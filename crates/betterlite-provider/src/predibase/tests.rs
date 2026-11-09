@@ -12,8 +12,8 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::config::{
-    PredibaseConfig, call_error, get_complete_url, get_supported_openai_params, map_openai_params,
-    validate_environment,
+    CallFailure, PredibaseConfig, call_error, get_complete_url, get_supported_openai_params,
+    map_openai_params, validate_environment,
 };
 use super::error::PredibaseSetupError;
 use super::request::{CustomPrompt, RequestContext};
@@ -349,11 +349,6 @@ async fn a_custom_prompt_entry_missing_a_field_fails(#[case] wire: &str, #[case]
     Some("org/model"),
     "https://host/t/deployments/v2/llms/org/model/generate"
 )]
-#[case::stream_argument(
-    Some("https://host"),
-    Some("org/model"),
-    "https://host/t/deployments/v2/llms/org/model/generate"
-)]
 fn complete_urls_follow_the_base_and_model(
     #[case] api_base: Option<&str>,
     #[case] model: Option<&str>,
@@ -473,26 +468,36 @@ fn caller_headers_replace_the_default_of_the_same_spelling_only() {
 }
 
 #[rstest]
-#[case::streaming_ok(Some(200), true, None)]
-#[case::streaming_created(Some(201), true, Some((201, "boom")))]
-#[case::streaming_error(Some(502), true, Some((502, "boom")))]
-#[case::streaming_transport_failure(None, true, None)]
-#[case::non_streaming_ok(Some(200), false, None)]
-#[case::non_streaming_created(Some(201), false, None)]
-#[case::non_streaming_no_content(Some(204), false, None)]
+#[case::streaming_ok(CallFailure::Response { status: 200, body: "boom" }, true, None)]
+#[case::streaming_created(CallFailure::Response { status: 201, body: "boom" }, true, Some((201, "boom")))]
+#[case::streaming_error(CallFailure::Response { status: 502, body: "boom" }, true, Some((502, "boom")))]
+#[case::streaming_timeout(CallFailure::Rethrown, true, None)]
+#[case::streaming_transport_failure(CallFailure::Transport { message: "boom" }, true, None)]
+#[case::non_streaming_ok(CallFailure::Response { status: 200, body: "boom" }, false, None)]
+#[case::non_streaming_created(CallFailure::Response { status: 201, body: "boom" }, false, None)]
+#[case::non_streaming_no_content(CallFailure::Response { status: 204, body: "boom" }, false, None)]
 #[case::non_streaming_redirect(
-    Some(301),
+    CallFailure::Response { status: 301, body: "boom" },
     false,
     Some((301, "HTTPStatusError - received status_code=301, error_message=boom"))
 )]
-#[case::non_streaming_error(Some(502), false, Some((502, "HTTPStatusError - received status_code=502, error_message=boom")))]
-#[case::non_streaming_transport_failure(None, false, Some((500, "boom")))]
+#[case::non_streaming_error(
+    CallFailure::Response { status: 502, body: "boom" },
+    false,
+    Some((502, "HTTPStatusError - received status_code=502, error_message=boom"))
+)]
+#[case::non_streaming_timeout(CallFailure::Rethrown, false, None)]
+#[case::non_streaming_transport_failure(
+    CallFailure::Transport { message: "boom" },
+    false,
+    Some((500, "boom"))
+)]
 fn call_errors_follow_the_streaming_and_plain_shapes(
-    #[case] status: Option<u16>,
+    #[case] failure: CallFailure<'static>,
     #[case] streaming: bool,
     #[case] expected: Option<(u16, &str)>,
 ) {
-    let error = call_error(status, "boom", streaming);
+    let error = call_error(failure, streaming);
     assert_eq!(
         error.map(|found| (found.status_code, found.message)),
         expected.map(|(code, message)| (code, String::from(message)))

@@ -140,26 +140,37 @@ pub fn validate_environment(
     Ok(merged)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallFailure<'message> {
+    // the provider answered with this status and body
+    Response { status: u16, body: &'message str },
+    // an already typed client error such as LiteLLM's Timeout, which it re-raises unchanged
+    Rethrown,
+    // the client failed before a response for another reason
+    Transport { message: &'message str },
+}
+
 #[must_use]
-pub fn call_error(status: Option<u16>, body: &str, streaming: bool) -> Option<PredibaseError> {
+pub fn call_error(failure: CallFailure<'_>, streaming: bool) -> Option<PredibaseError> {
     let headers = BTreeMap::new();
-    let Some(code) = status else {
-        return if streaming {
-            None
-        } else {
-            Some(get_error_class(body, 500, &headers))
-        };
-    };
-    if streaming {
-        return (code != 200).then(|| get_error_class(body, code, &headers));
+    match failure {
+        CallFailure::Rethrown => None,
+        CallFailure::Transport { message } => {
+            (!streaming).then(|| get_error_class(message, 500, &headers))
+        }
+        CallFailure::Response { status, body } => {
+            if streaming {
+                return (status != 200).then(|| get_error_class(body, status, &headers));
+            }
+            // httpx raise_for_status accepts every 2xx, so only an HTTP error status raises here
+            if (200..300).contains(&status) {
+                return None;
+            }
+            Some(get_error_class(
+                &format!("HTTPStatusError - received status_code={status}, error_message={body}"),
+                status,
+                &headers,
+            ))
+        }
     }
-    // httpx raise_for_status accepts every 2xx, so only an HTTP error status raises here
-    if (200..300).contains(&code) {
-        return None;
-    }
-    Some(get_error_class(
-        &format!("HTTPStatusError - received status_code={code}, error_message={body}"),
-        code,
-        &headers,
-    ))
 }
