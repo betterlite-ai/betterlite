@@ -74,7 +74,9 @@ async fn a_non_numeric_count_is_an_error_and_never_an_empty_list() {
         .await
         .expect_err("the undecodable count");
     assert!(matches!(error, RedisCountersError::Decode(_)));
-    assert_eq!(gate.failures().len(), 1);
+    let failures = gate.failures();
+    assert_eq!(failures.len(), 1);
+    assert!(!failures[0].contains("not-a-count"), "{}", failures[0]);
     assert!(gate.exits().is_empty());
 }
 

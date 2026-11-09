@@ -173,11 +173,10 @@ fn scan_reply(reply: Value) -> Result<(String, Vec<Vec<u8>>), RedisCountersError
 }
 
 fn cluster_primaries(topology: Value) -> Result<Vec<(String, u16)>, RedisCountersError> {
-    let unexpected = || RedisCountersError::UnexpectedReply {
-        operation: SCAN_OPERATION,
-    };
     let RedisReply::Array(slots) = classify(topology) else {
-        return Err(unexpected());
+        return Err(RedisCountersError::UnexpectedReply {
+            operation: SCAN_OPERATION,
+        });
     };
     let mut primaries: Vec<(String, u16)> = Vec::new();
     for slot in slots {
@@ -199,7 +198,8 @@ fn slot_primary(slot: Value) -> Result<(String, u16), RedisCountersError> {
     let RedisReply::Array(nodes) = classify(slot) else {
         return Err(unexpected());
     };
-    let Some(primary) = nodes.into_iter().next() else {
+    // a CLUSTER SLOTS entry is [start, end, primary, replicas..], so the primary is the third element
+    let Some(primary) = nodes.into_iter().nth(2) else {
         return Err(unexpected());
     };
     let RedisReply::Array(primary_fields) = classify(primary) else {

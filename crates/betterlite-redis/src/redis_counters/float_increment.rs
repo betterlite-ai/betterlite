@@ -5,12 +5,36 @@ use redis::{Value, cmd};
 use crate::cache_primitives::float_ttl::{TtlFollowup, needs_standalone_expire, plan_ttl_followup};
 use crate::cache_primitives::pipeline_increment::PipelineStep;
 use crate::cache_primitives::pipeline_increment::PipelineStep::IncrByFloat;
+use crate::cache_primitives::pipeline_increment::{
+    IncrementOperation, float_replies, plan_pipeline_steps,
+};
 use crate::cache_primitives::protocol::AsyncRedisCommands as _;
 use crate::redis_live_client::LiveAsyncClient;
 use crate::redis_live_client::pipeline::LivePipeline;
 
-use super::RedisCountersError;
 use super::reply::{RedisReply, classify};
+use super::{RedisCounters, RedisCountersError};
+
+pub(crate) async fn pipeline_increment(
+    counters: &RedisCounters,
+    increment_list: &[IncrementOperation],
+) -> Result<Vec<f64>, RedisCountersError> {
+    let steps = plan_pipeline_steps(increment_list, counters.namespace.as_deref());
+    let client = counters.transport.async_client().await?;
+    let mut pipeline = client.pipeline(false);
+    for step in &steps {
+        add_pipeline_step(&mut pipeline, step);
+    }
+    let replies = pipeline.execute().await?;
+    let mut floats: Vec<Option<f64>> = Vec::with_capacity(replies.len());
+    for (step, reply) in steps.iter().zip(replies) {
+        match step {
+            IncrByFloat { .. } => floats.push(Some(float_reply(reply, "pipeline_increment")?)),
+            PipelineStep::Expire { .. } => floats.push(None),
+        }
+    }
+    Ok(float_replies(&floats))
+}
 
 pub(crate) async fn increment_with_followup(
     client: &LiveAsyncClient,
@@ -23,16 +47,16 @@ pub(crate) async fn increment_with_followup(
         operation: "incr_by_float_with_ttl",
     };
     let (pipeline, followup) = ttl_pipeline(client, key, value, ttl_seconds, refresh_ttl);
-    let replies = pipeline.execute().await?;
-    let Some(increment_reply) = replies.first() else {
+    let mut replies = pipeline.execute().await?.into_iter();
+    let Some(increment_reply) = replies.next() else {
         return Err(unexpected());
     };
-    let result = float_reply(increment_reply.clone(), "incr_by_float_with_ttl")?;
+    let result = float_reply(increment_reply, "incr_by_float_with_ttl")?;
     if followup == Some(TtlFollowup::Ttl) {
-        let Some(Value::Int(answered)) = replies.get(1) else {
+        let Some(Value::Int(answered)) = replies.next() else {
             return Err(unexpected());
         };
-        if needs_standalone_expire(followup, *answered) {
+        if needs_standalone_expire(followup, answered) {
             client.expire(key, ttl_seconds).await?;
         }
     }

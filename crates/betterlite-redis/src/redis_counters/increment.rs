@@ -23,6 +23,31 @@ pub(crate) fn resolve_ttl(ttl: Option<f64>, default_ttl: i64) -> Result<i64, Red
         .map_err(|_source| RedisCountersError::InvalidTtl)
 }
 
+pub(crate) fn increment_cache(
+    counters: &RedisCounters,
+    key: &str,
+    value: i64,
+    set_ttl: i64,
+) -> Result<i64, RedisCountersError> {
+    let started = Instant::now();
+    let outcome = increment_steps(counters, key, value, set_ttl);
+    if let Err(error) = &outcome {
+        counters.hooks.failure(
+            &ServiceEvent {
+                call_type: "increment_cache",
+                duration: started.elapsed(),
+                key: Some(key.to_owned()),
+            },
+            error,
+        );
+        tracing::error!(
+            error = %error,
+            "LiteLLM Redis Caching: increment_cache() - Got exception from REDIS"
+        );
+    }
+    outcome
+}
+
 pub(crate) fn increment_steps(
     counters: &RedisCounters,
     key: &str,
