@@ -1058,6 +1058,7 @@ dependencies = [
  "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
