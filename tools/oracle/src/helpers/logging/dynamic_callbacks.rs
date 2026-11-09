@@ -85,8 +85,9 @@ fn add_process(input: &Input) -> HelperResult {
         calls: Mutex::new(Vec::new()),
     };
     if input.process {
+        let known = |name: &str| input.known.iter().any(|candidate| candidate == name);
         lists
-            .process_dynamic_callbacks(&recorder, &trusted(&input.trusted))
+            .process_dynamic_callbacks(&recorder, &trusted(&input.trusted), &known)
             .map_err(|error| helper_error("DynamicCallbackError", error.to_string()))?;
     }
     Ok(json!({"lists": lists_value(&lists), "calls": recorder.recorded()}))

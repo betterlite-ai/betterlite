@@ -45,6 +45,9 @@ impl PartialEq for DynamicCallback {
 
 impl Eq for DynamicCallback {}
 
+// LiteLLM copies a per-request callback list verbatim; betterlite bounds each list before it resolves names
+pub const MAX_CALLBACKS_PER_LIST: usize = 100;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DynamicCallbackKind {
     Input,
@@ -69,6 +72,16 @@ impl DynamicCallbackKind {
             Self::Success => Some(Self::AsyncSuccess),
             Self::Failure => Some(Self::AsyncFailure),
             Self::Input | Self::AsyncSuccess | Self::AsyncFailure => None,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::Success => "success",
+            Self::AsyncSuccess => "async_success",
+            Self::Failure => "failure",
+            Self::AsyncFailure => "async_failure",
         }
     }
 }
@@ -135,9 +148,10 @@ impl DynamicCallbackLists {
         &mut self,
         resolver: &dyn LoggerResolver,
         trusted: &TrustedCallbacks,
+        is_known: &dyn Fn(&str) -> bool,
     ) -> Result<(), DynamicCallbackError> {
         for kind in DynamicCallbackKind::ALL {
-            self.process_dynamic_callback_list(kind, resolver, trusted)?;
+            self.process_dynamic_callback_list(kind, resolver, trusted, is_known)?;
         }
         Ok(())
     }
@@ -147,16 +161,28 @@ impl DynamicCallbackLists {
         kind: DynamicCallbackKind,
         resolver: &dyn LoggerResolver,
         trusted: &TrustedCallbacks,
+        is_known: &dyn Fn(&str) -> bool,
     ) -> Result<(), DynamicCallbackError> {
         let Some(callbacks) = self.slot_mut(kind).take() else {
             return Ok(());
         };
+        if callbacks.len() > MAX_CALLBACKS_PER_LIST {
+            return Err(DynamicCallbackError::TooMany {
+                list: kind.name(),
+                count: callbacks.len(),
+                limit: MAX_CALLBACKS_PER_LIST,
+            });
+        }
         let mut processed = Vec::with_capacity(callbacks.len());
         for callback in callbacks {
             let DynamicCallback::Name(name) = &callback else {
                 processed.push(callback);
                 continue;
             };
+            if !is_known(name) {
+                processed.push(callback);
+                continue;
+            }
             for logger in resolve::resolve_callback_string(name, trusted, resolver)? {
                 let entry = DynamicCallback::Logger(logger);
                 self.mirror_entry(kind, &entry);

@@ -13,6 +13,7 @@ use secrecy::SecretString;
 use super::DynamicCallback;
 use super::DynamicCallbackKind;
 use super::DynamicCallbackLists;
+use super::MAX_CALLBACKS_PER_LIST;
 use super::error::DynamicCallbackError;
 use super::filters::get_callback_name;
 use super::filters::get_combined_callback_list;
@@ -185,6 +186,16 @@ fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
+fn all_known(_name: &str) -> bool {
+    true
+}
+
+fn marker_list(count: usize) -> Vec<DynamicCallback> {
+    (0..count)
+        .map(|index| logger(&format!("l{index}")))
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Scenario {
     AddRegistersInEveryList,
@@ -193,8 +204,11 @@ enum Scenario {
     ProcessInputResolvesNamesOnly,
     ProcessDropsAnUnavailableName,
     ProcessKeepsNoneAndEmptyLists,
+    ProcessAcceptsAListAtTheLimit,
+    ProcessRejectsAListOverTheLimit,
     SuccessMirrorsIntoAsyncSuccess,
     SuccessDuplicatesAnAlreadyListedAsyncEntry,
+    SuccessKeepsANonKnownNameWithoutMirroring,
     FailureMirrorsIntoAsyncFailure,
     ProcessErrorNamesTheCallback,
     ResolveDatadogSendsOnlyDdVars,
@@ -210,10 +224,13 @@ enum Scenario {
     InternalCallbackFilterKeepsNamesAndDropsLoggers,
     UnknownCallbackNameSurvivesTheLoggerFilter,
     ParamsPrecedenceFollowsRequestSlots,
+    ParamsPrecedenceSkipsAMissingSlot,
     ParamsSkipUnsupportedAndBlockedFields,
     ParamsApplyTrustedOverlay,
     ParamsInheritedPrivacyWins,
     ParamsRejectEnvironmentReferences,
+    ParamsRejectAShadowedEnvironmentReference,
+    ParamsRejectAnInvalidLangfuseEnvironment,
     ParamsEmptyRequestIsEmpty,
     WireNamesConvertToListEntries,
 }
@@ -225,9 +242,14 @@ enum Scenario {
 #[case::process_input_resolves_names_only(Scenario::ProcessInputResolvesNamesOnly)]
 #[case::process_drops_an_unavailable_name(Scenario::ProcessDropsAnUnavailableName)]
 #[case::process_keeps_none_and_empty_lists(Scenario::ProcessKeepsNoneAndEmptyLists)]
+#[case::process_accepts_a_list_at_the_limit(Scenario::ProcessAcceptsAListAtTheLimit)]
+#[case::process_rejects_a_list_over_the_limit(Scenario::ProcessRejectsAListOverTheLimit)]
 #[case::success_mirrors_into_async_success(Scenario::SuccessMirrorsIntoAsyncSuccess)]
 #[case::success_duplicates_an_already_listed_async_entry(
     Scenario::SuccessDuplicatesAnAlreadyListedAsyncEntry
+)]
+#[case::success_keeps_a_non_known_name_without_mirroring(
+    Scenario::SuccessKeepsANonKnownNameWithoutMirroring
 )]
 #[case::failure_mirrors_into_async_failure(Scenario::FailureMirrorsIntoAsyncFailure)]
 #[case::process_error_names_the_callback(Scenario::ProcessErrorNamesTheCallback)]
@@ -256,10 +278,17 @@ enum Scenario {
     Scenario::UnknownCallbackNameSurvivesTheLoggerFilter
 )]
 #[case::params_precedence_follows_request_slots(Scenario::ParamsPrecedenceFollowsRequestSlots)]
+#[case::params_precedence_skips_a_missing_slot(Scenario::ParamsPrecedenceSkipsAMissingSlot)]
 #[case::params_skip_unsupported_and_blocked_fields(Scenario::ParamsSkipUnsupportedAndBlockedFields)]
 #[case::params_apply_trusted_overlay(Scenario::ParamsApplyTrustedOverlay)]
 #[case::params_inherited_privacy_wins(Scenario::ParamsInheritedPrivacyWins)]
 #[case::params_reject_environment_references(Scenario::ParamsRejectEnvironmentReferences)]
+#[case::params_reject_a_shadowed_environment_reference(
+    Scenario::ParamsRejectAShadowedEnvironmentReference
+)]
+#[case::params_reject_an_invalid_langfuse_environment(
+    Scenario::ParamsRejectAnInvalidLangfuseEnvironment
+)]
 #[case::params_empty_request_is_empty(Scenario::ParamsEmptyRequestIsEmpty)]
 #[case::wire_names_convert_to_list_entries(Scenario::WireNamesConvertToListEntries)]
 fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
@@ -314,6 +343,7 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
                     DynamicCallbackKind::Input,
                     &resolver,
                     &TrustedCallbacks::default(),
+                    &all_known,
                 )
                 .unwrap();
             assert_eq!(
@@ -330,8 +360,9 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
                 ("gitlab", Outcome::Missing),
                 ("langfuse", Outcome::Logger(marker("langfuse"))),
             ]);
+            let known = |candidate: &str| matches!(candidate, "gitlab" | "langfuse");
             lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &known)
                 .unwrap();
             assert_eq!(labels(lists.input.as_deref().unwrap()), ["langfuse"]);
             assert_eq!(resolver.calls().len(), 2);
@@ -341,11 +372,39 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             lists.success = Some(Vec::new());
             let resolver = FakeResolver::new(Vec::new());
             lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
                 .unwrap();
             assert!(lists.input.is_none());
             assert_eq!(lists.success, Some(Vec::new()));
             assert!(lists.async_success.is_none());
+            assert!(resolver.calls().is_empty());
+        }
+        Scenario::ProcessAcceptsAListAtTheLimit => {
+            let mut lists = lists();
+            lists.input = Some(marker_list(MAX_CALLBACKS_PER_LIST));
+            let resolver = FakeResolver::new(Vec::new());
+            lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
+                .unwrap();
+            assert_eq!(
+                lists.input.as_deref().unwrap().len(),
+                MAX_CALLBACKS_PER_LIST
+            );
+            assert!(resolver.calls().is_empty());
+        }
+        Scenario::ProcessRejectsAListOverTheLimit => {
+            let mut lists = lists();
+            lists.input = Some(marker_list(MAX_CALLBACKS_PER_LIST.saturating_add(1)));
+            let resolver =
+                FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
+            let error = lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
+                .unwrap_err();
+            assert!(matches!(
+                &error,
+                DynamicCallbackError::TooMany { list, .. } if *list == "input"
+            ));
+            assert!(error.to_string().contains("input"));
             assert!(resolver.calls().is_empty());
         }
         Scenario::SuccessMirrorsIntoAsyncSuccess => {
@@ -354,7 +413,7 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             let resolver =
                 FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
             lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
                 .unwrap();
             assert_eq!(labels(lists.success.as_deref().unwrap()), ["langfuse"]);
             assert_eq!(
@@ -370,7 +429,7 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             let resolver =
                 FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
             lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
                 .unwrap();
             assert_eq!(labels(lists.success.as_deref().unwrap()), ["langfuse"]);
             assert_eq!(
@@ -379,13 +438,32 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             );
             assert_eq!(resolver.calls().len(), 2);
         }
+        Scenario::SuccessKeepsANonKnownNameWithoutMirroring => {
+            let mut lists = lists();
+            lists.success = Some(vec![name("helicone"), name("langfuse"), logger("otel")]);
+            let resolver =
+                FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
+            let known = |candidate: &str| candidate == "langfuse";
+            lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &known)
+                .unwrap();
+            assert_eq!(
+                labels(lists.success.as_deref().unwrap()),
+                ["helicone", "langfuse", "otel"]
+            );
+            assert_eq!(
+                labels(lists.async_success.as_deref().unwrap()),
+                ["langfuse"]
+            );
+            assert_eq!(resolver.calls().len(), 1);
+        }
         Scenario::FailureMirrorsIntoAsyncFailure => {
             let mut lists = lists();
             lists.failure = Some(vec![name("langfuse")]);
             let resolver =
                 FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
             lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
                 .unwrap();
             assert_eq!(labels(lists.failure.as_deref().unwrap()), ["langfuse"]);
             assert_eq!(
@@ -399,7 +477,7 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             lists.input = Some(vec![name("langfuse")]);
             let resolver = FakeResolver::new(vec![("langfuse", Outcome::Error)]);
             let error = lists
-                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
                 .unwrap_err();
             assert!(matches!(
                 &error,
@@ -549,7 +627,6 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
         Scenario::ParamsPrecedenceFollowsRequestSlots => {
             let standard = request_params(
                 r#"{
-                    "langsmith_project": "direct",
                     "metadata": {"langsmith_project": "metadata", "langfuse_public_key": "pk"},
                     "litellm_metadata": {"langsmith_project": "litellm_metadata", "langsmith_api_key": "key"},
                     "litellm_params": {"metadata": {"langsmith_project": "params", "arize_api_key": "arize"}}
@@ -558,10 +635,25 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
                 false,
             )
             .unwrap();
-            assert_eq!(standard.get("langsmith_project"), Some(&text("direct")));
+            assert_eq!(standard.get("langsmith_project"), Some(&text("params")));
             assert_eq!(standard.get("langfuse_public_key"), Some(&text("pk")));
             assert_eq!(standard.get("langsmith_api_key"), Some(&text("key")));
             assert_eq!(standard.get("arize_api_key"), Some(&text("arize")));
+        }
+        Scenario::ParamsPrecedenceSkipsAMissingSlot => {
+            let standard = request_params(
+                r#"{
+                    "metadata": {"langsmith_project": "metadata"},
+                    "litellm_metadata": {"langsmith_project": "litellm_metadata"}
+                }"#,
+                &TrustedCallbacks::default(),
+                false,
+            )
+            .unwrap();
+            assert_eq!(
+                standard.get("langsmith_project"),
+                Some(&text("litellm_metadata"))
+            );
         }
         Scenario::ParamsSkipUnsupportedAndBlockedFields => {
             let standard = request_params(
@@ -625,6 +717,33 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
                 }) if field == "langsmith_project"
             ));
             assert!(error.to_string().contains("langsmith_project"));
+        }
+        Scenario::ParamsRejectAShadowedEnvironmentReference => {
+            let error = request_params(
+                r#"{"langsmith_project": "direct", "metadata": {"langsmith_project": "os.environ/X"}}"#,
+                &TrustedCallbacks::default(),
+                false,
+            )
+            .unwrap_err();
+            assert!(matches!(
+                &error,
+                DynamicCallbackError::Params(CallbackMetadataError::EnvironmentReference {
+                    field
+                }) if field == "langsmith_project"
+            ));
+        }
+        Scenario::ParamsRejectAnInvalidLangfuseEnvironment => {
+            let error = request_params(
+                r#"{"langfuse_environment": "Production"}"#,
+                &TrustedCallbacks::default(),
+                false,
+            )
+            .unwrap_err();
+            assert!(matches!(
+                &error,
+                DynamicCallbackError::Params(CallbackMetadataError::InvalidField { field })
+                    if field == "langfuse_environment"
+            ));
         }
         Scenario::ParamsEmptyRequestIsEmpty => {
             let standard = request_params("{}", &TrustedCallbacks::default(), false).unwrap();

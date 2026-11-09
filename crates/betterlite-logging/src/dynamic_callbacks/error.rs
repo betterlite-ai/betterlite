@@ -11,6 +11,14 @@ pub enum DynamicCallbackError {
         #[source]
         source: RegistryError,
     },
+    #[error(
+        "the {list} dynamic callback list holds {count} callbacks, at most {limit} are allowed"
+    )]
+    TooMany {
+        list: &'static str,
+        count: usize,
+        limit: usize,
+    },
     #[error(transparent)]
     Params(#[from] CallbackMetadataError),
 }
