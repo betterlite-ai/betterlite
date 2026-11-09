@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod client;
 mod create;
 mod delete;
 mod replicate;

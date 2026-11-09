@@ -170,6 +170,22 @@ pub(super) fn timed_out() -> Reply {
     Err(TransportError::Timeout)
 }
 
+pub(super) fn region_params(region: &str) -> AwsOptionalParams {
+    AwsOptionalParams {
+        aws_role_name: None,
+        aws_session_name: None,
+        aws_region_name: Some(region.to_owned()),
+        aws_external_id: None,
+        aws_profile_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        aws_bedrock_runtime_endpoint: None,
+    }
+}
+
 pub(super) fn first_token() -> Uuid {
     Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0001)
 }
