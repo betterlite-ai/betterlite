@@ -90,6 +90,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "linkup_reply"
+path = "fuzz_targets/linkup_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "exa_ai_reply"
 path = "fuzz_targets/exa_ai_reply.rs"
 test = false
@@ -99,6 +106,13 @@ bench = false
 [[bin]]
 name = "firecrawl_reply"
 path = "fuzz_targets/firecrawl_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "searxng_reply"
+path = "fuzz_targets/searxng_reply.rs"
 test = false
 doc = false
 bench = false
