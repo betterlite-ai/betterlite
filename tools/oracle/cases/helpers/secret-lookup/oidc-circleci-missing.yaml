@@ -1,0 +1,10 @@
+kind: helper
+name: secret-lookup-oidc-circleci-missing
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret
+    secret_name: oidc/circleci/audience
+    environment: {}
+    default_value: null

@@ -1,0 +1,1 @@
+{"results":{"web":[{"title":"Web","url":"https://web.test","snippets":["first"],"description":"ignored","page_age":"2024-01-02"}],"news":[{"title":"News","url":"https://news.test","snippets":[],"description":"fallback"}]}}
