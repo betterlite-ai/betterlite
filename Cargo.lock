@@ -2110,6 +2110,7 @@ dependencies = [
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-logging",
  "betterlite-oracle",
  "chrono",
  "libfuzzer-sys",
