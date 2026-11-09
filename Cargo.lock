@@ -1011,6 +1011,7 @@ name = "betterlite-a2a"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "betterlite-config",
@@ -1020,6 +1021,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-core",
  "futures-util",
@@ -1033,6 +1035,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "strum",
@@ -1142,6 +1145,7 @@ dependencies = [
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
@@ -1151,14 +1155,17 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "bytes",
  "chrono",
  "crc32fast",
@@ -1338,12 +1345,9 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "betterlite-config",
- "betterlite-http",
  "betterlite-models",
  "betterlite-redact",
- "betterlite-tokenizer",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1352,7 +1356,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1563,6 +1566,7 @@ dependencies = [
  "mime_guess",
  "pem",
  "pkcs8",
+ "rcgen",
  "regex",
  "reqwest",
  "rstest",
@@ -1733,6 +1737,24 @@ dependencies = [
  "betterlite-lens",
  "libfuzzer-sys",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-lens-worker"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-lens",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -2126,6 +2148,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "rcgen",
  "rstest",
  "rust_decimal",
  "rustls",
@@ -2134,11 +2157,13 @@ dependencies = [
  "serde",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "testcontainers",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "url",
  "uuid",
 ]
@@ -2414,6 +2439,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
@@ -2586,6 +2612,7 @@ dependencies = [
  "multipart-rs",
  "percent-encoding",
  "rand 0.10.3",
+ "rcgen",
  "regex",
  "rmcp",
  "rquickjs",
@@ -2631,12 +2658,20 @@ dependencies = [
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
+ "betterlite-tokenizer",
  "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -2659,6 +2694,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-prompts",
  "futures-util",
  "hex",
  "hf-hub",
@@ -7313,9 +7349,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.41.1"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da9bba6f3506135e120a6586df05be18b48d18896600646a4bec8f993d91a594"
+checksum = "9c026b4444579e8d754556c6c75d040d69c4a44283cdb648ab8a8d5965c2cfa8"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator 0.3.0",
