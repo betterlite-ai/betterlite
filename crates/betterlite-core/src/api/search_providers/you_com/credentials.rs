@@ -2,12 +2,9 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::error::YouComError;
-use super::{YOU_COM_CREDENTIAL, YouComSearch};
-
-struct YouComEnvironment<'settings> {
-    api_key: Option<&'settings SecretString>,
-    api_base: Option<&'settings str>,
+pub(super) struct YouComEnvironment<'settings> {
+    pub(super) api_key: Option<&'settings SecretString>,
+    pub(super) api_base: Option<&'settings str>,
 }
 
 impl EnvironmentLookup for YouComEnvironment<'_> {
@@ -18,18 +15,6 @@ impl EnvironmentLookup for YouComEnvironment<'_> {
             _ => None,
         }
     }
-}
-
-pub(super) fn resolve(
-    settings: &YouComSearch,
-    api_key: Option<&SecretString>,
-    api_base: Option<&str>,
-) -> Result<Option<SecretString>, YouComError> {
-    let environment = YouComEnvironment {
-        api_key: settings.api_key.as_ref(),
-        api_base: settings.api_base.as_deref(),
-    };
-    Ok(YOU_COM_CREDENTIAL.resolve(api_key.cloned(), api_base, &environment)?)
 }
 
 pub(super) fn compose_headers(mut headers: Headers, key: Option<&SecretString>) -> Headers {

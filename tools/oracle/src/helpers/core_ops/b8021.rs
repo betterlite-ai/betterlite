@@ -124,12 +124,8 @@ impl ProviderSearch {
         response: &ProviderResponse<'_>,
     ) -> Result<SearchResponse, Box<HelperError>> {
         match self {
-            Self::Tavily(search) => search
-                .transform_search_response(response)
-                .map_err(failure),
-            Self::YouCom(search) => search
-                .transform_search_response(response)
-                .map_err(failure),
+            Self::Tavily(search) => search.transform_search_response(response).map_err(failure),
+            Self::YouCom(search) => search.transform_search_response(response).map_err(failure),
         }
     }
 }
@@ -185,12 +181,13 @@ fn call_outcome(provider: Provider, call: &Call) -> Result<Value, Box<HelperErro
             api_base,
             api_key,
             environment,
-        } => Ok(Value::String(complete_called(
-            provider,
-            api_base.as_deref(),
-            api_key.as_deref(),
-            environment,
-        ))),
+        } => {
+            let key = api_key.as_deref().map(SecretString::from);
+            let search = ProviderSearch::load(provider, environment);
+            Ok(Value::String(
+                search.endpoint(api_base.as_deref(), key.as_ref()),
+            ))
+        }
         Call::TransformSearchRequest {
             query,
             optional_params,
@@ -213,19 +210,12 @@ fn validate_called(
     environment: &BTreeMap<String, String>,
 ) -> Result<Value, Box<HelperError>> {
     let key = api_key.map(SecretString::from);
-    let prepared = ProviderSearch::load(provider, environment)
-        .prepare_headers(headers.clone(), key.as_ref(), api_base)?;
+    let prepared = ProviderSearch::load(provider, environment).prepare_headers(
+        headers.clone(),
+        key.as_ref(),
+        api_base,
+    )?;
     serde_json::to_value(prepared).map_err(failure)
-}
-
-fn complete_called(
-    provider: Provider,
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    environment: &BTreeMap<String, String>,
-) -> String {
-    let key = api_key.map(SecretString::from);
-    ProviderSearch::load(provider, environment).endpoint(api_base, key.as_ref())
 }
 
 fn request_called(
@@ -252,8 +242,8 @@ fn response_called(
         headers,
         text: &text,
     };
-    let parsed = ProviderSearch::load(provider, environment)
-        .transform_search_response(&response)?;
+    let parsed =
+        ProviderSearch::load(provider, environment).transform_search_response(&response)?;
     serde_json::to_value(parsed).map_err(failure)
 }
 

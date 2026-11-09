@@ -2,12 +2,9 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::error::TavilyError;
-use super::{TAVILY_CREDENTIAL, TavilySearch};
-
-struct TavilyEnvironment<'settings> {
-    api_key: Option<&'settings SecretString>,
-    api_base: &'settings str,
+pub(super) struct TavilyEnvironment<'settings> {
+    pub(super) api_key: Option<&'settings SecretString>,
+    pub(super) api_base: &'settings str,
 }
 
 impl EnvironmentLookup for TavilyEnvironment<'_> {
@@ -18,20 +15,6 @@ impl EnvironmentLookup for TavilyEnvironment<'_> {
             _ => None,
         }
     }
-}
-
-pub(super) fn resolve(
-    settings: &TavilySearch,
-    api_key: Option<&SecretString>,
-    api_base: Option<&str>,
-) -> Result<SecretString, TavilyError> {
-    let environment = TavilyEnvironment {
-        api_key: settings.api_key.as_ref(),
-        api_base: &settings.api_base,
-    };
-    TAVILY_CREDENTIAL
-        .resolve(api_key.cloned(), api_base, &environment)?
-        .ok_or(TavilyError::MissingApiKey)
 }
 
 pub(super) fn auth_headers(mut headers: Headers, key: &SecretString) -> Headers {

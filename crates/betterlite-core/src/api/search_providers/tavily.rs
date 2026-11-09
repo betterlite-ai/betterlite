@@ -13,7 +13,7 @@ use betterlite_openai::search::provider::{
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use credentials::auth_headers;
+use credentials::{TavilyEnvironment, auth_headers};
 use error::TavilyError;
 use reply::decode_tavily_reply;
 use request::search_body;
@@ -56,7 +56,13 @@ impl TavilySearch {
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
     ) -> Result<SecretString, TavilyError> {
-        credentials::resolve(self, api_key, api_base)
+        let environment = TavilyEnvironment {
+            api_key: self.api_key.as_ref(),
+            api_base: &self.api_base,
+        };
+        TAVILY_CREDENTIAL
+            .resolve(api_key.cloned(), api_base, &environment)?
+            .ok_or(TavilyError::MissingApiKey)
     }
 
     pub fn prepare_headers(
@@ -66,7 +72,13 @@ impl TavilySearch {
         api_base: Option<&str>,
     ) -> Result<Headers, TavilyError> {
         let credential = self.resolve_api_key(api_key, api_base)?;
-        Ok(auth_headers(headers, &credential))
+        let mut prepared = headers;
+        prepared.insert(
+            "Authorization".to_owned(),
+            format!("Bearer {}", credential.expose_secret()),
+        );
+        prepared.insert("Content-Type".to_owned(), "application/json".to_owned());
+        Ok(prepared)
     }
 }
 

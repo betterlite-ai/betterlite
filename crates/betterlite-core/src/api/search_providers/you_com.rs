@@ -1,5 +1,4 @@
 mod credentials;
-mod endpoint;
 pub mod error;
 pub mod reply;
 mod request;
@@ -14,7 +13,7 @@ use betterlite_openai::search::provider::{
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use credentials::compose_headers;
+use credentials::{YouComEnvironment, compose_headers};
 use error::YouComError;
 use reply::decode_you_com_reply;
 use request::search_body;
@@ -45,7 +44,15 @@ impl YouComSearch {
 
     #[must_use]
     pub fn endpoint(&self, api_base: Option<&str>, api_key: Option<&SecretString>) -> String {
-        endpoint::endpoint(self, api_base, api_key)
+        let configured = api_base.or(self.api_base.as_deref()).map(finish);
+        if let Some(url) = configured {
+            return url;
+        }
+        let caller_key = api_key.filter(|key| !key.expose_secret().is_empty());
+        if caller_key.is_some() || self.api_key.is_some() {
+            return finish(YOU_COM_API_BASE);
+        }
+        YOU_COM_FREE_API_BASE.to_owned()
     }
 
     pub fn resolve_api_key(
@@ -53,7 +60,11 @@ impl YouComSearch {
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
     ) -> Result<Option<SecretString>, YouComError> {
-        credentials::resolve(self, api_key, api_base)
+        let environment = YouComEnvironment {
+            api_key: self.api_key.as_ref(),
+            api_base: self.api_base.as_deref(),
+        };
+        Ok(YOU_COM_CREDENTIAL.resolve(api_key.cloned(), api_base, &environment)?)
     }
 
     pub fn prepare_headers(
@@ -63,7 +74,24 @@ impl YouComSearch {
         api_base: Option<&str>,
     ) -> Result<Headers, YouComError> {
         let credential = self.resolve_api_key(api_key, api_base)?;
-        Ok(compose_headers(headers, credential.as_ref()))
+        let mut prepared = headers;
+        prepared.insert("Content-Type".to_owned(), "application/json".to_owned());
+        prepared
+            .entry("Accept-Encoding".to_owned())
+            .or_insert_with(|| "identity".to_owned());
+        if let Some(key) = credential {
+            prepared.insert("X-API-Key".to_owned(), key.expose_secret().to_owned());
+        }
+        Ok(prepared)
+    }
+}
+
+fn finish(base: &str) -> String {
+    let trimmed = base.trim_end_matches('/');
+    if trimmed.ends_with("/v1/search") || trimmed.ends_with("/v1/agents/search") {
+        trimmed.to_owned()
+    } else {
+        format!("{trimmed}/v1/search")
     }
 }
 
