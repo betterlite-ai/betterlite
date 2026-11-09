@@ -29,11 +29,8 @@ pub fn a2a_call_cost(logging: Option<&LoggingState>) -> Result<Decimal, CostCalc
     };
     let details = &state.model_call_details;
     let params = cost_params(details)?;
-    let fixed_price = params.response_cost.is_some() || params.cost_per_query.is_some();
-    let token_rates =
-        params.input_cost_per_token.is_some() || params.output_cost_per_token.is_some();
-    // LiteLLM reads usage only in the token branch, so a fixed price or no rate never validates it
-    let usage = if token_rates && !fixed_price {
+    // LiteLLM reads usage only in the token branch, which cost_params reaches only when both fixed prices are absent
+    let usage = if params.input_cost_per_token.is_some() || params.output_cost_per_token.is_some() {
         usage(details.get("usage"))?
     } else {
         None
@@ -51,17 +48,19 @@ fn cost_params(details: &IndexMap<String, Json>) -> Result<A2aCostParams, CostCa
             output_cost_per_token: None,
         });
     }
-    let params = match details.get("litellm_params") {
-        None | Some(Json::Null) => None,
-        Some(Json::Object(values)) => Some(values),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(CostCalculatorError::ParamsNotObject);
-        }
-    };
+    let params = litellm_params(details)?;
     let cost_per_query = money(
         params.and_then(|values| values.get("cost_per_query")),
         "cost_per_query",
     )?;
+    if cost_per_query.is_some() {
+        return Ok(A2aCostParams {
+            response_cost,
+            cost_per_query,
+            input_cost_per_token: None,
+            output_cost_per_token: None,
+        });
+    }
     let input_cost_per_token = money(
         params.and_then(|values| values.get("input_cost_per_token")),
         "input_cost_per_token",
@@ -76,6 +75,18 @@ fn cost_params(details: &IndexMap<String, Json>) -> Result<A2aCostParams, CostCa
         input_cost_per_token,
         output_cost_per_token,
     })
+}
+
+fn litellm_params(
+    details: &IndexMap<String, Json>,
+) -> Result<Option<&IndexMap<String, Json>>, CostCalculatorError> {
+    match details.get("litellm_params") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(values)) => Ok(Some(values)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(CostCalculatorError::ParamsNotObject)
+        }
+    }
 }
 
 fn money(

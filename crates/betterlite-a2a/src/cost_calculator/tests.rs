@@ -381,6 +381,19 @@ fn a_fractional_token_count_is_an_error() {
 }
 
 #[test]
+fn a_cost_per_query_does_not_validate_the_token_rates() {
+    let details = [(
+        "litellm_params",
+        object(&[
+            ("cost_per_query", number(3)),
+            ("input_cost_per_token", Json::Text("free".to_owned())),
+        ]),
+    )];
+
+    assert_eq!(cost(&details), Ok(money("3")));
+}
+
+#[test]
 fn a_fixed_price_does_not_validate_the_usage() {
     let details = [
         ("litellm_params", object(&[("cost_per_query", number(3))])),
