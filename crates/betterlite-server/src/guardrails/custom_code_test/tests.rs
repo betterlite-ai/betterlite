@@ -113,6 +113,7 @@ impl LoadedModule for FakeModule {
 struct FakeHost {
     loads: AtomicUsize,
     sources: Mutex<Vec<String>>,
+    globals: Mutex<Option<SandboxGlobals>>,
     seen: Arc<Mutex<Vec<CallArguments>>>,
     reply: HostReply,
 }
@@ -121,13 +122,14 @@ impl ModuleHost for FakeHost {
     fn load(
         &self,
         program: &CompiledProgram,
-        _globals: &SandboxGlobals,
+        globals: &SandboxGlobals,
     ) -> Result<Box<dyn LoadedModule>, SandboxError<ModuleLoadFailure>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         self.sources
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(program.source.clone());
+        *self.globals.lock().unwrap_or_else(PoisonError::into_inner) = Some(globals.clone());
         match &self.reply {
             HostReply::Answer(answer) => Ok(Box::new(FakeModule {
                 answer: answer.clone(),
@@ -156,6 +158,7 @@ fn host(reply: HostReply) -> Arc<FakeHost> {
     Arc::new(FakeHost {
         loads: AtomicUsize::new(0),
         sources: Mutex::new(Vec::new()),
+        globals: Mutex::new(None),
         seen: Arc::new(Mutex::new(Vec::new())),
         reply,
     })
@@ -586,6 +589,18 @@ async fn compile_not_callable_is_reported() {
 }
 
 #[tokio::test]
+async fn compile_hands_the_primitives_and_guards_to_the_host() {
+    let fake = host(allow_answer());
+    let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
+    assert!(response.success);
+    let globals = fake.globals.lock().unwrap().clone().unwrap();
+    assert!(globals.entries.contains_key("allow"));
+    assert!(globals.entries.contains_key("regex_match"));
+    assert!(globals.entries.contains_key("_budget_ok_"));
+    assert!(globals.entries.contains_key("__builtins__"));
+}
+
+#[tokio::test]
 async fn compile_load_failure_is_reported() {
     let fake = host(HostReply::Runtime("name 'allow' is not defined"));
     let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
@@ -699,6 +714,61 @@ async fn run_existing_texts_are_kept() {
     assert_eq!(
         inputs["texts"],
         GuardrailValue::Array(vec![GuardrailValue::Text("hello".to_owned())])
+    );
+}
+
+#[tokio::test]
+async fn run_explicitly_null_texts_are_kept() {
+    let fake = host(allow_answer());
+    let mut given = request(ALLOW_SOURCE);
+    given.test_input = BTreeMap::from([("texts".to_owned(), GuardrailValue::Null)]);
+    let response = run_test(given, sandbox(&fake).as_ref()).await;
+    assert!(response.success);
+    let arguments = last_call(&fake);
+    let GuardrailValue::Object(inputs) = &arguments.inputs else {
+        panic!("inputs object");
+    };
+    assert_eq!(inputs["texts"], GuardrailValue::Null);
+}
+
+#[tokio::test]
+async fn run_request_data_explicit_values_are_kept() {
+    let fake = host(allow_answer());
+    let mut given = request(ALLOW_SOURCE);
+    given.request_data = Some(BTreeMap::from([
+        ("model".to_owned(), GuardrailValue::Null),
+        ("metadata".to_owned(), GuardrailValue::Null),
+    ]));
+    let response = run_test(given, sandbox(&fake).as_ref()).await;
+    assert!(response.success);
+    let arguments = last_call(&fake);
+    let GuardrailValue::Object(request_data) = &arguments.request_data else {
+        panic!("request data object");
+    };
+    assert_eq!(request_data.len(), 5);
+    assert_eq!(request_data["model"], GuardrailValue::Null);
+    assert_eq!(request_data["metadata"], GuardrailValue::Null);
+}
+
+#[tokio::test]
+async fn compile_failure_answers_200_over_http() {
+    let fake = host(allow_answer());
+    let (status, text) = post(
+        routes(sandbox(&fake)),
+        Some(caller(ADMIN, vec![Role::PlatformAdmin])),
+        r#"{"custom_code":"def apply_guardrail(:","test_input":{}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let response: TestCustomCodeResponse = serde_json::from_str(&text).unwrap();
+    assert!(!response.success);
+    assert_eq!(response.result, None);
+    assert_eq!(response.error_type, Some(ErrorType::Compilation));
+    assert!(
+        response
+            .error
+            .unwrap()
+            .starts_with("Syntax error in custom code:")
     );
 }
 
