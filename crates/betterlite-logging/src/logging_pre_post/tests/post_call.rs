@@ -21,6 +21,7 @@ const LOGGER_POST: &str = "logger_post:2026-01-01T00:00:00+00:00:";
 #[case::sentry_precedes_the_logger(RESPONSE, &[Knob::Sentry], Look::Kinds, "log:Debug|logger_fn|sentry|logger_post")]
 #[case::logger_gets_the_call_start_time(RESPONSE, &[], Look::Mentions(LOGGER_POST, "post_api_call"), "yes")]
 #[case::logger_fn_failure_is_swallowed(RESPONSE, &[Knob::FailingLoggerFn], Look::Kinds, "log:Debug|logger_fn|log:Error|logger_post")]
+#[case::missing_logger_fn_is_skipped(RESPONSE, &[Knob::NoLoggerFn], Look::Kinds, "log:Debug|logger_post")]
 #[case::logger_fn_failure_is_logged(RESPONSE, &[Knob::FailingLoggerFn], Look::Record(1), "Error:LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging logger_fn exploded:{}")]
 #[case::callback_failure_is_captured(RESPONSE, &[Knob::FailingCallback, Knob::Sentry], Look::Kinds, "log:Debug|logger_fn|sentry|logger_post|log:Error|captured")]
 #[case::callback_failure_is_uncaptured_without_sentry(RESPONSE, &[Knob::FailingCallback], Look::Kinds, "log:Debug|logger_fn|logger_post|log:Error")]

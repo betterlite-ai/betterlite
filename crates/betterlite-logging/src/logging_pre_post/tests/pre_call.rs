@@ -16,6 +16,7 @@ const ORIGINAL_START: &str = r#""2026-01-01T00:00:05+00:00""#;
 #[case::litellm_params_api_base_is_masked("", CALL, &[], Look::Param("api_base"), MASKED_BASE)]
 #[case::details_api_base_is_masked("", CALL, &[], Look::Detail(&["litellm_params", "api_base"]), MASKED_BASE)]
 #[case::missing_api_base_is_empty("", r#"{"input":"x"}"#, &[], Look::Param("api_base"), r#""""#)]
+#[case::missing_additional_args_are_stored_empty("", r#"{"input":"x"}"#, &[], Look::Detail(&["additional_args"]), "{}")]
 #[case::call_model_replaces_the_logged_one("", r#"{"input":"x","model":"gpt-4o-mini"}"#, &[], Look::Detail(&["model"]), r#""gpt-4o-mini""#)]
 #[case::empty_call_model_keeps_the_logged_one("", r#"{"input":"x","model":""}"#, &[], Look::Detail(&["model"]), r#""gpt-4o""#)]
 #[case::missing_call_model_keeps_the_logged_one("", r#"{"input":"x"}"#, &[], Look::Detail(&["model"]), r#""gpt-4o""#)]

@@ -6,7 +6,9 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 
-use crate::logging_pre_post::env::{DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv};
+use crate::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
+};
 use crate::logging_pre_post::error::PrePostError;
 use crate::logging_pre_post::hooks::{
     ApiCallLogger, InputCallback, InputEventSink, PostCallEvent, PreCallEvent, SentrySink,
@@ -34,6 +36,7 @@ pub(super) enum Knob {
     FailingLoggerFn,
     FailingCallback,
     EarlierAttempt,
+    NoLoggerFn,
 }
 
 pub(super) struct Recorder {
@@ -197,6 +200,7 @@ where
         Ok(())
     };
     let sentry: &dyn SentrySink = &recorder;
+    let logger_hook: LoggerFn<'_> = &logger_fn;
     let (debug, globals, decision) = settings(knobs);
     let env = PrePostEnv {
         debug,
@@ -206,7 +210,7 @@ where
         log: &recorder,
         input_callbacks: &callbacks,
         sentry: knobs.contains(&Knob::Sentry).then_some(sentry),
-        logger_fn: Some(&logger_fn),
+        logger_fn: (!knobs.contains(&Knob::NoLoggerFn)).then_some(logger_hook),
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the fixture parses"),
     };
     let result = action(&mut logging, &env);

@@ -13,6 +13,7 @@ const OK: &str = "Ok(PreCallOutput { classifier_input: None })";
 #[case::logger_fn_failure_is_swallowed("", &[Knob::FailingLoggerFn], Look::Kinds, "logger_fn|log:Error|logger_pre|input_event")]
 #[case::logger_fn_failure_is_logged("", &[Knob::FailingLoggerFn], Look::Record(0), "Error:LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging logger_fn exploded:{}")]
 #[case::logger_fn_failure_still_succeeds("", &[Knob::FailingLoggerFn], Look::Outcome, OK)]
+#[case::missing_logger_fn_is_skipped("", &[Knob::NoLoggerFn], Look::Kinds, "logger_pre|input_event")]
 #[case::callback_failure_is_isolated("", &[Knob::FailingCallback], Look::Kinds, "logger_fn|logger_pre|log:Error|input_event")]
 #[case::callback_failure_is_captured("", &[Knob::FailingCallback, Knob::Sentry], Look::Kinds, "logger_fn|sentry|logger_pre|log:Error|captured|input_event")]
 #[case::callback_failure_is_logged("", &[Knob::FailingCallback], Look::Record(0), "Error:litellm.Logging.pre_call(): Exception occurred - callback exploded:{}")]
