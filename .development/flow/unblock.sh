@@ -26,6 +26,14 @@ case "$reason" in
     touch "$journal/auto-grant"
     echo "The review rounds ran out, and this is the one extra run the rules give. Fix every finding from the last review, then finish as usual."
     exit 0 ;;
+  *RUSTSEC-*)
+    # a worker can't bump a lock, and the flow merges main before the rerun
+    [ -e "$journal/deny-rerun" ] && exit 1
+    git fetch -q origin 2> /dev/null
+    git diff --quiet "$(git merge-base HEAD origin/main)" origin/main -- Cargo.lock deny.toml && exit 1
+    touch "$journal/deny-rerun"
+    echo "The deny failure comes from an older main. The flow merges main before this run, and main has changed Cargo.lock or deny.toml since your base. Keep your work and finish the task."
+    exit 0 ;;
 esac
 
 # dependency policy and task-format changes stay with a person
