@@ -81,3 +81,31 @@ path = "fuzz_targets/response_schema.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fastcrw_reply"
+path = "fuzz_targets/fastcrw_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "linkup_reply"
+path = "fuzz_targets/linkup_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "firecrawl_reply"
+path = "fuzz_targets/firecrawl_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "searxng_reply"
+path = "fuzz_targets/searxng_reply.rs"
+test = false
+doc = false
+bench = false

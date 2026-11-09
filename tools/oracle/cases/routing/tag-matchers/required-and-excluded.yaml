@@ -1,0 +1,34 @@
+kind: probe
+name: required-and-excluded
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: r1, tags: [team-a, alpha]}
+          - {id: r2, tags: [team-a, team-b]}
+          - {id: r3, tags: [alpha]}
+        tags: ["&team-a", "!team-b", alpha]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: r1, tags: [team-a, alpha]}
+          - {id: r2, tags: [team-a, team-b]}
+          - {id: r3, tags: [alpha]}
+        tags: ["&team-a", "&alpha"]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: r1, tags: [team-a, alpha]}
+          - {id: r2, tags: [team-a, team-b]}
+          - {id: r3, tags: [alpha]}
+        tags: ["!team-a"]
+        match_any: true
+compare: {ignore: []}

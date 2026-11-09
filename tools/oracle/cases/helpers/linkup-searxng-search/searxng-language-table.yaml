@@ -1,0 +1,34 @@
+kind: helper
+name: searxng-language-table
+call:
+  b8023:
+    operation: searxng_body
+    params:
+      requests:
+        - query: q
+          optional_params: {country: us}
+        - query: q
+          optional_params: {country: uk}
+        - query: q
+          optional_params: {country: de}
+        - query: q
+          optional_params: {country: fr}
+        - query: q
+          optional_params: {country: es}
+        - query: q
+          optional_params: {country: jp}
+        - query: q
+          optional_params: {country: br}
+        - query: q
+          optional_params: {country: US}
+        - query: q
+          optional_params: {country: ""}
+        - query: q
+          optional_params:
+            max_results: 5
+            search_domain_filter:
+              - a.test
+            categories: news
+            language: fr
+env: {}
+compare: {ignore: []}

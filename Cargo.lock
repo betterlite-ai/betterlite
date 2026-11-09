@@ -1011,6 +1011,7 @@ name = "betterlite-a2a"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "betterlite-config",
@@ -1020,6 +1021,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-core",
  "futures-util",
@@ -1033,6 +1035,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "strum",
@@ -1142,6 +1145,7 @@ dependencies = [
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
@@ -1151,14 +1155,17 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "bytes",
  "chrono",
  "crc32fast",
@@ -1222,6 +1229,8 @@ dependencies = [
  "azure_core",
  "azure_storage_blob",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-models",
  "futures-util",
  "rstest",
  "secrecy",
@@ -1338,12 +1347,9 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "betterlite-config",
- "betterlite-http",
  "betterlite-models",
  "betterlite-redact",
- "betterlite-tokenizer",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1352,7 +1358,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1563,6 +1568,7 @@ dependencies = [
  "mime_guess",
  "pem",
  "pkcs8",
+ "rcgen",
  "regex",
  "reqwest",
  "rstest",
@@ -1733,6 +1739,24 @@ dependencies = [
  "betterlite-lens",
  "libfuzzer-sys",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-lens-worker"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-lens",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -1995,6 +2019,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -2126,6 +2151,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "rcgen",
  "rstest",
  "rust_decimal",
  "rustls",
@@ -2134,11 +2160,13 @@ dependencies = [
  "serde",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "testcontainers",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "url",
  "uuid",
 ]
@@ -2203,6 +2231,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2239,9 +2268,13 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "serde_repr",
  "serde_with",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -2288,7 +2321,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redis",
- "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
@@ -2337,6 +2369,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "num-traits",
+ "percent-encoding",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2416,6 +2449,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
@@ -2493,6 +2527,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2563,6 +2598,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
@@ -2587,6 +2623,7 @@ dependencies = [
  "multipart-rs",
  "percent-encoding",
  "rand 0.10.3",
+ "rcgen",
  "regex",
  "rmcp",
  "rquickjs",
@@ -2597,6 +2634,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha1",
  "sha2 0.11.1",
@@ -2668,6 +2706,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-prompts",
  "futures-util",
  "hex",
  "hf-hub",
