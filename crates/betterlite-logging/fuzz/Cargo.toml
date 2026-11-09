@@ -86,3 +86,10 @@ path = "fuzz_targets/private_json.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "zerobus_token_response"
+path = "fuzz_targets/zerobus_token_response.rs"
+test = false
+doc = false
+bench = false
