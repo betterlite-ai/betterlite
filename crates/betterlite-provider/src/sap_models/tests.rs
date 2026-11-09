@@ -626,6 +626,24 @@ fn translation_module_requires_input_or_output() {
 }
 
 #[test]
+fn translation_module_takes_input_or_output_alone() {
+    let input_only =
+        module_fields(r#""translation":{"input":{"config":{"target_language":"en-US"}}}"#);
+    assert_request_dump(&input_only, &input_only);
+    let output_only =
+        module_fields(r#""translation":{"output":{"config":{"target_language":"en-US"}}}"#);
+    assert_request_dump(&output_only, &output_only);
+    let null_input = module_fields(
+        r#""translation":{"input":null,"output":{"config":{"target_language":"en-US"}}}"#,
+    );
+    assert_request_dump(&null_input, &null_input);
+    let null_output = module_fields(
+        r#""translation":{"input":{"config":{"target_language":"en-US"}},"output":null}"#,
+    );
+    assert_request_dump(&null_output, &null_output);
+}
+
+#[test]
 fn translation_selectors_and_languages_round_trip() {
     let fields = r#""translation":{"input":{"type":"sap_document_translation","translate_messages_history":true,"config":{"source_language":"de-DE","target_language":"en-US","apply_to":[{"category":"placeholders","items":["q"],"source_language":"de-DE"}]}},"output":{"config":{"source_language":null,"target_language":{"category":"template_roles","items":["system"],"source_language":"de-DE"}}}}"#;
     let text = module_fields(fields);

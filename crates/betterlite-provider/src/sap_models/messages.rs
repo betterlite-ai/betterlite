@@ -81,13 +81,6 @@ pub struct FunctionObj {
 pub struct Parameters(Json);
 
 impl Parameters {
-    fn empty() -> Self {
-        let mut object = Object::new();
-        object.insert(String::from("type"), Json::Text(String::from("object")));
-        object.insert(String::from("properties"), Json::Object(Object::new()));
-        Self(Json::Object(object))
-    }
-
     fn normalized(object: Object) -> Self {
         let mut normalized = Object::new();
         normalized.insert(String::from("type"), Json::Text(String::from("object")));
@@ -104,8 +97,7 @@ impl TryFrom<Json> for Parameters {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         match value {
-            Json::Null => Ok(Self::empty()),
-            Json::Object(object) if object.is_empty() => Ok(Self::empty()),
+            Json::Null => Ok(Self::normalized(Object::new())),
             Json::Object(object) => Ok(Self::normalized(object)),
             Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
                 Err(SapModelError::Rejected {
@@ -132,7 +124,7 @@ impl FunctionTool {
         Self {
             description: self.description.full(String::new()),
             name: self.name.clone(),
-            parameters: self.parameters.full(Parameters::empty()),
+            parameters: self.parameters.full(Parameters::normalized(Object::new())),
             strict: self.strict.full(false),
         }
     }
