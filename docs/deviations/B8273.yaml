@@ -1,0 +1,5 @@
+task: B8273
+deviations:
+  - what: "sample_report clamps a start date or merge date that falls before chrono's first representable day to -262143-01-01, where Python raises OverflowError for a now within the first 28 days of year 1."
+    why: "Rule no-panics forbids the panic, the demo route always passes the current time, and no working setup can rely on that exception."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sample.py#L8"
