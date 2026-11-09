@@ -47,7 +47,6 @@ pub fn to_converse_message(message: &Json) -> Json {
 #[must_use]
 pub fn transform_system(system: Option<&Json>) -> Vec<Json> {
     match system {
-        None | Some(Json::Null) => Vec::new(),
         Some(Json::Text(text)) => vec![Json::Object(IndexMap::from([(
             "text".to_owned(),
             Json::Text(text.clone()),
@@ -67,17 +66,17 @@ pub fn transform_system(system: Option<&Json>) -> Vec<Json> {
                 }
             })
             .collect(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => Vec::new(),
+        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => Vec::new(),
     }
 }
 
 #[must_use]
 pub fn transform_tools(tools: Option<&Json>) -> Option<ToolConfig> {
-    let tools = tools?;
-    let supplied = match tools {
+    let provided = tools?;
+    let supplied = match provided {
         Json::Null | Json::Bool(false) => false,
         Json::Bool(true) => true,
-        Json::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        Json::Number(number) => number.as_f64().is_none_or(|value| value != 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
@@ -86,7 +85,7 @@ pub fn transform_tools(tools: Option<&Json>) -> Option<ToolConfig> {
         return None;
     }
     Some(ToolConfig {
-        tools: match tools {
+        tools: match provided {
             Json::List(items) => items.iter().map(to_bedrock_tool_spec).collect(),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
                 Vec::new()

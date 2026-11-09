@@ -15,11 +15,17 @@ pub(super) fn value(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
-fn as_json<T: Serialize>(value: &T) -> Json {
+fn as_json<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
-pub(super) fn assert_json<T: Serialize>(actual: &T, expected: &str) {
+pub(super) fn assert_json<T>(actual: &T, expected: &str)
+where
+    T: Serialize,
+{
     assert_eq!(as_json(actual), value(expected));
 }
 

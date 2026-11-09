@@ -40,9 +40,14 @@ pub(super) fn count_endpoint_path() {
         "https://runtime.example/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
     assert_eq!(
-        endpoint(MODEL, "eu-west-1", None, None, Some("https://env.example"),),
+        endpoint(MODEL, "eu-west-1", None, None, Some("https://env.example")),
         "https://env.example/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
+    regional_defaults();
+    partition_and_encoding();
+}
+
+fn regional_defaults() {
     assert_eq!(
         endpoint(MODEL, "eu-west-1", None, None, None),
         "https://bedrock-runtime.eu-west-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
@@ -51,6 +56,9 @@ pub(super) fn count_endpoint_path() {
         endpoint(MODEL, "cn-north-1", None, None, None),
         "https://bedrock-runtime.cn-north-1.amazonaws.com.cn/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
+}
+
+fn partition_and_encoding() {
     assert_eq!(
         endpoint(
             MODEL,
@@ -67,7 +75,7 @@ pub(super) fn count_endpoint_path() {
             "eu-west-1",
             None,
             Some(""),
-            Some("https://env.example"),
+            Some("https://env.example")
         ),
         "/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
@@ -77,7 +85,7 @@ pub(super) fn count_endpoint_path() {
             "us-east-1",
             None,
             None,
-            Some("")
+            Some(""),
         ),
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-sonnet-5/count-tokens"
     );

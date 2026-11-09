@@ -8,9 +8,9 @@ pub fn validate_count_tokens_request(
     request: &IndexMap<String, Json>,
 ) -> Result<(), CountTokensError> {
     let model_supplied = match request.get("model") {
-        None | Some(Json::Null) | Some(Json::Bool(false)) => false,
+        None | Some(Json::Null | Json::Bool(false)) => false,
         Some(Json::Bool(true)) => true,
-        Some(Json::Number(number)) => number.as_f64().is_none_or(|value| value != 0.0),
+        Some(Json::Number(number)) => number.as_f64().is_none_or(|value| value != 0.0_f64),
         Some(Json::Text(text)) => !text.is_empty(),
         Some(Json::List(items)) => !items.is_empty(),
         Some(Json::Object(fields)) => !fields.is_empty(),

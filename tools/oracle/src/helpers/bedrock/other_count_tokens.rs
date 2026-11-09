@@ -107,7 +107,7 @@ impl Helper for Op {
             | Input::InvokeBodyDefaults(call)
             | Input::ConverseContentSystem(call)
             | Input::EmptyToolsOmission(call) => multi_request(call),
-            Input::CountEndpointPath(call) => endpoint(call),
+            Input::CountEndpointPath(call) => Ok(endpoint(call)),
             Input::CountToAnthropicResult(call) => response(call),
         }
     }
@@ -140,7 +140,7 @@ fn multi_request(call: &MultiCall) -> HelperResult {
     Ok(json!({"outcomes": outcomes}))
 }
 
-fn endpoint(call: &EndpointCall) -> HelperResult {
+fn endpoint(call: &EndpointCall) -> Value {
     let endpoints = call
         .cases
         .iter()
@@ -157,7 +157,7 @@ fn endpoint(call: &EndpointCall) -> HelperResult {
             })
         })
         .collect::<Vec<String>>();
-    Ok(json!({"endpoints": endpoints}))
+    json!({"endpoints": endpoints})
 }
 
 fn response(call: &ResponseCall) -> HelperResult {
