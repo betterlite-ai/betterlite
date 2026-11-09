@@ -13,7 +13,7 @@ pub struct ZerobusInitParams {
     pub table_name: Option<String>,
     pub batch_size: NonZeroUsize,
     pub flush_interval: NonZeroU64,
-    pub turn_off_message_logging: bool,
+    pub turn_off_message_logging: Option<bool>,
 }
 
 impl Default for ZerobusInitParams {
@@ -27,7 +27,7 @@ impl Default for ZerobusInitParams {
             // NonZeroUsize::new cannot be called in a const expression, so a default counts up from one
             batch_size: NonZeroUsize::MIN.saturating_add(99),
             flush_interval: NonZeroU64::MIN.saturating_add(9),
-            turn_off_message_logging: false,
+            turn_off_message_logging: None,
         }
     }
 }

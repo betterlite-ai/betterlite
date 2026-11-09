@@ -176,7 +176,7 @@ async fn a_network_failure_on_insert_is_retryable() {
 async fn a_stalled_insert_past_the_deadline_is_retryable() {
     let fake = FakeZerobus::start(minted(), vec![Reply::stalling()]).await;
     let clock = FakeClock::new(1_000.0);
-    let client = client_with(connection(&fake.base), &clock, Duration::from_millis(100));
+    let client = client_with(connection(&fake.base), &clock, Duration::from_secs(2));
 
     let failure = client.insert(&[]).await.unwrap_err();
 

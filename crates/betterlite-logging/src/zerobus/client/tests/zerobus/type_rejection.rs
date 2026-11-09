@@ -68,7 +68,7 @@ fn a_boolean_is_rejected_in_a_numeric_column(#[case] column: &str) {
 }
 
 #[rstest]
-#[case::text("id", r#""5""#)]
+#[case::number("id", "5")]
 #[case::boolean("error_str", "true")]
 #[case::object("model", r#"{"name": "gpt-4o"}"#)]
 fn a_wrongly_typed_text_field_is_null(#[case] column: &str, #[case] value: &str) {
@@ -98,4 +98,59 @@ fn a_missing_stream_or_cache_hit_is_null() {
     let row = row("{}");
     assert_eq!(row.stream, None);
     assert_eq!(row.cache_hit, None);
+}
+
+#[test]
+fn the_payload_scalars_land_in_their_columns() {
+    let row = row(r#"{
+            "id": "chatcmpl-1",
+            "trace_id": "trace-1",
+            "session_id": "session-1",
+            "litellm_call_id": "call-1",
+            "call_type": "acompletion",
+            "status": "success",
+            "model": "gpt-4o",
+            "model_group": "gpt-4o-group",
+            "model_id": "model-1",
+            "custom_llm_provider": "openai",
+            "api_base": "https://api.openai.com",
+            "end_user": "end-user-1",
+            "requester_ip_address": "10.0.0.1",
+            "user_agent": "curl/8"
+        }"#);
+    assert_eq!(row.id.as_deref(), Some("chatcmpl-1"));
+    assert_eq!(row.trace_id.as_deref(), Some("trace-1"));
+    assert_eq!(row.session_id.as_deref(), Some("session-1"));
+    assert_eq!(row.litellm_call_id.as_deref(), Some("call-1"));
+    assert_eq!(row.call_type.as_deref(), Some("acompletion"));
+    assert_eq!(row.status.as_deref(), Some("success"));
+    assert_eq!(row.model.as_deref(), Some("gpt-4o"));
+    assert_eq!(row.model_group.as_deref(), Some("gpt-4o-group"));
+    assert_eq!(row.model_id.as_deref(), Some("model-1"));
+    assert_eq!(row.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(row.api_base.as_deref(), Some("https://api.openai.com"));
+    assert_eq!(row.end_user.as_deref(), Some("end-user-1"));
+    assert_eq!(row.requester_ip_address.as_deref(), Some("10.0.0.1"));
+    assert_eq!(row.user_agent.as_deref(), Some("curl/8"));
+}
+
+#[test]
+fn response_time_lands_as_a_json_number() {
+    let json = row_json(&row(r#"{"response_time": 1.25}"#));
+    assert_eq!(json["response_time"], expected("1.25"));
+}
+
+#[test]
+fn the_token_counts_land_in_their_columns() {
+    let row = row(r#"{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}"#);
+    assert_eq!(row.prompt_tokens, Some(10));
+    assert_eq!(row.completion_tokens, Some(5));
+    assert_eq!(row.total_tokens, Some(15));
+}
+
+#[test]
+fn a_fractional_count_is_truncated_toward_zero() {
+    let row = row(r#"{"prompt_tokens": 10.9, "completion_tokens": -0.9}"#);
+    assert_eq!(row.prompt_tokens, Some(10));
+    assert_eq!(row.completion_tokens, Some(0));
 }
