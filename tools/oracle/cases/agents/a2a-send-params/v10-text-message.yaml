@@ -1,0 +1,12 @@
+kind: helper
+name: a2a-send-params-v10-text-message
+call:
+  b6950:
+    params:
+      message:
+        role: ROLE_USER
+        messageId: m1
+        parts:
+          - text: hi
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+task: B6950
+deviations:
+  - what: >-
+      The 0.3 pydantic validation and the 1.0 protobuf JSON parse followed by to_compat_send_message_request are implemented natively in betterlite-a2a. LiteLLM delegates both to the a2a-sdk: MessageSendParams(**params) for 0.3, then ParseDict into SendMessageRequest and the SDK's compat conversions for 1.0.
+    why: >-
+      Neither the a2a-sdk nor protobuf exists in the Rust workspace, so the two shapes and the conversion between them are written from the SDK's models and conversion module.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L102-L117'
+  - what: >-
+      The text after "Invalid params: " is betterlite's own, naming the field that failed. LiteLLM prints a pydantic ValidationError or a protobuf ParseError message.
+    why: >-
+      Those texts come from two Python libraries and cannot be reproduced; the JSON-RPC code -32602 and the Invalid params prefix are the same.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L856-L859'
+  - what: >-
+      Params that are not a JSON object return the same invalid-params error. LiteLLM raises a TypeError from `MessageSendParams(**params)`, which the route reports as -32603 Internal error.
+    why: >-
+      The declared type of params is an object, so a typed -32602 error is the honest answer to a list or a string.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L102-L117'

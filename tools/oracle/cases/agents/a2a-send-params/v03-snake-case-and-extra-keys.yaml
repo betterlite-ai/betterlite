@@ -1,0 +1,15 @@
+kind: helper
+name: a2a-send-params-v03-snake-case-and-extra-keys
+call:
+  b6950:
+    params:
+      message:
+        message_id: m1
+        role: agent
+        parts:
+          - text: hi
+            extra: 1
+        unknown: true
+      unknown: x
+env: {}
+compare: {ignore: []}

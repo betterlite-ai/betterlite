@@ -1,0 +1,15 @@
+kind: helper
+name: a2a-send-params-v10-configuration-blocking
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - text: hi
+      configuration:
+        acceptedOutputModes: []
+        historyLength: 0
+        returnImmediately: true
+env: {}
+compare: {ignore: []}
