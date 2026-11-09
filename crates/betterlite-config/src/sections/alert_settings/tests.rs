@@ -11,26 +11,22 @@ use crate::sections::alert_settings::Settings;
 use crate::sections::alert_settings::types::{AlertType, DEFAULT_ALERT_TYPES, SlackAlertingArgs};
 use crate::sections::alert_settings::webhooks::WebhookUrl;
 
-fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
+fn loaded(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     ConfigLoader { lookup }
         .load(source)
-        .expect("the alert settings load")
-        .sections
-        .alert_settings
+        .map(|config| config.sections.alert_settings)
+}
+
+fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
+    loaded(source, variables).expect("the alert settings load")
 }
 
 fn load_error(source: &str, variables: &[(&str, &str)]) -> ConfigError {
-    let lookup: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .expect_err("the alert settings fail to load")
+    loaded(source, variables).expect_err("the alert settings fail to load")
 }
 
 fn decimal(text: &str) -> Decimal {
