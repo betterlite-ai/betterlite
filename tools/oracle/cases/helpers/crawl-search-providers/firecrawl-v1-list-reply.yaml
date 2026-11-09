@@ -1,0 +1,14 @@
+kind: helper
+name: crawl-search-providers-firecrawl-v1-list-reply
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_response
+    replies:
+      - success: true
+        data:
+          - {title: "A", url: "https://a.test", markdown: "markdown body", description: "ignored"}
+          - {title: "B", url: "https://b.test", description: "description fallback", date: "2024-01-02", last_updated: "2024-02-03"}
+env: {}
+compare:
+  ignore: []
