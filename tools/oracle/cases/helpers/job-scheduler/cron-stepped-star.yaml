@@ -1,0 +1,9 @@
+kind: helper
+name: cron-stepped-star
+call:
+  b8370:
+    cron: "0 */6 * * *"
+    start: "2026-01-01T00:00:30Z"
+env: {}
+compare:
+  ignore: []

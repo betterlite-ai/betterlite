@@ -1,0 +1,12 @@
+kind: helper
+name: provider-mapping
+call:
+  b5990:
+    steps:
+      - kind: transform_request
+        model: "novita/org/model"
+        messages: [{role: user, content: "hi"}]
+        optional_params: {max_retries: 2}
+        mapping: {novita: {status: live, providerId: "org/mapped"}}
+env: {}
+compare: {ignore: []}

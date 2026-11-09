@@ -1,0 +1,16 @@
+kind: helper
+name: request-with-api-base
+call:
+  b5990:
+    steps:
+      - kind: transform_request
+        model: "novita/org/model"
+        api_base: "http://mock"
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: "https://example.com/a.png"}
+        optional_params: {max_retries: 2}
+        mapping: {novita: {status: live, providerId: "org/mapped"}}
+env: {}
+compare: {ignore: []}
