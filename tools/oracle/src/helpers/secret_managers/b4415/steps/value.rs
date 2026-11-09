@@ -13,16 +13,14 @@ pub(super) async fn value_step(
     step: &Step,
 ) -> Value {
     let written = match step {
-        Step::AsyncReplicateSecret { name, regions } => {
+        Step::ReplicateSecret { name, regions } => {
             async_replicate_secret(manager, name, regions, None, None).await
         }
-        Step::AsyncPutSecretValue { name, value } => {
+        Step::PutSecretValue { name, value } => {
             let secret_value = SecretString::from(value.clone());
             async_put_secret_value(manager, name, &secret_value, None, None).await
         }
-        Step::AsyncWriteSecret { .. }
-        | Step::AsyncDeleteSecret { .. }
-        | Step::AsyncRotateSecret { .. } => {
+        Step::WriteSecret { .. } | Step::DeleteSecret { .. } | Step::RotateSecret { .. } => {
             return json!({"raised": true});
         }
     };

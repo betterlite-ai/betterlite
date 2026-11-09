@@ -12,7 +12,7 @@ pub(super) async fn rotate_step(
     manager: &AwsSecretsManager<Resolver, Script>,
     step: &Step,
 ) -> Value {
-    let Step::AsyncRotateSecret {
+    let Step::RotateSecret {
         current,
         new,
         value,

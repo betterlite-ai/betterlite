@@ -127,11 +127,11 @@ impl State {
         let Some(fields) = body.as_object_mut() else {
             return;
         };
-        let token = fields
+        let found = fields
             .get("ClientRequestToken")
             .and_then(Value::as_str)
             .map(str::to_owned);
-        let Some(token) = token else {
+        let Some(token) = found else {
             return;
         };
         if Uuid::parse_str(&token).is_err() {

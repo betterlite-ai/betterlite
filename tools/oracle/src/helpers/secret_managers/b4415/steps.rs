@@ -15,7 +15,7 @@ use super::{Failure, Step};
 
 pub(super) async fn run_step(manager: &AwsSecretsManager<Resolver, Script>, step: &Step) -> Value {
     match step {
-        Step::AsyncDeleteSecret {
+        Step::DeleteSecret {
             name,
             recovery_window_in_days,
         } => {
@@ -33,25 +33,25 @@ pub(super) async fn run_step(manager: &AwsSecretsManager<Resolver, Script>, step
                 .await;
             write_outcome(deleted)
         }
-        Step::AsyncWriteSecret { .. } => write_step(manager, step).await,
-        Step::AsyncRotateSecret { .. } => rotate::rotate_step(manager, step).await,
-        Step::AsyncReplicateSecret { .. } | Step::AsyncPutSecretValue { .. } => {
+        Step::WriteSecret { .. } => write_step(manager, step).await,
+        Step::RotateSecret { .. } => rotate::rotate_step(manager, step).await,
+        Step::ReplicateSecret { .. } | Step::PutSecretValue { .. } => {
             value::value_step(manager, step).await
         }
     }
 }
 
 async fn write_step(manager: &AwsSecretsManager<Resolver, Script>, step: &Step) -> Value {
-    let Step::AsyncWriteSecret {
+    let Step::WriteSecret {
         name,
         value,
         description,
-        tags,
+        tags: requested,
     } = step
     else {
         return json!({"raised": true});
     };
-    let Ok(tags) = decode_tags(tags.as_ref()) else {
+    let Ok(tags) = decode_tags(requested.as_ref()) else {
         return json!({"raised": true});
     };
     let secret_value = SecretString::from(value.clone());

@@ -37,9 +37,10 @@ struct Manager {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "op", deny_unknown_fields)]
 enum Step {
-    AsyncWriteSecret {
+    #[serde(rename = "async_write_secret")]
+    WriteSecret {
         name: String,
         value: String,
         #[serde(default)]
@@ -47,24 +48,22 @@ enum Step {
         #[serde(default)]
         tags: Option<Value>,
     },
-    AsyncDeleteSecret {
+    #[serde(rename = "async_delete_secret")]
+    DeleteSecret {
         name: String,
         #[serde(default)]
         recovery_window_in_days: Option<u32>,
     },
-    AsyncRotateSecret {
+    #[serde(rename = "async_rotate_secret")]
+    RotateSecret {
         current: String,
         new: String,
         value: String,
     },
-    AsyncReplicateSecret {
-        name: String,
-        regions: Vec<String>,
-    },
-    AsyncPutSecretValue {
-        name: String,
-        value: String,
-    },
+    #[serde(rename = "async_replicate_secret")]
+    ReplicateSecret { name: String, regions: Vec<String> },
+    #[serde(rename = "async_put_secret_value")]
+    PutSecretValue { name: String, value: String },
 }
 
 impl Helper for Op {
