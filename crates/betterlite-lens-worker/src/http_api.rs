@@ -44,6 +44,22 @@ impl HttpApi {
         }
     }
 
+    async fn send(
+        &self,
+        verb: Verb,
+        path: &str,
+        query: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<Answer, WorkerError> {
+        self.exchange(Call {
+            verb,
+            path,
+            query,
+            body,
+        })
+        .await
+    }
+
     async fn exchange(&self, call: Call<'_>) -> Result<Answer, WorkerError> {
         let client = &self.client.client;
         let url = format!("{}{}{}", self.base_url, call.path, call.query);
@@ -118,32 +134,23 @@ fn extend_body(received: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<(),
 impl LensApi for HttpApi {
     async fn claim(&self) -> Result<Option<Claim>, WorkerError> {
         let answer = self
-            .exchange(Call {
-                verb: Verb::Post,
-                path: "/lens/worker/claim",
-                query: "?protocol_version=2",
-                body: None,
-            })
+            .send(
+                Verb::Post,
+                "/lens/worker/claim",
+                "?protocol_version=2",
+                None,
+            )
             .await?;
         if answer.body.trim_ascii() == b"null".as_slice() {
             return Ok(None);
         }
-        decode(&answer.body)
-            .map(Some)
-            .map_err(|error| WorkerError::Decode(error.to_string()))
+        decode(&answer.body).map(Some).map_err(WorkerError::from)
     }
 
     async fn sample(&self, prefix: &str) -> Result<Sample, WorkerError> {
         let path = format!("{prefix}/sample");
-        let answer = self
-            .exchange(Call {
-                verb: Verb::Get,
-                path: &path,
-                query: "",
-                body: None,
-            })
-            .await?;
-        decode(&answer.body).map_err(|error| WorkerError::Decode(error.to_string()))
+        let answer = self.send(Verb::Get, &path, "", None).await?;
+        decode(&answer.body).map_err(WorkerError::from)
     }
 
     async fn content(
@@ -163,70 +170,34 @@ impl LensApi for HttpApi {
                 .append_pair("offset", &offset_text)
                 .finish()
         );
-        let answer = self
-            .exchange(Call {
-                verb: Verb::Get,
-                path: &path,
-                query: &query,
-                body: None,
-            })
-            .await?;
-        decode(&answer.body).map_err(|error| WorkerError::Decode(error.to_string()))
+        let answer = self.send(Verb::Get, &path, &query, None).await?;
+        decode(&answer.body).map_err(WorkerError::from)
     }
 
     async fn model(&self, prefix: &str, request: ModelRequest) -> Result<ModelResult, WorkerError> {
         let path = format!("{prefix}/model");
-        let body =
-            serde_json::to_vec(&request).map_err(|error| WorkerError::Decode(error.to_string()))?;
-        let answer = self
-            .exchange(Call {
-                verb: Verb::Post,
-                path: &path,
-                query: "",
-                body: Some(body),
-            })
-            .await?;
-        decode(&answer.body).map_err(|error| WorkerError::Decode(error.to_string()))
+        let body = serde_json::to_vec(&request).map_err(WorkerError::from)?;
+        let answer = self.send(Verb::Post, &path, "", Some(body)).await?;
+        decode(&answer.body).map_err(WorkerError::from)
     }
 
     async fn progress(&self, prefix: &str, progress: Progress) -> Result<(), WorkerError> {
         let path = format!("{prefix}/progress");
-        let body = serde_json::to_vec(&progress)
-            .map_err(|error| WorkerError::Decode(error.to_string()))?;
-        self.exchange(Call {
-            verb: Verb::Post,
-            path: &path,
-            query: "",
-            body: Some(body),
-        })
-        .await?;
+        let body = serde_json::to_vec(&progress).map_err(WorkerError::from)?;
+        self.send(Verb::Post, &path, "", Some(body)).await?;
         Ok(())
     }
 
     async fn heartbeat(&self, prefix: &str) -> Result<(), WorkerError> {
         let path = format!("{prefix}/heartbeat");
-        self.exchange(Call {
-            verb: Verb::Post,
-            path: &path,
-            query: "",
-            body: None,
-        })
-        .await?;
+        self.send(Verb::Post, &path, "", None).await?;
         Ok(())
     }
 
     async fn result(&self, prefix: &str, result: &JobResult) -> Result<ResultStatus, WorkerError> {
         let path = format!("{prefix}/result");
-        let body =
-            serde_json::to_vec(result).map_err(|error| WorkerError::Decode(error.to_string()))?;
-        let answer = self
-            .exchange(Call {
-                verb: Verb::Post,
-                path: &path,
-                query: "",
-                body: Some(body),
-            })
-            .await?;
+        let body = serde_json::to_vec(result).map_err(WorkerError::from)?;
+        let answer = self.send(Verb::Post, &path, "", Some(body)).await?;
         Ok(ResultStatus {
             status: answer.status,
         })

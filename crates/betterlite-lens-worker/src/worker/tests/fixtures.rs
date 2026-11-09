@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::future::ready;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use betterlite_lens::analysis::Candidate;
@@ -18,7 +18,7 @@ use tokio::time::{Instant, sleep};
 use crate::api::{LensApi, ResultStatus, WorkerError};
 
 pub(super) fn claim() -> Claim {
-    let mut claim: Claim = serde_json::from_str(include_str!("../fixtures/claim.json")).unwrap();
+    let mut claim: Claim = serde_json::from_str(include_str!("../../fixtures/claim.json")).unwrap();
     claim.job.settings.concurrency = 1;
     claim
 }
@@ -137,18 +137,60 @@ impl Default for FakeApi {
     }
 }
 
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl FakeApi {
+    fn record_claim(&self) -> Result<Option<Claim>, WorkerError> {
+        lock(&self.claim_calls).push(Instant::now());
+        lock(&self.claimed).pop_front().unwrap_or(Ok(None))
+    }
+
+    fn record_content(
+        &self,
+        execution_id: &str,
+        cursor: &str,
+        offset: i64,
+    ) -> Result<ExecutionContent, WorkerError> {
+        let call = (execution_id.to_owned(), cursor.to_owned(), offset);
+        lock(&self.content_calls).push(call);
+        lock(&self.pages).pop_front().unwrap_or_else(|| Ok(page()))
+    }
+
+    fn record_model(&self, request: &ModelRequest) -> Result<ModelResult, WorkerError> {
+        let fallback = default_model_answer(request);
+        lock(&self.model_calls).push((Instant::now(), request.clone()));
+        lock(&self.model_answers)
+            .pop_front()
+            .unwrap_or(Ok(fallback))
+    }
+
+    fn record_progress(&self, progress: Progress) {
+        lock(&self.progress_calls).push((progress.stage, progress.coverage));
+    }
+
+    fn record_heartbeat(&self) -> Result<(), WorkerError> {
+        lock(&self.heartbeats).push(Instant::now());
+        lock(&self.heartbeat_failure).take().map_or(Ok(()), Err)
+    }
+
+    fn record_result(&self, result: &JobResult) -> Result<ResultStatus, WorkerError> {
+        lock(&self.results).push(result.clone());
+        let answer = lock(&self.result_answers).pop_front().unwrap_or(Ok(200));
+        answer.map(|status| ResultStatus { status })
+    }
+}
+
 impl LensApi for FakeApi {
     fn claim(&self) -> impl Future<Output = Result<Option<Claim>, WorkerError>> + Send {
-        self.claim_calls.lock().unwrap().push(Instant::now());
-        ready(self.claimed.lock().unwrap().pop_front().unwrap_or(Ok(None)))
+        ready(self.record_claim())
     }
 
     async fn sample(&self, _prefix: &str) -> Result<Sample, WorkerError> {
-        let delay = *self.sample_delay.lock().unwrap();
+        let delay = *lock(&self.sample_delay);
         sleep(delay).await;
-        self.samples
-            .lock()
-            .unwrap()
+        lock(&self.samples)
             .pop_front()
             .unwrap_or_else(|| Ok(sample()))
     }
@@ -160,18 +202,7 @@ impl LensApi for FakeApi {
         cursor: &str,
         offset: i64,
     ) -> impl Future<Output = Result<ExecutionContent, WorkerError>> + Send {
-        self.content_calls.lock().unwrap().push((
-            execution_id.to_owned(),
-            cursor.to_owned(),
-            offset,
-        ));
-        ready(
-            self.pages
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or_else(|| Ok(page())),
-        )
+        ready(self.record_content(execution_id, cursor, offset))
     }
 
     fn model(
@@ -179,13 +210,7 @@ impl LensApi for FakeApi {
         _prefix: &str,
         request: ModelRequest,
     ) -> impl Future<Output = Result<ModelResult, WorkerError>> + Send {
-        let now = Instant::now();
-        let answer = self.model_answers.lock().unwrap().pop_front();
-        self.model_calls
-            .lock()
-            .unwrap()
-            .push((now, request.clone()));
-        ready(answer.unwrap_or_else(|| Ok(default_model_answer(&request))))
+        ready(self.record_model(&request))
     }
 
     fn progress(
@@ -193,17 +218,12 @@ impl LensApi for FakeApi {
         _prefix: &str,
         progress: Progress,
     ) -> impl Future<Output = Result<(), WorkerError>> + Send {
-        self.progress_calls
-            .lock()
-            .unwrap()
-            .push((progress.stage, progress.coverage));
+        self.record_progress(progress);
         ready(Ok(()))
     }
 
     fn heartbeat(&self, _prefix: &str) -> impl Future<Output = Result<(), WorkerError>> + Send {
-        self.heartbeats.lock().unwrap().push(Instant::now());
-        let failure = self.heartbeat_failure.lock().unwrap().take();
-        ready(failure.map_or(Ok(()), Err))
+        ready(self.record_heartbeat())
     }
 
     fn result(
@@ -211,12 +231,6 @@ impl LensApi for FakeApi {
         _prefix: &str,
         result: &JobResult,
     ) -> impl Future<Output = Result<ResultStatus, WorkerError>> + Send {
-        self.results.lock().unwrap().push(result.clone());
-        let answer = self.result_answers.lock().unwrap().pop_front();
-        ready(
-            answer
-                .unwrap_or(Ok(200))
-                .map(|status| ResultStatus { status }),
-        )
+        ready(self.record_result(result))
     }
 }

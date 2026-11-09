@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use betterlite_lens::models::decode::DecodeError;
 use betterlite_lens::models::execution::{ExecutionContent, Sample};
 use betterlite_lens::models::messages::{Claim, JobResult, ModelRequest, ModelResult, Progress};
 use thiserror::Error;
@@ -21,6 +22,18 @@ pub enum WorkerError {
     Decode(String),
     #[error("the worker temporary storage failed: {0}")]
     Storage(String),
+}
+
+impl From<DecodeError> for WorkerError {
+    fn from(error: DecodeError) -> Self {
+        Self::Decode(error.to_string())
+    }
+}
+
+impl From<serde_json::Error> for WorkerError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Decode(error.to_string())
+    }
 }
 
 impl WorkerError {

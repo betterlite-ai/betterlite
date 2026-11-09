@@ -114,26 +114,37 @@ impl<A: LensApi> LensWorker<A> {
 
     async fn analyze(&self, claim: Claim, prefix: &str) -> Result<JobResult, Failure> {
         let sample = self.api.sample(prefix).await.map_err(Failure::Api)?;
-        let read = self.read_port(prefix);
+        let (read, progress) = self.api_ports(prefix);
         let model = self.model_port(prefix);
-        let progress = self.progress_port(prefix);
         coordinator::analyze_sample(claim, sample, read, model, progress)
             .await
             .map_err(Failure::Analysis)
     }
 
-    fn read_port(&self, prefix: &str) -> ReadContent {
-        let port_api = Arc::clone(&self.api);
-        let port_path = prefix.to_owned();
-        Arc::new(move |execution_id, cursor, offset| {
-            let api = Arc::clone(&port_api);
-            let path = port_path.clone();
+    fn api_ports(&self, prefix: &str) -> (ReadContent, ReportProgress) {
+        let read_api = Arc::clone(&self.api);
+        let read_path = prefix.to_owned();
+        let read: ReadContent = Arc::new(move |execution_id, cursor, offset| {
+            let api = Arc::clone(&read_api);
+            let path = read_path.clone();
             Box::pin(async move {
                 api.content(&path, &execution_id, &cursor, offset)
                     .await
                     .map_err(|error| AnalysisError::Callback(failure_message(&error)))
             })
-        })
+        });
+        let progress_api = Arc::clone(&self.api);
+        let progress_path = prefix.to_owned();
+        let progress: ReportProgress = Arc::new(move |stage, coverage| {
+            let api = Arc::clone(&progress_api);
+            let path = progress_path.clone();
+            Box::pin(async move {
+                api.progress(&path, Progress { stage, coverage })
+                    .await
+                    .map_err(|error| AnalysisError::Callback(failure_message(&error)))
+            })
+        });
+        (read, progress)
     }
 
     fn model_port(&self, prefix: &str) -> ModelCall {
@@ -145,20 +156,6 @@ impl<A: LensApi> LensWorker<A> {
             Box::pin(async move {
                 worker
                     .model_request(&path, body)
-                    .await
-                    .map_err(|error| AnalysisError::Callback(failure_message(&error)))
-            })
-        })
-    }
-
-    fn progress_port(&self, prefix: &str) -> ReportProgress {
-        let port_api = Arc::clone(&self.api);
-        let port_path = prefix.to_owned();
-        Arc::new(move |stage, coverage| {
-            let api = Arc::clone(&port_api);
-            let path = port_path.clone();
-            Box::pin(async move {
-                api.progress(&path, Progress { stage, coverage })
                     .await
                     .map_err(|error| AnalysisError::Callback(failure_message(&error)))
             })
@@ -220,7 +217,7 @@ const fn coordinator_kind(error: &CoordinatorError) -> &'static str {
     }
 }
 
-#[path = "worker/fixtures.rs"]
+#[path = "worker/tests/fixtures.rs"]
 mod fixtures;
 #[path = "worker/retry/tests.rs"]
 mod retry;
