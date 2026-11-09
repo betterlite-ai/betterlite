@@ -3,7 +3,7 @@ use rstest::rstest;
 use crate::tag_matchers::candidates::MatchVia;
 use crate::tag_matchers::document::{MAX_TAG_MATCH_BYTES, parse_tag_match};
 use crate::tag_matchers::error::TagMatcherError;
-use crate::tag_matchers::patterns::{MAX_PATTERN_BYTES, WarningKind};
+use crate::tag_matchers::patterns::{MAX_MATCH_STEPS, MAX_PATTERN_BYTES, WarningKind};
 use crate::tag_matchers::selection::TagMatcher;
 use crate::tag_matchers::tokens::strip_routing_prefix;
 
@@ -15,6 +15,7 @@ enum Boundary {
     DocumentBytes(usize),
     InvalidDocument,
     MatchSteps,
+    FancyMatch,
     UnsupportedConstruct,
     EmptyPrefix,
     DefaultMatchAny,
@@ -28,6 +29,7 @@ enum Boundary {
 #[case::document_over_limit(Boundary::DocumentBytes(MAX_TAG_MATCH_BYTES.saturating_add(1)))]
 #[case::invalid_document(Boundary::InvalidDocument)]
 #[case::match_steps(Boundary::MatchSteps)]
+#[case::fancy_match(Boundary::FancyMatch)]
 #[case::unsupported_construct(Boundary::UnsupportedConstruct)]
 #[case::empty_prefix(Boundary::EmptyPrefix)]
 #[case::default_match_any(Boundary::DefaultMatchAny)]
@@ -38,6 +40,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::DocumentBytes(bytes) => document_bytes_boundary(bytes),
         Boundary::InvalidDocument => invalid_document_boundary(),
         Boundary::MatchSteps => match_steps_boundary(),
+        Boundary::FancyMatch => fancy_match_boundary(),
         Boundary::UnsupportedConstruct => unsupported_construct_boundary(),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
         Boundary::DefaultMatchAny => default_match_any_boundary(),
@@ -92,6 +95,18 @@ fn invalid_document_boundary() {
 fn default_match_any_boundary() {
     let request = parse_tag_match(b"{\"deployments\":[]}").unwrap();
     assert!(request.match_any);
+}
+
+fn fancy_match_boundary() {
+    assert_eq!(MAX_PATTERN_BYTES, 2048);
+    assert_eq!(MAX_MATCH_STEPS, 100_000);
+    assert_eq!(MAX_TAG_MATCH_BYTES, 0x0010_0000);
+    let backref = TagMatcher::new(vec![deployment(None, Some(&[r"(a)\1"]))]);
+    assert!(backref.warnings.is_empty());
+    let selection = backref.select(&query(&[], None, &["aa"], true, ""));
+    assert_eq!(selection.matches.len(), 1);
+    assert_eq!(selection.matches[0].value, r"(a)\1");
+    assert!(selection.warnings.is_empty());
 }
 
 fn unsupported_construct_boundary() {
