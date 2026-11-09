@@ -43,20 +43,17 @@ pub struct RedisCacheAdmin {
 }
 
 impl RedisCacheAdmin {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "B5640's facade passes the transport, the store, the factory and the settings it built"
-    )]
+    // the transport already carries the store, the factory and the settings it was built with
     #[must_use]
     pub fn new(
         transport: Arc<RedisTransport>,
-        store: Arc<RedisClientStore>,
-        factory: Arc<LiveClientFactory>,
-        settings: RedisConnectionSettings,
         namespace: Option<String>,
         hooks: Arc<dyn ServiceHooks>,
         gate: Arc<dyn BreakerGate>,
     ) -> Self {
+        let store = Arc::clone(&transport.store);
+        let factory = Arc::clone(&transport.factory);
+        let settings = transport.settings.clone();
         Self {
             transport,
             store,

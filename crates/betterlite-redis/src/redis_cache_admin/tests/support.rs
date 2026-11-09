@@ -184,9 +184,6 @@ pub(crate) fn probe(
     );
     let admin = Arc::new(RedisCacheAdmin::new(
         transport,
-        Arc::clone(&store),
-        factory,
-        settings.clone(),
         namespace.map(str::to_owned),
         Arc::new(hooks.clone()),
         Arc::new(gate.clone()),
