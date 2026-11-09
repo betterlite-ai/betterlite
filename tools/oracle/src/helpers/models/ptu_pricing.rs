@@ -51,15 +51,15 @@ impl crate::helpers::Helper for Op {
                 }),
                 None => Value::Null,
             },
-            Operation::ConfigError => {
-                optional_string(ptu_config_error(&model_info, input.model_name.as_deref()))
-            }
-            Operation::Identity => optional_string(ptu_identity_error(
+            Operation::ConfigError => ptu_config_error(&model_info, input.model_name.as_deref())
+                .map_or(Value::Null, Value::String),
+            Operation::Identity => ptu_identity_error(
                 input.declared_id.as_deref(),
                 input.taken,
                 input.current_id.as_deref(),
                 input.model_name.as_deref(),
-            )),
+            )
+            .map_or(Value::Null, Value::String),
             Operation::Declares => Value::Bool(declares_ptu(&model_info)),
             Operation::Spillover => spillover_value(azure_spillover(
                 input.response_headers.as_ref(),
@@ -68,10 +68,6 @@ impl crate::helpers::Helper for Op {
         };
         Ok(value)
     }
-}
-
-fn optional_string(value: Option<String>) -> Value {
-    value.map_or(Value::Null, Value::String)
 }
 
 fn spillover_value(spillover: Option<AzureSpillover>) -> Value {
