@@ -8,8 +8,10 @@ use rstest::rstest;
 #[case::fraction_not_number("1/2")]
 fn call_context_tests_behavior(#[case] raw: &str) {
     let env = BTreeMap::from([("REQUEST_TIMEOUT".to_owned(), raw.to_owned())]);
-    let loader = ConfigLoader { lookup: env };
+    let loader = ConfigLoader {
+        lookup: BTreeMap::new(),
+    };
     let config = loader.load("{}").unwrap();
-    let error = CoreSettings::load(&config, &loader.lookup).unwrap_err();
+    let error = CoreSettings::load(&config, &env).unwrap_err();
     assert!(error.to_string().contains("REQUEST_TIMEOUT"));
 }
