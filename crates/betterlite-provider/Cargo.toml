@@ -12,9 +12,11 @@ base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 http = "1.5.0"

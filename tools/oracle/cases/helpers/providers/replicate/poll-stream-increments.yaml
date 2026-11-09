@@ -1,0 +1,44 @@
+kind: helper
+name: replicate-poll-stream-increments
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: stream
+    requests:
+      - policy: strict
+        url: https://poll/1
+        headers: {x-a: b}
+        polls:
+          - {body: '{"status":"starting","output":["he"]}'}
+          - {body: '{"status":"processing","output":["hea"]}'}
+          - {body: '{"status":"succeeded","output":["hear"]}'}
+      - policy: lenient
+        url: https://poll/2
+        polls:
+          - {body: '{"status":"processing","output":null}'}
+          - {body: '{"status":"succeeded","output":["z"]}'}
+      - policy: lenient
+        url: https://poll/3
+        polls:
+          - {body: '{"status":"processing","output":"abc"}'}
+          - {body: '{"status":"succeeded","output":"abcd"}'}
+      - policy: strict
+        url: https://poll/4
+        polling_delay: 0.25
+        polls:
+          - {status: 500, body: '{"status":"processing"}'}
+          - {body: '{"status":"succeeded"}'}
+      - policy: strict
+        url: https://poll/5
+        polls:
+          - {body: '{"status":"canceled"}'}
+      - policy: strict
+        url: https://poll/6
+        polls:
+          - {body: '{"status":"succeeded"}'}
+      - policy: lenient
+        url: https://poll/7
+        polls:
+          - {body: '{"status":"processing","output":5}'}
+          - {body: '{"status":"succeeded","output":"56"}'}
