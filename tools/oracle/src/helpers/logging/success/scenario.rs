@@ -19,9 +19,7 @@ use crate::compare::helper::HelperError;
 
 use super::input::{LoggerSpec, ResultKind, ResultSpec, StampSpec};
 use super::state::{payload, to_json};
-use super::support::{
-    FixedAssembler, FixedBuilder, FixedClock, RecordingCounter, RecordingLogger,
-};
+use super::support::{FixedAssembler, FixedBuilder, FixedClock, RecordingCounter, RecordingLogger};
 
 pub(crate) struct ScenarioSpec<'probe> {
     pub(crate) loggers: &'probe [LoggerSpec],
@@ -83,10 +81,7 @@ impl Scenario {
 
 fn loggers(
     specs: &[LoggerSpec],
-) -> Result<(
-    CallbackRegistry,
-    Vec<Arc<RecordingLogger>>,
-), Box<HelperError>> {
+) -> Result<(CallbackRegistry, Vec<Arc<RecordingLogger>>), Box<HelperError>> {
     let mut registry = CallbackRegistry::new(64);
     let mut recording = Vec::new();
     for logger in specs {

@@ -176,4 +176,3 @@ impl CallbackFailureCounter for RecordingCounter {
             .push(callback_name.to_owned());
     }
 }
-
