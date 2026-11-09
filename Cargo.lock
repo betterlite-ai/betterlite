@@ -1758,6 +1758,7 @@ dependencies = [
  "pep440_rs",
  "percent-encoding",
  "prost",
+ "py_literal",
  "rand 0.10.3",
  "regex",
  "rstest",
@@ -2054,6 +2055,7 @@ dependencies = [
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-logging",
  "betterlite-oracle",
  "chrono",
  "libfuzzer-sys",

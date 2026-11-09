@@ -1,0 +1,55 @@
+use betterlite_models::decisions::Json;
+
+use super::literal::literal_json;
+use super::messages::to_dd_messages;
+use super::records::DdMessage;
+use super::values::{Object, as_list, as_object};
+
+// The call types whose response carries a choices[0].message LiteLLM projects onto the span.
+const LLM_OBS_CALL_TYPES: [&str; 9] = [
+    "completion",
+    "acompletion",
+    "text_completion",
+    "atext_completion",
+    "generate_content",
+    "agenerate_content",
+    "generate_content_stream",
+    "agenerate_content_stream",
+    "anthropic_messages",
+];
+
+// LiteLLM's _get_response_messages: a response string is read as a Python literal, then as JSON.
+#[must_use]
+pub fn response_messages(response: Option<&Json>, call_type: Option<&str>) -> Vec<DdMessage> {
+    let Some(value) = response else {
+        return Vec::new();
+    };
+    let decoded = match value {
+        Json::Null => return Vec::new(),
+        Json::Text(text) => {
+            let Some(parsed) =
+                literal_json(text).or_else(|| serde_json::from_str::<Json>(text).ok())
+            else {
+                return Vec::new();
+            };
+            parsed
+        }
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => value.clone(),
+    };
+    let Some(fields) = as_object(&decoded) else {
+        return Vec::new();
+    };
+    if !call_type.is_some_and(|name| LLM_OBS_CALL_TYPES.contains(&name)) {
+        return Vec::new();
+    }
+    let Some(message) = first_choice_message(fields) else {
+        return Vec::new();
+    };
+    to_dd_messages(Some(&Json::List(vec![message.clone()])))
+}
+
+fn first_choice_message(response: &Object) -> Option<&Json> {
+    let choices = response.get("choices").and_then(as_list)?;
+    let first = choices.first().and_then(as_object)?;
+    first.get("message")
+}
