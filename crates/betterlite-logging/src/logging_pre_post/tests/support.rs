@@ -179,11 +179,6 @@ where
     F: FnOnce(&mut LoggingState, &PrePostEnv<'_>) -> T,
 {
     let mut logging = state(extra);
-    if knobs.contains(&Knob::EarlierAttempt) {
-        logging
-            .model_call_details
-            .insert("first_api_call_start_time".to_owned(), text("earlier"));
-    }
     logging.litellm_request_debug = knobs.contains(&Knob::RequestDebug);
     let recorder = Recorder::new(knobs.contains(&Knob::FailingCallback));
     let scrubber = redactor();
@@ -228,6 +223,13 @@ pub(super) const CALL: &str = r#"{"input":[{"role":"user","content":"call input"
 
 pub(super) fn run_pre(extra: &str, call: &str, knobs: &[Knob]) -> PreRun {
     run(extra, knobs, |logging, env| {
+        let earlier = Knob::EarlierAttempt;
+        if knobs.contains(&earlier) {
+            let earlier_start = text("earlier");
+            logging
+                .model_call_details
+                .insert("first_api_call_start_time".to_owned(), earlier_start);
+        }
         pre_call(
             logging,
             &serde_json::from_str(call).expect("the call fixture is valid"),
