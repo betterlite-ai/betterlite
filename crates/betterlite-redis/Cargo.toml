@@ -13,7 +13,7 @@ hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
-redis = { workspace = true, features = ["cluster-async", "connection-manager", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
+redis = { workspace = true, features = ["cluster-async", "connection-manager", "script", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = "1.0.154"

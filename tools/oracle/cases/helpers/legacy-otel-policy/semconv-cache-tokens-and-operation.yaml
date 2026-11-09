@@ -1,0 +1,12 @@
+kind: helper
+name: semconv-cache-tokens-and-operation
+call:
+  b3854:
+    function: semconv_cache_and_operation
+    payloads:
+      - metadata: {usage_object: {cache_creation_input_tokens: 0, cache_read_input_tokens: 100}}
+      - metadata: {usage_object: {cache_creation_input_tokens: 50}}
+      - metadata: {usage_object: null}
+    call_types: [aembedding, text_completion, completion, null]
+env: {}
+compare: {ignore: []}

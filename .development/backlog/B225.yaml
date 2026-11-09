@@ -1,14 +1,14 @@
 id: B225
 milestone: M1 openai data plane
 title: Anthropic user blocks and system projection
-status: todo
+status: done
 depends_on: [B178, B179, B183, B222, B223, B224]
 file: tasks/B225-anthropic-user-blocks.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 945

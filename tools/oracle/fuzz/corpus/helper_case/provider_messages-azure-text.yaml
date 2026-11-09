@@ -1,0 +1,29 @@
+kind: helper
+name: provider-messages-azure-text
+call:
+  provider_messages:
+    operation: azure_text_pt
+    messages:
+      - role: system
+        content: be brief
+      - role: user
+        content: hello
+      - role: user
+        content:
+          - type: text
+            text: one
+          - type: image_url
+            image_url: https://example.test/a.png
+          - type: text
+            text: two
+      - role: assistant
+        content: null
+      - role: assistant
+        content: []
+      - role: tool
+        content:
+          - type: text
+            text: res
+env: {}
+compare:
+  ignore: []
