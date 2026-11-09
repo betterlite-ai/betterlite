@@ -219,6 +219,7 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
     "post_call_sniffs_the_media_type_from_the_bytes"
 )]
 #[case::post_call_fails_with_an_unknown_media_type("post_call_fails_with_an_unknown_media_type")]
+#[case::transport_limits_match_litellm_defaults("transport_limits_match_litellm_defaults")]
 #[case::remote_fetch_returns_base64_and_content_type(
     "remote_fetch_returns_base64_and_content_type"
 )]
@@ -420,6 +421,10 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 error.to_string(),
                 "could not determine the content type of url https://example.com/image"
             );
+        }
+        "transport_limits_match_litellm_defaults" => {
+            assert_eq!(TRANSPORT_LIMITS.connect_timeout, Duration::from_secs(5));
+            assert_eq!(TRANSPORT_LIMITS.read_timeout, Duration::from_secs(600));
         }
         "remote_fetch_returns_base64_and_content_type" => {
             let server = Server::start(Reply::image("image/png; charset=utf-8", PNG)).await;
