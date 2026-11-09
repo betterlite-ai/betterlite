@@ -1,0 +1,9 @@
+kind: helper
+name: cron-step-and-range
+call:
+  b8370:
+    cron: "0-30/10 9-11 * * 1-5"
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []
