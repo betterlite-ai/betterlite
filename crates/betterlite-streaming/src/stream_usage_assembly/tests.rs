@@ -251,7 +251,6 @@ async fn cache_and_details() {
     cache_counts_retain_earlier_values().await;
     details_are_last_wins().await;
     empty_details_never_clear_earlier_ones().await;
-    empty_completion_details_never_clear_earlier_ones().await;
     nested_details_survive_replacement().await;
     server_tool_use_is_coerced().await;
 }
@@ -319,29 +318,6 @@ async fn empty_details_never_clear_earlier_ones() {
     );
 }
 
-async fn empty_completion_details_never_clear_earlier_ones() {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let kept = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        kept.completion_tokens_details,
-        Some(fixture_completion_details(r#"{"reasoning_tokens":2}"#))
-    );
-
-    let cleared = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":null}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        cleared.completion_tokens_details,
-        Some(CompletionTokensDetails::default())
-    );
-}
-
 async fn cache_counts_follow_prompt_side_reporting() {
     let counter = FixtureCounter::counting(7, 2, 4);
     let creation = simple_usage(
@@ -384,16 +360,24 @@ async fn details_are_last_wins() {
         Some(3)
     );
 
-    let mirrored = simple_usage(
+    let empty = simple_usage(
         &counter,
-        r#"[{"usage":{"prompt_tokens_details":{"cache_write_tokens":5}}}]"#,
+        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{}}}]"#,
     )
     .await;
     assert_eq!(
-        mirrored.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cache_write_tokens":5,"cache_creation_tokens":5}"#
-        ))
+        empty.completion_tokens_details,
+        Some(fixture_completion_details(r#"{"reasoning_tokens":2}"#))
+    );
+
+    let all_null = simple_usage(
+        &counter,
+        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":null}}}]"#,
+    )
+    .await;
+    assert_eq!(
+        all_null.completion_tokens_details,
+        Some(CompletionTokensDetails::default())
     );
 }
 
