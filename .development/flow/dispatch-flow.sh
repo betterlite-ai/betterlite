@@ -122,8 +122,8 @@ if ! pushed=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
 fi
 body=$L/pr-body-$id.md
 printf 'Builds %s, from [its task file](https://github.com/betterlite-ai/betterlite/blob/%s/.development/%s). %s, Cargo.lock aside. The lint checks pass locally and the review approved it. CI runs the tests, the oracle cases and mutants. The PR also marks %s done in the backlog.\n' "$title" "$branch" "$file" "$size" "$id" > "$body"
-old=$(git show "origin/main:.development/$file" | sed -n "s/^  max_changed_lines: //p")
-new=$(sed -n "s/^  max_changed_lines: //p" ".development/$file")
+old=$(git show "origin/main:.development/$file" | grep -o -E 'max_changed_lines: [0-9]+' | cut -d' ' -f2)
+new=$(grep -o -E 'max_changed_lines: [0-9]+' ".development/$file" | cut -d' ' -f2)
 if [ "$old" != "$new" ]; then
   printf "\nThe architect raised its line budget from %s to %s: %s\n" "$old" "$new" "$(git log -1 --format=%b --grep="^docs(tasks): $id budget " origin/main..HEAD | head -n 1)" >> "$body"
 fi

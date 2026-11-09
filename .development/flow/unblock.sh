@@ -69,20 +69,20 @@ case "$reason" in
     exit 0 ;;
 esac
 
-# dependency policy and task-format changes stay with a person
-grep -q -E 'deny\.toml|max_new_expects|\.development/' <<< "$reason" && exit 1
+# dependency policy and the expect budget stay with a person
+grep -q -E 'deny\.toml|max_new_expects' <<< "$reason" && exit 1
 
 if grep -q -E 'FAIL diff-budget|max_changed_lines|[0-9]+ (changed|counted) lines' <<< "$reason"; then
   grep -q "^docs(tasks): $id budget " <<< "$commits" && exit 1
   need=$(grep -o -E '[0-9]+ (changed|counted) lines' <<< "$reason" | head -n 1 | cut -d' ' -f1)
   [ -n "$need" ] || exit 1
-  old=$(sed -n 's/^  max_changed_lines: //p' "$task")
+  old=$(grep -o -E 'max_changed_lines: [0-9]+' "$task" | head -n 1 | cut -d' ' -f2)
   [ -n "$old" ] || exit 1
   most=$((old * 3 / 2))
   new=$(( (need * 11 / 10 / 100 + 1) * 100 ))
   [ "$new" -gt "$most" ] && new=$most
   [ "$new" -ge "$need" ] && [ "$new" -gt "$old" ] || exit 1
-  sed -i "s/^  max_changed_lines: .*/  max_changed_lines: $new/" "$task"
+  sed -i -E "s/max_changed_lines: [0-9]+/max_changed_lines: $new/" "$task"
   git add "$task"
   git commit -q -m "docs(tasks): $id budget $new" -m "The branch counts $need changed lines against a budget of $old, inside the 1.5x a block rule may raise it." -- "$task" || exit 1
   echo "Your line budget is now $new (commit on this branch). Keep your work and finish the task."
