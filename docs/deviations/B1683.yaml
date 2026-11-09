@@ -1,0 +1,5 @@
+task: B1683
+deviations:
+  - what: Provider-stated costs and usage arithmetic reject nonfinite or unrepresentable values with typed errors instead of admitting float infinity or unchecked counters.
+    why: Even an upstream price header must obey the same finite money contract as calculated spend.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1962-L1976"
