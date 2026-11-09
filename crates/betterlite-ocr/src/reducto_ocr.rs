@@ -34,9 +34,7 @@ pub type Boundaries = fn() -> Uuid;
 // both protocols share the auth, URL and upload flow; a config only picks its options and body
 pub trait ReductoProviderBody: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + Send;
-
     const SUPPORTED: &'static [&'static str];
-
     fn body(input: String, params: &Object) -> Self::Request;
 
     fn boundaries(&self) -> Boundaries;
@@ -159,7 +157,6 @@ impl Default for ReductoParseV3Config {
 
 impl ReductoProviderBody for ReductoParseV3Config {
     type Request = ReductoV3Request;
-
     const SUPPORTED: &'static [&'static str] = &["formatting", "retrieval", "settings"];
 
     fn body(input: String, params: &Object) -> ReductoV3Request {
@@ -188,7 +185,6 @@ impl Default for ReductoParseLegacyConfig {
 
 impl ReductoProviderBody for ReductoParseLegacyConfig {
     type Request = ReductoLegacyRequest;
-
     const SUPPORTED: &'static [&'static str] = &["enhance"];
 
     fn body(input: String, params: &Object) -> ReductoLegacyRequest {
