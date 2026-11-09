@@ -129,13 +129,16 @@ base:
         if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
         cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright is left to CI, since it was most of this check's time and failed once in 185 runs
       run: |-
         config=(.pre-commit-config.yaml sgconfig.yml .ast-grep rust-toolchain.toml .development/checks.yaml typos.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/ruff.toml tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
+        if [ "$GITHUB_ACTIONS" != true ]; then export SKIP=basedpyright-helpers; fi
         if git diff --quiet "$GATE_BASE" HEAD -- "${config[@]}"; then prek run --from-ref "$GATE_BASE" --to-ref HEAD; else prek run --all-files; fi
     - id: similarity
-      why: no two functions are near copies of each other
-      run: similarity-rs $(ls -d crates tools 2>/dev/null) --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates
+      why: no two functions are near copies of each other, on this machine in the crates the change edits and in CI across crates and tools
+      run: |-
+        if [ "$GITHUB_ACTIONS" = true ]; then paths=$(ls -d crates tools 2>/dev/null); else paths=$({ git diff --name-only "$GATE_BASE"; git ls-files --others --exclude-standard; } | grep -E '^(crates|tools)/[^/]+/' | cut -d/ -f1,2 | sort -u | xargs -r ls -d 2>/dev/null); fi
+        if [ -z "$paths" ]; then echo "the change edits no crate"; else similarity-rs $paths --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates; fi
     - id: notice
       why: the MIT license and Berri AI's notice for LiteLLM stay in place
       run: grep -q '^MIT License' LICENSE && grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
