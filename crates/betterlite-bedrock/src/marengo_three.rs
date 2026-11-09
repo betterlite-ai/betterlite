@@ -1,13 +1,14 @@
 pub mod error;
 pub mod fields;
 mod inputs;
+pub mod options;
 pub mod params;
 pub mod request;
 mod tests;
 
 use error::{Marengo3Error, bad_request};
-use fields::InputType;
 use inputs::{media_source, multi_input, text_image_input, timed_media_input};
+use options::InputType;
 use params::{Marengo3Params, RawParams};
 use request::{ImageInput, Marengo3Request, RequestBody, TextInput};
 

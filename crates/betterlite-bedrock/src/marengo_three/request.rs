@@ -1,7 +1,8 @@
 use serde::Serialize;
 use serde_json::Number;
 
-use super::fields::{EmbeddingOption, EmbeddingScope, EmbeddingType, Segmentation};
+use super::fields::Segmentation;
+use super::options::{EmbeddingOption, EmbeddingScope, EmbeddingType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]

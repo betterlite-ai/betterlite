@@ -3,9 +3,9 @@ use serde::Deserialize;
 
 use super::error::{Marengo3Error, bad_request};
 use super::fields::{
-    InputType, Parsed, choice, list, media_sources, number, segmentation as parse_segmentation,
-    text,
+    Parsed, choice, list, media_sources, number, segmentation as parse_segmentation, text,
 };
+use super::options::InputType;
 use super::request::TimedMediaOptions;
 use crate::image_models::params::Field;
 
