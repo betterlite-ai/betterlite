@@ -1,10 +1,8 @@
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-
 const PRICED_SERVICE_TIERS: [&str; 5] = ["balanced", "fast", "flex", "priority", "ultrafast"];
 const BASE_PRICING_SERVICE_TIERS: [&str; 2] = ["default", "standard"];
-
 #[must_use]
 pub fn served_service_tier(
     response_tier: Option<&str>,
@@ -14,30 +12,23 @@ pub fn served_service_tier(
     if let Some(tier) = response_tier {
         return Some(tier.to_owned());
     }
-    if let Some(tier) = usage.and_then(usage_service_tier) {
-        return Some(tier.to_owned());
+    if let Some(Json::Text(tier)) = usage.and_then(|found| found.extras.get("service_tier")) {
+        return Some(tier.clone());
     }
-    let hidden = hidden_params?;
-    let provider_specific = hidden.get("provider_specific_fields");
+    let provider_specific = hidden_params?.get("provider_specific_fields");
     let traffic_type = match provider_specific {
         Some(Json::Object(fields)) => fields.get("traffic_type"),
         None | Some(Json::Null) => None,
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => return None,
     };
-    let Json::Text(traffic) = traffic_type? else {
-        return None;
-    };
-    if traffic.is_empty() {
-        return None;
-    }
-    Some(traffic_type_tier(traffic).to_owned())
-}
-
-fn usage_service_tier(usage: &Usage) -> Option<&str> {
-    match usage.extras.get("service_tier") {
-        Some(Json::Text(tier)) => Some(tier),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
+    match traffic_type? {
+        Json::Text(traffic) if !traffic.is_empty() => Some(traffic_type_tier(traffic).to_owned()),
+        Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_) => None,
     }
 }
 
@@ -49,7 +40,6 @@ fn traffic_type_tier(traffic_type: &str) -> &'static str {
         _ => "default",
     }
 }
-
 #[must_use]
 pub const fn normalize_service_tier(service_tier: Option<&str>) -> Option<&str> {
     match service_tier {
@@ -57,7 +47,6 @@ pub const fn normalize_service_tier(service_tier: Option<&str>) -> Option<&str> 
         Some(_) | None => None,
     }
 }
-
 #[must_use]
 pub fn resolve_billable_service_tier(
     requested: Option<&str>,

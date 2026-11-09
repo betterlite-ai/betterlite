@@ -12,8 +12,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 
-use super::{Call, UsageKindInput, UsageSpec, failure};
-
+use super::{Call, Failure, UsageKindInput, UsageSpec, failure};
 pub(super) enum OwnedUsage {
     Absent,
     Null,
@@ -24,9 +23,7 @@ pub(super) enum OwnedUsage {
     DecisionsOpenAi(DecisionUsage),
     Interactions(IndexMap<String, Json>),
     Mapping(IndexMap<String, Json>),
-    TypedRecord(IndexMap<String, Json>),
 }
-
 impl OwnedUsage {
     pub(super) const fn borrowed(&self) -> BillingUsage<'_> {
         match self {
@@ -39,73 +36,57 @@ impl OwnedUsage {
             Self::DecisionsOpenAi(usage) => BillingUsage::DecisionsOpenAi(usage),
             Self::Interactions(mapping) => BillingUsage::Interactions(mapping),
             Self::Mapping(mapping) => BillingUsage::Mapping(mapping),
-            Self::TypedRecord(mapping) => BillingUsage::TypedRecord(mapping),
         }
     }
 }
-
-pub(super) fn parse_usage(
-    spec: Option<&UsageSpec>,
-) -> Result<OwnedUsage, Box<crate::helpers::HelperError>> {
-    let Some(found_spec) = spec else {
+pub(super) fn parse_usage(spec: Option<&UsageSpec>) -> Result<OwnedUsage, Failure> {
+    let Some(found) = spec else {
         return Ok(OwnedUsage::Absent);
     };
-    match found_spec.kind {
+    let value = || {
+        found
+            .value
+            .clone()
+            .ok_or_else(|| failure("value is required"))
+    };
+    match found.kind {
         UsageKindInput::Absent => Ok(OwnedUsage::Absent),
         UsageKindInput::Null => Ok(OwnedUsage::Null),
-        UsageKindInput::Chat => usage_from_mapping(&mapping_value(required_value(found_spec)?)?)
+        UsageKindInput::Chat => usage_from_mapping(&mapping_value(value()?)?)
             .map(OwnedUsage::Chat)
             .map_err(failure),
         UsageKindInput::Responses => Ok(OwnedUsage::Response(
-            serde_json::from_value(required_value(found_spec)?).map_err(failure)?,
+            serde_json::from_value(value()?).map_err(failure)?,
         )),
         UsageKindInput::Transcription => Ok(OwnedUsage::Transcription(
-            serde_json::from_value(required_value(found_spec)?).map_err(failure)?,
+            serde_json::from_value(value()?).map_err(failure)?,
         )),
         UsageKindInput::DecisionsIr => Ok(OwnedUsage::DecisionsIr(
-            serde_json::from_value(required_value(found_spec)?).map_err(failure)?,
+            serde_json::from_value(value()?).map_err(failure)?,
         )),
         UsageKindInput::DecisionsOpenAi => Ok(OwnedUsage::DecisionsOpenAi(
-            serde_json::from_value(required_value(found_spec)?).map_err(failure)?,
+            serde_json::from_value(value()?).map_err(failure)?,
         )),
-        UsageKindInput::Interactions => Ok(OwnedUsage::Interactions(mapping_value(
-            required_value(found_spec)?,
-        )?)),
-        UsageKindInput::Mapping => Ok(OwnedUsage::Mapping(mapping_value(required_value(
-            found_spec,
-        )?)?)),
-        UsageKindInput::TypedRecord => Ok(OwnedUsage::TypedRecord(mapping_value(required_value(
-            found_spec,
-        )?)?)),
+        UsageKindInput::Interactions => Ok(OwnedUsage::Interactions(mapping_value(value()?)?)),
+        UsageKindInput::Mapping => Ok(OwnedUsage::Mapping(mapping_value(value()?)?)),
     }
 }
-
-fn required_value(spec: &UsageSpec) -> Result<Value, Box<crate::helpers::HelperError>> {
-    spec.value
-        .clone()
-        .ok_or_else(|| failure("value is required"))
-}
-
-fn mapping_value(value: Value) -> Result<IndexMap<String, Json>, Box<crate::helpers::HelperError>> {
+fn mapping_value(value: Value) -> Result<IndexMap<String, Json>, Failure> {
     let parsed: Json = serde_json::from_value(value).map_err(failure)?;
     let Json::Object(fields) = parsed else {
         return Err(failure("the usage mapping must be an object"));
     };
     Ok(fields)
 }
-
 pub(super) fn optional_mapping(
     value: Option<&Value>,
-) -> Result<Option<IndexMap<String, Json>>, Box<crate::helpers::HelperError>> {
+) -> Result<Option<IndexMap<String, Json>>, Failure> {
     match value {
         None => Ok(None),
         Some(found) => mapping_value(found.clone()).map(Some),
     }
 }
-
-pub(super) fn optional_usage(
-    call: &Call,
-) -> Result<Option<Usage>, Box<crate::helpers::HelperError>> {
+pub(super) fn optional_usage(call: &Call) -> Result<Option<Usage>, Failure> {
     let Some(value) = call.usage.as_ref() else {
         return Ok(None);
     };
@@ -113,24 +94,18 @@ pub(super) fn optional_usage(
 
     usage_from_mapping(&mapping).map(Some).map_err(failure)
 }
-
 pub(super) fn usage_projection(usage: Option<&Usage>) -> Value {
     let Some(found_usage) = usage else {
         return Value::Null;
     };
     let mut record = Map::new();
-    record.insert(
-        "prompt_tokens".to_owned(),
-        Value::from(found_usage.prompt_tokens),
-    );
-    record.insert(
-        "completion_tokens".to_owned(),
-        Value::from(found_usage.completion_tokens),
-    );
-    record.insert(
-        "total_tokens".to_owned(),
-        Value::from(found_usage.total_tokens),
-    );
+    for (name, count) in [
+        ("prompt_tokens", found_usage.prompt_tokens),
+        ("completion_tokens", found_usage.completion_tokens),
+        ("total_tokens", found_usage.total_tokens),
+    ] {
+        record.insert(name.to_owned(), Value::from(count));
+    }
     if let Some(details) = found_usage.prompt_tokens_details.as_ref() {
         record.insert(
             "prompt_tokens_details".to_owned(),
@@ -152,7 +127,6 @@ pub(super) fn usage_projection(usage: Option<&Usage>) -> Value {
     );
     Value::Object(record)
 }
-
 const PROMPT_FIELDS: [&str; 6] = [
     "text_tokens",
     "audio_tokens",
@@ -168,7 +142,6 @@ const COMPLETION_FIELDS: [&str; 5] = [
     "video_tokens",
     "reasoning_tokens",
 ];
-
 fn details_projection(details: &IndexMap<String, Json>, fields: &[&str]) -> Value {
     let mut record = Map::new();
     for name in fields {
@@ -181,13 +154,11 @@ fn details_projection(details: &IndexMap<String, Json>, fields: &[&str]) -> Valu
     }
     Value::Object(record)
 }
-
 pub(super) fn decimal_value(cost: &Decimal) -> Value {
     let text = cost.normalize().to_string();
     serde_json::Number::from_str(&text)
         .map_or_else(|_error| Value::String(cost.to_string()), Value::Number)
 }
-
 pub(super) fn optional_text(value: Option<&str>) -> Value {
     match value {
         Some(text) => Value::String(text.to_owned()),

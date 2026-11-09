@@ -8,7 +8,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::insert_count;
-
 pub(super) fn from_usage(usage: &AnthropicUsage) -> Usage {
     Usage {
         prompt_tokens: usage.prompt_tokens,
@@ -21,20 +20,19 @@ pub(super) fn from_usage(usage: &AnthropicUsage) -> Usage {
         extras: extras(usage),
     }
 }
-
 fn prompt_details(details: &AnthropicPromptDetails) -> IndexMap<String, Json> {
     let mut record = IndexMap::new();
-    insert_count(&mut record, "text_tokens", Some(details.text));
-    insert_count(&mut record, "cached_tokens", Some(details.cached));
-    insert_count(
-        &mut record,
-        "cache_creation_tokens",
-        Some(details.cache_creation),
-    );
-    insert_count(&mut record, "cache_write_tokens", Some(details.cache_write));
-    insert_count(&mut record, "audio_tokens", details.audio);
-    insert_count(&mut record, "image_tokens", details.image);
-    insert_count(&mut record, "video_tokens", details.video);
+    for (name, value) in [
+        ("text_tokens", Some(details.text)),
+        ("cached_tokens", Some(details.cached)),
+        ("cache_creation_tokens", Some(details.cache_creation)),
+        ("cache_write_tokens", Some(details.cache_write)),
+        ("audio_tokens", details.audio),
+        ("image_tokens", details.image),
+        ("video_tokens", details.video),
+    ] {
+        insert_count(&mut record, name, value);
+    }
     if let Some(nested) = details.cache_creation_details.as_ref() {
         record.insert(
             "cache_creation_token_details".to_owned(),
@@ -43,7 +41,6 @@ fn prompt_details(details: &AnthropicPromptDetails) -> IndexMap<String, Json> {
     }
     record
 }
-
 fn cache_creation_details(details: &CacheCreationTokenDetails) -> Json {
     let mut record = IndexMap::new();
     insert_count(
@@ -58,7 +55,6 @@ fn cache_creation_details(details: &CacheCreationTokenDetails) -> Json {
     );
     Json::Object(record)
 }
-
 fn completion_details(details: &AnthropicCompletionDetails) -> IndexMap<String, Json> {
     let mut record = IndexMap::new();
     for (name, value) in [
@@ -74,7 +70,6 @@ fn completion_details(details: &AnthropicCompletionDetails) -> IndexMap<String, 
     }
     record
 }
-
 fn server_tool_use(usage: &ServerToolUse) -> IndexMap<String, Json> {
     let mut record = IndexMap::new();
     insert_count(&mut record, "web_search_requests", usage.web_search);
@@ -82,7 +77,6 @@ fn server_tool_use(usage: &ServerToolUse) -> IndexMap<String, Json> {
     insert_count(&mut record, "browser_open_requests", usage.browser_open);
     record
 }
-
 fn extras(usage: &AnthropicUsage) -> IndexMap<String, Json> {
     let mut extras = IndexMap::new();
     insert_count(
@@ -104,7 +98,6 @@ fn extras(usage: &AnthropicUsage) -> IndexMap<String, Json> {
     insert_text(&mut extras, "service_tier", usage.service_tier.as_deref());
     extras
 }
-
 fn insert_text(record: &mut IndexMap<String, Json>, name: &str, value: Option<&str>) {
     record.insert(
         name.to_owned(),

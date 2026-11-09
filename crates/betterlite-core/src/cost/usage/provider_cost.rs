@@ -6,10 +6,8 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use super::BillingUsageError;
-
+use super::BillingUsageError as Error;
 const RESPONSE_COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
-
 #[must_use]
 pub fn without_provider_stated_cost(usage: &Usage) -> Cow<'_, Usage> {
     if usage.cost.is_none() {
@@ -19,10 +17,9 @@ pub fn without_provider_stated_cost(usage: &Usage) -> Cow<'_, Usage> {
     cleared.cost = None;
     Cow::Owned(cleared)
 }
-
 pub fn hidden_response_cost(
     hidden_params: Option<&IndexMap<String, Json>>,
-) -> Result<Option<Decimal>, BillingUsageError> {
+) -> Result<Option<Decimal>, Error> {
     let Some(hidden) = hidden_params else {
         return Ok(None);
     };
@@ -30,27 +27,23 @@ pub fn hidden_response_cost(
         return Ok(None);
     };
     let Json::Object(header_map) = headers else {
-        return Err(BillingUsageError::HiddenParameter {
+        return Err(Error::Hidden {
             field: "additional_headers",
         });
     };
     let Some(cost) = header_map.get(RESPONSE_COST_HEADER) else {
         return Ok(None);
     };
-    match cost {
-        Json::Null => Ok(None),
-        Json::Number(number) => decimal_text(&number.to_string())
-            .map(Some)
-            .ok_or(BillingUsageError::ResponseCostNotNumber),
-        Json::Text(text) => decimal_text(text)
-            .map(Some)
-            .ok_or(BillingUsageError::ResponseCostNotNumber),
-        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
-            Err(BillingUsageError::ResponseCostNotNumber)
-        }
-    }
+    let parsed = match cost {
+        Json::Null => return Ok(None),
+        Json::Number(number) => decimal_text(&number.to_string()),
+        Json::Text(text) => decimal_text(text),
+        Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
+    };
+    parsed.map(Some).ok_or(Error::Hidden {
+        field: RESPONSE_COST_HEADER,
+    })
 }
-
 fn decimal_text(text: &str) -> Option<Decimal> {
     let parsed = if text.contains(['e', 'E']) {
         Decimal::from_scientific(text)

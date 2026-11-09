@@ -17,15 +17,14 @@ use indexmap::IndexMap;
 use thiserror::Error;
 
 use crate::api::responses_usage::ResponsesUsageError;
-
 mod convert;
 pub mod provider_cost;
 mod tests;
 pub mod tiers;
 
 type AnthropicUsageError = UsageError<Infallible>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResponseKind {
     Chat,
     ChatStream,
@@ -41,7 +40,6 @@ pub enum ResponseKind {
     Responses,
     Other,
 }
-
 pub enum BillingUsage<'usage> {
     Absent,
     Null,
@@ -54,14 +52,12 @@ pub enum BillingUsage<'usage> {
     Mapping(&'usage IndexMap<String, Json>),
     TypedRecord(&'usage IndexMap<String, Json>),
 }
-
 pub struct BillingResponse<'usage> {
     pub kind: ResponseKind,
     pub usage: BillingUsage<'usage>,
     pub service_tier: Option<&'usage str>,
     pub hidden_params: Option<&'usage IndexMap<String, Json>>,
 }
-
 #[derive(Debug, Error)]
 pub enum BillingUsageError {
     #[error("the usage object could not be read: {source}")]
@@ -89,21 +85,16 @@ pub enum BillingUsageError {
         #[source]
         source: UsageParseError,
     },
-    #[error("the {field} count does not fit a signed 64-bit integer")]
-    TokenCount { field: &'static str },
-    #[error("the {field} token total overflowed")]
-    TokenOverflow { field: &'static str },
+    #[error("the {field} token count is not representable")]
+    Token { field: &'static str },
     #[error("the {kind} usage does not belong to a {kind} response")]
     Projection { kind: &'static str },
-    #[error("the hidden response cost is not a number")]
-    ResponseCostNotNumber,
-    #[error("the hidden parameter {field} is not an object")]
-    HiddenParameter { field: &'static str },
+    #[error("the hidden parameter {field} is not usable")]
+    Hidden { field: &'static str },
 }
 
 // The source only asks for Anthropic usage here with reasoning_content None, so the counter never runs.
 struct NoReasoningCounter;
-
 impl ReasoningTokenCounter for NoReasoningCounter {
     type Failure = Infallible;
 
@@ -111,7 +102,6 @@ impl ReasoningTokenCounter for NoReasoningCounter {
         Ok(0)
     }
 }
-
 pub fn get_usage_object(
     response: &BillingResponse<'_>,
 ) -> Result<Option<Usage>, BillingUsageError> {
@@ -119,11 +109,10 @@ pub fn get_usage_object(
         response.kind,
         ResponseKind::DecisionsIr | ResponseKind::DecisionsOpenAi
     ) {
-        return convert::decisions::get_usage(&response.usage);
+        return convert::decisions_usage(&response.usage);
     }
     usage_object(&response.usage)
 }
-
 fn usage_object(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageError> {
     match usage {
         BillingUsage::Absent | BillingUsage::Null => Ok(None),
@@ -142,7 +131,6 @@ fn usage_object(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageE
         }
     }
 }
-
 #[must_use]
 pub const fn is_known_usage_object(usage: &BillingUsage<'_>) -> bool {
     matches!(
@@ -154,7 +142,6 @@ pub const fn is_known_usage_object(usage: &BillingUsage<'_>) -> bool {
             | BillingUsage::DecisionsOpenAi(_)
     )
 }
-
 #[must_use]
 pub const fn infer_call_type(call_type: Option<&str>, kind: ResponseKind) -> Option<&str> {
     if let Some(explicit) = call_type {
@@ -175,7 +162,6 @@ pub const fn infer_call_type(call_type: Option<&str>, kind: ResponseKind) -> Opt
         | ResponseKind::Other => None,
     }
 }
-
 #[must_use]
 pub fn transcription_has_tokens(usage: Option<&Usage>) -> bool {
     let Some(counted) = usage else {
@@ -190,7 +176,6 @@ pub fn transcription_has_tokens(usage: Option<&Usage>) -> bool {
     }
     counted.prompt_tokens > 0 || counted.completion_tokens > 0
 }
-
 fn detail_count(details: &IndexMap<String, Json>, name: &str) -> i64 {
     match details.get(name) {
         Some(Json::Number(number)) => number.as_i64().unwrap_or(0),

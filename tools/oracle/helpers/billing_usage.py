@@ -1,24 +1,8 @@
 from typing import TYPE_CHECKING, TypeAlias, cast
 
-from litellm.cost_calculator import (  # pyright: ignore[reportPrivateUsage]
-    _resolve_billable_service_tier,  # pyright: ignore[reportPrivateUsage]
-    _served_service_tier,  # pyright: ignore[reportPrivateUsage]
-    _without_provider_stated_cost,  # pyright: ignore[reportPrivateUsage]
-    get_response_cost_from_hidden_params,  # pyright: ignore[reportUnknownVariableType]
-    get_usage_object,
-)
-from litellm.types.decisions import (
-    DecisionsResponse,
-    DecisionsUsage,
-    OpenAIDecisionResponse,
-    OpenAIDecisionUsage,
-)
-from litellm.types.llms.openai import ResponseAPIUsage
-from litellm.types.utils import (
-    TranscriptionUsageDurationObject,
-    TranscriptionUsageTokensObject,
-    Usage,
-)
+from litellm import cost_calculator
+from litellm.types import decisions, utils
+from litellm.types.llms import openai as openai_types
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 if TYPE_CHECKING:
@@ -29,10 +13,6 @@ _PROMPT_FIELDS = ("text_tokens", "audio_tokens", "image_tokens", "video_tokens",
                   "cached_tokens", "cache_write_tokens")
 _COMPLETION_FIELDS = ("text_tokens", "audio_tokens", "image_tokens", "video_tokens",
                       "reasoning_tokens")
-
-
-class _TypedUsage(BaseModel):
-    model_config = ConfigDict(extra="allow")
 
 
 class _Response(BaseModel):
@@ -63,15 +43,11 @@ def _optional_string(value: Json | None, name: str) -> str | None:
 def _details(value: object, fields: tuple[str, ...]) -> dict[str, Json] | None:
     if value is None:
         return None
-    projected: dict[str, Json] = {}
-    for field in fields:
-        found = getattr(value, field, None)
-        if found is not None:
-            projected[field] = cast(Json, found)
-    return projected
+    present = (field for field in fields if getattr(value, field, None) is not None)
+    return {field: cast(Json, getattr(value, field)) for field in present}
 
 
-def _usage_projection(usage: Usage | None) -> Json:
+def _usage_projection(usage: utils.Usage | None) -> Json:
     if usage is None:
         return None
     result: dict[str, Json] = {
@@ -79,14 +55,14 @@ def _usage_projection(usage: Usage | None) -> Json:
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
     }
-    prompt = _details(usage.prompt_tokens_details, _PROMPT_FIELDS)
-    if prompt is not None:
-        result["prompt_tokens_details"] = prompt
-    completion = _details(usage.completion_tokens_details, _COMPLETION_FIELDS)
-    if completion is not None:
-        result["completion_tokens_details"] = completion
-    cost: object = getattr(usage, "cost", None)
-    if cost is not None:
+    for name, details, fields in (
+        ("prompt_tokens_details", usage.prompt_tokens_details, _PROMPT_FIELDS),
+        ("completion_tokens_details", usage.completion_tokens_details, _COMPLETION_FIELDS),
+    ):
+        projected = _details(details, fields)
+        if projected is not None:
+            result[name] = projected
+    if (cost := getattr(usage, "cost", None)) is not None:
         result["cost"] = cast(Json, cost)
     result["extras"] = cast(Json, usage.model_extra or {})
     return result
@@ -97,8 +73,6 @@ def _usage_object(spec: dict[str, Json]) -> object:
     value = spec.get("value")
     if kind in ("absent", "null"):
         return None
-    if kind == "typed_record":
-        return _TypedUsage(**_object(value, "value"))
     if kind in ("interactions", "mapping"):
         return _object(value, "value")
     return _provider_usage_object(kind, value)
@@ -106,19 +80,19 @@ def _usage_object(spec: dict[str, Json]) -> object:
 
 def _provider_usage_object(kind: str, value: Json) -> object:
     if kind == "chat":
-        return cast("Callable[..., Usage]", Usage)(**_object(value, "value"))
+        return cast("Callable[..., object]", utils.Usage)(**_object(value, "value"))
     if kind == "responses":
-        return ResponseAPIUsage.model_validate(value)
+        return openai_types.ResponseAPIUsage.model_validate(value)
     if kind == "transcription":
         inner = _object(value, "value")
         if inner.get("type") == "duration":
-            return TranscriptionUsageDurationObject.model_validate(inner)
-        return TranscriptionUsageTokensObject.model_validate(inner)
+            return utils.TranscriptionUsageDurationObject.model_validate(inner)
+        return utils.TranscriptionUsageTokensObject.model_validate(inner)
     if kind == "decisions_ir":
-        usage_input = cast("Callable[..., DecisionsUsage]", DecisionsUsage)
+        usage_input = cast("Callable[..., object]", decisions.DecisionsUsage)
         return usage_input(**_object(value, "value"))
     if kind == "decisions_openai":
-        openai_input = cast("Callable[..., OpenAIDecisionUsage]", OpenAIDecisionUsage)
+        openai_input = cast("Callable[..., object]", decisions.OpenAIDecisionUsage)
         return openai_input(**_object(value, "value"))
     raise ValueError(f"unknown provider usage kind {kind}")
 
@@ -126,49 +100,54 @@ def _provider_usage_object(kind: str, value: Json) -> object:
 def _response_object(spec: dict[str, Json]) -> object:
     kind = _string(spec.get("kind"), "kind")
     raw_usage = spec.get("usage")
-    usage_spec = None if raw_usage is None else _object(raw_usage, "usage")
-    usage = None if usage_spec is None else _usage_object(usage_spec)
+    usage = None if raw_usage is None else _usage_object(_object(raw_usage, "usage"))
     if kind == "decisions_ir":
-        return DecisionsResponse(model=None, answers={}, usage=cast("DecisionsUsage | None", usage))
+        typed = cast("decisions.DecisionsUsage | None", usage)
+        return decisions.DecisionsResponse(model=None, answers={}, usage=typed)
     if kind == "decisions_openai":
-        decisions_usage = cast("OpenAIDecisionUsage", usage)
-        return OpenAIDecisionResponse(model="model", answers=(), usage=decisions_usage)
+        decisions_usage = cast("decisions.OpenAIDecisionUsage", usage)
+        return decisions.OpenAIDecisionResponse(model="model", answers=(), usage=decisions_usage)
     response = _Response(usage=usage)
-    raw_tier = spec.get("service_tier")
-    if raw_tier is not None:
-        response.service_tier = _string(raw_tier, "service_tier")  # pyright: ignore[reportAttributeAccessIssue]
-    raw_hidden = spec.get("hidden_params")
-    if raw_hidden is not None:
-        response._hidden_params = _object(raw_hidden, "hidden_params")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if (tier := spec.get("service_tier")) is not None:
+        response.service_tier = _string(tier, "service_tier")  # pyright: ignore[reportAttributeAccessIssue]
+    if (hidden := spec.get("hidden_params")) is not None:
+        response._hidden_params = _object(hidden, "hidden_params")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     return response
 
 
-def _optional_usage(call: dict[str, Json]) -> Usage | None:
+def _optional_usage(call: dict[str, Json]) -> utils.Usage | None:
     raw_usage = call.get("usage")
     if raw_usage is None:
         return None
-    return cast("Callable[..., Usage]", Usage)(**_object(raw_usage, "usage"))
-
-
-def _hidden_params(call: dict[str, Json]) -> dict[str, Json]:
-    raw_hidden = call.get("hidden_params")
-    return {} if raw_hidden is None else _object(raw_hidden, "hidden_params")
+    builder = cast("Callable[..., utils.Usage]", utils.Usage)
+    return builder(**_object(raw_usage, "usage"))
 
 
 def _execute(function: str, call: dict[str, Json]) -> Json:
     match function:
         case "get_usage_object":
             response = _response_object(_object(call.get("response"), "response"))
-            result: Json = _usage_projection(get_usage_object(response))
+            result: Json = _usage_projection(cost_calculator.get_usage_object(response))
         case "without_provider_stated_cost":
-            result = _usage_projection(_without_provider_stated_cost(_optional_usage(call)))
+            cleared = cost_calculator._without_provider_stated_cost(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                _optional_usage(call)
+            )
+            result = _usage_projection(cleared)
         case "hidden_response_cost":
-            result = cast(Json, get_response_cost_from_hidden_params(_hidden_params(call)))
+            raw_hidden = call.get("hidden_params")
+            hidden = {} if raw_hidden is None else _object(raw_hidden, "hidden_params")
+            cost = cost_calculator.get_response_cost_from_hidden_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+                hidden
+            )
+            result = cast(Json, cost)
         case "served_service_tier":
             response = _response_object(_object(call.get("response"), "response"))
-            result = cast(Json, _served_service_tier(response, _optional_usage(call)))
+            served = cost_calculator._served_service_tier(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                response, _optional_usage(call)
+            )
+            result = cast(Json, served)
         case "resolve_billable_service_tier":
-            resolved = _resolve_billable_service_tier(
+            resolved = cost_calculator._resolve_billable_service_tier(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 _optional_string(call.get("requested_tier"), "requested_tier"),
                 _optional_string(call.get("served_tier"), "served_tier"),
             )

@@ -26,7 +26,7 @@ def _string(value: Json, name: str) -> str:
 
 
 def _optional_string(value: Json | None, name: str) -> str | None:
-    return None if value is None else _string(value, name)
+    return _string(value, name) if value is not None else None
 
 
 def _run_probe(probe: dict[str, Json]) -> Json:
@@ -40,18 +40,14 @@ def _run_probe(probe: dict[str, Json]) -> Json:
         pricing,
         calculation_failed,
     )
-    warning = (
-        None
-        if diagnostic is None
-        else zero_cost_warning(
-            diagnostic,
-            model_group=_optional_string(probe.get("model_group"), "model_group"),
-            model=_string(probe.get("model"), "model"),
-            custom_llm_provider=_optional_string(
-                probe.get("custom_llm_provider"), "custom_llm_provider"
-            ),
-            usage=usage,
-        )
+    warning = None if diagnostic is None else zero_cost_warning(
+        diagnostic,
+        model_group=_optional_string(probe.get("model_group"), "model_group"),
+        model=_string(probe.get("model"), "model"),
+        custom_llm_provider=_optional_string(
+            probe.get("custom_llm_provider"), "custom_llm_provider"
+        ),
+        usage=usage,
     )
     return {
         "used_keys": cast(Json, used_keys),
