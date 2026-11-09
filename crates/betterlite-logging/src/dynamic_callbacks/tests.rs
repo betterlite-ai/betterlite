@@ -228,6 +228,7 @@ enum Scenario {
     CombinedDeduplicatesDynamicFirst,
     CombinedWithEmptyDynamicDeduplicatesGlobal,
     CallbackNameReadsNamesAndLoggers,
+    DebugShowsNamesAndLoggerNames,
     InternalCallbackFilterKeepsNamesAndDropsLoggers,
     UnknownCallbackNameSurvivesTheLoggerFilter,
     ParamsPrecedenceFollowsRequestSlots,
@@ -284,6 +285,7 @@ enum Scenario {
     Scenario::CombinedWithEmptyDynamicDeduplicatesGlobal
 )]
 #[case::callback_name_reads_names_and_loggers(Scenario::CallbackNameReadsNamesAndLoggers)]
+#[case::debug_shows_names_and_logger_names(Scenario::DebugShowsNamesAndLoggerNames)]
 #[case::internal_callback_filter_keeps_names_and_drops_loggers(
     Scenario::InternalCallbackFilterKeepsNamesAndDropsLoggers
 )]
@@ -652,6 +654,10 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
         Scenario::CallbackNameReadsNamesAndLoggers => {
             assert_eq!(get_callback_name(&name("langfuse")), "langfuse");
             assert_eq!(get_callback_name(&logger("s3_v2")), "s3_v2");
+        }
+        Scenario::DebugShowsNamesAndLoggerNames => {
+            assert_eq!(format!("{:?}", name("langfuse")), "Name(\"langfuse\")");
+            assert_eq!(format!("{:?}", logger("otel")), "Logger(\"otel\")");
         }
         Scenario::InternalCallbackFilterKeepsNamesAndDropsLoggers => {
             let entries = [name("langfuse"), logger("s3_v2")];
