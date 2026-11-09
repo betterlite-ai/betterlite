@@ -55,11 +55,17 @@ pub fn decode_exa_ai_search(bytes: &[u8]) -> Result<SearchResponse, ExaAiSearchE
 }
 
 fn exa_result(result: ExaReplyResult) -> Result<SearchResult, ExaAiSearchError> {
+    // a missing date and a null date are both absent; a present non-string date fails like the source
+    let date = result
+        .published_date
+        .filter(|raw| serde_json::from_str::<()>(raw.get()).is_err())
+        .map(|raw| parse_text(&raw, "publishedDate"))
+        .transpose()?;
     Ok(SearchResult {
         title: text_member(result.title, "title")?,
         url: text_member(result.url, "url")?,
         snippet: text_member(result.text, "text")?,
-        date: date_member(result.published_date, "publishedDate")?,
+        date,
         last_updated: None,
         extra: Object::new(),
     })
@@ -75,26 +81,12 @@ fn text_member(
     if serde_json::from_str::<()>(raw.get()).is_ok() {
         return Err(ExaAiSearchError::ResultField { field: name });
     }
+    parse_text(&raw, name)
+}
+
+fn parse_text(raw: &RawValue, name: &'static str) -> Result<String, ExaAiSearchError> {
     serde_json::from_str(raw.get()).map_err(|source| ExaAiSearchError::ReplyField {
         field: name,
         source,
     })
-}
-
-fn date_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<Option<String>, ExaAiSearchError> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Ok(None);
-    }
-    serde_json::from_str(raw.get())
-        .map(Some)
-        .map_err(|source| ExaAiSearchError::ReplyField {
-            field: name,
-            source,
-        })
 }

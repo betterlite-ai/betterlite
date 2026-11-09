@@ -56,11 +56,17 @@ pub fn decode_serper_search(bytes: &[u8]) -> Result<SearchResponse, SerperSearch
 }
 
 fn serper_result(result: SerperReplyResult) -> Result<SearchResult, SerperSearchError> {
+    // a missing date and a null date are both absent; a present non-string date fails like the source
+    let date = result
+        .date
+        .filter(|raw| serde_json::from_str::<()>(raw.get()).is_err())
+        .map(|raw| parse_text(&raw, "date"))
+        .transpose()?;
     Ok(SearchResult {
         title: text_member(result.title, "title")?,
         url: text_member(result.link, "link")?,
         snippet: text_member(result.snippet, "snippet")?,
-        date: date_member(result.date, "date")?,
+        date,
         last_updated: None,
         extra: Object::new(),
     })
@@ -76,26 +82,12 @@ fn text_member(
     if serde_json::from_str::<()>(raw.get()).is_ok() {
         return Err(SerperSearchError::ResultField { field: name });
     }
+    parse_text(&raw, name)
+}
+
+fn parse_text(raw: &RawValue, name: &'static str) -> Result<String, SerperSearchError> {
     serde_json::from_str(raw.get()).map_err(|source| SerperSearchError::ReplyField {
         field: name,
         source,
     })
-}
-
-fn date_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<Option<String>, SerperSearchError> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Ok(None);
-    }
-    serde_json::from_str(raw.get())
-        .map(Some)
-        .map_err(|source| SerperSearchError::ReplyField {
-            field: name,
-            source,
-        })
 }

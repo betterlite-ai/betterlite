@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use betterlite_core::api::search_providers::exa_ai::reply::decode_exa_ai_search;
 use betterlite_core::api::search_providers::exa_ai::{ExaAiSearchConfig, ExaAiSearchSettings};
 use betterlite_core::api::search_providers::serper::reply::decode_serper_search;
 use betterlite_core::api::search_providers::serper::{SerperSearchConfig, SerperSearchSettings};
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{SearchProvider, SearchQuery};
+use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{Value, json};
 
 #[derive(Deserialize)]
@@ -59,62 +61,66 @@ enum Operation {
     },
 }
 
-trait UnderTest: SearchProvider {
-    fn headers_for(
-        &self,
-        headers: Headers,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-    ) -> Result<Headers, String>;
-
-    fn settings_value(&self) -> Value;
-
-    fn decode_reply(&self, body: &str) -> Result<SearchResponse, String>;
+enum Config {
+    Exa(ExaAiSearchConfig),
+    Serper(SerperSearchConfig),
 }
 
-impl UnderTest for ExaAiSearchConfig {
+impl Config {
     fn headers_for(
         &self,
         headers: Headers,
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
     ) -> Result<Headers, String> {
-        self.validated_headers(headers, api_key, api_base)
-            .map_err(|error| error.to_string())
+        match self {
+            Self::Exa(config) => config
+                .validated_headers(headers, api_key, api_base)
+                .map_err(|error| error.to_string()),
+            Self::Serper(config) => config
+                .validated_headers(headers, api_key, api_base)
+                .map_err(|error| error.to_string()),
+        }
     }
 
     fn settings_value(&self) -> Value {
-        json!({
-            "api_key": self.settings.api_key.as_ref().map(ExposeSecret::expose_secret),
-            "api_base": self.settings.api_base,
-        })
+        match self {
+            Self::Exa(config) => {
+                settings_json(config.settings.api_key.as_ref(), &config.settings.api_base)
+            }
+            Self::Serper(config) => {
+                settings_json(config.settings.api_key.as_ref(), &config.settings.api_base)
+            }
+        }
     }
 
     fn decode_reply(&self, body: &str) -> Result<SearchResponse, String> {
-        decode_exa_ai_search(body.as_bytes()).map_err(|error| error.to_string())
-    }
-}
-
-impl UnderTest for SerperSearchConfig {
-    fn headers_for(
-        &self,
-        headers: Headers,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-    ) -> Result<Headers, String> {
-        self.validated_headers(headers, api_key, api_base)
-            .map_err(|error| error.to_string())
+        match self {
+            Self::Exa(_) => {
+                decode_exa_ai_search(body.as_bytes()).map_err(|error| error.to_string())
+            }
+            Self::Serper(_) => {
+                decode_serper_search(body.as_bytes()).map_err(|error| error.to_string())
+            }
+        }
     }
 
-    fn settings_value(&self) -> Value {
-        json!({
-            "api_key": self.settings.api_key.as_ref().map(ExposeSecret::expose_secret),
-            "api_base": self.settings.api_base,
-        })
+    fn complete_url(&self, api_base: Option<&str>) -> Result<String, String> {
+        match self {
+            Self::Exa(config) => config
+                .complete_url(api_base, &Object::new(), None)
+                .map_err(|error| error.to_string()),
+            Self::Serper(config) => config
+                .complete_url(api_base, &Object::new(), None)
+                .map_err(|error| error.to_string()),
+        }
     }
 
-    fn decode_reply(&self, body: &str) -> Result<SearchResponse, String> {
-        decode_serper_search(body.as_bytes()).map_err(|error| error.to_string())
+    fn request(&self, query: &SearchQuery, options: &Object) -> Result<Value, String> {
+        match self {
+            Self::Exa(config) => serialize_body(config.transform_search_request(query, options)),
+            Self::Serper(config) => serialize_body(config.transform_search_request(query, options)),
+        }
     }
 }
 
@@ -126,21 +132,15 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let mut outcomes = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
-            let result = match call.provider {
-                Provider::ExaAi => {
-                    let config = ExaAiSearchConfig {
-                        settings: ExaAiSearchSettings::load(&input.environment),
-                    };
-                    run_operation(&config, &call.call)
-                }
-                Provider::Serper => {
-                    let config = SerperSearchConfig {
-                        settings: SerperSearchSettings::load(&input.environment),
-                    };
-                    run_operation(&config, &call.call)
-                }
+            let config = match call.provider {
+                Provider::ExaAi => Config::Exa(ExaAiSearchConfig {
+                    settings: ExaAiSearchSettings::load(&input.environment),
+                }),
+                Provider::Serper => Config::Serper(SerperSearchConfig {
+                    settings: SerperSearchSettings::load(&input.environment),
+                }),
             };
-            outcomes.push(outcome(result));
+            outcomes.push(outcome(run_operation(&config, &call.call)));
         }
         serde_json::to_value(outcomes).map_err(|error| failure(&error))
     }
@@ -153,10 +153,7 @@ fn outcome(result: Result<Value, String>) -> Value {
     )
 }
 
-fn run_operation<P>(config: &P, operation: &Operation) -> Result<Value, String>
-where
-    P: UnderTest,
-{
+fn run_operation(config: &Config, operation: &Operation) -> Result<Value, String> {
     match operation {
         Operation::Settings => Ok(config.settings_value()),
         Operation::ValidateEnvironment {
@@ -169,24 +166,35 @@ where
             let validated = config.headers_for(incoming, key.as_ref(), api_base.as_deref())?;
             serde_json::to_value(validated).map_err(|error| error.to_string())
         }
-        Operation::CompleteUrl { api_base } => config
-            .complete_url(api_base.as_deref(), &Object::new(), None)
-            .map(Value::String)
-            .map_err(|error| error.to_string()),
+        Operation::CompleteUrl { api_base } => {
+            config.complete_url(api_base.as_deref()).map(Value::String)
+        }
         Operation::Request {
             query,
             optional_params,
-        } => {
-            let body = config
-                .transform_search_request(query, optional_params)
-                .map_err(|error| error.to_string())?;
-            serde_json::to_value(body).map_err(|error| error.to_string())
-        }
+        } => config.request(query, optional_params),
         Operation::Reply { body } => {
             let response = config.decode_reply(body)?;
             serde_json::to_value(response).map_err(|error| error.to_string())
         }
     }
+}
+
+fn settings_json(api_key: Option<&SecretString>, api_base: &str) -> Value {
+    json!({
+        "api_key": api_key.map(ExposeSecret::expose_secret),
+        "api_base": api_base,
+    })
+}
+
+fn serialize_body<Body, Failure>(body: Result<Body, Failure>) -> Result<Value, String>
+where
+    Body: Serialize,
+    Failure: Display,
+{
+    let value = body.map_err(|error| error.to_string())?;
+    let encoded = serde_json::to_value(value);
+    encoded.map_err(|error| error.to_string())
 }
 
 fn failure(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
