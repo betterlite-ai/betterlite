@@ -197,79 +197,45 @@ def patched_world(env: Object, transport: Transport) -> Generator[None]:
         litellm.secret_manager_client = saved_client
 
 
-async def write_step(manager: Manager, step: Object) -> Json:
-    try:
-        result = await manager.async_write_secret(
-            secret_name=as_text(step["name"]),
-            secret_value=as_text(step["value"]),
-            description=optional_string(step.get("description")),
-            tags=step.get("tags"),
-        )
-    except Exception:  # noqa: BLE001 - a case compares only that the call raised
-        return {"raised": True}
-    return {"body": result}
-
-
-async def delete_step(manager: Manager, step: Object) -> Json:
-    try:
-        result = await manager.async_delete_secret(
-            secret_name=as_text(step["name"]),
-            recovery_window_in_days=as_int(step.get("recovery_window_in_days", 7)),
-        )
-    except Exception:  # noqa: BLE001 - a case compares only that the call raised
-        return {"raised": True}
-    return {"body": result}
-
-
-async def rotate_step(manager: Manager, step: Object) -> Json:
-    try:
-        result = await manager.async_rotate_secret(
-            current_secret_name=as_text(step["current"]),
-            new_secret_name=as_text(step["new"]),
-            new_secret_value=as_text(step["value"]),
-        )
-    except Exception:  # noqa: BLE001 - a case compares only that the call raised
-        return {"raised": True}
-    return {"body": result}
-
-
-async def replicate_step(manager: Manager, step: Object) -> Json:
-    try:
-        result = await manager.async_replicate_secret(
-            secret_name=as_text(step["name"]),
-            replica_regions=[as_text(region) for region in as_list(step.get("regions") or [])],
-        )
-    except Exception:  # noqa: BLE001 - a case compares only that the call raised
-        return {"raised": True}
-    return {"body": result}
-
-
-async def put_step(manager: Manager, step: Object) -> Json:
-    try:
-        result = await manager.async_put_secret_value(
-            secret_name=as_text(step["name"]),
-            secret_value=as_text(step["value"]),
-        )
-    except Exception:  # noqa: BLE001 - a case compares only that the call raised
-        return {"raised": True}
-    return {"body": result}
-
-
 async def run_step(manager: Manager, step: Object) -> Json:
     operation = as_text(step["op"])
-    match operation:
-        case "async_write_secret":
-            return await write_step(manager, step)
-        case "async_delete_secret":
-            return await delete_step(manager, step)
-        case "async_rotate_secret":
-            return await rotate_step(manager, step)
-        case "async_replicate_secret":
-            return await replicate_step(manager, step)
-        case "async_put_secret_value":
-            return await put_step(manager, step)
-        case _:
-            raise ValueError(f"unknown b4415 step: {operation}")
+    try:
+        match operation:
+            case "async_write_secret":
+                result = await manager.async_write_secret(
+                    secret_name=as_text(step["name"]),
+                    secret_value=as_text(step["value"]),
+                    description=optional_string(step.get("description")),
+                    tags=step.get("tags"),
+                )
+            case "async_delete_secret":
+                result = await manager.async_delete_secret(
+                    secret_name=as_text(step["name"]),
+                    recovery_window_in_days=as_int(step.get("recovery_window_in_days", 7)),
+                )
+            case "async_rotate_secret":
+                result = await manager.async_rotate_secret(
+                    current_secret_name=as_text(step["current"]),
+                    new_secret_name=as_text(step["new"]),
+                    new_secret_value=as_text(step["value"]),
+                )
+            case "async_replicate_secret":
+                result = await manager.async_replicate_secret(
+                    secret_name=as_text(step["name"]),
+                    replica_regions=[
+                        as_text(region) for region in as_list(step.get("regions") or [])
+                    ],
+                )
+            case "async_put_secret_value":
+                result = await manager.async_put_secret_value(
+                    secret_name=as_text(step["name"]),
+                    secret_value=as_text(step["value"]),
+                )
+            case _:
+                raise ValueError(f"unknown b4415 step: {operation}")
+    except Exception:  # noqa: BLE001 - a case compares only that the call raised
+        return {"raised": True}
+    return {"body": result}
 
 
 async def execute(input_value: Object, transport: Transport) -> Json:
