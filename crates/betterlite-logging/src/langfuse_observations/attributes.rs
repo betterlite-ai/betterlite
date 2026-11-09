@@ -4,28 +4,20 @@ mod wire;
 
 use betterlite_models::decisions::Json;
 use opentelemetry::{KeyValue, Value};
+use serde::Deserialize;
 
 use super::identity::Timestamp;
 use metadata::{flattened_metadata, tags_value};
 use wire::{serialized, string_or_none};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ObservationType {
     Generation,
     Span,
 }
 
-impl ObservationType {
-    #[must_use]
-    pub const fn value(self) -> &'static str {
-        match self {
-            Self::Generation => "generation",
-            Self::Span => "span",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct PromptLink {
     pub name: String,
     pub version: Option<i64>,
@@ -97,10 +89,11 @@ pub fn trace_attributes(fields: &TraceAttributes<'_>) -> Vec<KeyValue> {
 // litellm.integrations.langfuse.langfuse_sdk.observation_attributes; a fallback prompt has no server version
 #[must_use]
 pub fn observation_attributes(fields: &ObservationAttributes<'_>) -> Vec<KeyValue> {
-    let mut attributes = vec![KeyValue::new(
-        keys::OBSERVATION_TYPE,
-        Value::from(fields.observation_type.value()),
-    )];
+    let kind = match fields.observation_type {
+        ObservationType::Generation => "generation",
+        ObservationType::Span => "span",
+    };
+    let mut attributes = vec![KeyValue::new(keys::OBSERVATION_TYPE, Value::from(kind))];
     push_text_attributes(
         &mut attributes,
         &[
@@ -125,7 +118,11 @@ pub fn observation_attributes(fields: &ObservationAttributes<'_>) -> Vec<KeyValu
             (keys::OBSERVATION_COST_DETAILS, fields.cost_details),
         ],
     );
-    push_completion_start(&mut attributes, fields.completion_start_time);
+    attributes.extend(
+        fields
+            .completion_start_time
+            .map(|start| KeyValue::new(keys::COMPLETION_START, completion_start_text(start))),
+    );
     push_prompt(&mut attributes, fields.prompt);
     attributes.extend(flattened_metadata(
         keys::OBSERVATION_METADATA,
@@ -150,15 +147,6 @@ fn push_serialized_attributes(
         if let Some(value) = field.filter(|candidate| !matches!(candidate, Json::Null)) {
             attributes.push(KeyValue::new(key, Value::from(serialized(value))));
         }
-    }
-}
-
-fn push_completion_start(attributes: &mut Vec<KeyValue>, value: Option<Timestamp>) {
-    if let Some(start_time) = value {
-        attributes.push(KeyValue::new(
-            keys::OBSERVATION_COMPLETION_TIME,
-            Value::from(completion_start_text(start_time)),
-        ));
     }
 }
 

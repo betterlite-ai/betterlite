@@ -16,7 +16,6 @@ pub enum Timestamp {
     Seconds(Decimal),
 }
 
-// Langfuse v4 takes integer nanoseconds since the epoch, the way OTel stores a span time
 #[must_use]
 pub fn to_unix_nanos(value: Option<Timestamp>) -> Option<i64> {
     match value? {

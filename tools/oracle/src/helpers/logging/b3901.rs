@@ -1,3 +1,4 @@
+use betterlite_logging::langfuse_observations::attributes::{TraceAttributes, trace_attributes};
 use betterlite_logging::langfuse_observations::identity::{
     resolve_observation_id, resolve_trace_id, to_unix_nanos,
 };
@@ -8,13 +9,13 @@ use crate::helpers::{Helper, HelperResult};
 
 use identities::{parent_step, sampler_step};
 use inputs::{Input, Step};
-use projections::{observation_projection, timestamp, trace_projection};
+use projections::observation_projection;
 use spans::child_step;
+use values::pairs;
 
 mod identities;
 mod inputs;
 mod projections;
-mod scripted;
 mod spans;
 mod values;
 
@@ -24,44 +25,36 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let mut results = Vec::with_capacity(input.steps.len());
-        for step in &input.steps {
-            results.push(run_step(step)?);
-        }
-        Ok(serde_json::Value::Array(results))
-    }
-}
-
-fn run_step(step: &Step) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
-    match step {
-        Step::ResolveTraceId { input } => Ok(json!(
-            resolve_trace_id(input.as_deref(), &RandomIdGenerator::default()).to_string()
-        )),
-        Step::ResolveObservationId { input } => Ok(json!(
-            resolve_observation_id(input.as_deref()).map(|id| id.to_string())
-        )),
-        Step::ToUnixNanos { seconds, datetime } => Ok(json!(to_unix_nanos(timestamp(
-            *seconds,
-            datetime.as_deref()
-        )?))),
-        Step::TraceAttributes { fields } => Ok(trace_projection(fields)),
-        Step::ObservationAttributes { fields } => observation_projection(fields),
-        Step::Sampler {
-            rate,
-            trace_id,
-            attributes,
-        } => sampler_step(*rate, trace_id, attributes),
-        Step::ParentContext {
-            trace_id,
-            parent_observation_id,
-            existing_trace,
-            fallback_span_id,
-        } => parent_step(
-            trace_id,
-            parent_observation_id.as_deref(),
-            *existing_trace,
-            fallback_span_id,
-        ),
-        Step::StartChildSpan { .. } => child_step(step),
+        let results = input.steps.iter().map(|call| match call {
+            Step::ResolveTraceId { input: requested } => json!(
+                resolve_trace_id(requested.as_deref(), &RandomIdGenerator::default()).to_string()
+            ),
+            Step::ResolveObservationId { input: requested } => {
+                json!(resolve_observation_id(requested.as_deref()).map(|id| id.to_string()))
+            }
+            Step::ToUnixNanos(moment) => json!(to_unix_nanos(moment.timestamp())),
+            Step::TraceAttributes { fields } => {
+                pairs(&trace_attributes(&TraceAttributes::from(fields)))
+            }
+            Step::ObservationAttributes { fields } => observation_projection(fields),
+            Step::Sampler {
+                rate,
+                trace_id,
+                attributes,
+            } => sampler_step(*rate, trace_id, attributes),
+            Step::ParentContext {
+                trace_id,
+                parent_observation_id,
+                existing_trace,
+                fallback_span_id,
+            } => parent_step(
+                trace_id,
+                parent_observation_id.as_ref(),
+                *existing_trace,
+                fallback_span_id,
+            ),
+            Step::StartChildSpan(child) => child_step(child),
+        });
+        Ok(serde_json::Value::Array(results.collect()))
     }
 }

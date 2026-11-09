@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use opentelemetry::{Array, KeyValue, StringValue, Value};
 use rstest::rstest;
+use serde::de::DeserializeOwned;
 
 use super::{
     ObservationAttributes, ObservationType, PromptLink, TraceAttributes, observation_attributes,
@@ -84,20 +85,25 @@ fn entries(text: &str) -> IndexMap<String, Json> {
     }
 }
 
+impl<'fields> From<&'fields IndexMap<String, Json>> for TraceAttributes<'fields> {
+    fn from(fields: &'fields IndexMap<String, Json>) -> Self {
+        Self {
+            name: fields.get("name"),
+            user_id: fields.get("user_id"),
+            session_id: fields.get("session_id"),
+            version: fields.get("version"),
+            release: fields.get("release"),
+            tags: fields.get("tags"),
+            metadata: fields.get("metadata"),
+            public: public_flag(fields.get("public")),
+            input: fields.get("input"),
+            output: fields.get("output"),
+        }
+    }
+}
+
 fn trace_from(text: &str) -> Vec<(String, Value)> {
-    let fields = entries(text);
-    pairs(trace_attributes(&TraceAttributes {
-        name: fields.get("name"),
-        user_id: fields.get("user_id"),
-        session_id: fields.get("session_id"),
-        version: fields.get("version"),
-        release: fields.get("release"),
-        tags: fields.get("tags"),
-        metadata: fields.get("metadata"),
-        public: public_flag(fields.get("public")),
-        input: fields.get("input"),
-        output: fields.get("output"),
-    }))
+    pairs(trace_attributes(&TraceAttributes::from(&entries(text))))
 }
 
 fn public_flag(value: Option<&Json>) -> Option<bool> {
@@ -107,50 +113,21 @@ fn public_flag(value: Option<&Json>) -> Option<bool> {
     None
 }
 
-fn prompt_link(value: Option<&Json>) -> Option<PromptLink> {
-    let Json::Object(entries) = value? else {
-        return None;
-    };
-    Some(PromptLink {
-        name: match entries.get("name") {
-            Some(Json::Text(spelling)) => spelling.clone(),
-            None
-            | Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            ) => String::new(),
-        },
-        version: match entries.get("version") {
-            Some(Json::Number(number)) => number.as_i64(),
-            None
-            | Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-                None
-            }
-        },
-        is_fallback: matches!(entries.get("is_fallback"), Some(Json::Bool(true))),
-    })
-}
-
-fn completion_start(value: Option<&Json>) -> Option<Timestamp> {
-    let Some(Json::Text(spelling)) = value else {
-        return None;
-    };
-    let parsed = DateTime::parse_from_rfc3339(spelling).ok()?;
-    Some(Timestamp::DateTime(parsed.with_timezone(&chrono::Utc)))
-}
-
-fn observation_type(value: Option<&Json>) -> ObservationType {
-    if matches!(value, Some(Json::Text(spelling)) if spelling == "span") {
-        ObservationType::Span
-    } else {
-        ObservationType::Generation
-    }
+fn decoded<T>(value: Option<&Json>) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    let text = serde_json::to_string(value?).unwrap();
+    Some(serde_json::from_str(&text).unwrap())
 }
 
 fn observation_from(text: &str) -> Vec<(String, Value)> {
     let fields = entries(text);
-    let prompt = prompt_link(fields.get("prompt"));
+    let prompt = decoded::<PromptLink>(fields.get("prompt"));
+    let started = decoded::<DateTime<Utc>>(fields.get("completion_start_time"));
     let attributes = ObservationAttributes {
-        observation_type: observation_type(fields.get("observation_type")),
+        observation_type: decoded(fields.get("observation_type"))
+            .unwrap_or(ObservationType::Generation),
         input: fields.get("input"),
         output: fields.get("output"),
         metadata: fields.get("metadata"),
@@ -161,7 +138,7 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
         model_parameters: fields.get("model_parameters"),
         usage_details: fields.get("usage_details"),
         cost_details: fields.get("cost_details"),
-        completion_start_time: completion_start(fields.get("completion_start_time")),
+        completion_start_time: started.map(Timestamp::DateTime),
         prompt: prompt.as_ref(),
     };
     pairs(observation_attributes(&attributes))

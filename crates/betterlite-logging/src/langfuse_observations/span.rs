@@ -138,7 +138,6 @@ fn span_builder(
     builder
 }
 
-// OTel takes a SystemTime, and the span API's own clock is the fallback when no time was given
 fn system_time(nanos: i64) -> Option<SystemTime> {
     let magnitude = Duration::from_nanos(nanos.unsigned_abs());
     if nanos < 0 {

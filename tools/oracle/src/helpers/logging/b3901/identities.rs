@@ -1,73 +1,50 @@
 use betterlite_logging::langfuse_observations::sampler::TraceIdHashSampler;
 use betterlite_logging::langfuse_observations::span::parent_context;
-use betterlite_models::decisions::Json;
 use opentelemetry::trace::{SpanId, SpanKind, TraceContextExt as _, TraceId};
 use opentelemetry_sdk::trace::{IdGenerator, SamplingDecision, ShouldSample as _};
 use serde_json::json;
 
-use super::values::{key_values, pairs, parse_span, parse_trace};
-use crate::helpers::HelperError;
+use super::inputs::{HexSpanId, HexTraceId};
+use super::values::{context_parts, key_values, pairs};
 
 pub(crate) fn sampler_step(
     rate: f64,
-    trace_id: &str,
-    attributes: &[(String, Json)],
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let sampled_trace = parse_trace(trace_id)?;
-    let converted = key_values(attributes);
+    trace_id: &HexTraceId,
+    attributes: &[(String, String)],
+) -> serde_json::Value {
     let result = TraceIdHashSampler { rate }.should_sample(
         None,
-        sampled_trace,
+        trace_id.0,
         "span",
         &SpanKind::Internal,
-        &converted,
+        &key_values(attributes),
         &[],
     );
-    let sampled = result.decision == SamplingDecision::RecordAndSample;
-    Ok(json!({
-        "decision": decision_name(&result.decision),
-        "attributes": if sampled { pairs(&result.attributes) } else { serde_json::Value::Null },
-    }))
-}
-
-const fn decision_name(decision: &SamplingDecision) -> &'static str {
-    match decision {
-        SamplingDecision::Drop => "drop",
-        SamplingDecision::RecordOnly => "record_only",
-        SamplingDecision::RecordAndSample => "record_and_sample",
-    }
+    let (decision, kept) = match result.decision {
+        SamplingDecision::Drop => ("drop", serde_json::Value::Null),
+        SamplingDecision::RecordOnly => ("record_only", pairs(&result.attributes)),
+        SamplingDecision::RecordAndSample => ("record_and_sample", pairs(&result.attributes)),
+    };
+    json!({"decision": decision, "attributes": kept})
 }
 
 pub(crate) fn parent_step(
-    trace_id: &str,
-    parent_observation_id: Option<&str>,
+    trace_id: &HexTraceId,
+    parent_observation_id: Option<&HexSpanId>,
     existing_trace: bool,
-    fallback_span_id: &str,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let id_generator = FixedIdGenerator {
-        span_id: parse_span(fallback_span_id)?,
-    };
-    let parent = parent_observation_id.map(parse_span).transpose()?;
+    fallback_span_id: &HexSpanId,
+) -> serde_json::Value {
     let context = parent_context(
-        parse_trace(trace_id)?,
-        parent,
+        trace_id.0,
+        parent_observation_id.map(|parent| parent.0),
         existing_trace,
-        &id_generator,
+        &FixedIdGenerator(fallback_span_id.0),
     );
-    let span_context = context.span().span_context().clone();
-    Ok(json!({
-        "valid": span_context.is_valid(),
-        "trace_id": span_context.is_valid().then(|| span_context.trace_id().to_string()),
-        "span_id": span_context.is_valid().then(|| span_context.span_id().to_string()),
-        "is_remote": span_context.is_remote(),
-        "sampled": span_context.is_sampled(),
-    }))
+    context_parts(context.span().span_context())
 }
 
-#[derive(Clone, Copy, Debug)]
-struct FixedIdGenerator {
-    span_id: SpanId,
-}
+#[derive(Debug)]
+struct FixedIdGenerator(SpanId);
 
 impl IdGenerator for FixedIdGenerator {
     fn new_trace_id(&self) -> TraceId {
@@ -75,6 +52,6 @@ impl IdGenerator for FixedIdGenerator {
     }
 
     fn new_span_id(&self) -> SpanId {
-        self.span_id
+        self.0
     }
 }

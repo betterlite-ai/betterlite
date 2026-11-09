@@ -1,17 +1,15 @@
 task: B3901
 deviations:
   - what: >-
-      A datetime completion_start_time is written in UTC, as 2026-01-01T00:00:00+00:00. LiteLLM calls
-      astimezone() with no argument, which re-renders the same instant in the host's local timezone.
+      A datetime completion_start_time is written in UTC (2026-01-01T00:00:00+00:00). LiteLLM calls
+      astimezone() and renders the same instant in the host's local timezone.
     why: >-
-      betterlite stores timestamps as DateTime<Utc> and reads no local timezone; the instant and the
-      attribute's JSON string stay correct, only the offset text differs on a host that is not on UTC.
+      betterlite reads no local timezone; the instant stays correct, only the offset text differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L167-L171
   - what: >-
-      to_unix_nanos yields no timestamp when the nanoseconds of a seconds value do not fit an i64,
-      while LiteLLM returns the arbitrary-precision integer Python produces. The same happens for a
-      datetime past the year 2262.
+      to_unix_nanos yields no timestamp when the nanoseconds do not fit an i64 (a datetime past 2262
+      included), where LiteLLM returns Python's arbitrary-precision integer.
     why: >-
-      OTel span times in betterlite are i64 nanoseconds and a SystemTime carries no more; a time that
-      overflows that range cannot become a span timestamp, and no working Langfuse setup sends one.
+      OTel span times are i64 nanoseconds, so a larger time cannot become a span timestamp, and no
+      working Langfuse setup sends one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L125-L135
