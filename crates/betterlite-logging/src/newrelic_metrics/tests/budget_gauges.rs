@@ -59,8 +59,8 @@ fn gauges_pair_max_and_remaining_for_each_team() {
             Decimal::new(70, 1),
         ]
     );
-    assert_eq!(attribute_at(&envelope, 6, "team_id"), "team-b");
-    assert_eq!(attribute_at(&envelope, 8, "team_id"), "team-a");
+    assert_eq!(attribute_at(&envelope, 12, "team_id"), "team-b");
+    assert_eq!(attribute_at(&envelope, 14, "team_id"), "team-a");
 }
 
 #[test]
