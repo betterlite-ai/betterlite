@@ -59,6 +59,7 @@ struct Fixture {
 fn build<R>(
     environment: &[(&str, &str)],
     config: BTreeMap<AlertType, AlertTypeConfig>,
+    log_to_console: bool,
     replies: R,
 ) -> Fixture
 where
@@ -82,7 +83,7 @@ where
             clock: clock_trait,
         },
         delivery: FakeDelivery::scripted(replies),
-        log_to_console: false,
+        log_to_console,
         environment: resolved,
         flush_task: FlushTask::default(),
     });
@@ -93,7 +94,14 @@ fn fixture<R>(environment: &[(&str, &str)], replies: R) -> Fixture
 where
     R: IntoIterator<Item = Reply>,
 {
-    build(environment, BTreeMap::new(), replies)
+    build(environment, BTreeMap::new(), false, replies)
+}
+
+fn console_fixture<R>(replies: R) -> Fixture
+where
+    R: IntoIterator<Item = Reply>,
+{
+    build(&[], BTreeMap::new(), true, replies)
 }
 
 fn digest_fixture<R>(environment: &[(&str, &str)], interval: u32, replies: R) -> Fixture
@@ -107,7 +115,7 @@ where
             digest_interval: interval,
         },
     )]);
-    build(environment, config, replies)
+    build(environment, config, false, replies)
 }
 
 async fn settle(delivery: &AlertDelivery<FakeDelivery>, expected: usize) {
@@ -248,6 +256,23 @@ async fn periodic_flush_keeps_running_on_the_configured_interval() {
     tasks.close();
     advance(Duration::from_secs(5)).await;
     tasks.wait().await;
+}
+
+#[tokio::test]
+async fn a_delivery_with_console_logging_on_warns_about_the_flushed_payload() {
+    let (logs, _guard) = capture_logs();
+    let fixture = console_fixture([Reply::Status(200)]);
+    let _queued = fixture.delivery.queue.enqueue(alert(
+        "https://hooks/a",
+        AlertType::BudgetAlerts,
+        "hello",
+        None,
+    ));
+    let _report = fixture.delivery.async_send_batch().await;
+    let contents = logs.contents();
+    assert!(contents.contains("WARN"));
+    assert!(contents.contains("alert payload"));
+    assert!(contents.contains("hello"));
 }
 
 #[derive(serde::Serialize)]
