@@ -14,20 +14,6 @@ pub(super) fn lax_i64(value: &Json) -> Option<i64> {
     }
 }
 
-// LiteLLM accepts numbers, numeric strings and booleans for Reducto credits
-pub(super) fn lax_f64(value: &Json) -> Option<f64> {
-    match value {
-        Json::Number(number) => number.as_f64().filter(|candidate| candidate.is_finite()),
-        Json::Text(text) => text
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|candidate| candidate.is_finite()),
-        Json::Bool(flag) => Some(f64::from(*flag)),
-        Json::Null | Json::List(_) | Json::Object(_) => None,
-    }
-}
-
 fn integral_i64(value: f64) -> Option<i64> {
     if value.fract() != 0.0_f64 {
         return None;

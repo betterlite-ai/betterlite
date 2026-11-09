@@ -29,168 +29,129 @@ const REDUCTO_ID_PREFIX: &str = "reducto://";
 #[derive(Clone, Debug)]
 pub struct ReductoParseV3Config;
 
-impl OcrProviderConfig for ReductoParseV3Config {
-    type OcrParams = Object;
-    type ProviderRequest = ReductoV3Request;
-    type Environment = Vec<(String, String)>;
-
-    fn secret_names(&self) -> Vec<&'static str> {
-        vec![REDUCTO_API_KEY_ENV]
-    }
-
-    fn get_supported_ocr_params(&self, _model: &str) -> &'static [&'static str] {
-        &["formatting", "retrieval", "settings"]
-    }
-
-    fn map_ocr_params(
-        &self,
-        non_default_params: &Object,
-        model: &str,
-    ) -> Result<Self::OcrParams, OcrError> {
-        Ok(select_params(
-            non_default_params,
-            self.get_supported_ocr_params(model),
-        ))
-    }
-
-    fn validate_environment(
-        &self,
-        request: &PreparedOcrRequest,
-        _client: &OcrClient,
-    ) -> impl Future<Output = Result<Self::Environment, OcrError>> + Send {
-        ready(resolve_headers(request))
-    }
-
-    fn get_complete_url(
-        &self,
-        request: &PreparedOcrRequest,
-        _optional_params: &Self::OcrParams,
-        _environment: &Self::Environment,
-    ) -> Result<String, OcrError> {
-        complete_endpoint_url(request.connection.api_base.as_deref(), "parse")
-    }
-
-    fn transform_ocr_request(
-        &self,
-        document: OcrDocument,
-        transform: OcrTransform<'_, Self::OcrParams>,
-    ) -> Result<Self::ProviderRequest, OcrError> {
-        Ok(ReductoV3Request {
-            input: reducto_id(document.source())?,
-            params: transform.optional_params.clone(),
-        })
-    }
-
-    fn async_transform_ocr_request(
-        &self,
-        document: OcrDocument,
-        transform: OcrTransform<'_, Self::OcrParams>,
-        context: OcrRequestContext<'_>,
-    ) -> impl Future<Output = Result<Self::ProviderRequest, OcrError>> + Send {
-        v3_body(document, transform, context)
-    }
-
-    fn transform_ocr_response(
-        &self,
-        model: &str,
-        raw_response: &[u8],
-        request_format: RequestFormat,
-    ) -> Result<OCRResponse, OcrError> {
-        decode_and_normalize_response(model, raw_response, request_format, normalize_response)
-    }
-
-    fn prepare_request(
-        &self,
-        request: &PreparedOcrRequest,
-        client: &OcrClient,
-        hooks: &dyn CallHooks,
-    ) -> impl Future<Output = Result<OutboundRequest, OcrError>> + Send {
-        prepare_upload_request(self, request, client, hooks)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ReductoParseLegacyConfig;
 
-impl OcrProviderConfig for ReductoParseLegacyConfig {
-    type OcrParams = Object;
-    type ProviderRequest = ReductoLegacyRequest;
-    type Environment = Vec<(String, String)>;
+// both protocols share auth, URL and upload; only the supported options and body differ
+macro_rules! reducto_provider {
+    ($config:ident, $request:ty, $supported:expr, $body:item) => {
+        impl $config {
+            $body
 
-    fn secret_names(&self) -> Vec<&'static str> {
-        vec![REDUCTO_API_KEY_ENV]
-    }
+            async fn uploaded_body(
+                document: OcrDocument,
+                transform: OcrTransform<'_, Object>,
+                context: OcrRequestContext<'_>,
+            ) -> Result<$request, OcrError> {
+                let input = ensure_file_id(document.source(), transform.headers, context).await?;
+                Ok(Self::body(input, transform.optional_params))
+            }
+        }
 
-    fn get_supported_ocr_params(&self, _model: &str) -> &'static [&'static str] {
-        &["enhance"]
-    }
+        impl OcrProviderConfig for $config {
+            type OcrParams = Object;
+            type ProviderRequest = $request;
+            type Environment = Vec<(String, String)>;
 
-    fn map_ocr_params(
-        &self,
-        non_default_params: &Object,
-        model: &str,
-    ) -> Result<Self::OcrParams, OcrError> {
-        Ok(select_params(
-            non_default_params,
-            self.get_supported_ocr_params(model),
-        ))
-    }
+            fn secret_names(&self) -> Vec<&'static str> {
+                vec![REDUCTO_API_KEY_ENV]
+            }
 
-    fn validate_environment(
-        &self,
-        request: &PreparedOcrRequest,
-        _client: &OcrClient,
-    ) -> impl Future<Output = Result<Self::Environment, OcrError>> + Send {
-        ready(resolve_headers(request))
-    }
+            fn get_supported_ocr_params(&self, _model: &str) -> &'static [&'static str] {
+                $supported
+            }
 
-    fn get_complete_url(
-        &self,
-        request: &PreparedOcrRequest,
-        _optional_params: &Self::OcrParams,
-        _environment: &Self::Environment,
-    ) -> Result<String, OcrError> {
-        complete_endpoint_url(request.connection.api_base.as_deref(), "parse")
-    }
+            fn map_ocr_params(
+                &self,
+                non_default_params: &Object,
+                model: &str,
+            ) -> Result<Self::OcrParams, OcrError> {
+                Ok(select_params(
+                    non_default_params,
+                    self.get_supported_ocr_params(model),
+                ))
+            }
 
-    fn transform_ocr_request(
-        &self,
-        document: OcrDocument,
-        transform: OcrTransform<'_, Self::OcrParams>,
-    ) -> Result<Self::ProviderRequest, OcrError> {
-        Ok(legacy_body(
-            reducto_id(document.source())?,
-            transform.optional_params,
-        ))
-    }
+            fn validate_environment(
+                &self,
+                request: &PreparedOcrRequest,
+                _client: &OcrClient,
+            ) -> impl Future<Output = Result<Self::Environment, OcrError>> + Send {
+                ready(resolve_headers(request))
+            }
 
-    fn async_transform_ocr_request(
-        &self,
-        document: OcrDocument,
-        transform: OcrTransform<'_, Self::OcrParams>,
-        context: OcrRequestContext<'_>,
-    ) -> impl Future<Output = Result<Self::ProviderRequest, OcrError>> + Send {
-        legacy_request(document, transform, context)
-    }
+            fn get_complete_url(
+                &self,
+                request: &PreparedOcrRequest,
+                _optional_params: &Self::OcrParams,
+                _environment: &Self::Environment,
+            ) -> Result<String, OcrError> {
+                complete_endpoint_url(request.connection.api_base.as_deref(), "parse")
+            }
 
-    fn transform_ocr_response(
-        &self,
-        model: &str,
-        raw_response: &[u8],
-        request_format: RequestFormat,
-    ) -> Result<OCRResponse, OcrError> {
-        decode_and_normalize_response(model, raw_response, request_format, normalize_response)
-    }
+            fn transform_ocr_request(
+                &self,
+                document: OcrDocument,
+                transform: OcrTransform<'_, Self::OcrParams>,
+            ) -> Result<Self::ProviderRequest, OcrError> {
+                Ok(Self::body(reducto_id(document.source())?, transform.optional_params))
+            }
 
-    fn prepare_request(
-        &self,
-        request: &PreparedOcrRequest,
-        client: &OcrClient,
-        hooks: &dyn CallHooks,
-    ) -> impl Future<Output = Result<OutboundRequest, OcrError>> + Send {
-        prepare_upload_request(self, request, client, hooks)
-    }
+            fn async_transform_ocr_request(
+                &self,
+                document: OcrDocument,
+                transform: OcrTransform<'_, Self::OcrParams>,
+                context: OcrRequestContext<'_>,
+            ) -> impl Future<Output = Result<Self::ProviderRequest, OcrError>> + Send {
+                Self::uploaded_body(document, transform, context)
+            }
+
+            fn transform_ocr_response(
+                &self,
+                model: &str,
+                raw_response: &[u8],
+                request_format: RequestFormat,
+            ) -> Result<OCRResponse, OcrError> {
+                decode_and_normalize_response(
+                    model,
+                    raw_response,
+                    request_format,
+                    normalize_response,
+                )
+            }
+
+            fn prepare_request(
+                &self,
+                request: &PreparedOcrRequest,
+                client: &OcrClient,
+                hooks: &dyn CallHooks,
+            ) -> impl Future<Output = Result<OutboundRequest, OcrError>> + Send {
+                prepare_upload_request(self, request, client, hooks)
+            }
+        }
+    };
 }
+
+reducto_provider!(
+    ReductoParseV3Config,
+    ReductoV3Request,
+    &["formatting", "retrieval", "settings"],
+    fn body(input: String, params: &Object) -> ReductoV3Request {
+        ReductoV3Request {
+            input,
+            params: params.clone(),
+        }
+    }
+);
+
+reducto_provider!(
+    ReductoParseLegacyConfig,
+    ReductoLegacyRequest,
+    &["enhance"],
+    fn body(input: String, params: &Object) -> ReductoLegacyRequest {
+        legacy_body(input, params)
+    }
+);
 
 async fn prepare_upload_request<C>(
     config: &C,
@@ -225,29 +186,6 @@ where
         config.get_supported_ocr_params(&request.model),
     )?;
     build_http_request(request, &url, headers, &composed)
-}
-
-async fn v3_body(
-    document: OcrDocument,
-    transform: OcrTransform<'_, Object>,
-    context: OcrRequestContext<'_>,
-) -> Result<ReductoV3Request, OcrError> {
-    let input = ensure_file_id(document.source(), transform.headers, context).await?;
-    Ok(ReductoV3Request {
-        input,
-        params: transform.optional_params.clone(),
-    })
-}
-
-async fn legacy_request(
-    document: OcrDocument,
-    transform: OcrTransform<'_, Object>,
-    context: OcrRequestContext<'_>,
-) -> Result<ReductoLegacyRequest, OcrError> {
-    Ok(legacy_body(
-        ensure_file_id(document.source(), transform.headers, context).await?,
-        transform.optional_params,
-    ))
 }
 
 mod tests;

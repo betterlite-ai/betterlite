@@ -8,7 +8,7 @@ use crate::ocr_config::decode::decode_value;
 use crate::ocr_error::OcrError;
 use crate::response::{OCRPage, OCRResponse, OCRUsageInfo};
 
-use super::numbers::{lax_f64, lax_i64, truncated_i64};
+use super::numbers::{lax_i64, truncated_i64};
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ReductoResponse {
@@ -82,9 +82,17 @@ fn usage_info(reported: Option<ReductoUsage>) -> Result<OCRUsageInfo, OcrError> 
         .credits
         .as_ref()
         .map(|value| {
-            lax_f64(value).ok_or_else(|| OcrError::ResponseField {
-                path: "usage.credits".to_owned(),
-            })
+            let parsed = match value {
+                Json::Number(number) => number.as_f64(),
+                Json::Text(text) => text.trim().parse::<f64>().ok(),
+                Json::Bool(flag) => Some(f64::from(*flag)),
+                Json::Null | Json::List(_) | Json::Object(_) => None,
+            };
+            parsed
+                .filter(|candidate| candidate.is_finite())
+                .ok_or_else(|| OcrError::ResponseField {
+                    path: "usage.credits".to_owned(),
+                })
         })
         .transpose()?;
     Ok(OCRUsageInfo {
