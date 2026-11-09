@@ -70,18 +70,6 @@ use crate::otel::config::Signal;
     Signal::Traces,
     Some("http://h/v1/logs/extra/v1/traces")
 )]
-fn endpoint_is_normalized_per_signal(
-    #[case] endpoint: Option<&str>,
-    #[case] signal: Signal,
-    #[case] expected: Option<&str>,
-) {
-    assert_eq!(
-        normalize_otel_endpoint(endpoint, signal, None).as_deref(),
-        expected
-    );
-}
-
-#[rstest]
 #[case::metrics_base(
     Some("http://host:4318"),
     Signal::Metrics,
@@ -123,7 +111,7 @@ fn endpoint_is_normalized_per_signal(
     Signal::Logs,
     Some("http://h/v1/metrics/extra/v1/logs")
 )]
-fn endpoint_swaps_each_sibling_signal(
+fn endpoint_is_normalized_per_signal(
     #[case] endpoint: Option<&str>,
     #[case] signal: Signal,
     #[case] expected: Option<&str>,

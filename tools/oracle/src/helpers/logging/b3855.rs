@@ -46,14 +46,11 @@ fn parse_signal(text: &str) -> Option<Signal> {
 }
 
 fn headers_dictionary_reply(input: &Input) -> HelperResult {
-    let headers = input
+    let source = input
         .headers
         .as_ref()
-        .map_or_else(
-            || headers_dictionary(HeadersInput::None),
-            |value| headers_dictionary(value.as_input()),
-        )
-        .map_err(|error| invalid(&error.to_string()))?;
+        .map_or(HeadersInput::None, HeadersValue::as_input);
+    let headers = headers_dictionary(source).map_err(|error| invalid(&error.to_string()))?;
     Ok(serde_json::json!(headers))
 }
 
@@ -74,12 +71,9 @@ fn span_processor_reply(input: &Input) -> HelperResult {
 }
 
 fn log_exporter_reply(input: &Input) -> HelperResult {
-    let plan = log_exporter_plan(
-        &input.config.to_config(&input.environment),
-        input.callback_name.as_deref(),
-        &input.environment,
-    )
-    .map_err(|error| invalid(&error.to_string()))?;
+    let config = input.config.to_config(&input.environment);
+    let plan = log_exporter_plan(&config, input.callback_name.as_deref(), &input.environment);
+    let plan = plan.map_err(|error| invalid(&error.to_string()))?;
     Ok(plan_fields(
         plan.kind,
         plan.endpoint.as_deref(),
@@ -88,11 +82,9 @@ fn log_exporter_reply(input: &Input) -> HelperResult {
 }
 
 fn metric_reader_reply(input: &Input) -> HelperResult {
-    let plan = metric_reader_plan(
-        &input.config.to_config(&input.environment),
-        input.callback_name.as_deref(),
-    )
-    .map_err(|error| invalid(&error.to_string()))?;
+    let config = input.config.to_config(&input.environment);
+    let plan = metric_reader_plan(&config, input.callback_name.as_deref());
+    let plan = plan.map_err(|error| invalid(&error.to_string()))?;
     Ok(plan_fields(
         plan.kind,
         plan.endpoint.as_deref(),

@@ -11,7 +11,8 @@ use tracing::debug;
 
 use crate::otel::legacy_exporters::build::LegacyExporterBuilder;
 use crate::otel::legacy_exporters::error::LegacyExporterError;
-use crate::otel::legacy_exporters::selection::span_processor_plan;
+use crate::otel::legacy_exporters::headers::HeadersError;
+use crate::otel::legacy_exporters::selection::{SpanProcessorPlan, span_processor_plan};
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};
 
 pub const MAX_DYNAMIC_TRACER_PROVIDERS: usize = 256;
@@ -107,35 +108,48 @@ impl DynamicTracerCache {
             headers: dynamic_config.headers.clone(),
         };
         let owns_exporter = !matches!(&dynamic_config.exporter, Exporter::InMemory);
-        self.cached_dynamic_tracer(key, owns_exporter, || {
-            let plan = span_processor_plan(
+        let plan = || {
+            span_processor_plan(
                 &self.config,
                 None,
                 Some(dynamic_config),
                 self.callback_name.as_deref(),
-            )?;
-            let processor = self.builder.span_processor(&plan)?;
-            Ok(SdkTracerProvider::builder()
-                .with_resource(self.resource.clone())
-                .with_span_processor(processor)
-                .build())
-        })
+            )
+        };
+        self.tracer_for_key(key, owns_exporter, plan)
     }
 
     pub fn tracer_for_headers(
         &self,
         dynamic_headers: &BTreeMap<String, String>,
     ) -> Result<SdkTracer, LegacyExporterError> {
-        let key = CacheKey::Headers(dynamic_headers.clone());
         let owns_exporter = !matches!(&self.config.exporter, Exporter::InMemory);
-        self.cached_dynamic_tracer(key, owns_exporter, || {
-            let plan = span_processor_plan(
+        let plan = || {
+            span_processor_plan(
                 &self.config,
                 Some(dynamic_headers),
                 None,
                 self.callback_name.as_deref(),
-            )?;
-            let processor = self.builder.span_processor(&plan)?;
+            )
+        };
+        self.tracer_for_key(
+            CacheKey::Headers(dynamic_headers.clone()),
+            owns_exporter,
+            plan,
+        )
+    }
+
+    fn tracer_for_key<F>(
+        &self,
+        key: CacheKey,
+        owns_exporter: bool,
+        plan: F,
+    ) -> Result<SdkTracer, LegacyExporterError>
+    where
+        F: FnOnce() -> Result<SpanProcessorPlan, HeadersError>,
+    {
+        self.cached_dynamic_tracer(key, owns_exporter, move || {
+            let processor = self.builder.span_processor(&plan()?)?;
             Ok(SdkTracerProvider::builder()
                 .with_resource(self.resource.clone())
                 .with_span_processor(processor)

@@ -33,18 +33,14 @@ pub struct SpanProcessorPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogExporterPlan {
+pub struct ExporterPlan {
     pub kind: ExporterKind,
     pub endpoint: Option<String>,
     pub headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MetricReaderPlan {
-    pub kind: ExporterKind,
-    pub endpoint: Option<String>,
-    pub headers: BTreeMap<String, String>,
-}
+pub type LogExporterPlan = ExporterPlan;
+pub type MetricReaderPlan = ExporterPlan;
 
 // LiteLLM matches exporter text exactly, so OTLP_HTTP and GRPC fall through to the console exporter.
 fn named_exporter_kind(text: &str) -> Option<ExporterKind> {
@@ -116,59 +112,73 @@ pub fn span_processor_plan(
     })
 }
 
+fn log_exporter_kind(config: &OpenTelemetryConfig, env: &BTreeMap<String, String>) -> ExporterKind {
+    let env_console = env
+        .get(LOGS_EXPORTER_ENV)
+        .is_some_and(|value| value == "console");
+    match &config.exporter {
+        Exporter::InMemory => ExporterKind::Shared,
+        Exporter::Console => ExporterKind::Console,
+        Exporter::Named(_) if env_console => ExporterKind::Console,
+        Exporter::Named(text) => named_exporter_kind(text).unwrap_or_else(|| {
+            warn!("OpenTelemetry: Unknown log exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
+            ExporterKind::Console
+        }),
+    }
+}
+
+// The metric reader has no shared-exporter branch, so an in-memory exporter counts as unknown here.
+fn metric_exporter_kind(config: &OpenTelemetryConfig) -> ExporterKind {
+    match &config.exporter {
+        Exporter::Console => ExporterKind::Console,
+        Exporter::Named(text) => named_exporter_kind(text).unwrap_or_else(|| {
+            warn!("OpenTelemetry: Unknown metric exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
+            ExporterKind::Console
+        }),
+        Exporter::InMemory => {
+            warn!("OpenTelemetry: Unknown metric exporter 'in_memory', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
+            ExporterKind::Console
+        }
+    }
+}
+
+fn signal_plan(
+    config: &OpenTelemetryConfig,
+    signal: Signal,
+    kind: ExporterKind,
+    callback_name: Option<&str>,
+) -> Result<ExporterPlan, HeadersError> {
+    let headers = plan_headers(config, None)?;
+    Ok(ExporterPlan {
+        kind,
+        endpoint: otlp_endpoint(kind, config, signal, callback_name),
+        headers,
+    })
+}
+
 pub fn log_exporter_plan(
     config: &OpenTelemetryConfig,
     callback_name: Option<&str>,
     env: &BTreeMap<String, String>,
 ) -> Result<LogExporterPlan, HeadersError> {
-    let headers = plan_headers(config, None)?;
-    let env_console = env
-        .get(LOGS_EXPORTER_ENV)
-        .is_some_and(|value| value == "console");
-    let kind = match &config.exporter {
-        Exporter::InMemory => ExporterKind::Shared,
-        Exporter::Console => ExporterKind::Console,
-        Exporter::Named(_) if env_console => ExporterKind::Console,
-        Exporter::Named(text) => named_exporter_kind(text).unwrap_or_else(|| {
-            warn!(
-                "OpenTelemetry: Unknown log exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}"
-            );
-            ExporterKind::Console
-        }),
-    };
-    Ok(LogExporterPlan {
-        kind,
-        endpoint: otlp_endpoint(kind, config, Signal::Logs, callback_name),
-        headers,
-    })
+    signal_plan(
+        config,
+        Signal::Logs,
+        log_exporter_kind(config, env),
+        callback_name,
+    )
 }
 
 pub fn metric_reader_plan(
     config: &OpenTelemetryConfig,
     callback_name: Option<&str>,
 ) -> Result<MetricReaderPlan, HeadersError> {
-    let headers = plan_headers(config, None)?;
-    // The metric reader has no shared-exporter branch, so an in-memory exporter counts as unknown here.
-    let kind = match &config.exporter {
-        Exporter::Console => ExporterKind::Console,
-        Exporter::Named(text) => named_exporter_kind(text).unwrap_or_else(|| {
-            warn!(
-                "OpenTelemetry: Unknown metric exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}"
-            );
-            ExporterKind::Console
-        }),
-        Exporter::InMemory => {
-            warn!(
-                "OpenTelemetry: Unknown metric exporter 'in_memory', defaulting to console. Supported: {SUPPORTED_EXPORTERS}"
-            );
-            ExporterKind::Console
-        }
-    };
-    Ok(MetricReaderPlan {
-        kind,
-        endpoint: otlp_endpoint(kind, config, Signal::Metrics, callback_name),
-        headers,
-    })
+    signal_plan(
+        config,
+        Signal::Metrics,
+        metric_exporter_kind(config),
+        callback_name,
+    )
 }
 
 #[path = "selection/tests.rs"]
