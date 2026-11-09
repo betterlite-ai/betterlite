@@ -66,6 +66,8 @@ fn content_of(text: &str) -> String {
 fn json_content_message() {
     let a2a = r#"{"jsonrpc":"2.0","result":{"parts":[{"kind":"text","text":"direct"}]}}"#;
     assert_eq!(content_of(a2a), "direct");
+    let null_jsonrpc = r#"{"jsonrpc":null,"result":{"parts":[{"kind":"text","text":"still"}]}}"#;
+    assert_eq!(content_of(null_jsonrpc), "still");
     let falling_through = r#"{"jsonrpc":"2.0","result":{"content":[{"text":"fall"}]}}"#;
     assert_eq!(content_of(falling_through), "fall");
     let empty_result = r#"{"result":{},"response":"ignored"}"#;
@@ -96,6 +98,8 @@ fn sse_content_delta() {
                 data: 42\n\
                 data: {}\n\
                 data: {\"event\":{}}\n\
+                data: {\"event\":5}\n\
+                data: {\"message\":5}\n\
                 data: {\"event\":{\"contentBlockDelta\":{}}}\n\
                 data: {\"event\":{\"contentBlockDelta\":{\"delta\":{}}}}\n\
                 data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"\"}}}}\n\
@@ -162,6 +166,22 @@ fn plain_text_response() {
     let lines = b"data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"s\"}}}}";
     let via_sse = decode_agentcore_reply(lines, Some("text/event-stream")).unwrap();
     assert_eq!(via_sse.content, "s");
+    let raw = RawResponse {
+        status_code: 200,
+        headers: vec![("Content-Type".to_owned(), "Application/JSON".to_owned())],
+        body: br#"{"result":{"content":[{"text":"named"}]}}"#.to_vec(),
+    };
+    let mut named = response();
+    block_on(transform_agentcore_response(
+        "gpt-4",
+        &raw,
+        &[],
+        &mut named,
+        &FixtureCounter::counting(1, 1),
+    ))
+    .unwrap();
+    let (_, _, _, named_content) = choice_message(&named);
+    assert_eq!(named_content.as_deref(), Some("named"));
 }
 
 fn missing_usage() {
