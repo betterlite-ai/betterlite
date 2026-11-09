@@ -1,0 +1,27 @@
+task: B4560
+deviations:
+  - what: >-
+      Get with no key lists every stored entry in key-sorted order. LiteLLM's load_config hands back whatever
+      Mapping the JSON object produced, so a hand-edited config.json lists its keys in file order instead.
+    why: >-
+      betterlite stores config in a BTreeMap, which already gives load_config and save_config a deterministic
+      order for free; every key set_config ever writes is one of its two allowed names, so a file this CLI wrote
+      itself shows no difference. Only a file someone edited by hand to put hidden_commands ahead of base_url
+      would list differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L120-L139
+  - what: >-
+      hidden_command_names takes no warnings writer, so a malformed ~/.litellm/config.json is reported only while
+      running a config subcommand, not while the root command builds its --help listing.
+    why: >-
+      LiteLLM's hidden_command_names calls get_config_value, which reaches click.echo(err=True) and prints the
+      warning even during --help. betterlite injects writers instead of touching stderr, and the task fixes this
+      function's one-argument signature, so the help path reads the value through a sink.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L60-L62
+  - what: >-
+      normalize_base_url rejects a value the url crate refuses to parse, such as an out-of-range port in
+      http://host:99999, with the missing-scheme-or-host message where LiteLLM's urlparse accepts it.
+    why: >-
+      betterlite validates with url::Url::parse, which follows the WHATWG URL standard and returns an error for
+      malformed input that Python's urlparse only records lazily; the task maps any parse failure to the same
+      full-URL message, so the failure stays a Usage error naming the URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L65-L75

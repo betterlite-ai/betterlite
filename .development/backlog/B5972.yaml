@@ -1,14 +1,14 @@
 id: B5972
 milestone: M3 providers
 title: Watsonx text generation and prompt templates
-status: todo
+status: done
 depends_on: [B5970, B177, B668]
 file: tasks/B5972-watsonx-text-generation.yaml
 covers:
   - "litellm/llms/watsonx/completion/**"
 parent: B042
 split_from: B5842
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 953
