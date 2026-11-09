@@ -26,8 +26,10 @@ def run(input_value: dict[str, Json]) -> Json:
         model_parameters = input_value.get("model_parameters")
         return plain(datadog_llm_obs._to_dd_tool_definitions(model_parameters))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     if function == "response_messages":
+        call_type = input_value.get("call_type")
+        if call_type is not None and not isinstance(call_type, str):
+            raise ValueError("call_type must be a string or null")
         payload = cast("StandardLoggingPayload", {"response": input_value.get("response")})
-        call_type = optional_string(input_value.get("call_type"))
         return plain(_LOGGER._get_response_messages(payload, call_type))  # pyright: ignore[reportPrivateUsage]
     raise ValueError(f"unknown {litellm.__name__} helper function {function}")
 
@@ -53,14 +55,6 @@ def argument_pieces(value: Json) -> list[Json]:
 def own_string(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
-    return value
-
-
-def optional_string(value: Json) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError("call_type must be a string or null")
     return value
 
 

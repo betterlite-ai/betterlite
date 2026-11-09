@@ -93,3 +93,30 @@ fn a_non_string_non_object_value_rides_along(#[case] fixture: &str) {
     };
     assert_eq!(carried, value);
 }
+
+// serde_json bounds recursion at 128 levels, beyond which LiteLLM's json.loads still returns the object.
+#[test]
+fn an_argument_object_nested_past_the_json_parser_limit_stays_raw() {
+    let refused = first_refused_depth();
+    let text = nested_object_argument(refused);
+    assert_eq!(
+        decode_tool_arguments(&text),
+        ToolArguments::Text(text.clone())
+    );
+    let accepted = nested_object_argument(refused.saturating_sub(1));
+    assert!(matches!(
+        decode_tool_arguments(&accepted),
+        ToolArguments::Object(_)
+    ));
+}
+
+fn first_refused_depth() -> usize {
+    (1_usize..512)
+        .find(|depth| serde_json::from_str::<Json>(&nested_object_argument(*depth)).is_err())
+        .expect("the JSON parser refuses some depth")
+}
+
+fn nested_object_argument(depth: usize) -> String {
+    let innermost = String::from("{\"k\": 1}");
+    (0..depth).fold(innermost, |inner, _| format!("{{\"k\": {inner}}}"))
+}

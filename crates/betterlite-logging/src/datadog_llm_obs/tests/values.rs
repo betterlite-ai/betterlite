@@ -3,8 +3,7 @@ use rstest::rstest;
 
 use super::support::json;
 use crate::datadog_llm_obs::values::{
-    as_list, as_object, as_text, content_blocks, is_filled, mapping_field, safe_identifier,
-    text_field,
+    as_object, as_text, content_blocks, is_filled, mapping_field, safe_identifier, text_field,
 };
 
 fn object_fields(text: &str) -> indexmap::IndexMap<String, Json> {
@@ -100,10 +99,7 @@ fn is_filled_matches_python_truthiness(#[case] source: &str, #[case] expected: b
 fn json_accessors_read_their_own_variant() {
     let object = json(r#"{"a": 1}"#);
     assert!(as_object(&object).is_some());
-    assert!(as_list(&object).is_none());
     assert!(as_text(&object).is_none());
-    let list = json("[1]");
-    assert!(as_list(&list).is_some());
     let text = json(r#""x""#);
     assert_eq!(as_text(&text), Some("x"));
 }

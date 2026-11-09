@@ -1758,7 +1758,6 @@ dependencies = [
  "pep440_rs",
  "percent-encoding",
  "prost",
- "py_literal",
  "rand 0.10.3",
  "regex",
  "rstest",

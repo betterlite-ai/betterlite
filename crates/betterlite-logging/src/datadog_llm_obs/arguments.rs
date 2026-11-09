@@ -4,13 +4,11 @@ use serde::Serialize;
 use super::constants::MAX_PARSED_TOOL_ARGUMENT_CHARS;
 use super::values::Object;
 
-// LLM Obs types arguments as an object, or the raw string when they will not parse to one.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum ToolArguments {
     Object(Object),
     Text(String),
-    // a value outside the declared object-or-string type is carried as it arrived
     Value(Json),
 }
 

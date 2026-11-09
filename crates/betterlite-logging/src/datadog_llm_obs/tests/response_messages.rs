@@ -10,9 +10,9 @@ fn projected(response: &Json, call_type: Option<&str>) -> String {
 }
 
 #[test]
-fn reads_a_python_literal_response_string() {
+fn reads_a_multi_line_python_literal_response_string() {
     let response = Json::Text(
-        r#"{'choices': [{'message': {'role': 'assistant', 'content': 'Hello', 'tool_calls': [{'id': 'call_9', 'type': 'function', 'function': {'name': 'f', 'arguments': '{\"a\": 1}'}}]}}]}"#
+        "{'choices': [\n  {'message': {'role': 'assistant', 'content': 'Hello',\n               'tool_calls': [{'id': 'call_9', 'type': 'function',\n                               'function': {'name': 'f', 'arguments': '{\"a\": 1}'}}]}}\n]}\n"
             .to_owned(),
     );
     assert_eq!(

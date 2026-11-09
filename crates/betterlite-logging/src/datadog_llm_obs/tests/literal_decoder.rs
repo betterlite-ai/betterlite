@@ -1,0 +1,104 @@
+use std::time::{Duration, Instant};
+
+use betterlite_models::decisions::Json;
+use rstest::rstest;
+
+use super::support::serialized;
+use crate::datadog_llm_obs::literal::{MAX_LITERAL_DEPTH, literal_json};
+
+fn decoded(source: &str) -> String {
+    serialized(&literal_json(source).expect("the fixture is a Python literal"))
+}
+
+fn nested_lists(depth: usize) -> String {
+    format!("{}1{}", "[".repeat(depth), "]".repeat(depth))
+}
+
+#[rstest]
+#[case::single_quotes("{'a': 1}", r#"{"a":1}"#)]
+#[case::double_quotes(r#"{"a": "b"}"#, r#"{"a":"b"}"#)]
+#[case::list("[1, 2]", "[1,2]")]
+#[case::tuple("(1, 2)", "[1,2]")]
+#[case::parenthesized_value("(1)", "1")]
+#[case::empty_tuple("()", "[]")]
+#[case::set("{1, 2}", "[1,2]")]
+#[case::keywords("(True, False, None)", "[true,false,null]")]
+#[case::hexadecimal("0x1f", "31")]
+#[case::octal("0o17", "15")]
+#[case::binary("0b101", "5")]
+#[case::integer_underscores("1_000", "1000")]
+#[case::float("1.5", "1.5")]
+#[case::float_trailing_dot("1.", "1.0")]
+#[case::float_trailing_dot_exponent("1.e3", "1000.0")]
+#[case::float_leading_zeros("01.5", "1.5")]
+#[case::integer_with_underscores_in_fraction("1_0.5", "10.5")]
+#[case::float_leading_dot(".5", "0.5")]
+#[case::exponent("1e3", "1000.0")]
+#[case::negative("-2", "-2")]
+#[case::negative_zero("-0", "0")]
+#[case::nested("{'a': [1, (2, {'b': None})]}", r#"{"a":[1,[2,{"b":null}]]}"#)]
+#[case::trailing_comma("[1, 2,]", "[1,2]")]
+#[case::comment("1 # done", "1")]
+#[case::leading_blank_lines("\n\n1", "1")]
+#[case::newlines_inside_brackets("[\n  1,\n  2\n]\n", "[1,2]")]
+#[case::comment_inside_brackets("[1, # one\n 2]", "[1,2]")]
+#[case::triple_quoted("'''multi\nline'''", "\"multi\\nline\"")]
+fn python_literals_decode_to_json(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(decoded(source), expected);
+}
+
+#[rstest]
+#[case::unknown_escape(r"'\q'", "\\q")]
+#[case::octal_escape(r"'\101'", "A")]
+#[case::hex_escape(r"'\x41'", "A")]
+#[case::unicode_escape(r"'\u00e9'", "\u{e9}")]
+#[case::raw_string(r"r'\n'", "\\n")]
+fn escapes_decode_like_python(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(literal_json(source), Some(Json::Text(expected.to_owned())));
+}
+
+#[rstest]
+#[case::unterminated_dict("{")]
+#[case::unterminated_string("'unterminated")]
+#[case::leading_zero("01")]
+#[case::double_underscore("1__0")]
+#[case::binary_expression("1+2")]
+#[case::imaginary("2j")]
+#[case::bytes("b'abc'")]
+#[case::formatted_string("f'{x}'")]
+#[case::unicode_name(r"'\N{SNOWMAN}'")]
+#[case::bare_dot(".")]
+#[case::double_sign("--1")]
+#[case::exponent_without_digits("1e")]
+#[case::newline_between_tokens("1\n+2")]
+#[case::missing_value("[1, 2")]
+#[case::missing_separator("{'a': 1, 'b'}")]
+#[case::non_string_key("{1: 2}")]
+fn unsupported_literals_decode_to_none(#[case] source: &str) {
+    assert_eq!(literal_json(source), None);
+}
+
+#[test]
+fn a_literal_at_the_depth_cap_decodes_promptly() {
+    let started = Instant::now();
+    let decoded = literal_json(&nested_lists(MAX_LITERAL_DEPTH));
+    assert!(decoded.is_some());
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn a_literal_nested_past_the_cap_is_refused() {
+    assert_eq!(
+        literal_json(&nested_lists(MAX_LITERAL_DEPTH.saturating_add(1))),
+        None
+    );
+}
+
+// A parser that re-reads the last element of every list doubles its work per level; this catches that.
+#[test]
+fn a_literal_at_depth_twenty_decodes_well_under_a_second() {
+    let started = Instant::now();
+    let decoded = literal_json(&nested_lists(20));
+    assert!(decoded.is_some());
+    assert!(started.elapsed() < Duration::from_secs(1));
+}

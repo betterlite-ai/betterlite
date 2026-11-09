@@ -13,7 +13,6 @@ pub fn safe_identifier(value: Option<&Json>) -> String {
     }
 }
 
-// LiteLLM's _text_field: a string field read as given, the default when absent or null.
 #[must_use]
 pub fn text_field(source: &Object, key: &str, default: &str) -> String {
     match source.get(key) {
@@ -23,7 +22,6 @@ pub fn text_field(source: &Object, key: &str, default: &str) -> String {
     }
 }
 
-// LiteLLM's _mapping_field: the value at the key when it is an object, and nothing otherwise.
 #[must_use]
 pub fn mapping_field<'source>(source: &'source Object, key: &str) -> Option<&'source Object> {
     match source.get(key) {
@@ -33,7 +31,6 @@ pub fn mapping_field<'source>(source: &'source Object, key: &str) -> Option<&'so
     }
 }
 
-// LiteLLM's _content_blocks: the objects in a content list, whatever their block type.
 #[must_use]
 pub fn content_blocks(source: &Object) -> Vec<&Object> {
     match source.get("content") {
@@ -48,14 +45,6 @@ pub const fn as_object(value: &Json) -> Option<&Object> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-#[must_use]
-pub const fn as_list(value: &Json) -> Option<&[Json]> {
-    match value {
-        Json::List(items) => Some(items.as_slice()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
     }
 }
 

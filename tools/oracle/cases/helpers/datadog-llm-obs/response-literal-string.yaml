@@ -4,7 +4,12 @@ call:
   b3935:
     function: response_messages
     call_type: acompletion
-    response: "{'choices': [{'message': {'role': 'assistant', 'content': 'Hello', 'tool_calls': [{'id': 'call_9', 'type': 'function', 'function': {'name': 'f', 'arguments': '{\"a\": 1}'}}]}}]}"
+    response: |
+      {'choices': [
+        {'message': {'role': 'assistant', 'content': 'Hello',
+                     'tool_calls': [{'id': 'call_9', 'type': 'function',
+                                     'function': {'name': 'f', 'arguments': '{"a": 1}'}}]}}
+      ]}
 env: {}
 compare:
   ignore: []

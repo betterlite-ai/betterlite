@@ -1,11 +1,8 @@
 task: B3935
 deviations:
-  - what: >-
-      A captured response string nested deeper than 128 containers is refused by the bounded decoder,
-      and the span is sent without output messages.
-    why: >-
-      The decoder must not recurse without bound on a provider-supplied string. LiteLLM's ast.literal_eval
-      call raises a recursion or parser-stack error there, which its narrow except (ValueError, SyntaxError)
-      does not catch, so async_log_success_event loses the whole span; betterlite keeps the input side and
-      the metrics.
+  - what: A captured response string nested deeper than 128 containers is refused by the bounded decoder, and the span is sent without output messages.
+    why: The decoder must not recurse without bound on a provider-supplied string; LiteLLM's ast.literal_eval raises a recursion error there that its narrow except does not catch, so it loses the whole span.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L802-L817
+  - what: A tool-argument JSON document nested deeper than 128 levels stays the raw string, where LiteLLM's json.loads returns the object.
+    why: serde_json bounds recursion at 128 levels to protect the stack, and a document nested that deep has no working setup behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L285

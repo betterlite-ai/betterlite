@@ -1,0 +1,161 @@
+use std::str::FromStr as _;
+
+use betterlite_models::decisions::Json;
+use serde_json::Number;
+
+use super::Parser;
+
+// Python refuses to stringify an integer past this many digits, so a bigger literal cannot reach the intake.
+const MAX_INTEGER_DIGITS: usize = 4300;
+
+pub(super) enum Numeric {
+    Integer(String),
+    Float(f64),
+}
+
+// ast.literal_eval allows one leading sign and +/- only onto a complex number, which JSON cannot carry.
+pub(super) fn number(parser: &mut Parser<'_>) -> Option<Json> {
+    let negative = match parser.bytes.get(parser.position).copied()? {
+        b'-' => {
+            parser.position = parser.position.saturating_add(1);
+            true
+        }
+        b'+' => {
+            parser.position = parser.position.saturating_add(1);
+            false
+        }
+        _ => false,
+    };
+    let numeric = unsigned_number(parser)?;
+    if matches!(
+        parser.bytes.get(parser.position).copied(),
+        Some(b'+' | b'-' | b'j' | b'J')
+    ) {
+        return None;
+    }
+    match numeric {
+        Numeric::Float(value) => {
+            let sign = if negative { -1.0 } else { 1.0 };
+            Number::from_f64(value.copysign(sign)).map(Json::Number)
+        }
+        Numeric::Integer(raw) => {
+            let prefix = if negative && raw != "0" { "-" } else { "" };
+            Number::from_str(&format!("{prefix}{raw}"))
+                .ok()
+                .map(Json::Number)
+        }
+    }
+}
+
+fn unsigned_number(parser: &mut Parser<'_>) -> Option<Numeric> {
+    if parser.bytes.get(parser.position).copied() == Some(b'.') {
+        parser.position = parser.position.saturating_add(1);
+        let fraction = digits(parser, 10)?;
+        if fraction.is_empty() {
+            return None;
+        }
+        let value = format!("0.{fraction}").parse::<f64>().ok()?;
+        return value.is_finite().then_some(Numeric::Float(value));
+    }
+    if parser.bytes.get(parser.position).copied() == Some(b'0')
+        && let Some(radix) = parser
+            .bytes
+            .get(parser.position.saturating_add(1))
+            .copied()
+            .and_then(|byte| match byte {
+                b'x' | b'X' => Some(16),
+                b'o' | b'O' => Some(8),
+                b'b' | b'B' => Some(2),
+                _ => None,
+            })
+    {
+        parser.position = parser.position.saturating_add(2);
+        let base_digits = digits(parser, radix)?;
+        return base_integer(&base_digits, radix).map(Numeric::Integer);
+    }
+    let integer = digits(parser, 10)?;
+    if integer.is_empty() {
+        return None;
+    }
+    let (literal, is_float) = decimal_literal(parser, &integer)?;
+    if !is_float {
+        return decimal_integer(&integer);
+    }
+    let value = literal.parse::<f64>().ok()?;
+    value.is_finite().then_some(Numeric::Float(value))
+}
+
+fn decimal_literal(parser: &mut Parser<'_>, integer: &str) -> Option<(String, bool)> {
+    let mut literal = integer.to_owned();
+    let mut is_float = false;
+    if parser.bytes.get(parser.position).copied() == Some(b'.') {
+        parser.position = parser.position.saturating_add(1);
+        is_float = true;
+        literal.push('.');
+        let fraction = digits(parser, 10)?;
+        literal.push_str(&fraction);
+        if fraction.is_empty() {
+            literal.push('0');
+        }
+    }
+    if matches!(
+        parser.bytes.get(parser.position).copied(),
+        Some(b'e' | b'E')
+    ) {
+        is_float = true;
+        parser.position = parser.position.saturating_add(1);
+        literal.push('e');
+        if let Some(sign @ (b'+' | b'-')) = parser.bytes.get(parser.position).copied() {
+            literal.push(char::from(sign));
+            parser.position = parser.position.saturating_add(1);
+        }
+        let exponent = digits(parser, 10)?;
+        if exponent.is_empty() {
+            return None;
+        }
+        literal.push_str(&exponent);
+    }
+    Some((literal, is_float))
+}
+
+fn digits(parser: &mut Parser<'_>, radix: u32) -> Option<String> {
+    let mut digits = String::new();
+    while let Some(byte) = parser.bytes.get(parser.position).copied() {
+        if !char::from(byte).is_digit(radix) {
+            break;
+        }
+        digits.push(char::from(byte));
+        parser.position = parser.position.saturating_add(1);
+        if parser.bytes.get(parser.position).copied() != Some(b'_') {
+            continue;
+        }
+        let following = parser
+            .bytes
+            .get(parser.position.saturating_add(1))
+            .copied()
+            .is_some_and(|next| char::from(next).is_digit(radix));
+        if !following {
+            return None;
+        }
+        parser.position = parser.position.saturating_add(1);
+    }
+    Some(digits)
+}
+
+// A provider repr writes integers in decimal, so a base-prefixed integer fits a u128 or is refused.
+fn base_integer(digits: &str, radix: u32) -> Option<String> {
+    u128::from_str_radix(digits, radix)
+        .ok()
+        .map(|value| value.to_string())
+}
+
+fn decimal_integer(digits: &str) -> Option<Numeric> {
+    let trimmed = digits.trim_start_matches('0');
+    if trimmed.is_empty() {
+        return Some(Numeric::Integer("0".to_owned()));
+    }
+    if trimmed.len() != digits.len() || digits.len() > MAX_INTEGER_DIGITS {
+        return None;
+    }
+    Some(Numeric::Integer(digits.to_owned()))
+}
