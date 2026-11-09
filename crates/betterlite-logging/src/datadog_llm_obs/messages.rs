@@ -36,20 +36,17 @@ pub fn to_dd_message(message: &Json, tool_call_names: &IndexMap<String, String>)
     match message {
         Json::Object(fields) => DdMessage::Message(project_message(fields, tool_call_names)),
         other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            converted_messages(other).into_iter().next().map_or_else(
-                || {
-                    DdMessage::Message(Message {
-                        role: String::new(),
-                        content: Json::Text(String::new()),
-                        reasoning_content: None,
-                        tool_calls: Vec::new(),
-                        tool_results: Vec::new(),
-                    })
-                },
-                as_dd_message,
-            )
+            converted_dd_message(other, tool_call_names)
         }
     }
+}
+
+fn converted_dd_message(value: &Json, tool_call_names: &IndexMap<String, String>) -> DdMessage {
+    converted_messages(value).into_iter().next().map_or_else(
+        // LiteLLM's _EMPTY_MESSAGE is an empty message dict, which projects to itself
+        || DdMessage::Message(project_message(&IndexMap::new(), tool_call_names)),
+        as_dd_message,
+    )
 }
 
 fn project_message(fields: &Object, tool_call_names: &IndexMap<String, String>) -> Message {

@@ -58,8 +58,9 @@ fn an_object_tool_argument_serializes_as_its_object() {
     );
 }
 
-fn sample_meta() -> Meta {
-    Meta {
+#[test]
+fn the_meta_record_matches_the_datadog_schema() {
+    let meta = Meta {
         kind: Some(SpanKind::Llm),
         input: Some(InputMeta {
             messages: vec![DdMessage::Input(InputMessage {
@@ -80,39 +81,62 @@ fn sample_meta() -> Meta {
             description: "d".to_owned(),
             schema: None,
         }],
-    }
+    };
+    assert_eq!(
+        serialized(&meta),
+        concat!(
+            r#"{"kind":"llm","input":{"messages":[{"input":"hi"}]},"#,
+            r#""output":{"messages":[{"role":"assistant"}]},"metadata":{},"#,
+            r#""error":{"message":"boom","type":"ValueError"},"#,
+            r#""tool_definitions":[{"name":"t","description":"d"}]}"#
+        )
+    );
 }
 
-fn sample_metrics() -> LLMMetrics {
-    LLMMetrics {
+#[test]
+fn a_span_payload_keeps_its_identity_and_timing() {
+    let payload = LLMObsPayload {
+        parent_id: Some("undefined".to_owned()),
+        trace_id: Some("trace".to_owned()),
+        apm_id: None,
+        span_id: Some("span".to_owned()),
+        name: Some("chat".to_owned()),
+        meta: None,
+        start_ns: Some(1_700_000_000_000_000_000),
+        duration: Some(1_500_000),
+        metrics: None,
+        tags: Some(vec!["user:me".to_owned()]),
+        status: Some(SpanStatus::Ok),
+    };
+    assert_eq!(
+        serialized(&payload),
+        concat!(
+            r#"{"parent_id":"undefined","trace_id":"trace","span_id":"span","name":"chat","#,
+            r#""start_ns":1700000000000000000,"duration":1500000,"#,
+            r#""tags":["user:me"],"status":"ok"}"#
+        )
+    );
+}
+
+#[test]
+fn span_metrics_serialize_numbers_and_omit_absent_counts() {
+    let metrics = LLMMetrics {
         input_tokens: Some(10.0_f64),
         output_tokens: Some(5.0_f64),
         total_tokens: Some(15.0_f64),
         time_to_first_token: Some(0.2_f64),
         time_per_output_token: None,
         total_cost: Some(Decimal::from_str("0.0012").expect("a decimal")),
-        cache_read_input_tokens: None,
+        cache_read_input_tokens: Some(4.0_f64),
         cache_write_input_tokens: None,
-        non_cached_input_tokens: None,
+        non_cached_input_tokens: Some(6.0_f64),
         reasoning_output_tokens: None,
         tool_output_tokens: None,
-    }
-}
-
-fn sample_span() -> LLMObsPayload {
-    LLMObsPayload {
-        parent_id: Some("undefined".to_owned()),
-        trace_id: Some("trace".to_owned()),
-        apm_id: None,
-        span_id: Some("span".to_owned()),
-        name: Some("chat".to_owned()),
-        meta: Some(sample_meta()),
-        start_ns: Some(1_700_000_000_000_000_000),
-        duration: Some(1_500_000),
-        metrics: Some(sample_metrics()),
-        tags: Some(vec!["user:me".to_owned()]),
-        status: Some(SpanStatus::Ok),
-    }
+    };
+    assert_eq!(
+        serialized(&metrics),
+        r#"{"input_tokens":10.0,"output_tokens":5.0,"total_tokens":15.0,"time_to_first_token":0.2,"total_cost":0.0012,"cache_read_input_tokens":4.0,"non_cached_input_tokens":6.0}"#
+    );
 }
 
 #[test]
@@ -122,38 +146,13 @@ fn the_intake_envelope_matches_the_datadog_schema() {
         attributes: DDSpanAttributes {
             ml_app: "betterlite".to_owned(),
             tags: vec!["env:test".to_owned()],
-            spans: vec![sample_span()],
+            spans: Vec::new(),
         },
     };
     assert_eq!(
         serialized(&envelope),
-        concat!(
-            r#"{"type":"llm_obs","attributes":{"ml_app":"betterlite","tags":["env:test"],"spans":[{"#,
-            r#""parent_id":"undefined","trace_id":"trace","span_id":"span","name":"chat","#,
-            r#""meta":{"kind":"llm","input":{"messages":[{"input":"hi"}]},"output":{"messages":[{"role":"assistant"}]},"metadata":{},"error":{"message":"boom","type":"ValueError"},"tool_definitions":[{"name":"t","description":"d"}]},"#,
-            r#""start_ns":1700000000000000000,"duration":1500000,"#,
-            r#""metrics":{"input_tokens":10.0,"output_tokens":5.0,"total_tokens":15.0,"time_to_first_token":0.2,"total_cost":0.0012},"#,
-            r#""tags":["user:me"],"status":"ok"}]}}"#
-        )
+        r#"{"type":"llm_obs","attributes":{"ml_app":"betterlite","tags":["env:test"],"spans":[]}}"#
     );
-}
-
-#[test]
-fn an_empty_span_payload_serializes_as_an_empty_object() {
-    let payload = LLMObsPayload {
-        parent_id: None,
-        trace_id: None,
-        apm_id: None,
-        span_id: None,
-        name: None,
-        meta: None,
-        start_ns: None,
-        duration: None,
-        metrics: None,
-        tags: None,
-        status: None,
-    };
-    assert_eq!(serialized(&payload), "{}");
 }
 
 #[rstest]

@@ -1,0 +1,11 @@
+task: B3935
+deviations:
+  - what: >-
+      A captured response string nested deeper than 128 containers is refused by the bounded decoder,
+      and the span is sent without output messages.
+    why: >-
+      The decoder must not recurse without bound on a provider-supplied string. LiteLLM's ast.literal_eval
+      call raises a recursion or parser-stack error there, which its narrow except (ValueError, SyntaxError)
+      does not catch, so async_log_success_event loses the whole span; betterlite keeps the input side and
+      the metrics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L802-L817
