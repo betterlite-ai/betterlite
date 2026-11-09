@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 
 use crate::model_policy::UNSUPPORTED_DEPLOYED_PARAMS;
 use crate::model_policy::capabilities::{
-    CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
+    CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
     get_supports_system_message, supports_response_json_schema,
 };
 use crate::model_policy::error::{VertexAiError, classify_vertex_error};
@@ -211,22 +211,18 @@ struct FixtureLookup {
 }
 
 impl ModelCapabilityLookup for FixtureLookup {
-    fn supports_system_messages(
+    fn supports(
         &self,
+        kind: CapabilityKind,
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
         self.check_provider(provider)?;
-        self.system.value()
-    }
-
-    fn supports_response_schema(
-        &self,
-        _model: &str,
-        provider: &str,
-    ) -> Result<bool, CapabilityLookupError> {
-        self.check_provider(provider)?;
-        self.schema.value()
+        let outcome = match kind {
+            CapabilityKind::SystemMessages => self.system,
+            CapabilityKind::ResponseSchema => self.schema,
+        };
+        outcome.value()
     }
 }
 
@@ -375,7 +371,7 @@ fn capability_cases(#[case] case: CapabilityCase) {
                 schema: outcome,
                 provider: lookup_provider,
             };
-            let result = lookup.supports_vertex_schema(model, provider);
+            let result = lookup.supports_vertex(CapabilityKind::ResponseSchema, model, provider);
             assert_eq!(result.ok(), expected, "model {model}");
         }
     }

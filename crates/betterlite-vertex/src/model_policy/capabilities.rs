@@ -22,6 +22,12 @@ impl VertexCapabilityProvider {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CapabilityKind {
+    SystemMessages,
+    ResponseSchema,
+}
+
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct CapabilityLookupError {
@@ -29,24 +35,20 @@ pub struct CapabilityLookupError {
 }
 
 pub trait ModelCapabilityLookup {
-    fn supports_system_messages(
+    fn supports(
         &self,
+        kind: CapabilityKind,
         model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError>;
 
-    fn supports_response_schema(
+    fn supports_vertex(
         &self,
-        model: &str,
-        provider: &str,
-    ) -> Result<bool, CapabilityLookupError>;
-
-    fn supports_vertex_schema(
-        &self,
+        kind: CapabilityKind,
         model: &str,
         provider: VertexCapabilityProvider,
     ) -> Result<bool, CapabilityLookupError> {
-        self.supports_response_schema(model, provider.lookup_name())
+        self.supports(kind, model, provider.lookup_name())
     }
 }
 
@@ -56,7 +58,7 @@ pub fn get_supports_system_message(
     provider: VertexCapabilityProvider,
     lookup: &dyn ModelCapabilityLookup,
 ) -> bool {
-    match lookup.supports_system_messages(model, provider.lookup_name()) {
+    match lookup.supports_vertex(CapabilityKind::SystemMessages, model, provider) {
         Ok(supported) => supported || model.contains("gemini/"),
         Err(error) => {
             tracing::warn!(

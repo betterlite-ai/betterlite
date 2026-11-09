@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_vertex::model_policy::capabilities::{
-    CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
+    CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
     get_supports_system_message, supports_response_json_schema,
 };
 use serde_json::{Value, json};
@@ -34,7 +34,7 @@ fn capability_value(case: &CapabilityCase) -> Value {
         get_supports_system_message(&case.model, provider, &lookup)
     });
     let schema = lookup
-        .supports_vertex_schema(&case.model, provider)
+        .supports_vertex(CapabilityKind::ResponseSchema, &case.model, provider)
         .map_or_else(
             |_error| json!({"error": true}),
             |supported| json!(supported),
@@ -69,22 +69,18 @@ struct FixtureLookup {
 }
 
 impl ModelCapabilityLookup for FixtureLookup {
-    fn supports_system_messages(
+    fn supports(
         &self,
+        kind: CapabilityKind,
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
         self.check_provider(provider)?;
-        self.system.value()
-    }
-
-    fn supports_response_schema(
-        &self,
-        _model: &str,
-        provider: &str,
-    ) -> Result<bool, CapabilityLookupError> {
-        self.check_provider(provider)?;
-        self.schema.value()
+        let outcome = match kind {
+            CapabilityKind::SystemMessages => self.system,
+            CapabilityKind::ResponseSchema => self.schema,
+        };
+        outcome.value()
     }
 }
 
