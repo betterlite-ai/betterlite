@@ -61,21 +61,17 @@ fn cache_creation_details(details: &CacheCreationTokenDetails) -> Json {
 
 fn completion_details(details: &AnthropicCompletionDetails) -> IndexMap<String, Json> {
     let mut record = IndexMap::new();
-    insert_count(&mut record, "reasoning_tokens", details.reasoning);
-    insert_count(&mut record, "text_tokens", details.text);
-    insert_count(
-        &mut record,
-        "accepted_prediction_tokens",
-        details.accepted_prediction,
-    );
-    insert_count(
-        &mut record,
-        "rejected_prediction_tokens",
-        details.rejected_prediction,
-    );
-    insert_count(&mut record, "audio_tokens", details.audio);
-    insert_count(&mut record, "image_tokens", details.image);
-    insert_count(&mut record, "video_tokens", details.video);
+    for (name, value) in [
+        ("reasoning_tokens", details.reasoning),
+        ("text_tokens", details.text),
+        ("accepted_prediction_tokens", details.accepted_prediction),
+        ("rejected_prediction_tokens", details.rejected_prediction),
+        ("audio_tokens", details.audio),
+        ("image_tokens", details.image),
+        ("video_tokens", details.video),
+    ] {
+        insert_count(&mut record, name, value);
+    }
     record
 }
 

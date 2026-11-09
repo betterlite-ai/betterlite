@@ -4,7 +4,6 @@ use serde_json::Number;
 use std::str::FromStr as _;
 
 use crate::decisions::Json;
-use crate::usage_sum::Usage;
 
 mod tests;
 
@@ -41,6 +40,14 @@ pub struct ZeroCostDiagnostic {
     pub missing_pricing_keys: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TokenUsage {
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub prompt_audio_tokens: i64,
+    pub completion_audio_tokens: i64,
+}
+
 enum Nested<'json> {
     Mapping(&'json IndexMap<String, Json>),
     Sequence(&'json [Json]),
@@ -48,19 +55,9 @@ enum Nested<'json> {
 
 // The four source rate names stay in this order, so the missing-key list keeps it too.
 #[must_use]
-pub fn used_pricing_keys(usage: &Usage) -> Vec<&'static str> {
-    let prompt_audio = usage
-        .prompt_tokens_details
-        .as_ref()
-        .and_then(|details| details.audio_tokens)
-        .filter(|count| *count > 0)
-        .unwrap_or(0);
-    let completion_audio = usage
-        .completion_tokens_details
-        .as_ref()
-        .and_then(|details| details.audio_tokens)
-        .filter(|count| *count > 0)
-        .unwrap_or(0);
+pub fn used_pricing_keys(usage: &TokenUsage) -> Vec<&'static str> {
+    let prompt_audio = usage.prompt_audio_tokens.max(0);
+    let completion_audio = usage.completion_audio_tokens.max(0);
     let prompt_text = usage.prompt_tokens.max(0).saturating_sub(prompt_audio);
     let completion_text = usage
         .completion_tokens
@@ -80,7 +77,7 @@ pub fn used_pricing_keys(usage: &Usage) -> Vec<&'static str> {
 
 #[must_use]
 pub fn diagnose_zero_cost(
-    usage: &Usage,
+    usage: &TokenUsage,
     pricing_model: &str,
     pricing_entry: &IndexMap<String, Json>,
     calculation_failed: bool,
@@ -90,7 +87,10 @@ pub fn diagnose_zero_cost(
         return None;
     }
     let missing_keys = missing_rates(&used_keys, pricing_entry);
-    if free_rates_suppress(&used_keys, pricing_entry, &missing_keys) {
+    let every_used_rate_is_zero = used_keys
+        .iter()
+        .all(|key| pricing_entry.get(*key).is_some_and(is_explicit_zero));
+    if missing_keys.is_empty() && every_used_rate_is_zero {
         return None;
     }
     if !declares_a_rate(pricing_entry) {
@@ -129,26 +129,13 @@ fn missing_rates(
         .collect()
 }
 
-fn free_rates_suppress(
-    used_keys: &[&'static str],
-    pricing_entry: &IndexMap<String, Json>,
-    missing_keys: &[&'static str],
-) -> bool {
-    if !missing_keys.is_empty() {
-        return false;
-    }
-    used_keys
-        .iter()
-        .all(|key| pricing_entry.get(*key).is_some_and(is_explicit_zero))
-}
-
 #[must_use]
 pub fn zero_cost_warning(
     diagnostic: &ZeroCostDiagnostic,
     model_group: Option<&str>,
     model: &str,
     custom_llm_provider: Option<&str>,
-    usage: &Usage,
+    usage: &TokenUsage,
 ) -> String {
     let group = model_group.unwrap_or(model);
     let provider = custom_llm_provider.unwrap_or("unknown");

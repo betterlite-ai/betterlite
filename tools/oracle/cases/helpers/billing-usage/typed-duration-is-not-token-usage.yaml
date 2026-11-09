@@ -24,22 +24,5 @@ call:
               input_token_details:
                 audio_tokens: 5
                 text_tokens: 2
-      - function: is_known_usage
-        variant:
-          kind: transcription
-          value:
-            type: duration
-            seconds: 12.5
-      - function: is_known_usage
-        variant:
-          kind: transcription
-          value:
-            type: tokens
-            input_tokens: 7
-            output_tokens: 3
-            total_tokens: 10
-            input_token_details:
-              audio_tokens: 5
-              text_tokens: 2
 env: {}
 compare: {ignore: []}

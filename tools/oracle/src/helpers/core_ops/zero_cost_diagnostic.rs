@@ -1,11 +1,12 @@
+use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage};
 use betterlite_models::zero_cost::{
-    ZeroCostDiagnostic, diagnose_zero_cost, used_pricing_keys, zero_cost_warning,
+    TokenUsage, ZeroCostDiagnostic, diagnose_zero_cost, used_pricing_keys, zero_cost_warning,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+use std::fmt::Display;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,7 +46,7 @@ impl crate::helpers::Helper for Op {
 
 fn run_probe(probe: &Probe) -> Result<Value, Box<crate::helpers::HelperError>> {
     let usage = usage_from_value(&probe.usage)?;
-    let pricing = pricing_from_value(&probe.pricing)?;
+    let pricing = object_mapping(&probe.pricing, "pricing")?;
     let used_keys = used_pricing_keys(&usage);
     let diagnostic = diagnose_zero_cost(
         &usage,
@@ -77,104 +78,38 @@ fn diagnostic_value(diagnostic: &ZeroCostDiagnostic) -> Value {
     })
 }
 
-fn usage_from_value(value: &Value) -> Result<Usage, Box<crate::helpers::HelperError>> {
-    Ok(Usage {
-        prompt_tokens: token(value.get("prompt_tokens"), "prompt_tokens")?,
-        completion_tokens: token(value.get("completion_tokens"), "completion_tokens")?,
-        total_tokens: token(value.get("total_tokens"), "total_tokens")?,
-        prompt_tokens_details: prompt_details(value.get("prompt_tokens_details"))?,
-        completion_tokens_details: completion_details(value.get("completion_tokens_details"))?,
-        numeric_extras: std::collections::BTreeMap::new(),
+fn usage_from_value(value: &Value) -> Result<TokenUsage, Box<crate::helpers::HelperError>> {
+    let converted = usage_from_mapping(&object_mapping(value, "usage")?).map_err(failure)?;
+    Ok(TokenUsage {
+        prompt_tokens: converted.prompt_tokens,
+        completion_tokens: converted.completion_tokens,
+        prompt_audio_tokens: audio_tokens(converted.prompt_tokens_details.as_ref()),
+        completion_audio_tokens: audio_tokens(converted.completion_tokens_details.as_ref()),
     })
 }
 
-fn token(
-    value: Option<&Value>,
-    name: &'static str,
-) -> Result<i64, Box<crate::helpers::HelperError>> {
-    match value {
-        None | Some(Value::Null) => Ok(0),
-        Some(Value::Number(number)) => number
-            .as_i64()
-            .ok_or_else(|| failure(format!("{name} must be an integer"))),
-        Some(_) => Err(failure(format!("{name} must be an integer"))),
+fn audio_tokens(details: Option<&IndexMap<String, Json>>) -> i64 {
+    match details.and_then(|found| found.get("audio_tokens")) {
+        Some(Json::Number(number)) => number.as_i64().unwrap_or(0),
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => 0,
     }
 }
 
-fn prompt_details(
-    value: Option<&Value>,
-) -> Result<Option<PromptTokensDetails>, Box<crate::helpers::HelperError>> {
-    let Some(found) = object_or_absent(value, "prompt_tokens_details")? else {
-        return Ok(None);
-    };
-    Ok(Some(PromptTokensDetails {
-        text_tokens: detail_count(found, "text_tokens"),
-        audio_tokens: detail_count(found, "audio_tokens"),
-        image_tokens: None,
-        video_tokens: None,
-        web_search_requests: None,
-        google_maps_grounding_requests: None,
-        tool_use_tokens: None,
-        character_count: None,
-        image_count: None,
-        video_length_seconds: None,
-        audio_length_seconds: None,
-        query_count: None,
-        cache_write_tokens: None,
-        cache_creation_tokens: None,
-        cached_tokens: None,
-        cached_tokens_details: None,
-    }))
-}
-
-fn completion_details(
-    value: Option<&Value>,
-) -> Result<Option<CompletionTokensDetails>, Box<crate::helpers::HelperError>> {
-    let Some(found) = object_or_absent(value, "completion_tokens_details")? else {
-        return Ok(None);
-    };
-    Ok(Some(CompletionTokensDetails {
-        text_tokens: detail_count(found, "text_tokens"),
-        audio_tokens: detail_count(found, "audio_tokens"),
-        image_tokens: None,
-        video_tokens: None,
-        reasoning_tokens: None,
-        accepted_prediction_tokens: None,
-        rejected_prediction_tokens: None,
-    }))
-}
-
-fn object_or_absent<'value>(
-    value: Option<&'value Value>,
-    name: &'static str,
-) -> Result<Option<&'value Map<String, Value>>, Box<crate::helpers::HelperError>> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(found)) => Ok(Some(found)),
-        Some(_) => Err(failure(format!("{name} must be an object"))),
-    }
-}
-
-fn detail_count(details: &Map<String, Value>, name: &str) -> Option<i64> {
-    match details.get(name) {
-        Some(Value::Number(number)) => number.as_i64(),
-        None | Some(_) => None,
-    }
-}
-
-fn pricing_from_value(
+fn object_mapping(
     value: &Value,
+    name: &str,
 ) -> Result<IndexMap<String, Json>, Box<crate::helpers::HelperError>> {
     let parsed: Json = serde_json::from_value(value.clone()).map_err(failure)?;
     let Json::Object(fields) = parsed else {
-        return Err(failure("pricing must be an object"));
+        return Err(failure(format!("{name} must be an object")));
     };
     Ok(fields)
 }
 
 fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),

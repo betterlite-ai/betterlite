@@ -32,18 +32,5 @@ call:
           kind: decisions_ir
           usage:
             kind: absent
-      - function: is_known_usage
-        variant:
-          kind: decisions_ir
-          value:
-            input_tokens: 9
-            output_tokens: 4
-      - function: is_known_usage
-        variant:
-          kind: decisions_openai
-          value:
-            input_tokens: 9
-            output_tokens: 4
-            total_tokens: 13
 env: {}
 compare: {ignore: []}

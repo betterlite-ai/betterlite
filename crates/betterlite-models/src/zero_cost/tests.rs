@@ -1,62 +1,28 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
+use super::TokenUsage;
 use super::{
     AUDIO_INPUT_RATE, AUDIO_OUTPUT_RATE, MAX_PRICING_DEPTH, TEXT_INPUT_RATE, TEXT_OUTPUT_RATE,
     ZeroCostDiagnostic, ZeroCostReason, declares_a_rate, diagnose_zero_cost, used_pricing_keys,
     zero_cost_warning,
 };
 use crate::decisions::Json;
-use crate::usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage};
 
-fn usage(
-    prompt: i64,
-    completion: i64,
-    prompt_audio: Option<i64>,
-    completion_audio: Option<i64>,
-) -> Usage {
-    Usage {
+fn usage(prompt: i64, completion: i64, prompt_audio: i64, completion_audio: i64) -> TokenUsage {
+    TokenUsage {
         prompt_tokens: prompt,
         completion_tokens: completion,
-        total_tokens: prompt.saturating_add(completion),
-        prompt_tokens_details: prompt_audio.map(|audio| PromptTokensDetails {
-            text_tokens: None,
-            audio_tokens: Some(audio),
-            image_tokens: None,
-            video_tokens: None,
-            web_search_requests: None,
-            google_maps_grounding_requests: None,
-            tool_use_tokens: None,
-            character_count: None,
-            image_count: None,
-            video_length_seconds: None,
-            audio_length_seconds: None,
-            query_count: None,
-            cache_write_tokens: None,
-            cache_creation_tokens: None,
-            cached_tokens: None,
-            cached_tokens_details: None,
-        }),
-        completion_tokens_details: completion_audio.map(|audio| CompletionTokensDetails {
-            text_tokens: None,
-            audio_tokens: Some(audio),
-            image_tokens: None,
-            video_tokens: None,
-            reasoning_tokens: None,
-            accepted_prediction_tokens: None,
-            rejected_prediction_tokens: None,
-        }),
-        numeric_extras: BTreeMap::new(),
+        prompt_audio_tokens: prompt_audio,
+        completion_audio_tokens: completion_audio,
     }
 }
 
-fn text_usage() -> Usage {
-    usage(100, 50, None, None)
+fn text_usage() -> TokenUsage {
+    usage(100, 50, 0, 0)
 }
 
 fn number(value: i64) -> Json {
@@ -96,18 +62,18 @@ fn diagnostic(reason: ZeroCostReason, keys: &[&'static str]) -> ZeroCostDiagnost
 
 #[test]
 fn used_keys_are_empty_without_positive_use() {
-    assert!(used_pricing_keys(&usage(0, 0, Some(0), Some(0))).is_empty());
-    assert!(used_pricing_keys(&usage(-5, -2, None, None)).is_empty());
+    assert!(used_pricing_keys(&usage(0, 0, 0, 0)).is_empty());
+    assert!(used_pricing_keys(&usage(-5, -2, 0, 0)).is_empty());
 }
 
 #[test]
 fn audio_counts_are_only_used_while_positive() {
     assert_eq!(
-        used_pricing_keys(&usage(5, 1, Some(10), Some(3))),
+        used_pricing_keys(&usage(5, 1, 10, 3)),
         vec![AUDIO_INPUT_RATE, AUDIO_OUTPUT_RATE]
     );
     assert_eq!(
-        used_pricing_keys(&usage(100, 50, Some(10), None)),
+        used_pricing_keys(&usage(100, 50, 10, 0)),
         vec![TEXT_INPUT_RATE, TEXT_OUTPUT_RATE]
     );
 }
@@ -122,11 +88,11 @@ fn deliberately_free_used_rates_suppress_diagnostics() {
 
     let partial = pricing(&[(TEXT_INPUT_RATE, number(0)), (TEXT_OUTPUT_RATE, number(5))]);
     assert_eq!(
-        diagnose_zero_cost(&usage(1, 0, None, None), "model", &partial, false),
+        diagnose_zero_cost(&usage(1, 0, 0, 0), "model", &partial, false),
         None
     );
     assert_eq!(
-        diagnose_zero_cost(&usage(1, 0, None, None), "model", &partial, true),
+        diagnose_zero_cost(&usage(1, 0, 0, 0), "model", &partial, true),
         None
     );
 }
@@ -143,7 +109,7 @@ fn missing_used_rate_names_keys_in_source_order() {
         ))
     );
 
-    let audio_usage = usage(10, 10, Some(4), Some(3));
+    let audio_usage = usage(10, 10, 4, 3);
     assert_eq!(
         diagnose_zero_cost(&audio_usage, "model", &only_input, false),
         Some(diagnostic(
@@ -286,7 +252,7 @@ fn warning_uses_positive_token_counts_only() {
         None,
         "m",
         None,
-        &usage(-4, 7, None, None),
+        &usage(-4, 7, 0, 0),
     );
 
     assert!(warning.contains("prompt_tokens=0 completion_tokens=7"));

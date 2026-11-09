@@ -1,65 +1,34 @@
-from collections.abc import Callable
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
-import httpx
 from litellm.cost_calculator import (  # pyright: ignore[reportPrivateUsage]
-    _infer_call_type,  # pyright: ignore[reportPrivateUsage]
-    _is_known_usage_objects,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
     _resolve_billable_service_tier,  # pyright: ignore[reportPrivateUsage]
     _served_service_tier,  # pyright: ignore[reportPrivateUsage]
-    _transcription_usage_has_token_details,  # pyright: ignore[reportPrivateUsage]
     _without_provider_stated_cost,  # pyright: ignore[reportPrivateUsage]
     get_response_cost_from_hidden_params,  # pyright: ignore[reportUnknownVariableType]
     get_usage_object,
 )
-from litellm.types.agents import LiteLLMSendMessageResponse
 from litellm.types.decisions import (
     DecisionsResponse,
     DecisionsUsage,
     OpenAIDecisionResponse,
     OpenAIDecisionUsage,
 )
-from litellm.types.llms.openai import HttpxBinaryResponseContent, ResponseAPIUsage
-from litellm.types.rerank import RerankResponse
+from litellm.types.llms.openai import ResponseAPIUsage
 from litellm.types.utils import (
-    EmbeddingResponse,
-    ImageResponse,
-    ModelResponse,
-    ModelResponseStream,
-    TextCompletionResponse,
-    TranscriptionResponse,
     TranscriptionUsageDurationObject,
     TranscriptionUsageTokensObject,
     Usage,
 )
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-_PROMPT_FIELDS = (
-    "text_tokens",
-    "audio_tokens",
-    "image_tokens",
-    "video_tokens",
-    "cached_tokens",
-    "cache_write_tokens",
-)
-_COMPLETION_FIELDS = (
-    "text_tokens",
-    "audio_tokens",
-    "image_tokens",
-    "video_tokens",
-    "reasoning_tokens",
-)
-_RESPONSE_FACTORIES: dict[str, Callable[[], object]] = {
-    "chat": ModelResponse,
-    "chat_stream": ModelResponseStream,
-    "embedding": EmbeddingResponse,
-    "transcription": TranscriptionResponse,
-    "rerank": RerankResponse,
-    "image": ImageResponse,
-    "text_completion": TextCompletionResponse,
-    "send_message": LiteLLMSendMessageResponse.model_construct,
-}
+_PROMPT_FIELDS = ("text_tokens", "audio_tokens", "image_tokens", "video_tokens",
+                  "cached_tokens", "cache_write_tokens")
+_COMPLETION_FIELDS = ("text_tokens", "audio_tokens", "image_tokens", "video_tokens",
+                      "reasoning_tokens")
 
 
 class _TypedUsage(BaseModel):
@@ -68,7 +37,6 @@ class _TypedUsage(BaseModel):
 
 class _Response(BaseModel):
     model_config = ConfigDict(extra="allow")
-
     usage: object = None
     _hidden_params: dict[str, Json] = PrivateAttr(default_factory=dict)
 
@@ -92,14 +60,15 @@ def _optional_string(value: Json | None, name: str) -> str | None:
     return None if value is None else _string(value, name)
 
 
-def _details_projection(value: object, fields: tuple[str, ...]) -> dict[str, Json] | None:
+def _details(value: object, fields: tuple[str, ...]) -> dict[str, Json] | None:
     if value is None:
         return None
-    return {
-        field: cast(Json, found)
-        for field in fields
-        if (found := getattr(value, field, None)) is not None
-    }
+    projected: dict[str, Json] = {}
+    for field in fields:
+        found = getattr(value, field, None)
+        if found is not None:
+            projected[field] = cast(Json, found)
+    return projected
 
 
 def _usage_projection(usage: Usage | None) -> Json:
@@ -110,10 +79,10 @@ def _usage_projection(usage: Usage | None) -> Json:
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
     }
-    prompt = _details_projection(usage.prompt_tokens_details, _PROMPT_FIELDS)
+    prompt = _details(usage.prompt_tokens_details, _PROMPT_FIELDS)
     if prompt is not None:
         result["prompt_tokens_details"] = prompt
-    completion = _details_projection(usage.completion_tokens_details, _COMPLETION_FIELDS)
+    completion = _details(usage.completion_tokens_details, _COMPLETION_FIELDS)
     if completion is not None:
         result["completion_tokens_details"] = completion
     cost: object = getattr(usage, "cost", None)
@@ -123,74 +92,47 @@ def _usage_projection(usage: Usage | None) -> Json:
     return result
 
 
-def _transcription_usage(value: dict[str, Json]) -> object:
-    if value.get("type") == "duration":
-        return TranscriptionUsageDurationObject.model_validate(value)
-    return TranscriptionUsageTokensObject.model_validate(value)
-
-
-def _chat_usage(mapping: dict[str, Json]) -> Usage:
-    return cast("Callable[..., Usage]", Usage)(**mapping)
-
-
-def _decisions_usage(mapping: dict[str, Json]) -> DecisionsUsage:
-    return cast("Callable[..., DecisionsUsage]", DecisionsUsage)(**mapping)
-
-
-def _openai_decisions_usage(mapping: dict[str, Json]) -> OpenAIDecisionUsage:
-    return cast("Callable[..., OpenAIDecisionUsage]", OpenAIDecisionUsage)(**mapping)
-
-
-def _provider_usage_object(kind: str, value: Json) -> object:
-    match kind:
-        case "chat":
-            return _chat_usage(_object(value, "value"))
-        case "responses":
-            return ResponseAPIUsage.model_validate(value)
-        case "transcription":
-            return _transcription_usage(_object(value, "value"))
-        case "decisions_ir":
-            return _decisions_usage(_object(value, "value"))
-        case "decisions_openai":
-            return _openai_decisions_usage(_object(value, "value"))
-        case _:
-            raise ValueError(f"unknown provider usage kind {kind}")
-
-
 def _usage_object(spec: dict[str, Json]) -> object:
     kind = _string(spec.get("kind"), "kind")
+    value = spec.get("value")
     if kind in ("absent", "null"):
         return None
     if kind == "typed_record":
-        return _TypedUsage(**_object(spec.get("value"), "value"))
+        return _TypedUsage(**_object(value, "value"))
     if kind in ("interactions", "mapping"):
-        return _object(spec.get("value"), "value")
-    return _provider_usage_object(kind, spec.get("value"))
+        return _object(value, "value")
+    return _provider_usage_object(kind, value)
 
 
-def _decisions_ir_response(spec: dict[str, Json] | None) -> DecisionsResponse:
-    if spec is None:
-        return DecisionsResponse(model=None, answers={}, usage=None)
-    usage = cast("DecisionsUsage | None", _usage_object(spec))
-    return DecisionsResponse(model=None, answers={}, usage=usage)
-
-
-def _decisions_openai_response(spec: dict[str, Json]) -> OpenAIDecisionResponse:
-    usage = cast("OpenAIDecisionUsage", _usage_object(spec))
-    return OpenAIDecisionResponse(model="model", answers=(), usage=usage)
+def _provider_usage_object(kind: str, value: Json) -> object:
+    if kind == "chat":
+        return cast("Callable[..., Usage]", Usage)(**_object(value, "value"))
+    if kind == "responses":
+        return ResponseAPIUsage.model_validate(value)
+    if kind == "transcription":
+        inner = _object(value, "value")
+        if inner.get("type") == "duration":
+            return TranscriptionUsageDurationObject.model_validate(inner)
+        return TranscriptionUsageTokensObject.model_validate(inner)
+    if kind == "decisions_ir":
+        usage_input = cast("Callable[..., DecisionsUsage]", DecisionsUsage)
+        return usage_input(**_object(value, "value"))
+    if kind == "decisions_openai":
+        openai_input = cast("Callable[..., OpenAIDecisionUsage]", OpenAIDecisionUsage)
+        return openai_input(**_object(value, "value"))
+    raise ValueError(f"unknown provider usage kind {kind}")
 
 
 def _response_object(spec: dict[str, Json]) -> object:
     kind = _string(spec.get("kind"), "kind")
     raw_usage = spec.get("usage")
     usage_spec = None if raw_usage is None else _object(raw_usage, "usage")
-    if kind == "decisions_ir":
-        return _decisions_ir_response(usage_spec)
-    if kind == "decisions_openai":
-        if usage_spec is None:
-            raise ValueError("an OpenAI Decisions response requires a usage object")
-        return _decisions_openai_response(usage_spec)
     usage = None if usage_spec is None else _usage_object(usage_spec)
+    if kind == "decisions_ir":
+        return DecisionsResponse(model=None, answers={}, usage=cast("DecisionsUsage | None", usage))
+    if kind == "decisions_openai":
+        decisions_usage = cast("OpenAIDecisionUsage", usage)
+        return OpenAIDecisionResponse(model="model", answers=(), usage=decisions_usage)
     response = _Response(usage=usage)
     raw_tier = spec.get("service_tier")
     if raw_tier is not None:
@@ -205,7 +147,7 @@ def _optional_usage(call: dict[str, Json]) -> Usage | None:
     raw_usage = call.get("usage")
     if raw_usage is None:
         return None
-    return _chat_usage(_object(raw_usage, "usage"))
+    return cast("Callable[..., Usage]", Usage)(**_object(raw_usage, "usage"))
 
 
 def _hidden_params(call: dict[str, Json]) -> dict[str, Json]:
@@ -213,32 +155,11 @@ def _hidden_params(call: dict[str, Json]) -> dict[str, Json]:
     return {} if raw_hidden is None else _object(raw_hidden, "hidden_params")
 
 
-def _infer_response(kind: str) -> object:
-    if kind == "speech":
-        return HttpxBinaryResponseContent(httpx.Response(200))
-    factory = _RESPONSE_FACTORIES.get(kind)
-    if factory is None:
-        return {}
-    return factory()
-
-
 def _execute(function: str, call: dict[str, Json]) -> Json:
     match function:
         case "get_usage_object":
             response = _response_object(_object(call.get("response"), "response"))
             result: Json = _usage_projection(get_usage_object(response))
-        case "is_known_usage":
-            variant = _usage_object(_object(call.get("variant"), "variant"))
-            result = _is_known_usage_objects(variant)
-        case "infer_call_type":
-            infer = cast("Callable[[str | None, object], str | None]", _infer_call_type)
-            inferred = infer(
-                _optional_string(call.get("call_type"), "call_type"),
-                _infer_response(_string(call.get("kind"), "kind")),
-            )
-            result = cast(Json, inferred)
-        case "transcription_has_token_details":
-            result = _transcription_usage_has_token_details(_optional_usage(call))
         case "without_provider_stated_cost":
             result = _usage_projection(_without_provider_stated_cost(_optional_usage(call)))
         case "hidden_response_cost":
@@ -258,9 +179,8 @@ def _execute(function: str, call: dict[str, Json]) -> Json:
 
 
 def _run_call(call: dict[str, Json]) -> Json:
-    function = _string(call.get("function"), "function")
     try:
-        value = _execute(function, call)
+        value = _execute(_string(call.get("function"), "function"), call)
     except Exception as error:  # noqa: BLE001 - a rejected probe is part of the compared outcome
         outcome: dict[str, Json] = {"ok": False, "error": {"class": type(error).__name__}}
         return outcome

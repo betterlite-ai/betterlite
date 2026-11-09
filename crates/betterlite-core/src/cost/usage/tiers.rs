@@ -1,23 +1,23 @@
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::decisions::Json;
-
-use super::BillingResponse;
+use indexmap::IndexMap;
 
 const PRICED_SERVICE_TIERS: [&str; 5] = ["balanced", "fast", "flex", "priority", "ultrafast"];
 const BASE_PRICING_SERVICE_TIERS: [&str; 2] = ["default", "standard"];
 
 #[must_use]
 pub fn served_service_tier(
-    response: &BillingResponse<'_>,
+    response_tier: Option<&str>,
+    hidden_params: Option<&IndexMap<String, Json>>,
     usage: Option<&Usage>,
 ) -> Option<String> {
-    if let Some(tier) = response.service_tier {
+    if let Some(tier) = response_tier {
         return Some(tier.to_owned());
     }
     if let Some(tier) = usage.and_then(usage_service_tier) {
         return Some(tier.to_owned());
     }
-    let hidden = response.hidden_params?;
+    let hidden = hidden_params?;
     let provider_specific = hidden.get("provider_specific_fields");
     let traffic_type = match provider_specific {
         Some(Json::Object(fields)) => fields.get("traffic_type"),

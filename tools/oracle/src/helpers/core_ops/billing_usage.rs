@@ -1,12 +1,17 @@
 use std::fmt::Display;
 
 use betterlite_core::cost::usage::ResponseKind;
+use betterlite_core::cost::usage::provider_cost::{
+    hidden_response_cost, without_provider_stated_cost,
+};
+use betterlite_core::cost::usage::tiers::resolve_billable_service_tier;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-mod parse;
+use model::{decimal_value, optional_mapping, optional_text, optional_usage, usage_projection};
+
+mod model;
 mod probes;
-mod projection;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,10 +26,6 @@ struct Call {
     #[serde(default)]
     response: Option<ResponseInput>,
     #[serde(default)]
-    variant: Option<UsageSpec>,
-    #[serde(default)]
-    kind: Option<KindInput>,
-    #[serde(default)]
     usage: Option<Value>,
     #[serde(default)]
     hidden_params: Option<Value>,
@@ -32,17 +33,12 @@ struct Call {
     requested_tier: Option<String>,
     #[serde(default)]
     served_tier: Option<String>,
-    #[serde(default, rename = "call_type")]
-    explicit_type: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Function {
     GetUsageObject,
-    IsKnownUsage,
-    InferCallType,
-    TranscriptionHasTokenDetails,
     WithoutProviderStatedCost,
     HiddenResponseCost,
     ServedServiceTier,
@@ -143,13 +139,26 @@ fn run_call(call: &Call) -> Value {
 fn execute(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
     match call.function {
         Function::GetUsageObject => probes::get_usage(call),
-        Function::IsKnownUsage => probes::known_usage(call),
-        Function::InferCallType => probes::infer(call),
-        Function::TranscriptionHasTokenDetails => probes::transcription_details(call),
-        Function::WithoutProviderStatedCost => probes::cleared_usage(call),
-        Function::HiddenResponseCost => probes::hidden_cost(call),
+        Function::WithoutProviderStatedCost => {
+            let Some(usage) = optional_usage(call)? else {
+                return Ok(Value::Null);
+            };
+            let cleared = without_provider_stated_cost(&usage);
+            Ok(usage_projection(Some(cleared.as_ref())))
+        }
+        Function::HiddenResponseCost => {
+            let hidden = optional_mapping(call.hidden_params.as_ref())?;
+            let cost = hidden_response_cost(hidden.as_ref()).map_err(failure)?;
+            Ok(cost.map_or(Value::Null, |amount| decimal_value(&amount)))
+        }
         Function::ServedServiceTier => probes::served_tier(call),
-        Function::ResolveBillableServiceTier => Ok(probes::resolve_tier(call)),
+        Function::ResolveBillableServiceTier => Ok(optional_text(
+            resolve_billable_service_tier(
+                call.requested_tier.as_deref(),
+                call.served_tier.as_deref(),
+            )
+            .as_deref(),
+        )),
     }
 }
 

@@ -115,38 +115,13 @@ impl ReasoningTokenCounter for NoReasoningCounter {
 pub fn get_usage_object(
     response: &BillingResponse<'_>,
 ) -> Result<Option<Usage>, BillingUsageError> {
-    match response.kind {
-        ResponseKind::DecisionsIr | ResponseKind::DecisionsOpenAi => {
-            decisions_usage(&response.usage)
-        }
-        ResponseKind::Chat
-        | ResponseKind::ChatStream
-        | ResponseKind::Embedding
-        | ResponseKind::Transcription
-        | ResponseKind::Speech
-        | ResponseKind::Rerank
-        | ResponseKind::Image
-        | ResponseKind::TextCompletion
-        | ResponseKind::SendMessage
-        | ResponseKind::Responses
-        | ResponseKind::Other => usage_object(&response.usage),
+    if matches!(
+        response.kind,
+        ResponseKind::DecisionsIr | ResponseKind::DecisionsOpenAi
+    ) {
+        return convert::decisions::get_usage(&response.usage);
     }
-}
-
-fn decisions_usage(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageError> {
-    match usage {
-        BillingUsage::Absent | BillingUsage::Null => Ok(None),
-        BillingUsage::DecisionsIr(found) => convert::decisions::from_ir_usage(found).map(Some),
-        BillingUsage::DecisionsOpenAi(found) => {
-            convert::decisions::from_openai_usage(found).map(Some)
-        }
-        BillingUsage::Chat(_)
-        | BillingUsage::Response(_)
-        | BillingUsage::Transcription(_)
-        | BillingUsage::Interactions(_)
-        | BillingUsage::Mapping(_)
-        | BillingUsage::TypedRecord(_) => Err(BillingUsageError::Projection { kind: "decision" }),
-    }
+    usage_object(&response.usage)
 }
 
 fn usage_object(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageError> {

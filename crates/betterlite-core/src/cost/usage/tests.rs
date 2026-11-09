@@ -483,7 +483,7 @@ fn served_service_tier_returns_a_response_tier_verbatim() {
     };
 
     assert_eq!(
-        served_service_tier(&response, None),
+        served_service_tier(response.service_tier, response.hidden_params, None),
         Some("PRIORITY".to_owned())
     );
 }
@@ -502,7 +502,7 @@ fn served_service_tier_stops_at_an_empty_response_tier() {
     };
 
     assert_eq!(
-        served_service_tier(&response, Some(&usage)),
+        served_service_tier(response.service_tier, response.hidden_params, Some(&usage)),
         Some(String::new())
     );
 }
@@ -521,7 +521,7 @@ fn served_service_tier_reads_the_usage_tier() {
     };
 
     assert_eq!(
-        served_service_tier(&response, Some(&usage)),
+        served_service_tier(response.service_tier, response.hidden_params, Some(&usage)),
         Some("flex".to_owned())
     );
 }
@@ -555,7 +555,7 @@ fn served_service_tier_maps_hidden_traffic_types(
     };
 
     assert_eq!(
-        served_service_tier(&response, None),
+        served_service_tier(response.service_tier, response.hidden_params, None),
         expected.map(str::to_owned)
     );
 }
@@ -570,7 +570,10 @@ fn served_service_tier_is_absent_without_hidden_traffic() {
         hidden_params: Some(&hidden),
     };
 
-    assert_eq!(served_service_tier(&response, None), None);
+    assert_eq!(
+        served_service_tier(response.service_tier, response.hidden_params, None),
+        None
+    );
 }
 
 #[rstest]
