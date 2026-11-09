@@ -26,6 +26,8 @@ call:
       metadata:
         user_api_key_team_id: team-1
         user_api_key_team_alias: Team One
+        team_id: metadata-team
+        team_alias: Metadata Team
         user_api_key_team_max_budget: 10.0
         user_api_key_team_spend: 2.5
       saved_cache_cost: 0.0

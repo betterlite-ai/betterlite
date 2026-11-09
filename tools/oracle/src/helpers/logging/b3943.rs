@@ -42,7 +42,8 @@ impl crate::helpers::Helper for Op {
             })
             .map_err(value_error),
             Input::Record { payload } => {
-                serde_json::to_value(metric_record_from_payload(payload)).map_err(value_error)
+                let record = metric_record_from_payload(payload).map_err(value_error)?;
+                serde_json::to_value(record).map_err(value_error)
             }
             Input::Payload {
                 records,
@@ -58,8 +59,11 @@ fn payload_output(
     window_start_ms: u64,
     now_ms: u64,
 ) -> crate::helpers::HelperResult {
-    let extracted: Vec<NewRelicMetricRecord> =
-        records.iter().map(metric_record_from_payload).collect();
+    let extracted = records
+        .iter()
+        .map(metric_record_from_payload)
+        .collect::<Result<Vec<NewRelicMetricRecord>, _>>()
+        .map_err(value_error)?;
     let envelope = build_metric_payload(
         &extracted,
         Duration::from_millis(window_start_ms),

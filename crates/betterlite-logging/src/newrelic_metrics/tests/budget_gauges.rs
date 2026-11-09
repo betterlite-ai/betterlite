@@ -94,6 +94,26 @@ fn remaining_budget_is_not_clamped_at_zero() {
 }
 
 #[test]
+fn a_latest_record_without_a_budget_drops_the_teams_gauges() {
+    let mut first = record();
+    first.team_max_budget = Some(Decimal::new(100, 1));
+    let mut second = record();
+    second.team_max_budget = None;
+    let envelope = envelope(&[first, second], WINDOW_START_MS, WINDOW_END_MS);
+    assert!(gauges(&envelope).is_empty());
+}
+
+#[test]
+fn a_zero_max_budget_still_emits_gauges() {
+    let mut record = record();
+    record.team_max_budget = Some(Decimal::ZERO);
+    record.team_spend = Some(Decimal::new(25, 1));
+    record.response_cost = Decimal::new(5, 1);
+    let envelope = envelope(&[record], WINDOW_START_MS, WINDOW_END_MS);
+    assert_eq!(gauges(&envelope), [Decimal::ZERO, Decimal::new(-30, 1)]);
+}
+
+#[test]
 fn remaining_budget_treats_a_missing_team_spend_as_zero() {
     let mut record = record();
     record.team_max_budget = Some(Decimal::new(100, 1));

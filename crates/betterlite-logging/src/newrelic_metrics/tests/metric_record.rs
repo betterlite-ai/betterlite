@@ -1,3 +1,5 @@
+use std::str::FromStr as _;
+
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -8,7 +10,7 @@ use crate::newrelic_metrics::records::metric_record_from_payload;
 
 #[test]
 fn record_fields_come_from_the_standard_logging_payload() {
-    let record = metric_record_from_payload(&payload());
+    let record = metric_record_from_payload(&payload()).expect("a record");
     assert_eq!(record.team_id, "team-1");
     assert_eq!(record.team_alias, "Team One");
     assert_eq!(record.model_group, "production");
@@ -29,7 +31,7 @@ fn missing_optional_fields_default_to_empty_strings() {
     let mut payload = payload();
     payload.model_group = None;
     payload.custom_llm_provider = None;
-    let record = metric_record_from_payload(&payload);
+    let record = metric_record_from_payload(&payload).expect("a record");
     assert_eq!(record.model_group, "");
     assert_eq!(record.custom_llm_provider, "");
 }
@@ -39,10 +41,8 @@ fn team_id_falls_back_to_the_metadata_team_id() {
     let mut payload = payload();
     payload.metadata.user_api_key_team_id = None;
     payload.metadata.team_id = Some("team-fallback".to_owned());
-    assert_eq!(
-        metric_record_from_payload(&payload).team_id,
-        "team-fallback"
-    );
+    let record = metric_record_from_payload(&payload).expect("a record");
+    assert_eq!(record.team_id, "team-fallback");
 }
 
 #[test]
@@ -50,17 +50,27 @@ fn team_alias_falls_back_to_the_metadata_team_alias() {
     let mut payload = payload();
     payload.metadata.user_api_key_team_alias = None;
     payload.metadata.team_alias = Some("Fallback Team".to_owned());
-    assert_eq!(
-        metric_record_from_payload(&payload).team_alias,
-        "Fallback Team"
-    );
+    let record = metric_record_from_payload(&payload).expect("a record");
+    assert_eq!(record.team_alias, "Fallback Team");
+}
+
+#[test]
+fn the_api_key_team_wins_when_both_team_fields_are_set() {
+    let mut payload = payload();
+    payload.metadata.user_api_key_team_id = Some("api-key-team".to_owned());
+    payload.metadata.team_id = Some("metadata-team".to_owned());
+    payload.metadata.user_api_key_team_alias = Some("API Key Team".to_owned());
+    payload.metadata.team_alias = Some("Metadata Team".to_owned());
+    let record = metric_record_from_payload(&payload).expect("a record");
+    assert_eq!(record.team_id, "api-key-team");
+    assert_eq!(record.team_alias, "API Key Team");
 }
 
 #[test]
 fn missing_team_metadata_becomes_an_empty_team() {
     let mut payload = payload();
     payload.metadata = StandardLoggingMetadata::default();
-    let record = metric_record_from_payload(&payload);
+    let record = metric_record_from_payload(&payload).expect("a record");
     assert_eq!(record.team_id, "");
     assert_eq!(record.team_alias, "");
     assert_eq!(record.team_max_budget, None);
@@ -71,7 +81,8 @@ fn missing_team_metadata_becomes_an_empty_team() {
 fn failure_status_stays_a_lowercase_string() {
     let mut payload = payload();
     payload.status = LoggingStatus::Failure;
-    assert_eq!(metric_record_from_payload(&payload).status, "failure");
+    let record = metric_record_from_payload(&payload).expect("a record");
+    assert_eq!(record.status, "failure");
 }
 
 #[rstest]
@@ -81,6 +92,17 @@ fn failure_status_stays_a_lowercase_string() {
 fn duration_converts_seconds_to_milliseconds(#[case] seconds: f64, #[case] millis: f64) {
     let mut payload = payload();
     payload.response_time = Decimal::from_f64_retain(seconds).expect("a decimal second");
-    let record = metric_record_from_payload(&payload);
+    let record = metric_record_from_payload(&payload).expect("a record");
     assert_eq!(record.duration_ms.to_bits(), millis.to_bits());
+}
+
+#[test]
+fn duration_rounds_like_python_float_multiplication() {
+    let mut payload = payload();
+    payload.response_time = Decimal::from_str("21.326182382018498").expect("a decimal second");
+    let record = metric_record_from_payload(&payload).expect("a record");
+    assert_eq!(
+        record.duration_ms.to_bits(),
+        21_326.182_382_018_498_f64.to_bits()
+    );
 }

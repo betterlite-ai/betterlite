@@ -1,3 +1,4 @@
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{
@@ -109,6 +110,31 @@ fn separate_buckets_emit_separate_metric_groups() {
     assert_eq!(metric_names(&envelope).len(), 12);
     assert_eq!(attribute_at(&envelope, 0, "model"), "gpt-4o");
     assert_eq!(attribute_at(&envelope, 6, "model"), "gpt-4o-mini");
+}
+
+#[rstest]
+#[case::team_alias("team_alias", "Team One", "Team Two")]
+#[case::model_group("model_group", "production", "staging")]
+#[case::custom_llm_provider("custom_llm_provider", "openai", "anthropic")]
+#[case::status("status", "success", "failure")]
+fn every_bucket_key_field_separates_records(
+    #[case] field: &str,
+    #[case] first_value: &str,
+    #[case] second_value: &str,
+) {
+    let first = record_without_budget();
+    let mut second = record_without_budget();
+    match field {
+        "team_alias" => second.team_alias = second_value.to_owned(),
+        "model_group" => second.model_group = second_value.to_owned(),
+        "custom_llm_provider" => second.custom_llm_provider = second_value.to_owned(),
+        "status" => second.status = second_value.to_owned(),
+        _ => panic!("an unknown bucket key field"),
+    }
+    let envelope = envelope(&[first, second], WINDOW_START_MS, WINDOW_END_MS);
+    assert_eq!(metric_names(&envelope).len(), 12);
+    assert_eq!(attribute_at(&envelope, 0, field), first_value);
+    assert_eq!(attribute_at(&envelope, 6, field), second_value);
 }
 
 #[test]
