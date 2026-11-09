@@ -44,9 +44,9 @@ pub struct MetadataPairs {
 
 #[derive(Debug, Deserialize)]
 struct GroundingSearchConfigRaw {
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     max_chunk_count: Field<Count>,
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     max_document_count: Field<Count>,
 }
 

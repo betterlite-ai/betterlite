@@ -174,9 +174,9 @@ pub struct OutputFiltering {
 
 #[derive(Debug, Deserialize)]
 struct FilteringModuleConfigRaw {
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     input: Field<InputFiltering>,
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     output: Field<OutputFiltering>,
 }
 

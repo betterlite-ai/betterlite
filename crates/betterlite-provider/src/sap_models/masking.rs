@@ -147,9 +147,9 @@ pub struct MaskingProviderConfig {
 
 #[derive(Debug, Deserialize)]
 struct MaskingModuleConfigRaw {
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     providers: Field<NonEmpty<MaskingProviderConfig>>,
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     masking_providers: Field<NonEmpty<MaskingProviderConfig>>,
 }
 

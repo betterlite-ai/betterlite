@@ -66,9 +66,9 @@ pub struct SAPDocumentTranslationOutput {
 
 #[derive(Debug, Deserialize)]
 struct TranslationModuleConfigRaw {
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     input: Field<SAPDocumentTranslationInput>,
-    #[serde(default)]
+    #[serde(default, with = "optional")]
     output: Field<SAPDocumentTranslationOutput>,
 }
 
