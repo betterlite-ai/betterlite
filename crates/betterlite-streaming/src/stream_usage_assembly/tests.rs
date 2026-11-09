@@ -79,6 +79,7 @@ async fn usage_record_cache_mappings_are_applied() {
             r#"{"cache_write_tokens":5,"cache_creation_tokens":5}"#
         ))
     );
+
     let nested = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"cache_creation_input_tokens":4}}}]"#,
@@ -129,6 +130,7 @@ async fn counts_replace_and_report_zero() {
         negative,
         fixture_usage(r#"{"prompt_tokens":-2,"completion_tokens":4,"total_tokens":2}"#)
     );
+
     let unreported = simple_usage(
         &counter,
         r#"[{"choices":[]},{"usage":{"completion_tokens":-1}}]"#,
