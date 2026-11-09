@@ -1,6 +1,6 @@
 use std::ops::Sub as _;
 
-use betterlite_rag::valkey_vector_store::pack_vector;
+use betterlite_redis::valkey::pack_vector;
 use serde_json::Number;
 
 use super::ValkeySemanticCache;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_rag::valkey_vector_store::build_valkey_url;
+use betterlite_redis::valkey::build_valkey_url;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::ValkeySemanticError;

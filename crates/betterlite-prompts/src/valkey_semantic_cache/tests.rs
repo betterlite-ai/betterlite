@@ -5,7 +5,7 @@ mod fixtures;
 use std::error::Error as _;
 use std::sync::Arc;
 
-use betterlite_rag::valkey_vector_store::pack_vector;
+use betterlite_redis::valkey::pack_vector;
 use redis::Value;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};

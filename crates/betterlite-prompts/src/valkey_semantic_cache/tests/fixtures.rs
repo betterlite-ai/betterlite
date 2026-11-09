@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_rag::valkey_vector_store::pack_vector;
 use betterlite_redis::redis_live_client::LiveClientError;
+use betterlite_redis::valkey::pack_vector;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
