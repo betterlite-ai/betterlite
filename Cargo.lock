@@ -2238,6 +2238,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "url",

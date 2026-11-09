@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "predibase_reply"
+path = "fuzz_targets/predibase_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sandbox_ndjson"
 path = "fuzz_targets/sandbox_ndjson.rs"
 test = false
