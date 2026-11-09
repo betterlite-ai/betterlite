@@ -539,6 +539,14 @@ fn hidden_command_names_returns_an_empty_set_when_unset() {
     assert_eq!(hidden_command_names(&environment), BTreeSet::new());
 }
 
+#[test]
+fn hidden_command_names_ignores_an_invalid_config_file() {
+    let home = TempDir::new().unwrap();
+    write_config(home.path(), "not json");
+    let environment = FakeEnvironment::with_home(home.path());
+    assert_eq!(hidden_command_names(&environment), BTreeSet::new());
+}
+
 #[rstest]
 #[case::empty("", EMPTY_LIST_MESSAGE)]
 #[case::separators_only(" , ", EMPTY_LIST_MESSAGE)]
