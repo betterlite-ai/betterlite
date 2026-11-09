@@ -123,3 +123,10 @@ path = "fuzz_targets/gemini_tool_results.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "provider_messages"
+path = "fuzz_targets/provider_messages.rs"
+test = false
+doc = false
+bench = false
