@@ -54,6 +54,8 @@ enum Boundary {
 #[case::caret_class(Boundary::Supported("[^^][ab]"))]
 #[case::range_start(Boundary::Unsupported("[]-x]"))]
 #[case::negated_range_start(Boundary::Unsupported("[^]-x]"))]
+#[case::bracket_hyphen(Boundary::Supported("[]-]"))]
+#[case::negated_bracket_hyphen(Boundary::Supported("[^]-]"))]
 #[case::bracket_first_escape(Boundary::Supported(r"[]\<tag]"))]
 #[case::negated_bracket_first_escape(Boundary::Supported(r"[^]\<tag]"))]
 #[case::engine_refused(Boundary::Unsupported("(?~|abc|def)"))]
