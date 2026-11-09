@@ -1011,6 +1011,7 @@ name = "betterlite-a2a"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "betterlite-config",
@@ -1020,6 +1021,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-core",
  "futures-util",
@@ -1342,12 +1344,9 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "betterlite-config",
- "betterlite-http",
  "betterlite-models",
  "betterlite-redact",
- "betterlite-tokenizer",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1356,7 +1355,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
