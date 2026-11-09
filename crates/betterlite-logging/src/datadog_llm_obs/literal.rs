@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
+use super::values::as_text;
+
 mod numbers;
 mod strings;
 
@@ -145,12 +147,7 @@ impl Parser<'_> {
         let mut key = first;
         loop {
             self.position = self.position.saturating_add(1);
-            let name = match key {
-                Json::Text(name) => name,
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    PLACEHOLDER_LITERAL.to_owned()
-                }
-            };
+            let name = as_text(&key).unwrap_or(PLACEHOLDER_LITERAL).to_owned();
             fields.insert(name, self.value()?);
             if !matches!(self.separator(b'}')?, Next::Element) {
                 return Some(fields);
