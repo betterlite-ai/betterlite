@@ -99,7 +99,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::MatchSteps => match_steps_boundary(),
         Boundary::FancyMatch => fancy_match_boundary(),
         Boundary::Unsupported(pattern) => {
-            warning_boundary(pattern, WarningKind::UnsupportedPattern)
+            warning_boundary(pattern, WarningKind::UnsupportedPattern);
         }
         Boundary::Invalid(pattern) => warning_boundary(pattern, WarningKind::InvalidPattern),
         Boundary::Supported(pattern) => supported_construct_boundary(pattern),
