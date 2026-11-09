@@ -1,0 +1,39 @@
+task: B258
+deviations:
+  - what: >-
+      Exact image counting reads local bytes only. calculate_img_tokens and the dimension helpers take a
+      data URL and never fetch an http or https URL, while LiteLLM downloads the URL inside
+      get_image_dimensions. An explicit use_default_image_token_count=true still returns the default
+      count without a fetch.
+    why: >-
+      B009, B183 and the bounded-inputs rule forbid fetching request-supplied media URLs. A caller that
+      needs the exact count passes the image bytes as a data URL.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L248
+  - what: >-
+      Open, waiting for Max: token counting keeps no remote image fetch and works from local bytes with
+      default-count behavior, instead of sharing SSRF-checked remote dimensions with the B009/B183
+      downloader. The public counting helpers default use_default_image_token_count to false and may
+      fetch in LiteLLM.
+    why: >-
+      B009 and the bounded-inputs rule keep request-derived URLs away from outbound calls until Max
+      decides between no remote fetch and the shared SSRF-checked downloader.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
+  - what: >-
+      resize_image_high_res divides with integer arithmetic instead of binary64, so an image limit above
+      2^21 can place a resized side one pixel away from LiteLLM's int(float) result for a header
+      dimension near 2^32.
+    why: >-
+      Rust float arithmetic is denied and this task's expect budget is zero. At the pinned limits (768
+      and 2000) and for every dimension a PNG, GIF, JPEG or WebP header can carry, the integer quotient
+      equals Python's int(float) result.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L170
+  - what: >-
+      A negative base_tokens value is refused instead of producing a negative token count as LiteLLM
+      does.
+    why: >-
+      Token counts are unsigned in betterlite and no working setup counts negative tokens.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L297-L330
