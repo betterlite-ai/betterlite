@@ -2702,6 +2702,7 @@ dependencies = [
  "kitoken",
  "lru",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
