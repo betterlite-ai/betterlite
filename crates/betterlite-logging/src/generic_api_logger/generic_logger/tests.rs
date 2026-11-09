@@ -155,7 +155,6 @@ async fn callback_logger_sends_at_the_batch_size_with_the_standard_payload() {
     };
     assert_eq!(entry.get("id"), Some(&Json::Text("chatcmpl-1".to_owned())));
 }
-
 #[tokio::test]
 async fn callback_logger_uses_the_v1_payload_when_enabled() {
     let (recorder, _sleeper, logger) = ready(settings(args()), true, 10);

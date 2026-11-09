@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use tokio::time::timeout;
 
 use super::super::ApiEventType;
@@ -10,30 +11,28 @@ use super::super::GenericApiLogger;
 use super::super::error::ApiError;
 use super::super::tests::{entries, payload, ready, settings};
 use crate::generic_api_logger::tests::{args, capture_logs};
-
 async fn record_both(logger: &GenericApiLogger) {
     let payload = payload();
     logger.record(ApiEventType::Success, &payload).await;
     logger.record(ApiEventType::Failure, &payload).await;
 }
-
 #[tokio::test]
 async fn delivery_posts_the_queue_in_the_selected_format() {
-    let (recorder, _sleeper, logger) = ready(settings(args()), false, 10);
+    let mut arguments = args();
+    arguments.headers = Some(IndexMap::from([("X-Test".to_owned(), "yes".to_owned())]));
+    arguments.timeout = Some(Duration::from_secs(7));
+    let (recorder, _sleeper, logger) = ready(settings(arguments), false, 10);
     record_both(&logger).await;
     logger.send_batch().await;
     assert_eq!(recorder.bodies().len(), 1);
     assert_eq!(entries(&recorder).len(), 2);
     let request = recorder.first();
-    assert_eq!(
-        request.headers.get("Content-Type"),
-        Some(&"application/json".to_owned())
-    );
-    assert_eq!(request.timeout, Duration::from_secs(600));
+    assert_eq!(request.headers.get("X-Test"), Some(&"yes".to_owned()));
+    assert_eq!(request.timeout, Duration::from_secs(7));
 
-    let mut arguments = args();
-    arguments.log_format = Some("ndjson".to_owned());
-    let (ndjson, _ndjson_sleeper, ndjson_logger) = ready(settings(arguments), false, 10);
+    let mut ndjson_arguments = args();
+    ndjson_arguments.log_format = Some("ndjson".to_owned());
+    let (ndjson, _ndjson_sleeper, ndjson_logger) = ready(settings(ndjson_arguments), false, 10);
     record_both(&ndjson_logger).await;
     ndjson_logger.send_batch().await;
     let body = ndjson.first().body;
@@ -46,7 +45,6 @@ async fn delivery_posts_the_queue_in_the_selected_format() {
             .all(|line| serde_json::from_str::<Json>(line).is_ok())
     );
 }
-
 #[tokio::test]
 async fn delivery_single_posts_each_entry_and_continues_past_a_failure() {
     let mut arguments = args();
@@ -62,7 +60,6 @@ async fn delivery_single_posts_each_entry_and_continues_past_a_failure() {
             .contains("Generic API Logger - Error sending log 0: the request timed out")
     );
 }
-
 #[tokio::test]
 async fn delivery_clears_the_queue_after_a_failed_or_cancelled_send() {
     let (recorder, _sleeper, logger) = ready(settings(args()), false, 10);

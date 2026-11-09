@@ -7,13 +7,10 @@ use indexmap::IndexMap;
 
 use super::{GenericApiArgs, GenericApiSettings, GenericApiSettingsError, LogFormat, resolve};
 use crate::generic_api_logger::tests::{ENDPOINT, args, capture_logs, environment};
-
 type Resolved = Result<GenericApiSettings, GenericApiSettingsError>;
-
 fn configured(arguments: GenericApiArgs, env: &BTreeMap<String, String>) -> Resolved {
     resolve(arguments, env, &IndexMap::new())
 }
-
 #[test]
 fn given_values_beat_the_named_config_and_the_environment() {
     let mut given = args();
@@ -59,7 +56,6 @@ fn given_values_beat_the_named_config_and_the_environment() {
         Some("Bearer sk-key")
     );
 }
-
 #[test]
 fn an_unknown_name_warns_and_an_empty_endpoint_falls_back_to_the_environment() {
     let (logs, _guard) = capture_logs();
@@ -79,7 +75,6 @@ fn an_unknown_name_warns_and_an_empty_endpoint_falls_back_to_the_environment() {
         "https://env.test"
     );
 }
-
 #[test]
 fn a_missing_endpoint_and_a_bad_format_fail_with_the_litellm_text() {
     let mut arguments = args();
@@ -101,7 +96,6 @@ fn a_missing_endpoint_and_a_bad_format_fail_with_the_litellm_text() {
         "Invalid log_format: table. Must be one of: 'json_array', 'ndjson', 'single'"
     );
 }
-
 #[test]
 fn headers_merge_in_litellm_order_by_exact_key() {
     let env = environment(&[(
@@ -137,7 +131,6 @@ fn headers_merge_in_litellm_order_by_exact_key() {
         Some("application/json")
     );
 }
-
 #[test]
 fn retries_and_the_delay_are_clamped_and_the_timeout_is_kept() {
     let mut arguments = args();

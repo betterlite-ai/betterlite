@@ -7,14 +7,12 @@ use rust_decimal::Decimal;
 use super::{V1Kwargs, V1PayloadError, v1_logging_payload};
 
 const RESPONSE: &str = r#"{"id":"chatcmpl-1","usage":{"total_tokens":5}}"#;
-
 fn field<'payload>(
     payload: &'payload IndexMap<String, String>,
     name: &str,
 ) -> Option<&'payload str> {
     payload.get(name).map(String::as_str)
 }
-
 fn built(kwargs: &V1Kwargs, response: &Json) -> IndexMap<String, String> {
     v1_logging_payload(
         kwargs,
@@ -25,22 +23,26 @@ fn built(kwargs: &V1Kwargs, response: &Json) -> IndexMap<String, String> {
     )
     .expect("a payload")
 }
-
-#[test]
-fn v1_payload_has_the_thirteen_text_keys() {
-    let metadata = IndexMap::from([("team".to_owned(), Json::Text("a".to_owned()))]);
-    let kwargs = V1Kwargs {
+fn full() -> V1Kwargs {
+    let parameters = IndexMap::from([("temperature".to_owned(), Json::Text("0".to_owned()))]);
+    V1Kwargs {
         call_type: Some("acompletion".to_owned()),
         cache_hit: Some(true),
         model: Some("gpt-4o".to_owned()),
-        user: None,
-        model_parameters: None,
-        messages: None,
-        metadata: Some(metadata),
+        user: Some("user-1".to_owned()),
+        model_parameters: Some(parameters),
+        messages: Some(Json::Text("hi".to_owned())),
+        metadata: Some(IndexMap::from([(
+            "team".to_owned(),
+            Json::Text("a".to_owned()),
+        )])),
         cost: Some(Decimal::new(5, 1)),
-    };
+    }
+}
+#[test]
+fn v1_payload_has_the_thirteen_text_keys() {
     let payload = v1_logging_payload(
-        &kwargs,
+        &full(),
         &serde_json::from_str(RESPONSE).expect("a response"),
         Decimal::from(10_i64),
         Decimal::new(15, 1),
@@ -59,8 +61,13 @@ fn v1_payload_has_the_thirteen_text_keys() {
         field(&payload, "endTime"),
         Some("1970-01-01T00:00:01.500+00:00")
     );
-    assert_eq!(field(&payload, "modelParameters"), Some("{}"));
-    assert_eq!(field(&payload, "messages"), Some("null"));
+    assert_eq!(
+        field(&payload, "modelParameters"),
+        Some(r#"{"temperature":"0"}"#)
+    );
+    assert_eq!(field(&payload, "messages"), Some("hi"));
+    assert_eq!(field(&payload, "model"), Some("gpt-4o"));
+    assert_eq!(field(&payload, "user"), Some("user-1"));
     assert_eq!(field(&payload, "response"), Some(RESPONSE));
     assert_eq!(field(&payload, "metadata"), Some(r#"{"team":"a"}"#));
     assert_eq!(field(&payload, "usage"), Some(r#"{"total_tokens":5}"#));
