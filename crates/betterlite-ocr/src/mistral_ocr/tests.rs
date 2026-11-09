@@ -185,6 +185,10 @@ async fn decodes_the_response_into_the_shared_ocr_response() {
 #[case::bare_base(Some("https://example.com"), "https://example.com/v1/ocr")]
 #[case::versioned_base(Some("https://example.com/v1"), "https://example.com/v1/ocr")]
 #[case::complete_endpoint(Some("https://example.com/v1/ocr"), "https://example.com/v1/ocr")]
+#[case::complete_endpoint_with_query(
+    Some("https://example.com/v1/ocr?tenant=a"),
+    "https://example.com/v1/ocr?tenant=a"
+)]
 #[case::query_is_kept(
     Some("https://example.com/v1?tenant=a"),
     "https://example.com/v1/ocr?tenant=a"
@@ -219,6 +223,11 @@ fn the_request_key_becomes_the_bearer_header_before_the_environment_key() {
     let environment = connection(None, None, Vec::new(), key_secrets("environment"));
     assert_eq!(
         resolve_headers(&environment).expect("the environment key resolves"),
+        [("Authorization".to_owned(), "Bearer environment".to_owned())]
+    );
+    let blank_request_key = connection(None, Some(""), Vec::new(), key_secrets("environment"));
+    assert_eq!(
+        resolve_headers(&blank_request_key).expect("the blank request key falls back"),
         [("Authorization".to_owned(), "Bearer environment".to_owned())]
     );
 }
@@ -347,6 +356,18 @@ fn a_response_uses_its_own_model_or_the_request_model(
         )
         .expect("the response decodes");
     assert_eq!(response.model, expected);
+}
+
+#[test]
+fn a_response_without_pages_decodes_to_an_empty_page_list() {
+    let response = MistralOcrConfig
+        .transform_ocr_response(
+            "mistral-ocr-latest",
+            br#"{"model":"served-model"}"#,
+            RequestFormat::Litellm,
+        )
+        .expect("the response decodes");
+    assert!(response.pages.is_empty());
 }
 
 #[test]
