@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future as _;
 use std::task::{Context, Waker};
 use std::time::Duration;
@@ -165,4 +166,23 @@ async fn flushes_at_one_hundred_when_no_size_is_given() {
         .expect("the flush write");
     assert_eq!(server.commands_named("SET").len(), 100);
     assert_eq!(harness.values.buffered_count(), 0);
+}
+
+#[tokio::test]
+async fn fails_the_write_when_the_value_cannot_serialize() {
+    let server = FakeServer::start().await;
+    let harness = harness(&server, settings(Some("ns"), None, Some(2)));
+    let map = HashMap::from([((1_u8, 2_u8), "value")]);
+    let error = harness
+        .values
+        .batch_cache_write("alpha", &map)
+        .await
+        .expect_err("a tuple key cannot be a JSON object key");
+    assert!(matches!(error, RedisCacheValuesError::Serialize(_)));
+    assert_eq!(harness.values.buffered_count(), 0);
+    assert!(server.commands().is_empty());
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:batch_cache_write");
+    assert!(gate[1].starts_with("failure:"));
+    assert_eq!(gate.len(), 2);
 }

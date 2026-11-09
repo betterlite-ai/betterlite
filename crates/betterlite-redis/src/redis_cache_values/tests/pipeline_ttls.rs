@@ -1,4 +1,5 @@
 use super::support::{harness, harness_without_server, settings};
+use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 fn mixed_entries() -> Vec<(String, &'static str, Option<f64>)> {
@@ -96,4 +97,22 @@ async fn swallows_an_execute_failure() {
             .iter()
             .any(|entry| entry.starts_with("swallowed:1:"))
     );
+}
+
+#[tokio::test]
+async fn an_out_of_range_ttl_fails_the_write() {
+    let server = FakeServer::start().await;
+    let harness = harness(&server, settings(Some("ns"), None, None));
+    let entries = [("alpha".to_owned(), "first", Some(f64::MAX))];
+    let error = harness
+        .values
+        .async_set_cache_pipeline_with_ttls(&entries)
+        .await
+        .expect_err("the TTL does not fit an i64");
+    assert!(matches!(error, RedisCacheValuesError::TtlOutOfRange { .. }));
+    assert!(server.commands().is_empty());
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_set_cache_pipeline_with_ttls");
+    assert!(gate[1].starts_with("failure:"));
+    assert_eq!(gate.len(), 2);
 }
