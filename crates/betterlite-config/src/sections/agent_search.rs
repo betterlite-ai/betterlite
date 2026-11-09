@@ -47,12 +47,13 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        // LiteLLM's get_secret returns None for an unset os.environ/ variable, so the model stays unset
+        let embedding_model = self
+            .litellm_settings
+            .agent_search_embedding_model
+            .and_then(|model| resolve_string(model, EMBEDDING_MODEL_PATH, lookup).ok());
         Ok(Settings {
-            embedding_model: self
-                .litellm_settings
-                .agent_search_embedding_model
-                .map(|model| resolve_string(model, EMBEDDING_MODEL_PATH, lookup))
-                .transpose()?,
+            embedding_model,
             health_check_timeout_seconds: seconds_from_environment(lookup, PROBE_TIMEOUT_VARIABLE)?
                 .unwrap_or(PROBE_TIMEOUT_SECONDS),
             health_gather_timeout_seconds: seconds_from_environment(

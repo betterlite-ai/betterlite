@@ -238,7 +238,7 @@ async fn filter_returns_healthy_agents_then_url_less_agents_in_input_order() {
         agent("a1", None),
         agent("a2", Some("https://agent.example/two")),
         agent("a3", Some("https://agent.example/three")),
-        agent("a4", None),
+        agent("a4", Some("")),
         agent("a5", Some("https://agent.example/five")),
     ];
     let healthy = filter_healthy_agents(agents, &transport, &settings(5.0, 30.0)).await;

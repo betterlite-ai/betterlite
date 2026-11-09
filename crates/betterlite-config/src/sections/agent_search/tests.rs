@@ -64,13 +64,12 @@ fn resolves_an_environment_reference_for_the_embedding_model() {
 }
 
 #[test]
-fn a_missing_embedding_model_variable_is_a_startup_error() {
-    let error = load_error(
+fn an_unset_embedding_model_variable_leaves_search_unconfigured() {
+    let loaded = settings(
         "litellm_settings:\n  agent_search_embedding_model: os.environ/EMBED_MODEL",
         &[],
     );
-    assert_eq!(error.category(), "missing_environment");
-    assert!(error.to_string().contains("EMBED_MODEL"), "{error}");
+    assert_eq!(loaded.embedding_model, None);
 }
 
 #[test]
