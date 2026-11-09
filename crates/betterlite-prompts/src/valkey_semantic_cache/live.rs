@@ -107,6 +107,7 @@ pub(crate) fn create_command(index: &str, schema: &IndexSchema) -> redis::Cmd {
         .arg(&["ON", "HASH", "PREFIX"])
         .arg(1_usize)
         .arg(schema.prefix.as_str());
+    command.arg(&["SCORE", "1.0"]);
     command
         .arg("SCHEMA")
         .arg(CACHE_KEY_FIELD_NAME)
@@ -161,10 +162,10 @@ fn info_object(items: &[Value]) -> Result<Json, ValkeySemanticError> {
     }
     let mut object = Object::new();
     for [name, value] in pairs {
-        let Value::BulkString(raw_name) = name else {
+        let Json::Text(field) = reply_to_json(name)? else {
             return Err(ValkeySemanticError::MalformedIndexInfo);
         };
-        object.insert(String::from_utf8(raw_name.clone())?, reply_to_json(value)?);
+        object.insert(field, reply_to_json(value)?);
     }
     Ok(Json::Object(object))
 }

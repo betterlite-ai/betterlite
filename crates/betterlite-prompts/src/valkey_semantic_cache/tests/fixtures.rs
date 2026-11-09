@@ -7,12 +7,14 @@ use betterlite_redis::valkey::pack_vector;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
+use super::fake_server::FakeValkey;
 use crate::arguments::json::{Json, Object};
 use crate::message_content::{Content, Message};
-use crate::redis_semantic_cache::SemanticCacheKwargs;
 use crate::redis_semantic_cache::ports::{SemanticEmbedError, SemanticEmbedder};
+use crate::redis_semantic_cache::{SIMILARITY_FIELD, SemanticCacheKwargs};
 use crate::valkey_semantic_cache::ValkeySemanticCache;
 use crate::valkey_semantic_cache::error::ValkeySemanticError;
+use crate::valkey_semantic_cache::live::LiveValkeyConnector;
 use crate::valkey_semantic_cache::options::{ValkeyEnv, ValkeySemanticOptions};
 use crate::valkey_semantic_cache::ports::{
     DocIdSource, DocMapping, Hit, IndexSchema, KnnQuery, ValkeyConnector, ValkeyIndex,
@@ -400,13 +402,22 @@ pub(crate) fn vector_attribute(dimension: usize) -> Json {
     Json::List(fields)
 }
 
+pub(crate) fn tag_attribute() -> Json {
+    Json::List(
+        ["identifier", "litellm_cache_key", "type", "TAG"]
+            .map(|item| Json::Text(item.to_owned()))
+            .to_vec(),
+    )
+}
+
 pub(crate) fn info_reply(dimension: usize) -> Json {
+    info_with_attributes(vec![vector_attribute(dimension)])
+}
+
+pub(crate) fn info_with_attributes(attributes: Vec<Json>) -> Json {
     let mut info = Object::new();
     info.insert("index_name".to_owned(), Json::Text(INDEX_NAME.to_owned()));
-    info.insert(
-        "attributes".to_owned(),
-        Json::List(vec![vector_attribute(dimension)]),
-    );
+    info.insert("attributes".to_owned(), Json::List(attributes));
     info.insert("num_docs".to_owned(), Json::Number(Number::from(2_i64)));
     Json::Object(info)
 }
@@ -432,3 +443,47 @@ pub(crate) fn text_args(command: &redis::Cmd) -> Vec<String> {
 pub(crate) fn packed_vector() -> Vec<u8> {
     pack_vector(&VECTOR)
 }
+
+pub(crate) async fn live_index(server: &FakeValkey) -> Arc<dyn ValkeyIndex> {
+    LiveValkeyConnector
+        .connect(&SecretString::from(server.url()))
+        .await
+        .expect("the live index")
+}
+
+pub(crate) fn url_of(cache: &ValkeySemanticCache) -> String {
+    cache
+        .url
+        .as_ref()
+        .expect("a resolved valkey url")
+        .expose_secret()
+        .to_owned()
+}
+
+fn similarity_of(metadata: &Object) -> f64 {
+    match metadata.get(SIMILARITY_FIELD) {
+        Some(Json::Number(number)) => number.as_f64().expect("a finite similarity"),
+        _ => panic!("the semantic similarity is missing"),
+    }
+}
+
+pub(crate) fn assert_similarity(metadata: &Object, expected: f64) {
+    assert_eq!(similarity_of(metadata).to_bits(), expected.to_bits());
+}
+
+pub(crate) fn vector_attribute_without_marker() -> Json {
+    Json::List(vec![
+        Json::Text("identifier".to_owned()),
+        Json::Text("embedding".to_owned()),
+        Json::Text("attribute".to_owned()),
+        Json::Text("embedding".to_owned()),
+        Json::Text("type".to_owned()),
+        Json::Text("VECTOR".to_owned()),
+        Json::Text("dim".to_owned()),
+        Json::Text("3".to_owned()),
+    ])
+}
+
+pub(crate) const SIMPLE_STRING_INFO: &str = "*6\r\n+index_name\r\n$3\r\nidx\r\n+attributes\r\n*1\r\n*3\r\n+identifier\r\n+embedding\r\n*4\r\n+dimensions\r\n:3\r\n+type\r\n+VECTOR\r\n+num_docs\r\n:2\r\n";
+
+pub(crate) const ONE_HIT: &str = "*3\r\n:1\r\n$5\r\ndoc-a\r\n*4\r\n$8\r\nresponse\r\n$8\r\n\"cached\"\r\n$15\r\nvector_distance\r\n$4\r\n0.25\r\n";

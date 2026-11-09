@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod fake_server;
 mod fixtures;
 
 use std::error::Error as _;
@@ -8,45 +9,27 @@ use std::sync::Arc;
 use betterlite_redis::valkey::pack_vector;
 use redis::Value;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
+use self::fake_server::FakeValkey;
 use self::fixtures::{
-    FakeEmbedder, FakeIndex, INDEX_NAME, PROMPT, VECTOR, alternative_error, build, cache_with,
-    cache_with_injected_index, command_args, empty_env, exists_error, hit, info_reply,
-    kwargs_with_message, kwargs_without_prompt, options, packed_vector, server_error, text_args,
+    FakeEmbedder, FakeIndex, INDEX_NAME, ONE_HIT, PROMPT, SIMPLE_STRING_INFO, VECTOR,
+    alternative_error, assert_similarity, build, cache_with, cache_with_injected_index,
+    command_args, empty_env, exists_error, hit, info_reply, info_with_attributes,
+    kwargs_with_message, kwargs_without_prompt, live_index, options, packed_vector, server_error,
+    tag_attribute, text_args, url_of, vector_attribute, vector_attribute_without_marker,
 };
 use crate::arguments::json::{Json, Object};
-use crate::redis_semantic_cache::SIMILARITY_FIELD;
-use crate::valkey_semantic_cache::ValkeySemanticCache;
+use crate::message_content::Message;
 use crate::valkey_semantic_cache::error::ValkeySemanticError;
 use crate::valkey_semantic_cache::live::{
     create_command, parse_search_reply, search_command, store_command,
 };
 use crate::valkey_semantic_cache::options::ValkeyEnv;
-use crate::valkey_semantic_cache::ports::{IndexSchema, ValkeyIndex};
+use crate::valkey_semantic_cache::ports::{Hit, IndexSchema, ValkeyIndex};
 use crate::valkey_semantic_cache::schema::{
     assert_dim_matches, doc_mapping, extract_index_dim, knn_query, scope_tag,
 };
-
-fn url_of(cache: &ValkeySemanticCache) -> String {
-    cache
-        .url
-        .as_ref()
-        .expect("a resolved valkey url")
-        .expose_secret()
-        .to_owned()
-}
-
-fn similarity_of(metadata: &Object) -> f64 {
-    match metadata.get(SIMILARITY_FIELD) {
-        Some(Json::Number(number)) => number.as_f64().expect("a finite similarity"),
-        _ => panic!("the semantic similarity is missing"),
-    }
-}
-
-fn assert_similarity(metadata: &Object, expected: f64) {
-    assert_eq!(similarity_of(metadata).to_bits(), expected.to_bits());
-}
 
 #[test]
 fn options_missing_threshold_fails_with_litellms_message() {
@@ -209,33 +192,21 @@ fn options_redis_url_wins_over_host_port_and_password() {
     assert_eq!(url_of(&cache), "redis://:urlpw@elsewhere:6390");
 }
 
-#[test]
-fn options_ssl_selects_the_rediss_scheme() {
-    let mut settings = options();
-    settings.ssl = true;
-    let cache = build(settings, empty_env()).expect("the ssl setting");
-    assert_eq!(url_of(&cache), "rediss://:pw@localhost:6379");
-}
-
 #[rstest]
-#[case::punctuation("p@ss word/", "redis://:p%40ss%20word%2F@localhost:6379")]
-#[case::python_safe_characters("a~b_c.d-e", "redis://:a~b_c.d-e@localhost:6379")]
-fn options_password_is_percent_encoded_like_python_quote(
-    #[case] password: &str,
+#[case::punctuation(Some("p@ss word/"), false, "redis://:p%40ss%20word%2F@localhost:6379")]
+#[case::python_safe_characters(Some("a~b_c.d-e"), false, "redis://:a~b_c.d-e@localhost:6379")]
+#[case::ssl_selects_the_rediss_scheme(Some("pw"), true, "rediss://:pw@localhost:6379")]
+#[case::a_missing_password_builds_a_credential_free_url(None, false, "redis://localhost:6379")]
+fn options_url_encodes_the_password_and_picks_the_scheme(
+    #[case] password: Option<&str>,
+    #[case] ssl: bool,
     #[case] expected: &str,
 ) {
     let mut settings = options();
-    settings.password = Some(SecretString::from(password));
-    let cache = build(settings, empty_env()).expect("the password encoding");
+    settings.password = password.map(SecretString::from);
+    settings.ssl = ssl;
+    let cache = build(settings, empty_env()).expect("the url settings");
     assert_eq!(url_of(&cache), expected);
-}
-
-#[test]
-fn options_a_missing_password_builds_a_credential_free_url() {
-    let mut settings = options();
-    settings.password = None;
-    let cache = build(settings, empty_env()).expect("the credential-free url");
-    assert_eq!(url_of(&cache), "redis://localhost:6379");
 }
 
 #[test]
@@ -347,6 +318,8 @@ fn schema_index_schema_matches_litellm() {
             "PREFIX",
             "1",
             "litellm_semantic_cache_index:",
+            "SCORE",
+            "1.0",
             "SCHEMA",
             "litellm_cache_key",
             "TAG",
@@ -469,28 +442,11 @@ fn schema_extract_index_dim_is_none_without_the_marker(#[case] info: Json) {
     assert_eq!(extract_index_dim(&info), None);
 }
 
-fn vector_attribute_without_marker() -> Json {
-    Json::List(vec![
-        Json::Text("identifier".to_owned()),
-        Json::Text("embedding".to_owned()),
-        Json::Text("attribute".to_owned()),
-        Json::Text("embedding".to_owned()),
-        Json::Text("type".to_owned()),
-        Json::Text("VECTOR".to_owned()),
-        Json::Text("dim".to_owned()),
-        Json::Text("3".to_owned()),
-    ])
-}
-
-#[test]
-fn schema_assert_dim_matches_accepts_the_same_dimension() {
-    assert_dim_matches(&info_reply(3), 3, INDEX_NAME).expect("the same dimension");
-}
-
-#[test]
-fn schema_assert_dim_matches_accepts_an_index_without_a_dimension() {
-    let info = Json::Object(Object::new());
-    assert_dim_matches(&info, 3, INDEX_NAME).expect("a missing dimension");
+#[rstest]
+#[case::the_same_dimension(info_reply(3))]
+#[case::an_index_without_a_dimension(Json::Object(Object::new()))]
+fn schema_assert_dim_matches_accepts(#[case] info: Json) {
+    assert_dim_matches(&info, 3, INDEX_NAME).expect("a matching or missing dimension");
 }
 
 #[test]
@@ -612,7 +568,7 @@ async fn index_an_exists_error_is_recognized_in_any_case() {
 
 #[tokio::test]
 async fn index_other_create_errors_are_not_remembered() {
-    let index = Arc::new(FakeIndex::default());
+    let index = Arc::new(FakeIndex::default().with_info(INDEX_NAME, info_reply(3)));
     index.fail_create_next(alternative_error());
     let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
     let kwargs = kwargs_with_message(PROMPT);
@@ -670,9 +626,12 @@ async fn store_pipeline_writes_every_pair() {
 #[rstest]
 #[case::no_ttl(None, None)]
 #[case::a_ttl(Some(60), Some(60))]
-#[case::zero_is_no_expiry(Some(0), None)]
+#[case::zero_reaches_expire(Some(0), Some(0))]
 #[tokio::test]
-async fn store_uses_the_redis_ttl_rule(#[case] ttl: Option<i64>, #[case] expected: Option<i64>) {
+async fn store_passes_the_ttl_to_the_hash_unchanged(
+    #[case] ttl: Option<i64>,
+    #[case] expected: Option<i64>,
+) {
     let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
     let mut kwargs = kwargs_with_message(PROMPT);
@@ -711,55 +670,36 @@ async fn store_stores_the_json_text_of_the_value() {
     assert_eq!(index.stores()[0].1.response, "{\"answer\":\"42\"}");
 }
 
+#[rstest]
+#[case::no_messages(None)]
+#[case::empty_messages(Some(Vec::new()))]
 #[tokio::test]
-async fn store_without_a_prompt_writes_nothing() {
+async fn store_without_a_prompt_writes_nothing(#[case] messages: Option<Vec<Message>>) {
     let embedder = Arc::new(FakeEmbedder::new());
     let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(Arc::clone(&embedder), &index);
+    let mut kwargs = kwargs_without_prompt();
+    kwargs.messages = messages;
     cache
-        .async_set_cache(
-            "user-1",
-            &Json::Text("cached".to_owned()),
-            &kwargs_without_prompt(),
-        )
+        .async_set_cache("user-1", &Json::Text("cached".to_owned()), &kwargs)
         .await;
     assert!(index.stores().is_empty());
     assert!(embedder.calls().is_empty());
 }
 
+#[rstest]
+#[case::embedding(true)]
+#[case::backend(false)]
 #[tokio::test]
-async fn store_treats_empty_messages_as_no_prompt() {
-    let index = Arc::new(FakeIndex::default());
-    let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
-    let mut kwargs = kwargs_with_message(PROMPT);
-    kwargs.messages = Some(Vec::new());
-    cache
-        .async_set_cache("user-1", &Json::Text("cached".to_owned()), &kwargs)
-        .await;
-    assert!(index.stores().is_empty());
-}
-
-#[tokio::test]
-async fn store_swallows_embedding_errors() {
+async fn store_swallows_errors(#[case] embedding: bool) {
     let embedder = Arc::new(FakeEmbedder::new());
     let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(Arc::clone(&embedder), &index);
-    embedder.fail();
-    cache
-        .async_set_cache(
-            "user-1",
-            &Json::Text("cached".to_owned()),
-            &kwargs_with_message(PROMPT),
-        )
-        .await;
-    assert!(index.stores().is_empty());
-}
-
-#[tokio::test]
-async fn store_swallows_backend_errors() {
-    let index = Arc::new(FakeIndex::default());
-    index.fail_store(alternative_error());
-    let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
+    if embedding {
+        embedder.fail();
+    } else {
+        index.fail_store(alternative_error());
+    }
     cache
         .async_set_cache(
             "user-1",
@@ -789,30 +729,24 @@ async fn lookup_returns_the_decoded_response_and_the_similarity() {
     assert_similarity(&metadata, 0.75_f64);
 }
 
+#[rstest]
+#[case::below_the_threshold(0.875_f64, false, 0.125_f64)]
+#[case::equal_to_the_threshold(0.75_f64, true, 0.25_f64)]
 #[tokio::test]
-async fn lookup_below_the_threshold_keeps_the_similarity() {
+async fn lookup_compares_the_similarity_with_the_threshold(
+    #[case] distance: f64,
+    #[case] is_hit: bool,
+    #[case] similarity: f64,
+) {
     let index = Arc::new(FakeIndex::default());
-    index.set_hits(vec![hit(0.875, "{\"text\":\"cached\"}")]);
+    index.set_hits(vec![hit(distance, "{\"text\":\"cached\"}")]);
     let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
     let mut metadata = Object::new();
     let value = cache
         .async_get_cache("user-1", &kwargs_with_message(PROMPT), Some(&mut metadata))
         .await;
-    assert!(value.is_none());
-    assert_similarity(&metadata, 0.125_f64);
-}
-
-#[tokio::test]
-async fn lookup_a_similarity_equal_to_the_threshold_is_a_hit() {
-    let index = Arc::new(FakeIndex::default());
-    index.set_hits(vec![hit(0.75, "{\"text\":\"cached\"}")]);
-    let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
-    let mut metadata = Object::new();
-    let value = cache
-        .async_get_cache("user-1", &kwargs_with_message(PROMPT), Some(&mut metadata))
-        .await;
-    assert!(value.is_some());
-    assert_similarity(&metadata, 0.25_f64);
+    assert_eq!(value.is_some(), is_hit);
+    assert_similarity(&metadata, similarity);
 }
 
 #[tokio::test]
@@ -964,4 +898,94 @@ async fn info_propagates_backend_errors() {
         panic!("an FT.INFO failure must surface");
     };
     assert_eq!(error.to_string(), alternative_error().to_string());
+}
+
+#[tokio::test]
+async fn info_live_index_reads_simple_string_field_names() {
+    let server = FakeValkey::start(&[("FT.INFO", SIMPLE_STRING_INFO)]).await;
+    let info = live_index(&server)
+        .await
+        .ft_info(INDEX_NAME)
+        .await
+        .expect("the parsed FT.INFO reply");
+    assert_eq!(extract_index_dim(&info), Some(3));
+    let Json::Object(fields) = info else {
+        panic!("FT.INFO must parse into an object");
+    };
+    assert_eq!(
+        fields.get("index_name"),
+        Some(&Json::Text("idx".to_owned()))
+    );
+}
+
+#[rstest]
+#[case::no_ttl(None, 0)]
+#[case::a_ttl(Some(60), 1)]
+#[case::zero(Some(0), 1)]
+#[tokio::test]
+async fn store_live_index_sends_expire_only_with_a_ttl(
+    #[case] ttl: Option<i64>,
+    #[case] expires: usize,
+) {
+    let server = FakeValkey::start(&[]).await;
+    let fields = doc_mapping("user-1", PROMPT, "\"cached\"", &VECTOR);
+    live_index(&server)
+        .await
+        .store_hash("doc-1", &fields, ttl)
+        .await
+        .expect("the stored hash");
+    assert_eq!(server.commands_named("HSET").len(), 1);
+    let sent = server.commands_named("EXPIRE");
+    assert_eq!(sent.len(), expires);
+    if let Some(seconds) = ttl {
+        assert_eq!(
+            sent[0],
+            ["EXPIRE".to_owned(), "doc-1".to_owned(), seconds.to_string()]
+        );
+    }
+}
+
+#[rstest]
+#[case::one_document(ONE_HIT, vec![Hit { response: "\"cached\"".to_owned(), distance: 0.25 }])]
+#[case::empty("*1\r\n:0\r\n", Vec::new())]
+#[tokio::test]
+async fn lookup_live_index_parses_the_search_reply(
+    #[case] reply: &str,
+    #[case] expected: Vec<Hit>,
+) {
+    let server = FakeValkey::start(&[("FT.SEARCH", reply)]).await;
+    let hits = live_index(&server)
+        .await
+        .ft_search(INDEX_NAME, &knn_query("user-1"), &packed_vector())
+        .await
+        .expect("the parsed hits");
+    assert_eq!(hits, expected);
+}
+
+#[test]
+fn schema_extract_index_dim_scans_past_attributes_without_a_dimension() {
+    let info = info_with_attributes(vec![tag_attribute(), vector_attribute(768)]);
+    assert_eq!(extract_index_dim(&info), Some(768));
+}
+
+#[rstest]
+#[case::explicit_wins(Some("explicit"), "explicit")]
+#[case::empty_explicit_falls_to_valkey(Some(""), "valkeypw")]
+#[case::missing_explicit_falls_to_valkey(None, "valkeypw")]
+fn options_explicit_password_wins_and_an_empty_one_counts_as_missing(
+    #[case] explicit: Option<&str>,
+    #[case] expected: &str,
+) {
+    let mut settings = options();
+    settings.password = explicit.map(SecretString::from);
+    let env = ValkeyEnv {
+        valkey_password: Some(SecretString::from("valkeypw")),
+        redis_password: Some(SecretString::from("redispw")),
+        ..empty_env()
+    };
+    let cache = build(settings, env).expect("the password choice");
+    assert_eq!(
+        url_of(&cache),
+        format!("redis://:{expected}@localhost:6379")
+    );
 }

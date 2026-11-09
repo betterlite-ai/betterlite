@@ -3,7 +3,7 @@ use super::error::ValkeySemanticError;
 use super::index;
 use super::schema::{doc_mapping, scope_tag};
 use crate::arguments::json::Json;
-use crate::redis_semantic_cache::{RedisSemanticCache, SemanticCacheKwargs};
+use crate::redis_semantic_cache::SemanticCacheKwargs;
 use crate::semantic_cache_records::extract_semantic_prompt;
 
 pub(crate) async fn store_value(
@@ -30,7 +30,5 @@ pub(crate) async fn store_value(
     let id = cache.doc_ids.next_id();
     let document = format!("{}{}:{id}", cache.key_prefix, scope_tag(key));
     let fields = doc_mapping(key, &prompt, &response, &vector);
-    backend
-        .store_hash(&document, &fields, RedisSemanticCache::get_ttl(kwargs.ttl))
-        .await
+    backend.store_hash(&document, &fields, kwargs.ttl).await
 }
