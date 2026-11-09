@@ -79,5 +79,38 @@ call:
       model: claude-3
       completion_output: hello world
       counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - usage: {completion_tokens: 0}
+        choices: [{finish_reason: stop}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: [{}, {finish_reason: stop}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - usage: {completion_tokens: 0}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {completion_tokens: 8}
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 0}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

@@ -59,5 +59,12 @@ call:
       model: gpt-4o
       completion_output: hi
       counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, prompt_tokens_details: {google_maps_grounding_requests: 2}}
+      - usage: {prompt_tokens: 2, prompt_tokens_details: {cached_tokens: 3}}
+      model: gemini-1.5-pro
+      completion_output: hi
+      counter: {text: 7, messages: 4}
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}
