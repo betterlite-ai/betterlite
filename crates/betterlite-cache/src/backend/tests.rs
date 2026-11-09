@@ -116,6 +116,34 @@ async fn base_pipeline_reads_and_writes_are_unsupported() {
     ));
 }
 
+#[tokio::test]
+async fn base_async_reads_and_writes_are_unsupported() {
+    let read_error = BaseContract
+        .async_get_cache("key")
+        .await
+        .expect_err("unsupported");
+    assert!(matches!(
+        read_error,
+        BackendError::Unsupported("async_get_cache")
+    ));
+    let write_error = BaseContract
+        .async_set_cache("key", CacheValue::Integer(1), None)
+        .await
+        .expect_err("unsupported");
+    assert!(matches!(
+        write_error,
+        BackendError::Unsupported("async_set_cache")
+    ));
+    let batch_error = BaseContract
+        .batch_cache_write("key", CacheValue::Integer(1), None)
+        .await
+        .expect_err("unsupported");
+    assert!(matches!(
+        batch_error,
+        BackendError::Unsupported("batch_cache_write")
+    ));
+}
+
 #[test]
 fn memory_default_ttl_is_six_hundred() {
     assert_eq!(cache_at(0.0_f64).default_ttl(), 600);
