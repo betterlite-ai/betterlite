@@ -9,6 +9,8 @@ call:
         - {kind: embedding, model: 'vertex_ai/gemini-embedding-2', project: proj, location: europe-west1, api_version: v1beta1}
         - {kind: embedding, model: gemini-embedding-2-001, project: proj, location: us-central1, api_version: v1}
         - {kind: embedding, model: 'vertex_ai/gemini-embedding-2-001', project: proj, location: us-central1, api_version: v1}
+        - {kind: embedding, model: 'vertex_ai/vertex_ai/gemini-embedding-2', project: proj, location: us-central1, api_version: v1}
+        - {kind: embedding, model: gemini-flash-experimental-001, project: proj, location: us-central1, api_version: v1}
         - {kind: embedding, model: text-embedding-005, project: proj, location: us-central1, api_version: v1}
 env: {}
 compare: {ignore: []}

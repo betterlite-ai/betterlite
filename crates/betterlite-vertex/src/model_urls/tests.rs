@@ -315,6 +315,7 @@ fn embed_content_catalog() {
     .unwrap();
     assert_eq!(predict.endpoint, Endpoint::Predict);
     model_name_variants();
+    spec_model_embedding();
 }
 
 fn model_name_variants() {
@@ -333,12 +334,24 @@ fn model_name_variants() {
             Endpoint::EmbedContent,
         )
     );
-    let versioned = get_embedding_url(
-        &catalog,
-        &embedding_input("gemini-embedding-2-001", "us-central1", ApiVersion::V1),
-    )
-    .unwrap();
-    assert_eq!(versioned.endpoint, Endpoint::EmbedContent);
+    assert_eq!(
+        catalog_embedding(&catalog, "vertex_ai/vertex_ai/gemini-embedding-2", "us-central1", ApiVersion::V1),
+        (
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/vertex_ai/vertex_ai/gemini-embedding-2:embedContent".to_owned(),
+            Endpoint::EmbedContent,
+        )
+    );
+    assert_eq!(
+        catalog_embedding(&catalog, "gemini-flash-experimental-001", "us-central1", ApiVersion::V1),
+        (
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-flash-experimental-001:embedContent".to_owned(),
+            Endpoint::EmbedContent,
+        )
+    );
+}
+
+fn spec_model_embedding() {
+    let catalog = catalog();
     let spec = get_vertex_url(
         &catalog,
         &vertex_input(
@@ -353,6 +366,17 @@ fn model_name_variants() {
     assert_eq!(
         spec.url,
         "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-embedding-2:embedContent"
+    );
+    assert_eq!(spec.endpoint, Endpoint::EmbedContent);
+    assert_eq!(
+        catalog_embedding(
+            &catalog,
+            "gemini-embedding-2-001",
+            "us-central1",
+            ApiVersion::V1
+        )
+        .1,
+        Endpoint::EmbedContent
     );
 }
 

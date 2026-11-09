@@ -37,7 +37,7 @@ pub fn get_embedding_url(
     })
 }
 
-// get_model_info reads vertex_ai/<model>, <model>, then the names with a stable version suffix removed
+// get_model_info reads vertex_ai/<model>, <model>, the split name, then both with the version suffix removed
 fn uses_embed_content(catalog: &ModelCatalog, model: &str) -> bool {
     let split = model.strip_prefix("vertex_ai/").unwrap_or(model);
     let stripped = strip_stable_vertex_version(split);
@@ -46,6 +46,7 @@ fn uses_embed_content(catalog: &ModelCatalog, model: &str) -> bool {
     [
         prefixed.as_str(),
         model,
+        split,
         stripped_prefixed.as_str(),
         stripped.as_str(),
     ]
