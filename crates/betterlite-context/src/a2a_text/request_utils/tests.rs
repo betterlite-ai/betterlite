@@ -182,9 +182,9 @@ async fn usage_without_any_text_is_zero() {
 
 #[rstest]
 #[case::no_params(
-    r#"{"request":{},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#
+    r#"{"request":{},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#
 )]
-#[case::no_message(r#"{"request":{"params":{}},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#)]
+#[case::no_message(r#"{"request":{"params":{}},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#)]
 #[tokio::test]
 async fn usage_without_a_request_message_counts_no_prompt(#[case] source: &str) {
     let probe = usage_probe(source);
@@ -199,7 +199,7 @@ async fn usage_without_a_request_message_counts_no_prompt(#[case] source: &str) 
 #[tokio::test]
 async fn usage_with_a_failing_tokenizer_is_zero() {
     let probe = usage_probe(
-        r#"{"request":{"params":{"message":{"parts":[{"kind":"text","text":"hello world"}]}}},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#,
+        r#"{"request":{"params":{"message":{"parts":[{"kind":"text","text":"hello world"}]}}},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#,
     );
 
     let usage = usage_from_request_response(&failing_counter(), &probe.request, &probe.response)
