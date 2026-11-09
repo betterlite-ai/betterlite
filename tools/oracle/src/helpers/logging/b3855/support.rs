@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use betterlite_logging::otel::legacy_exporters::build::LegacyExporterBuilder;
 use betterlite_logging::otel::legacy_exporters::selection::{
-    ExporterKind, ProcessorKind, SpanProcessorPlan,
+    ExporterKind, ExporterPlan, ProcessorKind, SpanProcessorPlan,
 };
 use betterlite_logging::otel::legacy_exporters::tracer_cache::{
     CacheKey, CacheSettings, DynamicTracerCache, MAX_DYNAMIC_TRACER_PROVIDERS,
@@ -54,25 +54,13 @@ const fn processor_text(kind: ProcessorKind) -> &'static str {
     }
 }
 
-pub(super) fn plan_fields(
-    kind: ExporterKind,
-    endpoint: Option<&str>,
-    headers: &BTreeMap<String, String>,
-) -> Value {
-    json!({
-        "kind": kind_text(kind),
-        "endpoint": endpoint,
-        "headers": headers,
-    })
-}
-
-pub(super) fn span_plan_json(plan: &SpanProcessorPlan) -> Value {
-    json!({
-        "kind": kind_text(plan.kind),
-        "endpoint": plan.endpoint,
-        "headers": plan.headers,
-        "processor": processor_text(plan.processor),
-    })
+pub(super) fn plan_json(plan: &ExporterPlan, processor: Option<ProcessorKind>) -> Value {
+    let kind = kind_text(plan.kind);
+    let mut value = json!({ "kind": kind, "endpoint": plan.endpoint, "headers": plan.headers });
+    if let (Some(processor), Value::Object(fields)) = (processor, &mut value) {
+        fields.insert("processor".to_owned(), json!(processor_text(processor)));
+    }
+    value
 }
 
 pub(super) fn resource_json(resource: &Resource) -> Value {

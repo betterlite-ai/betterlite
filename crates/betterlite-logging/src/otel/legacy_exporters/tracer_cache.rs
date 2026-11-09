@@ -107,36 +107,36 @@ impl DynamicTracerCache {
             endpoint: dynamic_config.endpoint.clone(),
             headers: dynamic_config.headers.clone(),
         };
-        let owns_exporter = !matches!(&dynamic_config.exporter, Exporter::InMemory);
-        let plan = || {
-            span_processor_plan(
-                &self.config,
-                None,
-                Some(dynamic_config),
-                self.callback_name.as_deref(),
-            )
-        };
-        self.tracer_for_key(key, owns_exporter, plan)
+        self.tracer_for_plan(key, &dynamic_config.exporter, Some(dynamic_config), None)
     }
 
     pub fn tracer_for_headers(
         &self,
         dynamic_headers: &BTreeMap<String, String>,
     ) -> Result<SdkTracer, LegacyExporterError> {
-        let owns_exporter = !matches!(&self.config.exporter, Exporter::InMemory);
+        let key = CacheKey::Headers(dynamic_headers.clone());
+        let exporter = &self.config.exporter;
+        self.tracer_for_plan(key, exporter, None, Some(dynamic_headers))
+    }
+
+    fn tracer_for_plan(
+        &self,
+        key: CacheKey,
+        exporter: &Exporter,
+        config_override: Option<&OpenTelemetryConfig>,
+        dynamic_headers: Option<&BTreeMap<String, String>>,
+    ) -> Result<SdkTracer, LegacyExporterError> {
+        let owns_exporter = !matches!(exporter, Exporter::InMemory);
+        let callback_name = self.callback_name.as_deref();
         let plan = || {
             span_processor_plan(
                 &self.config,
-                Some(dynamic_headers),
-                None,
-                self.callback_name.as_deref(),
+                dynamic_headers,
+                config_override,
+                callback_name,
             )
         };
-        self.tracer_for_key(
-            CacheKey::Headers(dynamic_headers.clone()),
-            owns_exporter,
-            plan,
-        )
+        self.tracer_for_key(key, owns_exporter, plan)
     }
 
     fn tracer_for_key<F>(

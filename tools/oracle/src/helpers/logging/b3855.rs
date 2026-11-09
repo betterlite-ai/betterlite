@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::helpers::HelperResult;
 
 use self::inputs::{ConfigInput, HeadersValue, RequestInput};
-use self::support::{invalid, plan_fields, resource_json, span_plan_json, tracer_cache_sequence};
+use self::support::{invalid, plan_json, resource_json, tracer_cache_sequence};
 
 mod inputs;
 mod support;
@@ -67,29 +67,21 @@ fn span_processor_reply(input: &Input) -> HelperResult {
         input.callback_name.as_deref(),
     )
     .map_err(|error| invalid(&error.to_string()))?;
-    Ok(span_plan_json(&plan))
+    Ok(plan_json(&plan, Some(plan.processor)))
 }
 
 fn log_exporter_reply(input: &Input) -> HelperResult {
     let config = input.config.to_config(&input.environment);
     let plan = log_exporter_plan(&config, input.callback_name.as_deref(), &input.environment);
     let plan = plan.map_err(|error| invalid(&error.to_string()))?;
-    Ok(plan_fields(
-        plan.kind,
-        plan.endpoint.as_deref(),
-        &plan.headers,
-    ))
+    Ok(plan_json(&plan, None))
 }
 
 fn metric_reader_reply(input: &Input) -> HelperResult {
     let config = input.config.to_config(&input.environment);
     let plan = metric_reader_plan(&config, input.callback_name.as_deref());
     let plan = plan.map_err(|error| invalid(&error.to_string()))?;
-    Ok(plan_fields(
-        plan.kind,
-        plan.endpoint.as_deref(),
-        &plan.headers,
-    ))
+    Ok(plan_json(&plan, None))
 }
 
 impl crate::helpers::Helper for Op {
