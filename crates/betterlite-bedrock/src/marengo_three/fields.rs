@@ -4,6 +4,10 @@ use serde_json::Number;
 
 use super::options::Choice;
 
+// pydantic caps integer text at 4300 characters and counts the minus sign
+const MAX_POSITIVE_DIGITS: usize = 4300;
+const MAX_NEGATIVE_DIGITS: usize = 4299;
+
 pub type Parsed<T> = Result<T, Vec<String>>;
 
 // Numbers stay serde_json::Number so decoding does not depend on the arbitrary_precision feature
@@ -108,27 +112,46 @@ fn parse_numeric_text(text: &str) -> Option<Number> {
     whole.or_else(|| trimmed.parse::<f64>().ok().and_then(Number::from_f64))
 }
 
-fn whole_digits(text: &str) -> Option<Number> {
-    let unsigned = text.strip_prefix('+').unwrap_or(text);
-    let digits = unsigned.strip_prefix('-').unwrap_or(unsigned);
-    let all_digits = !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
-    all_digits.then_some(unsigned)?.parse::<Number>().ok()
+fn whole_digits(text: &str, zero_fraction: bool) -> Option<Number> {
+    let negative = text.starts_with('-');
+    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+    let digits = match unsigned.split_once('.') {
+        None => unsigned,
+        Some((whole, zeros))
+            if zero_fraction && !zeros.is_empty() && zeros.bytes().all(|byte| byte == b'0') =>
+        {
+            whole
+        }
+        Some(_) => return None,
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let significant = digits.trim_start_matches('0');
+    let allowed = if negative {
+        MAX_NEGATIVE_DIGITS
+    } else {
+        MAX_POSITIVE_DIGITS
+    };
+    if significant.len() > allowed {
+        return None;
+    }
+    if significant.is_empty() {
+        return Some(Number::from(0_u8));
+    }
+    let sign = if negative { "-" } else { "" };
+    format!("{sign}{significant}").parse::<Number>().ok()
 }
 
 pub fn integer(value: &Given, location: &str) -> Parsed<Number> {
     let invalid = || vec![format!("{location}: Input should be a valid integer")];
-    if matches!(value, Given::Text(text) if text.contains(['e', 'E'])) {
-        return Err(invalid());
-    }
-    let written = match value {
-        Given::Number(literal) => Some(literal.to_string()),
-        Given::Text(text) => Some(text.trim().to_owned()),
-        Given::Null | Given::Bool(_) | Given::List(_) | Given::Mapping(_) => None,
-    };
-    if let Some(whole) = written.as_deref().and_then(whole_digits) {
-        return Ok(whole);
+    if let Given::Text(text) = value {
+        return whole_digits(text.trim(), true).ok_or_else(invalid);
     }
     let parsed = number(value, location).map_err(|_unparsed| invalid())?;
+    if let Some(whole) = whole_digits(&parsed.to_string(), false) {
+        return Ok(whole);
+    }
     let float = parsed.as_f64().ok_or_else(invalid)?;
     // A whole float prints without a fraction, so it reads back as an integer
     let rendered = float.to_string();
