@@ -9,26 +9,17 @@ from redis.exceptions import ResponseError
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Value: TypeAlias = str | bytes | int | float
-BYTE_MAX = 255
 
 
 class Lists(Protocol):
-    async def async_rpush(
-        self, key: str, values: Sequence[Value], parent_otel_span: object = None
-    ) -> int: ...
-
+    async def async_rpush(self, key: str, values: Sequence[Value]) -> int: ...
     async def async_rpush_and_trim(
         self, key: str, values: Sequence[Value], max_len: int
     ) -> int: ...
-
     async def async_rpush_pipeline(
         self, rpush_list: Sequence[RedisPipelineRpushOperation]
     ) -> list[int]: ...
-
-    async def async_lpop(
-        self, key: str, count: int | None = None, parent_otel_span: object = None
-    ) -> object: ...
-
+    async def async_lpop(self, key: str, count: int | None = None) -> object: ...
     async def async_lpop_pipeline(
         self, lpop_list: Sequence[RedisPipelineLpopOperation]
     ) -> list[object]: ...
@@ -38,12 +29,6 @@ def string_value(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
     return value
-
-
-def optional_string(value: Json, name: str) -> str | None:
-    if value is None:
-        return None
-    return string_value(value, name)
 
 
 def optional_integer(value: Json, name: str) -> int | None:
@@ -68,12 +53,6 @@ def list_value(value: Json, name: str) -> list[Json]:
     return value
 
 
-def byte_value(value: Json) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= BYTE_MAX:
-        raise ValueError("a byte must be an integer from 0 to 255")
-    return value
-
-
 def decode_value(value: Json) -> Value:
     if isinstance(value, dict):
         raw = value.get("bytes")
@@ -85,36 +64,18 @@ def decode_value(value: Json) -> Value:
     return value
 
 
-def as_bytes(value: object) -> bytes:
+def byte_value(value: Json) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 256:  # noqa: PLR2004
+        raise ValueError("a byte must be an integer from 0 to 255")
+    return value
+
+
+def as_bytes(value: Value) -> bytes:
     if isinstance(value, bytes):
         return value
     if isinstance(value, str):
         return value.encode()
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TypeError(f"a list value cannot be {type(value).__name__}")
     return str(value).encode()
-
-
-@dataclass
-class Push:
-    name: str
-    values: list[Value]
-
-
-@dataclass
-class Trim:
-    name: str
-    start: int
-    stop: int
-
-
-@dataclass
-class Pop:
-    name: str
-    count: int | None
-
-
-Queued: TypeAlias = Push | Trim | Pop
 
 
 def push_rows(lists: dict[str, list[bytes]], name: str, values: list[Value]) -> int:
@@ -128,8 +89,7 @@ def trim_rows(lists: dict[str, list[bytes]], name: str, start: int, stop: int) -
     if rows is not None:
         length = len(rows)
         begin = max(length + start, 0) if start < 0 else start
-        end = length + stop if stop < 0 else stop
-        end = min(end, length - 1)
+        end = min(length + stop if stop < 0 else stop, length - 1)
         if begin > end:
             rows.clear()
         else:
@@ -152,10 +112,29 @@ def pop_rows(
     return popped
 
 
+@dataclass
+class Push:
+    name: str
+    values: list[Value]
+
+
+@dataclass
+class Trim:
+    name: str
+    start: int
+    stop: int
+
+
+@dataclass
+class Pop:
+    name: str
+    count: int | None
+
+
 class FakePipeline:
     def __init__(self, lists: dict[str, list[bytes]]) -> None:
         self.lists = lists
-        self.queued: list[Queued] = []
+        self.queued: list[Push | Trim | Pop] = []
 
     async def __aenter__(self) -> Self:
         return self
@@ -205,74 +184,20 @@ class RecordingLogger:
     def __init__(self) -> None:
         self.events: list[dict[str, Json]] = []
 
-    async def async_service_success_hook(
-        self,
-        service: object,  # noqa: ARG002 - the litellm keyword name
-        duration: object,  # noqa: ARG002 - the litellm keyword name
-        call_type: str,
-        caller: object = None,  # noqa: ARG002 - the litellm keyword name
-    ) -> None:
+    async def async_service_success_hook(self, *, call_type: str, **_: object) -> None:
         self.events.append({"call_type": call_type, "outcome": "success"})
 
-    async def async_service_failure_hook(
-        self,
-        service: object,  # noqa: ARG002 - the litellm keyword name
-        duration: object,  # noqa: ARG002 - the litellm keyword name
-        error: object,  # noqa: ARG002 - the litellm keyword name
-        call_type: str,
-        caller: object = None,  # noqa: ARG002 - the litellm keyword name
-    ) -> None:
+    async def async_service_failure_hook(self, *, call_type: str, **_: object) -> None:
         self.events.append({"call_type": call_type, "outcome": "failure"})
-
-
-def build_cache(
-    namespace: str | None, redis_version: str, client: FakeRedis
-) -> tuple[Lists, RecordingLogger]:
-    logger = RecordingLogger()
-    cache = object.__new__(RedisCache)
-    fields: dict[str, object] = {
-        "namespace": namespace,
-        "redis_version": redis_version,
-        "_circuit_breaker": RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60),
-        "service_logger_obj": logger,
-        "init_async_client": lambda: client,
-    }
-    for name, value in fields.items():
-        object.__setattr__(cache, name, value)
-    return cast(Lists, cache), logger
-
-
-def required_key(input_value: dict[str, Json]) -> str:
-    return string_value(input_value.get("key"), "key")
-
-
-def pipeline_entries(input_value: dict[str, Json]) -> list[dict[str, Json]]:
-    raw = list_value(input_value.get("operations"), "operations")
-    return [object_value(entry, "operation") for entry in raw]
 
 
 def entry_values(entry: dict[str, Json]) -> list[Value]:
     return [decode_value(item) for item in list_value(entry.get("values"), "values")]
 
 
-def rpush_operations(input_value: dict[str, Json]) -> list[RedisPipelineRpushOperation]:
-    return [
-        RedisPipelineRpushOperation(
-            key=string_value(entry.get("key"), "key"),
-            values=entry_values(entry),
-        )
-        for entry in pipeline_entries(input_value)
-    ]
-
-
-def lpop_operations(input_value: dict[str, Json]) -> list[RedisPipelineLpopOperation]:
-    return [
-        RedisPipelineLpopOperation(
-            key=string_value(entry.get("key"), "key"),
-            count=optional_integer(entry.get("count"), "count"),
-        )
-        for entry in pipeline_entries(input_value)
-    ]
+def pipeline_entries(input_value: dict[str, Json]) -> list[dict[str, Json]]:
+    raw = list_value(input_value.get("operations"), "operations")
+    return [object_value(entry, "operation") for entry in raw]
 
 
 def project_value(value: Json) -> Json:
@@ -285,31 +210,40 @@ def project_value(value: Json) -> Json:
     return value
 
 
-def project_lists(lists: dict[str, list[bytes]]) -> Json:
-    return {key: [project_value(cast(Json, item)) for item in rows] for key, rows in lists.items()}
-
-
 async def apply_operation(input_value: dict[str, Json], cache: Lists) -> Json:
     operation = string_value(input_value.get("operation"), "operation")
     match operation:
         case "rpush":
-            return await cache.async_rpush(required_key(input_value), entry_values(input_value))
+            key = string_value(input_value.get("key"), "key")
+            return await cache.async_rpush(key, entry_values(input_value))
         case "rpush_and_trim":
+            key = string_value(input_value.get("key"), "key")
             max_len = optional_integer(input_value.get("max_len"), "max_len")
             if max_len is None:
                 raise ValueError("rpush_and_trim needs max_len")
-            return await cache.async_rpush_and_trim(
-                required_key(input_value), entry_values(input_value), max_len
-            )
+            return await cache.async_rpush_and_trim(key, entry_values(input_value), max_len)
         case "rpush_pipeline":
-            return cast(Json, await cache.async_rpush_pipeline(rpush_operations(input_value)))
+            entries = [
+                RedisPipelineRpushOperation(
+                    key=string_value(entry.get("key"), "key"), values=entry_values(entry)
+                )
+                for entry in pipeline_entries(input_value)
+            ]
+            return cast(Json, await cache.async_rpush_pipeline(entries))
         case "lpop":
+            key = string_value(input_value.get("key"), "key")
             count = optional_integer(input_value.get("count"), "count")
-            popped = await cache.async_lpop(required_key(input_value), count)
-            return project_value(cast(Json, popped))
+            return project_value(cast(Json, await cache.async_lpop(key, count)))
         case "lpop_pipeline":
-            entries = await cache.async_lpop_pipeline(lpop_operations(input_value))
-            return [project_value(cast(Json, entry)) for entry in entries]
+            entries = [
+                RedisPipelineLpopOperation(
+                    key=string_value(entry.get("key"), "key"),
+                    count=optional_integer(entry.get("count"), "count"),
+                )
+                for entry in pipeline_entries(input_value)
+            ]
+            result = await cache.async_lpop_pipeline(entries)
+            return [project_value(cast(Json, entry)) for entry in result]
         case _:
             raise ValueError(f"unknown operation {operation}")
 
@@ -324,21 +258,30 @@ def initial_lists(input_value: dict[str, Json]) -> dict[str, list[bytes]]:
     raw = input_value.get("lists")
     if raw is None:
         return {}
-    lists: dict[str, list[bytes]] = {}
-    for key, rows in object_value(raw, "lists").items():
-        lists[key] = [as_bytes(decode_value(item)) for item in list_value(rows, key)]
-    return lists
+    return {
+        key: [as_bytes(decode_value(item)) for item in list_value(rows, key)]
+        for key, rows in object_value(raw, "lists").items()
+    }
+
+
+def project_lists(lists: dict[str, list[bytes]]) -> Json:
+    return {key: [project_value(cast(Json, item)) for item in rows] for key, rows in lists.items()}
 
 
 def run(input_value: dict[str, Json]) -> Json:
     lists = initial_lists(input_value)
-    client = FakeRedis(lists)
-    cache, logger = build_cache(
-        optional_string(input_value.get("namespace"), "namespace"),
-        string_value(input_value.get("redis_version"), "redis_version"),
-        client,
-    )
-    result = asyncio.run(drive(input_value, cache))
+    logger = RecordingLogger()
+    cache = object.__new__(RedisCache)
+    fields: dict[str, object] = {
+        "namespace": input_value.get("namespace"),
+        "redis_version": string_value(input_value.get("redis_version"), "redis_version"),
+        "_circuit_breaker": RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60),
+        "service_logger_obj": logger,
+        "init_async_client": lambda: FakeRedis(lists),
+    }
+    for name, value in fields.items():
+        object.__setattr__(cache, name, value)
+    result = asyncio.run(drive(input_value, cast(Lists, cache)))
     return {
         "result": result,
         "lists": project_lists(lists),
