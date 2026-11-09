@@ -1,0 +1,576 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io;
+use std::net::SocketAddr;
+use std::str;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::Verification;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_http::user_url::fetch::UserUrlFetcher;
+use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
+use http::{HeaderMap, HeaderName, HeaderValue};
+use rstest::rstest;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
+
+use crate::bedrock_images::block::create_bedrock_block;
+use crate::bedrock_images::error::BedrockImageError;
+use crate::bedrock_images::formats::validate_format;
+use crate::bedrock_images::parse::{parse_content_type, parse_mime_type};
+use crate::bedrock_images::processor::{Base64Image, parse_base64_image, process_image};
+use crate::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS, post_call_image_processing};
+use crate::bedrock_images::types::ContentBlock;
+
+const PNG: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR";
+const EXAMPLE_URL: &str = "https://example.com/image";
+
+struct Reply {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    drip: bool,
+}
+
+impl Reply {
+    fn status(status: u16) -> Self {
+        Self {
+            status,
+            headers: Vec::new(),
+            body: Vec::new(),
+            drip: false,
+        }
+    }
+
+    fn image(content_type: &str, body: &[u8]) -> Self {
+        Self {
+            status: 200,
+            headers: vec![("Content-Type".to_owned(), content_type.to_owned())],
+            body: body.to_vec(),
+            drip: false,
+        }
+    }
+}
+
+struct Server {
+    address: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    tasks: JoinSet<()>,
+}
+
+impl Server {
+    async fn start(reply: Reply) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let shared_reply = Arc::new(reply);
+        let state = Arc::clone(&requests);
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async move {
+            let mut open = JoinSet::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                open.spawn(serve(stream, Arc::clone(&shared_reply), Arc::clone(&state)));
+            }
+        });
+        Self {
+            address,
+            requests,
+            tasks,
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{path}", self.address)
+    }
+
+    fn request_count(&self) -> usize {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.tasks.abort_all();
+    }
+}
+
+async fn serve(mut stream: TcpStream, reply: Arc<Reply>, requests: Arc<Mutex<Vec<String>>>) {
+    let Some(path) = request_path(&mut stream).await else {
+        return;
+    };
+    requests
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(path);
+    let _outcome = write_reply(&mut stream, &reply).await;
+}
+
+async fn request_path(stream: &mut TcpStream) -> Option<String> {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    while !buffer.windows(4).any(|window| window == b"\r\n\r\n") {
+        let count = stream.read(&mut chunk).await.ok()?;
+        if count == 0 {
+            return None;
+        }
+        buffer.extend_from_slice(chunk.get(..count)?);
+    }
+    let head = str::from_utf8(&buffer).ok()?;
+    head.lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .map(str::to_owned)
+}
+
+async fn write_reply(stream: &mut TcpStream, reply: &Reply) -> io::Result<()> {
+    let mut response = format!(
+        "HTTP/1.1 {} X\r\nContent-Length: {}\r\nConnection: close\r\n",
+        reply.status,
+        reply.body.len()
+    );
+    for (name, value) in &reply.headers {
+        write!(response, "{name}: {value}\r\n").unwrap();
+    }
+    response.push_str("\r\n");
+    stream.write_all(response.as_bytes()).await?;
+    if reply.drip {
+        for _ in 0..20_u32 {
+            stream.write_all(b"x").await?;
+            stream.flush().await?;
+            sleep(Duration::from_millis(50)).await;
+        }
+        return Ok(());
+    }
+    stream.write_all(&reply.body).await
+}
+
+fn remote_with(
+    limits: TransportLimits,
+    allowed: &[&str],
+    max_mb: f64,
+) -> RemoteImage<SystemResolver> {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::build(base_builder(), &policy, limits).unwrap();
+    let hosts: Vec<String> = allowed.iter().map(|host| (*host).to_owned()).collect();
+    let validator = UrlValidator::new(SystemResolver, &hosts, &Verification::Enabled);
+    RemoteImage {
+        client,
+        urls: UserUrlFetcher {
+            validator,
+            validation: true,
+        },
+        max_download_size_mb: max_mb,
+    }
+}
+
+fn remote(allowed: &[&str], max_mb: f64) -> RemoteImage<SystemResolver> {
+    remote_with(TRANSPORT_LIMITS, allowed, max_mb)
+}
+
+fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in pairs {
+        headers.insert(
+            HeaderName::try_from(*name).unwrap(),
+            HeaderValue::try_from(*value).unwrap(),
+        );
+    }
+    headers
+}
+
+#[rstest]
+#[case::content_type_keeps_the_media_type("content_type_keeps_the_media_type")]
+#[case::content_type_defaults_to_text_plain("content_type_defaults_to_text_plain")]
+#[case::mime_type_reads_the_data_prefix("mime_type_reads_the_data_prefix")]
+#[case::mime_type_needs_the_exact_marker("mime_type_needs_the_exact_marker")]
+#[case::base64_image_splits_metadata_and_payload("base64_image_splits_metadata_and_payload")]
+#[case::base64_image_reads_parameters("base64_image_reads_parameters")]
+#[case::base64_image_defaults_to_jpeg("base64_image_defaults_to_jpeg")]
+#[case::base64_image_rejects_extra_commas("base64_image_rejects_extra_commas")]
+#[case::base64_image_requires_a_media_subtype("base64_image_requires_a_media_subtype")]
+#[case::format_validation_accepts_images_and_videos("format_validation_accepts_images_and_videos")]
+#[case::format_validation_rejects_unknown_image_formats(
+    "format_validation_rejects_unknown_image_formats"
+)]
+#[case::format_validation_maps_document_mime_types("format_validation_maps_document_mime_types")]
+#[case::format_validation_rejects_unknown_documents("format_validation_rejects_unknown_documents")]
+#[case::blocks_wrap_image_video_and_document_content(
+    "blocks_wrap_image_video_and_document_content"
+)]
+#[case::document_blocks_hash_the_normalized_payload("document_blocks_hash_the_normalized_payload")]
+#[case::post_call_takes_the_header_media_type("post_call_takes_the_header_media_type")]
+#[case::post_call_infers_the_media_type_from_the_url(
+    "post_call_infers_the_media_type_from_the_url"
+)]
+#[case::post_call_sniffs_the_media_type_from_the_bytes(
+    "post_call_sniffs_the_media_type_from_the_bytes"
+)]
+#[case::post_call_fails_with_an_unknown_media_type("post_call_fails_with_an_unknown_media_type")]
+#[case::remote_fetch_returns_base64_and_content_type(
+    "remote_fetch_returns_base64_and_content_type"
+)]
+#[case::remote_fetch_fails_with_httpx_status_text("remote_fetch_fails_with_httpx_status_text")]
+#[case::remote_fetch_fails_a_body_over_the_limit("remote_fetch_fails_a_body_over_the_limit")]
+#[case::remote_fetch_rejects_a_blocked_loopback("remote_fetch_rejects_a_blocked_loopback")]
+#[case::remote_fetch_ends_a_dripping_body_at_the_deadline(
+    "remote_fetch_ends_a_dripping_body_at_the_deadline"
+)]
+#[case::process_dispatches_base64_before_a_url("process_dispatches_base64_before_a_url")]
+#[case::process_rejects_an_unsupported_image_url("process_rejects_an_unsupported_image_url")]
+#[case::process_overrides_the_media_type_and_format("process_overrides_the_media_type_and_format")]
+#[case::process_fetches_a_remote_image("process_fetches_a_remote_image")]
+#[case::process_rejects_an_unsupported_format("process_rejects_an_unsupported_format")]
+#[case::process_returns_a_document_block("process_returns_a_document_block")]
+#[case::process_uses_the_fetched_content_type("process_uses_the_fetched_content_type")]
+#[tokio::test]
+async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
+    match scenario {
+        "content_type_keeps_the_media_type" => {
+            assert_eq!(parse_content_type("Image/PNG; charset=utf-8"), "image/png");
+            assert_eq!(parse_content_type(" image/png ; x=1"), "image/png");
+            assert_eq!(parse_content_type("image/png;"), "image/png");
+        }
+        "content_type_defaults_to_text_plain" => {
+            assert_eq!(parse_content_type("image"), "text/plain");
+            assert_eq!(parse_content_type(""), "text/plain");
+            assert_eq!(parse_content_type("image/png/extra"), "text/plain");
+        }
+        "mime_type_reads_the_data_prefix" => {
+            assert_eq!(
+                parse_mime_type("data:image/png;base64,AAAA"),
+                Some("image/png")
+            );
+            assert_eq!(
+                parse_mime_type("data:image/png;charset=x;base64,AAAA"),
+                Some("image/png;charset=x")
+            );
+            assert_eq!(parse_mime_type("data:;base64,AAAA"), Some(""));
+        }
+        "mime_type_needs_the_exact_marker" => {
+            assert_eq!(parse_mime_type("image/png;base64,AAAA"), None);
+            assert_eq!(parse_mime_type("data:image/png,AAAA"), None);
+            assert_eq!(parse_mime_type("data:image/png\n;base64,AAAA"), None);
+            assert_eq!(parse_mime_type("DATA:image/png;base64,AAAA"), None);
+        }
+        "base64_image_splits_metadata_and_payload" => {
+            assert_eq!(
+                parse_base64_image("data:image/png;base64,AAAA").unwrap(),
+                Base64Image {
+                    data: "AAAA".to_owned(),
+                    mime_type: "image/png".to_owned(),
+                    format: "png".to_owned(),
+                }
+            );
+        }
+        "base64_image_reads_parameters" => {
+            let parsed = parse_base64_image("data:image/gif;charset=utf-8;base64,R0lG").unwrap();
+            assert_eq!(parsed.mime_type, "image/gif");
+            assert_eq!(parsed.format, "gif");
+            assert_eq!(parsed.data, "R0lG");
+        }
+        "base64_image_defaults_to_jpeg" => {
+            assert_eq!(
+                parse_base64_image("data:image/png,AAAA").unwrap(),
+                Base64Image {
+                    data: "AAAA".to_owned(),
+                    mime_type: "image/jpeg".to_owned(),
+                    format: "jpeg".to_owned(),
+                }
+            );
+        }
+        "base64_image_rejects_extra_commas" => {
+            assert!(matches!(
+                parse_base64_image("data:image/png;base64,AA,AA"),
+                Err(BedrockImageError::DataUrlParts)
+            ));
+            assert!(matches!(
+                parse_base64_image("data:image/png;base64"),
+                Err(BedrockImageError::DataUrlParts)
+            ));
+        }
+        "base64_image_requires_a_media_subtype" => {
+            assert!(matches!(
+                parse_base64_image("data:png;base64,AAAA"),
+                Err(BedrockImageError::MissingMediaSubtype { .. })
+            ));
+        }
+        "format_validation_accepts_images_and_videos" => {
+            assert_eq!(validate_format("image/png", "png").unwrap(), "png");
+            assert_eq!(validate_format("image/jpeg", "jpeg").unwrap(), "jpeg");
+            assert_eq!(validate_format("image/gif", "gif").unwrap(), "gif");
+            assert_eq!(validate_format("image/webp", "webp").unwrap(), "webp");
+            assert_eq!(validate_format("video/mp4", "mp4").unwrap(), "mp4");
+            assert_eq!(validate_format("video/webm", "webm").unwrap(), "webm");
+        }
+        "format_validation_rejects_unknown_image_formats" => {
+            let error = validate_format("image/tiff", "tiff").unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Unsupported image format: tiff. Supported formats: ['mp4', 'mov', 'mkv', 'webm', 'flv', 'mpeg', 'mpg', 'wmv', '3gp', 'png', 'jpeg', 'gif', 'webp']"
+            );
+        }
+        "format_validation_maps_document_mime_types" => {
+            assert_eq!(validate_format("application/pdf", "pdf").unwrap(), "pdf");
+            assert_eq!(validate_format("application/msword", "doc").unwrap(), "doc");
+            assert_eq!(
+                validate_format(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "docx"
+                )
+                .unwrap(),
+                "docx"
+            );
+            assert_eq!(
+                validate_format("application/vnd.ms-excel", "xls").unwrap(),
+                "xls"
+            );
+            assert_eq!(
+                validate_format(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "xlsx"
+                )
+                .unwrap(),
+                "xlsx"
+            );
+            assert_eq!(validate_format("text/csv", "csv").unwrap(), "csv");
+            assert_eq!(validate_format("text/html", "html").unwrap(), "html");
+            assert_eq!(validate_format("text/plain", "plain").unwrap(), "txt");
+            assert_eq!(validate_format("text/markdown", "markdown").unwrap(), "md");
+        }
+        "format_validation_rejects_unknown_documents" => {
+            let error = validate_format("application/x-unknown", "unknown").unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "No supported extensions for MIME type: application/x-unknown. Supported formats: ['pdf', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'html', 'txt', 'md']"
+            );
+        }
+        "blocks_wrap_image_video_and_document_content" => {
+            let image = create_bedrock_block("QUJD", "image/png", "png");
+            assert_eq!(
+                serde_json::to_string(&image).unwrap(),
+                r#"{"image":{"format":"png","source":{"bytes":"QUJD"}}}"#
+            );
+            let video = create_bedrock_block("QUJD", "video/mp4", "mp4");
+            assert_eq!(
+                serde_json::to_string(&video).unwrap(),
+                r#"{"video":{"format":"mp4","source":{"bytes":"QUJD"}}}"#
+            );
+            let document = create_bedrock_block("QUJD", "application/pdf", "pdf");
+            let ContentBlock::Document { document: block } = &document else {
+                panic!("a document media type answers with a document block");
+            };
+            assert_eq!(block.format, "pdf");
+            assert_eq!(block.source.bytes, "QUJD");
+            assert!(block.name.starts_with("DocumentPDFmessages_"));
+            assert!(block.name.ends_with("_pdf"));
+        }
+        "document_blocks_hash_the_normalized_payload" => {
+            let whitespace = create_bedrock_block(" QUJD\n", "text/plain", "txt");
+            assert_eq!(
+                serde_json::to_string(&whitespace).unwrap(),
+                r#"{"document":{"format":"txt","source":{"bytes":" QUJD\n"},"name":"DocumentPDFmessages_0a702913308f6ec6_txt"}}"#
+            );
+            let large_payload = format!("{}{}", "A".repeat(0x0001_0000), "B".repeat(10));
+            let sampled = create_bedrock_block(&large_payload, "application/pdf", "pdf");
+            assert_eq!(
+                serde_json::to_string(&sampled).unwrap(),
+                format!(
+                    r#"{{"document":{{"format":"pdf","source":{{"bytes":"{large_payload}"}},"name":"DocumentPDFmessages_850366edec6eebdd_pdf"}}}}"#
+                )
+            );
+        }
+        "post_call_takes_the_header_media_type" => {
+            let headers = headers_of(&[("content-type", "image/png; charset=utf-8")]);
+            let (base64, content_type) =
+                post_call_image_processing("https://example.com/pic.gif", &headers, PNG).unwrap();
+            assert_eq!(base64, BASE64.encode(PNG));
+            assert_eq!(content_type, "image/png");
+        }
+        "post_call_infers_the_media_type_from_the_url" => {
+            let headers = headers_of(&[("content-type", "application/octet-stream")]);
+            let (base64, content_type) =
+                post_call_image_processing("https://example.com/pic.png", &headers, b"hello")
+                    .unwrap();
+            assert_eq!(base64, BASE64.encode(b"hello"));
+            assert_eq!(content_type, "image/png");
+        }
+        "post_call_sniffs_the_media_type_from_the_bytes" => {
+            let (base64, content_type) =
+                post_call_image_processing(EXAMPLE_URL, &HeaderMap::new(), PNG).unwrap();
+            assert_eq!(base64, BASE64.encode(PNG));
+            assert_eq!(content_type, "image/png");
+        }
+        "post_call_fails_with_an_unknown_media_type" => {
+            let error =
+                post_call_image_processing(EXAMPLE_URL, &HeaderMap::new(), b"hello").unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "could not determine the content type of url https://example.com/image"
+            );
+        }
+        "remote_fetch_returns_base64_and_content_type" => {
+            let server = Server::start(Reply::image("image/png; charset=utf-8", PNG)).await;
+            let url = server.url("/image.png");
+            let (base64, content_type) = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap();
+            assert_eq!(base64, BASE64.encode(PNG));
+            assert_eq!(content_type, "image/png");
+            assert_eq!(server.request_count(), 1);
+        }
+        "remote_fetch_fails_with_httpx_status_text" => {
+            let server = Server::start(Reply::status(404)).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Client error '404 Not Found' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+                )
+            );
+            assert_eq!(server.request_count(), 1);
+        }
+        "remote_fetch_fails_a_body_over_the_limit" => {
+            let server = Server::start(Reply::image("image/png", &vec![0xAB_u8; 2000])).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 0.001)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Error: Image size (0.00MB) exceeds maximum allowed size (0.001MB). url={url}"
+                )
+            );
+            assert_eq!(server.request_count(), 1);
+        }
+        "remote_fetch_rejects_a_blocked_loopback" => {
+            let server = Server::start(Reply::image("image/png", PNG)).await;
+            let url = server.url("/image.png");
+            let error = remote(&[], 50.0).image_details(&url).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "URL targets a blocked address (127.0.0.1). If this is a legitimate internal service, add the host to `user_url_allowed_hosts` in litellm_settings."
+            );
+            assert_eq!(server.request_count(), 0);
+        }
+        "remote_fetch_ends_a_dripping_body_at_the_deadline" => {
+            let server = Server::start(Reply {
+                status: 200,
+                headers: Vec::new(),
+                body: vec![b'x'; 20],
+                drip: true,
+            })
+            .await;
+            let url = server.url("/drip.png");
+            let limits = TransportLimits {
+                connect_timeout: Duration::from_secs(5),
+                read_timeout: Duration::from_millis(200),
+                body_bytes: TransportLimits::DEFAULT.body_bytes,
+                header_bytes: TransportLimits::DEFAULT.header_bytes,
+            };
+            let outcome = timeout(
+                Duration::from_secs(5),
+                remote_with(limits, &["127.0.0.1"], 50.0).image_details(&url),
+            )
+            .await
+            .expect("a fetch without a total deadline would never end");
+            assert!(matches!(outcome.unwrap_err(), BedrockImageError::Deadline));
+        }
+        "process_dispatches_base64_before_a_url" => {
+            let error = process_image("https://example.com/base64.png", None, &remote(&[], 50.0))
+                .await
+                .unwrap_err();
+            assert!(matches!(error, BedrockImageError::DataUrlParts));
+        }
+        "process_rejects_an_unsupported_image_url" => {
+            let error = process_image("s3://bucket/image.png", None, &remote(&[], 50.0))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Unsupported image type. Expected either image url or base64 encoded string"
+            );
+        }
+        "process_overrides_the_media_type_and_format" => {
+            let block = process_image(
+                "data:image/png;base64,QUJD",
+                Some("image/jpeg"),
+                &remote(&[], 50.0),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                serde_json::to_string(&block).unwrap(),
+                r#"{"image":{"format":"jpeg","source":{"bytes":"QUJD"}}}"#
+            );
+        }
+        "process_fetches_a_remote_image" => {
+            let server = Server::start(Reply::image("image/png", PNG)).await;
+            let url = server.url("/image.png");
+            let block = process_image(&url, None, &remote(&["127.0.0.1"], 50.0))
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_string(&block).unwrap(),
+                format!(
+                    r#"{{"image":{{"format":"png","source":{{"bytes":"{}"}}}}}}"#,
+                    BASE64.encode(PNG)
+                )
+            );
+            assert_eq!(server.request_count(), 1);
+        }
+        "process_rejects_an_unsupported_format" => {
+            let error = process_image("data:image/tiff;base64,AAAA", None, &remote(&[], 50.0))
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                BedrockImageError::UnsupportedImageFormat { .. }
+            ));
+        }
+        "process_returns_a_document_block" => {
+            let block = process_image("data:application/pdf;base64,QUJD", None, &remote(&[], 50.0))
+                .await
+                .unwrap();
+            let ContentBlock::Document { document } = block else {
+                panic!("a document media type answers with a document block");
+            };
+            assert_eq!(document.format, "pdf");
+            assert_eq!(document.source.bytes, "QUJD");
+        }
+        "process_uses_the_fetched_content_type" => {
+            let server = Server::start(Reply::image("video/mp4", b"mp4-body")).await;
+            let url = server.url("/clip.mp4");
+            let block = process_image(&url, None, &remote(&["127.0.0.1"], 50.0))
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_string(&block).unwrap(),
+                format!(
+                    r#"{{"video":{{"format":"mp4","source":{{"bytes":"{}"}}}}}}"#,
+                    BASE64.encode(b"mp4-body")
+                )
+            );
+        }
+        other => panic!("unknown scenario {other}"),
+    }
+}
