@@ -1,144 +1,39 @@
+mod records;
+
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_core::agents::AgentResponse;
-use betterlite_semantic::{EmbedError, Embedder, Vector};
 use betterlite_server::agent_endpoints::search::index::{AgentSearchEmbedding, AgentSearchIndex};
 use betterlite_server::agent_endpoints::search::{
-    AgentEmbedders, AgentSearchError, AgentSearchHit, AgentSearchOutcome, AgentSearchRuntime,
-    agent_search_result, agent_search_text, search_agents,
+    AgentSearchError, AgentSearchHit, AgentSearchOutcome, AgentSearchRuntime, agent_search_result,
+    agent_search_text, search_agents,
 };
 use betterlite_server::auth::auth_identity::AuthContext;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
+use self::records::{
+    EmbeddingProbe, Failure, FailuresInput, MapEmbedder, MissingEmbedders, RankInput, ResultInput,
+    SearchAgentsInput,
+};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 
-#[derive(Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Input {
-    SearchText(SearchTextInput),
-    Result(ResultInput),
-    Rank(RankInput),
-    SearchAgents(SearchAgentsInput),
-    Failures(FailuresInput),
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SearchTextInput {
-    agent: AgentResponse,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ResultInput {
-    agent: AgentResponse,
-    score: f64,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RankInput {
-    query: String,
-    agents: Vec<AgentResponse>,
-    top_k: usize,
-    embedding_model: String,
-    vectors: BTreeMap<String, Vector>,
-    #[serde(default)]
-    failure: Option<Failure>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SearchAgentsInput {
-    query: String,
-    agents: Vec<AgentResponse>,
-    top_k: usize,
-    embedding_model: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FailuresInput {
-    query: String,
-    agents: Vec<AgentResponse>,
-    top_k: usize,
-    embedding_model: String,
-    message: String,
-    http_status: u16,
-    http_detail: String,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum Failure {
-    Value { message: String },
-    Http { status_code: u16, detail: String },
-}
-
-struct MapEmbedder {
-    vectors: BTreeMap<String, Vector>,
-    failure: Option<Failure>,
-}
-
-#[async_trait]
-impl Embedder for MapEmbedder {
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vector>, EmbedError> {
-        if let Some(failure) = &self.failure {
-            return Err(match failure {
-                Failure::Value { message } => EmbedError::Other(message.clone()),
-                Failure::Http {
-                    status_code,
-                    detail,
-                } => EmbedError::Http {
-                    status_code: *status_code,
-                    detail: detail.clone(),
-                },
-            });
-        }
-        texts
-            .iter()
-            .map(|text| {
-                self.vectors
-                    .get(text)
-                    .cloned()
-                    .ok_or_else(|| EmbedError::Other(format!("no vector for {text}")))
-            })
-            .collect()
-    }
-}
-
-struct MissingEmbedders;
-
-impl AgentEmbedders for MissingEmbedders {
-    fn embedder_for(
-        &self,
-        _embedding_model: &str,
-        _caller: &AuthContext,
-    ) -> Option<Box<dyn Embedder>> {
-        None
-    }
-}
-
 impl Helper for Op {
-    type Input = Input;
+    type Input = records::Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::SearchText(call) => Ok(json!(agent_search_text(&call.agent))),
-            Input::Result(call) => project(call),
-            Input::Rank(call) => rank(call),
-            Input::SearchAgents(call) => search(call),
-            Input::Failures(call) => failures(call),
+            records::Input::SearchText(call) => Ok(json!(agent_search_text(&call.agent))),
+            records::Input::Result(call) => project(call),
+            records::Input::Rank(call) => rank(call),
+            records::Input::SearchAgents(call) => search(call),
+            records::Input::Failures(call) => failures(call),
         }
     }
 }
@@ -209,24 +104,36 @@ fn search(call: &SearchAgentsInput) -> HelperResult {
 fn failures(call: &FailuresInput) -> HelperResult {
     let executor = executor()?;
     let index = AgentSearchIndex::default();
-    let outcome = embedding_failure(&executor, &index, call)?;
-    let http_error = embedding_http_error(&executor, &index, call);
+    let failed = Failure::Value {
+        message: call.message.clone(),
+    };
+    let outcome = probe_outcome(&executor, &index, call, failed).map_err(route_error)?;
+    let rejected = Failure::Http {
+        status_code: call.http_status,
+        detail: call.http_detail.clone(),
+    };
+    let http_error = match probe_outcome(&executor, &index, call, rejected) {
+        Err(AgentSearchError::Http {
+            status_code,
+            detail,
+        }) => json!({"status_code": status_code, "detail": detail}),
+        Ok(_) => Value::Null,
+    };
     Ok(json!({
         "embedding_failed": outcome_value(outcome),
         "http_error": http_error,
     }))
 }
 
-fn embedding_failure(
+fn probe_outcome(
     executor: &Runtime,
     index: &AgentSearchIndex,
     call: &FailuresInput,
-) -> Result<AgentSearchOutcome, Box<HelperError>> {
+    failure: Failure,
+) -> Result<AgentSearchOutcome, AgentSearchError> {
     let embedder = MapEmbedder {
         vectors: BTreeMap::new(),
-        failure: Some(Failure::Value {
-            message: call.message.clone(),
-        }),
+        failure: Some(failure),
     };
     let probe = EmbeddingProbe {
         query: &call.query,
@@ -235,43 +142,7 @@ fn embedding_failure(
         embedder: &embedder,
         embedding_model: &call.embedding_model,
     };
-    probe_agents(executor, index, &probe).map_err(route_error)
-}
-
-fn embedding_http_error(
-    executor: &Runtime,
-    index: &AgentSearchIndex,
-    call: &FailuresInput,
-) -> Value {
-    let embedder = MapEmbedder {
-        vectors: BTreeMap::new(),
-        failure: Some(Failure::Http {
-            status_code: call.http_status,
-            detail: call.http_detail.clone(),
-        }),
-    };
-    let probe = EmbeddingProbe {
-        query: &call.query,
-        agents: &call.agents,
-        top_k: call.top_k,
-        embedder: &embedder,
-        embedding_model: &call.embedding_model,
-    };
-    match probe_agents(executor, index, &probe) {
-        Err(AgentSearchError::Http {
-            status_code,
-            detail,
-        }) => json!({"status_code": status_code, "detail": detail}),
-        Ok(_) => Value::Null,
-    }
-}
-
-struct EmbeddingProbe<'search> {
-    query: &'search str,
-    agents: &'search [AgentResponse],
-    top_k: usize,
-    embedder: &'search MapEmbedder,
-    embedding_model: &'search str,
+    probe_agents(executor, index, &probe)
 }
 
 fn probe_agents(
