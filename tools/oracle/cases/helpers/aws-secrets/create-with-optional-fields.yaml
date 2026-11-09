@@ -1,0 +1,17 @@
+kind: helper
+name: aws-secrets-create-with-optional-fields
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [], kms_key_id: alias/gateway}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"ARN":"arn:one","Name":"prod/db","VersionId":"v1"}'}
+    steps:
+      - {op: async_write_secret, name: prod/db, value: s3cr3t, description: gateway key}
