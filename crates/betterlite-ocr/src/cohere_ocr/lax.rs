@@ -1,12 +1,11 @@
 use serde::Deserialize;
+use serde_json::Number;
 use thiserror::Error;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum LaxIntegerWire {
-    Integer(i64),
-    Unsigned(u64),
-    Float(f64),
+    Number(Number),
     Text(String),
     Bool(bool),
 }
@@ -24,16 +23,22 @@ impl TryFrom<LaxIntegerWire> for LaxInteger {
 
     fn try_from(wire: LaxIntegerWire) -> Result<Self, Self::Error> {
         let value = match wire {
-            LaxIntegerWire::Integer(value) => value,
-            LaxIntegerWire::Unsigned(value) => {
-                i64::try_from(value).map_err(|_source| LaxIntegerError)?
-            }
-            LaxIntegerWire::Float(value) => integral(value).ok_or(LaxIntegerError)?,
+            LaxIntegerWire::Number(value) => integer_from_number(&value).ok_or(LaxIntegerError)?,
             LaxIntegerWire::Text(value) => parse_integer(value.trim()).ok_or(LaxIntegerError)?,
             LaxIntegerWire::Bool(value) => i64::from(value),
         };
         Ok(Self(value))
     }
+}
+
+fn integer_from_number(number: &Number) -> Option<i64> {
+    if let Some(value) = number.as_i64() {
+        return Some(value);
+    }
+    if let Some(value) = number.as_u64() {
+        return i64::try_from(value).ok();
+    }
+    number.as_f64().and_then(integral)
 }
 
 fn integral(value: f64) -> Option<i64> {
