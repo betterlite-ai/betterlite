@@ -136,7 +136,6 @@ fn event() -> Arc<LoggerEvent> {
         guardrail_snapshot: None,
     })
 }
-
 #[tokio::test]
 async fn callback_logger_queues_the_standard_payload_on_success() {
     let fixture = Fixture::new(settings(args()), false, 10);
@@ -148,7 +147,6 @@ async fn callback_logger_queues_the_standard_payload_on_success() {
     };
     assert_eq!(entry.get("id"), Some(&Json::Text("chatcmpl-1".to_owned())));
 }
-
 #[tokio::test]
 async fn callback_logger_queues_the_standard_payload_on_failure() {
     let fixture = Fixture::new(settings(args()), false, 10);

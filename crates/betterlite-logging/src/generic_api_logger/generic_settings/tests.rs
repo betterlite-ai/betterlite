@@ -121,6 +121,8 @@ fn headers_merge_in_litellm_order_by_exact_key() {
         settings.headers.get("Content-Type").map(String::as_str),
         Some("application/json")
     );
+    let shown = format!("{settings:?}");
+    assert!(!shown.contains("hook.test") && !shown.contains("text/plain"));
 }
 
 #[test]
