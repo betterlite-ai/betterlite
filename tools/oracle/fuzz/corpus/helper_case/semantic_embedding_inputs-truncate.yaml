@@ -1,0 +1,10 @@
+kind: helper
+name: semantic_embedding_inputs-truncate-seed
+call:
+  b4310:
+    operation: truncate
+    prompt: hello world
+    embedding_model: text-embedding-3-small
+    max_input_tokens: -2
+env: {}
+compare: {ignore: []}

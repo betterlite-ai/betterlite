@@ -1,0 +1,6 @@
+kind: helper
+name: agent_search-text-seed
+call:
+  b4783: {function: search_text, agent: {agent_id: a1, agent_name: alpha, agent_card_params: {description: seed, skills: [{name: one, tags: [two]}]}}}
+env: {}
+compare: {ignore: []}
