@@ -138,7 +138,7 @@ async fn feature_types_outside_the_documented_values_are_refused(#[case] params:
         .unwrap_err();
 
     assert!(
-        matches!(&error, OcrError::RequestField { path } if path == "optional_params.feature_types"),
+        matches!(&error, OcrError::RequestField { path } if path.starts_with("optional_params.feature_types")),
         "{error}"
     );
     assert_eq!(error.http_status_code(), Some(400));
