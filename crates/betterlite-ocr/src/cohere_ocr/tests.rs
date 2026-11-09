@@ -570,6 +570,40 @@ fn a_missing_index_uses_the_page_position() {
 }
 
 #[rstest]
+#[case::plain("2", Some(2))]
+#[case::signed_plus("+4", Some(4))]
+#[case::signed_minus("-3", Some(-3))]
+#[case::underscores("1_000", Some(1000))]
+#[case::whole_fraction("1.00", Some(1))]
+#[case::underscored_fraction("1_0.00", Some(10))]
+#[case::empty_fraction("1.", None)]
+#[case::fractional("1.5", None)]
+#[case::leading_underscore("_1", None)]
+#[case::trailing_underscore("1_", None)]
+#[case::double_underscore("1__0", None)]
+#[case::signed_leading_underscore("+_1", None)]
+#[case::trailing_letter("1a", None)]
+#[case::empty("", None)]
+#[case::sign_only("+", None)]
+fn string_page_index_follows_the_lenient_integer_rule(
+    #[case] index: &str,
+    #[case] expected: Option<i64>,
+) {
+    let quoted = serde_json::to_string(index).expect("the index serializes");
+    let raw = format!(r#"{{"pages":[{{"index":{quoted}}}]}}"#);
+    match expected {
+        Some(value) => {
+            let response = normalize(&raw).expect("the string index decodes");
+            assert_eq!(response.pages[0].index, value);
+        }
+        None => assert!(matches!(
+            normalize(&raw),
+            Err(OcrError::ResponseField { path }) if path == "pages[0].index"
+        )),
+    }
+}
+
+#[rstest]
 #[case::billed_over_count(r#"{"pages":[{},{}],"meta":{"billed_units":{"pages":3}}}"#, 3)]
 #[case::billed_zero_over_count(r#"{"pages":[{},{}],"meta":{"billed_units":{"pages":0}}}"#, 0)]
 #[case::billed_float(r#"{"pages":[],"meta":{"billed_units":{"pages":1.0}}}"#, 1)]

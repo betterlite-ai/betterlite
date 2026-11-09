@@ -63,12 +63,7 @@ fn parse_integer(value: &str) -> Option<i64> {
         return None;
     }
     let digits = integer.strip_prefix(['+', '-']).unwrap_or(integer);
-    if digits.is_empty()
-        || digits.starts_with('_')
-        || !digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-    {
+    if digits.starts_with('_') {
         return None;
     }
     integer.replace('_', "").parse::<i64>().ok()
