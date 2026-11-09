@@ -256,6 +256,28 @@ fn fetch_limits_default_to_five_seconds_and_three_attempts() {
 }
 
 #[test]
+fn a_single_attempt_budget_starts_no_retry() {
+    let service = bundled_service();
+    let client = Arc::new(ScriptedClient::new(vec![Reply::transport(
+        "connection refused",
+    )]));
+    runtime().block_on(async {
+        let startup = service
+            .startup(
+                limits(1),
+                Arc::clone(&client),
+                Arc::new(RecordingSleeper::default()),
+                ScriptedJitter::new(&[]),
+            )
+            .await;
+        assert!(startup.retry.is_none());
+        assert_eq!(startup.snapshot.catalog.entries.len(), 60);
+        assert!(Arc::ptr_eq(&service.current.load(), &startup.snapshot));
+        assert_eq!(client.requests(), 1);
+    });
+}
+
+#[test]
 fn retry_task_honors_attempt_and_wait_limits() {
     let service = bundled_service();
     let client = Arc::new(ScriptedClient::new(vec![
