@@ -285,6 +285,30 @@ async fn v3_body_keeps_supported_options_and_drops_unknown_ones() {
     );
 }
 
+#[test]
+fn the_sync_transform_accepts_only_a_reducto_id() {
+    let config = ReductoParseV3Config;
+    let transform = OcrTransform {
+        model: "parse-v3",
+        optional_params: &Object::new(),
+        headers: &[],
+    };
+    let body = config
+        .transform_ocr_request(document("reducto://ready.pdf"), transform.clone())
+        .expect("the id builds the body");
+    assert_eq!(
+        decode(&serde_json::to_vec(&body).expect("the body encodes")),
+        Json::Object(object(&[("input", text("reducto://ready.pdf"))]))
+    );
+    let error = config
+        .transform_ocr_request(
+            document("data:application/pdf;base64,YWJj"),
+            transform.clone(),
+        )
+        .expect_err("a data URI needs the async upload path");
+    assert!(matches!(error, OcrError::ReductoSource), "{error:?}");
+}
+
 async fn v3_body_for(selected: &Object) -> Json {
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let connection = test_connection();
