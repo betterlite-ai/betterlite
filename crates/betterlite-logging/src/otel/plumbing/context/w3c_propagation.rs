@@ -19,10 +19,13 @@ pub fn extract_traceparent(headers: &BTreeMap<String, String>) -> Option<Context
     {
         return None;
     }
-    Some(TraceContextPropagator::new().extract(&lowercase_carrier(headers)))
+    Some(
+        TraceContextPropagator::new()
+            .extract_with_context(&Context::new(), &lowercase_carrier(headers)),
+    )
 }
 
-// the MCP carrier is caller-controlled, so it is extracted on an explicitly empty base context
+// extraction starts from an empty context, as Python's propagator does, so a malformed header never inherits the ambient span
 #[must_use]
 pub fn extract_carrier(carrier: &BTreeMap<String, String>) -> Option<SpanContext> {
     let extracted = TraceContextPropagator::new()
@@ -71,7 +74,7 @@ pub fn traceparent_from_header(
             carrier.insert(key.to_owned(), value.clone());
         }
     }
-    Some(TraceContextPropagator::new().extract(&carrier))
+    Some(TraceContextPropagator::new().extract_with_context(&Context::new(), &carrier))
 }
 
 fn lowercase_carrier(headers: &BTreeMap<String, String>) -> HashMap<String, String> {

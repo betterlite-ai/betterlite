@@ -80,3 +80,14 @@ deviations:
       request lifecycle that ended it. The phase marker, the primary signal in LiteLLM too, still links
       every span emitted from the post-response phase.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L249-L256
+  - what: >-
+      set_request_baggage stores an entry only when it fits the OpenTelemetry Baggage limits: at most 64
+      entries, 8192 bytes of key, value and metadata in total, and a key free of separator characters
+      such as "/" and ":". An entry that breaks a limit is left out and the others are kept. LiteLLM
+      stores every value without a size or key check.
+    why: >-
+      The opentelemetry crate's Baggage type enforces the W3C limits in insert and offers no way around
+      them, and the baggage span processor reads that same type from the span's parent context. A value
+      past 8 KB, such as a large team metadata blob, therefore does not reach the span attributes the
+      allowlist would otherwise stamp. W3C propagation never carries such a value either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L192-L197

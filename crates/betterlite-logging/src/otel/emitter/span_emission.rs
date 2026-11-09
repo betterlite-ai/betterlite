@@ -10,6 +10,8 @@ use crate::otel::emitter::error_stamping::{ErrorStamp, error_attributes, stamp_e
 use crate::otel::emitter::message_fitting::fit_indexed_messages;
 use crate::otel::emitter::span_kind::span_kind;
 use crate::otel::mappers::base::{AttributeMap, AttributeMapper, SpanData};
+use crate::otel::mappers::genai::GenAIMapper;
+use crate::otel::mappers::legacy::LegacyMapper;
 use crate::otel::model::payloads::error::SpanError;
 use crate::otel::plumbing::events::{GenAIEventRecorder, OperationException};
 use crate::otel::vocabulary::registry::SpanRole;
@@ -60,11 +62,26 @@ impl DedupCache {
     }
 }
 
+// the attribute mappers the chain can hold; a new mapper adds a variant and the match below stops compiling
+pub enum MapperKind {
+    GenAI(GenAIMapper),
+    Legacy(LegacyMapper),
+}
+
+impl AttributeMapper for MapperKind {
+    fn map(&self, data: &SpanData<'_>, environment: &dyn EnvironmentLookup) -> AttributeMap {
+        match self {
+            Self::GenAI(mapper) => mapper.map(data, environment),
+            Self::Legacy(mapper) => mapper.map(data, environment),
+        }
+    }
+}
+
 // litellm.integrations.otel.emitter.SpanEmitter; the mapper chain and event recorder are injected
 pub struct SpanEmitter<T> {
     pub tracer: T,
     pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
-    pub mappers: Vec<Box<dyn AttributeMapper + Send + Sync>>,
+    pub mappers: Vec<MapperKind>,
     pub event_recorder: Option<Arc<GenAIEventRecorder>>,
     pub attribute_limit: Option<usize>,
     pub emitted: DedupCache,
@@ -124,16 +141,7 @@ where
     ) {
         span.update_name(span_name(data));
         let error = span_facts(data).error;
-        let mapped = self.mapped_attributes(data);
-        let stamped = error.map_or_else(AttributeMap::new, error_attributes);
-        let reserved = stamped
-            .keys()
-            .filter(|key| !mapped.contains_key(*key))
-            .count();
-        let budget = self
-            .attribute_limit
-            .map(|limit| limit.saturating_sub(reserved));
-        for (key, value) in fit_indexed_messages(mapped, budget) {
+        for (key, value) in self.fit_to_budget(self.mapped_attributes(data), error) {
             span.set_attribute(KeyValue::new(key, value));
         }
         if let Some(failure) = error {
@@ -155,6 +163,19 @@ where
             Some(closed_at) => span.end_with_timestamp(closed_at),
             None => span.end(),
         }
+    }
+
+    // the room the error attributes will take is kept free, then indexed messages shed to fit the rest
+    fn fit_to_budget(&self, mapped: AttributeMap, error: Option<&SpanError>) -> AttributeMap {
+        let stamped = error.map_or_else(AttributeMap::new, error_attributes);
+        let reserved = stamped
+            .keys()
+            .filter(|key| !mapped.contains_key(*key))
+            .count();
+        let budget = self
+            .attribute_limit
+            .map(|limit| limit.saturating_sub(reserved));
+        fit_indexed_messages(mapped, budget)
     }
 
     fn mapped_attributes(&self, data: &SpanData<'_>) -> AttributeMap {

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use opentelemetry::Context;
+use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::{
     SpanContext, SpanId, TraceContextExt as _, TraceFlags, TraceId, TraceState,
 };
@@ -11,6 +12,7 @@ use crate::otel::model::metadata::wire::callback::{Callback, Params};
 use crate::otel::model::metadata::wire::decode;
 use crate::otel::model::metadata::wire::payload::Metadata;
 use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::plumbing::context::baggage_context::set_request_baggage;
 use crate::otel::plumbing::context::parent_span::{
     ParentSpanSources, parent_otel_span_from_kwargs, span_context_from_kwargs,
     span_context_from_value,
@@ -63,6 +65,33 @@ fn the_metadata_parent_wins_over_the_traceparent_header() {
         METADATA_TRACE
     );
     assert!(parent.span.is_none());
+}
+
+#[test]
+fn the_metadata_parent_keeps_the_ambient_baggage() {
+    let _ambient = set_request_baggage(
+        &BTreeMap::from([("litellm.team.id".to_owned(), "team-1".to_owned())]),
+        None,
+    )
+    .attach();
+    let callback = callback(&format!(
+        r#"{{"litellm_params": {{"metadata": {{"litellm_parent_otel_span": "{}"}}}}}}"#,
+        traceparent(METADATA_TRACE)
+    ));
+    let context = span_context_from_kwargs(&callback)
+        .context
+        .expect("context");
+    assert_eq!(
+        context.span().span_context().trace_id().to_string(),
+        METADATA_TRACE
+    );
+    assert_eq!(
+        context
+            .baggage()
+            .get("litellm.team.id")
+            .map(|value| value.as_str().to_owned()),
+        Some("team-1".to_owned())
+    );
 }
 
 #[test]

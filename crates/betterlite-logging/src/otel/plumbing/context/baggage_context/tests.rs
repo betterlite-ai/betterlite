@@ -96,3 +96,36 @@ fn the_baggage_survives_a_context_derived_for_a_child_span() {
     );
     assert!(child.span().span_context().is_valid());
 }
+
+#[test]
+fn a_value_over_the_baggage_byte_limit_is_not_stored() {
+    let oversized = "x".repeat(8192);
+    let context = set_request_baggage(
+        &values(&[
+            ("litellm.metadata.big", oversized.as_str()),
+            ("litellm.team.id", "team-1"),
+        ]),
+        None,
+    );
+    assert_eq!(baggage_entry(&context, "litellm.metadata.big"), None);
+    assert_eq!(
+        baggage_entry(&context, "litellm.team.id"),
+        Some("team-1".to_owned())
+    );
+}
+
+#[test]
+fn entries_past_the_sixty_fourth_are_not_stored() {
+    let entries: BTreeMap<String, String> = (0_u32..65_u32)
+        .map(|index| (format!("litellm.metadata.k{index:02}"), "v".to_owned()))
+        .collect();
+    let context = set_request_baggage(&entries, None);
+    assert_eq!(context.baggage().len(), 64);
+    assert_eq!(baggage_entry(&context, "litellm.metadata.k64"), None);
+}
+
+#[test]
+fn a_key_with_a_separator_character_is_not_stored() {
+    let context = set_request_baggage(&values(&[("litellm/team", "team-1")]), None);
+    assert_eq!(baggage_entry(&context, "litellm/team"), None);
+}

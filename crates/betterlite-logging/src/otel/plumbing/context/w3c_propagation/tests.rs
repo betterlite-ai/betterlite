@@ -67,6 +67,9 @@ fn extract_traceparent_returns_none_without_the_header() {
 
 #[test]
 fn extract_traceparent_returns_no_span_for_a_malformed_value() {
+    let _ambient = Context::new()
+        .with_remote_span_context(span_context(1, 2))
+        .attach();
     let context = extract_traceparent(&headers(&[("traceparent", "00-not-a-traceparent")]));
     assert!(!context.expect("context").span().span_context().is_valid());
 }
@@ -259,6 +262,16 @@ fn traceparent_from_header_requires_the_exact_lowercase_key() {
     assert!(traceparent_from_header(Some(&headers)).is_none());
     assert!(traceparent_from_header(None).is_none());
     assert!(traceparent_from_header(Some(&BTreeMap::new())).is_none());
+}
+
+#[test]
+fn traceparent_from_header_returns_no_span_for_a_malformed_value() {
+    let _ambient = Context::new()
+        .with_remote_span_context(span_context(1, 2))
+        .attach();
+    let headers = BTreeMap::from([("traceparent".to_owned(), Some("garbage".to_owned()))]);
+    let context = traceparent_from_header(Some(&headers)).expect("context");
+    assert!(!context.span().span_context().is_valid());
 }
 
 #[test]

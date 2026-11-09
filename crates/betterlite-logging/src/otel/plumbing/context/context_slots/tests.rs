@@ -1,12 +1,16 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use opentelemetry::Context;
+use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::{
     Span as _, SpanBuilder, SpanContext, SpanId, TraceContextExt as _, TraceFlags, TraceId,
     TraceState, Tracer as _, TracerProvider as _,
 };
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
+use crate::otel::plumbing::context::baggage_context::set_request_baggage;
 use crate::otel::plumbing::context::context_slots::{AnchoredSpan, RequestTraceContext};
 
 fn span_context(trace_id: u128, span_id: u64) -> SpanContext {
@@ -106,9 +110,32 @@ fn an_invalid_span_never_replaces_a_good_anchor() {
 
 #[test]
 fn without_an_anchor_the_ambient_context_is_used() {
+    let _ambient = Context::new()
+        .with_remote_span_context(span_context(1, 2))
+        .attach();
     let trace = RequestTraceContext::default();
     let context = trace.resolve_request_span_context();
-    assert!(!context.span().span_context().is_valid());
+    assert_eq!(context.span().span_context().trace_id(), TraceId::from(1));
+}
+
+#[test]
+fn the_anchored_context_keeps_the_ambient_baggage() {
+    let _ambient = set_request_baggage(
+        &BTreeMap::from([("litellm.team.id".to_owned(), "team-1".to_owned())]),
+        None,
+    )
+    .attach();
+    let mut trace = RequestTraceContext::default();
+    trace.anchor_request_root(anchored(9, 10, None));
+    let parent = trace.resolve_request_span_context();
+    assert_eq!(parent.span().span_context().trace_id(), TraceId::from(9));
+    assert_eq!(
+        parent
+            .baggage()
+            .get("litellm.team.id")
+            .map(|value| value.as_str().to_owned()),
+        Some("team-1".to_owned())
+    );
 }
 
 #[test]

@@ -32,7 +32,7 @@ pub fn span_context_from_kwargs(callback: &Callback) -> ParentSpan {
         .or_else(|| metadata_parent(&callback.litellm_params.litellm_metadata));
     if let Some(parent) = explicit {
         return ParentSpan {
-            context: Some(Context::new().with_remote_span_context(parent)),
+            context: Some(Context::current().with_remote_span_context(parent)),
             span: None,
         };
     }

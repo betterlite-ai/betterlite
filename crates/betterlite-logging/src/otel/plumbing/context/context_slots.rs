@@ -51,7 +51,7 @@ impl RequestTraceContext {
             .as_ref()
             .filter(|root| root.context.is_valid())
             .map_or_else(Context::current, |root| {
-                Context::new().with_remote_span_context(root.context.clone())
+                Context::current().with_remote_span_context(root.context.clone())
             })
     }
 

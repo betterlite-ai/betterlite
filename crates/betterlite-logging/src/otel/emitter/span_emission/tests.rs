@@ -18,10 +18,12 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvide
 
 use super::DedupCache;
 use crate::otel::emitter::span_emission::{
-    DEFAULT_SPAN_ATTRIBUTE_LIMIT, EmitOptions, SpanEmitter, StartOptions,
+    DEFAULT_SPAN_ATTRIBUTE_LIMIT, EmitOptions, MapperKind, SpanEmitter, StartOptions,
 };
 use crate::otel::emitter::span_kind::span_kind;
-use crate::otel::mappers::base::{AttributeMap, AttributeMapper, SpanData};
+use crate::otel::mappers::base::{AttributeMap, SpanData};
+use crate::otel::mappers::genai::GenAIMapper;
+use crate::otel::mappers::legacy::LegacyMapper;
 use crate::otel::model::metadata::wire::decode;
 use crate::otel::model::metadata::wire::payload::Payload;
 use crate::otel::model::payloads::error::SpanError;
@@ -83,7 +85,7 @@ fn exporter_and_provider() -> (InMemorySpanExporter, SdkTracerProvider) {
 
 fn emitter(
     tracer: SdkTracer,
-    mappers: Vec<Box<dyn AttributeMapper + Send + Sync>>,
+    mappers: Vec<MapperKind>,
     limit: Option<usize>,
 ) -> SpanEmitter<SdkTracer> {
     SpanEmitter {
@@ -146,34 +148,41 @@ fn attributes(span: &ExportedSpan) -> BTreeMap<String, Value> {
         .collect()
 }
 
-struct FixedAttributes(Vec<(&'static str, &'static str)>);
+fn fixed(entries: &[(&str, &str)]) -> AttributeMap {
+    entries
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), Value::from((*value).to_owned())))
+        .collect()
+}
 
-impl AttributeMapper for FixedAttributes {
-    fn map(&self, _data: &SpanData<'_>, _environment: &dyn EnvironmentLookup) -> AttributeMap {
-        self.0
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), Value::from(*value)))
-            .collect()
+fn indexed(count: usize) -> AttributeMap {
+    let mut attributes = AttributeMap::new();
+    for index in 0..count {
+        attributes.insert(
+            format!("llm.input_messages.{index}.message.role"),
+            Value::from("user"),
+        );
+        attributes.insert(
+            format!("llm.input_messages.{index}.message.content"),
+            Value::from("hi"),
+        );
+    }
+    attributes
+}
+
+fn rate_limit_error(code: Option<&str>) -> SpanError {
+    SpanError {
+        error_type: Some("RateLimitError".to_owned()),
+        message: Some("slow down".to_owned()),
+        code: code.map(str::to_owned),
+        stack_trace: None,
+        llm_provider: None,
     }
 }
 
-struct IndexedMessages(usize);
-
-impl AttributeMapper for IndexedMessages {
-    fn map(&self, _data: &SpanData<'_>, _environment: &dyn EnvironmentLookup) -> AttributeMap {
-        let mut attributes = AttributeMap::new();
-        for index in 0..self.0 {
-            attributes.insert(
-                format!("llm.input_messages.{index}.message.role"),
-                Value::from("user"),
-            );
-            attributes.insert(
-                format!("llm.input_messages.{index}.message.content"),
-                Value::from("hi"),
-            );
-        }
-        attributes
-    }
+fn bare_emitter(limit: Option<usize>) -> SpanEmitter<SdkTracer> {
+    let (_exporter, provider) = exporter_and_provider();
+    emitter(provider.tracer("span-emission"), Vec::new(), limit)
 }
 
 #[test]
@@ -315,151 +324,106 @@ fn the_dedup_cache_evicts_the_least_recently_used_key() {
     assert!(cache.mark("call-extra", SpanRole::LlmCall));
 }
 
-#[test]
-fn emit_runs_every_mapper_and_the_last_writer_wins() {
+fn service_attributes_through(mappers: Vec<MapperKind>) -> BTreeMap<String, Value> {
     let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![
-        Box::new(FixedAttributes(vec![
-            ("litellm.shared", "first"),
-            ("litellm.one", "1"),
-        ])),
-        Box::new(FixedAttributes(vec![
-            ("litellm.shared", "second"),
-            ("litellm.two", "2"),
-        ])),
-    ];
+    let mut service = service_data();
+    service.event_metadata = BTreeMap::from([(
+        "litellm.service.name".to_owned(),
+        "from-legacy-metadata".to_owned(),
+    )]);
     let emitter = emitter(provider.tracer("span-emission"), mappers, None);
-    let data = call_data("call-1");
     emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
+        SpanRole::Service,
+        &SpanData::Service(&service),
         &options(None, None),
     );
-    let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(written.get("litellm.one"), Some(&Value::from("1")));
-    assert_eq!(written.get("litellm.two"), Some(&Value::from("2")));
-    assert_eq!(written.get("litellm.shared"), Some(&Value::from("second")));
+    attributes(&exported(&exporter)[0])
+}
+
+#[test]
+fn emit_runs_every_mapper_and_the_later_one_wins() {
+    let written = service_attributes_through(vec![
+        MapperKind::GenAI(GenAIMapper {
+            tool_attr_budget: 8,
+        }),
+        MapperKind::Legacy(LegacyMapper {
+            tool_attr_budget: 8,
+        }),
+    ]);
+    assert_eq!(
+        written.get("litellm.service.name"),
+        Some(&Value::from("from-legacy-metadata"))
+    );
+    assert_eq!(
+        written.get("litellm.service.call_type"),
+        Some(&Value::from("get"))
+    );
+}
+
+#[test]
+fn emit_lets_the_genai_mapper_win_when_it_runs_last() {
+    let written = service_attributes_through(vec![
+        MapperKind::Legacy(LegacyMapper {
+            tool_attr_budget: 8,
+        }),
+        MapperKind::GenAI(GenAIMapper {
+            tool_attr_budget: 8,
+        }),
+    ]);
+    assert_eq!(
+        written.get("litellm.service.name"),
+        Some(&Value::from("redis"))
+    );
 }
 
 #[test]
 fn emit_sheds_whole_message_groups_least_valuable_first() {
-    let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![Box::new(IndexedMessages(5))];
-    let emitter = emitter(provider.tracer("span-emission"), mappers, Some(6));
-    let data = call_data("call-1");
-    emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
-        &options(None, None),
-    );
-    let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(written.len(), 6);
-    assert!(!written.contains_key("llm.input_messages.1.message.role"));
-    assert!(!written.contains_key("llm.input_messages.2.message.content"));
-    assert!(written.contains_key("llm.input_messages.0.message.role"));
-    assert!(written.contains_key("llm.input_messages.3.message.content"));
-    assert!(written.contains_key("llm.input_messages.4.message.content"));
+    let fitted = bare_emitter(Some(6)).fit_to_budget(indexed(5), None);
+    assert_eq!(fitted.len(), 6);
+    assert!(!fitted.contains_key("llm.input_messages.1.message.role"));
+    assert!(!fitted.contains_key("llm.input_messages.2.message.content"));
+    assert!(fitted.contains_key("llm.input_messages.0.message.role"));
+    assert!(fitted.contains_key("llm.input_messages.3.message.content"));
+    assert!(fitted.contains_key("llm.input_messages.4.message.content"));
 }
 
 #[test]
 fn emit_reserves_room_for_error_attributes() {
-    let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![Box::new(IndexedMessages(5))];
-    let emitter = emitter(provider.tracer("span-emission"), mappers, Some(10));
-    let mut data = call_data("call-1");
-    data.error = Some(SpanError {
-        error_type: Some("RateLimitError".to_owned()),
-        message: Some("slow down".to_owned()),
-        code: Some("429".to_owned()),
-        stack_trace: None,
-        llm_provider: None,
-    });
-    emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
-        &options(None, None),
-    );
-    let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(written.len(), 9);
-    assert!(!written.contains_key("llm.input_messages.1.message.content"));
-    assert!(!written.contains_key("llm.input_messages.2.message.content"));
-    assert_eq!(
-        written.get("error.type"),
-        Some(&Value::from("RateLimitError"))
-    );
-    assert_eq!(
-        written.get("error.message"),
-        Some(&Value::from("slow down"))
-    );
+    let error = rate_limit_error(Some("429"));
+    let fitted = bare_emitter(Some(10)).fit_to_budget(indexed(5), Some(&error));
+    assert_eq!(fitted.len(), 6);
+    assert!(!fitted.contains_key("llm.input_messages.1.message.content"));
+    assert!(!fitted.contains_key("llm.input_messages.2.message.content"));
 }
 
 #[test]
 fn emit_keeps_every_attribute_without_an_attribute_limit() {
-    let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![Box::new(IndexedMessages(50))];
-    let emitter = emitter(provider.tracer("span-emission"), mappers, None);
-    let data = call_data("call-1");
-    emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
-        &options(None, None),
-    );
-    assert_eq!(attributes(&exported(&exporter)[0]).len(), 100);
+    let error = rate_limit_error(Some("429"));
+    let fitted = bare_emitter(None).fit_to_budget(indexed(50), Some(&error));
+    assert_eq!(fitted.len(), 100);
 }
 
 #[test]
 fn emit_never_sheds_attributes_that_are_not_indexed_messages() {
-    let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![
-        Box::new(FixedAttributes(vec![
-            ("litellm.one", "1"),
-            ("litellm.two", "2"),
-            ("litellm.three", "3"),
-        ])),
-        Box::new(IndexedMessages(2)),
-    ];
-    let emitter = emitter(provider.tracer("span-emission"), mappers, Some(1));
-    let data = call_data("call-1");
-    emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
-        &options(None, None),
-    );
-    let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(written.len(), 3);
-    assert!(written.contains_key("litellm.three"));
-    assert!(!written.contains_key("llm.input_messages.0.message.role"));
+    let mut mapped = fixed(&[
+        ("litellm.one", "1"),
+        ("litellm.two", "2"),
+        ("litellm.three", "3"),
+    ]);
+    mapped.extend(indexed(2));
+    let fitted = bare_emitter(Some(1)).fit_to_budget(mapped, None);
+    assert_eq!(fitted.len(), 3);
+    assert!(fitted.contains_key("litellm.three"));
+    assert!(!fitted.contains_key("llm.input_messages.0.message.role"));
 }
 
 #[test]
 fn an_error_mapper_attribute_is_not_reserved_twice() {
-    let (exporter, provider) = exporter_and_provider();
-    let mappers: Vec<Box<dyn AttributeMapper + Send + Sync>> = vec![Box::new(FixedAttributes(
-        vec![("error.type", "MappedError")],
-    ))];
-    let emitter = emitter(provider.tracer("span-emission"), mappers, Some(2));
-    let mut data = call_data("call-1");
-    data.error = Some(SpanError {
-        error_type: Some("RateLimitError".to_owned()),
-        message: Some("slow down".to_owned()),
-        code: None,
-        stack_trace: None,
-        llm_provider: None,
-    });
-    emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
-        &options(None, None),
-    );
-    let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(
-        written.get("error.type"),
-        Some(&Value::from("RateLimitError"))
-    );
-    assert_eq!(
-        written.get("error.message"),
-        Some(&Value::from("slow down"))
-    );
+    let mut mapped = fixed(&[("error.type", "MappedError")]);
+    mapped.extend(indexed(2));
+    let error = rate_limit_error(None);
+    let fitted = bare_emitter(Some(6)).fit_to_budget(mapped, Some(&error));
+    assert_eq!(fitted.len(), 5);
 }
 
 #[test]
@@ -837,37 +801,31 @@ fn an_invalid_link_is_dropped() {
 
 #[test]
 fn the_emitter_environment_reaches_the_mappers() {
-    struct EnvironmentAttribute;
-    impl AttributeMapper for EnvironmentAttribute {
-        fn map(&self, _data: &SpanData<'_>, environment: &dyn EnvironmentLookup) -> AttributeMap {
-            let mut attributes = AttributeMap::new();
-            if let Some(value) = environment.lookup("LITELLM_TEST_VALUE") {
-                attributes.insert("litellm.test".to_owned(), Value::from(value));
-            }
-            attributes
-        }
-    }
     let (exporter, provider) = exporter_and_provider();
     let environment: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::new(BTreeMap::from([(
-        "LITELLM_TEST_VALUE".to_owned(),
-        "from-environment".to_owned(),
+        "DATABASE_URL".to_owned(),
+        "postgresql://user:pass@db.example.com:5433/app".to_owned(),
     )]));
     let emitter = SpanEmitter {
         tracer: provider.tracer("span-emission"),
         environment,
-        mappers: vec![Box::new(EnvironmentAttribute)],
+        mappers: vec![MapperKind::GenAI(GenAIMapper {
+            tool_attr_budget: 8,
+        })],
         event_recorder: None,
         attribute_limit: None,
         emitted: DedupCache::default(),
     };
-    let data = call_data("call-1");
+    let mut service = service_data();
+    service.service_name = "postgres".to_owned();
+    service.call_type = Some("postgres_query".to_owned());
     emitter.emit(
-        SpanRole::LlmCall,
-        &SpanData::LLMCall(&data),
+        SpanRole::Service,
+        &SpanData::Service(&service),
         &options(None, None),
     );
     assert_eq!(
-        attributes(&exported(&exporter)[0]).get("litellm.test"),
-        Some(&Value::from("from-environment"))
+        attributes(&exported(&exporter)[0]).get("server.address"),
+        Some(&Value::from("db.example.com"))
     );
 }
