@@ -3,6 +3,7 @@ use rstest::rstest;
 
 use super::fixtures::{call_kwargs, object, payload, sources};
 use crate::fields::timestamps::Moment;
+use crate::newrelic_extraction::ExtractionError;
 use crate::newrelic_extraction::timing::{duration, milliseconds_as_int, to_epoch_ms};
 
 fn decimal_seconds(text: &str) -> Moment {
@@ -33,6 +34,14 @@ fn newrelic_extraction_tests_behavior_milliseconds_as_int(
     #[case] expected: i64,
 ) {
     assert_eq!(milliseconds_as_int(milliseconds).unwrap(), expected);
+}
+
+#[test]
+fn newrelic_extraction_tests_behavior_milliseconds_as_int_rejects_out_of_range() {
+    assert!(matches!(
+        milliseconds_as_int(1e30_f64),
+        Err(ExtractionError::TimestampRange)
+    ));
 }
 
 #[test]

@@ -51,6 +51,11 @@ fn newrelic_extraction_tests_behavior_request_params_omits_absent_and_null_value
     assert_eq!(parameters, RequestParameters::default());
 }
 
+#[test]
+fn newrelic_extraction_tests_behavior_request_params_defaults_without_any_source() {
+    assert_eq!(params_of(None, None), RequestParameters::default());
+}
+
 #[rstest]
 #[case::zero(r#"{"temperature":0,"max_tokens":0}"#, "0", "0")]
 #[case::empty_string(r#"{"temperature":"","max_tokens":""}"#, r#""""#, r#""""#)]

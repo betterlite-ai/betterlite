@@ -94,6 +94,20 @@ fn newrelic_extraction_tests_behavior_all_messages_defaults_missing_roles() {
 }
 
 #[test]
+fn newrelic_extraction_tests_behavior_all_messages_defaults_empty_roles() {
+    let mut standard = payload();
+    zero_times(&mut standard);
+    standard.messages = Some(json(r#"[{"role":"","content":"hi"}]"#));
+    let env = environment(&[]);
+    let policy = content_policy(&env);
+    let response = r#"{"choices":[{"message":{"role":"","content":"hello"}}]}"#;
+    let events = events_with(Some(&standard), None, response, &policy).unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].role, "user");
+    assert_eq!(events[1].role, "assistant");
+}
+
+#[test]
 fn newrelic_extraction_tests_behavior_all_messages_prefers_payload_messages() {
     let mut standard = payload();
     zero_times(&mut standard);
