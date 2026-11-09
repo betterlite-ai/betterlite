@@ -71,7 +71,6 @@ def patched_environment(input_value: dict[str, Json]) -> Generator[None, None, N
         for name, value in object_value(environment.get("files", {}), "files").items()
     }
     home = string_value(environment.get("home"), "home")
-    default_home = str(Path(home) / ".aicore")
 
     def exists(path: Path) -> bool:
         return str(path) in files
@@ -84,7 +83,7 @@ def patched_environment(input_value: dict[str, Json]) -> Generator[None, None, N
 
     with (
         patch.dict(os.environ, variables, clear=False),
-        patch.object(sap_credentials, "DEFAULT_HOME_PATH", default_home),
+        patch.object(sap_credentials, "DEFAULT_HOME_PATH", str(Path(home) / ".aicore")),
         patch.object(Path, "exists", exists),
         patch.object(Path, "open", open_path),
     ):
@@ -92,18 +91,9 @@ def patched_environment(input_value: dict[str, Json]) -> Generator[None, None, N
 
 
 @dataclass
-class RecordedRequest:
-    url: str
-    form: dict[str, str]
-    cert: tuple[str, str] | None
-    cert_text: str | None
-    key_text: str | None
-
-
-@dataclass
 class Recorder:
     responses: list[str]
-    requests: list[RecordedRequest]
+    requests: list[str]
 
     def next_response(self) -> str:
         index = min(len(self.requests), len(self.responses)) - 1
@@ -132,32 +122,17 @@ class FakeSapClient:
 
 
 class FakeSapHandler:
-    def __init__(self, recorder: Recorder, client: FakeSapClient | None = None) -> None:
+    def __init__(self, recorder: Recorder, **_kwargs: object) -> None:
         self.recorder = recorder
-        self.client = client
 
     def post(
         self,
         url: str,
         data: dict[str, str] | None = None,
-        timeout: float | None = None,
+        **_kwargs: object,
     ) -> FakeResponse:
-        cert = None if self.client is None else self.client.cert
-        cert_text = None
-        key_text = None
-        if cert is not None:
-            cert_text = Path(cert[0]).read_text(encoding="utf-8")
-            key_text = Path(cert[1]).read_text(encoding="utf-8")
-        del timeout
-        self.recorder.requests.append(
-            RecordedRequest(
-                url=url,
-                form=dict(data or {}),
-                cert=cert,
-                cert_text=cert_text,
-                key_text=key_text,
-            )
-        )
+        del data
+        self.recorder.requests.append(url)
         return FakeResponse(self.recorder.next_response())
 
 
@@ -210,42 +185,6 @@ def validate_output(input_value: dict[str, Json]) -> Json:
         key_file_path=optional_string(values, "key_file_path"),
     )
     return None
-
-
-def identity_output(request: RecordedRequest, values: dict[str, Json]) -> Json:
-    if request.cert is None:
-        return {"kind": "none"}
-    cert_path = optional_string(values, "cert_file_path")
-    if cert_path is not None and request.cert[0] == cert_path:
-        return {"kind": "files", "cert": request.cert[0], "key": request.cert[1]}
-    return {
-        "kind": "pem",
-        "cert": request.cert_text if request.cert_text is not None else "",
-        "key": request.key_text if request.key_text is not None else "",
-    }
-
-
-def token_request_output(input_value: dict[str, Json]) -> Json:
-    values = object_value(input_value.get("credentials"), "credentials")
-    recorder = Recorder(responses=[DEFAULT_RESPONSE_BODY], requests=[])
-    holder = [EPOCH]
-    with (
-        patched_token_transport(recorder),
-        patch.object(sap_credentials, "datetime", FixedNow(holder)),
-        patch.object(
-            sap_credentials,
-            "fetch_credentials",
-            return_value=resolved_credentials(values),
-        ),
-    ):
-        creator, _base_url, _resource_group = sap_credentials.get_token_creator()  # pyright: ignore[reportUnknownMemberType]
-        _token = creator()
-    request = recorder.requests[0]
-    return {
-        "url": request.url,
-        "form": cast(Json, request.form),
-        "identity": identity_output(request, values),
-    }
 
 
 def token_output(input_value: dict[str, Json]) -> Json:
@@ -357,26 +296,12 @@ def embed_deployment_url(listing: Json, configurations: dict[str, Json]) -> Json
 def deployment_output(input_value: dict[str, Json]) -> Json:
     mode = string_value(input_value.get("mode"), "mode")
     listing = input_value.get("listing")
-    configurations = object_value(
-        input_value.get("configurations"),
-        "configurations",
-    )
+    configurations = object_value(input_value.get("configurations"), "configurations")
     if mode == "chat":
         return chat_deployment_url(listing, configurations)
     if mode == "embedding":
         return embed_deployment_url(listing, configurations)
     raise ValueError(f"unknown mode {mode}")
-
-
-def headers_output(input_value: dict[str, Json]) -> Json:
-    token = string_value(input_value.get("token"), "token")
-    resource_group = string_value(input_value.get("resource_group"), "resource_group")
-    creator = partial(fixed_token_creator, token, BASE_URL, resource_group)
-    with patch.object(sap_chat, "get_token_creator", creator):
-        config = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-        config.run_env_setup()  # pyright: ignore[reportUnknownMemberType]
-        headers = config.headers  # pyright: ignore[reportUnknownMemberType]
-    return {name.lower(): value for name, value in headers.items()}
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -385,12 +310,8 @@ def run(input_value: dict[str, Json]) -> Json:
         return credentials_output(input_value)
     if function == "validate":
         return validate_output(input_value)
-    if function == "token_request":
-        return token_request_output(input_value)
     if function == "token":
         return token_output(input_value)
     if function == "deployment":
         return deployment_output(input_value)
-    if function == "headers":
-        return headers_output(input_value)
     raise ValueError(f"unknown function {function}")

@@ -3,26 +3,23 @@ deviations:
   - what: A PEM certificate and key given as strings reach the HTTP client in memory, with no temporary directory and files.
     why: The Rust client takes a PEM identity directly, and writing a private key to disk adds nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L463-L479
-  - what: A listing with no orchestrable deployment is a typed NoOrchestrationDeployment error instead of Python's IndexError "list index out of range".
-    why: The IndexError text is a Python runtime detail and a typed error lets the caller report the failure properly.
+  - what: A listing with no orchestrable deployment is a typed NoOrchestrationDeployment error instead of Python's IndexError.
+    why: The IndexError text is a Python runtime detail and a typed error lets the caller report the failure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L181-L183
-  - what: The token request carries no timeout in this module; the caller's transport owns the timeout and uses 30 seconds.
+  - what: The token request carries no timeout; the caller's transport owns it and uses 30 seconds.
     why: This module does no I/O, so a timeout value would be a constant nothing here reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L403
-  - what: A config file whose JSON is not an object provides no credential values and logs a warning; the resource group then comes from a later source or the default.
-    why: LiteLLM calls .get on the loaded JSON, so a list, string, number or null file raises AttributeError out of fetch_credentials; a typed no-values result keeps the other sources working.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L265-L272
-  - what: A config file that exists but cannot be read is a typed ConfigRead error.
-    why: LiteLLM opens the file inside init_conf and lets the OSError or UnicodeDecodeError escape, which a caller cannot match; betterlite reports the path and keeps the cause as the error source.
+  - what: A config file whose JSON is not an object, or that exists but cannot be read, provides no values with a warning or a typed ConfigRead error.
+    why: LiteLLM calls .get on the loaded JSON and lets OSError escape, so those files raise AttributeError or an OS error a caller cannot match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L144-L149
   - what: A VCAP_SERVICES value whose top level is not a JSON object, or whose service lists or entries are not arrays of objects, is treated as absent or skipped with a warning.
-    why: LiteLLM iterates the parsed value with .values() and .get(), so those shapes raise AttributeError or TypeError; only a JSON object of service lists is usable input.
+    why: LiteLLM iterates the parsed value with .values() and .get(), so those shapes raise AttributeError or TypeError.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L75-L84
   - what: A credential value that is a JSON array or object is skipped with a warning rather than turned into Python's str() of the value.
-    why: LiteLLM's _str_or_none calls str() on any non-null value, which for a list or dict writes Python repr text into a client id or URL; betterlite does not port repr text.
+    why: LiteLLM writes Python repr text into a client id or URL, and betterlite does not port repr text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L68-L72
-  - what: A deployment listing whose resources entry, resource objects, configuration documents or id and timestamp fields are not the JSON shapes SAP documents fail with NoOrchestrationDeployment or DeploymentEntry.
-    why: LiteLLM uses dict subscripts and .get on whatever the API returned, so a malformed listing raises KeyError, TypeError, AttributeError or IndexError; betterlite reports the same failures as typed errors.
+  - what: A malformed deployment listing or resource fails with NoOrchestrationDeployment or DeploymentEntry instead of Python's KeyError, TypeError, AttributeError or IndexError.
+    why: LiteLLM subscripts and calls .get on whatever the API returned; betterlite reports the same failures as typed errors.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L156-L183
   - what: The deployment selection function is named pick_orchestration_deployment instead of the task's select_orchestration_deployment.
     why: The repository hook rejects identifiers of 31 characters or more, and select_orchestration_deployment is 31.

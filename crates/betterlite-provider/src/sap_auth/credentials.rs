@@ -1,11 +1,19 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 
+use self::config::load_config;
+use self::text::{lookup, string_value};
+use self::transform::{CREDENTIAL_VALUES, transformed};
+use self::vcap::{find_vcap_service, load_vcap};
 use super::environment::SapEnvironment;
 use super::error::SapAuthError;
+
+mod config;
+mod text;
+mod transform;
+mod vcap;
 
 pub const AUTH_ENDPOINT_SUFFIX: &str = "/oauth/token";
 pub const CONFIG_FILE_ENV_VAR: &str = "AICORE_CONFIG";
@@ -16,7 +24,6 @@ pub const VCAP_SERVICES_ENV_VAR: &str = "VCAP_SERVICES";
 pub const VCAP_AICORE_SERVICE_NAME: &str = "aicore";
 pub const DEFAULT_RESOURCE_GROUP: &str = "default";
 const RESOURCE_GROUP_ENV_VAR: &str = "AICORE_RESOURCE_GROUP";
-const DEFAULT_PROFILE_CONFIG: &str = "config.json";
 const RESOURCE_GROUP_NAME: &str = "resource_group";
 const CREDENTIALS_PATH: &str = "credentials";
 
@@ -33,95 +40,6 @@ pub struct Credentials {
     pub resource_group: String,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Transform {
-    AuthEndpoint,
-    ApiBase,
-    PemText,
-}
-
-impl Transform {
-    fn apply(self, value: &str) -> String {
-        match self {
-            Self::AuthEndpoint => {
-                let trimmed = value.trim_end_matches('/');
-                let suffix = if value.ends_with(AUTH_ENDPOINT_SUFFIX) {
-                    ""
-                } else {
-                    AUTH_ENDPOINT_SUFFIX
-                };
-                format!("{trimmed}{suffix}")
-            }
-            Self::ApiBase => {
-                let trimmed = value.trim_end_matches('/');
-                let suffix = if value.ends_with("/v2") { "" } else { "/v2" };
-                format!("{trimmed}{suffix}")
-            }
-            Self::PemText => value.replace("\\n", "\n"),
-        }
-    }
-}
-
-struct CredentialValue {
-    name: &'static str,
-    vcap_key: Option<&'static [&'static str]>,
-    transform: Option<Transform>,
-}
-
-const RESOURCE_GROUP_VALUE: CredentialValue = CredentialValue {
-    name: RESOURCE_GROUP_NAME,
-    vcap_key: None,
-    transform: None,
-};
-
-const CREDENTIAL_VALUES: [CredentialValue; 9] = [
-    CredentialValue {
-        name: "client_id",
-        vcap_key: Some(&["clientid"]),
-        transform: None,
-    },
-    CredentialValue {
-        name: "client_secret",
-        vcap_key: Some(&["clientsecret"]),
-        transform: None,
-    },
-    CredentialValue {
-        name: "auth_url",
-        vcap_key: Some(&["url"]),
-        transform: Some(Transform::AuthEndpoint),
-    },
-    CredentialValue {
-        name: "base_url",
-        vcap_key: Some(&["serviceurls", "AI_API_URL"]),
-        transform: Some(Transform::ApiBase),
-    },
-    CredentialValue {
-        name: "cert_url",
-        vcap_key: Some(&["certurl"]),
-        transform: Some(Transform::AuthEndpoint),
-    },
-    CredentialValue {
-        name: "cert_file_path",
-        vcap_key: None,
-        transform: None,
-    },
-    CredentialValue {
-        name: "key_file_path",
-        vcap_key: None,
-        transform: None,
-    },
-    CredentialValue {
-        name: "cert_str",
-        vcap_key: Some(&["certificate"]),
-        transform: Some(Transform::PemText),
-    },
-    CredentialValue {
-        name: "key_str",
-        vcap_key: Some(&["key"]),
-        transform: Some(Transform::PemText),
-    },
-];
-
 #[derive(Debug, Default)]
 struct Extracted {
     values: BTreeMap<&'static str, String>,
@@ -135,16 +53,17 @@ pub fn fetch_credentials(
 ) -> Result<Credentials, SapAuthError> {
     let config = load_config(environment)?;
     let vcap = load_vcap(environment);
-    let service_key_document =
-        select_service_key(environment, service_key, litellm_sap_service_key)
-            .and_then(|value| parse_service_key(&value));
+    let document = select_service_key(environment, [service_key, litellm_sap_service_key])
+        .and_then(|value| parse_service_key(&value));
     let sources = [
-        service_key_document
+        document
             .as_ref()
             .map_or_else(Extracted::default, extract_service_key),
         extract_environment(environment),
         extract_config(&config),
-        vcap_source(vcap.as_ref()),
+        vcap.as_ref()
+            .and_then(find_vcap_service)
+            .map_or_else(Extracted::default, extract_vcap),
     ];
     let mut resolved = None;
     let mut resource_group = None;
@@ -210,14 +129,12 @@ pub fn validate_credentials(credentials: &Credentials) -> Result<(), SapAuthErro
 
 fn select_service_key(
     environment: &dyn SapEnvironment,
-    service_key: Option<&Json>,
-    litellm_sap_service_key: Option<&Json>,
+    candidates: [Option<&Json>; 2],
 ) -> Option<Json> {
-    let configured = [service_key, litellm_sap_service_key]
+    candidates
         .into_iter()
         .flatten()
-        .find(|value| is_selectable(value));
-    configured
+        .find(|value| is_selectable(value))
         .cloned()
         .or_else(|| environment.var(SERVICE_KEY_ENV_VAR).map(Json::Text))
 }
@@ -252,27 +169,25 @@ fn parse_service_key(value: &Json) -> Option<Json> {
 
 fn extract_service_key(document: &Json) -> Extracted {
     let mut extracted = Extracted::default();
-    for credential in &CREDENTIAL_VALUES {
-        if let Some(value) = service_key_lookup(document, credential) {
-            insert_value(&mut extracted.values, credential, &value);
+    for (name, vcap_key, transform) in CREDENTIAL_VALUES {
+        if let Some(value) = service_key_lookup(document, name, vcap_key) {
+            extracted
+                .values
+                .insert(name, transformed(transform, &value));
         }
     }
-    extracted.resource_group = service_key_lookup(document, &RESOURCE_GROUP_VALUE);
+    extracted.resource_group = service_key_lookup(document, RESOURCE_GROUP_NAME, None);
     extracted
 }
 
-fn service_key_lookup(document: &Json, credential: &CredentialValue) -> Option<String> {
-    let prefixed: Vec<&str> = credential.vcap_key.map_or_else(
-        || vec![credential.name],
-        |keys| {
-            let mut path = vec![CREDENTIALS_PATH];
-            path.extend(keys.iter().copied());
-            path
-        },
-    );
-    let mut value = lookup(document, &prefixed);
+fn service_key_lookup(
+    document: &Json,
+    name: &str,
+    vcap_key: Option<&'static [&'static str]>,
+) -> Option<String> {
+    let mut value = lookup(document, &prefixed_path(name, vcap_key));
     if value.is_none()
-        && let Some(keys) = credential.vcap_key
+        && let Some(keys) = vcap_key
     {
         value = lookup(document, keys);
     }
@@ -280,12 +195,28 @@ fn service_key_lookup(document: &Json, credential: &CredentialValue) -> Option<S
     string_value(&found)
 }
 
+fn prefixed_path<'name>(
+    name: &'name str,
+    vcap_key: Option<&'static [&'static str]>,
+) -> Vec<&'name str> {
+    vcap_key.map_or_else(
+        || vec![name],
+        |keys| {
+            let mut path = vec![CREDENTIALS_PATH];
+            path.extend(keys.iter().copied());
+            path
+        },
+    )
+}
+
 fn extract_environment(environment: &dyn SapEnvironment) -> Extracted {
     let mut extracted = Extracted::default();
-    for credential in &CREDENTIAL_VALUES {
-        let name = format!("AICORE_{}", credential.name.to_ascii_uppercase());
-        if let Some(value) = environment.var(&name) {
-            insert_value(&mut extracted.values, credential, &value);
+    for (name, _, transform) in CREDENTIAL_VALUES {
+        let variable = format!("AICORE_{}", name.to_ascii_uppercase());
+        if let Some(value) = environment.var(&variable) {
+            extracted
+                .values
+                .insert(name, transformed(transform, &value));
         }
     }
     extracted.resource_group = environment.var(RESOURCE_GROUP_ENV_VAR);
@@ -300,23 +231,21 @@ fn extract_config(config: &Json) -> Extracted {
         );
         return extracted;
     };
-    for credential in &CREDENTIAL_VALUES {
-        let env_name = format!("AICORE_{}", credential.name.to_ascii_uppercase());
-        let chosen = match fields.get(&env_name) {
-            Some(Json::Null) | None => fields.get(credential.name),
-            Some(value) => Some(value),
-        };
-        if let Some(text) = chosen.and_then(string_value) {
-            insert_value(&mut extracted.values, credential, &text);
+    for (name, _, transform) in CREDENTIAL_VALUES {
+        let variable = format!("AICORE_{}", name.to_ascii_uppercase());
+        if let Some(value) = config_value(fields, &variable, name) {
+            extracted
+                .values
+                .insert(name, transformed(transform, &value));
         }
     }
     extracted.resource_group = config_value(fields, RESOURCE_GROUP_ENV_VAR, RESOURCE_GROUP_NAME);
     extracted
 }
 
-fn config_value(fields: &Object, env_name: &str, plain_name: &str) -> Option<String> {
-    let chosen = match fields.get(env_name) {
-        Some(Json::Null) | None => fields.get(plain_name),
+fn config_value(fields: &Object, variable: &str, name: &str) -> Option<String> {
+    let chosen = match fields.get(variable) {
+        Some(Json::Null) | None => fields.get(name),
         Some(value) => Some(value),
     };
     let value = chosen?;
@@ -325,139 +254,15 @@ fn config_value(fields: &Object, env_name: &str, plain_name: &str) -> Option<Str
 
 fn extract_vcap(service: &Json) -> Extracted {
     let mut extracted = Extracted::default();
-    for credential in &CREDENTIAL_VALUES {
-        let path: Vec<&str> = credential.vcap_key.map_or_else(
-            || vec![credential.name],
-            |keys| {
-                let mut path = vec![CREDENTIALS_PATH];
-                path.extend(keys.iter().copied());
-                path
-            },
-        );
+    for (name, vcap_key, transform) in CREDENTIAL_VALUES {
+        let path = prefixed_path(name, vcap_key);
         if let Some(value) = lookup(service, &path).and_then(|found| string_value(&found)) {
-            insert_value(&mut extracted.values, credential, &value);
+            extracted
+                .values
+                .insert(name, transformed(transform, &value));
         }
     }
     extracted.resource_group =
         lookup(service, &[RESOURCE_GROUP_NAME]).and_then(|found| string_value(&found));
     extracted
-}
-
-fn vcap_source(services: Option<&Object>) -> Extracted {
-    services
-        .and_then(find_vcap_service)
-        .map_or_else(Extracted::default, extract_vcap)
-}
-
-fn insert_value(
-    values: &mut BTreeMap<&'static str, String>,
-    credential: &CredentialValue,
-    value: &str,
-) {
-    let transformed = credential
-        .transform
-        .map_or_else(|| value.to_owned(), |transform| transform.apply(value));
-    values.insert(credential.name, transformed);
-}
-
-fn lookup(document: &Json, path: &[&str]) -> Option<Json> {
-    let mut current = match document {
-        Json::Text(text) => {
-            let Ok(parsed) = serde_json::from_str::<Json>(text) else {
-                tracing::warn!("SAP service key or VCAP service is a string but not valid JSON");
-                return None;
-            };
-            parsed
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            document.clone()
-        }
-    };
-    for key in path {
-        let Some(fields) = current.as_object() else {
-            tracing::warn!(
-                key = *key,
-                "SAP service key or VCAP service traversal hit a non-object value"
-            );
-            return None;
-        };
-        current = fields.get(*key)?.clone();
-    }
-    Some(current)
-}
-
-fn string_value(value: &Json) -> Option<String> {
-    match value {
-        Json::Null => None,
-        Json::Text(text) => Some(text.clone()),
-        Json::Number(number) => Some(number.to_string()),
-        Json::Bool(flag) => Some(flag.to_string()),
-        Json::List(_) | Json::Object(_) => {
-            tracing::warn!("a SAP AI Core credential value is a JSON array or object; skipping it");
-            None
-        }
-    }
-}
-
-fn load_vcap(environment: &dyn SapEnvironment) -> Option<Object> {
-    let raw = environment.var(VCAP_SERVICES_ENV_VAR)?;
-    if raw.is_empty() {
-        return None;
-    }
-    serde_json::from_str::<Object>(&raw).ok()
-}
-
-fn find_vcap_service(services: &Object) -> Option<&Json> {
-    for (_, list) in services {
-        let Json::List(entries) = list else {
-            tracing::warn!("a VCAP_SERVICES service list is not a JSON array; skipping it");
-            continue;
-        };
-        for entry in entries {
-            let Json::Object(fields) = entry else {
-                continue;
-            };
-            if fields.get("label").and_then(Json::as_str) == Some(VCAP_AICORE_SERVICE_NAME) {
-                return Some(entry);
-            }
-        }
-    }
-    None
-}
-
-fn load_config(environment: &dyn SapEnvironment) -> Result<Json, SapAuthError> {
-    let home = environment
-        .var(HOME_PATH_ENV_VAR)
-        .map_or_else(|| environment.home_dir().join(".aicore"), PathBuf::from);
-    let profile = environment.var(PROFILE_ENV_VAR);
-    let config_env = environment.var(CONFIG_FILE_ENV_VAR);
-    let explicit_config = config_env.as_deref().is_some_and(|value| !value.is_empty());
-    let named_profile = profile
-        .as_deref()
-        .is_some_and(|value| !value.is_empty() && value != "default");
-    let path = match config_env.as_deref() {
-        Some(value) if !value.is_empty() => PathBuf::from(value),
-        _ => home.join(profile_file_name(profile.as_deref())),
-    };
-    if environment.file_exists(&path) {
-        let text = environment
-            .read_file(&path)
-            .map_err(|source| SapAuthError::ConfigRead {
-                path: path.clone(),
-                source,
-            })?;
-        return serde_json::from_str::<Json>(&text)
-            .map_err(|_source| SapAuthError::ConfigNotJson { path });
-    }
-    if explicit_config || named_profile {
-        return Err(SapAuthError::ConfigFileNotFound { path, home });
-    }
-    Ok(Json::Object(Object::new()))
-}
-
-fn profile_file_name(profile: Option<&str>) -> String {
-    match profile {
-        None | Some("" | "default") => DEFAULT_PROFILE_CONFIG.to_owned(),
-        Some(name) => format!("config_{name}.json"),
-    }
 }

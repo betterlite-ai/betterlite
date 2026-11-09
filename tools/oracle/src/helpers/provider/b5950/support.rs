@@ -1,0 +1,109 @@
+use std::collections::{BTreeMap, VecDeque};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
+
+use betterlite_prompts::arguments::json::Json;
+use betterlite_provider::sap_auth::deployment::DeploymentConfigurations;
+use betterlite_provider::sap_auth::environment::SapEnvironment;
+use betterlite_provider::sap_auth::error::ConfigurationLookupError;
+use betterlite_provider::sap_auth::token::{
+    SapClock, SapTokenTransport, TokenRequest, TokenTransportError,
+};
+use chrono::{DateTime, Utc};
+
+use super::EnvironmentInput;
+
+pub(super) struct MapEnvironment {
+    vars: BTreeMap<String, String>,
+    files: BTreeMap<PathBuf, String>,
+    home: PathBuf,
+}
+
+impl MapEnvironment {
+    pub(super) fn from_input(input: &EnvironmentInput) -> Self {
+        Self {
+            vars: input.vars.clone(),
+            files: input
+                .files
+                .iter()
+                .map(|(path, contents)| (PathBuf::from(path), contents.clone()))
+                .collect(),
+            home: PathBuf::from(input.home.as_str()),
+        }
+    }
+}
+
+impl SapEnvironment for MapEnvironment {
+    fn var(&self, name: &str) -> Option<String> {
+        self.vars.get(name).cloned()
+    }
+
+    fn file_exists(&self, path: &Path) -> bool {
+        self.files.contains_key(path)
+    }
+
+    fn read_file(&self, path: &Path) -> Result<String, io::Error> {
+        self.files
+            .get(path)
+            .cloned()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
+    fn home_dir(&self) -> PathBuf {
+        self.home.clone()
+    }
+}
+
+pub(super) struct ScriptedClock {
+    pub(super) times: Vec<i64>,
+    pub(super) index: Mutex<usize>,
+}
+
+impl SapClock for ScriptedClock {
+    fn now(&self) -> DateTime<Utc> {
+        let mut index = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let position = *index;
+        *index = position.saturating_add(1);
+        drop(index);
+        DateTime::from_timestamp(self.times.get(position).copied().unwrap_or(0), 0)
+            .unwrap_or(DateTime::UNIX_EPOCH)
+    }
+}
+
+pub(super) struct Scripted {
+    pub(super) responses: VecDeque<String>,
+    pub(super) requests: usize,
+}
+
+pub(super) struct ScriptedTransport {
+    pub(super) script: Mutex<Scripted>,
+}
+
+impl SapTokenTransport for ScriptedTransport {
+    fn post(&self, _request: &TokenRequest) -> Result<String, TokenTransportError> {
+        let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
+        script.requests = script.requests.saturating_add(1);
+        script
+            .responses
+            .pop_front()
+            .ok_or_else(|| TokenTransportError {
+                text: "the case scripted no more token responses".to_owned(),
+            })
+    }
+}
+
+pub(super) struct MapConfigurations<'input> {
+    pub(super) configurations: &'input BTreeMap<String, Json>,
+}
+
+impl DeploymentConfigurations for MapConfigurations<'_> {
+    fn configuration(&self, configuration_id: &str) -> Result<Json, ConfigurationLookupError> {
+        self.configurations
+            .get(configuration_id)
+            .cloned()
+            .ok_or_else(|| ConfigurationLookupError {
+                message: format!("the case has no configuration {configuration_id}"),
+            })
+    }
+}

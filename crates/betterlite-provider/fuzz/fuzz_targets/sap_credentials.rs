@@ -8,49 +8,26 @@ use betterlite_provider::sap_auth::credentials::fetch_credentials;
 use betterlite_provider::sap_auth::environment::SapEnvironment;
 use libfuzzer_sys::fuzz_target;
 
-struct ServiceKeyEnvironment {
+struct FuzzEnvironment {
     text: String,
+    config: bool,
 }
 
-impl SapEnvironment for ServiceKeyEnvironment {
+impl SapEnvironment for FuzzEnvironment {
     fn var(&self, name: &str) -> Option<String> {
-        match name {
-            "AICORE_SERVICE_KEY" | "VCAP_SERVICES" => Some(self.text.clone()),
-            _ => None,
-        }
-    }
-
-    fn file_exists(&self, _path: &Path) -> bool {
-        false
-    }
-
-    fn read_file(&self, _path: &Path) -> Result<String, io::Error> {
-        Err(io::Error::from(io::ErrorKind::NotFound))
-    }
-
-    fn home_dir(&self) -> PathBuf {
-        PathBuf::from("/fuzz")
-    }
-}
-
-struct ConfigEnvironment {
-    text: String,
-}
-
-impl SapEnvironment for ConfigEnvironment {
-    fn var(&self, name: &str) -> Option<String> {
-        match name {
-            "AICORE_CONFIG" => Some("/fuzz/config.json".to_owned()),
+        match (self.config, name) {
+            (false, "AICORE_SERVICE_KEY" | "VCAP_SERVICES") => Some(self.text.clone()),
+            (true, "AICORE_CONFIG") => Some("/fuzz/config.json".to_owned()),
             _ => None,
         }
     }
 
     fn file_exists(&self, path: &Path) -> bool {
-        path == Path::new("/fuzz/config.json")
+        self.config && path == Path::new("/fuzz/config.json")
     }
 
     fn read_file(&self, path: &Path) -> Result<String, io::Error> {
-        if path == Path::new("/fuzz/config.json") {
+        if self.config && path == Path::new("/fuzz/config.json") {
             return Ok(self.text.clone());
         }
         Err(io::Error::from(io::ErrorKind::NotFound))
@@ -65,12 +42,14 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(text) = from_utf8(bytes) else {
         return;
     };
-    let environment = ServiceKeyEnvironment {
+    let service_key = FuzzEnvironment {
         text: text.to_owned(),
+        config: false,
     };
-    let _service_key = fetch_credentials(&environment, None, None);
-    let configured = ConfigEnvironment {
+    let _decoded = fetch_credentials(&service_key, None, None);
+    let configured = FuzzEnvironment {
         text: text.to_owned(),
+        config: true,
     };
-    let _config = fetch_credentials(&configured, None, None);
+    let _configured = fetch_credentials(&configured, None, None);
 });
