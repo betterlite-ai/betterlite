@@ -148,20 +148,38 @@ pub fn text(value: &Field, location: &str) -> Parsed<String> {
         .ok_or_else(|| vec![format!("{location}: Input should be a valid string")])
 }
 
+// Pydantic lax mode: bools count as 0 and 1 and numeric strings are read as numbers
 pub fn number(value: &Field, location: &str) -> Parsed<Number> {
     if let Field::Int(whole) = value {
         return Ok(Number::from(*whole));
+    }
+    if let Field::Bool(flag) = value {
+        return Ok(Number::from(i64::from(*flag)));
     }
     if let Field::Float(float) = value
         && let Some(finite) = Number::from_f64(*float)
     {
         return Ok(finite);
     }
+    if let Field::Text(text) = value
+        && let Some(parsed) = parse_numeric_text(text)
+    {
+        return Ok(parsed);
+    }
     Err(vec![format!("{location}: Input should be a valid number")])
+}
+
+fn parse_numeric_text(text: &str) -> Option<Number> {
+    let trimmed = text.trim();
+    let whole = trimmed.parse::<i64>().ok().map(Number::from);
+    whole.or_else(|| trimmed.parse::<f64>().ok().and_then(Number::from_f64))
 }
 
 pub fn integer(value: &Field, location: &str) -> Parsed<Number> {
     let invalid = || vec![format!("{location}: Input should be a valid integer")];
+    if matches!(value, Field::Text(text) if text.contains(['e', 'E'])) {
+        return Err(invalid());
+    }
     let parsed = number(value, location).map_err(|_unparsed| invalid())?;
     let Some(float) = parsed.as_f64().filter(|_| parsed.is_f64()) else {
         return Ok(parsed);
@@ -173,7 +191,10 @@ pub fn integer(value: &Field, location: &str) -> Parsed<Number> {
             "{location}: Input should be a valid integer, got a number with a fractional part"
         )]);
     }
-    rendered.parse().map_err(|_unparsed| invalid())
+    let whole = rendered.parse::<Number>().ok();
+    whole
+        .filter(|candidate| !candidate.is_f64())
+        .ok_or_else(invalid)
 }
 
 pub fn choice<T>(value: &Field, location: &str) -> Parsed<T>

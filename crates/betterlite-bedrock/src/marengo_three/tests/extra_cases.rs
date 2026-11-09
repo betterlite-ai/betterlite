@@ -113,6 +113,18 @@ fn builds(#[case] call: &str, #[case] expected: Expected<'_>) {
     r#"{"input": "x", "params": {"textTruncate": null}}"#,
     Expected::Built(r#"{"inputType": "text", "text": {"inputText": "x"}}"#)
 )]
+#[case::lax_numbers_from_strings_and_bools(
+    r#"{"input": "AAA", "params": {"inputType": "video", "startSec": "1.5", "endSec": true, "segmentation": {"method": "fixed", "fixed": {"durationSec": "4"}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "video", "video": {"mediaSource": {"base64String": "AAA"}, "startSec": 1.5, "endSec": 1, "segmentation": {"method": "fixed", "fixed": {"durationSec": 4}}}}"#
+    )
+)]
+#[case::lax_whole_duration_text_and_bool(
+    r#"{"input": "AAA", "params": {"inputType": "audio", "startSec": false, "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": " 4.0 "}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "audio", "audio": {"mediaSource": {"base64String": "AAA"}, "startSec": 0, "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 4}}}}"#
+    )
+)]
 #[case::dynamic_segmentation(
     r#"{"input": "AAA", "params": {"inputType": "audio", "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 3.0}}, "inferenceId": "id-1"}}"#,
     Expected::Built(
@@ -141,8 +153,12 @@ fn policy(#[case] call: &str, #[case] expected: Expected<'_>) {
     "media_sources.a: Input should be a valid string; media_sources.c: Input should be a valid string"
 )]
 #[case::bad_times_in_order(
-    r#"{"endSec": "x", "startSec": true, "bucketOwner": 1}"#,
+    r#"{"endSec": "x", "startSec": [1], "bucketOwner": 1}"#,
     "bucketOwner: Input should be a valid string; startSec: Input should be a valid number; endSec: Input should be a valid number"
+)]
+#[case::bad_numeric_text(
+    r#"{"startSec": "", "endSec": "abc", "segmentation": {"method": "fixed", "fixed": {"durationSec": "1e2"}}}"#,
+    "startSec: Input should be a valid number; endSec: Input should be a valid number; segmentation.TwelveLabsMarengo3FixedSegmentation.fixed.durationSec: Input should be a valid integer; segmentation.TwelveLabsMarengo3DynamicSegmentation.method: Input should be 'dynamic'; segmentation.TwelveLabsMarengo3DynamicSegmentation.dynamic: Field required"
 )]
 #[case::bad_option_items(
     r#"{"embeddingOption": ["visual", "bad", "worse"], "embeddingType": "fused_embedding", "embeddingScope": ["wide"]}"#,
