@@ -117,8 +117,15 @@ impl CallbackLogger for BaseLogger {
     }
 }
 
+type Builder = Arc<
+    dyn Fn(CallbackName, &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError>
+        + Send
+        + Sync,
+>;
+
 pub struct LoggerCatalog {
     inputs: CatalogInputs,
+    build: Builder,
     built: Mutex<BTreeMap<CallbackName, Arc<dyn CallbackLogger>>>,
 }
 
@@ -127,6 +134,7 @@ impl LoggerCatalog {
     pub fn new(inputs: CatalogInputs) -> Self {
         Self {
             inputs,
+            build: Arc::new(build_logger),
             built: Mutex::new(BTreeMap::new()),
         }
     }
@@ -144,7 +152,7 @@ impl LoggerCatalog {
         if let Some(logger) = self.existing(name) {
             return Ok(Some(logger));
         }
-        self.resolve_built(callback, build_logger(callback, &self.inputs))
+        self.resolve_built(callback, (self.build)(callback, &self.inputs))
     }
 
     #[must_use]

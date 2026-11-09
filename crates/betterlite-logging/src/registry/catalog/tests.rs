@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{Result as IoResult, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::loader::ConfigLoader;
@@ -16,7 +17,7 @@ use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::{CatalogError, CatalogInputs, LoggerCatalog};
+use super::{BaseLogger, CatalogError, CatalogInputs, LoggerCatalog};
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::resolver::LoggerResolver;
@@ -94,6 +95,21 @@ fn catalog() -> LoggerCatalog {
     LoggerCatalog::new(inputs())
 }
 
+fn counting_catalog(builds: &Arc<AtomicUsize>) -> LoggerCatalog {
+    let counter = Arc::clone(builds);
+    LoggerCatalog {
+        inputs: inputs(),
+        build: Arc::new(move |callback: CallbackName, _inputs: &CatalogInputs| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            let logger: Arc<dyn CallbackLogger> = Arc::new(BaseLogger {
+                name: callback.as_str().to_owned(),
+            });
+            Ok(logger)
+        }),
+        built: Mutex::new(BTreeMap::new()),
+    }
+}
+
 fn flags() -> FeatureFlags {
     FeatureFlags {
         otel_v2_enabled: false,
@@ -156,7 +172,8 @@ fn an_enterprise_factory_name_builds_a_base_logger(#[case] name: &str) {
 
 #[test]
 fn a_logger_is_built_once_and_reused() {
-    let catalog = catalog();
+    let builds = Arc::new(AtomicUsize::new(0));
+    let catalog = counting_catalog(&builds);
     assert!(catalog.existing("pagerduty").is_none());
     let first = catalog
         .resolve_logger("pagerduty")
@@ -167,9 +184,25 @@ fn a_logger_is_built_once_and_reused() {
         .expect("the name is available")
         .expect("the second resolve reuses it");
     assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(builds.load(Ordering::SeqCst), 1);
     let existing = catalog.existing("pagerduty").expect("the logger is stored");
     assert!(Arc::ptr_eq(&first, &existing));
     assert!(catalog.existing("langsmith").is_none());
+}
+
+#[test]
+fn storing_a_second_logger_for_a_name_keeps_the_first() {
+    let catalog = catalog();
+    let first: Arc<dyn CallbackLogger> = Arc::new(BaseLogger {
+        name: "first".to_owned(),
+    });
+    let second: Arc<dyn CallbackLogger> = Arc::new(BaseLogger {
+        name: "second".to_owned(),
+    });
+    let stored_first = catalog.store(CallbackName::Pagerduty, Arc::clone(&first));
+    let stored_second = catalog.store(CallbackName::Pagerduty, Arc::clone(&second));
+    assert!(Arc::ptr_eq(&stored_first, &first));
+    assert!(Arc::ptr_eq(&stored_second, &first));
 }
 
 #[test]
@@ -184,12 +217,19 @@ fn an_init_error_gives_none_and_logs_once() {
             .expect("an init error is not a resolve error")
             .is_none()
     );
+    let line = log
+        .lines()
+        .find(|line| line.contains("Non-Blocking Error"))
+        .expect("the init error is logged");
+    assert!(line.contains("ERROR"));
+    assert!(line.contains(
+        "[Non-Blocking Error] Error initializing custom logger: arize needs ARIZE_API_KEY"
+    ));
     assert_eq!(
         log.matches("[Non-Blocking Error] Error initializing custom logger")
             .count(),
         1
     );
-    assert!(log.contains("arize needs ARIZE_API_KEY"));
 }
 
 #[test]
@@ -225,4 +265,21 @@ fn a_registry_registers_the_catalog_logger_for_success() {
         loggers.first().expect("one logger").callback_name(),
         "pagerduty"
     );
+}
+
+#[test]
+fn a_registry_with_the_catalog_refuses_an_unbuilt_name() {
+    let resolver: Arc<dyn LoggerResolver> = Arc::new(catalog());
+    let mut registry = CallbackRegistry::new(100).with_resolver(resolver);
+    assert!(matches!(
+        registry.register_configured(
+            "langsmith",
+            &CallbackVars::new(),
+            CallbackList::Success,
+            flags()
+        ),
+        Err(RegistryError::UnavailableAdapter { name }) if name == "langsmith"
+    ));
+    assert!(registry.list_identities(CallbackList::Success).is_empty());
+    assert!(registry.loggers(CallbackPhase::Success).is_empty());
 }

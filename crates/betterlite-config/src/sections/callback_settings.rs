@@ -154,9 +154,12 @@ fn unavailable_paths(lists: &RawLiteLlm) -> Vec<String> {
         .as_ref()
         .map(RawCallbackList::names)
         .unwrap_or_default();
-    if callbacks
-        .iter()
-        .any(|name| names::CallbackName::from_name(name).is_none())
+    // LiteLLM's non-list branch hands the value to get_instance_fn without checking the known list
+    let scalar_callback = matches!(&lists.callbacks, Some(RawCallbackList::One(_)));
+    if scalar_callback
+        || callbacks
+            .iter()
+            .any(|name| names::CallbackName::from_name(name).is_none())
     {
         paths.push("litellm_settings.callbacks".to_owned());
     }

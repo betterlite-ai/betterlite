@@ -95,6 +95,7 @@ enum Scenario {
     SettingsScalars,
     SettingsDebugRedacts,
     Capacity(&'static [(&'static str, &'static str)], usize),
+    ScalarCallbacks(&'static str),
     StringCallbacks(&'static str),
     ScalarSuccessCallback(&'static str),
     ScalarEntry(&'static str),
@@ -132,6 +133,7 @@ fn variables(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 #[rstest]
 #[case::empty_lists_load(Scenario::EmptyLists)]
 #[case::langsmith_in_callbacks_loads(Scenario::AcceptedName("callbacks", "langsmith"))]
+#[case::pagerduty_in_callbacks_loads(Scenario::AcceptedName("callbacks", "pagerduty"))]
 #[case::s3_in_success_callback_loads(Scenario::AcceptedName("success_callback", "s3"))]
 #[case::rubrik_in_failure_callback_loads(Scenario::AcceptedName("failure_callback", "rubrik"))]
 #[case::not_a_callback_fails_with_its_list_path(Scenario::RejectedName(
@@ -142,6 +144,8 @@ fn variables(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
     "success_callback",
     "hide_secrets"
 ))]
+#[case::wrong_case_name_fails_with_its_list_path(Scenario::RejectedName("callbacks", "Langfuse"))]
+#[case::scalar_known_callback_fails_startup(Scenario::ScalarCallbacks("pagerduty"))]
 #[case::every_unknown_list_is_named(Scenario::EveryList(&[
     "litellm_settings.callbacks",
     "litellm_settings.success_callback",
@@ -268,6 +272,12 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
         Scenario::Capacity(environment, expected) => {
             let settings = load("", environment).unwrap();
             assert_eq!(settings.max_callbacks, expected);
+        }
+        Scenario::ScalarCallbacks(name) => {
+            let source = format!("litellm_settings:\n  callbacks: {name}\n");
+            let error = load(&source, &[]).unwrap_err();
+            assert!(matches!(error, ConfigError::Unsupported { paths }
+                if paths == ["litellm_settings.callbacks"]));
         }
         Scenario::StringCallbacks(source) => {
             let error = load(source, &[]).unwrap_err();
