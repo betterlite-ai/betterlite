@@ -105,8 +105,14 @@ where
     for path in &paths {
         let url = format!("{normalized}{path}");
         match card_from(&url, source).await {
-            Ok(card) => return Ok(card),
-            Err(error) => last_error = Some(error),
+            Ok(card) => {
+                tracing::debug!(url, "A2A discovery succeeded");
+                return Ok(card);
+            }
+            Err(error) => {
+                tracing::debug!(url = %url, error = %error, "A2A discovery path failed");
+                last_error = Some(error);
+            }
         }
     }
     Err(AgentCardDiscoveryError::AllPathsFailed {
