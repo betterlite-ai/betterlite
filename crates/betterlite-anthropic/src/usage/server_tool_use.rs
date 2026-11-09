@@ -1,30 +1,36 @@
+use std::error::Error as StdError;
+
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 
 use super::ServerToolUse;
-use super::shape::{UsageShapeError, optional_count};
+use super::count::optional_int;
+use super::error::UsageError;
+use super::wire::{ServerToolUseValue, UsageObject};
 use crate::response_content::wire::{get, json_text};
 
-pub(super) fn resolve_server_tool_use(
-    fields: &IndexMap<String, Json>,
+pub(super) fn resolve_server_tool_use<CounterFailure>(
+    object: &UsageObject,
     completion_response: Option<&Json>,
-) -> Result<Option<ServerToolUse>, UsageShapeError> {
+) -> Result<Option<ServerToolUse>, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let mut web_search = None;
     let mut tool_search = None;
-    match fields.get("server_tool_use") {
-        None | Some(Json::Null) => {}
-        Some(Json::Object(usage)) => {
-            web_search = optional_count(
-                usage.get("web_search_requests"),
+    match &object.server_tool_use {
+        None => {}
+        Some(ServerToolUseValue::Mapping(usage)) => {
+            web_search = optional_int(
+                usage.web_search_requests.as_ref(),
                 "server_tool_use.web_search_requests",
             )?;
-            tool_search = optional_count(
-                usage.get("tool_search_requests"),
+            tool_search = optional_int(
+                usage.tool_search_requests.as_ref(),
                 "server_tool_use.tool_search_requests",
             )?;
         }
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(UsageShapeError::FieldType {
+        Some(ServerToolUseValue::Other) => {
+            return Err(UsageError::FieldType {
                 field: "server_tool_use",
             });
         }
@@ -42,9 +48,12 @@ pub(super) fn resolve_server_tool_use(
     }))
 }
 
-fn content_tool_search_count(
+fn content_tool_search_count<CounterFailure>(
     completion_response: Option<&Json>,
-) -> Result<Option<i64>, UsageShapeError> {
+) -> Result<Option<i64>, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let Some(Json::Object(response)) = completion_response else {
         return Ok(None);
     };
@@ -63,12 +72,12 @@ fn content_tool_search_count(
             continue;
         };
         let Some(tool_name) = json_text(name) else {
-            return Err(UsageShapeError::FieldType {
+            return Err(UsageError::FieldType {
                 field: "content.name",
             });
         };
         if tool_name.contains("tool_search") {
-            count = count.checked_add(1).ok_or(UsageShapeError::Overflow {
+            count = count.checked_add(1).ok_or(UsageError::Overflow {
                 field: "server_tool_use.tool_search_requests",
             })?;
         }

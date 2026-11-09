@@ -1,16 +1,19 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
+use std::error::Error as StdError;
 
-use super::shape::{UsageShapeError, integer_value};
-use super::{CompletionTokensDetails, ReasoningTokenCounter, UsageError};
+use betterlite_models::decisions::Json;
+
+use super::count::thinking_tokens;
+use super::error::UsageError;
+use super::wire::{OutputTokensDetailsValue, UsageIteration, UsageObject};
+use super::{CompletionTokensDetails, ReasoningTokenCounter};
 use crate::response_content::wire::{get, json_text};
 
 type CompletionSplit = (Option<i64>, Option<i64>);
 
 #[derive(Clone, Copy)]
 pub(super) struct CompletionTokenInput<'usage> {
-    pub(super) fields: &'usage IndexMap<String, Json>,
-    pub(super) iterations: Option<&'usage [Json]>,
+    pub(super) object: &'usage UsageObject,
+    pub(super) iterations: Option<&'usage [UsageIteration]>,
     pub(super) reasoning_content: Option<&'usage str>,
     pub(super) completion_response: Option<&'usage Json>,
     pub(super) completion_tokens: i64,
@@ -43,10 +46,10 @@ where
     Counter: ReasoningTokenCounter,
 {
     let reported = iteration_thinking_tokens(input.iterations)?
-        .or_else(|| thinking_tokens_from_usage(input.fields));
+        .or_else(|| details_thinking(input.object.output_tokens_details.as_ref()));
     if let Some(tokens) = reported {
         let reasoning = tokens.max(0).min(input.completion_tokens);
-        return Ok(completion_text_split(input.completion_tokens, reasoning)?);
+        return completion_text_split(input.completion_tokens, reasoning);
     }
     if let Some(reasoning_content) = input.reasoning_content.filter(|text| !text.is_empty()) {
         let token_count = counter
@@ -54,13 +57,13 @@ where
             .map_err(|source| UsageError::Counter { source })?;
         let estimate = i64::try_from(token_count)
             .ok()
-            .ok_or(UsageShapeError::OutOfRange {
+            .ok_or(UsageError::OutOfRange {
                 field: "reasoning_tokens",
             })?;
-        return Ok(completion_text_split(
+        return completion_text_split(
             input.completion_tokens,
             estimate.min(input.completion_tokens).max(0),
-        )?);
+        );
     }
     if response_has_thinking_block(input.completion_response) {
         return Ok((None, None));
@@ -68,48 +71,47 @@ where
     Ok((Some(0), Some(input.completion_tokens)))
 }
 
-fn completion_text_split(
+fn completion_text_split<CounterFailure>(
     completion_tokens: i64,
     reasoning_tokens: i64,
-) -> Result<CompletionSplit, UsageShapeError> {
+) -> Result<CompletionSplit, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let text_tokens =
         completion_tokens
             .checked_sub(reasoning_tokens)
-            .ok_or(UsageShapeError::Overflow {
+            .ok_or(UsageError::Overflow {
                 field: "completion_tokens_details.text_tokens",
             })?;
     Ok((Some(reasoning_tokens), Some(text_tokens)))
 }
 
-fn iteration_thinking_tokens(iterations: Option<&[Json]>) -> Result<Option<i64>, UsageShapeError> {
+fn iteration_thinking_tokens<CounterFailure>(
+    iterations: Option<&[UsageIteration]>,
+) -> Result<Option<i64>, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let Some(items) = iterations else {
         return Ok(None);
     };
     let mut total = 0_i64;
-    for item in items {
-        let Json::Object(fields) = item else {
+    for iteration in items {
+        let Some(tokens) = details_thinking(iteration.output_tokens_details.as_ref()) else {
             return Ok(None);
         };
-        let Some(tokens) = thinking_tokens_from_usage(fields) else {
-            return Ok(None);
-        };
-        total = total.checked_add(tokens).ok_or(UsageShapeError::Overflow {
+        total = total.checked_add(tokens).ok_or(UsageError::Overflow {
             field: "completion_tokens_details.reasoning_tokens",
         })?;
     }
     Ok(Some(total))
 }
 
-fn thinking_tokens_from_usage(fields: &IndexMap<String, Json>) -> Option<i64> {
-    let Some(Json::Object(details)) = fields.get("output_tokens_details") else {
-        return None;
-    };
-    match details.get("thinking_tokens") {
-        Some(Json::Number(number)) => {
-            integer_value(number, "output_tokens_details.thinking_tokens").ok()
-        }
-        Some(Json::Bool(flag)) => Some(i64::from(*flag)),
-        None | Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) => None,
+fn details_thinking(value: Option<&OutputTokensDetailsValue>) -> Option<i64> {
+    match value? {
+        OutputTokensDetailsValue::Mapping(found) => thinking_tokens(found.thinking_tokens.as_ref()),
+        OutputTokensDetailsValue::Other => None,
     }
 }
 

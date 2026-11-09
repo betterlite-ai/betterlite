@@ -4,8 +4,9 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 use serde::Deserialize;
 
+use crate::usage::error::UsageError;
 use crate::usage::{
-    AnthropicUsage, CacheCreationTokenDetails, ReasoningTokenCounter, ServerToolUse, UsageError,
+    AnthropicUsage, CacheCreationTokenDetails, ReasoningTokenCounter, ServerToolUse,
     calculate_usage, is_anthropic_usage_object,
 };
 

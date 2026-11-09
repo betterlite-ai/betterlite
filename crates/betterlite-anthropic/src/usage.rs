@@ -2,19 +2,22 @@ use std::error::Error as StdError;
 
 use betterlite_models::decisions::Json;
 use serde::Serialize;
-use thiserror::Error;
 
 mod cache_creation;
 mod completion;
+mod count;
 mod server_tool_use;
-mod shape;
 mod tokens;
+mod wire;
+
+pub mod error;
 
 use cache_creation::cache_creation_details;
 use completion::{CompletionTokenInput, completion_token_details};
+use error::UsageError;
 use server_tool_use::resolve_server_tool_use;
-use shape::{UsageShapeError, optional_text, resolved_speed};
-use tokens::{TokenCounts, iteration_blocks, token_counts};
+use tokens::{TokenCounts, token_counts};
+use wire::{CountValue, decode_usage_object};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AnthropicUsage {
@@ -92,39 +95,6 @@ pub struct ServerToolUse {
     pub browser_open: Option<i64>,
 }
 
-#[derive(Debug, Error)]
-pub enum UsageError<CounterFailure>
-where
-    CounterFailure: StdError + Send + Sync + 'static,
-{
-    #[error("the Anthropic usage object is not a mapping")]
-    UsageNotMapping,
-    #[error("the usage field {field} has a type the declared Anthropic shape does not allow")]
-    FieldType { field: &'static str },
-    #[error("the usage field {field} is outside the signed 64-bit range")]
-    OutOfRange { field: &'static str },
-    #[error("the usage arithmetic overflowed at {field}")]
-    Overflow { field: &'static str },
-    #[error("the reasoning token counter failed")]
-    Counter {
-        #[source]
-        source: CounterFailure,
-    },
-}
-
-impl<CounterFailure> From<UsageShapeError> for UsageError<CounterFailure>
-where
-    CounterFailure: StdError + Send + Sync + 'static,
-{
-    fn from(error: UsageShapeError) -> Self {
-        match error {
-            UsageShapeError::FieldType { field } => Self::FieldType { field },
-            UsageShapeError::OutOfRange { field } => Self::OutOfRange { field },
-            UsageShapeError::Overflow { field } => Self::Overflow { field },
-        }
-    }
-}
-
 // LiteLLM counts the fallback through token_counter(text=..., count_response_tokens=True), so the caller injects it.
 pub trait ReasoningTokenCounter {
     type Failure: StdError + Send + Sync + 'static;
@@ -142,16 +112,15 @@ pub fn calculate_usage<Counter>(
 where
     Counter: ReasoningTokenCounter,
 {
-    let Json::Object(fields) = usage_object else {
-        return Err(UsageError::UsageNotMapping);
-    };
-    let iterations = iteration_blocks(fields)?;
-    let cache_creation_token_details = cache_creation_details(fields, iterations)?;
-    let counts = token_counts(fields, iterations)?;
-    let server_tool_use = resolve_server_tool_use(fields, completion_response)?;
+    let object =
+        decode_usage_object(usage_object).map_err(|source| UsageError::Decode { source })?;
+    let counts = token_counts(&object)?;
+    let cache_creation_token_details = cache_creation_details(&object)?;
+    let server_tool_use = resolve_server_tool_use(&object, completion_response)?;
+    let iterations = object.present_iterations();
     let completion_tokens_details = completion_token_details(
         CompletionTokenInput {
-            fields,
+            object: &object,
             iterations,
             reasoning_content,
             completion_response,
@@ -175,11 +144,11 @@ where
         completion_tokens_details,
         cache_creation_input_tokens: counts.cache_creation,
         cache_read_input_tokens: counts.cache_read,
-        iterations: fields.get("iterations").cloned(),
-        inference_geo: optional_text(fields, "inference_geo")?,
-        speed: resolved_speed(fields, speed),
-        service_tier: optional_text(fields, "service_tier")?,
         server_tool_use,
+        inference_geo: required_text(object.inference_geo.as_ref(), "inference_geo")?,
+        speed: speed_text(object.speed.as_ref()).or_else(|| speed.map(str::to_owned)),
+        service_tier: required_text(object.service_tier.as_ref(), "service_tier")?,
+        iterations: object.iterations.map(|found| found.raw),
     })
 }
 
@@ -194,16 +163,19 @@ pub fn is_anthropic_usage_object(usage_object: &Json) -> bool {
             || fields.contains_key("cache_creation_input_tokens"))
 }
 
-fn prompt_token_details(
+fn prompt_token_details<CounterFailure>(
     counts: TokenCounts,
     cache_creation_token_details: Option<CacheCreationTokenDetails>,
-) -> Result<PromptTokensDetails, UsageShapeError> {
+) -> Result<PromptTokensDetails, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     Ok(PromptTokensDetails {
         text: counts
             .prompt
             .checked_sub(counts.cache_read)
             .and_then(|value| value.checked_sub(counts.cache_creation))
-            .ok_or(UsageShapeError::Overflow {
+            .ok_or(UsageError::Overflow {
                 field: "prompt_tokens_details.text_tokens",
             })?,
         cached: counts.cache_read,
@@ -214,6 +186,32 @@ fn prompt_token_details(
         video: None,
         cache_creation_details: cache_creation_token_details,
     })
+}
+
+fn required_text<CounterFailure>(
+    value: Option<&CountValue>,
+    field: &'static str,
+) -> Result<Option<String>, UsageError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
+    match value {
+        Some(CountValue::Text(text)) => Ok(Some(text.clone())),
+        None | Some(CountValue::Null) => Ok(None),
+        Some(
+            CountValue::Number(_)
+            | CountValue::Bool(_)
+            | CountValue::List { .. }
+            | CountValue::Object { .. },
+        ) => Err(UsageError::FieldType { field }),
+    }
+}
+
+fn speed_text(value: Option<&CountValue>) -> Option<String> {
+    if let Some(CountValue::Text(text)) = value {
+        return Some(text.clone());
+    }
+    None
 }
 
 mod tests;
