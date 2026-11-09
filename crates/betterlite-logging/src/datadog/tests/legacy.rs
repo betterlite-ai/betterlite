@@ -96,6 +96,13 @@ fn datadog_legacy_v1_logging_defaults() {
 }
 
 #[test]
+fn datadog_legacy_v1_logging_generates_the_id_for_a_null_id() {
+    let kwargs = LegacyLoggingKwargs::default();
+    let body = legacy_message(&kwargs, &json(r#"{"id": null, "usage": {}}"#));
+    assert_eq!(field(&body, "id"), &json(r#""generated-id""#));
+}
+
+#[test]
 fn datadog_legacy_v1_logging_writes_a_null_response_time_that_overflows() {
     let kwargs = LegacyLoggingKwargs::default();
     let response = json(r#"{"usage": {}}"#);

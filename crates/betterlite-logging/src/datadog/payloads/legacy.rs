@@ -97,10 +97,10 @@ fn legacy_message(event: &LegacyLoggingEvent<'_>) -> Result<String, DatadogPaylo
     };
     let id = match response.get("id") {
         Some(Json::Text(id)) => id.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+        Some(Json::Null) | None => event.generated_id.to_owned(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             return Err(DatadogPayloadError::ResponseIdNotText);
         }
-        None => event.generated_id.to_owned(),
     };
     let record = legacy_record(event, response, usage, id);
     Ok(safe_dumps(&record, DEFAULT_MAX_RECURSE_DEPTH, None)?)
