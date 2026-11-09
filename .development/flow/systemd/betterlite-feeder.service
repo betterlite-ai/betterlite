@@ -1,0 +1,13 @@
+[Unit]
+Description=betterlite feeder
+
+[Service]
+Environment=PATH=@PATH@
+ExecStart=/bin/bash @FLOW@/feeder.sh
+Restart=on-failure
+RestartSec=30
+LimitNOFILE=524288
+KillMode=process
+
+[Install]
+WantedBy=default.target
