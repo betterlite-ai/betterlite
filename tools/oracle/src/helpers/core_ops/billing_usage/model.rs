@@ -81,10 +81,10 @@ fn mapping_value(value: Value) -> Result<IndexMap<String, Json>, Failure> {
 pub(super) fn optional_mapping(
     value: Option<&Value>,
 ) -> Result<Option<IndexMap<String, Json>>, Failure> {
-    match value {
-        None => Ok(None),
-        Some(found) => mapping_value(found.clone()).map(Some),
-    }
+    let Some(found) = value else {
+        return Ok(None);
+    };
+    mapping_value(found.clone()).map(Some)
 }
 pub(super) fn optional_usage(call: &Call) -> Result<Option<Usage>, Failure> {
     let Some(value) = call.usage.as_ref() else {
@@ -160,8 +160,8 @@ pub(super) fn decimal_value(cost: &Decimal) -> Value {
         .map_or_else(|_error| Value::String(cost.to_string()), Value::Number)
 }
 pub(super) fn optional_text(value: Option<&str>) -> Value {
-    match value {
-        Some(text) => Value::String(text.to_owned()),
-        None => Value::Null,
-    }
+    let Some(text) = value else {
+        return Value::Null;
+    };
+    Value::String(text.to_owned())
 }
