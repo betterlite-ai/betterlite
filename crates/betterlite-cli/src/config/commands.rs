@@ -3,7 +3,8 @@ use std::io::Write;
 use betterlite_config::loader::EnvironmentLookup;
 use clap::Subcommand;
 
-use super::{ConfigError, ConfigKey, load_config, save_config};
+use super::error::ConfigError;
+use super::{ConfigKey, load_config, save_config};
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {

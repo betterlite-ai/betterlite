@@ -11,10 +11,10 @@ use rstest::rstest;
 use tempfile::TempDir;
 
 use super::commands::{ConfigCommand, run_config_command};
+use super::error::ConfigError;
 use super::{
-    ConfigError, HIDDEN_COMMANDS_KEY, SaveFailure, config_file_path, get_config_value,
-    hidden_command_names, load_config, normalize_base_url, normalize_hidden_commands,
-    parse_hidden_commands, save_config,
+    HIDDEN_COMMANDS_KEY, config_file_path, hidden_command_names, load_config, normalize_base_url,
+    normalize_hidden_commands, parse_hidden_commands, save_config,
 };
 
 const FULL_URL_MESSAGE: &str = "base_url must be a full http:// or https:// URL including a host";
@@ -266,7 +266,7 @@ fn save_config_round_trips_through_load_config() {
 fn save_config_reports_a_missing_home() {
     let environment = FakeEnvironment::without_home();
     let error = save_config(&BTreeMap::new(), &environment).unwrap_err();
-    assert!(matches!(error, ConfigError::Save(SaveFailure::NoHome)));
+    assert!(matches!(error, ConfigError::NoHome));
 }
 
 #[test]
@@ -277,11 +277,13 @@ fn save_config_wraps_a_directory_failure() {
     let environment = FakeEnvironment::with_home(&blocked);
     let error = save_config(&BTreeMap::new(), &environment).unwrap_err();
     match error {
-        ConfigError::Save(SaveFailure::Private(PrivateJsonError::Directory(path, _))) => {
+        ConfigError::Save(PrivateJsonError::Directory(path, _)) => {
             assert_eq!(path, blocked.join(".litellm"));
         }
         ConfigError::Usage(message) => panic!("unexpected usage failure: {message}"),
         ConfigError::KeyNotSet(key) => panic!("unexpected key failure: {key}"),
+        ConfigError::NoHome => panic!("unexpected missing-home failure"),
+        ConfigError::Runtime { source } => panic!("unexpected runtime failure: {source}"),
         ConfigError::Save(other) => panic!("unexpected save failure: {other:?}"),
     }
 }
@@ -294,11 +296,13 @@ fn save_config_wraps_a_write_failure() {
     let environment = FakeEnvironment::with_home(home.path());
     let error = save_config(&BTreeMap::new(), &environment).unwrap_err();
     match error {
-        ConfigError::Save(SaveFailure::Private(PrivateJsonError::Commit(path, _))) => {
+        ConfigError::Save(PrivateJsonError::Commit(path, _)) => {
             assert_eq!(path, target);
         }
         ConfigError::Usage(message) => panic!("unexpected usage failure: {message}"),
         ConfigError::KeyNotSet(key) => panic!("unexpected key failure: {key}"),
+        ConfigError::NoHome => panic!("unexpected missing-home failure"),
+        ConfigError::Runtime { source } => panic!("unexpected runtime failure: {source}"),
         ConfigError::Save(other) => panic!("unexpected save failure: {other:?}"),
     }
 }
@@ -483,25 +487,29 @@ fn unset_config_removes_the_key_and_saves() {
 }
 
 #[test]
-fn get_config_value_reads_a_stored_value() {
+fn load_config_reads_a_single_stored_value() {
     let home = TempDir::new().unwrap();
     write_config(home.path(), r#"{"base_url": "https://proxy.example.com"}"#);
     let environment = FakeEnvironment::with_home(home.path());
     let mut warnings = Vec::new();
     assert_eq!(
-        get_config_value(&environment, "base_url", &mut warnings),
+        load_config(&environment, &mut warnings)
+            .get("base_url")
+            .cloned(),
         Some("https://proxy.example.com".to_owned())
     );
     assert!(warnings.is_empty());
 }
 
 #[test]
-fn get_config_value_returns_none_for_an_absent_key() {
+fn load_config_lookup_returns_none_for_an_absent_key() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment::with_home(home.path());
     let mut warnings = Vec::new();
     assert_eq!(
-        get_config_value(&environment, "base_url", &mut warnings),
+        load_config(&environment, &mut warnings)
+            .get("base_url")
+            .cloned(),
         None
     );
 }

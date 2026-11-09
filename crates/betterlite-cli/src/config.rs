@@ -1,59 +1,23 @@
 pub mod commands;
+pub mod error;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
-use thiserror::Error;
 use tokio::runtime::Builder;
 use url::Url;
+
+use error::ConfigError;
 
 pub const HIDDEN_COMMANDS_KEY: &str = "hidden_commands";
 
 const CONFIG_DIRECTORY: &str = ".litellm";
 const CONFIG_FILE: &str = "config.json";
 const FULL_URL_MESSAGE: &str = "base_url must be a full http:// or https:// URL including a host";
-
-#[derive(Debug, Error)]
-pub enum ConfigError {
-    #[error("{0}")]
-    Usage(String),
-    #[error("{0} is not set")]
-    KeyNotSet(String),
-    #[error(transparent)]
-    Save(#[from] SaveFailure),
-}
-
-impl From<PrivateJsonError> for ConfigError {
-    fn from(source: PrivateJsonError) -> Self {
-        Self::Save(SaveFailure::Private(source))
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum SaveFailure {
-    #[error("the environment has no home directory")]
-    NoHome,
-    #[error("the private JSON runtime could not start: {source}")]
-    Runtime {
-        #[source]
-        source: io::Error,
-    },
-    #[error(transparent)]
-    Private(#[from] PrivateJsonError),
-}
-
-#[derive(Debug, Error)]
-enum LoadFailure {
-    #[error(transparent)]
-    Read(#[from] io::Error),
-    #[error(transparent)]
-    Parse(#[from] serde_json::Error),
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConfigKey {
@@ -86,9 +50,12 @@ impl ConfigKey {
 }
 
 pub fn config_file_path(environment: &dyn EnvironmentLookup) -> Option<PathBuf> {
-    let home = environment.system_home()?;
-    let directory = home.join(CONFIG_DIRECTORY);
-    Some(directory.join(CONFIG_FILE))
+    Some(
+        environment
+            .system_home()?
+            .join(CONFIG_DIRECTORY)
+            .join(CONFIG_FILE),
+    )
 }
 
 pub fn load_config(
@@ -101,52 +68,38 @@ pub fn load_config(
     if !path.exists() {
         return BTreeMap::new();
     }
-    match read_config(&path) {
-        Ok(config) => config,
-        Err(failure) => {
-            // the write cannot change the outcome: the invalid file still reads as an empty config
-            let _unused = writeln!(
-                warnings,
-                "Warning: ignoring invalid config file {}: {failure}",
-                path.display()
-            );
-            BTreeMap::new()
-        }
-    }
-}
-
-fn read_config(path: &Path) -> Result<BTreeMap<String, String>, LoadFailure> {
-    let text = fs::read_to_string(path)?;
-    let config: BTreeMap<String, String> = serde_json::from_str(&text)?;
-    Ok(config)
+    let failure = match fs::read_to_string(&path) {
+        Ok(text) => match serde_json::from_str::<BTreeMap<String, String>>(&text) {
+            Ok(config) => return config,
+            Err(source) => source.to_string(),
+        },
+        Err(source) => source.to_string(),
+    };
+    // a warning the writer refuses cannot change the outcome: the file still reads as empty
+    let _unused = writeln!(
+        warnings,
+        "Warning: ignoring invalid config file {}: {failure}",
+        path.display()
+    );
+    BTreeMap::new()
 }
 
 pub fn save_config(
     config: &BTreeMap<String, String>,
     environment: &dyn EnvironmentLookup,
 ) -> Result<PathBuf, ConfigError> {
-    let path = config_file_path(environment).ok_or(SaveFailure::NoHome)?;
-    let directory = path.parent().ok_or(SaveFailure::NoHome)?;
+    let path = config_file_path(environment).ok_or(ConfigError::NoHome)?;
+    let directory = path.parent().ok_or(ConfigError::NoHome)?;
     let document = PrivateDocument::json(config)?;
     let runtime = Builder::new_current_thread()
         .build()
-        .map_err(|source| SaveFailure::Runtime { source })?;
+        .map_err(|source| ConfigError::Runtime { source })?;
     runtime.block_on(async {
         let files = PrivateFiles::default();
         files.ensure_private_dir(directory).await?;
         files.write_private(&path, document).await
     })?;
     Ok(path)
-}
-
-pub fn get_config_value(
-    environment: &dyn EnvironmentLookup,
-    key: &str,
-    warnings: &mut dyn Write,
-) -> Option<String> {
-    let config = load_config(environment, warnings);
-    let stored = config.get(key)?;
-    Some(stored.clone())
 }
 
 pub fn parse_hidden_commands(raw: Option<&str>) -> BTreeSet<String> {
@@ -160,7 +113,9 @@ pub fn parse_hidden_commands(raw: Option<&str>) -> BTreeSet<String> {
 
 pub fn hidden_command_names(environment: &dyn EnvironmentLookup) -> BTreeSet<String> {
     let mut warnings = io::sink();
-    let stored = get_config_value(environment, HIDDEN_COMMANDS_KEY, &mut warnings);
+    let stored = load_config(environment, &mut warnings)
+        .get(HIDDEN_COMMANDS_KEY)
+        .cloned();
     parse_hidden_commands(stored.as_deref())
 }
 
