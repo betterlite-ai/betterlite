@@ -10,7 +10,6 @@ use betterlite_context::local_ttl_cache::{CacheLimits, CacheValue, LocalTtlCache
 use super::{CacheBackend, CacheResult, Ttl};
 use crate::types::pipeline::RedisPipelineIncrement;
 
-pub const DEFAULT_CAPACITY: i64 = 200;
 pub const DEFAULT_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 
 type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
