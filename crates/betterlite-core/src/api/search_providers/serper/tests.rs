@@ -143,6 +143,58 @@ fn serper_sign_request_fails_before_sending_without_a_key() {
     assert!(matches!(error, SerperSearchError::MissingApiKey));
 }
 
+#[test]
+fn serper_sign_request_blocks_the_server_key_for_an_untrusted_base() {
+    let config = config(&[("SERPER_API_KEY", "sk-server")]);
+    let text = SearchQuery::Single(String::from("rust"));
+    let request = config
+        .transform_search_request(&text, &Object::new())
+        .unwrap();
+    let outbound = OutboundSearch {
+        api_base: "https://evil.test/search",
+        api_key: None,
+        optional_params: &Object::new(),
+        body: &request,
+    };
+    let error = config.sign_request(Headers::new(), &outbound).unwrap_err();
+    assert!(matches!(
+        error,
+        SerperSearchError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+}
+
+#[rstest]
+#[case::server_key_default_base("https://google.serper.dev/search", None, "sk-server")]
+#[case::caller_key_other_base("https://evil.test/search", Some("sk-caller"), "sk-caller")]
+fn serper_sign_request_signs_with_the_key_and_content_type(
+    #[case] api_base: &str,
+    #[case] caller_key: Option<&str>,
+    #[case] expected_key: &str,
+) {
+    let config = config(&[("SERPER_API_KEY", "sk-server")]);
+    let text = SearchQuery::Single(String::from("rust"));
+    let request = config
+        .transform_search_request(&text, &Object::new())
+        .unwrap();
+    let caller_secret = caller_key.map(SecretString::from);
+    let outbound = OutboundSearch {
+        api_base,
+        api_key: caller_secret.as_ref(),
+        optional_params: &Object::new(),
+        body: &request,
+    };
+    let (headers, body) = config.sign_request(Headers::new(), &outbound).unwrap();
+    assert_eq!(
+        headers.get("X-API-KEY").map(String::as_str),
+        Some(expected_key)
+    );
+    assert_eq!(
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    assert_eq!(body, None);
+}
+
 #[rstest]
 #[case::default(None, &[], "https://google.serper.dev/search")]
 #[case::caller_base(Some("https://x.test"), &[], "https://x.test/search")]
