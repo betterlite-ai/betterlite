@@ -1,21 +1,17 @@
-use betterlite_prompts::media::base64_string::get_base64_str;
-
 pub mod error;
 pub mod fields;
+mod inputs;
 pub mod params;
 pub mod request;
 mod tests;
 
 use error::{Marengo3Error, bad_request};
 use fields::InputType;
+use inputs::{media_source, multi_input, text_image_input, timed_media_input};
 use params::{Marengo3Params, RawParams};
-use request::{
-    ImageInput, Marengo3Request, MediaSource, MultiInput, NamedMediaSource, RequestBody,
-    S3Location, TextImageInput, TextInput, TimedMediaInput,
-};
+use request::{ImageInput, Marengo3Request, RequestBody, TextInput};
 
 pub const MARENGO_3_MODEL_MARKER: &str = "marengo-embed-3-";
-const S3_URI_PREFIX: &str = "s3://";
 
 #[must_use]
 pub fn is_marengo_3_model(model: Option<&str>) -> bool {
@@ -93,71 +89,4 @@ fn reject_given(given: &[&str], reason: &str) -> Result<(), Marengo3Error> {
         "{reason} {}; set drop_params to drop them",
         given.join(", ")
     )))
-}
-
-fn media_source(media: &str, bucket_owner: Option<&str>) -> Result<MediaSource, Marengo3Error> {
-    if !media.starts_with(S3_URI_PREFIX) {
-        return Ok(MediaSource::Inline {
-            base64_string: get_base64_str(media).to_owned(),
-        });
-    }
-    let Some(owner) = bucket_owner else {
-        return Err(bad_request(
-            "s3:// media requires the 'bucketOwner' parameter, the account id that owns the bucket"
-                .to_owned(),
-        ));
-    };
-    Ok(MediaSource::Remote {
-        s3_location: S3Location {
-            uri: media.to_owned(),
-            bucket_owner: owner.to_owned(),
-        },
-    })
-}
-
-fn timed_media_input(
-    media: &str,
-    params: &Marengo3Params,
-) -> Result<TimedMediaInput, Marengo3Error> {
-    Ok(TimedMediaInput {
-        media_source: media_source(media, params.bucket_owner.as_deref())?,
-        options: params.timed.clone(),
-    })
-}
-
-fn text_image_input(input: &str, params: &Marengo3Params) -> Result<TextImageInput, Marengo3Error> {
-    let Some(media) = params.media_source.as_deref() else {
-        return Err(bad_request(
-            "Input type 'text_image' requires the 'media_source' parameter".to_owned(),
-        ));
-    };
-    Ok(TextImageInput {
-        input_text: input.to_owned(),
-        media_source: media_source(media, params.bucket_owner.as_deref())?,
-    })
-}
-
-fn multi_input(input: &str, params: &Marengo3Params) -> Result<MultiInput, Marengo3Error> {
-    let Some(sources) = params
-        .media_sources
-        .as_ref()
-        .filter(|named| !named.is_empty())
-    else {
-        return Err(bad_request(
-            "Input type 'multi_input' requires a non-empty 'media_sources' mapping of name to media"
-                .to_owned(),
-        ));
-    };
-    let mut media_sources = Vec::with_capacity(sources.len());
-    for (name, media) in sources {
-        media_sources.push(NamedMediaSource {
-            name: name.clone(),
-            media_type: "image",
-            source: media_source(media, params.bucket_owner.as_deref())?,
-        });
-    }
-    Ok(MultiInput {
-        input_text: (!input.is_empty()).then(|| input.to_owned()),
-        media_sources,
-    })
 }

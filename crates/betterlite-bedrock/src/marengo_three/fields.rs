@@ -149,45 +149,44 @@ pub fn text(value: &Field, location: &str) -> Parsed<String> {
 }
 
 pub fn number(value: &Field, location: &str) -> Parsed<Number> {
-    let parsed = match value {
-        Field::Int(whole) => Some(Number::from(*whole)),
-        Field::Float(float) => Number::from_f64(*float),
-        Field::Null | Field::Bool(_) | Field::Text(_) | Field::List(_) | Field::Mapping(_) => None,
-    };
-    parsed.ok_or_else(|| vec![format!("{location}: Input should be a valid number")])
+    if let Field::Int(whole) = value {
+        return Ok(Number::from(*whole));
+    }
+    if let Field::Float(float) = value
+        && let Some(finite) = Number::from_f64(*float)
+    {
+        return Ok(finite);
+    }
+    Err(vec![format!("{location}: Input should be a valid number")])
 }
 
 pub fn integer(value: &Field, location: &str) -> Parsed<Number> {
-    let invalid = vec![format!("{location}: Input should be a valid integer")];
-    match value {
-        Field::Int(whole) => Ok(Number::from(*whole)),
-        Field::Float(float) => {
-            // A whole float prints without a fraction, so it reads back as an integer
-            let rendered = float.to_string();
-            if rendered.contains('.') {
-                return Err(vec![format!(
-                    "{location}: Input should be a valid integer, got a number with a fractional part"
-                )]);
-            }
-            rendered.parse().map_err(|_unparsed| invalid)
-        }
-        Field::Null | Field::Bool(_) | Field::Text(_) | Field::List(_) | Field::Mapping(_) => {
-            Err(invalid)
-        }
+    let invalid = || vec![format!("{location}: Input should be a valid integer")];
+    let parsed = number(value, location).map_err(|_unparsed| invalid())?;
+    let Some(float) = parsed.as_f64().filter(|_| parsed.is_f64()) else {
+        return Ok(parsed);
+    };
+    // A whole float prints without a fraction, so it reads back as an integer
+    let rendered = float.to_string();
+    if rendered.contains('.') {
+        return Err(vec![format!(
+            "{location}: Input should be a valid integer, got a number with a fractional part"
+        )]);
     }
+    rendered.parse().map_err(|_unparsed| invalid())
 }
 
 pub fn choice<T>(value: &Field, location: &str) -> Parsed<T>
 where
     T: Choice,
 {
-    let found = value
-        .as_str()
-        .and_then(|text| T::NAMES.iter().find(|(name, _)| *name == text));
-    found.map_or_else(
-        || Err(vec![format!("{location}: {}", T::EXPECTED)]),
-        |(_, selected)| Ok(*selected),
-    )
+    let given = value.as_str().unwrap_or_default();
+    for (name, selected) in T::NAMES {
+        if *name == given {
+            return Ok(*selected);
+        }
+    }
+    Err(vec![format!("{location}: {}", T::EXPECTED)])
 }
 
 fn collect<T>(items: Vec<Parsed<T>>) -> Parsed<Vec<T>> {
@@ -206,10 +205,11 @@ fn collect<T>(items: Vec<Parsed<T>>) -> Parsed<Vec<T>> {
     }
 }
 
-pub fn choices<T>(value: &Field, location: &str) -> Parsed<Vec<T>>
-where
-    T: Choice,
-{
+pub fn list<T>(
+    value: &Field,
+    location: &str,
+    parse: fn(&Field, &str) -> Parsed<T>,
+) -> Parsed<Vec<T>> {
     let Field::List(items) = value else {
         return Err(vec![format!("{location}: Input should be a valid tuple")]);
     };
@@ -217,7 +217,7 @@ where
         items
             .iter()
             .enumerate()
-            .map(|(index, item)| choice(item, &format!("{location}.{index}")))
+            .map(|(index, item)| parse(item, &format!("{location}.{index}")))
             .collect(),
     )
 }

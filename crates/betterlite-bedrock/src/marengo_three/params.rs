@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::error::{Marengo3Error, bad_request};
 use super::fields::{
-    InputType, Parsed, choice, choices, media_sources, number, segmentation as parse_segmentation,
+    InputType, Parsed, choice, list, media_sources, number, segmentation as parse_segmentation,
     text,
 };
 use super::request::TimedMediaOptions;
@@ -95,9 +95,19 @@ fn timed_options(raw: &RawParams, issues: &mut Issues) -> TimedMediaOptions {
             "segmentation",
             parse_segmentation,
         ),
-        embedding_option: issues.field(raw.embedding_option.as_ref(), "embeddingOption", choices),
-        embedding_type: issues.field(raw.embedding_type.as_ref(), "embeddingType", choices),
-        embedding_scope: issues.field(raw.embedding_scope.as_ref(), "embeddingScope", choices),
+        embedding_option: issues.field(
+            raw.embedding_option.as_ref(),
+            "embeddingOption",
+            |value, at| list(value, at, choice),
+        ),
+        embedding_type: issues.field(raw.embedding_type.as_ref(), "embeddingType", |value, at| {
+            list(value, at, choice)
+        }),
+        embedding_scope: issues.field(
+            raw.embedding_scope.as_ref(),
+            "embeddingScope",
+            |value, at| list(value, at, choice),
+        ),
     }
 }
 
