@@ -9,7 +9,7 @@ call:
       - status: 200
         body: '{"choices": []}'
     logging_obj: null
-    request_data: null
+    request_data: {litellm_call_id: call-1}
     input_type: response
     inputs:
       texts: [hello]
