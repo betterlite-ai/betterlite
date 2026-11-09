@@ -29,5 +29,5 @@ deviations:
     why: >-
       Python ints are unbounded, while a Duration, a retry count and a parsed TTL need a fixed width. No working setup
       configures a flush interval of 5.8e11 years, four billion retries or a TTL past 2^63 seconds, so the saturated or
-      rejected value never changes what an operator gets. The behavior tests an_overflow_saturates and beyond_i64 pin it.
+      rejected value never changes what an operator gets. The behavior test cases flush_interval_overflow_saturates and beyond_i64 pin it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L497-L516
