@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::alert_settings::Settings;
 use betterlite_config::sections::alert_settings::types::{
     AlertType, AlertTypeConfig, DEFAULT_ALERT_TYPES,
 };
@@ -16,7 +15,7 @@ use betterlite_config::sections::langfuse_settings;
 use chrono::{FixedOffset, TimeZone as _};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use strum::{EnumCount as _, IntoEnumIterator as _};
 use tokio::time::Instant;
 
@@ -43,15 +42,6 @@ fn langfuse_settings(variables: &[(&str, &str)]) -> langfuse_settings::Settings 
     .load("")
     .expect("the langfuse settings load");
     config.sections.langfuse_settings
-}
-
-fn alert_settings(source: &str, variables: &[(&str, &str)]) -> Settings {
-    let config = ConfigLoader {
-        lookup: lookup(variables),
-    }
-    .load(source)
-    .expect("the alert settings load");
-    config.sections.alert_settings
 }
 
 fn time() -> chrono::DateTime<FixedOffset> {
@@ -368,11 +358,7 @@ fn hanging_request_data_new_applies_litellm_defaults() {
 }
 
 #[test]
-fn digest_entry_carries_the_resolved_webhook_union() {
-    let loaded = alert_settings(
-        "general_settings:\n  alert_to_webhook_url:\n    spend_reports:\n      - os.environ/FIRST\n      - https://plain.example",
-        &[("FIRST", "https://first.example")],
-    );
+fn digest_entry_debug_hides_the_webhook_url() {
     let entry = DigestEntry {
         alert_type: "spend_reports".to_owned(),
         request_model: "gpt-4o".to_owned(),
@@ -382,15 +368,9 @@ fn digest_entry_carries_the_resolved_webhook_union() {
         count: 1,
         start_time: time(),
         last_time: time(),
-        webhook_url: loaded.alert_to_webhook_url[&AlertType::SpendReports].clone(),
+        webhook_url: WebhookUrl::Multiple(vec![SecretString::from("https://hooks.example/SECRET")]),
     };
-    let WebhookUrl::Multiple(urls) = entry.webhook_url else {
-        panic!("a list of webhooks stays a list");
-    };
-    assert_eq!(
-        urls.iter()
-            .map(|url| url.expose_secret().to_owned())
-            .collect::<Vec<String>>(),
-        vec!["https://first.example", "https://plain.example"]
-    );
+    let debug = format!("{entry:?}");
+    assert!(!debug.contains("SECRET"), "{debug}");
+    assert!(debug.contains("REDACTED"), "{debug}");
 }
