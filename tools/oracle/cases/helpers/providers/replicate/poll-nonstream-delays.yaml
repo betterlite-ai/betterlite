@@ -10,7 +10,7 @@ call:
         messages:
           - {role: user, content: hi}
         retries: 3
-        retry_delay: 1.0
+        retry_delay: 1
         now: 1700000000
         create: {body: '{"urls":{"get":"https://poll/1"}}'}
         polls:
@@ -21,7 +21,7 @@ call:
         messages:
           - {role: user, content: hi}
         retries: 2
-        retry_delay: 0.5
+        retry_delay: 2
         now: 1700000001
         create: {body: '{"urls":{"get":"https://poll/2"}}'}
         polls:
@@ -36,7 +36,7 @@ call:
         messages:
           - {role: user, content: hi}
         retries: 3
-        retry_delay: 1.0
+        retry_delay: 1
         create: {body: '{"urls":{"get":"https://poll/3"}}'}
         polls:
           - {status: 500, body: '{"status":"processing"}'}

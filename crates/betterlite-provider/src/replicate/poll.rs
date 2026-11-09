@@ -31,11 +31,13 @@ impl ReplicatePolling {
                 retries.unwrap_or_default(),
             )?
             .unwrap_or(5),
-            retry_delay_seconds: number::<f64>(
-                "DEFAULT_REPLICATE_POLLING_DELAY_SECONDS",
-                retry_delay.unwrap_or_default(),
-            )?
-            .unwrap_or(1.0_f64),
+            retry_delay_seconds: f64::from(
+                number::<i32>(
+                    "DEFAULT_REPLICATE_POLLING_DELAY_SECONDS",
+                    retry_delay.unwrap_or_default(),
+                )?
+                .unwrap_or(1_i32),
+            ),
             polling_delay_seconds: number::<f64>(
                 "REPLICATE_POLLING_DELAY_SECONDS",
                 polling_delay.unwrap_or_default(),

@@ -20,6 +20,7 @@ use super::super::request::{
 use super::stream::poll_stream;
 use super::transport::{REQUEST_TIMEOUT, ReplicateRequest, ReplicateResponse, ReplicateTransport};
 use super::{OutputPolicy, ReplicateCompletion, ReplicatePolling, ReplicateSleeper};
+use crate::oci_common::Clock;
 
 pub struct Replicate<'deps> {
     pub transport: Arc<dyn ReplicateTransport>,
@@ -27,6 +28,7 @@ pub struct Replicate<'deps> {
     pub prompts: &'deps PromptFactory,
     pub counter: &'deps dyn TokenCounter,
     pub logger: &'deps dyn PostCallLogger,
+    pub clock: &'deps dyn Clock,
     pub polling: ReplicatePolling,
     pub policy: OutputPolicy,
 }
@@ -73,14 +75,6 @@ struct PollRequest<'request> {
     request_data: &'request ReplicateBody,
     api_key: Option<&'request str>,
     created: Option<i64>,
-}
-
-// the sync path stamps the reply with the clock right before the create POST; the async twin leaves it unset
-const fn created_at(policy: OutputPolicy, now: DateTime<Utc>) -> Option<i64> {
-    match policy {
-        OutputPolicy::Strict => Some(now.timestamp()),
-        OutputPolicy::Lenient => None,
-    }
 }
 
 fn is_processing(response: &ReplicateResponse) -> Result<bool, ReplicateFailure> {
@@ -180,7 +174,11 @@ impl Replicate<'_> {
         let mut invocation = call;
         let headers = validate_environment(&HeaderMap::new(), invocation.api_key)?;
         let body = invocation.build_body(self.prompts, &self.polling).await?;
-        let created = created_at(self.policy, invocation.now);
+        // the sync path stamps the reply with the clock right before the create POST; the async twin leaves it unset
+        let created = match self.policy {
+            OutputPolicy::Strict => Some(self.clock.now().timestamp()),
+            OutputPolicy::Lenient => None,
+        };
 
         let prediction_url = self
             .create_prediction(invocation.model, &headers, &body)

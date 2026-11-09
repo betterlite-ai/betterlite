@@ -8,14 +8,14 @@ use betterlite_provider::replicate::poll::transport::ReplicateTransport;
 use betterlite_provider::replicate::poll::{
     OutputPolicy, ReplicateCompletion, ReplicatePolling, ReplicateSleeper, ReplicateStream,
 };
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use futures_util::StreamExt as _;
 use serde_json::{Value, json};
 
 use super::ops::{failure_output, polling_for, usage_value};
 use super::script::{
-    RecordingSleeper, ScriptedResponse, ScriptedTransport, SilentLogger, StandInCounter, factory,
-    header_map, runtime,
+    FIXED_NOW, FixedClock, RecordingSleeper, ScriptedResponse, ScriptedTransport, SilentLogger,
+    StandInCounter, factory, header_map, runtime,
 };
 use super::{Policy, PollCase, StreamCase};
 use crate::helpers::{HelperError, HelperResult};
@@ -36,14 +36,16 @@ struct Fixture {
     prompts: PromptFactory,
     counter: StandInCounter,
     logger: SilentLogger,
+    clock: FixedClock,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    fn new(now: i64) -> Self {
         Self {
             prompts: factory(),
             counter: StandInCounter,
             logger: SilentLogger,
+            clock: FixedClock(DateTime::<Utc>::from_timestamp(now, 0).unwrap_or_default()),
         }
     }
 
@@ -64,6 +66,7 @@ impl Fixture {
             prompts: &self.prompts,
             counter: &self.counter,
             logger: &self.logger,
+            clock: &self.clock,
             polling,
             policy,
         }
@@ -137,9 +140,9 @@ fn poll_outcome(
 
 pub(super) fn poll(cases: &[PollCase]) -> HelperResult {
     let runtime = runtime()?;
-    let fixture = Fixture::new();
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
+        let fixture = Fixture::new(case.now);
         results.push(poll_outcome(&runtime, &fixture, case)?);
     }
     Ok(json!({"requests": results}))
@@ -207,7 +210,7 @@ fn stream_outcome(
 
 pub(super) fn streams(cases: &[StreamCase]) -> HelperResult {
     let runtime = runtime()?;
-    let fixture = Fixture::new();
+    let fixture = Fixture::new(FIXED_NOW);
     let streams: Vec<Value> = cases
         .iter()
         .map(|case| stream_outcome(&runtime, &fixture, case))

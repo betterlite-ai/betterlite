@@ -19,15 +19,44 @@ use crate::replicate::request::ReplicateBody;
 struct FixedCounter {
     prompt: Option<i64>,
     completion: Option<i64>,
+    message_models: Mutex<Vec<String>>,
+    responses: Mutex<Vec<(String, String)>>,
+}
+
+impl FixedCounter {
+    fn new(prompt: Option<i64>, completion: Option<i64>) -> Self {
+        Self {
+            prompt,
+            completion,
+            message_models: Mutex::new(Vec::new()),
+            responses: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn message_models(&self) -> Vec<String> {
+        self.message_models.lock().unwrap().clone()
+    }
+
+    fn responses(&self) -> Vec<(String, String)> {
+        self.responses.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
 impl TokenCounter for FixedCounter {
-    async fn count_messages(&self, _model: &str, _messages: &[Message]) -> Result<i64, CountError> {
+    async fn count_messages(&self, model: &str, _messages: &[Message]) -> Result<i64, CountError> {
+        self.message_models
+            .lock()
+            .unwrap()
+            .push(String::from(model));
         self.prompt.ok_or_else(|| CountError::MissingInput)
     }
 
-    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
+    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<i64, CountError> {
+        self.responses
+            .lock()
+            .unwrap()
+            .push((String::from(model), String::from(text)));
         self.completion.ok_or_else(|| CountError::MissingInput)
     }
 }
@@ -79,10 +108,11 @@ async fn transform(
 }
 
 fn counter(prompt: i64, completion: i64) -> FixedCounter {
-    FixedCounter {
-        prompt: Some(prompt),
-        completion: Some(completion),
-    }
+    FixedCounter::new(Some(prompt), Some(completion))
+}
+
+fn recorded(model: &str, text: &str) -> (String, String) {
+    (String::from(model), String::from(text))
 }
 
 #[test]
@@ -121,14 +151,17 @@ fn a_prediction_url_that_is_not_a_string_is_rejected() {
 async fn a_reply_joins_the_output_and_counts_usage() {
     let logger = RecordingLogger::default();
     let messages = parse_messages(r#"[{"role":"user","content":"hi"}]"#);
+    let counter = counter(7, 5);
     let reply = transform(
         r#"{"status":"succeeded","output":["he","llo"]}"#,
         &messages,
-        &counter(7, 5),
+        &counter,
         &logger,
     )
     .await
     .unwrap();
+    assert_eq!(counter.message_models(), ["m"]);
+    assert_eq!(counter.responses(), [recorded("m", "hello")]);
     assert_eq!(reply.model, "replicate/m");
     assert_eq!(reply.text, "hello");
     assert_eq!(reply.usage.prompt_tokens, 7);
@@ -150,15 +183,17 @@ async fn a_reply_joins_the_output_and_counts_usage() {
 #[case::empty_output_string(r#"{"status":"succeeded","output":""}"#)]
 #[tokio::test]
 async fn an_empty_output_becomes_one_space(#[case] body: &str) {
+    let counter = counter(1, 1);
     let reply = transform(
         body,
         &parse_messages("[]"),
-        &counter(1, 1),
+        &counter,
         &RecordingLogger::default(),
     )
     .await
     .unwrap();
     assert_eq!(reply.text, " ");
+    assert_eq!(counter.responses(), [recorded("m", " ")]);
 }
 
 #[tokio::test]
@@ -244,7 +279,7 @@ async fn a_failing_token_counter_fails_the_reply(
     #[case] prompt: Option<i64>,
     #[case] completion: Option<i64>,
 ) {
-    let counter = FixedCounter { prompt, completion };
+    let counter = FixedCounter::new(prompt, completion);
     let error = transform(
         r#"{"status":"succeeded","output":["ok"]}"#,
         &parse_messages("[]"),

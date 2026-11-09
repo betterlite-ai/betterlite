@@ -37,3 +37,8 @@ call:
         url: https://poll/6
         polls:
           - {body: '{"status":"succeeded"}'}
+      - policy: lenient
+        url: https://poll/7
+        polls:
+          - {body: '{"status":"processing","output":5}'}
+          - {body: '{"status":"succeeded","output":"56"}'}

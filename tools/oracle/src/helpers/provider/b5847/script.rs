@@ -7,12 +7,14 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
+use betterlite_provider::oci_common::Clock;
 use betterlite_provider::replicate::poll::ReplicateSleeper;
 use betterlite_provider::replicate::poll::transport::{
     ReplicateRequest, ReplicateResponse, ReplicateTransport,
 };
 use betterlite_provider::replicate::reply::{PostCall, PostCallLogger, TokenCounter};
 use betterlite_tokenizer::count::error::CountError;
+use chrono::{DateTime, Utc};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -177,16 +179,34 @@ impl ReplicateSleeper for RecordingSleeper {
     }
 }
 
+pub(super) struct FixedClock(pub(super) DateTime<Utc>);
+
+impl Clock for FixedClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+// the count carries the model name's length, so a counter handed the wrong model shows in the usage
 pub(super) struct StandInCounter;
+
+fn stand_in_count(model: &str, size: usize) -> Result<i64, CountError> {
+    let total = model
+        .chars()
+        .count()
+        .checked_add(size)
+        .ok_or(CountError::Overflow)?;
+    i64::try_from(total).map_err(|_overflow| CountError::Overflow)
+}
 
 #[async_trait]
 impl TokenCounter for StandInCounter {
-    async fn count_messages(&self, _model: &str, messages: &[Message]) -> Result<i64, CountError> {
-        i64::try_from(messages.len()).map_err(|_overflow| CountError::Overflow)
+    async fn count_messages(&self, model: &str, messages: &[Message]) -> Result<i64, CountError> {
+        stand_in_count(model, messages.len())
     }
 
-    async fn count_response_tokens(&self, _model: &str, text: &str) -> Result<i64, CountError> {
-        i64::try_from(text.chars().count()).map_err(|_overflow| CountError::Overflow)
+    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<i64, CountError> {
+        stand_in_count(model, text.chars().count())
     }
 }
 

@@ -146,13 +146,16 @@ def with_custom_prompts(custom: Object) -> Generator[None]:
 
 
 def standin_counter(**params: Json) -> int:
+    # the count includes the model name's length, so a wrong model shows in the usage
+    model = params.get("model")
+    base = len(model) if isinstance(model, str) else 0
     messages = params.get("messages")
     if isinstance(messages, list):
-        return len(messages)
+        return base + len(messages)
     text = params.get("text")
     if isinstance(text, str):
-        return len(text)
-    return 0
+        return base + len(text)
+    return base
 
 
 class SleepRecorder:
@@ -416,9 +419,8 @@ def poll(input_value: Object) -> Json:
             except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
                 outcome = failure_from(error)
             else:
-                described = describe_reply(cast("Completion", result))
-                created = int(now)
-                outcome = {**described, "created": created}
+                completion = cast("Completion", result)
+                outcome = {**describe_reply(completion), "created": completion.created}
         results.append(
             {
                 "delays": cast("Json", sleep_recorder.delays),
