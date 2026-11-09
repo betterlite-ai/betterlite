@@ -4,6 +4,7 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_integer, resolve_number};
+use crate::sections::alert_settings::flags::{RawFlag, resolve_flag};
 use crate::sections::alert_settings::types::{
     ANOMALY_BASELINE_DAYS, ANOMALY_MIN_SPEND, ANOMALY_MULTIPLIER, BUDGET_ALERT_TTL, CountField,
     DAILY_SPEND_THRESHOLD, MAJOR_OUTAGE_THRESHOLD, MAX_OUTAGE_LIST_SIZE, MINOR_OUTAGE_THRESHOLD,
@@ -23,7 +24,7 @@ pub struct RawAlertingArgs {
     minor_outage_alert_threshold: Option<RawNumber>,
     major_outage_alert_threshold: Option<RawNumber>,
     max_outage_alert_list_size: Option<RawNumber>,
-    log_to_console: Option<bool>,
+    log_to_console: Option<RawFlag>,
     #[serde(rename = "daily_spend_per_user_threshold")]
     daily_spend: Option<RawNumber>,
     #[serde(rename = "monthly_spend_per_user_threshold")]
@@ -74,6 +75,12 @@ impl<L: EnvironmentLookup> Resolver<'_, L> {
         }
         Ok(field.default)
     }
+
+    fn flag(&self, value: Option<RawFlag>, field: &str) -> Result<bool, ConfigError> {
+        value.map_or(Ok(false), |raw| {
+            resolve_flag(raw, &format!("{ARGS_PATH}.{field}"), self.lookup)
+        })
+    }
 }
 
 impl RawAlertingArgs {
@@ -110,7 +117,7 @@ impl RawAlertingArgs {
             )?,
             max_outage_alert_list_size: values
                 .count(raw.max_outage_alert_list_size.take(), MAX_OUTAGE_LIST_SIZE)?,
-            log_to_console: raw.log_to_console.take().unwrap_or(false),
+            log_to_console: values.flag(raw.log_to_console.take(), "log_to_console")?,
             daily_user_spend_threshold: values
                 .optional_money(raw.daily_spend.take(), DAILY_SPEND_THRESHOLD)?,
             monthly_user_spend_threshold: values

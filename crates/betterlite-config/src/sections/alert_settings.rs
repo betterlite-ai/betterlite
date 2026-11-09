@@ -13,13 +13,14 @@ use self::types::{
     AlertType, AlertTypeConfig, DEFAULT_ALERT_TYPES, DEFAULT_DAILY_REPORT_FREQUENCY,
     SlackAlertingArgs,
 };
-use self::webhooks::{WebhookUrl, resolve_alerting_webhooks};
+use self::webhooks::{RawWebhookUrl, WebhookUrl, resolve_alerting_webhooks};
 
 pub mod args;
 pub mod digest;
 pub mod types;
 pub mod webhooks;
 
+mod flags;
 mod tests;
 
 const ALERTING_THRESHOLD_PATH: &str = "general_settings.alerting_threshold";
@@ -37,12 +38,12 @@ struct RawGeneral {
     alerting: Option<Vec<String>>,
     alerting_threshold: Option<RawNumber>,
     alert_types: Option<Vec<AlertType>>,
-    alert_to_webhook_url: Option<BTreeMap<AlertType, WebhookUrl>>,
+    alert_to_webhook_url: Option<BTreeMap<AlertType, RawWebhookUrl>>,
     alerting_args: Option<RawAlertingArgs>,
     alert_type_config: Option<BTreeMap<AlertType, RawAlertTypeConfig>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Settings {
     pub alerting: Vec<String>,
     pub alerting_threshold_seconds: f64,
@@ -74,6 +75,8 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let environment_frequency = daily_report_frequency(lookup)?;
+        let alert_type_config =
+            resolve_alert_type_config(general.alert_type_config.unwrap_or_default(), lookup)?;
         Ok(Settings {
             alerting: general.alerting.unwrap_or_default(),
             alerting_threshold_seconds: resolve_number(
@@ -94,14 +97,23 @@ impl Section for Raw {
                 .alerting_args
                 .unwrap_or_default()
                 .resolve(lookup, environment_frequency)?,
-            alert_type_config: general
-                .alert_type_config
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alert_type, config)| (alert_type, config.resolve()))
-                .collect(),
+            alert_type_config,
         })
     }
+}
+
+fn resolve_alert_type_config<L>(
+    raw: BTreeMap<AlertType, RawAlertTypeConfig>,
+    lookup: &L,
+) -> Result<BTreeMap<AlertType, AlertTypeConfig>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let mut resolved = BTreeMap::new();
+    for (alert_type, config) in raw {
+        resolved.insert(alert_type, config.resolve(alert_type, lookup)?);
+    }
+    Ok(resolved)
 }
 
 fn daily_report_frequency<L>(lookup: &L) -> Result<u32, ConfigError>

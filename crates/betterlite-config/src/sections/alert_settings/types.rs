@@ -15,6 +15,8 @@ pub const DEFAULT_DIGEST_INTERVAL: u32 = 86_400;
     PartialOrd,
     serde::Serialize,
     strum::Display,
+    strum::EnumCount,
+    strum::EnumIter,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]

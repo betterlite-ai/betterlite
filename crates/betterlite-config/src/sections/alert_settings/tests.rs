@@ -5,6 +5,7 @@ use std::str::FromStr as _;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::alert_settings::Settings;
@@ -33,10 +34,20 @@ fn decimal(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the test decimal parses")
 }
 
+fn exposed(url: &WebhookUrl) -> Vec<String> {
+    match url {
+        WebhookUrl::Single(value) => vec![value.expose_secret().to_owned()],
+        WebhookUrl::Multiple(values) => values
+            .iter()
+            .map(|value| value.expose_secret().to_owned())
+            .collect(),
+    }
+}
+
 #[test]
 fn defaults_match_litellm_when_a_config_sets_no_alerting() {
     let loaded = settings("general_settings: {}", &[]);
-    assert_eq!(loaded, Settings::default());
+    assert_eq!(loaded.alerting_args, Settings::default().alerting_args);
     assert!(loaded.alerting.is_empty());
     assert_eq!(
         loaded.alerting_threshold_seconds.to_bits(),
@@ -268,17 +279,15 @@ fn webhook_urls_resolve_environment_references() {
         source,
         &[("FIRST_HOOK", "https://a"), ("SECOND_HOOK", "https://b")],
     );
+    let budgets = &loaded.alert_to_webhook_url[&AlertType::BudgetAlerts];
+    assert!(matches!(budgets, WebhookUrl::Multiple(_)));
     assert_eq!(
-        loaded.alert_to_webhook_url[&AlertType::BudgetAlerts],
-        WebhookUrl::Multiple(vec![
-            "https://hooks.example/plain".to_owned(),
-            "https://b".to_owned()
-        ])
+        exposed(budgets),
+        vec!["https://hooks.example/plain", "https://b"]
     );
-    assert_eq!(
-        loaded.alert_to_webhook_url[&AlertType::SpendReports],
-        WebhookUrl::Single("https://a".to_owned())
-    );
+    let reports = &loaded.alert_to_webhook_url[&AlertType::SpendReports];
+    assert!(matches!(reports, WebhookUrl::Single(_)));
+    assert_eq!(exposed(reports), vec!["https://a"]);
 }
 
 #[test]
@@ -286,20 +295,18 @@ fn a_plain_webhook_url_is_kept_unchanged() {
     let source =
         "general_settings:\n  alert_to_webhook_url:\n    budget_alerts: https://hooks.example/x";
     let loaded = settings(source, &[]);
-    assert_eq!(
-        loaded.alert_to_webhook_url[&AlertType::BudgetAlerts],
-        WebhookUrl::Single("https://hooks.example/x".to_owned())
-    );
+    let webhook = &loaded.alert_to_webhook_url[&AlertType::BudgetAlerts];
+    assert!(matches!(webhook, WebhookUrl::Single(_)));
+    assert_eq!(exposed(webhook), vec!["https://hooks.example/x"]);
 }
 
 #[test]
 fn an_empty_webhook_url_is_used_as_given() {
     let source = "general_settings:\n  alert_to_webhook_url:\n    budget_alerts: \"\"";
     let loaded = settings(source, &[]);
-    assert_eq!(
-        loaded.alert_to_webhook_url[&AlertType::BudgetAlerts],
-        WebhookUrl::Single(String::new())
-    );
+    let webhook = &loaded.alert_to_webhook_url[&AlertType::BudgetAlerts];
+    assert!(matches!(webhook, WebhookUrl::Single(_)));
+    assert_eq!(exposed(webhook), vec![String::new()]);
 }
 
 #[test]
@@ -318,12 +325,12 @@ fn a_missing_webhook_variable_is_an_error_naming_the_variable_and_field() {
 fn a_webhook_reference_must_begin_with_the_marker() {
     let source = "general_settings:\n  alert_to_webhook_url:\n    budget_alerts: https://hooks.example/os.environ/HOOK";
     let error = load_error(source, &[]);
-    assert!(
-        error
-            .to_string()
-            .contains("https://hooks.example/os.environ/HOOK"),
-        "{error}"
-    );
+    assert!(matches!(
+        &error,
+        ConfigError::MissingEnvironment { variable, path }
+            if variable == "HOOK" && path == "general_settings.alert_to_webhook_url.budget_alerts"
+    ));
+    assert!(!error.to_string().contains("hooks.example"), "{error}");
 }
 
 #[test]
@@ -365,4 +372,74 @@ fn an_unknown_alerting_args_key_is_reported() {
     let error = load_error(source, &[]);
     assert_eq!(error.category(), "unsupported_key");
     assert!(error.to_string().contains("not_an_arg"), "{error}");
+}
+
+#[test]
+fn log_to_console_resolves_an_environment_reference() {
+    let loaded = settings(
+        "general_settings:\n  alerting_args:\n    log_to_console: os.environ/LOG_ALERTS",
+        &[("LOG_ALERTS", "true")],
+    );
+    assert!(loaded.alerting_args.log_to_console);
+}
+
+#[test]
+fn a_missing_log_to_console_variable_is_an_error_naming_the_field() {
+    let source = "general_settings:\n  alerting_args:\n    log_to_console: os.environ/LOG_ALERTS";
+    let error = load_error(source, &[]);
+    assert!(matches!(
+        error,
+        ConfigError::MissingEnvironment { variable, path }
+            if variable == "LOG_ALERTS"
+                && path == "general_settings.alerting_args.log_to_console"
+    ));
+}
+
+#[test]
+fn digest_settings_resolve_environment_references() {
+    let source = "general_settings:\n  alert_type_config:\n    spend_reports:\n      digest: os.environ/DIGEST\n      digest_interval: os.environ/DIGEST_SECONDS";
+    let loaded = settings(source, &[("DIGEST", "yes"), ("DIGEST_SECONDS", "120")]);
+    let config = loaded.alert_type_config[&AlertType::SpendReports];
+    assert!(config.digest);
+    assert_eq!(config.digest_interval, 120);
+}
+
+#[test]
+fn a_missing_digest_variable_is_an_error_naming_the_field() {
+    let source = "general_settings:\n  alert_type_config:\n    spend_reports:\n      digest: os.environ/DIGEST";
+    let error = load_error(source, &[]);
+    assert!(matches!(
+        error,
+        ConfigError::MissingEnvironment { variable, path }
+            if variable == "DIGEST"
+                && path == "general_settings.alert_type_config.spend_reports.digest"
+    ));
+}
+
+#[test]
+fn a_missing_digest_interval_variable_is_an_error_naming_the_field() {
+    let source = "general_settings:\n  alert_type_config:\n    spend_reports:\n      digest_interval: os.environ/DIGEST_SECONDS";
+    let error = load_error(source, &[]);
+    assert!(matches!(
+        error,
+        ConfigError::MissingEnvironment { variable, path }
+            if variable == "DIGEST_SECONDS"
+                && path == "general_settings.alert_type_config.spend_reports.digest_interval"
+    ));
+}
+
+#[test]
+fn an_unknown_alert_type_config_key_is_reported() {
+    let source = "general_settings:\n  alert_type_config:\n    spend_reports:\n      note: x";
+    let error = load_error(source, &[]);
+    assert_eq!(error.category(), "unsupported_key");
+    assert!(error.to_string().contains("note"), "{error}");
+}
+
+#[test]
+fn a_negative_digest_interval_is_rejected() {
+    let source =
+        "general_settings:\n  alert_type_config:\n    spend_reports:\n      digest_interval: -1";
+    let error = load_error(source, &[]);
+    assert_eq!(error.category(), "invalid_integer");
 }
