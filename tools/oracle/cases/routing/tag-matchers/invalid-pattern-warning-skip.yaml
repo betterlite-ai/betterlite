@@ -1,0 +1,34 @@
+kind: probe
+name: invalid-pattern-warning-skip
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["(", "^User-Agent: ok"]
+        tags: []
+        header_strings: ["User-Agent: ok"]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["(", "^User-Agent: ok"]
+        tags: []
+        header_strings: ["User-Agent: no"]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["("]
+        tags: []
+        header_strings: ["anything"]
+        match_any: true
+compare: {ignore: []}
