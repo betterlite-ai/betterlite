@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use rstest::rstest;
 use secrecy::SecretString;
-use tracing::subscriber::with_default;
+use tracing::{Level, subscriber::with_default};
 use tracing_subscriber::fmt;
 
 use super::error::{CloudflareChatError, get_error_class};
@@ -34,6 +34,7 @@ where
     let subscriber = fmt()
         .without_time()
         .with_ansi(false)
+        .with_max_level(Level::WARN)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     let result = with_default(subscriber, run);
@@ -70,6 +71,10 @@ fn account_base_resolves_from_the_account_id(
 #[case::complete_with_suffix(
     "https://proxy.example/chat/completions/extra",
     "https://proxy.example/chat/completions/extra"
+)]
+#[case::complete_with_trailing_slash(
+    "https://proxy.example/chat/completions/",
+    "https://proxy.example/chat/completions"
 )]
 #[case::double_trailing_slash(
     "https://proxy.example/custom//",
@@ -132,6 +137,7 @@ fn legacy_rewrite_warns_once_with_litellm_text() {
         url.unwrap(),
         "https://api.cloudflare.com/client/v4/accounts/A/ai/v1/chat/completions"
     );
+    assert!(warnings.contains(" WARN "), "{warnings}");
     assert_eq!(warnings.matches(LEGACY_WARNING).count(), 1, "{warnings}");
 }
 

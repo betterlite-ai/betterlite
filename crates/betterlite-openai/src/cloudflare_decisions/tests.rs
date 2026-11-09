@@ -79,6 +79,11 @@ fn model_names_match_litellm(#[case] model: &str, #[case] canonical: &str, #[cas
     "model",
     "https://api.cloudflare.com/client/v4/accounts/A/ai/run/model"
 )]
+#[case::ai_run_with_two_slashes(
+    "https://api.cloudflare.com/client/v4/accounts/A/ai/run//",
+    "model",
+    "https://api.cloudflare.com/client/v4/accounts/A/ai/run/model"
+)]
 #[case::ai_v1(
     "https://api.cloudflare.com/client/v4/accounts/A/ai/v1",
     "model",
@@ -89,9 +94,19 @@ fn model_names_match_litellm(#[case] model: &str, #[case] canonical: &str, #[cas
     "model",
     "https://api.cloudflare.com/client/v4/accounts/A/ai/run/model"
 )]
+#[case::ai_v1_with_two_slashes(
+    "https://api.cloudflare.com/client/v4/accounts/A/ai/v1//",
+    "model",
+    "https://api.cloudflare.com/client/v4/accounts/A/ai/run/model"
+)]
 #[case::other_base("https://proxy.example", "model", "https://proxy.example/ai/run/model")]
 #[case::other_base_with_slash(
     "https://proxy.example/",
+    "model",
+    "https://proxy.example/ai/run/model"
+)]
+#[case::other_base_with_two_slashes(
+    "https://proxy.example//",
     "model",
     "https://proxy.example/ai/run/model"
 )]
