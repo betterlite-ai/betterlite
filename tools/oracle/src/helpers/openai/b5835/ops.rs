@@ -122,7 +122,7 @@ fn models_step(step: &ModelsStep) -> Value {
     );
     let result = match parse_models(step.status, step.body.as_bytes()) {
         Ok(models) => json!({"models": models}),
-        Err(error) => json!({"failure": error.message}),
+        Err(error) => json!({"failure": error.to_string()}),
     };
     json!({"url": url, "result": result})
 }

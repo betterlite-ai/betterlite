@@ -2,6 +2,7 @@ pub mod chat;
 pub mod embedding;
 pub mod error;
 pub mod models;
+pub mod models_error;
 pub mod provider_info;
 
 mod tests;

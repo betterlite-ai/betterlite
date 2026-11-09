@@ -16,11 +16,13 @@ use super::embedding::{
 };
 use super::error::get_error_class;
 use super::models::{models_url, parse_models};
+use super::models_error::ModelsError;
 use super::provider_info::provider_info;
 use crate::embedding::{EmbeddingError, EmbeddingInput};
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
 };
+use std::error::Error as _;
 
 fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
@@ -383,31 +385,32 @@ fn an_empty_model_list_parses_to_no_ids() {
 #[case::invalid_json(b"{")]
 fn a_model_list_of_the_wrong_shape_is_a_typed_error(#[case] body: &[u8]) {
     let error = parse_models(200, body).expect_err("malformed");
-    assert_eq!(error.status_code, 502);
-    assert!(error.headers.is_empty());
+    assert!(matches!(error, ModelsError::Shape(_)));
+    assert_eq!(error.status_code(), 502);
+    assert!(error.source().is_some());
 }
 
 #[test]
 fn only_status_200_counts_as_a_model_list() {
     let error = parse_models(201, br#"{"data":[]}"#).expect_err("status");
-    assert_eq!(error.status_code, 201);
+    assert!(matches!(error, ModelsError::Status { code: 201, .. }));
 }
 
 #[test]
 fn a_non_200_model_list_keeps_litellm_failure_text_and_status() {
     let error = parse_models(500, b"upstream down").expect_err("status");
-    assert_eq!(error.message, "Failed to get models: upstream down");
-    assert_eq!(error.status_code, 500);
+    assert_eq!(error.to_string(), "Failed to get models: upstream down");
+    assert_eq!(error.status_code(), 500);
 }
 
 #[test]
 fn a_non_200_model_list_with_invalid_utf8_names_the_bytes() {
     let error = parse_models(502, &[0xff, 0xfe]).expect_err("status");
     assert_eq!(
-        error.message,
+        error.to_string(),
         "Failed to get models: 2 bytes that are not UTF-8"
     );
-    assert_eq!(error.status_code, 502);
+    assert_eq!(error.status_code(), 502);
 }
 
 #[test]
