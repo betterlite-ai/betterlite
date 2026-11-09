@@ -266,9 +266,9 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
         Check::IdReadsTheSpanContext => {
             let (provider, _exporter) = provider();
             let span = provider.tracer("langfuse-observations").start("bare");
-            let observation = LangfuseObservation { span, public: None };
+            let observation = LangfuseObservation::new(span, None);
             assert_eq!(
-                observation.id(),
+                observation.id,
                 observation.span.span_context().span_id().to_string()
             );
         }
