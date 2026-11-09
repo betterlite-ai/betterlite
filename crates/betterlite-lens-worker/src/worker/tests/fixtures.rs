@@ -147,13 +147,7 @@ impl FakeApi {
         lock(&self.claimed).pop_front().unwrap_or(Ok(None))
     }
 
-    fn record_content(
-        &self,
-        execution_id: &str,
-        cursor: &str,
-        offset: i64,
-    ) -> Result<ExecutionContent, WorkerError> {
-        let call = (execution_id.to_owned(), cursor.to_owned(), offset);
+    fn record_content(&self, call: (String, String, i64)) -> Result<ExecutionContent, WorkerError> {
         lock(&self.content_calls).push(call);
         lock(&self.pages).pop_front().unwrap_or_else(|| Ok(page()))
     }
@@ -202,7 +196,8 @@ impl LensApi for FakeApi {
         cursor: &str,
         offset: i64,
     ) -> impl Future<Output = Result<ExecutionContent, WorkerError>> + Send {
-        ready(self.record_content(execution_id, cursor, offset))
+        let call = (execution_id.to_owned(), cursor.to_owned(), offset);
+        ready(self.record_content(call))
     }
 
     fn model(
