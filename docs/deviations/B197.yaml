@@ -26,9 +26,10 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L869-L951
   - what: >-
-      Token counts and image counts are unsigned 64-bit values, so a count past 2^64 is a typed error or
-      the fallback count, where Python's integers never overflow.
+      Token counts and image counts are unsigned 64-bit values, so a negative fallback count or a count
+      past 2^64 is a typed error or the fallback count, where Python's integers take either value.
     why: >-
-      Counts are machine words in betterlite, and no working setup counts near 2^64 tokens.
+      Counts are machine words in betterlite, and no working setup counts a negative number of tokens
+      or near 2^64.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L131
