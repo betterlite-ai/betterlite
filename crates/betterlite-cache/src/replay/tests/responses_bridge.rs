@@ -129,38 +129,38 @@ fn responses_bridge_chat_shaped_stream_uses_the_bridged_converter(
 }
 
 #[rstest]
-#[case::responses(CachingSupportedCallType::Responses)]
-#[case::aresponses(CachingSupportedCallType::Aresponses)]
-fn responses_bridge_other_cache_becomes_a_responses_object(
+#[case::responses_object(CachingSupportedCallType::Responses, false)]
+#[case::aresponses_object(CachingSupportedCallType::Aresponses, false)]
+#[case::responses_stream(CachingSupportedCallType::Responses, true)]
+#[case::aresponses_stream(CachingSupportedCallType::Aresponses, true)]
+fn responses_bridge_other_cache_replays_as_a_responses_result(
     #[case] call_type: CachingSupportedCallType,
+    #[case] stream: bool,
 ) {
     let fake = Fake::new();
-    let outcome = convert(responses_dict(), call_type, &non_stream_request(), &fake).unwrap();
-    let Replayed::Responses(response) = outcome else {
-        panic!("a non-chat cached responses result did not become a responses object");
+    let request = if stream {
+        stream_request()
+    } else {
+        non_stream_request()
     };
-    assert!(response.cache_hit);
+    let outcome = convert(responses_dict(), call_type, &request, &fake).unwrap();
     let calls = fake.calls();
-    assert_eq!(calls.responses_calls, 1);
-    assert_eq!(calls.responses_stream_calls, 0);
-    assert!(calls.wraps.is_empty());
-}
-
-#[rstest]
-#[case::responses(CachingSupportedCallType::Responses)]
-#[case::aresponses(CachingSupportedCallType::Aresponses)]
-fn responses_bridge_other_cache_stream_wraps_the_stamped_response(
-    #[case] call_type: CachingSupportedCallType,
-) {
-    let fake = Fake::new();
-    let outcome = convert(responses_dict(), call_type, &stream_request(), &fake).unwrap();
-    let Replayed::ResponsesStream(stream) = outcome else {
-        panic!("a non-chat cached responses result did not replay as a stream");
-    };
-    assert!(stream.cache_hit);
-    let calls = fake.calls();
-    assert_eq!(calls.responses_stream_calls, 1);
-    assert!(calls.responses_stream_stamped);
-    assert_eq!(calls.responses_stream_call_type, Some(call_type));
+    if stream {
+        let Replayed::ResponsesStream(replayed) = outcome else {
+            panic!("a non-chat cached responses result did not replay as a stream");
+        };
+        assert!(replayed.cache_hit);
+        assert!(calls.responses_stream_stamped);
+        assert_eq!(calls.responses_stream_calls, 1);
+        assert_eq!(calls.responses_stream_call_type, Some(call_type));
+        assert_eq!(calls.responses_calls, 1);
+    } else {
+        let Replayed::Responses(replayed) = outcome else {
+            panic!("a non-chat cached responses result did not become a responses object");
+        };
+        assert!(replayed.cache_hit);
+        assert_eq!(calls.responses_calls, 1);
+        assert_eq!(calls.responses_stream_calls, 0);
+    }
     assert!(calls.wraps.is_empty());
 }

@@ -34,11 +34,13 @@ pub struct ReplayRequest<'request> {
     pub custom_llm_provider: Option<&'request str>,
     pub elapsed: Duration,
 }
+
 pub struct TranscriptionHidden<'provider> {
     pub model: &'static str,
     pub custom_llm_provider: Option<&'provider str>,
     pub cache_hit: bool,
 }
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResponseKind {
     Chat,
@@ -47,9 +49,11 @@ pub enum ResponseKind {
     Rerank,
     Transcription,
 }
+
 pub trait CacheHitMetadata {
     fn set_cache_hit(&mut self);
 }
+
 #[derive(Debug, Error)]
 pub enum ReplayError {
     #[error("the cached result does not match the {expected} response shape")]
@@ -63,26 +67,32 @@ pub enum ReplayError {
 
 pub trait ReplayConversions {
     type Response: CacheHitMetadata;
+
     fn model_response(
         &self,
         cached: &CachedDict,
         kind: ResponseKind,
     ) -> Result<Self::Response, ReplayError>;
+
     fn transcription_response(
         &self,
         cached: &CachedDict,
         hidden: &TranscriptionHidden<'_>,
     ) -> Result<Self::Response, ReplayError>;
+
     fn responses_response(&self, cached: &CachedDict) -> Result<Self::Response, ReplayError>;
+
     fn responses_stream(
         &self,
         response: Self::Response,
         call_type: CachingSupportedCallType,
     ) -> Result<Self::Response, ReplayError>;
+
     fn anthropic_messages_stream(
         &self,
         cached: &CachedDict,
     ) -> Result<Option<Self::Response>, ReplayError>;
+
     fn stream_wrapper(
         &self,
         cached: &CachedDict,
@@ -90,6 +100,7 @@ pub trait ReplayConversions {
         model: &str,
         custom_llm_provider: &str,
     ) -> Result<Self::Response, ReplayError>;
+
     fn update_response_metadata(
         &self,
         result: &mut ReplayedBy<Self>,
@@ -106,7 +117,9 @@ pub enum Replayed<Response> {
     MessagesStream(Response),
     Unchanged(CacheValue),
 }
+
 pub type ReplayedBy<C> = Replayed<<C as ReplayConversions>::Response>;
+
 pub enum CacheHit<C: ReplayConversions> {
     Stored(CacheValue),
     Replayed(ReplayedBy<C>),
@@ -123,6 +136,7 @@ where
             Self::Response(..) | Self::Responses(_) | Self::Unchanged(_) => false,
         }
     }
+
     pub fn stamp_cache_hit(&mut self) {
         match self {
             Self::Response(_, response)
@@ -147,6 +161,7 @@ pub fn is_chat_completion_cached_dict(cached: &CachedDict) -> bool {
     }
     cached.contains_key("choices")
 }
+
 #[must_use]
 pub const fn stream_replay_requested(request: &ReplayRequest<'_>) -> bool {
     if request.stream {
@@ -202,8 +217,10 @@ where
         CachingSupportedCallType::Completion
         | CachingSupportedCallType::Acompletion
         | CachingSupportedCallType::TextCompletion
-        | CachingSupportedCallType::AtextCompletion => {
-            convert_completion(&cached, call_type, request, conversions)
+        | CachingSupportedCallType::AtextCompletion
+        | CachingSupportedCallType::Responses
+        | CachingSupportedCallType::Aresponses => {
+            convert_chat_like(&cached, call_type, request, conversions)
         }
         CachingSupportedCallType::Embedding | CachingSupportedCallType::Aembedding => {
             let response = conversions.model_response(&cached, ResponseKind::Embedding)?;
@@ -222,9 +239,6 @@ where
             let response = conversions.transcription_response(&cached, &hidden)?;
             Ok(Replayed::Response(ResponseKind::Transcription, response))
         }
-        CachingSupportedCallType::Responses | CachingSupportedCallType::Aresponses => {
-            convert_responses(&cached, call_type, request, conversions)
-        }
         CachingSupportedCallType::AnthropicMessages
         | CachingSupportedCallType::AanthropicMessages => {
             let stream = conversions.anthropic_messages_stream(&cached)?;
@@ -236,7 +250,7 @@ where
     }
 }
 
-fn convert_completion<C>(
+fn convert_chat_like<C>(
     cached: &CachedDict,
     call_type: CachingSupportedCallType,
     request: &ReplayRequest<'_>,
@@ -245,8 +259,28 @@ fn convert_completion<C>(
 where
     C: ReplayConversions,
 {
+    let bridge = matches!(
+        call_type,
+        CachingSupportedCallType::Responses | CachingSupportedCallType::Aresponses
+    );
+    if bridge && !is_chat_completion_cached_dict(cached) {
+        let mut response = conversions.responses_response(cached)?;
+        response.set_cache_hit();
+        if stream_replay_requested(request) {
+            let stream = conversions.responses_stream(response, call_type)?;
+            return Ok(Replayed::ResponsesStream(stream));
+        }
+        return Ok(Replayed::Responses(response));
+    }
     if stream_replay_requested(request) {
-        return replay_stream(cached, call_type, request, conversions);
+        let asynchronous = streams_asynchronously(call_type);
+        let stream = conversions.stream_wrapper(
+            cached,
+            asynchronous,
+            request.model,
+            CACHED_STREAM_PROVIDER,
+        )?;
+        return Ok(Replayed::Stream(stream));
     }
     let kind = if matches!(
         call_type,
@@ -258,45 +292,4 @@ where
     };
     let response = conversions.model_response(cached, kind)?;
     Ok(Replayed::Response(kind, response))
-}
-
-fn convert_responses<C>(
-    cached: &CachedDict,
-    call_type: CachingSupportedCallType,
-    request: &ReplayRequest<'_>,
-    conversions: &C,
-) -> Result<ReplayedBy<C>, ReplayError>
-where
-    C: ReplayConversions,
-{
-    if is_chat_completion_cached_dict(cached) {
-        if stream_replay_requested(request) {
-            return replay_stream(cached, call_type, request, conversions);
-        }
-        let response = conversions.model_response(cached, ResponseKind::Chat)?;
-        return Ok(Replayed::Response(ResponseKind::Chat, response));
-    }
-    let mut response = conversions.responses_response(cached)?;
-    response.set_cache_hit();
-    if stream_replay_requested(request) {
-        return Ok(Replayed::ResponsesStream(
-            conversions.responses_stream(response, call_type)?,
-        ));
-    }
-    Ok(Replayed::Responses(response))
-}
-
-fn replay_stream<C>(
-    cached: &CachedDict,
-    call_type: CachingSupportedCallType,
-    request: &ReplayRequest<'_>,
-    conversions: &C,
-) -> Result<ReplayedBy<C>, ReplayError>
-where
-    C: ReplayConversions,
-{
-    let asynchronous = streams_asynchronously(call_type);
-    let stream =
-        conversions.stream_wrapper(cached, asynchronous, request.model, CACHED_STREAM_PROVIDER)?;
-    Ok(Replayed::Stream(stream))
 }

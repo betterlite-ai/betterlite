@@ -9,84 +9,31 @@ use crate::replay::{ReplayRequest, Replayed, ResponseKind};
 use crate::types::call_type::CachingSupportedCallType;
 
 use super::shared::{
-    Fake, HiddenRecord, chat_completion_dict, convert, embedding_dict, non_stream_request, replay,
-    rerank_dict, stream_request, text_completion_dict, transcription_dict,
+    Fake, HiddenRecord, convert, fixture, non_stream_request, replay, stream_request,
+    transcription_dict,
 };
 
 #[rstest]
-#[case::completion(CachingSupportedCallType::Completion)]
-#[case::acompletion(CachingSupportedCallType::Acompletion)]
-fn conversion_completion_cached_dict_becomes_a_chat_response(
+#[case::completion(CachingSupportedCallType::Completion, ResponseKind::Chat)]
+#[case::acompletion(CachingSupportedCallType::Acompletion, ResponseKind::Chat)]
+#[case::text_completion(CachingSupportedCallType::TextCompletion, ResponseKind::Text)]
+#[case::atext_completion(CachingSupportedCallType::AtextCompletion, ResponseKind::Text)]
+#[case::embedding(CachingSupportedCallType::Embedding, ResponseKind::Embedding)]
+#[case::aembedding(CachingSupportedCallType::Aembedding, ResponseKind::Embedding)]
+#[case::rerank(CachingSupportedCallType::Rerank, ResponseKind::Rerank)]
+#[case::arerank(CachingSupportedCallType::Arerank, ResponseKind::Rerank)]
+fn conversion_cached_dict_becomes_its_response_kind(
     #[case] call_type: CachingSupportedCallType,
+    #[case] expected: ResponseKind,
 ) {
     let fake = Fake::new();
-    let outcome = convert(
-        chat_completion_dict(),
-        call_type,
-        &non_stream_request(),
-        &fake,
-    )
-    .unwrap();
+    let outcome = convert(fixture(call_type), call_type, &non_stream_request(), &fake).unwrap();
     let Replayed::Response(kind, response) = outcome else {
-        panic!("a cached chat completion did not become a chat response");
+        panic!("the cached result did not replay as a model response");
     };
-    assert_eq!(kind, ResponseKind::Chat);
+    assert_eq!(kind, expected);
     assert!(response.cache_hit);
-    assert_eq!(fake.calls().model_kinds, vec![ResponseKind::Chat]);
-}
-
-#[rstest]
-#[case::text_completion(CachingSupportedCallType::TextCompletion)]
-#[case::atext_completion(CachingSupportedCallType::AtextCompletion)]
-fn conversion_text_completion_cached_dict_becomes_a_text_response(
-    #[case] call_type: CachingSupportedCallType,
-) {
-    let fake = Fake::new();
-    let outcome = convert(
-        text_completion_dict(),
-        call_type,
-        &non_stream_request(),
-        &fake,
-    )
-    .unwrap();
-    let Replayed::Response(kind, response) = outcome else {
-        panic!("a cached text completion did not become a text completion response");
-    };
-    assert_eq!(kind, ResponseKind::Text);
-    assert!(response.cache_hit);
-    assert_eq!(fake.calls().model_kinds, vec![ResponseKind::Text]);
-}
-
-#[rstest]
-#[case::embedding(CachingSupportedCallType::Embedding)]
-#[case::aembedding(CachingSupportedCallType::Aembedding)]
-fn conversion_embedding_cached_dict_becomes_an_embedding_response(
-    #[case] call_type: CachingSupportedCallType,
-) {
-    let fake = Fake::new();
-    let outcome = convert(embedding_dict(), call_type, &non_stream_request(), &fake).unwrap();
-    let Replayed::Response(kind, response) = outcome else {
-        panic!("a cached embedding did not become an embedding response");
-    };
-    assert_eq!(kind, ResponseKind::Embedding);
-    assert!(response.cache_hit);
-    assert_eq!(fake.calls().model_kinds, vec![ResponseKind::Embedding]);
-}
-
-#[rstest]
-#[case::rerank(CachingSupportedCallType::Rerank)]
-#[case::arerank(CachingSupportedCallType::Arerank)]
-fn conversion_rerank_cached_dict_becomes_a_rerank_response(
-    #[case] call_type: CachingSupportedCallType,
-) {
-    let fake = Fake::new();
-    let outcome = convert(rerank_dict(), call_type, &non_stream_request(), &fake).unwrap();
-    let Replayed::Response(kind, response) = outcome else {
-        panic!("a cached rerank result did not become a rerank response");
-    };
-    assert_eq!(kind, ResponseKind::Rerank);
-    assert!(response.cache_hit);
-    assert_eq!(fake.calls().model_kinds, vec![ResponseKind::Rerank]);
+    assert_eq!(fake.calls().model_kinds, vec![expected]);
 }
 
 #[rstest]
@@ -104,7 +51,7 @@ fn conversion_transcription_gets_whisper_hidden_params(
     )
     .unwrap();
     let Replayed::Response(kind, response) = outcome else {
-        panic!("a cached transcription did not become a transcription response");
+        panic!("the cached transcription did not replay as a model response");
     };
     assert_eq!(kind, ResponseKind::Transcription);
     assert!(response.cache_hit);
@@ -140,6 +87,7 @@ fn conversion_transcription_hidden_params_carry_the_requested_provider() {
     .unwrap();
     let hidden = fake.calls().transcription_hidden.unwrap();
     assert_eq!(hidden.custom_llm_provider, Some("azure".to_owned()));
+    assert_eq!(hidden.model, "whisper-1");
 }
 
 #[rstest]

@@ -103,9 +103,7 @@ impl ReplayConversions for Fake {
         _cached: &CachedDict,
         kind: ResponseKind,
     ) -> Result<Self::Response, ReplayError> {
-        let mut recorded = lock(&self.recorded);
-        recorded.model_kinds.push(kind);
-        drop(recorded);
+        lock(&self.recorded).model_kinds.push(kind);
         Ok(Model::default())
     }
 
@@ -302,22 +300,15 @@ pub(crate) fn non_stream_request() -> ReplayRequest<'static> {
 pub(crate) fn stream_request() -> ReplayRequest<'static> {
     ReplayRequest {
         stream: true,
-        converted_stream_requested: false,
-        agentic_loop_depth: 0,
-        model: "gpt-4o",
-        custom_llm_provider: None,
-        elapsed: Duration::from_millis(7),
+        ..non_stream_request()
     }
 }
 
 pub(crate) fn converted_stream_request(depth: u32) -> ReplayRequest<'static> {
     ReplayRequest {
-        stream: false,
         converted_stream_requested: true,
         agentic_loop_depth: depth,
-        model: "gpt-4o",
-        custom_llm_provider: None,
-        elapsed: Duration::from_millis(7),
+        ..non_stream_request()
     }
 }
 
