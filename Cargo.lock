@@ -2263,9 +2263,13 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "serde_repr",
  "serde_with",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -2623,6 +2627,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha1",
  "sha2 0.11.1",
