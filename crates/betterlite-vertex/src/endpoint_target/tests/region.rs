@@ -106,3 +106,11 @@ fn api_base_rejects_an_invalid_location() {
         EndpointTargetError::VertexUrl(VertexUrlError::InvalidLocation)
     ));
 }
+
+#[test]
+fn api_base_skips_location_validation_with_a_custom_base() {
+    assert_eq!(
+        get_api_base(Some("https://proxy.example.com"), Some("bad loc!")).unwrap(),
+        "https://proxy.example.com"
+    );
+}

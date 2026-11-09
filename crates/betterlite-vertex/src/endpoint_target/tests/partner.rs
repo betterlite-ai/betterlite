@@ -189,7 +189,7 @@ enum PartnerUrlKind {
     Partner::Claude,
     Some(true),
     Some("https://proxy.example.com/v1"),
-    "https://proxy.example.com/v1/v1beta1/projects/proj/locations/us-central1/publishers/anthropic/models/gemini-2.5-flash:streamRawPredict?alt=sse"
+    "https://proxy.example.com/v1/v1/projects/proj/locations/us-central1/publishers/anthropic/models/gemini-2.5-flash:streamRawPredict?alt=sse"
 )]
 fn partner_url_cases(
     #[case] kind: PartnerUrlKind,
@@ -212,16 +212,21 @@ fn partner_url_cases(
 
 #[test]
 fn create_vertex_url_validates_the_location_only_without_a_custom_base() {
-    let input = partner_input!(Partner::Llama, None, None);
-    let mut invalid = partner_input!(Partner::Llama, None, Some("https://h"));
-    invalid.location = "bad loc!";
-    let error = create_vertex_url(&invalid).unwrap_err();
+    let mut with_base = partner_input!(Partner::Llama, None, Some("https://h"));
+    with_base.location = "bad loc!";
+    assert_eq!(
+        create_vertex_url(&with_base).unwrap(),
+        "https://h/v1/projects/proj/locations/bad loc!/endpoints/openapi/chat/completions"
+    );
+    let mut without_base = partner_input!(Partner::Llama, None, None);
+    without_base.location = "bad loc!";
+    let error = create_vertex_url(&without_base).unwrap_err();
     assert!(matches!(
         error,
         EndpointTargetError::VertexUrl(VertexUrlError::InvalidLocation)
     ));
     assert_eq!(
-        create_vertex_url(&input).unwrap(),
+        create_vertex_url(&partner_input!(Partner::Llama, None, None)).unwrap(),
         "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/endpoints/openapi/chat/completions"
     );
 }

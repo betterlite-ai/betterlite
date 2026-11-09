@@ -209,6 +209,22 @@ fn token_and_url_cases(#[case] scenario: TokenCase) {
 }
 
 #[test]
+fn token_and_url_gemini_ignores_psc_format() {
+    let key = secret("gk");
+    let input = TokenUrlInput {
+        provider: TargetProvider::Gemini,
+        gemini_api_key: Some(&key),
+        api_base: Some("https://custom.example.com"),
+        use_psc_endpoint_format: true,
+        ..token_input!(None)
+    };
+    assert_eq!(
+        get_token_and_url(&catalog(), &input).unwrap().url,
+        "https://custom.example.com/models/gemini-2.5-flash:generateContent"
+    );
+}
+
+#[test]
 fn token_and_url_requires_a_gemini_key() {
     let input = TokenUrlInput {
         provider: TargetProvider::Gemini,

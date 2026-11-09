@@ -180,6 +180,13 @@ fn with_api_version_cases(#[case] route: &str, #[case] expected: &str) {
     Some("l"),
     "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/m:generateContent"
 )]
+#[case::base_with_fragment(
+    "https://h.example.com/base#frag",
+    "/publishers/google/models/m:generateContent",
+    Some("p"),
+    Some("l"),
+    "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/m:generateContent#frag"
+)]
 fn construct_target_url_cases(
     #[case] base_url: &str,
     #[case] route: &str,

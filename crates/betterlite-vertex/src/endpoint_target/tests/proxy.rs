@@ -317,6 +317,22 @@ fn gemini_custom_base_requires_a_key() {
 }
 
 #[test]
+fn gemini_custom_base_wins_over_psc_format() {
+    let key = secret("gk");
+    let input = CustomProxyInput {
+        api_base: Some("https://custom.example.com"),
+        provider: TargetProvider::Gemini,
+        gemini_api_key: Some(&key),
+        use_psc_endpoint_format: true,
+        ..proxy_input!(None, None)
+    };
+    assert_eq!(
+        check_custom_proxy(&input).unwrap().url,
+        "https://custom.example.com/models/gemini-2.5-flash:generateContent"
+    );
+}
+
+#[test]
 fn gemini_without_a_custom_base_returns_the_passed_auth() {
     let auth = AuthHeader::Token(secret("tok"));
     let input = CustomProxyInput {
