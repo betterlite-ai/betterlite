@@ -1,0 +1,35 @@
+kind: probe
+name: routing-prefix
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: p1, tags: [alpha, gamma]}
+          - {id: p2, tags: [beta]}
+        tags: ["group:alpha", "!group:beta", "group:&gamma", plain]
+        routing_prefix: "group:"
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: p1, tags: [alpha, gamma]}
+          - {id: p2, tags: [beta]}
+        tags: ["group:alpha"]
+        routing_prefix: ""
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: p1, tags: [alpha, gamma]}
+          - {id: p2, tags: [beta]}
+        tags: ["group:&gamma"]
+        inherited_tags: ["group:&plan", "!group:trial"]
+        routing_prefix: "group:"
+        match_any: true
+compare: {ignore: []}

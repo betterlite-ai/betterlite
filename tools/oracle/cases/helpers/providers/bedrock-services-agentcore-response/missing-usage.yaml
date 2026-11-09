@@ -1,0 +1,20 @@
+kind: helper
+name: missing-usage
+call:
+  bedrock_services_agentcore_response:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result": {"content": [{"text": "hello"}]}}'
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    content: hello
+    response:
+      id: chatcmpl-fixture
+      object: chat.completion
+      created: 123
+      model: supplied
+      system_fingerprint: fp-fixture
+      choices: []
+      usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}
