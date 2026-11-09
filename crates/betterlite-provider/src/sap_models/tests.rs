@@ -52,7 +52,7 @@ fn filtering_input(filters: &str) -> String {
 }
 
 fn filtering_output(filters: &str, stream_options: &str) -> String {
-    r#""filtering":{"output":{"filters":[FILTERS],"stream_options":{OVERLAP}}}"#
+    r#""filtering":{"output":{"filters":[FILTERS],"stream_options":OVERLAP}}"#
         .replace("FILTERS", filters)
         .replace("OVERLAP", stream_options)
 }
@@ -62,7 +62,7 @@ fn masking_providers(providers: &str) -> String {
 }
 
 fn azure_input_filter(config: &str) -> String {
-    r#"{"type":"azure_content_safety","config":{CONFIG}}"#.replace("CONFIG", config)
+    r#"{"type":"azure_content_safety","config":CONFIG}"#.replace("CONFIG", config)
 }
 
 fn named_entity(entity: &str) -> String {
