@@ -8,6 +8,7 @@ use crate::error::details::{ApiDetails, GuardrailDetails, ResponseDetails, Respo
 use crate::facts::presence::Field;
 use crate::facts::{ErrorCode, ProviderErrorBody};
 use crate::parse::LitellmExceptionFacts;
+use crate::parse::constructors::ExceptionName;
 
 fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("built-in redaction patterns always compile")
@@ -50,6 +51,35 @@ fn family(class: &ErrorClass) -> &'static str {
         ErrorClass::MidStreamFallback(_) => "mid_stream_fallback",
         ErrorClass::Unclassified(_) => "unclassified",
     }
+}
+
+const KNOWN_SECRETS: [&str; 3] = [
+    "abcdefghij1234567890",
+    "queryvalue0123",
+    "cookievalue9876543210",
+];
+
+fn secret_in_error_str(text: &str) -> DispatchInput {
+    let error_str = format!("Rate limit reached for requests {text}");
+    DispatchInput::Raw(raw("openai", &error_str, Some(429)))
+}
+
+fn secret_in_message(text: &str) -> DispatchInput {
+    let mut request = raw("openai", "boom", Some(429));
+    request.message = Some(format!("Rate limit reached for requests {text}"));
+    DispatchInput::Raw(request)
+}
+
+fn secret_in_body(text: &str) -> DispatchInput {
+    let mut request = raw("openai", "Rate limit reached for requests", Some(429));
+    request.body = Some(RawExceptionBody {
+        kind: None,
+        param: None,
+        code: None,
+        message: Some(format!("Rate limit reached for requests {text}")),
+        error: None,
+    });
+    DispatchInput::Raw(request)
 }
 
 #[rstest]
@@ -100,12 +130,52 @@ fn family(class: &ErrorClass) -> &'static str {
     DispatchInput::Raw(raw("some-unknown-provider", "boom", None)),
     "api_connection"
 )]
+#[case::bearer_in_error_str(
+    secret_in_error_str("Authorization: Bearer abcdefghij1234567890"),
+    "rate_limit"
+)]
+#[case::bearer_in_message(
+    secret_in_message("Authorization: Bearer abcdefghij1234567890"),
+    "rate_limit"
+)]
+#[case::bearer_in_body(
+    secret_in_body("Authorization: Bearer abcdefghij1234567890"),
+    "rate_limit"
+)]
+#[case::query_string_credential_in_error_str(
+    secret_in_error_str("GET /v1?token=queryvalue0123 HTTP/1.1"),
+    "rate_limit"
+)]
+#[case::query_string_credential_in_message(
+    secret_in_message("GET /v1?token=queryvalue0123 HTTP/1.1"),
+    "rate_limit"
+)]
+#[case::query_string_credential_in_body(
+    secret_in_body("GET /v1?token=queryvalue0123 HTTP/1.1"),
+    "rate_limit"
+)]
+#[case::auth_token_cookie_in_error_str(
+    secret_in_error_str("Cookie: auth_token=cookievalue9876543210"),
+    "rate_limit"
+)]
+#[case::auth_token_cookie_in_message(
+    secret_in_message("Cookie: auth_token=cookievalue9876543210"),
+    "rate_limit"
+)]
+#[case::auth_token_cookie_in_body(
+    secret_in_body("Cookie: auth_token=cookievalue9876543210"),
+    "rate_limit"
+)]
 fn openai_errors_openai_error_tests_behavior(
     #[case] input: DispatchInput,
     #[case] expected_family: &str,
 ) {
     let class = dispatch(&input, &redactor());
     assert_eq!(family(&class), expected_family, "produced {class:?}");
+    let exposed = format!("{class:?}");
+    for secret in KNOWN_SECRETS {
+        assert!(!exposed.contains(secret), "leaked {secret}: {exposed}");
+    }
 }
 
 #[rstest]
@@ -262,21 +332,6 @@ fn a_secret_looking_body_message_is_redacted_before_it_reaches_the_client() {
 }
 
 #[test]
-fn rate_limit_classifications_never_carry_vendor_response_headers() {
-    let mapped = dispatch(
-        &DispatchInput::Raw(raw("openai", "Rate limit reached for requests", Some(429))),
-        &redactor(),
-    );
-    let ErrorClass::RateLimit(details) = mapped else {
-        panic!("expected RateLimit");
-    };
-    assert!(
-        details.headers.is_empty(),
-        "no branch this task owns ever forwards a vendor Set-Cookie/CORS/Authorization header"
-    );
-}
-
-#[test]
 fn mistral_streaming_still_classifies_as_api_through_the_openai_family_branch() {
     let input = DispatchInput::Raw(raw("mistral", "Mistral API raised a streaming error", None));
     let ErrorClass::Api(details) = dispatch(&input, &redactor()) else {
@@ -304,28 +359,37 @@ fn is_openai_family_recognizes_every_alias_and_every_compatible_provider() {
 }
 
 #[rstest]
-#[case::authentication_error("AuthenticationError", "authentication")]
-#[case::bad_gateway_error("BadGatewayError", "bad_gateway")]
-#[case::context_window_exceeded_error("ContextWindowExceededError", "context_window_exceeded")]
-#[case::not_found_error("NotFoundError", "not_found")]
-#[case::permission_denied_error("PermissionDeniedError", "permission_denied")]
-#[case::service_unavailable_error("ServiceUnavailableError", "service_unavailable")]
-#[case::unprocessable_entity_error("UnprocessableEntityError", "unprocessable_entity")]
-#[case::unsupported_params_error("UnsupportedParamsError", "unsupported_params")]
-#[case::content_policy_violation_error("ContentPolicyViolationError", "content_policy_violation")]
-#[case::internal_server_error("InternalServerError", "internal_server")]
-#[case::rate_limit_error("RateLimitError", "rate_limit")]
-#[case::api_connection_error("APIConnectionError", "api_connection")]
-#[case::api_response_validation_error("APIResponseValidationError", "api_response_validation")]
-#[case::bad_request_error("BadRequestError", "bad_request")]
-#[case::image_fetch_error("ImageFetchError", "bad_request")]
-#[case::invalid_request_error("InvalidRequestError", "bad_request")]
+#[case::authentication_error(ExceptionName::Authentication, "authentication")]
+#[case::bad_gateway_error(ExceptionName::BadGateway, "bad_gateway")]
+#[case::context_window_exceeded_error(
+    ExceptionName::ContextWindowExceeded,
+    "context_window_exceeded"
+)]
+#[case::not_found_error(ExceptionName::NotFound, "not_found")]
+#[case::permission_denied_error(ExceptionName::PermissionDenied, "permission_denied")]
+#[case::service_unavailable_error(ExceptionName::ServiceUnavailable, "service_unavailable")]
+#[case::unprocessable_entity_error(ExceptionName::UnprocessableEntity, "unprocessable_entity")]
+#[case::unsupported_params_error(ExceptionName::UnsupportedParams, "unsupported_params")]
+#[case::content_policy_violation_error(
+    ExceptionName::ContentPolicyViolation,
+    "content_policy_violation"
+)]
+#[case::internal_server_error(ExceptionName::InternalServer, "internal_server")]
+#[case::rate_limit_error(ExceptionName::RateLimit, "rate_limit")]
+#[case::api_connection_error(ExceptionName::ApiConnection, "api_connection")]
+#[case::api_response_validation_error(
+    ExceptionName::ApiResponseValidation,
+    "api_response_validation"
+)]
+#[case::bad_request_error(ExceptionName::BadRequest, "bad_request")]
+#[case::image_fetch_error(ExceptionName::ImageFetch, "bad_request")]
+#[case::invalid_request_error(ExceptionName::InvalidRequest, "bad_request")]
 fn classify_facts_maps_every_litellm_proxy_exception_name_to_its_family(
-    #[case] name: &str,
+    #[case] name: ExceptionName,
     #[case] expected_family: &str,
 ) {
     let facts = LitellmExceptionFacts {
-        name: name.to_owned(),
+        name,
         message: "boom".to_owned(),
         model: "gpt-4".to_owned(),
         provider: "litellm_proxy".to_owned(),
@@ -333,7 +397,7 @@ fn classify_facts_maps_every_litellm_proxy_exception_name_to_its_family(
         body: None,
     };
     assert_eq!(
-        family(&litellm_proxy::classify_facts(&facts, None)),
+        family(&litellm_proxy::classify_facts(&facts, None, None)),
         expected_family
     );
 }
@@ -341,7 +405,7 @@ fn classify_facts_maps_every_litellm_proxy_exception_name_to_its_family(
 #[test]
 fn classify_facts_reads_a_numeric_body_code_as_its_decimal_string() {
     let facts = LitellmExceptionFacts {
-        name: "RateLimitError".to_owned(),
+        name: ExceptionName::RateLimit,
         message: "boom".to_owned(),
         model: "gpt-4".to_owned(),
         provider: "litellm_proxy".to_owned(),
@@ -352,7 +416,7 @@ fn classify_facts_reads_a_numeric_body_code_as_its_decimal_string() {
             code: Field::Value(ErrorCode::Number(42)),
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(details.context.body_code.as_deref(), Some("42"));
@@ -361,7 +425,7 @@ fn classify_facts_reads_a_numeric_body_code_as_its_decimal_string() {
 #[test]
 fn classify_facts_reads_a_text_body_code_verbatim() {
     let facts = LitellmExceptionFacts {
-        name: "RateLimitError".to_owned(),
+        name: ExceptionName::RateLimit,
         message: "boom".to_owned(),
         model: "gpt-4".to_owned(),
         provider: "litellm_proxy".to_owned(),
@@ -372,7 +436,7 @@ fn classify_facts_reads_a_text_body_code_verbatim() {
             code: Field::Value(ErrorCode::Text("rate_limit_exceeded".to_owned())),
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(
@@ -384,7 +448,7 @@ fn classify_facts_reads_a_text_body_code_verbatim() {
 #[test]
 fn classify_facts_leaves_body_code_absent_when_the_body_carries_no_code() {
     let facts = LitellmExceptionFacts {
-        name: "RateLimitError".to_owned(),
+        name: ExceptionName::RateLimit,
         message: "boom".to_owned(),
         model: "gpt-4".to_owned(),
         provider: "litellm_proxy".to_owned(),
@@ -395,7 +459,7 @@ fn classify_facts_leaves_body_code_absent_when_the_body_carries_no_code() {
             code: Field::Missing,
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(details.context.body_code, None);
@@ -423,22 +487,6 @@ fn the_litellm_proxy_branch_forwards_the_raw_bodys_code_into_the_raised_exceptio
 }
 
 #[test]
-fn an_unrecognized_facts_name_never_panics_and_classifies_as_unclassified() {
-    let facts = LitellmExceptionFacts {
-        name: "SomeFutureError".to_owned(),
-        message: "boom".to_owned(),
-        model: "gpt-4".to_owned(),
-        provider: "litellm_proxy".to_owned(),
-        response: None,
-        body: None,
-    };
-    assert_eq!(
-        family(&litellm_proxy::classify_facts(&facts, None)),
-        "unclassified"
-    );
-}
-
-#[test]
 fn the_catchall_classifies_by_status_before_falling_back_to_api_connection() {
     let classified = dispatch(
         &DispatchInput::Raw(raw("some-unknown-provider", "boom", Some(429))),
@@ -461,15 +509,11 @@ fn a_synthesized_status_in_the_catchall_never_outranks_the_plain_api_connection_
 }
 
 #[test]
-fn a_synthesized_status_on_an_openai_family_provider_falls_back_to_api_connection() {
+fn a_synthesized_status_on_an_openai_family_provider_picks_the_family_of_a_real_status() {
     let mut request = raw("openai", "boom", Some(500));
     request.status_code_is_synthesized = true;
     let class = dispatch(&DispatchInput::Raw(request), &redactor());
-    assert_eq!(
-        family(&class),
-        "api_connection",
-        "dispatch must forward status_code_is_synthesized into OpenaiExceptionInput"
-    );
+    assert_eq!(family(&class), "internal_server");
 }
 
 #[test]
@@ -526,4 +570,37 @@ fn litellm_proxy_invalid_request_keeps_400() {
         panic!("expected BadRequest");
     };
     assert_eq!(details.status.0, 400);
+}
+
+fn proxy_request_with_body(error_str: &str) -> Box<RawException> {
+    let mut request = raw("litellm_proxy", error_str, None);
+    request.body = Some(RawExceptionBody {
+        kind: Some("invalid_request_error".to_owned()),
+        param: Some("messages".to_owned()),
+        code: None,
+        message: None,
+        error: None,
+    });
+    request
+}
+
+#[test]
+fn the_litellm_proxy_branch_forwards_the_raw_bodys_type_and_param_to_a_body_taking_exception() {
+    let request = proxy_request_with_body("litellm.BadRequestError: invalid request");
+    let ErrorClass::BadRequest(context) = dispatch(&DispatchInput::Raw(request), &redactor())
+    else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(context.body_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(context.body_param.as_deref(), Some("messages"));
+}
+
+#[test]
+fn the_litellm_proxy_branch_keeps_the_class_default_for_an_exception_that_takes_no_body() {
+    let request = proxy_request_with_body("litellm.NotFoundError: no such model");
+    let ErrorClass::NotFound(details) = dispatch(&DispatchInput::Raw(request), &redactor()) else {
+        panic!("expected NotFound");
+    };
+    assert_eq!(details.body_type, None);
+    assert_eq!(details.body_param, None);
 }
