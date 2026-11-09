@@ -1,3 +1,4 @@
+use betterlite_logging::private_json::error::PrivateJsonError;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
@@ -45,8 +46,9 @@ pub fn encode_secret(record: &CliTokenRecord) -> Result<SecretString, TokenRecor
         refresh_token: record.refresh_token.clone(),
         timestamp: record.timestamp,
     };
-    let blob =
-        serde_json::to_string(&secret).map_err(|source| TokenRecordError::Encode { source })?;
+    let blob = serde_json::to_string(&secret).map_err(|source| TokenRecordError::Encode {
+        source: PrivateJsonError::Encode(source),
+    })?;
     Ok(SecretString::from(blob))
 }
 

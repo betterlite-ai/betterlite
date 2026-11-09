@@ -3,10 +3,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TokenRecordError {
-    #[error("cannot encode the token secret: {source}")]
+    #[error("cannot encode the credential JSON: {source}")]
     Encode {
         #[source]
-        source: serde_json::Error,
+        source: PrivateJsonError,
     },
     #[error("cannot prepare the private token directory: {source}")]
     Directory {
