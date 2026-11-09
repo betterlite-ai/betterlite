@@ -29,6 +29,8 @@ pub struct TritonEmbeddingConfig;
 
 // LiteLLM sends the embedding call with no headers at all and keeps every optional param as given
 impl EmbeddingConfig for TritonEmbeddingConfig {
+    // the empty default is an equivalent mutant: HeaderMap::new() is already the default map
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(&self) -> HeaderMap {
         HeaderMap::new()
     }

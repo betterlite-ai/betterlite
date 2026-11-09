@@ -424,8 +424,9 @@ fn infer_request_appends_the_default_max_tokens() {
 
 #[test]
 fn infer_request_maps_values_to_triton_datatypes() {
-    let optional =
-        options(r#"{"count":3,"ratio":1.5,"label":"x","empty":null,"items":[1],"flag":true}"#);
+    let optional = options(
+        r#"{"count":3,"ratio":1.5,"label":"x","empty":null,"items":[1],"flag":true,"big":18446744073709551615,"negative":-3}"#,
+    );
     let given = user_message();
     let body = infer_request(&input("model", &given, &optional)).unwrap();
     let datatypes: Vec<&str> = body
@@ -440,7 +441,7 @@ fn infer_request_maps_values_to_triton_datatypes() {
     assert_eq!(
         datatypes,
         [
-            "BYTES", "INT32", "FP32", "BYTES", "BYTES", "BYTES", "INT32", "INT32"
+            "BYTES", "INT32", "FP32", "BYTES", "BYTES", "BYTES", "INT32", "INT32", "INT32", "INT32"
         ]
     );
 }
