@@ -113,7 +113,7 @@ fn run_inputs(
     redact_user_api_key_info: bool,
 ) -> Result<RunMetadata, PayloadError> {
     let metadata = json_object(&payload.metadata)?;
-    let extra = build_extra_metadata(&metadata, redact_user_api_key_info);
+    let extra = build_extra_metadata(metadata.clone(), redact_user_api_key_info);
     let mut inputs = json_object(payload)?;
     inputs.insert(
         "metadata".to_owned(),

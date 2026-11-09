@@ -14,9 +14,8 @@ pub fn redact_metadata(
     else {
         return metadata.clone();
     };
-    if let Some(Json::Object(requester)) = redacted.get("requester_metadata") {
-        let scrubbed = redact_user_api_key_info(&Json::Object(requester.clone()), redact_user_keys);
-        redacted.insert("requester_metadata".to_owned(), scrubbed);
+    if let Some(nested) = redacted.get_mut("requester_metadata") {
+        *nested = redact_user_api_key_info(nested, redact_user_keys);
     }
     redacted
 }
@@ -24,17 +23,27 @@ pub fn redact_metadata(
 // LangsmithLogger._build_extra_metadata: the tracer's session keys are read from requester_metadata unless a top-level one exists.
 #[must_use]
 pub fn build_extra_metadata(
-    metadata: &IndexMap<String, Json>,
+    metadata: IndexMap<String, Json>,
     redact_user_keys: bool,
 ) -> IndexMap<String, Json> {
-    let mut extra = metadata.clone();
-    let nested = extra.get("requester_metadata").cloned();
-    if let Some(Json::Object(requester)) = nested {
-        for key in ["session_id", "thread_id", "conversation_id"] {
-            if let Some(value) = requester.get(key) {
-                extra.entry(key.to_owned()).or_insert_with(|| value.clone());
-            }
+    let mut extra = metadata;
+    elevate_session_keys(&mut extra);
+    redact_metadata(&extra, redact_user_keys)
+}
+
+fn elevate_session_keys(extra: &mut IndexMap<String, Json>) {
+    let requester = nested_requester(extra);
+    for key in ["session_id", "thread_id", "conversation_id"] {
+        if let Some(value) = requester.get(key) {
+            extra.entry(key.to_owned()).or_insert_with(|| value.clone());
         }
     }
-    redact_metadata(&extra, redact_user_keys)
+}
+
+fn nested_requester(metadata: &IndexMap<String, Json>) -> IndexMap<String, Json> {
+    match metadata.get("requester_metadata") {
+        Some(Json::Object(fields)) => fields.clone(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+        | None => IndexMap::new(),
+    }
 }

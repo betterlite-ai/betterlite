@@ -391,25 +391,25 @@ fn redact_nested_requester() {
 #[test]
 fn elevate_session_id() {
     let original = metadata(r#"{"requester_metadata": {"session_id": "session-1"}}"#);
-    let extra = build_extra_metadata(&original, false);
+    let extra = build_extra_metadata(original, false);
     assert_eq!(extra.get("session_id"), Some(&text("session-1")));
     let top_level =
         metadata(r#"{"session_id": "top-level", "requester_metadata": {"session_id": "nested"}}"#);
-    let top_extra = build_extra_metadata(&top_level, false);
+    let top_extra = build_extra_metadata(top_level, false);
     assert_eq!(top_extra.get("session_id"), Some(&text("top-level")));
 }
 
 #[test]
 fn elevate_thread_id() {
     let original = metadata(r#"{"requester_metadata": {"thread_id": "thread-1"}}"#);
-    let extra = build_extra_metadata(&original, false);
+    let extra = build_extra_metadata(original, false);
     assert_eq!(extra.get("thread_id"), Some(&text("thread-1")));
 }
 
 #[test]
 fn elevate_conversation_id() {
     let original = metadata(r#"{"requester_metadata": {"conversation_id": "conversation-1"}}"#);
-    let extra = build_extra_metadata(&original, false);
+    let extra = build_extra_metadata(original, false);
     assert_eq!(extra.get("conversation_id"), Some(&text("conversation-1")));
 }
 
@@ -418,7 +418,7 @@ fn extra_metadata_redacted() {
     let original = metadata(
         r#"{"user_api_key_hash": "hash", "requester_metadata": {"user_api_key": "secret", "session_id": "session-1"}}"#,
     );
-    let extra = build_extra_metadata(&original, true);
+    let extra = build_extra_metadata(original, true);
     assert!(extra.get("user_api_key_hash").is_none());
     assert_eq!(extra.get("session_id"), Some(&text("session-1")));
     let Some(Json::Object(requester)) = extra.get("requester_metadata") else {
