@@ -4,7 +4,7 @@ use super::base_url::validate_vertex_location;
 use super::error::VertexUrlError;
 use super::model_name::get_vertex_base_model_name;
 use super::path::{VertexPath, model_path};
-use super::{ApiVersion, VertexUrl};
+use super::{ApiVersion, Endpoint, VertexUrl};
 
 pub struct EmbeddingUrlInput<'model> {
     pub model: &'model str,
@@ -21,9 +21,9 @@ pub fn get_embedding_url(
     let project = input.project.ok_or(VertexUrlError::ProjectRequired)?;
     let model = get_vertex_base_model_name(input.model);
     let endpoint = if uses_embed_content(catalog, input.model) {
-        "embedContent"
+        Endpoint::EmbedContent
     } else {
-        "predict"
+        Endpoint::Predict
     };
     let path = VertexPath {
         model,
@@ -31,7 +31,7 @@ pub fn get_embedding_url(
         location,
     };
     Ok(VertexUrl {
-        url: model_path(&path, input.api_version, "v1", endpoint),
+        url: model_path(&path, input.api_version, ApiVersion::V1, endpoint),
         endpoint,
     })
 }

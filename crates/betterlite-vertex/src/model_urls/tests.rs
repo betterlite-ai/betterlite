@@ -10,11 +10,11 @@ use crate::model_urls::embedding::{EmbeddingUrlInput, get_embedding_url};
 use crate::model_urls::error::VertexUrlError;
 use crate::model_urls::gemini::{GeminiUrlInput, get_gemini_url};
 use crate::model_urls::model_name::{
-    get_fine_tuned_endpoint_id, get_model_for_vertex_ai_url, get_vertex_base_model_name,
-    is_gemini_3_or_newer,
+    forward_gemini_call_id, get_fine_tuned_endpoint_id, get_model_for_vertex_ai_url,
+    get_vertex_base_model_name, is_gemini_3_or_newer,
 };
 use crate::model_urls::vertex::{VertexUrlInput, get_vertex_url};
-use crate::model_urls::{ApiVersion, UrlMode};
+use crate::model_urls::{ApiVersion, Endpoint, UrlMode};
 
 const PROJECT: &str = "proj";
 
@@ -123,7 +123,7 @@ fn regional_and_global() {
         global.url,
         "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/google/models/gemini-2.5-flash:generateContent"
     );
-    assert_eq!(global.endpoint, "generateContent");
+    assert_eq!(global.endpoint, Endpoint::GenerateContent);
     streaming_chat();
 }
 
@@ -144,7 +144,7 @@ fn streaming_chat() {
         regional.url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
     );
-    assert_eq!(regional.endpoint, "streamGenerateContent");
+    assert_eq!(regional.endpoint, Endpoint::StreamGenerateContent);
     let not_streaming = get_vertex_url(
         &catalog,
         &vertex_input(
@@ -156,7 +156,7 @@ fn streaming_chat() {
         ),
     )
     .unwrap();
-    assert_eq!(not_streaming.endpoint, "generateContent");
+    assert_eq!(not_streaming.endpoint, Endpoint::GenerateContent);
     assert!(!not_streaming.url.contains("alt=sse"));
 }
 
@@ -190,7 +190,7 @@ fn geography_vertex_urls() {
         count.url,
         "https://aiplatform.eu.rep.googleapis.com/v1beta1/projects/proj/locations/eu/publishers/google/models/gemini-2.5-flash:countTokens"
     );
-    assert_eq!(count.endpoint, "countTokens");
+    assert_eq!(count.endpoint, Endpoint::CountTokens);
     let image = get_vertex_url(
         &catalog,
         &vertex_input(
@@ -237,7 +237,7 @@ fn numeric_endpoint_embedding() {
         bge.url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/123456:predict"
     );
-    assert_eq!(bge.endpoint, "predict");
+    assert_eq!(bge.endpoint, Endpoint::Predict);
     let digits = get_embedding_url(
         &catalog,
         &embedding_input("4965075652664360960", "global", ApiVersion::V1Beta1),
@@ -288,7 +288,7 @@ fn embed_content_catalog() {
         plain.url,
         "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-embedding-2:embedContent"
     );
-    assert_eq!(plain.endpoint, "embedContent");
+    assert_eq!(plain.endpoint, Endpoint::EmbedContent);
     let preview = get_embedding_url(
         &catalog,
         &embedding_input("gemini-embedding-2-preview", "us", ApiVersion::V1),
@@ -303,7 +303,7 @@ fn embed_content_catalog() {
         &embedding_input("text-embedding-005", "us-central1", ApiVersion::V1),
     )
     .unwrap();
-    assert_eq!(predict.endpoint, "predict");
+    assert_eq!(predict.endpoint, Endpoint::Predict);
     prefixed_embed_content();
 }
 
@@ -352,6 +352,8 @@ fn gemini_version_aliases() {
     assert!(!is_gemini_3_or_newer("gemma-3-12b-it"));
     assert!(is_gemini_3_or_newer("gemini-10-pro"));
     assert!(!is_gemini_3_or_newer(""));
+    assert!(forward_gemini_call_id("gemini-3-pro-preview"));
+    assert!(!forward_gemini_call_id("gemini-2.5-flash"));
     gemini_version_urls();
 }
 
@@ -361,7 +363,7 @@ fn gemini_version_urls() {
         old.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     );
-    assert_eq!(old.endpoint, "generateContent");
+    assert_eq!(old.endpoint, Endpoint::GenerateContent);
     let new = get_gemini_url(&gemini_input(
         UrlMode::Chat,
         "gemini-3-pro-preview",
@@ -372,7 +374,7 @@ fn gemini_version_urls() {
         new.url,
         "https://generativelanguage.googleapis.com/v1alpha/models/gemini-3-pro-preview:streamGenerateContent?alt=sse"
     );
-    assert_eq!(new.endpoint, "streamGenerateContent");
+    assert_eq!(new.endpoint, Endpoint::StreamGenerateContent);
     let latest = get_gemini_url(&gemini_input(UrlMode::Chat, "gemini-flash-latest", None)).unwrap();
     assert_eq!(
         latest.url,
@@ -463,7 +465,7 @@ fn fine_tuned_urls() {
         digits.url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/4965075652664360960:streamGenerateContent?alt=sse"
     );
-    assert_eq!(digits.endpoint, "streamGenerateContent");
+    assert_eq!(digits.endpoint, Endpoint::StreamGenerateContent);
 }
 
 fn invalid_location() {
@@ -544,7 +546,7 @@ fn native_batch_embedding() {
     assert!(matches!(
         batch,
         Err(VertexUrlError::UnsupportedMode {
-            mode: "batch_embedding"
+            mode: UrlMode::BatchEmbedding
         })
     ));
     // the rejected mode never validates the location first
@@ -583,7 +585,7 @@ fn gemini_unsupported_modes() {
         batch_gemini.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:batchEmbedContents"
     );
-    assert_eq!(batch_gemini.endpoint, "batchEmbedContents");
+    assert_eq!(batch_gemini.endpoint, Endpoint::BatchEmbedContents);
 }
 
 #[test]
@@ -604,7 +606,7 @@ fn image_generation_keeps_its_version_rules() {
         numeric.url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/1234567890:predict"
     );
-    assert_eq!(numeric.endpoint, "predict");
+    assert_eq!(numeric.endpoint, Endpoint::Predict);
     let publisher = get_vertex_url(
         &catalog,
         &vertex_input(
@@ -640,7 +642,7 @@ fn count_tokens_always_uses_the_publisher_path() {
         count.url,
         "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/1234:countTokens"
     );
-    assert_eq!(count.endpoint, "countTokens");
+    assert_eq!(count.endpoint, Endpoint::CountTokens);
 }
 
 #[test]
@@ -691,5 +693,5 @@ fn catalog_lookup_is_case_sensitive() {
         &embedding_input("Gemini-Embedding-2", "us-central1", ApiVersion::V1),
     )
     .unwrap();
-    assert_eq!(other_case.endpoint, "predict");
+    assert_eq!(other_case.endpoint, Endpoint::Predict);
 }

@@ -1,4 +1,5 @@
 use super::ApiVersion;
+use super::Endpoint;
 use super::base_url::host_for;
 use super::model_name::is_decimal;
 
@@ -27,16 +28,11 @@ pub(crate) struct VertexPath<'text> {
 pub(crate) fn model_path(
     path: &VertexPath<'_>,
     api_version: ApiVersion,
-    publisher_version: &str,
-    endpoint: &str,
+    publisher_version: ApiVersion,
+    endpoint: Endpoint,
 ) -> String {
     if is_decimal(path.model) {
-        resource_path(
-            path,
-            api_version.as_str(),
-            endpoint,
-            VertexCollection::Endpoints,
-        )
+        resource_path(path, api_version, endpoint, VertexCollection::Endpoints)
     } else {
         resource_path(
             path,
@@ -49,8 +45,8 @@ pub(crate) fn model_path(
 
 pub(crate) fn resource_path(
     path: &VertexPath<'_>,
-    version: &str,
-    endpoint: &str,
+    version: ApiVersion,
+    endpoint: Endpoint,
     collection: VertexCollection,
 ) -> String {
     let VertexPath {
@@ -60,7 +56,9 @@ pub(crate) fn resource_path(
     } = *path;
     let base_url = host_for(location);
     let segment = collection.segment();
+    let version_text = version.as_str();
+    let endpoint_text = endpoint.as_str();
     format!(
-        "{base_url}/{version}/projects/{project}/locations/{location}/{segment}/{model}:{endpoint}"
+        "{base_url}/{version_text}/projects/{project}/locations/{location}/{segment}/{model}:{endpoint_text}"
     )
 }

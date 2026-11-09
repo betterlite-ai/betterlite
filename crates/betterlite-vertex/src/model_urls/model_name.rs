@@ -39,6 +39,12 @@ pub fn is_gemini_3_or_newer(model: &str) -> bool {
 }
 
 #[must_use]
+pub fn forward_gemini_call_id(model: &str) -> bool {
+    // Gemini 3+ accepts and returns the function-call id; older models reject the field
+    is_gemini_3_or_newer(model)
+}
+
+#[must_use]
 pub(crate) fn is_decimal(text: &str) -> bool {
     if text.is_empty() {
         return false;

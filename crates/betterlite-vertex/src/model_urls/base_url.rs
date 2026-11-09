@@ -22,10 +22,8 @@ pub fn validate_vertex_location(location: Option<&str>) -> Result<&str, VertexUr
 }
 
 pub fn get_vertex_base_url(location: Option<&str>) -> Result<String, VertexUrlError> {
-    match validate_vertex_location(location) {
-        Ok(validated) => Ok(host_for(validated)),
-        Err(error) => Err(error),
-    }
+    // the host is chosen only after the location passes the injection check
+    validate_vertex_location(location).map(host_for)
 }
 
 #[must_use]

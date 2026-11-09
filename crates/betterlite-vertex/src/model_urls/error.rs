@@ -1,3 +1,5 @@
+use super::UrlMode;
+
 #[derive(Debug, thiserror::Error)]
 pub enum VertexUrlError {
     #[error("vertex_location is required")]
@@ -6,8 +8,8 @@ pub enum VertexUrlError {
     InvalidLocation,
     #[error("vertex_project is required")]
     ProjectRequired,
-    #[error("unable to get vertex url/endpoint for mode: {mode}")]
-    UnsupportedMode { mode: &'static str },
+    #[error("unable to get vertex url/endpoint for mode: {}", .mode.as_str())]
+    UnsupportedMode { mode: UrlMode },
     #[error("the gemini/ route does not support image generation")]
     GeminiImageGeneration,
 }

@@ -5,7 +5,7 @@ use super::embedding::{EmbeddingUrlInput, get_embedding_url};
 use super::error::VertexUrlError;
 use super::model_name::get_model_for_vertex_ai_url;
 use super::path::{VertexCollection, VertexPath, model_path, resource_path};
-use super::{ApiVersion, UrlMode, VertexUrl};
+use super::{ApiVersion, Endpoint, UrlMode, VertexUrl};
 
 pub struct VertexUrlInput<'model> {
     pub mode: UrlMode,
@@ -35,13 +35,13 @@ pub fn get_vertex_url(
         UrlMode::ImageGeneration => {
             let path = path_of(model, input)?;
             Ok(VertexUrl {
-                url: model_path(&path, input.api_version, "v1", "predict"),
-                endpoint: "predict",
+                url: model_path(&path, input.api_version, ApiVersion::V1, Endpoint::Predict),
+                endpoint: Endpoint::Predict,
             })
         }
         UrlMode::CountTokens => count_tokens_url(model, input),
         UrlMode::BatchEmbedding => Err(VertexUrlError::UnsupportedMode {
-            mode: "batch_embedding",
+            mode: UrlMode::BatchEmbedding,
         }),
     }
 }
@@ -62,20 +62,23 @@ fn path_of<'model>(
 fn chat_url(model: &str, input: &VertexUrlInput<'_>) -> Result<VertexUrl, VertexUrlError> {
     let path = path_of(model, input)?;
     let (endpoint, suffix) = match input.stream {
-        Some(true) => ("streamGenerateContent", "?alt=sse"),
-        Some(false) | None => ("generateContent", ""),
+        Some(true) => (Endpoint::StreamGenerateContent, "?alt=sse"),
+        Some(false) | None => (Endpoint::GenerateContent, ""),
     };
-    let version = input.api_version.as_str();
-    let mut url = model_path(&path, input.api_version, version, endpoint);
+    let mut url = model_path(&path, input.api_version, input.api_version, endpoint);
     url.push_str(suffix);
     Ok(VertexUrl { url, endpoint })
 }
 
 fn count_tokens_url(model: &str, input: &VertexUrlInput<'_>) -> Result<VertexUrl, VertexUrlError> {
     let path = path_of(model, input)?;
-    let version = input.api_version.as_str();
     Ok(VertexUrl {
-        url: resource_path(&path, version, "countTokens", VertexCollection::Publishers),
-        endpoint: "countTokens",
+        url: resource_path(
+            &path,
+            input.api_version,
+            Endpoint::CountTokens,
+            VertexCollection::Publishers,
+        ),
+        endpoint: Endpoint::CountTokens,
     })
 }

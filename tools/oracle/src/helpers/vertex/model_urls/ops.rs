@@ -3,8 +3,8 @@ use betterlite_vertex::model_urls::base_url::get_vertex_base_url;
 use betterlite_vertex::model_urls::embedding::{EmbeddingUrlInput, get_embedding_url};
 use betterlite_vertex::model_urls::gemini::{GeminiUrlInput, get_gemini_url};
 use betterlite_vertex::model_urls::model_name::{
-    get_fine_tuned_endpoint_id, get_model_for_vertex_ai_url, get_vertex_base_model_name,
-    is_gemini_3_or_newer,
+    forward_gemini_call_id, get_fine_tuned_endpoint_id, get_model_for_vertex_ai_url,
+    get_vertex_base_model_name, is_gemini_3_or_newer,
 };
 use betterlite_vertex::model_urls::vertex::{VertexUrlInput, get_vertex_url};
 use betterlite_vertex::model_urls::{ApiVersion, UrlMode, VertexUrl};
@@ -24,7 +24,7 @@ pub(super) fn run(input: &Input) -> Value {
 fn url_value(result: Result<VertexUrl, CaseError>) -> Value {
     result.map_or_else(
         |_error| json!({"error": true}),
-        |url| json!({"url": url.url, "endpoint": url.endpoint}),
+        |url| json!({"url": url.url, "endpoint": url.endpoint.as_str()}),
     )
 }
 
@@ -101,13 +101,12 @@ fn model_predicates(models: &[String]) -> Value {
     let entries: Vec<Value> = models
         .iter()
         .map(|model| {
-            let newer = is_gemini_3_or_newer(model);
             json!({
                 "base_name": get_vertex_base_model_name(model),
                 "fine_tuned_id": get_fine_tuned_endpoint_id(model),
                 "url_model": get_model_for_vertex_ai_url(model),
-                "newer": newer,
-                "forward": newer,
+                "newer": is_gemini_3_or_newer(model),
+                "forward": forward_gemini_call_id(model),
             })
         })
         .collect();
