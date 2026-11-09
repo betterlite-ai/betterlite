@@ -264,9 +264,6 @@ fn url_missing() {
 
 fn url_structural_rejects() {
     let inputs = [
-        "http://localhost:8080",
-        "http://0.0.0.0",
-        "http://[::ffff:127.0.0.1]",
         "https://user@sidecar.example.test",
         "https://user:pass@sidecar.example.test",
         "https://sidecar.example.test?x=1",
@@ -280,6 +277,23 @@ fn url_structural_rejects() {
         assert_eq!(
             message(&error),
             "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment.",
+            "{input}"
+        );
+    }
+}
+
+fn url_http_requires_loopback() {
+    let inputs = [
+        "http://localhost:8080",
+        "http://0.0.0.0",
+        "http://[::ffff:127.0.0.1]",
+        "http://sidecar.example.test",
+    ];
+    for input in inputs {
+        let error = get_complete_url(Some(input)).expect_err(input);
+        assert_eq!(
+            message(&error),
+            "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1.",
             "{input}"
         );
     }
@@ -891,6 +905,7 @@ fn provider_name() {
 #[case::url_accepts(url_accepts)]
 #[case::url_missing(url_missing)]
 #[case::url_structural_rejects(url_structural_rejects)]
+#[case::url_http_requires_loopback(url_http_requires_loopback)]
 #[case::url_parse_rejects(url_parse_rejects)]
 #[case::endpoint_table(endpoint_table)]
 #[case::connection_string(connection_string)]
