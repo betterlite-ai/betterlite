@@ -20,6 +20,10 @@ call:
       - call: mongodb_complete_url
         input: {api_base: "http://[::ffff:127.0.0.1]"}
       - call: mongodb_complete_url
+        input: {api_base: "http://127.0.0.1\t"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://evil.com\\@127.0.0.1"}
+      - call: mongodb_complete_url
         input: {api_base: "http://127.1"}
       - call: mongodb_complete_url
         input: {api_base: "http://2130706433"}

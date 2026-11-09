@@ -250,6 +250,7 @@ fn url_accepts() {
         ("http://127.0.0.1", "http://127.0.0.1"),
         ("http://[::1]:8080//", "http://[::1]:8080"),
         ("http://[::ffff:127.0.0.1]", "http://[::ffff:127.0.0.1]"),
+        ("http://127.0.0.1\t", "http://127.0.0.1\t"),
         (
             "https://sidecar.example.test/prefix",
             "https://sidecar.example.test/prefix",
@@ -297,6 +298,7 @@ fn url_structural_rejects() {
         "http:127.0.0.1:8080",
         "http:///127.0.0.1",
         "https:example.test",
+        "http://evil.com\\@127.0.0.1",
     ];
     for input in inputs {
         let error = get_complete_url(Some(input)).expect_err(input);
