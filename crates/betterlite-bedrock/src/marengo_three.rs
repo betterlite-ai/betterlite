@@ -1,6 +1,7 @@
 pub mod error;
 pub mod fields;
 mod inputs;
+mod integer_text;
 pub mod options;
 pub mod params;
 pub mod request;
