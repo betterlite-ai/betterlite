@@ -58,7 +58,7 @@ impl FakeLogging {
             journal: journal.clone(),
             baseline,
             langfuse,
-            state: Mutex::new(LoggingState::default()),
+            state: Mutex::default(),
         }
     }
 
@@ -161,11 +161,12 @@ pub(super) struct FakeFactory {
 
 impl FakeFactory {
     pub(super) fn new(journal: &Journal) -> Self {
+        let shared = journal.clone();
         Self {
-            journal: journal.clone(),
+            journal: shared,
             baseline: false,
             langfuse: None,
-            created: Mutex::new(Vec::new()),
+            created: Mutex::default(),
         }
     }
 
@@ -331,13 +332,18 @@ pub(super) struct SlackRecord {
     pub langfuse_trace: Option<String>,
 }
 
+#[derive(Default)]
+struct SlackState {
+    sent: Vec<SlackRecord>,
+    budget: Vec<BudgetAlertKind>,
+    failed_tracking: Vec<(String, String)>,
+    too_long: Vec<Option<JsonMap>>,
+}
+
 pub(super) struct FakeSlack {
     journal: Journal,
     configured: bool,
-    sent: Mutex<Vec<SlackRecord>>,
-    budget: Mutex<Vec<BudgetAlertKind>>,
-    failed_tracking: Mutex<Vec<(String, String)>>,
-    too_long: Mutex<Vec<Option<JsonMap>>>,
+    state: Mutex<SlackState>,
 }
 
 impl FakeSlack {
@@ -345,27 +351,28 @@ impl FakeSlack {
         Self {
             journal: journal.clone(),
             configured,
-            sent: Mutex::new(Vec::new()),
-            budget: Mutex::new(Vec::new()),
-            failed_tracking: Mutex::new(Vec::new()),
-            too_long: Mutex::new(Vec::new()),
+            state: Mutex::default(),
         }
     }
 
     pub(super) fn sent(&self) -> Vec<SlackRecord> {
-        self.sent.lock().expect("sent lock").clone()
+        self.state.lock().expect("state lock").sent.clone()
     }
 
     pub(super) fn budget(&self) -> Vec<BudgetAlertKind> {
-        self.budget.lock().expect("budget lock").clone()
+        self.state.lock().expect("state lock").budget.clone()
     }
 
     pub(super) fn failed_tracking(&self) -> Vec<(String, String)> {
-        self.failed_tracking.lock().expect("tracking lock").clone()
+        self.state
+            .lock()
+            .expect("state lock")
+            .failed_tracking
+            .clone()
     }
 
     pub(super) fn too_long(&self) -> Vec<Option<JsonMap>> {
-        self.too_long.lock().expect("too long lock").clone()
+        self.state.lock().expect("state lock").too_long.clone()
     }
 }
 
@@ -378,31 +385,36 @@ impl SlackAlerting for FakeSlack {
     async fn failed_tracking_alert(&self, error_message: &str, failing_model: &str) {
         self.journal
             .record(format!("failed_tracking:{error_message}:{failing_model}"));
-        self.failed_tracking
+        self.state
             .lock()
-            .expect("tracking lock")
+            .expect("state lock")
+            .failed_tracking
             .push((error_message.to_owned(), failing_model.to_owned()));
     }
 
     async fn budget_alerts(&self, kind: BudgetAlertKind, _user_info: &CallInfo) {
         self.journal.record(format!("budget:{kind:?}"));
-        self.budget.lock().expect("budget lock").push(kind);
+        self.state.lock().expect("state lock").budget.push(kind);
     }
 
     async fn send_alert(&self, alert: SlackAlert<'_>) {
         self.journal.record(format!("send_alert:{}", alert.message));
-        self.sent.lock().expect("sent lock").push(SlackRecord {
-            message: alert.message.to_owned(),
-            level: alert.level,
-            alert_type: alert.alert_type,
-            alerting_metadata: alert.alerting_metadata.clone(),
-            langfuse_trace: alert.langfuse_trace.map(str::to_owned),
-        });
+        self.state
+            .lock()
+            .expect("state lock")
+            .sent
+            .push(SlackRecord {
+                message: alert.message.to_owned(),
+                level: alert.level,
+                alert_type: alert.alert_type,
+                alerting_metadata: alert.alerting_metadata.clone(),
+                langfuse_trace: alert.langfuse_trace.map(str::to_owned),
+            });
     }
 
     async fn response_taking_too_long(&self, data: Option<JsonMap>) {
         self.journal.record("response_taking_too_long".to_owned());
-        self.too_long.lock().expect("too long lock").push(data);
+        self.state.lock().expect("state lock").too_long.push(data);
     }
 }
 
