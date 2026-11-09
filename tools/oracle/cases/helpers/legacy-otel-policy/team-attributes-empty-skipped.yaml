@@ -1,0 +1,12 @@
+kind: helper
+name: team-attributes-empty-skipped
+call:
+  b3854:
+    function: team
+    teams:
+      - {team_id: "", team_alias: null}
+      - {team_id: team-id, team_alias: ""}
+      - {team_id: null, team_alias: team-alias}
+      - {team_id: team-id, team_alias: team-alias}
+env: {}
+compare: {ignore: []}
