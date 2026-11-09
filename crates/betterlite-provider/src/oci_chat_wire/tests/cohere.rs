@@ -239,7 +239,50 @@ fn cohere_response_turns_empty_text_into_no_content() {
     )
     .unwrap();
     assert_eq!(response.choices[0].message.content, None);
+    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(response.usage, ChatUsage::default());
+}
+
+fn cohere_tool_call(body_text: &str) -> (String, String) {
+    let mut response = base_response();
+    handle_cohere_response(&body(body_text), "m", 0, 200, &mut response).unwrap();
+    let call = &response.choices[0].message.tool_calls.as_ref().unwrap()[0];
+    (call.id.clone(), call.function.arguments.clone())
+}
+
+#[test]
+fn cohere_response_hashes_nested_parameter_keys_in_a_stable_order() {
+    let first = cohere_tool_call(
+        r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+            "text": "", "apiFormat": "COHERE", "toolCalls": [{"name": "f", "parameters": {
+                "o": {"b": 1, "a": 2}, "l": [{"d": 4, "c": 3}]
+            }}]
+        }}"#,
+    );
+    let second = cohere_tool_call(
+        r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+            "text": "", "apiFormat": "COHERE", "toolCalls": [{"name": "f", "parameters": {
+                "l": [{"c": 3, "d": 4}], "o": {"a": 2, "b": 1}
+            }}]
+        }}"#,
+    );
+    assert_eq!(
+        first.0,
+        expected_call_id(
+            0,
+            "f",
+            "{\"l\":[{\"c\":3,\"d\":4}],\"o\":{\"a\":2,\"b\":1}}"
+        )
+    );
+    assert_eq!(first.0, second.0);
+    assert_eq!(
+        first.1,
+        "{\"o\":{\"b\":1,\"a\":2},\"l\":[{\"d\":4,\"c\":3}]}"
+    );
+    assert_eq!(
+        second.1,
+        "{\"l\":[{\"c\":3,\"d\":4}],\"o\":{\"a\":2,\"b\":1}}"
+    );
 }
 
 #[test]

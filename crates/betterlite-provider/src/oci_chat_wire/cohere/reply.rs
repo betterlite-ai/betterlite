@@ -27,7 +27,9 @@ pub fn handle_cohere_response(
     model.clone_into(&mut response.model);
     response.created = created;
     let text = result.chat_response.text;
-    let finish_reason = normalize_oci_finish_reason(result.chat_response.finish_reason.as_deref());
+    // Choices.__init__ turns an absent finish reason into "stop" before the response reaches a client
+    let finish_reason = normalize_oci_finish_reason(result.chat_response.finish_reason.as_deref())
+        .unwrap_or_else(|| String::from("stop"));
     let tool_calls = result
         .chat_response
         .tool_calls
@@ -45,7 +47,7 @@ pub fn handle_cohere_response(
             refusal: None,
             provider_specific_fields: MessageProviderFields::default(),
         },
-        finish_reason,
+        finish_reason: Some(finish_reason),
         logprobs: None,
         provider_specific_fields: BTreeMap::new(),
     }];
@@ -95,35 +97,38 @@ pub fn handle_cohere_stream_chunk(
         logprobs: None,
     })
 }
-struct AdaptedCall {
-    id: String,
-    name: String,
-    arguments: String,
-}
 fn adapt_tool_calls(calls: &[CohereToolCall]) -> Vec<ToolCall> {
     calls
         .iter()
         .enumerate()
-        .map(|(position, call)| {
-            let adapted = adapt_call(position, call);
-            ToolCall {
-                id: adapted.id,
-                kind: String::from("function"),
-                function: FunctionCall {
-                    name: adapted.name,
-                    arguments: adapted.arguments,
-                },
-            }
-        })
+        .map(|(position, call)| adapt_call(position, call))
         .collect()
 }
-fn adapt_call(position: usize, call: &CohereToolCall) -> AdaptedCall {
+fn adapt_call(position: usize, call: &CohereToolCall) -> ToolCall {
     let arguments = serde_json::to_string(&call.parameters).unwrap_or_default();
-    let sorted: BTreeMap<&String, &Json> = call.parameters.iter().collect();
+    let sorted = sorted_json(&Json::Object(call.parameters.clone()));
     let sorted_text = serde_json::to_string(&sorted).unwrap_or_default();
-    AdaptedCall {
+    ToolCall {
         id: synthesize_oci_tool_call_id(position, &call.name, &sorted_text),
-        name: call.name.clone(),
-        arguments,
+        kind: String::from("function"),
+        function: FunctionCall {
+            name: call.name.clone(),
+            arguments,
+        },
+    }
+}
+// json.dumps(sort_keys=True) sorts every nested object, so re-emissions of one call hash alike
+fn sorted_json(value: &Json) -> Json {
+    match value {
+        Json::Object(fields) => Json::Object(
+            fields
+                .iter()
+                .map(|(key, field)| (key.clone(), sorted_json(field)))
+                .collect::<BTreeMap<String, Json>>()
+                .into_iter()
+                .collect(),
+        ),
+        Json::List(items) => Json::List(items.iter().map(sorted_json).collect()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
     }
 }
