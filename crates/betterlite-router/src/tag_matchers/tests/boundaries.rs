@@ -15,6 +15,7 @@ enum Boundary {
     DocumentBytes(usize),
     InvalidDocument,
     MatchSteps,
+    UnsupportedConstruct,
     EmptyPrefix,
     DefaultMatchAny,
     Selection,
@@ -27,6 +28,7 @@ enum Boundary {
 #[case::document_over_limit(Boundary::DocumentBytes(MAX_TAG_MATCH_BYTES.saturating_add(1)))]
 #[case::invalid_document(Boundary::InvalidDocument)]
 #[case::match_steps(Boundary::MatchSteps)]
+#[case::unsupported_construct(Boundary::UnsupportedConstruct)]
 #[case::empty_prefix(Boundary::EmptyPrefix)]
 #[case::default_match_any(Boundary::DefaultMatchAny)]
 #[case::selection(Boundary::Selection)]
@@ -36,6 +38,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::DocumentBytes(bytes) => document_bytes_boundary(bytes),
         Boundary::InvalidDocument => invalid_document_boundary(),
         Boundary::MatchSteps => match_steps_boundary(),
+        Boundary::UnsupportedConstruct => unsupported_construct_boundary(),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
         Boundary::DefaultMatchAny => default_match_any_boundary(),
         Boundary::Selection => selection_boundary(),
@@ -89,6 +92,24 @@ fn invalid_document_boundary() {
 fn default_match_any_boundary() {
     let request = parse_tag_match(b"{\"deployments\":[]}").unwrap();
     assert!(request.match_any);
+}
+
+fn unsupported_construct_boundary() {
+    let named = TagMatcher::new(vec![deployment(None, Some(&[r"\N{LATIN SMALL LETTER A}"]))]);
+    assert_eq!(named.warnings.len(), 1);
+    assert_eq!(named.warnings[0].kind, WarningKind::UnsupportedPattern);
+    assert_eq!(named.warnings[0].pattern, r"\N{LATIN SMALL LETTER A}");
+    let selection = named.select(&query(&[], None, &["a"], true, ""));
+    assert!(selection.matches.is_empty());
+    let after_tab = TagMatcher::new(vec![deployment(
+        None,
+        Some(&[r"\t\N{LATIN SMALL LETTER A}"]),
+    )]);
+    assert_eq!(after_tab.warnings[0].kind, WarningKind::UnsupportedPattern);
+    let escaped = TagMatcher::new(vec![deployment(None, Some(&[r"\\N\{"]))]);
+    assert!(escaped.warnings.is_empty());
+    let tab_brace = TagMatcher::new(vec![deployment(None, Some(&[r"\t{"]))]);
+    assert_eq!(tab_brace.warnings[0].kind, WarningKind::InvalidPattern);
 }
 
 fn match_steps_boundary() {

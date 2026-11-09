@@ -64,7 +64,7 @@ impl Patterns {
                     regex: Some(regex),
                 }),
                 Err(error) => warnings.push(TagWarning {
-                    kind: classify(&error),
+                    kind: classify(source, &error),
                     pattern: source.clone(),
                 }),
             }
@@ -122,9 +122,26 @@ fn build(source: &str) -> Result<Regex, Error> {
         .build()
 }
 
-const fn classify(error: &Error) -> WarningKind {
-    if matches!(error, Error::ParseError(..)) {
-        return WarningKind::InvalidPattern;
+fn classify(source: &str, error: &Error) -> WarningKind {
+    if uses_named_escape(source) || !matches!(error, Error::ParseError(..)) {
+        return WarningKind::UnsupportedPattern;
     }
-    WarningKind::UnsupportedPattern
+    WarningKind::InvalidPattern
+}
+
+// Python's \N{NAME} is a valid escape fancy-regex's parser refuses; an escaped backslash before it is not one
+fn uses_named_escape(source: &str) -> bool {
+    let mut characters = source.chars().peekable();
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            escaped = !escaped;
+            continue;
+        }
+        if character == 'N' && escaped && characters.peek() == Some(&'{') {
+            return true;
+        }
+        escaped = false;
+    }
+    false
 }
