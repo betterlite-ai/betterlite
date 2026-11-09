@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-legacy-anthropic-names
+call:
+  bedrock_config_selection:
+    function: legacy_anthropic_names
+env: {}
+compare: {ignore: []}

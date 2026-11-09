@@ -1,0 +1,8 @@
+task: B5941
+deviations:
+  - what: The wording of the JSON parse failure and of the schema mismatch message differs from LiteLLM, which embeds the text of a Python exception. The status codes (the HTTP status for invalid JSON, 500 for a schema mismatch) and the fixed prefixes are the same.
+    why: The Python exception text comes from json and pydantic and has no Rust equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/embed/transformation.py#L259-L276
+  - what: A token count that a non-negative 32-bit integer cannot hold, such as a negative inputTextTokenCounts entry or a sum past u32::MAX, is OciError status 500 with a schema message; LiteLLM accepts any Python int and reports it in the response usage.
+    why: betterlite's shared EmbeddingUsage stores u32 token counts, and OCI never returns a negative or that large a count, so no working setup reaches the difference; rejecting the body keeps the usage type honest instead of wrapping the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L422-L437

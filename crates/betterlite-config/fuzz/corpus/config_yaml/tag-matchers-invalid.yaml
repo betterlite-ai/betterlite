@@ -1,0 +1,5 @@
+model_list:
+  - model_name: broken
+    litellm_params:
+      model: openai/gpt-4o
+      tag_regex: "^User-Agent: not-a-list"

@@ -27,3 +27,7 @@ test = false
 name = "tokenizer_input"
 path = "fuzz_targets/tokenizer_input.rs"
 test = false
+[[bin]]
+name = "image_token_header"
+path = "fuzz_targets/image_token_header.rs"
+test = false
