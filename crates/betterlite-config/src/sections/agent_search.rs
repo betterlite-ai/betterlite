@@ -1,10 +1,12 @@
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod tests;
 
+const EMBEDDING_MODEL_PATH: &str = "litellm_settings.agent_search_embedding_model";
 const PROBE_TIMEOUT_SECONDS: f64 = 5.0;
 const GATHER_TIMEOUT_SECONDS: f64 = 30.0;
 const PROBE_TIMEOUT_VARIABLE: &str = "LITELLM_AGENT_HEALTH_CHECK_TIMEOUT";
@@ -46,7 +48,11 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            embedding_model: self.litellm_settings.agent_search_embedding_model,
+            embedding_model: self
+                .litellm_settings
+                .agent_search_embedding_model
+                .map(|model| resolve_string(model, EMBEDDING_MODEL_PATH, lookup))
+                .transpose()?,
             health_check_timeout_seconds: seconds_from_environment(lookup, PROBE_TIMEOUT_VARIABLE)?
                 .unwrap_or(PROBE_TIMEOUT_SECONDS),
             health_gather_timeout_seconds: seconds_from_environment(

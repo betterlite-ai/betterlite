@@ -52,6 +52,28 @@ fn reads_the_embedding_model_from_litellm_settings() {
 }
 
 #[test]
+fn resolves_an_environment_reference_for_the_embedding_model() {
+    let loaded = settings(
+        "litellm_settings:\n  agent_search_embedding_model: os.environ/EMBED_MODEL",
+        &[("EMBED_MODEL", "text-embedding-3-large")],
+    );
+    assert_eq!(
+        loaded.embedding_model.as_deref(),
+        Some("text-embedding-3-large")
+    );
+}
+
+#[test]
+fn a_missing_embedding_model_variable_is_a_startup_error() {
+    let error = load_error(
+        "litellm_settings:\n  agent_search_embedding_model: os.environ/EMBED_MODEL",
+        &[],
+    );
+    assert_eq!(error.category(), "missing_environment");
+    assert!(error.to_string().contains("EMBED_MODEL"), "{error}");
+}
+
+#[test]
 fn reads_both_health_timeouts_from_the_environment() {
     let loaded = settings(
         "litellm_settings: {}",

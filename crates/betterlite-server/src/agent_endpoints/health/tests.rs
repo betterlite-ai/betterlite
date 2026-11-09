@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use super::{
     AgentHealthError, AgentHealthResult, AgentHealthTransport, PooledHealthTransport,
@@ -46,15 +46,29 @@ fn settings(probe_seconds: f64, gather_seconds: f64) -> AgentSearchSettings {
 }
 
 struct FakeTransport {
-    status: u16,
+    answers: BTreeMap<String, u16>,
+    default_status: u16,
     failure: Option<String>,
-    calls: Mutex<Vec<String>>,
+    calls: Mutex<Vec<(String, Duration)>>,
 }
 
 impl FakeTransport {
     fn answering(status: u16) -> Self {
         Self {
-            status,
+            answers: BTreeMap::new(),
+            default_status: status,
+            failure: None,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn mapped(answers: &[(&str, u16)]) -> Self {
+        Self {
+            answers: answers
+                .iter()
+                .map(|(url, status)| ((*url).to_owned(), *status))
+                .collect(),
+            default_status: 500,
             failure: None,
             calls: Mutex::new(Vec::new()),
         }
@@ -62,23 +76,44 @@ impl FakeTransport {
 
     fn failing(message: &str) -> Self {
         Self {
-            status: 0,
+            answers: BTreeMap::new(),
+            default_status: 0,
             failure: Some(message.to_owned()),
             calls: Mutex::new(Vec::new()),
         }
     }
 
     fn probed(&self) -> Vec<String> {
-        self.calls.lock().unwrap().clone()
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(url, _timeout)| url.clone())
+            .collect()
+    }
+
+    fn timeouts(&self) -> Vec<Duration> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_url, timeout)| *timeout)
+            .collect()
     }
 }
 
 #[async_trait]
 impl AgentHealthTransport for FakeTransport {
-    async fn get_status(&self, url: &str, _timeout: Duration) -> Result<u16, AgentHealthError> {
-        self.calls.lock().unwrap().push(url.to_owned());
+    async fn get_status(&self, url: &str, timeout: Duration) -> Result<u16, AgentHealthError> {
+        self.calls.lock().unwrap().push((url.to_owned(), timeout));
         self.failure.as_ref().map_or_else(
-            || Ok(self.status),
+            || {
+                Ok(self
+                    .answers
+                    .get(url)
+                    .copied()
+                    .unwrap_or(self.default_status))
+            },
             |message| {
                 Err(AgentHealthError::Unreachable {
                     message: message.clone(),
@@ -194,12 +229,17 @@ async fn transport_errors_are_unhealthy_with_their_message() {
 
 #[tokio::test]
 async fn filter_returns_healthy_agents_then_url_less_agents_in_input_order() {
-    let transport = FakeTransport::failing("unreachable");
+    let transport = FakeTransport::mapped(&[
+        ("https://agent.example/two", 200),
+        ("https://agent.example/three", 503),
+        ("https://agent.example/five", 200),
+    ]);
     let agents = vec![
         agent("a1", None),
         agent("a2", Some("https://agent.example/two")),
-        agent("a3", None),
-        agent("a4", Some("")),
+        agent("a3", Some("https://agent.example/three")),
+        agent("a4", None),
+        agent("a5", Some("https://agent.example/five")),
     ];
     let healthy = filter_healthy_agents(agents, &transport, &settings(5.0, 30.0)).await;
     assert_eq!(
@@ -207,9 +247,25 @@ async fn filter_returns_healthy_agents_then_url_less_agents_in_input_order() {
             .iter()
             .map(|agent| agent.agent_id.as_str())
             .collect::<Vec<_>>(),
-        ["a1", "a3", "a4"]
+        ["a2", "a5", "a1", "a4"]
     );
-    assert_eq!(transport.probed(), ["https://agent.example/two"]);
+    assert_eq!(
+        transport.probed(),
+        [
+            "https://agent.example/two",
+            "https://agent.example/three",
+            "https://agent.example/five",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn filter_passes_the_configured_probe_timeout() {
+    let transport = FakeTransport::answering(200);
+    let agents = vec![agent("a1", Some("https://agent.example/one"))];
+    let healthy = filter_healthy_agents(agents, &transport, &settings(1.5, 30.0)).await;
+    assert_eq!(healthy.len(), 1);
+    assert_eq!(transport.timeouts(), [Duration::from_millis(1500)]);
 }
 
 #[tokio::test]
@@ -344,6 +400,36 @@ async fn production_transport_reports_the_status_without_a_body() {
         .await
         .unwrap();
     assert_eq!(status, 503);
+}
+
+#[tokio::test]
+async fn production_transport_times_out_when_the_server_never_answers() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let Ok((stream, _peer)) = listener.accept().await else {
+            return;
+        };
+        let _held = stream;
+        sleep(Duration::from_secs(30)).await;
+    });
+    let transport = PooledHealthTransport {
+        client: proxied_client(),
+    };
+    let outcome = timeout(
+        Duration::from_secs(5),
+        transport.get_status(
+            &format!("http://{address}/slow"),
+            Duration::from_millis(100),
+        ),
+    )
+    .await;
+    assert!(outcome.is_ok(), "the probe ignored its deadline");
+    assert!(matches!(
+        outcome.unwrap(),
+        Err(AgentHealthError::Request(_))
+    ));
 }
 
 #[tokio::test]

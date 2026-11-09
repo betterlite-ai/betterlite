@@ -509,6 +509,50 @@ async fn rank_agents_by_query_sets_search_score_in_rank_order() {
 }
 
 #[tokio::test]
+async fn rank_agents_by_query_keeps_the_shortest_score_text() {
+    let embedder = FixedEmbedder::mapped(&[
+        ("query", vec![1.0_f64, 0.0_f64]),
+        ("a1", vec![0.6_f64, 0.8_f64]),
+    ]);
+    let embedders = TestEmbedders::present(embedder);
+    let index = AgentSearchIndex::default();
+    let caller = caller();
+    let runtime = AgentSearchRuntime {
+        embedders: &embedders,
+        index: &index,
+        caller: &caller,
+    };
+    let ranked = rank_agents_by_query("query", &[agent("a1")], 5, Some("model"), runtime)
+        .await
+        .unwrap();
+    assert_eq!(
+        ranked[0].search_score,
+        Some(from_str::<Decimal>("0.6").unwrap())
+    );
+}
+
+#[tokio::test]
+async fn rank_agents_by_query_maps_a_non_finite_score_to_a_500() {
+    let embedder =
+        FixedEmbedder::mapped(&[("query", vec![1.0e200_f64]), ("a1", vec![1.0e200_f64])]);
+    let embedders = TestEmbedders::present(embedder);
+    let index = AgentSearchIndex::default();
+    let caller = caller();
+    let runtime = AgentSearchRuntime {
+        embedders: &embedders,
+        index: &index,
+        caller: &caller,
+    };
+    let error = rank_agents_by_query("query", &[agent("a1")], 5, Some("model"), runtime)
+        .await
+        .unwrap_err();
+    match error {
+        AgentSearchRouteError::Embedding { status_code, .. } => assert_eq!(status_code, 500),
+        AgentSearchRouteError::Http(_) => panic!("expected the embedding error"),
+    }
+}
+
+#[tokio::test]
 async fn rank_agents_by_query_maps_not_configured_to_a_400() {
     let embedders = TestEmbedders::missing();
     let index = AgentSearchIndex::default();
