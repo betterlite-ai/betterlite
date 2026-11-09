@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use super::literal::literal_json;
 use super::messages::to_dd_messages;
 use super::records::DdMessage;
-use super::values::{Object, as_list, as_object};
+use super::values::as_object;
 
 // The call types whose response carries a choices[0].message LiteLLM projects onto the span.
 const LLM_OBS_CALL_TYPES: [&str; 9] = [
@@ -42,14 +42,16 @@ pub fn response_messages(response: Option<&Json>, call_type: Option<&str>) -> Ve
     if !call_type.is_some_and(|name| LLM_OBS_CALL_TYPES.contains(&name)) {
         return Vec::new();
     }
-    let Some(message) = first_choice_message(fields) else {
+    let Some(message) = fields
+        .get("choices")
+        .and_then(|choices| match choices {
+            Json::List(items) => items.first(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
+        })
+        .and_then(as_object)
+        .and_then(|choice| choice.get("message"))
+    else {
         return Vec::new();
     };
     to_dd_messages(Some(&Json::List(vec![message.clone()])))
-}
-
-fn first_choice_message(response: &Object) -> Option<&Json> {
-    let choices = response.get("choices").and_then(as_list)?;
-    let first = choices.first().and_then(as_object)?;
-    first.get("message")
 }
