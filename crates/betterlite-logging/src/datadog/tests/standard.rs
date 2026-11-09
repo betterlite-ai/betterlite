@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::datadog::apm::NullTracer;
@@ -6,9 +7,11 @@ use crate::datadog::payloads::standard::standard_logging_to_datadog;
 use crate::datadog::payloads::status::DataDogStatus;
 use crate::exporter_options::truncation::{MAX_LOGGED_TEXT_CHARS, TRUNCATION_SUFFIX};
 use crate::fields::status::LoggingStatus;
+use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, MAX_DEPTH_MARKER};
 
 use super::support::{
-    default_environment, environment, field, json, message, standard_payload, tagged_payload,
+    default_environment, environment, field, json, message, nested_json, standard_payload,
+    tagged_payload,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -118,4 +121,62 @@ fn datadog_standard_logging_maps_request_tag_values(#[case] tag: &str, #[case] e
     )
     .unwrap();
     assert!(built.ddtags.contains(expected));
+}
+
+#[rstest]
+#[case::team_alias(Some("Team B"), None, None, "team:team_b")]
+#[case::user_api_key_team_id(None, Some("Team C"), None, "team:team_c")]
+#[case::team_id(None, None, Some("Team D"), "team:team_d")]
+#[case::team_alias_beats_team_id(Some("Team B"), None, Some("Team D"), "team:team_b")]
+fn datadog_standard_logging_team_tag_sources(
+    #[case] team_alias: Option<&str>,
+    #[case] user_api_key_team_id: Option<&str>,
+    #[case] team_id: Option<&str>,
+    #[case] expected: &str,
+) {
+    let mut payload = standard_payload();
+    payload.metadata.team_alias = team_alias.map(str::to_owned);
+    payload.metadata.user_api_key_team_id = user_api_key_team_id.map(str::to_owned);
+    payload.metadata.team_id = team_id.map(str::to_owned);
+    let built = standard_logging_to_datadog(
+        &payload,
+        DataDogStatus::Info,
+        &default_environment(),
+        &NullTracer,
+    )
+    .unwrap();
+    assert!(built.ddtags.ends_with(expected));
+}
+
+#[test]
+fn datadog_standard_logging_strips_nul_bytes() {
+    let mut fields = IndexMap::new();
+    fields.insert("a\0b".to_owned(), Json::Text("c\0d".to_owned()));
+    let mut payload = standard_payload();
+    payload.model = "m\0odel".to_owned();
+    payload.messages = Some(Json::Object(fields));
+    let built = standard_logging_to_datadog(
+        &payload,
+        DataDogStatus::Info,
+        &default_environment(),
+        &NullTracer,
+    )
+    .unwrap();
+    let body = message(&built);
+    assert_eq!(field(&body, "model"), &json(r#""model""#));
+    assert_eq!(field(&body, "messages"), &json(r#"{"ab": "cd"}"#));
+}
+
+#[test]
+fn datadog_standard_logging_marks_values_past_the_recursion_limit() {
+    let mut payload = standard_payload();
+    payload.messages = Some(nested_json(DEFAULT_MAX_RECURSE_DEPTH + 1));
+    let built = standard_logging_to_datadog(
+        &payload,
+        DataDogStatus::Info,
+        &default_environment(),
+        &NullTracer,
+    )
+    .unwrap();
+    assert!(built.message.contains(MAX_DEPTH_MARKER));
 }

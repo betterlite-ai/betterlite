@@ -1,12 +1,16 @@
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::datadog::apm::NullTracer;
 use crate::datadog::payloads::legacy::{LegacyLoggingKwargs, legacy_v1_logging_to_datadog};
 use crate::datadog::payloads::status::DataDogStatus;
+use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, MAX_DEPTH_MARKER};
 
-use super::support::{default_environment, default_kwargs, field, json, legacy_event, message};
+use super::support::{
+    default_environment, default_kwargs, field, json, legacy_event, message, nested_json,
+};
 
 const KWARGS: &str = r#"{
     "model": "gpt-4o",
@@ -149,6 +153,37 @@ fn datadog_legacy_v1_logging_cleans_metadata(#[case] metadata: &str, #[case] exp
     let response = json(r#"{"usage": {}}"#);
     let body = legacy_message(&kwargs, &response);
     assert_eq!(field(&body, "metadata"), &json(expected));
+}
+
+#[test]
+fn datadog_legacy_v1_logging_strips_nul_bytes() {
+    let mut messages = IndexMap::new();
+    messages.insert("a\0b".to_owned(), Json::Text("c\0d".to_owned()));
+    let mut kwargs = default_kwargs();
+    kwargs.model = "m\0odel".to_owned();
+    kwargs.messages = Json::Object(messages);
+    kwargs
+        .litellm_params
+        .metadata
+        .insert("k\0ey".to_owned(), Json::Text("v\0al".to_owned()));
+    let body = legacy_message(&kwargs, &json(r#"{"usage": {}}"#));
+    assert_eq!(field(&body, "model"), &json(r#""model""#));
+    assert_eq!(field(&body, "messages"), &json(r#"{"ab": "cd"}"#));
+    assert_eq!(field(&body, "metadata"), &json(r#"{"key": "val"}"#));
+}
+
+#[test]
+fn datadog_legacy_v1_logging_marks_values_past_the_recursion_limit() {
+    let mut kwargs = default_kwargs();
+    kwargs.messages = nested_json(DEFAULT_MAX_RECURSE_DEPTH + 1);
+    let response = json(r#"{"usage": {}}"#);
+    let built = legacy_v1_logging_to_datadog(
+        &legacy_event(&kwargs, &response),
+        &default_environment(),
+        &NullTracer,
+    )
+    .unwrap();
+    assert!(built.message.contains(MAX_DEPTH_MARKER));
 }
 
 #[rstest]

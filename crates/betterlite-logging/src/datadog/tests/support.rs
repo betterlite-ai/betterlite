@@ -110,6 +110,14 @@ pub(crate) fn default_kwargs() -> LegacyLoggingKwargs {
     serde_json::from_str("{}").unwrap()
 }
 
+pub(crate) fn nested_json(depth: usize) -> Json {
+    let mut value = Json::Text("deep".to_owned());
+    for _ in 0..depth {
+        value = Json::List(vec![value]);
+    }
+    value
+}
+
 pub(crate) fn legacy_event<'event>(
     kwargs: &'event LegacyLoggingKwargs,
     response_obj: &'event Json,
