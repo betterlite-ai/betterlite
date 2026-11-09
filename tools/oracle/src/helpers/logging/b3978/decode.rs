@@ -117,11 +117,17 @@ pub(super) fn inputs_view(inputs: &GuardrailInputs) -> Value {
     })
 }
 
-const fn stash_status(data: &RequestData) -> &'static str {
+fn stash_status(data: &RequestData, logging_obj: Option<&Arc<LoggingObject>>) -> &'static str {
     match &data.logging_obj {
         LoggingObjectStash::Missing => "missing",
         LoggingObjectStash::Present(None) => "null",
-        LoggingObjectStash::Present(Some(_)) => "same",
+        LoggingObjectStash::Present(Some(stashed)) => {
+            if logging_obj.is_some_and(|present| Arc::ptr_eq(stashed, present)) {
+                "same"
+            } else {
+                "other"
+            }
+        }
     }
 }
 
@@ -157,7 +163,7 @@ pub(super) fn outcome_result(
         "outcome": outcome_label,
         "inputs": inputs,
         "block": block,
-        "stash": stash_status(request_data),
+        "stash": stash_status(request_data, logging_obj),
         "blocked": blocked_flag(logging_obj),
     })
 }
