@@ -35,8 +35,8 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let configured = lookup.lookup(LOCAL_MODEL_COST_MAP_ENV).unwrap_or_default();
-        let local = betterlite_env::flag(LOCAL_MODEL_COST_MAP_ENV, &configured)?.unwrap_or(false);
+        let local_value = lookup.lookup(LOCAL_MODEL_COST_MAP_ENV).unwrap_or_default();
+        let local = betterlite_env::flag(LOCAL_MODEL_COST_MAP_ENV, &local_value)?.unwrap_or(false);
         let url = match lookup.lookup(MODEL_COST_MAP_URL_ENV) {
             Some(configured) if !configured.is_empty() => configured,
             _ => DEFAULT_MODEL_COST_MAP_URL.to_owned(),
