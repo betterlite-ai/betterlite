@@ -1,0 +1,81 @@
+kind: probe
+name: calibration-clips-endpoints
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "1.0", intercept: "0.0"}
+        reply: {kind: text, content: '{"crux":"clipped floor","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "1.0", intercept: "0.0"}
+        reply: {kind: text, content: '{"crux":"clipped ceiling","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":1}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "1.0", intercept: "0.0"}
+        reply: {kind: text, content: '{"crux":"unclipped middle","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "0.0", intercept: "0.0"}
+        reply: {kind: text, content: '{"crux":"flat calibration","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.25}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "20.0", intercept: "-20.0"}
+        reply: {kind: text, content: '{"crux":"steep floor","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: v1, slope: "20.0", intercept: "-20.0"}
+        reply: {kind: text, content: '{"crux":"steep ceiling","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":1}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: "0.5"
+          calibration: {version: broken, slope: "-1.0", intercept: "0.0"}
+        reply: {kind: text, content: '{"crux":"invalid calibration","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.4}'}
+compare: {ignore: []}

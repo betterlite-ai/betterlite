@@ -8,6 +8,7 @@ my $file = shift;
 open my $in, '<', $file or die "$file: $!\n";
 my $text = do { local $/; <$in> };
 close $in;
+$text =~ s{^\[\[(test|bin)\]\]\n<<<<<<< HEAD\n((?:(?:name|path) = [^\n]*\n)+)=======\n((?:(?:name|path) = [^\n]*\n)+)>>>>>>> origin/main\n}{[[$1]]\n$3\n[[$1]]\n$2}mg;
 $text =~ s{<<<<<<< HEAD\n(.*?)=======\n(.*?)>>>>>>> origin/main\n}{resolve($1, $2)}sge;
 $text = union_bins($file, $text) if $file =~ m{(^|/)fuzz/Cargo\.toml$} && $text =~ /^<<<<<<< /m;
 open my $out, '>', $file or die "$file: $!\n";
