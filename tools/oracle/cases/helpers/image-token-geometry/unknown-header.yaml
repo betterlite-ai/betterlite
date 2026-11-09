@@ -1,0 +1,17 @@
+kind: helper
+name: image-token-geometry-unknown-header
+call:
+  image_tokens:
+    settings:
+      default_width: 800
+      default_height: 600
+    calls:
+      - function: get_image_type
+        data: "data:application/octet-stream;base64,bm90IGFuIGltYWdlIGF0IGFsbA=="
+      - function: get_image_dimensions
+        data: "data:application/octet-stream;base64,bm90IGFuIGltYWdlIGF0IGFsbA=="
+      - function: calculate_img_tokens
+        data: "data:application/octet-stream;base64,bm90IGFuIGltYWdlIGF0IGFsbA=="
+        mode: high
+env: {}
+compare: {ignore: []}
