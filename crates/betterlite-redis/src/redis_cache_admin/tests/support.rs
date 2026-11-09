@@ -20,7 +20,7 @@ use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::store::RedisClientStore;
 use crate::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
 use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
-use crate::redis_live_client::tests::fake_server::FakeServer;
+use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::redis_live_client::{LiveClientError, LiveClientFactory};
 
 pub(crate) mod cluster;
@@ -324,6 +324,13 @@ impl AsyncRedisCommands for ScriptedPing {
     ) -> impl Future<Output = Result<Self::Reply, Self::Error>> + Send {
         ready(Err(self.reject()))
     }
+}
+
+// a fresh connection sends CLIENT SETINFO twice before the first command the test scripts
+pub(crate) fn script_after_connection_setup(server: &FakeServer, name: &str, reply: Reply) {
+    server.script(name, reply.clone());
+    server.script(name, reply.clone());
+    server.script(name, reply);
 }
 
 pub(crate) async fn wait_for_commands(server: &FakeServer, name: &str, count: usize) {

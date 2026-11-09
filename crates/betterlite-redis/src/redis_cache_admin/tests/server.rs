@@ -1,5 +1,5 @@
 use super::support::cluster::{cluster_pair, cluster_settings};
-use super::support::{Probe, direct_settings, probe};
+use super::support::{Probe, direct_settings, probe, script_after_connection_setup};
 use crate::redis_cache_admin::info_parse::InfoValue;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
@@ -18,7 +18,7 @@ fn standalone(server: &FakeServer) -> Probe {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn client_list_parses_the_sync_reply() {
     let server = FakeServer::start().await;
-    server.script("CLIENT", Reply::Bulk(CLIENT_LIST.to_owned()));
+    script_after_connection_setup(&server, "CLIENT", Reply::Bulk(CLIENT_LIST.to_owned()));
     let fixture = standalone(&server);
     let clients = fixture.admin.client_list().expect("a client list");
     assert_eq!(clients.len(), 2);
@@ -27,14 +27,20 @@ async fn client_list_parses_the_sync_reply() {
         Some("127.0.0.1:56789")
     );
     assert_eq!(clients[1].get("cmd").map(String::as_str), Some("ping"));
-    assert_eq!(server.commands_named("CLIENT").len(), 1);
+    let lists = server
+        .commands_named("CLIENT")
+        .into_iter()
+        .filter(|command| command.args.get(1).map(String::as_str) == Some("LIST"))
+        .count();
+    assert_eq!(lists, 1);
     assert!(fixture.gate.enters().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn client_list_returns_the_server_error() {
     let server = FakeServer::start().await;
-    server.script(
+    script_after_connection_setup(
+        &server,
         "CLIENT",
         Reply::Error("ERR client list is restricted".to_owned()),
     );
