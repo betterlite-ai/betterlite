@@ -34,7 +34,6 @@ enum StreamLine {
     Object(ObjectOnly<StreamObject>),
     Null(()),
     Flag(bool),
-    Integer(i64),
     Float(f64),
     Text(String),
     List(Vec<IgnoredAny>),
@@ -56,7 +55,7 @@ pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
         .unwrap_or(line);
     let parsed = match serde_json::from_str::<StreamLine>(stripped) {
         Ok(StreamLine::Object(ObjectOnly { inner })) => inner,
-        Ok(StreamLine::Null(()) | StreamLine::Flag(false) | StreamLine::Integer(0)) => {
+        Ok(StreamLine::Null(()) | StreamLine::Flag(false)) => {
             return Ok(StreamChunk::default());
         }
         Ok(StreamLine::Float(number)) if number.classify() == FpCategory::Zero => {
