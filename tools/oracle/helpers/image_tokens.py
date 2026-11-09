@@ -94,18 +94,35 @@ def _decoded(data: Json) -> bytes:
     return base64.b64decode(encoded)
 
 
+def _count_options(call: dict[str, Json]) -> dict[str, Json]:
+    options: dict[str, Json] = {}
+    mode = call.get("mode")
+    if mode is not None:
+        options["mode"] = _mode(mode)
+    base_tokens = call.get("base_tokens")
+    if base_tokens is not None:
+        options["base_tokens"] = _integer(base_tokens, "base_tokens")
+    use_default = call.get("use_default_image_token_count")
+    if use_default is not None:
+        options["use_default_image_token_count"] = _boolean(
+            use_default, "use_default_image_token_count"
+        )
+    return options
+
+
+def _upper_bound(call: dict[str, Json]) -> Json:
+    base_tokens = call.get("base_tokens")
+    if base_tokens is None:
+        return high_detail_image_token_upper_bound()
+    return high_detail_image_token_upper_bound(_integer(base_tokens, "base_tokens"))
+
+
 def _call(call: dict[str, Json]) -> Json:
     function = call.get("function")
     match function:
         case "calculate_img_tokens":
             return calculate_img_tokens(
-                data=_string(call.get("data"), "data"),
-                mode=_mode(call.get("mode")),
-                base_tokens=_integer(call.get("base_tokens", 85), "base_tokens"),
-                use_default_image_token_count=_boolean(
-                    call.get("use_default_image_token_count", False),
-                    "use_default_image_token_count",
-                ),
+                data=_string(call.get("data"), "data"), **_count_options(call)
             )
         case "resize_image_high_res":
             width, height = resize_image_high_res(
@@ -119,9 +136,7 @@ def _call(call: dict[str, Json]) -> Json:
                 _integer(call.get("resized_height"), "resized_height"),
             )
         case "high_detail_image_token_upper_bound":
-            return high_detail_image_token_upper_bound(
-                _integer(call.get("base_tokens", 85), "base_tokens"),
-            )
+            return _upper_bound(call)
         case "get_image_type":
             return get_image_type(_decoded(call.get("data")))
         case "get_image_dimensions":

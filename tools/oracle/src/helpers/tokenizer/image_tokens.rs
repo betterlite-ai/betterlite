@@ -6,7 +6,7 @@ use betterlite_tokenizer::image::geometry::{
 };
 use betterlite_tokenizer::image::header::{ImageType, image_type};
 use betterlite_tokenizer::image::settings::Settings;
-use betterlite_tokenizer::image::tokens::{Mode, calculate_img_tokens};
+use betterlite_tokenizer::image::tokens::{DEFAULT_BASE_TOKENS, Mode, calculate_img_tokens};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -25,12 +25,9 @@ pub(crate) struct Input {
 enum Call {
     CalculateImgTokens {
         data: String,
-        #[serde(default)]
-        mode: Mode,
-        #[serde(default = "default_base_tokens")]
-        base_tokens: u64,
-        #[serde(default)]
-        use_default_image_token_count: bool,
+        mode: Option<Mode>,
+        base_tokens: Option<u64>,
+        use_default_image_token_count: Option<bool>,
     },
     ResizeImageHighRes {
         width: u32,
@@ -41,8 +38,7 @@ enum Call {
         resized_height: u32,
     },
     HighDetailImageTokenUpperBound {
-        #[serde(default = "default_base_tokens")]
-        base_tokens: u64,
+        base_tokens: Option<u64>,
     },
     GetImageType {
         data: String,
@@ -50,10 +46,6 @@ enum Call {
     GetImageDimensions {
         data: String,
     },
-}
-
-const fn default_base_tokens() -> u64 {
-    85
 }
 
 pub(crate) struct Op;
@@ -100,7 +92,8 @@ fn run_call(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>>
         }
         Call::HighDetailImageTokenUpperBound { base_tokens } => {
             let tokens =
-                high_detail_upper_bound(*base_tokens, settings).map_err(|error| failure(&error))?;
+                high_detail_upper_bound(base_tokens.unwrap_or(DEFAULT_BASE_TOKENS), settings)
+                    .map_err(|error| failure(&error))?;
             Ok(json!(tokens))
         }
         Call::GetImageType { data } => image_type_of(data),
@@ -123,16 +116,16 @@ fn dimensions_of(data: &str, settings: &Settings) -> Result<Value, Box<HelperErr
 
 fn count_img_tokens(
     data: &str,
-    mode: Mode,
-    base_tokens: u64,
-    use_default_image_token_count: bool,
+    mode: Option<Mode>,
+    base_tokens: Option<u64>,
+    use_default_image_token_count: Option<bool>,
     settings: &Settings,
 ) -> Result<Value, Box<HelperError>> {
     let tokens = calculate_img_tokens(
         data,
-        mode,
-        base_tokens,
-        use_default_image_token_count,
+        mode.unwrap_or_default(),
+        base_tokens.unwrap_or(DEFAULT_BASE_TOKENS),
+        use_default_image_token_count.unwrap_or_default(),
         settings,
     )
     .map_err(|error| failure(&error))?;
