@@ -153,10 +153,14 @@ def _verbose(input_value: HelperInput) -> Json:
     log_lines = StringIO()
     with patch.dict(os.environ, {"WORKER_CONFIG": worker_config}), redirect_stdout(log_lines):
         init_verbose_loggers()
-    return {
+    levels: dict[str, Json] = {
         name: None if logger.level == _BASELINE_LEVEL else logging.getLevelName(logger.level)
         for name, logger in loggers.items()
     }
+    # DEBUG left on would print LiteLLM's shutdown log lines to stdout after the JSON answer
+    for logger in loggers.values():
+        logger.setLevel(_BASELINE_LEVEL)
+    return levels
 
 
 HANDLERS: dict[str, Callable[[HelperInput], Json]] = {
