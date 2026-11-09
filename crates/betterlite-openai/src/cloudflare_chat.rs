@@ -1,6 +1,8 @@
 pub mod error;
 mod tests;
 
+use secrecy::{ExposeSecret as _, SecretString};
+
 use crate::openai_base_config::Headers;
 use error::CloudflareChatError;
 
@@ -49,10 +51,13 @@ fn account_base(account_id: Option<&str>) -> Result<String, CloudflareChatError>
 
 pub fn validate_environment(
     mut headers: Headers,
-    api_key: Option<&str>,
+    api_key: Option<&SecretString>,
 ) -> Result<Headers, CloudflareChatError> {
     let key = api_key.ok_or(CloudflareChatError::MissingApiKey)?;
-    headers.insert(AUTHORIZATION.to_owned(), format!("Bearer {key}"));
+    headers.insert(
+        AUTHORIZATION.to_owned(),
+        format!("Bearer {}", key.expose_secret()),
+    );
     if !headers.contains_key(LOWER_CONTENT_TYPE) && !headers.contains_key(CONTENT_TYPE) {
         headers.insert(CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned());
     }

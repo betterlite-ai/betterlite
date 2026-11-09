@@ -5,6 +5,7 @@ use betterlite_openai::cloudflare_chat::{complete_url, validate_environment};
 use betterlite_openai::cloudflare_decisions::CloudflareDecisionsConfig;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::error::ProviderError;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -94,7 +95,8 @@ fn chat_url(call: &ChatUrlCall) -> Value {
 }
 
 fn chat_headers(call: &ChatHeadersCall) -> Value {
-    match validate_environment(call.headers.clone(), call.api_key.as_deref()) {
+    let key = call.api_key.as_deref().map(SecretString::from);
+    match validate_environment(call.headers.clone(), key.as_ref()) {
         Ok(headers) => json!({"headers": headers}),
         Err(error) => json!({"error": error.to_string()}),
     }

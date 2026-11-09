@@ -123,6 +123,10 @@ fn complete_url_appends_the_model(
     r#"{"answers":{"q":{"type":"noul","noul":1}},"result":{"answers":{}}}"#,
     r#"{"answers":{"q":{"type":"noul","noul":1}},"result":{"answers":{}}}"#
 )]
+#[case::answers_null_blocks_a_result(
+    r#"{"answers":null,"result":{"answers":{}}}"#,
+    r#"{"answers":null,"result":{"answers":{}}}"#
+)]
 #[case::result_object(
     r#"{"result":{"answers":{"q":{"type":"noul","noul":1}}},"id":"reply-1"}"#,
     r#"{"answers":{"q":{"type":"noul","noul":1}}}"#

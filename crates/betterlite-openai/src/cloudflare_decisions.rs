@@ -1,7 +1,8 @@
 mod tests;
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
-use serde_json::Value;
 use serde_json::value::RawValue;
 
 use crate::decisions::transformation::provider_config::DecisionsProviderConfig;
@@ -29,10 +30,12 @@ impl CloudflareDecisionsConfig {
     }
 }
 
+// a borrowed key map keeps every key, so a null answers value still marks the key as present
 #[derive(Deserialize)]
-struct ResultEnvelope<'call> {
+#[serde(transparent)]
+struct ReplyEnvelope<'call> {
     #[serde(borrow)]
-    result: Option<&'call RawValue>,
+    fields: BTreeMap<String, &'call RawValue>,
 }
 
 impl DecisionsProviderConfig for CloudflareDecisionsConfig {
@@ -75,15 +78,19 @@ impl DecisionsProviderConfig for CloudflareDecisionsConfig {
     }
 
     fn unwrap_response<'call>(&self, payload: &'call [u8]) -> &'call [u8] {
-        let Ok(Value::Object(object)) = serde_json::from_slice(payload) else {
+        let Ok(envelope) = serde_json::from_slice::<ReplyEnvelope<'call>>(payload) else {
             return payload;
         };
-        if object.contains_key("answers") || !object.get("result").is_some_and(Value::is_object) {
+        if envelope.fields.contains_key("answers") {
             return payload;
         }
-        serde_json::from_slice::<ResultEnvelope<'call>>(payload)
-            .ok()
-            .and_then(|envelope| envelope.result)
-            .map_or(payload, |result| result.get().as_bytes())
+        let Some(result) = envelope.fields.get("result") else {
+            return payload;
+        };
+        // a JSON object's raw text begins with '{'; arrays, strings, numbers and null do not
+        if !result.get().starts_with('{') {
+            return payload;
+        }
+        result.get().as_bytes()
     }
 }

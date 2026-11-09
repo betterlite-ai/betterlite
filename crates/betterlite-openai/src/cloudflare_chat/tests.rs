@@ -4,6 +4,7 @@ use std::fs::read_to_string;
 use std::sync::Arc;
 
 use rstest::rstest;
+use secrecy::SecretString;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
@@ -199,8 +200,9 @@ fn validate_environment_matches_the_header_rule(
     #[case] headers: &[(&str, &str)],
     #[case] expected: &[(&str, &str)],
 ) {
+    let key = api_key.map(SecretString::from);
     assert_eq!(
-        validate_environment(headers_of(headers), api_key).unwrap(),
+        validate_environment(headers_of(headers), key.as_ref()).unwrap(),
         headers_of(expected)
     );
 }
