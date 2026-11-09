@@ -1,0 +1,6 @@
+services:
+  lens-worker:
+    build:
+      context: ../..
+      dockerfile: packaging/lens/Dockerfile
+    image: betterlite-lens-worker:local

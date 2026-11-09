@@ -1,0 +1,35 @@
+kind: helper
+name: ragflow-create-metadata-fields
+call:
+  b7814:
+    calls:
+      - call: create_request
+        input:
+          optional_params: {name: notes}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params: {name: notes, metadata: {}}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params:
+            name: notes
+            file_ids: [file_a]
+            metadata:
+              avatar: a
+              description: d
+              embedding_model: BAAI/bge-large-zh-v1.5@BAAI
+              permission: me
+              parser_config: {chunk_token_num: 512, delimiter: "\n"}
+              parse_type: 2
+              unknown: dropped
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params:
+            name: notes
+            metadata: {description: null, avatar: a}
+          api_base: "http://localhost:9380/api/v1/datasets"
+env: {}
+compare: {ignore: []}
