@@ -36,15 +36,10 @@ fn first_object(content: &str) -> Option<&str> {
 }
 
 fn object_at<'input>(content: &'input str, masked: &str, start: usize) -> Option<&'input str> {
-    let tail = masked.get(start..)?;
-    let end = raw_value_end(tail)?;
-    content.get(start..start.saturating_add(end))
-}
-
-fn raw_value_end(tail: &str) -> Option<usize> {
-    let mut values = Deserializer::from_str(tail).into_iter::<&RawValue>();
+    let mut values = Deserializer::from_str(masked.get(start..)?).into_iter::<&RawValue>();
     values.next()?.ok()?;
-    Some(values.byte_offset())
+    let end = values.byte_offset();
+    content.get(start..start.saturating_add(end))
 }
 
 fn mask_constants(content: &str) -> String {

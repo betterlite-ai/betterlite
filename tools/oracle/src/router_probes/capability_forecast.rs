@@ -44,11 +44,6 @@ pub(crate) fn run(
             let reply = require(payload.reply.as_ref(), "reply")?;
             fields.route = Some(evaluate(config, reply)?);
         }
-        Function::Calibrate => {
-            let calibration = require(payload.calibration.as_ref(), "calibration")?;
-            let probabilities = require(payload.probabilities.as_ref(), "probabilities")?;
-            fields.calibrated = calibrated(calibration, probabilities)?;
-        }
         Function::ValidateConfig => {
             let config = require(payload.config.as_ref(), "config")?;
             fields.config = Some(validate_config(config)?);
@@ -162,37 +157,6 @@ fn evaluate(config: &ConfigInput, reply: &Reply) -> Result<RouteOutcome, Operati
         capability_boundary: routed.forecast.verdict.capability_boundary,
         calibration_version: routed.forecast.calibration_version,
     })
-}
-
-fn calibrated(
-    calibration: &CalibrationInput,
-    probabilities: &[String],
-) -> Result<Option<Vec<String>>, OperationError> {
-    let draft = Config {
-        efficient_tier: "SIMPLE".to_owned(),
-        capable_tier: "REASONING".to_owned(),
-        base_threshold: 0.5_f64,
-        threshold_step: 0.0_f64,
-        max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-        calibration: Some(calibration_config(calibration)?),
-        response_format: ResponseFormat::JsonSchema,
-    };
-    let Ok(checked) = draft.validate() else {
-        return Ok(None);
-    };
-    let mut values = Vec::with_capacity(probabilities.len());
-    for probability in probabilities {
-        let reply = format!(
-            r#"{{"crux":"x","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":{probability}}}"#
-        );
-        let Ok(routed) = route(&checked, reply.as_bytes()) else {
-            return Err(OperationError::InvalidRequest {
-                message: format!("probability is not a number in [0, 1]: {probability}"),
-            });
-        };
-        values.push(format!("{:.6}", routed.forecast.p_solve));
-    }
-    Ok(Some(values))
 }
 
 fn validate_config(input: &ConfigInput) -> Result<ConfigOutcome, OperationError> {

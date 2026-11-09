@@ -3,7 +3,6 @@ from typing import Annotated, Final, Literal, TypeVar
 
 from litellm.router_strategy.complexity_router.capability_classifier import (
     CapabilityClassifierForecast,
-    CapabilityClassifierVerdict,
     capability_classifier_response_format,
     capability_classifier_system_prompt,
     parse_capability_classifier_verdict,
@@ -20,7 +19,7 @@ from probes.protocol import Operation, ProbeError, Strict
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 Mode = Literal["json_schema", "json_object"]
-Function = Literal["response_format", "system_prompt", "evaluate", "calibrate", "validate_config"]
+Function = Literal["response_format", "system_prompt", "evaluate", "validate_config"]
 T = TypeVar("T")
 
 MAX_PADDED_BYTES: Final = 2_097_152
@@ -103,7 +102,6 @@ class Output(Strict):
     system_prompt: str | None = None
     route: RouteOutcome | None = None
     config: ConfigOutcome | None = None
-    calibrated: list[str] | None = None
 
 
 def require(value: T | None, name: str) -> T:
@@ -195,31 +193,6 @@ def evaluate(config: ConfigInput, reply: Reply) -> RouteOutcome:
     return route_outcome(checked, reply_content(reply))
 
 
-def calibrated_values(calibration: CapabilityCalibrationConfig, probabilities: list[str]) -> list[str]:
-    values: list[str] = []
-    for probability in probabilities:
-        raw = parse_float(probability, "probability")
-        try:
-            verdict = CapabilityClassifierVerdict(
-                crux="x",
-                primary_rule="SUP-1",
-                capability_boundary="supported",
-                p_solve=raw,
-            )
-        except ValidationError as error:
-            raise ProbeError("invalid_request", f"probability is not in [0, 1]: {probability}") from error
-        values.append(f"{calibration.calibrate(verdict.p_solve):.6f}")
-    return values
-
-
-def calibrate(calibration: CalibrationInput, probabilities: list[str]) -> list[str] | None:
-    try:
-        model = calibration_model(calibration)
-    except ValidationError:
-        return None
-    return calibrated_values(model, probabilities)
-
-
 def validate(config: ConfigInput) -> ConfigOutcome:
     try:
         checked = capability_config(config)
@@ -244,7 +217,6 @@ class CapabilityForecast(Operation):
     reply: Reply | None = None
     config: ConfigInput | None = None
     calibration: CalibrationInput | None = None
-    probabilities: list[str] | None = None
 
     @override
     def run(self) -> Output:
@@ -257,9 +229,5 @@ class CapabilityForecast(Operation):
                 )
             case "evaluate":
                 return Output(route=evaluate(require(self.config, "config"), require(self.reply, "reply")))
-            case "calibrate":
-                calibration = require(self.calibration, "calibration")
-                probabilities = require(self.probabilities, "probabilities")
-                return Output(calibrated=calibrate(calibration, probabilities))
             case "validate_config":
                 return Output(config=validate(require(self.config, "config")))

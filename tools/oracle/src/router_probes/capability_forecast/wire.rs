@@ -14,8 +14,6 @@ pub(super) struct Payload {
     pub(super) config: Option<ConfigInput>,
     #[serde(default)]
     pub(super) calibration: Option<CalibrationInput>,
-    #[serde(default)]
-    pub(super) probabilities: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,7 +22,6 @@ pub(super) enum Function {
     ResponseFormat,
     SystemPrompt,
     Evaluate,
-    Calibrate,
     ValidateConfig,
 }
 
@@ -78,7 +75,6 @@ pub(super) struct Fields {
     pub(super) system_prompt: Option<String>,
     pub(super) route: Option<RouteOutcome>,
     pub(super) config: Option<ConfigOutcome>,
-    pub(super) calibrated: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
