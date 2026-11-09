@@ -52,6 +52,7 @@ betterlite-router = { path = "../../crates/betterlite-router" }
 betterlite-sdk = { path = "../../crates/betterlite-sdk" }
 betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
+betterlite-semantic = { path = "../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }

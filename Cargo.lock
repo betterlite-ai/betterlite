@@ -2001,6 +2001,7 @@ dependencies = [
  "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-semantic",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
