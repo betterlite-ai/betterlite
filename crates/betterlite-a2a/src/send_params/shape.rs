@@ -21,6 +21,12 @@ const CONFIG_ALIASES: &[(&str, &str)] = &[
     ),
     ("pushNotificationConfig", "push_notification_config"),
 ];
+const PUSH_CONFIG_KEYS: &[&str] = &[
+    "taskPushNotificationConfig",
+    "task_push_notification_config",
+    "pushNotificationConfig",
+    "push_notification_config",
+];
 #[derive(Clone, Copy)]
 enum Record {
     Params,
@@ -118,7 +124,37 @@ fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> 
             }
             Ok(())
         }
-        Record::Configuration | Record::File => Ok(()),
+        Record::Configuration => {
+            normalize_push_config(value);
+            Ok(())
+        }
+        Record::File => Ok(()),
+    }
+}
+
+// each push config key belongs to one path, so an array there must fail only the path that reads it
+fn normalize_push_config(value: &mut AgentJson) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    for name in PUSH_CONFIG_KEYS {
+        let Some(push) = fields.get_mut(*name) else {
+            continue;
+        };
+        reject_array(push);
+        let AgentJson::Object(push_fields) = push else {
+            continue;
+        };
+        if let Some(authentication) = push_fields.get_mut("authentication") {
+            reject_array(authentication);
+        }
+    }
+}
+
+// a JSON array is not a record, and serde's derived structs would read it by position
+fn reject_array(value: &mut AgentJson) {
+    if value.is_array() {
+        *value = AgentJson::Bool(false);
     }
 }
 

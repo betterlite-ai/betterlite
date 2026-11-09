@@ -283,6 +283,26 @@ fn json(text: &str) -> AgentJson {
         r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
     )
 )]
+#[case::v03_push_config_array(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"pushNotificationConfig": ["https://x"]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
+    )
+)]
+#[case::v03_push_config_authentication_array(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"pushNotificationConfig": {"url": "https://x", "authentication": [["Bearer"]]}}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
+    )
+)]
+#[case::v10_task_push_config_array(
+    r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi"}]}, "configuration": {"taskPushNotificationConfig": ["https://x"]}}"#,
+    None
+)]
+#[case::v10_task_push_config_authentication_array(
+    r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi"}]}, "configuration": {"taskPushNotificationConfig": {"url": "https://x", "authentication": ["Bearer"]}}}"#,
+    None
+)]
 #[case::v10_part_ignores_non_object_file(
     r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi", "file": "x"}]}}"#,
     Some(
