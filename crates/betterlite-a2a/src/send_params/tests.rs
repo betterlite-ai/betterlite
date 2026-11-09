@@ -301,8 +301,18 @@ fn json(text: &str) -> AgentJson {
         r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
     )
 )]
+#[case::v03_push_config_snake_case_array(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"push_notification_config": ["https://x"]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
+    )
+)]
 #[case::v10_task_push_config_array(
     r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi"}]}, "configuration": {"taskPushNotificationConfig": ["https://x"]}}"#,
+    None
+)]
+#[case::v10_task_push_config_snake_case_array(
+    r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi"}]}, "configuration": {"task_push_notification_config": ["https://x"]}}"#,
     None
 )]
 #[case::v10_task_push_config_authentication_array(
