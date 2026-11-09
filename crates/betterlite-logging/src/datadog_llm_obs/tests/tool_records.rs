@@ -93,7 +93,7 @@ fn the_meta_record_matches_the_datadog_schema() {
         concat!(
             r#"{"kind":"llm","input":{"messages":[{"input":"hi"}]},"#,
             r#""output":{"messages":[{"role":"assistant","content":"done"}]},"metadata":{},"#,
-            r#""error":{"message":"boom","type":"ValueError"},"#,
+            r#""error":{"message":"boom","stack":null,"type":"ValueError"},"#,
             r#""tool_definitions":[{"name":"t","description":"d"}]}"#
         )
     );
@@ -188,5 +188,5 @@ fn an_empty_metadata_map_is_kept_when_it_is_present() {
         error: None,
         tool_definitions: Vec::new(),
     };
-    assert_eq!(serialized(&meta), r#"{"metadata":{}}"#);
+    assert_eq!(serialized(&meta), r#"{"metadata":{},"error":null}"#);
 }
