@@ -37,19 +37,29 @@ pub fn decode_metadata_document(bytes: &[u8]) -> Result<MetadataDocument, Docume
         return Err(DocumentError::NotObject);
     };
     Ok(MetadataDocument {
-        authorization_servers: servers(fields.get("authorization_servers"))?,
-        scopes_supported: scopes_value(fields.get("scopes_supported"), "scopes_supported")?,
-        scopes: scopes_value(fields.get("scopes"), "scopes")?,
+        authorization_servers: field(
+            fields.get("authorization_servers"),
+            "authorization_servers",
+            entries,
+        )?,
+        scopes_supported: field(
+            fields.get("scopes_supported"),
+            "scopes_supported",
+            scopes_entries,
+        )?,
+        scopes: field(fields.get("scopes"), "scopes", scopes_entries)?,
         resource: fields.get("resource").cloned(),
         issuer: fields.get("issuer").cloned(),
-        authorization_endpoint: text_field(
+        authorization_endpoint: field(
             fields.get("authorization_endpoint"),
             "authorization_endpoint",
+            text_entry,
         )?,
-        token_endpoint: text_field(fields.get("token_endpoint"), "token_endpoint")?,
-        registration_endpoint: text_field(
+        token_endpoint: field(fields.get("token_endpoint"), "token_endpoint", text_entry)?,
+        registration_endpoint: field(
             fields.get("registration_endpoint"),
             "registration_endpoint",
+            text_entry,
         )?,
     })
 }
@@ -78,41 +88,40 @@ pub fn document_text(value: Option<&JsonValue>) -> Option<&str> {
     }
 }
 
-fn servers(value: Option<&JsonValue>) -> Result<Option<Vec<JsonValue>>, DocumentError> {
+fn field<T, C>(
+    value: Option<&JsonValue>,
+    name: &'static str,
+    convert: C,
+) -> Result<Option<T>, DocumentError>
+where
+    C: FnOnce(&JsonValue) -> Option<T>,
+{
     match value {
         None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Array(entries)) => Ok(Some(entries.clone())),
-        Some(
-            JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
-        ) => Err(DocumentError::Field {
-            field: "authorization_servers",
-        }),
+        Some(inner) => convert(inner)
+            .map(Some)
+            .ok_or(DocumentError::Field { field: name }),
     }
 }
 
-fn scopes_value(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<ScopesValue>, DocumentError> {
+fn entries(value: &JsonValue) -> Option<Vec<JsonValue>> {
+    if let JsonValue::Array(values) = value {
+        return Some(values.clone());
+    }
+    None
+}
+
+fn scopes_entries(value: &JsonValue) -> Option<ScopesValue> {
     match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::String(text)) => Ok(Some(ScopesValue::Text(text.clone()))),
-        Some(JsonValue::Array(entries)) => Ok(Some(ScopesValue::List(entries.clone()))),
-        Some(JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_)) => {
-            Err(DocumentError::Field { field })
-        }
+        JsonValue::String(text) => Some(ScopesValue::Text(text.clone())),
+        JsonValue::Array(values) => Some(ScopesValue::List(values.clone())),
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_) => None,
     }
 }
 
-fn text_field(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<String>, DocumentError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::String(text)) => Ok(Some(text.clone())),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(DocumentError::Field { field }),
+fn text_entry(value: &JsonValue) -> Option<String> {
+    if let JsonValue::String(text) = value {
+        return Some(text.clone());
     }
+    None
 }

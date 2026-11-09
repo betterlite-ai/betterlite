@@ -1,5 +1,4 @@
 use crate::oauth_resource::python_url::{self, ParsedUrl};
-use crate::oauth_resource::resource_identity::redact_mcp_resource_url;
 use crate::server_oauth::basics::blank_to_none;
 use crate::server_oauth::issuer::issuer_matches;
 use crate::server_record::MCPOAuthMetadata;
@@ -7,7 +6,7 @@ use crate::server_record::MCPOAuthMetadata;
 use super::document::{MetadataDocument, document_scopes, document_text};
 use super::fetch::{MetadataFetcher, fetch_oauth_discovery_url};
 use super::outcome::DiscoveryStatus;
-use super::redaction::UNPARSABLE_URL;
+use super::redaction::redacted_origin;
 use super::settings::DiscoverySettings;
 
 pub const AZURE_ENTRA_HOSTS: [&str; 3] = [
@@ -94,8 +93,7 @@ where
             && !issuer_matches(document.issuer.as_ref(), required)
         {
             statuses.push(DiscoveryStatus::IssuerMismatch);
-            let origin =
-                redact_mcp_resource_url(Some(&url)).unwrap_or_else(|| UNPARSABLE_URL.to_owned());
+            let origin = redacted_origin(&url);
             tracing::warn!(
                 "the MCP authorization server metadata at {origin} does not self-attest the configured issuer {required} (RFC 8414 section 3.3); rejecting it"
             );

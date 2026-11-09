@@ -6,9 +6,17 @@ const URL_PLACEHOLDER: &str = "<url>";
 const MAX_ERROR_TEXT_CHARS: usize = 200;
 
 #[must_use]
+pub fn redacted_origin(url: &str) -> String {
+    let Some(origin) = redact_mcp_resource_url(Some(url)) else {
+        return UNPARSABLE_URL.to_owned();
+    };
+    origin
+}
+
+#[must_use]
 pub fn redacted_origin_list(urls: &[String]) -> String {
     urls.iter()
-        .map(|url| redact_mcp_resource_url(Some(url)).unwrap_or_else(|| UNPARSABLE_URL.to_owned()))
+        .map(|url| redacted_origin(url))
         .collect::<Vec<String>>()
         .join(", ")
 }
