@@ -286,7 +286,8 @@ fn the_work_budget_is_enforced(#[case] limit: usize, #[case] allowed: bool) {
 
 #[test]
 fn a_fan_out_block_graph_is_refused() {
-    let walked = walk(&fan_out_blocks(40), 1_000);
+    // 18 levels keep the uncharged walk finite, so a broken budget fails instead of hanging
+    let walked = walk(&fan_out_blocks(18), 1_000);
 
     assert!(
         matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),

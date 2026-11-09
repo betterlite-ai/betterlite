@@ -4,9 +4,11 @@ use crate::ocr_config::{OcrProviderConfig as _, OcrTransform};
 use crate::ocr_error::OcrError;
 use crate::ocr_http::tests::support::{MockServer, reply};
 use crate::textract_ocr::detect::{DetectDocumentTextRequest, TextractDetectTextConfig};
-use crate::textract_ocr::document::{SYNC_DOCUMENT_MAX_BYTES, document_bytes};
+use crate::textract_ocr::document::document_bytes;
 
 use super::support::{NoHooks, body_json, document, json, region_params, request, signing_client};
+
+const TEN_MEBIBYTES: usize = 10 * 1024 * 1024;
 
 fn sync_transform(source: &str) -> Result<DetectDocumentTextRequest, OcrError> {
     TextractDetectTextConfig.transform_ocr_request(
@@ -31,36 +33,40 @@ fn document_bytes_are_the_base64_payload_without_the_data_uri_envelope(
 }
 
 #[rstest]
-#[case::remote_url("https://example.com/a.pdf".to_owned(), false)]
-#[case::invalid_base64("data:image/png;base64,@@@".to_owned(), false)]
-#[case::over_the_sync_limit(
-    format!("data:,{}", "a".repeat(SYNC_DOCUMENT_MAX_BYTES + 1)),
-    true
-)]
-fn document_bytes_refuse_what_the_sync_api_cannot_take(
-    #[case] source: String,
-    #[case] too_large: bool,
-) {
+#[case::remote_url("https://example.com/a.pdf".to_owned())]
+#[case::invalid_base64("data:image/png;base64,@@@".to_owned())]
+fn document_bytes_refuse_what_the_sync_api_cannot_take(#[case] source: String) {
     let error = sync_transform(&source).unwrap_err();
 
-    if too_large {
-        assert!(
-            matches!(&error, OcrError::InlineDocumentTooLarge),
-            "{error}"
-        );
-    } else {
-        assert!(matches!(&error, OcrError::InvalidDataUri), "{error}");
-    }
+    assert!(matches!(&error, OcrError::InvalidDataUri), "{error}");
+}
+
+#[test]
+fn a_document_at_the_sync_limit_is_accepted() {
+    let source = format!("data:,{}", "a".repeat(TEN_MEBIBYTES));
+
+    let encoded = document_bytes(&document(&source)).expect("ten mebibytes fit the sync cap");
+
+    assert!(!encoded.bytes.is_empty());
+}
+
+#[test]
+fn a_document_one_byte_over_the_sync_limit_is_refused() {
+    let source = format!("data:,{}", "a".repeat(TEN_MEBIBYTES + 1));
+
+    let error = sync_transform(&source).unwrap_err();
+
+    assert!(
+        matches!(&error, OcrError::InlineDocumentTooLarge),
+        "{error}"
+    );
 }
 
 #[tokio::test]
 async fn a_document_over_the_sync_limit_fails_before_signing() {
     let (log, client) = signing_client();
     let mut request = request("detect-document-text", None, region_params("us-east-1"));
-    request.document = document(&format!(
-        "data:,{}",
-        "a".repeat(SYNC_DOCUMENT_MAX_BYTES + 1)
-    ));
+    request.document = document(&format!("data:,{}", "a".repeat(TEN_MEBIBYTES + 1)));
 
     let error = TextractDetectTextConfig
         .prepare_request(&request, &client, &NoHooks)

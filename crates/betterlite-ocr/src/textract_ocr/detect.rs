@@ -41,6 +41,8 @@ impl OcrProviderConfig for TextractDetectTextConfig {
         health_check_document()
     }
 
+    // the unit params make Ok(Default::default()) the same value as Ok(())
+    #[cfg_attr(test, mutants::skip)]
     fn map_ocr_params(
         &self,
         _non_default_params: &Object,
