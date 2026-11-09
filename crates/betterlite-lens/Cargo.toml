@@ -11,7 +11,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["alloc", "s
 garde = { version = "0.23.0", default-features = false, features = ["derive", "regex", "rust_decimal"] }
 hex = "0.4.3"
 indexmap = "2.14.2"
-rusqlite = { version = "0.41.1", features = ["bundled"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
