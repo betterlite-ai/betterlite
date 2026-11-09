@@ -137,18 +137,16 @@ pub(super) fn error_response(
         id: None,
         error: ErrorDetail { code, message },
     };
-    let mut response = Response::new(Body::from(serde_json::to_string(&body).unwrap_or_default()));
-    *response.status_mut() = status;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static(CONTENT_TYPE_JSON),
-    );
-    insert_session_id(&mut response, session_id);
-    response
+    let payload = serde_json::to_string(&body).unwrap_or_default();
+    json_body(status, Body::from(payload), session_id)
 }
 
-pub(super) fn json_response(status: StatusCode, session_id: Option<&str>) -> Response<Body> {
-    let mut response = Response::new(Body::empty());
+pub(super) fn json_body(
+    status: StatusCode,
+    payload: Body,
+    session_id: Option<&str>,
+) -> Response<Body> {
+    let mut response = Response::new(payload);
     *response.status_mut() = status;
     response.headers_mut().insert(
         header::CONTENT_TYPE,

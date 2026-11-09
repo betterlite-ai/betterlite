@@ -25,18 +25,40 @@ pub(super) async fn handle<H>(
 where
     H: ServerHandler,
 {
-    let session_id = request
-        .headers()
-        .get(wire::MCP_SESSION_ID_HEADER)
-        .map(|value| value.to_str().map(str::to_owned));
-    match session_id {
-        None => open_session(sessions, request, handler).await,
-        Some(Ok(id)) => match lookup(sessions, &id) {
-            Some(target) => serve_existing(sessions, target, request, handler).await,
-            None => unknown_session(),
-        },
-        Some(Err(_)) => unknown_session(),
+    let id = match session_header(&request) {
+        SessionHeader::Absent => {
+            let id = uuid::Uuid::new_v4().simple().to_string();
+            let mut session = Session::new();
+            let response = new_session_response(&mut session, &id, request, handler).await;
+            return keep_if_established(sessions, id, session, response);
+        }
+        SessionHeader::Invalid => return unknown_session(),
+        SessionHeader::Id(id) => id,
+    };
+    let Some(target) = lookup(sessions, &id) else {
+        return unknown_session();
+    };
+    match *request.method() {
+        Method::POST => existing_post(target, request).await,
+        Method::GET => existing_get(&target, &request),
+        Method::DELETE => delete_session(sessions, &target),
+        _ => wire::method_not_allowed(Some(&target.id)),
     }
+}
+
+enum SessionHeader {
+    Absent,
+    Invalid,
+    Id(String),
+}
+
+fn session_header(request: &Request<Body>) -> SessionHeader {
+    let Some(value) = request.headers().get(wire::MCP_SESSION_ID_HEADER) else {
+        return SessionHeader::Absent;
+    };
+    value.to_str().map_or(SessionHeader::Invalid, |id| {
+        SessionHeader::Id(id.to_owned())
+    })
 }
 
 fn lookup(sessions: &Mutex<IndexMap<String, Session>>, id: &str) -> Option<SessionHandle> {
@@ -61,22 +83,12 @@ fn unknown_session() -> Response<Body> {
     )
 }
 
-async fn open_session<H>(
+fn keep_if_established(
     sessions: &Mutex<IndexMap<String, Session>>,
-    request: Request<Body>,
-    handler: H,
-) -> Response<Body>
-where
-    H: ServerHandler,
-{
-    let id = uuid::Uuid::new_v4().simple().to_string();
-    let mut session = Session::new();
-    let response = match *request.method() {
-        Method::POST => open_session_post(&mut session, &id, request, handler).await,
-        Method::GET => new_session_get(&id, &request),
-        Method::DELETE => missing_session_id(&id),
-        _ => wire::method_not_allowed(Some(&id)),
-    };
+    id: String,
+    session: Session,
+    response: Response<Body>,
+) -> Response<Body> {
     if response.status().as_u16() < 400 {
         sessions
             .lock()
@@ -84,6 +96,23 @@ where
             .insert(id, session);
     }
     response
+}
+
+async fn new_session_response<H>(
+    session: &mut Session,
+    id: &str,
+    request: Request<Body>,
+    handler: H,
+) -> Response<Body>
+where
+    H: ServerHandler,
+{
+    match *request.method() {
+        Method::POST => open_session_post(session, id, request, handler).await,
+        Method::GET => new_session_get(id, &request),
+        Method::DELETE => missing_session_id(id),
+        _ => wire::method_not_allowed(Some(id)),
+    }
 }
 
 fn new_session_get(id: &str, request: &Request<Body>) -> Response<Body> {
@@ -138,23 +167,6 @@ where
     };
     let streams = Arc::clone(&session.streams);
     serve_request(&streams, id, service, call).await
-}
-
-async fn serve_existing<H>(
-    sessions: &Mutex<IndexMap<String, Session>>,
-    target: SessionHandle,
-    request: Request<Body>,
-    _handler: H,
-) -> Response<Body>
-where
-    H: ServerHandler,
-{
-    match *request.method() {
-        Method::POST => existing_post(target, request).await,
-        Method::GET => existing_get(&target, &request),
-        Method::DELETE => delete_session(sessions, &target),
-        _ => wire::method_not_allowed(Some(&target.id)),
-    }
 }
 
 async fn existing_post(target: SessionHandle, request: Request<Body>) -> Response<Body> {
@@ -218,7 +230,7 @@ fn delete_session(
         streams.streams.clear();
         streams.progress_tokens.clear();
     }
-    wire::json_response(StatusCode::OK, Some(&target.id))
+    wire::json_body(StatusCode::OK, Body::empty(), Some(&target.id))
 }
 
 async fn serve_request(
@@ -256,7 +268,7 @@ async fn accept_message(
     if service.send(message).await.is_err() {
         return terminated(id);
     }
-    wire::json_response(StatusCode::ACCEPTED, Some(id))
+    wire::json_body(StatusCode::ACCEPTED, Body::empty(), Some(id))
 }
 
 fn terminated(id: &str) -> Response<Body> {
@@ -267,3 +279,5 @@ fn terminated(id: &str) -> Response<Body> {
         Some(id),
     )
 }
+
+mod tests;

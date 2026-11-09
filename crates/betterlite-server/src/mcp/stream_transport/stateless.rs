@@ -23,17 +23,25 @@ pub(super) async fn handle<H>(request: Request<Body>, handler: H) -> Response<Bo
 where
     H: ServerHandler,
 {
-    match *request.method() {
-        Method::POST => handle_post(request, handler).await,
-        Method::GET => handle_get(&request),
-        Method::DELETE => wire::error_response(
-            StatusCode::METHOD_NOT_ALLOWED,
-            ErrorCode::INVALID_REQUEST,
-            "Method Not Allowed: Session termination not supported",
-            None,
-        ),
-        _ => wire::method_not_allowed(None),
+    if *request.method() == Method::POST {
+        return handle_post(request, handler).await;
     }
+    if *request.method() == Method::GET {
+        return handle_get(&request);
+    }
+    if *request.method() == Method::DELETE {
+        return delete_refusal();
+    }
+    wire::method_not_allowed(None)
+}
+
+fn delete_refusal() -> Response<Body> {
+    wire::error_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        ErrorCode::INVALID_REQUEST,
+        "Method Not Allowed: Session termination not supported",
+        None,
+    )
 }
 
 async fn handle_post<H>(request: Request<Body>, handler: H) -> Response<Body>
@@ -50,7 +58,7 @@ where
         | ClientJsonRpcMessage::Notification(_)
         | ClientJsonRpcMessage::Error(_)) => {
             dispatch_notification(other, handler).await;
-            wire::json_response(StatusCode::ACCEPTED, None)
+            wire::json_body(StatusCode::ACCEPTED, Body::empty(), None)
         }
     }
 }
