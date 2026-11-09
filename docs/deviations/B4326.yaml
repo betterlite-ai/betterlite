@@ -22,6 +22,17 @@ deviations:
       `close_pubsub_client` returns `()` after dropping the stored entry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1841-L1881
   - what: >-
+      On a Cluster client, async `ping` (and so the startup async ping and the Cluster
+      `test_connection`) sends PING to every primary and fails unless all of them answer, where
+      LiteLLM's `await _redis_client.ping()` reaches the default node only. With a healthy
+      default node next to one failing primary, LiteLLM answers true and betterlite returns an
+      error, so the connection test reports failed where LiteLLM reports success.
+    why: >-
+      redis-rs 1.7.0 routes PING to all primaries with `ResponsePolicy::AllSucceeded`, and
+      `LiveAsyncClient::query` takes no routing argument, so the async client cannot address one
+      node the way redis-py's PING under `DEFAULT_NODE` does.
+    link: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/cluster_handling/routing.rs
+  - what: >-
       On a Cluster client, `sync_ping` and the startup sync probe reach every primary, `info`
       takes the first node's reply, and `client_list` goes to whichever node redis-rs picks.
       redis-py sends all three to the default node.

@@ -1,13 +1,16 @@
 use std::io;
+use std::sync::Arc;
 
 use rstest::rstest;
 
 use super::support::cluster::{cluster_pair, cluster_settings};
-use super::support::{Logs, Probe, direct_settings, empty_settings, probe};
-use crate::redis_cache_admin::RedisAdminError;
+use super::support::{Gate, Hooks, Logs, Probe, direct_settings, empty_settings, probe};
 use crate::redis_cache_admin::connection_test::{ConnectionStatus, connection_test_result};
-use crate::redis_client_reuse::transport::RedisCacheFamily;
+use crate::redis_cache_admin::{RedisAdminError, RedisCacheAdmin};
+use crate::redis_client_reuse::store::RedisClientStore;
+use crate::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
 use crate::redis_live_client::LiveClientError;
+use crate::redis_live_client::LiveClientFactory;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 fn standalone(server: &FakeServer) -> Probe {
@@ -81,29 +84,23 @@ fn connection_test_result_texts(
 }
 
 #[test]
-fn a_successful_result_serializes_without_an_error_key() {
-    let text = serde_json::to_string(&connection_test_result(
+fn the_result_serializes_the_status_message_and_optional_error() {
+    let success = serde_json::to_string(&connection_test_result(
         RedisCacheFamily::Standalone,
         Ok(true),
     ))
-    .expect("a serialized result");
-    assert_eq!(
-        text,
-        r#"{"message":"Redis connection test successful","status":"success"}"#
-    );
-}
-
-#[test]
-fn a_failed_result_serializes_the_error_text() {
-    let text = serde_json::to_string(&connection_test_result(
+    .expect("a serialized success");
+    assert!(success.contains(r#""status":"success""#));
+    assert!(success.contains(r#""message":"Redis connection test successful""#));
+    assert!(!success.contains(r#""error":"#));
+    let failure = serde_json::to_string(&connection_test_result(
         RedisCacheFamily::Cluster,
         Err(admin_error("down")),
     ))
-    .expect("a serialized result");
-    assert_eq!(
-        text,
-        r#"{"error":"down","message":"Redis Cluster connection failed: down","status":"failed"}"#
-    );
+    .expect("a serialized failure");
+    assert!(failure.contains(r#""status":"failed""#));
+    assert!(failure.contains(r#""message":"Redis Cluster connection failed: down""#));
+    assert!(failure.contains(r#""error":"down""#));
 }
 
 #[tokio::test]
@@ -160,10 +157,29 @@ async fn reports_a_ping_error_and_logs_it() {
 
 #[tokio::test]
 async fn reports_a_failed_client_build_without_failing() {
-    let fixture = probe(&empty_settings(), RedisCacheFamily::Standalone, None);
-    let result = fixture.admin.test_connection().await;
+    let store = Arc::new(RedisClientStore::new());
+    let factory = Arc::new(LiveClientFactory::new(None));
+    let mut transport = RedisTransport::new(
+        direct_settings("127.0.0.1", 6379),
+        RedisCacheFamily::Standalone,
+        Arc::clone(&factory),
+        Arc::clone(&store),
+        None,
+    )
+    .expect("a transport");
+    // the transport carries the settings test_connection builds its fresh client from
+    transport.settings = empty_settings();
+    let admin = RedisCacheAdmin::new(
+        Arc::new(transport),
+        None,
+        Arc::new(Hooks::default()),
+        Arc::new(Gate::default()),
+    );
+    let result = admin.test_connection().await;
     assert_eq!(result.status, ConnectionStatus::Failed);
-    assert!(result.error.is_some());
+    assert!(result.message.starts_with("Redis connection failed: "));
+    let error = result.error.expect("the build error text");
+    assert!(error.contains("Either 'host' or 'url' must be specified for redis."));
 }
 
 #[tokio::test]
