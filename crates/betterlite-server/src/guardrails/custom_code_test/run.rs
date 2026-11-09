@@ -3,8 +3,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::custom_code::runtime::LoadedModule;
+use betterlite_guardrails::custom_code::runtime::CallOutput;
+use betterlite_guardrails::custom_code::runtime::LoadFailure as ModuleLoadFailure;
+use betterlite_guardrails::custom_code::runtime::RuntimeFailure;
 use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
+use betterlite_guardrails::custom_code_execution::execution::error::SandboxError;
+use betterlite_guardrails::custom_code_execution::sandbox::CompiledProgram;
+use betterlite_guardrails::custom_code_execution::sandbox::globals::SandboxGlobals;
 
 use super::body::TestCustomCodeRequest;
 use super::error::CallFailure;
@@ -18,7 +23,25 @@ pub const EXECUTION_TIMEOUT: Duration = Duration::from_secs(EXECUTION_TIMEOUT_SE
 
 const TEST_MODEL: &str = "test-model";
 
-pub struct LoadedCode(pub Box<dyn LoadedModule>);
+// The route hands the function the input_type text itself, which B3803's two-value CallArguments cannot carry
+pub trait SandboxModule: Send + Sync {
+    fn call(
+        &self,
+        inputs: GuardrailValue,
+        request_data: GuardrailValue,
+        input_type: &str,
+    ) -> Result<CallOutput, SandboxError<RuntimeFailure>>;
+}
+
+pub trait SandboxHost: Send + Sync {
+    fn load(
+        &self,
+        program: &CompiledProgram,
+        globals: &SandboxGlobals,
+    ) -> Result<Box<dyn SandboxModule>, SandboxError<ModuleLoadFailure>>;
+}
+
+pub struct LoadedCode(pub Box<dyn SandboxModule>);
 
 pub struct TestCall {
     pub inputs: BTreeMap<String, GuardrailValue>,

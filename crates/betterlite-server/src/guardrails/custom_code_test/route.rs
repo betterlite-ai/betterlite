@@ -16,10 +16,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_error::envelope::ErrorObject;
 use betterlite_error::envelope::ErrorResponse;
 use betterlite_error::envelope::WireField;
-use betterlite_guardrails::custom_code::runtime::CallArguments;
 use betterlite_guardrails::custom_code::runtime::CallOutput;
 use betterlite_guardrails::custom_code::runtime::LoadFailure as ModuleLoadFailure;
-use betterlite_guardrails::custom_code::runtime::ModuleHost;
 use betterlite_guardrails::custom_code::runtime::RuntimeFailure;
 use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
 use betterlite_guardrails::custom_code_execution::execution::error::ExecutionTimeoutError;
@@ -30,7 +28,6 @@ use betterlite_guardrails::custom_code_execution::execution::offloop::call_off_l
 use betterlite_guardrails::custom_code_execution::sandbox::DEFAULT_FILENAME;
 use betterlite_guardrails::custom_code_execution::sandbox::compile_sandboxed;
 use betterlite_guardrails::custom_code_execution::sandbox::globals::build_sandbox_globals;
-use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
@@ -44,6 +41,7 @@ use super::run::CodeSandbox;
 use super::run::EXECUTION_TIMEOUT;
 use super::run::LoadOutcome;
 use super::run::LoadedCode;
+use super::run::SandboxHost;
 use super::run::TestCall;
 use super::run::run_test;
 
@@ -52,7 +50,7 @@ const MASTER_KEY_SUBJECT: &str = "master_key";
 const UNAUTHENTICATED: &str = "the API key is not valid";
 
 pub struct SandboxedCode {
-    pub host: Arc<dyn ModuleHost>,
+    pub host: Arc<dyn SandboxHost>,
 }
 
 #[derive(Clone)]
@@ -149,18 +147,11 @@ impl CodeSandbox for SandboxedCode {
     async fn call(&self, code: LoadedCode, arguments: TestCall) -> CallOutcome {
         let started = Instant::now();
         let module = code.0;
-        // B3802 carries only request or response, so another text reaches the function as request
-        let call_arguments = CallArguments {
-            inputs: GuardrailValue::Object(arguments.inputs),
-            request_data: GuardrailValue::Object(arguments.request_data),
-            input_type: if arguments.input_type == "response" {
-                GuardrailInputType::Response
-            } else {
-                GuardrailInputType::Request
-            },
-        };
+        let inputs = GuardrailValue::Object(arguments.inputs);
+        let request_data = GuardrailValue::Object(arguments.request_data);
+        let input_type = arguments.input_type;
         let output = match call_off_loop_with_timeout(
-            move || module.call(call_arguments),
+            move || module.call(inputs, request_data, &input_type),
             EXECUTION_TIMEOUT,
             "test",
         )

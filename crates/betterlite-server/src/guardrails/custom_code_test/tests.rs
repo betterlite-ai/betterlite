@@ -30,18 +30,14 @@ use betterlite_auth::auth_identity::roles::AuthMethod;
 use betterlite_auth::auth_identity::roles::PrincipalType;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::custom_code::runtime::CallArguments;
 use betterlite_guardrails::custom_code::runtime::CallOutput;
 use betterlite_guardrails::custom_code::runtime::LoadFailure as ModuleLoadFailure;
-use betterlite_guardrails::custom_code::runtime::LoadedModule;
-use betterlite_guardrails::custom_code::runtime::ModuleHost;
 use betterlite_guardrails::custom_code::runtime::RuntimeFailure;
 use betterlite_guardrails::custom_code_execution::deadline;
 use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
 use betterlite_guardrails::custom_code_execution::execution::error::SandboxError;
 use betterlite_guardrails::custom_code_execution::sandbox::CompiledProgram;
 use betterlite_guardrails::custom_code_execution::sandbox::globals::SandboxGlobals;
-use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use rstest::rstest;
 use tokio::time::sleep;
 use tower::ServiceExt as _;
@@ -60,6 +56,8 @@ use super::run::CallOutcome;
 use super::run::CodeSandbox;
 use super::run::LoadOutcome;
 use super::run::LoadedCode;
+use super::run::SandboxHost;
+use super::run::SandboxModule;
 use super::run::TestCall;
 use super::run::run_test;
 
@@ -91,17 +89,33 @@ enum HostReply {
     Stuck,
 }
 
-struct FakeModule {
-    answer: Answer,
-    seen: Arc<Mutex<Vec<CallArguments>>>,
+#[derive(Clone)]
+struct RecordedCall {
+    inputs: GuardrailValue,
+    request_data: GuardrailValue,
+    input_type: String,
 }
 
-impl LoadedModule for FakeModule {
-    fn call(&self, arguments: CallArguments) -> Result<CallOutput, SandboxError<RuntimeFailure>> {
+struct FakeModule {
+    answer: Answer,
+    seen: Arc<Mutex<Vec<RecordedCall>>>,
+}
+
+impl SandboxModule for FakeModule {
+    fn call(
+        &self,
+        inputs: GuardrailValue,
+        request_data: GuardrailValue,
+        input_type: &str,
+    ) -> Result<CallOutput, SandboxError<RuntimeFailure>> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(arguments);
+            .push(RecordedCall {
+                inputs,
+                request_data,
+                input_type: input_type.to_owned(),
+            });
         match &self.answer {
             Answer::Value(value) => Ok(CallOutput::Value(value.clone())),
             Answer::Pending(value) => {
@@ -135,16 +149,16 @@ struct FakeHost {
     loads: AtomicUsize,
     sources: Mutex<Vec<String>>,
     globals: Mutex<Option<SandboxGlobals>>,
-    seen: Arc<Mutex<Vec<CallArguments>>>,
+    seen: Arc<Mutex<Vec<RecordedCall>>>,
     reply: HostReply,
 }
 
-impl ModuleHost for FakeHost {
+impl SandboxHost for FakeHost {
     fn load(
         &self,
         program: &CompiledProgram,
         globals: &SandboxGlobals,
-    ) -> Result<Box<dyn LoadedModule>, SandboxError<ModuleLoadFailure>> {
+    ) -> Result<Box<dyn SandboxModule>, SandboxError<ModuleLoadFailure>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         self.sources
             .lock()
@@ -187,31 +201,19 @@ fn host(reply: HostReply) -> Arc<FakeHost> {
 
 fn sandbox(host: &Arc<FakeHost>) -> Arc<SandboxedCode> {
     let cloned = Arc::clone(host);
-    let dynamic: Arc<dyn ModuleHost> = cloned;
+    let dynamic: Arc<dyn SandboxHost> = cloned;
     Arc::new(SandboxedCode { host: dynamic })
-}
-
-struct DummyModule;
-
-impl LoadedModule for DummyModule {
-    fn call(&self, _arguments: CallArguments) -> Result<CallOutput, SandboxError<RuntimeFailure>> {
-        Err(SandboxError::Failed(RuntimeFailure {
-            message: "the scripted sandbox replaces the call".to_owned(),
-        }))
-    }
 }
 
 struct Scripted {
     load: Mutex<Option<LoadOutcome>>,
     call: Mutex<Option<CallOutcome>>,
-    seen: Mutex<Vec<TestCall>>,
 }
 
 fn scripted_sandbox(load: LoadOutcome, call: CallOutcome) -> Arc<Scripted> {
     Arc::new(Scripted {
         load: Mutex::new(Some(load)),
         call: Mutex::new(Some(call)),
-        seen: Mutex::new(Vec::new()),
     })
 }
 
@@ -225,8 +227,7 @@ impl CodeSandbox for Scripted {
         })
     }
 
-    async fn call(&self, _code: LoadedCode, arguments: TestCall) -> CallOutcome {
-        self.seen.lock().unwrap().push(arguments);
+    async fn call(&self, _code: LoadedCode, _arguments: TestCall) -> CallOutcome {
         self.call.lock().unwrap().take().unwrap_or_else(|| {
             CallOutcome::Failed(CallFailure::Unexpected(ExecutionError::Spawn {
                 source: IoError::other("no scripted call"),
@@ -235,19 +236,8 @@ impl CodeSandbox for Scripted {
     }
 }
 
-fn last_call(fake: &Arc<FakeHost>) -> CallArguments {
+fn last_call(fake: &Arc<FakeHost>) -> RecordedCall {
     fake.seen.lock().unwrap().last().unwrap().clone()
-}
-
-fn scripted_input_type(scripted: &Arc<Scripted>) -> String {
-    scripted
-        .seen
-        .lock()
-        .unwrap()
-        .first()
-        .unwrap()
-        .input_type
-        .clone()
 }
 
 fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
@@ -411,7 +401,7 @@ async fn body_defaults_are_applied() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let arguments = last_call(&fake);
-    assert_eq!(arguments.input_type, GuardrailInputType::Request);
+    assert_eq!(arguments.input_type, "request");
     let GuardrailValue::Object(request_data) = &arguments.request_data else {
         panic!("request data object");
     };
@@ -690,15 +680,12 @@ async fn run_async_function_result_is_awaited() {
 
 #[tokio::test]
 async fn run_input_type_text_is_passed_on() {
-    let scripted = scripted_sandbox(
-        LoadOutcome::Loaded(LoadedCode(Box::new(DummyModule))),
-        CallOutcome::Result(GuardrailValue::Null),
-    );
+    let fake = host(allow_answer());
     let mut given = request(ALLOW_SOURCE);
     given.input_type = "foo".to_owned();
-    let response = run_test(given, scripted.as_ref()).await;
+    let response = run_test(given, sandbox(&fake).as_ref()).await;
     assert!(response.success);
-    assert_eq!(scripted_input_type(&scripted), "foo");
+    assert_eq!(last_call(&fake).input_type, "foo");
 }
 
 #[tokio::test]
@@ -708,7 +695,7 @@ async fn run_response_input_type_reaches_the_sandbox_call() {
     given.input_type = "response".to_owned();
     let response = run_test(given, sandbox(&fake).as_ref()).await;
     assert!(response.success);
-    assert_eq!(last_call(&fake).input_type, GuardrailInputType::Response);
+    assert_eq!(last_call(&fake).input_type, "response");
 }
 
 #[tokio::test]
