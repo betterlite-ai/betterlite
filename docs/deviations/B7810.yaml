@@ -1,0 +1,8 @@
+task: B7810
+deviations:
+  - what: "A Milvus search row whose distance is not a JSON number becomes a provider error carrying the response status and headers, where LiteLLM copies the value into the response score unchanged"
+    why: "The score field's declared type is float or null, and B1131 decodes it strictly; betterlite rejects a value no client of the declared response type can read instead of passing it through"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L244"
+  - what: "A Milvus distance that is a JSON number outside the exact decimal range fails the search with B1131's score error (502, bad_gateway, param score, code decimal_out_of_range), where LiteLLM copies the float into the response score"
+    why: "The repository forbids floats and B1131 rejects provider scores outside exact decimal representation instead of rounding them, so the Milvus projection uses the same numeric boundary"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L244"

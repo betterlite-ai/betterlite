@@ -1,0 +1,25 @@
+task: B227
+deviations:
+  - what: >-
+      A fetched Bedrock image body stops at MAX_IMAGE_URL_DOWNLOAD_SIZE_MB (default 50) with image_handling's size
+      text. LiteLLM reads the whole body with no cap, and a limit of 0 here fails every fetch with a body.
+    why: >-
+      A user-supplied URL can send an endless body, and LiteLLM already caps the same kind of download at this limit
+      in image_handling.py.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3411-L3438
+  - what: >-
+      Each fetch also has a total deadline of 600 seconds. LiteLLM's httpx timeout applies to each connect, read and
+      write on its own, with no total.
+    why: B173's client always sets a total deadline, so a server that trickles bytes can't hold a request open forever.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: >-
+      The document format lookup uses the extension table Python's mimetypes module ships with plus LiteLLM's
+      FILE_MIME_TYPES fallback, instead of reading the OS mimetypes database. A MIME alias only the OS database knows,
+      such as an /etc/mime.types entry for text/x-markdown, gets "No supported extensions" instead of an extension.
+    why: >-
+      LiteLLM's result then depends on which media-types package the host installed; the fixed table is the lookup a
+      container without mimetypes files gets, which is the case LiteLLM's own fallback was written for.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3458-L3530
