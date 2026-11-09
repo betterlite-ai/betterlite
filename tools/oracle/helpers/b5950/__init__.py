@@ -102,14 +102,6 @@ class Recorder:
         return self.responses[index]
 
 
-class FakeResponse:
-    def __init__(self, body: str) -> None:
-        self.body = body
-
-    def json(self) -> Json:
-        return cast(Json, json.loads(self.body))
-
-
 class FakeSapHandler:
     def __init__(self, recorder: Recorder, **_kwargs: object) -> None:
         self.recorder = recorder
@@ -119,10 +111,10 @@ class FakeSapHandler:
         url: str,
         data: dict[str, str] | None = None,
         **_kwargs: object,
-    ) -> FakeResponse:
+    ) -> "JsonResponse":
         del data
         self.recorder.requests.append(url)
-        return FakeResponse(self.recorder.next_response())
+        return JsonResponse(cast(Json, json.loads(self.recorder.next_response())))
 
 
 @contextmanager
@@ -208,7 +200,7 @@ def token_output(input_value: dict[str, Json]) -> Json:
     return {"tokens": tokens, "requests": len(recorder.requests)}
 
 
-class DeploymentResponse:
+class JsonResponse:
     def __init__(self, value: Json) -> None:
         self.value = value
 
@@ -227,14 +219,14 @@ class ConfigurationSource:
         self.listing = listing
         self.configurations = configurations
 
-    def get(self, url: str, **_kwargs: object) -> DeploymentResponse:
+    def get(self, url: str, **_kwargs: object) -> JsonResponse:
         if url == BASE_URL + "/lm/deployments":
-            return DeploymentResponse(self.listing)
+            return JsonResponse(self.listing)
         prefix = BASE_URL + "/lm/configurations/"
         if url.startswith(prefix):
             key = url[len(prefix) :]
             if key in self.configurations:
-                return DeploymentResponse(self.configurations[key])
+                return JsonResponse(self.configurations[key])
         raise KeyError(url)
 
     def __enter__(self) -> Self:

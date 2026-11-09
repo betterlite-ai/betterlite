@@ -21,6 +21,3 @@ deviations:
   - what: A malformed deployment listing or resource fails with NoOrchestrationDeployment or DeploymentEntry instead of Python's KeyError, TypeError, AttributeError or IndexError.
     why: LiteLLM subscripts and calls .get on whatever the API returned; betterlite reports the same failures as typed errors.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L156-L183
-  - what: The deployment selection function is named pick_orchestration_deployment instead of the task's select_orchestration_deployment.
-    why: The repository hook rejects identifiers of 31 characters or more, and select_orchestration_deployment is 31.
-    link: ''
