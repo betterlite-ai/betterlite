@@ -1,0 +1,36 @@
+kind: helper
+name: predibase-custom-prompt-dict
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: payload
+    max_new_tokens: 4096
+    custom_prompt_dict:
+      m:
+        roles:
+          user: {pre_message: "U:", post_message: "!"}
+          assistant: {post_message: "\n"}
+        initial_prompt_value: "I"
+        final_prompt_value: "F"
+      broken:
+        roles: {}
+    requests:
+      - model: m
+        messages:
+          - {role: user, content: hi}
+        options: {}
+      - model: m
+        messages:
+          - {role: user, content: hi}
+          - {role: assistant, content: ok}
+          - {role: user, content: more}
+        options: {}
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: user, content: hi}
+        options: {}
+      - model: broken
+        messages:
+          - {role: user, content: hi}
+        options: {}

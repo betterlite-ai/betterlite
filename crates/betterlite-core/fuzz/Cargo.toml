@@ -97,6 +97,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "tavily_reply"
+path = "fuzz_targets/tavily_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "exa_ai_reply"
 path = "fuzz_targets/exa_ai_reply.rs"
 test = false
@@ -113,6 +120,13 @@ bench = false
 [[bin]]
 name = "searxng_reply"
 path = "fuzz_targets/searxng_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "you_com_reply"
+path = "fuzz_targets/you_com_reply.rs"
 test = false
 doc = false
 bench = false

@@ -12,6 +12,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 num-traits = "0.2.19"
+percent-encoding.workspace = true
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
 redis = { workspace = true, features = ["cluster-async", "connection-manager", "script", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
