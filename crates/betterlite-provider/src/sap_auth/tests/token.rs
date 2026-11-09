@@ -200,6 +200,15 @@ fn a_negative_expires_in_puts_the_expiry_in_the_past() {
     r#"{"access_token": "tok", "expires_in": 1e999}"#,
     r#"{"access_token": "<redacted>", "expires_in": 1e999}"#
 )]
+#[case::truncated_token_body(
+    r#"{"access_token": "tok", "expires_in": 36"#,
+    "token response names access_token but is not valid JSON, body withheld"
+)]
+#[case::trailing_garbage_token_body(
+    r#"{"access_token": "tok", "expires_in": 3600} trailing"#,
+    "token response names access_token but is not valid JSON, body withheld"
+)]
+#[case::invalid_client_error(r#"{"error":"invalid_client"}"#, r#"{"error":"invalid_client"}"#)]
 fn a_bad_token_response_fails_with_its_body(#[case] body: &str, #[case] text: &str) {
     let error = parse_token_response(body, at(1_700_000_000)).unwrap_err();
     assert_eq!(error.to_string(), format!("Token request failed: {text}"));

@@ -13,6 +13,7 @@ use super::error::{SapAuthError, TokenFailure};
 pub const GRANT_TYPE: &str = "client_credentials";
 pub const DEFAULT_EXPIRY_SECONDS: i64 = 3600;
 pub const EXPIRY_BUFFER_MINUTES: i64 = 60;
+const WITHHELD: &str = "token response names access_token but is not valid JSON, body withheld";
 
 #[derive(Debug)]
 pub struct TokenForm {
@@ -130,7 +131,8 @@ fn error_text(body: &str) -> String {
         Ok(TokenText { access_token: raw }) if raw.get().starts_with('"') => {
             body.replace(raw.get(), "\"<redacted>\"")
         }
-        Ok(TokenText { .. }) | Err(_) => body.to_owned(),
+        Err(_) if body.contains("access_token") => WITHHELD.to_owned(),
+        _ => body.to_owned(),
     }
 }
 
@@ -160,10 +162,8 @@ impl TokenCache {
     pub fn new(credentials: &Credentials) -> Result<Self, SapAuthError> {
         validate_credentials(credentials)?;
         let request = build_token_request(credentials)?;
-        Ok(Self {
-            request,
-            cached: Mutex::new(None),
-        })
+        let cached = Mutex::new(None);
+        Ok(Self { request, cached })
     }
 
     pub fn token(
