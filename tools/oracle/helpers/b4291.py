@@ -18,7 +18,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 Value: TypeAlias = bool | int | float | str | list["Value"] | dict[str, "Value"]
 
 
-
 class StorageStandIn:
     # diskcache 5.6.3 stores expire_time = now + expire and reads a row only while expire_time > now
     def __init__(self, directory: str) -> None:
