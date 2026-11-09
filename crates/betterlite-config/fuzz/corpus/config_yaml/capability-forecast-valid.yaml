@@ -1,0 +1,23 @@
+model_list:
+  - model_name: capability-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        classifier_type: capability
+        classifier_llm_config:
+          model: judge-model
+          timeout_ms: 400
+        tiers:
+          SIMPLE: efficient-model
+          REASONING: capable-model
+        capability_classifier_config:
+          efficient_tier: SIMPLE
+          capable_tier: REASONING
+          base_threshold: 0.5
+          threshold_step: 0.1
+          max_output_tokens: 512
+          response_format: json_object
+          calibration:
+            version: held-out-v1
+            slope: 1.0
+            intercept: 0.0
