@@ -141,24 +141,27 @@ fn multi_request(call: &MultiCall) -> HelperResult {
 }
 
 fn endpoint(call: &EndpointCall) -> HelperResult {
-    let mut endpoints = Vec::with_capacity(call.cases.len());
-    for case in &call.cases {
-        endpoints.push(count_tokens_endpoint(CountTokensEndpoint {
-            model: &case.model,
-            aws_region_name: &case.aws_region_name,
-            api_base: case.api_base.as_deref(),
-            aws_bedrock_runtime_endpoint: case.aws_bedrock_runtime_endpoint.as_deref(),
-            environment_endpoint: case
-                .environment
-                .get(RUNTIME_ENDPOINT_VARIABLE)
-                .map(String::as_str),
-        }));
-    }
+    let endpoints = call
+        .cases
+        .iter()
+        .map(|case| {
+            count_tokens_endpoint(CountTokensEndpoint {
+                model: &case.model,
+                aws_region_name: &case.aws_region_name,
+                api_base: case.api_base.as_deref(),
+                aws_bedrock_runtime_endpoint: case.aws_bedrock_runtime_endpoint.as_deref(),
+                environment_endpoint: case
+                    .environment
+                    .get(RUNTIME_ENDPOINT_VARIABLE)
+                    .map(String::as_str),
+            })
+        })
+        .collect::<Vec<String>>();
     Ok(json!({"endpoints": endpoints}))
 }
 
 fn response(call: &ResponseCall) -> HelperResult {
-    let mut results = Vec::with_capacity(call.cases.len());
+    let mut results = Vec::new();
     for case in &call.cases {
         let result = transform_response(case);
         results.push(serde_json::to_value(result).map_err(Failure::from)?);
