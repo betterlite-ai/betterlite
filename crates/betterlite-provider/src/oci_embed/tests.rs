@@ -110,6 +110,34 @@ fn map_openai_params_prefers_dimensions_over_an_existing_output_dimensions() {
 }
 
 #[test]
+fn mapped_params_serialize_with_the_oci_output_dimensions_name() {
+    let mut non_default = options();
+    non_default.dimensions = Some(1024);
+    let encoded = serde_json::to_string(&map_openai_params(&non_default, options())).unwrap();
+    assert_eq!(encoded, r#"{"outputDimensions":1024}"#);
+}
+
+#[test]
+fn params_deserialize_the_optional_param_names() {
+    let params: OciEmbedParams = serde_json::from_str(
+        r#"{"dimensions":8,"outputDimensions":512,"input_type":"search_query","truncate":"START","oci_serving_mode":"DEDICATED","oci_endpoint_id":"endpoint"}"#,
+    )
+    .unwrap();
+    assert_eq!(params.dimensions, Some(8));
+    assert_eq!(params.output_dimensions, Some(512));
+    assert_eq!(params.input_type.as_deref(), Some("search_query"));
+    assert_eq!(params.truncate.as_deref(), Some("START"));
+    assert_eq!(params.oci_serving_mode.as_deref(), Some("DEDICATED"));
+    assert_eq!(params.oci_endpoint_id.as_deref(), Some("endpoint"));
+}
+
+#[test]
+fn params_ignore_an_unknown_optional_param() {
+    let params: OciEmbedParams = serde_json::from_str(r#"{"user":"ignored"}"#).unwrap();
+    assert_eq!(params, options());
+}
+
+#[test]
 fn transform_request_builds_the_on_demand_body() {
     let body = request_with(&options());
     assert_eq!(body.compartment_id, COMPARTMENT);
