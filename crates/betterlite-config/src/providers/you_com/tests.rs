@@ -3,9 +3,24 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 
-use super::YouComSearchSettings;
+use crate::loader::EnvironmentLookup;
+
+struct YouComSearchSettings {
+    api_key: Option<SecretString>,
+    api_base: Option<String>,
+}
+
+impl YouComSearchSettings {
+    fn load(lookup: &dyn EnvironmentLookup) -> Self {
+        let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
+        Self {
+            api_key: present("YOUCOM_API_KEY").map(SecretString::from),
+            api_base: present("YOUCOM_API_BASE"),
+        }
+    }
+}
 
 fn load(environment: &[(&str, &str)]) -> YouComSearchSettings {
     let lookup: BTreeMap<String, String> = environment

@@ -3,9 +3,26 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 
-use super::{TAVILY_API_BASE, TavilySearchSettings};
+use crate::loader::EnvironmentLookup;
+
+const TAVILY_API_BASE: &str = "https://api.tavily.com";
+
+struct TavilySearchSettings {
+    api_key: Option<SecretString>,
+    api_base: String,
+}
+
+impl TavilySearchSettings {
+    fn load(lookup: &dyn EnvironmentLookup) -> Self {
+        let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
+        Self {
+            api_key: present("TAVILY_API_KEY").map(SecretString::from),
+            api_base: present("TAVILY_API_BASE").unwrap_or_else(|| TAVILY_API_BASE.to_owned()),
+        }
+    }
+}
 
 fn load(environment: &[(&str, &str)]) -> TavilySearchSettings {
     let lookup: BTreeMap<String, String> = environment
