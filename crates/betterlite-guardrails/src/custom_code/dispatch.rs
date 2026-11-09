@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use std::sync::PoisonError;
-use std::time::Instant;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::CompiledCode;
 use super::CustomCodeGuardrail;
 use super::error::CustomCodeGuardrailError;
-use super::error::ErrorDetails;
 use super::runtime::CallArguments;
 use super::runtime::CallOutput;
 use super::runtime::LoadFailure;
@@ -46,13 +44,11 @@ pub(super) fn compiled_code(
         .unwrap_or_else(PoisonError::into_inner);
     match (&state.code, &state.error) {
         (Some(code), _) => Ok(Arc::clone(code)),
-        (None, Some(message)) => Err(CustomCodeGuardrailError::Execution {
+        (None, Some(message)) => Err(CustomCodeGuardrailError::ExecutionMessage {
             message: format!("Custom code guardrail not compiled: {message}"),
-            details: ErrorDetails::new(),
         }),
-        (None, None) => Err(CustomCodeGuardrailError::Execution {
+        (None, None) => Err(CustomCodeGuardrailError::ExecutionMessage {
             message: "Custom code guardrail not compiled".to_owned(),
-            details: ErrorDetails::new(),
         }),
     }
 }
@@ -70,7 +66,6 @@ pub(super) async fn call(
     input_type: GuardrailInputType,
     mode: CallMode,
 ) -> Result<GuardrailValue, CustomCodeGuardrailError> {
-    let started = Instant::now();
     let (output, timeout) = match mode {
         CallMode::Async => (
             module.call(arguments).map_err(|source| {
@@ -79,6 +74,7 @@ pub(super) async fn call(
             guardrail.execution_budget,
         ),
         CallMode::Sync => {
+            let started = (guardrail.clock)();
             let shared_module = Arc::clone(module);
             let output = call_off_loop_with_timeout(
                 move || shared_module.call(arguments),
@@ -87,7 +83,8 @@ pub(super) async fn call(
             )
             .await
             .map_err(|source| classify(guardrail, input_type, source))?;
-            let remaining = guardrail.execution_budget.saturating_sub(started.elapsed());
+            let elapsed = (guardrail.clock)().saturating_sub(started);
+            let remaining = guardrail.execution_budget.saturating_sub(elapsed);
             (output, remaining)
         }
     };

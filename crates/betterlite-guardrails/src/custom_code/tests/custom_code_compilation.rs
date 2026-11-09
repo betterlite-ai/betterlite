@@ -60,10 +60,7 @@ fn a_syntax_error_is_a_compilation_error_and_never_reaches_the_host() {
     ) else {
         panic!("expected a compilation error");
     };
-    assert!(matches!(
-        error,
-        CustomCodeGuardrailError::Compilation { .. }
-    ));
+    assert!(matches!(error, CustomCodeGuardrailError::Syntax { .. }));
     assert!(
         error
             .to_string()
@@ -79,10 +76,7 @@ fn a_forbidden_construct_is_a_compilation_error() {
     else {
         panic!("expected a compilation error");
     };
-    assert!(matches!(
-        error,
-        CustomCodeGuardrailError::Compilation { .. }
-    ));
+    assert!(matches!(error, CustomCodeGuardrailError::Syntax { .. }));
     assert!(error.to_string().contains("import"));
     assert_eq!(host.load_count(), 0);
 }
@@ -98,10 +92,7 @@ fn a_module_without_apply_guardrail_names_the_expected_signature() {
         error.to_string(),
         "Custom code must define an 'apply_guardrail' function. Expected signature: apply_guardrail(inputs, request_data, input_type)"
     );
-    assert!(matches!(
-        error,
-        CustomCodeGuardrailError::Compilation { .. }
-    ));
+    assert!(matches!(error, CustomCodeGuardrailError::MissingFunction));
 }
 
 #[test]
@@ -132,7 +123,7 @@ fn a_module_that_fails_to_load_is_a_compilation_error_with_the_cause() {
     );
     assert!(matches!(
         error,
-        CustomCodeGuardrailError::Compilation { .. }
+        CustomCodeGuardrailError::CompileFailed { .. }
     ));
 }
 

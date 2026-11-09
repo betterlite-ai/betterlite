@@ -28,27 +28,52 @@ pub enum CustomCodeGuardrailError {
     MissingGuardrailName,
     #[error("Custom code guardrail requires 'custom_code' in litellm_params")]
     MissingCustomCode,
-    #[error("{message}")]
-    Compilation {
-        message: String,
-        details: ErrorDetails,
+    #[error(
+        "Custom code must define an 'apply_guardrail' function. Expected signature: apply_guardrail(inputs, request_data, input_type)"
+    )]
+    MissingFunction,
+    #[error("'apply_guardrail' must be a callable function")]
+    NotCallable,
+    #[error("Syntax error in custom code: {source}")]
+    Syntax {
+        #[source]
+        source: CompileError,
     },
-    #[error("{message}")]
+    #[error("Failed to compile custom code: {source}")]
+    CompileFailed {
+        #[source]
+        source: ExecutionError<LoadFailure>,
+    },
+    #[error("Custom code guardrail execution failed: {source}")]
     Execution {
-        message: String,
+        #[source]
+        source: ExecutionError<RuntimeFailure>,
         details: ErrorDetails,
     },
+    #[error("Custom code guardrail '{guardrail_name}' exceeded its {timeout}s execution timeout")]
+    Timeout {
+        guardrail_name: String,
+        timeout: f64,
+        details: ErrorDetails,
+    },
+    #[error("{message}")]
+    ExecutionMessage { message: String },
 }
 
 impl CustomCodeGuardrailError {
     #[must_use]
     pub const fn details(&self) -> Option<&ErrorDetails> {
         match self {
-            Self::Compilation { details, .. } | Self::Execution { details, .. } => Some(details),
+            Self::Execution { details, .. } | Self::Timeout { details, .. } => Some(details),
             Self::NonPositiveTimeout { .. }
             | Self::TimeoutOutOfRange { .. }
             | Self::MissingGuardrailName
-            | Self::MissingCustomCode => None,
+            | Self::MissingCustomCode
+            | Self::MissingFunction
+            | Self::NotCallable
+            | Self::Syntax { .. }
+            | Self::CompileFailed { .. }
+            | Self::ExecutionMessage { .. } => None,
         }
     }
 }
@@ -106,29 +131,20 @@ impl CustomCodeApplyError {
 }
 
 #[must_use]
-pub fn syntax_error(source: &CompileError) -> CustomCodeGuardrailError {
-    CustomCodeGuardrailError::Compilation {
-        message: format!("Syntax error in custom code: {source}"),
-        details: ErrorDetails::new(),
-    }
-}
-
-#[must_use]
 pub fn load_error(source: ExecutionError<LoadFailure>) -> CustomCodeGuardrailError {
     match source {
-        ExecutionError::Sandbox(SandboxError::Failed(
-            failure @ (LoadFailure::MissingFunction | LoadFailure::NotCallable),
-        )) => CustomCodeGuardrailError::Compilation {
-            message: failure.to_string(),
-            details: ErrorDetails::new(),
-        },
+        ExecutionError::Sandbox(SandboxError::Failed(LoadFailure::MissingFunction)) => {
+            CustomCodeGuardrailError::MissingFunction
+        }
+        ExecutionError::Sandbox(SandboxError::Failed(LoadFailure::NotCallable)) => {
+            CustomCodeGuardrailError::NotCallable
+        }
         other @ (ExecutionError::Timeout(_)
         | ExecutionError::Sandbox(_)
         | ExecutionError::Spawn { .. }
-        | ExecutionError::TimeoutOutOfRange { .. }) => CustomCodeGuardrailError::Compilation {
-            message: format!("Failed to compile custom code: {other}"),
-            details: ErrorDetails::new(),
-        },
+        | ExecutionError::TimeoutOutOfRange { .. }) => {
+            CustomCodeGuardrailError::CompileFailed { source: other }
+        }
     }
 }
 
@@ -148,7 +164,7 @@ pub fn execution_error(
         | ExecutionError::TimeoutOutOfRange { .. }) => {
             tracing::error!("Custom code guardrail '{guardrail_name}' execution error: {other}");
             CustomCodeGuardrailError::Execution {
-                message: format!("Custom code guardrail execution failed: {other}"),
+                source: other,
                 details: execution_details(guardrail_name, input_type),
             }
         }
@@ -168,10 +184,9 @@ fn timeout_failure(
         "timeout".to_owned(),
         GuardrailValue::Decimal(execution_timeout),
     );
-    CustomCodeGuardrailError::Execution {
-        message: format!(
-            "Custom code guardrail '{guardrail_name}' exceeded its {execution_timeout}s execution timeout"
-        ),
+    CustomCodeGuardrailError::Timeout {
+        guardrail_name: guardrail_name.to_owned(),
+        timeout: execution_timeout,
         details,
     }
 }

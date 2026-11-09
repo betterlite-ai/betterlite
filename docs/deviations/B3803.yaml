@@ -15,8 +15,8 @@ deviations:
   - what: A result action other than allow, block, flag or modify is treated as allow with a warning.
     why: Unexpected user code output must not stall or crash a request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
-  - what: Compilation failures are the Compilation variant of CustomCodeGuardrailError and stop initialization; execution failures are the Execution variant. LiteLLM has separate CustomCodeCompilationError and CustomCodeExecutionError classes.
-    why: A guardrail whose code does not compile must fail at startup instead of being skipped, and Rust has no exception hierarchy, so the two classes become the enum's variants.
+  - what: Compile-time and run-time failures are separate CustomCodeGuardrailError variants and each keeps its cause (CompileError or ExecutionError) as an error source, where LiteLLM's CustomCodeCompilationError and CustomCodeExecutionError classes carry the same causes with `from e`.
+    why: A guardrail whose code does not compile must fail at startup instead of being skipped, and Rust has no exception hierarchy, so the two classes become variants of one enum.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L192-L235
   - what: CustomCodeGuardrail calls the loaded apply_guardrail through a ModuleHost and LoadedModule port; the caller supplies the runtime that executes the sandboxed source.
     why: betterlite has no in-process Python, and B3802 returns guarded source instead of a code object, so the runtime that runs it is a separate component.

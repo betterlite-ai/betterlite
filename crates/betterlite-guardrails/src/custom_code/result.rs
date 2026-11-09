@@ -6,7 +6,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::CustomCodeGuardrail;
 use super::error::CustomCodeApplyError;
 use super::error::CustomCodeGuardrailError;
-use super::error::ErrorDetails;
 use super::inputs::CustomCodeInputs;
 use super::records;
 use super::runtime::input_type_name;
@@ -178,9 +177,8 @@ pub(super) fn modify(
 }
 
 fn invalid_field(key: &str, expected: &str) -> CustomCodeGuardrailError {
-    CustomCodeGuardrailError::Execution {
+    CustomCodeGuardrailError::ExecutionMessage {
         message: format!("custom code guardrail result field '{key}' must be {expected}"),
-        details: ErrorDetails::new(),
     }
 }
 

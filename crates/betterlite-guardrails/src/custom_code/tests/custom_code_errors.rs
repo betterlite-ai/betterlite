@@ -1,33 +1,40 @@
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::time::Duration;
 
 use super::fake::text;
 use crate::custom_code::error::CustomCodeApplyError;
 use crate::custom_code::error::CustomCodeGuardrailError;
 use crate::custom_code::error::ErrorDetails;
+use crate::custom_code_execution::execution::error::ExecutionError;
+use crate::custom_code_execution::sandbox::error::CompileError;
 
 #[test]
-fn compilation_and_execution_errors_carry_a_message_and_details() {
-    let compilation = CustomCodeGuardrailError::Compilation {
-        message: "Syntax error in custom code: <guardrail>: line 1: invalid syntax".to_owned(),
-        details: ErrorDetails::new(),
+fn compilation_and_execution_errors_keep_their_cause_and_details() {
+    let compilation = CustomCodeGuardrailError::Syntax {
+        source: CompileError::syntax("<guardrail>", 1, "invalid syntax"),
     };
     assert!(
         compilation
             .to_string()
             .starts_with("Syntax error in custom code:")
     );
-    assert_eq!(compilation.details(), Some(&BTreeMap::new()));
+    assert!(Error::source(&compilation).is_some());
+    assert!(compilation.details().is_none());
 
     let mut details = ErrorDetails::new();
     details.insert("guardrail_name".to_owned(), text("custom_code"));
     let execution = CustomCodeGuardrailError::Execution {
-        message: "Custom code guardrail execution failed: boom".to_owned(),
+        source: ExecutionError::TimeoutOutOfRange {
+            timeout: Duration::from_secs(1),
+        },
         details,
     };
     assert_eq!(
         execution.to_string(),
-        "Custom code guardrail execution failed: boom"
+        "Custom code guardrail execution failed: the execution timeout 1s is too large to schedule"
     );
+    assert!(Error::source(&execution).is_some());
     assert_eq!(execution.details().map(BTreeMap::len), Some(1));
 }
 

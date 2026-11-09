@@ -12,6 +12,7 @@ use super::fake::ASYNC_SOURCE;
 use super::fake::FakeHost;
 use super::fake::LoadReply;
 use super::fake::build;
+use super::fake::build_with_clock;
 use super::fake::inputs;
 use super::fake::never;
 use super::fake::object;
@@ -22,6 +23,7 @@ use super::fake::pending;
 use super::fake::spinning;
 use super::fake::text;
 use super::fake::value;
+use super::fake::wall_clock;
 use crate::custom_code::error::CustomCodeApplyError;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 
@@ -105,9 +107,9 @@ async fn an_async_function_past_the_deadline_fails_with_the_timeout() {
 #[tokio::test]
 async fn an_awaitable_returned_by_a_sync_function_shares_the_deadline() {
     let host = FakeHost::new(LoadReply::Module(parking_then_pending(
-        Duration::from_millis(150),
+        Duration::from_millis(300),
     )));
-    let guardrail = build(params_with_timeout(ALLOW_SOURCE, 0.2), &host);
+    let guardrail = build_with_clock(params_with_timeout(ALLOW_SOURCE, 0.5), &host, wall_clock);
     let started = Instant::now();
     let mut request_data = BTreeMap::new();
     let error = guardrail
@@ -120,7 +122,7 @@ async fn an_awaitable_returned_by_a_sync_function_shares_the_deadline() {
         .unwrap_err();
     assert!(matches!(error, CustomCodeApplyError::Execution(_)));
     assert!(
-        started.elapsed() < Duration::from_millis(330),
+        started.elapsed() < Duration::from_millis(700),
         "the awaitable got a fresh budget instead of what was left: {:?}",
         started.elapsed()
     );

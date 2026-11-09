@@ -38,7 +38,7 @@ async fn execution_error(host: &Arc<FakeHost>) -> CustomCodeGuardrailError {
 async fn a_timeout_names_the_guardrail_and_reports_the_budget_in_the_details() {
     let host = FakeHost::new(LoadReply::Module(spinning()));
     let error = execution_error(&host).await;
-    assert!(matches!(error, CustomCodeGuardrailError::Execution { .. }));
+    assert!(matches!(error, CustomCodeGuardrailError::Timeout { .. }));
     assert_eq!(
         error.to_string(),
         "Custom code guardrail 'custom_code' exceeded its 0.03s execution timeout"
@@ -53,6 +53,7 @@ async fn a_timeout_names_the_guardrail_and_reports_the_budget_in_the_details() {
 async fn a_failure_inside_the_code_is_an_execution_error_with_the_cause() {
     let host = FakeHost::new(LoadReply::Module(failing("boom")));
     let error = execution_error(&host).await;
+    assert!(matches!(error, CustomCodeGuardrailError::Execution { .. }));
     assert_eq!(
         error.to_string(),
         "Custom code guardrail execution failed: boom"

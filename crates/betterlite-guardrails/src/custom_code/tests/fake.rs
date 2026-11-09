@@ -8,6 +8,8 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::thread::ThreadId;
 use std::time::Duration;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -144,6 +146,12 @@ pub(super) fn fixed_clock() -> Duration {
     Duration::from_millis(5)
 }
 
+pub(super) fn wall_clock() -> Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+}
+
 pub(super) fn as_host(host: &Arc<FakeHost>) -> Arc<dyn ModuleHost> {
     let cloned = Arc::clone(host);
     let dynamic: Arc<dyn ModuleHost> = cloned;
@@ -169,7 +177,15 @@ pub(super) fn build(
     params: CustomCodeGuardrailParams,
     host: &Arc<FakeHost>,
 ) -> CustomCodeGuardrail {
-    CustomCodeGuardrail::new(params, as_host(host), fixed_clock).unwrap()
+    build_with_clock(params, host, fixed_clock)
+}
+
+pub(super) fn build_with_clock(
+    params: CustomCodeGuardrailParams,
+    host: &Arc<FakeHost>,
+    clock: fn() -> Duration,
+) -> CustomCodeGuardrail {
+    CustomCodeGuardrail::new(params, as_host(host), clock).unwrap()
 }
 
 pub(super) fn text(value: &str) -> GuardrailValue {

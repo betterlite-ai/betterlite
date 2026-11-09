@@ -178,7 +178,7 @@ impl CustomCodeGuardrail {
         let program = match compile_sandboxed(&self.custom_code, DEFAULT_FILENAME) {
             Ok(program) => program,
             Err(source) => {
-                let error = error::syntax_error(&source);
+                let error = CustomCodeGuardrailError::Syntax { source };
                 state.error = Some(error.to_string());
                 return Err(error);
             }
@@ -231,10 +231,22 @@ impl CustomCodeGuardrail {
     ) -> SafeRequestData {
         let metadata = prepare::merged_metadata(request_data);
         SafeRequestData {
-            model: request_data.get("model").cloned(),
-            user_id: metadata.get("user_api_key_user_id").cloned(),
-            team_id: metadata.get("user_api_key_team_id").cloned(),
-            end_user_id: metadata.get("user_api_key_end_user_id").cloned(),
+            model: request_data
+                .get("model")
+                .cloned()
+                .unwrap_or(GuardrailValue::Null),
+            user_id: metadata
+                .get("user_api_key_user_id")
+                .cloned()
+                .unwrap_or(GuardrailValue::Null),
+            team_id: metadata
+                .get("user_api_key_team_id")
+                .cloned()
+                .unwrap_or(GuardrailValue::Null),
+            end_user_id: metadata
+                .get("user_api_key_end_user_id")
+                .cloned()
+                .unwrap_or(GuardrailValue::Null),
             metadata,
         }
     }
