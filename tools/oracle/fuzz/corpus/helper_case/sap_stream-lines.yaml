@@ -1,0 +1,12 @@
+kind: helper
+name: sap-stream-lines-seed
+call:
+  b5952:
+    operation: lines
+    params:
+      lines: ['data: [DONE]', 'data: {"error": seeded}']
+      modes: [sync, async]
+      now: 1700000000
+      failure: read
+env: {}
+compare: {ignore: []}

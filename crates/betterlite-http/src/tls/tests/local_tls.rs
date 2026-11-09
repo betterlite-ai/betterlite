@@ -12,22 +12,42 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::ProxyTrust;
+use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use rstest::rstest;
 use rustls::crypto::aws_lc_rs;
-use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::server::{Acceptor, ClientHello, WebPkiClientVerifier};
 use rustls::{NamedGroup, RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 use tokio::runtime::Builder;
 
 use crate::proxy::ProxiedClient;
 
-const SERVER_CERT: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
-const SERVER_KEY: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
-const TEST_CA: &[u8] = include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/ca.pem");
 const TIMEOUT: Duration = Duration::from_secs(5);
+
+struct Authority {
+    ca_pem: String,
+    ca: CertificateDer<'static>,
+    leaf: CertificateDer<'static>,
+    key: PrivateKeyDer<'static>,
+}
+
+fn authority() -> Authority {
+    let ca_key = KeyPair::generate().unwrap();
+    let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    let ca_certificate = ca_params.self_signed(&ca_key).unwrap();
+    let issuer = Issuer::from_params(&ca_params, &ca_key);
+    let leaf_key = KeyPair::generate().unwrap();
+    let leaf_params = CertificateParams::new(vec!["localhost".to_owned()]).unwrap();
+    let leaf_certificate = leaf_params.signed_by(&leaf_key, &issuer).unwrap();
+    Authority {
+        ca_pem: ca_certificate.pem(),
+        ca: ca_certificate.der().clone(),
+        leaf: leaf_certificate.der().clone(),
+        key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der())),
+    }
+}
 
 #[rstest]
 #[case::outbound_http1_default("legacy", "localhost", false)]
@@ -50,11 +70,12 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[case::https_connect_rejects_wrong_host("proxy", "127.0.0.1", false)]
 fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] succeeds: bool) {
     thread::scope(|scope| {
+        let authority = authority();
         let ca_file = tempfile::NamedTempFile::new().unwrap();
-        fs::write(ca_file.path(), TEST_CA).unwrap();
+        fs::write(ca_file.path(), authority.ca_pem.as_bytes()).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
-        let server = scope.spawn(move || serve(&listener, mode));
+        let server = scope.spawn(move || serve(&listener, mode, &authority));
         let mut environment = environment(mode, ca_file.path().to_str().unwrap());
         let proxy = (mode == "proxy").then(|| {
             let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -152,7 +173,11 @@ fn environment(mode: &str, ca_path: &str) -> BTreeMap<String, String> {
     variables
 }
 
-fn serve(listener: &TcpListener, mode: &str) -> Result<(String, bool, bool), IoError> {
+fn serve(
+    listener: &TcpListener,
+    mode: &str,
+    authority: &Authority,
+) -> Result<(String, bool, bool), IoError> {
     let mut stream = accept(listener);
     stream.set_read_timeout(Some(TIMEOUT))?;
     stream.set_write_timeout(Some(TIMEOUT))?;
@@ -174,7 +199,7 @@ fn serve(listener: &TcpListener, mode: &str) -> Result<(String, bool, bool), IoE
         .alpn()
         .is_some_and(|mut protocols| protocols.any(|protocol| protocol == b"h2"));
     let connection = accepted
-        .into_connection(server_config(mode))
+        .into_connection(server_config(mode, authority))
         .map_err(|(error, _alert)| IoError::other(error))?;
     if mode == "legacy" {
         assert_http1(&connection);
@@ -193,15 +218,9 @@ fn serve(listener: &TcpListener, mode: &str) -> Result<(String, bool, bool), IoE
     Ok((request_text, offered_h2, sent_identity))
 }
 
-fn server_config(mode: &str) -> Arc<ServerConfig> {
-    let certificates = CertificateDer::pem_slice_iter(SERVER_CERT)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    let private_key = PrivateKeyDer::from_pem_slice(SERVER_KEY).unwrap();
+fn server_config(mode: &str, authority: &Authority) -> Arc<ServerConfig> {
     let mut roots = RootCertStore::empty();
-    roots
-        .add(CertificateDer::from_pem_slice(TEST_CA).unwrap())
-        .unwrap();
+    roots.add(authority.ca.clone()).unwrap();
     let verifier = WebPkiClientVerifier::builder(Arc::new(roots))
         .allow_unauthenticated()
         .build()
@@ -214,7 +233,7 @@ fn server_config(mode: &str) -> Arc<ServerConfig> {
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_client_cert_verifier(verifier)
-        .with_single_cert(certificates, private_key)
+        .with_single_cert(vec![authority.leaf.clone()], authority.key.clone_key())
         .unwrap();
     if mode == "legacy" {
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];

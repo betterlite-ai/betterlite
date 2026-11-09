@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-selection-without-construction
+call:
+  bedrock_config_selection:
+    function: selection_without_construction
+    models:
+      - claude_platform/anthropic.claude-3
+      - converse/anthropic.claude-3
+      - openai/gpt-5.6
+      - chat_completions/openai.gpt-5.5
+      - agent/foo
+      - agentcore/foo
+      - mantle/openai.gpt-5.5
+      - amazon.titan-text-express-v1
+      - anthropic.claude-v2
+      - anthropic.claude-3-5-sonnet-20240620-v1:0
+      - meta.llama3-8b-instruct-v1:0
+      - ai21.j2-mid-v1
+      - cohere.command-r-v1:0
+      - mistral.mistral-7b-instruct-v0:2
+      - moonshot/foo
+      - deepseek_r1/foo
+      - us.amazon.nova-pro-v1:0
+      - qwen3/foo
+      - qwen2/foo
+      - twelvelabs/pegasus
+      - async_invoke/stability.foo
+env: {}
+compare: {ignore: []}
