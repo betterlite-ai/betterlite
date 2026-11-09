@@ -4,7 +4,6 @@ use serde::Serialize;
 use super::Params;
 use super::error::MongoDbError;
 use super::query::query_text;
-use crate::batches::sdk::Timeout;
 use crate::vector_stores::store::{Query, SearchParams};
 
 const DEFAULT_EMBEDDING_FIELD: &str = "embedding";
@@ -271,21 +270,36 @@ fn timeout_ms(params: &Params) -> Result<u64, MongoDbError> {
         })
 }
 
+// an untagged enum reads a lexeme that does not round-trip through f64 as a map, so read the Json number directly
 fn read_timeout(params: &Params) -> Result<Option<f64>, MongoDbError> {
     let Some(value) = params.get("timeout") else {
         return Ok(None);
     };
-    let raw = serde_json::to_value(value).map_err(|_error| MongoDbError::BadRequest {
-        message: TIMEOUT.to_owned(),
-    })?;
-    let timeout = serde_json::from_value::<Option<Timeout>>(raw).map_err(|_error| {
-        MongoDbError::BadRequest {
-            message: TIMEOUT.to_owned(),
+    let read = match value {
+        Json::Null => None,
+        Json::Number(number) => Some(number),
+        Json::Object(fields) => match fields.get("read") {
+            None | Some(Json::Null) => None,
+            Some(Json::Number(number)) => Some(number),
+            Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(MongoDbError::BadRequest {
+                    message: TIMEOUT.to_owned(),
+                });
+            }
+        },
+        Json::Bool(_) | Json::Text(_) | Json::List(_) => {
+            return Err(MongoDbError::BadRequest {
+                message: TIMEOUT.to_owned(),
+            });
         }
-    })?;
-    match timeout {
-        None => Ok(None),
-        Some(Timeout::Seconds(seconds)) => Ok(Some(seconds)),
-        Some(Timeout::Phases(phases)) => Ok(phases.read),
+    };
+    let Some(number) = read else {
+        return Ok(None);
+    };
+    match number.as_f64() {
+        Some(seconds) if seconds.is_finite() => Ok(Some(seconds)),
+        _ => Err(MongoDbError::BadRequest {
+            message: TIMEOUT.to_owned(),
+        }),
     }
 }

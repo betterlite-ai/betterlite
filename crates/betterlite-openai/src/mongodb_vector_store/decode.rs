@@ -11,19 +11,14 @@ use crate::api::vector_store_records::records::vector::{
 use super::error::MongoDbError;
 
 const INVALID_RESPONSE: &str = "MongoDB sidecar returned an invalid search response. Check the sidecar version and deployment.";
+const TEXT_KIND: &str = "text";
 pub const SEARCH_RESULTS_OBJECT: &str = "vector_store.search_results.page";
 
 #[derive(Debug, Deserialize)]
 struct WireResponse {
-    object: ObjectKind,
+    object: String,
     search_query: String,
     data: Vec<WireResult>,
-}
-
-#[derive(Debug, Deserialize)]
-enum ObjectKind {
-    #[serde(rename = "vector_store.search_results.page")]
-    SearchResultsPage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,14 +32,8 @@ struct WireResult {
 #[derive(Debug, Deserialize)]
 struct WireContent {
     #[serde(rename = "type")]
-    kind: ContentKind,
+    type_name: String,
     text: String,
-}
-
-#[derive(Debug, Deserialize)]
-enum ContentKind {
-    #[serde(rename = "text")]
-    Text,
 }
 
 // LiteLLM's strict model requires the key and accepts null, so Nullable separates null from a missing field
@@ -61,10 +50,15 @@ pub fn decode_mongodb_search(body: &[u8]) -> Result<VectorStoreSearchResponse, M
             message: INVALID_RESPONSE.to_owned(),
         })?;
     let WireResponse {
-        object: ObjectKind::SearchResultsPage,
+        object,
         search_query,
         data,
     } = response;
+    if object != SEARCH_RESULTS_OBJECT {
+        return Err(MongoDbError::ServiceUnavailable {
+            message: INVALID_RESPONSE.to_owned(),
+        });
+    }
     let mut results = Vec::with_capacity(data.len());
     for row in data {
         results.push(search_result(row)?);
@@ -82,14 +76,15 @@ fn search_result(row: WireResult) -> Result<VectorStoreSearchResult, MongoDbErro
     let file_id = nullable_text(row.file_id);
     let filename = nullable_text(row.filename);
     let mut contents = Vec::with_capacity(row.content.len());
-    for WireContent {
-        kind: ContentKind::Text,
-        text,
-    } in row.content
-    {
+    for WireContent { type_name, text } in row.content {
+        if type_name != TEXT_KIND {
+            return Err(MongoDbError::ServiceUnavailable {
+                message: INVALID_RESPONSE.to_owned(),
+            });
+        }
         contents.push(VectorStoreResultContent {
             text: Some(text),
-            type_name: Some("text".to_owned()),
+            type_name: Some(TEXT_KIND.to_owned()),
             extra: BTreeMap::new(),
         });
     }

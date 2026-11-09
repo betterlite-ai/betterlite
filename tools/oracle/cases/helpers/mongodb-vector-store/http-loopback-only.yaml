@@ -18,6 +18,22 @@ call:
       - call: mongodb_complete_url
         input: {api_base: "http://[::1]:8080//"}
       - call: mongodb_complete_url
+        input: {api_base: "http://[::ffff:127.0.0.1]"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://127.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://2130706433"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://0x7f.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://%31%32%37.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http:127.0.0.1:8080"}
+      - call: mongodb_complete_url
+        input: {api_base: "http:///127.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "https:example.test"}
+      - call: mongodb_complete_url
         input: {api_base: "http://localhost:8080"}
       - call: mongodb_complete_url
         input: {api_base: "http://0.0.0.0"}

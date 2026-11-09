@@ -11,18 +11,19 @@ use serde_json::Value;
 use super::Params;
 use super::create::{create_request, create_response, validate_create_vector_store};
 use super::decode::decode_mongodb_search;
-use super::environment::{MongoEnv, get_complete_url, validate_environment};
+use super::environment::{
+    MongoEnv, auth_credentials, endpoints, get_complete_url, validate_environment,
+};
 use super::error::{LLM_PROVIDER, MongoDbError, error_for_status};
 use super::prepare::{PreparedSearch, prepare_search};
 use super::search::{SearchRequest, search_request};
-use crate::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
 use crate::embedding::{EmbeddingRecord, EmbeddingResponse, EmbeddingUsage, EmbeddingVector};
 use crate::vector_stores::Headers;
 use crate::vector_stores::store::{Query, SearchParams};
 
 const BASE: &str = "https://sidecar.example.test";
 const VALID: &str = r#"{"litellm_embedding_model":"openai/text-embedding-3-small","mongodb_database":"sample_mflix","mongodb_collection":"embedded_movies"}"#;
-const TIMEOUT_CASES: [(&str, u64); 10] = [
+const TIMEOUT_CASES: [(&str, u64); 15] = [
     (
         r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c"}"#,
         30_000,
@@ -62,6 +63,26 @@ const TIMEOUT_CASES: [(&str, u64); 10] = [
     (
         r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":{}}"#,
         30_000,
+    ),
+    (
+        r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":1e3}"#,
+        1_000_000,
+    ),
+    (
+        r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":2.50}"#,
+        2_500,
+    ),
+    (
+        r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":1.10}"#,
+        1_100,
+    ),
+    (
+        r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":1e-05}"#,
+        1,
+    ),
+    (
+        r#"{"litellm_embedding_model":"m","mongodb_database":"db","mongodb_collection":"c","timeout":{"read":2.50}}"#,
+        2_500,
     ),
 ];
 
@@ -228,6 +249,7 @@ fn url_accepts() {
         ("http://127.0.0.1:8080/", "http://127.0.0.1:8080"),
         ("http://127.0.0.1", "http://127.0.0.1"),
         ("http://[::1]:8080//", "http://[::1]:8080"),
+        ("http://[::ffff:127.0.0.1]", "http://[::ffff:127.0.0.1]"),
         (
             "https://sidecar.example.test/prefix",
             "https://sidecar.example.test/prefix",
@@ -272,6 +294,9 @@ fn url_structural_rejects() {
         "https://sidecar.example.test:0",
         "ftp://127.0.0.1",
         "not a url",
+        "http:127.0.0.1:8080",
+        "http:///127.0.0.1",
+        "https:example.test",
     ];
     for input in inputs {
         let error = get_complete_url(Some(input)).expect_err(input);
@@ -287,7 +312,10 @@ fn url_http_requires_loopback() {
     let inputs = [
         "http://localhost:8080",
         "http://0.0.0.0",
-        "http://[::ffff:127.0.0.1]",
+        "http://127.1",
+        "http://2130706433",
+        "http://0x7f.0.0.1",
+        "http://%31%32%37.0.0.1",
         "http://sidecar.example.test",
     ];
     for input in inputs {
@@ -315,14 +343,13 @@ fn url_parse_rejects() {
 }
 
 fn endpoint_table() {
-    let table = VectorStoreIndexEndpoints {
-        read: Some(Vec::new()),
-        write: Some(Vec::new()),
-        extra: BTreeMap::new(),
-    };
     assert_eq!(
-        serde_json::to_value(&table).expect("endpoints"),
+        serde_json::to_value(endpoints()).expect("endpoints"),
         json_value(r#"{"read":[],"write":[]}"#)
+    );
+    assert_eq!(
+        serde_json::to_value(auth_credentials()).expect("credentials"),
+        json_value("{}")
     );
 }
 
@@ -824,7 +851,7 @@ fn decode_empty_rows() {
 }
 
 fn decode_failures() {
-    let invalid: [&[u8]; 25] = [
+    let invalid: [&[u8]; 27] = [
         b"",
         b"not json",
         b"[]",
@@ -850,6 +877,8 @@ fn decode_failures() {
         br#"{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1e300,"content":[],"file_id":null,"filename":null}]}"#,
         br#"{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1e400,"content":[],"file_id":null,"filename":null}]}"#,
         br#"{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":NaN,"content":[],"file_id":null,"filename":null}]}"#,
+        br#"{"object":{"vector_store.search_results.page":null},"search_query":"q","data":[]}"#,
+        br#"{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":{"text":null},"text":"x"}],"file_id":null,"filename":null}]}"#,
     ];
     for body in invalid {
         let error = decode_mongodb_search(body).expect_err("invalid response");

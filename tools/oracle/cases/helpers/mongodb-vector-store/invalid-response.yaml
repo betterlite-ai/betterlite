@@ -42,5 +42,9 @@ call:
         input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":"text"}],"file_id":null,"filename":null}]}'}
       - call: mongodb_decode_search
         input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[],"file_id":5,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":{"vector_store.search_results.page":null},"search_query":"q","data":[]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":{"text":null},"text":"x"}],"file_id":null,"filename":null}]}'}
 env: {}
 compare: {ignore: []}
