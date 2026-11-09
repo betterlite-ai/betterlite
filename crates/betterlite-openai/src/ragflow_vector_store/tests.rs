@@ -97,6 +97,19 @@ fn validate_headers() {
         plain(&fallback.expect("empty explicit falls through"))["Authorization"],
         "Bearer env-key"
     );
+    // LiteLLM's headers.update replaces a credential the caller already holds
+    let stale = validate_environment(
+        BTreeMap::from([
+            ("Authorization".to_owned(), key("Bearer stale")),
+            ("Content-Type".to_owned(), key("text/plain")),
+        ]),
+        Some(&key("explicit-key")),
+        &env(None, None),
+    );
+    let overwritten = stale.expect("overwritten");
+    let replaced = plain(&overwritten);
+    assert_eq!(replaced["Authorization"], "Bearer explicit-key");
+    assert_eq!(replaced["Content-Type"], "application/json");
     let preserved = validate_environment(
         BTreeMap::from([("X-Trace".to_owned(), key("t"))]),
         Some(&key("explicit-key")),
@@ -134,6 +147,15 @@ fn complete_url() {
             Some("https://explicit.example.test///"),
             None,
             &env(None, None)
+        ),
+        "https://explicit.example.test/api/v1/datasets"
+    );
+    // the explicit api_base wins over litellm_params and the env
+    assert_eq!(
+        get_complete_url(
+            Some("https://explicit.example.test"),
+            Some("https://params.example.test"),
+            &env(None, Some("https://env.example.test"))
         ),
         "https://explicit.example.test/api/v1/datasets"
     );

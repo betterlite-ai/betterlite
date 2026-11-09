@@ -22,6 +22,8 @@ call:
       - call: validate_environment
         input: {headers: {X-Trace: t}, litellm_params: {api_key: explicit-key}, env: {RAGFLOW_API_KEY: env-key}}
       - call: validate_environment
+        input: {headers: {Authorization: "Bearer stale", Content-Type: text/plain}, litellm_params: {api_key: explicit-key}, env: {}}
+      - call: validate_environment
         input: {headers: {}, litellm_params: {api_key: ""}, env: {}}
 env: {}
 compare: {ignore: []}
