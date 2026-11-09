@@ -23,7 +23,8 @@ pub(super) struct RecordingTransport {
     pub(super) requests: Mutex<Vec<PostRequest>>,
     pub(super) replies: Mutex<VecDeque<Result<u16, ApiError>>>,
     blocked: AtomicBool,
-    gate: Notify,
+    pub(super) gate: Notify,
+    pub(super) started: Notify,
 }
 impl RecordingTransport {
     pub(super) fn reply(&self, outcome: Result<u16, ApiError>) {
@@ -47,7 +48,8 @@ impl RecordingTransport {
 impl PostTransport for RecordingTransport {
     async fn post(&self, request: PostRequest) -> Result<u16, ApiError> {
         self.requests.lock().expect("the requests").push(request);
-        if self.blocked.load(Ordering::SeqCst) {
+        if self.blocked.swap(false, Ordering::SeqCst) {
+            self.started.notify_one();
             self.gate.notified().await;
         }
         self.replies
