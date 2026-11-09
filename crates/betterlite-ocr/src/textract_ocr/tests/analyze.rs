@@ -243,7 +243,7 @@ fn nested_blocks(depth: usize) -> String {
     blocks.push(format!(
         r#"{{"Id":"b{depth}","BlockType":"LINE","Text":"deep"}}"#
     ));
-    blocks.join(",")
+    format!("[{}]", blocks.join(","))
 }
 
 #[test]
