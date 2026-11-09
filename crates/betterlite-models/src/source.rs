@@ -21,11 +21,10 @@ impl CatalogSource {
     #[must_use]
     pub fn from_settings(local: bool, url: &str) -> Self {
         if local {
-            Self::Local
-        } else {
-            Self::Remote {
-                url: url.to_owned(),
-            }
+            return Self::Local;
+        }
+        Self::Remote {
+            url: url.to_owned(),
         }
     }
 }

@@ -117,9 +117,8 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
         J: JitterSource,
     {
         let CatalogSource::Remote { url } = &self.source else {
-            return ReloadOutcome::Reloaded(
-                self.adopt_bundled(BundledSource::Local, (self.clock)()),
-            );
+            let snapshot = self.adopt_bundled(BundledSource::Local, (self.clock)());
+            return ReloadOutcome::Reloaded(snapshot);
         };
         let fetch = refresh::ReloadFetch {
             limits,
