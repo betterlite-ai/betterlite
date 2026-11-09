@@ -1,6 +1,7 @@
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
 use super::SerperSearchError;
@@ -31,20 +32,20 @@ pub fn decode_serper_search(bytes: &[u8]) -> Result<SearchResponse, SerperSearch
             limit: REPLY_MAX_BYTES,
         });
     }
-    let reply: SerperReply =
-        serde_json::from_slice(bytes).map_err(SerperSearchError::ReplyDecode)?;
+    let reply: SerperReply = parse_object(bytes)?;
     let results = match reply.organic {
         None => Vec::new(),
         Some(raw) => {
             if serde_json::from_str::<()>(raw.get()).is_ok() {
                 return Err(SerperSearchError::OrganicShape);
             }
-            let items: Vec<SerperReplyResult> =
+            let items: Vec<Box<RawValue>> =
                 serde_json::from_str(raw.get()).map_err(SerperSearchError::ReplyDecode)?;
-            items
-                .into_iter()
-                .map(serper_result)
-                .collect::<Result<Vec<_>, _>>()?
+            let mut results = Vec::with_capacity(items.len());
+            for item in &items {
+                results.push(serper_result(parse_object(item.get().as_bytes())?)?);
+            }
+            results
         }
     };
     Ok(SearchResponse {
@@ -53,6 +54,17 @@ pub fn decode_serper_search(bytes: &[u8]) -> Result<SearchResponse, SerperSearch
         extra: Object::new(),
         hidden_params: Object::new(),
     })
+}
+
+// serde fills a struct from a JSON array too, and the source fails on anything but an object
+fn parse_object<T>(bytes: &[u8]) -> Result<T, SerperSearchError>
+where
+    T: DeserializeOwned,
+{
+    if bytes.trim_ascii_start().first() != Some(&b'{') {
+        return Err(SerperSearchError::NotAnObject);
+    }
+    serde_json::from_slice(bytes).map_err(SerperSearchError::ReplyDecode)
 }
 
 fn serper_result(result: SerperReplyResult) -> Result<SearchResult, SerperSearchError> {

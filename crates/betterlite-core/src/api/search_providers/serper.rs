@@ -7,7 +7,6 @@ use betterlite_openai::search::provider::{
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
 use thiserror::Error;
 
 pub mod reply;
@@ -39,8 +38,6 @@ pub enum SerperSearchError {
     OptionType { field: &'static str },
     #[error("the Serper search option `{field}` is not a list of strings")]
     OptionList { field: &'static str },
-    #[error("a Serper search request option is not JSON")]
-    RequestJson(#[source] serde_json::Error),
     #[error("the Serper search reply is larger than {limit} bytes")]
     ReplyTooLarge { limit: usize },
     #[error("the Serper search reply does not match the Serper schema")]
@@ -55,6 +52,8 @@ pub enum SerperSearchError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the Serper search reply holds a value that is not a JSON object")]
+    NotAnObject,
 }
 
 #[derive(Debug, Clone)]
@@ -91,9 +90,8 @@ pub struct SerperSearchRequest {
     #[serde(rename = "q")]
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub num: Option<Box<RawValue>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub gl: Option<String>,
+    // num and the passthrough options, copied as given
     #[serde(flatten)]
     pub extra: Object,
 }

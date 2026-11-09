@@ -1,17 +1,20 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 
 use betterlite_core::api::search_providers::exa_ai::reply::decode_exa_ai_search;
-use betterlite_core::api::search_providers::exa_ai::{ExaAiSearchConfig, ExaAiSearchSettings};
+use betterlite_core::api::search_providers::exa_ai::{
+    ExaAiSearchConfig, ExaAiSearchError, ExaAiSearchSettings,
+};
 use betterlite_core::api::search_providers::serper::reply::decode_serper_search;
-use betterlite_core::api::search_providers::serper::{SerperSearchConfig, SerperSearchSettings};
+use betterlite_core::api::search_providers::serper::{
+    SerperSearchConfig, SerperSearchError, SerperSearchSettings,
+};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
-use serde::Serialize;
 use serde_json::{Value, json};
+use thiserror::Error;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -61,6 +64,16 @@ enum Operation {
     },
 }
 
+#[derive(Debug, Error)]
+enum B8020HelperError {
+    #[error(transparent)]
+    Exa(#[from] ExaAiSearchError),
+    #[error(transparent)]
+    Serper(#[from] SerperSearchError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
 enum Config {
     Exa(ExaAiSearchConfig),
     Serper(SerperSearchConfig),
@@ -72,14 +85,10 @@ impl Config {
         headers: Headers,
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
-    ) -> Result<Headers, String> {
+    ) -> Result<Headers, B8020HelperError> {
         match self {
-            Self::Exa(config) => config
-                .validated_headers(headers, api_key, api_base)
-                .map_err(|error| error.to_string()),
-            Self::Serper(config) => config
-                .validated_headers(headers, api_key, api_base)
-                .map_err(|error| error.to_string()),
+            Self::Exa(config) => Ok(config.validated_headers(headers, api_key, api_base)?),
+            Self::Serper(config) => Ok(config.validated_headers(headers, api_key, api_base)?),
         }
     }
 
@@ -94,32 +103,28 @@ impl Config {
         }
     }
 
-    fn decode_reply(&self, body: &str) -> Result<SearchResponse, String> {
+    fn decode_reply(&self, body: &str) -> Result<SearchResponse, B8020HelperError> {
         match self {
-            Self::Exa(_) => {
-                decode_exa_ai_search(body.as_bytes()).map_err(|error| error.to_string())
-            }
-            Self::Serper(_) => {
-                decode_serper_search(body.as_bytes()).map_err(|error| error.to_string())
-            }
+            Self::Exa(_) => Ok(decode_exa_ai_search(body.as_bytes())?),
+            Self::Serper(_) => Ok(decode_serper_search(body.as_bytes())?),
         }
     }
 
-    fn complete_url(&self, api_base: Option<&str>) -> Result<String, String> {
+    fn complete_url(&self, api_base: Option<&str>) -> Result<String, B8020HelperError> {
         match self {
-            Self::Exa(config) => config
-                .complete_url(api_base, &Object::new(), None)
-                .map_err(|error| error.to_string()),
-            Self::Serper(config) => config
-                .complete_url(api_base, &Object::new(), None)
-                .map_err(|error| error.to_string()),
+            Self::Exa(config) => Ok(config.complete_url(api_base, &Object::new(), None)?),
+            Self::Serper(config) => Ok(config.complete_url(api_base, &Object::new(), None)?),
         }
     }
 
-    fn request(&self, query: &SearchQuery, options: &Object) -> Result<Value, String> {
+    fn request(&self, query: &SearchQuery, options: &Object) -> Result<Value, B8020HelperError> {
         match self {
-            Self::Exa(config) => serialize_body(config.transform_search_request(query, options)),
-            Self::Serper(config) => serialize_body(config.transform_search_request(query, options)),
+            Self::Exa(config) => Ok(serde_json::to_value(
+                config.transform_search_request(query, options)?,
+            )?),
+            Self::Serper(config) => Ok(serde_json::to_value(
+                config.transform_search_request(query, options)?,
+            )?),
         }
     }
 }
@@ -146,14 +151,14 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn outcome(result: Result<Value, String>) -> Value {
+fn outcome(result: Result<Value, B8020HelperError>) -> Value {
     result.map_or_else(
         |_| json!({"ok": false}),
         |value| json!({"ok": true, "value": value}),
     )
 }
 
-fn run_operation(config: &Config, operation: &Operation) -> Result<Value, String> {
+fn run_operation(config: &Config, operation: &Operation) -> Result<Value, B8020HelperError> {
     match operation {
         Operation::Settings => Ok(config.settings_value()),
         Operation::ValidateEnvironment {
@@ -164,7 +169,7 @@ fn run_operation(config: &Config, operation: &Operation) -> Result<Value, String
             let key = api_key.as_deref().map(SecretString::from);
             let incoming: Headers = headers.clone().into_iter().collect();
             let validated = config.headers_for(incoming, key.as_ref(), api_base.as_deref())?;
-            serde_json::to_value(validated).map_err(|error| error.to_string())
+            Ok(serde_json::to_value(validated)?)
         }
         Operation::CompleteUrl { api_base } => {
             config.complete_url(api_base.as_deref()).map(Value::String)
@@ -175,7 +180,7 @@ fn run_operation(config: &Config, operation: &Operation) -> Result<Value, String
         } => config.request(query, optional_params),
         Operation::Reply { body } => {
             let response = config.decode_reply(body)?;
-            serde_json::to_value(response).map_err(|error| error.to_string())
+            Ok(serde_json::to_value(response)?)
         }
     }
 }
@@ -185,16 +190,6 @@ fn settings_json(api_key: Option<&SecretString>, api_base: &str) -> Value {
         "api_key": api_key.map(ExposeSecret::expose_secret),
         "api_base": api_base,
     })
-}
-
-fn serialize_body<Body, Failure>(body: Result<Body, Failure>) -> Result<Value, String>
-where
-    Body: Serialize,
-    Failure: Display,
-{
-    let value = body.map_err(|error| error.to_string())?;
-    let encoded = serde_json::to_value(value);
-    encoded.map_err(|error| error.to_string())
 }
 
 fn failure(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {

@@ -254,22 +254,51 @@ fn exa_ai_reply_projects_the_result_fields(#[case] payload: &str, #[case] expect
     assert_eq!(actual, expected_reply);
 }
 
+#[test]
+fn exa_ai_reply_rejects_null_results() {
+    let error = decode_exa_ai_search(br#"{"results": null}"#).unwrap_err();
+    assert!(matches!(error, ExaAiSearchError::ResultsShape));
+}
+
 #[rstest]
-#[case::null_results(r#"{"results": null}"#)]
+#[case::null_title(r#"{"results": [{"title": null}]}"#, "title")]
+#[case::null_url(r#"{"results": [{"url": null}]}"#, "url")]
+#[case::null_text(r#"{"results": [{"text": null}]}"#, "text")]
+fn exa_ai_reply_rejects_a_null_member(#[case] payload: &str, #[case] expected: &str) {
+    let error = decode_exa_ai_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, ExaAiSearchError::ResultField { field } if field == expected));
+}
+
+#[rstest]
 #[case::string_results(r#"{"results": "abc"}"#)]
 #[case::object_results(r#"{"results": {"a": 1}}"#)]
-#[case::null_member(r#"{"results": [null]}"#)]
-#[case::string_member(r#"{"results": ["x"]}"#)]
-#[case::null_title(r#"{"results": [{"title": null}]}"#)]
-#[case::numeric_title(r#"{"results": [{"title": 5}]}"#)]
-#[case::null_text(r#"{"results": [{"text": null}]}"#)]
-#[case::numeric_date(r#"{"results": [{"publishedDate": 5}]}"#)]
 #[case::invalid_json("{")]
 #[case::trailing_bytes(r#"{"results": []}{"#)]
-#[case::not_an_object("[]")]
-fn exa_ai_reply_rejects_a_broken_shape(#[case] payload: &str) {
+fn exa_ai_reply_rejects_a_wrong_type(#[case] payload: &str) {
     let error = decode_exa_ai_search(payload.as_bytes()).unwrap_err();
-    assert!(!error.to_string().is_empty());
+    assert!(matches!(error, ExaAiSearchError::ReplyDecode(_)));
+}
+
+#[rstest]
+#[case::numeric_title(r#"{"results": [{"title": 5}]}"#, "title")]
+#[case::numeric_url(r#"{"results": [{"url": 5}]}"#, "url")]
+#[case::numeric_text(r#"{"results": [{"text": 5}]}"#, "text")]
+#[case::numeric_date(r#"{"results": [{"publishedDate": 5}]}"#, "publishedDate")]
+fn exa_ai_reply_rejects_a_member_of_the_wrong_type(#[case] payload: &str, #[case] expected: &str) {
+    let error = decode_exa_ai_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, ExaAiSearchError::ReplyField { field, .. } if field == expected));
+}
+
+#[rstest]
+#[case::null_member(r#"{"results": [null]}"#)]
+#[case::string_member(r#"{"results": ["x"]}"#)]
+#[case::array_member(r#"{"results": [[]]}"#)]
+#[case::empty_array("[]")]
+#[case::null_reply("null")]
+#[case::empty_reply("")]
+fn exa_ai_reply_rejects_a_value_that_is_not_an_object(#[case] payload: &str) {
+    let error = decode_exa_ai_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, ExaAiSearchError::NotAnObject));
 }
 
 #[test]

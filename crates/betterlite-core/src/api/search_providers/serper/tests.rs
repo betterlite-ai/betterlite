@@ -213,14 +213,31 @@ fn serper_request_maps_gl_and_domains(
 #[rstest]
 #[case::numeric_country(r#"{"country": 5}"#)]
 #[case::object_country(r#"{"country": {"a": 1}}"#)]
-#[case::numeric_domain(r#"{"search_domain_filter": [1]}"#)]
-fn serper_request_rejects_a_wrong_option_type(#[case] options: &str) {
+fn serper_request_rejects_a_non_string_country(#[case] options: &str) {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str("\"q\"").unwrap();
     let error = config(&[])
         .transform_search_request(&query, &optional_params)
         .unwrap_err();
-    assert!(!error.to_string().is_empty());
+    assert!(matches!(
+        error,
+        SerperSearchError::OptionType { field: "country" }
+    ));
+}
+
+#[test]
+fn serper_request_rejects_a_non_string_domain() {
+    let optional_params: Object = serde_json::from_str(r#"{"search_domain_filter": [1]}"#).unwrap();
+    let query: SearchQuery = serde_json::from_str("\"q\"").unwrap();
+    let error = config(&[])
+        .transform_search_request(&query, &optional_params)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        SerperSearchError::OptionList {
+            field: "search_domain_filter"
+        }
+    ));
 }
 
 #[rstest]
@@ -250,21 +267,50 @@ fn serper_reply_reads_organic_only(#[case] payload: &str, #[case] expected: &str
     assert_eq!(actual, expected_reply);
 }
 
+#[test]
+fn serper_reply_rejects_null_organic() {
+    let error = decode_serper_search(br#"{"organic": null}"#).unwrap_err();
+    assert!(matches!(error, SerperSearchError::OrganicShape));
+}
+
 #[rstest]
-#[case::null_organic(r#"{"organic": null}"#)]
+#[case::null_title(r#"{"organic": [{"title": null}]}"#, "title")]
+#[case::null_link(r#"{"organic": [{"link": null}]}"#, "link")]
+#[case::null_snippet(r#"{"organic": [{"snippet": null}]}"#, "snippet")]
+fn serper_reply_rejects_a_null_member(#[case] payload: &str, #[case] expected: &str) {
+    let error = decode_serper_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, SerperSearchError::ResultField { field } if field == expected));
+}
+
+#[rstest]
 #[case::string_organic(r#"{"organic": "abc"}"#)]
 #[case::object_organic(r#"{"organic": {"a": 1}}"#)]
-#[case::null_member(r#"{"organic": [null]}"#)]
-#[case::null_title(r#"{"organic": [{"title": null}]}"#)]
-#[case::null_link(r#"{"organic": [{"link": null}]}"#)]
-#[case::numeric_snippet(r#"{"organic": [{"snippet": 5}]}"#)]
-#[case::numeric_date(r#"{"organic": [{"date": 5}]}"#)]
-#[case::invalid_json("")]
+#[case::invalid_json("{")]
 #[case::trailing_bytes(r#"{"organic": []}{"#)]
-#[case::not_an_object("[]")]
-fn serper_reply_rejects_a_broken_shape(#[case] payload: &str) {
+fn serper_reply_rejects_a_wrong_type(#[case] payload: &str) {
     let error = decode_serper_search(payload.as_bytes()).unwrap_err();
-    assert!(!error.to_string().is_empty());
+    assert!(matches!(error, SerperSearchError::ReplyDecode(_)));
+}
+
+#[rstest]
+#[case::numeric_title(r#"{"organic": [{"title": 5}]}"#, "title")]
+#[case::numeric_link(r#"{"organic": [{"link": 5}]}"#, "link")]
+#[case::numeric_snippet(r#"{"organic": [{"snippet": 5}]}"#, "snippet")]
+#[case::numeric_date(r#"{"organic": [{"date": 5}]}"#, "date")]
+fn serper_reply_rejects_a_member_of_the_wrong_type(#[case] payload: &str, #[case] expected: &str) {
+    let error = decode_serper_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, SerperSearchError::ReplyField { field, .. } if field == expected));
+}
+
+#[rstest]
+#[case::null_member(r#"{"organic": [null]}"#)]
+#[case::array_member(r#"{"organic": [[]]}"#)]
+#[case::empty_array("[]")]
+#[case::null_reply("null")]
+#[case::empty_reply("")]
+fn serper_reply_rejects_a_value_that_is_not_an_object(#[case] payload: &str) {
+    let error = decode_serper_search(payload.as_bytes()).unwrap_err();
+    assert!(matches!(error, SerperSearchError::NotAnObject));
 }
 
 #[test]

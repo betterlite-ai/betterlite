@@ -6,8 +6,7 @@ use betterlite_openai::search::provider::{
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
+use serde::Serialize;
 use thiserror::Error;
 
 pub mod reply;
@@ -35,8 +34,6 @@ pub enum ExaAiSearchError {
     MissingApiKey,
     #[error(transparent)]
     Credential(#[from] CredentialError),
-    #[error("an Exa AI search request option is not JSON")]
-    RequestJson(#[source] serde_json::Error),
     #[error("the Exa AI search reply is larger than {limit} bytes")]
     ReplyTooLarge { limit: usize },
     #[error("the Exa AI search reply does not match the Exa AI schema")]
@@ -51,6 +48,8 @@ pub enum ExaAiSearchError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the Exa AI search reply holds a value that is not a JSON object")]
+    NotAnObject,
 }
 
 #[derive(Debug, Clone)]
@@ -82,18 +81,20 @@ impl EnvironmentLookup for ExaAiSearchSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
+pub struct DefaultContents {
+    pub text: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ExaAiSearchRequest {
     pub query: String,
-    #[serde(rename = "numResults", skip_serializing_if = "Option::is_none")]
-    pub num_results: Option<Box<RawValue>>,
-    #[serde(rename = "includeDomains", skip_serializing_if = "Option::is_none")]
-    pub include_domains: Option<Box<RawValue>>,
-    #[serde(rename = "userLocation", skip_serializing_if = "Option::is_none")]
-    pub user_location: Option<Box<RawValue>>,
-    pub contents: Box<RawValue>,
+    // set only when the caller sent no contents, so it never meets a caller contents in fields
+    #[serde(rename = "contents", skip_serializing_if = "Option::is_none")]
+    pub default_contents: Option<DefaultContents>,
+    // numResults, includeDomains, userLocation, a caller contents and the passthrough options, as given
     #[serde(flatten)]
-    pub extra: Object,
+    pub fields: Object,
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +166,7 @@ impl SearchProvider for ExaAiSearchConfig {
         query: &SearchQuery,
         optional_params: &Object,
     ) -> Result<Self::Body, Self::Error> {
-        request::build(query, optional_params)
+        Ok(request::build(query, optional_params))
     }
 
     fn transform_search_response(

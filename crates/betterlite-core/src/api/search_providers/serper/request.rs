@@ -1,27 +1,25 @@
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::provider::{PERPLEXITY_PARAMS, SearchQuery};
-use serde_json::value::{RawValue, to_raw_value};
 
 use super::{SerperSearchError, SerperSearchRequest};
 
 pub(super) fn build(
-    query: &SearchQuery,
+    search_query: &SearchQuery,
     optional_params: &Object,
 ) -> Result<SerperSearchRequest, SerperSearchError> {
-    let joined = match query {
+    let joined = match search_query {
         SearchQuery::Single(text) => text.clone(),
         SearchQuery::Multiple(queries) => queries.join(" "),
     };
-    let mut body = SerperSearchRequest {
-        query: joined,
-        num: raw_field(optional_params, "max_results")?,
-        gl: serper_country(optional_params)?,
-        extra: Object::new(),
+    let gl = serper_country(optional_params)?;
+    let query = match serper_domains(optional_params)? {
+        Some(clauses) => format!("({joined}) ({})", clauses.join(" OR ")),
+        None => joined,
     };
-    if let Some(clauses) = serper_domains(optional_params)? {
-        body.query = format!("({}) ({})", body.query, clauses.join(" OR "));
-    }
     let mut extra = Object::new();
+    if let Some(num) = optional_params.get("max_results") {
+        extra.insert("num".to_owned(), num.clone());
+    }
     for (name, value) in optional_params {
         if PERPLEXITY_PARAMS.contains(&name.as_str()) {
             continue;
@@ -31,18 +29,7 @@ pub(super) fn build(
         }
         extra.insert(name.clone(), value.clone());
     }
-    body.extra = extra;
-    Ok(body)
-}
-
-fn raw_field(
-    optional_params: &Object,
-    name: &str,
-) -> Result<Option<Box<RawValue>>, SerperSearchError> {
-    optional_params
-        .get(name)
-        .map(|value| to_raw_value(value).map_err(SerperSearchError::RequestJson))
-        .transpose()
+    Ok(SerperSearchRequest { query, gl, extra })
 }
 
 fn serper_country(optional_params: &Object) -> Result<Option<String>, SerperSearchError> {
