@@ -1,0 +1,32 @@
+kind: helper
+name: document_url_request_and_response
+call:
+  b6801:
+    model: mistral-ocr-latest
+    document:
+      type: document_url
+      document_url: https://example.com/a.pdf
+    api_key: sk-test
+    api_base_path: /v1
+    api_base_query: "?tenant=a"
+    options:
+      pages: [0, 1]
+      extract_header: true
+      req_format: litellm
+    answer:
+      pages:
+        - index: 0
+          markdown: "# Title"
+          dimensions: {width: 612, height: 792, dpi: 72}
+          blocks: [{type: title, bbox: {x: 1}}]
+        - index: 1
+          markdown: second
+          header: h
+          footer: f
+      model: mistral-ocr-2505
+      document_annotation: {language: en}
+      usage_info: {pages_processed: 2, credits: 1.5, custom: 0}
+      extra_root: kept
+env: {}
+compare:
+  ignore: []
