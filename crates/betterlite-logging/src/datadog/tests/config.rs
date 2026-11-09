@@ -1,9 +1,9 @@
 use crate::datadog::apm::NullTracer;
-use crate::datadog::payloads::legacy::{LegacyLoggingKwargs, legacy_v1_logging_to_datadog};
+use crate::datadog::payloads::legacy::legacy_v1_logging_to_datadog;
 use crate::datadog::payloads::standard::standard_logging_to_datadog;
 use crate::datadog::payloads::status::DataDogStatus;
 
-use super::support::{default_environment, json, legacy_event, standard_payload};
+use super::support::{default_environment, default_kwargs, json, legacy_event, standard_payload};
 
 #[test]
 fn datadog_config_defaults_behavior() {
@@ -20,7 +20,7 @@ fn datadog_config_defaults_behavior() {
     assert_eq!(built.service, "litellm-server");
     assert_eq!(built.hostname, "");
     assert_eq!(built.ddtags, tags);
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let response = json(r#"{"usage": {}}"#);
     let legacy =
         legacy_v1_logging_to_datadog(&legacy_event(&kwargs, &response), &environment, &NullTracer)

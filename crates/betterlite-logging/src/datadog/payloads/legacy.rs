@@ -18,27 +18,37 @@ use super::error::DatadogPayloadError;
 use super::status::DataDogStatus;
 use super::types::DatadogPayload;
 
-const DEFAULT_CALL_TYPE: &str = "litellm.completion";
 const CLEANED_METADATA_KEYS: [&str; 3] = ["endpoint", "caching_groups", "previous_models"];
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct LegacyLoggingKwargs {
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub model: String,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub user: String,
-    #[serde(default)]
-    pub messages: Option<Json>,
+    #[serde(default = "default_messages")]
+    pub messages: Json,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub litellm_params: LegacyLitellmParams,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub optional_params: IndexMap<String, Json>,
-    #[serde(default)]
-    pub call_type: Option<String>,
+    #[serde(
+        default = "default_call_type",
+        deserialize_with = "As::<DefaultOnNull>::deserialize"
+    )]
+    pub call_type: String,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub cache_hit: bool,
-    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub response_cost: Option<Decimal>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub response_cost: Decimal,
+}
+
+const fn default_messages() -> Json {
+    Json::Null
+}
+
+fn default_call_type() -> String {
+    "litellm.completion".to_owned()
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -114,18 +124,13 @@ fn legacy_record(
 ) -> Json {
     let kwargs = event.kwargs;
     let format = SecondsFormat::Micros;
-    let call_type = kwargs
-        .call_type
-        .clone()
-        .unwrap_or_else(|| DEFAULT_CALL_TYPE.to_owned());
     let start_time = event.start_time.to_rfc3339_opts(format, false);
     let end_time = event.end_time.to_rfc3339_opts(format, false);
     let parameters = Json::Object(kwargs.optional_params.clone());
-    let spend = number_json(kwargs.response_cost.unwrap_or_default());
     let metadata = Json::Object(clean_metadata(&kwargs.litellm_params.metadata));
     let entries = [
         ("id", Json::Text(id)),
-        ("call_type", Json::Text(call_type)),
+        ("call_type", Json::Text(kwargs.call_type.clone())),
         ("cache_hit", Json::Bool(kwargs.cache_hit)),
         ("start_time", Json::Text(start_time)),
         ("end_time", Json::Text(end_time)),
@@ -133,8 +138,8 @@ fn legacy_record(
         ("model", Json::Text(kwargs.model.clone())),
         ("user", Json::Text(kwargs.user.clone())),
         ("model_parameters", parameters),
-        ("spend", spend),
-        ("messages", kwargs.messages.clone().unwrap_or(Json::Null)),
+        ("spend", number_json(kwargs.response_cost)),
+        ("messages", kwargs.messages.clone()),
         ("response", Json::Object(response.clone())),
         ("usage", usage),
         ("metadata", metadata),

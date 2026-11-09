@@ -6,7 +6,7 @@ use crate::datadog::apm::NullTracer;
 use crate::datadog::payloads::legacy::{LegacyLoggingKwargs, legacy_v1_logging_to_datadog};
 use crate::datadog::payloads::status::DataDogStatus;
 
-use super::support::{default_environment, field, json, legacy_event, message};
+use super::support::{default_environment, default_kwargs, field, json, legacy_event, message};
 
 const KWARGS: &str = r#"{
     "model": "gpt-4o",
@@ -72,7 +72,7 @@ fn datadog_legacy_v1_logging_behavior() {
 
 #[test]
 fn datadog_legacy_v1_logging_defaults() {
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let response = json(r#"{"usage": {}}"#);
     let expected = json(
         r#"{
@@ -97,14 +97,14 @@ fn datadog_legacy_v1_logging_defaults() {
 
 #[test]
 fn datadog_legacy_v1_logging_generates_the_id_for_a_null_id() {
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let body = legacy_message(&kwargs, &json(r#"{"id": null, "usage": {}}"#));
     assert_eq!(field(&body, "id"), &json(r#""generated-id""#));
 }
 
 #[test]
 fn datadog_legacy_v1_logging_writes_a_null_response_time_that_overflows() {
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let response = json(r#"{"usage": {}}"#);
     let mut event = legacy_event(&kwargs, &response);
     event.start_time = DateTime::<Utc>::MIN_UTC.fixed_offset();
@@ -150,7 +150,7 @@ fn datadog_legacy_v1_logging_cleans_metadata(#[case] metadata: &str, #[case] exp
     "the legacy response object's id is not a string"
 )]
 fn datadog_legacy_v1_logging_rejects_bad_responses(#[case] encoded: &str, #[case] expected: &str) {
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let response = json(encoded);
     let error = legacy_v1_logging_to_datadog(
         &legacy_event(&kwargs, &response),

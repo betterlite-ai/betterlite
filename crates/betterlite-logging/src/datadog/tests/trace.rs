@@ -1,10 +1,10 @@
 use crate::datadog::apm::{NullTracer, Span, Tracer};
-use crate::datadog::payloads::legacy::{LegacyLoggingKwargs, legacy_v1_logging_to_datadog};
+use crate::datadog::payloads::legacy::legacy_v1_logging_to_datadog;
 use crate::datadog::payloads::standard::standard_logging_to_datadog;
 use crate::datadog::payloads::status::DataDogStatus;
 use crate::datadog::payloads::types::DatadogPayload;
 
-use super::support::{default_environment, json, legacy_event, standard_payload};
+use super::support::{default_environment, default_kwargs, json, legacy_event, standard_payload};
 
 struct TestSpan {
     trace_id: Option<u128>,
@@ -53,7 +53,7 @@ fn datadog_trace_context_attachment_behavior() {
     let built = standard(&current);
     assert_eq!(built.trace_id.as_deref(), Some("12"));
     assert_eq!(built.span_id.as_deref(), Some("34"));
-    let kwargs = LegacyLoggingKwargs::default();
+    let kwargs = default_kwargs();
     let response = json(r#"{"usage": {}}"#);
     let legacy = legacy_v1_logging_to_datadog(
         &legacy_event(&kwargs, &response),

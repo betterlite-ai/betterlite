@@ -106,6 +106,10 @@ pub(crate) fn moment(encoded: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(encoded).unwrap()
 }
 
+pub(crate) fn default_kwargs() -> LegacyLoggingKwargs {
+    serde_json::from_str("{}").unwrap()
+}
+
 pub(crate) fn legacy_event<'event>(
     kwargs: &'event LegacyLoggingKwargs,
     response_obj: &'event Json,
