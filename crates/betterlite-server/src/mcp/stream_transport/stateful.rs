@@ -236,14 +236,15 @@ async fn serve_request(
         drop(guard);
         receiver
     };
+    let state = stream_state(shared, key, receiver);
     if service
         .send(ClientJsonRpcMessage::Request(call))
         .await
         .is_err()
     {
+        drop(state);
         return terminated(id);
     }
-    let state = stream_state(shared, key, receiver);
     wire::sse_response(Body::from_stream(state), Some(id))
 }
 
