@@ -1,5 +1,6 @@
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::request::{TextInput, TokenRequest};
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::{A2aResponse, A2aTextError, Field, ListValue, RecordOr, RecordValue, Shape};
@@ -12,6 +13,23 @@ pub enum RequestUtilsError {
     Text(#[from] A2aTextError),
     #[error("A2A usage token total overflows")]
     UsageOverflow,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct A2aRequest {
+    pub params: Option<RecordOr<Box<A2aParams>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct A2aParams {
+    pub message: Option<RecordValue>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PartSource {
+    Dict,
+    // the a2a-sdk parses request parts into TextPart, whose kind defaults to "text", before model_dump writes the JSON
+    SdkDump,
 }
 
 #[must_use]
@@ -41,7 +59,16 @@ pub async fn count_tokens(counter: &Counter, text: &str) -> usize {
 pub fn extract_text_from_message(message: Option<&RecordValue>) -> Result<String, A2aTextError> {
     match message {
         None | Some(RecordOr::Other(_)) => Ok(String::new()),
-        Some(RecordOr::Record(record)) => text_parts(&record.parts),
+        Some(RecordOr::Record(record)) => text_parts(&record.parts, PartSource::Dict),
+    }
+}
+
+#[must_use = "the caller needs the request's input message or the fact that it has none"]
+pub fn get_input_message_from_request(request: &A2aRequest) -> Option<&RecordValue> {
+    let params = request.params.as_ref()?;
+    match params {
+        RecordOr::Record(found) => found.message.as_ref(),
+        RecordOr::Other(_) => None,
     }
 }
 
@@ -50,7 +77,7 @@ pub fn extract_text_from_response(response: &A2aResponse) -> Result<String, A2aT
         return Ok(String::new());
     };
     if matches!(&result.kind, Field::Present(Shape::Text(kind)) if kind == "message") {
-        return text_parts(&result.parts);
+        return text_parts(&result.parts, PartSource::Dict);
     }
     result.message.as_ref().map_or_else(
         || Ok(String::new()),
@@ -60,10 +87,13 @@ pub fn extract_text_from_response(response: &A2aResponse) -> Result<String, A2aT
 
 pub async fn usage_from_request_response(
     counter: &Counter,
-    message: Option<&RecordValue>,
+    request: &A2aRequest,
     response: &A2aResponse,
 ) -> Result<(usize, usize, usize), RequestUtilsError> {
-    let prompt_text = extract_text_from_message(message)?;
+    let prompt_text = match get_input_message_from_request(request) {
+        Some(RecordOr::Record(message)) => text_parts(&message.parts, PartSource::SdkDump)?,
+        None | Some(RecordOr::Other(_)) => String::new(),
+    };
     let completion_text = extract_text_from_response(response)?;
     let prompt_tokens = count_tokens(counter, &prompt_text).await;
     let completion_tokens = count_tokens(counter, &completion_text).await;
@@ -73,7 +103,7 @@ pub async fn usage_from_request_response(
     Ok((prompt_tokens, completion_tokens, total_tokens))
 }
 
-fn text_parts(parts: &Field<ListValue>) -> Result<String, A2aTextError> {
+fn text_parts(parts: &Field<ListValue>, source: PartSource) -> Result<String, A2aTextError> {
     let items = match parts {
         Field::Present(ListValue::List(items)) => items,
         Field::Present(ListValue::Other(Shape::Null | Shape::Flag(_) | Shape::Number(_))) => {
@@ -87,7 +117,14 @@ fn text_parts(parts: &Field<ListValue>) -> Result<String, A2aTextError> {
         let RecordOr::Record(part) = item else {
             continue;
         };
-        if !matches!(&part.kind, Field::Present(Shape::Text(kind)) if kind == "text") {
+        let is_text = match (&part.kind, source) {
+            (Field::Present(Shape::Text(kind)), _) => kind == "text",
+            (Field::Absent, PartSource::SdkDump) => {
+                matches!(&part.text, Field::Present(Shape::Text(_)))
+            }
+            (Field::Absent | Field::Present(_), _) => false,
+        };
+        if !is_text {
             continue;
         }
         texts.push(match &part.text {

@@ -6,8 +6,8 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::{
-    RequestUtilsError, count_tokens, extract_text_from_message, extract_text_from_response,
-    usage_from_request_response,
+    A2aRequest, RequestUtilsError, count_tokens, extract_text_from_message,
+    extract_text_from_response, get_input_message_from_request, usage_from_request_response,
 };
 use crate::a2a_text::{A2aResponse, A2aTextError, RecordValue};
 use support::{counter, failing_counter};
@@ -114,6 +114,18 @@ fn malformed_response_cases(#[case] source: &str) {
     assert_projection(source);
 }
 
+#[rstest]
+#[case::a_params_message(r#"{"params":{"message":{"parts":[]}}}"#, true)]
+#[case::no_params("{}", false)]
+#[case::no_message(r#"{"params":{}}"#, false)]
+#[case::null_params(r#"{"params":null}"#, false)]
+#[case::non_object_params(r#"{"params":[]}"#, false)]
+fn the_input_message_is_read_from_the_request(#[case] source: &str, #[case] present: bool) {
+    let request: A2aRequest = serde_json::from_str(source).expect("the fixture parses");
+
+    assert_eq!(get_input_message_from_request(&request).is_some(), present);
+}
+
 #[tokio::test]
 async fn counts_the_default_encoding_tokens() {
     assert_eq!(count_tokens(&counter(), "hello world").await, 2);
@@ -131,7 +143,7 @@ async fn a_failing_tokenizer_is_zero_tokens() {
 
 #[derive(Deserialize)]
 struct UsageProbe {
-    message: Option<RecordValue>,
+    request: A2aRequest,
     response: A2aResponse,
 }
 
@@ -139,13 +151,18 @@ fn usage_probe(source: &str) -> UsageProbe {
     serde_json::from_str(source).expect("the fixture parses")
 }
 
+#[rstest]
+#[case::explicit_kind(
+    r#"{"request":{"params":{"message":{"parts":[{"kind":"text","text":"hello world"}]}}},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#
+)]
+#[case::sdk_default_kind(
+    r#"{"request":{"params":{"message":{"parts":[{"text":"hello world"}]}}},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#
+)]
 #[tokio::test]
-async fn usage_counts_prompt_and_completion_text() {
-    let probe = usage_probe(
-        r#"{"message":{"parts":[{"kind":"text","text":"hello world"}]},"response":{"result":{"kind":"message","parts":[{"kind":"text","text":"hello world"}]}}}"#,
-    );
+async fn usage_counts_prompt_and_completion_text(#[case] source: &str) {
+    let probe = usage_probe(source);
 
-    let usage = usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response)
+    let usage = usage_from_request_response(&counter(), &probe.request, &probe.response)
         .await
         .expect("the fixture extracts");
 
@@ -154,22 +171,25 @@ async fn usage_counts_prompt_and_completion_text() {
 
 #[tokio::test]
 async fn usage_without_any_text_is_zero() {
-    let probe = usage_probe(r#"{"message":null,"response":{"result":{}}}"#);
+    let probe = usage_probe(r#"{"request":{"params":{}},"response":{"result":{}}}"#);
 
-    let usage = usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response)
+    let usage = usage_from_request_response(&counter(), &probe.request, &probe.response)
         .await
         .expect("the fixture extracts");
 
     assert_eq!(usage, (0, 0, 0));
 }
 
+#[rstest]
+#[case::no_params(
+    r#"{"request":{},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#
+)]
+#[case::no_message(r#"{"request":{"params":{}},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#)]
 #[tokio::test]
-async fn usage_without_a_request_message_counts_no_prompt() {
-    let probe = usage_probe(
-        r#"{"message":null,"response":{"result":{"message":{"parts":[{"kind":"text","text":"hello world"}]}}}}"#,
-    );
+async fn usage_without_a_request_message_counts_no_prompt(#[case] source: &str) {
+    let probe = usage_probe(source);
 
-    let usage = usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response)
+    let usage = usage_from_request_response(&counter(), &probe.request, &probe.response)
         .await
         .expect("the fixture extracts");
 
@@ -179,23 +199,23 @@ async fn usage_without_a_request_message_counts_no_prompt() {
 #[tokio::test]
 async fn usage_with_a_failing_tokenizer_is_zero() {
     let probe = usage_probe(
-        r#"{"message":{"parts":[{"kind":"text","text":"hello world"}]},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#,
+        r#"{"request":{"params":{"message":{"parts":[{"kind":"text","text":"hello world"}]}}},"response":{"result":{"parts":[{"kind":"text","text":"hello world"}]}}}"#,
     );
 
-    let usage =
-        usage_from_request_response(&failing_counter(), probe.message.as_ref(), &probe.response)
-            .await
-            .expect("the fixture extracts");
+    let usage = usage_from_request_response(&failing_counter(), &probe.request, &probe.response)
+        .await
+        .expect("the fixture extracts");
 
     assert_eq!(usage, (0, 0, 0));
 }
 
 #[tokio::test]
 async fn usage_propagates_a_malformed_request_message() {
-    let probe = usage_probe(r#"{"message":{"parts":null},"response":{"result":{}}}"#);
+    let probe = usage_probe(
+        r#"{"request":{"params":{"message":{"parts":null}}},"response":{"result":{}}}"#,
+    );
 
-    let usage =
-        usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response).await;
+    let usage = usage_from_request_response(&counter(), &probe.request, &probe.response).await;
 
     assert_eq!(
         usage,
@@ -206,11 +226,10 @@ async fn usage_propagates_a_malformed_request_message() {
 #[tokio::test]
 async fn usage_propagates_a_malformed_response() {
     let probe = usage_probe(
-        r#"{"message":null,"response":{"result":{"message":{"parts":[{"kind":"text","text":null}]}}}}"#,
+        r#"{"request":{"params":{}},"response":{"result":{"message":{"parts":[{"kind":"text","text":null}]}}}}"#,
     );
 
-    let usage =
-        usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response).await;
+    let usage = usage_from_request_response(&counter(), &probe.request, &probe.response).await;
 
     assert_eq!(
         usage,
