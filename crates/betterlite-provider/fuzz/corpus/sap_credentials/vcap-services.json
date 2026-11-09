@@ -1,0 +1,1 @@
+{"aicore": [{"label": "aicore", "credentials": {"clientid": "client", "clientsecret": "secret", "url": "https://auth.example.com", "certificate": "cert\nkey", "key": "key\nline"}}]}
