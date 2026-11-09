@@ -300,9 +300,7 @@ async fn a_data_uri_without_a_mime_type_sends_the_default_type() {
     let requests = server.requests().await;
     assert_eq!(requests.len(), 2);
     assert!(
-        requests[0]
-            .to_ascii_lowercase()
-            .contains("content-type: text/plain;charset=us-ascii"),
+        requests[0].contains("Content-Type: text/plain;charset=us-ascii"),
         "{}",
         requests[0]
     );
