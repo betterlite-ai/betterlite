@@ -31,7 +31,7 @@ pub(crate) fn base_test_connection() -> HelperResult {
 }
 
 pub(crate) fn memory_ttl(clock: f64, ttl: f64, key: &str, value: &str) -> HelperResult {
-    let cache = memory(clock)?;
+    let cache = memory(clock);
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         cache
@@ -53,7 +53,7 @@ pub(crate) fn memory_increments(clock: f64, inputs: &[IncrementInput]) -> Helper
             ttl: None,
         })
         .collect::<Vec<_>>();
-    let cache = memory(clock)?;
+    let cache = memory(clock);
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         let results = cache
@@ -66,7 +66,7 @@ pub(crate) fn memory_increments(clock: f64, inputs: &[IncrementInput]) -> Helper
 }
 
 pub(crate) fn oldest_keys(clock: f64, entries: &[OldestEntryInput], limit: usize) -> HelperResult {
-    let cache = memory(clock)?;
+    let cache = memory(clock);
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         for entry in entries {

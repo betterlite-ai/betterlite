@@ -1,17 +1,8 @@
 task: B4290
 deviations:
-  - what: Rust trait methods use Result for fallible operations, and the async adapters propagate an error instead of LiteLLM's NotImplementedError or absence-means-success return.
-    why: Rust does not permit a missing return value as a silent success, and a typed error names the operation a backend has not built.
+  - what: Rust trait methods use Result for fallible operations, and the async adapters propagate an error instead of LiteLLM's NotImplementedError.
+    why: Rust does not permit a missing return value as a silent success, and a typed Unsupported error names the operation a backend has not built.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L35-L39
-  - what: async_get_oldest_n_keys orders keys with equal expiry by key, while LiteLLM's stable sort keeps ttl_dict insertion order for equal expiries.
-    why: The shared local cache keeps expiries in a BTreeMap keyed by cache key and records no insertion order to sort by.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L277-L283
-  - what: async_increment returns an error when the sum leaves the finite f64 range, while LiteLLM keeps an infinite float.
-    why: A non-finite number cannot be written as standard JSON, and no working cache setup can rely on an infinite counter.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L230-L236
   - what: Cache type records reject unknown JSON keys, while LiteLLM's pydantic models ignore extra fields and its TypedDicts are plain dicts.
     why: An unmodelled key becomes an error that names it instead of being dropped before a caller learns it was ignored.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L117-L125
-  - what: The BaseCache get_ttl contract returns whole seconds, so a fractional default ttl given to the memory cache is truncated there.
-    why: LiteLLM declares default_ttl as int and get_ttl as int or None, and betterlite keeps the declared type for the contract value.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L30

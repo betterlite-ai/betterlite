@@ -3,9 +3,6 @@ pub mod memory;
 #[path = "backend/tests.rs"]
 mod tests;
 
-use std::num::TryFromIntError;
-use std::time::TryFromFloatSecsError;
-
 use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue};
 use serde::{Deserialize, Serialize};
@@ -31,22 +28,6 @@ pub enum BackendError {
     },
     #[error("the cached value under {key} is not a number")]
     NotNumeric { key: String },
-    #[error("the increment under {key} left the finite range")]
-    IncrementOutOfRange { key: String },
-    #[error("the cache default ttl {value} is not a finite duration")]
-    InvalidDefaultDuration {
-        value: f64,
-        #[source]
-        source: TryFromFloatSecsError,
-    },
-    #[error("the cache default ttl {value} cannot be written as whole seconds")]
-    InvalidDefaultSeconds {
-        value: f64,
-        #[source]
-        source: TryFromIntError,
-    },
-    #[error("the cache default ttl {value} cannot be represented")]
-    InvalidDefaultTtl { value: f64 },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

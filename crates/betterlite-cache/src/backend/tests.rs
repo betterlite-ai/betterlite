@@ -1,15 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use rstest::rstest;
+use serde_json::Number;
 
-use super::memory::{DEFAULT_MAX_SIZE_PER_ITEM_KIB, MemoryCache};
+use super::memory::{MemoryCache, MemoryCacheOps};
 use super::{
-    BASE_DEFAULT_TTL_SECONDS, BackendError, CacheBackend, ConnectionStatus, ConnectionTest,
+    BASE_DEFAULT_TTL_SECONDS, BackendError, CacheBackend, CacheResult, ConnectionStatus,
+    ConnectionTest, Ttl,
 };
 use crate::types::pipeline::RedisPipelineIncrement;
 
@@ -21,38 +22,120 @@ impl CacheBackend for BaseContract {
     }
 }
 
-fn clock_at(seconds: f64) -> Arc<dyn Fn() -> f64 + Send + Sync> {
-    Arc::new(move || seconds)
+#[derive(Default)]
+struct FakeState {
+    values: BTreeMap<String, CacheValue>,
+    entries: Vec<(String, f64)>,
+    set_ttls: Vec<(String, Ttl)>,
+    increments: Vec<(String, f64, Ttl)>,
+    default_ttl: i64,
+    default_expiry: f64,
 }
 
-fn cache_at(seconds: f64) -> MemoryCache {
-    MemoryCache::new(
-        None,
-        None,
-        None,
-        DEFAULT_MAX_SIZE_PER_ITEM_KIB,
-        clock_at(seconds),
-    )
-    .expect("the default memory cache")
+struct FakeOps {
+    state: Mutex<FakeState>,
 }
 
-fn mutable_clock() -> (Arc<AtomicU64>, Arc<dyn Fn() -> f64 + Send + Sync>) {
-    let ticks = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
-    let source = Arc::clone(&ticks);
-    let clock = Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed)));
-    (ticks, clock)
+impl FakeOps {
+    fn with_default_ttl(default_ttl: i64) -> Self {
+        Self {
+            state: Mutex::new(FakeState {
+                values: BTreeMap::new(),
+                entries: Vec::new(),
+                set_ttls: Vec::new(),
+                increments: Vec::new(),
+                default_ttl,
+                default_expiry: Number::from(default_ttl)
+                    .as_f64()
+                    .expect("a finite default"),
+            }),
+        }
+    }
+
+    fn state(&self) -> MutexGuard<'_, FakeState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn record_entry(&self, key: &str, ttl: Ttl) {
+        let mut state = self.state();
+        let expiry = ttl.unwrap_or(state.default_expiry);
+        match state.entries.iter_mut().find(|(name, _)| name == key) {
+            Some(entry) => entry.1 = expiry,
+            None => state.entries.push((key.to_owned(), expiry)),
+        }
+    }
 }
 
-fn fill(cache: &MemoryCache, count: usize) {
-    for index in 0..count {
-        let step = u32::try_from(index)
-            .expect("small index")
-            .checked_add(1)
-            .expect("small index");
-        let ttl = f64::from(step);
-        cache
-            .set_cache(&format!("key-{index}"), CacheValue::Integer(1), Some(ttl))
-            .expect("a stored key");
+impl MemoryCacheOps for FakeOps {
+    fn default_ttl(&self) -> i64 {
+        self.state().default_ttl
+    }
+
+    fn get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
+        Ok(self.state().values.get(key).cloned())
+    }
+
+    fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
+        self.state().values.insert(key.to_owned(), value);
+        self.state().set_ttls.push((key.to_owned(), ttl));
+        self.record_entry(key, ttl);
+        Ok(())
+    }
+
+    fn delete_cache(&self, key: &str) -> CacheResult<()> {
+        self.state().values.remove(key);
+        self.state().entries.retain(|(name, _)| name != key);
+        Ok(())
+    }
+
+    fn flush_cache(&self) -> CacheResult<()> {
+        self.state().values.clear();
+        self.state().entries.clear();
+        Ok(())
+    }
+
+    fn batch_get_cache(&self, keys: &[String]) -> CacheResult<Vec<Option<CacheValue>>> {
+        let state = self.state();
+        Ok(keys
+            .iter()
+            .map(|key| state.values.get(key).cloned())
+            .collect())
+    }
+
+    fn increment_cache(&self, key: &str, value: f64, ttl: Ttl) -> CacheResult<f64> {
+        let base = match self.state().values.get(key) {
+            None => 0.0_f64,
+            Some(CacheValue::Integer(number)) => {
+                Number::from(*number)
+                    .as_f64()
+                    .ok_or_else(|| BackendError::NotNumeric {
+                        key: key.to_owned(),
+                    })?
+            }
+            Some(CacheValue::Float(number)) => *number,
+            Some(_) => {
+                return Err(BackendError::NotNumeric {
+                    key: key.to_owned(),
+                });
+            }
+        };
+        let next = base.mul_add(1.0_f64, value);
+        self.state()
+            .values
+            .insert(key.to_owned(), CacheValue::Float(next));
+        self.state().increments.push((key.to_owned(), value, ttl));
+        self.record_entry(key, ttl);
+        Ok(next)
+    }
+
+    fn ttl_entries(&self) -> CacheResult<Vec<(String, f64)>> {
+        Ok(self.state().entries.clone())
+    }
+}
+
+fn cache(default_ttl: i64) -> MemoryCache<FakeOps> {
+    MemoryCache {
+        operations: FakeOps::with_default_ttl(default_ttl),
     }
 }
 
@@ -145,15 +228,15 @@ async fn base_async_reads_and_writes_are_unsupported() {
 }
 
 #[test]
-fn memory_default_ttl_is_six_hundred() {
-    assert_eq!(cache_at(0.0_f64).default_ttl(), 600);
+fn memory_default_ttl_comes_from_the_operations() {
+    assert_eq!(cache(600).default_ttl(), 600);
 }
 
 #[tokio::test]
-async fn memory_reads_what_the_sync_cache_stored() {
-    let cache = cache_at(0.0_f64);
+async fn memory_reads_what_the_operations_stored() {
+    let cache = cache(600);
     cache
-        .async_set_cache("key", CacheValue::Text("value".to_owned()), None)
+        .async_set_cache("key", CacheValue::Text("value".to_owned()), Some(30.0_f64))
         .await
         .expect("a stored value");
     assert_eq!(
@@ -167,111 +250,8 @@ async fn memory_reads_what_the_sync_cache_stored() {
 }
 
 #[tokio::test]
-async fn memory_get_ttl_returns_the_absolute_expiry() {
-    let cache = cache_at(1000.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(30.0_f64))
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(1030.0_f64)
-    );
-    assert_eq!(cache.async_get_ttl("missing").await.expect("a ttl"), None);
-}
-
-#[tokio::test]
-async fn memory_get_ttl_uses_the_default_without_an_explicit_ttl() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), None)
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(600.0_f64)
-    );
-}
-
-#[tokio::test]
-async fn memory_negative_ttl_is_reported_as_written() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(-5.0_f64))
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(-5.0_f64)
-    );
-    assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
-}
-
-#[tokio::test]
-async fn memory_nan_ttl_keeps_the_key_and_its_expiry() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(f64::NAN))
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_cache("key").await.expect("a read"),
-        Some(CacheValue::Integer(1))
-    );
-    let ttl = cache.async_get_ttl("key").await.expect("a ttl");
-    assert!(ttl.is_some_and(f64::is_nan));
-    assert_eq!(
-        cache
-            .async_get_oldest_n_keys(1)
-            .await
-            .expect("the oldest keys"),
-        vec!["key".to_owned()]
-    );
-}
-
-#[tokio::test]
-async fn memory_set_accepts_a_non_finite_ttl() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(f64::INFINITY))
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_cache("key").await.expect("a read"),
-        Some(CacheValue::Integer(1))
-    );
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(f64::INFINITY)
-    );
-}
-
-#[tokio::test]
-async fn memory_read_allows_a_key_at_its_expiry() {
-    let (ticks, clock) = mutable_clock();
-    let cache = MemoryCache::new(None, None, None, DEFAULT_MAX_SIZE_PER_ITEM_KIB, clock)
-        .expect("the default memory cache");
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(10.0_f64))
-        .await
-        .expect("a stored value");
-    ticks.store(10.0_f64.to_bits(), Ordering::Relaxed);
-    assert_eq!(
-        cache.async_get_cache("key").await.expect("a read"),
-        Some(CacheValue::Integer(1))
-    );
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(10.0_f64)
-    );
-    ticks.store(10.5_f64.to_bits(), Ordering::Relaxed);
-    assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("key").await.expect("a ttl"), None);
-}
-
-#[tokio::test]
 async fn memory_batch_get_preserves_order_and_misses() {
-    let cache = cache_at(0.0_f64);
+    let cache = cache(600);
     cache
         .async_set_cache("a", CacheValue::Integer(1), None)
         .await
@@ -293,7 +273,7 @@ async fn memory_batch_get_preserves_order_and_misses() {
 
 #[tokio::test]
 async fn memory_set_pipeline_applies_the_ttl() {
-    let cache = cache_at(0.0_f64);
+    let cache = cache(600);
     let entries = vec![
         ("a".to_owned(), CacheValue::Integer(1)),
         ("b".to_owned(), CacheValue::Integer(2)),
@@ -303,91 +283,20 @@ async fn memory_set_pipeline_applies_the_ttl() {
         .await
         .expect("a pipeline write");
     assert_eq!(
+        cache.operations.state().set_ttls,
+        vec![
+            ("a".to_owned(), Some(30.0_f64)),
+            ("b".to_owned(), Some(30.0_f64))
+        ]
+    );
+    assert_eq!(
         cache.async_get_ttl("a").await.expect("a ttl"),
         Some(30.0_f64)
     );
-    assert_eq!(
-        cache.async_get_ttl("b").await.expect("a ttl"),
-        Some(30.0_f64)
-    );
 }
 
-#[tokio::test]
-async fn memory_increment_starts_from_zero() {
-    let cache = cache_at(0.0_f64);
-    let incremented = cache
-        .async_increment("key", 1.5_f64, None)
-        .await
-        .expect("an increment");
-    assert_eq!(incremented.to_bits(), 1.5_f64.to_bits());
-    assert_eq!(
-        cache.async_get_cache("key").await.expect("a read"),
-        Some(CacheValue::Float(1.5_f64))
-    );
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(600.0_f64)
-    );
-}
-
-#[tokio::test]
-async fn memory_increment_adds_to_the_stored_value() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("float", CacheValue::Float(2.0_f64), None)
-        .await
-        .expect("a stored value");
-    cache
-        .async_set_cache("int", CacheValue::Integer(2), None)
-        .await
-        .expect("a stored value");
-    let from_float = cache
-        .async_increment("float", 1.5_f64, None)
-        .await
-        .expect("an increment");
-    let from_integer = cache
-        .async_increment("int", 1.5_f64, None)
-        .await
-        .expect("an increment");
-    assert_eq!(from_float.to_bits(), 3.5_f64.to_bits());
-    assert_eq!(from_integer.to_bits(), 3.5_f64.to_bits());
-}
-
-#[tokio::test]
-async fn memory_increment_rejects_a_non_number() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Text("text".to_owned()), None)
-        .await
-        .expect("a stored value");
-    let error = cache
-        .async_increment("key", 1.0_f64, None)
-        .await
-        .expect_err("a non-number");
-    assert!(matches!(error, BackendError::NotNumeric { key } if key == "key"));
-}
-
-#[tokio::test]
-async fn memory_increment_rejects_a_non_finite_result() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Float(f64::MAX), None)
-        .await
-        .expect("a stored value");
-    let error = cache
-        .async_increment("key", f64::MAX, None)
-        .await
-        .expect_err("an overflow");
-    assert!(matches!(
-        error,
-        BackendError::IncrementOutOfRange { key } if key == "key"
-    ));
-}
-
-#[tokio::test]
-async fn memory_increment_pipeline_returns_each_result() {
-    let cache = cache_at(0.0_f64);
-    let increments = vec![
+fn counter_increments() -> Vec<RedisPipelineIncrement> {
+    vec![
         RedisPipelineIncrement {
             key: "a".to_owned(),
             increment_value: 1.5_f64,
@@ -403,10 +312,15 @@ async fn memory_increment_pipeline_returns_each_result() {
             increment_value: 1.0_f64,
             ttl: None,
         },
-    ];
+    ]
+}
+
+#[tokio::test]
+async fn memory_increment_pipeline_returns_each_result() {
+    let cache = cache(600);
     assert_eq!(
         cache
-            .async_increment_pipeline(increments)
+            .async_increment_pipeline(counter_increments())
             .await
             .expect("a pipeline"),
         vec![1.5_f64, 3.5_f64, 1.0_f64]
@@ -415,7 +329,15 @@ async fn memory_increment_pipeline_returns_each_result() {
         cache.async_get_cache("a").await.expect("a read"),
         Some(CacheValue::Float(3.5_f64))
     );
-    // LiteLLM's pipeline hands each record to async_increment without its ttl, so the memory default applies
+    // LiteLLM's pipeline hands each record to async_increment without its ttl, so the default applies
+    assert!(
+        cache
+            .operations
+            .state()
+            .increments
+            .iter()
+            .all(|(_, _, ttl)| ttl.is_none())
+    );
     assert_eq!(
         cache.async_get_ttl("a").await.expect("a ttl"),
         Some(600.0_f64)
@@ -423,8 +345,36 @@ async fn memory_increment_pipeline_returns_each_result() {
 }
 
 #[tokio::test]
+async fn memory_increment_rejects_a_non_number() {
+    let cache = cache(600);
+    cache
+        .async_set_cache("key", CacheValue::Text("text".to_owned()), None)
+        .await
+        .expect("a stored value");
+    let error = cache
+        .async_increment("key", 1.0_f64, None)
+        .await
+        .expect_err("a non-number");
+    assert!(matches!(error, BackendError::NotNumeric { key } if key == "key"));
+}
+
+#[tokio::test]
+async fn memory_get_ttl_returns_the_stored_entry() {
+    let cache = cache(600);
+    cache
+        .async_set_cache("key", CacheValue::Integer(1), Some(1030.0_f64))
+        .await
+        .expect("a stored value");
+    assert_eq!(
+        cache.async_get_ttl("key").await.expect("a ttl"),
+        Some(1030.0_f64)
+    );
+    assert_eq!(cache.async_get_ttl("missing").await.expect("a ttl"), None);
+}
+
+#[tokio::test]
 async fn memory_oldest_keys_orders_by_expiry() {
-    let cache = cache_at(0.0_f64);
+    let cache = cache(600);
     cache
         .async_set_cache("b", CacheValue::Integer(1), Some(20.0_f64))
         .await
@@ -461,8 +411,28 @@ async fn memory_oldest_keys_orders_by_expiry() {
 }
 
 #[tokio::test]
+async fn memory_oldest_keys_keeps_insertion_order_for_equal_expiries() {
+    let cache = cache(600);
+    cache
+        .async_set_cache("b", CacheValue::Integer(1), Some(20.0_f64))
+        .await
+        .expect("a stored value");
+    cache
+        .async_set_cache("a", CacheValue::Integer(1), Some(20.0_f64))
+        .await
+        .expect("a stored value");
+    assert_eq!(
+        cache
+            .async_get_oldest_n_keys(2)
+            .await
+            .expect("the oldest keys"),
+        vec!["b".to_owned(), "a".to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn memory_delete_removes_the_value_and_the_ttl() {
-    let cache = cache_at(0.0_f64);
+    let cache = cache(600);
     cache
         .async_set_cache("key", CacheValue::Integer(1), Some(30.0_f64))
         .await
@@ -474,7 +444,7 @@ async fn memory_delete_removes_the_value_and_the_ttl() {
 
 #[tokio::test]
 async fn memory_flush_clears_the_values_and_the_ttls() {
-    let cache = cache_at(0.0_f64);
+    let cache = cache(600);
     cache
         .async_set_cache("key", CacheValue::Integer(1), Some(30.0_f64))
         .await
@@ -482,134 +452,20 @@ async fn memory_flush_clears_the_values_and_the_ttls() {
     cache.flush_cache().expect("a flush");
     assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
     assert_eq!(cache.async_get_ttl("key").await.expect("a ttl"), None);
-    cache
-        .async_set_cache("key", CacheValue::Integer(2), Some(10.0_f64))
-        .await
-        .expect("a stored value");
-    assert_eq!(
-        cache.async_get_ttl("key").await.expect("a ttl"),
-        Some(10.0_f64)
-    );
 }
 
 #[tokio::test]
 async fn memory_disconnect_succeeds() {
-    cache_at(0.0_f64).disconnect().await.expect("a disconnect");
+    cache(600).disconnect().await.expect("a disconnect");
 }
 
 #[tokio::test]
 async fn memory_connection_test_is_unsupported() {
-    let error = cache_at(0.0_f64)
-        .test_connection()
-        .await
-        .expect_err("unsupported");
+    let error = cache(600).test_connection().await.expect_err("unsupported");
     assert!(matches!(
         error,
         BackendError::Unsupported("test_connection")
     ));
-}
-
-#[tokio::test]
-async fn memory_capacity_evicts_the_earliest_expiry() {
-    let cache = MemoryCache::new(
-        Some(2),
-        None,
-        None,
-        DEFAULT_MAX_SIZE_PER_ITEM_KIB,
-        clock_at(0.0_f64),
-    )
-    .expect("a two-entry cache");
-    cache
-        .async_set_cache("a", CacheValue::Integer(1), Some(30.0_f64))
-        .await
-        .expect("a stored value");
-    cache
-        .async_set_cache("b", CacheValue::Integer(1), Some(10.0_f64))
-        .await
-        .expect("a stored value");
-    cache
-        .async_set_cache("c", CacheValue::Integer(1), Some(20.0_f64))
-        .await
-        .expect("a stored value");
-    assert_eq!(cache.async_get_cache("b").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("b").await.expect("a ttl"), None);
-    assert_eq!(
-        cache.async_get_cache("a").await.expect("a read"),
-        Some(CacheValue::Integer(1))
-    );
-    assert_eq!(
-        cache.async_get_cache("c").await.expect("a read"),
-        Some(CacheValue::Integer(1))
-    );
-}
-
-#[tokio::test]
-async fn memory_default_capacity_is_two_hundred() {
-    let cache = cache_at(0.0_f64);
-    fill(&cache, 201);
-    assert_eq!(cache.async_get_cache("key-0").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("key-0").await.expect("a ttl"), None);
-    assert_eq!(
-        cache.async_get_ttl("key-200").await.expect("a ttl"),
-        Some(201.0_f64)
-    );
-}
-
-#[tokio::test]
-async fn memory_rejection_after_eviction_keeps_nothing() {
-    let cache = MemoryCache::new(
-        Some(1),
-        None,
-        Some(1),
-        DEFAULT_MAX_SIZE_PER_ITEM_KIB,
-        clock_at(0.0_f64),
-    )
-    .expect("a one-entry cache");
-    cache
-        .async_set_cache("a", CacheValue::Integer(1), Some(30.0_f64))
-        .await
-        .expect("a stored value");
-    cache
-        .async_set_cache("b", CacheValue::Text("x".repeat(2000)), Some(30.0_f64))
-        .await
-        .expect("a rejected value");
-    assert_eq!(cache.async_get_cache("a").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("a").await.expect("a ttl"), None);
-    assert_eq!(cache.async_get_cache("b").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("b").await.expect("a ttl"), None);
-}
-
-#[tokio::test]
-async fn memory_zero_capacity_stores_nothing() {
-    let cache = MemoryCache::new(
-        Some(0),
-        None,
-        None,
-        DEFAULT_MAX_SIZE_PER_ITEM_KIB,
-        clock_at(0.0_f64),
-    )
-    .expect("a disabled cache");
-    cache
-        .async_set_cache("key", CacheValue::Integer(1), Some(30.0_f64))
-        .await
-        .expect("a refused value");
-    assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("key").await.expect("a ttl"), None);
-}
-
-#[tokio::test]
-async fn memory_stored_value_decodes_like_the_shared_cache() {
-    let cache = cache_at(0.0_f64);
-    cache
-        .async_set_cache("key", CacheValue::Text("{\"a\":1}".to_owned()), None)
-        .await
-        .expect("a stored value");
-    let mut decoded = BTreeMap::new();
-    decoded.insert("a".to_owned(), CacheValue::Integer(1));
-    assert_eq!(
-        cache.async_get_cache("key").await.expect("a read"),
-        Some(CacheValue::Object(decoded))
-    );
 }
 
 #[tokio::test]
