@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-config-selection-seed-chat
+call:
+  bedrock_config_selection:
+    function: chat_config_selector
+    models: [anthropic.claude-v2, converse/anthropic.claude-3, qwen3/foo]
+env: {}
+compare: {ignore: []}
