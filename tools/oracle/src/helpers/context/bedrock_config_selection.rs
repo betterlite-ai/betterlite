@@ -82,12 +82,9 @@ fn chat_report(model: &str) -> Result<Value, Box<HelperError>> {
     let route = selector
         .route(model, None)
         .map_err(|error| invalid(&error.to_string()))?;
+    let provider = invoke_provider(model).map(provider_of);
     let base_model = get_bedrock_base_model(model);
-    let tag = select_bedrock_chat_config(
-        route_of(route),
-        invoke_provider(model).map(provider_of),
-        &base_model,
-    );
+    let tag = select_bedrock_chat_config(route_of(route), provider, &base_model);
     Ok(json!({"class": tag.class_name(), "arguments": []}))
 }
 
