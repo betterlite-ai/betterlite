@@ -2,7 +2,8 @@ kind: helper
 name: sap-models-message-seed
 call:
   b5951:
-    model: sap_message
-    data: {role: assistant, content: [{text: a}, b], refusal: r}
+    calls:
+      - model: sap_message
+        data: {role: assistant, content: [{text: a}, b], refusal: r}
 env: {}
 compare: {ignore: []}

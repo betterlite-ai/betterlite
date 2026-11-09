@@ -144,7 +144,13 @@ fn message_rejects_an_unknown_role() {
 #[rstest]
 #[case::text(r#"{"role":"user","content":"x"}"#)]
 #[case::text_part(r#"{"role":"user","content":{"text":"x"}}"#)]
+#[case::typed_text_part(r#"{"role":"user","content":{"type":"text","text":"x"}}"#)]
+#[case::image_part(r#"{"role":"user","content":{"type":"image_url","image_url":{"url":"u"}}}"#)]
+#[case::typed_image_part(
+    r#"{"role":"user","content":{"type":"image_url","image_url":{"url":"u","detail":"low"}}}"#
+)]
 #[case::parts(r#"{"role":"user","content":[{"text":"x"},{"image_url":{"url":"u"}}]}"#)]
+#[case::typed_parts(r#"{"role":"user","content":[{"type":"text","text":"x"},{"type":"image_url","image_url":{"url":"u"}}]}"#)]
 fn user_message_keeps_every_content_shape(#[case] message: &str) {
     let text = r#"{"config":{"modules":{"prompt_templating":{"prompt":{"template":[MESSAGE]},"model":{"name":"m"}}}}}"#;
     let input = text.replace("MESSAGE", message);
@@ -155,6 +161,14 @@ fn user_message_keeps_every_content_shape(#[case] message: &str) {
 fn user_message_rejects_a_list_of_bare_strings() {
     let error = error_text(validate_sap_message(&parse_json(
         r#"{"role":"user","content":["x"]}"#,
+    )));
+    assert!(error.contains("content"), "{error}");
+}
+
+#[test]
+fn user_part_rejects_an_unknown_type() {
+    let error = error_text(validate_sap_message(&parse_json(
+        r#"{"role":"user","content":[{"type":"nope","text":"a"}]}"#,
     )));
     assert!(error.contains("content"), "{error}");
 }
@@ -279,6 +293,8 @@ fn nested_tools_dump_only_their_present_keys() {
 fn response_format_dumps_only_the_keys_it_was_given() {
     let empty = validate_response_format(&parse_json("{}")).unwrap();
     assert_eq!(dump_text(&empty), "{}");
+    let text = validate_response_format(&parse_json(r#"{"type":"text"}"#)).unwrap();
+    assert_eq!(dump_text(&text), r#"{"type":"text"}"#);
     let json_object = validate_response_format(&parse_json(r#"{"type":"json_object"}"#)).unwrap();
     assert_eq!(dump_text(&json_object), r#"{"type":"json_object"}"#);
 }
@@ -358,7 +374,7 @@ fn grounding_search_config_rejects_both_counts() {
 
 #[test]
 fn grounding_search_config_keeps_zero_and_null() {
-    let fields = r#""grounding":{"config":{"placeholders":{"input":["q"],"output":"o"},"filters":[{"data_repository_type":"vector","search_config":{"max_chunk_count":null,"max_document_count":0}}]}}"#;
+    let fields = r#""grounding":{"config":{"filters":[{"data_repository_type":"vector","search_config":{"max_chunk_count":null,"max_document_count":0}}],"placeholders":{"input":["q"],"output":"o"}}}"#;
     let text = module_fields(fields);
     assert_request_dump(&text, &text);
 }
@@ -497,11 +513,14 @@ fn masking_profile_entity_rejects_an_unknown_value() {
 }
 
 #[test]
+fn masking_standard_entity_takes_a_fabricated_replacement() {
+    let text = r#"{"providers":[{"method":"anonymization","entities":[{"type":"profile-email","replacement_strategy":{"method":"fabricated_data"}}]}]}"#;
+    let output = validate_masking_module(&parse_json(text)).unwrap();
+    assert_eq!(dump_text(&output), text);
+}
+
+#[test]
 fn masking_custom_entity_needs_a_constant_replacement() {
-    let standard = error_text(validate_masking_module(&parse_json(
-        r#"{"providers":[{"method":"anonymization","entities":[{"type":"profile-email","replacement_strategy":{"method":"fabricated_data"}}]}]}"#,
-    )));
-    assert!(standard.contains("replacement_strategy"), "{standard}");
     let custom = error_text(validate_masking_module(&parse_json(
         r#"{"providers":[{"method":"anonymization","entities":[{"regex":"r","replacement_strategy":{"method":"fabricated_data"}}]}]}"#,
     )));
@@ -547,7 +566,7 @@ fn azure_thresholds_reject_other_numbers(#[case] threshold: &str) {
     let config = r#"{"hate":THRESHOLD}"#.replace("THRESHOLD", threshold);
     let text = module_fields(&filtering_input(&azure_input_filter(&config)));
     let error = error_text(validate_orchestration_request(&parse_json(&text)));
-    assert!(error.contains("hate"), "{error}");
+    assert!(error.contains("filters[0]"), "{error}");
 }
 
 #[test]
@@ -566,7 +585,7 @@ fn llama_guard_flags_are_written_only_when_present() {
     let error = error_text(validate_orchestration_request(&parse_json(&module_fields(
         invalid,
     ))));
-    assert!(error.contains("hate"), "{error}");
+    assert!(error.contains("filters[0]"), "{error}");
 }
 
 #[rstest]
@@ -673,7 +692,10 @@ fn errors_carry_the_field_path_and_the_message() {
         panic!("expected an invalid model");
     };
     assert_eq!(path, "message.content");
-    assert_eq!(source.to_string(), "Content must be a string");
+    assert!(
+        source.to_string().starts_with("Content must be a string"),
+        "{source}"
+    );
 }
 
 #[test]

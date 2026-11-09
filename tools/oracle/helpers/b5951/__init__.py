@@ -28,6 +28,12 @@ def object_value(value: Json, name: str) -> dict[str, Json]:
     return value
 
 
+def array_value(value: Json, name: str) -> list[Json]:
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list")
+    return value
+
+
 def string_value(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
@@ -38,9 +44,7 @@ def dump(data: dict[str, Json], model: type[BaseModel]) -> Json:
     return cast(Json, model.model_validate(data).model_dump(by_alias=True, exclude_unset=True))
 
 
-def run(input_value: dict[str, Json]) -> Json:
-    model = string_value(input_value.get("model"), "model")
-    data = object_value(input_value.get("data"), "data")
+def dispatch(model: str, data: dict[str, Json]) -> Json:
     if model == "orchestration_request":
         return dump(data, OrchestrationRequest)
     if model == "chat_completion_tool":
@@ -56,3 +60,18 @@ def run(input_value: dict[str, Json]) -> Json:
         selected = MESSAGE_MODELS.get(role if isinstance(role, str) else "", SAPMessage)
         return dump(data, selected)
     raise ValueError(f"unknown model {model}")
+
+
+def one(call: Json) -> Json:
+    fields = object_value(call, "call")
+    model = string_value(fields.get("model"), "model")
+    data = object_value(fields.get("data"), "data")
+    try:
+        value = dispatch(model, data)
+    except ValueError:
+        return {"ok": False}
+    return {"ok": True, "value": value}
+
+
+def run(input_value: dict[str, Json]) -> Json:
+    return [one(call) for call in array_value(input_value.get("calls"), "calls")]
