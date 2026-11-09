@@ -151,14 +151,19 @@ impl Helper for Op {
                 &logs,
                 |settings, step| json!({"ok": true, "value": resolve_host(settings, step.host.as_deref())}),
             ),
-            Input::Environment { steps } => collect(steps, &logs, environment_value),
+            Input::Environment { steps } => collect(steps, &logs, |settings, step| {
+                verdict(
+                    resolve_environment(settings, step.explicit.as_deref())
+                        .map(|value| json!(value)),
+                )
+            }),
             Input::FlushInterval { steps } => collect(
                 steps,
                 &logs,
                 |settings, step| json!({"ok": true, "value": flush_interval(settings, step.default)}),
             ),
             Input::Read { reading, steps } => collect(steps, &logs, |settings, _step| {
-                read_value(*reading, settings)
+                verdict(read(*reading, settings))
             }),
         })
     }
@@ -229,15 +234,8 @@ fn credentials_value(settings: &Settings, step: &CredentialStep) -> Value {
     })
 }
 
-fn environment_value(settings: &Settings, step: &EnvironmentValueStep) -> Value {
-    resolve_environment(settings, step.explicit.as_deref()).map_or_else(
-        |_| json!({"ok": false}),
-        |value| json!({"ok": true, "value": value}),
-    )
-}
-
-fn read_value(reading: Reading, settings: &Settings) -> Value {
-    let read = match reading {
+fn read(reading: Reading, settings: &Settings) -> Result<Value, LangfuseSettingsError> {
+    match reading {
         Reading::FlushAt => Ok(json!(flush_at(settings))),
         Reading::SampleRate => Ok(json!(sample_rate(settings))),
         Reading::MaxRetries => Ok(json!(max_retries(settings))),
@@ -247,7 +245,10 @@ fn read_value(reading: Reading, settings: &Settings) -> Value {
         }
         Reading::Release => Ok(json!(release(settings))),
         Reading::DebugAndMock => debug_and_mock(settings),
-    };
+    }
+}
+
+fn verdict(read: Result<Value, LangfuseSettingsError>) -> Value {
     read.map_or_else(
         |_| json!({"ok": false}),
         |value| json!({"ok": true, "value": value}),
