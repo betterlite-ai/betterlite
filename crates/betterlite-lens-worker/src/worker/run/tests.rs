@@ -235,6 +235,11 @@ async fn pauses_ten_seconds_after_every_pass() {
         .lock()
         .unwrap()
         .push_back(Err(WorkerError::Timeout));
+    // the failure post fails too, so the first pass returns an error and the loop warns and goes on
+    fake.result_answers
+        .lock()
+        .unwrap()
+        .push_back(Err(status("/lens/worker/lens/job/result", 500)));
     let worker = Arc::new(LensWorker {
         api: Arc::new(fake),
     });
