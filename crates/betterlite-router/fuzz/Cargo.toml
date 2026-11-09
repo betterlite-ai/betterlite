@@ -26,3 +26,10 @@ path = "fuzz_targets/routing_header_value.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cap_reply"
+path = "fuzz_targets/cap_reply.rs"
+test = false
+doc = false
+bench = false

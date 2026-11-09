@@ -1,0 +1,1 @@
+{"access_token": "tok-1", "expires_in": 900, "token_type": "Bearer", "resource": "api://databricks/workspaces/1/zerobusDirectWriteApi"}
