@@ -1,0 +1,16 @@
+kind: helper
+name: redis-cache-admin-info-sections-and-scalars
+call:
+  b4326:
+    function: parse_info
+    text: |-
+      # Server
+      redis_version:7.2.4
+      redis_mode:standalone
+      uptime_in_seconds:42
+      used_cpu_sys:1.5
+
+      # Clients
+      connected_clients:3
+env: {}
+compare: {ignore: []}

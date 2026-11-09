@@ -1,0 +1,11 @@
+kind: helper
+name: semantic-embedding-inputs-timeout
+call:
+  b4310:
+    operation: timeout
+    configured: 2.5
+    default_seconds: 7.5
+env:
+  SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS: "7.5"
+compare:
+  ignore: []
