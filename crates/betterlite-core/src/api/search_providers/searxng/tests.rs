@@ -275,6 +275,20 @@ fn searxng_url_encodes_the_params_record() {
 }
 
 #[test]
+fn searxng_url_quotes_wire_text_like_python_repr() {
+    let options = params(&[(
+        "tags",
+        JsonValue::Array(vec![text("O'Brien"), text("a\"b'c")]),
+    )]);
+    let request = build_request(&SearchQuery::Single("q".to_owned()), &options).unwrap();
+    let url = search_url(Some("https://searx.test"), None, Some(&request)).unwrap();
+    assert_eq!(
+        url,
+        "https://searx.test/search?q=q&format=json&tags=%5B%22O%27Brien%22%2C+%27a%22b%5C%27c%27%5D"
+    );
+}
+
+#[test]
 fn searxng_url_without_a_record_has_no_query() {
     assert_eq!(
         search_url(Some("https://searx.test"), None, None).unwrap(),

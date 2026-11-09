@@ -95,6 +95,16 @@ fn linkup_search_settings_treat_empty_values_as_unset() {
 }
 
 #[test]
+fn linkup_search_settings_treat_an_empty_caller_base_as_unset() {
+    let lookup = environment(&[("LINKUP_API_KEY", "sk-linkup")]);
+    let loaded = LinkupSearchConfig::load(None, Some(""), &lookup).unwrap();
+    assert_eq!(
+        loaded.complete_url(Some(""), &Object::new(), None).unwrap(),
+        format!("{DEFAULT_API_BASE}/search")
+    );
+}
+
+#[test]
 fn linkup_search_settings_refuse_an_untrusted_base() {
     let lookup = environment(&[("LINKUP_API_KEY", "sk-server")]);
     let error = LinkupSearchConfig::load(None, Some("https://evil.test"), &lookup).unwrap_err();

@@ -23,5 +23,10 @@ call:
           optional_params:
             country: us
             language: fr
+        - query: q
+          optional_params:
+            tags:
+              - "O'Brien"
+              - "a\"b'c"
 env: {}
 compare: {ignore: []}
