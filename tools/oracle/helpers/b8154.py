@@ -42,7 +42,6 @@ EMBEDDING_REPLY = cast(
     "Callable[..., EmbeddingResponse]", EMBEDDING.transform_embedding_response
 )
 EMBEDDING_SUPPORTED = cast("Callable[..., list[str]]", EMBEDDING.get_supported_openai_params)
-EMBEDDING_MAP = cast("Callable[..., Object]", EMBEDDING.map_openai_params)
 EMBEDDING_VALIDATE = cast("Callable[..., Object]", EMBEDDING.validate_environment)
 
 
@@ -94,16 +93,15 @@ def status_of(error: Exception) -> int:
     return 500
 
 
-def _unreachable(hf_model_name: str) -> dict[str, Json]:
-    del hf_model_name
-    raise RuntimeError("offline")
-
-
 @contextmanager
 def offline() -> Generator[None]:
     with (
-        patch.object(huggingface_template_handler, "_get_tokenizer_config", _unreachable),
-        patch.object(huggingface_template_handler, "_get_chat_template_file", _unreachable),
+        patch.object(
+            huggingface_template_handler, "_get_tokenizer_config", side_effect=RuntimeError
+        ),
+        patch.object(
+            huggingface_template_handler, "_get_chat_template_file", side_effect=RuntimeError
+        ),
     ):
         yield
 
@@ -197,10 +195,6 @@ def generate_request(input_value: Object) -> Json:
         return transform_requests(input_value, GENERATE_REQUEST)
 
 
-def infer_request(input_value: Object) -> Json:
-    return transform_requests(input_value, INFER_REQUEST)
-
-
 def transform_replies(input_value: Object, transform: Callable[..., ModelResponse]) -> Json:
     found: list[Json] = []
     for entry in [expect_object(item) for item in expect_list(input_value["replies"])]:
@@ -223,14 +217,6 @@ def transform_replies(input_value: Object, transform: Callable[..., ModelRespons
         except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
             found.append({"ok": False, "status": status_of(error)})
     return {"replies": found}
-
-
-def generate_reply(input_value: Object) -> Json:
-    return transform_replies(input_value, GENERATE_REPLY)
-
-
-def infer_reply(input_value: Object) -> Json:
-    return transform_replies(input_value, INFER_REPLY)
 
 
 def stream_line(input_value: Object) -> Json:
@@ -324,12 +310,6 @@ def embedding(input_value: Object) -> Json:
         {
             "supported": EMBEDDING_SUPPORTED(model="model"),
             "headers": validated_headers(EMBEDDING_VALIDATE),
-            "mapped": EMBEDDING_MAP(
-                non_default_params={"dimensions": 3},
-                optional_params={"kept": True},
-                model="model",
-                drop_params=False,
-            ),
             "requests": requests,
             "replies": found,
             "split": split_results,
@@ -340,9 +320,9 @@ def embedding(input_value: Object) -> Json:
 OPS: dict[str, Callable[[Object], Json]] = {
     "llm_type": llm_type,
     "generate_request": generate_request,
-    "infer_request": infer_request,
-    "generate_reply": generate_reply,
-    "infer_reply": infer_reply,
+    "infer_request": lambda value: transform_requests(value, INFER_REQUEST),
+    "generate_reply": lambda value: transform_replies(value, GENERATE_REPLY),
+    "infer_reply": lambda value: transform_replies(value, INFER_REPLY),
     "stream_line": stream_line,
     "embedding": embedding,
 }

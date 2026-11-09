@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_prompts::builtin::Field;
 use betterlite_provider::triton::config::{
     SUPPORTED_OPENAI_PARAMS, TritonEndpoint, complete_url, map_openai_params, validate_environment,
 };
@@ -21,7 +20,6 @@ use betterlite_provider::triton::request::TransformInput;
 use betterlite_provider::triton::stream::decode_stream_line;
 use chrono::DateTime;
 use http::HeaderMap;
-use indexmap::IndexMap;
 use serde_json::Value;
 use serde_json::json;
 
@@ -196,7 +194,6 @@ pub(super) fn embedding(
     json!({
         "supported": EMBEDDING_PARAMS,
         "headers": validated_headers(&TritonEmbeddingConfig.validate_environment()),
-        "mapped": TritonEmbeddingConfig.map_openai_params(IndexMap::from([(String::from("kept"), Field::Bool(true))])),
         "requests": requests,
         "replies": embedding_replies(replies),
         "split": embedding_splits(split),
@@ -233,13 +230,13 @@ fn embedding_replies(replies: &[EmbeddingReplyCase]) -> Vec<Value> {
 }
 
 fn embedding_splits(split: &[SplitCase]) -> Vec<Value> {
-    let mut results = Vec::with_capacity(split.len());
-    for case in split {
-        let found = match split_embedding_by_shape(&case.data, &case.shape) {
-            Ok(chunks) => json!({"ok": true, "chunks": chunks}),
-            Err(error) => json!({"ok": false, "status": error.status().unwrap_or(500)}),
-        };
-        results.push(found);
-    }
-    results
+    split
+        .iter()
+        .map(
+            |case| match split_embedding_by_shape(&case.data, &case.shape) {
+                Ok(chunks) => json!({"ok": true, "chunks": chunks}),
+                Err(error) => json!({"ok": false, "status": error.status().unwrap_or(500)}),
+            },
+        )
+        .collect()
 }

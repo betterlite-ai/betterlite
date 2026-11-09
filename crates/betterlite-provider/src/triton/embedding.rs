@@ -146,13 +146,10 @@ pub fn build_embedding_usage(
     {
         Some(EmbeddingInput::Texts(values)) => values.clone(),
         Some(EmbeddingInput::Tokens(ids)) => ids.iter().map(ToString::to_string).collect(),
-        Some(EmbeddingInput::TokenLists(lists)) => lists
-            .iter()
-            .map(|ids| {
-                let texts: Vec<String> = ids.iter().map(ToString::to_string).collect();
-                format!("[{}]", texts.join(", "))
-            })
-            .collect(),
+        // Debug of an integer list is the Python list repr that LiteLLM counts
+        Some(EmbeddingInput::TokenLists(lists)) => {
+            lists.iter().map(|ids| format!("{ids:?}")).collect()
+        }
         Some(EmbeddingInput::Text(_)) | None => Vec::new(),
     };
     let prompt_tokens = texts

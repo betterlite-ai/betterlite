@@ -59,24 +59,9 @@ impl TritonError {
     // an unhandled transform exception ends as LiteLLM's generic 500, so only this class carries a status
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
-        match self {
-            Self::Api { status_code, .. } => Some(*status_code),
-            Self::MissingApiBase
-            | Self::InvalidApiBase { .. }
-            | Self::ReplyShape { .. }
-            | Self::NoOutputs
-            | Self::NoMessages
-            | Self::NotAnInteger { .. }
-            | Self::NotABoolean { .. }
-            | Self::ShapeLength
-            | Self::ShapeValue { .. }
-            | Self::ShapeExceedsData { .. }
-            | Self::UsageOverflow
-            | Self::TooManyEmbeddings
-            | Self::InvalidEmbedding { .. }
-            | Self::UnexpectedPrompt
-            | Self::Prompt { .. }
-            | Self::Environment { .. } => None,
-        }
+        let Self::Api { status_code, .. } = self else {
+            return None;
+        };
+        Some(*status_code)
     }
 }
