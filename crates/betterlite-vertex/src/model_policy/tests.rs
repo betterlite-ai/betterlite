@@ -123,7 +123,7 @@ fn route_cases(
         api_base,
     };
     assert_eq!(
-        get_vertex_ai_model_route(model, Some(&params)),
+        get_vertex_ai_model_route(model, &params),
         expected,
         "model {model}"
     );
@@ -131,12 +131,13 @@ fn route_cases(
 
 #[test]
 fn route_without_params_uses_only_the_model() {
+    let params = RouteParams::default();
     assert_eq!(
-        get_vertex_ai_model_route("1234567890", None),
+        get_vertex_ai_model_route("1234567890", &params),
         VertexModelRoute::NonGemini
     );
     assert_eq!(
-        get_vertex_ai_model_route("gemini-2.5-pro", None),
+        get_vertex_ai_model_route("gemini-2.5-pro", &params),
         VertexModelRoute::Gemini
     );
 }
@@ -371,7 +372,11 @@ fn capability_cases(#[case] case: CapabilityCase) {
                 schema: outcome,
                 provider: lookup_provider,
             };
-            let result = lookup.supports_vertex(CapabilityKind::ResponseSchema, model, provider);
+            let result = lookup.supports(
+                CapabilityKind::ResponseSchema,
+                model,
+                provider.lookup_name(),
+            );
             assert_eq!(result.ok(), expected, "model {model}");
         }
     }

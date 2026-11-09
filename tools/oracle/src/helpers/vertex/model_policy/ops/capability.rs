@@ -34,7 +34,11 @@ fn capability_value(case: &CapabilityCase) -> Value {
         get_supports_system_message(&case.model, provider, &lookup)
     });
     let schema = lookup
-        .supports_vertex(CapabilityKind::ResponseSchema, &case.model, provider)
+        .supports(
+            CapabilityKind::ResponseSchema,
+            &case.model,
+            provider.lookup_name(),
+        )
         .map_or_else(
             |_error| json!({"error": true}),
             |supported| json!(supported),

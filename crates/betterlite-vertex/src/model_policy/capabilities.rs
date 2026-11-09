@@ -41,15 +41,6 @@ pub trait ModelCapabilityLookup {
         model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError>;
-
-    fn supports_vertex(
-        &self,
-        kind: CapabilityKind,
-        model: &str,
-        provider: VertexCapabilityProvider,
-    ) -> Result<bool, CapabilityLookupError> {
-        self.supports(kind, model, provider.lookup_name())
-    }
 }
 
 #[must_use]
@@ -58,7 +49,11 @@ pub fn get_supports_system_message(
     provider: VertexCapabilityProvider,
     lookup: &dyn ModelCapabilityLookup,
 ) -> bool {
-    match lookup.supports_vertex(CapabilityKind::SystemMessages, model, provider) {
+    match lookup.supports(
+        CapabilityKind::SystemMessages,
+        model,
+        provider.lookup_name(),
+    ) {
         Ok(supported) => supported || model.contains("gemini/"),
         Err(error) => {
             tracing::warn!(

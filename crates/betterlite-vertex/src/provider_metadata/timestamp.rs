@@ -11,12 +11,6 @@ pub struct LocalTimeContext {
     pub zone: TimeZone,
 }
 
-impl From<TimeZone> for LocalTimeContext {
-    fn from(zone: TimeZone) -> Self {
-        Self { zone }
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum VertexTimestampError {
     #[error("the vertex timestamp is {size} bytes, over the {limit} byte limit")]
@@ -112,8 +106,8 @@ fn civil_from_parts(parts: TimestampParts<'_>) -> Result<civil::DateTime, Vertex
         return Err(VertexTimestampError::Format);
     }
     let month = parse_digits(parts.month, 1, 2).ok_or(VertexTimestampError::Format)?;
-    let day = parse_digits(parts.day, 1, 2).ok_or(VertexTimestampError::Format)?;
-    let hour = parse_digits(parts.hour, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let day = parse_day(parts.day).ok_or(VertexTimestampError::Format)?;
+    let hour = parse_hour(parts.hour).ok_or(VertexTimestampError::Format)?;
     let minute = parse_digits(parts.minute, 1, 2).ok_or(VertexTimestampError::Format)?;
     let second = parse_digits(parts.second, 1, 2).ok_or(VertexTimestampError::Format)?;
     let nanosecond = subsec_nanoseconds(parts.fraction)?;
@@ -152,6 +146,21 @@ fn subsec_nanoseconds(fraction: &str) -> Result<i32, VertexTimestampError> {
         .checked_mul(1_000)
         .ok_or(VertexTimestampError::OutOfRange)?;
     i32::try_from(nanos).map_err(|_error| VertexTimestampError::OutOfRange)
+}
+
+// strptime's %d also takes a space before a single digit 1-9, and its %H a space before any single digit
+fn parse_day(text: &str) -> Option<u32> {
+    let Some(rest) = text.strip_prefix(' ') else {
+        return parse_digits(text, 1, 2);
+    };
+    parse_digits(rest, 1, 1).filter(|day| *day != 0)
+}
+
+fn parse_hour(text: &str) -> Option<u32> {
+    let Some(rest) = text.strip_prefix(' ') else {
+        return parse_digits(text, 1, 2);
+    };
+    parse_digits(rest, 1, 1)
 }
 
 fn parse_digits(text: &str, min: usize, max: usize) -> Option<u32> {

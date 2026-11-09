@@ -10,11 +10,8 @@ pub struct RouteParams<'params> {
 }
 
 #[must_use]
-pub fn get_vertex_ai_model_route(
-    model: &str,
-    params: Option<&RouteParams<'_>>,
-) -> VertexModelRoute {
-    if let Some(base_model) = params.and_then(|route_params| route_params.base_model)
+pub fn get_vertex_ai_model_route(model: &str, params: &RouteParams<'_>) -> VertexModelRoute {
+    if let Some(base_model) = params.base_model
         && base_model.contains("gemini")
     {
         return VertexModelRoute::Gemini;
@@ -22,12 +19,8 @@ pub fn get_vertex_ai_model_route(
     if model.contains("agent_engine/") {
         return VertexModelRoute::AgentEngine;
     }
-    let numeric_endpoint = is_decimal(model)
-        && params.is_some_and(|route_params| {
-            route_params
-                .api_base
-                .is_some_and(|api_base| !api_base.is_empty())
-        });
+    let numeric_endpoint =
+        is_decimal(model) && params.api_base.is_some_and(|api_base| !api_base.is_empty());
     if numeric_endpoint {
         return VertexModelRoute::Gemini;
     }

@@ -43,7 +43,7 @@ fn routes(cases: &[RouteCase]) -> Value {
                 base_model: case.base_model.as_deref(),
                 api_base: case.api_base.as_deref(),
             };
-            route_name(get_vertex_ai_model_route(&case.model, Some(&params)))
+            route_name(get_vertex_ai_model_route(&case.model, &params))
         })
         .collect();
     json!({"routes": routes})
@@ -80,7 +80,7 @@ fn partners(models: &[String]) -> Value {
 fn timestamps(zone: &str, values: &[String]) -> Result<Value, Box<HelperError>> {
     let time_zone = TimeZone::get(zone)
         .map_err(|error| invalid_input(format!("unknown time zone {zone}: {error}")))?;
-    let context = LocalTimeContext::from(time_zone);
+    let context = LocalTimeContext { zone: time_zone };
     let results: Vec<Value> = values
         .iter()
         .map(|value| {

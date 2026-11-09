@@ -97,6 +97,9 @@ enum MetadataCase {
 #[case::utc_last_microsecond(MetadataCase::Timestamp { zone: "UTC", text: "2024-01-02T03:04:05.999999Z", expected: 1_704_164_645 })]
 #[case::single_digit_fields(MetadataCase::Timestamp { zone: "UTC", text: "2024-1-2T3:4:5.5Z", expected: 1_704_164_645 })]
 #[case::lowercase_separators(MetadataCase::Timestamp { zone: "UTC", text: "2024-01-02t03:04:05.5z", expected: 1_704_164_645 })]
+#[case::space_padded_day(MetadataCase::Timestamp { zone: "UTC", text: "2024-01- 2T03:04:05.5Z", expected: 1_704_164_645 })]
+#[case::space_padded_hour(MetadataCase::Timestamp { zone: "UTC", text: "2024-01-02T 3:04:05.5Z", expected: 1_704_164_645 })]
+#[case::space_padded_day_and_hour(MetadataCase::Timestamp { zone: "UTC", text: "2024-01- 9T 9:04:05.5Z", expected: 1_704_791_045 })]
 #[case::first_century(MetadataCase::Timestamp { zone: "UTC", text: "0001-01-02T03:04:05.5Z", expected: -62_135_499_354 })]
 #[case::new_york_summer(MetadataCase::Timestamp { zone: "America/New_York", text: "2024-07-01T12:00:00.000000Z", expected: 1_719_849_600 })]
 #[case::new_york_fold_takes_the_earlier_offset(MetadataCase::Timestamp { zone: "America/New_York", text: "2024-11-03T01:30:00.000000Z", expected: 1_730_611_800 })]
@@ -126,6 +129,11 @@ enum MetadataCase {
 #[case::extra_date_field(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02-03T03:04:05.5Z" })]
 #[case::extra_time_field(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02T03:04:05:06.5Z" })]
 #[case::space_separator(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02 03:04:05.5Z" })]
+#[case::space_padded_day_zero(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01- 0T03:04:05.5Z" })]
+#[case::space_padded_two_digit_day(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01- 12T03:04:05.5Z" })]
+#[case::space_padded_two_digit_hour(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02T 12:04:05.5Z" })]
+#[case::space_padded_minute(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02T03: 4:05.5Z" })]
+#[case::space_padded_month(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024- 1-02T03:04:05.5Z" })]
 #[case::three_digit_month(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-001-02T03:04:05.5Z" })]
 #[case::empty_text(MetadataCase::InvalidTimestamp { zone: "UTC", text: "" })]
 fn metadata_cases(#[case] case: MetadataCase) {
@@ -145,7 +153,9 @@ fn metadata_cases(#[case] case: MetadataCase) {
             text,
             expected,
         } => {
-            let context = LocalTimeContext::from(TimeZone::get(zone).unwrap());
+            let context = LocalTimeContext {
+                zone: TimeZone::get(zone).unwrap(),
+            };
             assert_eq!(
                 decode_vertex_timestamp(text.as_bytes(), &context).ok(),
                 Some(expected),
@@ -153,7 +163,9 @@ fn metadata_cases(#[case] case: MetadataCase) {
             );
         }
         MetadataCase::InvalidTimestamp { zone, text } => {
-            let context = LocalTimeContext::from(TimeZone::get(zone).unwrap());
+            let context = LocalTimeContext {
+                zone: TimeZone::get(zone).unwrap(),
+            };
             assert!(
                 decode_vertex_timestamp(text.as_bytes(), &context).is_err(),
                 "zone {zone} text {text}"
@@ -178,7 +190,9 @@ fn provider_metadata_fields_are_the_five_wire_names() {
 
 #[test]
 fn non_utf8_timestamp_is_rejected() {
-    let context = LocalTimeContext::from(TimeZone::UTC);
+    let context = LocalTimeContext {
+        zone: TimeZone::UTC,
+    };
     assert!(matches!(
         decode_vertex_timestamp(&[0xff, 0xfe], &context),
         Err(VertexTimestampError::Utf8(_))
@@ -187,7 +201,9 @@ fn non_utf8_timestamp_is_rejected() {
 
 #[test]
 fn timestamp_byte_limit_is_exact() {
-    let context = LocalTimeContext::from(TimeZone::UTC);
+    let context = LocalTimeContext {
+        zone: TimeZone::UTC,
+    };
     let at_limit = vec![b'0'; 64];
     assert!(matches!(
         decode_vertex_timestamp(&at_limit, &context),
@@ -206,6 +222,8 @@ fn timestamp_byte_limit_is_exact() {
 #[rstest]
 fn replays_the_vertex_timestamp_corpus(#[files("fuzz/corpus/vertex_timestamp/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let context = LocalTimeContext::from(TimeZone::UTC);
+    let context = LocalTimeContext {
+        zone: TimeZone::UTC,
+    };
     let _decoded = decode_vertex_timestamp(&bytes, &context);
 }
