@@ -86,7 +86,7 @@ fn entries(text: &str) -> IndexMap<String, Json> {
 
 fn trace_from(text: &str) -> Vec<(String, Value)> {
     let fields = entries(text);
-    let attributes = TraceAttributes {
+    pairs(trace_attributes(&TraceAttributes {
         name: fields.get("name"),
         user_id: fields.get("user_id"),
         session_id: fields.get("session_id"),
@@ -97,8 +97,7 @@ fn trace_from(text: &str) -> Vec<(String, Value)> {
         public: public_flag(fields.get("public")),
         input: fields.get("input"),
         output: fields.get("output"),
-    };
-    pairs(trace_attributes(&attributes))
+    }))
 }
 
 fn public_flag(value: Option<&Json>) -> Option<bool> {
@@ -150,7 +149,7 @@ fn observation_type(value: Option<&Json>) -> ObservationType {
 fn observation_from(text: &str) -> Vec<(String, Value)> {
     let fields = entries(text);
     let prompt = prompt_link(fields.get("prompt"));
-    pairs(observation_attributes(&ObservationAttributes {
+    let attributes = ObservationAttributes {
         observation_type: observation_type(fields.get("observation_type")),
         input: fields.get("input"),
         output: fields.get("output"),
@@ -164,7 +163,8 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
         cost_details: fields.get("cost_details"),
         completion_start_time: completion_start(fields.get("completion_start_time")),
         prompt: prompt.as_ref(),
-    }))
+    };
+    pairs(observation_attributes(&attributes))
 }
 
 #[rstest]

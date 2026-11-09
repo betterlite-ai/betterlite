@@ -27,7 +27,7 @@ pub(crate) fn parse_datetime(text: &str) -> Result<DateTime<chrono::Utc>, Box<He
 }
 
 pub(crate) fn trace_projection(fields: &TraceFields) -> serde_json::Value {
-    let attributes = TraceAttributes {
+    pairs(&trace_attributes(&TraceAttributes {
         name: fields.name.as_ref(),
         user_id: fields.user_id.as_ref(),
         session_id: fields.session_id.as_ref(),
@@ -38,8 +38,7 @@ pub(crate) fn trace_projection(fields: &TraceFields) -> serde_json::Value {
         public: fields.public,
         input: fields.input.as_ref(),
         output: fields.output.as_ref(),
-    };
-    pairs(&trace_attributes(&attributes))
+    }))
 }
 
 pub(crate) fn observation_projection(
