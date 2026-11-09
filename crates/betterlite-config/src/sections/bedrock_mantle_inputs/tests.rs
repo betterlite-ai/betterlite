@@ -3,19 +3,21 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
 use super::Settings;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Field {
     ApiBase,
     ApiKey,
     Region,
     Unrelated,
 }
+
+const FIELDS: [Field; 3] = [Field::ApiBase, Field::ApiKey, Field::Region];
 
 fn load(environment: &[(&str, &str)]) -> Settings {
     let lookup = environment
@@ -29,8 +31,21 @@ fn load(environment: &[(&str, &str)]) -> Settings {
         .bedrock_mantle_inputs
 }
 
-fn exposed(secret: Option<&SecretString>) -> Option<&str> {
-    secret.map(ExposeSecret::expose_secret)
+fn read(settings: &Settings, field: Field) -> Option<String> {
+    let secret = settings.api_key.as_ref().map(ExposeSecret::expose_secret);
+    match field {
+        Field::ApiBase => settings.api_base.clone(),
+        Field::ApiKey => secret.map(str::to_owned),
+        Field::Region => settings.region.clone(),
+        Field::Unrelated => None,
+    }
+}
+
+fn set_fields(settings: &Settings) -> Vec<Field> {
+    FIELDS
+        .into_iter()
+        .filter(|field| read(settings, *field).is_some())
+        .collect()
 }
 
 #[rstest]
@@ -40,65 +55,38 @@ fn exposed(secret: Option<&SecretString>) -> Option<&str> {
 #[case::rejects_unrelated_key(Field::Unrelated)]
 fn bedrock_mantle_inputs_config_cases(#[case] field: Field) {
     match field {
-        Field::ApiBase => loads_api_base(),
-        Field::ApiKey => loads_api_key(),
-        Field::Region => loads_region(),
         Field::Unrelated => rejects_unrelated_keys(),
+        Field::ApiBase | Field::ApiKey | Field::Region => loads_field(field),
     }
 }
 
-fn loads_api_base() {
+fn loads_field(field: Field) {
+    let variable = match field {
+        Field::ApiBase => "BEDROCK_MANTLE_API_BASE",
+        Field::ApiKey => "BEDROCK_MANTLE_API_KEY",
+        Field::Region => "BEDROCK_MANTLE_REGION",
+        Field::Unrelated => return,
+    };
     let default = load(&[]);
-    assert!(default.api_base.is_none());
-    assert!(default.api_key.is_none());
-    assert!(default.region.is_none());
-    let configured = load(&[("BEDROCK_MANTLE_API_BASE", "https://mantle.example/v1")]);
-    assert_eq!(
-        configured.api_base.as_deref(),
-        Some("https://mantle.example/v1")
-    );
-    assert!(configured.api_key.is_none());
-    assert!(configured.region.is_none());
+    assert_eq!(read(&default, field), None);
+    assert!(set_fields(&default).is_empty());
+
+    let configured = load(&[(variable, "from-env")]);
+    assert_eq!(read(&configured, field).as_deref(), Some("from-env"));
+    assert_eq!(set_fields(&configured), [field]);
+
     // the resolver applies LiteLLM's truthiness, so an empty value is kept as given
-    let empty = load(&[("BEDROCK_MANTLE_API_BASE", "")]);
-    assert_eq!(empty.api_base.as_deref(), Some(""));
-}
-
-fn loads_api_key() {
-    let default = load(&[]);
-    assert!(default.api_key.is_none());
-    assert!(default.api_base.is_none());
-    assert!(default.region.is_none());
-    let configured = load(&[("BEDROCK_MANTLE_API_KEY", "fixture-mantle-key")]);
-    assert_eq!(
-        exposed(configured.api_key.as_ref()),
-        Some("fixture-mantle-key")
-    );
-    assert!(configured.api_base.is_none());
-    assert!(configured.region.is_none());
-    let empty = load(&[("BEDROCK_MANTLE_API_KEY", "")]);
-    assert_eq!(exposed(empty.api_key.as_ref()), Some(""));
-    assert!(!format!("{empty:?}").contains("BEDROCK_MANTLE_API_KEY"));
-}
-
-fn loads_region() {
-    let default = load(&[]);
-    assert!(default.region.is_none());
-    assert!(default.api_base.is_none());
-    assert!(default.api_key.is_none());
-    let configured = load(&[("BEDROCK_MANTLE_REGION", "eu-west-1")]);
-    assert_eq!(configured.region.as_deref(), Some("eu-west-1"));
-    assert!(configured.api_base.is_none());
-    assert!(configured.api_key.is_none());
-    let empty = load(&[("BEDROCK_MANTLE_REGION", "")]);
-    assert_eq!(empty.region.as_deref(), Some(""));
+    let empty = load(&[(variable, "")]);
+    assert_eq!(read(&empty, field).as_deref(), Some(""));
+    assert_eq!(set_fields(&empty), [field]);
 }
 
 fn rejects_unrelated_keys() {
-    let lookup = BTreeMap::new();
-    let error = ConfigLoader { lookup }
-        .load("litellm_settings:\n  bedrock_mantle_api_base: https://mantle.example/v1\n")
-        .unwrap_err();
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings:\n  bedrock_mantle_api_base: https://mantle.example/v1\n")
+    .unwrap_err();
     assert!(
         matches!(
             &error,
@@ -107,9 +95,8 @@ fn rejects_unrelated_keys() {
         ),
         "{error}"
     );
-    let nested_lookup = BTreeMap::new();
     let nested_error = ConfigLoader {
-        lookup: nested_lookup,
+        lookup: BTreeMap::new(),
     }
     .load("bedrock_mantle_inputs:\n  api_key: fixture\n")
     .unwrap_err();
@@ -120,5 +107,16 @@ fn rejects_unrelated_keys() {
                 if *paths == ["bedrock_mantle_inputs"]
         ),
         "{nested_error}"
+    );
+}
+
+#[test]
+fn bedrock_mantle_inputs_keep_the_key_secret() {
+    let configured = load(&[("BEDROCK_MANTLE_API_KEY", "fixture-mantle-key")]);
+    let rendered = format!("{configured:?}");
+    assert!(!rendered.contains("fixture-mantle-key"));
+    assert_eq!(
+        configured.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("fixture-mantle-key")
     );
 }

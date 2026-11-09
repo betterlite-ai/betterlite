@@ -56,6 +56,7 @@ pub(super) fn mantle_chat_endpoint_inputs() {
     api_base_cases();
     explicit_region_cases();
     invalid_region_cases();
+    hostname_is_not_a_region_source();
     segment_cases();
     bearer_cases();
 }
@@ -157,18 +158,23 @@ fn explicit_region_cases() {
 }
 
 fn invalid_region_cases() {
-    assert!(rejected(
+    let explicit = rejected(
         params(
             Some("openai.gpt-5"),
             Some("https://custom.example"),
-            Some("BAD_REGION")
+            Some("BAD_REGION"),
         ),
-        &[]
-    ));
-    assert!(rejected(
+        &[],
+    );
+    let configured = rejected(
         params(None, Some("https://custom.example"), None),
-        &[("BEDROCK_MANTLE_REGION", "BAD_REGION")]
-    ));
+        &[("BEDROCK_MANTLE_REGION", "BAD_REGION")],
+    );
+    assert!(explicit);
+    assert!(configured);
+}
+
+fn hostname_is_not_a_region_source() {
     // the region comes from the configured inputs, never from the supplied hostname
     let host_only = resolve(
         params(None, Some("https://bedrock-mantle.US-EAST-1.api.aws"), None),
