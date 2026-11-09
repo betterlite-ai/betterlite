@@ -54,6 +54,11 @@ case "$reason" in
     touch "$journal/auto-grant"
     echo "The review rounds ran out, and this is the one extra run the rules give. Fix every finding from the last review, then finish as usual."
     exit 0 ;;
+  *"reviewer hit its"*)
+    [ -e "$journal/review-timeout" ] && exit 1
+    touch "$journal/review-timeout"
+    echo "The reviewer timed out before it answered, so this run asks it again. Change nothing unless a review finds something."
+    exit 0 ;;
   *RUSTSEC-*)
     # a worker can't bump a lock, and the flow merges main before the rerun
     [ -e "$journal/deny-rerun" ] && exit 1
