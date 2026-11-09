@@ -1,11 +1,12 @@
 #![cfg(test)]
 
+use betterlite_error::dispatch::RawExceptionBody;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use rstest::rstest;
 
-use super::{ErrorBodyKind, ProviderFailure, fallback_type, provider_failure};
+use super::{ErrorBodyKind, ProviderFailure, fallback_type, provider_failure, sdk_body};
 use crate::chat::RequestError;
 use crate::chat::execution::ChatError;
 
@@ -40,6 +41,12 @@ fn fallback_type_names_each_status_family(#[case] status: u16, #[case] error_typ
     400,
     r#"{"error":{"message":"bad","type":"t","param":"temperature"}}"#,
     ErrorBodyKind::MessageOnly,
+    expected(400, "invalid_request_error", None)
+)]
+#[case::type_and_param_none_take_the_fallback(
+    400,
+    r#"{"error":{"type":"None","param":"None"}}"#,
+    ErrorBodyKind::Structured,
     expected(400, "invalid_request_error", None)
 )]
 #[case::status_429_throttles(
@@ -82,6 +89,36 @@ fn provider_failure_renders_the_dispatch_class(
         provider_failure(&response, Some(&redactor), error_body),
         rendered
     );
+}
+
+#[rstest]
+#[case::error_object(
+    br#"{"error":{"type":"invalid_request_error","param":"messages","code":"invalid","message":"bad"}}"#,
+    Some(RawExceptionBody {
+        kind: Some("invalid_request_error".to_owned()),
+        param: Some("messages".to_owned()),
+        code: Some("invalid".to_owned()),
+        message: Some("bad".to_owned()),
+        error: None,
+    })
+)]
+#[case::whole_body_without_an_error_object(
+    br#"{"type":"t","message":"m"}"#,
+    Some(RawExceptionBody {
+        kind: Some("t".to_owned()),
+        param: None,
+        code: None,
+        message: Some("m".to_owned()),
+        error: None,
+    })
+)]
+#[case::not_json(b"not json", None)]
+#[case::an_array_is_not_an_object(b"[]", None)]
+fn sdk_body_reads_the_error_object_or_the_whole_body(
+    #[case] bytes: &[u8],
+    #[case] expected: Option<RawExceptionBody>,
+) {
+    assert_eq!(sdk_body(bytes), expected);
 }
 
 #[rstest]
