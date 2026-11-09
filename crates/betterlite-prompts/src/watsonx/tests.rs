@@ -190,6 +190,20 @@ async fn messages_to_prompt_falls_back_to_the_lowercased_model() {
 }
 
 #[tokio::test]
+async fn messages_to_prompt_keeps_a_template_matched_before_lowercasing() {
+    let prompt = messages_to_prompt(
+        &factory(),
+        "GRANITE-CHAT-ibm-mistral-8x7b",
+        &messages(r#"[{"role":"user","content":"hi"}]"#),
+        "watsonx",
+        now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt.as_deref(), Some("<s>[INST] hi [/INST]\n"));
+}
+
+#[tokio::test]
 async fn messages_to_prompt_returns_none_when_no_template_matches() {
     let prompt = messages_to_prompt(
         &factory(),

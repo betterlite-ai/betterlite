@@ -491,4 +491,12 @@ fn replays_the_watsonx_text_reply_corpus() {
 fn reply_decoder_rejects_non_utf8_without_panicking() {
     let error = decode_text_generation_reply(&[0xff_u8, 0xfe]).unwrap_err();
     assert_eq!(error.status(), Some(500));
+    assert!(error.to_string().contains("2 bytes that are not UTF-8"));
+}
+
+#[test]
+fn reply_error_names_the_unreadable_body() {
+    let body = r#"{"model_id":"granite"}"#;
+    let error = decode_text_generation_reply(body.as_bytes()).unwrap_err();
+    assert!(error.to_string().contains(body));
 }
