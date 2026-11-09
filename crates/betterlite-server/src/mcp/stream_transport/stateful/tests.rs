@@ -70,10 +70,10 @@ fn app() -> (Arc<StreamTransport>, Router) {
     let router = Router::new().route(
         "/mcp",
         any({
-            let transport = Arc::clone(&transport);
+            let shared = Arc::clone(&transport);
             move |request: Request<Body>| {
-                let transport = Arc::clone(&transport);
-                async move { transport.handle(request, FakeHandler).await }
+                let manager = Arc::clone(&shared);
+                async move { manager.handle(request, FakeHandler).await }
             }
         }),
     );
