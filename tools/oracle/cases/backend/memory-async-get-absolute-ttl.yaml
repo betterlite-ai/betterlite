@@ -2,11 +2,11 @@ kind: helper
 name: memory-async-get-absolute-ttl
 call:
   b4290:
-    function: memory_async_get_absolute_ttl
-    clock: 1000.0
-    ttl: 30.0
-    key: cache-key
-    value: cached-value
+    memory_async_get_absolute_ttl:
+      clock: 1000.0
+      ttl: 30.0
+      key: cache-key
+      value: cached-value
 env: {}
 compare:
   ignore: []

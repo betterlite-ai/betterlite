@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 #[derive(Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
     BaseCacheContractGet,
     BaseCacheContractSet,

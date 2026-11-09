@@ -2,7 +2,7 @@ kind: helper
 name: supported-call-types
 call:
   b4290:
-    function: supported_call_types
+    supported_call_types: null
 env: {}
 compare:
   ignore: []

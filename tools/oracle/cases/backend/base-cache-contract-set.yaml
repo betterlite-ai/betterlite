@@ -2,7 +2,7 @@ kind: helper
 name: base-cache-contract-set
 call:
   b4290:
-    function: base_cache_contract_set
+    base_cache_contract_set: null
 env: {}
 compare:
   ignore: []

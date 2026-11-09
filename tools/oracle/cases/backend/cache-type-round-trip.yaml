@@ -2,7 +2,7 @@ kind: helper
 name: cache-type-round-trip
 call:
   b4290:
-    function: cache_type_round_trip
+    cache_type_round_trip: null
 env: {}
 compare:
   ignore: []
