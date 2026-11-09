@@ -1736,6 +1736,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-lens-worker"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-lens",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
