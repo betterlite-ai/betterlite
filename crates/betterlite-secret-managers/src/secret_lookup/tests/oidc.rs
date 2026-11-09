@@ -138,6 +138,46 @@ fn oidc_google_caches_a_token_for_the_default_ttl() {
 }
 
 #[test]
+fn oidc_google_cache_entry_expires_exactly_at_its_ttl() {
+    let clock = Arc::new(ManualClock::at(1_700_000_000));
+    let (lookup, http) = scripted_lookup(
+        vec![answer("google-token"), answer("second-token")],
+        &clock,
+    );
+    let first = lookup
+        .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
+        .expect("the first read should succeed");
+    assert_eq!(text_value(first.as_ref()).as_deref(), Some("google-token"));
+    clock.advance(3540);
+    let refreshed = lookup
+        .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
+        .expect("an entry expiring exactly now is a miss");
+    assert_eq!(
+        text_value(refreshed.as_ref()).as_deref(),
+        Some("second-token")
+    );
+    assert_eq!(http.requests().len(), 2);
+}
+
+#[test]
+fn oidc_google_token_with_a_zero_ttl_is_not_cached_and_warns() {
+    let (logs, _guard) = capture_logs();
+    let clock = Arc::new(ManualClock::at(1_700_000_000));
+    let token = jwt(1_700_000_060);
+    let (lookup, http) = scripted_lookup(vec![answer(&token), answer(&token)], &clock);
+    lookup
+        .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
+        .expect("a token expiring in exactly 60s is still returned");
+    lookup
+        .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
+        .expect("a token expiring in exactly 60s is still returned");
+    assert_eq!(http.requests().len(), 2);
+    assert!(logs.text().contains(
+        "Google OIDC token for oidc/google/audience is already expired or expires within 60s; not caching it"
+    ));
+}
+
+#[test]
 fn oidc_google_caps_the_cache_at_the_token_expiry() {
     let clock = Arc::new(ManualClock::at(1_700_000_000));
     let token = jwt(1_700_000_600);
