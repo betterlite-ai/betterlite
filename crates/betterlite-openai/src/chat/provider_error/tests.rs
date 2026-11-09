@@ -73,6 +73,18 @@ fn fallback_type_names_each_status_family(#[case] status: u16, #[case] error_typ
     ErrorBodyKind::Structured,
     expected(403, "permission_error", None)
 )]
+#[case::timeout_preamble(
+    500,
+    r#"{"error":{"message":"Request timed out"}}"#,
+    ErrorBodyKind::Structured,
+    expected(408, "invalid_request_error", None)
+)]
+#[case::status_outside_the_client_range_clamps_to_500(
+    304,
+    "",
+    ErrorBodyKind::Structured,
+    expected(500, "internal_server_error", None)
+)]
 fn provider_failure_renders_the_dispatch_class(
     #[case] status: u16,
     #[case] body: &str,
@@ -85,10 +97,7 @@ fn provider_failure_renders_the_dispatch_class(
         body: body.as_bytes().to_vec(),
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("built-in patterns compile");
-    assert_eq!(
-        provider_failure(&response, Some(&redactor), error_body),
-        rendered
-    );
+    assert_eq!(provider_failure(&response, &redactor, error_body), rendered);
 }
 
 #[rstest]
@@ -122,24 +131,6 @@ fn sdk_body_reads_the_error_object_or_the_whole_body(
 }
 
 #[rstest]
-#[case::throttled(429, r#"{"error":{"type":"requests","param":"p"}}"#)]
-#[case::forbidden(403, r#"{"type":"t","param":"p"}"#)]
-#[case::bad_request(400, r#"{"error":{"message":"bad","type":"t","param":"x"}}"#)]
-fn failure_without_a_redactor_matches_the_gateway_mapping(#[case] status: u16, #[case] body: &str) {
-    let response = UpstreamResponse {
-        status,
-        headers: HeaderMap::new(),
-        body: body.as_bytes().to_vec(),
-    };
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("built-in patterns compile");
-    let gateway = provider_failure(&response, Some(&redactor), ErrorBodyKind::Structured);
-    let error = ChatError::Provider {
-        response: Box::new(response),
-    };
-    assert_eq!(error.failure(), gateway);
-}
-
-#[rstest]
 #[case::unknown_model(ChatError::UnknownModel { model: "m".to_owned() }, 400, "invalid_request_error")]
 #[case::bad_request(ChatError::from(RequestError::Unsupported { name: "x".to_owned() }), 400, "invalid_request_error")]
 #[case::streaming(ChatError::Streaming, 501, "internal_server_error")]
@@ -152,5 +143,6 @@ fn maps_betterlite_errors_to_litellm_codes(
     #[case] status: u16,
     #[case] error_type: &str,
 ) {
-    assert_eq!(error.failure(), expected(status, error_type, None));
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("built-in patterns compile");
+    assert_eq!(error.failure(&redactor), expected(status, error_type, None));
 }

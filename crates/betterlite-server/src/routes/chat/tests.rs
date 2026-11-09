@@ -667,7 +667,16 @@ enum Failing {
 #[rstest]
 #[case::an_upstream_403_is_permission_denied(
     Failing::Upstream { status: 403, body: r#"{"error":{"message":"denied"}}"# },
+    403,
     "permission_error"
+)]
+#[case::a_timeout_preamble_on_an_upstream_500(
+    Failing::Upstream {
+        status: 500,
+        body: r#"{"error":{"message":"Request timed out"}}"#,
+    },
+    408,
+    "invalid_request_error"
 )]
 #[case::an_api_429_without_a_body_type(
     Failing::Class(Box::new(ErrorClass::Api(Box::new(ApiDetails {
@@ -683,14 +692,16 @@ enum Failing {
         },
         status: 429,
     })))),
+    429,
     "rate_limit_error"
 )]
 #[tokio::test]
 async fn openai_errors_openai_error_tests_behavior(
     #[case] failing: Failing,
+    #[case] expected_status: u16,
     #[case] expected_type: &str,
 ) {
-    let error_type = match failing {
+    let (status, error_type) = match failing {
         Failing::Upstream { status, body } => {
             let answered = exchange(
                 "/v1/chat/completions",
@@ -700,14 +711,17 @@ async fn openai_errors_openai_error_tests_behavior(
                 (NO_DELAY, "0.4"),
             )
             .await;
-            assert_eq!(answered.status, status);
-            serde_json::from_slice::<ErrorReply>(&answered.body)
+            let error = serde_json::from_slice::<ErrorReply>(&answered.body)
                 .unwrap()
-                .error
-                .error_type
+                .error;
+            (answered.status, error.error_type)
         }
-        Failing::Class(class) => rendered(&class).error_type,
+        Failing::Class(class) => {
+            let rendered = rendered(&class);
+            (rendered.status, rendered.error_type)
+        }
     };
+    assert_eq!(status, expected_status);
     assert_eq!(error_type, expected_type);
 }
 

@@ -139,7 +139,7 @@ fn failure(
 fn embedding_failure(error: &EmbeddingError, redactor: &Redactor) -> ProviderFailure {
     match error {
         EmbeddingError::Provider { response } => {
-            provider_failure(response, Some(redactor), ErrorBodyKind::MessageOnly)
+            provider_failure(response, redactor, ErrorBodyKind::MessageOnly)
         }
         EmbeddingError::UnknownModel { .. }
         | EmbeddingError::Body { .. }

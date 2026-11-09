@@ -1,8 +1,6 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
-use betterlite_error::openai::body::OpenaiErrorBody;
-use betterlite_error::openai::{OpenaiExceptionInput, map_openai_exception};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_redact::secret::Redactor;
 use serde_json::Value;
@@ -23,16 +21,16 @@ pub enum ErrorBodyKind {
 }
 
 impl ChatError {
-    // A failure rendered without a Redactor, for callers that read the status, type and param and never the message.
+    // the client status, type and param of any variant; Provider runs the same dispatch the gateway bodies use
     #[must_use]
-    pub fn failure(&self) -> ProviderFailure {
+    pub fn failure(&self, redactor: &Redactor) -> ProviderFailure {
         let status = match self {
             Self::UnknownModel { .. } | Self::Request { .. } => 400,
             Self::UnsupportedProvider { .. } | Self::Streaming => 501,
             Self::MissingApiKey => 401,
             Self::Timeout { .. } => 408,
             Self::Provider { response } => {
-                return provider_failure(response, None, ErrorBodyKind::Structured);
+                return provider_failure(response, redactor, ErrorBodyKind::Structured);
             }
             Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => 500,
         };
@@ -44,45 +42,32 @@ impl ChatError {
     }
 }
 
-// with a Redactor the error runs LiteLLM's full dispatch, without one it maps straight through map_openai_exception
 #[must_use]
 pub fn provider_failure(
     response: &UpstreamResponse,
-    redactor: Option<&Redactor>,
+    redactor: &Redactor,
     error_body: ErrorBodyKind,
 ) -> ProviderFailure {
-    let raw = raw_exception(response, error_body);
-    let class = if let Some(active) = redactor {
-        dispatch(&DispatchInput::Raw(Box::new(raw)), active)
-    } else {
-        let input = OpenaiExceptionInput {
-            model: raw.model,
-            custom_llm_provider: raw.custom_llm_provider,
-            error_str: raw.error_str,
-            status_code: raw.status_code,
-            status_code_is_synthesized: raw.status_code_is_synthesized,
-            message: raw.message,
-            body: raw.body.map(|body| OpenaiErrorBody {
-                kind: body.kind,
-                param: body.param,
-                code: body.code,
-                message: body.message,
-                error: None,
-            }),
-        };
-        map_openai_exception(&input)
-    };
-    rendered(&class)
+    rendered(&dispatch(
+        &DispatchInput::Raw(Box::new(raw_exception(response, error_body))),
+        redactor,
+    ))
 }
 
 // LiteLLM's openai_error_type: the exception's own type unless it is the string "None", else the client type from the status
 #[must_use]
 pub fn rendered(class: &ErrorClass) -> ProviderFailure {
     let metadata = class.metadata();
+    // _handle_llm_api_exception keeps a provider status only in 400..=599 and answers 500 for every other one
+    let status = if (400..=599).contains(&metadata.status_code) {
+        metadata.status_code
+    } else {
+        500
+    };
     let error_type = match metadata.error_type {
         WireField::Text(text) if text != "None" => text,
         WireField::Text(_) | WireField::Missing(_) | WireField::Null => {
-            fallback_type(metadata.status_code).to_owned()
+            fallback_type(status).to_owned()
         }
     };
     let param = match metadata.param {
@@ -90,7 +75,7 @@ pub fn rendered(class: &ErrorClass) -> ProviderFailure {
         WireField::Text(_) | WireField::Missing(_) | WireField::Null => None,
     };
     ProviderFailure {
-        status: metadata.status_code,
+        status,
         error_type,
         param,
     }

@@ -114,6 +114,7 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
 )]
 #[case::custom_type(400, "provider_custom", 400, "invalid_request_error", None)]
 #[case::authentication(401, "invalid_api_key", 401, "authentication_error", None)]
+#[case::timeout_preamble(500, "Request timed out", 408, "invalid_request_error", None)]
 #[tokio::test]
 async fn embedding_error_classification(
     #[case] status: u16,
