@@ -150,10 +150,37 @@ impl DynamicCallbackLists {
         trusted: &TrustedCallbacks,
         is_known: &dyn Fn(&str) -> bool,
     ) -> Result<(), DynamicCallbackError> {
+        self.check_list_bounds()?;
         for kind in DynamicCallbackKind::ALL {
             self.process_dynamic_callback_list(kind, resolver, trusted, is_known)?;
         }
         Ok(())
+    }
+
+    fn check_list_bounds(&self) -> Result<(), DynamicCallbackError> {
+        for kind in DynamicCallbackKind::ALL {
+            let Some(callbacks) = self.slot(kind) else {
+                continue;
+            };
+            if callbacks.len() > MAX_CALLBACKS_PER_LIST {
+                return Err(DynamicCallbackError::TooMany {
+                    list: kind.name(),
+                    count: callbacks.len(),
+                    limit: MAX_CALLBACKS_PER_LIST,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    const fn slot(&self, kind: DynamicCallbackKind) -> Option<&Vec<DynamicCallback>> {
+        match kind {
+            DynamicCallbackKind::Input => self.input.as_ref(),
+            DynamicCallbackKind::Success => self.success.as_ref(),
+            DynamicCallbackKind::AsyncSuccess => self.async_success.as_ref(),
+            DynamicCallbackKind::Failure => self.failure.as_ref(),
+            DynamicCallbackKind::AsyncFailure => self.async_failure.as_ref(),
+        }
     }
 
     fn process_dynamic_callback_list(
@@ -166,13 +193,6 @@ impl DynamicCallbackLists {
         let Some(callbacks) = self.slot_mut(kind).take() else {
             return Ok(());
         };
-        if callbacks.len() > MAX_CALLBACKS_PER_LIST {
-            return Err(DynamicCallbackError::TooMany {
-                list: kind.name(),
-                count: callbacks.len(),
-                limit: MAX_CALLBACKS_PER_LIST,
-            });
-        }
         let mut processed = Vec::with_capacity(callbacks.len());
         for callback in callbacks {
             let DynamicCallback::Name(name) = &callback else {

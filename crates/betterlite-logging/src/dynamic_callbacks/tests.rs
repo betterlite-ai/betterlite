@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::iter;
 use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -196,6 +197,10 @@ fn marker_list(count: usize) -> Vec<DynamicCallback> {
         .collect()
 }
 
+fn name_list(count: usize) -> Vec<DynamicCallback> {
+    iter::repeat_with(|| name("langfuse")).take(count).collect()
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Scenario {
     AddRegistersInEveryList,
@@ -206,6 +211,8 @@ enum Scenario {
     ProcessKeepsNoneAndEmptyLists,
     ProcessAcceptsAListAtTheLimit,
     ProcessRejectsAListOverTheLimit,
+    ProcessRejectsAnOverLimitListBeforeResolving,
+    FailureAtTheLimitAcceptsAnAsyncMirror,
     SuccessMirrorsIntoAsyncSuccess,
     SuccessDuplicatesAnAlreadyListedAsyncEntry,
     SuccessKeepsANonKnownNameWithoutMirroring,
@@ -244,6 +251,12 @@ enum Scenario {
 #[case::process_keeps_none_and_empty_lists(Scenario::ProcessKeepsNoneAndEmptyLists)]
 #[case::process_accepts_a_list_at_the_limit(Scenario::ProcessAcceptsAListAtTheLimit)]
 #[case::process_rejects_a_list_over_the_limit(Scenario::ProcessRejectsAListOverTheLimit)]
+#[case::process_rejects_an_over_limit_list_before_resolving(
+    Scenario::ProcessRejectsAnOverLimitListBeforeResolving
+)]
+#[case::failure_at_the_limit_accepts_an_async_mirror(
+    Scenario::FailureAtTheLimitAcceptsAnAsyncMirror
+)]
 #[case::success_mirrors_into_async_success(Scenario::SuccessMirrorsIntoAsyncSuccess)]
 #[case::success_duplicates_an_already_listed_async_entry(
     Scenario::SuccessDuplicatesAnAlreadyListedAsyncEntry
@@ -394,7 +407,7 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
         }
         Scenario::ProcessRejectsAListOverTheLimit => {
             let mut lists = lists();
-            lists.input = Some(marker_list(MAX_CALLBACKS_PER_LIST.saturating_add(1)));
+            lists.input = Some(name_list(MAX_CALLBACKS_PER_LIST.saturating_add(1)));
             let resolver =
                 FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
             let error = lists
@@ -406,6 +419,42 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             ));
             assert!(error.to_string().contains("input"));
             assert!(resolver.calls().is_empty());
+        }
+        Scenario::ProcessRejectsAnOverLimitListBeforeResolving => {
+            let mut lists = lists();
+            lists.input = Some(vec![name("langfuse")]);
+            lists.async_success = Some(marker_list(MAX_CALLBACKS_PER_LIST.saturating_add(1)));
+            let resolver =
+                FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
+            let error = lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
+                .unwrap_err();
+            assert!(matches!(
+                &error,
+                DynamicCallbackError::TooMany { list, .. } if *list == "async_success"
+            ));
+            assert!(resolver.calls().is_empty());
+        }
+        Scenario::FailureAtTheLimitAcceptsAnAsyncMirror => {
+            let mut lists = lists();
+            let mut failure = vec![name("langfuse")];
+            failure.extend(marker_list(MAX_CALLBACKS_PER_LIST.saturating_sub(1)));
+            lists.failure = Some(failure);
+            lists.async_failure = Some(marker_list(MAX_CALLBACKS_PER_LIST));
+            let resolver =
+                FakeResolver::new(vec![("langfuse", Outcome::Logger(marker("langfuse")))]);
+            lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default(), &all_known)
+                .unwrap();
+            assert_eq!(
+                lists.failure.as_deref().unwrap().len(),
+                MAX_CALLBACKS_PER_LIST
+            );
+            assert_eq!(
+                lists.async_failure.as_deref().unwrap().len(),
+                MAX_CALLBACKS_PER_LIST.saturating_add(1)
+            );
+            assert_eq!(resolver.calls().len(), 1);
         }
         Scenario::SuccessMirrorsIntoAsyncSuccess => {
             let mut lists = lists();
