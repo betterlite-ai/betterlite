@@ -1,10 +1,13 @@
+use std::future::pending;
 use std::time::Duration;
 
 use http::StatusCode;
 use reqwest::Method;
+use reqwest::redirect::Policy;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::gigachat_tokens::authenticator::{GigachatAuthenticator, oauth_request};
@@ -308,7 +311,6 @@ fn oauth_request_carries_a_thirty_second_timeout() {
         support::request_uid(),
         "GIGACHAT_API_PERS",
     )
-    .build()
     .expect("the OAuth request builds");
 
     assert_eq!(request.method(), Method::POST);
@@ -331,6 +333,44 @@ fn oauth_request_carries_a_thirty_second_timeout() {
         request.body().and_then(reqwest::Body::as_bytes),
         Some(&b"scope=GIGACHAT_API_PERS"[..])
     );
+    assert!(!format!("{request:?}").contains("Basic-credentials"));
+}
+
+#[tokio::test]
+async fn oauth_request_reports_a_timeout_with_status_408() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port opens");
+    let address = listener.local_addr().expect("the bound address is known");
+    let mut held = JoinSet::new();
+    held.spawn(async move {
+        if let Ok((_stream, _)) = listener.accept().await {
+            pending::<()>().await;
+        }
+    });
+    let auth_url = format!("http://{address}/oauth");
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_AUTH_URL", auth_url.as_str()),
+    ]);
+    let client = reqwest::ClientBuilder::new()
+        .no_proxy()
+        .redirect(Policy::none())
+        .read_timeout(Duration::from_millis(50))
+        .build()
+        .expect("the test HTTP client builds");
+    let auth = GigachatAuthenticator::new(settings, client, SystemRuntime);
+
+    let error = auth
+        .access_token(&request(&auth_url))
+        .await
+        .expect_err("a server that never answers times out");
+
+    assert!(matches!(
+        &error,
+        GigachatAuthError::Transport { source } if source.is_timeout()
+    ));
+    assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
 }
 
 #[tokio::test]

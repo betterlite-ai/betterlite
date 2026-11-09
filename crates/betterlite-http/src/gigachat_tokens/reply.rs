@@ -48,6 +48,14 @@ pub fn decode_token_reply(bytes: &[u8]) -> Result<TokenReply, GigachatAuthError>
     if bytes.len() > MAX_REPLY_BYTES {
         return Err(GigachatAuthError::InvalidReply);
     }
+    // A derived struct deserializes from a JSON array too, so the object form is checked first
+    let starts_object = bytes
+        .iter()
+        .find(|byte| !byte.is_ascii_whitespace())
+        .is_some_and(|byte| *byte == b'{');
+    if !starts_object {
+        return Err(GigachatAuthError::InvalidReply);
+    }
     let Ok(reply) = serde_json::from_slice::<ReplyBody>(bytes) else {
         return Err(GigachatAuthError::InvalidReply);
     };

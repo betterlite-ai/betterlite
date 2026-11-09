@@ -115,6 +115,7 @@ fn reply_decoding_reads_a_string_zero_expiry() {
 #[rstest]
 #[case::not_json("not json")]
 #[case::an_array("[]")]
+#[case::a_four_element_array("[\"token-a\",null,null,null]")]
 #[case::a_string("\"text\"")]
 #[case::a_null("null")]
 #[case::missing_token("{\"exp\":1}")]
@@ -135,6 +136,14 @@ fn reply_decoding_rejects_an_unusable_reply(#[case] body: &str) {
         decode_token_reply(body.as_bytes()),
         Err(GigachatAuthError::InvalidReply)
     ));
+}
+
+#[test]
+fn reply_decoding_accepts_leading_whitespace() {
+    let reply =
+        decode_token_reply(b" \n\t{\"tok\":\"token-a\"}").expect("leading whitespace is allowed");
+
+    assert_eq!(reply.token.expose_secret(), "token-a");
 }
 
 #[test]

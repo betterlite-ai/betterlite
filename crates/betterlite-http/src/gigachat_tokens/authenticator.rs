@@ -74,16 +74,18 @@ impl<R: GigachatRuntime> GigachatAuthenticator<R> {
         auth_url: &str,
     ) -> Result<TokenReply, GigachatAuthError> {
         tracing::debug!("Requesting GigaChat access token from {auth_url}");
-        let response = oauth_request(
+        let request = oauth_request(
             &self.client,
             auth_url,
             credentials,
             self.runtime.request_uid(),
             scope,
-        )
-        .send()
-        .await
-        .map_err(|source| GigachatAuthError::Transport { source })?;
+        )?;
+        let response = self
+            .client
+            .execute(request)
+            .await
+            .map_err(|source| GigachatAuthError::Transport { source })?;
         let status = response.status();
         if !status.is_success() {
             let body = read_prefix(response, MAX_REJECTED_BYTES)
@@ -162,8 +164,8 @@ pub(super) fn oauth_request(
     credentials: &SecretString,
     request_uid: Uuid,
     scope: &str,
-) -> reqwest::RequestBuilder {
-    client
+) -> Result<reqwest::Request, GigachatAuthError> {
+    let mut request = client
         .post(auth_url)
         .header(
             AUTHORIZATION,
@@ -172,6 +174,13 @@ pub(super) fn oauth_request(
         .header("RqUID", request_uid.to_string())
         .form(&[("scope", scope)])
         .timeout(OAUTH_TIMEOUT)
+        .build()
+        .map_err(|source| GigachatAuthError::Transport { source })?;
+    // A basic credential never reaches Debug output or a log line
+    if let Some(value) = request.headers_mut().get_mut(AUTHORIZATION) {
+        value.set_sensitive(true);
+    }
+    Ok(request)
 }
 
 async fn read_prefix(mut response: Response, limit: usize) -> Result<Vec<u8>, reqwest::Error> {

@@ -18,10 +18,11 @@ pub enum GigachatAuthError {
 
 impl GigachatAuthError {
     #[must_use]
-    pub const fn status_code(&self) -> StatusCode {
+    pub fn status_code(&self) -> StatusCode {
         match self {
             Self::MissingCredentials => StatusCode::UNAUTHORIZED,
             Self::Rejected { status, .. } => *status,
+            Self::Transport { source } if source.is_timeout() => StatusCode::REQUEST_TIMEOUT,
             Self::Transport { .. } | Self::InvalidReply => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
