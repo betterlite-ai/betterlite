@@ -4,9 +4,25 @@ use crate::ocr_error::OcrError;
 use crate::textract_ocr::wire::{Block, BlockType, LayoutType};
 
 const MAX_BLOCK_DEPTH: usize = 64;
-const MAX_BLOCK_VISITS: usize = 1_000_000;
 const MAX_TABLE_COLUMNS: usize = 1000;
 const BULLETS: [char; 4] = ['-', '*', '\u{2022}', '\u{00b7}'];
+
+pub(crate) struct WorkBudget {
+    pub(crate) spent: usize,
+    pub(crate) limit: usize,
+}
+
+impl WorkBudget {
+    fn charge(&mut self, amount: usize) -> Result<(), OcrError> {
+        self.spent = self.spent.saturating_add(amount);
+        if self.spent > self.limit {
+            return Err(OcrError::InvalidResponse(
+                "the Textract blocks need more work than the response size allows".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
 
 struct PageTables<'page> {
     blocks: Vec<&'page Block>,
@@ -18,7 +34,7 @@ pub(crate) fn layout_markdown(
     blocks: &[Block],
     page: i64,
     by_id: &HashMap<&str, &Block>,
-    visited: &mut usize,
+    work: &mut WorkBudget,
 ) -> Result<String, OcrError> {
     let on_page: Vec<&Block> = blocks.iter().filter(|block| block.page == page).collect();
     let list_items: BTreeSet<&str> = on_page
@@ -47,7 +63,7 @@ pub(crate) fn layout_markdown(
         let Some(layout) = block.kind.layout() else {
             continue;
         };
-        let section = section_markdown(block, layout, by_id, &tables, visited)?;
+        let section = section_markdown(block, layout, by_id, &tables, work)?;
         if !section.trim().is_empty() {
             sections.push(section);
         }
@@ -60,12 +76,12 @@ fn section_markdown(
     layout: LayoutType,
     by_id: &HashMap<&str, &Block>,
     tables: &PageTables<'_>,
-    visited: &mut usize,
+    work: &mut WorkBudget,
 ) -> Result<String, OcrError> {
     match layout {
-        LayoutType::Title => Ok(format!("# {}", text_of(block, by_id, " ", 0, visited)?)),
-        LayoutType::SectionHeader => Ok(format!("## {}", text_of(block, by_id, " ", 0, visited)?)),
-        LayoutType::List => list_markdown(block, by_id, visited),
+        LayoutType::Title => Ok(format!("# {}", text_of(block, by_id, " ", 0, work)?)),
+        LayoutType::SectionHeader => Ok(format!("## {}", text_of(block, by_id, " ", 0, work)?)),
+        LayoutType::List => list_markdown(block, by_id, work),
         LayoutType::Table => {
             let linked = block
                 .children()
@@ -76,14 +92,14 @@ fn section_markdown(
                 .get(block.id.as_str())
                 .and_then(|ordinal| tables.blocks.get(*ordinal).copied());
             let Some(table) = linked.or(positioned) else {
-                return text_of(block, by_id, "\n", 0, visited);
+                return text_of(block, by_id, "\n", 0, work);
             };
-            table_markdown(table, by_id, visited)
+            table_markdown(table, by_id, work)
         }
-        LayoutType::KeyValue => text_of(block, by_id, "\n", 0, visited),
+        LayoutType::KeyValue => text_of(block, by_id, "\n", 0, work),
         LayoutType::Figure => Ok(String::new()),
         LayoutType::Text | LayoutType::Header | LayoutType::Footer | LayoutType::PageNumber => {
-            text_of(block, by_id, " ", 0, visited)
+            text_of(block, by_id, " ", 0, work)
         }
     }
 }
@@ -91,11 +107,11 @@ fn section_markdown(
 fn list_markdown(
     block: &Block,
     by_id: &HashMap<&str, &Block>,
-    visited: &mut usize,
+    work: &mut WorkBudget,
 ) -> Result<String, OcrError> {
     let mut items = Vec::new();
     for item in block.children().filter_map(|id| by_id.get(id).copied()) {
-        let text = text_of(item, by_id, " ", 0, visited)?;
+        let text = text_of(item, by_id, " ", 0, work)?;
         items.push(format!(
             "- {}",
             text.trim_start_matches(BULLETS).trim_start()
@@ -104,19 +120,23 @@ fn list_markdown(
     Ok(items.join("\n"))
 }
 
+// one visit, its text bytes, and the child ids it lists are all work the walk does
+fn charge_block(block: &Block, work: &mut WorkBudget) -> Result<(), OcrError> {
+    work.charge(
+        1_usize
+            .saturating_add(block.text.as_ref().map_or(0, String::len))
+            .saturating_add(block.children().count()),
+    )
+}
+
 fn text_of(
     block: &Block,
     by_id: &HashMap<&str, &Block>,
     separator: &str,
     depth: usize,
-    visited: &mut usize,
+    work: &mut WorkBudget,
 ) -> Result<String, OcrError> {
-    if *visited >= MAX_BLOCK_VISITS {
-        return Err(OcrError::InvalidResponse(
-            "the Textract blocks need more visits than the allowed budget".to_owned(),
-        ));
-    }
-    *visited = visited.saturating_add(1);
+    charge_block(block, work)?;
     if let Some(text) = &block.text {
         return Ok(text.clone());
     }
@@ -127,7 +147,7 @@ fn text_of(
     }
     let mut texts = Vec::new();
     for child in block.children().filter_map(|id| by_id.get(id).copied()) {
-        let text = text_of(child, by_id, separator, depth.saturating_add(1), visited)?;
+        let text = text_of(child, by_id, separator, depth.saturating_add(1), work)?;
         if !text.is_empty() {
             texts.push(text);
         }
@@ -138,8 +158,9 @@ fn text_of(
 fn table_markdown(
     table: &Block,
     by_id: &HashMap<&str, &Block>,
-    visited: &mut usize,
+    work: &mut WorkBudget,
 ) -> Result<String, OcrError> {
+    charge_block(table, work)?;
     let mut cells: BTreeMap<(usize, usize), String> = BTreeMap::new();
     for cell in table.children().filter_map(|id| by_id.get(id).copied()) {
         if cell.kind != BlockType::Cell {
@@ -148,7 +169,7 @@ fn table_markdown(
         let (Some(row), Some(column)) = (cell.row_index, cell.column_index) else {
             continue;
         };
-        let text = text_of(cell, by_id, " ", 0, visited)?.replace('|', "\\|");
+        let text = text_of(cell, by_id, " ", 0, work)?.replace('|', "\\|");
         let _previous = cells.insert((row, column), text);
     }
     let columns = cells.keys().map(|(_, column)| *column).max().unwrap_or(0);

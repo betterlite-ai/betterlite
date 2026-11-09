@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::json::{Json, Object};
 use crate::ocr_config::decode::{OcrFieldKind, decode_and_normalize_response, decode_value};
-use crate::ocr_config::{OcrProviderConfig, OcrRequestContext, OcrTransform, PreparedOcrRequest};
+use crate::ocr_config::{
+    OCR_RESPONSE_MAX_BYTES, OcrProviderConfig, OcrRequestContext, OcrTransform, PreparedOcrRequest,
+};
 use crate::ocr_document::OcrDocument;
 use crate::ocr_error::OcrError;
 use crate::ocr_http::OcrClient;
@@ -17,7 +19,7 @@ use crate::textract_ocr::environment::{
     AWS_SECRET_NAMES, TextractEnvironment, endpoint, textract_environment,
 };
 use crate::textract_ocr::error::textract_error;
-use crate::textract_ocr::markdown::layout_markdown;
+use crate::textract_ocr::markdown::{WorkBudget, layout_markdown};
 use crate::textract_ocr::response::{lines_by_page, ocr_response};
 use crate::textract_ocr::wire::{Block, FeatureType, TextractDocument, TextractResponse};
 
@@ -155,9 +157,12 @@ fn analyze_response(model: &str, response: TextractResponse) -> Result<OCRRespon
             .collect();
         let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page).collect();
         let mut page_markdown = Vec::new();
-        let mut visited = 0_usize;
+        let mut work = WorkBudget {
+            spent: 0,
+            limit: OCR_RESPONSE_MAX_BYTES,
+        };
         for page in pages {
-            let markdown = layout_markdown(blocks, page, &by_id, &mut visited)?;
+            let markdown = layout_markdown(blocks, page, &by_id, &mut work)?;
             if !markdown.is_empty() {
                 page_markdown.push((page, markdown));
             }

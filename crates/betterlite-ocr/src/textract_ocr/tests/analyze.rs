@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::iter::repeat_n;
 
 use rstest::rstest;
@@ -7,6 +8,8 @@ use crate::ocr_error::OcrError;
 use crate::request_format::RequestFormat;
 use crate::response::OCRResponse;
 use crate::textract_ocr::analyze::TextractAnalyzeDocumentConfig;
+use crate::textract_ocr::markdown::{WorkBudget, layout_markdown};
+use crate::textract_ocr::wire::{Block, TextractResponse};
 
 const MODEL: &str = "analyze-document";
 
@@ -246,43 +249,80 @@ fn table_columns_are_limited(#[case] column: usize, #[case] allowed: bool) {
     }
 }
 
-#[rstest]
-#[case::at_the_limit(999_999, true)]
-#[case::over_the_limit(1_000_000, false)]
-fn the_block_visit_budget_is_enforced(#[case] children: usize, #[case] allowed: bool) {
-    let response = analyze(&wide_blocks(children));
+fn walk(blocks: &str, limit: usize) -> Result<String, OcrError> {
+    let raw = format!(r#"{{"Blocks":{blocks}}}"#);
+    let parsed: TextractResponse = serde_json::from_str(&raw)
+        .map_err(|_source| OcrError::InvalidResponse("the test blocks parse".to_owned()))?;
+    let by_id: HashMap<&str, &Block> = parsed
+        .blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect();
+    let mut work = WorkBudget { spent: 0, limit };
+    layout_markdown(&parsed.blocks, 1, &by_id, &mut work)
+}
 
+#[rstest]
+#[case::exactly_at_the_limit(4, true)]
+#[case::one_below_the_work(3, false)]
+fn the_work_budget_is_enforced(#[case] limit: usize, #[case] allowed: bool) {
+    let walked = walk(
+        r#"[{"Id":"root","BlockType":"LAYOUT_TEXT","Text":"abc"}]"#,
+        limit,
+    );
+
+    assert_eq!(walked.is_ok(), allowed, "limit {limit}");
     if allowed {
-        let answer = response.expect("the last visit inside the budget passes");
-        assert_eq!(answer.pages.len(), 1);
-        assert_eq!(
-            answer.pages[0].markdown.len(),
-            children.saturating_mul(2).saturating_sub(1)
-        );
+        assert_eq!(walked.expect("the walk fits the budget"), "abc");
     } else {
         assert!(
-            matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("budget")),
-            "the visit past the budget is refused"
+            matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+            "limit {limit}"
         );
     }
 }
 
-fn wide_blocks(children: usize) -> String {
-    let ids = repeat_n("\"leaf\"", children)
-        .collect::<Vec<&str>>()
-        .join(",");
-    format!(
-        r#"[{{"Id":"root","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"leaf","BlockType":"LINE","Text":"x"}}]"#
-    )
+#[test]
+fn a_fan_out_block_graph_is_refused() {
+    let walked = walk(&fan_out_blocks(40), 1_000);
+
+    assert!(
+        matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the fan out graph is refused"
+    );
 }
 
 #[test]
-fn a_fan_out_block_graph_is_refused_within_the_budget() {
-    let response = analyze(&fan_out_blocks(40));
+fn a_repeated_large_text_block_is_refused() {
+    let ids = repeat_n("\"line\"", 100).collect::<Vec<&str>>().join(",");
+    let text = "x".repeat(1_000);
+    let blocks = format!(
+        r#"[{{"Id":"root","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"line","BlockType":"LINE","Text":"{text}"}}]"#
+    );
+
+    let walked = walk(&blocks, 10_000);
 
     assert!(
-        matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("budget")),
-        "the fan out graph hits the visit budget"
+        matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the repeated text block is refused"
+    );
+}
+
+#[test]
+fn a_repeated_child_with_many_dangling_ids_is_refused() {
+    let parents = repeat_n("\"parent\"", 100).collect::<Vec<&str>>().join(",");
+    let dangling = repeat_n("\"missing\"", 200)
+        .collect::<Vec<&str>>()
+        .join(",");
+    let blocks = format!(
+        r#"[{{"Id":"root","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{parents}]}}]}},{{"Id":"parent","BlockType":"PAGE","Relationships":[{{"Type":"CHILD","Ids":[{dangling}]}}]}}]"#
+    );
+
+    let walked = walk(&blocks, 10_000);
+
+    assert!(
+        matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the repeated dangling ids are refused"
     );
 }
 
