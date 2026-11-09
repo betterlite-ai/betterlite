@@ -94,8 +94,12 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
         })
     }
 
-    fn adopt_local(&self, loaded_at: DateTime<Utc>) -> Arc<CatalogSnapshot> {
-        let snapshot = self.bundled_snapshot(BundledSource::Local, loaded_at);
+    fn adopt_bundled(
+        &self,
+        source: BundledSource<'_>,
+        loaded_at: DateTime<Utc>,
+    ) -> Arc<CatalogSnapshot> {
+        let snapshot = self.bundled_snapshot(source, loaded_at);
         self.current.store(Arc::clone(&snapshot));
         snapshot
     }
@@ -113,7 +117,9 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
         J: JitterSource,
     {
         let CatalogSource::Remote { url } = &self.source else {
-            return ReloadOutcome::Reloaded(self.adopt_local((self.clock)()));
+            return ReloadOutcome::Reloaded(
+                self.adopt_bundled(BundledSource::Local, (self.clock)()),
+            );
         };
         let fetch = refresh::ReloadFetch {
             limits,
@@ -138,7 +144,7 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
     {
         match &self.source {
             CatalogSource::Local => StartupOutcome {
-                snapshot: self.adopt_local((self.clock)()),
+                snapshot: self.adopt_bundled(BundledSource::Local, (self.clock)()),
                 retry: None,
             },
             CatalogSource::Remote { url } => {

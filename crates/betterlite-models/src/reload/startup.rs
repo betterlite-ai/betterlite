@@ -38,7 +38,7 @@ where
     match outcome {
         AttemptOutcome::Reloaded(fetched) => reloaded(service, &request.url, &fetched, loaded_at),
         AttemptOutcome::Unavailable(unavailable) => StartupOutcome {
-            snapshot: service.bundled_snapshot(
+            snapshot: service.adopt_bundled(
                 BundledSource::Fallback {
                     url: &request.url,
                     reason: format!("Remote fetch failed: {}", unavailable.reason),
@@ -48,7 +48,7 @@ where
             retry: None,
         },
         AttemptOutcome::Retryable(retryable) => StartupOutcome {
-            snapshot: service.bundled_snapshot(
+            snapshot: service.adopt_bundled(
                 BundledSource::Fallback {
                     url: &request.url,
                     reason: format!("Remote fetch failed: {}", retryable.reason),
@@ -85,7 +85,7 @@ where
             retry: None,
         },
         Err(error) => StartupOutcome {
-            snapshot: service.bundled_snapshot(
+            snapshot: service.adopt_bundled(
                 BundledSource::Fallback {
                     url,
                     reason: failure_reason(&error),

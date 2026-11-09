@@ -54,7 +54,7 @@ pub(super) async fn start(
 ) -> StartupOutcome<ScriptedClient, RecordingSleeper, ScriptedJitter> {
     service
         .startup(
-            limits(1),
+            limits(3),
             client,
             Arc::new(RecordingSleeper::default()),
             ScriptedJitter::new(&[]),

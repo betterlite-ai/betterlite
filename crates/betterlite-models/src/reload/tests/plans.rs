@@ -5,8 +5,8 @@ use crate::reload::{ReloadOutcome, RetryOutcome, StartupOutcome};
 use crate::source::{CatalogProvenance, SourceKind};
 
 use super::support::{
-    RecordingSleeper, Reply, ScriptedClient, ScriptedJitter, URL, blob, body_with_entry,
-    bundled_service, catalog_body, fixed_moment, limits, local_service,
+    RecordingSleeper, Reply, ScriptedClient, ScriptedJitter, TestService, URL, blob,
+    body_with_entry, bundled_service, catalog_body, fixed_moment, limits, local_service,
 };
 use super::{adopted, decimal, reload_once, start};
 
@@ -59,17 +59,18 @@ async fn plan_startup_local() {
     assert_eq!(provenance.source_revision, Some(revision));
     assert_eq!(provenance.etag, None);
     assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert!(outcome.retry.is_none());
     assert_eq!(client.requests(), 0);
 }
 
 type Startup = StartupOutcome<ScriptedClient, RecordingSleeper, ScriptedJitter>;
 
-async fn started(replies: Vec<Reply>) -> (Startup, Arc<ScriptedClient>) {
+async fn started(replies: Vec<Reply>) -> (Arc<TestService>, Startup, Arc<ScriptedClient>) {
     let service = bundled_service();
     let client = Arc::new(ScriptedClient::new(replies));
     let outcome = start(&service, Arc::clone(&client)).await;
-    (outcome, client)
+    (service, outcome, client)
 }
 
 fn assert_remote(outcome: &Startup, body: &str) {
@@ -86,7 +87,7 @@ fn assert_remote(outcome: &Startup, body: &str) {
     assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
 }
 
-fn assert_fallback(outcome: &Startup) {
+fn assert_fallback(service: &TestService, outcome: &Startup) {
     let provenance = &outcome.snapshot.provenance;
     assert_eq!(provenance.kind, SourceKind::Local);
     assert_eq!(provenance.url.as_deref(), Some(URL));
@@ -97,20 +98,23 @@ fn assert_fallback(outcome: &Startup) {
     );
     assert_eq!(provenance.etag, None);
     assert!(provenance.source_revision.is_some());
+    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert!(outcome.retry.is_none());
 }
 
 async fn plan_startup_remote() {
     let body = catalog_body("remote", 60);
-    let (outcome, client) = started(vec![Reply::ok_with_etag(&body, "\"v1\"")]).await;
+    let (service, outcome, client) = started(vec![Reply::ok_with_etag(&body, "\"v1\"")]).await;
     assert_remote(&outcome, &body);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert_eq!(client.requests(), 1);
     assert_eq!(client.timeouts(), [Duration::from_secs(5)]);
 }
 
 async fn plan_startup_fallback() {
-    let (outcome, client) = started(vec![Reply::status(404)]).await;
-    assert_fallback(&outcome);
+    let (service, outcome, client) = started(vec![Reply::status(404)]).await;
+    assert_fallback(&service, &outcome);
     assert_eq!(client.requests(), 1);
 }
 
@@ -120,7 +124,7 @@ async fn plan_startup_transport() {
         "connection refused",
     )]));
     let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_none());
+    assert!(outcome.retry.is_some());
     let reason = outcome
         .snapshot
         .provenance
@@ -129,6 +133,8 @@ async fn plan_startup_transport() {
         .unwrap();
     assert!(reason.starts_with("Remote fetch failed:"));
     assert!(reason.contains(URL));
+    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert_eq!(client.requests(), 1);
 }
 
@@ -140,6 +146,8 @@ async fn plan_startup_invalid_url() {
     let outcome = start(&service, Arc::clone(&client)).await;
     assert!(outcome.retry.is_none());
     assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
+    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert_eq!(client.requests(), 1);
 }
 
@@ -148,10 +156,13 @@ async fn plan_startup_integrity_fallback() {
     let service = bundled_service();
     let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&shrunk)]));
     let outcome = start(&service, Arc::clone(&client)).await;
+    assert!(outcome.retry.is_none());
     assert_eq!(
         outcome.snapshot.provenance.fallback_reason.as_deref(),
         Some("Remote data failed integrity validation")
     );
+    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
     assert!(
         !outcome
             .snapshot
@@ -170,6 +181,7 @@ async fn plan_startup_parse_fallback() {
     let service = bundled_service();
     let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&broken)]));
     let outcome = start(&service, Arc::clone(&client)).await;
+    assert!(outcome.retry.is_none());
     let reason = outcome
         .snapshot
         .provenance
@@ -178,6 +190,8 @@ async fn plan_startup_parse_fallback() {
         .unwrap();
     assert!(reason.starts_with("Remote data failed to load:"));
     assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
+    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
+    assert!(Arc::ptr_eq(&service.current.load(), &outcome.snapshot));
 }
 
 async fn plan_startup_retry() {
