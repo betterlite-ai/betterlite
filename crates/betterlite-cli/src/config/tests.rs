@@ -598,6 +598,7 @@ fn normalize_hidden_commands_sorts_and_joins_names() {
     "https://proxy.example.com/team@acme",
     "https://proxy.example.com/team@acme"
 )]
+#[case::backslash_after_scheme(r"https://\proxy.example.com", r"https://\proxy.example.com")]
 #[case::port_and_path(
     "https://proxy.example.com:8443/v1",
     "https://proxy.example.com:8443/v1"
