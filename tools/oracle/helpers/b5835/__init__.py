@@ -109,6 +109,12 @@ def _object(value: Json, name: str) -> Object:
     return cast("Object", value)
 
 
+def _object_or_empty(value: Json, name: str) -> Object:
+    if value is None:
+        return {}
+    return _object(value, name)
+
+
 def _text(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a string")
@@ -122,7 +128,7 @@ def _optional_text(value: Json, name: str) -> str | None:
 
 
 def _string_map(value: Json, name: str) -> dict[str, str]:
-    fields = _object({} if value is None else value, name)
+    fields = _object_or_empty(value, name)
     result: dict[str, str] = {}
     for key, item in fields.items():
         if not isinstance(item, str):
@@ -170,8 +176,8 @@ def _provider_step(step: Object, config: ChatConfig) -> Json:
 
 def _map_step(step: Object, config: ChatConfig) -> Json:
     model = _text(step.get("model"), "model")
-    requested = dict(_object(step.get("non_default_params"), "non_default_params"))
-    optional = dict(_object(step.get("optional_params"), "optional_params"))
+    requested = dict(_object_or_empty(step.get("non_default_params"), "non_default_params"))
+    optional = dict(_object_or_empty(step.get("optional_params"), "optional_params"))
     with (
         patch.object(
             litellm, "open_ai_chat_completion_models", _string_set(step.get("chat_models", []))
@@ -187,7 +193,7 @@ def _map_step(step: Object, config: ChatConfig) -> Json:
 
 
 def _headers_step(step: Object, config: EmbeddingConfig) -> Json:
-    headers = dict(_object(step.get("headers"), "headers"))
+    headers = dict(_object_or_empty(step.get("headers"), "headers"))
     api_key = _optional_text(step.get("api_key"), "api_key")
     api_base = _optional_text(step.get("api_base"), "api_base")
     environment = _string_map(step.get("environment"), "environment")
@@ -213,8 +219,8 @@ def _headers_step(step: Object, config: EmbeddingConfig) -> Json:
 
 def _request_step(step: Object, config: EmbeddingConfig) -> Json:
     model = _text(step.get("model"), "model")
-    requested = _object(step.get("non_default_params"), "non_default_params")
-    optional = _object(step.get("optional_params"), "optional_params")
+    requested = _object_or_empty(step.get("non_default_params"), "non_default_params")
+    optional = _object_or_empty(step.get("optional_params"), "optional_params")
     mapped = config.map_openai_params(
         non_default_params=dict(requested),
         optional_params=dict(optional),
