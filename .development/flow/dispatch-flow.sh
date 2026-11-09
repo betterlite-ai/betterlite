@@ -107,7 +107,7 @@ if [ "$code" -ne 0 ]; then
 fi
 fi
 sed -i 's/^land_only=.*/land_only=1/' "$args"
-bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { say "ready, but main does not merge cleanly"; exit 3; }
+bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { park "ready, but main does not merge cleanly"; exit 3; }
 if ! bash "$P/crate-cycles.sh" "$worktree" > /dev/null; then LAND_ONLY= exec bash "$P/dispatch-flow.sh" "$id" "${run}d" ""; fi
 cd "$worktree" || exit 3
 exec >>"$L/land-$id.log" 2>&1
