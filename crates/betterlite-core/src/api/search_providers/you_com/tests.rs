@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -256,6 +256,77 @@ fn caller_key_does_not_reach_the_url_choice() {
     );
 }
 
+#[test]
+fn sign_request_refuses_the_server_key_for_the_free_host() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: YOU_COM_FREE_API_BASE,
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(
+        error,
+        YouComError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+}
+
+#[test]
+fn sign_request_refuses_the_server_key_for_an_untrusted_host() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: "https://evil.test/v1/search",
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(
+        error,
+        YouComError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+}
+
+#[test]
+fn sign_request_adds_the_server_key_for_a_trusted_host() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: "https://ydc-index.io/v1/search",
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let (headers, signed) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(headers.get("X-API-Key").map(String::as_str), Some("sk-env"));
+    assert_eq!(signed, None);
+}
+
+#[test]
+fn sign_request_accepts_a_caller_key_on_an_untrusted_host() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let caller_key = key("sk-caller");
+    let request = OutboundSearch {
+        api_base: "https://evil.test/v1/search",
+        api_key: Some(&caller_key),
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let (headers, _signed) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        headers.get("X-API-Key").map(String::as_str),
+        Some("sk-caller")
+    );
+}
+
 #[rstest]
 #[case::single(SearchQuery::Single("rust".to_owned()), r#"{"query":"rust"}"#)]
 #[case::multiple(
@@ -374,9 +445,6 @@ fn reply_falls_back_to_description(#[case] bytes: &[u8], #[case] expected: &str)
 #[rstest]
 #[case::null_title(br#"{"results":{"web":[{"title":null}]}}"#)]
 #[case::null_url(br#"{"results":{"web":[{"url":null}]}}"#)]
-#[case::null_description(
-    br#"{"results":{"web":[{"title":"T","snippets":[],"description":null}]}}"#
-)]
 #[case::numeric_page_age(br#"{"results":{"web":[{"title":"T","page_age":7}]}}"#)]
 #[case::null_snippet(br#"{"results":{"web":[{"title":"T","snippets":[null]}]}}"#)]
 #[case::snippets_not_a_list(br#"{"results":{"web":[{"title":"T","snippets":"x"}]}}"#)]
@@ -386,6 +454,25 @@ fn reply_rejects_a_shape_the_source_would_fail(#[case] bytes: &[u8]) {
     assert!(matches!(
         decode_you_com_reply(bytes),
         Err(YouComError::Reply { .. })
+    ));
+}
+
+#[test]
+fn reply_ignores_a_null_description_when_snippets_exist() {
+    let response = decode_you_com_reply(
+        br#"{"results":{"web":[{"title":"T","url":"u","snippets":["a"],"description":null}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(response.results[0].snippet, "a");
+}
+
+#[test]
+fn reply_rejects_a_null_description_without_snippets() {
+    assert!(matches!(
+        decode_you_com_reply(
+            br#"{"results":{"web":[{"title":"T","snippets":[],"description":null}]}}"#
+        ),
+        Err(YouComError::DescriptionNotString)
     ));
 }
 

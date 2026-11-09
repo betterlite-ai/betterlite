@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -198,6 +198,58 @@ fn trait_complete_url_appends_search() {
             .unwrap(),
         "https://proxy.test/search"
     );
+}
+
+#[test]
+fn sign_request_refuses_a_server_key_for_an_untrusted_base() {
+    let search = load(&[("TAVILY_API_KEY", "sk-server")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: "https://evil.test/search",
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(
+        error,
+        TavilyError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+}
+
+#[test]
+fn sign_request_fails_without_a_key() {
+    let search = load(&[]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: "https://api.tavily.com/search",
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(error, TavilyError::MissingApiKey));
+}
+
+#[test]
+fn sign_request_signs_a_server_key_for_the_trusted_host() {
+    let search = load(&[("TAVILY_API_KEY", "sk-server")]);
+    let optional_params = Object::new();
+    let body = Object::new();
+    let request = OutboundSearch {
+        api_base: "https://api.tavily.com/search",
+        api_key: None,
+        optional_params: &optional_params,
+        body: &body,
+    };
+    let (headers, signed) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-server")
+    );
+    assert_eq!(signed, None);
 }
 
 #[rstest]

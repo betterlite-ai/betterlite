@@ -7,6 +7,8 @@ pub enum YouComError {
     Credential(#[from] CredentialError),
     #[error("country must be a string")]
     CountryNotString,
+    #[error("description must be a string")]
+    DescriptionNotString,
     #[error("the You.com search reply is larger than {limit} bytes")]
     ReplyTooLarge { limit: usize },
     #[error("the You.com search reply does not match the search response shape: {source}")]

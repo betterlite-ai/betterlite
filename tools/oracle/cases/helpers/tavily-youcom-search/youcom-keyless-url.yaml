@@ -11,10 +11,6 @@ call:
         api_base: null
         environment:
           YOUCOM_API_KEY: ""
-      - operation: complete_url
-        api_base: null
-        environment:
-          YOUCOM_API_BASE: ""
 env: {}
 compare:
   ignore: []
