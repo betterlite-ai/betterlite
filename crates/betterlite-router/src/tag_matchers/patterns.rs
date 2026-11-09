@@ -201,7 +201,7 @@ impl Scanner<'_> {
         if character == '<' || character == '>' {
             return true;
         }
-        if character == '0' && next.is_some_and(|digit| ('0'..='7').contains(&digit)) {
+        if character == '0' {
             return true;
         }
         is_three_digit_octal(character, &self.characters)

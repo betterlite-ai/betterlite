@@ -43,6 +43,7 @@ enum Boundary {
 #[case::nested_class_at_start(Boundary::Unsupported("[[ab]]"))]
 #[case::negated_nested_class_at_start(Boundary::Unsupported("[^[ab]]"))]
 #[case::octal_escape(Boundary::Unsupported(r"(a)\012"))]
+#[case::nul_octal_escape(Boundary::Unsupported(r"\0"))]
 #[case::three_digit_octal(Boundary::Unsupported(r"\101"))]
 #[case::absolute_end(Boundary::Unsupported(r"a\Z"))]
 #[case::conditional(Boundary::Unsupported("(?P<a>x)(?(a)y|z)"))]
