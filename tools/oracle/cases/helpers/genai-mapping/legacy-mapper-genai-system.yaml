@@ -1,0 +1,40 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-legacy-mapper-genai-system",
+  "call": {
+    "b3845": {
+      "function": "legacy_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "custom_llm_provider": "anthropic",
+        "call_type": "completion",
+        "stream": true,
+        "model_parameters": {
+          "top_k": 5,
+          "frequency_penalty": 0.1,
+          "presence_penalty": 0.2,
+          "stop": ["END"],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "description": "Weather",
+                "parameters": { "type": "object" }
+              }
+            }
+          ]
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
