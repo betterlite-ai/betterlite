@@ -9,14 +9,16 @@ deviations:
   - what: >-
       Tag patterns run on fancy-regex with seek disabled instead of Python's re. Constructs Python and the
       engine read differently are warned about as unsupported_pattern and skipped: \N{...} named escapes,
-      \< and \> (literal brackets in Python, word boundaries here), POSIX classes such as [[:digit:]],
-      nested classes such as [a[bc]], the &&, ~~ and -- set operators inside a class, leading-zero octal
-      escapes such as \01, conditional groups such as (?(name)yes|no), and any pattern fancy-regex's
-      compiler refuses. Other patterns the engine's parser rejects are warned about as invalid_pattern and
-      skipped. The engine accepts constructs Python 3.13 rejects, such as \G and stacked repeats, and
-      without MULTILINE $ matches only at the very end rather than before one trailing newline; character
-      classes, case folding and word boundaries follow the engine's Unicode tables, which can differ from
-      Python's for a few characters. Build warnings are logged once when the server builds the matcher,
-      and a selection carries only match-time warnings.
+      \Z (the absolute end in Python), \< and \> (literal brackets in Python, word boundaries here), any
+      unescaped [ inside a character class (POSIX classes such as [[:digit:]], nested classes such as
+      [a[bc]] and [[ab]], and the [[.a.]] and [[=a=]] forms), the &&, ~~ and -- set operators inside a
+      class, leading-zero and three-digit octal escapes such as \012 and \101, conditional groups such as
+      (?(name)yes|no), patterns that turn on verbose mode with the x flag because a # comment can hide
+      later constructs, and any pattern fancy-regex's compiler refuses. Other patterns the engine's parser
+      rejects are warned about as invalid_pattern and skipped. The engine accepts constructs Python 3.13
+      rejects, such as \G and stacked repeats, and without MULTILINE $ matches only at the very end rather
+      than before one trailing newline; character classes, case folding and word boundaries follow the
+      engine's Unicode tables, which can differ from Python's for a few characters. Build warnings are
+      logged once when the server builds the matcher, and a selection carries only match-time warnings.
     why: Python's re is not available in Rust; fancy-regex is the maintained engine already in the lock that runs lookahead, backreferences and named groups with an explicit backtrack limit. A construct the engine reads differently is skipped with a named warning rather than selecting different traffic.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105
