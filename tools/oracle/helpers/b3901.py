@@ -154,7 +154,7 @@ class _ObservationFields(TypedDict, total=False):
     model_parameters: object
     usage_details: object
     cost_details: object
-    completion_start_time: dt.datetime | None
+    completion_start_time: dt.datetime | float | None
     prompt: _PromptClient | None
 
 

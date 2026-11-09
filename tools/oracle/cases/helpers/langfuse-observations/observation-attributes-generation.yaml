@@ -26,6 +26,10 @@ call:
       - function: observation_attributes
         fields:
           observation_type: generation
+          completion_start_time: 1234.5
+      - function: observation_attributes
+        fields:
+          observation_type: generation
           prompt:
             name: local
             version: 1

@@ -3,10 +3,10 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::{TimeZone as _, Utc};
-use opentelemetry::Value;
 use opentelemetry::trace::{
     Span as _, SpanId, TraceContextExt as _, TraceId, Tracer as _, TracerProvider as _,
 };
+use opentelemetry::{KeyValue, Value};
 use opentelemetry_sdk::trace::{
     IdGenerator, InMemorySpanExporter, RandomIdGenerator, SdkTracerProvider, Span as SdkSpan,
     SpanData,
@@ -186,11 +186,18 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
             assert_eq!(data.name, "generation");
         }
         Check::GenerationKeepsPublicFlag => {
-            let (_provider, exporter, mut observation) = generation(generation_start(Some(true)));
-            assert_eq!(observation.public, Some(true));
+            let (_bare_provider, bare_exporter, mut bare) =
+                generation(generation_start(Some(true)));
+            assert_eq!(bare.public, Some(true));
+            bare.end(None);
+            assert!(!has_public_attribute(&single(&bare_exporter), true));
+            let mut start = generation_start(Some(true));
+            start.attributes = vec![KeyValue::new("langfuse.trace.public", true)];
+            let (_provider, exporter, mut observation) = generation(start);
             observation.end(None);
             let data = single(&exporter);
             assert!(has_public_attribute(&data, true));
+            assert_eq!(data.attributes.len(), 1);
         }
         Check::GenerationLinksAnExplicitParent => {
             let parent = span("0000000000000005");

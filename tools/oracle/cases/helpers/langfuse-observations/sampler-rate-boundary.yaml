@@ -24,6 +24,14 @@ call:
         trace_id: "00000000000000000000000000000000"
         attributes: []
       - function: sampler
+        rate: 0.0001
+        trace_id: "000000000000000000000000000009be"
+        attributes: []
+      - function: sampler
+        rate: 0.0001
+        trace_id: "00000000000000000000000000000000"
+        attributes: []
+      - function: sampler
         rate: 1.0
         trace_id: "00000000000000000000000000000003"
         attributes: []

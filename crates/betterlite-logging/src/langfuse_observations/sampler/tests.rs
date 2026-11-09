@@ -9,7 +9,7 @@ use opentelemetry::{Context, KeyValue};
 use opentelemetry_sdk::trace::{SamplingDecision, ShouldSample as _};
 use rstest::rstest;
 
-use super::TraceIdHashSampler;
+use super::{TraceIdHashSampler, sampling_threshold};
 
 #[derive(Clone, Copy, Debug)]
 enum Check {
@@ -104,8 +104,16 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
             );
         }
         Check::TinyRateKeepsOnlyTheLowestDigests => {
+            assert_eq!(sampling_threshold(1e-4), 1_844_674_407_370_955);
+            assert_eq!(sampling_threshold(2.0_f64.powi(-65)), 0);
+            assert_eq!(sampling_threshold(f64::from_bits(0x3bf8_0000_0000_0000)), 2);
+            assert_eq!(sampling_threshold(f64::from_bits(0x3c04_0000_0000_0000)), 2);
             assert_eq!(
-                decision(1e-9, trace("00000000000000000000000000000000"), &[]),
+                decision(1e-4, trace("000000000000000000000000000009be"), &[]),
+                SamplingDecision::RecordAndSample
+            );
+            assert_eq!(
+                decision(1e-4, trace("00000000000000000000000000000000"), &[]),
                 SamplingDecision::Drop
             );
             assert_eq!(

@@ -31,6 +31,7 @@ enum Check {
     ObservationInputOutputStrings,
     ObservationContainersSerialize,
     ObservationCompletionStartIsJsonText,
+    ObservationCompletionStartSecondsStayNumericText,
     ObservationPromptLinks,
     ObservationFallbackPromptIsDropped,
     ObservationMetadataFlattensKeys,
@@ -123,7 +124,12 @@ where
 fn observation_from(text: &str) -> Vec<(String, Value)> {
     let fields = entries(text);
     let prompt = decoded::<PromptLink>(fields.get("prompt"));
-    let started = decoded::<DateTime<Utc>>(fields.get("completion_start_time"));
+    let started = fields.get("completion_start_time").map(|raw| match raw {
+        Json::Number(seconds) => Timestamp::Seconds(seconds.to_string().parse().unwrap()),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            Timestamp::DateTime(decoded::<DateTime<Utc>>(Some(raw)).unwrap())
+        }
+    });
     let attributes = ObservationAttributes {
         observation_type: decoded(fields.get("observation_type"))
             .unwrap_or(ObservationType::Generation),
@@ -137,7 +143,7 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
         model_parameters: fields.get("model_parameters"),
         usage_details: fields.get("usage_details"),
         cost_details: fields.get("cost_details"),
-        completion_start_time: started.map(Timestamp::DateTime),
+        completion_start_time: started,
         prompt: prompt.as_ref(),
     };
     pairs(observation_attributes(&attributes))
@@ -160,6 +166,9 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
 #[case::observation_input_output_strings(Check::ObservationInputOutputStrings)]
 #[case::observation_containers_serialize(Check::ObservationContainersSerialize)]
 #[case::observation_completion_start_is_json_text(Check::ObservationCompletionStartIsJsonText)]
+#[case::observation_completion_start_seconds_stay_numeric_text(
+    Check::ObservationCompletionStartSecondsStayNumericText
+)]
 #[case::observation_prompt_links(Check::ObservationPromptLinks)]
 #[case::observation_fallback_prompt_is_dropped(Check::ObservationFallbackPromptIsDropped)]
 #[case::observation_metadata_flattens_keys(Check::ObservationMetadataFlattensKeys)]
@@ -278,6 +287,13 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
                     "langfuse.observation.completion_start_time",
                     "\"2026-01-01T00:00:00+00:00\""
                 ),
+            ]
+        ),
+        Check::ObservationCompletionStartSecondsStayNumericText => assert_eq!(
+            observation_from(r#"{"observation_type":"generation","completion_start_time":1234.5}"#),
+            vec![
+                text_attr("langfuse.observation.type", "generation"),
+                text_attr("langfuse.observation.completion_start_time", "1234.5"),
             ]
         ),
         Check::ObservationPromptLinks => assert_eq!(

@@ -110,6 +110,22 @@ pub(crate) struct TraceFields {
 }
 
 #[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum StartTime {
+    DateTime(DateTime<Utc>),
+    Seconds(Decimal),
+}
+
+impl StartTime {
+    pub(crate) const fn timestamp(&self) -> Timestamp {
+        match *self {
+            Self::DateTime(datetime) => Timestamp::DateTime(datetime),
+            Self::Seconds(seconds) => Timestamp::Seconds(seconds),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 pub(crate) struct ObservationFields {
     pub(crate) observation_type: ObservationType,
     pub(crate) input: Option<Json>,
@@ -122,6 +138,6 @@ pub(crate) struct ObservationFields {
     pub(crate) model_parameters: Option<Json>,
     pub(crate) usage_details: Option<Json>,
     pub(crate) cost_details: Option<Json>,
-    pub(crate) completion_start_time: Option<DateTime<Utc>>,
+    pub(crate) completion_start_time: Option<StartTime>,
     pub(crate) prompt: Option<PromptLink>,
 }
