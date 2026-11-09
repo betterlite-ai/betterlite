@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
-use betterlite_openai::search::provider::{OutboundSearch, SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{
+    HttpMethod, OutboundSearch, SearchProvider as _, SearchQuery,
+};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -26,6 +28,12 @@ fn config(values: &[(&str, &str)]) -> ExaAiSearchConfig {
     ExaAiSearchConfig {
         settings: ExaAiSearchSettings::load(&environment(values)),
     }
+}
+
+#[test]
+fn exa_ai_reports_its_display_name_and_post_method() {
+    assert_eq!(ExaAiSearchConfig::ui_friendly_name(), "Exa AI");
+    assert_eq!(config(&[]).http_method(), HttpMethod::Post);
 }
 
 #[rstest]
