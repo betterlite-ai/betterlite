@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-images-mime-parameters
+call:
+  bedrock_images:
+    call: post_call
+    headers:
+      content-type: "image/png; charset=utf-8"
+    body_base64: "iVBORw0KGgo="
+    image_url: "https://example.com/picture.gif"
+env: {}
+compare:
+  ignore: []
