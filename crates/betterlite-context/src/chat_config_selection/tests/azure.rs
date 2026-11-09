@@ -65,6 +65,20 @@ const AZURE_CASES: &[Case] = &[
     },
     Case {
         provider: ProviderId::Azure,
+        model: "o1",
+        base_model: Some(""),
+        tag: ChatConfigTag::AzureOpenAiO1,
+        arguments: Arguments::None,
+    },
+    Case {
+        provider: ProviderId::Azure,
+        model: "gpt-5",
+        base_model: Some(""),
+        tag: ChatConfigTag::AzureOpenAiGpt5,
+        arguments: Arguments::None,
+    },
+    Case {
+        provider: ProviderId::Azure,
         model: "gpt-5",
         base_model: None,
         tag: ChatConfigTag::AzureOpenAiGpt5,

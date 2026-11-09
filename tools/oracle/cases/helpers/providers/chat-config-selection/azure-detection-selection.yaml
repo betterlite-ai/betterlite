@@ -12,6 +12,8 @@ call:
       - {provider: azure, model: my-deployment, base_model: o3-mini}
       - {provider: azure, model: o1, base_model: gpt-5}
       - {provider: azure, model: gpt-5, base_model: plain-deployment}
+      - {provider: azure, model: o1, base_model: ""}
+      - {provider: azure, model: gpt-5, base_model: ""}
       - {provider: azure, model: gpt-5}
       - {provider: azure, model: gpt-6}
       - {provider: azure, model: gpt-5-chat}

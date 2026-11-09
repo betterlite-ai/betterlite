@@ -66,7 +66,11 @@ fn select_openai_config(
 }
 
 fn select_azure(request: &ChatConfigRequest<'_>) -> ConfigSelection<ChatConfigTag> {
-    let detection_model = request.base_model.unwrap_or(request.model);
+    // LiteLLM runs detection on `base_model or model`, so an empty base_model falls back to the model
+    let detection_model = request
+        .base_model
+        .filter(|value| !value.is_empty())
+        .unwrap_or(request.model);
     ConfigSelection {
         tag: azure::select_config(detection_model, request.families),
         construction: ConfigConstruction::New(Vec::new()),
