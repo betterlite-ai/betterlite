@@ -1242,6 +1242,8 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-logging",
+ "clap",
  "dbus-secret-service-keyring-store",
  "httparse",
  "keyring-core",
@@ -1249,9 +1251,12 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "thiserror",
+ "tokio",
  "url",
  "windows-native-keyring-store",
 ]
@@ -1893,6 +1898,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "serde_with",
  "thiserror",
  "tokio",
  "url",
@@ -2010,6 +2016,7 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
  "chrono",
@@ -2025,6 +2032,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml",
  "rand 0.10.3",
+ "redis",
  "reqwest",
  "rstest",
  "rust_decimal",
@@ -2310,6 +2318,7 @@ dependencies = [
  "crc16",
  "futures-util",
  "hex",
+ "indexmap 2.14.2",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2575,6 +2584,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-rustls",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -6997,6 +7007,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "ryu",
+ "sha1_smol",
  "socket2",
  "tokio",
  "tokio-rustls",
@@ -7697,6 +7708,12 @@ dependencies = [
  "cpufeatures 0.3.1",
  "digest 0.11.3",
 ]
+
+[[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"
