@@ -113,15 +113,9 @@ pub fn transform_embedding_response(
             .enumerate()
         {
             let index = u32::try_from(position).map_err(|_error| TritonError::TooManyEmbeddings)?;
-            let embedding = chunk
-                .iter()
-                .map(|value| {
-                    Number::from_f64(*value).ok_or(TritonError::InvalidEmbedding { value: *value })
-                })
-                .collect::<Result<Vec<Number>, TritonError>>()?;
             data.push(EmbeddingRecord {
                 object: String::from("embedding"),
-                embedding: EmbeddingVector::Floats(embedding),
+                embedding: EmbeddingVector::Floats(embedding_numbers(&chunk)?),
                 index,
             });
         }
@@ -131,6 +125,15 @@ pub fn transform_embedding_response(
         data,
         usage: build_embedding_usage(model, request, counter)?,
     })
+}
+
+fn embedding_numbers(chunk: &[f64]) -> Result<Vec<Number>, TritonError> {
+    chunk
+        .iter()
+        .map(|value| {
+            Number::from_f64(*value).ok_or(TritonError::InvalidEmbedding { value: *value })
+        })
+        .collect()
 }
 
 pub fn build_embedding_usage(
