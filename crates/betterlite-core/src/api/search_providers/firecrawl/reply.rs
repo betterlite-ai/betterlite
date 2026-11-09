@@ -1,0 +1,146 @@
+use std::collections::BTreeMap;
+
+use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
+use serde::Deserialize;
+use serde_json::Deserializer;
+use serde_json::value::RawValue;
+
+use super::error::FirecrawlError;
+
+pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
+
+type RawFields = BTreeMap<String, Box<RawValue>>;
+
+#[derive(Deserialize)]
+struct FirecrawlReply {
+    #[serde(default)]
+    data: Option<Box<RawValue>>,
+}
+
+// the cloud v2 shape nests web and news under one object; a null list fails like the source does
+#[derive(Deserialize)]
+struct FirecrawlCloud {
+    #[serde(default)]
+    web: Vec<RawFields>,
+    #[serde(default)]
+    news: Vec<RawFields>,
+}
+
+pub fn decode_firecrawl_reply(bytes: &[u8]) -> Result<SearchResponse, FirecrawlError> {
+    if bytes.len() > MAX_REPLY_BYTES {
+        return Err(FirecrawlError::ReplyTooLarge {
+            limit: MAX_REPLY_BYTES,
+        });
+    }
+    let mut decoder = Deserializer::from_slice(bytes);
+    let reply: FirecrawlReply = serde_path_to_error::deserialize(&mut decoder)
+        .map_err(|source| FirecrawlError::Reply { source })?;
+    decoder.end().map_err(FirecrawlError::TrailingBytes)?;
+    let results = reply
+        .data
+        .as_deref()
+        .map_or_else(|| Ok(Vec::new()), |data| project_data(data.get()))?;
+    Ok(SearchResponse {
+        results,
+        object: SearchObject::default(),
+        extra: Object::new(),
+        hidden_params: Object::new(),
+    })
+}
+
+fn project_data(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
+    match text.trim_start().as_bytes().first().copied() {
+        Some(b'[') => flat_results(text),
+        Some(b'{') => cloud_results(text),
+        _ => Ok(Vec::new()),
+    }
+}
+
+// the self-hosted v1 shape and the cloud web list share one projection
+fn flat_results(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
+    let items: Vec<RawFields> =
+        serde_json::from_str(text).map_err(|source| FirecrawlError::Result { source })?;
+    items.iter().map(project_web).collect()
+}
+
+fn cloud_results(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
+    let cloud: FirecrawlCloud =
+        serde_json::from_str(text).map_err(|source| FirecrawlError::Result { source })?;
+    let web = cloud
+        .web
+        .iter()
+        .map(project_web)
+        .collect::<Result<Vec<_>, _>>()?;
+    let news = cloud
+        .news
+        .iter()
+        .map(project_news)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(web.into_iter().chain(news).collect())
+}
+
+fn project_web(fields: &RawFields) -> Result<SearchResult, FirecrawlError> {
+    Ok(SearchResult {
+        title: text_field(fields.get("title").map(Box::as_ref), "title")?,
+        url: text_field(fields.get("url").map(Box::as_ref), "url")?,
+        snippet: markdown_then(
+            fields.get("markdown").map(Box::as_ref),
+            fields.get("description").map(Box::as_ref),
+            "description",
+        )?,
+        date: None,
+        last_updated: None,
+        extra: Object::new(),
+    })
+}
+
+fn project_news(fields: &RawFields) -> Result<SearchResult, FirecrawlError> {
+    Ok(SearchResult {
+        title: text_field(fields.get("title").map(Box::as_ref), "title")?,
+        url: text_field(fields.get("url").map(Box::as_ref), "url")?,
+        snippet: markdown_then(
+            fields.get("markdown").map(Box::as_ref),
+            fields.get("snippet").map(Box::as_ref),
+            "snippet",
+        )?,
+        date: optional_text(fields.get("date").map(Box::as_ref), "date")?,
+        last_updated: None,
+        extra: Object::new(),
+    })
+}
+
+fn markdown_then(
+    markdown: Option<&RawValue>,
+    fallback: Option<&RawValue>,
+    field: &'static str,
+) -> Result<String, FirecrawlError> {
+    markdown
+        .and_then(markdown_text)
+        .map_or_else(|| text_field(fallback, field), Ok)
+}
+
+fn markdown_text(raw: &RawValue) -> Option<String> {
+    serde_json::from_str::<String>(raw.get())
+        .ok()
+        .filter(|text| !text.is_empty())
+}
+
+fn text_field(value: Option<&RawValue>, field: &'static str) -> Result<String, FirecrawlError> {
+    let Some(raw) = value else {
+        return Ok(String::new());
+    };
+    serde_json::from_str::<String>(raw.get())
+        .map_err(|source| FirecrawlError::NotText { field, source })
+}
+
+fn optional_text(
+    value: Option<&RawValue>,
+    field: &'static str,
+) -> Result<Option<String>, FirecrawlError> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    serde_json::from_str::<Option<String>>(raw.get())
+        .map_err(|source| FirecrawlError::NotText { field, source })
+}
