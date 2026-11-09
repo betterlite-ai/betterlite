@@ -489,20 +489,25 @@ async fn the_guardrail_sees_the_source_document_and_its_headers_reach_the_parse_
     );
 }
 
+fn set_authorization(mut request: OcrWireRequest, value: &str) -> OcrWireRequest {
+    request
+        .headers
+        .retain(|(name, _)| !name.eq_ignore_ascii_case("authorization"));
+    request
+        .headers
+        .push(("authorization".to_owned(), value.to_owned()));
+    request
+}
+
 struct HeaderHook;
 
 #[async_trait]
 impl CallHooks for HeaderHook {
     async fn before_provider_request(
         &self,
-        mut request: OcrWireRequest,
+        request: OcrWireRequest,
     ) -> Result<OcrWireRequest, OcrError> {
-        for (name, value) in &mut request.headers {
-            if name.eq_ignore_ascii_case("authorization") {
-                *value = "Bearer hook-key".to_owned();
-            }
-        }
-        Ok(request)
+        Ok(set_authorization(request, "Bearer hook-key"))
     }
 
     async fn response_received(&self, _body: &[u8]) -> Result<(), OcrError> {
@@ -918,40 +923,28 @@ fn a_block_page_number_at_two_pow_63_saturates_at_i64_max() {
 }
 
 #[rstest]
-#[case::integral_float(r#"{"usage":{"num_pages":2.0}}"#, Some(2))]
-#[case::numeric_string_with_fraction(r#"{"usage":{"num_pages":"2.0"}}"#, Some(2))]
-#[case::numeric_string_with_underscore(r#"{"usage":{"num_pages":"1_000"}}"#, Some(1000))]
-#[case::boolean(r#"{"usage":{"num_pages":true}}"#, Some(1))]
-fn usage_page_counts_accept_the_forms_litellm_accepts(
+#[case::pages_integral_float(r#"{"usage":{"num_pages":2.0}}"#, Some(2), None)]
+#[case::pages_numeric_string_with_fraction(r#"{"usage":{"num_pages":"2.0"}}"#, Some(2), None)]
+#[case::pages_numeric_string_with_underscore(
+    r#"{"usage":{"num_pages":"1_000"}}"#,
+    Some(1000),
+    None
+)]
+#[case::pages_boolean(r#"{"usage":{"num_pages":true}}"#, Some(1), None)]
+#[case::credits_numeric_string(r#"{"usage":{"credits":"3"}}"#, None, Some(3.0_f64))]
+#[case::credits_boolean(r#"{"usage":{"credits":true}}"#, None, Some(1.0_f64))]
+fn usage_numbers_accept_the_forms_litellm_accepts(
     #[case] raw: &str,
-    #[case] expected: Option<i64>,
+    #[case] pages: Option<i64>,
+    #[case] credits: Option<f64>,
 ) {
-    let response = v3()
+    let usage = v3()
         .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect("the page count parses");
-    assert_eq!(
-        response
-            .usage_info
-            .expect("usage is reported")
-            .pages_processed,
-        expected
-    );
-}
-
-#[rstest]
-#[case::numeric_string(r#"{"usage":{"credits":"3"}}"#, Some(3.0_f64))]
-#[case::boolean(r#"{"usage":{"credits":true}}"#, Some(1.0_f64))]
-fn usage_credits_accept_the_forms_litellm_accepts(
-    #[case] raw: &str,
-    #[case] expected: Option<f64>,
-) {
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect("the credits parse");
-    assert_eq!(
-        response.usage_info.expect("usage is reported").credits,
-        expected
-    );
+        .expect("the usage parses")
+        .usage_info
+        .expect("usage is reported");
+    assert_eq!(usage.pages_processed, pages);
+    assert_eq!(usage.credits, credits);
 }
 
 #[rstest]
