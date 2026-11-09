@@ -17,8 +17,11 @@ fn request(auth_url: &str) -> GigachatTokenRequest {
     }
 }
 
-fn authenticator() -> GigachatAuthenticator<support::ScriptedRuntime> {
-    let settings = support::settings(&[("GIGACHAT_CREDENTIALS", CREDENTIALS)]);
+fn authenticator(auth_url: &str) -> GigachatAuthenticator<support::ScriptedRuntime> {
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_AUTH_URL", auth_url),
+    ]);
     GigachatAuthenticator::new(
         settings,
         support::client(),
@@ -31,7 +34,7 @@ async fn token_cache_keys_on_the_first_sixteen_characters() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":4102444800000}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let mut first = request(&server.url);
     first.credentials = Some(SecretString::from("abcdefghijklmnop-one"));
     let mut second = request(&server.url);
@@ -62,7 +65,7 @@ async fn token_cache_keys_on_the_first_sixteen_characters() {
 async fn token_cache_counts_characters_not_bytes() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let prefix = "\u{e9}".repeat(16);
     let mut first = request(&server.url);
     first.credentials = Some(SecretString::from(format!("{prefix}-one")));
@@ -88,7 +91,10 @@ async fn token_cache_serves_a_token_until_sixty_seconds_before_its_expiry() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":60100}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":60200}");
-    let settings = support::settings(&[("GIGACHAT_CREDENTIALS", CREDENTIALS)]);
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     let auth = GigachatAuthenticator::new(
         settings,
         support::client(),
@@ -120,7 +126,7 @@ async fn token_cache_stores_nothing_when_the_remaining_ttl_is_zero() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":60000}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":60000}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let supplied = request(&server.url);
 
     let first = auth
@@ -142,7 +148,10 @@ async fn token_cache_stores_nothing_at_the_exact_expiry_boundary() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":61000}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":61000}");
-    let settings = support::settings(&[("GIGACHAT_CREDENTIALS", CREDENTIALS)]);
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     // the clock steps back one millisecond, which exposes an entry stored at the boundary
     let auth = GigachatAuthenticator::new(
         settings,
@@ -170,7 +179,7 @@ async fn token_cache_stores_nothing_when_the_expiry_is_missing() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\"}");
     server.answer(200, "{\"tok\":\"token-2\"}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let supplied = request(&server.url);
 
     let first = auth
@@ -192,7 +201,7 @@ async fn token_cache_stores_nothing_for_a_zero_expiry() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":0}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":0}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let supplied = request(&server.url);
 
     let first = auth
@@ -214,7 +223,7 @@ async fn token_cache_stores_nothing_for_a_zero_string_expiry() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":\"0\"}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":\"0\"}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let supplied = request(&server.url);
 
     let first = auth
@@ -236,7 +245,10 @@ async fn token_cache_reads_the_clock_again_after_the_reply() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":61000}");
     server.answer(200, "{\"tok\":\"token-2\",\"exp\":61000}");
-    let settings = support::settings(&[("GIGACHAT_CREDENTIALS", CREDENTIALS)]);
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     let auth = GigachatAuthenticator::new(
         settings,
         support::client(),
@@ -329,7 +341,7 @@ async fn token_cache_hit_logs_the_cached_token() {
     let (logs, _guard) = support::Logs::capture();
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
-    let auth = authenticator();
+    let auth = authenticator(&server.url);
     let supplied = request(&server.url);
 
     auth.access_token(&supplied)

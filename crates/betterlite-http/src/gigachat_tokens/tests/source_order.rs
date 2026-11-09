@@ -22,7 +22,10 @@ fn request(auth_url: &str) -> GigachatTokenRequest {
 #[tokio::test]
 async fn source_order_returns_the_request_token_before_the_environment_token() {
     let server = support::Server::start().await;
-    let settings = support::settings(&[("GIGACHAT_ACCESS_TOKEN", "environment-token")]);
+    let settings = support::settings(&[
+        ("GIGACHAT_ACCESS_TOKEN", "environment-token"),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     let auth = GigachatAuthenticator::new(settings, support::client(), SystemRuntime);
     let mut supplied = request(&server.url);
     supplied.access_token = Some(SecretString::from("request-token"));
@@ -39,7 +42,10 @@ async fn source_order_returns_the_request_token_before_the_environment_token() {
 #[tokio::test]
 async fn source_order_returns_the_environment_token_without_credentials() {
     let server = support::Server::start().await;
-    let settings = support::settings(&[("GIGACHAT_ACCESS_TOKEN", "environment-token")]);
+    let settings = support::settings(&[
+        ("GIGACHAT_ACCESS_TOKEN", "environment-token"),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     let auth = GigachatAuthenticator::new(settings, support::client(), SystemRuntime);
 
     let token = auth
@@ -54,7 +60,10 @@ async fn source_order_returns_the_environment_token_without_credentials() {
 #[tokio::test]
 async fn source_order_skips_an_empty_request_token() {
     let server = support::Server::start().await;
-    let settings = support::settings(&[("GIGACHAT_ACCESS_TOKEN", "environment-token")]);
+    let settings = support::settings(&[
+        ("GIGACHAT_ACCESS_TOKEN", "environment-token"),
+        ("GIGACHAT_AUTH_URL", server.url.as_str()),
+    ]);
     let auth = GigachatAuthenticator::new(settings, support::client(), SystemRuntime);
     let mut supplied = request(&server.url);
     supplied.access_token = Some(SecretString::from(""));
