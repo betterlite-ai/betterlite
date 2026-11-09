@@ -108,13 +108,13 @@ fn usage(value: Option<&Json>) -> Result<Option<A2aUsage>, CostCalculatorError> 
 }
 
 fn tokens(value: Option<&Json>, field: &'static str) -> Result<u64, CostCalculatorError> {
-    let Some(record) = value.filter(|item| !matches!(item, Json::Null)) else {
+    if matches!(value, None | Some(Json::Null)) {
         return Ok(0);
-    };
-    let Json::Number(number) = record else {
-        return Err(CostCalculatorError::UsageType { field });
-    };
-    number
-        .as_u64()
-        .ok_or(CostCalculatorError::UsageType { field })
+    }
+    if let Some(Json::Number(number)) = value {
+        return number
+            .as_u64()
+            .ok_or(CostCalculatorError::UsageType { field });
+    }
+    Err(CostCalculatorError::UsageType { field })
 }
