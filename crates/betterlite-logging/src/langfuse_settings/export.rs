@@ -37,8 +37,9 @@ pub fn flush_at(settings: &Settings) -> usize {
     let Some(raw) = settings.flush_at.as_deref() else {
         return DEFAULT_FLUSH_AT;
     };
+    // The empty string counts as all digits, and usize::MAX then fails the range check.
     let trimmed = raw.trim();
-    let digits = !trimmed.is_empty() && trimmed.bytes().all(|byte| byte.is_ascii_digit());
+    let digits = trimmed.bytes().all(|byte| byte.is_ascii_digit());
     match digits.then(|| trimmed.parse::<usize>().unwrap_or(usize::MAX)) {
         Some(batch) if (1..=MAX_QUEUE_SIZE).contains(&batch) => batch,
         Some(_) | None => {
