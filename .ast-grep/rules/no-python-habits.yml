@@ -9,6 +9,7 @@ ignores:
   - "**/tests.rs"
   - "**/tests/**"
   - crates/betterlite-env/**
+  - crates/betterlite-a2a/src/a2a_text.rs
   - crates/betterlite-a2a/src/agent_card/merge.rs
   - crates/betterlite-anthropic/src/api/messages_errors/errors.rs
   - crates/betterlite-anthropic/src/output_schema/notes.rs
@@ -20,7 +21,6 @@ ignores:
   - crates/betterlite-config/src/sections/redis_credentials/provider.rs
   - crates/betterlite-config/src/sections/scheduled_job_stagger.rs
   - crates/betterlite-config/src/sections/settings/settings_resolution.rs
-  - crates/betterlite-context/src/a2a_text.rs
   - crates/betterlite-context/src/cloud_storage/policy.rs
   - crates/betterlite-core/src/agents/provider/request_id.rs
   - crates/betterlite-core/src/api/codex_history_tools.rs
