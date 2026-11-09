@@ -75,13 +75,15 @@ pub(crate) fn last_pricing_fields(chunks: &[Chunk]) -> (Option<String>, Option<S
     (inference_geo, speed)
 }
 
+// Choices defaults a missing or null finish_reason to "stop", so every choice on a ModelResponse is evidence.
 #[must_use]
 pub(crate) fn saw_finish_reason(chunks: &[Chunk]) -> bool {
-    chunks.iter().any(|chunk| {
-        chunk
+    chunks.iter().any(|chunk| match chunk.form {
+        ChunkForm::ModelResponse => !chunk.choices.is_empty(),
+        ChunkForm::Dict | ChunkForm::ModelResponseStream => chunk
             .choices
             .iter()
-            .any(|choice| choice.finish_reason.is_some())
+            .any(|choice| choice.finish_reason.is_some()),
     })
 }
 

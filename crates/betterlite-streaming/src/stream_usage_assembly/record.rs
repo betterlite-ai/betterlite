@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 
-use super::wire::{CompletionTokensDetails, PromptTokensDetails, UsageRecord};
+use super::wire::{CompletionTokensDetails, DetailsField, PromptTokensDetails, UsageRecord};
 use crate::stream_chunk_shaping::records::JsonValue;
 
 // The Usage object LiteLLM builds from one usage record before the accumulator reads it.
@@ -21,7 +21,9 @@ pub(crate) struct RecordedUsage {
 impl RecordedUsage {
     // Usage(**record) applies the constructor's cache and reasoning mappings before any accumulator sees it.
     pub(crate) fn from_record(record: UsageRecord) -> Self {
-        let mut completion_tokens_details = record.completion_tokens_details;
+        let mut completion_tokens_details = record
+            .completion_tokens_details
+            .and_then(DetailsField::present);
         fill_reasoning_tokens(
             &mut completion_tokens_details,
             record.reasoning_tokens,
@@ -29,6 +31,7 @@ impl RecordedUsage {
         );
         let mut prompt_tokens_details = record
             .prompt_tokens_details
+            .and_then(DetailsField::present)
             .map(PromptTokensDetails::mirrored);
         if let Some(hits) = record.prompt_cache_hit_tokens {
             prompt_tokens_details.get_or_insert_default().cached_tokens = Some(hits);

@@ -54,13 +54,37 @@ pub struct UsageRecord {
     pub cache_read_input_tokens: Option<i64>,
     pub prompt_cache_hit_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
-    pub prompt_tokens_details: Option<PromptTokensDetails>,
-    pub completion_tokens_details: Option<CompletionTokensDetails>,
+    pub prompt_tokens_details: Option<DetailsField<PromptTokensDetails>>,
+    pub completion_tokens_details: Option<DetailsField<CompletionTokensDetails>>,
     pub server_tool_use: Option<JsonValue>,
     #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cost: Option<Decimal>,
     pub inference_geo: Option<JsonValue>,
     pub speed: Option<JsonValue>,
+}
+
+// Usage(**record) drops an empty details object, so a later {} never clears an earlier record while an all-null one does.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum DetailsField<T> {
+    Empty(EmptyDetails),
+    Present(T),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmptyDetails {
+    #[serde(skip)]
+    marker: (),
+}
+
+impl<T> DetailsField<T> {
+    pub(crate) fn present(self) -> Option<T> {
+        match self {
+            Self::Present(details) => Some(details),
+            Self::Empty(_) => None,
+        }
+    }
 }
 
 // The wrapper mirrors cache write and cache creation tokens into each other, and reads both from a nested cache count.

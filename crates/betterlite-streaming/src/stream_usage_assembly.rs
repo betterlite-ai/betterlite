@@ -14,10 +14,9 @@ mod record;
 mod tests;
 pub mod wire;
 
-use crate::stream_chunk_shaping::records::JsonObject;
 use accumulate::calculate_usage_per_chunk;
 use details::apply_grounding_request_counts;
-use wire::{CompletionTokensDetails, ReasoningChoice, Usage};
+use wire::{ReasoningChoice, Usage};
 
 #[derive(Debug, Error)]
 pub enum UsageAssemblyError {
@@ -82,7 +81,7 @@ where
         inference_geo: per_chunk.inference_geo,
         speed: per_chunk.speed,
     };
-    apply_reasoning_details(&mut usage, request.reasoning_tokens)?;
+    apply_reasoning_details(&mut usage, request.reasoning_tokens);
     usage.prompt_tokens_details = apply_grounding_request_counts(
         usage.prompt_tokens_details.as_ref(),
         per_chunk.web_search_requests,
@@ -137,43 +136,18 @@ async fn completion_tokens_fallback(
         .ok_or(UsageAssemblyError::Overflow)
 }
 
-fn apply_reasoning_details(
-    usage: &mut Usage,
-    reasoning_tokens: Option<i64>,
-) -> Result<(), UsageAssemblyError> {
+// The capped reasoning count fills a details record, and a missing text count is the completion count minus it.
+fn apply_reasoning_details(usage: &mut Usage, reasoning_tokens: Option<i64>) {
     let Some(reasoning) = reasoning_tokens else {
-        return Ok(());
+        return;
     };
     let capped = reasoning.max(0).min(usage.completion_tokens);
-    match usage.completion_tokens_details.take() {
-        None => {
-            usage.completion_tokens_details = Some(CompletionTokensDetails {
-                reasoning_tokens: Some(capped),
-                text_tokens: capped_text(usage, capped)?,
-                image_tokens: None,
-                audio_tokens: None,
-                extra: JsonObject::new(),
-            });
-        }
-        Some(mut details) => {
-            if details.reasoning_tokens.is_none() {
-                details.reasoning_tokens = Some(capped);
-                if details.text_tokens.is_none() {
-                    details.text_tokens = capped_text(usage, capped)?;
-                }
-            }
-            usage.completion_tokens_details = Some(details);
-        }
+    let text = usage.completion_tokens.saturating_sub(capped);
+    let details = usage.completion_tokens_details.get_or_insert_default();
+    if details.reasoning_tokens.is_none() {
+        details.reasoning_tokens = Some(capped);
+        details.text_tokens = details.text_tokens.or(Some(text));
     }
-    Ok(())
-}
-
-fn capped_text(usage: &Usage, capped: i64) -> Result<Option<i64>, UsageAssemblyError> {
-    usage
-        .completion_tokens
-        .checked_sub(capped)
-        .map(Some)
-        .ok_or(UsageAssemblyError::Overflow)
 }
 
 // The final Usage(**dump) rebuild feeds the top-level cache counts back into the prompt details wrapper.
