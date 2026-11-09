@@ -164,6 +164,12 @@ fn json(text: &str) -> AgentJson {
         ]}}"#
     )
 )]
+#[case::v10_raw_part_trailing_bits(
+    r#"{"message": {"messageId": "m1", "parts": [{"raw": "aGl="}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "file", "file": {"bytes": "aGk="}}]}}"#
+    )
+)]
 #[case::v10_part_without_content(
     r#"{"message": {"messageId": "m1", "parts": [{"mediaType": "text/plain"}]}}"#,
     None

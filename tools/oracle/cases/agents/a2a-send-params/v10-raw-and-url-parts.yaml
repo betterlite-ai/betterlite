@@ -13,5 +13,6 @@ call:
             mediaType: image/png
             filename: ""
           - raw: "-_8"
+          - raw: "aGl="
 env: {}
 compare: {ignore: []}

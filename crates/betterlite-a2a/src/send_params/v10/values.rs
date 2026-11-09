@@ -1,10 +1,20 @@
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD_NO_PAD;
+use base64::alphabet;
+use base64::engine::DecodePaddingMode;
+use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
 use betterlite_core::agents::json::AgentJson;
 use num_traits::ToPrimitive as _;
 
 use crate::send_params::error::SendParamsError;
 use crate::send_params::v03::JsonMap;
+
+// Python's urlsafe_b64decode accepts non-canonical trailing bits, so protobuf reads those too
+const LENIENT: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_allow_trailing_bits(true)
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
 
 // protobuf stores every Struct and Value number as a double, so an integer comes back widened
 pub(super) fn normalize_map(
@@ -93,5 +103,5 @@ pub(super) fn decode_base64(text: &str) -> Option<Vec<u8>> {
             _ => {}
         }
     }
-    STANDARD_NO_PAD.decode(cleaned.as_bytes()).ok()
+    LENIENT.decode(cleaned.as_bytes()).ok()
 }
