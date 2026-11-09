@@ -129,12 +129,13 @@ impl TryFrom<i64> for Overlap {
     type Error = SapModelError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if !(0..=10_000).contains(&value) {
-            return Err(SapModelError::Rejected {
+        if (0..=10_000).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(SapModelError::Rejected {
                 message: String::from("overlap must be between 0 and 10000"),
-            });
+            })
         }
-        Ok(Self(value))
     }
 }
 
@@ -191,7 +192,9 @@ impl TryFrom<FilteringModuleConfigRaw> for FilteringModuleConfig {
     type Error = SapModelError;
 
     fn try_from(raw: FilteringModuleConfigRaw) -> Result<Self, Self::Error> {
-        if raw.input.as_ref().is_none() && raw.output.as_ref().is_none() {
+        let has_input = raw.input.as_ref().is_some();
+        let has_output = raw.output.as_ref().is_some();
+        if !has_input && !has_output {
             return Err(SapModelError::Rejected {
                 message: String::from(
                     "For using SAP Filtering Module you must provide at least one property: input or output filters.",

@@ -1,0 +1,8 @@
+kind: helper
+name: sap-models-tool-seed
+call:
+  b5951:
+    model: chat_completion_tool
+    data: {function: {name: n, parameters: {type: object, properties: {}}}}
+env: {}
+compare: {ignore: []}

@@ -62,7 +62,9 @@ impl TryFrom<GroundingSearchConfigRaw> for GroundingSearchConfig {
     type Error = SapModelError;
 
     fn try_from(raw: GroundingSearchConfigRaw) -> Result<Self, Self::Error> {
-        if raw.max_chunk_count.as_ref().is_some() && raw.max_document_count.as_ref().is_some() {
+        let chunk_count = raw.max_chunk_count.as_ref().is_some();
+        let document_count = raw.max_document_count.as_ref().is_some();
+        if chunk_count && document_count {
             return Err(SapModelError::Rejected {
                 message: String::from("Cannot specify both maxChunkCount and maxDocumentCount."),
             });
