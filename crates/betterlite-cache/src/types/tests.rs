@@ -19,17 +19,20 @@ use super::pipeline::{
 use super::record::{CacheTypeRecord, CacheTypesError, MAX_CACHE_TYPE_BYTES, decode_cache_types};
 use super::semantic::SemanticCacheScope;
 
-fn assert_round_trip<Value>(wire: &str)
+fn assert_wire<Value>(value: &Value, wire: &str)
 where
     Value: Serialize + DeserializeOwned + PartialEq + Debug,
 {
     let decoded: Value = serde_json::from_str(wire).expect("a LiteLLM input form");
-    assert_eq!(
-        serde_json::to_string(&decoded).expect("a LiteLLM output form"),
-        wire
-    );
-    let again: Value = serde_json::from_str(wire).expect("a LiteLLM input form");
-    assert_eq!(again, decoded);
+    assert_eq!(&decoded, value);
+    assert_eq!(serde_json::to_string(value).expect("a wire form"), wire);
+}
+
+fn assert_scalar_wire<Value>(value: &Value, wire: &str)
+where
+    Value: Serialize + DeserializeOwned + PartialEq + Debug,
+{
+    assert_wire(value, &format!("\"{wire}\""));
 }
 
 #[rstest]
@@ -43,39 +46,21 @@ where
 #[case::azure_blob(LiteLlmCacheType::AzureBlob, "azure-blob")]
 #[case::gcs(LiteLlmCacheType::Gcs, "gcs")]
 fn cache_type_round_trips(#[case] cache_type: LiteLlmCacheType, #[case] wire: &str) {
-    let quoted = format!("\"{wire}\"");
-    assert_eq!(
-        serde_json::to_string(&cache_type).expect("a wire form"),
-        quoted
-    );
-    assert_eq!(
-        serde_json::from_str::<LiteLlmCacheType>(&quoted).expect("a wire form"),
-        cache_type
-    );
+    assert_scalar_wire(&cache_type, wire);
 }
 
 #[rstest]
 #[case::default_on(CacheMode::DefaultOn, "default_on")]
 #[case::default_off(CacheMode::DefaultOff, "default_off")]
 fn cache_mode_round_trips(#[case] mode: CacheMode, #[case] wire: &str) {
-    let quoted = format!("\"{wire}\"");
-    assert_eq!(serde_json::to_string(&mode).expect("a wire form"), quoted);
-    assert_eq!(
-        serde_json::from_str::<CacheMode>(&quoted).expect("a wire form"),
-        mode
-    );
+    assert_scalar_wire(&mode, wire);
 }
 
 #[rstest]
 #[case::key(SemanticCacheScope::Key, "key")]
 #[case::end_user(SemanticCacheScope::EndUser, "end_user")]
 fn semantic_scope_round_trips(#[case] scope: SemanticCacheScope, #[case] wire: &str) {
-    let quoted = format!("\"{wire}\"");
-    assert_eq!(serde_json::to_string(&scope).expect("a wire form"), quoted);
-    assert_eq!(
-        serde_json::from_str::<SemanticCacheScope>(&quoted).expect("a wire form"),
-        scope
-    );
+    assert_scalar_wire(&scope, wire);
 }
 
 #[rstest]
@@ -97,15 +82,7 @@ fn supported_call_type_round_trips(
     #[case] call_type: CachingSupportedCallType,
     #[case] wire: &str,
 ) {
-    let quoted = format!("\"{wire}\"");
-    assert_eq!(
-        serde_json::to_string(&call_type).expect("a wire form"),
-        quoted
-    );
-    assert_eq!(
-        serde_json::from_str::<CachingSupportedCallType>(&quoted).expect("a wire form"),
-        call_type
-    );
+    assert_scalar_wire(&call_type, wire);
 }
 
 #[test]
@@ -128,12 +105,66 @@ fn default_supported_call_types_match_the_declared_order() {
     ];
     let wires = SUPPORTED_CALL_TYPES
         .iter()
-        .map(|call_type| {
-            let quoted = serde_json::to_string(call_type).expect("a wire form");
-            serde_json::from_str::<String>(&quoted).expect("a wire string")
-        })
+        .map(|call_type| serde_json::to_string(call_type).expect("a wire form"))
         .collect::<Vec<String>>();
-    assert_eq!(wires, expected);
+    let quoted = expected
+        .iter()
+        .map(|wire| format!("\"{wire}\""))
+        .collect::<Vec<String>>();
+    assert_eq!(wires, quoted);
+}
+
+#[rstest]
+#[case::full(concat!(
+    r#"{"status":"success","cache_type":"local","ping_response":true,"#,
+    r#""set_cache_response":"ok","litellm_cache_params":"{\"a\":1}","#,
+    r#""health_check_cache_params":{"host":"localhost","port":6379,"#,
+    r#""redis_kwargs":{"db":0,"ssl":false},"namespace":"ns","#,
+    r#""redis_version":"7.0.1"}}"#
+))]
+#[case::minimal(concat!(
+    r#"{"status":"failed","cache_type":"redis","ping_response":null,"#,
+    r#""set_cache_response":null,"litellm_cache_params":null,"#,
+    r#""health_check_cache_params":null}"#
+))]
+fn cache_ping_response_round_trips(#[case] wire: &str) {
+    let decoded: CachePingResponse = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
+}
+
+#[rstest]
+#[case::minimal(
+    r#"{"host":null,"port":null,"redis_kwargs":null,"namespace":null,"redis_version":null}"#
+)]
+#[case::text_port(
+    r#"{"host":null,"port":"6379","redis_kwargs":null,"namespace":null,"redis_version":7}"#
+)]
+#[case::full(
+    r#"{"host":"cache","port":6379,"redis_kwargs":{"db":1},"namespace":"team","redis_version":7.5}"#
+)]
+fn health_check_params_round_trip(#[case] wire: &str) {
+    let decoded: HealthCheckCacheParams = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
+}
+
+#[rstest]
+#[case::vector(concat!(
+    r#"{"embedding":[0.1,0.2],"index":0,"object":"embedding","#,
+    r#""model":"text-embedding-3-small","prompt_tokens":4,"#,
+    r#""prompt_tokens_details":{"image_tokens":2},"format_version":2}"#
+))]
+#[case::text(concat!(
+    r#"{"embedding":"base64","index":null,"object":null,"model":null,"#,
+    r#""prompt_tokens":null,"prompt_tokens_details":null,"format_version":2}"#
+))]
+fn cached_embedding_round_trips(#[case] wire: &str) {
+    let decoded: CachedEmbedding = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
+}
+
+#[test]
+fn embedding_cache_format_version_is_two() {
+    assert_eq!(EMBEDDING_CACHE_FORMAT_VERSION, 2);
 }
 
 #[test]
@@ -150,11 +181,7 @@ fn dynamic_cache_control_round_trips() {
         r#"{"ttl":120,"namespace":"team","s-maxage":60,"s-max-age":30,"#,
         r#""no-cache":false,"no-store":true}"#
     );
-    assert_eq!(serde_json::to_string(&control).expect("a wire form"), wire);
-    assert_eq!(
-        serde_json::from_str::<DynamicCacheControl>(wire).expect("a wire form"),
-        control
-    );
+    assert_wire(&control, wire);
     let empty = DynamicCacheControl::default();
     assert_eq!(serde_json::to_string(&empty).expect("a wire form"), "{}");
     assert_eq!(
@@ -171,78 +198,35 @@ fn dynamic_cache_control_rejects_an_unknown_key() {
     ));
 }
 
-#[test]
-fn cache_ping_response_round_trips() {
-    assert_round_trip::<CachePingResponse>(concat!(
-        r#"{"status":"success","cache_type":"local","ping_response":true,"#,
-        r#""set_cache_response":"ok","litellm_cache_params":"{\"a\":1}","#,
-        r#""health_check_cache_params":{"host":"localhost","port":6379,"#,
-        r#""redis_kwargs":{"db":0,"ssl":false},"namespace":"ns","#,
-        r#""redis_version":"7.0.1"}}"#
-    ));
-    assert_round_trip::<CachePingResponse>(concat!(
-        r#"{"status":"failed","cache_type":"redis","ping_response":null,"#,
-        r#""set_cache_response":null,"litellm_cache_params":null,"#,
-        r#""health_check_cache_params":null}"#
-    ));
+#[rstest]
+#[case::with_ttl(r#"{"key":"k","increment_value":1.5,"ttl":30}"#)]
+#[case::without_ttl(r#"{"key":"k","increment_value":2.0,"ttl":null}"#)]
+fn redis_pipeline_increment_round_trips(#[case] wire: &str) {
+    let decoded: RedisPipelineIncrement = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
 }
 
-#[test]
-fn health_check_params_round_trip() {
-    assert_round_trip::<HealthCheckCacheParams>(concat!(
-        r#"{"host":null,"port":null,"redis_kwargs":null,"namespace":null,"#,
-        r#""redis_version":null}"#
-    ));
-    assert_round_trip::<HealthCheckCacheParams>(concat!(
-        r#"{"host":null,"port":"6379","redis_kwargs":null,"namespace":null,"#,
-        r#""redis_version":7}"#
-    ));
-    assert_round_trip::<HealthCheckCacheParams>(concat!(
-        r#"{"host":"cache","port":6379,"redis_kwargs":{"db":1},"#,
-        r#""namespace":"team","redis_version":7.5}"#
-    ));
-}
-
-#[test]
-fn cached_embedding_round_trips() {
-    assert_round_trip::<CachedEmbedding>(concat!(
-        r#"{"embedding":[0.1,0.2],"index":0,"object":"embedding","#,
-        r#""model":"text-embedding-3-small","prompt_tokens":4,"#,
-        r#""prompt_tokens_details":{"image_tokens":2},"format_version":2}"#
-    ));
-    assert_round_trip::<CachedEmbedding>(concat!(
-        r#"{"embedding":"base64","index":null,"object":null,"model":null,"#,
-        r#""prompt_tokens":null,"prompt_tokens_details":null,"format_version":2}"#
-    ));
-}
-
-#[test]
-fn embedding_cache_format_version_is_two() {
-    assert_eq!(EMBEDDING_CACHE_FORMAT_VERSION, 2);
-}
-
-#[test]
-fn redis_pipeline_increment_round_trips() {
-    assert_round_trip::<RedisPipelineIncrement>(r#"{"key":"k","increment_value":1.5,"ttl":30}"#);
-    assert_round_trip::<RedisPipelineIncrement>(r#"{"key":"k","increment_value":2.0,"ttl":null}"#);
-}
-
-#[test]
-fn redis_pipeline_set_round_trips() {
-    assert_round_trip::<RedisPipelineSet>(
-        r#"{"key":"k","value":{"nested":[1,true,null]},"ttl":null}"#,
-    );
+#[rstest]
+#[case::object(r#"{"key":"k","value":{"nested":[1,true,null]},"ttl":null}"#)]
+#[case::text(r#"{"key":"k","value":"text","ttl":30}"#)]
+fn redis_pipeline_set_round_trips(#[case] wire: &str) {
+    let decoded: RedisPipelineSet = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
 }
 
 #[test]
 fn redis_pipeline_rpush_round_trips() {
-    assert_round_trip::<RedisPipelineRpush>(r#"{"key":"k","values":["a",1,false]}"#);
+    let wire = r#"{"key":"k","values":["a",1,false]}"#;
+    let decoded: RedisPipelineRpush = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
 }
 
-#[test]
-fn redis_pipeline_lpop_round_trips() {
-    assert_round_trip::<RedisPipelineLpop>(r#"{"key":"k","count":5}"#);
-    assert_round_trip::<RedisPipelineLpop>(r#"{"key":"k","count":null}"#);
+#[rstest]
+#[case::count(r#"{"key":"k","count":5}"#)]
+#[case::no_count(r#"{"key":"k","count":null}"#)]
+fn redis_pipeline_lpop_round_trips(#[case] wire: &str) {
+    let decoded: RedisPipelineLpop = serde_json::from_str(wire).expect("a LiteLLM input form");
+    assert_wire(&decoded, wire);
 }
 
 #[rstest]
@@ -268,14 +252,7 @@ fn redis_pipeline_lpop_round_trips() {
 #[case::pipeline_lpop(r#"{"redis_pipeline_lpop":{"key":"k","count":null}}"#)]
 fn cache_type_records_round_trip(#[case] wire: &str) {
     let decoded = decode_cache_types(wire.as_bytes()).expect("a LiteLLM input form");
-    assert_eq!(
-        serde_json::to_string(&decoded).expect("a LiteLLM output form"),
-        wire
-    );
-    assert_eq!(
-        decode_cache_types(wire.as_bytes()).expect("a LiteLLM input form"),
-        decoded
-    );
+    assert_wire(&decoded, wire);
 }
 
 #[test]

@@ -11,8 +11,10 @@ use super::{BaseContract, IncrementInput, OldestEntryInput, failure, memory, run
 use crate::helpers::HelperResult;
 
 pub(crate) fn base_get() -> HelperResult {
-    let value = BaseContract.get_cache("key").map_err(failure)?;
-    Ok(json!({"value": value}))
+    BaseContract
+        .get_cache("key")
+        .map_err(failure)
+        .map(|value| json!({"value": value}))
 }
 
 pub(crate) fn base_set() -> HelperResult {

@@ -5,7 +5,8 @@ use std::time::Duration;
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use serde_json::Number;
 
-use super::{BackendError, Clock, MemorySettings, MemoryState};
+use super::{Clock, MemorySettings, MemoryState};
+use crate::backend::BackendError;
 
 pub(super) fn oldest_keys(expiries: &BTreeMap<String, f64>, limit: usize) -> Vec<String> {
     let mut entries = expiries.iter().collect::<Vec<(&String, &f64)>>();
@@ -86,23 +87,7 @@ pub(super) fn increment(
     value: f64,
     ttl: Option<f64>,
 ) -> Result<f64, BackendError> {
-    let current = read(state, key)?;
-    let base = match current {
-        None => 0.0_f64,
-        Some(CacheValue::Integer(number)) => {
-            Number::from(number)
-                .as_f64()
-                .ok_or_else(|| BackendError::NotNumeric {
-                    key: key.to_owned(),
-                })?
-        }
-        Some(CacheValue::Float(number)) => number,
-        Some(_) => {
-            return Err(BackendError::NotNumeric {
-                key: key.to_owned(),
-            });
-        }
-    };
+    let base = stored_number(state, key)?;
     let next = base.mul_add(1.0_f64, value);
     if !next.is_finite() {
         return Err(BackendError::IncrementOutOfRange {
@@ -111,6 +96,23 @@ pub(super) fn increment(
     }
     write(state, settings, key, CacheValue::Float(next), ttl)?;
     Ok(next)
+}
+
+fn stored_number(state: &mut MemoryState, key: &str) -> Result<f64, BackendError> {
+    match read(state, key)? {
+        None => Ok(0.0_f64),
+        Some(CacheValue::Integer(number)) => {
+            Number::from(number)
+                .as_f64()
+                .ok_or_else(|| BackendError::NotNumeric {
+                    key: key.to_owned(),
+                })
+        }
+        Some(CacheValue::Float(number)) => Ok(number),
+        Some(_) => Err(BackendError::NotNumeric {
+            key: key.to_owned(),
+        }),
+    }
 }
 
 fn read_clock(clock: &Clock) -> Result<f64, BackendError> {

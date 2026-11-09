@@ -67,12 +67,7 @@ fn base_get_ttl_precedes_the_default(#[case] ttl: Option<i64>, #[case] expected:
 #[test]
 fn base_get_cache_is_unsupported() {
     let error = BaseContract.get_cache("key").expect_err("unsupported");
-    assert!(matches!(
-        error,
-        BackendError::Unsupported {
-            operation: "get_cache"
-        }
-    ));
+    assert!(matches!(error, BackendError::Unsupported("get_cache")));
 }
 
 #[test]
@@ -80,12 +75,7 @@ fn base_set_cache_is_unsupported() {
     let error = BaseContract
         .set_cache("key", CacheValue::Integer(1), None)
         .expect_err("unsupported");
-    assert!(matches!(
-        error,
-        BackendError::Unsupported {
-            operation: "set_cache"
-        }
-    ));
+    assert!(matches!(error, BackendError::Unsupported("set_cache")));
 }
 
 #[tokio::test]
@@ -96,21 +86,14 @@ async fn base_test_connection_is_unsupported() {
         .expect_err("unsupported");
     assert!(matches!(
         error,
-        BackendError::Unsupported {
-            operation: "test_connection"
-        }
+        BackendError::Unsupported("test_connection")
     ));
 }
 
 #[tokio::test]
 async fn base_disconnect_is_unsupported() {
     let error = BaseContract.disconnect().await.expect_err("unsupported");
-    assert!(matches!(
-        error,
-        BackendError::Unsupported {
-            operation: "disconnect"
-        }
-    ));
+    assert!(matches!(error, BackendError::Unsupported("disconnect")));
 }
 
 #[tokio::test]
@@ -121,9 +104,7 @@ async fn base_pipeline_reads_and_writes_are_unsupported() {
         .expect_err("unsupported");
     assert!(matches!(
         error,
-        BackendError::Unsupported {
-            operation: "async_set_cache_pipeline"
-        }
+        BackendError::Unsupported("async_set_cache_pipeline")
     ));
     let batch_error = BaseContract
         .async_batch_get_cache(&[])
@@ -131,9 +112,7 @@ async fn base_pipeline_reads_and_writes_are_unsupported() {
         .expect_err("unsupported");
     assert!(matches!(
         batch_error,
-        BackendError::Unsupported {
-            operation: "async_batch_get_cache"
-        }
+        BackendError::Unsupported("async_batch_get_cache")
     ));
 }
 
@@ -445,9 +424,7 @@ async fn memory_connection_test_is_unsupported() {
         .expect_err("unsupported");
     assert!(matches!(
         error,
-        BackendError::Unsupported {
-            operation: "test_connection"
-        }
+        BackendError::Unsupported("test_connection")
     ));
 }
 

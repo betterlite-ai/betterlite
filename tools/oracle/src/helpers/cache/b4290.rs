@@ -19,7 +19,8 @@ use serde_json::json;
 pub(crate) enum Input {
     BaseCacheContractGet,
     BaseCacheContractSet,
-    BaseCacheTestConnectionUnsupported,
+    #[serde(rename = "base_cache_test_connection_unsupported")]
+    BaseTestConnection,
     MemoryAsyncGetAbsoluteTtl {
         clock: f64,
         ttl: f64,
@@ -35,7 +36,7 @@ pub(crate) enum Input {
     },
     SemanticScopeKeyAndUser,
     #[serde(rename = "cached_embedding_format_version_2")]
-    CachedEmbeddingFormatVersionTwo {
+    CachedEmbeddingV2 {
         embedding: CachedEmbedding,
     },
     SupportedCallTypes,
@@ -91,7 +92,7 @@ impl crate::helpers::Helper for Op {
         match input {
             Input::BaseCacheContractGet => cases::base_get(),
             Input::BaseCacheContractSet => cases::base_set(),
-            Input::BaseCacheTestConnectionUnsupported => cases::base_test_connection(),
+            Input::BaseTestConnection => cases::base_test_connection(),
             Input::MemoryAsyncGetAbsoluteTtl {
                 clock,
                 ttl,
@@ -103,9 +104,7 @@ impl crate::helpers::Helper for Op {
             }
             Input::DynamicCacheControlTtl { cache } => Ok(json!({"cache": cache})),
             Input::SemanticScopeKeyAndUser => cases::semantic_scopes(),
-            Input::CachedEmbeddingFormatVersionTwo { embedding } => {
-                cases::cached_embedding(embedding)
-            }
+            Input::CachedEmbeddingV2 { embedding } => cases::cached_embedding(embedding),
             Input::SupportedCallTypes => cases::supported_call_types(),
             Input::CacheTypeRoundTrip => cases::cache_types(),
             Input::PingResponseHealthCheck { ping } => Ok(json!({"ping": ping})),
@@ -137,8 +136,9 @@ where
 }
 
 pub(crate) fn memory(clock: f64) -> Result<MemoryCache, Box<crate::helpers::HelperError>> {
-    let source = Arc::new(move || clock);
-    MemoryCache::new(None, None, None, DEFAULT_MAX_SIZE_PER_ITEM_KIB, source).map_err(failure)
+    let source: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(move || clock);
+    let cache = MemoryCache::new(None, None, None, DEFAULT_MAX_SIZE_PER_ITEM_KIB, source);
+    cache.map_err(failure)
 }
 
 pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {

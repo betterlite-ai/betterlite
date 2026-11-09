@@ -7,7 +7,7 @@ use self::operations::{increment, oldest_keys, read, whole_seconds, write};
 use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::{CacheLimits, CacheValue, LocalTtlCache};
 
-use super::{BackendError, CacheBackend};
+use super::{CacheBackend, CacheResult, Ttl};
 use crate::types::pipeline::RedisPipelineIncrement;
 
 pub const DEFAULT_CAPACITY: i64 = 200;
@@ -47,7 +47,7 @@ impl MemoryCache {
         max_size_per_item: Option<i64>,
         loaded_item_kib: i64,
         clock: Clock,
-    ) -> Result<Self, BackendError> {
+    ) -> CacheResult<Self> {
         let values = LocalTtlCache::with_clock(
             capacity,
             default_ttl,
@@ -89,22 +89,17 @@ impl CacheBackend for MemoryCache {
         self.settings.default_ttl_seconds
     }
 
-    fn get_cache(&self, key: &str) -> Result<Option<CacheValue>, BackendError> {
+    fn get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         read(&mut state, key)
     }
 
-    fn set_cache(
-        &self,
-        key: &str,
-        value: CacheValue,
-        ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
+    fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         write(&mut state, &self.settings, key, value, ttl)
     }
 
-    fn delete_cache(&self, key: &str) -> Result<(), BackendError> {
+    fn delete_cache(&self, key: &str) -> CacheResult<()> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.values.delete(key);
         state.expiries.remove(key);
@@ -112,7 +107,7 @@ impl CacheBackend for MemoryCache {
         Ok(())
     }
 
-    fn flush_cache(&self) -> Result<(), BackendError> {
+    fn flush_cache(&self) -> CacheResult<()> {
         let construction = &self.settings.construction;
         let values = LocalTtlCache::with_clock(
             construction.capacity,
@@ -128,43 +123,30 @@ impl CacheBackend for MemoryCache {
         Ok(())
     }
 
-    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, BackendError> {
+    async fn async_get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
         self.get_cache(key)
     }
 
-    async fn async_set_cache(
-        &self,
-        key: &str,
-        value: CacheValue,
-        ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
+    async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
         self.set_cache(key, value, ttl)
     }
 
     async fn async_set_cache_pipeline(
         &self,
         entries: Vec<(String, CacheValue)>,
-        ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
+        ttl: Ttl,
+    ) -> CacheResult<()> {
         for (key, value) in entries {
             self.set_cache(&key, value, ttl)?;
         }
         Ok(())
     }
 
-    async fn async_batch_get_cache(
-        &self,
-        keys: &[String],
-    ) -> Result<Vec<Option<CacheValue>>, BackendError> {
+    async fn async_batch_get_cache(&self, keys: &[String]) -> CacheResult<Vec<Option<CacheValue>>> {
         keys.iter().map(|key| self.get_cache(key)).collect()
     }
 
-    async fn async_increment(
-        &self,
-        key: &str,
-        value: f64,
-        ttl: Option<f64>,
-    ) -> Result<f64, BackendError> {
+    async fn async_increment(&self, key: &str, value: f64, ttl: Ttl) -> CacheResult<f64> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         increment(&mut state, &self.settings, key, value, ttl)
     }
@@ -172,7 +154,7 @@ impl CacheBackend for MemoryCache {
     async fn async_increment_pipeline(
         &self,
         increments: Vec<RedisPipelineIncrement>,
-    ) -> Result<Vec<f64>, BackendError> {
+    ) -> CacheResult<Vec<f64>> {
         let mut results = Vec::with_capacity(increments.len());
         for increment in increments {
             results.push(
@@ -183,17 +165,17 @@ impl CacheBackend for MemoryCache {
         Ok(results)
     }
 
-    async fn async_get_ttl(&self, key: &str) -> Result<Option<f64>, BackendError> {
+    async fn async_get_ttl(&self, key: &str) -> CacheResult<Option<f64>> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(state.expiries.get(key).copied())
     }
 
-    async fn async_get_oldest_n_keys(&self, limit: usize) -> Result<Vec<String>, BackendError> {
+    async fn async_get_oldest_n_keys(&self, limit: usize) -> CacheResult<Vec<String>> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(oldest_keys(&state.expiries, limit))
     }
 
-    async fn disconnect(&self) -> Result<(), BackendError> {
+    async fn disconnect(&self) -> CacheResult<()> {
         Ok(())
     }
 }

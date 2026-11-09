@@ -6,8 +6,8 @@ from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.types.caching import (
     DEFAULT_CACHING_SUPPORTED_CALL_TYPES,
     EMBEDDING_CACHE_FORMAT_VERSION,
-    CachePingResponse,
     CachedEmbedding,
+    CachePingResponse,
     DynamicCacheControl,
     HealthCheckCacheParams,
     LiteLLMCacheType,
@@ -31,7 +31,11 @@ _DYNAMIC_CACHE_CONTROL_KEYS = (
 
 
 class _BaseProbe(BaseCache):
-    async def async_set_cache_pipeline(self, _cache_list: object, **_kwargs: object) -> None:
+    async def async_set_cache_pipeline(
+        self,
+        cache_list: object,  # noqa: ARG002 - BaseCache names this parameter
+        **kwargs: object,  # noqa: ARG002 - BaseCache passes keyword arguments
+    ) -> None:
         return None
 
 
@@ -108,22 +112,24 @@ def _memory(clock: float) -> InMemoryCache:
 
 
 async def _stored_ttl(cache: InMemoryCache, key: str, value: str, ttl: float) -> float | None:
-    await cache.async_set_cache(key, value, ttl=ttl)
+    await cache.async_set_cache(key, value, ttl=ttl)  # pyright: ignore[reportUnknownMemberType]
     return await cache.async_get_ttl(key)
 
 
 def _base_cache_contract_get() -> Json:
     probe = _BaseProbe()
-    return cast(Json, probe.get_cache("key"))
+    return cast(Json, probe.get_cache("key"))  # pyright: ignore[reportUnknownMemberType]
 
 
 def _base_cache_contract_set() -> Json:
     probe = _BaseProbe()
-    return cast(Json, probe.set_cache("key", 1))
+    return cast(Json, probe.set_cache("key", 1))  # pyright: ignore[reportUnknownMemberType]
 
 
 def _base_cache_test_connection_unsupported() -> Json:
-    return cast(Json, asyncio.run(_BaseProbe().test_connection()))
+    # BaseCache's untyped signature leaks into the coroutine type
+    probe = _BaseProbe()
+    return cast(Json, asyncio.run(probe.test_connection()))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
 
 def _memory_async_get_absolute_ttl(input_value: dict[str, Json]) -> Json:
@@ -150,7 +156,8 @@ def _memory_async_increment_pipeline(input_value: dict[str, Json]) -> Json:
     clock = number_value(input_value.get("clock"), "clock")
     raw = list_value(input_value.get("increments"), "increments")
     operations = [_increment_operation(entry) for entry in raw]
-    results = asyncio.run(_memory(clock).async_increment_pipeline(operations))
+    cache = _memory(clock)
+    results = asyncio.run(cache.async_increment_pipeline(operations))  # pyright: ignore[reportUnknownMemberType]
     return cast(Json, {"results": results})
 
 
@@ -158,7 +165,9 @@ async def _oldest_keys(cache: InMemoryCache, entries: list[Json], limit: int) ->
     for entry in entries:
         record = object_value(entry, "entry")
         key = string_value(record.get("key"), "key")
-        await cache.async_set_cache(key, key, ttl=number_value(record.get("ttl"), "ttl"))
+        await cache.async_set_cache(  # pyright: ignore[reportUnknownMemberType]
+            key, key, ttl=number_value(record.get("ttl"), "ttl")
+        )
     return await cache.async_get_oldest_n_keys(limit)
 
 
@@ -271,7 +280,9 @@ def _redis_pipeline_lpop(input_value: dict[str, Json]) -> Json:
     return cast(Json, {"operation": record})
 
 
-def run(input_value: dict[str, Json]) -> Json:
+def run(  # noqa: C901, PLR0911, PLR0912 - one branch per b4290 operation
+    input_value: dict[str, Json],
+) -> Json:
     function = string_value(input_value.get("function"), "function")
     match function:
         case "base_cache_contract_get":

@@ -15,10 +15,15 @@ use crate::types::pipeline::RedisPipelineIncrement;
 
 pub const BASE_DEFAULT_TTL_SECONDS: i64 = 60;
 
+pub type CacheResult<Value> = Result<Value, BackendError>;
+
+// a per-call ttl in seconds; absent means the backend default
+pub type Ttl = Option<f64>;
+
 #[derive(Debug, Error)]
 pub enum BackendError {
-    #[error("the {operation} operation is not implemented by this cache backend")]
-    Unsupported { operation: &'static str },
+    #[error("the {0} operation is not implemented by this cache backend")]
+    Unsupported(&'static str),
     #[error("the cache operation failed")]
     Cache {
         #[from]
@@ -69,123 +74,78 @@ pub trait CacheBackend: Send + Sync {
         ttl.unwrap_or_else(|| self.default_ttl())
     }
 
-    fn get_cache(&self, _key: &str) -> Result<Option<CacheValue>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "get_cache",
-        })
+    fn get_cache(&self, _key: &str) -> CacheResult<Option<CacheValue>> {
+        Err(BackendError::Unsupported("get_cache"))
     }
 
-    fn set_cache(
-        &self,
-        _key: &str,
-        _value: CacheValue,
-        _ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "set_cache",
-        })
+    fn set_cache(&self, _key: &str, _value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
+        Err(BackendError::Unsupported("set_cache"))
     }
 
-    fn delete_cache(&self, _key: &str) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "delete_cache",
-        })
+    fn delete_cache(&self, _key: &str) -> CacheResult<()> {
+        Err(BackendError::Unsupported("delete_cache"))
     }
 
-    fn flush_cache(&self) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "flush_cache",
-        })
+    fn flush_cache(&self) -> CacheResult<()> {
+        Err(BackendError::Unsupported("flush_cache"))
     }
 
-    async fn async_get_cache(&self, _key: &str) -> Result<Option<CacheValue>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_get_cache",
-        })
+    async fn async_get_cache(&self, _key: &str) -> CacheResult<Option<CacheValue>> {
+        Err(BackendError::Unsupported("async_get_cache"))
     }
 
-    async fn async_set_cache(
-        &self,
-        _key: &str,
-        _value: CacheValue,
-        _ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_set_cache",
-        })
+    async fn async_set_cache(&self, _key: &str, _value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
+        Err(BackendError::Unsupported("async_set_cache"))
     }
 
     async fn async_set_cache_pipeline(
         &self,
         _entries: Vec<(String, CacheValue)>,
-        _ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_set_cache_pipeline",
-        })
+        _ttl: Ttl,
+    ) -> CacheResult<()> {
+        Err(BackendError::Unsupported("async_set_cache_pipeline"))
     }
 
     async fn async_batch_get_cache(
         &self,
         _keys: &[String],
-    ) -> Result<Vec<Option<CacheValue>>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_batch_get_cache",
-        })
+    ) -> CacheResult<Vec<Option<CacheValue>>> {
+        Err(BackendError::Unsupported("async_batch_get_cache"))
     }
 
-    async fn async_increment(
-        &self,
-        _key: &str,
-        _value: f64,
-        _ttl: Option<f64>,
-    ) -> Result<f64, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_increment",
-        })
+    async fn async_increment(&self, _key: &str, _value: f64, _ttl: Ttl) -> CacheResult<f64> {
+        Err(BackendError::Unsupported("async_increment"))
     }
 
     async fn async_increment_pipeline(
         &self,
         _increments: Vec<RedisPipelineIncrement>,
-    ) -> Result<Vec<f64>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_increment_pipeline",
-        })
+    ) -> CacheResult<Vec<f64>> {
+        Err(BackendError::Unsupported("async_increment_pipeline"))
     }
 
-    async fn async_get_ttl(&self, _key: &str) -> Result<Option<f64>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_get_ttl",
-        })
+    async fn async_get_ttl(&self, _key: &str) -> CacheResult<Option<f64>> {
+        Err(BackendError::Unsupported("async_get_ttl"))
     }
 
-    async fn async_get_oldest_n_keys(&self, _limit: usize) -> Result<Vec<String>, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "async_get_oldest_n_keys",
-        })
+    async fn async_get_oldest_n_keys(&self, _limit: usize) -> CacheResult<Vec<String>> {
+        Err(BackendError::Unsupported("async_get_oldest_n_keys"))
     }
 
     async fn batch_cache_write(
         &self,
         _key: &str,
         _value: CacheValue,
-        _ttl: Option<f64>,
-    ) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "batch_cache_write",
-        })
+        _ttl: Ttl,
+    ) -> CacheResult<()> {
+        Err(BackendError::Unsupported("batch_cache_write"))
     }
 
-    async fn disconnect(&self) -> Result<(), BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "disconnect",
-        })
+    async fn disconnect(&self) -> CacheResult<()> {
+        Err(BackendError::Unsupported("disconnect"))
     }
 
-    async fn test_connection(&self) -> Result<ConnectionTest, BackendError> {
-        Err(BackendError::Unsupported {
-            operation: "test_connection",
-        })
+    async fn test_connection(&self) -> CacheResult<ConnectionTest> {
+        Err(BackendError::Unsupported("test_connection"))
     }
 }
