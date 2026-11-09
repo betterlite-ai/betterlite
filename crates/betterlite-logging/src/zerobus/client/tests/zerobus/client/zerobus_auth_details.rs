@@ -38,6 +38,24 @@ async fn the_token_request_asks_for_the_zerobus_resource_with_the_client_credent
 }
 
 #[tokio::test]
+async fn a_table_name_that_is_not_catalog_schema_table_is_a_permanent_failure() {
+    let fake = FakeZerobus::start(
+        vec![Reply::new(200, &token_reply("tok-1", "3600"))],
+        vec![Reply::new(202, "{}")],
+    )
+    .await;
+    let mut connection = connection(&fake.base);
+    connection.table_name = "traces".to_owned();
+    let clock = FakeClock::new(1_000.0);
+    let client = client_with(connection, &clock, Duration::from_secs(5));
+
+    let failure = client.insert(&[]).await.unwrap_err();
+
+    assert!(!failure.retryable);
+    assert!(failure.detail.contains("catalog.schema.table"));
+}
+
+#[tokio::test]
 async fn the_token_request_carries_the_table_privileges() {
     let (_grant_type, _scope, _resource, details) = token_form().await;
 

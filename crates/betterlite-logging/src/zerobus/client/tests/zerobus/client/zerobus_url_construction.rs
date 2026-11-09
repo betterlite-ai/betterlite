@@ -23,6 +23,24 @@ async fn the_token_url_comes_from_the_workspace_url_without_its_trailing_slashes
 }
 
 #[tokio::test]
+async fn an_endpoint_that_is_not_a_url_is_a_permanent_failure() {
+    let fake = FakeZerobus::start(
+        vec![Reply::new(200, &token_reply("tok-1", "3600"))],
+        vec![Reply::new(202, "{}")],
+    )
+    .await;
+    let mut connection = connection(&fake.base);
+    connection.workspace_url = "not a url".to_owned();
+    let clock = FakeClock::new(1_000.0);
+    let client = client_with(connection, &clock, Duration::from_secs(5));
+
+    let failure = client.insert(&[]).await.unwrap_err();
+
+    assert!(!failure.retryable);
+    assert!(failure.detail.contains("token URL"));
+}
+
+#[tokio::test]
 async fn the_insert_url_comes_from_the_server_endpoint_and_the_table_name() {
     let fake = FakeZerobus::start(
         vec![Reply::new(200, &token_reply("tok-1", "3600"))],

@@ -154,3 +154,9 @@ fn a_fractional_count_is_truncated_toward_zero() {
     assert_eq!(row.prompt_tokens, Some(10));
     assert_eq!(row.completion_tokens, Some(0));
 }
+
+#[test]
+fn a_count_past_the_i64_range_is_null() {
+    let row = row(r#"{"prompt_tokens": 1e25}"#);
+    assert_eq!(row.prompt_tokens, None);
+}
