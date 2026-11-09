@@ -4,10 +4,13 @@ use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{AwsOptionalParams, AwsTransport, CredentialResolver};
 use crate::aws_secret_reads::AwsReadError;
 use crate::secret_contracts::RotationError;
-use crate::secret_contracts::options::{SecretRotation, SecretTimeout, SecretWrite};
+use crate::secret_contracts::options::{SecretRotation, SecretTimeout};
 
 use super::SecretActionResponse;
 use super::put_value::async_put_secret_value;
+use rotate_write::write_rotated;
+
+mod rotate_write;
 
 const ROTATION_DELETE_DAYS: u32 = 7;
 
@@ -55,7 +58,8 @@ where
     if current.is_none() {
         return Err(RotationError::CurrentSecretNotFound);
     }
-    let written = write_rotated(manager, rotation).await?;
+    let description = format!("Rotated from {}", rotation.current_secret_name);
+    let written = write_rotated(manager, rotation, &description).await?;
     let created = read_rotated(
         manager,
         rotation.new_secret_name,
@@ -92,27 +96,4 @@ where
         .async_read_secret(secret_name, optional_params, timeout, None)
         .await
         .map_err(|source| RotationError::Operation { source })
-}
-
-async fn write_rotated<Resolver, Transport>(
-    manager: &AwsSecretsManager<Resolver, Transport>,
-    rotation: &SecretRotation<'_, AwsOptionalParams>,
-) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
-where
-    Resolver: CredentialResolver + Sync,
-    Transport: AwsTransport,
-{
-    let description = format!("Rotated from {}", rotation.current_secret_name);
-    super::write::write(
-        manager,
-        SecretWrite {
-            secret_name: rotation.new_secret_name,
-            secret_value: rotation.new_secret_value,
-            description: Some(&description),
-            options: rotation.options,
-            tags: None,
-        },
-    )
-    .await
-    .map_err(|source| RotationError::Operation { source })
 }

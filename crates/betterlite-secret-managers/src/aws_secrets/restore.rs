@@ -5,7 +5,7 @@ use crate::aws::request_signing::{
     ActionRequest, AwsOptionalParams, AwsRequestError, AwsTransport, CredentialResolver, NoBody,
 };
 use crate::aws_secret_reads::AwsReadError;
-use crate::secret_contracts::options::SecretTimeout;
+use crate::secret_contracts::options::{SecretOptions, SecretTimeout};
 
 use super::bodies::{CreateSecretBody, DescribeSecretReply, TagResourceBody, UpdateSecretBody};
 use super::{SecretActionResponse, delete, post_reply};
@@ -40,22 +40,13 @@ where
     if !value_error(&failure) {
         return Err(failure);
     }
-    if !scheduled_for_deletion(manager, body.name, optional_params.as_deref_mut(), timeout).await? {
+    let options = SecretOptions {
+        optional_params: optional_params.as_deref(),
+        timeout,
+    };
+    if !scheduled_for_deletion(manager, body.name, options).await? {
         return Err(failure);
     }
-    restore_and_update(manager, body, optional_params, timeout).await
-}
-
-async fn restore_and_update<Resolver, Transport>(
-    manager: &AwsSecretsManager<Resolver, Transport>,
-    body: &CreateSecretBody<'_>,
-    mut optional_params: Option<&mut AwsOptionalParams>,
-    timeout: Option<SecretTimeout>,
-) -> Result<SecretActionResponse, AwsReadError<Resolver::Error, Transport::Error>>
-where
-    Resolver: CredentialResolver + Sync,
-    Transport: AwsTransport,
-{
     let restore: ActionRequest<'_, NoBody> = ActionRequest {
         action: RESTORE_SECRET,
         secret_name: body.name,
@@ -145,8 +136,7 @@ where
 async fn scheduled_for_deletion<Resolver, Transport>(
     manager: &AwsSecretsManager<Resolver, Transport>,
     secret_name: &str,
-    optional_params: Option<&mut AwsOptionalParams>,
-    timeout: Option<SecretTimeout>,
+    options: SecretOptions<'_, AwsOptionalParams>,
 ) -> Result<bool, AwsReadError<Resolver::Error, Transport::Error>>
 where
     Resolver: CredentialResolver + Sync,
@@ -157,8 +147,13 @@ where
         secret_name,
         request_data: None,
     };
+    let mut optional_params = options.optional_params.map(super::copy_params);
     let failure = match manager
-        .async_post_action::<NoBody, DescribeSecretReply>(&request, optional_params, timeout)
+        .async_post_action::<NoBody, DescribeSecretReply>(
+            &request,
+            optional_params.as_mut(),
+            options.timeout,
+        )
         .await
     {
         Ok(reply) => return Ok(reply.deleted_date.is_some()),

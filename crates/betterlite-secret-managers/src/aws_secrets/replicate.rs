@@ -28,11 +28,6 @@ where
             body: SecretString::from("{}".to_owned()),
         });
     }
-    tracing::info!(
-        secret = secret_name,
-        regions = ?replica_regions,
-        "replicating the secret to the configured regions"
-    );
     let body = ReplicateSecretBody {
         secret_id: secret_name,
         add_replica_regions: replica_regions
