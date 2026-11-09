@@ -215,7 +215,12 @@ fn an_invalid_base_fails_with_the_api_base_request_field(#[case] api_base: &str)
 
 #[test]
 fn the_request_key_becomes_the_bearer_header_before_the_environment_key() {
-    let explicit = connection(None, Some("explicit"), Vec::new(), Secrets::new());
+    let explicit = connection(
+        None,
+        Some("explicit"),
+        Vec::new(),
+        key_secrets("environment"),
+    );
     assert_eq!(
         resolve_headers(&explicit).expect("the request key resolves"),
         [("Authorization".to_owned(), "Bearer explicit".to_owned())]
@@ -368,6 +373,23 @@ fn a_response_without_pages_decodes_to_an_empty_page_list() {
         )
         .expect("the response decodes");
     assert!(response.pages.is_empty());
+}
+
+#[rstest]
+#[case::non_object_page(r#"{"pages":[42]}"#)]
+#[case::missing_markdown(r#"{"pages":[{"index":0}]}"#)]
+#[case::non_string_markdown(r#"{"pages":[{"index":0,"markdown":42}]}"#)]
+fn an_invalid_page_fails_with_the_page_response_field(
+    #[case] payload: &str,
+    #[values(RequestFormat::Litellm, RequestFormat::Native)] format: RequestFormat,
+) {
+    let error = MistralOcrConfig
+        .transform_ocr_response("mistral-ocr-latest", payload.as_bytes(), format)
+        .expect_err("an invalid page is an error");
+    assert!(
+        matches!(&error, OcrError::ResponseField { path } if path.starts_with("pages[0]")),
+        "{error:?}"
+    );
 }
 
 #[test]
