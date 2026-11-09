@@ -118,13 +118,13 @@ async fn calculate_usage<C>(
 where
     C: TokenCounter + Sync,
 {
-    let prompt_request = prompt_request(model, messages);
+    let prompt_request = usage_request(model, Some(messages), None);
     let prompt = match counter.count(&prompt_request).await {
         Ok(count) => count,
         Err(error) => return counter_failed(error),
     };
     let text = TextInput::One(content.to_owned());
-    let completion_request = completion_request(model, &text);
+    let completion_request = usage_request(model, None, Some(&text));
     let completion = match counter.count(&completion_request).await {
         Ok(count) => count,
         Err(error) => return counter_failed(error),
@@ -144,31 +144,17 @@ where
     })
 }
 
-const fn prompt_request<'request>(
+const fn usage_request<'request>(
     model: &'request str,
-    messages: &'request [Message],
+    messages: Option<&'request [Message]>,
+    text: Option<&'request TextInput>,
 ) -> TokenRequest<'request> {
     TokenRequest {
         model,
         custom_tokenizer: None,
-        text: None,
-        messages: Some(messages),
-        count_response_tokens: Some(false),
-        tools: None,
-        tool_choice: None,
-    }
-}
-
-const fn completion_request<'request>(
-    model: &'request str,
-    text: &'request TextInput,
-) -> TokenRequest<'request> {
-    TokenRequest {
-        model,
-        custom_tokenizer: None,
-        text: Some(text),
-        messages: None,
-        count_response_tokens: Some(true),
+        text,
+        messages,
+        count_response_tokens: Some(text.is_some()),
         tools: None,
         tool_choice: None,
     }
