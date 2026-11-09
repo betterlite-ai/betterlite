@@ -1,0 +1,11 @@
+kind: helper
+name: missing-and-duplicate-stable-identity
+call:
+  ptu_pricing:
+    operation: identity
+    declared_id: ""
+    taken: false
+    current_id: dep-7
+    model_name: gpt-4o-ptu
+compare: {ignore: []}
+env: {}
