@@ -190,9 +190,24 @@ fn plain_text_response() {
         headers: vec![("Content-Type".to_owned(), "Application/JSON".to_owned())],
         body: br#"{"result":{"content":[{"text":"named"}]}}"#.to_vec(),
     };
-    let named = run(&raw, &[], "named", (Some(1), Some(1)));
-    let (_, _, _, named_content) = choice_message(&named);
-    assert_eq!(named_content.as_deref(), Some("named"));
+    assert_eq!(transformed_content(&raw, "named"), Some("named".to_owned()));
+    let repeated = RawResponse {
+        status_code: 200,
+        headers: vec![
+            ("content-type".to_owned(), "text/plain".to_owned()),
+            ("content-type".to_owned(), "application/json".to_owned()),
+        ],
+        body: br#"{"result":{"content":[{"text":"joined"}]}}"#.to_vec(),
+    };
+    assert_eq!(
+        transformed_content(&repeated, "joined"),
+        Some("joined".to_owned())
+    );
+}
+
+fn transformed_content(raw: &RawResponse, content: &str) -> Option<String> {
+    let completed = run(raw, &[], content, (Some(1), Some(1)));
+    choice_message(&completed).3
 }
 
 fn missing_usage() {
