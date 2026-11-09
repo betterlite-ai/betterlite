@@ -19,15 +19,11 @@ pub struct MetadataFields {
 // LangsmithLogger._extract_metadata_fields, which reads litellm_params.metadata and falls back to the credentials' project.
 #[must_use]
 pub fn extract_metadata_fields(
-    metadata: Option<&IndexMap<String, Json>>,
+    metadata: &IndexMap<String, Json>,
     credentials: &Credentials,
     default_run_name: &str,
 ) -> MetadataFields {
-    let field = |key: &str| {
-        metadata
-            .and_then(|fields| fields.get(key))
-            .and_then(text_value)
-    };
+    let field = |key: &str| metadata.get(key).and_then(text_value);
     MetadataFields {
         project_name: field("project_name").unwrap_or_else(|| credentials.project.clone()),
         run_name: field("run_name").unwrap_or_else(|| default_run_name.to_owned()),

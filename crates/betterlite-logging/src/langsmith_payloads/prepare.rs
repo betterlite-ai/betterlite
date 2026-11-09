@@ -1,10 +1,8 @@
-use std::str::FromStr as _;
-
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::Number;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::LoggingStatus;
@@ -23,8 +21,6 @@ pub enum PayloadError {
     Payload(#[source] serde_json::Error),
     #[error("the standard logging payload is not a JSON object")]
     PayloadShape,
-    #[error("the payload start or end time could not be written as a JSON number")]
-    Timestamp(#[source] serde_json::Error),
     #[error(transparent)]
     Output(#[from] OutputError),
 }
@@ -32,7 +28,7 @@ pub enum PayloadError {
 #[derive(Clone, Copy)]
 pub struct Prepare<'event> {
     pub standard_logging_object: Option<&'event StandardLoggingPayload>,
-    pub litellm_metadata: Option<&'event IndexMap<String, Json>>,
+    pub litellm_metadata: &'event IndexMap<String, Json>,
     pub credentials: &'event Credentials,
     pub default_run_name: &'event str,
     pub redact_user_api_key_info: bool,
@@ -45,8 +41,10 @@ pub struct RunData {
     pub inputs: IndexMap<String, Json>,
     pub outputs: IndexMap<String, Json>,
     pub session_name: String,
-    pub start_time: Json,
-    pub end_time: Json,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub start_time: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub end_time: Decimal,
     pub tags: Vec<Json>,
     pub extra: IndexMap<String, Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,8 +69,6 @@ struct RunParts<'event> {
     required: RequiredIds,
     metadata: RunMetadata,
     outputs: IndexMap<String, Json>,
-    start_time: Json,
-    end_time: Json,
 }
 
 // LangsmithLogger._prepare_log_data: the run object every LangSmith event queues, without the unused response object.
@@ -94,7 +90,6 @@ pub fn prepare_log_data(
         fields.session_id = None;
     }
     let metadata = run_inputs(payload, prepare.redact_user_api_key_info)?;
-    let (start_time, end_time) = run_timestamps(payload)?;
     let outputs = build_outputs_with_usage(payload)?;
     let required = resolve_ids(&fields, now, ids);
     Ok(assemble_run(RunParts {
@@ -103,8 +98,6 @@ pub fn prepare_log_data(
         required,
         metadata,
         outputs,
-        start_time,
-        end_time,
     }))
 }
 
@@ -120,14 +113,6 @@ fn run_inputs(
         Json::Object(redact_metadata(&metadata, redact_user_api_key_info)),
     );
     Ok(RunMetadata { inputs, extra })
-}
-
-fn run_timestamps(payload: &StandardLoggingPayload) -> Result<(Json, Json), PayloadError> {
-    let start = Number::from_str(&payload.start_time.normalize().to_string())
-        .map_err(PayloadError::Timestamp)?;
-    let end = Number::from_str(&payload.end_time.normalize().to_string())
-        .map_err(PayloadError::Timestamp)?;
-    Ok((Json::Number(start), Json::Number(end)))
 }
 
 fn resolve_ids(fields: &MetadataFields, now: DateTime<Utc>, ids: &dyn IdSource) -> RequiredIds {
@@ -147,8 +132,8 @@ fn assemble_run(parts: RunParts<'_>) -> RunData {
         inputs: parts.metadata.inputs,
         outputs: parts.outputs,
         session_name: parts.fields.project_name,
-        start_time: parts.start_time,
-        end_time: parts.end_time,
+        start_time: parts.payload.start_time,
+        end_time: parts.payload.end_time,
         tags: parts.payload.request_tags.clone(),
         extra: parts.metadata.extra,
         error: parts

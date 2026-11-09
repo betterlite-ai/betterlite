@@ -23,8 +23,11 @@ pub fn sampling_rate_for_request(
     match fields.get("langsmith_sampling_rate") {
         None | Some(Json::Null) => Ok(default_rate),
         Some(Json::Number(number)) => number.as_f64().ok_or(SamplingError::RateType),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(SamplingError::RateType)
-        }
+        // float() reads a team callback var's decimal text, so "0.5" from callback_vars is a rate too
+        Some(Json::Text(text)) => text
+            .trim()
+            .parse::<f64>()
+            .map_err(|_source| SamplingError::RateType),
+        Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => Err(SamplingError::RateType),
     }
 }

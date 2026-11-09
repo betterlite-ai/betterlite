@@ -16,6 +16,7 @@ use betterlite_logging::langsmith_payloads::sampling::{SamplingError, sampling_r
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret, SecretString};
 
 const PAYLOAD: &str = r#"{
@@ -108,7 +109,7 @@ fn prepare<'event>(
 ) -> Prepare<'event> {
     Prepare {
         standard_logging_object: Some(payload),
-        litellm_metadata: Some(metadata),
+        litellm_metadata: metadata,
         credentials,
         default_run_name: DEFAULT_RUN_NAME,
         redact_user_api_key_info: redact,
@@ -138,8 +139,8 @@ fn assert_run_identity(run: &RunData) {
 }
 
 fn assert_run_outputs(run: &RunData) {
-    assert_eq!(run.start_time, json("1704067200"));
-    assert_eq!(run.end_time, json("1704067201.5"));
+    assert_eq!(run.start_time, Decimal::from(1_704_067_200_i64));
+    assert_eq!(run.end_time, Decimal::new(17_040_672_015, 1));
     assert_eq!(run.tags, vec![text("team-a")]);
     assert_eq!(run.outputs.get("id"), Some(&text("chatcmpl-1")));
 }
@@ -287,10 +288,10 @@ fn allow_env_true_uses_env() {
 fn extract_run_name() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let named = metadata(r#"{"run_name": "my-run"}"#);
-    let named_fields = extract_metadata_fields(Some(&named), &credentials, DEFAULT_RUN_NAME);
+    let named_fields = extract_metadata_fields(&named, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(named_fields.run_name, "my-run");
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(absent_fields.run_name, DEFAULT_RUN_NAME);
     assert_eq!(DEFAULT_RUN_NAME, "LLMRun");
 }
@@ -299,13 +300,13 @@ fn extract_run_name() {
 fn extract_run_id() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let both = metadata(r#"{"id": "id-1", "run_id": "id-2"}"#);
-    let id_fields = extract_metadata_fields(Some(&both), &credentials, DEFAULT_RUN_NAME);
+    let id_fields = extract_metadata_fields(&both, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(id_fields.run_id.as_deref(), Some("id-1"));
     let fallback = metadata(r#"{"run_id": "id-2"}"#);
-    let fallback_fields = extract_metadata_fields(Some(&fallback), &credentials, DEFAULT_RUN_NAME);
+    let fallback_fields = extract_metadata_fields(&fallback, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(fallback_fields.run_id.as_deref(), Some("id-2"));
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert!(absent_fields.run_id.is_none());
 }
 
@@ -313,10 +314,10 @@ fn extract_run_id() {
 fn extract_parent_run_id() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let present = metadata(r#"{"parent_run_id": "parent-1"}"#);
-    let present_fields = extract_metadata_fields(Some(&present), &credentials, DEFAULT_RUN_NAME);
+    let present_fields = extract_metadata_fields(&present, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(present_fields.parent_run_id.as_deref(), Some("parent-1"));
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert!(absent_fields.parent_run_id.is_none());
 }
 
@@ -324,10 +325,10 @@ fn extract_parent_run_id() {
 fn extract_trace_id() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let present = metadata(r#"{"trace_id": "trace-1"}"#);
-    let present_fields = extract_metadata_fields(Some(&present), &credentials, DEFAULT_RUN_NAME);
+    let present_fields = extract_metadata_fields(&present, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(present_fields.trace_id.as_deref(), Some("trace-1"));
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert!(absent_fields.trace_id.is_none());
 }
 
@@ -335,10 +336,10 @@ fn extract_trace_id() {
 fn extract_session_id() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let present = metadata(r#"{"session_id": "session-1"}"#);
-    let present_fields = extract_metadata_fields(Some(&present), &credentials, DEFAULT_RUN_NAME);
+    let present_fields = extract_metadata_fields(&present, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(present_fields.session_id.as_deref(), Some("session-1"));
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert!(absent_fields.session_id.is_none());
 }
 
@@ -346,13 +347,13 @@ fn extract_session_id() {
 fn extract_dotted_order() {
     let credentials = test_credentials(DEFAULT_PROJECT);
     let present = metadata(r#"{"dotted_order": "20240102T030405123456Zrun-1"}"#);
-    let present_fields = extract_metadata_fields(Some(&present), &credentials, DEFAULT_RUN_NAME);
+    let present_fields = extract_metadata_fields(&present, &credentials, DEFAULT_RUN_NAME);
     assert_eq!(
         present_fields.dotted_order.as_deref(),
         Some("20240102T030405123456Zrun-1")
     );
     let absent = metadata("{}");
-    let absent_fields = extract_metadata_fields(Some(&absent), &credentials, DEFAULT_RUN_NAME);
+    let absent_fields = extract_metadata_fields(&absent, &credentials, DEFAULT_RUN_NAME);
     assert!(absent_fields.dotted_order.is_none());
 }
 
@@ -516,8 +517,11 @@ fn sampling_rate_dynamic() {
     let dynamic = json(r#"{"langsmith_sampling_rate": 0.25}"#);
     let rate = sampling_rate_for_request(1.0, Some(&dynamic)).expect("rate");
     assert_eq!(rate.to_bits(), 0.25_f64.to_bits());
-    let wrong_type = json(r#"{"langsmith_sampling_rate": "0.25"}"#);
-    let error = sampling_rate_for_request(1.0, Some(&wrong_type)).expect_err("a non-number rate");
+    let decimal_text = json(r#"{"langsmith_sampling_rate": "0.25"}"#);
+    let text_rate = sampling_rate_for_request(1.0, Some(&decimal_text)).expect("text rate");
+    assert_eq!(text_rate.to_bits(), 0.25_f64.to_bits());
+    let wrong_type = json(r#"{"langsmith_sampling_rate": "half"}"#);
+    let error = sampling_rate_for_request(1.0, Some(&wrong_type)).expect_err("a non-numeric rate");
     assert!(matches!(error, SamplingError::RateType));
 }
 
@@ -677,9 +681,10 @@ fn prepare_with_error_field() {
 #[test]
 fn prepare_missing_payload_raises() {
     let credentials = test_credentials(DEFAULT_PROJECT);
+    let metadata = IndexMap::new();
     let request = Prepare {
         standard_logging_object: None,
-        litellm_metadata: None,
+        litellm_metadata: &metadata,
         credentials: &credentials,
         default_run_name: DEFAULT_RUN_NAME,
         redact_user_api_key_info: false,
