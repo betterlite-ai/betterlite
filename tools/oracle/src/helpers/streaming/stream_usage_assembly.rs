@@ -6,7 +6,7 @@ use betterlite_streaming::stream_usage_assembly::details::{
     apply_grounding_request_counts, attach_cache_breakdown, capture_cache_breakdown,
 };
 use betterlite_streaming::stream_usage_assembly::wire::{
-    CacheCreationTokenDetails, Chunk, PromptTokensDetails, ReasoningChoice, Usage,
+    CacheCreationTokenDetails, Chunk, PromptTokensDetails, ReasoningChoice,
 };
 use betterlite_streaming::stream_usage_assembly::{
     UsageAssemblyError, UsageRequest, UsageTokenCounter, VerboseHook, calculate_usage,
@@ -68,20 +68,20 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum PromptCount {
+pub(crate) enum PromptCount {
     Value(i64),
     Failure(FailureMode),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum FailureMode {
+pub(crate) enum FailureMode {
     Raise,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct CounterFixture {
+pub(crate) struct CounterFixture {
     text: i64,
     messages: i64,
     fail_text: bool,
@@ -124,13 +124,6 @@ impl FixtureCounter {
         }
     }
 
-    fn counted(&self, failed: bool, count: i64) -> Result<i64, CountError> {
-        if failed {
-            return Err(CountError::MissingInput);
-        }
-        Ok(count)
-    }
-
     fn calls(&self) -> Value {
         let calls = self
             .calls
@@ -146,6 +139,13 @@ impl FixtureCounter {
     }
 }
 
+const fn counted(failed: bool, count: i64) -> Result<i64, CountError> {
+    if failed {
+        return Err(CountError::MissingInput);
+    }
+    Ok(count)
+}
+
 #[async_trait]
 impl UsageTokenCounter for FixtureCounter {
     async fn count_response_text(&self, model: &str, text: &str) -> Result<i64, CountError> {
@@ -154,7 +154,7 @@ impl UsageTokenCounter for FixtureCounter {
             count_response_tokens: true,
             model: Some(model.to_owned()),
         });
-        self.counted(self.fixture.fail_text, self.fixture.text)
+        counted(self.fixture.fail_text, self.fixture.text)
     }
 
     async fn count_text(&self, text: &str) -> Result<i64, CountError> {
@@ -163,7 +163,7 @@ impl UsageTokenCounter for FixtureCounter {
             count_response_tokens: true,
             model: None,
         });
-        self.counted(self.fixture.fail_text, self.fixture.text)
+        counted(self.fixture.fail_text, self.fixture.text)
     }
 
     async fn count_messages(
@@ -175,10 +175,10 @@ impl UsageTokenCounter for FixtureCounter {
             model: model.to_owned(),
             messages: self.raw_messages.clone(),
         });
-        if messages.is_none() || self.fixture.fail_messages {
+        if messages.is_none() {
             return Err(CountError::MissingInput);
         }
-        Ok(self.fixture.messages)
+        counted(self.fixture.fail_messages, self.fixture.messages)
     }
 }
 
@@ -230,81 +230,132 @@ impl crate::helpers::Helper for Op {
 
 fn run_input(runtime: &tokio::runtime::Runtime, input: &Input) -> crate::helpers::HelperResult {
     match input {
-        Input::Batch { cases } => {
-            let results = cases
-                .iter()
-                .map(|case| run_input(runtime, case))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::Array(results))
-        }
-        Input::CalculateUsage {
-            chunks,
-            model,
-            completion_output,
-            messages,
-            reasoning_tokens,
-            count_prompt_tokens,
-            counter,
-        } => {
-            let request = CalculateRequest {
-                chunks,
-                model,
-                completion_output,
-                messages: messages.as_deref(),
-                reasoning_tokens: *reasoning_tokens,
-                count_prompt_tokens: count_prompt_tokens.as_ref(),
-            };
-            calculate(runtime, &request, counter)
-        }
+        Input::Batch { cases } => run_batch(runtime, cases),
+        Input::CalculateUsage { .. } => calculate_input(runtime, input),
         Input::CountReasoningTokens { choices, counter } => {
-            let fixture = FixtureCounter::new(counter, None);
-            match runtime.block_on(count_reasoning_tokens(&fixture, choices)) {
-                Ok(counted) => Ok(json!({
-                    "ok": true,
-                    "reasoning_tokens": counted,
-                    "counter_calls": fixture.calls(),
-                })),
-                Err(error) => Ok(error_output(&error)),
-            }
+            Ok(reasoning(runtime, choices, counter))
         }
         Input::CaptureCacheCreation {
             prompt_tokens_details,
             current,
         } => {
             let captured = capture_cache_breakdown(prompt_tokens_details.as_ref(), current.clone());
-            Ok(json!({"ok": true, "details": details_value(captured.as_ref())?}))
+            let details = match captured.as_ref() {
+                None => Value::Null,
+                Some(breakdown) => rendered(breakdown)?,
+            };
+            Ok(json!({"ok": true, "details": details}))
         }
         Input::AttachCacheCreation {
             prompt_tokens_details,
             cache_creation_token_details,
-        } => {
-            let result = attach_cache_breakdown(
-                prompt_tokens_details.as_ref(),
-                cache_creation_token_details.as_ref(),
-            );
-            Ok(json!({
-                "ok": true,
-                "same_object": matches!(&result, None | Some(Cow::Borrowed(_))),
-                "details": details_value(result.as_deref())?,
-            }))
-        }
+        } => Ok(attach(
+            prompt_tokens_details.as_ref(),
+            cache_creation_token_details.as_ref(),
+        )?),
         Input::ApplyGrounding {
             prompt_tokens_details,
             web_search_requests,
             google_maps_grounding_requests,
-        } => {
-            let result = apply_grounding_request_counts(
-                prompt_tokens_details.as_ref(),
-                *web_search_requests,
-                *google_maps_grounding_requests,
-            );
-            Ok(json!({
-                "ok": true,
-                "same_object": matches!(&result, None | Some(Cow::Borrowed(_))),
-                "details": details_value(result.as_deref())?,
-            }))
-        }
+        } => Ok(grounding(
+            prompt_tokens_details.as_ref(),
+            *web_search_requests,
+            *google_maps_grounding_requests,
+        )?),
     }
+}
+
+fn calculate_input(
+    runtime: &tokio::runtime::Runtime,
+    input: &Input,
+) -> crate::helpers::HelperResult {
+    let Input::CalculateUsage {
+        chunks,
+        model,
+        completion_output,
+        messages,
+        reasoning_tokens,
+        count_prompt_tokens,
+        counter,
+    } = input
+    else {
+        return Err(failure(
+            "the input is not a calculate_usage call".to_owned(),
+        ));
+    };
+    calculate(
+        runtime,
+        &CalculateRequest {
+            chunks,
+            model,
+            completion_output,
+            messages: messages.as_deref(),
+            reasoning_tokens: *reasoning_tokens,
+            count_prompt_tokens: count_prompt_tokens.as_ref(),
+        },
+        counter,
+    )
+}
+
+fn run_batch(runtime: &tokio::runtime::Runtime, cases: &[Input]) -> crate::helpers::HelperResult {
+    let results = cases
+        .iter()
+        .map(|case| run_input(runtime, case))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::Array(results))
+}
+
+fn reasoning(
+    runtime: &tokio::runtime::Runtime,
+    choices: &[ReasoningChoice],
+    counter: &CounterFixture,
+) -> Value {
+    let fixture = FixtureCounter::new(counter, None);
+    match runtime.block_on(count_reasoning_tokens(&fixture, choices)) {
+        Ok(tokens) => json!({
+            "ok": true,
+            "reasoning_tokens": tokens,
+            "counter_calls": fixture.calls(),
+        }),
+        Err(error) => error_output(&error),
+    }
+}
+
+fn attach(
+    prompt_tokens_details: Option<&PromptTokensDetails>,
+    cache_creation_token_details: Option<&CacheCreationTokenDetails>,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let result = attach_cache_breakdown(prompt_tokens_details, cache_creation_token_details);
+    let details = match result.as_deref() {
+        None => Value::Null,
+        Some(details) => rendered(details)?,
+    };
+    Ok(json!({
+        "ok": true,
+        "same_object": matches!(&result, None | Some(Cow::Borrowed(_))),
+        "details": details,
+    }))
+}
+
+fn grounding(
+    prompt_tokens_details: Option<&PromptTokensDetails>,
+    web_search_requests: Option<i64>,
+    google_maps_grounding_requests: Option<i64>,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let result = apply_grounding_request_counts(
+        prompt_tokens_details,
+        web_search_requests,
+        google_maps_grounding_requests,
+    );
+    let details = match result.as_deref() {
+        None => Value::Null,
+        Some(details) => rendered(details)?,
+    };
+    Ok(json!({
+        "ok": true,
+        "same_object": matches!(&result, None | Some(Cow::Borrowed(_))),
+        "details": details,
+    }))
 }
 
 fn calculate(
@@ -312,8 +363,7 @@ fn calculate(
     request: &CalculateRequest<'_>,
     counter: &CounterFixture,
 ) -> crate::helpers::HelperResult {
-    let raw_messages = request.messages.map(<[Value]>::to_vec);
-    let fixture = FixtureCounter::new(counter, raw_messages);
+    let fixture = FixtureCounter::new(counter, request.messages.map(<[Value]>::to_vec));
     let verbose = RecordedVerbose::default();
     let typed_messages = decode_messages(request.messages)?;
     let callback = prompt_callback(request.count_prompt_tokens);
@@ -325,24 +375,16 @@ fn calculate(
         reasoning_tokens: request.reasoning_tokens,
         count_prompt_tokens: callback.as_deref(),
     };
-    let result = runtime.block_on(calculate_usage(&fixture, &verbose, &usage_request));
-    let usage = match result {
+    let usage = match runtime.block_on(calculate_usage(&fixture, &verbose, &usage_request)) {
         Ok(usage) => usage,
         Err(error) => return Ok(error_output(&error)),
     };
-    let rendered = rendered_usage(&usage)?;
     Ok(json!({
         "ok": true,
-        "usage": rendered,
+        "usage": rendered(&usage)?,
         "counter_calls": fixture.calls(),
         "verbose": verbose.messages(),
     }))
-}
-
-fn rendered_usage(usage: &Usage) -> Result<Value, Box<crate::helpers::HelperError>> {
-    serde_json::to_value(usage)
-        .map(prune)
-        .map_err(|error| failure(error.to_string()))
 }
 
 fn decode_messages(
@@ -378,15 +420,13 @@ fn error_output(error: &UsageAssemblyError) -> Value {
     json!({"ok": false, "error_type": kind})
 }
 
-fn details_value(
-    details: Option<&PromptTokensDetails>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    match details {
-        None => Ok(Value::Null),
-        Some(details) => serde_json::to_value(details)
-            .map(prune)
-            .map_err(|error| failure(error.to_string())),
-    }
+fn rendered<T>(value: &T) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    T: Serialize,
+{
+    serde_json::to_value(value)
+        .map(prune)
+        .map_err(|error| failure(error.to_string()))
 }
 
 fn prune(value: Value) -> Value {
@@ -399,7 +439,7 @@ fn prune(value: Value) -> Value {
                 .collect(),
         ),
         Value::Array(items) => Value::Array(items.into_iter().map(prune).collect()),
-        other => other,
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => other,
     }
 }
 
