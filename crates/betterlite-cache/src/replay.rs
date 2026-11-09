@@ -173,6 +173,7 @@ pub const fn stream_replay_requested(request: &ReplayRequest<'_>) -> bool {
     }
     request.converted_stream_requested && request.agentic_loop_depth == 0
 }
+
 #[must_use]
 pub const fn streams_asynchronously(call_type: CachingSupportedCallType) -> bool {
     // the Responses bridge hands aresponses to the completion converter, so it replays async
