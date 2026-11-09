@@ -19,5 +19,9 @@ call:
             tags:
               - a
               - b
+        - query: q
+          optional_params:
+            country: us
+            language: fr
 env: {}
 compare: {ignore: []}

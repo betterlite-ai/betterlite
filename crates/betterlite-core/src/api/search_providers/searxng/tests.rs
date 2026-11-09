@@ -89,6 +89,15 @@ fn searxng_search_settings_treat_an_empty_key_as_unset() {
 }
 
 #[test]
+fn searxng_search_settings_treat_an_empty_base_as_unset() {
+    let loaded = config(&[("SEARXNG_API_BASE", "")]);
+    assert!(matches!(
+        loaded.complete_url(None, &Object::new(), None),
+        Err(SearxngSearchError::MissingApiBase)
+    ));
+}
+
+#[test]
 fn searxng_search_settings_refuse_a_caller_base_with_a_server_key() {
     let lookup = environment(&[("SEARXNG_API_KEY", "sk-server")]);
     let error = SearxngSearchConfig::load(None, Some("https://searx.test"), &lookup).unwrap_err();
@@ -188,6 +197,25 @@ fn searxng_request_drops_and_passes_options() {
     assert_eq!(request.params.extra.len(), 2);
     assert_eq!(request.params.extra.get("categories"), Some(&text("news")));
     assert_eq!(request.params.extra.get("language"), Some(&text("fr")));
+}
+
+#[test]
+fn searxng_request_keeps_the_mapped_language_over_a_caller_language() {
+    let options = params(&[("country", text("us")), ("language", text("fr"))]);
+    let request = build_request(&SearchQuery::Single("q".to_owned()), &options).unwrap();
+    assert_eq!(request.params.language.as_deref(), Some("en"));
+    assert_eq!(request.params.extra.get("language"), None);
+    let url = search_url(Some("https://searx.test"), None, Some(&request)).unwrap();
+    let languages: Vec<&str> = url
+        .split_once('?')
+        .map(|(_, query)| {
+            query
+                .split('&')
+                .filter(|pair| pair.starts_with("language="))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(languages, ["language=en"]);
 }
 
 #[test]

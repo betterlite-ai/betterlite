@@ -202,6 +202,23 @@ fn linkup_request_maps_the_unified_options() {
 }
 
 #[test]
+fn linkup_request_keeps_a_mapped_value_over_a_same_named_option() {
+    let options = params(&[
+        ("max_results", JsonValue::from(3_i64)),
+        ("maxResults", JsonValue::from(9_i64)),
+        (
+            "search_domain_filter",
+            JsonValue::Array(vec![text("a.test")]),
+        ),
+        ("includeDomains", JsonValue::Array(vec![text("b.test")])),
+    ]);
+    let request = build_request(&SearchQuery::Single("q".to_owned()), &options).unwrap();
+    assert_eq!(request.max_results, Some(3));
+    assert_eq!(request.include_domains, Some(vec!["a.test".to_owned()]));
+    assert!(request.extra.is_empty());
+}
+
+#[test]
 fn linkup_request_passes_other_options_through() {
     let options = params(&[
         ("includeImages", JsonValue::Bool(true)),
