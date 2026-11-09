@@ -123,15 +123,27 @@ async fn a_reply_gives_content_finish_reason_created_and_model() {
 #[tokio::test]
 async fn integer_logprobs_sum_exactly_with_nulls_skipped() {
     let fixture = reply_fixture(
-        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[{"logprob":-3},{"logprob":null},{"logprob":5}]}}"#,
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[{"logprob":-3},{"logprob":null},{"logprob":6}]}}"#,
     );
     let response = transform_response(&fixture.input(), &Counting::working())
         .await
         .unwrap();
     assert_eq!(
         response.choices[0].private_logprob,
-        Some(Number::from(2_i64))
+        Some(Number::from(3_i64))
     );
+}
+
+#[tokio::test]
+async fn integer_logprobs_above_the_signed_range_keep_their_value() {
+    let fixture = reply_fixture(
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[{"logprob":18446744073709551615},{"logprob":1}]}}"#,
+    );
+    let response = transform_response(&fixture.input(), &Counting::working())
+        .await
+        .unwrap();
+    let expected = Number::from_i128(i128::from(u64::MAX) + 1).unwrap();
+    assert_eq!(response.choices[0].private_logprob, Some(expected));
 }
 
 #[tokio::test]
