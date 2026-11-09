@@ -39,10 +39,3 @@ where
     }
     chunks
 }
-
-pub fn decode_stream_line(line: &str) -> Result<StreamEvent, StreamError> {
-    match serde_json::from_str(line) {
-        Ok(event) => Ok(event),
-        Err(source) => Err(StreamError::Malformed { source }),
-    }
-}

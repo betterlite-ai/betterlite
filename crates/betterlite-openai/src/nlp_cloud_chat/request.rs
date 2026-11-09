@@ -1,20 +1,37 @@
+use secrecy::SecretString;
 use serde_json::Value;
 
 use crate::chat::{ChatMessage, MessageContent};
+use crate::nlp_cloud_chat::NlpCloudConfig;
 use crate::nlp_cloud_chat::error::NlpCloudError;
-use crate::openai_base_config::Object;
+use crate::nlp_cloud_chat::headers::validate_environment;
+use crate::openai_base_config::{Headers, Object};
 
-#[must_use]
-pub fn complete_url(api_base: &str, model: &str) -> String {
-    let capacity = api_base
-        .len()
-        .saturating_add(model.len())
-        .saturating_add("/generation".len());
-    let mut url = String::with_capacity(capacity);
-    url.push_str(api_base);
-    url.push_str(model);
-    url.push_str("/generation");
-    url
+pub struct CompletionInput<'request> {
+    pub model: &'request str,
+    pub messages: &'request [ChatMessage],
+    pub api_base: &'request str,
+    pub api_key: Option<&'request SecretString>,
+    pub caller_headers: &'request Headers,
+    pub optional_params: &'request Object,
+    pub config: &'request NlpCloudConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionRequest {
+    pub url: String,
+    pub headers: Headers,
+    pub body: Object,
+}
+
+pub fn completion_request(input: &CompletionInput<'_>) -> Result<CompletionRequest, NlpCloudError> {
+    let mut options = input.optional_params.clone();
+    input.config.merge_defaults(&mut options);
+    Ok(CompletionRequest {
+        url: format!("{}{}/generation", input.api_base, input.model),
+        headers: validate_environment(input.caller_headers, input.api_key),
+        body: transform_request(input.messages, &options)?,
+    })
 }
 
 pub fn transform_request(

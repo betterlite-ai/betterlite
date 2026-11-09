@@ -47,10 +47,10 @@ impl NlpCloudConfig {
         Ok(Self { defaults: kept })
     }
 
-    // LiteLLM fills only the keys the options leave absent; a null option counts as absent
+    // LiteLLM fills a default only when the option key is absent, whatever value the option holds
     pub fn merge_defaults(&self, options: &mut Object) {
         for (key, value) in &self.defaults {
-            if options.get(key).is_some_and(|existing| !existing.is_null()) {
+            if options.contains_key(key) {
                 continue;
             }
             options.insert(key.clone(), value.clone());

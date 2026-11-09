@@ -75,7 +75,7 @@ fn chat_response(input: ReplyInput<'_>, generated_text: &str, usage: ChatUsage) 
             index: 0,
             message: AssistantMessage {
                 role: "assistant".to_owned(),
-                content: Some(generated_text.to_owned()),
+                content: (!generated_text.is_empty()).then(|| generated_text.to_owned()),
                 tool_calls: None,
                 annotations: None,
                 audio: None,

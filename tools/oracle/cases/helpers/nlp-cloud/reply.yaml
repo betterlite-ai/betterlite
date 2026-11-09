@@ -10,6 +10,11 @@ call:
         body: '{"generated_text": "hello", "nb_input_tokens": 3, "nb_generated_tokens": 4}'
       - kind: reply
         status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"generated_text": "", "nb_input_tokens": 1, "nb_generated_tokens": 2}'
+      - kind: reply
+        status: 200
         model: "dolphin-2"
         created: 1700000001
         body: '{"generated_text": "hi", "nb_input_tokens": 1, "nb_generated_tokens": 2, "details": {"seed": 4}}'

@@ -9,12 +9,12 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use super::NlpCloudConfig;
-use super::error::{NlpCloudError, get_error_class};
+use super::error::NlpCloudError;
 use super::headers::validate_environment;
 use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::reply::{ReplyInput, decode_reply};
-use super::request::{complete_url, transform_request};
-use super::stream::{StreamError, clean_and_iterate_chunks, decode_stream_line};
+use super::request::{CompletionInput, CompletionRequest, completion_request, transform_request};
+use super::stream::{StreamError, StreamEvent, clean_and_iterate_chunks};
 use crate::chat::ChatMessage;
 use crate::chat::response::ChatResponse;
 use crate::openai_base_config::{Headers, Object};
@@ -35,6 +35,27 @@ fn reply(status_code: u16, body: &str) -> Result<ChatResponse, NlpCloudError> {
         created: 1_700_000_000,
         id: String::from("reply-id"),
     })
+}
+
+fn completion(
+    api_base: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    optional_params: &Object,
+    defaults: Object,
+) -> CompletionRequest {
+    let config = NlpCloudConfig::new(defaults).unwrap();
+    let caller_headers = Headers::new();
+    let input = CompletionInput {
+        model,
+        messages,
+        api_base,
+        api_key: None,
+        caller_headers: &caller_headers,
+        optional_params,
+        config: &config,
+    };
+    completion_request(&input).unwrap()
 }
 
 #[test]
@@ -161,7 +182,36 @@ fn url_appends_the_model_and_generation_without_adding_a_slash(
     #[case] model: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(complete_url(api_base, model), expected);
+    let request = completion(api_base, model, &[], &Object::new(), Object::new());
+    assert_eq!(request.url, expected);
+}
+
+#[test]
+fn completion_request_builds_the_headers_and_merges_the_defaults() {
+    let messages = messages(r#"[{"role": "user", "content": "hi"}]"#);
+    let optional_params = object(r#"{"max_length": null, "temperature": 0.2}"#);
+    let request = completion(
+        "https://host/",
+        "dolphin",
+        &messages,
+        &optional_params,
+        object(r#"{"max_length": 50, "top_k": 5}"#),
+    );
+    assert_eq!(request.url, "https://host/dolphin/generation");
+    assert_eq!(
+        request.headers,
+        Headers::from([
+            (String::from("accept"), String::from("application/json")),
+            (
+                String::from("content-type"),
+                String::from("application/json")
+            ),
+        ])
+    );
+    assert_eq!(
+        request.body,
+        object(r#"{"text": "hi", "max_length": null, "temperature": 0.2, "top_k": 5}"#)
+    );
 }
 
 #[test]
@@ -254,7 +304,7 @@ fn defaults_fill_only_the_absent_options() {
     config.merge_defaults(&mut options);
     assert_eq!(
         options,
-        object(r#"{"max_length": 20, "temperature": 0.2, "top_k": 5}"#)
+        object(r#"{"max_length": 20, "temperature": 0.2, "top_k": null}"#)
     );
 }
 
@@ -285,7 +335,11 @@ fn defaults_keep_explicit_false_and_empty_values() {
 #[test]
 fn error_class_carries_the_status_message_and_headers() {
     let headers = Headers::from([(String::from("retry-after"), String::from("2"))]);
-    let error = get_error_class("slow down", 429, Some(headers.clone()));
+    let error = NlpCloudError {
+        status_code: 429,
+        message: String::from("slow down"),
+        headers: Some(headers.clone()),
+    };
     assert_eq!(error.status_code, 429);
     assert_eq!(error.message, "slow down");
     assert_eq!(error.headers, Some(headers));
@@ -315,14 +369,14 @@ fn reply_maps_generated_text_usage_and_finish() {
 }
 
 #[test]
-fn reply_keeps_an_empty_generated_text_as_given() {
+fn reply_leaves_an_empty_generated_text_null() {
     let response = reply(
         200,
         r#"{"generated_text": "", "nb_input_tokens": 1, "nb_generated_tokens": 0}"#,
     )
     .unwrap();
     let choice = response.choices.first().unwrap();
-    assert_eq!(choice.message.content.as_deref(), Some(""));
+    assert_eq!(choice.message.content, None);
     assert_eq!(response.usage.total_tokens, 1);
 }
 
@@ -460,13 +514,18 @@ fn cleaner_does_not_trim_spaces() {
 
 #[test]
 fn stream_decoder_reads_the_generated_text() {
-    let event = decode_stream_line(r#"{"generated_text": "the whole delta"}"#).unwrap();
+    let event: StreamEvent = serde_json::from_str(r#"{"generated_text": "the whole delta"}"#)
+        .map_err(|source| StreamError::Malformed { source })
+        .unwrap();
     assert_eq!(event.generated_text, "the whole delta");
 }
 
 #[test]
 fn stream_decoder_ignores_extra_keys() {
-    let event = decode_stream_line(r#"{"generated_text": "hi", "details": {"x": 1}}"#).unwrap();
+    let event: StreamEvent =
+        serde_json::from_str(r#"{"generated_text": "hi", "details": {"x": 1}}"#)
+            .map_err(|source| StreamError::Malformed { source })
+            .unwrap();
     assert_eq!(event.generated_text, "hi");
 }
 
@@ -478,7 +537,9 @@ fn stream_decoder_ignores_extra_keys() {
 #[case::numeric_generated_text(r#"{"generated_text": 5}"#)]
 #[case::array("[]")]
 fn stream_decoder_rejects_a_line_without_generated_text(#[case] line: &str) {
-    let error = decode_stream_line(line).unwrap_err();
+    let error = serde_json::from_str::<StreamEvent>(line)
+        .map_err(|source| StreamError::Malformed { source })
+        .unwrap_err();
     assert!(matches!(error, StreamError::Malformed { .. }));
 }
 
@@ -505,6 +566,9 @@ fn replays_the_nlp_cloud_stream_lines_corpus(
     let cleaned = clean_and_iterate_chunks(text.split('\n'));
     let _decoded: Vec<_> = cleaned
         .iter()
-        .map(|line| decode_stream_line(line))
+        .map(|line| {
+            serde_json::from_str::<StreamEvent>(line)
+                .map_err(|source| StreamError::Malformed { source })
+        })
         .collect();
 }

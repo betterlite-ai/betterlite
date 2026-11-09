@@ -1,11 +1,11 @@
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::nlp_cloud_chat::NlpCloudConfig;
-use betterlite_openai::nlp_cloud_chat::error::{NlpCloudError, get_error_class};
+use betterlite_openai::nlp_cloud_chat::error::NlpCloudError;
 use betterlite_openai::nlp_cloud_chat::headers::validate_environment;
 use betterlite_openai::nlp_cloud_chat::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use betterlite_openai::nlp_cloud_chat::reply::{ReplyInput, decode_reply};
-use betterlite_openai::nlp_cloud_chat::request::{complete_url, transform_request};
+use betterlite_openai::nlp_cloud_chat::request::{CompletionInput, completion_request};
 use betterlite_openai::nlp_cloud_chat::stream::clean_and_iterate_chunks;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use secrecy::SecretString;
@@ -156,10 +156,17 @@ fn completion_value(step: &CompletionStep) -> HelperResult {
     let Ok(config) = NlpCloudConfig::new(step.defaults.clone()) else {
         return Ok(failure_value(FAILURE_STATUS));
     };
-    let mut options = step.optional_params.clone();
-    config.merge_defaults(&mut options);
-    let body = match transform_request(&step.messages, &options) {
-        Ok(body) => body,
+    let key = step.api_key.as_deref().map(SecretString::from);
+    let request = match completion_request(&CompletionInput {
+        model: &step.model,
+        messages: &step.messages,
+        api_base: &step.api_base,
+        api_key: key.as_ref(),
+        caller_headers: &step.headers,
+        optional_params: &step.optional_params,
+        config: &config,
+    }) {
+        Ok(request) => request,
         Err(error) => return Ok(failure_value(error.status_code)),
     };
     let reply = if step.chunks.is_some() {
@@ -170,16 +177,14 @@ fn completion_value(step: &CompletionStep) -> HelperResult {
             Err(error) => return Ok(failure_value(error.status_code)),
         }
     };
-    let key = step.api_key.as_deref().map(SecretString::from);
-    let headers = validate_environment(&step.headers, key.as_ref());
     let mut value = Object::new();
     value.insert(String::from("ok"), Value::Bool(true));
+    value.insert(String::from("url"), Value::String(request.url));
     value.insert(
-        String::from("url"),
-        Value::String(complete_url(&step.api_base, &step.model)),
+        String::from("headers"),
+        serde_json::to_value(&request.headers)?,
     );
-    value.insert(String::from("headers"), serde_json::to_value(&headers)?);
-    value.insert(String::from("body"), Value::Object(body));
+    value.insert(String::from("body"), Value::Object(request.body));
     value.insert(String::from("reply"), reply);
     value.insert(String::from("chunks"), chunk_value(step.chunks.as_deref())?);
     Ok(Value::Object(value))
@@ -259,7 +264,11 @@ fn execute(step: &Step) -> HelperResult {
             message,
             status,
             headers,
-        } => error_value(&get_error_class(message, *status, headers.clone())),
+        } => error_value(&NlpCloudError {
+            status_code: *status,
+            message: message.clone(),
+            headers: headers.clone(),
+        }),
         Step::Defaults { defaults } => Ok(defaults_value(defaults)),
         Step::Completion(found) => completion_value(found),
         Step::Reply {

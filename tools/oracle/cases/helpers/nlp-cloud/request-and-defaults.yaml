@@ -51,5 +51,13 @@ call:
         reply:
           status: 200
           body: '{"generated_text": "custom answer", "nb_input_tokens": 7, "nb_generated_tokens": 9, "details": {}}'
+      - kind: completion
+        model: "dolphin"
+        api_base: "https://host/"
+        messages:
+          - {role: user, content: "null option"}
+        optional_params: {max_length: null}
+        defaults: {max_length: 50, top_k: 5}
+        created: 1700000004
 env: {}
 compare: {ignore: []}

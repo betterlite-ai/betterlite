@@ -2,7 +2,9 @@
 
 use std::str;
 
-use betterlite_openai::nlp_cloud_chat::stream::{clean_and_iterate_chunks, decode_stream_line};
+use betterlite_openai::nlp_cloud_chat::stream::{
+    StreamError, StreamEvent, clean_and_iterate_chunks,
+};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
@@ -12,6 +14,9 @@ fuzz_target!(|bytes: &[u8]| {
     let cleaned = clean_and_iterate_chunks(text.split('\n'));
     let _decoded: Vec<_> = cleaned
         .iter()
-        .map(|line| decode_stream_line(line))
+        .map(|line| {
+            serde_json::from_str::<StreamEvent>(line)
+                .map_err(|source| StreamError::Malformed { source })
+        })
         .collect();
 });
