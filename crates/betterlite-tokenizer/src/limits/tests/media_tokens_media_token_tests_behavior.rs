@@ -48,6 +48,7 @@ fn buffer(buffer_perc: f64, buffer_num: f64) -> Settings {
 #[case::shared_context_buffer_at_the_limit((SHARED_CONTEXT, SHARED_CONTEXT), Some(100), 8191, buffer(0.0, 0.0), resolved(0))]
 #[case::separate_output_limit_clamps((GPT35, GPT35), Some(5000), 0, Settings::default(), resolved(4096))]
 #[case::separate_output_limit_at_the_limit((GPT35, GPT35), Some(4096), 0, Settings::default(), resolved(4096))]
+#[case::separate_output_limit_with_large_input((GPT35, GPT35), Some(5000), 5000, Settings::default(), resolved(4096))]
 #[case::separate_output_limit_keeps_a_fitting_limit((GPT4O, GPT4O), Some(1000), 0, Settings::default(), resolved(1000))]
 #[case::default_percentage_boundary((SHARED_CONTEXT, SHARED_CONTEXT), Some(8100), 100, buffer(0.29, 10.0), resolved(8063))]
 #[case::buffer_number_dominates((SHARED_CONTEXT, SHARED_CONTEXT), Some(8000), 1000, buffer(0.001, 50.0), resolved(7141))]

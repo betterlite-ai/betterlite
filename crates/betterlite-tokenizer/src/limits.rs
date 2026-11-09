@@ -115,23 +115,15 @@ fn adjusted(user: i64, input: i128, buffer: i128, limits: &ModelLimits) -> Modif
         // LiteLLM lets the call fail normally rather than set a negative max_tokens
         return resolved(user);
     }
-    let over = if shared {
-        user_wide.saturating_add(buffered) > limit
-    } else {
-        user_wide > limit
-    };
-    if !over {
-        return resolved(user);
-    }
-    let value = if shared {
-        let Some(value) = limit.checked_sub(buffered) else {
+    let room = if shared {
+        let Some(room) = limit.checked_sub(buffered) else {
             return fallback(user, Warning::Overflow);
         };
-        value
+        room
     } else {
         limit
     };
-    let Some(max_tokens) = i64::try_from(value).ok() else {
+    let Some(max_tokens) = i64::try_from(user_wide.min(room)).ok() else {
         return fallback(user, Warning::Overflow);
     };
     resolved(max_tokens)
@@ -140,11 +132,11 @@ fn adjusted(user: i64, input: i128, buffer: i128, limits: &ModelLimits) -> Modif
 fn token_buffer(input_tokens: usize, settings: &Settings) -> Option<i128> {
     let tokens = input_tokens.to_f64()?;
     let product = tokens.mul_add(settings.buffer_perc, 0.0_f64);
-    // Python's max returns the first argument whenever the second does not compare greater, NaN included
-    let buffer = if settings.buffer_num > product {
-        settings.buffer_num
-    } else {
+    // Rust's f64::max ignores a NaN operand, so a NaN product stays NaN as Python's max keeps the first
+    let buffer = if product.is_nan() {
         product
+    } else {
+        product.max(settings.buffer_num)
     };
     if !buffer.is_finite() {
         return None;
