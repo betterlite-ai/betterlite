@@ -100,10 +100,16 @@ fn datadog_standard_logging_truncates_long_fields(#[case] selected: LongField) {
     assert_eq!(source, Some(MAX_LOGGED_TEXT_CHARS + 1));
 }
 
-#[test]
-fn datadog_standard_logging_keeps_request_tags_as_standard_json() {
-    let mut payload = tagged_payload();
-    payload.request_tags = vec![json(r#"{"team": "A B"}"#)];
+#[rstest]
+#[case::text(r#""Prod A""#, "request_tag:prod_a")]
+#[case::number("7", "request_tag:7")]
+#[case::null("null", "request_tag:none")]
+#[case::boolean("true", "request_tag:true")]
+#[case::object(r#"{"team": "A B"}"#, "request_tag:team_:_a_b")]
+#[case::list("[1, 2]", "request_tag:1_2")]
+fn datadog_standard_logging_maps_request_tag_values(#[case] tag: &str, #[case] expected: &str) {
+    let mut payload = standard_payload();
+    payload.request_tags = vec![json(tag)];
     let built = standard_logging_to_datadog(
         &payload,
         DataDogStatus::Info,
@@ -111,5 +117,5 @@ fn datadog_standard_logging_keeps_request_tags_as_standard_json() {
         &NullTracer,
     )
     .unwrap();
-    assert!(built.ddtags.contains("request_tag:team_:_a_b"));
+    assert!(built.ddtags.contains(expected));
 }

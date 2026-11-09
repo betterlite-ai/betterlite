@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use rstest::rstest;
 
 use crate::datadog::apm::NullTracer;
@@ -92,6 +93,17 @@ fn datadog_legacy_v1_logging_defaults() {
     }"#,
     );
     assert_eq!(legacy_message(&kwargs, &response), expected);
+}
+
+#[test]
+fn datadog_legacy_v1_logging_writes_a_null_response_time_that_overflows() {
+    let kwargs = LegacyLoggingKwargs::default();
+    let response = json(r#"{"usage": {}}"#);
+    let mut event = legacy_event(&kwargs, &response);
+    event.start_time = DateTime::<Utc>::MIN_UTC.fixed_offset();
+    event.end_time = DateTime::<Utc>::MAX_UTC.fixed_offset();
+    let built = legacy_v1_logging_to_datadog(&event, &default_environment(), &NullTracer).unwrap();
+    assert_eq!(field(&message(&built), "response_time"), &Json::Null);
 }
 
 #[test]
