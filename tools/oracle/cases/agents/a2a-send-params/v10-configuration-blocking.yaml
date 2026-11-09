@@ -1,0 +1,19 @@
+kind: helper
+name: a2a-send-params-v10-configuration-blocking
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - text: hi
+      configuration:
+        accepted_output_modes: []
+        history_length: 0
+        task_push_notification_config:
+          url: "https://p"
+          id: p1
+          token: ""
+        return_immediately: true
+env: {}
+compare: {ignore: []}

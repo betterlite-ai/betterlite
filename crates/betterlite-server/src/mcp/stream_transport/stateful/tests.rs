@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,10 +13,10 @@ use rmcp::ErrorData;
 use rmcp::RoleServer;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, RequestId, ServerConfig,
-    ServerRequest,
+    InitializeRequestParams, InitializeResult, ListToolsResult, PaginatedRequestParams,
+    ProgressNotificationParam, RequestId, ServerConfig, ServerRequest,
 };
-use rmcp::service::{PeerRequestOptions, RequestContext};
+use rmcp::service::{MaybeSendFuture, PeerRequestOptions, RequestContext};
 use tokio::time::{sleep, timeout};
 use tower::ServiceExt as _;
 
@@ -24,6 +25,11 @@ use crate::mcp::stream_transport::StreamTransport;
 const INITIALIZE: &str = concat!(
     r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","#,
     r#""capabilities":{},"clientInfo":{"name":"test-client","version":"1.0"}}}"#
+);
+const REJECTED_CLIENT: &str = "rejected-client";
+const REJECTED_INITIALIZE: &str = concat!(
+    r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","#,
+    r#""capabilities":{},"clientInfo":{"name":"rejected-client","version":"1.0"}}}"#
 );
 const TOOLS_LIST: &str = concat!(
     r#"{"jsonrpc":"2.0","id":7,"method":"tools/list","#,
@@ -40,6 +46,20 @@ struct FakeHandler;
 impl ServerHandler for FakeHandler {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::default()
+    }
+
+    fn initialize(
+        &self,
+        request: InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<InitializeResult, ErrorData>> + MaybeSendFuture + '_ {
+        let outcome = if request.client_info.name == REJECTED_CLIENT {
+            Err(ErrorData::invalid_params("client rejected", None))
+        } else {
+            context.peer.set_peer_info(request.clone());
+            self.negotiate_initialize(&request)
+        };
+        ready(outcome)
     }
 
     async fn list_tools(
@@ -419,6 +439,17 @@ async fn ends_a_cancelled_requests_stream_with_the_sdk_error() {
 #[tokio::test]
 async fn discards_a_session_whose_initialize_fails() {
     let (transport, router) = app();
+    let response = send(&router, post(REJECTED_INITIALIZE, None)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let id = session_id(&response);
+    let _body = body_text(response).await;
+    wait_for_no_session(&transport, &id).await;
+    assert!(transport.live_session_ids().is_empty());
+}
+
+#[tokio::test]
+async fn keeps_a_session_after_an_undecodable_initialize() {
+    let (transport, router) = app();
     let response = send(
         &router,
         post(
@@ -429,9 +460,9 @@ async fn discards_a_session_whose_initialize_fails() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let id = session_id(&response);
-    let _body = body_text(response).await;
-    wait_for_no_session(&transport, &id).await;
-    assert!(transport.live_session_ids().is_empty());
+    let body = body_text(response).await;
+    assert!(body.contains(r#""error""#), "{body}");
+    assert!(transport.has_session(&id));
 }
 
 async fn wait_for_no_session(transport: &StreamTransport, id: &str) {

@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-config-selection-seed-native
+call:
+  bedrock_config_selection:
+    function: native_messages_route
+    models: [claude_platform/x, converse/claude, CLAUDE-3]
+env: {}
+compare: {ignore: []}
