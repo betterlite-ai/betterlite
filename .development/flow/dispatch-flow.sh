@@ -75,25 +75,25 @@ if [ "$code" -ne 0 ]; then
   rm -rf "$main/.git/betterlite/$id"/mutants-work*
   if [ -z "$RETRIED" ] && grep -q -E 'does not match its format|merge conflict|behind main' "$log"; then
     bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { park "main does not merge cleanly"; exit 3; }
-    RETRIED=1 exec bash "$0" "$id" "${run}b" "main is merged into your branch now; continue where the last run stopped."
+    RETRIED=1 exec bash "$P/dispatch-flow.sh" "$id" "${run}b" "main is merged into your branch now; continue where the last run stopped."
   fi
   if grep -q -E 'at its usage limit|ladder is unavailable|every worker vendor is unavailable' "$log"; then
     why=$(grep -o -E "[a-z]+ (can't reach its API|is logged out|is at its usage limit)" "$log" | sort -u | paste -sd, -)
     say "paused: ${why:-vendor unavailable}; waiting for its reset or recovery before preparing another checkout"
     sleep 60
     maintenance
-    LIMITS=$(( ${LIMITS:-0} + 1 )) BASE=${BASE:-$run} exec bash "$0" "$id" "${BASE:-$run}l$(( ${LIMITS:-0} + 1 ))" "$note"
+    LIMITS=$(( ${LIMITS:-0} + 1 )) BASE=${BASE:-$run} exec bash "$P/dispatch-flow.sh" "$id" "${BASE:-$run}l$(( ${LIMITS:-0} + 1 ))" "$note"
   fi
   if grep -q -E 'ended without an answer|ended without a final answer' "$log" && ! grep -q "ladder ran out of attempts" "$log" && [ "${PAUSES:-0}" -lt 4 ]; then
     say "paused: an agent ended without an answer, retrying after a short recovery pause"
     sleep 60
     maintenance
-    PAUSES=$(( ${PAUSES:-0} + 1 )) exec bash "$0" "$id" "${run}p" "$note"
+    PAUSES=$(( ${PAUSES:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}p" "$note"
   fi
   reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "$log")
   if [ -n "$reason" ] && [ -d "$worktree" ] && unblock_note=$(bash "$P/unblock.sh" "$id" "$worktree" "$reason"); then
     say "unblocked by a rule: $unblock_note"
-    GRANT=1 exec bash "$0" "$id" "${run}u" "$unblock_note"
+    GRANT=1 exec bash "$P/dispatch-flow.sh" "$id" "${run}u" "$unblock_note"
   fi
   park "${reason:0:300}"
   # Preserve the build target and task temp files for a later explicit resume.
@@ -182,7 +182,7 @@ case "$result" in
     missed=$(find "$logs" -path '*/mutants.out/missed.txt' -exec cat {} + 2>/dev/null | sort -u | head -n 40)
     timed_out=$(find "$logs" -path '*/mutants.out/timeout.txt' -exec cat {} + 2>/dev/null | sort -u | head -n 20)
     say "CI failed on PR #$pr (run $run_id); fix round $(( ${CI_ROUNDS:-0} + 1 ))"
-    LAND_ONLY= CI_ROUNDS=$(( ${CI_ROUNDS:-0} + 1 )) exec bash "$0" "$id" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/$run_id failed on PR #$pr.
+    LAND_ONLY= CI_ROUNDS=$(( ${CI_ROUNDS:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/$run_id failed on PR #$pr.
 $lines${missed:+
 Mutants CI missed:
 $missed}${timed_out:+
@@ -193,6 +193,6 @@ The gate logs of that run are in target/ci-logs/$run_id/ in your worktree. Fix t
   *" conflicts with main"*)
     [ "${CONFLICTS:-0}" -lt 3 ] || { park "PR #$pr conflicts with main after 3 merges of main"; exit 5; }
     say "PR #$pr conflicts with main; merging main and landing again"
-    LAND_ONLY=1 CONFLICTS=$(( ${CONFLICTS:-0} + 1 )) exec bash "$0" "$id" "${run}m" "" ;;
+    LAND_ONLY=1 CONFLICTS=$(( ${CONFLICTS:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}m" "" ;;
   *) exit 5 ;;
 esac
