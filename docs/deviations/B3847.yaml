@@ -1,0 +1,65 @@
+task: B3847
+deviations:
+  - what: >-
+      The span attribute budget is computed from the SpanEmitter's attribute_limit (128 by default, the
+      SDK default) rather than from the span's own SdkSpan, and the engine counts only the attributes it
+      wrote. Mapped attributes are still fitted with fit_indexed_messages, which sheds whole indexed
+      message groups so the mapped and stamped error attributes fit, as LiteLLM does.
+    why: >-
+      The OpenTelemetry Rust SDK exposes no public accessor for a span's attributes or its SpanLimits,
+      where LiteLLM reads ReadableSpan.attributes and SdkSpan._limits. A span the engine opens starts
+      empty and takes every attribute at finish_span, so the count the engine adds is exact; the limit is
+      the one the provider was built with, which the caller passes in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L85-L108
+  - what: >-
+      MCP message span links are always W3C trace context only; remote Baggage is never inherited from
+      params._meta.
+    why: >-
+      Caller-controlled params could spoof identity baggage (team.id, metadata.*) if the remote carrier
+      were honored as ambient context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L309-L315
+  - what: >-
+      The request root span, the MCP message carrier, the MCP transport span and the request's OTLP
+      destinations live in an explicit RequestTraceContext the request task owns and hands on, instead of
+      in ContextVars.
+    why: >-
+      betterlite forbids module-level state, and a Rust async task has no contextvar that its children
+      inherit. The semantics stay LiteLLM's: the root anchor is captured once and never reset, an MCP
+      message re-anchors it only while its transport is still recording, and the carrier, transport and
+      destinations are restored when the message ends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L48-L155
+  - what: >-
+      The parent span that kwargs metadata names is a W3C carrier, a traceparent string or an object with
+      traceparent and tracestate fields, instead of a live Span object.
+    why: >-
+      litellm_parent_otel_span holds a Python Span instance that only exists in-process. A carrier keeps
+      the same parentage, the trace id and the span id, across the typed wire without Python object
+      identity; a value of any other shape is not a parent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L429-L450
+  - what: >-
+      Trace flags other than the W3C sampled bit are zeroed when betterlite extracts or injects
+      traceparent, because the standard OpenTelemetry Rust propagator masks them; LiteLLM's Python
+      propagator echoes every flag bit it received.
+    why: >-
+      The task pins the standard library propagator for extraction and injection. Unknown flag bits carry
+      no meaning a working setup can rely on, and the W3C trace-context specification requires unknown
+      flags to be ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L30-L31
+  - what: >-
+      A span name is built from the payload's own variant, not from a role-to-builder table: a service
+      and a DB call payload both name themselves "{service} {call_type}", and an LLM call payload names
+      itself "{operation} {model}".
+    why: >-
+      The payload enum already says which builder applies, so a mismatched role cannot silently select
+      another vocabulary's name. Every name the role table would produce for a matching payload is
+      unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L42-L54
+  - what: >-
+      mcp_message_transport_span reports a published transport span's context for as long as the message
+      keeps it; LiteLLM re-reads the span's is_recording() on every call and answers None once it has
+      finished.
+    why: >-
+      A Rust span is owned by the task that started it, so the context slot can only record the state the
+      publisher observed. The message handler restores the slot when the message ends, which is the same
+      boundary LiteLLM's recording check protects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L158-L172
