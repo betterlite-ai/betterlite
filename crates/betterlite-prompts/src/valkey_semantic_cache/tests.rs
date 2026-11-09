@@ -2,6 +2,7 @@
 
 mod fixtures;
 
+use std::error::Error as _;
 use std::sync::Arc;
 
 use betterlite_rag::valkey_vector_store::pack_vector;
@@ -179,7 +180,7 @@ fn options_a_non_numeric_port_fails_naming_the_field() {
         error.to_string(),
         "the valkey port 'not-a-port' is not a number between 0 and 65535"
     );
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[rstest]
@@ -913,7 +914,7 @@ fn lookup_a_non_numeric_distance_keeps_its_parse_source() {
         panic!("a non-numeric distance must fail");
     };
     assert!(matches!(&error, ValkeySemanticError::MalformedDistance(_)));
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[tokio::test]

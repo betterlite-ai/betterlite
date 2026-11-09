@@ -1,12 +1,13 @@
 use std::ops::Sub as _;
 
+use betterlite_rag::valkey_vector_store::pack_vector;
 use serde_json::Number;
 
 use super::ValkeySemanticCache;
 use super::error::ValkeySemanticError;
 use super::index;
 use super::ports::Hit;
-use super::schema::{knn_query, pack_vector};
+use super::schema::knn_query;
 use crate::arguments::json::{Json, Object};
 use crate::redis_semantic_cache::{SIMILARITY_FIELD, SemanticCacheKwargs};
 use crate::semantic_cache_records::{decode_cached_response, extract_semantic_prompt};

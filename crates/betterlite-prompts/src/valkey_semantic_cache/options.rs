@@ -47,40 +47,35 @@ pub(crate) fn resolve_url(
     if let Some(url) = &settings.redis_url {
         return Ok(url.clone());
     }
-    let resolved_host = first_set(
+    let Some(host) = first_set(
         settings.host.as_deref(),
         valkey_host.as_deref(),
         redis_host.as_deref(),
-    );
-    let resolved_port = first_set(
+    ) else {
+        return Err(ValkeySemanticError::MissingConfiguration);
+    };
+    let Some(port) = first_set(
         settings.port.as_deref(),
         valkey_port.as_deref(),
         redis_port.as_deref(),
-    );
-    let (Some(host), Some(port)) = (resolved_host, resolved_port) else {
+    ) else {
         return Err(ValkeySemanticError::MissingConfiguration);
     };
-    let port_number = port
-        .parse::<u16>()
+    let port_number = parse_port(port)?;
+    let password = first_secret(
+        settings.password.as_ref(),
+        valkey_password.as_ref(),
+        redis_password.as_ref(),
+    );
+    Ok(build_valkey_url(host, port_number, password, settings.ssl))
+}
+
+fn parse_port(port: &str) -> Result<u16, ValkeySemanticError> {
+    port.parse::<u16>()
         .map_err(|source| ValkeySemanticError::InvalidPort {
             port: port.to_owned(),
             source,
-        })?;
-    let password = settings
-        .password
-        .as_ref()
-        .filter(|secret| !secret.expose_secret().is_empty())
-        .or_else(|| {
-            valkey_password
-                .as_ref()
-                .filter(|secret| !secret.expose_secret().is_empty())
         })
-        .or_else(|| {
-            redis_password
-                .as_ref()
-                .filter(|secret| !secret.expose_secret().is_empty())
-        });
-    Ok(build_valkey_url(host, port_number, password, settings.ssl))
 }
 
 fn first_set<'value>(
@@ -92,4 +87,15 @@ fn first_set<'value>(
         .filter(|value| !value.is_empty())
         .or_else(|| valkey.filter(|value| !value.is_empty()))
         .or_else(|| redis.filter(|value| !value.is_empty()))
+}
+
+fn first_secret<'secret>(
+    explicit: Option<&'secret SecretString>,
+    valkey: Option<&'secret SecretString>,
+    redis: Option<&'secret SecretString>,
+) -> Option<&'secret SecretString> {
+    explicit
+        .filter(|secret| !secret.expose_secret().is_empty())
+        .or_else(|| valkey.filter(|secret| !secret.expose_secret().is_empty()))
+        .or_else(|| redis.filter(|secret| !secret.expose_secret().is_empty()))
 }
