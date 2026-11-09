@@ -2,6 +2,7 @@ import os
 from typing import TypeAlias
 
 import fastapi.applications
+from fastapi.responses import RedirectResponse
 from litellm.proxy import utils as proxy_utils
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -69,11 +70,18 @@ def apply_environment(values: dict[str, Json]) -> None:
 
 def resolution(scenario: dict[str, Json]) -> Json:
     apply_environment(scenario)
+    root_redirect_url = os.getenv("ROOT_REDIRECT_URL")
+    location = (
+        RedirectResponse(url=root_redirect_url).headers["location"]
+        if root_redirect_url is not None
+        else None
+    )
     return {
         "docs_url": proxy_utils._get_docs_url(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         "redoc_url": proxy_utils._get_redoc_url(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         "openapi_url": proxy_utils._get_openapi_url(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        "root_redirect_url": os.getenv("ROOT_REDIRECT_URL"),
+        "root_redirect_url": root_redirect_url,
+        "root_redirect_location": location,
     }
 
 

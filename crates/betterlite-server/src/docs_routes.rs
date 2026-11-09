@@ -1,16 +1,18 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::mem::take;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{OriginalUri, Path, State};
+use axum::extract::rejection::PathRejection;
+use axum::extract::{OriginalUri, Path};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse as _, Redirect, Response};
-use axum::routing::{MethodRouter, any, get};
+use axum::routing::{MethodFilter, MethodRouter, any, get, on};
 use betterlite_openapi::docs_pages::{
     SwaggerPageInputs, oauth2_redirect_page, redoc_page, swagger_asset, swagger_ui_page,
 };
 use betterlite_openapi::docs_settings::DocsUrls;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 mod tests;
 
@@ -26,52 +28,45 @@ pub enum DocsPage {
     Redoc,
 }
 
-type ConfigState = Arc<DocsRouteConfig>;
-type PageRoute = (String, MethodRouter<ConfigState>);
+// Starlette's RedirectResponse quote() safe set, plus the unreserved characters quote always keeps
+const REDIRECT_SAFE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~')
+    .remove(b':')
+    .remove(b'/')
+    .remove(b'%')
+    .remove(b'#')
+    .remove(b'?')
+    .remove(b'=')
+    .remove(b'@')
+    .remove(b'[')
+    .remove(b']')
+    .remove(b'!')
+    .remove(b'$')
+    .remove(b'&')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')')
+    .remove(b'*')
+    .remove(b'+')
+    .remove(b',')
+    .remove(b';');
 
 pub fn docs_router(config: DocsRouteConfig) -> Router {
     // the caller registers the OpenAPI route, and FastAPI adds it before these pages
-    let mut paths: BTreeSet<String> = config.urls.openapi_url.iter().cloned().collect();
-    // Starlette reads a colon or asterisk at the start of a segment as a literal character
-    let mut router = Router::<ConfigState>::new().without_v07_checks();
-    for (path, route) in page_routes(&config) {
-        if paths.insert(path.clone()) {
-            router = router.route(&path, route);
-        }
-    }
-    if paths.insert("/swagger".to_owned()) {
-        router = router.route("/swagger", any(swagger_slash_redirect));
-    }
-    if paths.insert("/swagger/".to_owned()) {
-        router = router.route(
-            "/swagger/",
-            get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
-                .fallback(method_not_allowed),
-        );
-    }
-    if paths.insert("/swagger/{*path}".to_owned()) {
-        router = router.route(
-            "/swagger/{*path}",
-            get(swagger_file).fallback(method_not_allowed),
-        );
-    }
-    if config.urls.docs_url.as_deref() != Some("/")
-        && config.urls.root_redirect_url.is_some()
-        && paths.insert("/".to_owned())
-    {
-        router = router.route(
-            "/",
-            get(root_redirect_response).fallback(method_not_allowed),
-        );
-    }
-    router.with_state(Arc::new(config))
+    let mut builder = RouteBuilder::new(config);
+    add_page_routes(&mut builder);
+    add_mount_routes(&mut builder);
+    add_root_redirect(&mut builder);
+    builder.finish()
 }
 
 #[must_use]
-pub fn page_body(config: &DocsRouteConfig, page: DocsPage) -> Option<String> {
-    let openapi_url = config.urls.openapi_url.as_deref()?;
+pub fn page_body(config: &DocsRouteConfig, openapi_url: &str, page: DocsPage) -> String {
     let prefix = config.server_root_path.trim_end_matches('/');
-    let body = match page {
+    match page {
         DocsPage::Swagger => swagger_ui_page(&SwaggerPageInputs {
             title: format!("{} - Swagger UI", config.title),
             openapi_url: format!("{prefix}{openapi_url}"),
@@ -82,40 +77,154 @@ pub fn page_body(config: &DocsRouteConfig, page: DocsPage) -> Option<String> {
             &format!("{} - ReDoc", config.title),
             &format!("{prefix}{openapi_url}"),
         ),
+    }
+}
+
+// Starlette quotes redirect urls with quote(url, safe=":/%#?=@[]!$&'()*+,;") and percent-encodes the rest
+#[must_use]
+pub fn redirect_location(host: Option<&str>, target: &str) -> String {
+    let location = host.map_or_else(
+        || target.to_owned(),
+        |origin| format!("http://{origin}{target}"),
+    );
+    utf8_percent_encode(&location, REDIRECT_SAFE).to_string()
+}
+
+struct RouteBuilder {
+    config: DocsRouteConfig,
+    router: Router,
+    paths: BTreeSet<String>,
+    exact: Vec<String>,
+}
+
+impl RouteBuilder {
+    fn new(config: DocsRouteConfig) -> Self {
+        let paths = config.urls.openapi_url.iter().cloned().collect();
+        Self {
+            config,
+            // Starlette reads a colon or asterisk at the start of a segment as a literal character
+            router: Router::new().without_v07_checks(),
+            paths,
+            exact: Vec::new(),
+        }
+    }
+
+    fn add(&mut self, path: &str, route: MethodRouter) {
+        if self.paths.insert(path.to_owned()) {
+            self.exact.push(path.to_owned());
+            let router = take(&mut self.router);
+            self.router = router.route(path, route);
+        }
+    }
+
+    // FastAPI's redirect_slashes answers a route's other slash form with a 307 once nothing matched
+    fn finish(mut self) -> Router {
+        let exact = take(&mut self.exact);
+        for path in exact {
+            let toggled = match path.strip_suffix('/') {
+                Some(stripped) => stripped.to_owned(),
+                None if path.contains("{*") => continue,
+                None => format!("{path}/"),
+            };
+            // Starlette skips the redirect for "/" and an empty path would not be a valid route
+            if !toggled.starts_with('/') || toggled == "/" {
+                continue;
+            }
+            if self.paths.insert(toggled.clone()) {
+                let router = take(&mut self.router);
+                self.router = router.route(&toggled, any(slash_redirect));
+            }
+        }
+        self.router
+    }
+}
+
+fn add_page_routes(builder: &mut RouteBuilder) {
+    let Some(openapi_url) = builder.config.urls.openapi_url.clone() else {
+        return;
     };
-    Some(body)
+    if let Some(docs_url) = builder.config.urls.docs_url.clone() {
+        for path in route_variants(&builder.config.server_root_path, &docs_url) {
+            let route = page_router(&builder.config, &openapi_url, DocsPage::Swagger);
+            builder.add(&path, route);
+        }
+        for path in route_variants(&builder.config.server_root_path, "/docs/oauth2-redirect") {
+            builder.add(
+                &path,
+                get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
+            );
+        }
+    }
+    if let Some(redoc_url) = builder.config.urls.redoc_url.clone() {
+        for path in route_variants(&builder.config.server_root_path, &redoc_url) {
+            let route = page_router(&builder.config, &openapi_url, DocsPage::Redoc);
+            builder.add(&path, route);
+        }
+    }
 }
 
-fn page_routes(config: &DocsRouteConfig) -> Vec<PageRoute> {
-    let mut routes = Vec::new();
-    if config.urls.openapi_url.is_none() {
-        return routes;
+fn add_mount_routes(builder: &mut RouteBuilder) {
+    for path in route_variants(&builder.config.server_root_path, "/swagger/") {
+        builder.add(
+            &path,
+            get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
+                .fallback(method_not_allowed),
+        );
     }
-    if let Some(docs_url) = config.urls.docs_url.as_deref() {
-        routes.push((docs_url.to_owned(), page_router(config, DocsPage::Swagger)));
-        routes.push((
-            "/docs/oauth2-redirect".to_owned(),
-            get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
-        ));
+    for path in route_variants(&builder.config.server_root_path, "/swagger/{*path}") {
+        builder.add(&path, get(swagger_file).fallback(method_not_allowed));
     }
-    if let Some(url) = config.urls.redoc_url.as_deref() {
-        routes.push((url.to_owned(), page_router(config, DocsPage::Redoc)));
-    }
-    routes
 }
 
-fn page_router(config: &DocsRouteConfig, kind: DocsPage) -> MethodRouter<ConfigState> {
-    let body = page_body(config, kind);
+fn add_root_redirect(builder: &mut RouteBuilder) {
+    if builder.config.urls.docs_url.as_deref() == Some("/") {
+        return;
+    }
+    let Some(url) = builder.config.urls.root_redirect_url.clone() else {
+        return;
+    };
+    let location = redirect_location(None, &url);
+    for path in route_variants(&builder.config.server_root_path, "/") {
+        let route = redirect_router(location.clone());
+        builder.add(&path, route);
+    }
+}
+
+fn redirect_router(location: String) -> MethodRouter {
+    on(MethodFilter::GET, move || {
+        let target = location.clone();
+        async move { Redirect::temporary(&target).into_response() }
+    })
+    // axum routes HEAD to a GET handler, so the HEAD endpoint must reject it explicitly
+    .on(MethodFilter::HEAD, root_method_not_allowed)
+    .fallback(root_method_not_allowed)
+}
+
+fn page_router(config: &DocsRouteConfig, openapi_url: &str, page: DocsPage) -> MethodRouter {
+    let body = page_body(config, openapi_url, page);
     get(move || {
         let content = body.clone();
-        async move {
-            content.map_or_else(
-                || detail_response(StatusCode::NOT_FOUND, "Not Found"),
-                |page| Html(page).into_response(),
-            )
-        }
+        async move { Html(content) }
     })
     .fallback(method_not_allowed)
+}
+
+fn route_variants(server_root_path: &str, path: &str) -> Vec<String> {
+    let prefix = route_prefix(server_root_path);
+    if prefix.is_empty() {
+        return vec![path.to_owned()];
+    }
+    vec![path.to_owned(), format!("{prefix}{path}")]
+}
+
+// FastAPI gets the scalar root path as root_path, so it strips a whole-segment prefix while matching
+fn route_prefix(server_root_path: &str) -> &str {
+    let trimmed = server_root_path.trim_end_matches('/');
+    if trimmed.starts_with('/') {
+        trimmed
+    } else {
+        ""
+    }
 }
 
 fn swagger_base(server_root_path: &str) -> String {
@@ -126,30 +235,25 @@ fn swagger_base(server_root_path: &str) -> String {
     }
 }
 
-async fn root_redirect_response(State(config): State<ConfigState>) -> Response {
-    config.urls.root_redirect_url.as_ref().map_or_else(
-        || detail_response(StatusCode::NOT_FOUND, "Not Found"),
-        |url| Redirect::temporary(url).into_response(),
-    )
-}
-
-async fn swagger_slash_redirect(headers: HeaderMap, OriginalUri(uri): OriginalUri) -> Response {
-    let mut target = String::from("/swagger/");
+async fn slash_redirect(headers: HeaderMap, OriginalUri(uri): OriginalUri) -> Response {
+    let mut target = uri
+        .path()
+        .strip_suffix('/')
+        .map_or_else(|| format!("{}/", uri.path()), str::to_owned);
     if let Some(query) = uri.query() {
         target.push('?');
         target.push_str(query);
     }
-    let location = match headers
+    let host = headers
         .get(header::HOST)
-        .and_then(|host| host.to_str().ok())
-    {
-        Some(host) => format!("http://{host}{target}"),
-        None => target,
-    };
-    Redirect::temporary(&location).into_response()
+        .and_then(|host| host.to_str().ok());
+    Redirect::temporary(&redirect_location(host, &target)).into_response()
 }
 
-async fn swagger_file(Path(path): Path<String>) -> Response {
+async fn swagger_file(captured: Result<Path<String>, PathRejection>) -> Response {
+    let Ok(Path(path)) = captured else {
+        return detail_response(StatusCode::NOT_FOUND, "Not Found");
+    };
     let Some(name) = asset_name(&path) else {
         return detail_response(StatusCode::NOT_FOUND, "Not Found");
     };
@@ -173,6 +277,15 @@ async fn method_not_allowed() -> Response {
     response
         .headers_mut()
         .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+    response
+}
+
+// the root redirect is a FastAPI get route, which lists only GET in its Allow header
+async fn root_method_not_allowed() -> Response {
+    let mut response = detail_response(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+    response
+        .headers_mut()
+        .insert(header::ALLOW, HeaderValue::from_static("GET"));
     response
 }
 

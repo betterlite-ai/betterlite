@@ -3,6 +3,7 @@
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
+use betterlite_config::sections::request_root_paths::Settings;
 use betterlite_openapi::docs_pages::{
     SwaggerPageInputs, oauth2_redirect_page, redoc_page, swagger_asset, swagger_ui_page,
 };
@@ -11,6 +12,7 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 
 use super::{DocsRouteConfig, docs_router};
+use crate::middleware::request_root_paths::RootPaths;
 
 fn urls(
     docs: Option<&str>,
@@ -52,6 +54,19 @@ async fn send(router: &Router, method: Method, uri: &str) -> (StatusCode, Header
         .unwrap()
         .to_vec();
     (status, headers, body)
+}
+
+async fn send_with_host(router: &Router, method: Method, uri: &str) -> (StatusCode, HeaderMap) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::HOST, "proxy.example")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    (status, headers)
 }
 
 fn header_value<'headers>(
@@ -386,4 +401,169 @@ async fn a_docs_page_on_the_swagger_directory_keeps_the_assets_served() {
         body.as_slice(),
         swagger_asset("swagger-ui.css").unwrap().bytes
     );
+}
+
+#[tokio::test]
+async fn the_docs_are_served_under_the_server_root_path() {
+    let router = router(default_urls(), "/api");
+    let (root_status, _, root_body) = send(&router, Method::GET, "/api/").await;
+    assert_eq!(root_status, StatusCode::OK);
+    assert_eq!(root_body, expected_swagger_page("/api").into_bytes());
+    let (redoc_status, _, redoc_body) = send(&router, Method::GET, "/api/redoc").await;
+    assert_eq!(redoc_status, StatusCode::OK);
+    assert_eq!(
+        redoc_body,
+        redoc_page("LiteLLM API - ReDoc", "/api/openapi.json").into_bytes()
+    );
+    let (oauth_status, _, oauth_body) =
+        send(&router, Method::GET, "/api/docs/oauth2-redirect").await;
+    assert_eq!(oauth_status, StatusCode::OK);
+    assert_eq!(oauth_body, oauth2_redirect_page().as_bytes());
+    let (asset_status, asset_headers, asset_body) =
+        send(&router, Method::GET, "/api/swagger/swagger-ui.css").await;
+    assert_eq!(asset_status, StatusCode::OK);
+    assert_eq!(
+        header_value(&asset_headers, &header::CONTENT_TYPE),
+        "text/css; charset=utf-8"
+    );
+    assert_eq!(
+        asset_body.as_slice(),
+        swagger_asset("swagger-ui.css").unwrap().bytes
+    );
+}
+
+#[tokio::test]
+async fn the_prefixed_root_redirects_to_its_slash() {
+    let router = router(default_urls(), "/api");
+    let (status, headers) = send_with_host(&router, Method::GET, "/api").await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        header_value(&headers, &header::LOCATION),
+        "http://proxy.example/api/"
+    );
+}
+
+#[rstest]
+#[case::redoc("/redoc/", "http://proxy.example/redoc")]
+#[case::oauth2("/docs/oauth2-redirect/", "http://proxy.example/docs/oauth2-redirect")]
+#[tokio::test]
+async fn a_page_path_redirects_its_extra_slash(#[case] uri: &str, #[case] location: &str) {
+    let router = router(default_urls(), "");
+    let (status, headers) = send_with_host(&router, Method::GET, uri).await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(header_value(&headers, &header::LOCATION), location);
+}
+
+#[tokio::test]
+async fn a_page_path_redirects_its_extra_slash_for_any_method() {
+    let router = router(default_urls(), "");
+    let (status, _) = send_with_host(&router, Method::POST, "/redoc/").await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+}
+
+#[tokio::test]
+async fn a_configured_docs_url_redirects_its_extra_slash() {
+    let router = router(
+        urls(Some("/docs"), Some("/redoc"), Some("/openapi.json"), None),
+        "",
+    );
+    let (status, headers) = send_with_host(&router, Method::GET, "/docs/").await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        header_value(&headers, &header::LOCATION),
+        "http://proxy.example/docs"
+    );
+}
+
+#[tokio::test]
+async fn the_swagger_mount_redirect_keeps_the_stripped_prefix() {
+    let settings = Settings {
+        server_root_path: String::new(),
+        server_root_paths: vec!["/tenant".to_owned()],
+    };
+    let root_paths = RootPaths::from_settings(&settings).unwrap();
+    let router = root_paths.wrap(router(default_urls(), "/tenant"));
+    let request = Request::builder()
+        .uri("/tenant/swagger")
+        .header(header::HOST, "proxy.example")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        header_value(response.headers(), &header::LOCATION),
+        "http://proxy.example/tenant/swagger/"
+    );
+}
+
+#[tokio::test]
+async fn the_swagger_mount_redirect_encodes_unsafe_query_characters() {
+    let router = router(default_urls(), "");
+    let (status, headers) = send_with_host(&router, Method::GET, "/swagger?q=a|b").await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        header_value(&headers, &header::LOCATION),
+        "http://proxy.example/swagger/?q=a%7Cb"
+    );
+}
+
+#[rstest]
+#[case::space_and_unicode("/my page/\u{fc}", "/my%20page/%C3%BC")]
+#[case::pipe("/a|b", "/a%7Cb")]
+#[case::percent_is_kept("/ui%2Fcatalog", "/ui%2Fcatalog")]
+#[tokio::test]
+async fn the_root_redirect_percent_encodes_its_location(
+    #[case] configured: &str,
+    #[case] location: &str,
+) {
+    let router = router(
+        urls(
+            Some("/docs"),
+            Some("/redoc"),
+            Some("/openapi.json"),
+            Some(configured),
+        ),
+        "",
+    );
+    let (status, headers, _) = send(&router, Method::GET, "/").await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(header_value(&headers, &header::LOCATION), location);
+}
+
+#[tokio::test]
+async fn the_root_redirect_is_get_only() {
+    let router = router(
+        urls(
+            Some("/docs"),
+            Some("/redoc"),
+            Some("/openapi.json"),
+            Some("/ui"),
+        ),
+        "",
+    );
+    let (head_status, head_headers) = send_with_host(&router, Method::HEAD, "/").await;
+    let (post_status, post_headers) = send_with_host(&router, Method::POST, "/").await;
+    assert_eq!(head_status, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(post_status, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(header_value(&head_headers, &header::ALLOW), "GET");
+    assert_eq!(header_value(&post_headers, &header::ALLOW), "GET");
+}
+
+#[tokio::test]
+async fn an_invalid_utf8_swagger_path_is_not_found() {
+    let router = router(default_urls(), "");
+    let (status, headers, body) = send(&router, Method::GET, "/swagger/%FF").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        header_value(&headers, &header::CONTENT_TYPE),
+        "application/json"
+    );
+    assert_eq!(body, br#"{"detail":"Not Found"}"#);
+}
+
+#[tokio::test]
+async fn the_root_is_not_redirected_when_no_page_can_hold_it() {
+    let router = router(urls(Some("/"), Some("/redoc"), None, Some("/ui")), "");
+    let (status, _, _) = send(&router, Method::GET, "/").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

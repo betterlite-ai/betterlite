@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openapi::docs_settings::{DocsEnv, DocsUrls};
-use betterlite_server::docs_routes::{DocsPage, DocsRouteConfig, page_body};
+use betterlite_server::docs_routes::{DocsPage, DocsRouteConfig, page_body, redirect_location};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -37,7 +37,7 @@ impl crate::helpers::Helper for Op {
                 scenarios
                     .iter()
                     .map(|scenario| swagger_page(title, openapi_url, scenario))
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect::<Vec<_>>(),
             ),
             Input::DocsUrlResolution { scenarios } => {
                 to_json(scenarios.iter().map(resolution).collect::<Vec<_>>())
@@ -46,11 +46,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn swagger_page(
-    title: &str,
-    openapi_url: &str,
-    scenario: &RootPathScenario,
-) -> Result<String, Box<crate::helpers::HelperError>> {
+fn swagger_page(title: &str, openapi_url: &str, scenario: &RootPathScenario) -> String {
     let config = DocsRouteConfig {
         urls: DocsUrls {
             docs_url: Some("/".to_owned()),
@@ -61,7 +57,7 @@ fn swagger_page(
         title: title.to_owned(),
         server_root_path: scenario.server_root_path.clone(),
     };
-    page_body(&config, DocsPage::Swagger).ok_or_else(|| Box::new(missing_page_error()))
+    page_body(&config, openapi_url, DocsPage::Swagger)
 }
 
 fn resolution(scenario: &BTreeMap<String, String>) -> serde_json::Value {
@@ -75,11 +71,16 @@ fn resolution(scenario: &BTreeMap<String, String>) -> serde_json::Value {
         root_redirect_url: scenario.get("ROOT_REDIRECT_URL").cloned(),
     };
     let urls = env.resolve();
+    let root_redirect_location = urls
+        .root_redirect_url
+        .as_deref()
+        .map(|url| redirect_location(None, url));
     serde_json::json!({
         "docs_url": urls.docs_url,
         "redoc_url": urls.redoc_url,
         "openapi_url": urls.openapi_url,
         "root_redirect_url": urls.root_redirect_url,
+        "root_redirect_location": root_redirect_location,
     })
 }
 
@@ -97,15 +98,4 @@ where
             message: error.to_string(),
         })
     })
-}
-
-fn missing_page_error() -> crate::helpers::HelperError {
-    crate::helpers::HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: "the swagger page needs an openapi_url".to_owned(),
-    }
 }

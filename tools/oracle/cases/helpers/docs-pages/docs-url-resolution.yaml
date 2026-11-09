@@ -29,6 +29,12 @@ call:
         ROOT_REDIRECT_URL: /ui
       - NO_DOCS: "true"
         ROOT_REDIRECT_URL: ""
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: "/my page/ü"
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: /a|b
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: "https://ui.example/catalog?tenant=1&theme=dark"
 env: {}
 compare:
   ignore: []
