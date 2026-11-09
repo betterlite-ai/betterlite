@@ -1,0 +1,25 @@
+kind: probe
+name: unsupported-two-steps
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"noisy rendered media","primary_rule":"LIM-1","capability_boundary":"unsupported","p_solve":0.7}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"hidden reference behavior","primary_rule":"LIM-2","capability_boundary":"unsupported","p_solve":0.69}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.1", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"noisy rendered media","primary_rule":"LIM-1","capability_boundary":"unsupported","p_solve":0.3}'}
+compare: {ignore: []}
