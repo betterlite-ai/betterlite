@@ -200,6 +200,8 @@ fn ignores_values_that_are_not_chunk_events(#[case] event: &str) {
 #[rstest]
 #[case::null(r#"{"orchestration_result":{"choices":[{"index":null,"delta":{}}]}}"#)]
 #[case::text(r#"{"orchestration_result":{"choices":[{"index":"1","delta":{}}]}}"#)]
+#[case::negative(r#"{"orchestration_result":{"choices":[{"index":-1,"delta":{}}]}}"#)]
+#[case::beyond_u32(r#"{"orchestration_result":{"choices":[{"index":4294967296,"delta":{}}]}}"#)]
 fn rejects_a_choice_with_an_invalid_index(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
@@ -242,6 +244,17 @@ fn rejects_a_negative_creation_time(#[case] event: &str, #[case] now: i64) {
     assert!(matches!(
         rejected(event, now),
         SapStreamError::Timestamp { .. }
+    ));
+}
+
+#[test]
+fn rejects_a_creation_time_beyond_the_integer_range() {
+    assert!(matches!(
+        rejected(
+            r#"{"created":9223372036854775808,"orchestration_result":{"choices":[]}}"#,
+            FIXED_NOW
+        ),
+        SapStreamError::EventField("created")
     ));
 }
 
@@ -308,16 +321,25 @@ fn does_not_end_on_a_lowercase_done() {
 }
 
 #[rstest]
-#[case::sync(Mode::Sync)]
-#[case::async_mode(Mode::Async)]
-fn closes_after_a_finish_reason_chunk(#[case] mode: Mode) {
+#[case::orchestration_sync(
+    Mode::Sync,
+    r#"data: {"orchestration_result":{"choices":[{"delta":{},"finish_reason":"stop"}]}}"#
+)]
+#[case::orchestration_async(
+    Mode::Async,
+    r#"data: {"orchestration_result":{"choices":[{"delta":{},"finish_reason":"stop"}]}}"#
+)]
+#[case::final_result_sync(
+    Mode::Sync,
+    r#"data: {"final_result":{"id":"f","created":7,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}}"#
+)]
+#[case::final_result_async(
+    Mode::Async,
+    r#"data: {"final_result":{"id":"f","created":7,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}}"#
+)]
+fn closes_after_a_finish_reason_chunk(#[case] mode: Mode, #[case] line: &str) {
     let mut stream = new_stream();
-    let step = next(
-        &mut stream,
-        r#"data: {"orchestration_result":{"choices":[{"delta":{},"finish_reason":"stop"}]}}"#,
-        mode,
-    )
-    .unwrap();
+    let step = next(&mut stream, line, mode).unwrap();
     assert!(matches!(step, SapStep::Chunk(_)));
     assert!(stream.done);
     assert!(matches!(
