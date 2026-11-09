@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-content-return-continue-seed
+call:
+  bedrock_content:
+    function: return_assistant_continue
+    assistant_continue_message: Carry on.
+env: {}
+compare: {ignore: []}
