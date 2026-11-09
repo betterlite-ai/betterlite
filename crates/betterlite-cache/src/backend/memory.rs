@@ -1,3 +1,5 @@
+pub mod local;
+
 use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::CacheValue;
 
@@ -12,7 +14,7 @@ pub trait MemoryCacheOps: Send + Sync {
     fn flush_cache(&self) -> CacheResult<()>;
     fn batch_get_cache(&self, keys: &[String]) -> CacheResult<Vec<Option<CacheValue>>>;
     fn increment_cache(&self, key: &str, value: f64, ttl: Ttl) -> CacheResult<f64>;
-    // entries in ttl_dict insertion order, which a stable sort by expiry keeps for equal expiries
+    // every stored absolute expiry, in a stable order that the sort by expiry keeps for equal expiries
     fn ttl_entries(&self) -> CacheResult<Vec<(String, f64)>>;
 }
 
