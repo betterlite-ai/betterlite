@@ -6,3 +6,6 @@ deviations:
   - what: Cache type records reject unknown JSON keys, while LiteLLM's pydantic models ignore extra fields and its TypedDicts are plain dicts.
     why: An unmodelled key becomes an error that names it instead of being dropped before a caller learns it was ignored.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L117-L125
+  - what: CachePingResponse.health_check_cache_params is modelled as HealthCheckCacheParams, so a health-check dict carrying a key outside that record is rejected, while LiteLLM declares the field as a free dict and stores it as given.
+    why: The field carries HealthCheckCacheParams.model_dump() with masked values, and the typed record names every key betterlite reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L124-L125

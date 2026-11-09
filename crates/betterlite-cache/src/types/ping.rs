@@ -10,6 +10,13 @@ pub enum TextOrNumber {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TextOrInteger {
+    Text(String),
+    Integer(i64),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CachePingResponse {
     pub status: String,
@@ -24,7 +31,7 @@ pub struct CachePingResponse {
 #[serde(deny_unknown_fields)]
 pub struct HealthCheckCacheParams {
     pub host: Option<String>,
-    pub port: Option<TextOrNumber>,
+    pub port: Option<TextOrInteger>,
     pub redis_kwargs: Option<Extra>,
     pub namespace: Option<String>,
     pub redis_version: Option<TextOrNumber>,

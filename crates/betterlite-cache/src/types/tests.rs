@@ -147,6 +147,17 @@ fn health_check_params_round_trip(#[case] wire: &str) {
     assert_wire(&decoded, wire);
 }
 
+#[test]
+fn health_check_params_reject_a_fractional_port() {
+    let input = concat!(
+        r#"{"host":null,"port":6379.5,"redis_kwargs":null,"namespace":null,"#,
+        r#""redis_version":null}"#
+    );
+    let error = serde_json::from_str::<HealthCheckCacheParams>(input)
+        .expect_err("a fractional port is not a declared port type");
+    assert!(error.to_string().contains("TextOrInteger"));
+}
+
 #[rstest]
 #[case::vector(concat!(
     r#"{"embedding":[0.1,0.2],"index":0,"object":"embedding","#,
