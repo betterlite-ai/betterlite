@@ -111,7 +111,7 @@ fn usage_object(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageE
     match usage {
         BillingUsage::Absent | BillingUsage::Null => Ok(None),
         BillingUsage::Chat(found) => Ok(Some((*found).clone())),
-        BillingUsage::Response(found) => convert::responses_usage(found),
+        BillingUsage::Response(found) => convert::responses_usage(found).map(Some),
         BillingUsage::Transcription(found) => {
             Ok(transform_transcription_usage(found).map(|cost| Usage::from(&cost)))
         }

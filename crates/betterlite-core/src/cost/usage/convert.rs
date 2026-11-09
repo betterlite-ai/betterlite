@@ -68,11 +68,10 @@ fn interactions_from(usage: &InteractionsUsage) -> Result<Usage, Error> {
         .insert("cache_read_input_tokens".to_owned(), cached);
     Ok(converted)
 }
-pub(super) fn responses_usage(usage: &ResponseApiUsage) -> Result<Option<Usage>, Error> {
-    normalize_usage(UsageInput::Response(usage))
-        .map_err(Error::Responses)
-        .and_then(|converted| from_responses_usage(&converted))
-        .map(Some)
+pub(super) fn responses_usage(usage_object: &ResponseApiUsage) -> Result<Usage, Error> {
+    let converted_usage =
+        normalize_usage(UsageInput::Response(usage_object)).map_err(Error::Responses)?;
+    from_responses_usage(&converted_usage)
 }
 fn from_responses_usage(converted: &ResponsesUsage) -> Result<Usage, Error> {
     let mut extras = IndexMap::new();
