@@ -194,6 +194,17 @@ async fn memory_get_ttl_uses_the_default_without_an_explicit_ttl() {
 }
 
 #[tokio::test]
+async fn memory_negative_ttl_is_read_back_and_dropped() {
+    let cache = cache_at(0.0_f64);
+    cache
+        .async_set_cache("key", CacheValue::Integer(1), Some(-5.0_f64))
+        .await
+        .expect("a stored value");
+    assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
+    assert_eq!(cache.async_get_ttl("key").await.expect("a ttl"), None);
+}
+
+#[tokio::test]
 async fn memory_set_accepts_a_non_finite_ttl() {
     let cache = cache_at(0.0_f64);
     cache
