@@ -34,6 +34,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }

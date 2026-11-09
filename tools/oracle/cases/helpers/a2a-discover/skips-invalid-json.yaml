@@ -1,0 +1,13 @@
+kind: helper
+name: a2a-discover-skips-invalid-json
+call:
+  b8202:
+    operation: card
+    base_url: https://agent.example
+    replies:
+      - status: 200
+        body: not json
+      - status: 200
+        body: '{"name":"agent"}'
+env: {}
+compare: {ignore: []}
