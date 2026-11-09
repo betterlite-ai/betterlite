@@ -1,6 +1,9 @@
 use std::time::Duration;
 
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::limits::{ReadError, read_bounded};
+use betterlite_http::proxy::timed_out;
 use betterlite_lens::models::decode::decode;
 use betterlite_lens::models::execution::{ExecutionContent, Sample};
 use betterlite_lens::models::messages::{Claim, JobResult, ModelRequest, ModelResult, Progress};
@@ -22,13 +25,6 @@ enum Verb {
     Post,
 }
 
-struct Call<'call> {
-    verb: Verb,
-    path: &'call str,
-    query: &'call str,
-    body: Option<Vec<u8>>,
-}
-
 struct Answer {
     status: u16,
     body: Vec<u8>,
@@ -44,26 +40,16 @@ impl HttpApi {
         }
     }
 
-    async fn send(
+    async fn exchange(
         &self,
         verb: Verb,
         path: &str,
         query: &str,
         body: Option<Vec<u8>>,
     ) -> Result<Answer, WorkerError> {
-        self.exchange(Call {
-            verb,
-            path,
-            query,
-            body,
-        })
-        .await
-    }
-
-    async fn exchange(&self, call: Call<'_>) -> Result<Answer, WorkerError> {
         let client = &self.client.client;
-        let url = format!("{}{}{}", self.base_url, call.path, call.query);
-        let mut request = match (call.verb, call.body) {
+        let url = format!("{}{}{}", self.base_url, path, query);
+        let mut request = match (verb, body) {
             (Verb::Get, _) => client.get(url),
             (Verb::Post, Some(bytes)) => client
                 .post(url)
@@ -81,20 +67,16 @@ impl HttpApi {
         if let Some(value) = request.headers_mut().get_mut("authorization") {
             value.set_sensitive(true);
         }
-        let sent = client.execute(request);
-        let mut response = sent
+        let mut response = self.client.execute(request).await.map_err(http_failure)?;
+        let status = success_status(response.status().as_u16(), path)?;
+        let received = read_bounded(&mut response, self.client.limits.body_bytes)
             .await
-            .map_err(|source| transport_failure(source.is_timeout()))?;
-        let status = success_status(response.status().as_u16(), call.path)?;
-        let mut received = Vec::new();
-        loop {
-            let pending = response.chunk();
-            let chunk = pending
-                .await
-                .map_err(|source| transport_failure(source.is_timeout()))?;
-            let Some(bytes) = chunk else { break };
-            extend_body(&mut received, &bytes, self.client.limits.body_bytes)?;
-        }
+            .map_err(|error| match error {
+                ReadError::TooLarge { limit } => {
+                    WorkerError::Decode(format!("the response body is larger than {limit} bytes"))
+                }
+                ReadError::Failed(source) => transport_failure(source.is_timeout()),
+            })?;
         Ok(Answer {
             status,
             body: received,
@@ -113,6 +95,14 @@ fn success_status(status: u16, path: &str) -> Result<u16, WorkerError> {
     }
 }
 
+fn http_failure(error: HttpError) -> WorkerError {
+    if matches!(timed_out(error), HttpError::Timeout) {
+        WorkerError::Timeout
+    } else {
+        WorkerError::Transport
+    }
+}
+
 const fn transport_failure(timed_out: bool) -> WorkerError {
     if timed_out {
         WorkerError::Timeout
@@ -121,20 +111,10 @@ const fn transport_failure(timed_out: bool) -> WorkerError {
     }
 }
 
-fn extend_body(received: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<(), WorkerError> {
-    if received.len().saturating_add(chunk.len()) > limit {
-        return Err(WorkerError::Decode(format!(
-            "the response body is larger than {limit} bytes"
-        )));
-    }
-    received.extend_from_slice(chunk);
-    Ok(())
-}
-
 impl LensApi for HttpApi {
     async fn claim(&self) -> Result<Option<Claim>, WorkerError> {
         let answer = self
-            .send(
+            .exchange(
                 Verb::Post,
                 "/lens/worker/claim",
                 "?protocol_version=2",
@@ -149,7 +129,7 @@ impl LensApi for HttpApi {
 
     async fn sample(&self, prefix: &str) -> Result<Sample, WorkerError> {
         let path = format!("{prefix}/sample");
-        let answer = self.send(Verb::Get, &path, "", None).await?;
+        let answer = self.exchange(Verb::Get, &path, "", None).await?;
         decode(&answer.body).map_err(WorkerError::from)
     }
 
@@ -170,34 +150,34 @@ impl LensApi for HttpApi {
                 .append_pair("offset", &offset_text)
                 .finish()
         );
-        let answer = self.send(Verb::Get, &path, &query, None).await?;
+        let answer = self.exchange(Verb::Get, &path, &query, None).await?;
         decode(&answer.body).map_err(WorkerError::from)
     }
 
     async fn model(&self, prefix: &str, request: ModelRequest) -> Result<ModelResult, WorkerError> {
         let path = format!("{prefix}/model");
         let body = serde_json::to_vec(&request).map_err(WorkerError::from)?;
-        let answer = self.send(Verb::Post, &path, "", Some(body)).await?;
+        let answer = self.exchange(Verb::Post, &path, "", Some(body)).await?;
         decode(&answer.body).map_err(WorkerError::from)
     }
 
     async fn progress(&self, prefix: &str, progress: Progress) -> Result<(), WorkerError> {
         let path = format!("{prefix}/progress");
         let body = serde_json::to_vec(&progress).map_err(WorkerError::from)?;
-        self.send(Verb::Post, &path, "", Some(body)).await?;
+        self.exchange(Verb::Post, &path, "", Some(body)).await?;
         Ok(())
     }
 
     async fn heartbeat(&self, prefix: &str) -> Result<(), WorkerError> {
         let path = format!("{prefix}/heartbeat");
-        self.send(Verb::Post, &path, "", None).await?;
+        self.exchange(Verb::Post, &path, "", None).await?;
         Ok(())
     }
 
     async fn result(&self, prefix: &str, result: &JobResult) -> Result<ResultStatus, WorkerError> {
         let path = format!("{prefix}/result");
         let body = serde_json::to_vec(result).map_err(WorkerError::from)?;
-        let answer = self.send(Verb::Post, &path, "", Some(body)).await?;
+        let answer = self.exchange(Verb::Post, &path, "", Some(body)).await?;
         Ok(ResultStatus {
             status: answer.status,
         })

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::pending;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -14,6 +15,7 @@ use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use crate::api::{LensApi, WorkerError};
 use crate::http_api::HttpApi;
@@ -313,6 +315,28 @@ async fn maps_a_connect_failure_to_transport() {
     let api = HttpApi::new("http://127.0.0.1:1", SecretString::from("token"), client);
     let error = claim(&api).await.unwrap_err();
     assert!(matches!(error, WorkerError::Transport));
+}
+
+#[tokio::test(start_paused = true)]
+async fn refuses_an_unsupported_proxy_without_contacting_the_target() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let environment = BTreeMap::from([(
+        String::from("HTTP_PROXY"),
+        String::from("socks5://egress:1080"),
+    )]);
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let api = HttpApi::new(
+        &format!("http://{address}"),
+        SecretString::from("token"),
+        client,
+    );
+    let error = claim(&api).await.unwrap_err();
+    assert!(matches!(error, WorkerError::Transport));
+    if let Ok(Ok((_stream, _peer))) = timeout(Duration::from_millis(50), listener.accept()).await {
+        panic!("the worker reached the target through an unsupported proxy");
+    }
 }
 
 #[tokio::test(start_paused = true)]
