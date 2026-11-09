@@ -1,0 +1,28 @@
+kind: helper
+name: vercel-ai-gateway-provider-options-extra-body
+call:
+  b5835:
+    steps:
+      - kind: map_params
+        model: custom-model
+        non_default_params:
+          providerOptions:
+            gateway:
+              order: [a]
+          extra_body: {caller: true}
+          temperature: 0.5
+          unsupported: 1
+        optional_params: {existing: true}
+      - kind: map_params
+        model: custom-model
+        non_default_params: {providerOptions: null}
+        optional_params: {extra_body: {stale: true}}
+      - kind: map_params
+        model: custom-model
+        non_default_params: {extra_body: {caller: true}}
+      - kind: map_params
+        model: gpt-4o
+        chat_models: [gpt-4o]
+        non_default_params: {temperature: 0.2, user: reader}
+env: {}
+compare: {ignore: []}
