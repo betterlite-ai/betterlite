@@ -101,7 +101,7 @@ where
         data: &SpanData<'_>,
         options: &EmitOptions<'_, T>,
     ) -> Option<T::Span> {
-        if self.mark_emitted(dedup_key(data), role) {
+        if self.mark_emitted(span_facts(data).call_id, role) {
             return None;
         }
         let start = StartOptions {
@@ -123,7 +123,7 @@ where
         end_time: Option<SystemTime>,
     ) {
         span.update_name(span_name(data));
-        let error = error_of(data);
+        let error = span_facts(data).error;
         let mapped = self.mapped_attributes(data);
         let stamped = error.map_or_else(AttributeMap::new, error_attributes);
         let reserved = stamped
@@ -172,22 +172,34 @@ fn unix_nanos(time: SystemTime) -> Option<u64> {
     Some(nanos)
 }
 
-fn dedup_key<'data>(data: &'data SpanData<'_>) -> Option<&'data str> {
-    match data {
-        SpanData::LLMCall(call) => call.identity.call_id.as_deref(),
-        SpanData::MCPToolCall(call) => call.identity.call_id.as_deref(),
-        SpanData::MCPListTools(list) => list.identity.call_id.as_deref(),
-        SpanData::Guardrail(_) | SpanData::Service(_) => None,
-    }
+// the two things every payload kind names: the call it belongs to and the failure it carries
+struct SpanFacts<'data> {
+    call_id: Option<&'data str>,
+    error: Option<&'data SpanError>,
 }
 
-const fn error_of<'data>(data: &'data SpanData<'_>) -> Option<&'data SpanError> {
+fn span_facts<'data>(data: &'data SpanData<'_>) -> SpanFacts<'data> {
     match data {
-        SpanData::LLMCall(call) => call.error.as_ref(),
-        SpanData::MCPToolCall(call) => call.error.as_ref(),
-        SpanData::MCPListTools(list) => list.error.as_ref(),
-        SpanData::Guardrail(guardrail) => guardrail.error.as_ref(),
-        SpanData::Service(service) => service.error.as_ref(),
+        SpanData::LLMCall(call) => SpanFacts {
+            call_id: call.identity.call_id.as_deref(),
+            error: call.error.as_ref(),
+        },
+        SpanData::MCPToolCall(call) => SpanFacts {
+            call_id: call.identity.call_id.as_deref(),
+            error: call.error.as_ref(),
+        },
+        SpanData::MCPListTools(list) => SpanFacts {
+            call_id: list.identity.call_id.as_deref(),
+            error: list.error.as_ref(),
+        },
+        SpanData::Guardrail(guardrail) => SpanFacts {
+            call_id: None,
+            error: guardrail.error.as_ref(),
+        },
+        SpanData::Service(service) => SpanFacts {
+            call_id: None,
+            error: service.error.as_ref(),
+        },
     }
 }
 

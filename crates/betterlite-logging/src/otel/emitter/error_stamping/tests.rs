@@ -98,11 +98,11 @@ fn stamp_error_writes_the_attributes_and_returns_the_resolved_pair() {
         resolved,
         Some(("RateLimitError".to_owned(), "slow down".to_owned()))
     );
-    let exported = exporter.get_finished_spans().expect("spans");
-    let span = &exported[0];
-    assert_eq!(span.status, Status::error("slow down"));
-    assert_eq!(span.events.events.len(), 1);
-    assert_eq!(span.events.events[0].name, "exception");
+    let finished = exporter.get_finished_spans().expect("spans");
+    let exported_span = &finished[0];
+    assert_eq!(exported_span.status, Status::error("slow down"));
+    assert_eq!(exported_span.events.events.len(), 1);
+    assert_eq!(exported_span.events.events[0].name, "exception");
 }
 
 #[test]
@@ -119,9 +119,9 @@ fn stamp_error_attributes_only_leaves_the_status_and_events_alone() {
         ErrorStamp::ATTRIBUTES_ONLY,
     );
     span.end();
-    let exported = exporter.get_finished_spans().expect("spans");
-    let span = &exported[0];
-    let attributes: BTreeMap<String, Value> = span
+    let finished = exporter.get_finished_spans().expect("spans");
+    let exported_span = &finished[0];
+    let attributes: BTreeMap<String, Value> = exported_span
         .attributes
         .iter()
         .map(|pair| (pair.key.to_string(), pair.value.clone()))
@@ -130,8 +130,8 @@ fn stamp_error_attributes_only_leaves_the_status_and_events_alone() {
         attributes.get("error.type"),
         Some(&Value::from("RateLimitError"))
     );
-    assert_eq!(span.status, Status::Unset);
-    assert!(span.events.events.is_empty());
+    assert_eq!(exported_span.status, Status::Unset);
+    assert!(exported_span.events.events.is_empty());
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn stamping_nothing_returns_none_and_writes_nothing() {
         None
     );
     span.end();
-    let exported = exporter.get_finished_spans().expect("spans");
-    assert!(exported[0].attributes.is_empty());
-    assert_eq!(exported[0].status, Status::Unset);
+    let finished = exporter.get_finished_spans().expect("spans");
+    assert!(finished[0].attributes.is_empty());
+    assert_eq!(finished[0].status, Status::Unset);
 }

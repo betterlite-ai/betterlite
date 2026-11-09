@@ -33,7 +33,7 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::plumbing::events::{GenAIEventRecorder, SystemClock};
 use crate::otel::plumbing::providers::{build_logger_provider, get_event_logger};
 use crate::otel::plumbing::sinks::LogSink;
-use crate::otel::vocabulary::constants::{GenAIOperation, MCPMethod};
+use crate::otel::vocabulary::constants::MCPMethod;
 use crate::otel::vocabulary::registry::SpanRole;
 
 fn chat_payload(call_id: &str) -> Payload {
@@ -55,20 +55,11 @@ fn call_data(call_id: &str) -> LLMCallSpanData {
 }
 
 fn mcp_data(call_id: &str) -> MCPToolCallSpanData {
-    MCPToolCallSpanData {
-        operation: GenAIOperation::ExecuteTool,
-        method: MCPMethod::ToolsCall,
-        tool_name: "get-weather".to_owned(),
-        server_name: None,
-        server_address: None,
-        server_port: None,
-        session_id: None,
-        arguments_json: None,
-        result_json: None,
-        error: None,
-        response_cost: None,
-        identity: call_data(call_id).identity,
-    }
+    let text = format!(
+        r#"{{"id": "{call_id}", "model": "gpt-4o", "call_type": "call_mcp_tool", "metadata": {{"mcp_tool_call_metadata": {{"name": "get-weather"}}}}}}"#
+    );
+    let payload = decode::<Payload>(&text).expect("payload");
+    MCPToolCallSpanData::from_standard_logging_payload(&payload, false).expect("mcp data")
 }
 
 fn service_data() -> ServiceSpanData {

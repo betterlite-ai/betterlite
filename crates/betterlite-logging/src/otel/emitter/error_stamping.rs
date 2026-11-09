@@ -98,3 +98,6 @@ where
     }
     Some(resolved)
 }
+
+#[path = "error_stamping/tests.rs"]
+mod tests;
