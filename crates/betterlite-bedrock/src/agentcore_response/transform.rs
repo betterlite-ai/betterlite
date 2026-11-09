@@ -30,25 +30,31 @@ where
     C: TokenCounter + Sync,
 {
     if let Err(error) = apply(model, raw, messages, response, counter).await {
-        tracing::error!("Error processing Bedrock AgentCore response: {error}");
-        let input = ErrorInput {
-            status_code: raw.status_code,
-            message: format!("Error processing response: {error}"),
-            request: None,
-            body: None,
-            status_code_is_synthesized: false,
-            headers: Some(ErrorHeaders::Http(raw.headers.clone())),
-            response: None,
-        };
-        let bedrock = BedrockError::try_from(input).map_err(AgentCoreResponseError::Header)?;
-        return Err(AgentCoreResponseError::Bedrock {
+        return Err(bedrock_failure(raw, &error));
+    }
+    Ok(())
+}
+
+fn bedrock_failure(raw: &RawResponse, error: &AgentCoreResponseError) -> AgentCoreResponseError {
+    tracing::error!("Error processing Bedrock AgentCore response: {error}");
+    let input = ErrorInput {
+        status_code: raw.status_code,
+        message: format!("Error processing response: {error}"),
+        request: None,
+        body: None,
+        status_code_is_synthesized: false,
+        headers: Some(ErrorHeaders::Http(raw.headers.clone())),
+        response: None,
+    };
+    match BedrockError::try_from(input) {
+        Ok(bedrock) => AgentCoreResponseError::Bedrock {
             status: raw.status_code,
             error: BedrockFailure {
                 cause: Box::new(bedrock),
             },
-        });
+        },
+        Err(source) => AgentCoreResponseError::Header(source),
     }
-    Ok(())
 }
 
 async fn apply<C>(
