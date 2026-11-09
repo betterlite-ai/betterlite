@@ -8,6 +8,13 @@ call:
         - {kind: gemini, mode: chat, model: gemini-3-pro-preview, stream: true}
         - {kind: gemini, mode: chat, model: gemini-flash-latest}
         - {kind: gemini, mode: chat, model: gemini-flash}
+        - {kind: gemini, mode: chat, model: gemini-1.5-pro}
+        - {kind: gemini, mode: chat, model: 'gemini-1'}
+        - {kind: gemini, mode: chat, model: gemini-exp-1206}
+        - {kind: gemini, mode: chat, model: gemini-flash-lite}
+        - {kind: gemini, mode: chat, model: gemini-flash-lite-latest}
+        - {kind: gemini, mode: chat, model: gemini-pro-lite-latest}
+        - {kind: gemini, mode: chat, model: gemini-experimental}
         - {kind: gemini, mode: chat, model: gemini-pro-latest}
         - {kind: gemini, mode: chat, model: gemini-pro}
         - {kind: gemini, mode: chat, model: 'gemini/1234'}

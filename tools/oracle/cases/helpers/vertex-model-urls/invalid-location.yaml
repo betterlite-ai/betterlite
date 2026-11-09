@@ -3,6 +3,6 @@ name: invalid-location
 call:
   vertex_model_urls:
     base_url:
-      locations: [null, 'attacker.example/', 'evil.com#', US, us_central1, '', global, us, us-central1]
+      locations: [null, 'attacker.example/', 'evil.com#', US, us_central1, '', '1us', '-us', global, us, us-central1]
 env: {}
 compare: {ignore: []}

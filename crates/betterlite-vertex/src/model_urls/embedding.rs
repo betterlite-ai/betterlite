@@ -1,4 +1,5 @@
 use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::model_catalog_keys::strip_stable_vertex_version;
 
 use super::base_url::validate_vertex_location;
 use super::error::VertexUrlError;
@@ -36,14 +37,22 @@ pub fn get_embedding_url(
     })
 }
 
-// get_model_info with custom_llm_provider reads vertex_ai/<model> before <model>
+// get_model_info reads vertex_ai/<model>, <model>, then the names with a stable version suffix removed
 fn uses_embed_content(catalog: &ModelCatalog, model: &str) -> bool {
+    let split = model.strip_prefix("vertex_ai/").unwrap_or(model);
+    let stripped = strip_stable_vertex_version(split);
     let prefixed = format!("vertex_ai/{model}");
-    [prefixed.as_str(), model]
-        .into_iter()
-        .find_map(|key| {
-            let canonical = catalog.lookup.get(key)?;
-            catalog.entries.get(canonical.as_ref())
-        })
-        .is_some_and(|entry| entry.fields.capabilities.media.uses_embed_content == Some(true))
+    let stripped_prefixed = format!("vertex_ai/{stripped}");
+    [
+        prefixed.as_str(),
+        model,
+        stripped_prefixed.as_str(),
+        stripped.as_str(),
+    ]
+    .into_iter()
+    .find_map(|key| {
+        let canonical = catalog.lookup.get(key)?;
+        catalog.entries.get(canonical.as_ref())
+    })
+    .is_some_and(|entry| entry.fields.capabilities.media.uses_embed_content == Some(true))
 }

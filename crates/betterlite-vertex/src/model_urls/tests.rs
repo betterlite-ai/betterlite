@@ -277,6 +277,16 @@ fn publisher_embedding_version() {
     );
 }
 
+fn catalog_embedding(
+    catalog: &ModelCatalog,
+    model: &str,
+    location: &str,
+    version: ApiVersion,
+) -> (String, Endpoint) {
+    let url = get_embedding_url(catalog, &embedding_input(model, location, version)).unwrap();
+    (url.url, url.endpoint)
+}
+
 fn embed_content_catalog() {
     let catalog = catalog();
     let plain = get_embedding_url(
@@ -304,24 +314,31 @@ fn embed_content_catalog() {
     )
     .unwrap();
     assert_eq!(predict.endpoint, Endpoint::Predict);
-    prefixed_embed_content();
+    model_name_variants();
 }
 
-fn prefixed_embed_content() {
+fn model_name_variants() {
     let catalog = catalog();
-    let prefixed = get_embedding_url(
+    assert_eq!(
+        catalog_embedding(&catalog, "vertex_ai/gemini-embedding-2", "europe-west1", ApiVersion::V1Beta1),
+        (
+            "https://europe-west1-aiplatform.googleapis.com/v1/projects/proj/locations/europe-west1/publishers/google/models/vertex_ai/gemini-embedding-2:embedContent".to_owned(),
+            Endpoint::EmbedContent,
+        )
+    );
+    assert_eq!(
+        catalog_embedding(&catalog, "vertex_ai/gemini-embedding-2-001", "us-central1", ApiVersion::V1),
+        (
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/vertex_ai/gemini-embedding-2-001:embedContent".to_owned(),
+            Endpoint::EmbedContent,
+        )
+    );
+    let versioned = get_embedding_url(
         &catalog,
-        &embedding_input(
-            "vertex_ai/gemini-embedding-2",
-            "europe-west1",
-            ApiVersion::V1Beta1,
-        ),
+        &embedding_input("gemini-embedding-2-001", "us-central1", ApiVersion::V1),
     )
     .unwrap();
-    assert_eq!(
-        prefixed.url,
-        "https://europe-west1-aiplatform.googleapis.com/v1/projects/proj/locations/europe-west1/publishers/google/models/vertex_ai/gemini-embedding-2:embedContent"
-    );
+    assert_eq!(versioned.endpoint, Endpoint::EmbedContent);
     let spec = get_vertex_url(
         &catalog,
         &vertex_input(
@@ -340,21 +357,36 @@ fn prefixed_embed_content() {
 }
 
 fn gemini_version_aliases() {
+    older_gemini_names();
+    newer_gemini_names();
+    assert!(forward_gemini_call_id("gemini-3-pro-preview"));
+    assert!(!forward_gemini_call_id("gemini-2.5-flash"));
+    gemini_version_urls();
+}
+
+fn older_gemini_names() {
     assert!(!is_gemini_3_or_newer("gemini-2.5-flash"));
     assert!(!is_gemini_3_or_newer("gemini-flash"));
-    assert!(is_gemini_3_or_newer("gemini-flash-latest"));
+    assert!(!is_gemini_3_or_newer("gemini-1.5-pro"));
+    assert!(!is_gemini_3_or_newer("gemini-1"));
+    assert!(!is_gemini_3_or_newer("gemini-exp-1206"));
+    assert!(!is_gemini_3_or_newer("gemini-flash-lite"));
     assert!(!is_gemini_3_or_newer("gemini-pro"));
-    assert!(is_gemini_3_or_newer("gemini-pro-latest"));
-    assert!(is_gemini_3_or_newer("gemini-3-pro-preview"));
     assert!(!is_gemini_3_or_newer("gemini/1234"));
     assert!(!is_gemini_3_or_newer("gemini/ft-abc"));
     assert!(!is_gemini_3_or_newer("1234"));
     assert!(!is_gemini_3_or_newer("gemma-3-12b-it"));
-    assert!(is_gemini_3_or_newer("gemini-10-pro"));
     assert!(!is_gemini_3_or_newer(""));
-    assert!(forward_gemini_call_id("gemini-3-pro-preview"));
-    assert!(!forward_gemini_call_id("gemini-2.5-flash"));
-    gemini_version_urls();
+}
+
+fn newer_gemini_names() {
+    assert!(is_gemini_3_or_newer("gemini-flash-latest"));
+    assert!(is_gemini_3_or_newer("gemini-pro-latest"));
+    assert!(is_gemini_3_or_newer("gemini-3-pro-preview"));
+    assert!(is_gemini_3_or_newer("gemini-10-pro"));
+    assert!(is_gemini_3_or_newer("gemini-flash-lite-latest"));
+    assert!(is_gemini_3_or_newer("gemini-pro-lite-latest"));
+    assert!(is_gemini_3_or_newer("gemini-experimental"));
 }
 
 fn gemini_version_urls() {
@@ -486,6 +518,11 @@ fn missing_location() {
 }
 
 fn malformed_locations() {
+    malformed_hosts();
+    malformed_first_characters();
+}
+
+fn malformed_hosts() {
     assert!(matches!(
         validate_vertex_location(Some("attacker.example/")),
         Err(VertexUrlError::InvalidLocation)
@@ -513,6 +550,18 @@ fn malformed_locations() {
     ));
     assert!(matches!(
         get_vertex_base_url(Some("evil.com#")),
+        Err(VertexUrlError::InvalidLocation)
+    ));
+}
+
+// the first character must be a lowercase letter, so a digit or hyphen cannot start a host
+fn malformed_first_characters() {
+    assert!(matches!(
+        validate_vertex_location(Some("1us")),
+        Err(VertexUrlError::InvalidLocation)
+    ));
+    assert!(matches!(
+        validate_vertex_location(Some("-us")),
         Err(VertexUrlError::InvalidLocation)
     ));
 }
