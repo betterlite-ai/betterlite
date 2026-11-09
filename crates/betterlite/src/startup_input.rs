@@ -6,6 +6,8 @@ use std::time::Duration;
 use rand::Rng;
 use rand::RngExt as _;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
+use serde_json::error::Category;
 
 const MAX_INPUT_BYTES: usize = 0x0001_0000;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -20,18 +22,26 @@ pub enum StartupInputError {
     UnknownCommand { command: String },
     #[error("the --headers value is longer than {limit} bytes")]
     HeadersTooLong { limit: usize },
-    #[error("the --headers value is not a JSON object of strings: {source}")]
-    Headers {
-        #[source]
-        source: serde_json::Error,
+    #[error("the --headers value is not valid JSON ({category} at line {line}, column {column})")]
+    HeadersSyntax {
+        category: &'static str,
+        line: usize,
+        column: usize,
     },
+    #[error("the --headers value must be a JSON object whose values are strings")]
+    HeadersShape,
     #[error("WORKER_CONFIG is longer than {limit} bytes")]
     WorkerConfigTooLong { limit: usize },
-    #[error("WORKER_CONFIG is not a JSON object of boolean flags: {source}")]
-    WorkerConfig {
-        #[source]
-        source: serde_json::Error,
+    #[error("WORKER_CONFIG is not valid JSON ({category} at line {line}, column {column})")]
+    WorkerConfigSyntax {
+        category: &'static str,
+        line: usize,
+        column: usize,
     },
+    #[error("WORKER_CONFIG must be a JSON object")]
+    WorkerConfigShape,
+    #[error("WORKER_CONFIG key {key} must be true or false")]
+    WorkerConfigFlag { key: &'static str },
     #[error("--prometheus_metrics_port must differ from --port")]
     MetricsPortClash,
 }
@@ -42,7 +52,7 @@ pub enum PositionalCommand {
     XaiOauthLogin,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WorkerDebugFlags {
     pub debug: Option<bool>,
     pub detailed_debug: Option<bool>,
@@ -81,9 +91,42 @@ pub fn decode_headers(raw: &str) -> Result<Option<BTreeMap<String, String>>, Sta
             limit: MAX_INPUT_BYTES,
         });
     }
-    let headers: BTreeMap<String, String> =
-        serde_json::from_str(raw).map_err(|source| StartupInputError::Headers { source })?;
-    Ok(Some(headers))
+    match serde_json::from_str(raw) {
+        Ok(headers) => Ok(Some(headers)),
+        Err(error) if error.classify() == Category::Data => Err(StartupInputError::HeadersShape),
+        Err(error) => Err(StartupInputError::HeadersSyntax {
+            category: syntax_category(&error),
+            line: error.line(),
+            column: error.column(),
+        }),
+    }
+}
+
+fn syntax_category(error: &serde_json::Error) -> &'static str {
+    if error.classify() == Category::Eof {
+        "unexpected end of input"
+    } else {
+        "syntax error"
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawFlag {
+    Absent(()),
+    Set(bool),
+    NotBoolean(IgnoredAny),
+}
+
+fn read_flag(
+    object: &BTreeMap<String, RawFlag>,
+    key: &'static str,
+) -> Result<Option<bool>, StartupInputError> {
+    match object.get(key) {
+        None | Some(RawFlag::Absent(())) => Ok(None),
+        Some(RawFlag::Set(flag)) => Ok(Some(*flag)),
+        Some(RawFlag::NotBoolean(_)) => Err(StartupInputError::WorkerConfigFlag { key }),
+    }
 }
 
 pub fn decode_worker_config(raw: &str) -> Result<WorkerDebugFlags, StartupInputError> {
@@ -92,7 +135,23 @@ pub fn decode_worker_config(raw: &str) -> Result<WorkerDebugFlags, StartupInputE
             limit: MAX_INPUT_BYTES,
         });
     }
-    serde_json::from_str(raw).map_err(|source| StartupInputError::WorkerConfig { source })
+    let object: BTreeMap<String, RawFlag> = match serde_json::from_str(raw) {
+        Ok(object) => object,
+        Err(error) if error.classify() == Category::Data => {
+            return Err(StartupInputError::WorkerConfigShape);
+        }
+        Err(error) => {
+            return Err(StartupInputError::WorkerConfigSyntax {
+                category: syntax_category(&error),
+                line: error.line(),
+                column: error.column(),
+            });
+        }
+    };
+    Ok(WorkerDebugFlags {
+        debug: read_flag(&object, "debug")?,
+        detailed_debug: read_flag(&object, "detailed_debug")?,
+    })
 }
 
 pub trait PortProber {

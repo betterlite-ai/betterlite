@@ -166,21 +166,34 @@ fn decode_headers_keeps_the_last_duplicate_key() {
 }
 
 #[rstest]
-#[case::invalid_json("{")]
 #[case::non_object("[]")]
-#[case::non_string_value(r#"{"a":1}"#)]
-#[case::nested_value(r#"{"a":{"b":"c"}}"#)]
+#[case::top_level_string(r#""sk-secret-token""#)]
+#[case::non_string_value(r#"{"Authorization":98765432}"#)]
+#[case::boolean_value(r#"{"Authorization":true}"#)]
+#[case::nested_value(r#"{"a":{"b":"sk-secret-token"}}"#)]
 fn decode_headers_rejects_what_is_not_a_string_object(#[case] raw: &str) {
     let error = decode_headers(raw).expect_err("the value is rejected");
 
-    assert!(matches!(error, StartupInputError::Headers { .. }));
+    assert!(matches!(error, StartupInputError::HeadersShape), "{error}");
+    assert!(!error.to_string().contains("sk-secret-token"), "{error}");
+    assert!(!error.to_string().contains("98765432"), "{error}");
 }
 
-#[test]
-fn decode_headers_reports_a_value_that_is_not_a_string() {
-    let error = decode_headers(r#"{"x-trace":5}"#).expect_err("the value is rejected");
+#[rstest]
+#[case::truncated("{", "unexpected end of input")]
+#[case::bad_token(r#"{"a":sk-secret-token}"#, "syntax error")]
+fn decode_headers_reports_invalid_json_without_the_input(
+    #[case] raw: &str,
+    #[case] category: &str,
+) {
+    let error = decode_headers(raw).expect_err("the text is rejected");
 
-    assert!(error.to_string().contains("expected a string"), "{error}");
+    assert!(
+        matches!(error, StartupInputError::HeadersSyntax { .. }),
+        "{error}"
+    );
+    assert!(error.to_string().contains(category), "{error}");
+    assert!(!error.to_string().contains("sk-secret-token"), "{error}");
 }
 
 #[test]
@@ -231,24 +244,49 @@ fn decode_worker_config_reads_null_as_unset() {
     assert_eq!(flags.detailed_debug, Some(true));
 }
 
+#[test]
+fn decode_worker_config_keeps_the_last_duplicate_key() {
+    let flags = decode_worker_config(r#"{"debug":false,"debug":true}"#).unwrap();
+
+    assert_eq!(flags.debug, Some(true));
+}
+
 #[rstest]
-#[case::invalid_json("{")]
-#[case::non_object("[]")]
+#[case::empty_array("[]")]
+#[case::true_pair("[true,true]")]
+#[case::false_pair("[false,false]")]
 #[case::number("5")]
-#[case::string_flag(r#"{"debug":"true"}"#)]
-#[case::number_flag(r#"{"detailed_debug":1}"#)]
-fn decode_worker_config_rejects_non_boolean_flags(#[case] raw: &str) {
+#[case::string(r#""debug""#)]
+fn decode_worker_config_rejects_what_is_not_an_object(#[case] raw: &str) {
     let error = decode_worker_config(raw).expect_err("the value is rejected");
 
-    assert!(matches!(error, StartupInputError::WorkerConfig { .. }));
+    assert!(
+        matches!(error, StartupInputError::WorkerConfigShape),
+        "{error}"
+    );
 }
 
 #[test]
-fn decode_worker_config_reports_a_flag_that_is_not_a_boolean() {
-    let error =
-        decode_worker_config(r#"{"detailed_debug":"yes"}"#).expect_err("the flag is rejected");
+fn decode_worker_config_rejects_invalid_json() {
+    let error = decode_worker_config("{").expect_err("the text is rejected");
 
-    assert!(error.to_string().contains("expected a boolean"), "{error}");
+    assert!(
+        matches!(error, StartupInputError::WorkerConfigSyntax { .. }),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::string_flag(r#"{"debug":"true"}"#, "debug")]
+#[case::number_flag(r#"{"detailed_debug":1}"#, "detailed_debug")]
+fn decode_worker_config_rejects_non_boolean_flags(#[case] raw: &str, #[case] key: &str) {
+    let error = decode_worker_config(raw).expect_err("the value is rejected");
+
+    assert!(
+        matches!(error, StartupInputError::WorkerConfigFlag { .. }),
+        "{error}"
+    );
+    assert!(error.to_string().contains(key), "{error}");
 }
 
 #[test]

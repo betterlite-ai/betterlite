@@ -9,9 +9,7 @@ use betterlite::diagnostic_commands::{
     DiagnosticError, config_validation_command, health_command, needs_ollama, ollama_serve,
     test_command,
 };
-use betterlite::startup_input::{
-    FALLBACK_PORT_HIGH, FALLBACK_PORT_LOW, StartupInputError, choose_port, classify_positional,
-};
+use betterlite::startup_input::{StartupInputError, choose_port, classify_positional};
 use betterlite::verbose_levels::{LogLevel, plan_verbose_levels};
 use betterlite_config::loader::ConfigLoader;
 use serde::Deserialize;
@@ -164,9 +162,12 @@ fn unknown_output(args: &[String]) -> HelperResult {
     let exit_code = match &error {
         StartupInputError::UnknownCommand { .. } => 2_i32,
         StartupInputError::HeadersTooLong { .. }
-        | StartupInputError::Headers { .. }
+        | StartupInputError::HeadersSyntax { .. }
+        | StartupInputError::HeadersShape
         | StartupInputError::WorkerConfigTooLong { .. }
-        | StartupInputError::WorkerConfig { .. }
+        | StartupInputError::WorkerConfigSyntax { .. }
+        | StartupInputError::WorkerConfigShape
+        | StartupInputError::WorkerConfigFlag { .. }
         | StartupInputError::MetricsPortClash => 1_i32,
     };
     Ok(json!({"exit_code": exit_code, "message": error.to_string()}))
@@ -202,8 +203,20 @@ fn port_output(port: u16, sample: u32) -> Value {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    let bounds = drawn.then_some([FALLBACK_PORT_LOW, FALLBACK_PORT_HIGH]);
+    let bounds = drawn.then(|| [fallback_edge(0), fallback_edge(u32::MAX)]);
     json!({"port": chosen, "probed": asked, "bounds": bounds})
+}
+
+fn fallback_edge(sample: u32) -> u16 {
+    let prober = RecordingProber {
+        busy: true,
+        asked: Mutex::new(Vec::new()),
+    };
+    let mut rng = RecordingRng {
+        sample,
+        draws: AtomicUsize::new(0),
+    };
+    choose_port(4_000, &prober, &mut rng)
 }
 
 fn verbose_output(worker_config: &str, litellm_log: &str) -> Value {

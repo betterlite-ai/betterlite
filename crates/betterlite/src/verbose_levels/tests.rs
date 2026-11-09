@@ -144,9 +144,12 @@ fn a_bad_worker_config_warns_once_and_plans_nothing() {
     );
 }
 
-#[test]
-fn a_worker_config_that_is_not_an_object_warns_and_plans_nothing() {
-    let (plan, warnings) = plan_with(Some("[]"), false, "DEBUG");
+#[rstest]
+#[case::empty_array("[]")]
+#[case::true_pair("[true,true]")]
+#[case::false_pair("[false,false]")]
+fn a_worker_config_that_is_not_an_object_warns_and_plans_nothing(#[case] raw: &str) {
+    let (plan, warnings) = plan_with(Some(raw), false, "DEBUG");
 
     assert_eq!(plan, EMPTY_PLAN);
     assert_eq!(warnings.len(), 1);

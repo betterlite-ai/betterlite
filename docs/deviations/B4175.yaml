@@ -36,3 +36,12 @@ deviations:
       LiteLLM redirects stdout and stderr only, so the child inherits the terminal's stdin; a
       background helper that is never asked anything gets all three closed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L634-L651
+  - what: >-
+      `--validate_config` prints the number of entries in `model_list`, not the length of the
+      router's expanded model list.
+    why: >-
+      LiteLLM counts `router.get_model_list()`, which adds a row per model_group_alias and routing
+      group and one deployment per `organization` entry. The config loader rejects those keys as
+      unsupported, so a config that loads has none of them and the two counts are equal; the count
+      has to follow the router once the loader reads those keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12078

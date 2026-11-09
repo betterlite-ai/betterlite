@@ -1,12 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::io;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::sync::PoisonError;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::health_probe::{HealthTransport, ReqwestHealth, TransportError};
@@ -120,6 +124,13 @@ fn health_command_writes_the_status_line_before_a_transport_failure() {
     assert_eq!(output, "\nLiteLLM: Health Testing models in config\n");
 }
 
+#[cfg(target_os = "linux")]
+const INNER_RUN_FLAG: &str = "inner-run";
+#[cfg(target_os = "linux")]
+const STREAMS_MARKER: &str = "streams";
+#[cfg(target_os = "linux")]
+const STREAM_PROBE: &str = "for fd in 0 1 2; do [ \"/proc/$$/fd/$fd\" -ef /dev/null ] || echo \"fd$fd\" >> \"$1\"; done; echo checked >> \"$1\"";
+
 fn config_file(text: &str) -> (tempfile::TempDir, PathBuf) {
     let folder = tempfile::tempdir().unwrap();
     let path = folder.path().join("config.yaml");
@@ -146,6 +157,26 @@ fn config_validation_accepts_a_loadable_file() {
         "LiteLLM: config OK (1 models)\n"
     );
     assert!(err_writer.is_empty());
+}
+
+#[rstest]
+#[case::alias("router_settings:\n  model_group_alias:\n    gpt-4o: gpt-4\n")]
+#[case::organization_list(
+    "model_list:\n  - model_name: gpt-4\n    litellm_params:\n      model: openai/gpt-4\n      organization: [org-a, org-b]\n"
+)]
+fn config_validation_refuses_keys_that_change_the_model_count(#[case] text: &str) {
+    let (_folder, path) = config_file(text);
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let mut writer = Vec::new();
+    let mut err_writer = Vec::new();
+
+    let error = config_validation_command(Some(&path), &loader, &mut writer, &mut err_writer)
+        .expect_err("a key the loader does not read is refused, not counted");
+
+    assert!(matches!(error, DiagnosticError::ConfigInvalid { .. }));
+    assert!(writer.is_empty());
 }
 
 #[test]
@@ -270,10 +301,55 @@ fn ollama_serve_turns_a_spawn_failure_into_the_warning() {
 }
 
 #[test]
-fn silent_launcher_starts_a_program_without_waiting() {
+fn silent_launcher_returns_before_the_program_ends() {
+    let started = Instant::now();
+
     SilentLauncher
-        .spawn_silent("sh", &["-c", "exit 0"])
+        .spawn_silent("sh", &["-c", "sleep 4"])
         .expect("sh starts");
+
+    let waited = started.elapsed();
+    assert!(waited < Duration::from_secs(2), "{waited:?}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn silent_launcher_connects_all_three_streams_to_the_null_device() {
+    // the test binary runs this test a second time, from a folder holding the flag file, with pipes on all three streams
+    if Path::new(INNER_RUN_FLAG).exists() {
+        SilentLauncher
+            .spawn_silent("sh", &["-c", STREAM_PROBE, "sh", STREAMS_MARKER])
+            .expect("sh starts");
+        return;
+    }
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(folder.path().join(INNER_RUN_FLAG), "").unwrap();
+    let marker = folder.path().join(STREAMS_MARKER);
+    let this_test = module_path!()
+        .split_once("::")
+        .map(|(_crate_name, path)| {
+            format!("{path}::silent_launcher_connects_all_three_streams_to_the_null_device")
+        })
+        .expect("the module path has a crate prefix");
+    let parent = Command::new(env::current_exe().unwrap())
+        .args(["--exact", &this_test, "--nocapture"])
+        .current_dir(folder.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+    assert!(parent.status.success(), "{parent:?}");
+
+    let started = Instant::now();
+    let mut seen = String::new();
+    while !seen.contains("checked") && started.elapsed() < Duration::from_secs(10) {
+        thread::park_timeout(Duration::from_millis(50));
+        seen = fs::read_to_string(&marker).unwrap_or_default();
+    }
+    assert_eq!(seen, "checked\n");
 }
 
 #[test]

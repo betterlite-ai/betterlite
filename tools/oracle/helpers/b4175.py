@@ -10,6 +10,7 @@ from typing import NotRequired, TypeAlias, TypedDict, cast
 from unittest.mock import patch
 
 import httpx
+import uvicorn
 from click.testing import CliRunner
 from litellm._logging import verbose_logger, verbose_proxy_logger, verbose_router_logger
 from litellm.proxy.common_utils.banner import show_banner
@@ -21,8 +22,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 _BASELINE_LEVEL = logging.WARNING
 _RANDOM_PORT = 31_000
 _DEFAULT_PORT = 4_000
-_FALLBACK_LOW = 1_024
-_FALLBACK_HIGH = 49_152
 
 
 class HelperInput(TypedDict):
@@ -127,15 +126,19 @@ def _port_fallback(input_value: HelperInput) -> Json:
         recorded["bounds"] = [low, high]
         return _RANDOM_PORT
 
+    def fake_uvicorn_run(**kwargs: object) -> None:
+        recorded["port"] = cast(Json, kwargs.get("port"))
+
     with (
+        patch.dict(os.environ),
         patch.object(ProxyInitializationHelpers, "_is_port_in_use", fake_in_use),
         patch.object(random, "randint", fake_randint),
+        patch.object(uvicorn, "run", fake_uvicorn_run),
     ):
-        if port == _DEFAULT_PORT and ProxyInitializationHelpers._is_port_in_use(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-            port
-        ):
-            port = random.randint(_FALLBACK_LOW, _FALLBACK_HIGH)  # noqa: S311
-    return {"port": port, "probed": probed, "bounds": recorded.get("bounds")}
+        result = CliRunner().invoke(run_server, ["--port", str(port)])
+    if "port" not in recorded:
+        raise RuntimeError(f"run_server never reached uvicorn.run: {result.exception!r}")
+    return {"port": recorded["port"], "probed": probed, "bounds": recorded.get("bounds")}
 
 
 def _verbose(input_value: HelperInput) -> Json:
