@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-content-empty-block
+call:
+  bedrock_content:
+    function: skip_empty_text_blocks
+    message:
+      role: assistant
+      content:
+        - {type: text, text: "   "}
+        - {type: text}
+        - {type: image_url, image_url: {url: "https://example.test/pic.png"}}
+        - {type: text, text: keep}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-admin-client-list-space-in-value
+call:
+  b4326:
+    function: parse_client_list
+    text: |-
+      id=5 addr=/tmp/redis sock/redis.sock laddr=/tmp/redis sock/redis.sock fd=10 name= age=1 cmd=client|list
+env: {}
+compare: {ignore: []}

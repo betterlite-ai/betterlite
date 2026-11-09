@@ -1,0 +1,17 @@
+task: B248
+deviations:
+  - what: A known callback name whose logger the resolver reports unavailable stops the request with an error naming the callback; LiteLLM logs the initialization error and skips the callback.
+    why: A logger that silently drops every event looks like working logging, so the missing adapter is reported where the request selects it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5183-L5188
+  - what: Each incoming per-request callback list is limited to 100 entries and a longer list is an error naming the list before any name resolves; LiteLLM copies a request's list of any length. A list that a success or failure mirror grows past the limit is accepted.
+    why: A request-supplied list must not drive one resolver call per entry or unbounded work past the configured callback capacity of 100.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1092-L1108
+  - what: Standard callback dynamic params validate every request slot in full, so an os.environ reference in a slot later shadowed by an earlier one still fails; LiteLLM skips validation for a parameter it already has.
+    why: Rejecting every request-supplied environment reference is the security boundary B188 enforces, shadowed or not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L192-L198
+  - what: A langfuse_environment value is checked against the lowercase pattern when the callback params are read; LiteLLM validates it later inside the langfuse logger.
+    why: Failing at the request boundary names the field before any logger is built, and the accepted pattern is the same one LiteLLM applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L61-L68
+  - what: Standard callback dynamic params omit request-supplied exporter destinations such as langfuse_host and langsmith_base_url.
+    why: Inherited from B188's documented destination block; a request must not replace an operator-configured exporter destination.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L85-L121
