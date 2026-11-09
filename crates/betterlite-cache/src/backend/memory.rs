@@ -31,7 +31,6 @@ struct Construction {
     default_ttl: Option<f64>,
     max_size_per_item: Option<i64>,
     loaded_item_kib: i64,
-    item_kib: i64,
 }
 
 struct MemoryState {
@@ -66,7 +65,6 @@ impl MemoryCache {
                 default_ttl,
                 max_size_per_item,
                 loaded_item_kib,
-                item_kib: limits.max_size_per_item,
             },
             default_ttl_seconds: whole_seconds(limits.default_ttl)?,
             limits,

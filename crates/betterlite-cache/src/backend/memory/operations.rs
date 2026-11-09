@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
+use betterlite_context::local_ttl_cache::{CacheError, CacheValue};
 use serde_json::Number;
 
 use super::{Clock, MemorySettings, MemoryState};
@@ -34,45 +33,29 @@ pub(super) fn write(
     ttl: Option<f64>,
 ) -> Result<(), BackendError> {
     let now = read_clock(&settings.clock)?;
+    // LiteLLM prunes expired entries and drops the earliest expiry before it checks the new size
     state.expiries.retain(|_, expiry| *expiry > now);
-    evict_to_capacity(&mut state.expiries, settings.limits.capacity);
-    let previous = state.expiries.get(key).copied();
-    let accepted = settings.limits.capacity != 0 && accepts(settings, key, &value)?;
+    if let Some(victim) = eviction_victim(&state.expiries, settings.limits.capacity) {
+        state.expiries.remove(&victim);
+    }
+    let kept = state.expiries.contains_key(key);
     state.values.set(key, value, ttl)?;
-    if accepted && previous.is_none_or(|expiry| expiry < now) {
+    if !kept && state.values.get(key)?.is_some() {
         let expiry = now.mul_add(1.0_f64, ttl.unwrap_or(settings.limits.default_ttl));
         state.expiries.insert(key.to_owned(), expiry);
     }
     Ok(())
 }
 
-// The shared cache decides admission from private state, so a one-entry copy applies its own size and key policy
-fn accepts(settings: &MemorySettings, key: &str, value: &CacheValue) -> Result<bool, BackendError> {
-    let item_kib = settings.construction.item_kib;
-    let mut probe = LocalTtlCache::with_clock(
-        Some(1),
-        Some(600.0_f64),
-        Some(item_kib),
-        item_kib,
-        Arc::clone(&settings.clock),
-    )?;
-    probe.set(key, value.clone(), None)?;
-    Ok(probe.get(key)?.is_some())
-}
-
-// LiteLLM drops the entries with the earliest expiry once the cache is full, before it checks the new size
-fn evict_to_capacity(expiries: &mut BTreeMap<String, f64>, capacity: usize) {
-    if capacity == 0 {
-        return;
+// LiteLLM's set drops the one entry with the earliest expiry when the cache is already full
+fn eviction_victim(expiries: &BTreeMap<String, f64>, capacity: usize) -> Option<String> {
+    if capacity == 0 || expiries.len() < capacity {
+        return None;
     }
-    while expiries.len() >= capacity {
-        let victim = expiries
-            .iter()
-            .min_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)))
-            .map(|(key, _)| key.clone());
-        let Some(earliest) = victim else { return };
-        expiries.remove(&earliest);
-    }
+    expiries
+        .iter()
+        .min_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)))
+        .map(|(key, _)| key.clone())
 }
 
 pub(super) fn increment(
