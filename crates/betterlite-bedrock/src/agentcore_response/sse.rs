@@ -54,22 +54,26 @@ fn extract_sse_json(line: &str) -> Option<Json> {
     Some(data)
 }
 
+fn object_field<'value>(
+    object: &'value IndexMap<String, Json>,
+    key: &str,
+    not_object: AgentCoreResponseError,
+) -> Result<Option<&'value IndexMap<String, Json>>, AgentCoreResponseError> {
+    match object.get(key) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(fields)) => Ok(Some(fields)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => Err(not_object),
+    }
+}
+
 fn usage_from_event(
     event: &IndexMap<String, Json>,
 ) -> Result<Option<AgentCoreUsage>, AgentCoreResponseError> {
-    let Some(metadata) = event.get("metadata") else {
+    let Some(metadata_fields) =
+        object_field(event, "metadata", AgentCoreResponseError::MetadataNotObject)?
+    else {
         return Ok(None);
     };
-    let metadata_fields = match metadata {
-        Json::Null => return Ok(None),
-        Json::Object(fields) => fields,
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreResponseError::MetadataNotObject);
-        }
-    };
-    if metadata_fields.is_empty() {
-        return Ok(None);
-    }
     let Some(usage) = metadata_fields.get("usage") else {
         return Ok(None);
     };
@@ -77,28 +81,21 @@ fn usage_from_event(
 }
 
 fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, AgentCoreResponseError> {
-    let Some(block) = event.get("contentBlockDelta") else {
+    let Some(block_fields) = object_field(
+        event,
+        "contentBlockDelta",
+        AgentCoreResponseError::DeltaEventNotObject,
+    )?
+    else {
         return Ok(None);
     };
-    let block_fields = match block {
-        Json::Null => return Ok(None),
-        Json::Object(fields) => fields,
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreResponseError::DeltaEventNotObject);
-        }
-    };
-    if block_fields.is_empty() {
+    let Some(delta_fields) = object_field(
+        block_fields,
+        "delta",
+        AgentCoreResponseError::DeltaNotObject,
+    )?
+    else {
         return Ok(None);
-    }
-    let Some(delta) = block_fields.get("delta") else {
-        return Ok(None);
-    };
-    let delta_fields = match delta {
-        Json::Null => return Ok(None),
-        Json::Object(fields) => fields,
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreResponseError::DeltaNotObject);
-        }
     };
     match delta_fields.get("text") {
         None | Some(Json::Null) => Ok(None),
