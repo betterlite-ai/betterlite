@@ -454,6 +454,7 @@ fn reply_falls_back_to_description(#[case] bytes: &[u8], #[case] expected: &str)
 #[case::snippets_not_a_list(br#"{"results":{"web":[{"title":"T","snippets":"x"}]}}"#)]
 #[case::nonempty_results_list(br#"{"results":[[{"title":"T"}]]}"#)]
 #[case::not_an_object(b"[]")]
+#[case::item_is_a_list(br#"{"results":{"web":[["T"]]}}"#)]
 #[case::web_not_a_list(br#"{"results":{"web":{}}}"#)]
 fn reply_rejects_a_shape_the_source_would_fail(#[case] bytes: &[u8]) {
     assert!(matches!(
