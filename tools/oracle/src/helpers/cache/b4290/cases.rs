@@ -6,6 +6,7 @@ use betterlite_cache::types::pipeline::RedisPipelineIncrement;
 use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_context::local_ttl_cache::CacheValue;
 use serde_json::json;
+use std::sync::PoisonError;
 
 use super::{BaseContract, IncrementInput, OldestEntryInput, failure, memory, runtime};
 use crate::helpers::HelperResult;
@@ -31,7 +32,7 @@ pub(crate) fn base_test_connection() -> HelperResult {
 }
 
 pub(crate) fn memory_ttl(clock: f64, ttl: f64, key: &str, value: &str) -> HelperResult {
-    let cache = memory(clock);
+    let (cache, _now) = memory(clock)?;
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         cache
@@ -40,6 +41,29 @@ pub(crate) fn memory_ttl(clock: f64, ttl: f64, key: &str, value: &str) -> Helper
             .map_err(failure)?;
         let stored = cache.async_get_ttl(key).await.map_err(failure)?;
         Ok(json!({"ttl": stored}))
+    });
+    outcome
+}
+
+pub(crate) fn memory_expired_ttl(
+    clock: f64,
+    ttl: f64,
+    key: &str,
+    value: &str,
+    read_at: f64,
+) -> HelperResult {
+    let (cache, now) = memory(clock)?;
+    let runtime = runtime()?;
+    let outcome: HelperResult = runtime.block_on(async {
+        cache
+            .async_set_cache(key, CacheValue::Text(value.to_owned()), Some(ttl))
+            .await
+            .map_err(failure)?;
+        *now.lock().unwrap_or_else(PoisonError::into_inner) = read_at;
+        let before_read = cache.async_get_ttl(key).await.map_err(failure)?;
+        let read = cache.async_get_cache(key).await.map_err(failure)?;
+        let after_read = cache.async_get_ttl(key).await.map_err(failure)?;
+        Ok(json!({"before_read": before_read, "read": read, "after_read": after_read}))
     });
     outcome
 }
@@ -53,7 +77,7 @@ pub(crate) fn memory_increments(clock: f64, inputs: &[IncrementInput]) -> Helper
             ttl: None,
         })
         .collect::<Vec<_>>();
-    let cache = memory(clock);
+    let (cache, _now) = memory(clock)?;
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         let results = cache
@@ -66,7 +90,7 @@ pub(crate) fn memory_increments(clock: f64, inputs: &[IncrementInput]) -> Helper
 }
 
 pub(crate) fn oldest_keys(clock: f64, entries: &[OldestEntryInput], limit: usize) -> HelperResult {
-    let cache = memory(clock);
+    let (cache, _now) = memory(clock)?;
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async {
         for entry in entries {

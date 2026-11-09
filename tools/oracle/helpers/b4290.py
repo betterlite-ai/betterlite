@@ -107,8 +107,8 @@ def string_or_number(value: Json, name: str) -> str | int | float | None:
     return value
 
 
-def _memory(clock: float) -> InMemoryCache:
-    return InMemoryCache(clock=lambda: clock)
+def _memory(now: list[float]) -> InMemoryCache:
+    return InMemoryCache(clock=lambda: now[0])
 
 
 async def _stored_ttl(cache: InMemoryCache, key: str, value: str, ttl: float) -> float | None:
@@ -136,8 +136,31 @@ def _memory_async_get_absolute_ttl(data: dict[str, Json]) -> Json:
     ttl = number_value(data.get("ttl"), "ttl")
     key = string_value(data.get("key"), "key")
     value = string_value(data.get("value"), "value")
-    stored = asyncio.run(_stored_ttl(_memory(clock), key, value, ttl))
+    stored = asyncio.run(_stored_ttl(_memory([clock]), key, value, ttl))
     return cast(Json, {"ttl": stored})
+
+
+async def _expired_ttl(
+    cache: InMemoryCache, now: list[float], entry: tuple[str, str, float], read_at: float
+) -> Json:
+    (key, value, ttl) = entry
+    await cache.async_set_cache(key, value, ttl=ttl)  # pyright: ignore[reportUnknownMemberType]
+    now[0] = read_at
+    before_read = await cache.async_get_ttl(key)
+    read = cast(Json, await cache.async_get_cache(key))  # pyright: ignore[reportUnknownMemberType]
+    after_read = await cache.async_get_ttl(key)
+    return cast(Json, {"before_read": before_read, "read": read, "after_read": after_read})
+
+
+def _memory_async_get_expired_ttl(data: dict[str, Json]) -> Json:
+    now = [number_value(data.get("clock"), "clock")]
+    entry = (
+        string_value(data.get("key"), "key"),
+        string_value(data.get("value"), "value"),
+        number_value(data.get("ttl"), "ttl"),
+    )
+    read_at = number_value(data.get("read_at"), "read_at")
+    return asyncio.run(_expired_ttl(_memory(now), now, entry, read_at))
 
 
 def _increment_operation(entry: Json) -> RedisPipelineIncrementOperation:
@@ -153,7 +176,7 @@ def _memory_async_increment_pipeline(data: dict[str, Json]) -> Json:
     clock = number_value(data.get("clock"), "clock")
     raw = list_value(data.get("increments"), "increments")
     operations = [_increment_operation(entry) for entry in raw]
-    cache = _memory(clock)
+    cache = _memory([clock])
     results = asyncio.run(cache.async_increment_pipeline(operations))  # pyright: ignore[reportUnknownMemberType]
     return cast(Json, {"results": results})
 
@@ -174,7 +197,7 @@ def _async_get_oldest_n_keys_ordering(data: dict[str, Json]) -> Json:
     limit = optional_integer(data.get("limit"), "limit")
     if limit is None:
         raise ValueError("limit must be an integer")
-    keys = asyncio.run(_oldest_keys(_memory(clock), entries, limit))
+    keys = asyncio.run(_oldest_keys(_memory([clock]), entries, limit))
     return cast(Json, {"keys": keys})
 
 
@@ -291,6 +314,8 @@ def run(  # noqa: C901, PLR0911, PLR0912 - one branch per b4290 operation
             return _base_cache_test_connection()
         case "memory_async_get_absolute_ttl":
             return _memory_async_get_absolute_ttl(data)
+        case "memory_async_get_expired_ttl":
+            return _memory_async_get_expired_ttl(data)
         case "memory_async_increment_pipeline":
             return _memory_async_increment_pipeline(data)
         case "dynamic_cache_control_ttl":
