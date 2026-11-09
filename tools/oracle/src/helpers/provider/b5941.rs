@@ -2,15 +2,14 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
 use betterlite_provider::oci_common::OciError;
-use betterlite_provider::oci_common::base_url::{OCI_API_VERSION, get_oci_base_url};
 use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
 };
 use betterlite_provider::oci_common::environment::OciEnvironment;
 use betterlite_provider::oci_embed::response::decode_embed_response;
 use betterlite_provider::oci_embed::{
-    OciEmbedParams, SUPPORTED_OPENAI_PARAMS, map_openai_params, transform_embedding_request,
-    validate_environment,
+    OciEmbedParams, SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
+    transform_embedding_request, validate_environment,
 };
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
@@ -161,10 +160,10 @@ fn validate_output(step: &ValidateStep) -> Result<serde_json::Value, OciError> {
 
 fn url_output(step: &UrlStep) -> Result<serde_json::Value, OciError> {
     let credentials = resolve_oci_credentials(&step.explicit, &step.env);
-    let base = get_oci_base_url(&credentials.oci_region, step.api_base.as_deref())?;
-    Ok(serde_json::json!(format!(
-        "{base}/{OCI_API_VERSION}/actions/embedText"
-    )))
+    Ok(serde_json::json!(get_complete_url(
+        &credentials,
+        step.api_base.as_deref()
+    )?))
 }
 
 fn request_output(step: &RequestStep) -> Result<serde_json::Value, OciError> {

@@ -22,6 +22,12 @@ call:
         status: 200
         body: '[]'
       - method: response
+        status: 200
+        body: '[null,[[0.5]],"m","v"]'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.5]],"modelId":"m","modelVersion":"v","usage":[4,7]}'
+      - method: response
         status: 201
         body: ''
 env: {}

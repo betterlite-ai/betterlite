@@ -9,14 +9,13 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use crate::oci_common::OciServingMode;
-use crate::oci_common::base_url::{OCI_API_VERSION, get_oci_base_url};
 use crate::oci_common::credentials::{DEFAULT_OCI_REGION, OciCredentials};
 use crate::oci_common::environment::OciEnvironment;
 
 use super::response::decode_embed_response;
 use super::{
     OCI_EMBED_BATCH_LIMIT, OciEmbedParams, OciEmbedRequest, SUPPORTED_OPENAI_PARAMS,
-    map_openai_params, transform_embedding_request, validate_environment,
+    get_complete_url, map_openai_params, transform_embedding_request, validate_environment,
 };
 
 const COMPARTMENT: &str = "ocid1.compartment.oc1..aaaa";
@@ -426,59 +425,60 @@ fn remove_credential(credentials: &mut OciCredentials, name: &str) {
     }
 }
 
-#[test]
-fn validate_environment_treats_empty_values_as_missing() {
+#[rstest]
+#[case::user("oci_user")]
+#[case::fingerprint("oci_fingerprint")]
+#[case::tenancy("oci_tenancy")]
+#[case::compartment("oci_compartment_id")]
+#[case::key("oci_key")]
+fn validate_environment_treats_an_empty_value_as_missing(#[case] empty: &str) {
     let mut credentials = credentials();
-    credentials.oci_user = Some(String::new());
-    credentials.oci_fingerprint = Some(String::new());
-    credentials.oci_tenancy = Some(String::new());
-    credentials.oci_compartment_id = Some(String::new());
-    credentials.oci_key = Some(SecretString::from(""));
+    empty_credential(&mut credentials, empty);
     let mut headers = HeaderMap::new();
     let error =
         validate_environment(&mut headers, &credentials, &OciEnvironment::default()).unwrap_err();
     assert_eq!(error.status, 401);
+    assert!(headers.is_empty());
+}
+
+fn empty_credential(credentials: &mut OciCredentials, name: &str) {
+    match name {
+        "oci_user" => credentials.oci_user = Some(String::new()),
+        "oci_fingerprint" => credentials.oci_fingerprint = Some(String::new()),
+        "oci_tenancy" => credentials.oci_tenancy = Some(String::new()),
+        "oci_compartment_id" => credentials.oci_compartment_id = Some(String::new()),
+        "oci_key" => credentials.oci_key = Some(SecretString::from("")),
+        other => panic!("unknown credential {other}"),
+    }
 }
 
 #[test]
 fn embed_text_url_appends_the_action_to_the_region_base() {
-    let credentials = credentials();
-    let base = get_oci_base_url(&credentials.oci_region, None).unwrap();
+    let url = get_complete_url(&credentials(), None).unwrap();
     assert_eq!(
-        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
+        url,
         "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/embedText"
     );
 }
 
 #[test]
 fn embed_text_url_strips_a_previous_action_path_from_the_api_base() {
-    let credentials = credentials();
-    let base = get_oci_base_url(
-        &credentials.oci_region,
-        Some("https://host/20231130/actions/chat/"),
-    )
-    .unwrap();
-    assert_eq!(
-        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
-        "https://host/20231130/actions/embedText"
-    );
+    let url =
+        get_complete_url(&credentials(), Some("https://host/20231130/actions/chat/")).unwrap();
+    assert_eq!(url, "https://host/20231130/actions/embedText");
 }
 
 #[test]
 fn embed_text_url_trims_a_trailing_slash_from_the_api_base() {
-    let credentials = credentials();
-    let base = get_oci_base_url(&credentials.oci_region, Some("https://host/base///")).unwrap();
-    assert_eq!(
-        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
-        "https://host/base/20231130/actions/embedText"
-    );
+    let url = get_complete_url(&credentials(), Some("https://host/base///")).unwrap();
+    assert_eq!(url, "https://host/base/20231130/actions/embedText");
 }
 
 #[test]
 fn embed_text_url_rejects_an_invalid_region() {
     let mut credentials = credentials();
     credentials.oci_region = "US_ASHBURN".to_owned();
-    let error = get_oci_base_url(&credentials.oci_region, None).unwrap_err();
+    let error = get_complete_url(&credentials, None).unwrap_err();
     assert_eq!(error.status, 400);
 }
 
@@ -518,6 +518,8 @@ fn decode_response_keeps_the_http_status_for_a_non_utf8_body() {
 #[case::missing_model_version(r#"{"embeddings":[[0.5]],"modelId":"m"}"#)]
 #[case::wrong_embedding_type(r#"{"embeddings":"x","modelId":"m","modelVersion":"v"}"#)]
 #[case::non_object_body("[]")]
+#[case::full_length_array(r#"[null,[[0.5]],"m","v"]"#)]
+#[case::usage_array(r#"{"embeddings":[[0.5]],"modelId":"m","modelVersion":"v","usage":[4,7]}"#)]
 #[case::null_body("null")]
 #[case::negative_token_count(
     r#"{"embeddings":[[0.5]],"modelId":"m","modelVersion":"v","inputTextTokenCounts":[-1]}"#

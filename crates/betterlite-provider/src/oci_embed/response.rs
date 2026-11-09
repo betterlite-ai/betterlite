@@ -3,9 +3,9 @@ use std::str;
 use betterlite_openai::embedding::{
     EmbeddingRecord, EmbeddingResponse, EmbeddingUsage, EmbeddingVector,
 };
+use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
 use serde_json::Number;
-use serde_json::error::Category;
 
 use crate::oci_common::OciError;
 
@@ -37,19 +37,28 @@ pub fn decode_embed_response(status: u16, body: &[u8]) -> Result<EmbeddingRespon
             message: body_text(body),
         });
     }
-    let parsed: OciEmbedResponse = serde_json::from_slice(body).map_err(|source| {
-        if source.classify() == Category::Data {
-            OciError {
-                status: 500,
-                message: format!("OCI embed response does not match expected schema: {source}"),
-            }
-        } else {
-            OciError {
-                status,
-                message: format!("Failed to parse OCI embed response as JSON: {source}"),
-            }
-        }
+    let document: Json = serde_json::from_slice(body).map_err(|source| OciError {
+        status,
+        message: format!("Failed to parse OCI embed response as JSON: {source}"),
     })?;
+    // the derived decoder also accepts a struct as a field sequence, which the OCI body never is
+    let Json::Object(fields) = &document else {
+        return Err(schema_mismatch("the response body is not a JSON object"));
+    };
+    if fields
+        .get("usage")
+        .is_some_and(|usage| !matches!(usage, Json::Null | Json::Object(_)))
+    {
+        return Err(schema_mismatch("usage is not a JSON object"));
+    }
+    let parsed: OciEmbedResponse = serde_json::from_slice(body).map_err(|source| OciError {
+        status: 500,
+        message: format!("OCI embed response does not match expected schema: {source}"),
+    })?;
+    embed_response(parsed)
+}
+
+fn embed_response(parsed: OciEmbedResponse) -> Result<EmbeddingResponse, OciError> {
     let usage = response_usage(&parsed)?;
     let row_count = parsed.embeddings.len();
     let mut data = Vec::with_capacity(row_count);
@@ -71,6 +80,13 @@ pub fn decode_embed_response(status: u16, body: &[u8]) -> Result<EmbeddingRespon
         model: parsed.model_id,
         usage,
     })
+}
+
+fn schema_mismatch(detail: &str) -> OciError {
+    OciError {
+        status: 500,
+        message: format!("OCI embed response does not match expected schema: {detail}"),
+    }
 }
 
 fn body_text(body: &[u8]) -> String {
