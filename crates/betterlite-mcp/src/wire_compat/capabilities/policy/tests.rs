@@ -193,6 +193,8 @@ fn an_initialize_with_declared_optional_members_and_unknown_keys_is_accepted() {
 #[case::exponent_float("1e2")]
 #[case::above_i64("9223372036854775808")]
 #[case::below_i64("-9223372036854775809")]
+#[case::above_u64("18446744073709551616")]
+#[case::above_u128("340282366920938463463374607431768211456")]
 #[case::boolean("true")]
 fn an_initialize_with_a_string_or_whole_number_progress_token_is_accepted(#[case] token: &str) {
     let raw = format!(

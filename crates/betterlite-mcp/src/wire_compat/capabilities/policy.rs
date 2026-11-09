@@ -1,7 +1,7 @@
 use betterlite_db::mcp_stored_contracts::MCPTransport;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
-use serde::de::{Error as _, value::Error as TokenError};
+use serde::de::IgnoredAny;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -79,31 +79,20 @@ pub struct ClientCapabilities {
 #[serde(rename_all = "camelCase")]
 pub struct RequestMeta {
     #[serde(default)]
-    pub progress_token: ProgressToken,
+    pub progress_token: IgnoredAny,
 }
 
-// an Option reads null as absent; pydantic's str | int also takes a bool and a whole number of any size, a float only below 2^63
-#[derive(Default, Deserialize)]
-#[serde(try_from = "Json")]
-pub struct ProgressToken;
-
-impl TryFrom<Json> for ProgressToken {
-    type Error = TokenError;
-    fn try_from(token: Json) -> Result<Self, Self::Error> {
-        match token {
-            Json::Text(_) | Json::Bool(_) => Ok(Self),
-            Json::Number(number)
-                if !number.to_string().contains(['.', 'e', 'E'])
-                    || number.as_f64().is_some_and(|float| {
-                        float.abs() < 2_f64.powi(63) && float.trunc().total_cmp(&float).is_eq()
-                    }) =>
-            {
-                Ok(Self)
-            }
-            Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => Err(
-                TokenError::custom("progressToken must be a string or an integer"),
-            ),
+// pydantic's str | int also takes a bool and a whole number of any size, a float only below 2^63; null is no token
+fn is_progress_token(token: &Json) -> bool {
+    match token {
+        Json::Text(_) | Json::Bool(_) => true,
+        Json::Number(number) => {
+            !number.to_string().contains(['.', 'e', 'E'])
+                || number.as_f64().is_some_and(|float| {
+                    float.abs() < 2_f64.powi(63) && float.trunc().total_cmp(&float).is_eq()
+                })
         }
+        Json::Null | Json::List(_) | Json::Object(_) => false,
     }
 }
 
@@ -170,6 +159,15 @@ impl GatewayVersionPolicy {
                 let parsed = serde_json::to_value(params)
                     .and_then(serde_json::from_value::<InitializeParams>)
                     .map_err(|error| VersionRejection::InvalidParams(error.to_string()))?;
+                if let Some(Json::Object(meta)) = params.get("_meta")
+                    && meta
+                        .get("progressToken")
+                        .is_some_and(|token| !is_progress_token(token))
+                {
+                    return Err(VersionRejection::InvalidParams(
+                        "progressToken must be a string or an integer".to_owned(),
+                    ));
+                }
                 SpecVersion::from_wire(&parsed.protocol_version)
                     .filter(|version| version.is_handshake())
                     .map_or(LATEST_HANDSHAKE_VERSION, SpecVersion::as_str)
