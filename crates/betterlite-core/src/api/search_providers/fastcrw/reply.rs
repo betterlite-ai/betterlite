@@ -42,7 +42,7 @@ pub fn decode_fastcrw_reply(bytes: &[u8]) -> Result<SearchResponse, FastcrwError
 
 // LiteLLM reads only a list here and lets the source validation reject a member that is not an object
 fn project_data(text: &str) -> Result<Vec<SearchResult>, FastcrwError> {
-    if !text.trim_start().starts_with('[') {
+    if !text.starts_with('[') {
         return Ok(Vec::new());
     }
     let items: Vec<RawFields> =

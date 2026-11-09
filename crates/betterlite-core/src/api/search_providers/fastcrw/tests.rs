@@ -233,6 +233,13 @@ fn trait_hooks_shape_headers_url_and_options() {
             .unwrap(),
         "https://proxy.test/search"
     );
+    let empty_caller_key = search.validate_environment(Headers::new(), Some(&key("")), None);
+    assert_eq!(
+        empty_caller_key.get("Authorization").map(String::as_str),
+        Some("Bearer crw-env")
+    );
+    let keyless = load(&[]).validate_environment(headers(&[("X-Trace", "1")]), None, None);
+    assert_eq!(keyless, headers(&[("X-Trace", "1")]));
     let response = ProviderResponse {
         status_code: 200,
         headers: &Headers::new(),

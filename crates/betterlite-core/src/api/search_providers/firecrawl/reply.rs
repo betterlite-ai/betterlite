@@ -50,7 +50,7 @@ pub fn decode_firecrawl_reply(bytes: &[u8]) -> Result<SearchResponse, FirecrawlE
 }
 
 fn project_data(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
-    match text.trim_start().as_bytes().first().copied() {
+    match text.as_bytes().first().copied() {
         Some(b'[') => flat_results(text),
         Some(b'{') => cloud_results(text),
         _ => Ok(Vec::new()),
