@@ -1,0 +1,12 @@
+kind: helper
+name: a2a-send-params-v03-invalid-role-no-fallback-match
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        role: ROLE_USER
+        parts:
+          - kind: text
+env: {}
+compare: {ignore: []}

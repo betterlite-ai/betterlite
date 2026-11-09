@@ -39,3 +39,10 @@ path = "fuzz_targets/cli_jsonl_framing.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "docker_sha256sum"
+path = "fuzz_targets/docker_sha256sum.rs"
+test = false
+doc = false
+bench = false

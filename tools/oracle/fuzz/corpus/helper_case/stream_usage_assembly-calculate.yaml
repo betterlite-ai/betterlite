@@ -1,0 +1,15 @@
+kind: helper
+name: stream-usage-assembly-calculate
+call:
+  stream_usage_assembly:
+    function: calculate_usage
+    chunks:
+    - usage: {prompt_tokens: 5}
+    - usage: {completion_tokens: 3}
+    messages:
+    - {role: user, content: hello}
+    model: gpt-4o
+    completion_output: hi
+    counter: {text: 7, messages: 4}
+env: {}
+compare: {ignore: []}

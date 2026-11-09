@@ -1,0 +1,25 @@
+kind: helper
+name: oci-embed-response-usage-fallbacks
+call:
+  b5941:
+    steps:
+      - method: response
+        status: 200
+        body: '{"id":"row-1","embeddings":[[0.125,-0.5],[1.0,2.5]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0","inputTextTokenCounts":[3,4],"usage":{"promptTokens":9,"totalTokens":10}}'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.25]],"modelId":"cohere.embed-v4.0","modelVersion":"2.0","inputTextTokenCounts":[],"usage":{"promptTokens":9,"totalTokens":10}}'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.25]],"modelId":"m","modelVersion":"v","usage":{"promptTokens":4,"totalTokens":7}}'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.25]],"modelId":"m","modelVersion":"v"}'
+      - method: response
+        status: 200
+        body: '{"embeddings":[],"modelId":"m","modelVersion":"v"}'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[1.5]],"modelId":"m","modelVersion":"v","usage":{"promptTokens":0,"totalTokens":0}}'
+env: {}
+compare: {ignore: []}

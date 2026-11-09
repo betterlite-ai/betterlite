@@ -1,0 +1,19 @@
+kind: helper
+name: a2a-send-params-v10-raw-and-url-parts
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - raw: "aGk="
+            mediaType: text/plain
+            filename: hi.txt
+          - url: "https://f"
+            mediaType: image/png
+            filename: ""
+          - raw: "-_8"
+            media_type: application/octet-stream
+          - raw: "aGl="
+env: {}
+compare: {ignore: []}
