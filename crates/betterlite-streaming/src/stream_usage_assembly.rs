@@ -236,8 +236,8 @@ impl UsageTokenCounter for Counter {
             tools: None,
             tool_choice: None,
         };
-        let counted = self.count(&request).await?;
-        i64::try_from(counted).map_err(|_conversion| CountError::Overflow)
+        let total = self.count(&request).await?;
+        i64::try_from(total).map_err(|_conversion| CountError::Overflow)
     }
 }
 
@@ -256,6 +256,6 @@ async fn response_text_tokens(
         tools: None,
         tool_choice: None,
     };
-    let counted = counter.count(&request).await?;
-    i64::try_from(counted).map_err(|_conversion| CountError::Overflow)
+    let total = counter.count(&request).await?;
+    i64::try_from(total).map_err(|_conversion| CountError::Overflow)
 }

@@ -142,12 +142,10 @@ impl FixtureLogger {
     }
 
     pub(crate) fn messages(&self) -> Value {
-        let records = self
-            .records
-            .lock()
-            .map(|records| records.clone())
-            .unwrap_or_default();
-        Value::Array(records)
+        match self.records.lock() {
+            Ok(records) => Value::Array(records.to_vec()),
+            Err(_poisoned) => Value::Array(Vec::new()),
+        }
     }
 }
 
