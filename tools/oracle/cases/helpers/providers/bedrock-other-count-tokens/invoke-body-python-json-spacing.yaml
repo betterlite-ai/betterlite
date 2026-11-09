@@ -1,0 +1,24 @@
+kind: helper
+name: invoke-body-python-json-spacing
+call:
+  bedrock_other_count_tokens:
+    invoke_body_python_json_spacing:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: "héllo 😀"
+        metadata:
+          naïve:
+            - "café"
+            - "tab\there"
+            - "line\nbreak"
+            - "quote\"d"
+            - "back\\slash"
+            - "\u007f"
+        scale: 1.0
+        temperature: 0.7
+env: {}
+compare: {ignore: []}
