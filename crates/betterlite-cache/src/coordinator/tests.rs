@@ -1,0 +1,377 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use betterlite_context::local_ttl_cache::CacheValue;
+use std::future::pending;
+use thiserror::Error;
+use tokio::sync::Notify;
+use tokio::task::{JoinSet, yield_now};
+
+use super::{AsyncCacheProtocol, CoordinatorError, EventDrivenCacheCoordinator};
+use crate::backend::Ttl;
+
+#[derive(Debug, Error)]
+enum FakeError {
+    #[error("the fake cache read failed")]
+    ReadFailed,
+    #[error("the fake load failed")]
+    LoadFailed,
+}
+
+struct FakeCache {
+    values: Mutex<BTreeMap<String, CacheValue>>,
+    read_count: AtomicUsize,
+    fail_reads: bool,
+    fill_after_first_read: bool,
+}
+
+impl FakeCache {
+    fn new(fail_reads: bool) -> Self {
+        Self {
+            values: Mutex::new(BTreeMap::new()),
+            read_count: AtomicUsize::new(0),
+            fail_reads,
+            fill_after_first_read: false,
+        }
+    }
+
+    fn filling_after_first_read() -> Self {
+        Self {
+            values: Mutex::new(BTreeMap::new()),
+            read_count: AtomicUsize::new(0),
+            fail_reads: false,
+            fill_after_first_read: true,
+        }
+    }
+
+    fn clear(&self) {
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+    }
+
+    fn stored(&self, key: &str) -> Option<CacheValue> {
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+}
+
+#[async_trait]
+impl AsyncCacheProtocol for FakeCache {
+    type Error = FakeError;
+
+    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, FakeError> {
+        if self.fail_reads {
+            return Err(FakeError::ReadFailed);
+        }
+        let read = self.read_count.fetch_add(1, Ordering::SeqCst);
+        if self.fill_after_first_read && read == 0 {
+            self.async_set_cache(key, CacheValue::Integer(5), None)
+                .await?;
+            return Ok(None);
+        }
+        Ok(self.stored(key))
+    }
+
+    async fn async_set_cache(
+        &self,
+        key: &str,
+        value: CacheValue,
+        _ttl: Ttl,
+    ) -> Result<(), FakeError> {
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
+        Ok(())
+    }
+}
+
+type Outcome = Result<Option<CacheValue>, CoordinatorError<FakeError, FakeError>>;
+
+// a current-thread runtime runs each ready task on every yield, so eight yields settle both loaders
+async fn settle() {
+    for _ in 0..8_usize {
+        yield_now().await;
+    }
+}
+
+fn coordinator(wait_timeout: Duration) -> Arc<EventDrivenCacheCoordinator> {
+    Arc::new(EventDrivenCacheCoordinator::new(
+        "[CACHE]".to_owned(),
+        wait_timeout,
+    ))
+}
+
+async fn blocked_load(
+    loads: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+) -> Result<CacheValue, FakeError> {
+    loads.fetch_add(1, Ordering::SeqCst);
+    started.notify_one();
+    release.notified().await;
+    Ok(CacheValue::Integer(42))
+}
+
+async fn failing_load(started: Arc<Notify>, release: Arc<Notify>) -> Result<CacheValue, FakeError> {
+    started.notify_one();
+    release.notified().await;
+    Err(FakeError::LoadFailed)
+}
+
+async fn pending_load(started: Arc<Notify>) -> Result<CacheValue, FakeError> {
+    started.notify_one();
+    pending().await
+}
+
+fn instant_value(loads: &AtomicUsize) -> CacheValue {
+    loads.fetch_add(1, Ordering::SeqCst);
+    CacheValue::Integer(0)
+}
+
+async fn run_blocked_loader(
+    cache: Arc<FakeCache>,
+    coordinator: Arc<EventDrivenCacheCoordinator>,
+    loads: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+) -> Outcome {
+    let load = || blocked_load(loads, started, release);
+    coordinator.get_or_load("key", cache.as_ref(), load).await
+}
+
+async fn run_failing_loader(
+    cache: Arc<FakeCache>,
+    coordinator: Arc<EventDrivenCacheCoordinator>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+) -> Outcome {
+    let load = || failing_load(started, release);
+    coordinator.get_or_load("key", cache.as_ref(), load).await
+}
+
+async fn run_pending_loader(
+    cache: Arc<FakeCache>,
+    coordinator: Arc<EventDrivenCacheCoordinator>,
+    started: Arc<Notify>,
+) -> Outcome {
+    let load = || pending_load(started);
+    coordinator.get_or_load("key", cache.as_ref(), load).await
+}
+
+async fn run_instant_loader(
+    cache: Arc<FakeCache>,
+    coordinator: Arc<EventDrivenCacheCoordinator>,
+    loads: Arc<AtomicUsize>,
+) -> Outcome {
+    let load = || async { Ok::<_, FakeError>(instant_value(&loads)) };
+    coordinator.get_or_load("key", cache.as_ref(), load).await
+}
+
+#[tokio::test]
+async fn cache_coordination_hit_skips_the_load() {
+    let cache = FakeCache::new(false);
+    cache
+        .async_set_cache("key", CacheValue::Integer(7), None)
+        .await
+        .unwrap();
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = AtomicUsize::new(0);
+    let value = coordinator
+        .get_or_load("key", &cache, || async {
+            loads.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, FakeError>(CacheValue::Integer(9))
+        })
+        .await
+        .unwrap();
+    assert_eq!(value, Some(CacheValue::Integer(7)));
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cache_coordination_miss_loads_and_caches_the_value() {
+    let cache = FakeCache::new(false);
+    let coordinator = coordinator(Duration::from_secs(5));
+    let value = coordinator
+        .get_or_load("key", &cache, || async {
+            Ok::<_, FakeError>(CacheValue::Integer(9))
+        })
+        .await
+        .unwrap();
+    assert_eq!(value, Some(CacheValue::Integer(9)));
+    assert_eq!(cache.stored("key"), Some(CacheValue::Integer(9)));
+}
+
+#[tokio::test]
+async fn cache_coordination_reports_a_cache_read_failure() {
+    let cache = FakeCache::new(true);
+    let coordinator = coordinator(Duration::from_secs(5));
+    let value = coordinator
+        .get_or_load("key", &cache, || async {
+            Ok::<_, FakeError>(CacheValue::Integer(9))
+        })
+        .await;
+    assert!(matches!(value, Err(CoordinatorError::Cache { .. })));
+}
+
+#[tokio::test]
+async fn cache_coordination_double_check_returns_a_value_filled_while_claiming() {
+    let cache = FakeCache::filling_after_first_read();
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = AtomicUsize::new(0);
+    let value = coordinator
+        .get_or_load("key", &cache, || async {
+            loads.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, FakeError>(CacheValue::Integer(9))
+        })
+        .await
+        .unwrap();
+    assert_eq!(value, Some(CacheValue::Integer(5)));
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cache_coordination_resets_the_loader_state_between_loads() {
+    let cache = FakeCache::new(false);
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = AtomicUsize::new(0);
+    let first = coordinator
+        .get_or_load("key", &cache, || async {
+            loads.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, FakeError>(CacheValue::Integer(1))
+        })
+        .await
+        .unwrap();
+    cache.clear();
+    let second = coordinator
+        .get_or_load("key", &cache, || async {
+            loads.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, FakeError>(CacheValue::Integer(1))
+        })
+        .await
+        .unwrap();
+    assert_eq!(first, Some(CacheValue::Integer(1)));
+    assert_eq!(second, Some(CacheValue::Integer(1)));
+    assert_eq!(loads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn cache_coordination_claim_role_hands_waiters_the_inflight_signal() {
+    let coordinator = coordinator(Duration::from_secs(5));
+    assert!(coordinator.claim_role().is_none());
+    let mut signal = coordinator.claim_role().unwrap();
+    coordinator.signal_done();
+    signal.changed().await.unwrap();
+    assert!(*signal.borrow());
+    assert!(coordinator.claim_role().is_none());
+}
+
+#[tokio::test]
+async fn cache_coordination_single_loader_serves_every_request() {
+    let cache = Arc::new(FakeCache::new(false));
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let mut loader = JoinSet::new();
+    loader.spawn(run_blocked_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&loads),
+        Arc::clone(&started),
+        Arc::clone(&release),
+    ));
+    started.notified().await;
+    let mut waiter = JoinSet::new();
+    waiter.spawn(run_instant_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&loads),
+    ));
+    settle().await;
+    release.notify_one();
+    let from_load = loader.join_next().await.unwrap().unwrap().unwrap();
+    let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
+    assert_eq!(from_load, Some(CacheValue::Integer(42)));
+    assert_eq!(from_wait, Some(CacheValue::Integer(42)));
+    assert_eq!(loads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn cache_coordination_loader_failure_signals_waiters() {
+    let cache = Arc::new(FakeCache::new(false));
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let mut loader = JoinSet::new();
+    loader.spawn(run_failing_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&started),
+        Arc::clone(&release),
+    ));
+    started.notified().await;
+    let mut waiter = JoinSet::new();
+    waiter.spawn(run_instant_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&loads),
+    ));
+    settle().await;
+    release.notify_one();
+    let from_load = loader.join_next().await.unwrap().unwrap();
+    assert!(matches!(from_load, Err(CoordinatorError::Load { .. })));
+    assert_eq!(waiter.join_next().await.unwrap().unwrap().unwrap(), None);
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cache_coordination_cancelled_loader_signals_waiters() {
+    let cache = Arc::new(FakeCache::new(false));
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let mut loader = JoinSet::new();
+    let pending = loader.spawn(run_pending_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&started),
+    ));
+    started.notified().await;
+    let mut waiter = JoinSet::new();
+    waiter.spawn(run_instant_loader(
+        Arc::clone(&cache),
+        Arc::clone(&coordinator),
+        Arc::clone(&loads),
+    ));
+    settle().await;
+    pending.abort();
+    let cancelled = loader.join_next().await.unwrap().unwrap_err();
+    assert!(cancelled.is_cancelled());
+    assert_eq!(waiter.join_next().await.unwrap().unwrap().unwrap(), None);
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cache_coordination_waiter_times_out_without_a_signal() {
+    let cache = FakeCache::new(false);
+    let coordinator = coordinator(Duration::from_millis(20));
+    assert!(coordinator.claim_role().is_none());
+    let waited = coordinator
+        .get_or_load("key", &cache, || async {
+            Ok::<_, FakeError>(CacheValue::Integer(0))
+        })
+        .await;
+    assert!(matches!(waited, Err(CoordinatorError::WaitTimeout { .. })));
+}
