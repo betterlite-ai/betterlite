@@ -98,8 +98,10 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::InvalidDocument => invalid_document_boundary(),
         Boundary::MatchSteps => match_steps_boundary(),
         Boundary::FancyMatch => fancy_match_boundary(),
-        Boundary::Unsupported(pattern) => unsupported_construct_boundary(pattern),
-        Boundary::Invalid(pattern) => invalid_pattern_boundary(pattern),
+        Boundary::Unsupported(pattern) => {
+            warning_boundary(pattern, WarningKind::UnsupportedPattern)
+        }
+        Boundary::Invalid(pattern) => warning_boundary(pattern, WarningKind::InvalidPattern),
         Boundary::Supported(pattern) => supported_construct_boundary(pattern),
         Boundary::ManyGroups(groups, suffix) => many_groups_boundary(groups, suffix),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
@@ -198,23 +200,14 @@ fn pooled_known_boundary() {
     ));
 }
 
-fn unsupported_construct_boundary(pattern: &str) {
+fn warning_boundary(pattern: &str, kind: WarningKind) {
     let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
     assert_eq!(matcher.warnings.len(), 1);
-    assert_eq!(matcher.warnings[0].kind, WarningKind::UnsupportedPattern);
+    assert_eq!(matcher.warnings[0].kind, kind);
     assert_eq!(matcher.warnings[0].pattern, pattern);
     let selection = matcher.select(&query(&[], None, &["anything"], true, ""));
     assert!(selection.matches.is_empty());
     assert!(selection.warnings.is_empty());
-}
-
-fn invalid_pattern_boundary(pattern: &str) {
-    let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
-    assert_eq!(matcher.warnings.len(), 1);
-    assert_eq!(matcher.warnings[0].kind, WarningKind::InvalidPattern);
-    assert_eq!(matcher.warnings[0].pattern, pattern);
-    let selection = matcher.select(&query(&[], None, &["anything"], true, ""));
-    assert!(selection.matches.is_empty());
 }
 
 fn supported_construct_boundary(pattern: &str) {
@@ -225,7 +218,7 @@ fn supported_construct_boundary(pattern: &str) {
 fn many_groups_boundary(groups: usize, suffix: &str) {
     let mut pattern = "()".repeat(groups);
     pattern.push_str(suffix);
-    unsupported_construct_boundary(&pattern);
+    warning_boundary(&pattern, WarningKind::UnsupportedPattern);
 }
 
 fn match_steps_boundary() {
