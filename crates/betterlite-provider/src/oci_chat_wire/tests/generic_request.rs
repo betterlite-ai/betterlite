@@ -64,12 +64,11 @@ fn generic_messages_reject_an_unsupported_content_type() {
     );
 }
 
-#[test]
-fn generic_messages_reject_a_text_part_without_a_string_text() {
-    let error = adapt_generic_messages(&messages(
-        r#"[{"role": "user", "content": [{"type": "text", "text": 5}]}]"#,
-    ))
-    .unwrap_err();
+#[rstest]
+#[case::number(r#"[{"role": "user", "content": [{"type": "text", "text": 5}]}]"#)]
+#[case::missing(r#"[{"role": "user", "content": [{"type": "text"}]}]"#)]
+fn generic_messages_reject_a_text_part_without_a_string_text(#[case] message: &str) {
+    let error = adapt_generic_messages(&messages(message)).unwrap_err();
     assert_eq!(error.status, 400);
     assert_eq!(
         error.message,
@@ -79,6 +78,7 @@ fn generic_messages_reject_a_text_part_without_a_string_text() {
 
 #[rstest]
 #[case::number(r#"[{"role": "user", "content": [{"type": "image_url", "image_url": 5}]}]"#)]
+#[case::missing(r#"[{"role": "user", "content": [{"type": "image_url"}]}]"#)]
 #[case::object_without_url(
     r#"[{"role": "user", "content": [{"type": "image_url", "image_url": {"detail": "LOW"}}]}]"#
 )]

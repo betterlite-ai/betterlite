@@ -148,6 +148,7 @@ fn cohere_tools_map_parameter_definitions() {
                 "i": {"type": "integer", "minimum": 1, "maximum": 9},
                 "u": {"type": "weird"},
                 "n": {},
+                "e": {"type": ""},
                 "x": {"type": "string", "description": "X"}
             },
             "required": ["s", "n", "missing", 7]
@@ -161,6 +162,7 @@ fn cohere_tools_map_parameter_definitions() {
             "i": {"description": "Range: min=1, max=9", "type": "int", "isRequired": false},
             "u": {"description": "", "type": "weird", "isRequired": false},
             "n": {"description": "", "type": "string", "isRequired": false},
+            "e": {"description": "", "type": "string", "isRequired": false},
             "x": {"description": "X", "type": "str", "isRequired": false}
         }}]"#,
     );
@@ -384,6 +386,35 @@ fn cohere_stream_keeps_tool_calls_without_prior_calls() {
     )
     .unwrap();
     assert!(choice.delta.tool_calls.is_some());
+}
+
+#[test]
+fn cohere_stream_ignores_an_empty_tool_call_list() {
+    let choice = handle_cohere_stream_chunk(
+        &body(r#"{"apiFormat": "COHERE", "toolCalls": []}"#),
+        CohereEmitted::default(),
+    )
+    .unwrap();
+    assert!(choice.delta.tool_calls.is_none());
+}
+
+#[test]
+fn cohere_response_keeps_no_tool_calls_for_an_empty_list() {
+    let mut response = base_response();
+    handle_cohere_response(
+        &body(
+            r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+                "text": "hi", "apiFormat": "COHERE", "toolCalls": []
+            }}"#,
+        ),
+        "m",
+        0,
+        200,
+        &mut response,
+    )
+    .unwrap();
+    assert!(response.choices[0].message.tool_calls.is_none());
+    assert_eq!(response.choices[0].message.content.as_deref(), Some("hi"));
 }
 
 #[test]

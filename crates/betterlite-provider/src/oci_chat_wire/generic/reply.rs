@@ -26,8 +26,6 @@ const TIME_EPOCH: &str = "OCI returned a timeCreated before the Unix epoch";
 const IMAGE_STREAM: &str =
     "OCI returned image content in a streaming response, which is not supported";
 
-const TOOL_INDEX: &str = "the OCI stream has more tool calls than a chunk can index";
-
 pub fn handle_generic_response(
     body: &Json,
     status: u16,
@@ -67,17 +65,12 @@ pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> 
         Some(message) => stream_text(message.content.as_deref())?,
         None => None,
     };
-    let tool_calls = match &typed.message {
-        Some(message) => match message
-            .tool_calls
-            .as_ref()
-            .filter(|calls| !calls.is_empty())
-        {
-            Some(calls) => Some(stream_tool_calls(calls)?),
-            None => None,
-        },
-        None => None,
-    };
+    let tool_calls = typed
+        .message
+        .as_ref()
+        .and_then(|message| message.tool_calls.as_ref())
+        .filter(|calls| !calls.is_empty())
+        .map(|calls| stream_tool_calls(calls));
     Ok(Choice {
         index: typed.index.unwrap_or(0),
         delta: Delta {
@@ -213,13 +206,10 @@ fn fill_missing_tool_call_fields(chunk: &mut Json) {
     }
 }
 
-fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Result<Vec<StreamToolCall>, OciError> {
+fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Vec<StreamToolCall> {
     let mut adapted = Vec::with_capacity(tool_calls.len());
     for (position, tool_call) in tool_calls.iter().enumerate() {
-        let index = u32::try_from(position).map_err(|_error| OciError {
-            status: 500,
-            message: String::from(TOOL_INDEX),
-        })?;
+        let index = u32::try_from(position).unwrap_or(u32::MAX);
         adapted.push(StreamToolCall {
             index,
             id: Some(tool_call_id(position, tool_call)),
@@ -230,5 +220,5 @@ fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Result<Vec<StreamToolCall>, 
             }),
         });
     }
-    Ok(adapted)
+    adapted
 }

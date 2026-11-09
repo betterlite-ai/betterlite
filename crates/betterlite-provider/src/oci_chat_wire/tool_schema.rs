@@ -10,13 +10,13 @@ const PARAMETERS_OBJECT: &str = "Tool `function.parameters` must be an object";
 pub(crate) fn resolved_tool_schema(
     function: Option<&FunctionDefinition>,
 ) -> Result<Json, OciError> {
-    let raw = match function.and_then(|definition| definition.parameters.as_ref()) {
-        Some(value) => serde_json::from_value(value.clone()).map_err(|source| OciError {
-            status: 400,
-            message: format!("Tool `function.parameters` is not a JSON schema: {source}"),
-        })?,
-        None => Json::Object(Object::new()),
-    };
+    // any serde_json value is representable as Json, so the value fallback never runs
+    let raw = function
+        .and_then(|definition| definition.parameters.as_ref())
+        .map_or_else(
+            || Json::Object(Object::new()),
+            |value| serde_json::from_value(value.clone()).unwrap_or(Json::Null),
+        );
     if !matches!(&raw, Json::Object(_)) {
         return Err(OciError {
             status: 400,

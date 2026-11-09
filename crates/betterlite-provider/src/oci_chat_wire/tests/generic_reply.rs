@@ -1,4 +1,5 @@
 use betterlite_openai::chat::response::ChatResponse;
+use rstest::rstest;
 
 use crate::oci_chat_wire::generic::reply::{handle_generic_response, handle_generic_stream_chunk};
 
@@ -344,4 +345,62 @@ fn generic_response_reports_a_response_without_a_choice_to_fill() {
     .unwrap_err();
     assert_eq!(error.status, 200);
     assert_eq!(error.message, "the response to fill has no choices");
+}
+
+#[test]
+fn generic_response_keeps_no_tool_calls_for_an_empty_list() {
+    let mut response = base_response();
+    handle_generic_response(
+        &body(
+            r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+                "apiFormat": "GENERIC", "timeCreated": "2025-01-01T00:00:00Z",
+                "choices": [{"index": 0, "message": {"role": "ASSISTANT", "toolCalls": []}}],
+                "usage": {"promptTokens": 1, "totalTokens": 1}
+            }}"#,
+        ),
+        200,
+        &mut response,
+    )
+    .unwrap();
+    assert!(response.choices[0].message.tool_calls.is_none());
+}
+
+#[test]
+fn generic_response_rejects_a_time_created_before_the_unix_epoch() {
+    let mut response = base_response();
+    let error = handle_generic_response(
+        &body(
+            r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+                "apiFormat": "GENERIC", "timeCreated": "1969-12-31T23:59:59Z",
+                "choices": [{"index": 0}], "usage": {"promptTokens": 1, "totalTokens": 1}
+            }}"#,
+        ),
+        400,
+        &mut response,
+    )
+    .unwrap_err();
+    assert_eq!(error.status, 400);
+    assert_eq!(
+        error.message,
+        "OCI returned a timeCreated before the Unix epoch"
+    );
+}
+
+#[rstest]
+#[case::missing_name(
+    r#"{"message": {"toolCalls": [{"id": "x", "arguments": "{}"}]}}"#,
+    "",
+    "{}"
+)]
+#[case::missing_arguments(r#"{"message": {"toolCalls": [{"id": "x", "name": "f"}]}}"#, "f", "")]
+fn generic_stream_fills_each_missing_tool_call_field(
+    #[case] chunk: &str,
+    #[case] name: &str,
+    #[case] arguments: &str,
+) {
+    let choice = handle_generic_stream_chunk(body(chunk)).unwrap();
+    let call = &choice.delta.tool_calls.as_ref().unwrap()[0];
+    let function = call.function.as_ref().unwrap();
+    assert_eq!(function.name.as_deref(), Some(name));
+    assert_eq!(function.arguments, arguments);
 }

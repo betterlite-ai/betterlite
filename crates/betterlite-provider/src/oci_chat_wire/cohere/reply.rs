@@ -13,8 +13,6 @@ use crate::oci_chat_wire::parse::parse;
 use crate::oci_chat_wire::types::cohere::{CohereChatResult, CohereStreamChunk, CohereToolCall};
 use crate::oci_common::OciError;
 
-const TOOL_INDEX: &str = "the OCI stream has more tool calls than a chunk can index";
-
 const CAST_PREFIX: &str = "Response cannot be casted to CohereChatResult";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -87,10 +85,9 @@ pub fn handle_cohere_stream_chunk(
     } else {
         typed.tool_calls.as_deref()
     };
-    let tool_calls = match remaining_calls.filter(|calls| !calls.is_empty()) {
-        Some(calls) => Some(stream_tool_calls(calls)?),
-        None => None,
-    };
+    let tool_calls = remaining_calls
+        .filter(|calls| !calls.is_empty())
+        .map(stream_tool_calls);
     Ok(Choice {
         index: typed.index.unwrap_or(0),
         delta: Delta {
@@ -129,13 +126,10 @@ fn adapt_tool_calls(calls: &[CohereToolCall]) -> Vec<ToolCall> {
         .collect()
 }
 
-fn stream_tool_calls(calls: &[CohereToolCall]) -> Result<Vec<StreamToolCall>, OciError> {
+fn stream_tool_calls(calls: &[CohereToolCall]) -> Vec<StreamToolCall> {
     let mut adapted = Vec::with_capacity(calls.len());
     for (position, call) in calls.iter().enumerate() {
-        let index = u32::try_from(position).map_err(|_error| OciError {
-            status: 500,
-            message: String::from(TOOL_INDEX),
-        })?;
+        let index = u32::try_from(position).unwrap_or(u32::MAX);
         let adapted_call = adapt_call(position, call);
         adapted.push(StreamToolCall {
             index,
@@ -147,7 +141,7 @@ fn stream_tool_calls(calls: &[CohereToolCall]) -> Result<Vec<StreamToolCall>, Oc
             }),
         });
     }
-    Ok(adapted)
+    adapted
 }
 
 fn adapt_call(position: usize, call: &CohereToolCall) -> AdaptedCall {

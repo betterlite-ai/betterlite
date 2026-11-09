@@ -7,11 +7,9 @@ pub(crate) fn parse<T>(value: &Json, status: u16, prefix: &str) -> Result<T, Oci
 where
     T: DeserializeOwned,
 {
-    let bytes = serde_json::to_vec(value).map_err(|source| OciError {
-        status,
-        message: format!("{prefix}: {source}"),
-    })?;
-    serde_json::from_slice(&bytes).map_err(|source| OciError {
+    // Json always serializes into a value, and a body that does not fit its type fails below
+    let raw = serde_json::to_value(value).unwrap_or_default();
+    serde_json::from_value(raw).map_err(|source| OciError {
         status,
         message: format!("{prefix}: {source}"),
     })
