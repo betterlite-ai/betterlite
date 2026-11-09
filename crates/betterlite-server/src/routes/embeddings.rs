@@ -6,8 +6,9 @@ use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, classify};
+use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
+use betterlite_redact::secret::Redactor;
 use serde::Serialize;
 use std::str;
 use std::sync::Arc;
@@ -70,14 +71,19 @@ async fn embeddings(
         .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
     let request = match EmbeddingRequest::parse(&body) {
         Ok(request) => request,
-        Err(error) => return failure(&error, &call_id, None),
+        Err(error) => return failure(&error, &call_id, None, &executor.redactor),
     };
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone())
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&executor, &model) else {
-        return failure(&EmbeddingError::UnknownModel { model }, &call_id, None);
+        return failure(
+            &EmbeddingError::UnknownModel { model },
+            &call_id,
+            None,
+            &executor.redactor,
+        );
     };
     match embedding::send(&executor, deployment, &request).await {
         Ok(outcome) => {
@@ -90,12 +96,17 @@ async fn embeddings(
             );
             (response_headers, Json(outcome.response)).into_response()
         }
-        Err(error) => failure(&error, &call_id, Some(deployment)),
+        Err(error) => failure(&error, &call_id, Some(deployment), &executor.redactor),
     }
 }
 
-fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
-    let failure = embedding_failure(error);
+fn failure(
+    error: &EmbeddingError,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+    redactor: &Redactor,
+) -> Response {
+    let failure = embedding_failure(error, redactor);
     let message = match error {
         EmbeddingError::Provider { response } => {
             provider_message(response.status, &response.body, error)
@@ -125,10 +136,10 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
     (status_code, response_headers, Json(body)).into_response()
 }
 
-fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
+fn embedding_failure(error: &EmbeddingError, redactor: &Redactor) -> ProviderFailure {
     match error {
         EmbeddingError::Provider { response } => {
-            classify(response.status, &response.body, ErrorBodyKind::MessageOnly)
+            provider_failure(response, Some(redactor), ErrorBodyKind::MessageOnly)
         }
         EmbeddingError::UnknownModel { .. }
         | EmbeddingError::Body { .. }

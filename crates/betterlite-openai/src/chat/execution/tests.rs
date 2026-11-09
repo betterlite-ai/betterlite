@@ -13,6 +13,7 @@ use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -82,12 +83,7 @@ fn fixed_id() -> Uuid {
     Uuid::from_u128(7)
 }
 
-fn executor(
-    entries: &str,
-    seed: u64,
-    operator_mock: Option<MockResponse>,
-    permission: MockPermission,
-) -> ChatExecutor {
+fn resolved_deployments(entries: &str) -> Vec<ChatDeployment> {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
@@ -98,11 +94,20 @@ fn executor(
         api_keys: Vec::new(),
         organization: Some("org-7".to_owned()),
     };
-    let deployments: Vec<ChatDeployment> = config
+    config
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults).unwrap())
-        .collect();
+        .collect()
+}
+
+fn executor(
+    entries: &str,
+    seed: u64,
+    operator_mock: Option<MockResponse>,
+    permission: MockPermission,
+) -> ChatExecutor {
+    let deployments = resolved_deployments(entries);
     let responses = operator_mock.map_or_else(BTreeMap::new, |response| {
         deployments
             .iter()
@@ -127,6 +132,7 @@ fn executor(
         },
         mock_chat: echo_mock,
         mock_embedding: unused_embedding,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     }
 }
 

@@ -15,6 +15,7 @@ use betterlite_error::normalize::provider::provider_facts;
 use betterlite_error::normalize::{ErrorFacts, Normalizer};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::provider_error::{ErrorBodyKind, provider_failure};
 use betterlite_openai::chat::{ChatRequest, RequestError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Serialize;
@@ -170,7 +171,15 @@ fn failure(
     call: &CallContext<'_>,
     deployment: Option<&ChatDeployment>,
 ) -> Response {
-    let failure = error.failure();
+    let failure = if let ChatError::Provider { response } = error {
+        provider_failure(
+            response,
+            Some(&call.errors.redactor),
+            ErrorBodyKind::Structured,
+        )
+    } else {
+        error.failure()
+    };
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let redactor = &call.errors.redactor;
     let message = redactor.redact_internal_details(&error.to_string());
