@@ -55,13 +55,14 @@ struct FailureFlags {
     failing_logger_fn: bool,
 }
 
-#[derive(Default, Deserialize)]
-#[serde(default)]
+#[derive(Deserialize)]
 pub(crate) struct Input {
+    #[serde(default)]
     action: Action,
     #[serde(default = "default_call_type")]
     call_type: String,
     messages: Option<Json>,
+    #[serde(default)]
     litellm_params: IndexMap<String, Json>,
     #[serde(flatten)]
     debug: DebugFlags,
@@ -69,16 +70,27 @@ pub(crate) struct Input {
     capture: CaptureFlags,
     #[serde(flatten)]
     failures: FailureFlags,
+    #[serde(default)]
     turn_off_message_logging: bool,
-    #[serde(rename = "input")]
-    payload: Option<Json>,
+    #[serde(rename = "input", default = "default_input")]
+    payload: Json,
     model: Option<String>,
-    original_response: Option<Json>,
+    #[serde(default = "default_original_response")]
+    original_response: Json,
+    #[serde(default)]
     additional_args: AdditionalArgs,
 }
 
 fn default_call_type() -> String {
     "completion".to_owned()
+}
+
+const fn default_input() -> Json {
+    Json::Null
+}
+
+const fn default_original_response() -> Json {
+    Json::Null
 }
 
 struct Recorder {
@@ -245,7 +257,7 @@ fn dispatch(
 fn invoke(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Value {
     if matches!(input.action, Action::Post) {
         let call = PostCall {
-            original_response: input.original_response.clone().unwrap_or(Json::Null),
+            original_response: input.original_response.clone(),
             input: input.payload.clone(),
             additional_args: input.additional_args.clone(),
         };
@@ -253,7 +265,7 @@ fn invoke(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Valu
         return Value::Null;
     }
     let call = PreCall {
-        input: input.payload.clone().unwrap_or(Json::Null),
+        input: input.payload.clone(),
         model: input.model.clone(),
         additional_args: input.additional_args.clone(),
     };

@@ -26,7 +26,7 @@ impl From<&RawBody> for Json {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct AdditionalArgs {
     pub api_base: Option<String>,

@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use super::args::AdditionalArgs;
+use super::args::{AdditionalArgs, RawBody};
 use super::classifier::{classifier_input_snapshot, is_classifier_call};
 use super::debug_log::print_llm_call_debugging_log;
 use super::env::PrePostEnv;
@@ -75,8 +75,10 @@ fn store_raw_request(state: &mut LoggingState, raw_request: &str) {
 }
 
 fn record_raw_request(state: &mut LoggingState, args: &AdditionalArgs, env: &PrePostEnv<'_>) {
-    let body = args.complete_input_dict.clone().unwrap_or_default();
-    let headers = args.headers.clone().unwrap_or_default();
+    let empty_body = RawBody::default();
+    let empty_headers = IndexMap::new();
+    let body = args.complete_input_dict.as_ref().unwrap_or(&empty_body);
+    let headers = args.headers.as_ref().unwrap_or(&empty_headers);
     let api_base = args.api_base.as_deref().unwrap_or_default();
     let (shown_body, raw_request) = if env.decision.content {
         (
@@ -86,12 +88,12 @@ fn record_raw_request(state: &mut LoggingState, args: &AdditionalArgs, env: &Pre
     } else {
         let command = curl_command(&CurlRequest {
             api_base,
-            headers: &headers,
+            headers,
             request_str: args.request_str.as_deref(),
-            data: &body,
+            data: body,
         });
         (
-            raw_request_body(Some(&body)),
+            raw_request_body(Some(body)),
             env.redactor.redact_string(&command),
         )
     };
@@ -103,7 +105,7 @@ fn record_raw_request(state: &mut LoggingState, args: &AdditionalArgs, env: &Pre
         ("raw_request_body".to_owned(), shown_body),
         (
             "raw_request_headers".to_owned(),
-            Json::Object(masked_headers(&headers, false)),
+            Json::Object(masked_headers(headers, false)),
         ),
         ("error".to_owned(), Json::Null),
     ]);

@@ -90,7 +90,7 @@ fn run_one(
     details: &Json,
     env: &PrePostEnv<'_>,
 ) -> Result<(), PrePostError> {
-    let messages = callback_snapshot(
+    let mut snapshot = callback_snapshot(
         Json::Object(IndexMap::from([(
             "messages".to_owned(),
             state.messages.clone().map_or(Json::Null, Json::List),
@@ -98,8 +98,8 @@ fn run_one(
         env.decision,
         env.redactor,
     );
-    let shown_messages = match &messages {
-        Json::Object(fields) => fields.get("messages").cloned().unwrap_or(Json::Null),
+    let shown_messages = match &mut snapshot {
+        Json::Object(fields) => fields.shift_remove("messages").unwrap_or(Json::Null),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Json::Null,
     };
     let pre = PreCallEvent {
@@ -108,7 +108,7 @@ fn run_one(
         details,
     };
     match (callback, phase) {
-        (InputCallback::Sentry, _) => env.sentry.map_or(Ok(()), |sentry| {
+        (InputCallback::Sentry, Phase::Pre | Phase::Post) => env.sentry.map_or(Ok(()), |sentry| {
             sentry.add_breadcrumb(&breadcrumb_text(phase, details, env))
         }),
         (InputCallback::Logger(logger), Phase::Pre) => logger.log_pre_api_call(&pre),
