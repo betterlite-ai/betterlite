@@ -125,6 +125,17 @@ async fn a_trailing_slash_in_the_server_root_path_is_stripped_once() {
 }
 
 #[tokio::test]
+async fn a_trailing_slash_in_the_root_path_matches_the_prefixed_routes() {
+    let router = router(default_urls(), "/api/");
+    let (status, _, body) = send(&router, Method::GET, "/api/redoc", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        redoc_page("LiteLLM API - ReDoc", "/api/openapi.json").into_bytes()
+    );
+}
+
+#[tokio::test]
 async fn redoc_page_is_served_at_the_default_redoc_url() {
     let router = router(default_urls(), "");
     let (status, headers, body) = send(&router, Method::GET, "/redoc", None).await;
