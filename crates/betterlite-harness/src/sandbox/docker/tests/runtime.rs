@@ -71,6 +71,14 @@ async fn start_rejects_a_blank_container_id() {
 }
 
 #[tokio::test]
+async fn start_replaces_invalid_utf8_in_the_container_id() {
+    let dir = tempdir();
+    let program = docker_script_with(&dir, "printf 'cont\\377iner\\n'", "exit 0", "exit 0");
+    let sandbox = sandbox(program);
+    assert_eq!(sandbox.start().await.unwrap(), "cont\u{fffd}iner");
+}
+
+#[tokio::test]
 async fn start_refuses_after_close() {
     let dir = tempdir();
     let program = docker_script(&dir, "exit 0");

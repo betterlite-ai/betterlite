@@ -86,6 +86,18 @@ async fn read_enforces_the_byte_cap() {
 }
 
 #[tokio::test]
+async fn read_caps_container_output_at_the_helper_limit() {
+    let dir = tempdir();
+    let program = docker_script(&dir, "head -c 67108865 /dev/zero");
+    let sandbox = sandbox(program);
+    let error = sandbox.read("huge", 1).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "sandbox read exceeded the 67108864-byte content limit"
+    );
+}
+
+#[tokio::test]
 async fn write_streams_data_through_the_write_script() {
     let dir = tempdir();
     let program = docker_script(&dir, "cat > \"$dir/written\"");
