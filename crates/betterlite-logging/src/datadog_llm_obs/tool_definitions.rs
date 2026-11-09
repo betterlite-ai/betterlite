@@ -3,7 +3,6 @@ use betterlite_models::decisions::Json;
 use super::records::ToolDefinition;
 use super::values::{Object, as_object, is_filled, mapping_field, text_field};
 
-// LiteLLM's _to_dd_tool_definitions: the request's declared tools, from either surface's shape.
 #[must_use]
 pub fn to_dd_tool_definitions(model_parameters: Option<&Json>) -> Vec<ToolDefinition> {
     let Some(Json::Object(parameters)) = model_parameters else {
@@ -26,7 +25,6 @@ pub fn to_dd_tool_definitions(model_parameters: Option<&Json>) -> Vec<ToolDefini
         .collect()
 }
 
-// LiteLLM's _to_dd_tool_definition: the wrapped chat-completions shape, or the bare Anthropic one.
 #[must_use]
 pub fn to_dd_tool_definition(entry: &Object) -> Option<ToolDefinition> {
     let declared = mapping_field(entry, "function").unwrap_or(entry);

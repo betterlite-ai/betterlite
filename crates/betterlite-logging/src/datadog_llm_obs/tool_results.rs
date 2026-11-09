@@ -51,7 +51,6 @@ fn anthropic_names(message: &Object, names: &mut IndexMap<String, String>) {
     }
 }
 
-// LiteLLM's _to_dd_tool_results: a role: "tool" message, else the Anthropic tool_result blocks.
 #[must_use]
 pub fn to_dd_tool_results(
     message: &Object,
@@ -109,7 +108,6 @@ fn result_text(content: Option<&Json>) -> String {
     }
 }
 
-// litellm's safe_json_structure: strings lose their NUL bytes and values past the depth cap become a marker.
 fn bounded_structure(value: &Json, depth: usize) -> Json {
     if depth > DEFAULT_MAX_RECURSE_DEPTH {
         return Json::Text(MAX_DEPTH_MARKER.to_owned());

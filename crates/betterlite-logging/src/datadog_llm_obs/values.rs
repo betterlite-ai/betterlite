@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 
 pub type Object = IndexMap<String, Json>;
 
-// LiteLLM's _safe_identifier reads any non-string, absent included, as the empty identifier.
 #[must_use]
 pub fn safe_identifier(value: Option<&Json>) -> String {
     match value {

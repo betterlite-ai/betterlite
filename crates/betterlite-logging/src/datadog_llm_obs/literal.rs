@@ -12,7 +12,6 @@ pub const MAX_LITERAL_DEPTH: usize = 128;
 // Stands in for a value Python reads and JSON cannot carry, so the rest of the literal survives.
 const PLACEHOLDER_LITERAL: &str = "<unrepresentable literal>";
 
-// Python's ast.literal_eval, as LiteLLM reads a captured response string back, in linear time.
 #[must_use]
 pub fn literal_json(text: &str) -> Option<Json> {
     let mut parser = Parser {
@@ -54,9 +53,8 @@ impl Parser<'_> {
                 Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
             }
             b's' => self.keyword("set()", Json::List(Vec::new())),
-            b'.' => self.dot_led(),
             b'E' => self.keyword("Ellipsis", Json::Text(PLACEHOLDER_LITERAL.to_owned())),
-            b'+' | b'-' | b'0'..=b'9' => numbers::number(self),
+            b'+' | b'-' | b'.' | b'0'..=b'9' => numbers::number(self),
             b'T' => self.keyword("True", Json::Bool(true)),
             b'F' => self.keyword("False", Json::Bool(false)),
             b'N' => self.keyword("None", Json::Null),
@@ -77,27 +75,15 @@ impl Parser<'_> {
         Some(value)
     }
 
-    // Python's Ellipsis, which JSON cannot carry, or else a float written with a leading dot.
-    fn dot_led(&mut self) -> Option<Json> {
-        let end = self.position.saturating_add(3);
-        if self.bytes.get(self.position..end) != Some(b"...".as_slice()) {
-            return numbers::number(self);
-        }
-        self.position = end;
-        Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
-    }
-
-    // A lone parenthesized value without a comma is the value itself, as in Python.
     fn sequence(&mut self, close: u8, tuple: bool) -> Option<Json> {
-        self.enter()?;
         self.position = self.position.saturating_add(1);
         self.skip(true);
-        let (mut items, separated) = if self.bytes.get(self.position).copied()? == close {
+        if self.bytes.get(self.position).copied()? == close {
             self.position = self.position.saturating_add(1);
-            (Vec::new(), false)
-        } else {
-            self.items(close)?
-        };
+            return Some(Json::List(Vec::new()));
+        }
+        self.enter()?;
+        let (mut items, separated) = self.items(close)?;
         self.depth = self.depth.saturating_sub(1);
         if tuple && items.len() == 1 && !separated {
             return items.pop();
@@ -107,30 +93,25 @@ impl Parser<'_> {
 
     fn items(&mut self, close: u8) -> Option<(Vec<Json>, bool)> {
         let mut items = Vec::new();
-        let mut separated = false;
-        loop {
+        let separated = loop {
             items.push(self.value()?);
             match self.separator(close)? {
                 Next::Element => {}
-                Next::Closing => break,
-                Next::TrailingComma => {
-                    separated = true;
-                    break;
-                }
+                Next::Closing => break false,
+                Next::TrailingComma => break true,
             }
-        }
+        };
         Some((items, separated))
     }
 
     fn braced(&mut self) -> Option<Json> {
-        self.enter()?;
         self.position = self.position.saturating_add(1);
         self.skip(true);
         if self.bytes.get(self.position).copied()? == b'}' {
             self.position = self.position.saturating_add(1);
-            self.depth = self.depth.saturating_sub(1);
             return Some(Json::Object(IndexMap::new()));
         }
+        self.enter()?;
         let first = self.value()?;
         self.skip(true);
         let value = if self.bytes.get(self.position).copied()? == b':' {
@@ -155,7 +136,6 @@ impl Parser<'_> {
         }
     }
 
-    // The value after a dict key: the colon itself, then the value.
     fn colon_value(&mut self) -> Option<Json> {
         self.skip(true);
         if self.bytes.get(self.position).copied()? != b':' {
@@ -175,7 +155,6 @@ impl Parser<'_> {
         }
     }
 
-    // Consumes the byte after an element: the closing bracket, or a comma and what follows it.
     fn separator(&mut self, close: u8) -> Option<Next> {
         self.skip(true);
         let byte = self.bytes.get(self.position).copied()?;

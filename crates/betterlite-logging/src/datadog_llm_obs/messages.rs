@@ -8,20 +8,13 @@ use super::tool_calls::to_dd_tool_calls;
 use super::tool_results::{to_dd_tool_results, tool_call_names_by_id};
 use super::values::{Object, as_object, text_field};
 
-// LiteLLM's _to_dd_messages: a whole conversation, with each tool result resolved against its call.
 #[must_use]
 pub fn to_dd_messages(messages: Option<&Json>) -> Vec<DdMessage> {
-    let Some(conversation) = messages else {
+    let Some(conversation) = messages.filter(|value| !matches!(value, Json::Null)) else {
         return Vec::new();
     };
-    if matches!(conversation, Json::Null) {
-        return Vec::new();
-    }
     let Json::List(items) = conversation else {
-        return converted_messages(conversation)
-            .into_iter()
-            .map(as_dd_message)
-            .collect();
+        return converted_messages(conversation);
     };
     let tool_call_names = tool_call_names_by_id(items);
     items
@@ -30,7 +23,6 @@ pub fn to_dd_messages(messages: Option<&Json>) -> Vec<DdMessage> {
         .collect()
 }
 
-// LiteLLM's _to_dd_message: a dict is projected, anything else goes through its conversion fallbacks.
 #[must_use]
 pub fn to_dd_message(message: &Json, tool_call_names: &IndexMap<String, String>) -> DdMessage {
     match message {
@@ -42,30 +34,20 @@ pub fn to_dd_message(message: &Json, tool_call_names: &IndexMap<String, String>)
 }
 
 fn converted_dd_message(value: &Json, tool_call_names: &IndexMap<String, String>) -> DdMessage {
-    converted_messages(value).into_iter().next().map_or_else(
-        // LiteLLM's _EMPTY_MESSAGE is an empty message dict, which projects to itself
-        || DdMessage::Message(project_message(&IndexMap::new(), tool_call_names)),
-        as_dd_message,
-    )
+    converted_messages(value)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| DdMessage::Message(project_message(&IndexMap::new(), tool_call_names)))
 }
 
 fn project_message(fields: &Object, tool_call_names: &IndexMap<String, String>) -> Message {
     let text = convert_content_list_to_str(fields);
-    let content = if text.is_empty() {
-        match fields.get("content") {
-            Some(Json::List(blocks)) if !blocks.is_empty() => Json::List(blocks.clone()),
-            Some(
-                Json::List(_)
-                | Json::Null
-                | Json::Bool(_)
-                | Json::Number(_)
-                | Json::Text(_)
-                | Json::Object(_),
-            )
-            | None => Json::Text(String::new()),
+    let content = match fields.get("content") {
+        Some(Json::List(blocks)) if text.is_empty() && !blocks.is_empty() => {
+            Json::List(blocks.clone())
         }
-    } else {
-        Json::Text(text)
+        _ if !text.is_empty() => Json::Text(text),
+        _ => Json::Text(String::new()),
     };
     Message {
         role: text_field(fields, "role", ""),
@@ -79,41 +61,33 @@ fn project_message(fields: &Object, tool_call_names: &IndexMap<String, String>) 
     }
 }
 
-enum Converted {
-    Input(String),
-    Fields(Object),
-}
-
-fn as_dd_message(converted: Converted) -> DdMessage {
-    match converted {
-        Converted::Input(input) => DdMessage::Input(InputMessage { input }),
-        Converted::Fields(fields) => DdMessage::Raw(fields),
-    }
-}
-
-// litellm's handle_any_messages_to_chat_completion_str_messages_conversion.
-fn converted_messages(value: &Json) -> Vec<Converted> {
+fn converted_messages(value: &Json) -> Vec<DdMessage> {
     match value {
         Json::List(items) => converted_list(items),
-        Json::Text(text) => vec![Converted::Input(text.clone())],
+        Json::Text(text) => vec![DdMessage::Input(InputMessage {
+            input: text.clone(),
+        })],
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => {
-            vec![Converted::Input(
-                serde_json::to_string(value).unwrap_or_default(),
-            )]
+            vec![DdMessage::Input(InputMessage {
+                input: serde_json::to_string(value).unwrap_or_default(),
+            })]
         }
     }
 }
 
-fn converted_list(items: &[Json]) -> Vec<Converted> {
+fn converted_list(items: &[Json]) -> Vec<DdMessage> {
     let converted: Option<Vec<Object>> = items.iter().map(converted_fields).collect();
     converted.map_or_else(
         || {
             items
                 .iter()
-                .map(|item| Converted::Input(serde_json::to_string(item).unwrap_or_default()))
+                .map(|item| {
+                    let input = serde_json::to_string(item).unwrap_or_default();
+                    DdMessage::Input(InputMessage { input })
+                })
                 .collect()
         },
-        |messages| messages.into_iter().map(Converted::Fields).collect(),
+        |messages| messages.into_iter().map(DdMessage::Raw).collect(),
     )
 }
 

@@ -12,7 +12,6 @@ pub enum ToolArguments {
     Value(Json),
 }
 
-// LiteLLM's _to_dd_arguments: an object passes through, a short string is parsed, anything else rides along.
 #[must_use]
 pub fn to_dd_arguments(value: &Json) -> ToolArguments {
     match value {

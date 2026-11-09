@@ -7,7 +7,6 @@ use super::values::{
     Object, as_object, as_text, content_blocks, is_filled, mapping_field, text_field,
 };
 
-// LiteLLM's _to_dd_tool_calls: OpenAI's function-wrapped calls, then Anthropic's tool_use blocks.
 #[must_use]
 pub fn to_dd_tool_calls(message: &Object) -> Vec<ToolCall> {
     let mut calls = Vec::new();

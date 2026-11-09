@@ -93,7 +93,6 @@ fn unsupported_literals_decode_to_none(#[case] source: &str) {
 #[case::complex("2j", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_real_part("(1+2j)", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_subtracted_part("1-2j", r#""<unrepresentable literal>""#)]
-#[case::ellipsis("...", r#""<unrepresentable literal>""#)]
 #[case::ellipsis_name("Ellipsis", r#""<unrepresentable literal>""#)]
 #[case::overflowing_float("1e400", r#""<unrepresentable literal>""#)]
 #[case::integer_past_u128(

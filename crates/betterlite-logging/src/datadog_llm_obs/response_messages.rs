@@ -5,7 +5,6 @@ use super::messages::to_dd_messages;
 use super::records::DdMessage;
 use super::values::as_object;
 
-// The call types whose response carries a choices[0].message LiteLLM projects onto the span.
 const LLM_OBS_CALL_TYPES: [&str; 9] = [
     "completion",
     "acompletion",
@@ -18,7 +17,6 @@ const LLM_OBS_CALL_TYPES: [&str; 9] = [
     "anthropic_messages",
 ];
 
-// LiteLLM's _get_response_messages: a response string is read as a Python literal, then as JSON.
 #[must_use]
 pub fn response_messages(response: Option<&Json>, call_type: Option<&str>) -> Vec<DdMessage> {
     let Some(value) = response else {

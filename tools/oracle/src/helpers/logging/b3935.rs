@@ -26,35 +26,22 @@ pub(crate) enum Input {
     },
 }
 
+// One tool argument: its text, or the text repeated between a prefix and a suffix.
 #[derive(Deserialize)]
-#[serde(untagged)]
-pub(crate) enum ArgumentPiece {
-    Text(String),
-    Repeated {
-        text: String,
-        prefix: Option<String>,
-        suffix: Option<String>,
-        times: usize,
-    },
+pub(crate) struct ArgumentPiece {
+    text: String,
+    prefix: Option<String>,
+    suffix: Option<String>,
+    times: Option<usize>,
 }
 
-impl ArgumentPiece {
-    fn expanded(&self) -> Json {
-        match self {
-            Self::Text(text) => Json::Text(text.clone()),
-            Self::Repeated {
-                text,
-                prefix,
-                suffix,
-                times,
-            } => Json::Text(format!(
-                "{}{}{}",
-                prefix.as_deref().unwrap_or(""),
-                text.repeat(*times),
-                suffix.as_deref().unwrap_or("")
-            )),
-        }
-    }
+fn expanded(piece: &ArgumentPiece) -> Json {
+    let repeated = piece.text.repeat(piece.times.unwrap_or(1));
+    Json::Text(format!(
+        "{}{repeated}{}",
+        piece.prefix.as_deref().unwrap_or_default(),
+        piece.suffix.as_deref().unwrap_or_default()
+    ))
 }
 
 impl crate::helpers::Helper for Op {
@@ -67,7 +54,7 @@ impl crate::helpers::Helper for Op {
                 arguments
                     .iter()
                     .map(|piece| {
-                        serde_json::to_value(to_dd_arguments(&piece.expanded())).unwrap_or_default()
+                        serde_json::to_value(to_dd_arguments(&expanded(piece))).unwrap_or_default()
                     })
                     .collect(),
             )),

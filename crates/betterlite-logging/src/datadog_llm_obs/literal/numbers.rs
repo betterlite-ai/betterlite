@@ -14,7 +14,6 @@ pub(super) enum Numeric {
     Placeholder,
 }
 
-// ast.literal_eval allows one leading sign and a complex's real or imaginary part; JSON carries neither.
 pub(super) fn number(parser: &mut Parser<'_>) -> Option<Json> {
     let negative = match parser.bytes.get(parser.position).copied()? {
         b'-' => {
@@ -57,7 +56,6 @@ pub(super) fn number(parser: &mut Parser<'_>) -> Option<Json> {
     }
 }
 
-// The imaginary part of a complex literal, which turns the whole number into the placeholder.
 fn imaginary_tail(parser: &mut Parser<'_>) -> Option<Json> {
     parser.position = parser.position.saturating_add(1);
     parser.skip(parser.depth > 0);
@@ -108,7 +106,11 @@ fn unsigned_number(parser: &mut Parser<'_>) -> Option<Numeric> {
             return None;
         }
         return Some(
-            base_integer(&base_digits, radix).map_or(Numeric::Placeholder, Numeric::Integer),
+            u128::from_str_radix(&base_digits, radix)
+                .ok()
+                .map_or(Numeric::Placeholder, |value| {
+                    Numeric::Integer(value.to_string())
+                }),
         );
     }
     let integer = digits(parser, 10)?;
@@ -141,12 +143,9 @@ fn decimal_literal(parser: &mut Parser<'_>, integer: &str) -> Option<(String, bo
     Some((literal, is_float))
 }
 
-// The exponent of a float literal, appended in the form f64 reads.
 fn exponent(parser: &mut Parser<'_>, literal: &mut String) -> Option<bool> {
-    if !matches!(
-        parser.bytes.get(parser.position).copied(),
-        Some(b'e' | b'E')
-    ) {
+    let byte = parser.bytes.get(parser.position).copied();
+    if !matches!(byte, Some(b'e' | b'E')) {
         return Some(false);
     }
     parser.position = parser.position.saturating_add(1);
@@ -185,13 +184,6 @@ fn digits(parser: &mut Parser<'_>, radix: u32) -> Option<String> {
         parser.position = parser.position.saturating_add(1);
     }
     Some(digits)
-}
-
-// A provider repr writes integers in decimal, so a base-prefixed integer fits a u128 or is refused.
-fn base_integer(digits: &str, radix: u32) -> Option<String> {
-    u128::from_str_radix(digits, radix)
-        .ok()
-        .map(|value| value.to_string())
 }
 
 fn decimal_integer(digits: &str) -> Option<Numeric> {

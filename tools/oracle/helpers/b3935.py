@@ -39,23 +39,19 @@ def argument_pieces(value: Json) -> list[Json]:
         raise ValueError("arguments must be a list")
     pieces: list[Json] = []
     for piece in value:
-        if isinstance(piece, dict) and "times" in piece:
-            text = own_string(piece.get("text", ""), "text")
-            prefix = own_string(piece.get("prefix", ""), "prefix")
-            suffix = own_string(piece.get("suffix", ""), "suffix")
-            times = piece.get("times")
-            if isinstance(times, bool) or not isinstance(times, int):
-                raise ValueError("a repeated argument needs an integer times")
-            pieces.append(cast(Json, prefix + text * times + suffix))
-        else:
-            pieces.append(piece)
+        if not isinstance(piece, Mapping):
+            raise ValueError("a tool argument must be a mapping")
+        fields = cast("Mapping[str, Json]", piece)
+        text = fields.get("text", "")
+        prefix = fields.get("prefix", "")
+        suffix = fields.get("suffix", "")
+        times = fields.get("times", 1)
+        if not (isinstance(text, str) and isinstance(prefix, str) and isinstance(suffix, str)):
+            raise ValueError("a tool argument needs string text, prefix and suffix")
+        if isinstance(times, bool) or not isinstance(times, int):
+            raise ValueError("a repeated argument needs an integer times")
+        pieces.append(cast(Json, prefix + text * times + suffix))
     return pieces
-
-
-def own_string(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
 
 
 def plain(value: object) -> Json:

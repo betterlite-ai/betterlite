@@ -79,7 +79,6 @@ pub const COST_DIMENSIONS: [&str; 8] = [
     "routed_model",
 ];
 
-// LiteLLM's _redact_message keeps a role only when it is one of the safe set's.
 #[must_use]
 pub fn safe_message_role(role: Option<&Json>) -> String {
     match role {

@@ -1,6 +1,5 @@
 use super::Parser;
 
-// One string token, joined with the adjacent tokens Python concatenates it with.
 pub(super) fn text(parser: &mut Parser<'_>) -> Option<String> {
     let mut out = one_string(parser)?;
     loop {
@@ -13,18 +12,17 @@ pub(super) fn text(parser: &mut Parser<'_>) -> Option<String> {
 }
 
 pub(super) fn one_string(parser: &mut Parser<'_>) -> Option<String> {
-    let raw = matches!(
-        parser.bytes.get(parser.position).copied(),
-        Some(b'r' | b'R')
-    );
-    if !matches!(parser.bytes.get(parser.position).copied()?, b'\'' | b'"') {
-        parser.position = parser.position.saturating_add(1);
-    }
-    let quote = parser.bytes.get(parser.position).copied()?;
+    let prefix = parser.bytes.get(parser.position).copied()?;
+    let start = if matches!(prefix, b'\'' | b'"') {
+        parser.position
+    } else {
+        parser.position.saturating_add(1)
+    };
+    let quote = parser.bytes.get(start).copied()?;
     if quote != b'\'' && quote != b'"' {
         return None;
     }
-    parser.position = parser.position.saturating_add(1);
+    parser.position = start.saturating_add(1);
     let triple = parser.bytes.get(parser.position).copied() == Some(quote)
         && parser.bytes.get(parser.position.saturating_add(1)).copied() == Some(quote);
     if triple {
@@ -34,7 +32,7 @@ pub(super) fn one_string(parser: &mut Parser<'_>) -> Option<String> {
     loop {
         let byte = parser.bytes.get(parser.position).copied()?;
         if byte == b'\\' {
-            backslash(parser, raw, &mut out)?;
+            backslash(parser, matches!(prefix, b'r' | b'R'), &mut out)?;
             continue;
         }
         if byte == quote && !triple {
@@ -117,7 +115,6 @@ fn escaped_char(parser: &mut Parser<'_>, marker: u8) -> Option<char> {
     Some(char::from_u32(value).unwrap_or('\u{fffd}'))
 }
 
-// At most `width` digits in `radix`; a fixed-width escape refuses a shorter run.
 fn digit_run(parser: &mut Parser<'_>, radix: u32, width: u32, exact: bool) -> Option<u32> {
     let mut value = 0_u32;
     let mut count = 0_u32;
