@@ -83,6 +83,21 @@ impl TokenCounter for Counting {
     }
 }
 
+struct FixedText {
+    count: i64,
+}
+
+#[async_trait]
+impl TokenCounter for FixedText {
+    async fn count_messages(&self, _messages: &[Message]) -> Option<i64> {
+        Some(0)
+    }
+
+    async fn count_text(&self, _text: &str) -> Option<i64> {
+        Some(self.count)
+    }
+}
+
 #[tokio::test]
 async fn a_reply_gives_content_finish_reason_created_and_model() {
     let fixture = reply_fixture(
@@ -103,6 +118,20 @@ async fn a_reply_gives_content_finish_reason_created_and_model() {
         Some(Number::from_f64(-0.75).unwrap())
     );
     assert_eq!(choice.logprobs, None);
+}
+
+#[tokio::test]
+async fn integer_logprobs_sum_exactly_with_nulls_skipped() {
+    let fixture = reply_fixture(
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[{"logprob":-3},{"logprob":null},{"logprob":5}]}}"#,
+    );
+    let response = transform_response(&fixture.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(
+        response.choices[0].private_logprob,
+        Some(Number::from(2_i64))
+    );
 }
 
 #[tokio::test]
@@ -253,6 +282,18 @@ async fn a_best_of_that_is_not_an_integer_adds_no_choices(#[case] options: &str)
 }
 
 #[tokio::test]
+async fn a_best_of_above_the_signed_range_still_adds_choices() {
+    let mut fixture = reply_fixture(
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}"#,
+    );
+    fixture.options = params(r#"{"best_of":18446744073709551615}"#);
+    let response = transform_response(&fixture.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(response.choices.len(), 2_usize);
+}
+
+#[tokio::test]
 async fn a_reply_with_sequences_alone_adds_no_choices() {
     let fixture = reply_fixture(
         r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}"#,
@@ -336,6 +377,35 @@ async fn usage_is_zero_for_empty_content() {
             total_tokens: 0
         }
     );
+}
+
+#[tokio::test]
+async fn an_empty_parsed_text_is_not_counted() {
+    let stripped = reply_fixture(r#"{"generated_text":"<s>"}"#);
+    let response = transform_response(&stripped.input(), &FixedText { count: 7 })
+        .await
+        .unwrap();
+    assert_eq!(response.choices[0].content.as_deref(), Some(""));
+    assert_eq!(response.usage.completion_tokens, 0);
+    let text = reply_fixture(r#"{"generated_text":"x"}"#);
+    let counted = transform_response(&text.input(), &FixedText { count: 7 })
+        .await
+        .unwrap();
+    assert_eq!(counted.usage.completion_tokens, 7);
+}
+
+#[tokio::test]
+async fn usage_counts_only_the_first_choice() {
+    let mut fixture = reply_fixture(
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"bbb","finish_reason":"stop","tokens":[]}]}}"#,
+    );
+    fixture.options = params(r#"{"best_of":2}"#);
+    let response = transform_response(&fixture.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(response.choices.len(), 2_usize);
+    assert_eq!(response.usage.completion_tokens, 1);
+    assert_eq!(response.usage.total_tokens, 1);
 }
 
 #[tokio::test]
