@@ -148,6 +148,7 @@ async fn decodes_the_response_into_the_shared_ocr_response() {
     let answer = br#"{"pages":[{"index":0,"markdown":"hello","images":[{"id":"img-0","image_base64":"data:image/png;base64,AA=="}],"dimensions":{"width":612,"height":792,"dpi":72},"blocks":[{"type":"title","bbox":{"x":1}}],"confidence_scores":{"mean":0.98}},{"index":1,"markdown":"second","tables":[{"rows":2}],"header":"h","footer":"f"}],"model":"served-model","document_annotation":{"language":"en"},"usage_info":{"pages_processed":2,"credits":1.5,"custom":0},"provider_field":true}"#;
     let (response, _) = call(answer, params("{}")).await;
     assert_eq!(response.model, "served-model");
+    assert_eq!(response.object, "ocr");
     assert_eq!(response.pages.len(), 2);
     assert_eq!(response.pages[0].markdown, "hello");
     assert_eq!(
@@ -358,6 +359,22 @@ fn an_explicit_null_model_fails_with_the_model_response_field() {
         )
         .expect_err("an explicit null model is an error");
     assert!(matches!(error, OcrError::ResponseField { path } if path == "model"));
+}
+
+#[test]
+fn a_native_response_format_keeps_the_provider_json_in_the_native_slot() {
+    let payload = br#"{"pages":[],"provider_extension":false}"#;
+    let native = MistralOcrConfig
+        .transform_ocr_response("mistral-ocr-latest", payload, RequestFormat::Native)
+        .expect("the native response decodes");
+    assert_eq!(
+        native.provider_native_response,
+        Some(json_value(r#"{"pages": [], "provider_extension": false}"#))
+    );
+    let litellm = MistralOcrConfig
+        .transform_ocr_response("mistral-ocr-latest", payload, RequestFormat::Litellm)
+        .expect("the litellm response decodes");
+    assert_eq!(litellm.provider_native_response, None);
 }
 
 const PAGE_FIELDS_PAYLOAD: &str = r#"{"pages":[{"index":0,"markdown":"hello","images":[{"id":"img-0"}],"dimensions":{"width":612,"height":792,"dpi":72},"blocks":[{"type":"title"}],"confidence_scores":{"mean":0.98},"tables":[{"rows":2}],"hyperlinks":["https://example.com"]}],"usage_info":{"pages_processed":1,"custom":0},"provider_extension":false}"#;
