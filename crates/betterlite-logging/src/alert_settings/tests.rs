@@ -16,12 +16,12 @@ use betterlite_config::sections::langfuse_settings;
 use chrono::{FixedOffset, TimeZone as _};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use strum::{EnumCount as _, IntoEnumIterator as _};
 use tokio::time::Instant;
 
 use crate::alert_settings::cache_keys::SlackAlertingCacheKeys;
-use crate::alert_settings::records::{DigestEntry, HangingRequestData};
+use crate::alert_settings::records::{AlertQueueItem, AlertText, DigestEntry, HangingRequestData};
 use crate::alert_settings::trace::{LangfuseTraceContext, LangfuseTraceSource, langfuse_trace_url};
 use crate::alert_settings::{
     HANGING_ALERT_BUFFER_SECONDS, LITELLM_LOGO_URL, LITELLM_SUPPORT_CONTACT,
@@ -336,6 +336,22 @@ fn alert_type_config_defaults_to_digest_off_for_a_day() {
     let config = AlertTypeConfig::default();
     assert!(!config.digest);
     assert_eq!(config.digest_interval, 86_400);
+}
+
+#[test]
+fn alert_queue_item_debug_hides_the_webhook_url() {
+    let item = AlertQueueItem {
+        url: SecretString::from("https://hooks.example/SECRET"),
+        headers: BTreeMap::new(),
+        payload: AlertText {
+            text: "boom".to_owned(),
+        },
+        alert_type: AlertType::BudgetAlerts,
+        format: None,
+    };
+    let debug = format!("{item:?}");
+    assert!(!debug.contains("SECRET"), "{debug}");
+    assert!(debug.contains("REDACTED"), "{debug}");
 }
 
 #[test]

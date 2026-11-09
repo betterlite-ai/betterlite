@@ -310,6 +310,15 @@ fn an_empty_webhook_url_is_used_as_given() {
 }
 
 #[test]
+fn settings_debug_hides_the_webhook_urls() {
+    let source = "general_settings:\n  alert_to_webhook_url:\n    budget_alerts: https://hooks.example/SECRET";
+    let loaded = settings(source, &[]);
+    let debug = format!("{loaded:?}");
+    assert!(!debug.contains("SECRET"), "{debug}");
+    assert!(debug.contains("REDACTED"), "{debug}");
+}
+
+#[test]
 fn a_missing_webhook_variable_is_an_error_naming_the_variable_and_field() {
     let source = "general_settings:\n  alert_to_webhook_url:\n    budget_alerts:\n      - os.environ/MISSING_HOOK";
     let error = load_error(source, &[]);
