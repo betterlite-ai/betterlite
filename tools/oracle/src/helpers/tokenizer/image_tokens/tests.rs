@@ -10,5 +10,5 @@ fn negative_base_tokens_are_refused() {
         "calls": [{"function": "calculate_img_tokens", "data": "data:x;base64,", "base_tokens": -1_i32}]
     });
     let error = serde_json::from_value::<Input>(call).unwrap_err();
-    assert!(error.to_string().contains("base_tokens"));
+    assert!(error.to_string().contains("expected u64"));
 }
