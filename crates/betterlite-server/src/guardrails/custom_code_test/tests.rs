@@ -702,6 +702,16 @@ async fn run_input_type_text_is_passed_on() {
 }
 
 #[tokio::test]
+async fn run_response_input_type_reaches_the_sandbox_call() {
+    let fake = host(allow_answer());
+    let mut given = request(ALLOW_SOURCE);
+    given.input_type = "response".to_owned();
+    let response = run_test(given, sandbox(&fake).as_ref()).await;
+    assert!(response.success);
+    assert_eq!(last_call(&fake).input_type, GuardrailInputType::Response);
+}
+
+#[tokio::test]
 async fn run_request_data_has_exactly_five_keys() {
     let fake = host(allow_answer());
     let mut given = request(ALLOW_SOURCE);
