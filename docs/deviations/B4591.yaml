@@ -12,9 +12,6 @@ deviations:
   - what: A staging, commit, write or overwrite failure returns TokenRecordError with the private-JSON error and its I/O source, instead of CredentialNotSaved, a false return or a raised exception.
     why: A typed error belongs to the module that defines the operation; B4592 converts this task's error into CredentialNotSaved at the call site when it needs that outcome.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L511-L526
-  - what: encode_secret returns a typed error when the record's timestamp is not a finite JSON number instead of producing a blob.
-    why: LiteLLM's pydantic model accepts a non-finite float and model_dump_json writes it as null, which its own reader then rejects; a NaN or infinity cannot be loaded from token.json, and writing a blob that silently loses the stamp would be worse than reporting the failure once.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L537-L544
   - what: A token path with no parent directory, such as the filesystem root or a bare relative file name, fails with TokenRecordError::Directory instead of treating the current directory as the parent.
     why: B192's ensure_private_dir refuses a path with no final name, and this task stages through it before writing; token_file_path always yields home/.litellm/token.json, so the difference only reaches a caller that bypasses it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L511-L517

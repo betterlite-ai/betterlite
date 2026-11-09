@@ -174,13 +174,12 @@ fn decode_secret_returns_nothing_for_invalid_json() {
 }
 
 #[test]
-fn encode_secret_refuses_a_non_finite_timestamp() {
+fn encode_secret_writes_a_non_finite_timestamp_as_null() {
     let mut record = record();
     record.timestamp = f64::NAN;
-    assert!(matches!(
-        encode_secret(&record),
-        Err(TokenRecordError::Encode { .. })
-    ));
+    let blob = encode_secret(&record).expect("encodes the secret");
+    assert!(blob.expose_secret().contains(r#""timestamp":null"#));
+    assert!(decode_secret(blob.expose_secret(), &record.base_url).is_none());
 }
 
 #[rstest]
