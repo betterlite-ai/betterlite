@@ -105,7 +105,11 @@ impl RedisCacheAdmin {
                 return Err(error);
             }
         };
-        let event = ping_event(SYNC_PING, started, caller);
+        let event = ServiceEvent {
+            call_type: SYNC_PING,
+            duration: started.elapsed(),
+            key: caller.map(str::to_owned),
+        };
         self.hooks.success(&event);
         Ok(answer == "PONG")
     }
@@ -117,7 +121,11 @@ impl RedisCacheAdmin {
         caller: Option<&str>,
         error: &RedisAdminError,
     ) {
-        let event = ping_event(call_type, started, caller);
+        let event = ServiceEvent {
+            call_type,
+            duration: started.elapsed(),
+            key: caller.map(str::to_owned),
+        };
         self.hooks.failure(&event, error);
         tracing::error!("LiteLLM Redis Cache PING: - Got exception from REDIS : {error}");
     }
@@ -253,14 +261,6 @@ impl RedisCacheAdmin {
             self.store.remove(&self.transport.cache_key);
         }
         self.transport.close_pubsub_client().await;
-    }
-}
-
-fn ping_event(call_type: &'static str, started: Instant, caller: Option<&str>) -> ServiceEvent {
-    ServiceEvent {
-        call_type,
-        duration: started.elapsed(),
-        key: caller.map(str::to_owned),
     }
 }
 
