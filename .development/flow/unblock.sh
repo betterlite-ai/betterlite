@@ -34,8 +34,11 @@ case "$reason" in
     for path in "${paths[@]}"; do
       grep -q -x -F "$path" <<< "$scope" && continue
       grep -q -F "${path%/\*\*}" <<< "$excluded" && exit 1
-      sed -i "0,/^  paths:\$/s||  paths:\n$indent- \"$path\"|" "$task"
       added="$added $path"
+    done
+    read -r -a new <<< "$added"
+    for path in "${new[@]}"; do
+      sed -i "0,/^  paths:\$/s||  paths:\n$indent- \"$path\"|" "$task"
     done
     if [ -n "$added" ]; then
       # a todo task may not cover a crate root, and the code has to leave and enter one
