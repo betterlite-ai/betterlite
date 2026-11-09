@@ -1,0 +1,12 @@
+kind: helper
+name: semantic-embedding-inputs-router-metadata
+call:
+  b4310:
+    operation: metadata
+    metadata:
+      trace_id: trace-1
+      semantic-cache-embedding: stale
+      user_id: user-7
+env: {}
+compare:
+  ignore: []

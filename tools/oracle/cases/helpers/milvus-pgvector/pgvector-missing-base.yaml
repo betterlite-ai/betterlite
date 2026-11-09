@@ -1,0 +1,11 @@
+kind: helper
+name: pgvector-missing-base
+call:
+  b7810:
+    calls:
+      - {call: pg_vector_complete_url, input: {api_base: null, env: {}}}
+      - {call: pg_vector_complete_url, input: {api_base: "", env: {PG_VECTOR_API_BASE: ""}}}
+      - {call: pg_vector_complete_url, input: {api_base: "https://pg.example.test///", env: {}}}
+      - {call: pg_vector_complete_url, input: {api_base: null, env: {PG_VECTOR_API_BASE: "https://env.example.test//"}}}
+env: {}
+compare: {ignore: []}

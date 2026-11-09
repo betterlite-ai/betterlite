@@ -1,0 +1,13 @@
+kind: helper
+name: milvus-base-trailing-slash
+call:
+  b7810:
+    calls:
+      - {call: milvus_complete_url, input: {api_base: "https://milvus.example.test///", env: {}}}
+      - {call: milvus_complete_url, input: {api_base: null, env: {MILVUS_API_BASE: "https://env.example.test//"}}}
+      - {call: milvus_complete_url, input: {api_base: "", env: {MILVUS_API_BASE: "https://env.example.test/"}}}
+      - {call: milvus_complete_url, input: {api_base: "/", env: {}}}
+      - {call: milvus_complete_url, input: {api_base: null, env: {MILVUS_API_BASE: ""}}}
+      - {call: milvus_complete_url, input: {api_base: null, env: {}}}
+env: {}
+compare: {ignore: []}
