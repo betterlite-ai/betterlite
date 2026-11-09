@@ -21,20 +21,17 @@ pub fn is_token_fresh(record: &CliTokenRecord, now_seconds: f64, expiration_hour
     let Some(stamp) = Duration::try_from_secs_f64(record.timestamp).ok() else {
         return false;
     };
+    let (Ok(now_nanos), Ok(stamp_nanos)) = (
+        i128::try_from(now.as_nanos()),
+        i128::try_from(stamp.as_nanos()),
+    ) else {
+        return false;
+    };
     let window = i128::from(expiration_hours)
         .checked_mul(SECONDS_PER_HOUR)
         .and_then(|seconds| seconds.checked_sub(i128::from(TOKEN_FRESHNESS_BUFFER_SECONDS)))
         .and_then(|seconds| seconds.checked_mul(NANOS_PER_SECOND));
-    let age = now.checked_sub(stamp).map_or_else(
-        || {
-            i128::try_from(stamp.saturating_sub(now).as_nanos())
-                .ok()
-                .and_then(i128::checked_neg)
-        },
-        |elapsed| i128::try_from(elapsed.as_nanos()).ok(),
-    );
-    match (age, window) {
-        (Some(age_nanos), Some(window_nanos)) => age_nanos < window_nanos,
-        _ => false,
-    }
+    window
+        .and_then(|span| stamp_nanos.checked_add(span))
+        .is_some_and(|deadline| now_nanos < deadline)
 }
