@@ -70,23 +70,30 @@ fn record(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> {
     children(value, kind)
 }
 
-// pydantic reads an int field from a JSON integer, an integral float or a numeric string
+// pydantic reads an int field from an integral float or a numeric string, and an integer stays exact
 fn narrow_history_length(value: &mut AgentJson) {
-    let number = match value {
-        AgentJson::Number(number) => number.as_f64(),
-        AgentJson::String(text) => text.parse::<f64>().ok(),
-        AgentJson::Null | AgentJson::Bool(_) | AgentJson::Array(_) | AgentJson::Object(_) => return,
+    let integer = match value {
+        AgentJson::Number(number) if number.is_f64() => number.as_f64().and_then(integral),
+        AgentJson::String(text) => text
+            .parse::<i64>()
+            .ok()
+            .or_else(|| text.parse::<f64>().ok().and_then(integral)),
+        AgentJson::Number(_)
+        | AgentJson::Null
+        | AgentJson::Bool(_)
+        | AgentJson::Array(_)
+        | AgentJson::Object(_) => None,
     };
-    let Some(float) = number else {
-        return;
-    };
-    if float.fract().to_bits() != 0.0_f64.to_bits() {
-        return;
+    if let Some(exact) = integer {
+        *value = AgentJson::from(exact);
     }
-    let Some(integer) = float.to_i64() else {
-        return;
-    };
-    *value = AgentJson::from(integer);
+}
+
+fn integral(value: f64) -> Option<i64> {
+    if value.fract().to_bits() != 0.0_f64.to_bits() {
+        return None;
+    }
+    value.to_i64()
 }
 
 fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> {
