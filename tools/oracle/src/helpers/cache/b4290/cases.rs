@@ -31,26 +31,12 @@ pub(crate) fn base_test_connection() -> HelperResult {
     Ok(json!({"status": outcome?}))
 }
 
-pub(crate) fn memory_ttl(clock: f64, ttl: f64, key: &str, value: &str) -> HelperResult {
-    let (cache, _now) = memory(clock)?;
-    let runtime = runtime()?;
-    let outcome: HelperResult = runtime.block_on(async {
-        cache
-            .async_set_cache(key, CacheValue::Text(value.to_owned()), Some(ttl))
-            .await
-            .map_err(failure)?;
-        let stored = cache.async_get_ttl(key).await.map_err(failure)?;
-        Ok(json!({"ttl": stored}))
-    });
-    outcome
-}
-
-pub(crate) fn memory_expired_ttl(
+pub(crate) fn memory_ttl(
     clock: f64,
     ttl: f64,
     key: &str,
     value: &str,
-    read_at: f64,
+    read_at: Option<f64>,
 ) -> HelperResult {
     let (cache, now) = memory(clock)?;
     let runtime = runtime()?;
@@ -59,11 +45,16 @@ pub(crate) fn memory_expired_ttl(
             .async_set_cache(key, CacheValue::Text(value.to_owned()), Some(ttl))
             .await
             .map_err(failure)?;
-        *now.lock().unwrap_or_else(PoisonError::into_inner) = read_at;
-        let before_read = cache.async_get_ttl(key).await.map_err(failure)?;
+        if let Some(later) = read_at {
+            *now.lock().unwrap_or_else(PoisonError::into_inner) = later;
+        }
+        let stored = cache.async_get_ttl(key).await.map_err(failure)?;
+        if read_at.is_none() {
+            return Ok(json!({"ttl": stored}));
+        }
         let read = cache.async_get_cache(key).await.map_err(failure)?;
         let after_read = cache.async_get_ttl(key).await.map_err(failure)?;
-        Ok(json!({"before_read": before_read, "read": read, "after_read": after_read}))
+        Ok(json!({"before_read": stored, "read": read, "after_read": after_read}))
     });
     outcome
 }
