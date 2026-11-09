@@ -40,6 +40,10 @@ impl CacheCodec {
     where
         Model: DeserializeOwned + Serialize,
     {
+        let CacheValue::Object(_) = value else {
+            // LiteLLM validates a mapping or a model and returns any other payload unchanged
+            return Ok(value.clone());
+        };
         let json =
             serde_json::to_value(value).map_err(|source| CodecError::Serialize { source })?;
         let model: Model =

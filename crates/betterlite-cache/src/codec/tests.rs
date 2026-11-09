@@ -151,9 +151,15 @@ fn codec_serialize_validated_rejects_a_missing_field() {
 }
 
 #[test]
-fn codec_serialize_validated_rejects_a_non_mapping() {
-    let stored = CacheCodec::encode_validated::<BudgetModel>(&text("gpt-4o"));
-    assert!(matches!(stored, Err(CodecError::Validation { .. })));
+fn codec_serialize_validated_passes_a_non_mapping_through() {
+    let stored = CacheCodec::encode_validated::<BudgetModel>(&text("gpt-4o")).unwrap();
+    assert_eq!(stored, text("gpt-4o"));
+}
+
+#[test]
+fn codec_serialize_validated_passes_a_number_through() {
+    let stored = CacheCodec::encode_validated::<BudgetModel>(&CacheValue::Integer(5)).unwrap();
+    assert_eq!(stored, CacheValue::Integer(5));
 }
 
 #[test]
