@@ -12,6 +12,7 @@ use crate::otel::integrations::arize_span_kind::{
 #[case::moderation("moderation", OpenInferenceSpanKind::Guardrail)]
 #[case::guardrail("guardrail_check", OpenInferenceSpanKind::Guardrail)]
 #[case::mcp_tool("call_mcp_tool", OpenInferenceSpanKind::Tool)]
+#[case::mcp_tool_prefix("call_mcp_tool_extra", OpenInferenceSpanKind::Unknown)]
 #[case::mcp("mcp", OpenInferenceSpanKind::Tool)]
 #[case::tool_suffix("get_weather_tool", OpenInferenceSpanKind::Tool)]
 #[case::asend_message("asend_message", OpenInferenceSpanKind::Agent)]
