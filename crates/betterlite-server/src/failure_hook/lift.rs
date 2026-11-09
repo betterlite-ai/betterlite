@@ -12,38 +12,39 @@ use super::ports::{FailureTokenCounter, RouteCallTypes, TokenCountError};
 
 pub mod deployment;
 
-pub const INPUT_ESTIMABLE_CALL_TYPES: [CallType; 22] = [
-    CallType::Completion,
-    CallType::Acompletion,
-    CallType::TextCompletion,
-    CallType::AtextCompletion,
-    CallType::AnthropicMessages,
-    CallType::AanthropicMessages,
-    CallType::Responses,
-    CallType::Aresponses,
-    CallType::Embedding,
-    CallType::Aembedding,
-    CallType::Moderation,
-    CallType::Amoderation,
-    CallType::ImageGeneration,
-    CallType::AimageGeneration,
-    CallType::Speech,
-    CallType::Aspeech,
-    CallType::Rerank,
-    CallType::Arerank,
-    CallType::GenerateContent,
-    CallType::AgenerateContent,
-    CallType::GenerateContentStream,
-    CallType::AgenerateContentStream,
+pub const INPUT_ESTIMABLE_CALL_TYPES: [&str; 22] = [
+    "completion",
+    "acompletion",
+    "text_completion",
+    "atext_completion",
+    "anthropic_messages",
+    "aanthropic_messages",
+    "responses",
+    "aresponses",
+    "embedding",
+    "aembedding",
+    "moderation",
+    "amoderation",
+    "image_generation",
+    "aimage_generation",
+    "speech",
+    "aspeech",
+    "rerank",
+    "arerank",
+    "generate_content",
+    "agenerate_content",
+    "generate_content_stream",
+    "agenerate_content_stream",
 ];
 
 pub const NO_UPSTREAM_LLM_CALL_KEY: &str = "litellm_no_upstream_llm_call";
+pub const PASS_THROUGH_CALL_TYPE: &str = "pass_through_endpoint";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModelCallDetails {
     pub start_time: Option<JsonValue>,
     pub first_api_call_start_time: Option<JsonValue>,
-    pub call_type: Option<CallType>,
+    pub call_type: Option<String>,
     pub combined_usage_object: Option<JsonValue>,
     pub response_cost: Option<Decimal>,
     pub standard_logging_object: Option<JsonValue>,
@@ -124,10 +125,7 @@ pub async fn failure_fields_to_lift(
         Some((_, cost)) => Some(decimal_value(*cost)?),
         None => None,
     };
-    let call_type = details
-        .call_type
-        .and_then(call_type_name)
-        .map(JsonValue::String);
+    let call_type = details.call_type.clone().map(JsonValue::String);
     Ok(FailureFields {
         start_time: details.start_time.clone(),
         first_api_call_start_time: details.first_api_call_start_time.clone(),
@@ -153,7 +151,7 @@ pub async fn failure_usage_to_lift(
     if !dispatched || details.no_upstream_llm_call {
         return None;
     }
-    let call_type = details.call_type?;
+    let call_type = details.call_type.as_deref()?;
     if !INPUT_ESTIMABLE_CALL_TYPES.contains(&call_type) {
         return None;
     }
@@ -263,7 +261,8 @@ pub fn call_type_for_route(route: Option<&str>, routes: &dyn RouteCallTypes) -> 
     call_types.first().copied()
 }
 
-fn call_type_name(call_type: CallType) -> Option<String> {
+#[must_use]
+pub fn call_type_name(call_type: CallType) -> Option<String> {
     match serde_json::to_value(call_type) {
         Ok(JsonValue::String(name)) => Some(name),
         _ => None,

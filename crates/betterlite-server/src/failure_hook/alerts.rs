@@ -25,6 +25,18 @@ pub struct AlertRequestData {
     pub logging: Option<Arc<dyn FailureLogging>>,
 }
 
+// The lookup is awaited inside the spawned alert so a port with LiteLLM's retry sleeps never blocks a request
+async fn alert_context(request_data: Option<AlertRequestData>) -> (JsonMap, Option<String>) {
+    let Some(request) = request_data else {
+        return (JsonMap::new(), None);
+    };
+    let langfuse = match request.logging {
+        Some(logging) => logging.langfuse_trace_url().await,
+        None => None,
+    };
+    (request.alerting_metadata, langfuse)
+}
+
 #[must_use]
 pub fn alerting_metadata_from(request_data: &JsonMap) -> JsonMap {
     request_data
@@ -121,15 +133,7 @@ impl ProxyAlerts {
         let Some(clients) = &self.alerting else {
             return Ok(());
         };
-        let (alerting_metadata, langfuse) = match request_data {
-            Some(request) => (
-                request.alerting_metadata,
-                request
-                    .logging
-                    .and_then(|logging| logging.langfuse_trace_url()),
-            ),
-            None => (JsonMap::new(), None),
-        };
+        let (alerting_metadata, langfuse) = alert_context(request_data).await;
         let formatted = self.format_alert(message, level, langfuse.as_deref());
         if clients
             .iter()

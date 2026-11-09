@@ -10,9 +10,9 @@ use super::super::lift::deployment::{
     PROXY_REJECTED_BEFORE_ROUTING, deployment_attribution, stamp_deployment_attribution,
 };
 use super::super::lift::{
-    INPUT_ESTIMABLE_CALL_TYPES, NO_UPSTREAM_LLM_CALL_KEY, call_type_for_route,
-    count_request_input_tokens, failure_fields_to_lift, failure_usage_to_lift, prompt_block_text,
-    system_prompt_text,
+    INPUT_ESTIMABLE_CALL_TYPES, NO_UPSTREAM_LLM_CALL_KEY, PASS_THROUGH_CALL_TYPE,
+    call_type_for_route, call_type_name, count_request_input_tokens, failure_fields_to_lift,
+    failure_usage_to_lift, prompt_block_text, system_prompt_text,
 };
 use super::support::{
     FakeCatalog, FakeCounter, FakeRoutes, Journal, deployment, details, json, object,
@@ -55,7 +55,7 @@ async fn dispatched_failures_estimate_input_usage_from_messages() {
     let journal = Journal::default();
     let counter = FakeCounter::new(&journal);
     let mut details = details();
-    details.call_type = Some(CallType::Acompletion);
+    details.call_type = Some("acompletion".to_owned());
     details.model = Some("gpt-4".to_owned());
     details.messages = Some(vec![json(r#"{"role":"user","content":"hi"}"#)]);
     let (usage, cost) = failure_usage_to_lift(&details, &object(&[]), true, &counter)
@@ -74,7 +74,7 @@ async fn system_prompt_text_counts_before_the_messages() {
     let journal = Journal::default();
     let counter = FakeCounter::new(&journal);
     let mut details = details();
-    details.call_type = Some(CallType::Acompletion);
+    details.call_type = Some("acompletion".to_owned());
     details.model = Some("gpt-4".to_owned());
     details.messages = Some(vec![json(r#"{"role":"user","content":"hi"}"#)]);
     details.optional_params = Some(object(&[(
@@ -102,7 +102,7 @@ async fn the_request_body_backfills_the_system_prompt() {
     let journal = Journal::default();
     let counter = FakeCounter::new(&journal);
     let mut details = details();
-    details.call_type = Some(CallType::Acompletion);
+    details.call_type = Some("acompletion".to_owned());
     details.model = Some("gpt-4".to_owned());
     details.messages = Some(vec![json(r#"{"role":"user","content":"hi"}"#)]);
     details.optional_params = Some(object(&[]));
@@ -142,12 +142,12 @@ async fn no_estimate_without_dispatch_an_upstream_call_or_an_estimable_type(
         EstimateCase::NotDispatched => false,
         EstimateCase::NoUpstreamCall => {
             details.no_upstream_llm_call = true;
-            details.call_type = Some(CallType::Acompletion);
+            details.call_type = Some("acompletion".to_owned());
             true
         }
         EstimateCase::MissingCallType => true,
         EstimateCase::NotEstimable => {
-            details.call_type = Some(CallType::CallMcpTool);
+            details.call_type = Some("call_mcp_tool".to_owned());
             true
         }
     };
@@ -163,7 +163,7 @@ async fn no_estimate_without_dispatch_an_upstream_call_or_an_estimable_type(
 async fn a_tokenizer_failure_or_a_zero_count_gives_no_estimate() {
     let journal = Journal::default();
     let mut details = details();
-    details.call_type = Some(CallType::Acompletion);
+    details.call_type = Some("acompletion".to_owned());
     details.model = Some("gpt-4".to_owned());
     details.messages = Some(vec![json("\"hello\"")]);
     let failing = FakeCounter::failing(&journal);
@@ -435,7 +435,7 @@ fn the_routes_single_operation_wins_and_mixed_routes_do_not() {
 #[case::generate_stream(CallType::GenerateContentStream, "generate_content_stream")]
 #[case::agenerate_stream(CallType::AgenerateContentStream, "agenerate_content_stream")]
 fn estimable_call_types_are_spelled_like_litellm(#[case] call_type: CallType, #[case] name: &str) {
-    assert!(INPUT_ESTIMABLE_CALL_TYPES.contains(&call_type));
+    assert!(INPUT_ESTIMABLE_CALL_TYPES.contains(&name));
     assert_eq!(
         serde_json::to_value(call_type).expect("serialized"),
         json(&format!("\"{name}\""))
@@ -448,7 +448,8 @@ async fn failure_fields_lift_only_the_present_values() {
     let counter = FakeCounter::new(&journal);
     let mut details = details();
     details.start_time = Some(json("\"2026-01-01T00:00:00+00:00\""));
-    details.call_type = Some(CallType::Acompletion);
+    details.first_api_call_start_time = Some(json("\"2026-01-01T00:00:01+00:00\""));
+    details.call_type = Some("acompletion".to_owned());
     details.standard_logging_object = Some(json(r#"{"model":"gpt-4"}"#));
     let fields = failure_fields_to_lift(&details, &object(&[]), &counter)
         .await
@@ -456,6 +457,10 @@ async fn failure_fields_lift_only_the_present_values() {
     assert_eq!(
         fields.start_time,
         Some(json("\"2026-01-01T00:00:00+00:00\""))
+    );
+    assert_eq!(
+        fields.first_api_call_start_time,
+        Some(json("\"2026-01-01T00:00:01+00:00\""))
     );
     assert_eq!(fields.call_type, Some(json("\"acompletion\"")));
     assert_eq!(
@@ -466,6 +471,14 @@ async fn failure_fields_lift_only_the_present_values() {
     assert_eq!(fields.response_cost, None);
     let mut data = object(&[]);
     fields.apply(&mut data);
+    assert_eq!(
+        data.get("start_time"),
+        Some(&json("\"2026-01-01T00:00:00+00:00\""))
+    );
+    assert_eq!(
+        data.get("first_api_call_start_time"),
+        Some(&json("\"2026-01-01T00:00:01+00:00\""))
+    );
     assert_eq!(data.get("call_type"), Some(&json("\"acompletion\"")));
     assert!(data.get("response_cost").is_none());
 }
@@ -492,5 +505,10 @@ fn the_logging_keys_are_spelled_like_litellm() {
     assert_eq!(
         PROXY_REJECTED_BEFORE_ROUTING,
         "proxy_rejected_before_routing"
+    );
+    assert_eq!(PASS_THROUGH_CALL_TYPE, "pass_through_endpoint");
+    assert_eq!(
+        call_type_name(CallType::PassThroughEndpoint).as_deref(),
+        Some(PASS_THROUGH_CALL_TYPE)
     );
 }

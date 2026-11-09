@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
@@ -116,10 +116,11 @@ async fn run_proxy_only(
     mut request_data: JsonMap,
     error: &ProxyHookError,
     logging: Option<Arc<dyn FailureLogging>>,
+    route: &str,
 ) -> JsonMap {
     let auth = auth();
     let key = FailureKey {
-        request_route: Some("/v1/chat/completions".to_owned()),
+        request_route: Some(route.to_owned()),
         team_id: Some("team".to_owned()),
         logged_key_metadata: object(&[("user_api_key_team_id", json("\"team\""))]),
     };
@@ -129,7 +130,7 @@ async fn run_proxy_only(
         auth: &auth,
         key,
         error_type: None,
-        route: Some("/v1/chat/completions"),
+        route: Some(route),
         traceback: None,
         logging,
         callbacks: &[],
@@ -154,7 +155,7 @@ async fn a_created_logging_object_gets_the_identity_input_and_key_metadata() {
     let messages = json(r#"[{"role":"user","content":"hi"}]"#);
     let request_data = object(&[("model", json("\"gpt-4\"")), ("messages", messages.clone())]);
     let error = http_error(500, "boom");
-    let lifted = run_proxy_only(&hook, request_data, &error, None).await;
+    let lifted = run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
     drain(&hook.alerts.tasks).await;
     let created = factory.created();
     assert_eq!(created.len(), 1);
@@ -171,7 +172,7 @@ async fn a_created_logging_object_gets_the_identity_input_and_key_metadata() {
             .contains_key("proxy_rejected_before_routing")
     );
     let details = logging.details();
-    assert_eq!(details.call_type, Some(CallType::Acompletion));
+    assert_eq!(details.call_type, Some("acompletion".to_owned()));
     assert_eq!(details.messages, Some(vec![messages]));
     assert!(details.no_upstream_llm_call);
     assert_eq!(lifted.get("litellm_call_id"), Some(&json("\"call-1\"")));
@@ -189,13 +190,56 @@ async fn a_created_logging_object_gets_the_identity_input_and_key_metadata() {
 fn assert_logging_order(journal: &Journal) {
     let entries = journal.entries();
     assert!(entries[0].starts_with("create:/v1/chat/completions:call-1:"));
-    assert_eq!(entries[1], "environment:gpt-4::Some(\"openai\")");
-    assert_eq!(entries[2], "input:messages");
-    assert_eq!(entries[3], "call_type:Acompletion");
-    assert_eq!(entries[4], "no_upstream_call");
-    assert_eq!(entries[5], "pre_call:messages:");
-    assert_eq!(entries[6], "async_failure:true");
+    assert_eq!(entries[1], "model_list:gpt-4:Some(\"team\")");
+    assert_eq!(entries[2], "environment:gpt-4::Some(\"openai\")");
+    assert_eq!(entries[3], "input:messages");
+    assert_eq!(entries[4], "call_type:Acompletion");
+    assert_eq!(entries[5], "no_upstream_call");
+    assert_eq!(entries[6], "pre_call:messages:");
+    assert_eq!(entries[7], "async_failure:true");
     assert!(entries.contains(&"sync_failure:true".to_owned()));
+}
+
+#[tokio::test]
+async fn request_fields_split_into_litellm_and_optional_params() {
+    let journal = Journal::default();
+    let (hook, factory) = hook_for(&journal, chat_routes(), FakeCatalog::new(&journal), false);
+    let error = http_error(500, "boom");
+    let request_data = object(&[
+        ("model", json("\"gpt-4\"")),
+        ("user", json("\"u1\"")),
+        ("litellm_logging_obj", json("{}")),
+        ("metadata", json(r#"{"m":1}"#)),
+        ("litellm_call_id", json("\"call-7\"")),
+        ("no_log", json("true")),
+        ("cooldown_time", json("30")),
+        ("temperature", json("0.2")),
+    ]);
+    run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
+    drain(&hook.alerts.tasks).await;
+    let created = factory.created();
+    let environment = created[0].environment().expect("environment");
+    let litellm_keys: BTreeSet<&str> = environment
+        .litellm_params
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        litellm_keys,
+        BTreeSet::from([
+            "cooldown_time",
+            "litellm_call_id",
+            "metadata",
+            "no_log",
+            "proxy_rejected_before_routing",
+        ])
+    );
+    let optional_keys: BTreeSet<&str> = environment
+        .optional_params
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(optional_keys, BTreeSet::from(["temperature"]));
 }
 
 #[tokio::test]
@@ -205,8 +249,18 @@ async fn an_existing_logging_object_is_reused_without_merging_key_metadata() {
     let existing = Arc::new(FakeLogging::new(&journal, false, None));
     let logging: Arc<dyn FailureLogging> = existing;
     let error = http_error(500, "boom");
-    let request_data = object(&[("model", json("\"gpt-4\""))]);
-    let lifted = run_proxy_only(&hook, request_data, &error, Some(logging)).await;
+    let request_data = object(&[
+        ("model", json("\"gpt-4\"")),
+        ("messages", json(r#"[{"role":"user"}]"#)),
+    ]);
+    let lifted = run_proxy_only(
+        &hook,
+        request_data,
+        &error,
+        Some(logging),
+        "/v1/chat/completions",
+    )
+    .await;
     drain(&hook.alerts.tasks).await;
     assert!(factory.created().is_empty());
     assert!(lifted.get("metadata").is_none());
@@ -229,7 +283,14 @@ async fn a_cache_hit_counts_as_reaching_a_deployment() {
     let logging: Arc<dyn FailureLogging> = shared;
     let error = http_error(500, "boom");
     let request_data = object(&[("model", json("\"gpt-4\""))]);
-    run_proxy_only(&hook, request_data, &error, Some(logging)).await;
+    run_proxy_only(
+        &hook,
+        request_data,
+        &error,
+        Some(logging),
+        "/v1/chat/completions",
+    )
+    .await;
     drain(&hook.alerts.tasks).await;
     assert!(factory.created().is_empty());
     let environment = existing.environment().expect("environment");
@@ -253,8 +314,18 @@ async fn pass_through_calls_stop_before_the_upstream_marker_and_pre_call() {
     );
     let logging: Arc<dyn FailureLogging> = existing;
     let error = http_error(500, "boom");
-    let request_data = object(&[("model", json("\"gpt-4\""))]);
-    run_proxy_only(&hook, request_data, &error, Some(logging)).await;
+    let request_data = object(&[
+        ("model", json("\"gpt-4\"")),
+        ("messages", json(r#"[{"role":"user"}]"#)),
+    ]);
+    run_proxy_only(
+        &hook,
+        request_data,
+        &error,
+        Some(logging),
+        "/v1/chat/completions",
+    )
+    .await;
     drain(&hook.alerts.tasks).await;
     let entries = journal.entries();
     assert!(entries.contains(&"input:messages".to_owned()));
@@ -283,7 +354,7 @@ async fn the_routes_single_operation_call_type_wins_over_the_body_shape() {
     let (hook, _factory) = hook_for(&journal, routes, FakeCatalog::new(&journal), false);
     let error = http_error(500, "boom");
     let request_data = object(&[("messages", json(r#"[{"role":"user"}]"#))]);
-    run_proxy_only(&hook, request_data, &error, None).await;
+    run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
     drain(&hook.alerts.tasks).await;
     assert!(
         journal
@@ -302,7 +373,7 @@ async fn a_mixed_route_falls_back_to_the_body_shape() {
     let (hook, _factory) = hook_for(&journal, routes, FakeCatalog::new(&journal), false);
     let error = http_error(500, "boom");
     let request_data = object(&[("messages", json(r#"[{"role":"user"}]"#))]);
-    run_proxy_only(&hook, request_data, &error, None).await;
+    run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
     drain(&hook.alerts.tasks).await;
     assert!(
         journal
@@ -320,7 +391,7 @@ async fn key_metadata_overwrites_existing_fields_and_keeps_the_rest() {
         "metadata",
         json(r#"{"user_api_key_team_id":"old","keep":"yes"}"#),
     )]);
-    let lifted = run_proxy_only(&hook, request_data, &error, None).await;
+    let lifted = run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
     drain(&hook.alerts.tasks).await;
     let metadata = lifted
         .get("metadata")
@@ -376,7 +447,7 @@ async fn tracebacks_follow_the_client_error_rule(
         TracebackCase::BelowClientRange => error(ErrorKind::Http(302)),
     };
     let request_data = object(&[("messages", json(r#"[{"role":"user"}]"#))]);
-    run_proxy_only(&hook, request_data, &error, None).await;
+    run_proxy_only(&hook, request_data, &error, None, "/v1/chat/completions").await;
     drain(&hook.alerts.tasks).await;
     let entries = journal.entries();
     assert!(entries.contains(&format!("async_failure:{expected}")));

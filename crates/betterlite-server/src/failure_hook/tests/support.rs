@@ -10,11 +10,12 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
+use tokio::task::yield_now;
 use tokio_util::task::TaskTracker;
 
 use super::super::alerts::ProxyAlerts;
 use super::super::hook::FailureHook;
-use super::super::lift::ModelCallDetails;
+use super::super::lift::{ModelCallDetails, call_type_name};
 use super::super::ports::{
     AlertLevel, AlertType, AlertingClient, BudgetAlertKind, CallEnvironment, CallInfo, Clock,
     DeploymentCatalog, EmailAlerting, EntityType, FailureInput, FailureLogging, FailureService,
@@ -63,7 +64,7 @@ impl FakeLogging {
     }
 
     pub(super) fn with_call_type(self, call_type: CallType) -> Self {
-        self.state.lock().expect("state lock").details.call_type = Some(call_type);
+        self.state.lock().expect("state lock").details.call_type = call_type_name(call_type);
         self
     }
 
@@ -86,13 +87,18 @@ impl FailureLogging for FakeLogging {
         self.snapshot()
     }
 
-    fn call_type(&self) -> Option<CallType> {
-        self.state.lock().expect("state lock").details.call_type
+    fn call_type(&self) -> Option<String> {
+        self.state
+            .lock()
+            .expect("state lock")
+            .details
+            .call_type
+            .clone()
     }
 
     fn set_call_type(&self, call_type: CallType) {
         self.journal.record(format!("call_type:{call_type:?}"));
-        self.state.lock().expect("state lock").details.call_type = Some(call_type);
+        self.state.lock().expect("state lock").details.call_type = call_type_name(call_type);
     }
 
     fn record_input(&self, input: &FailureInput) {
@@ -147,7 +153,8 @@ impl FailureLogging for FakeLogging {
             .record(format!("sync_failure:{}", !traceback.is_empty()));
     }
 
-    fn langfuse_trace_url(&self) -> Option<String> {
+    async fn langfuse_trace_url(&self) -> Option<String> {
+        yield_now().await;
         self.langfuse.clone()
     }
 }
@@ -189,6 +196,9 @@ impl LoggingFactory for FakeFactory {
             self.baseline,
             self.langfuse.clone(),
         ));
+        let mut logging_details = details();
+        logging_details.call_type = Some(route.to_owned());
+        logging.set_details(logging_details);
         self.created
             .lock()
             .expect("created lock")

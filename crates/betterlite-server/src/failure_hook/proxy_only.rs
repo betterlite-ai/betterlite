@@ -10,9 +10,9 @@ use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::hook::{FailureHook, FailureHookInput};
-use super::lift::call_type_for_route;
 use super::lift::deployment::stamp_deployment_attribution;
-use super::ports::{CallEnvironment, FailureInput, FailureLogging};
+use super::lift::{PASS_THROUGH_CALL_TYPE, call_type_for_route, call_type_name};
+use super::ports::{CallEnvironment, FailureInput, FailureLogging, RouteCallTypes};
 use crate::guardrails::callback_caps::errors::ProxyHookError;
 
 const LOGGED_LITELLM_PARAMS: [&str; 18] = [
@@ -61,7 +61,7 @@ pub fn is_proxy_only_error(
 pub(crate) async fn handle_proxy_only_error(hook: &FailureHook, input: &mut FailureHookInput<'_>) {
     let logging = ensure_logging(hook, input);
     let (picked, call_type) = update_logging_request(hook, input, &logging);
-    if call_type == Some(CallType::PassThroughEndpoint) {
+    if call_type.as_deref() == Some(PASS_THROUGH_CALL_TYPE) {
         return;
     }
     logging.mark_no_upstream_llm_call();
@@ -73,7 +73,7 @@ fn update_logging_request(
     hook: &FailureHook,
     input: &FailureHookInput<'_>,
     logging: &Arc<dyn FailureLogging>,
-) -> (FailureInput, Option<CallType>) {
+) -> (FailureInput, Option<String>) {
     let (mut litellm_params, optional_params) = split_params(input.request_data);
     let details = logging.details();
     let dispatched = details.first_api_call_start_time.is_some() || details.cache_hit;
@@ -105,15 +105,29 @@ fn update_logging_request(
     });
     let (picked, body_call_type) = pick_input(input.request_data);
     logging.record_input(&picked);
+    let call_type = resolve_call_type(
+        input.route,
+        hook.route_call_types.as_ref(),
+        logging,
+        body_call_type,
+    );
+    (picked, call_type)
+}
+
+fn resolve_call_type(
+    route: Option<&str>,
+    routes: &dyn RouteCallTypes,
+    logging: &Arc<dyn FailureLogging>,
+    body_call_type: Option<CallType>,
+) -> Option<String> {
     let mut call_type = logging.call_type();
-    let route_call_type = call_type_for_route(input.route, hook.route_call_types.as_ref());
-    if let Some(resolved) = route_call_type.or(body_call_type)
-        && call_type != Some(CallType::PassThroughEndpoint)
+    if let Some(resolved) = call_type_for_route(route, routes).or(body_call_type)
+        && call_type.as_deref() != Some(PASS_THROUGH_CALL_TYPE)
     {
         logging.set_call_type(resolved);
-        call_type = Some(resolved);
+        call_type = call_type_name(resolved);
     }
-    (picked, call_type)
+    call_type
 }
 
 fn ensure_logging(hook: &FailureHook, input: &mut FailureHookInput<'_>) -> Arc<dyn FailureLogging> {

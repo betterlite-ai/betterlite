@@ -242,6 +242,7 @@ pub trait Clock: Send + Sync {
 }
 
 pub trait LoggingFactory: Send + Sync {
+    // The created object starts with the route (or IGNORE_THIS) as its call type, like function_setup
     fn create_logging(
         &self,
         route: &str,
@@ -253,7 +254,7 @@ pub trait LoggingFactory: Send + Sync {
 #[async_trait]
 pub trait FailureLogging: Send + Sync {
     fn details(&self) -> ModelCallDetails;
-    fn call_type(&self) -> Option<CallType>;
+    fn call_type(&self) -> Option<String>;
     fn set_call_type(&self, call_type: CallType);
     fn record_input(&self, input: &FailureInput);
     fn mark_no_upstream_llm_call(&self);
@@ -263,5 +264,5 @@ pub trait FailureLogging: Send + Sync {
     async fn pre_call(&self, input: &FailureInput, api_key: &str);
     async fn async_failure_handler(&self, error: &ProxyHookError, traceback: &str);
     fn failure_handler(&self, error: &ProxyHookError, traceback: &str);
-    fn langfuse_trace_url(&self) -> Option<String>;
+    async fn langfuse_trace_url(&self) -> Option<String>;
 }

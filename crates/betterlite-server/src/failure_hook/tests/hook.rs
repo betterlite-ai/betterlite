@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
+use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 
@@ -102,6 +103,7 @@ fn assert_hook_order(journal: &Journal) {
     assert!(seen[0].starts_with("callback:one:"));
     assert!(seen[1].starts_with("callback:two:"));
     assert!(seen[3].starts_with("callback:four:"));
+    assert!(!seen[0].contains("litellm_logging_obj"), "{}", seen[0]);
 }
 
 #[tokio::test]
@@ -133,6 +135,14 @@ async fn the_hook_runs_litellm_steps_in_order_and_returns_the_first_http_error()
     );
     assert!(request_data.get("litellm_logging_obj").is_none());
     assert!(request_data.get("standard_logging_object").is_none());
+    let created = harness.factory.created();
+    let environment = created[0].environment().expect("environment");
+    assert!(
+        environment
+            .optional_params
+            .get("standard_logging_object")
+            .is_none()
+    );
     assert_hook_order(&harness.journal);
 }
 
@@ -195,7 +205,12 @@ fn alert_error(case: AlertCase) -> ProxyHookError {
     }
 }
 
-fn run_hook(harness: &Harness, error: &ProxyHookError, request_data: &mut JsonMap, route: &str) {
+async fn run_hook(
+    harness: &Harness,
+    error: &ProxyHookError,
+    request_data: &mut JsonMap,
+    route: &str,
+) {
     let auth = auth();
     let input = FailureHookInput {
         request_data,
@@ -208,7 +223,7 @@ fn run_hook(harness: &Harness, error: &ProxyHookError, request_data: &mut JsonMa
         logging: None,
         callbacks: &[],
     };
-    drop(harness.hook.post_call_failure_hook(input));
+    drop(harness.hook.post_call_failure_hook(input).await);
 }
 
 #[rstest]
@@ -224,7 +239,7 @@ async fn llm_exception_alerts_skip_client_errors(#[case] case: AlertCase, #[case
     );
     let error = alert_error(case);
     let mut request_data = object(&[]);
-    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions");
+    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions").await;
     drain(&harness.alerts.tasks).await;
     let sent = harness.slack.sent();
     assert_eq!(sent.len(), usize::from(expected));
@@ -241,7 +256,7 @@ async fn the_llm_exception_alert_is_redacted() {
     );
     let error = http_error(500, "provider sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa broke");
     let mut request_data = object(&[]);
-    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions");
+    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions").await;
     drain(&harness.alerts.tasks).await;
     let sent = harness.slack.sent();
     assert_eq!(sent.len(), 1);
@@ -320,7 +335,7 @@ async fn management_routes_do_not_create_a_logging_object() {
     let harness = harness(Some(vec![AlertingClient::Slack]), Vec::new());
     let error = http_error(500, "boom");
     let mut request_data = object(&[("litellm_call_id", json("\"client-call\""))]);
-    run_hook(&harness, &error, &mut request_data, "/key/generate");
+    run_hook(&harness, &error, &mut request_data, "/key/generate").await;
     drain(&harness.alerts.tasks).await;
     assert!(harness.factory.created().is_empty());
     let entries = harness.journal.entries();
@@ -335,7 +350,7 @@ async fn a_created_logging_object_lifts_its_call_type_onto_the_request() {
     let error = http_error(500, "boom");
     let messages = json(r#"[{"role":"user","content":"hi"}]"#);
     let mut request_data = object(&[("model", json("\"gpt-4\"")), ("messages", messages)]);
-    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions");
+    run_hook(&harness, &error, &mut request_data, "/v1/chat/completions").await;
     drain(&harness.alerts.tasks).await;
     assert_eq!(
         request_data.get("litellm_call_id"),
@@ -349,13 +364,35 @@ async fn a_created_logging_object_lifts_its_call_type_onto_the_request() {
 }
 
 #[tokio::test]
+async fn an_auth_failure_on_an_info_route_lifts_the_route_as_call_type() {
+    let harness = harness(None, Vec::new());
+    let auth = auth();
+    let error = other_error("invalid api key");
+    let mut request_data = object(&[]);
+    let input = FailureHookInput {
+        request_data: &mut request_data,
+        error: &error,
+        auth: &auth,
+        key: key("/v1/models"),
+        error_type: Some(ProxyErrorTypes::AuthError),
+        route: Some("/v1/models"),
+        traceback: None,
+        logging: None,
+        callbacks: &[],
+    };
+    drop(harness.hook.post_call_failure_hook(input).await);
+    drain(&harness.alerts.tasks).await;
+    assert_eq!(request_data.get("call_type"), Some(&json("\"/v1/models\"")));
+}
+
+#[tokio::test]
 async fn an_existing_logging_object_with_a_handoff_estimates_input_usage() {
     let harness = harness(None, Vec::new());
     let auth = auth();
     let logging = Arc::new(FakeLogging::new(&harness.journal, false, None));
     let mut logging_details = details();
     logging_details.first_api_call_start_time = Some(json("\"2026-01-01T00:00:00Z\""));
-    logging_details.call_type = Some(CallType::Acompletion);
+    logging_details.call_type = Some("acompletion".to_owned());
     logging_details.model = Some("gpt-4".to_owned());
     logging_details.messages = Some(vec![json(r#"{"role":"user","content":"hi"}"#)]);
     logging.set_details(logging_details);

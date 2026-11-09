@@ -97,6 +97,30 @@ struct BudgetCase {
     slack_calls: 0,
     email_calls: 0,
 })]
+#[case::soft_budget_emails_bypass_the_guard(BudgetCase {
+    alerting: None,
+    kind: BudgetAlertKind::SoftBudget,
+    emails: Some(vec!["a@example.com".to_owned()]),
+    email_wired: true,
+    slack_calls: 0,
+    email_calls: 1,
+})]
+#[case::soft_budget_without_emails_stops(BudgetCase {
+    alerting: None,
+    kind: BudgetAlertKind::SoftBudget,
+    emails: Some(Vec::new()),
+    email_wired: true,
+    slack_calls: 0,
+    email_calls: 0,
+})]
+#[case::ms_teams_uses_the_slack_instance(BudgetCase {
+    alerting: Some(vec![AlertingClient::MsTeams]),
+    kind: BudgetAlertKind::UserBudget,
+    emails: None,
+    email_wired: false,
+    slack_calls: 1,
+    email_calls: 0,
+})]
 #[case::slack(BudgetCase {
     alerting: Some(vec![AlertingClient::Slack]),
     kind: BudgetAlertKind::UserBudget,
@@ -263,6 +287,41 @@ async fn alerting_handler_fails_without_a_sentry_instance() {
         .alerting_handler("boom", AlertLevel::High, AlertType::DbExceptions, None)
         .await
         .expect("alerting off is not a failure");
+}
+
+struct SendCase {
+    alerting: Vec<AlertingClient>,
+    sends: usize,
+}
+
+#[rstest]
+#[case::slack(SendCase {
+    alerting: vec![AlertingClient::Slack],
+    sends: 1,
+})]
+#[case::ms_teams(SendCase {
+    alerting: vec![AlertingClient::MsTeams],
+    sends: 1,
+})]
+#[case::webhook_skips_the_slack_send(SendCase {
+    alerting: vec![AlertingClient::Webhook],
+    sends: 0,
+})]
+#[tokio::test]
+async fn alerting_handler_sends_only_to_slack_and_ms_teams(#[case] case: SendCase) {
+    let journal = Journal::default();
+    let slack = Arc::new(FakeSlack::new(&journal, true));
+    let alerts = proxy_alerts(
+        AlertParts::new(Some(case.alerting), Vec::new()),
+        Arc::new(FakeUsageCache::new(&journal)),
+        Arc::clone(&slack),
+        Arc::new(FakeServiceLogging::default()),
+    );
+    alerts
+        .alerting_handler("boom", AlertLevel::High, AlertType::LlmExceptions, None)
+        .await
+        .expect("sent");
+    assert_eq!(slack.sent().len(), case.sends);
 }
 
 #[tokio::test]
