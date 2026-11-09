@@ -91,6 +91,8 @@ description: >-
   secret shape in any input dispatch reads, so that part of the audit note is left out; see out_of_scope.
 scope:
   paths:
+  - "crates/betterlite-error/src/parse/tests/plain_constructors/tests.rs"
+  - "crates/betterlite-error/src/parse/tests/gate_constructor_cases.rs"
   - "crates/betterlite-error/src/parse/tests/exception_names/tests.rs"
   - "crates/betterlite-error/src/parse/tests"
   - "tools/oracle/src/helpers/core_ops/vector_query_embedding/fixtures.rs"
