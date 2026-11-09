@@ -499,6 +499,21 @@ fn cohere_stream_keeps_an_explicit_index() {
 }
 
 #[test]
+fn cohere_stream_rejects_an_unknown_history_role() {
+    let error = handle_cohere_stream_chunk(
+        &body(r#"{"apiFormat": "COHERE", "chatHistory": [{"role": "BOT", "message": "x"}]}"#),
+        CohereEmitted::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.status, 500);
+    assert!(
+        error
+            .message
+            .starts_with("Chunk cannot be parsed as CohereStreamChunk:")
+    );
+}
+
+#[test]
 fn cohere_stream_reports_a_chunk_that_does_not_fit_its_type() {
     let error = handle_cohere_stream_chunk(&body(r#"{"text": "x"}"#), CohereEmitted::default())
         .unwrap_err();

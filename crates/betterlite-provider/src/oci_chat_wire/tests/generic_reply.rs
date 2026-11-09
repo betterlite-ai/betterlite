@@ -198,6 +198,40 @@ fn generic_response_rejects_an_unreadable_time_created() {
 }
 
 #[test]
+fn generic_response_rejects_a_negative_token_count() {
+    let mut response = base_response();
+    let error = handle_generic_response(
+        &body(
+            r#"{"modelId": "m", "modelVersion": "1", "chatResponse": {
+                "apiFormat": "GENERIC", "timeCreated": "2025-01-01T00:00:00Z",
+                "choices": [{"index": 0}],
+                "usage": {"promptTokens": 1, "completionTokens": -1, "totalTokens": 1}
+            }}"#,
+        ),
+        200,
+        &mut response,
+    )
+    .unwrap_err();
+    assert_eq!(error.status, 200);
+    assert!(
+        error
+            .message
+            .starts_with("Response cannot be casted to OCICompletionResponse:")
+    );
+}
+
+#[test]
+fn generic_stream_rejects_an_index_past_u32() {
+    let error = handle_generic_stream_chunk(body(r#"{"index": 4294967296}"#)).unwrap_err();
+    assert_eq!(error.status, 500);
+    assert!(
+        error
+            .message
+            .starts_with("Chunk cannot be parsed as OCIStreamChunk:")
+    );
+}
+
+#[test]
 fn generic_response_omits_details_for_zero_reasoning_tokens() {
     let mut response = base_response();
     handle_generic_response(
