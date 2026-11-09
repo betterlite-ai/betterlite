@@ -46,7 +46,7 @@ class _Attributes:
 
 class _PromptClient(BaseModel):
     name: str
-    version: int | None = None
+    version: int
     is_fallback: bool
 
 

@@ -21,7 +21,7 @@ enum Check {
     TraceContainerSerializes,
     TraceTagsBecomeArray,
     TraceSingleTagBecomesEntry,
-    TraceEmptyTagsStayAnArray,
+    TraceEmptyTagsAreOmitted,
     TraceMetadataFlattensKeys,
     TraceScalarMetadataRidesUnderPrefix,
     TraceMetadataAbsent,
@@ -33,7 +33,6 @@ enum Check {
     ObservationCompletionStartIsJsonText,
     ObservationPromptLinks,
     ObservationFallbackPromptIsDropped,
-    ObservationPromptWithoutVersion,
     ObservationMetadataFlattensKeys,
 }
 
@@ -151,7 +150,7 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
 #[case::trace_container_serializes(Check::TraceContainerSerializes)]
 #[case::trace_tags_become_array(Check::TraceTagsBecomeArray)]
 #[case::trace_single_tag_becomes_entry(Check::TraceSingleTagBecomesEntry)]
-#[case::trace_empty_tags_stay_an_array(Check::TraceEmptyTagsStayAnArray)]
+#[case::trace_empty_tags_are_omitted(Check::TraceEmptyTagsAreOmitted)]
 #[case::trace_metadata_flattens_keys(Check::TraceMetadataFlattensKeys)]
 #[case::trace_scalar_metadata_rides_under_prefix(Check::TraceScalarMetadataRidesUnderPrefix)]
 #[case::trace_metadata_absent(Check::TraceMetadataAbsent)]
@@ -163,7 +162,6 @@ fn observation_from(text: &str) -> Vec<(String, Value)> {
 #[case::observation_completion_start_is_json_text(Check::ObservationCompletionStartIsJsonText)]
 #[case::observation_prompt_links(Check::ObservationPromptLinks)]
 #[case::observation_fallback_prompt_is_dropped(Check::ObservationFallbackPromptIsDropped)]
-#[case::observation_prompt_without_version(Check::ObservationPromptWithoutVersion)]
 #[case::observation_metadata_flattens_keys(Check::ObservationMetadataFlattensKeys)]
 fn observation_attributes_tests_behavior(#[case] check: Check) {
     match check {
@@ -202,10 +200,7 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
             trace_from(r#"{"tags":"solo"}"#),
             vec![array_attr("langfuse.trace.tags", &["solo"])]
         ),
-        Check::TraceEmptyTagsStayAnArray => assert_eq!(
-            trace_from(r#"{"tags":[]}"#),
-            vec![array_attr("langfuse.trace.tags", &[])]
-        ),
+        Check::TraceEmptyTagsAreOmitted => assert!(trace_from(r#"{"tags":[]}"#).is_empty()),
         Check::TraceMetadataFlattensKeys => assert_eq!(
             trace_from(
                 r#"{"metadata":{"count":1,"flag":true,"ratio":1.5,"big":9007199254740992,"nil":null,"list":["x"]}}"#
@@ -300,15 +295,6 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
                 r#"{"observation_type":"generation","prompt":{"name":"local","version":1,"is_fallback":true}}"#
             ),
             vec![text_attr("langfuse.observation.type", "generation")]
-        ),
-        Check::ObservationPromptWithoutVersion => assert_eq!(
-            observation_from(
-                r#"{"observation_type":"generation","prompt":{"name":"support-bot","version":null,"is_fallback":false}}"#
-            ),
-            vec![
-                text_attr("langfuse.observation.type", "generation"),
-                text_attr("langfuse.observation.prompt.name", "support-bot"),
-            ]
         ),
         Check::ObservationMetadataFlattensKeys => assert_eq!(
             observation_from(

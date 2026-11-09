@@ -27,11 +27,12 @@ pub(crate) fn flattened_metadata(prefix: &str, metadata: Option<&Json>) -> Vec<K
     }
 }
 
-// litellm's _string_sequence: each tag becomes text and a lone value becomes a one-entry list
+// litellm's _string_sequence: each tag becomes text and a lone value becomes a one-entry list, an empty list becomes no attribute
 #[must_use]
 pub(crate) fn tags_value(tags: Option<&Json>) -> Option<Value> {
     let present = tags.filter(|candidate| !matches!(candidate, Json::Null))?;
     match present {
+        Json::List(items) if items.is_empty() => None,
         Json::List(items) => Some(Value::Array(Array::String(
             items
                 .iter()

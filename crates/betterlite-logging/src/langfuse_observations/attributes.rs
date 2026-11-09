@@ -20,7 +20,7 @@ pub enum ObservationType {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct PromptLink {
     pub name: String,
-    pub version: Option<i64>,
+    pub version: i64,
     pub is_fallback: bool,
 }
 
@@ -86,7 +86,7 @@ pub fn trace_attributes(fields: &TraceAttributes<'_>) -> Vec<KeyValue> {
     attributes
 }
 
-// litellm.integrations.langfuse.langfuse_sdk.observation_attributes; a fallback prompt has no server version
+// litellm.integrations.langfuse.langfuse_sdk.observation_attributes; a fallback prompt is not linked
 #[must_use]
 pub fn observation_attributes(fields: &ObservationAttributes<'_>) -> Vec<KeyValue> {
     let kind = match fields.observation_type {
@@ -158,12 +158,10 @@ fn push_prompt(attributes: &mut Vec<KeyValue>, prompt: Option<&PromptLink>) {
         keys::OBSERVATION_PROMPT_NAME,
         Value::from(linked.name.clone()),
     ));
-    if let Some(version) = linked.version {
-        attributes.push(KeyValue::new(
-            keys::OBSERVATION_PROMPT_VERSION,
-            Value::I64(version),
-        ));
-    }
+    attributes.push(KeyValue::new(
+        keys::OBSERVATION_PROMPT_VERSION,
+        Value::I64(linked.version),
+    ));
 }
 
 // litellm's _serialize_datetime: a datetime reaches the attribute as the JSON string a reader parses back

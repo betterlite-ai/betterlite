@@ -19,6 +19,9 @@ call:
           tags: [alpha, beta]
       - function: trace_attributes
         fields:
+          tags: []
+      - function: trace_attributes
+        fields:
           name: null
           metadata: null
 env: {}
