@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::pending;
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -11,6 +12,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use thiserror::Error;
 use tokio::sync::Notify;
 use tokio::task::{AbortHandle, JoinSet, yield_now};
+use tracing::instrument::WithSubscriber as _;
 
 use super::{AsyncCacheProtocol, CoordinatorError, EventDrivenCacheCoordinator};
 use crate::backend::Ttl;
@@ -168,6 +170,48 @@ impl Scenario {
         let load = move || run_load(loader);
         tasks.spawn(async move { coordinator.get_or_load("key", cache.as_ref(), load).await })
     }
+}
+
+#[derive(Clone)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .flush()
+    }
+}
+
+async fn captured_log(prefix: &str) -> String {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = LogCapture(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let cache = FakeCache::new(false);
+    let coordinator = EventDrivenCacheCoordinator::new(prefix.to_owned(), Duration::from_secs(5));
+    let loaded = coordinator
+        .get_or_load("key", &cache, || async {
+            Ok::<_, FakeError>(CacheValue::Integer(1))
+        })
+        .with_subscriber(subscriber)
+        .await;
+    loaded.unwrap();
+    let log = bytes.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    String::from_utf8(log).unwrap()
 }
 
 fn coordinator(wait_timeout: Duration) -> Arc<EventDrivenCacheCoordinator> {
@@ -331,6 +375,15 @@ async fn cache_coordination_cancelled_loader_signals_waiters() {
     assert!(cancelled.is_cancelled());
     assert_eq!(from_wait, None);
     assert_eq!(scenario.loads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cache_coordination_logs_only_with_a_prefix() {
+    let quiet = captured_log("").await;
+    assert!(!quiet.contains("Cache miss"), "{quiet}");
+    let loud = captured_log("[CACHE]").await;
+    assert!(loud.contains("[CACHE] Cache miss"), "{loud}");
+    assert!(loud.contains("[CACHE] Starting load"), "{loud}");
 }
 
 #[tokio::test]

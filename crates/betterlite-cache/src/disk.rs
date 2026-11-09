@@ -158,6 +158,17 @@ impl DiskCache {
         Ok(next)
     }
 
+    pub async fn async_set_cache_pipeline(
+        &self,
+        entries: Vec<(String, CacheValue)>,
+        ttl: Ttl,
+    ) -> DiskResult<()> {
+        for (key, value) in entries {
+            AsyncCacheProtocol::async_set_cache(self, &key, value, ttl).await?;
+        }
+        Ok(())
+    }
+
     pub async fn async_delete_cache(&self, key: &str) -> DiskResult<()> {
         self.run_keyed(key, |store, cache_key, now| {
             store.delete(cache_key, now)?;

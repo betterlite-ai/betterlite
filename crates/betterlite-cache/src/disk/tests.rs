@@ -357,6 +357,36 @@ async fn disk_cache_async_calls_match_the_sync_ones() {
 }
 
 #[tokio::test]
+async fn disk_cache_async_pipeline_writes_every_entry() {
+    let (_directory, cache, _now) = temp_cache(1000.0);
+    let entries = vec![
+        ("first".to_owned(), CacheValue::Integer(1)),
+        ("second".to_owned(), CacheValue::Integer(2)),
+    ];
+    cache.async_set_cache_pipeline(entries, None).await.unwrap();
+    assert_eq!(
+        cache.get_cache("first").unwrap(),
+        Some(CacheValue::Integer(1))
+    );
+    assert_eq!(
+        cache.get_cache("second").unwrap(),
+        Some(CacheValue::Integer(2))
+    );
+}
+
+#[tokio::test]
+async fn disk_cache_async_pipeline_applies_the_ttl() {
+    let (_directory, cache, now) = temp_cache(1000.0);
+    let entries = vec![("piped".to_owned(), CacheValue::Integer(1))];
+    cache
+        .async_set_cache_pipeline(entries, Some(30.0_f64))
+        .await
+        .unwrap();
+    *now.lock().unwrap() = 1030.0_f64;
+    assert_eq!(cache.get_cache("piped").unwrap(), None);
+}
+
+#[tokio::test]
 async fn disk_cache_async_reads_a_falsy_entry_as_a_miss() {
     let (_directory, cache, _now) = temp_cache(1000.0);
     cache
