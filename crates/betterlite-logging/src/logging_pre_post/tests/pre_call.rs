@@ -4,6 +4,11 @@ use super::support::{CALL, Knob, Look, look, run_pre};
 
 const MASKED_BASE: &str = r#""https://host/v1?key=*****1234""#;
 const ORIGINAL_START: &str = r#""2026-01-01T00:00:05+00:00""#;
+const TEXT_BODY: &str = r#"{"input":"x","additional_args":{"complete_input_dict":"{\"prompt\": \"hidden question\"}"}}"#;
+const MANUAL: &str =
+    r#"{"input":"x","additional_args":{"request_str":"sagemaker request with hidden question"}}"#;
+const REDACTED_BODY: &str = r#""complete_input_dict": "redacted-by-litellm""#;
+const REDACTED_REQUEST: &str = r#""request_str": "redacted-by-litellm""#;
 
 #[rstest]
 #[case::records_the_input("", CALL, &[], Look::Detail(&["input"]), r#"[{"role": "user", "content": "call input"}]"#)]
@@ -26,6 +31,8 @@ const ORIGINAL_START: &str = r#""2026-01-01T00:00:05+00:00""#;
 #[case::retry_keeps_the_first_start("", CALL, &[Knob::EarlierAttempt], Look::Detail(&["first_api_call_start_time"]), r#""earlier""#)]
 #[case::retry_moves_the_latest_start("", CALL, &[Knob::EarlierAttempt], Look::Detail(&["api_call_start_time"]), ORIGINAL_START)]
 #[case::plain_call_succeeds("", CALL, &[], Look::Outcome, "Ok(PreCallOutput { classifier_input: None })")]
+#[case::snapshot_redacts_a_text_body("", TEXT_BODY, &[Knob::RedactContent], Look::Mentions("logger_fn:", REDACTED_BODY), "yes")]
+#[case::snapshot_redacts_a_request_str("", MANUAL, &[Knob::RedactContent], Look::Mentions("logger_pre:", REDACTED_REQUEST), "yes")]
 fn logging_pre_post_behavior_tests_behavior(
     #[case] extra: &str,
     #[case] call: &str,

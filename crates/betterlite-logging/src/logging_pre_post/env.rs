@@ -4,7 +4,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use super::error::PrePostError;
-use super::hooks::{InputCallback, SentrySink};
+use super::hooks::{InputCallback, SentrySink, redact_callback_fields};
 use crate::logging_privacy::request::Decision;
 use crate::logging_privacy::snapshot::callback_snapshot;
 
@@ -78,11 +78,10 @@ impl PrePostEnv<'_> {
         let Some(logger_fn) = self.logger_fn else {
             return;
         };
-        if let Err(error) = logger_fn(&callback_snapshot(
-            Json::Object(details.clone()),
-            self.decision,
-            self.redactor,
-        )) {
+        let mut snapshot =
+            callback_snapshot(Json::Object(details.clone()), self.decision, self.redactor);
+        redact_callback_fields(&mut snapshot, self.decision);
+        if let Err(error) = logger_fn(&snapshot) {
             self.emit(
                 LogLevel::Error,
                 &format!(

@@ -4,6 +4,8 @@ use indexmap::IndexMap;
 
 use super::env::PrePostEnv;
 use super::error::PrePostError;
+use crate::exporter_options::redaction::REDACTED_TEXT;
+use crate::logging_privacy::request::Decision;
 use crate::logging_privacy::snapshot::callback_snapshot;
 use crate::logging_state::LoggingState;
 use crate::python_json;
@@ -121,12 +123,37 @@ fn run_one(
     }
 }
 
+// redact_tree only rewrites a key named response, so the call fields it leaves alone are replaced here
+pub fn redact_callback_fields(snapshot: &mut Json, decision: Decision) {
+    if !decision.content {
+        return;
+    }
+    let Json::Object(fields) = snapshot else {
+        return;
+    };
+    if let Some(response) = fields.get_mut("original_response") {
+        *response = Json::Text(REDACTED_TEXT.to_owned());
+    }
+    let Some(Json::Object(call)) = fields.get_mut("additional_args") else {
+        return;
+    };
+    if let Some(body) = call.get_mut("complete_input_dict")
+        && matches!(body, Json::Text(_))
+    {
+        *body = Json::Text(REDACTED_TEXT.to_owned());
+    }
+    if let Some(request_str) = call.get_mut("request_str") {
+        *request_str = Json::Text(REDACTED_TEXT.to_owned());
+    }
+}
+
 pub fn run_input_callbacks(state: &LoggingState, phase: Phase, env: &PrePostEnv<'_>) {
-    let details = callback_snapshot(
+    let mut details = callback_snapshot(
         Json::Object(state.model_call_details.clone()),
         env.decision,
         env.redactor,
     );
+    redact_callback_fields(&mut details, env.decision);
     for callback in env.input_callbacks {
         if let Err(error) = run_one(*callback, phase, state, &details, env) {
             env.report_failure(phase.failure_headline(), &error);

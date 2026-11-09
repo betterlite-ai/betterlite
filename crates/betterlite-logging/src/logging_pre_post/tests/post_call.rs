@@ -34,6 +34,7 @@ const LOGGER_POST: &str = "logger_post:2026-01-01T00:00:00+00:00:";
 #[case::logger_fn_gets_a_redacted_snapshot(RESPONSE, &[Knob::RedactContent], Look::Mentions("logger_fn:", "hello"), "no")]
 #[case::state_keeps_the_raw_input(RESPONSE, &[Knob::RedactContent], Look::Detail(&["input"]), r#""hello""#)]
 #[case::state_keeps_the_raw_response(RESPONSE, &[Knob::RedactContent], Look::Detail(&["original_response"]), r#""raw text""#)]
+#[case::snapshot_redacts_the_response(RESPONSE, &[Knob::RedactContent], Look::Mentions("logger_post:", r#""original_response": "redacted-by-litellm""#), "yes")]
 fn logging_pre_post_behavior_tests_behavior(
     #[case] call: &str,
     #[case] knobs: &[Knob],
