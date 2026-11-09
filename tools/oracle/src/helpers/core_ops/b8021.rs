@@ -183,8 +183,8 @@ fn call_outcome(provider: Provider, call: &Call) -> Result<Value, Box<HelperErro
             api_base,
             environment,
         } => {
-            let url = ProviderSearch::load(provider, environment)
-                .complete_url(api_base.as_deref())?;
+            let url =
+                ProviderSearch::load(provider, environment).complete_url(api_base.as_deref())?;
             Ok(Value::String(url))
         }
         Call::TransformSearchRequest {
