@@ -1,0 +1,22 @@
+kind: helper
+name: vercel-ai-gateway-embedding-headers-and-url
+call:
+  b5835:
+    steps:
+      - kind: embedding_headers_and_url
+        headers:
+          content-type: text/plain
+        api_key: embed-key
+        api_base: https://explicit.example/v1///
+        environment: {}
+      - kind: embedding_headers_and_url
+        headers:
+          Authorization: Bearer caller
+        api_key: embed-key
+        environment:
+          VERCEL_AI_GATEWAY_API_BASE: https://env.example/v1/
+      - kind: embedding_headers_and_url
+        environment:
+          VERCEL_AI_GATEWAY_API_BASE: ""
+env: {}
+compare: {ignore: []}
