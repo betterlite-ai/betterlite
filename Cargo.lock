@@ -2231,6 +2231,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2319,7 +2320,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redis",
- "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
@@ -2368,6 +2368,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "num-traits",
+ "percent-encoding",
  "prometheus-client",
  "py_literal",
  "rcgen",

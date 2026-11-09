@@ -1,7 +1,9 @@
+#![cfg(test)]
+
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::valkey_vector_store::{build_valkey_url, pack_vector};
+use super::{build_valkey_url, pack_vector};
 
 #[rstest]
 #[case::no_password(
