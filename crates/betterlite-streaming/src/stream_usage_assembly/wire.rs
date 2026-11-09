@@ -57,7 +57,7 @@ pub struct UsageRecord {
     pub prompt_tokens_details: Option<DetailsField<PromptTokensDetails>>,
     pub completion_tokens_details: Option<DetailsField<CompletionTokensDetails>>,
     pub server_tool_use: Option<JsonValue>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    // A plain Option accepts the null that reaches the untagged usage slot as a unit, and Decimal reads the number's exact text.
     pub cost: Option<Decimal>,
     pub inference_geo: Option<JsonValue>,
     pub speed: Option<JsonValue>,
