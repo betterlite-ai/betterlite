@@ -1,0 +1,26 @@
+kind: helper
+name: fine-tuned-gemini
+call:
+  vertex_model_urls:
+    model_predicates:
+      models:
+        - '123'
+        - 'vertex_ai/123'
+        - 'vertex_ai/gemini/456'
+        - 'gemini/789'
+        - gemini-2.5-flash
+        - ''
+        - 'vertex_ai/gemini/987654'
+        - 'gemini/gemini-embedding-2'
+        - 'bge/123'
+        - 'gemma/gemma-3-12b-it'
+        - 'partner_models/x'
+        - 'model_garden/y'
+        - 'non_gemini/z'
+        - 'openai/w'
+        - 'agent_engine/v'
+        - 'bge/bge/x'
+        - 'gemini/ft-abc'
+        - 'GEMINI/x'
+env: {}
+compare: {ignore: []}
