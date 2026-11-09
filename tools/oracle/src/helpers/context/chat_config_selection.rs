@@ -8,7 +8,7 @@ mod reports;
 mod tests;
 
 use fixtures::{Fixtures, VertexLists};
-use reports::{chat_call, foundry_call, image_reports, json_reports, report_each};
+use reports::{chat_call, foundry_call, image_report, json_reports, report_each};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -114,7 +114,9 @@ impl crate::helpers::Helper for Op {
                 let fixtures = Fixtures::new(&Catalog::default(), &vertex, providers);
                 Ok(json_reports(&fixtures, calls))
             }
-            Input::ImageVariationConfigSelection { calls } => Ok(image_reports(calls)),
+            Input::ImageVariationConfigSelection { calls } => {
+                report_each(calls, |_, call| Ok(image_report(call)))
+            }
         }
     }
 }

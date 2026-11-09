@@ -112,17 +112,9 @@ pub(super) fn json_reports(fixtures: &Fixtures<'_>, calls: &[Call]) -> Value {
     Value::Array(reports)
 }
 
-pub(super) fn image_reports(calls: &[Call]) -> Value {
-    let mut reports = Vec::with_capacity(calls.len());
-    for call in calls {
-        reports.push(
-            match select_image_variation_config(&call.model, call.provider) {
-                Some(selection) => {
-                    selected_report(selection.tag.class_name(), &selection.construction)
-                }
-                None => Value::Null,
-            },
-        );
+pub(super) fn image_report(call: &Call) -> Value {
+    match select_image_variation_config(&call.model, call.provider) {
+        Some(selection) => selected_report(selection.tag.class_name(), &selection.construction),
+        None => Value::Null,
     }
-    Value::Array(reports)
 }
