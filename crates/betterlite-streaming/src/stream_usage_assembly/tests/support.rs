@@ -1,11 +1,34 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::huggingface_hub::{
+    OfflineSetting, Settings as HubSettings, TransferSetting,
+};
+use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
+use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
+use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
+use betterlite_tokenizer::count::settings::Settings;
+use betterlite_tokenizer::engine::Engine;
+use betterlite_tokenizer::engine::error::EngineError;
+use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
+use betterlite_tokenizer::engine::hub::HubDownloader;
+use betterlite_tokenizer::engine::limits::{
+    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService,
+};
+use betterlite_tokenizer::engine::selection::Selector;
+use tokio::time::Instant;
 
 use crate::stream_usage_assembly::wire::{
     Chunk, CompletionTokensDetails, PromptTokensDetails, ReasoningChoice, Usage,
@@ -192,15 +215,19 @@ pub(super) struct UsageCase<'fixture> {
         Option<&'fixture (dyn Fn() -> Result<i64, CountError> + Send + Sync)>,
 }
 
+pub(super) fn fixture_hooks() -> VerboseHooks<FixtureLogger, FixtureConsole> {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
+    VerboseHooks {
+        logger: FixtureLogger::default(),
+        console: FixtureConsole::default(),
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::new(redactor),
+    }
+}
+
 impl UsageCase<'_> {
     pub(super) async fn run(&self) -> (Result<Usage, UsageAssemblyError>, Vec<String>) {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
-        let hooks = VerboseHooks {
-            logger: FixtureLogger::default(),
-            console: FixtureConsole::default(),
-            set_verbose: Payload::Bool(false),
-            redactor: Arc::new(redactor),
-        };
+        let hooks = fixture_hooks();
         let request = UsageRequest {
             chunks: self.chunks,
             model: "gpt-4o",
@@ -261,3 +288,89 @@ pub(super) fn fixture_choices(source: &str) -> Vec<ReasoningChoice> {
 }
 
 pub(super) const TOKEN_COUNTER_FAILED: &str = "token_counter failed, assuming prompt tokens is 0";
+
+struct InlineCounter;
+
+#[async_trait]
+impl BlockingCounter for InlineCounter {
+    async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
+        job()
+    }
+
+    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
+    }
+
+    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
+        job()
+    }
+}
+
+// Same construction as the tokenizer oracle fixture; the gpt-4o and gpt-4 vocabularies are bundled, so no network.
+pub(super) fn real_counter() -> Counter {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .expect("fixture proxy policy resolves");
+    let client =
+        Arc::new(ProxiedClient::outbound(&Arc::new(policy)).expect("fixture http client builds"));
+    let settings = Settings::default();
+    let limits = settings.encode_limits().expect("fixture encode limits");
+    let facility: Arc<dyn BlockingCounter> = Arc::new(InlineCounter);
+    let service = Arc::new(CountingService::new(4, facility, limits));
+    let fetcher = Arc::new(TiktokenFetcher::new(
+        Arc::clone(&client),
+        None,
+        Arc::clone(&service),
+    ));
+    let catalog = BundledCatalog::default().get();
+    let hub = hub_settings();
+    let downloader = Arc::new(HubDownloader::new(
+        Arc::new(hub.clone()),
+        resolver(&hub, client),
+        Arc::new(Instant::now),
+    ));
+    let selector = Arc::new(Selector::new(
+        Arc::clone(&fetcher),
+        downloader,
+        Arc::clone(&catalog),
+        Arc::clone(&service),
+        false,
+    ));
+    Counter::new(selector, fetcher, service, catalog, settings)
+}
+
+fn hub_settings() -> HubSettings {
+    let directory = PathBuf::from("target/tokenizer-hub");
+    HubSettings {
+        endpoint: "http://127.0.0.1:1".to_owned(),
+        offline: OfflineSetting::Online,
+        etag_timeout: 10,
+        download_timeout: 10,
+        disable_implicit_token: false,
+        env_token: None,
+        hf_home: directory.clone(),
+        hub_cache: directory.clone(),
+        token_path: directory.join("token"),
+        stored_tokens_path: directory.join("stored_tokens"),
+        transfer: TransferSetting::Standard,
+    }
+}
+
+fn resolver(settings: &HubSettings, client: Arc<ProxiedClient>) -> Arc<HubTokenResolver> {
+    let oidc = OidcSettings {
+        resource: None,
+        id_token: None,
+        github_actions: false,
+        request_url: None,
+        request_token: None,
+        device_code_client_id: String::new(),
+    };
+    let clock: Arc<dyn HubClock> = Arc::new(SystemHubClock::default());
+    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
+    Arc::new(HubTokenResolver::new(
+        settings.clone(),
+        oidc,
+        client,
+        reader,
+        clock,
+    ))
+}
