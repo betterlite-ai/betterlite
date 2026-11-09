@@ -1,0 +1,20 @@
+task: B4833
+deviations:
+  - what: run takes a required Duration timeout and a byte cap, and read takes a byte cap, because the Rust Sandbox trait already requires them.
+    why: LiteLLM's timeout is optional and its output is unbounded; the bounded-inputs rule needs a cap, and callers in the harness crates pass explicit values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L202-L221
+  - what: Every docker call other than run caps its stdout and stderr at 64 MiB.
+    why: The bounded-inputs rule caps every read, while LiteLLM reads container output without a bound; a snapshot or read larger than that fails with a content limit instead of allocating without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L272-L279
+  - what: The docker client is started in its own process group and killed when its handle or the sandbox is dropped.
+    why: The processes-die-with-owner rule; LiteLLM leaves the client to the event loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L88-L100
+  - what: A docker client that exits before reading all of its stdin is treated as end of input, so write reports the container's stderr and exit code instead of a broken pipe.
+    why: LiteLLM awaits the stdin write and loses the container's error when the client closes the pipe first; no working setup relies on a broken-pipe failure, and the caller needs the container's reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L275-L276
+  - what: The container id read from docker run is decoded with U+FFFD replacement instead of LiteLLM's strict decode.
+    why: LiteLLM raises an unhandled UnicodeDecodeError when docker writes a non-UTF-8 id; no working setup can rely on that crash, and the replacement keeps the failure in the sandbox error path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L178
+  - what: The docker program path is set through with_docker_program instead of being the sixth constructor argument.
+    why: Tests need a fake docker without changing the process environment, and clippy's five-argument threshold refuses a sixth parameter on new; with no path configured the PATH lookup is LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L80-L100

@@ -17,19 +17,23 @@ use crate::process::check_command;
 
 pub(crate) const RULES: &str = include_str!("affected/rules.toml");
 
-pub(crate) fn affected(root: &Path) -> Result<Vec<String>, GateError> {
+pub(crate) fn affected(root: &Path, only_edited: bool) -> Result<Vec<String>, GateError> {
     match env::var("GATE_ALL_TESTS") {
         Ok(all) if !all.is_empty() => return Ok(vec!["--workspace".to_owned()]),
         Ok(_) | Err(VarError::NotPresent) => {}
         Err(VarError::NotUnicode(_)) => return Err(GateError::NotUnicode("GATE_ALL_TESTS")),
     }
     let base = resolve_base(root)?;
-    let changed = changed_paths(root, &base)?;
+    packages(root, &base, only_edited)
+}
+
+fn packages(root: &Path, base: &str, only_edited: bool) -> Result<Vec<String>, GateError> {
+    let changed = changed_paths(root, base)?;
     let snapshot = tempfile::tempdir().map_err(|source| GateError::Write {
         path: env::temp_dir(),
         source,
     })?;
-    let old = package_graph(&unpack_base(root, &base, snapshot.path())?)?;
+    let old = package_graph(&unpack_base(root, base, snapshot.path())?)?;
     let new = package_graph(root)?;
     let rules = DeterminatorRules::parse(RULES).map_err(|source| GateError::Affected {
         what: "the affected-package rules".to_owned(),
@@ -43,9 +47,15 @@ pub(crate) fn affected(root: &Path) -> Result<Vec<String>, GateError> {
             source: Box::new(source),
         })?;
     determinator.add_changed_paths(&changed);
-    let names: Vec<&str> = determinator
-        .compute()
-        .affected_set
+    let computed = determinator.compute();
+    let selected = if only_edited {
+        computed
+            .path_changed_set
+            .union(&computed.summary_changed_set)
+    } else {
+        computed.affected_set
+    };
+    let names: Vec<&str> = selected
         .packages(DependencyDirection::Forward)
         .filter(PackageMetadata::in_workspace)
         .map(|package| package.name())
