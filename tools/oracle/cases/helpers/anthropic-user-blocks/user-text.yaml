@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-user-blocks-user-text
+call:
+  anthropic_user_blocks:
+    function: user_blocks
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+    messages:
+      - role: user
+        content: hello
+        cache_control: {type: ephemeral}
+      - role: user
+        content:
+          - {type: text, text: first}
+          - {type: text, text: "   "}
+          - {type: audio, data: skipped}
+      - role: user
+        content: ""
+env: {}
+compare:
+  ignore: []

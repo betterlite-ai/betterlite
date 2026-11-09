@@ -1,0 +1,3 @@
+# Commandstats
+cmdstat_get:calls=12,usec=45,usec_per_call=3.75,rejected_calls=0,failed_calls=0
+cmdstat_host:10.0.0.1:6379
