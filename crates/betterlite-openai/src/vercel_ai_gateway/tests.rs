@@ -267,14 +267,19 @@ fn complete_url_trims_only_an_explicit_base(
     );
 }
 
-#[test]
-fn a_string_input_is_wrapped_and_the_prefix_is_stripped_once() {
+#[rstest]
+#[case::one_prefix("vercel_ai_gateway/text-embedding-3-small", "text-embedding-3-small")]
+#[case::two_prefixes("vercel_ai_gateway/vercel_ai_gateway/model", "vercel_ai_gateway/model")]
+fn a_string_input_is_wrapped_and_the_prefix_is_stripped_once(
+    #[case] model: &str,
+    #[case] expected_model: &str,
+) {
     let body = transform_embedding_request(
-        "vercel_ai_gateway/text-embedding-3-small",
+        model,
         &EmbeddingInput::Text(String::from("hello")),
         &Object::new(),
     );
-    assert_eq!(body.get("model"), Some(&json!("text-embedding-3-small")));
+    assert_eq!(body.get("model"), Some(&json!(expected_model)));
     assert_eq!(body.get("input"), Some(&json!(["hello"])));
 }
 

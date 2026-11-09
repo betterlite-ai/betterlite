@@ -20,5 +20,8 @@ call:
       - kind: embedding_request_and_params
         model: model
         input: [[1, 2], [3]]
+      - kind: embedding_request_and_params
+        model: vercel_ai_gateway/vercel_ai_gateway/model
+        input: twice
 env: {}
 compare: {ignore: []}
