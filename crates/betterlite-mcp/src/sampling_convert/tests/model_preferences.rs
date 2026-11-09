@@ -352,6 +352,13 @@ fn null_preferences_take_their_defaults() {
 }
 
 #[test]
+fn a_null_hint_name_decodes_as_an_empty_name() {
+    let preferences: ModelPreferences =
+        serde_json::from_str(r#"{"hints":[{"name":null},{"name":"fast"}]}"#).expect("preferences");
+    assert_eq!(preferences.hints, vec![hint(None), hint(Some("fast"))]);
+}
+
+#[test]
 fn select_model_by_priority_scores_without_the_resolver() {
     let selected = select_model_by_priority(
         &names(&["cheap", "fast", "smart"]),

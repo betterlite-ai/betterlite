@@ -38,8 +38,8 @@ pub struct ModelPreferences {
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct ModelHint {
-    #[serde(default)]
-    pub name: Option<String>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,9 +212,10 @@ pub(crate) fn normalise(
 
 fn resolve_hint(hints: &[ModelHint], available_model_names: &[String]) -> Option<String> {
     for hint in hints {
-        let Some(hint_name) = hint.name.as_deref().filter(|name| !name.is_empty()) else {
+        if hint.name.is_empty() {
             continue;
-        };
+        }
+        let hint_name = hint.name.as_str();
         let direct = available_model_names
             .iter()
             .find(|model| model.as_str() == hint_name);

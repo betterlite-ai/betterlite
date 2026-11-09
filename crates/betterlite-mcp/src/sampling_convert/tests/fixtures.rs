@@ -27,7 +27,7 @@ pub(crate) fn names(values: &[&str]) -> Vec<String> {
 
 pub(crate) fn hint(name: Option<&str>) -> ModelHint {
     ModelHint {
-        name: name.map(str::to_owned),
+        name: name.unwrap_or_default().to_owned(),
     }
 }
 
