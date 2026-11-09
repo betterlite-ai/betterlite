@@ -1,0 +1,8 @@
+kind: helper
+name: semantic-scope-key-and-user
+call:
+  b4290:
+    semantic_scope_key_and_user: null
+env: {}
+compare:
+  ignore: []

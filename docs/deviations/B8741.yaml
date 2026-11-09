@@ -1,0 +1,11 @@
+task: B8741
+deviations:
+  - what: lunary, wandb, mlflow, sentry and slack pass the config load as known names and stop startup with "no callback adapter is installed for '<name>'"; LiteLLM starts and sends to them.
+    why: Each needs a Python SDK LiteLLM imports (lunary, wandb, the mlflow tracking client, sentry_sdk, slack_bolt) and no Rust client is planned; B3967 and B3970 built only the records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4437-L4495
+  - what: A known callback name whose logger betterlite has not built (for example langsmith) passes the config load and stops startup with "no callback adapter is installed for 'langsmith'"; LiteLLM starts and logs to it.
+    why: A logger that silently drops every event would look like working logging; the stub modules are filled one by one by the logger tasks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4558-L4565
+  - what: The proxy hook names of initialize_callbacks_on_proxy (presidio, lakera_prompt_injection, aporia_prompt_injection, detect_prompt_injection, azure_content_safety, batch_redis_requests, websearch_interception, code_interpreter_interception) and the enterprise names still fail the config load with ConfigError::Unsupported.
+    why: They are guardrails and hooks, not loggers, and no task turns their callback names into hook objects yet; enterprise code is not ported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L417

@@ -1,0 +1,35 @@
+kind: helper
+name: sap-models-request-root-module-list
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              - prompt_templating:
+                  prompt: {template: []}
+                  model: {name: m}
+                grounding:
+                  type: document_grounding_service
+                  config:
+                    filters:
+                      - id: f
+                        data_repository_type: help.sap.com
+                        search_config: {max_chunk_count: 3}
+                        data_repositories: [r]
+                        data_repository_metadata: [{key: k, value: [v]}]
+                        document_metadata: [{key: k, value: [v], select_mode: [ignoreIfKeyAbsent]}]
+                        chunk_metadata: [{key: k, value: [v]}]
+                    placeholders: {input: [q], output: o}
+                    metadata_params: [m]
+              - prompt_templating:
+                  prompt: {template: [{role: user, content: [{text: nested}]}]}
+                  model: {name: m}
+            stream:
+              enabled: true
+              chunk_size: 10
+              delimiters: ["\n", " "]
+          placeholder_values: {q: v}
+env: {}
+compare: {ignore: []}

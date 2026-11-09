@@ -1,0 +1,9 @@
+kind: helper
+name: a2a-discover-well-known-fallback-paths
+call:
+  b8202:
+    operation: urls
+    base_url: https://agent.example
+    mode: well_known_fallback
+env: {}
+compare: {ignore: []}
