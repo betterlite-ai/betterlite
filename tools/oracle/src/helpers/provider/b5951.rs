@@ -27,9 +27,9 @@ fn failure(message: String) -> Box<HelperError> {
 }
 
 fn value(result: Result<Json, SapModelError>) -> crate::helpers::HelperResult {
-    result
-        .map_err(|error| failure(error.to_string()))
-        .and_then(|model| serde_json::to_value(&model).map_err(|error| failure(error.to_string())))
+    let model = result.map_err(|error| failure(error.to_string()))?;
+    let converted = serde_json::to_value(&model);
+    converted.map_err(|error| failure(error.to_string()))
 }
 
 pub(crate) struct Op;
