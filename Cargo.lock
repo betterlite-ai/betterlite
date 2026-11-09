@@ -1145,6 +1145,7 @@ dependencies = [
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
@@ -1154,14 +1155,17 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "bytes",
  "chrono",
  "crc32fast",
@@ -1733,6 +1737,24 @@ dependencies = [
  "betterlite-lens",
  "libfuzzer-sys",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-lens-worker"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-lens",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
