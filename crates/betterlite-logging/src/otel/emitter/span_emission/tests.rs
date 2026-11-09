@@ -421,9 +421,11 @@ fn emit_never_sheds_attributes_that_are_not_indexed_messages() {
 fn an_error_mapper_attribute_is_not_reserved_twice() {
     let mut mapped = fixed(&[("error.type", "MappedError")]);
     mapped.extend(indexed(2));
-    let error = rate_limit_error(None);
-    let fitted = bare_emitter(Some(6)).fit_to_budget(mapped, Some(&error));
-    assert_eq!(fitted.len(), 5);
+    let error = rate_limit_error(Some("429"));
+    let roomy = bare_emitter(Some(7)).fit_to_budget(mapped.clone(), Some(&error));
+    assert_eq!(roomy.len(), 5);
+    let tight = bare_emitter(Some(6)).fit_to_budget(mapped, Some(&error));
+    assert_eq!(tight.len(), 3);
 }
 
 #[test]
