@@ -103,6 +103,15 @@ fn a_pem_pair_wins_over_file_paths() {
 }
 
 #[test]
+fn a_pem_pair_with_an_empty_key_is_not_an_identity() {
+    let mut credentials = base_credentials();
+    credentials.cert_str = Some("cert".to_owned());
+    credentials.key_str = Some(secret(""));
+    let error = build_token_request(&credentials).unwrap_err();
+    assert!(matches!(error, SapAuthError::IncompleteCredentials));
+}
+
+#[test]
 fn a_token_request_without_an_authentication_mode_is_an_error() {
     let error = build_token_request(&base_credentials()).unwrap_err();
     assert!(matches!(error, SapAuthError::IncompleteCredentials));
@@ -417,7 +426,7 @@ fn a_transport_failure_keeps_the_transport_error_as_its_source() {
         transport_failure
             .source()
             .unwrap()
-            .downcast_ref::<TransportError>()
+            .downcast_ref::<Box<TransportError>>()
             .is_some()
     );
 }

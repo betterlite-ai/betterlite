@@ -391,6 +391,28 @@ fn a_missing_default_config_file_provides_nothing() {
 }
 
 #[test]
+fn an_empty_config_path_falls_back_to_the_home_config_file() {
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_CONFIG", "")
+        .with_file(
+            "/home/sap/.aicore/config.json",
+            r#"{"client_id": "home-client"}"#,
+        );
+    let credentials = fetch_credentials(&environment, None, None).unwrap();
+    assert_eq!(credentials.client_id.as_deref(), Some("home-client"));
+}
+
+#[test]
+fn an_empty_profile_with_no_config_file_provides_nothing() {
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_PROFILE", "");
+    let error = fetch_credentials(&environment, None, None).unwrap_err();
+    assert!(matches!(error, SapAuthError::NoCredentials));
+}
+
+#[test]
 fn an_explicit_config_path_that_is_missing_is_an_error() {
     let environment = FakeEnvironment::default()
         .with_home("/home/sap")
