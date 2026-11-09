@@ -3,8 +3,17 @@ use std::str::Utf8Error;
 use betterlite_context::a2a_text::A2aTextError;
 use thiserror::Error;
 
+use crate::bedrock_settings::{BedrockError, HeaderError};
+
+// B682's BedrockError implements no Display or Error, so the derived wrapper carries the cause instead.
 #[derive(Debug, Error)]
-pub enum AgentCoreReplyError {
+#[error("bedrock provider error")]
+pub struct BedrockFailure {
+    pub cause: Box<BedrockError>,
+}
+
+#[derive(Debug, Error)]
+pub enum AgentCoreResponseError {
     #[error("the response body is not UTF-8")]
     NotUtf8 {
         #[source]
@@ -46,4 +55,12 @@ pub enum AgentCoreReplyError {
     UsageFieldNegative { field: &'static str },
     #[error("message content block {index} text must be a string")]
     ContentTextNotString { index: usize },
+    #[error("bedrock provider error ({status})")]
+    Bedrock {
+        status: u16,
+        #[source]
+        error: BedrockFailure,
+    },
+    #[error(transparent)]
+    Header(#[from] HeaderError),
 }

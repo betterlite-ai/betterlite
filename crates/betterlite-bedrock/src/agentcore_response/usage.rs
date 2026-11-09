@@ -2,22 +2,22 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::response::ChatUsage;
 use indexmap::IndexMap;
 
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::AgentCoreResponseError;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentCoreUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
-    pub total_tokens: Option<u64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
 }
 
 impl AgentCoreUsage {
-    pub fn from_value(value: &Json) -> Result<Option<Self>, AgentCoreReplyError> {
+    pub fn from_value(value: &Json) -> Result<Option<Self>, AgentCoreResponseError> {
         let Json::Object(fields) = value else {
             if matches!(value, Json::Null) {
                 return Ok(None);
             }
-            return Err(AgentCoreReplyError::UsageNotObject);
+            return Err(AgentCoreResponseError::UsageNotObject);
         };
         if fields.is_empty() {
             return Ok(None);
@@ -30,11 +30,11 @@ impl AgentCoreUsage {
     }
 
     #[must_use]
-    pub fn to_chat_usage(&self) -> ChatUsage {
+    pub const fn to_chat_usage(&self) -> ChatUsage {
         ChatUsage {
-            prompt_tokens: self.input_tokens.unwrap_or(0),
-            completion_tokens: self.output_tokens.unwrap_or(0),
-            total_tokens: self.total_tokens.unwrap_or(0),
+            prompt_tokens: self.input_tokens,
+            completion_tokens: self.output_tokens,
+            total_tokens: self.total_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
         }
@@ -44,20 +44,20 @@ impl AgentCoreUsage {
 fn token(
     fields: &IndexMap<String, Json>,
     field: &'static str,
-) -> Result<Option<u64>, AgentCoreReplyError> {
+) -> Result<u64, AgentCoreResponseError> {
     match fields.get(field) {
-        None | Some(Json::Null) => Ok(None),
+        None | Some(Json::Null) => Ok(0),
         Some(Json::Number(number)) => {
             if let Some(found) = number.as_u64() {
-                return Ok(Some(found));
+                return Ok(found);
             }
             if number.as_i64().is_some_and(|found| found < 0) {
-                return Err(AgentCoreReplyError::UsageFieldNegative { field });
+                return Err(AgentCoreResponseError::UsageFieldNegative { field });
             }
-            Err(AgentCoreReplyError::UsageFieldNotInteger { field })
+            Err(AgentCoreResponseError::UsageFieldNotInteger { field })
         }
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(AgentCoreReplyError::UsageFieldNotInteger { field })
+            Err(AgentCoreResponseError::UsageFieldNotInteger { field })
         }
     }
 }

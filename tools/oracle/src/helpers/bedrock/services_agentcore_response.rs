@@ -2,8 +2,9 @@ use std::future::{self, Future};
 use std::io;
 
 use betterlite_bedrock::agentcore_response::counter::TokenCounter;
+use betterlite_bedrock::agentcore_response::error::AgentCoreResponseError;
 use betterlite_bedrock::agentcore_response::transform::{
-    AgentCoreResponseError, RawResponse, transform_agentcore_response,
+    RawResponse, transform_agentcore_response,
 };
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
@@ -93,7 +94,7 @@ async fn transform(input: &Input) -> crate::helpers::HelperResult {
                 "response_status": error.cause.error.response.status_code,
             },
         })),
-        Err(AgentCoreResponseError::Header(error)) => Err(failure(error.to_string())),
+        Err(error) => Err(failure(error.to_string())),
     }
 }
 

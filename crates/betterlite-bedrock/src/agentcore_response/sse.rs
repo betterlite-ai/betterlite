@@ -2,11 +2,11 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::agentcore_response::content::AgentCoreMessage;
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::AgentCoreResponseError;
 use crate::agentcore_response::reply::ParsedReply;
 use crate::agentcore_response::usage::AgentCoreUsage;
 
-pub fn parse_sse_stream(text: &str) -> Result<ParsedReply, AgentCoreReplyError> {
+pub fn parse_sse_stream(text: &str) -> Result<ParsedReply, AgentCoreResponseError> {
     let mut final_message: Option<AgentCoreMessage> = None;
     let mut usage: Option<AgentCoreUsage> = None;
     let mut deltas = String::new();
@@ -56,7 +56,7 @@ fn extract_sse_json(line: &str) -> Option<Json> {
 
 fn usage_from_event(
     event: &IndexMap<String, Json>,
-) -> Result<Option<AgentCoreUsage>, AgentCoreReplyError> {
+) -> Result<Option<AgentCoreUsage>, AgentCoreResponseError> {
     let Some(metadata) = event.get("metadata") else {
         return Ok(None);
     };
@@ -64,7 +64,7 @@ fn usage_from_event(
         Json::Null => return Ok(None),
         Json::Object(fields) => fields,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreReplyError::MetadataNotObject);
+            return Err(AgentCoreResponseError::MetadataNotObject);
         }
     };
     if metadata_fields.is_empty() {
@@ -76,7 +76,7 @@ fn usage_from_event(
     AgentCoreUsage::from_value(usage)
 }
 
-fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, AgentCoreReplyError> {
+fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, AgentCoreResponseError> {
     let Some(block) = event.get("contentBlockDelta") else {
         return Ok(None);
     };
@@ -84,7 +84,7 @@ fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, Agent
         Json::Null => return Ok(None),
         Json::Object(fields) => fields,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreReplyError::DeltaEventNotObject);
+            return Err(AgentCoreResponseError::DeltaEventNotObject);
         }
     };
     if block_fields.is_empty() {
@@ -97,7 +97,7 @@ fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, Agent
         Json::Null => return Ok(None),
         Json::Object(fields) => fields,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(AgentCoreReplyError::DeltaNotObject);
+            return Err(AgentCoreResponseError::DeltaNotObject);
         }
     };
     match delta_fields.get("text") {
@@ -105,7 +105,7 @@ fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, Agent
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(AgentCoreReplyError::DeltaTextNotString)
+            Err(AgentCoreResponseError::DeltaTextNotString)
         }
     }
 }

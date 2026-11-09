@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::agentcore_response::content::{AgentCoreContent, AgentCoreMessage};
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::AgentCoreResponseError;
 use crate::agentcore_response::reply::ParsedReply;
 
 const A2A_MAX_DEPTH: usize = 10;
@@ -17,7 +17,7 @@ fn raw_reply(value: &Json) -> ParsedReply {
     }
 }
 
-pub fn parse_json_reply(value: &Json) -> Result<ParsedReply, AgentCoreReplyError> {
+pub fn parse_json_reply(value: &Json) -> Result<ParsedReply, AgentCoreResponseError> {
     let Json::Object(object) = value else {
         tracing::warn!("AgentCore: JSON response is not a dict. Returning raw JSON as content.");
         return Ok(raw_reply(value));
@@ -70,15 +70,15 @@ fn first_text(object: &IndexMap<String, Json>) -> Option<String> {
 fn a2a_content(
     value: &Json,
     object: &IndexMap<String, Json>,
-) -> Result<Option<String>, AgentCoreReplyError> {
+) -> Result<Option<String>, AgentCoreResponseError> {
     if !object.contains_key("jsonrpc") {
         return Ok(None);
     }
     let shape =
-        serde_json::to_value(value).map_err(|source| AgentCoreReplyError::Encode { source })?;
-    let a2a: A2aResponse =
-        serde_json::from_value(shape).map_err(|source| AgentCoreReplyError::A2aShape { source })?;
+        serde_json::to_value(value).map_err(|source| AgentCoreResponseError::Encode { source })?;
+    let a2a: A2aResponse = serde_json::from_value(shape)
+        .map_err(|source| AgentCoreResponseError::A2aShape { source })?;
     let content = extract_text_from_a2a_response(&a2a, A2A_MAX_DEPTH)
-        .map_err(|source| AgentCoreReplyError::A2aText { source })?;
+        .map_err(|source| AgentCoreResponseError::A2aText { source })?;
     Ok((!content.is_empty()).then_some(content))
 }

@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::AgentCoreResponseError;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum AgentCoreContent {
@@ -44,7 +44,7 @@ impl AgentCoreContent {
         }
     }
 
-    pub fn text(&self) -> Result<String, AgentCoreReplyError> {
+    pub fn text(&self) -> Result<String, AgentCoreResponseError> {
         let Self::Blocks(blocks) = self else {
             return Ok(String::new());
         };
@@ -53,7 +53,7 @@ impl AgentCoreContent {
             match block {
                 AgentCoreBlock::Text(part) => text.push_str(part),
                 AgentCoreBlock::NotText { index } => {
-                    return Err(AgentCoreReplyError::ContentTextNotString { index: *index });
+                    return Err(AgentCoreResponseError::ContentTextNotString { index: *index });
                 }
                 AgentCoreBlock::Ignored => {}
             }

@@ -7,16 +7,14 @@ use betterlite_openai::chat::response::ChatUsage;
 use rstest::rstest;
 use tokio::runtime::Builder;
 
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::AgentCoreResponseError;
 use crate::agentcore_response::json::parse_json_reply;
 use crate::agentcore_response::reply::decode_agentcore_reply;
 use crate::agentcore_response::sse::parse_sse_stream;
 use crate::agentcore_response::tests::support::{
     FixtureCounter, capture, choice_message, json_response, response, sse_response,
 };
-use crate::agentcore_response::transform::{
-    AgentCoreResponseError, RawResponse, transform_agentcore_response,
-};
+use crate::agentcore_response::transform::{RawResponse, transform_agentcore_response};
 use crate::bedrock_settings::ErrorHeaders;
 
 #[rstest]
@@ -109,14 +107,14 @@ fn sse_content_delta() {
         parse_sse_stream(r#"data: {"event":{"contentBlockDelta":true}}"#).unwrap_err();
     assert!(matches!(
         broken_delta,
-        AgentCoreReplyError::DeltaEventNotObject
+        AgentCoreResponseError::DeltaEventNotObject
     ));
     let broken_text =
         parse_sse_stream(r#"data: {"event":{"contentBlockDelta":{"delta":{"text":7}}}}"#)
             .unwrap_err();
     assert!(matches!(
         broken_text,
-        AgentCoreReplyError::DeltaTextNotString
+        AgentCoreResponseError::DeltaTextNotString
     ));
 }
 
@@ -129,9 +127,9 @@ fn sse_usage_event() {
                 data: {\"event\":{\"metadata\":{\"usage\":{\"inputTokens\":0}}}}";
     let reply = parse_sse_stream(body).unwrap();
     let found = reply.usage.unwrap();
-    assert_eq!(found.input_tokens, Some(0));
-    assert_eq!(found.output_tokens, None);
-    assert_eq!(found.total_tokens, None);
+    assert_eq!(found.input_tokens, 0);
+    assert_eq!(found.output_tokens, 0);
+    assert_eq!(found.total_tokens, 0);
     let mut last_wins = response();
     block_on(transform_agentcore_response(
         "gpt-4",
@@ -311,7 +309,7 @@ fn json_raw_fallback() {
     let block_text = parse_json_reply(&json(r#"{"result":{"content":[{"text":1}]}}"#)).unwrap_err();
     assert!(matches!(
         block_text,
-        AgentCoreReplyError::ContentTextNotString { index: 0 }
+        AgentCoreResponseError::ContentTextNotString { index: 0 }
     ));
     let raw = json_response(r#"{"result":{"content":[{"text":"x"}]},"usage":{"inputTokens":9}}"#);
     let mut calculated = response();

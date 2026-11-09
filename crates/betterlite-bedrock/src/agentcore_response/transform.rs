@@ -6,37 +6,17 @@ use betterlite_openai::chat::response::{
 };
 use betterlite_tokenizer::count::request::{Message, TextInput, TokenRequest};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::agentcore_response::counter::TokenCounter;
-use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::error::{AgentCoreResponseError, BedrockFailure};
 use crate::agentcore_response::reply::decode_agentcore_reply;
-use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, HeaderError};
+use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RawResponse {
     pub status_code: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
-}
-
-// B682's BedrockError implements no Display or Error, so the derived wrapper carries the cause instead.
-#[derive(Debug, Error)]
-#[error("bedrock provider error")]
-pub struct BedrockFailure {
-    pub cause: Box<BedrockError>,
-}
-
-#[derive(Debug, Error)]
-pub enum AgentCoreResponseError {
-    #[error("bedrock provider error ({status})")]
-    Bedrock {
-        status: u16,
-        #[source]
-        error: BedrockFailure,
-    },
-    #[error(transparent)]
-    Header(#[from] HeaderError),
 }
 
 pub async fn transform_agentcore_response<C>(
@@ -77,7 +57,7 @@ async fn apply<C>(
     messages: &[Message],
     response: &mut ChatResponse,
     counter: &C,
-) -> Result<(), AgentCoreReplyError>
+) -> Result<(), AgentCoreResponseError>
 where
     C: TokenCounter + Sync,
 {
