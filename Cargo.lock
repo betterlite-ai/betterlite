@@ -1379,6 +1379,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
