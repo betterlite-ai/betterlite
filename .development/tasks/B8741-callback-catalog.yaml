@@ -75,6 +75,7 @@ description: >-
   once; a registry with the catalog as resolver registers pagerduty as a Logger sink and lists it for Success.
 scope:
   paths:
+    - "tools/oracle/src/helpers/logging/callback_registry.rs"
     - crates/betterlite-config/src/sections/callback_settings.rs
     - crates/betterlite-config/src/sections/callback_settings/**
     - crates/betterlite-logging/src/registry.rs
