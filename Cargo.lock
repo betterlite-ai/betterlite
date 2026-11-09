@@ -1760,7 +1760,6 @@ dependencies = [
  "prost",
  "rand 0.10.3",
  "regex",
- "reqwest",
  "rstest",
  "rust_decimal",
  "ryu",

@@ -46,7 +46,7 @@ fn messages_form(messages: Option<&Json>) -> String {
     };
     string_form(value)
 }
-// docs/compatibility.md gives timestamps as RFC 3339, so the payload's epoch seconds become a calendar time
+// docs/compatibility.md gives timestamps as RFC 3339, so epoch seconds become a calendar time
 fn timestamp_text(seconds: Decimal) -> String {
     let timestamp = seconds
         .checked_mul(Decimal::from(1_000_i64))

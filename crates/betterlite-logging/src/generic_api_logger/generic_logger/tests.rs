@@ -1,16 +1,4 @@
 #![cfg(test)]
-
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use async_trait::async_trait;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use rstest::rstest;
-use tokio::sync::Notify;
-
 use super::error::ApiError;
 use super::retry::RetrySleeper;
 use super::transport::{PostRequest, PostTransport};
@@ -20,7 +8,15 @@ use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::generic_api_logger::generic_settings::{GenericApiArgs, GenericApiSettings, resolve};
 use crate::generic_api_logger::tests::args;
-
+use async_trait::async_trait;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use rstest::rstest;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::Notify;
 const PAYLOAD: &str = r#"{"id":"chatcmpl-1","trace_id":"trace-1","session_id":"session-1","call_type":"completion","response_cost":0.5,"status":"success","status_fields":{"llm_api_status":"success","guardrail_status":"not_run"},"total_tokens":5,"prompt_tokens":2,"completion_tokens":3,"startTime":1704067200.0,"endTime":1704067201.5,"completionStartTime":1704067200.5,"response_time":1.0,"model_map_information":{},"model":"gpt-4o","api_base":"https://api.openai.com","metadata":{},"saved_cache_cost":0.0,"request_tags":["team-a"],"model_parameters":{},"hidden_params":{},"end_user":"user-1","cache_hit":false,"response":{"id":"chatcmpl-resp","usage":{"total_tokens":5}}}"#;
 #[derive(Default)]
 pub(super) struct RecordingTransport {
@@ -29,20 +25,16 @@ pub(super) struct RecordingTransport {
     blocked: AtomicBool,
     gate: Notify,
 }
-
 impl RecordingTransport {
     pub(super) fn reply(&self, outcome: Result<u16, ApiError>) {
         self.replies.lock().expect("the replies").push_back(outcome);
     }
-
     pub(super) fn block(&self) {
         self.blocked.store(true, Ordering::SeqCst);
     }
-
     pub(super) fn first(&self) -> PostRequest {
         self.requests.lock().expect("the requests")[0].clone()
     }
-
     pub(super) fn bodies(&self) -> Vec<Json> {
         let requests = self.requests.lock().expect("the requests");
         requests

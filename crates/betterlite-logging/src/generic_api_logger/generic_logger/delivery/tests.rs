@@ -1,16 +1,13 @@
 #![cfg(test)]
-
-use std::time::Duration;
-
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use tokio::time::timeout;
-
 use super::super::ApiEventType;
 use super::super::GenericApiLogger;
 use super::super::error::ApiError;
 use super::super::tests::{entries, payload, ready, settings};
 use crate::generic_api_logger::tests::{args, capture_logs};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use std::time::Duration;
+use tokio::time::timeout;
 async fn record_both(logger: &GenericApiLogger) {
     let payload = payload();
     logger.record(ApiEventType::Success, &payload).await;
@@ -29,7 +26,6 @@ async fn delivery_posts_the_queue_in_the_selected_format() {
     let request = recorder.first();
     assert_eq!(request.headers.get("X-Test"), Some(&"yes".to_owned()));
     assert_eq!(request.timeout, Duration::from_secs(7));
-
     let mut ndjson_arguments = args();
     ndjson_arguments.log_format = Some("ndjson".to_owned());
     let (ndjson, _ndjson_sleeper, ndjson_logger) = ready(settings(ndjson_arguments), false, 10);
@@ -68,7 +64,6 @@ async fn delivery_clears_the_queue_after_a_failed_or_cancelled_send() {
     logger.send_batch().await;
     logger.send_batch().await;
     assert_eq!(recorder.bodies().len(), 1);
-
     let (cancelled, _cancel_sleeper, cancelled_logger) = ready(settings(args()), false, 10);
     cancelled.block();
     record_both(&cancelled_logger).await;

@@ -56,6 +56,7 @@ fn given_values_beat_the_named_config_and_the_environment() {
         Some("Bearer sk-key")
     );
 }
+
 #[test]
 fn an_unknown_name_warns_and_an_empty_endpoint_falls_back_to_the_environment() {
     let (logs, _guard) = capture_logs();
@@ -69,7 +70,10 @@ fn an_unknown_name_warns_and_an_empty_endpoint_falls_back_to_the_environment() {
     );
     let mut fallback = args();
     fallback.endpoint = Some(String::new());
-    let env = environment(&[("GENERIC_LOGGER_ENDPOINT", "https://env.test")]);
+    let env = BTreeMap::from([(
+        "GENERIC_LOGGER_ENDPOINT".to_owned(),
+        "https://env.test".to_owned(),
+    )]);
     assert_eq!(
         configured(fallback, &env).expect("settings").endpoint,
         "https://env.test"

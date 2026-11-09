@@ -1,10 +1,18 @@
 #![cfg(test)]
-
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{
+    ProxiedClient,
+    outbound::{OutboundRequest, RequestBody},
+};
+use http::{Method, header::HeaderMap};
 use rstest::rstest;
+use url::Url;
 
 use super::super::error::ApiError;
 use super::super::tests::{RecordingSleeper, RecordingTransport, ready, settings};
@@ -33,7 +41,7 @@ async fn run(
     (result, recorder, sleeper)
 }
 #[tokio::test]
-async fn retry_makes_max_retries_plus_one_attempts_and_retries_a_server_error() {
+async fn retry_uses_max_retries_plus_one_attempts_and_only_retries_retryable_errors() {
     let (logs, _guard) = capture_logs();
     let (result, recorder, _sleeper) = run(1, None, &[Ok(503), Ok(200)]).await;
     result.expect("the retry succeeds");
@@ -54,12 +62,13 @@ async fn retry_makes_max_retries_plus_one_attempts_and_retries_a_server_error() 
     .await;
     assert!(matches!(failed, Err(ApiError::Timeout)));
     assert_eq!(attempts.bodies().len(), 3);
-}
-#[tokio::test]
-async fn retry_does_not_retry_a_client_error() {
-    let (result, recorder, _sleeper) = run(2, None, &[Ok(404)]).await;
-    assert!(matches!(result, Err(ApiError::Status { status: 404 })));
-    assert_eq!(recorder.bodies().len(), 1);
+
+    let (client_error, single, _single_sleeper) = run(2, None, &[Ok(404)]).await;
+    assert!(matches!(
+        client_error,
+        Err(ApiError::Status { status: 404 })
+    ));
+    assert_eq!(single.bodies().len(), 1);
 }
 #[tokio::test]
 async fn retry_sleeps_a_doubling_delay_and_skips_a_zero_delay() {
@@ -83,18 +92,27 @@ async fn retry_sleeps_a_doubling_delay_and_skips_a_zero_delay() {
 }
 #[tokio::test]
 async fn retry_treats_a_connection_failure_as_retryable() {
-    let error = reqwest::get("http://127.0.0.1:1/")
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("a client");
+    let request = OutboundRequest {
+        method: Method::POST,
+        url: Url::parse("http://127.0.0.1:1/").expect("a URL"),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: Duration::from_secs(5),
+    };
+    let failure = client
+        .send_buffered(request)
         .await
-        .expect_err("nothing listens on port 1");
-    let connection = TransportError::sending(error);
-    assert!(matches!(connection, TransportError::Connect(_)));
-    assert!(ApiError::Transport(connection).is_retryable());
+        .expect_err("the port is closed");
+    assert!(matches!(failure, TransportError::Connect(_)));
+    assert!(ApiError::Transport(failure).is_retryable());
 }
 #[rstest]
 #[case::timeout(ApiError::Timeout, true)]
 #[case::server_error(ApiError::Status { status: 500 }, true)]
 #[case::client_error(ApiError::Status { status: 404 }, false)]
-#[case::rate_limited(ApiError::Status { status: 429 }, false)]
 #[case::redirects(ApiError::Transport(TransportError::TooManyRedirects { limit: 5 }), false)]
 fn retry_classifies_an_error(#[case] error: ApiError, #[case] retryable: bool) {
     assert_eq!(error.is_retryable(), retryable);

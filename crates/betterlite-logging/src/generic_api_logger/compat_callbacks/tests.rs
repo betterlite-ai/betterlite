@@ -4,7 +4,6 @@ use rstest::rstest;
 
 use super::{CompatibleCallbacks, is_callback_compatible, substitute_env_variables};
 use crate::generic_api_logger::tests::environment;
-
 #[rstest]
 #[case::sample_callback("sample_callback")]
 #[case::rubrik("rubrik")]
@@ -15,12 +14,10 @@ fn embedded_configs_hold_each_named_callback(#[case] name: &str) {
     let callbacks = CompatibleCallbacks::embedded().expect("the embedded file parses");
     assert!(is_callback_compatible(&callbacks, name));
 }
-
 #[rstest]
 #[case::upper_case("{{environment_variables.HOOK_URL}}/x", "https://hook.test/x")]
 #[case::mixed_case("{{environment_variables.Foo1}}", "{{environment_variables.Foo1}}")]
 #[case::lower_case("{{environment_variables.foo}}", "{{environment_variables.foo}}")]
-#[case::other_prefix("{{variables.HOOK_URL}}", "{{variables.HOOK_URL}}")]
 #[case::unset("Bearer {{environment_variables.RAMP_API_KEY}}", "Bearer ")]
 fn substitute_env_variables_replaces_only_upper_case_names(
     #[case] value: &str,

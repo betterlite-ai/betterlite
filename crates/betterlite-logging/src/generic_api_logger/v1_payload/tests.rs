@@ -73,7 +73,6 @@ fn v1_payload_has_the_thirteen_text_keys() {
     assert_eq!(field(&payload, "usage"), Some(r#"{"total_tokens":5}"#));
     assert_eq!(field(&payload, "cost"), Some("0.5"));
 }
-
 #[test]
 fn v1_payload_applies_the_defaults_and_fails_without_usage() {
     let without_id: Json = serde_json::from_str(r#"{"usage":{}}"#).expect("a response");

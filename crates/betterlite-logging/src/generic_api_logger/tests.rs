@@ -1,15 +1,21 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::generic_settings::GenericApiArgs;
+use std::collections::BTreeMap;
 
+use super::generic_settings::GenericApiArgs;
 pub(crate) const ENDPOINT: &str = "https://hook.test/generic";
+pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
 
 pub(crate) fn args() -> GenericApiArgs {
     GenericApiArgs {
@@ -23,14 +29,6 @@ pub(crate) fn args() -> GenericApiArgs {
         timeout: None,
     }
 }
-
-pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
 #[derive(Clone, Default)]
 pub(crate) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
@@ -66,7 +64,6 @@ impl LogBuffer {
         String::from_utf8(bytes).expect("utf-8 log text")
     }
 }
-
 pub(crate) fn capture_logs() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
