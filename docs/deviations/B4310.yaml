@@ -1,0 +1,8 @@
+task: B4310
+deviations:
+  - what: A SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS value that Rust's f64 parser rejects (Python-only spellings such as "1_0") is a config error.
+    why: Python float() accepts underscore digit separators; Rust does not, and docs/compatibility.md leaves such runtime parsing out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L573-L575
+  - what: The configured timeout and max input tokens are typed numbers (f64 and i64) and nothing else.
+    why: LiteLLM declares float | None and int | None, and input of another type is outside the declared contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/_embedding_router.py#L50-L68
