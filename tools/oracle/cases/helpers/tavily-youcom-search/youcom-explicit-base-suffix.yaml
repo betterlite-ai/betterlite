@@ -1,0 +1,34 @@
+kind: helper
+name: youcom-explicit-base-suffix
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: complete_url
+        api_base: "https://proxy.test/"
+        api_key: null
+        environment: {}
+      - operation: complete_url
+        api_base: "https://proxy.test/v1/search"
+        api_key: null
+        environment: {}
+      - operation: complete_url
+        api_base: "https://proxy.test/v1/agents/search"
+        api_key: null
+        environment: {}
+      - operation: complete_url
+        api_base: "https://proxy.test/v1//"
+        api_key: null
+        environment: {}
+      - operation: complete_url
+        api_base: "https://proxy.test"
+        api_key: sk-caller
+        environment: {}
+      - operation: complete_url
+        api_base: null
+        api_key: null
+        environment:
+          YOUCOM_API_BASE: "https://env.test/"
+env: {}
+compare:
+  ignore: []
