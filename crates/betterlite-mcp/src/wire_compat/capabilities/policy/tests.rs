@@ -147,6 +147,24 @@ fn an_initialize_offer_negotiates_the_handshake_revision(
 #[case::progress_token_fraction(
     r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":1.5}}"#
 )]
+#[case::progress_token_float_above_i64(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":1e20}}"#
+)]
+#[case::progress_token_negative_float_below_i64(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":-1e20}}"#
+)]
+#[case::progress_token_float_at_2_pow_63(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":9223372036854775808.0}}"#
+)]
+#[case::progress_token_float_at_negative_2_pow_63(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":-9223372036854775808.0}}"#
+)]
+#[case::progress_token_tiny_fraction(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":1e-16}}"#
+)]
+#[case::progress_token_negative_tiny_fraction(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":-1e-16}}"#
+)]
 fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[case] raw: &str) {
     let policy = policy(&HANDSHAKE_VERSIONS);
     let params: Object = serde_json::from_str(raw).unwrap();

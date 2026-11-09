@@ -82,7 +82,7 @@ pub struct RequestMeta {
     pub progress_token: ProgressToken,
 }
 
-// an Option reads null as absent; pydantic's str | int also takes a bool and a whole number of any size
+// an Option reads null as absent; pydantic's str | int also takes a bool and a whole number of any size, a float only below 2^63
 #[derive(Default, Deserialize)]
 #[serde(try_from = "Json")]
 pub struct ProgressToken;
@@ -94,9 +94,9 @@ impl TryFrom<Json> for ProgressToken {
             Json::Text(_) | Json::Bool(_) => Ok(Self),
             Json::Number(number)
                 if !number.to_string().contains(['.', 'e', 'E'])
-                    || number
-                        .as_f64()
-                        .is_some_and(|float| float.fract().abs() < f64::EPSILON) =>
+                    || number.as_f64().is_some_and(|float| {
+                        float.abs() < 2_f64.powi(63) && float.trunc().total_cmp(&float).is_eq()
+                    }) =>
             {
                 Ok(Self)
             }
