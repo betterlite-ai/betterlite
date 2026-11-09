@@ -149,3 +149,5 @@ fn failure(error: &ImageError) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
+
+mod tests;
