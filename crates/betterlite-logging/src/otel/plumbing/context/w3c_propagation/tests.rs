@@ -100,6 +100,26 @@ fn inject_trace_context_adds_lowercase_trace_headers() {
 }
 
 #[test]
+fn unknown_trace_flag_bits_are_zeroed_on_injection() {
+    let parent = SpanContext::new(
+        TraceId::from(7_u128),
+        SpanId::from(8_u64),
+        TraceFlags::new(0x03),
+        false,
+        TraceState::default(),
+    );
+    let injected = inject_trace_context(
+        &RequestTraceContext::default(),
+        &BTreeMap::new(),
+        Some(&parent),
+    );
+    assert_eq!(
+        injected.get("traceparent").map(String::as_str),
+        Some("00-00000000000000000000000000000007-0000000000000008-01")
+    );
+}
+
+#[test]
 fn inject_trace_context_does_not_write_an_empty_tracestate() {
     let parent = span_context(7, 8);
     let injected = inject_trace_context(
