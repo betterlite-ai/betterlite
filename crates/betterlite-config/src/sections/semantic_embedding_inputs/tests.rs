@@ -15,6 +15,7 @@ use crate::sections::semantic_embedding_inputs::{
 #[case::configured(&[(EMBEDDING_TIMEOUT_ENV, "2.5")], 2.5_f64)]
 #[case::zero_is_kept(&[(EMBEDDING_TIMEOUT_ENV, "0")], 0.0_f64)]
 #[case::negative_is_kept(&[(EMBEDDING_TIMEOUT_ENV, "-1.5")], -1.5_f64)]
+#[case::exponent_is_kept(&[(EMBEDDING_TIMEOUT_ENV, "1e2")], 100.0_f64)]
 #[case::whitespace_is_trimmed(&[(EMBEDDING_TIMEOUT_ENV, " 7.5 ")], 7.5_f64)]
 #[case::empty_is_unset(&[(EMBEDDING_TIMEOUT_ENV, "")], DEFAULT_TIMEOUT_SECONDS)]
 #[case::blank_is_unset(&[(EMBEDDING_TIMEOUT_ENV, "   ")], DEFAULT_TIMEOUT_SECONDS)]
@@ -35,12 +36,13 @@ fn timeout_reads_the_environment(#[case] variables: &[(&str, &str)], #[case] exp
 #[case::not_a_number("fast")]
 #[case::python_underscore_spelling("1_0")]
 #[case::trailing_text("5s")]
+#[case::not_decimal_notation("nan")]
 fn an_unparsable_timeout_names_the_variable(#[case] value: &str) {
     let environment = BTreeMap::from([(EMBEDDING_TIMEOUT_ENV.to_owned(), value.to_owned())]);
     let raw: Raw = serde_saphyr::from_str("{}").unwrap();
     let error = raw.convert(&environment).unwrap_err();
     assert!(error.to_string().contains(EMBEDDING_TIMEOUT_ENV));
-    assert_eq!(error.category(), "invalid_float");
+    assert_eq!(error.category(), "environment");
 }
 
 #[test]

@@ -1,3 +1,5 @@
+use betterlite_env;
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -46,14 +48,6 @@ where
     let Some(text) = lookup.lookup(EMBEDDING_TIMEOUT_ENV) else {
         return Ok(DEFAULT_TIMEOUT_SECONDS);
     };
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Ok(DEFAULT_TIMEOUT_SECONDS);
-    }
-    trimmed
-        .parse::<f64>()
-        .map_err(|source| ConfigError::InvalidFloat {
-            path: EMBEDDING_TIMEOUT_ENV.to_owned(),
-            source,
-        })
+    let configured = betterlite_env::number::<f64>(EMBEDDING_TIMEOUT_ENV, &text)?;
+    Ok(configured.unwrap_or(DEFAULT_TIMEOUT_SECONDS))
 }
