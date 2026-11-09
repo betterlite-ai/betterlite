@@ -34,9 +34,13 @@ async fn gives_each_entry_its_own_ttl_and_uses_the_default_for_none() {
 async fn sends_no_ex_when_neither_ttl_exists() {
     let server = FakeServer::start().await;
     let harness = harness(&server, settings(Some("ns"), None, None));
+    let entries: Vec<(String, &str, Option<f64>)> = vec![
+        ("alpha".to_owned(), "first", None),
+        ("beta".to_owned(), "second", None),
+    ];
     harness
         .values
-        .async_set_cache_pipeline_with_ttls(&mixed_entries())
+        .async_set_cache_pipeline_with_ttls(&entries)
         .await
         .expect("the pipelined write");
     let sets = server.commands_named("SET");

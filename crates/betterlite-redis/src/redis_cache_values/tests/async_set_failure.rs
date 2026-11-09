@@ -16,7 +16,7 @@ async fn swallows_an_unreachable_client_after_the_failure_hook() {
     assert_eq!(stored, None);
     let hooks = harness.hooks.entries();
     assert_eq!(hooks.len(), 1);
-    assert!(hooks[0].starts_with("failure:async_set_cache:Some(ns:alpha):"));
+    assert!(hooks[0].starts_with("failure:async_set_cache:Some(\"ns:alpha\"):"));
     let gate = harness.gate.entries();
     assert_eq!(gate[0], "enter:async_set_cache");
     assert!(gate[1].starts_with("swallowed:1:"));
@@ -34,7 +34,7 @@ async fn swallows_an_unreachable_sentinel() {
     assert_eq!(stored, None);
     let hooks = harness.hooks.entries();
     assert_eq!(hooks.len(), 1);
-    assert!(hooks[0].starts_with("failure:async_set_cache:Some(ns:alpha):"));
+    assert!(hooks[0].starts_with("failure:async_set_cache:Some(\"ns:alpha\"):"));
     let gate = harness.gate.entries();
     assert_eq!(gate[0], "enter:async_set_cache");
     assert!(gate[1].starts_with("swallowed:1:"));
@@ -55,7 +55,7 @@ async fn swallows_a_missing_tls_file() {
     assert_eq!(stored, None);
     let hooks = harness.hooks.entries();
     assert_eq!(hooks.len(), 1);
-    assert!(hooks[0].starts_with("failure:async_set_cache:Some(ns:alpha):"));
+    assert!(hooks[0].starts_with("failure:async_set_cache:Some(\"ns:alpha\"):"));
     let gate = harness.gate.entries();
     assert_eq!(gate[0], "enter:async_set_cache");
     assert!(gate[1].starts_with("swallowed:1:"));
