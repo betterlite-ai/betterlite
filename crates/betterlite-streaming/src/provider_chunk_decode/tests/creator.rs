@@ -563,7 +563,7 @@ fn creator_function_call_ignores_parameters_for_null_arguments() {
 fn creator_custom_provider_normalizes_every_choice() {
     let mut decode_state = custom_state("my-model");
     let chunk = json_chunk(
-        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "hi"}}, {"index": 1, "delta": {"tool_calls": [{"id": "a", "function": {"name": "f", "arguments": null}}]}}]}"#,
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "z", "function": {"name": "g", "arguments": null}}]}}, {"index": 1, "delta": {"tool_calls": [{"id": "a", "function": {"name": "f", "arguments": null}}]}}]}"#,
     );
     let created_chunk =
         created("my-provider", &mut decode_state, &chunk).expect("a chunk is emitted");
