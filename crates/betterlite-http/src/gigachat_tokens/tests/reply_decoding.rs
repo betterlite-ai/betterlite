@@ -138,6 +138,17 @@ fn reply_decoding_rejects_an_unusable_reply(#[case] body: &str) {
 }
 
 #[test]
+fn reply_decoding_accepts_a_body_of_two_kib() {
+    let mut body = String::from("{\"tok\":\"token-a\"}");
+    body.push_str(&" ".repeat(2048_usize.saturating_sub(body.len())));
+    assert_eq!(body.len(), 2048);
+
+    let reply = decode_token_reply(body.as_bytes()).expect("a two KiB body decodes");
+
+    assert_eq!(reply.token.expose_secret(), "token-a");
+}
+
+#[test]
 fn reply_decoding_accepts_a_body_of_exactly_64_kib() {
     let mut body = String::from("{\"tok\":\"token-a\"}");
     body.push_str(&" ".repeat(MAX_REPLY_BYTES.saturating_sub(body.len())));

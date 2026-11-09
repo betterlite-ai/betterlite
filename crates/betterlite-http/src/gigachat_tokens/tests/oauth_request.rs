@@ -35,11 +35,23 @@ fn authenticator() -> GigachatAuthenticator<SystemRuntime> {
     GigachatAuthenticator::new(settings, support::client(), SystemRuntime)
 }
 
+fn scripted_authenticator() -> GigachatAuthenticator<support::ScriptedRuntime> {
+    let settings = support::settings(&[
+        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
+        ("GIGACHAT_SCOPE", "GIGACHAT_API_PERS"),
+    ]);
+    GigachatAuthenticator::new(
+        settings,
+        support::client(),
+        support::ScriptedRuntime::new(&[0]),
+    )
+}
+
 #[tokio::test]
 async fn oauth_request_posts_the_scope_form_to_the_auth_url() {
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
-    let auth = authenticator();
+    let auth = scripted_authenticator();
     let auth_url = format!("{}/oauth", server.url);
 
     let token = auth

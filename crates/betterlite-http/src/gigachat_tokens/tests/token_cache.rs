@@ -138,6 +138,34 @@ async fn token_cache_stores_nothing_when_the_remaining_ttl_is_zero() {
 }
 
 #[tokio::test]
+async fn token_cache_stores_nothing_at_the_exact_expiry_boundary() {
+    let server = support::Server::start().await;
+    server.answer(200, "{\"tok\":\"token-1\",\"exp\":61000}");
+    server.answer(200, "{\"tok\":\"token-2\",\"exp\":61000}");
+    let settings = support::settings(&[("GIGACHAT_CREDENTIALS", CREDENTIALS)]);
+    // the clock steps back one millisecond, which exposes an entry stored at the boundary
+    let auth = GigachatAuthenticator::new(
+        settings,
+        support::client(),
+        support::ScriptedRuntime::new(&[1_000, 1_000, 999, 999]),
+    );
+    let supplied = request(&server.url);
+
+    let first = auth
+        .access_token(&supplied)
+        .await
+        .expect("the first call fetches");
+    let second = auth
+        .access_token(&supplied)
+        .await
+        .expect("a boundary expiry is not stored");
+
+    assert_eq!(support::text(&first), "token-1");
+    assert_eq!(support::text(&second), "token-2");
+    assert_eq!(server.requests().len(), 2);
+}
+
+#[tokio::test]
 async fn token_cache_stores_nothing_when_the_expiry_is_missing() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\"}");

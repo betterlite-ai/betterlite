@@ -176,11 +176,14 @@ pub(super) fn oauth_request(
 
 async fn read_prefix(mut response: Response, limit: usize) -> Result<Vec<u8>, reqwest::Error> {
     let mut body = Vec::new();
-    while body.len() < limit {
+    loop {
+        let remaining = limit.saturating_sub(body.len());
+        if remaining == 0 {
+            break;
+        }
         let Some(chunk) = response.chunk().await? else {
             break;
         };
-        let remaining = limit.saturating_sub(body.len());
         let keep = remaining.min(chunk.len());
         body.extend_from_slice(chunk.get(..keep).unwrap_or_default());
     }
