@@ -192,11 +192,10 @@ fn first_entry(call: &WriteCall) -> Result<&EntryInput, Box<HelperError>> {
 }
 
 fn keyed_entries(call: &WriteCall) -> Result<Vec<(String, Value)>, Box<HelperError>> {
-    let mut entries = Vec::with_capacity(call.entries.len());
-    for entry in &call.entries {
-        entries.push((required_key(entry)?, entry.value.clone()));
-    }
-    Ok(entries)
+    call.entries
+        .iter()
+        .map(|entry| Ok((required_key(entry)?, entry.value.clone())))
+        .collect()
 }
 
 fn required_key(entry: &EntryInput) -> Result<String, Box<HelperError>> {

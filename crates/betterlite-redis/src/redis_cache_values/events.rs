@@ -114,19 +114,26 @@ pub(crate) const fn connection_failure(error: &RedisCacheValuesError) -> bool {
     )
 }
 
-pub(crate) fn failed_client<T>(
+pub(crate) async fn client_or_swallowed(
     values: &RedisCacheValues,
-    event: &ServiceEvent,
+    name: &'static str,
+    started: Instant,
     admission: BreakerAdmission,
-    error: RedisCacheValuesError,
-    fallback: T,
-) -> Result<T, RedisCacheValuesError> {
-    values.hooks.failure(event, &error);
-    if connection_failure(&error) {
-        values.gate.swallowed(&admission, &error);
-        values.gate.exit(admission);
-        return Ok(fallback);
+    key: Option<String>,
+) -> Result<Option<LiveAsyncClient>, RedisCacheValuesError> {
+    match open_client(values).await {
+        Ok(client) => Ok(Some(client)),
+        Err(error) => {
+            let event_key = connection_failure(&error).then_some(key).flatten();
+            let failed = event(name, started, event_key);
+            values.hooks.failure(&failed, &error);
+            if connection_failure(&error) {
+                values.gate.swallowed(&admission, &error);
+                values.gate.exit(admission);
+                return Ok(None);
+            }
+            values.gate.record_failure(&error);
+            Err(error)
+        }
     }
-    values.gate.record_failure(&error);
-    Err(error)
 }

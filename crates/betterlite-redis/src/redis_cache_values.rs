@@ -16,7 +16,7 @@ use serde::Serialize;
 use self::buffer::{buffered_reaches_flush, remove_sent};
 use self::error::RedisCacheValuesError;
 use self::events::{
-    connection_failure, enter_unless_empty, event, failed_client, finish_get, finish_outcome,
+    client_or_swallowed, connection_failure, enter_unless_empty, event, finish_get, finish_outcome,
     open_client,
 };
 use self::naming::{apply_namespace, namespaced_keys};
@@ -107,13 +107,16 @@ impl RedisCacheValues {
             return Ok(None);
         };
         let namespaced = apply_namespace(self, provided);
-        let client = match open_client(self).await {
-            Ok(client) => client,
-            Err(error) => {
-                let event_key = connection_failure(&error).then(|| namespaced.clone());
-                let failed = event("async_set_cache", started, event_key);
-                return failed_client(self, &failed, admission, error, None);
-            }
+        let Some(client) = client_or_swallowed(
+            self,
+            "async_set_cache",
+            started,
+            admission,
+            Some(namespaced.clone()),
+        )
+        .await?
+        else {
+            return Ok(None);
         };
         let outcome = match set_command(self.settings.default_ttl, &namespaced, value, ttl, nx) {
             Ok(command) => match client.query::<Option<String>>(&command).await {
@@ -202,12 +205,10 @@ impl RedisCacheValues {
     ) -> Result<(), RedisCacheValuesError> {
         let started = Instant::now();
         let admission = self.gate.enter("async_set_cache_sadd")?;
-        let client = match open_client(self).await {
-            Ok(client) => client,
-            Err(error) => {
-                let failed = event("async_set_cache_sadd", started, None);
-                return failed_client(self, &failed, admission, error, ());
-            }
+        let Some(client) =
+            client_or_swallowed(self, "async_set_cache_sadd", started, admission, None).await?
+        else {
+            return Ok(());
         };
         let namespaced = apply_namespace(self, key);
         let outcome = write_sadd(&client, &namespaced, value, ttl, self.settings.default_ttl).await;

@@ -123,16 +123,20 @@ impl TestHooks {
             Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
+
+    fn record(&self, duration: Duration) {
+        match self.durations.lock() {
+            Ok(mut durations) => durations.push(duration),
+            Err(poisoned) => poisoned.into_inner().push(duration),
+        }
+    }
 }
 
 impl ServiceHooks for TestHooks {
     fn success(&self, event: &ServiceEvent) {
         self.log
             .push(format!("success:{}:{:?}", event.call_type, event.key));
-        match self.durations.lock() {
-            Ok(mut durations) => durations.push(event.duration),
-            Err(poisoned) => poisoned.into_inner().push(event.duration),
-        }
+        self.record(event.duration);
     }
 
     fn failure(&self, event: &ServiceEvent, error: &(dyn Error + Send + Sync)) {
@@ -140,10 +144,7 @@ impl ServiceHooks for TestHooks {
             "failure:{}:{:?}:{error}",
             event.call_type, event.key
         ));
-        match self.durations.lock() {
-            Ok(mut durations) => durations.push(event.duration),
-            Err(poisoned) => poisoned.into_inner().push(event.duration),
-        }
+        self.record(event.duration);
     }
 }
 
