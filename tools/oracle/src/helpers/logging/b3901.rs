@@ -1,5 +1,5 @@
 use betterlite_logging::langfuse_observations::identity::{
-    resolve_observation_id, resolve_trace_id,
+    resolve_observation_id, resolve_trace_id, to_unix_nanos,
 };
 use opentelemetry_sdk::trace::RandomIdGenerator;
 use serde_json::json;
@@ -8,7 +8,7 @@ use crate::helpers::{Helper, HelperResult};
 
 use identities::{parent_step, sampler_step};
 use inputs::{Input, Step};
-use projections::{nanos, observation_projection, trace_projection};
+use projections::{observation_projection, timestamp, trace_projection};
 use spans::child_step;
 
 mod identities;
@@ -40,7 +40,10 @@ fn run_step(step: &Step) -> Result<serde_json::Value, Box<crate::helpers::Helper
         Step::ResolveObservationId { input } => Ok(json!(
             resolve_observation_id(input.as_deref()).map(|id| id.to_string())
         )),
-        Step::ToUnixNanos { seconds, datetime } => nanos(*seconds, datetime.as_deref()),
+        Step::ToUnixNanos { seconds, datetime } => Ok(json!(to_unix_nanos(timestamp(
+            *seconds,
+            datetime.as_deref()
+        )?))),
         Step::TraceAttributes { fields } => Ok(trace_projection(fields)),
         Step::ObservationAttributes { fields } => observation_projection(fields),
         Step::Sampler {

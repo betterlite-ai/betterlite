@@ -2,26 +2,13 @@ use betterlite_logging::langfuse_observations::attributes::{
     ObservationAttributes, ObservationType, PromptLink, TraceAttributes, observation_attributes,
     trace_attributes,
 };
-use betterlite_logging::langfuse_observations::identity::{Timestamp, to_unix_nanos};
+use betterlite_logging::langfuse_observations::identity::Timestamp;
 use chrono::DateTime;
 use rust_decimal::Decimal;
-use serde_json::json;
 
 use super::inputs::{ObservationFields, PromptFields, TraceFields};
 use super::values::{invalid, pairs};
 use crate::helpers::HelperError;
-
-pub(crate) fn nanos(
-    seconds: Option<Decimal>,
-    datetime: Option<&str>,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    if let Some(text) = datetime {
-        return Ok(json!(to_unix_nanos(Some(Timestamp::DateTime(
-            parse_datetime(text)?
-        )))));
-    }
-    Ok(json!(to_unix_nanos(seconds.map(Timestamp::Seconds))))
-}
 
 pub(crate) fn timestamp(
     seconds: Option<Decimal>,
@@ -40,7 +27,7 @@ pub(crate) fn parse_datetime(text: &str) -> Result<DateTime<chrono::Utc>, Box<He
 }
 
 pub(crate) fn trace_projection(fields: &TraceFields) -> serde_json::Value {
-    pairs(&trace_attributes(&TraceAttributes {
+    let attributes = TraceAttributes {
         name: fields.name.as_ref(),
         user_id: fields.user_id.as_ref(),
         session_id: fields.session_id.as_ref(),
@@ -51,7 +38,8 @@ pub(crate) fn trace_projection(fields: &TraceFields) -> serde_json::Value {
         public: fields.public,
         input: fields.input.as_ref(),
         output: fields.output.as_ref(),
-    }))
+    };
+    pairs(&trace_attributes(&attributes))
 }
 
 pub(crate) fn observation_projection(

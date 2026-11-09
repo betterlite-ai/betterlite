@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use chrono::DateTime;
+use indexmap::IndexMap;
 use opentelemetry::{Array, KeyValue, StringValue, Value};
 use rstest::rstest;
 
@@ -74,22 +75,30 @@ fn pairs(attributes: Vec<KeyValue>) -> Vec<(String, Value)> {
         .collect()
 }
 
+fn entries(text: &str) -> IndexMap<String, Json> {
+    match fields(text) {
+        Json::Object(entries) => entries,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("fields are an object")
+        }
+    }
+}
+
 fn trace_from(text: &str) -> Vec<(String, Value)> {
-    let Json::Object(entries) = fields(text) else {
-        panic!("trace fields are an object");
+    let fields = entries(text);
+    let attributes = TraceAttributes {
+        name: fields.get("name"),
+        user_id: fields.get("user_id"),
+        session_id: fields.get("session_id"),
+        version: fields.get("version"),
+        release: fields.get("release"),
+        tags: fields.get("tags"),
+        metadata: fields.get("metadata"),
+        public: public_flag(fields.get("public")),
+        input: fields.get("input"),
+        output: fields.get("output"),
     };
-    pairs(trace_attributes(&TraceAttributes {
-        name: entries.get("name"),
-        user_id: entries.get("user_id"),
-        session_id: entries.get("session_id"),
-        version: entries.get("version"),
-        release: entries.get("release"),
-        tags: entries.get("tags"),
-        metadata: entries.get("metadata"),
-        public: public_flag(entries.get("public")),
-        input: entries.get("input"),
-        output: entries.get("output"),
-    }))
+    pairs(trace_attributes(&attributes))
 }
 
 fn public_flag(value: Option<&Json>) -> Option<bool> {
@@ -139,23 +148,21 @@ fn observation_type(value: Option<&Json>) -> ObservationType {
 }
 
 fn observation_from(text: &str) -> Vec<(String, Value)> {
-    let Json::Object(entries) = fields(text) else {
-        panic!("observation fields are an object");
-    };
-    let prompt = prompt_link(entries.get("prompt"));
+    let fields = entries(text);
+    let prompt = prompt_link(fields.get("prompt"));
     pairs(observation_attributes(&ObservationAttributes {
-        observation_type: observation_type(entries.get("observation_type")),
-        input: entries.get("input"),
-        output: entries.get("output"),
-        metadata: entries.get("metadata"),
-        level: entries.get("level"),
-        status_message: entries.get("status_message"),
-        version: entries.get("version"),
-        model: entries.get("model"),
-        model_parameters: entries.get("model_parameters"),
-        usage_details: entries.get("usage_details"),
-        cost_details: entries.get("cost_details"),
-        completion_start_time: completion_start(entries.get("completion_start_time")),
+        observation_type: observation_type(fields.get("observation_type")),
+        input: fields.get("input"),
+        output: fields.get("output"),
+        metadata: fields.get("metadata"),
+        level: fields.get("level"),
+        status_message: fields.get("status_message"),
+        version: fields.get("version"),
+        model: fields.get("model"),
+        model_parameters: fields.get("model_parameters"),
+        usage_details: fields.get("usage_details"),
+        cost_details: fields.get("cost_details"),
+        completion_start_time: completion_start(fields.get("completion_start_time")),
         prompt: prompt.as_ref(),
     }))
 }

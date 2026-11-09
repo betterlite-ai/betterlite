@@ -47,16 +47,18 @@ pub(crate) fn pairs(attributes: &[KeyValue]) -> serde_json::Value {
 }
 
 fn value_of(value: &Json) -> Value {
-    match value {
-        Json::Bool(flag) => Value::Bool(*flag),
-        Json::Number(number) => number
-            .as_i64()
-            .map_or_else(|| Value::from(number.to_string()), Value::I64),
-        Json::Text(text) => Value::from(text.clone()),
-        Json::Null | Json::List(_) | Json::Object(_) => {
-            Value::from(serde_json::to_string(value).unwrap_or_else(|_error| String::new()))
-        }
+    if let Json::Bool(flag) = value {
+        return Value::Bool(*flag);
     }
+    if let Json::Number(number) = value {
+        return number
+            .as_i64()
+            .map_or_else(|| Value::from(number.to_string()), Value::I64);
+    }
+    if let Json::Text(text) = value {
+        return Value::from(text.clone());
+    }
+    Value::from(serde_json::to_string(value).unwrap_or_else(|_error| String::new()))
 }
 
 fn attribute_value(value: &Value) -> serde_json::Value {
@@ -71,13 +73,17 @@ fn attribute_value(value: &Value) -> serde_json::Value {
 }
 
 fn array_value(array: &opentelemetry::Array) -> serde_json::Value {
-    match array {
-        opentelemetry::Array::Bool(items) => json!(items),
-        opentelemetry::Array::I64(items) => json!(items),
-        opentelemetry::Array::F64(items) => json!(items),
-        opentelemetry::Array::String(items) => {
-            json!(items.iter().map(StringValue::as_str).collect::<Vec<_>>())
-        }
-        _ => serde_json::Value::Null,
+    if let opentelemetry::Array::String(items) = array {
+        return json!(items.iter().map(StringValue::as_str).collect::<Vec<_>>());
     }
+    if let opentelemetry::Array::Bool(items) = array {
+        return json!(items);
+    }
+    if let opentelemetry::Array::I64(items) = array {
+        return json!(items);
+    }
+    if let opentelemetry::Array::F64(items) = array {
+        return json!(items);
+    }
+    serde_json::Value::Null
 }
