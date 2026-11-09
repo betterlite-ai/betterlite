@@ -1,0 +1,22 @@
+kind: helper
+name: linkup-body-defaults
+call:
+  b8023:
+    operation: linkup_body
+    params:
+      requests:
+        - query: rust language
+          optional_params:
+            max_results: 3
+            search_domain_filter:
+              - rust-lang.org
+            country: us
+            max_tokens_per_page: 500
+            depth: deep
+            includeImages: true
+        - query:
+            - rust
+            - async
+          optional_params: {}
+env: {}
+compare: {ignore: []}
