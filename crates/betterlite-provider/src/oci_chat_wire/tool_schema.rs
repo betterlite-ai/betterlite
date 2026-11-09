@@ -5,6 +5,8 @@ use crate::oci_common::OciError;
 use crate::oci_common::schema::refs::resolve_oci_schema_refs;
 use crate::oci_common::schema::{resolve_oci_schema_anyof, sanitize_oci_schema};
 
+const PARAMETERS_OBJECT: &str = "Tool `function.parameters` must be an object";
+
 pub(crate) fn resolved_tool_schema(
     function: Option<&FunctionDefinition>,
 ) -> Result<Json, OciError> {
@@ -18,7 +20,7 @@ pub(crate) fn resolved_tool_schema(
     if !matches!(&raw, Json::Object(_)) {
         return Err(OciError {
             status: 400,
-            message: String::from("Tool `function.parameters` must be an object"),
+            message: String::from(PARAMETERS_OBJECT),
         });
     }
     Ok(sanitize_oci_schema(&resolve_oci_schema_anyof(

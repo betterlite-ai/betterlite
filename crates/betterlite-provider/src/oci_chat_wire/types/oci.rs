@@ -1,6 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use serde_with::skip_serializing_none;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -78,10 +79,10 @@ pub struct OciOtherPart {
     pub kind: String,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OciImageUrl {
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<OciImageDetail>,
 }
 
@@ -95,9 +96,9 @@ pub enum OciImageDetail {
     Low,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OciToolCall {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(rename = "type", default)]
     pub kind: OciFunctionType,
@@ -105,113 +106,89 @@ pub struct OciToolCall {
     pub arguments: String,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OciToolDefinition {
     #[serde(rename = "type", default)]
     pub kind: OciFunctionType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Json>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OciMessage {
     pub role: OciRole,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<Vec<OciContentPart>>,
-    #[serde(rename = "toolCalls", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "toolCalls")]
     pub tool_calls: Option<Vec<OciToolCall>>,
-    #[serde(
-        rename = "toolCallId",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "toolCallId")]
     pub tool_call_id: Option<String>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciChatRequestPayload {
     pub api_format: String,
     pub messages: Vec<OciMessage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<OciToolDefinition>>,
     #[serde(default)]
     pub is_stream: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub num_generations: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Object>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logit_bias: Option<Object>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_probs: Option<i64>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciCompletionTokenDetails {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted_prediction_tokens: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u64>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciPromptTokenDetails {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_tokens: Option<u64>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciResponseUsage {
     pub prompt_tokens: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens: Option<u64>,
     pub total_tokens: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<OciCompletionTokenDetails>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_details: Option<OciPromptTokenDetails>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciResponseChoice {
     pub index: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<OciMessage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<Object>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciChatResponse {
@@ -221,6 +198,7 @@ pub struct OciChatResponse {
     pub usage: OciResponseUsage,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciCompletionResponse {
@@ -229,26 +207,21 @@ pub struct OciCompletionResponse {
     pub chat_response: OciChatResponse,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciStreamDelta {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<Vec<OciContentPart>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<OciToolCall>>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OciStreamChunk {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<OciStreamDelta>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pad: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<u32>,
 }

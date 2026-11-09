@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::chat::{FunctionCall, ToolCall};
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 
 use crate::oci_chat_wire::ids::synthesize_oci_tool_call_id;
 use crate::oci_chat_wire::types::cohere::CohereToolCall;

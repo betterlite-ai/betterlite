@@ -7,6 +7,8 @@ use crate::oci_chat_wire::parse::parse_chunk;
 use crate::oci_chat_wire::types::cohere::{CohereStreamChunk, CohereToolCall};
 use crate::oci_common::OciError;
 
+const TOOL_INDEX: &str = "the OCI stream has more tool calls than a chunk can index";
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CohereEmitted {
     pub tool_calls: bool,
@@ -53,7 +55,7 @@ fn stream_tool_calls(calls: &[CohereToolCall]) -> Result<Vec<ToolCall>, OciError
     for (position, call) in calls.iter().enumerate() {
         let index = u32::try_from(position).map_err(|_error| OciError {
             status: 500,
-            message: String::from("the OCI stream has more tool calls than a chunk can index"),
+            message: String::from(TOOL_INDEX),
         })?;
         let adapted_call = adapt_call(position, call);
         adapted.push(ToolCall {

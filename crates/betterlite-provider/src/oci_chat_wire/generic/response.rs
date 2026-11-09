@@ -13,6 +13,14 @@ use crate::oci_chat_wire::types::oci::{
 };
 use crate::oci_common::OciError;
 
+const NO_CHOICES: &str = "OCI response contained no choices";
+
+const FILL_NO_CHOICES: &str = "the response to fill has no choices";
+
+const TIME_CREATED: &str = "OCI returned an unreadable timeCreated value";
+
+const TIME_EPOCH: &str = "OCI returned a timeCreated before the Unix epoch";
+
 pub fn handle_generic_response(
     body: &Json,
     status: u16,
@@ -24,14 +32,14 @@ pub fn handle_generic_response(
     let Some(response_choice) = completion.chat_response.choices.first() else {
         return Err(OciError {
             status,
-            message: String::from("OCI response contained no choices"),
+            message: String::from(NO_CHOICES),
         });
     };
     reject_unknown_parts(&completion.chat_response.choices, status)?;
     let Some(target) = response.choices.first_mut() else {
         return Err(OciError {
             status,
-            message: String::from("the response to fill has no choices"),
+            message: String::from(FILL_NO_CHOICES),
         });
     };
     if let Some(message) = &response_choice.message {
@@ -45,11 +53,11 @@ pub fn handle_generic_response(
 fn parse_time_created(text: &str, status: u16) -> Result<u64, OciError> {
     let parsed = DateTime::parse_from_rfc3339(text).map_err(|_error| OciError {
         status,
-        message: String::from("OCI returned an unreadable timeCreated value"),
+        message: String::from(TIME_CREATED),
     })?;
     u64::try_from(parsed.timestamp()).map_err(|_error| OciError {
         status,
-        message: String::from("OCI returned a timeCreated before the Unix epoch"),
+        message: String::from(TIME_EPOCH),
     })
 }
 

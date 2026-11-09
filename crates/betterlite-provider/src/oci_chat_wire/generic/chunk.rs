@@ -6,6 +6,11 @@ use crate::oci_chat_wire::parse::parse_chunk;
 use crate::oci_chat_wire::types::oci::{OciContentPart, OciStreamChunk, OciToolCall};
 use crate::oci_common::OciError;
 
+const IMAGE_STREAM: &str =
+    "OCI returned image content in a streaming response, which is not supported";
+
+const TOOL_INDEX: &str = "the OCI stream has more tool calls than a chunk can index";
+
 pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> {
     fill_missing_tool_call_fields(&mut chunk);
     let typed: OciStreamChunk = parse_chunk(&chunk, "OCIStreamChunk")?;
@@ -49,9 +54,7 @@ fn stream_text(parts: Option<&[OciContentPart]>) -> Result<Option<String>, OciEr
             OciContentPart::Image(_) => {
                 return Err(OciError {
                     status: 500,
-                    message: String::from(
-                        "OCI returned image content in a streaming response, which is not supported",
-                    ),
+                    message: String::from(IMAGE_STREAM),
                 });
             }
             OciContentPart::Other(other) => {
@@ -95,7 +98,7 @@ fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Result<Vec<ToolCall>, OciErr
     for (position, tool_call) in tool_calls.iter().enumerate() {
         let index = u32::try_from(position).map_err(|_error| OciError {
             status: 500,
-            message: String::from("the OCI stream has more tool calls than a chunk can index"),
+            message: String::from(TOOL_INDEX),
         })?;
         adapted.push(ToolCall {
             index,

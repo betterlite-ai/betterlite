@@ -4,19 +4,23 @@ use crate::oci_chat_wire::tool_schema::resolved_tool_schema;
 use crate::oci_chat_wire::types::oci::{OciFunctionType, OciToolDefinition};
 use crate::oci_common::OciError;
 
+const TOOL_KIND: &str = "OCI only supports function tools";
+
+const FUNCTION_OBJECT: &str = "Tool `function` must be a dictionary";
+
 pub fn adapt_generic_tools(tools: &[Tool]) -> Result<Vec<OciToolDefinition>, OciError> {
     let mut definitions = Vec::with_capacity(tools.len());
     for tool in tools {
         if tool.kind != "function" {
             return Err(OciError {
                 status: 400,
-                message: String::from("OCI only supports function tools"),
+                message: String::from(TOOL_KIND),
             });
         }
         let Some(function) = &tool.function else {
             return Err(OciError {
                 status: 400,
-                message: String::from("Tool `function` must be a dictionary"),
+                message: String::from(FUNCTION_OBJECT),
             });
         };
         definitions.push(OciToolDefinition {
