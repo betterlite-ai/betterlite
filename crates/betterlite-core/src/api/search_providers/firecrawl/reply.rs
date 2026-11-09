@@ -61,7 +61,10 @@ fn project_data(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
 fn flat_results(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
     let items: Vec<RawFields> =
         serde_json::from_str(text).map_err(|source| FirecrawlError::Result { source })?;
-    items.iter().map(project_web).collect()
+    items
+        .iter()
+        .map(|fields| project_cloud(fields, CloudSection::Web))
+        .collect()
 }
 
 fn cloud_results(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
@@ -70,41 +73,43 @@ fn cloud_results(text: &str) -> Result<Vec<SearchResult>, FirecrawlError> {
     let web = cloud
         .web
         .iter()
-        .map(project_web)
+        .map(|fields| project_cloud(fields, CloudSection::Web))
         .collect::<Result<Vec<_>, _>>()?;
     let news = cloud
         .news
         .iter()
-        .map(project_news)
+        .map(|fields| project_cloud(fields, CloudSection::News))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(web.into_iter().chain(news).collect())
 }
 
-fn project_web(fields: &RawFields) -> Result<SearchResult, FirecrawlError> {
-    Ok(SearchResult {
-        title: text_field(fields.get("title").map(Box::as_ref), "title")?,
-        url: text_field(fields.get("url").map(Box::as_ref), "url")?,
-        snippet: markdown_then(
-            fields.get("markdown").map(Box::as_ref),
-            fields.get("description").map(Box::as_ref),
-            "description",
-        )?,
-        date: None,
-        last_updated: None,
-        extra: Object::new(),
-    })
+#[derive(Clone, Copy)]
+enum CloudSection {
+    Web,
+    News,
 }
 
-fn project_news(fields: &RawFields) -> Result<SearchResult, FirecrawlError> {
+// a web item ignores its date and falls back to description, a news item keeps its date and snippet
+fn project_cloud(
+    fields: &RawFields,
+    section: CloudSection,
+) -> Result<SearchResult, FirecrawlError> {
+    let (fallback, date) = match section {
+        CloudSection::Web => ("description", None),
+        CloudSection::News => (
+            "snippet",
+            optional_text(fields.get("date").map(Box::as_ref), "date")?,
+        ),
+    };
     Ok(SearchResult {
         title: text_field(fields.get("title").map(Box::as_ref), "title")?,
         url: text_field(fields.get("url").map(Box::as_ref), "url")?,
         snippet: markdown_then(
             fields.get("markdown").map(Box::as_ref),
-            fields.get("snippet").map(Box::as_ref),
-            "snippet",
+            fields.get(fallback).map(Box::as_ref),
+            fallback,
         )?,
-        date: optional_text(fields.get("date").map(Box::as_ref), "date")?,
+        date,
         last_updated: None,
         extra: Object::new(),
     })
