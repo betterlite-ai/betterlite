@@ -1,0 +1,10 @@
+kind: helper
+name: sap-stream-event-seed
+call:
+  b5952:
+    operation: event
+    params:
+      event: {orchestration_result: {id: seeded, choices: [{delta: {content: seeded}}]}}
+      now: 1700000000
+env: {}
+compare: {ignore: []}
