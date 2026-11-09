@@ -271,12 +271,12 @@ async fn converse(
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
-    let path = target.split('?').next().unwrap_or("/").to_owned();
     requests
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .push(path.clone());
-    let Some(reply) = routes.get(&path) else {
+        .push(target.to_owned());
+    let path = target.split('?').next().unwrap_or("/");
+    let Some(reply) = routes.get(path) else {
         return write_reply(&mut stream, 404, None, &[], Duration::ZERO).await;
     };
     if !reply.delay.is_zero() {

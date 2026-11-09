@@ -11,7 +11,8 @@ use tracing::subscriber::with_default;
 use crate::api::a2a_discover::discovery::{
     AgentCardDiscoveryError, DEFAULT_DISCOVERY_TIMEOUT, DiscoveryMode, fetch_well_known_card,
 };
-use crate::api::a2a_discover::source::SafeCardSource;
+use crate::api::a2a_discover::source::{LiveDiscovery, SafeCardSource};
+use crate::api::a2a_discover::{DiscoverAgentCard as _, DiscoverAgentRequest};
 
 use super::support::{Reply, ScriptedReply, ScriptedSource, Server, proxied_client, safe_fetcher};
 
@@ -496,4 +497,50 @@ async fn a_stalled_body_is_cut_at_the_deadline() {
         server.requests(),
         ["/.well-known/agent-card.json", "/.well-known/agent.json"]
     );
+}
+
+#[tokio::test]
+async fn live_discovery_returns_the_card_for_a_langgraph_request() {
+    let server = Server::start(vec![("/.well-known/agent.json", Reply::json(CARD))]).await;
+    let discovery = LiveDiscovery {
+        client: proxied_client(Duration::from_secs(5)),
+        urls: safe_fetcher(&["127.0.0.1"]),
+        timeout: Duration::from_secs(5),
+    };
+    let request = DiscoverAgentRequest {
+        url: server.url(""),
+        discovery_mode: DiscoveryMode::LanggraphPlatform,
+        params: assistant_params("a1"),
+    };
+    let fetched = discovery.discover(&request).await.unwrap();
+    assert_eq!(fetched, card());
+    assert_eq!(
+        server.requests(),
+        [
+            "/.well-known/agent-card.json?assistant_id=a1",
+            "/.well-known/agent.json?assistant_id=a1",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn live_discovery_reports_the_discovery_error_when_every_path_fails() {
+    let server = Server::start(Vec::new()).await;
+    let discovery = LiveDiscovery {
+        client: proxied_client(Duration::from_secs(5)),
+        urls: safe_fetcher(&["127.0.0.1"]),
+        timeout: Duration::from_secs(5),
+    };
+    let request = DiscoverAgentRequest {
+        url: server.url(""),
+        discovery_mode: DiscoveryMode::WellKnownFallback,
+        params: BTreeMap::new(),
+    };
+    let failure = discovery.discover(&request).await.unwrap_err();
+    let message = failure.to_string();
+    assert!(
+        message.contains("Could not fetch agent card from"),
+        "{message}"
+    );
+    assert!(message.contains("/agent.json: HTTP 404"), "{message}");
 }
