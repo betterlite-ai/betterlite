@@ -24,13 +24,9 @@ MODEL_LIMIT: int = 50
 
 
 load_model_cost_map = cast(Callable[..., dict[str, Json]], cost_map.get_model_cost_map)
+RefetchResult: TypeAlias = ModelCostMapReloaded | ModelCostMapReloadUnavailable
 refetch_model_cost_map = cast(
-    Callable[
-        ...,
-        Coroutine[
-            object, object, ModelCostMapReloaded | ModelCostMapReloadUnavailable
-        ],
-    ],
+    Callable[..., Coroutine[object, object, RefetchResult]],
     cost_map.refetch_model_cost_map,
 )
 adopt_model_cost_map = cast(Callable[[dict[str, Json]], int], cost_map.adopt_model_cost_map)
@@ -60,7 +56,7 @@ class _Facts(NamedTuple):
     sleeps: list[float]
 
 
-class _GatedSleeper:
+class _Sleeper:
     def __init__(self, log: list[float]) -> None:
         self._log = log
         self.release = threading.Event()
@@ -68,11 +64,6 @@ class _GatedSleeper:
     def __call__(self, seconds: float) -> None:
         self._log.append(seconds)
         self.release.wait(timeout=10)
-
-
-class _AsyncSleeper:
-    def __init__(self, log: list[float]) -> None:
-        self._log = log
 
     async def sleep(self, seconds: float) -> None:
         self._log.append(seconds)
@@ -232,7 +223,7 @@ def _join_retry_threads(before: set[threading.Thread]) -> None:
 def _load(
     url: str, request: _Request, replies: _Replies, log: list[float]
 ) -> CostMapSourceInfo:
-    sleeper = _GatedSleeper(log)
+    sleeper = _Sleeper(log)
     before = set(threading.enumerate())
     model_cost = load_model_cost_map(
         url=url,
@@ -266,7 +257,7 @@ def _reload(request: _Request) -> _Facts:
             url=request.url,
             timeout=request.timeout,
             max_attempts=request.max_attempts,
-            sleep=_AsyncSleeper(log).sleep,
+            sleep=_Sleeper(log).sleep,
             rng=cast(random.Random, _Jitter(list(request.jitter))),
             client=_AsyncClient(replies),
         )

@@ -16,19 +16,15 @@ use super::invalid;
 use crate::helpers::HelperError;
 
 #[derive(Clone, Debug, thiserror::Error)]
-pub(crate) enum ScriptedError {
-    #[error("{detail}")]
-    Transport { detail: String },
-    #[error("{detail}")]
-    InvalidUrl { detail: String },
+#[error("{detail}")]
+pub(crate) struct ScriptedError {
+    pub(crate) kind: FetchErrorKind,
+    pub(crate) detail: String,
 }
 
 impl CatalogClientError for ScriptedError {
     fn kind(&self) -> FetchErrorKind {
-        match self {
-            Self::Transport { .. } => FetchErrorKind::Transport,
-            Self::InvalidUrl { .. } => FetchErrorKind::InvalidUrl,
-        }
+        self.kind
     }
 }
 
@@ -53,7 +49,8 @@ impl ScriptedClient {
             Err(poisoned) => poisoned.into_inner().pop_front(),
         }
         .unwrap_or_else(|| {
-            Err(ScriptedError::Transport {
+            Err(ScriptedError {
+                kind: FetchErrorKind::Transport,
                 detail: "unscripted request".to_owned(),
             })
         })
@@ -62,10 +59,12 @@ impl ScriptedClient {
 
 fn scripted_reply(reply: &ReplyInput) -> Result<FetchResponse, ScriptedError> {
     match reply.error.as_deref() {
-        Some("invalid_url") => Err(ScriptedError::InvalidUrl {
+        Some("invalid_url") => Err(ScriptedError {
+            kind: FetchErrorKind::InvalidUrl,
             detail: "unsupported url".to_owned(),
         }),
-        Some(_) => Err(ScriptedError::Transport {
+        Some(_) => Err(ScriptedError {
+            kind: FetchErrorKind::Transport,
             detail: "connection failed".to_owned(),
         }),
         None => Ok(FetchResponse::new(

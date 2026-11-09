@@ -32,15 +32,11 @@ const fn default_timeout() -> u64 {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct ReplyInput {
-    #[serde(default)]
     pub(crate) status: u16,
-    #[serde(default)]
     pub(crate) headers: BTreeMap<String, String>,
-    #[serde(default)]
     pub(crate) body: String,
-    #[serde(default)]
     pub(crate) error: Option<String>,
 }
 

@@ -160,6 +160,11 @@ fn facts(input: &Input, facts: &Facts<'_>) -> Value {
             (name.clone(), provider)
         })
         .collect::<BTreeMap<_, _>>();
+    let generalization = input
+        .probe_generalization
+        .as_deref()
+        .and_then(|probe| catalog.generalizations.match_routing(probe))
+        .map(str::to_owned);
     json!({
         "kind": facts.kind,
         "reason_kind": facts.reason.map(classify_reason),
@@ -167,7 +172,7 @@ fn facts(input: &Input, facts: &Facts<'_>) -> Value {
         "after": provenance_facts(&facts.final_snapshot.provenance),
         "catalog": {"count": catalog.adopted_size, "models": model_names(catalog)},
         "probes": probes,
-        "generalization": generalization(input, catalog),
+        "generalization": generalization,
         "requests": facts.client.requests.load(Ordering::SeqCst),
         "sleeps": sleeps,
     })
@@ -175,7 +180,10 @@ fn facts(input: &Input, facts: &Facts<'_>) -> Value {
 
 fn provenance_facts(provenance: &CatalogProvenance) -> Value {
     json!({
-        "source": source_name(provenance.kind),
+        "source": match provenance.kind {
+            SourceKind::Local => "local",
+            SourceKind::Remote => "remote",
+        },
         "url": &provenance.url,
         "is_env_forced": provenance.is_env_forced,
         "fallback": provenance.fallback_reason.as_deref().map(classify_reason),
@@ -196,21 +204,6 @@ fn model_names(catalog: &ModelCatalog) -> Value {
         .collect::<Vec<_>>();
     names.sort_unstable();
     json!(names)
-}
-
-fn generalization(input: &Input, catalog: &ModelCatalog) -> Option<String> {
-    input
-        .probe_generalization
-        .as_deref()
-        .and_then(|probe| catalog.generalizations.match_routing(probe))
-        .map(str::to_owned)
-}
-
-const fn source_name(kind: SourceKind) -> &'static str {
-    match kind {
-        SourceKind::Local => "local",
-        SourceKind::Remote => "remote",
-    }
 }
 
 fn classify_reason(reason: &str) -> &'static str {
