@@ -62,6 +62,12 @@ if [ -d "$worktree" ]; then
     git -C "$worktree" stash apply -q "$stashed" || { park "the worker's uncommitted work conflicts with main after the merge (git stash $stashed)"; exit 3; }
     flock "$L/locks/stash.lock" sh -c 'n=$(git -C "$1" stash list --format=%H | grep -n -x -F "$2" | cut -d: -f1) && [ -n "$n" ] && git -C "$1" stash drop -q "stash@{$((n - 1))}"' sh "$worktree" "$stashed"
   fi
+  # a crate loop with main or a running branch goes back to the worker with the report and the scope to move the code, three rounds at most
+  if ! bash "$P/crate-cycles.sh" "$worktree" > /dev/null; then
+    note=$(bash "$P/unblock.sh" "$id" "$worktree" "crate cycle") || { park "crate cycle no rule could break: $(bash "$P/crate-cycles.sh" "$worktree" | head -n 1)"; exit 3; }
+    grant=1
+    say "crate cycle, back to the worker: $(head -n 1 <<< "$note")"
+  fi
 fi
 GRANT=$grant bash "$P/next-slot.sh" "$id" "$run" "$note" > /dev/null
 code=$?
@@ -102,6 +108,7 @@ fi
 fi
 sed -i 's/^land_only=.*/land_only=1/' "$args"
 bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { say "ready, but main does not merge cleanly"; exit 3; }
+if ! bash "$P/crate-cycles.sh" "$worktree" > /dev/null; then LAND_ONLY= exec bash "$P/dispatch-flow.sh" "$id" "${run}d" ""; fi
 cd "$worktree" || exit 3
 exec >>"$L/land-$id.log" 2>&1
 branch=$(git branch --show-current)

@@ -1,0 +1,20 @@
+kind: helper
+name: sap-stream-final-result-and-passthrough
+call:
+  b5952:
+    operation: lines
+    params:
+      lines:
+        - 'data: {"final_result": {"id": "c1", "created": 7, "model": "m", "choices": [{"index": 0, "delta": {"content": "x"}, "finish_reason": null}]}}'
+        - 'data: {"final_result": {"id": "c2", "object": "other", "created": 8, "model": "m", "choices": []}}'
+        - 'data: {"object": "chat.completion.chunk", "id": "c3", "created": 9, "model": "m", "choices": [], "system_fingerprint": "fp-1", "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}'
+        - 'data: {"final_result": {"id": "f", "created": 20, "model": "m", "choices": []}, "orchestration_result": {"id": "o", "created": 21, "model": "m2", "choices": []}}'
+        - 'data: {"object": "chat.completion.chunk", "id": "p", "created": 22, "model": "m3", "choices": [], "orchestration_result": {"id": "o2", "created": 23, "model": "m4", "choices": []}}'
+        - '[1, 2]'
+        - '{"status": "ok"}'
+        - '"hello"'
+      modes: [sync, async]
+      now: 1700000000
+      failure: read
+env: {}
+compare: {ignore: []}
