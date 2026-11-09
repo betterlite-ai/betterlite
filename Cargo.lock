@@ -987,6 +987,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-server",
  "chrono",
  "clap",
@@ -998,6 +999,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -1229,6 +1231,8 @@ dependencies = [
  "azure_core",
  "azure_storage_blob",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-models",
  "futures-util",
  "rstest",
  "secrecy",
@@ -2017,6 +2021,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -2228,6 +2233,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2250,6 +2256,7 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-env",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
@@ -2257,6 +2264,8 @@ dependencies = [
  "chrono",
  "futures-util",
  "http 1.5.0",
+ "indexmap 2.14.2",
+ "mutants",
  "pem",
  "rstest",
  "rust_decimal",
@@ -2277,6 +2286,7 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
 ]
@@ -2316,7 +2326,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redis",
- "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
@@ -2365,6 +2374,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "num-traits",
+ "percent-encoding",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2522,6 +2532,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2592,6 +2603,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",

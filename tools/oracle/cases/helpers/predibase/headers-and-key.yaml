@@ -1,0 +1,15 @@
+kind: helper
+name: predibase-headers-and-key
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: headers
+    requests:
+      - api_key: sk-x
+      - api_key: ""
+      - api_key: sk-x
+        headers: {X: "1"}
+      - api_key: sk-x
+        headers: {Content-Type: text/plain, Authorization: "Bearer other"}
+      - headers: {}
