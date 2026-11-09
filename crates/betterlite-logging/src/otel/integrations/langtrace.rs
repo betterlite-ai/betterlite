@@ -109,13 +109,7 @@ impl LangtraceAttributes {
     where
         S: Span,
     {
-        let completions = completion_entries(response_obj);
-        if let Ok(text) = serde_json::to_string(&completions) {
-            span.add_event(
-                "gen_ai.content.completion",
-                vec![KeyValue::new("gen_ai.completion", text)],
-            );
-        }
+        record_completion_event(span, response_obj);
         set_attributes(span, response_obj, &RESPONSE_ATTRIBUTES);
     }
 
@@ -142,6 +136,19 @@ where
             span.set_attribute(KeyValue::new(key, value));
         }
     }
+}
+
+fn record_completion_event<S>(span: &mut S, response_obj: &MetadataMap)
+where
+    S: Span,
+{
+    let Ok(text) = serde_json::to_string(&completion_entries(response_obj)) else {
+        return;
+    };
+    span.add_event(
+        "gen_ai.content.completion",
+        vec![KeyValue::new("gen_ai.completion", text)],
+    );
 }
 
 fn completion_entries(response_obj: &MetadataMap) -> Vec<Completion<'_>> {
