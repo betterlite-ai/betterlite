@@ -2,9 +2,9 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::super::error::Marengo3Error;
+use super::super::fields::Given;
 use super::super::params::RawParams;
 use super::super::{build_marengo_3_request, is_marengo_3_model};
-use crate::image_models::params::Field;
 
 #[derive(Deserialize)]
 struct Call {
@@ -24,9 +24,9 @@ pub(super) fn check(call: &str, expected: &Expected<'_>) {
     let outcome = build_marengo_3_request(&parsed.input, &parsed.params, parsed.drop_params);
     match (outcome, expected) {
         (Ok(request), Expected::Built(wanted)) => {
-            let actual: Field =
+            let actual: Given =
                 serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
-            let expected_field: Field = serde_json::from_str(wanted).unwrap();
+            let expected_field: Given = serde_json::from_str(wanted).unwrap();
             assert_eq!(actual, expected_field);
         }
         (Err(Marengo3Error::Provider { status, error }), Expected::Rejected(message)) => {

@@ -1,11 +1,35 @@
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 use super::options::Choice;
-use crate::image_models::params::{Field, Params};
 
 pub type Parsed<T> = Result<T, Vec<String>>;
+
+// Numbers stay serde_json::Number so decoding does not depend on the arbitrary_precision feature
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Given {
+    Null,
+    Bool(bool),
+    Number(Number),
+    Text(String),
+    List(Vec<Self>),
+    Mapping(Entries),
+}
+
+pub type Entries = IndexMap<String, Given>;
+
+impl Given {
+    #[must_use]
+    pub fn as_str(&self) -> Option<&str> {
+        if let Self::Text(text) = self {
+            Some(text)
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "method", rename_all = "lowercase")]
@@ -55,7 +79,7 @@ const SEGMENTATION_BRANCHES: [SegmentationBranch; 2] = [
     },
 ];
 
-pub fn text(value: &Field, location: &str) -> Parsed<String> {
+pub fn text(value: &Given, location: &str) -> Parsed<String> {
     value
         .as_str()
         .map(str::to_owned)
@@ -63,19 +87,14 @@ pub fn text(value: &Field, location: &str) -> Parsed<String> {
 }
 
 // Pydantic lax mode: bools count as 0 and 1 and numeric strings are read as numbers
-pub fn number(value: &Field, location: &str) -> Parsed<Number> {
-    if let Field::Int(whole) = value {
-        return Ok(Number::from(*whole));
+pub fn number(value: &Given, location: &str) -> Parsed<Number> {
+    if let Given::Number(parsed) = value {
+        return Ok(parsed.clone());
     }
-    if let Field::Bool(flag) = value {
+    if let Given::Bool(flag) = value {
         return Ok(Number::from(i64::from(*flag)));
     }
-    if let Field::Float(float) = value
-        && let Some(finite) = Number::from_f64(*float)
-    {
-        return Ok(finite);
-    }
-    if let Field::Text(text) = value
+    if let Given::Text(text) = value
         && let Some(parsed) = parse_numeric_text(text)
     {
         return Ok(parsed);
@@ -89,15 +108,19 @@ fn parse_numeric_text(text: &str) -> Option<Number> {
     whole.or_else(|| trimmed.parse::<f64>().ok().and_then(Number::from_f64))
 }
 
-pub fn integer(value: &Field, location: &str) -> Parsed<Number> {
+pub fn integer(value: &Given, location: &str) -> Parsed<Number> {
     let invalid = || vec![format!("{location}: Input should be a valid integer")];
-    if matches!(value, Field::Text(text) if text.contains(['e', 'E'])) {
+    if matches!(value, Given::Text(text) if text.contains(['e', 'E'])) {
         return Err(invalid());
     }
     let parsed = number(value, location).map_err(|_unparsed| invalid())?;
-    let Some(float) = parsed.as_f64().filter(|_| parsed.is_f64()) else {
-        return Ok(parsed);
-    };
+    if let Some(whole) = parsed.as_i64() {
+        return Ok(Number::from(whole));
+    }
+    if let Some(large) = parsed.as_u64() {
+        return Ok(Number::from(large));
+    }
+    let float = parsed.as_f64().ok_or_else(invalid)?;
     // A whole float prints without a fraction, so it reads back as an integer
     let rendered = float.to_string();
     if rendered.contains('.') {
@@ -105,13 +128,13 @@ pub fn integer(value: &Field, location: &str) -> Parsed<Number> {
             "{location}: Input should be a valid integer, got a number with a fractional part"
         )]);
     }
-    let whole = rendered.parse::<Number>().ok();
-    whole
-        .filter(|candidate| !candidate.is_f64())
-        .ok_or_else(invalid)
+    rendered
+        .parse::<i64>()
+        .map(Number::from)
+        .map_err(|_unparsed| invalid())
 }
 
-pub fn choice<T>(value: &Field, location: &str) -> Parsed<T>
+pub fn choice<T>(value: &Given, location: &str) -> Parsed<T>
 where
     T: Choice,
 {
@@ -141,11 +164,11 @@ fn collect<T>(items: Vec<Parsed<T>>) -> Parsed<Vec<T>> {
 }
 
 pub fn list<T>(
-    value: &Field,
+    value: &Given,
     location: &str,
-    parse: fn(&Field, &str) -> Parsed<T>,
+    parse: fn(&Given, &str) -> Parsed<T>,
 ) -> Parsed<Vec<T>> {
-    let Field::List(items) = value else {
+    let Given::List(items) = value else {
         return Err(vec![format!("{location}: Input should be a valid tuple")]);
     };
     collect(
@@ -157,7 +180,7 @@ pub fn list<T>(
     )
 }
 
-pub fn media_sources(entries: &Params, location: &str) -> Parsed<IndexMap<String, String>> {
+pub fn media_sources(entries: &Entries, location: &str) -> Parsed<IndexMap<String, String>> {
     let named = entries
         .iter()
         .map(|(name, media)| {
@@ -167,7 +190,7 @@ pub fn media_sources(entries: &Params, location: &str) -> Parsed<IndexMap<String
     collect(named).map(IndexMap::from_iter)
 }
 
-pub fn segmentation(value: &Field, location: &str) -> Parsed<Segmentation> {
+pub fn segmentation(value: &Given, location: &str) -> Parsed<Segmentation> {
     let mut issues = Vec::new();
     for branch in SEGMENTATION_BRANCHES {
         match segmentation_branch(&branch, value, location) {
@@ -180,11 +203,11 @@ pub fn segmentation(value: &Field, location: &str) -> Parsed<Segmentation> {
 
 fn segmentation_branch(
     branch: &SegmentationBranch,
-    value: &Field,
+    value: &Given,
     location: &str,
 ) -> Parsed<Number> {
     let prefix = format!("{location}.{}", branch.label);
-    let Field::Mapping(object) = value else {
+    let Given::Mapping(object) = value else {
         return Err(vec![format!(
             "{prefix}: Input should be a valid dictionary"
         )]);
@@ -208,11 +231,11 @@ fn segmentation_branch(
     }
 }
 
-fn branch_duration(branch: &SegmentationBranch, object: &Params, prefix: &str) -> Parsed<Number> {
+fn branch_duration(branch: &SegmentationBranch, object: &Entries, prefix: &str) -> Parsed<Number> {
     let nested = format!("{prefix}.{}", branch.key);
     match object.get(branch.key) {
         None => Err(vec![format!("{nested}: Field required")]),
-        Some(Field::Mapping(inner)) => {
+        Some(Given::Mapping(inner)) => {
             let leaf = format!("{nested}.{}", branch.leaf);
             inner.get(branch.leaf).map_or_else(
                 || Err(vec![format!("{leaf}: Field required")]),

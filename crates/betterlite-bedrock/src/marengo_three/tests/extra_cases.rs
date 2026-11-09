@@ -34,6 +34,30 @@ fn model_marker(#[case] model: Option<&str>, #[case] expected: bool) {
         r#"{"inputType": "image", "image": {"mediaSource": {"s3Location": {"uri": "s3://bucket/key", "bucketOwner": ""}}}}"#
     )
 )]
+#[case::video_s3_owner(
+    r#"{"input": "s3://bucket/clip.mp4", "params": {"inputType": "video", "bucketOwner": "123456789012", "startSec": 1}}"#,
+    Expected::Built(
+        r#"{"inputType": "video", "video": {"mediaSource": {"s3Location": {"uri": "s3://bucket/clip.mp4", "bucketOwner": "123456789012"}}, "startSec": 1}}"#
+    )
+)]
+#[case::audio_s3_owner(
+    r#"{"input": "s3://bucket/song.wav", "params": {"inputType": "audio", "bucketOwner": "123456789012"}}"#,
+    Expected::Built(
+        r#"{"inputType": "audio", "audio": {"mediaSource": {"s3Location": {"uri": "s3://bucket/song.wav", "bucketOwner": "123456789012"}}}}"#
+    )
+)]
+#[case::text_image_s3_owner(
+    r#"{"input": "words", "params": {"inputType": "text_image", "media_source": "s3://bucket/pic.png", "bucketOwner": "123456789012"}}"#,
+    Expected::Built(
+        r#"{"inputType": "text_image", "text_image": {"inputText": "words", "mediaSource": {"s3Location": {"uri": "s3://bucket/pic.png", "bucketOwner": "123456789012"}}}}"#
+    )
+)]
+#[case::multi_input_s3_owner(
+    r#"{"input": "", "params": {"inputType": "multi_input", "media_sources": {"one": "s3://bucket/a.png"}, "bucketOwner": "123456789012"}}"#,
+    Expected::Built(
+        r#"{"inputType": "multi_input", "multi_input": {"mediaSources": [{"name": "one", "mediaType": "image", "s3Location": {"uri": "s3://bucket/a.png", "bucketOwner": "123456789012"}}]}}"#
+    )
+)]
 #[case::null_owner_rejected(
     r#"{"input": "s3://bucket/key", "params": {"inputType": "image", "bucketOwner": null}}"#,
     Expected::Rejected(BUCKET_OWNER_MESSAGE)

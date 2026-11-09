@@ -27,6 +27,7 @@ pub(crate) enum Input {
     NamedMediaSources(Call),
     RequiredBucketOwner(Call),
     TextVersusTimedOptions(Call),
+    #[serde(rename = "reject_27_only_options")]
     Reject27OnlyOptions(Call),
     DropPolicy(Call),
     RequireInputMedia(Call),

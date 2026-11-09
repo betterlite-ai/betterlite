@@ -3,42 +3,41 @@ use serde::Deserialize;
 
 use super::error::{Marengo3Error, bad_request};
 use super::fields::{
-    Parsed, choice, list, media_sources, number, segmentation as parse_segmentation, text,
+    Given, Parsed, choice, list, media_sources, number, segmentation as parse_segmentation, text,
 };
 use super::options::InputType;
 use super::request::TimedMediaOptions;
-use crate::image_models::params::Field;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct RawParams {
     #[serde(rename = "inputType")]
-    pub input_type_camel: Option<Field>,
-    pub input_type: Option<Field>,
-    pub media_source: Option<Field>,
-    pub media_sources: Option<Field>,
+    pub input_type_camel: Option<Given>,
+    pub input_type: Option<Given>,
+    pub media_source: Option<Given>,
+    pub media_sources: Option<Given>,
     #[serde(rename = "bucketOwner")]
-    pub bucket_owner: Option<Field>,
+    pub bucket_owner: Option<Given>,
     #[serde(rename = "startSec")]
-    pub start_sec: Option<Field>,
+    pub start_sec: Option<Given>,
     #[serde(rename = "endSec")]
-    pub end_sec: Option<Field>,
-    pub segmentation: Option<Field>,
+    pub end_sec: Option<Given>,
+    pub segmentation: Option<Given>,
     #[serde(rename = "embeddingOption")]
-    pub embedding_option: Option<Field>,
+    pub embedding_option: Option<Given>,
     #[serde(rename = "embeddingType")]
-    pub embedding_type: Option<Field>,
+    pub embedding_type: Option<Given>,
     #[serde(rename = "embeddingScope")]
-    pub embedding_scope: Option<Field>,
+    pub embedding_scope: Option<Given>,
     #[serde(rename = "inferenceId")]
-    pub inference_id: Option<Field>,
+    pub inference_id: Option<Given>,
     #[serde(rename = "textTruncate")]
-    pub text_truncate: Option<Field>,
+    pub text_truncate: Option<Given>,
     #[serde(rename = "lengthSec")]
-    pub length_sec: Option<Field>,
+    pub length_sec: Option<Given>,
     #[serde(rename = "useFixedLengthSec")]
-    pub use_fixed_length_sec: Option<Field>,
+    pub use_fixed_length_sec: Option<Given>,
     #[serde(rename = "minClipSec")]
-    pub min_clip_sec: Option<Field>,
+    pub min_clip_sec: Option<Given>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,9 +57,9 @@ struct Issues(Vec<String>);
 impl Issues {
     fn field<T>(
         &mut self,
-        raw: Option<&Field>,
+        raw: Option<&Given>,
         location: &str,
-        parse: fn(&Field, &str) -> Parsed<T>,
+        parse: fn(&Given, &str) -> Parsed<T>,
     ) -> Option<T> {
         match parse(raw?, location) {
             Ok(parsed) => Some(parsed),
@@ -72,17 +71,12 @@ impl Issues {
     }
 }
 
-fn mapping(raw: &Field, location: &str) -> Parsed<IndexMap<String, String>> {
+fn mapping(raw: &Given, location: &str) -> Parsed<IndexMap<String, String>> {
     match raw {
-        Field::Mapping(entries) => media_sources(entries, location),
-        Field::Null
-        | Field::Bool(_)
-        | Field::Int(_)
-        | Field::Float(_)
-        | Field::Text(_)
-        | Field::List(_) => Err(vec![format!(
-            "{location}: Input should be a valid dictionary"
-        )]),
+        Given::Mapping(entries) => media_sources(entries, location),
+        Given::Null | Given::Bool(_) | Given::Number(_) | Given::Text(_) | Given::List(_) => Err(
+            vec![format!("{location}: Input should be a valid dictionary")],
+        ),
     }
 }
 
