@@ -33,10 +33,10 @@ pub(super) fn append_content_blocks(
         };
         let text = textual_field(fields, &kind, index, position)?;
         match kind.as_str() {
-            THINKING if !text.is_empty() && !drop_unsignable(from_ref(block)).is_empty() => {
+            THINKING if !drop_unsignable(from_ref(block)).is_empty() => {
                 run.blocks.push(block.clone());
             }
-            TEXT if !text.is_empty() => push_text(run, text, fields),
+            TEXT => push_text(run, text, fields),
             SERVER_TOOL_USE => run.blocks.push(block.clone()),
             _ if kind.ends_with(TOOL_RESULT_SUFFIX) => run.blocks.push(block.clone()),
             _ => {}
