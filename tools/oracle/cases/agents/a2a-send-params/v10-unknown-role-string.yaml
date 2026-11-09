@@ -1,0 +1,12 @@
+kind: helper
+name: a2a-send-params-v10-unknown-role-string
+call:
+  b6950:
+    params:
+      message:
+        role: ROLE_BOGUS
+        messageId: m1
+        parts:
+          - text: hi
+env: {}
+compare: {ignore: []}

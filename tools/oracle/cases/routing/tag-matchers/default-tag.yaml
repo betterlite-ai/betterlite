@@ -1,0 +1,33 @@
+kind: probe
+name: default-tag
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: d1, tags: [default, team-a]}
+          - {id: d2, tags: [team-b]}
+          - {id: d3, tags: [default]}
+        tags: []
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: d1, tags: [default, team-a]}
+          - {id: d2, tags: [team-b]}
+          - {id: d3, tags: [default]}
+        tags: [default]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: plain-a, tags: [team-a]}
+          - {id: plain-b}
+        tags: []
+        match_any: true
+compare: {ignore: []}
