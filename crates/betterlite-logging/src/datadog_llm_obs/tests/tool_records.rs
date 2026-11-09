@@ -68,7 +68,13 @@ fn the_meta_record_matches_the_datadog_schema() {
             })],
         }),
         output: Some(OutputMeta {
-            messages: vec![json(r#"{"role": "assistant"}"#)],
+            messages: vec![DdMessage::Message(Message {
+                role: "assistant".to_owned(),
+                content: Json::Text("done".to_owned()),
+                reasoning_content: None,
+                tool_calls: Vec::new(),
+                tool_results: Vec::new(),
+            })],
         }),
         metadata: Some(indexmap::IndexMap::new()),
         error: Some(DDLLMObsError {
@@ -86,7 +92,7 @@ fn the_meta_record_matches_the_datadog_schema() {
         serialized(&meta),
         concat!(
             r#"{"kind":"llm","input":{"messages":[{"input":"hi"}]},"#,
-            r#""output":{"messages":[{"role":"assistant"}]},"metadata":{},"#,
+            r#""output":{"messages":[{"role":"assistant","content":"done"}]},"metadata":{},"#,
             r#""error":{"message":"boom","type":"ValueError"},"#,
             r#""tool_definitions":[{"name":"t","description":"d"}]}"#
         )

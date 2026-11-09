@@ -9,16 +9,16 @@ use super::values::{
     Object, as_object, as_text, content_blocks, mapping_field, safe_identifier, text_field,
 };
 
-// LiteLLM's _tool_call_names_by_id: ids to tool names for result linking, read structurally.
+// LiteLLM reads every OpenAI pair before every Anthropic pair, so an Anthropic tool_use name wins a shared id.
 #[must_use]
 pub fn tool_call_names_by_id(messages: &[Json]) -> IndexMap<String, String> {
+    let objects: Vec<&Object> = messages.iter().filter_map(as_object).collect();
     let mut names = IndexMap::new();
-    for message in messages {
-        let Some(fields) = as_object(message) else {
-            continue;
-        };
-        openai_names(fields, &mut names);
-        anthropic_names(fields, &mut names);
+    for message in &objects {
+        openai_names(message, &mut names);
+    }
+    for message in &objects {
+        anthropic_names(message, &mut names);
     }
     names
 }

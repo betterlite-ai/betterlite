@@ -236,3 +236,25 @@ fn a_tool_message_without_content_results_in_an_empty_string() {
         r#"[{"role":"tool","content":"","tool_results":[{"name":"","result":"","tool_id":"c","type":"function"}]}]"#
     );
 }
+
+#[test]
+fn an_anthropic_name_wins_a_shared_id_in_either_message_order() {
+    assert_eq!(
+        projected(
+            r#"[{"role": "assistant", "content": [{"type": "tool_use", "id": "early", "name": "anthropic_early", "input": {}}]},
+               {"role": "assistant", "content": null, "tool_calls": [{"id": "early", "function": {"name": "openai_late", "arguments": "{}"}}]},
+               {"role": "tool", "tool_call_id": "early", "content": "a"},
+               {"role": "assistant", "content": null, "tool_calls": [{"id": "late", "function": {"name": "openai_early", "arguments": "{}"}}]},
+               {"role": "assistant", "content": [{"type": "tool_use", "id": "late", "name": "anthropic_late", "input": {}}]},
+               {"role": "tool", "tool_call_id": "late", "content": "b"}]"#
+        ),
+        concat!(
+            r#"[{"role":"assistant","content":[{"type":"tool_use","id":"early","name":"anthropic_early","input":{}}],"tool_calls":[{"name":"anthropic_early","arguments":{},"tool_id":"early","type":"tool_use"}]},"#,
+            r#"{"role":"assistant","content":"","tool_calls":[{"name":"openai_late","arguments":{},"tool_id":"early","type":"function"}]},"#,
+            r#"{"role":"tool","content":"a","tool_results":[{"name":"anthropic_early","result":"a","tool_id":"early","type":"function"}]},"#,
+            r#"{"role":"assistant","content":"","tool_calls":[{"name":"openai_early","arguments":{},"tool_id":"late","type":"function"}]},"#,
+            r#"{"role":"assistant","content":[{"type":"tool_use","id":"late","name":"anthropic_late","input":{}}],"tool_calls":[{"name":"anthropic_late","arguments":{},"tool_id":"late","type":"tool_use"}]},"#,
+            r#"{"role":"tool","content":"b","tool_results":[{"name":"anthropic_late","result":"b","tool_id":"late","type":"function"}]}]"#
+        )
+    );
+}

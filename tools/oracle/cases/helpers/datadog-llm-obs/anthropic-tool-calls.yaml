@@ -14,6 +14,17 @@ call:
           - {type: tool_result, tool_use_id: toolu_1, content: '{"temp": 21}'}
           - {type: tool_result, tool_use_id: toolu_2, content: [{type: text, text: "found"}]}
           - {type: text, text: "thanks"}
+      - role: assistant
+        content: null
+        tool_calls:
+          - {id: toolu_2, function: {name: openai_override, arguments: "{}"}}
+          - {id: call_new, function: {name: openai_first, arguments: "{}"}}
+      - role: assistant
+        content:
+          - {type: tool_use, id: call_new, name: anthropic_later, input: {q: 1}}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: call_new, content: "ok"}
 env: {}
 compare:
   ignore: []

@@ -1,4 +1,3 @@
-use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
@@ -28,9 +27,10 @@ pub struct InputMeta {
     pub messages: Vec<DdMessage>,
 }
 
+// OutputMeta.messages carries the same projected records as the input side.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct OutputMeta {
-    pub messages: Vec<Json>,
+    pub messages: Vec<DdMessage>,
 }
 
 // Error information on the span according to the DD LLM Obs API spec.
