@@ -183,8 +183,9 @@ fn replies<M>(input: &ReplyInput) -> HelperResult
 where
     M: SearchMapping,
 {
-    let rendered = serde_json::to_value(M::reply(&input.body)?).map_err(failure)?;
-    Ok(json!({"response": rendered}))
+    serde_json::to_value(M::reply(&input.body)?)
+        .map_err(failure)
+        .map(|rendered| json!({"response": rendered}))
 }
 
 pub(crate) struct Op;
