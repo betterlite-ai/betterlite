@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use super::fixtures::{call_kwargs, json, object, payload, sources};
 use crate::fields::payload::StandardLoggingPayload;
-use crate::newrelic_extraction::request_params::{RequestParameters, request_params};
+use crate::newrelic_extraction::request_params::{RequestParameters, from_sources};
 
 fn params_of(
     standard: Option<&StandardLoggingPayload>,
@@ -14,7 +14,7 @@ fn params_of(
     let mut kwargs = call_kwargs();
     kwargs.optional_params = optional;
     let event_sources = sources(&kwargs, &body, standard);
-    request_params(&event_sources)
+    from_sources(&event_sources)
 }
 
 #[test]

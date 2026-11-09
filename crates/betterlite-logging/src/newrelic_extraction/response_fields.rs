@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::langfuse_projections::steering::truthiness;
-use crate::newrelic_extraction::ids::IdSource;
+use crate::newrelic_extraction::ids::UuidSource;
 use crate::newrelic_extraction::sources::EventSources;
 use crate::python_json;
 
@@ -13,7 +13,7 @@ pub struct Usage {
     pub total_tokens: i64,
 }
 
-pub fn completion_id(sources: &EventSources<'_>, ids: &dyn IdSource) -> String {
+pub fn completion_id(sources: &EventSources<'_>, ids: &dyn UuidSource) -> String {
     if let Some(id) = sources.response.get("id").filter(|value| truthiness(value)) {
         return match id {
             Json::Text(text) => text.clone(),
@@ -44,11 +44,12 @@ pub fn vendor(sources: &EventSources<'_>) -> String {
 }
 
 pub fn model_names(sources: &EventSources<'_>) -> (String, String) {
-    let slo_model = sources
+    let payload_model = sources
         .standard_logging_object
         .map(|payload| payload.model.as_str())
         .filter(|model| !model.is_empty());
-    let chosen_model = slo_model.or_else(|| sources.kwargs.model.filter(|model| !model.is_empty()));
+    let chosen_model =
+        payload_model.or_else(|| sources.kwargs.model.filter(|model| !model.is_empty()));
     let request_model = chosen_model.map_or_else(|| "unknown".to_owned(), str::to_owned);
     let response_model = match sources
         .response

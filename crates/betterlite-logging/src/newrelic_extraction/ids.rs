@@ -1,13 +1,13 @@
 use uuid::Uuid;
 
-pub trait IdSource: Send + Sync {
+pub trait UuidSource: Send + Sync {
     fn next_id(&self) -> Uuid;
 }
 
 #[derive(Debug, Default)]
-pub struct SystemIds;
+pub struct SystemUuids;
 
-impl IdSource for SystemIds {
+impl UuidSource for SystemUuids {
     fn next_id(&self) -> Uuid {
         Uuid::new_v4()
     }

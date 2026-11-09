@@ -1,11 +1,11 @@
 use betterlite_models::decisions::Json;
 
-use crate::newrelic_extraction::ids::IdSource;
+use crate::newrelic_extraction::ids::UuidSource;
 use crate::newrelic_extraction::sources::EventSources;
 
 const TRACEPARENT: &str = "traceparent";
 
-pub fn trace_context(sources: &EventSources<'_>, ids: &dyn IdSource) -> String {
+pub fn resolve_trace_id(sources: &EventSources<'_>, ids: &dyn UuidSource) -> String {
     if let Some(trace_id) = trace_from_headers(sources) {
         return trace_id;
     }

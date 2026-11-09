@@ -210,6 +210,28 @@ fn newrelic_extraction_tests_behavior_all_messages_skips_an_empty_choice_message
     assert!(result.unwrap().is_empty());
 }
 
+#[rstest]
+#[case::leading_skip(r#"{"choices":[{"message":{}},{"message":{"content":"x"}}]}"#, 1)]
+#[case::middle_skip(
+    r#"{"choices":[{"message":{"content":"a"}},{"message":{}},{"message":{"content":"b"}}]}"#,
+    2
+)]
+fn newrelic_extraction_tests_behavior_all_messages_numbers_skipped_choices_without_a_gap(
+    #[case] response: &str,
+    #[case] expected_sequence: usize,
+) {
+    let mut standard = payload();
+    zero_times(&mut standard);
+    standard.messages = Some(json(r#"[{"role":"user","content":"hi"}]"#));
+    let env = environment(&[]);
+    let policy = content_policy(&env);
+    let events = events_with(Some(&standard), None, response, &policy).unwrap();
+    assert_eq!(
+        events.last().map(|event| event.sequence),
+        Some(expected_sequence)
+    );
+}
+
 #[test]
 fn newrelic_extraction_tests_behavior_all_messages_numbers_multiple_choices() {
     let mut standard = payload();

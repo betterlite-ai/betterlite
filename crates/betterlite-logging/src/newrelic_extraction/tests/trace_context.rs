@@ -4,19 +4,19 @@ use rstest::rstest;
 
 use super::fixtures::{call_kwargs, ids, object, payload, sources};
 use crate::fields::payload::StandardLoggingPayload;
-use crate::newrelic_extraction::ids::{IdSource, SystemIds};
-use crate::newrelic_extraction::trace_context::trace_context;
+use crate::newrelic_extraction::ids::{SystemUuids, UuidSource};
+use crate::newrelic_extraction::trace_context::resolve_trace_id;
 
 fn trace_of(
     headers: Option<&IndexMap<String, Json>>,
     standard: Option<&StandardLoggingPayload>,
-    source: &dyn IdSource,
+    source: &dyn UuidSource,
 ) -> String {
     let mut kwargs = call_kwargs();
     kwargs.headers = headers;
     let response = object("{}");
     let event_sources = sources(&kwargs, &response, standard);
-    trace_context(&event_sources, source)
+    resolve_trace_id(&event_sources, source)
 }
 
 #[rstest]
@@ -78,7 +78,7 @@ fn newrelic_extraction_tests_behavior_trace_context_generates_a_hex_id() {
 
 #[test]
 fn newrelic_extraction_tests_behavior_trace_context_generates_32_hex_digits() {
-    let trace = trace_of(None, None, &SystemIds);
+    let trace = trace_of(None, None, &SystemUuids);
     assert_eq!(trace.len(), 32);
     assert!(!trace.contains('-'));
     assert!(trace.chars().all(|character| character.is_ascii_hexdigit()));

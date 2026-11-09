@@ -10,7 +10,7 @@ pub struct RequestParameters {
 }
 
 #[must_use]
-pub fn request_params(sources: &EventSources<'_>) -> RequestParameters {
+pub fn from_sources(sources: &EventSources<'_>) -> RequestParameters {
     let selected = sources
         .standard_logging_object
         .map_or(sources.kwargs.optional_params, |payload| {

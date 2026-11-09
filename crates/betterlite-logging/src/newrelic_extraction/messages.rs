@@ -51,14 +51,14 @@ pub fn all_messages(
     vendor: &str,
     policy: &ContentPolicy<'_>,
 ) -> Result<Vec<MessageEvent>, ExtractionError> {
-    let slo_start = sources
+    let payload_start = sources
         .standard_logging_object
         .map(|payload| payload.start_time);
-    let slo_end = sources
+    let payload_end = sources
         .standard_logging_object
         .map(|payload| payload.end_time);
-    let start_time = preferred_time(slo_start, sources.kwargs.start_time);
-    let end_time = preferred_time(slo_end, sources.kwargs.end_time);
+    let start_time = preferred_time(payload_start, sources.kwargs.start_time);
+    let end_time = preferred_time(payload_end, sources.kwargs.end_time);
     let start_timestamp = match start_time {
         Some(moment) => Some(milliseconds_as_int(to_epoch_ms(&moment)?)?),
         None => None,
@@ -91,10 +91,10 @@ pub fn all_messages(
 }
 
 const fn preferred_time(
-    slo_seconds: Option<Decimal>,
+    payload_seconds: Option<Decimal>,
     kwargs_time: Option<Moment>,
 ) -> Option<Moment> {
-    match slo_seconds {
+    match payload_seconds {
         Some(seconds) if !seconds.is_zero() => Some(Moment::Float(seconds)),
         Some(_) | None => kwargs_time,
     }
@@ -116,10 +116,10 @@ fn request_events(
 }
 
 fn request_messages<'event>(sources: &'event EventSources<'event>) -> &'event [Json] {
-    let slo_messages = sources
+    let payload_messages = sources
         .standard_logging_object
         .and_then(|payload| payload.messages.as_ref());
-    match slo_messages {
+    match payload_messages {
         Some(Json::List(items)) => items,
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
         | None => match sources.kwargs.messages {
@@ -141,11 +141,11 @@ fn response_events(
         return Ok(Vec::new());
     };
     let mut events = Vec::with_capacity(choices.len());
-    for (position, choice) in choices.iter().enumerate() {
+    let mut sequence = first_sequence;
+    for choice in choices {
         let Some(message) = choice_message(choice)? else {
             continue;
         };
-        let sequence = first_sequence.saturating_add(position);
         events.push(message_event(
             message,
             sequence,
@@ -153,6 +153,7 @@ fn response_events(
             "assistant",
             Some(true),
         ));
+        sequence = sequence.saturating_add(1);
     }
     Ok(events)
 }

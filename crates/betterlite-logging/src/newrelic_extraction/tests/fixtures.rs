@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::newrelic_extraction::content::ContentPolicy;
-use crate::newrelic_extraction::ids::IdSource;
+use crate::newrelic_extraction::ids::UuidSource;
 use crate::newrelic_extraction::sources::{CallKwargs, EventSources};
 
 const STANDARD_PAYLOAD: &str = r#"{
@@ -37,7 +37,7 @@ const STANDARD_PAYLOAD: &str = r#"{
 
 pub(super) struct FixedIds(Uuid);
 
-impl IdSource for FixedIds {
+impl UuidSource for FixedIds {
     fn next_id(&self) -> Uuid {
         self.0
     }
