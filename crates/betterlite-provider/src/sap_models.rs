@@ -29,8 +29,12 @@ use self::response_format::ResponseFormatJSONSchema;
 
 #[derive(Debug, Error)]
 pub enum SapModelError {
-    #[error("{path}: {message}")]
-    Invalid { path: String, message: String },
+    #[error("{path}: {source}")]
+    Invalid {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
     // Raised inside a model's TryFrom; serde puts its message on the path of the field it was reading.
     #[error("{message}")]
     Rejected { message: String },
@@ -53,9 +57,10 @@ where
 {
     let mut deserializer = serde_json::Deserializer::from_str(text);
     serde_path_to_error::deserialize::<_, T>(&mut deserializer).map_err(|source| {
+        let path = beneath(root, source.path());
         SapModelError::Invalid {
-            path: beneath(root, source.path()),
-            message: source.into_inner().to_string(),
+            path,
+            source: source.into_inner(),
         }
     })
 }
@@ -68,7 +73,7 @@ where
     let text = serde_json::to_string(model).map_err(SapModelError::Serialize)?;
     serde_json::from_str(&text).map_err(|source| SapModelError::Invalid {
         path: root.to_owned(),
-        message: source.to_string(),
+        source,
     })
 }
 

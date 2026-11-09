@@ -669,11 +669,11 @@ fn request_dump_keeps_the_declared_field_order() {
 fn errors_carry_the_field_path_and_the_message() {
     let error =
         validate_sap_message(&parse_json(r#"{"role":"assistant","content":null}"#)).unwrap_err();
-    let SapModelError::Invalid { path, message } = error else {
+    let SapModelError::Invalid { path, source } = error else {
         panic!("expected an invalid model");
     };
     assert_eq!(path, "message.content");
-    assert_eq!(message, "Content must be a string");
+    assert_eq!(source.to_string(), "Content must be a string");
 }
 
 #[test]
