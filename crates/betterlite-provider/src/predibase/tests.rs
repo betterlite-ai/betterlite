@@ -474,9 +474,17 @@ fn caller_headers_replace_the_default_of_the_same_spelling_only() {
 
 #[rstest]
 #[case::streaming_ok(Some(200), true, None)]
+#[case::streaming_created(Some(201), true, Some((201, "boom")))]
 #[case::streaming_error(Some(502), true, Some((502, "boom")))]
 #[case::streaming_transport_failure(None, true, None)]
 #[case::non_streaming_ok(Some(200), false, None)]
+#[case::non_streaming_created(Some(201), false, None)]
+#[case::non_streaming_no_content(Some(204), false, None)]
+#[case::non_streaming_redirect(
+    Some(301),
+    false,
+    Some((301, "HTTPStatusError - received status_code=301, error_message=boom"))
+)]
 #[case::non_streaming_error(Some(502), false, Some((502, "HTTPStatusError - received status_code=502, error_message=boom")))]
 #[case::non_streaming_transport_failure(None, false, Some((500, "boom")))]
 fn call_errors_follow_the_streaming_and_plain_shapes(

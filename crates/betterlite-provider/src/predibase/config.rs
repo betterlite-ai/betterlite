@@ -143,14 +143,23 @@ pub fn validate_environment(
 #[must_use]
 pub fn call_error(status: Option<u16>, body: &str, streaming: bool) -> Option<PredibaseError> {
     let headers = BTreeMap::new();
-    match status {
-        None if !streaming => Some(get_error_class(body, 500, &headers)),
-        None | Some(200) => None,
-        Some(code) if streaming => Some(get_error_class(body, code, &headers)),
-        Some(code) => Some(get_error_class(
-            &format!("HTTPStatusError - received status_code={code}, error_message={body}"),
-            code,
-            &headers,
-        )),
+    let Some(code) = status else {
+        return if streaming {
+            None
+        } else {
+            Some(get_error_class(body, 500, &headers))
+        };
+    };
+    if streaming {
+        return (code != 200).then(|| get_error_class(body, code, &headers));
     }
+    // httpx raise_for_status accepts every 2xx, so only an HTTP error status raises here
+    if (200..300).contains(&code) {
+        return None;
+    }
+    Some(get_error_class(
+        &format!("HTTPStatusError - received status_code={code}, error_message={body}"),
+        code,
+        &headers,
+    ))
 }
