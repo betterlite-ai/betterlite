@@ -1240,6 +1240,8 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-logging",
+ "clap",
  "dbus-secret-service-keyring-store",
  "httparse",
  "keyring-core",
@@ -1249,7 +1251,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "thiserror",
+ "tokio",
  "url",
  "windows-native-keyring-store",
 ]
