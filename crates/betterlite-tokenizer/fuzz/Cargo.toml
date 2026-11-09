@@ -31,3 +31,7 @@ test = false
 name = "image_token_header"
 path = "fuzz_targets/image_token_header.rs"
 test = false
+[[bin]]
+name = "token_media"
+path = "fuzz_targets/token_media.rs"
+test = false
