@@ -1,0 +1,8 @@
+task: B6807
+deviations:
+  - what: A Textract block graph that nests deeper than 64 levels, including a cycle, fails with an invalid-response error instead of recursing without bound.
+    why: LiteLLM's text_of recurses through child blocks with no depth limit, so a cyclic or pathologically nested provider answer overflows the stack. No working Textract answer nests that deep, and betterlite never panics on provider data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L217-L228
+  - what: A table whose highest ColumnIndex is above 1000 fails with a numeric-range error instead of rendering every column up to that index.
+    why: LiteLLM builds a string and a cell vector sized by the provider's ColumnIndex, so one huge index allocates until the process aborts. Textract's synchronous tables stay far below that width.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L235-L263
