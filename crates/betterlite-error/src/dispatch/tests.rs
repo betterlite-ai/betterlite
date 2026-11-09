@@ -509,15 +509,11 @@ fn a_synthesized_status_in_the_catchall_never_outranks_the_plain_api_connection_
 }
 
 #[test]
-fn a_synthesized_status_on_an_openai_family_provider_falls_back_to_api_connection() {
+fn a_synthesized_status_on_an_openai_family_provider_picks_the_family_of_a_real_status() {
     let mut request = raw("openai", "boom", Some(500));
     request.status_code_is_synthesized = true;
     let class = dispatch(&DispatchInput::Raw(request), &redactor());
-    assert_eq!(
-        family(&class),
-        "api_connection",
-        "dispatch must forward status_code_is_synthesized into OpenaiExceptionInput"
-    );
+    assert_eq!(family(&class), "internal_server");
 }
 
 #[test]
