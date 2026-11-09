@@ -8,8 +8,8 @@ use super::support::{json, serialized};
 use crate::datadog_llm_obs::arguments::ToolArguments;
 use crate::datadog_llm_obs::records::{DdMessage, InputMessage, Message, ToolDefinition};
 use crate::datadog_llm_obs::span_records::{
-    DDIntakePayload, DDLLMObsError, DDSpanAttributes, InputMeta, LLMMetrics, LLMObsPayload, Meta,
-    OutputMeta, SpanKind, SpanStatus,
+    DDIntakePayload, DDLLMObsError, DDLLMObsSpendMetrics, DDSpanAttributes, InputMeta, LLMMetrics,
+    LLMObsPayload, Meta, OutputMeta, SpanKind, SpanStatus,
 };
 
 #[test]
@@ -189,4 +189,25 @@ fn an_empty_metadata_map_is_kept_when_it_is_present() {
         tool_definitions: Vec::new(),
     };
     assert_eq!(serialized(&meta), r#"{"metadata":{},"error":null}"#);
+}
+
+#[test]
+fn spend_metrics_omit_absent_values_and_keep_the_cost_as_a_number() {
+    let empty = DDLLMObsSpendMetrics {
+        response_cost: None,
+        user_api_key_spend: None,
+        user_api_key_max_budget: None,
+        user_api_key_budget_reset_at: None,
+    };
+    assert_eq!(serialized(&empty), "{}");
+    let spend = DDLLMObsSpendMetrics {
+        response_cost: Some(Decimal::from_str("0.5").expect("a decimal")),
+        user_api_key_spend: None,
+        user_api_key_max_budget: Some(Decimal::from_str("2.25").expect("a decimal")),
+        user_api_key_budget_reset_at: Some("2026-01-01T00:00:00Z".to_owned()),
+    };
+    assert_eq!(
+        serialized(&spend),
+        r#"{"response_cost":0.5,"user_api_key_max_budget":2.25,"user_api_key_budget_reset_at":"2026-01-01T00:00:00Z"}"#
+    );
 }
