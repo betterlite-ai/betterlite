@@ -61,6 +61,8 @@ fn passthrough_extraction_cases(
 )]
 #[case::no_trailing_slash("/projects/a/locations/b", "/projects/a/locations/b")]
 #[case::empty_location("/projects/a/locations//x", "/projects/a/locations//x")]
+#[case::empty_project("/projects//locations/l/x", "/projects//locations/l/x")]
+#[case::project_with_slash("/projects/a/b/locations/l/x", "/projects/a/b/locations/l/x")]
 #[case::not_a_route("/x/projects/a/locations/b/", "/x/projects/p/locations/l/")]
 fn replace_route_project_location_cases(#[case] route: &str, #[case] expected: &str) {
     assert_eq!(

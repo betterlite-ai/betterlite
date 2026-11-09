@@ -36,6 +36,12 @@ use super::support::{
     NATIVE_URL,
     "https://proxy.example.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
 )]
+#[case::host_only_with_query(
+    Some("https://proxy.example.com?x=1"),
+    None,
+    NATIVE_URL,
+    "https://proxy.example.com?x=1/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
+)]
 #[case::version_root_v1(
     Some("https://proxy.example.com/v1"),
     None,
