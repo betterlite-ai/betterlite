@@ -13,6 +13,7 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
 use super::fake::ALLOW_SOURCE;
+use super::fake::ASYNC_SOURCE;
 use super::fake::FakeHost;
 use super::fake::LoadReply;
 use super::fake::build;
@@ -55,6 +56,7 @@ where
     let subscriber = fmt()
         .with_max_level(level)
         .with_ansi(false)
+        .with_target(false)
         .with_writer(move || writer.clone())
         .finish();
     let result = with_default(subscriber, run);
@@ -195,11 +197,12 @@ fn flag_result() -> GuardrailValue {
 
 async fn applied_flag_with_clock(
     result: GuardrailValue,
+    source: &str,
     request_data: &mut BTreeMap<String, GuardrailValue>,
     clock: fn() -> Duration,
 ) -> CustomCodeInputs {
     let host = host_returning(result);
-    let guardrail = build_with_clock(params(ALLOW_SOURCE), &host, clock);
+    let guardrail = build_with_clock(params(source), &host, clock);
     guardrail
         .apply_guardrail(
             inputs(&["hello"]),
@@ -211,7 +214,7 @@ async fn applied_flag_with_clock(
 }
 
 async fn applied_flag(request_data: &mut BTreeMap<String, GuardrailValue>) -> CustomCodeInputs {
-    applied_flag_with_clock(flag_result(), request_data, fixed_clock).await
+    applied_flag_with_clock(flag_result(), ALLOW_SOURCE, request_data, fixed_clock).await
 }
 
 #[tokio::test]
@@ -227,9 +230,9 @@ async fn flag_leaves_the_inputs_alone() {
 }
 
 #[tokio::test]
-async fn flag_records_a_guardrail_flagged_entry_with_the_clock_times() {
+async fn flag_records_a_guardrail_flagged_entry() {
     let mut request_data = map(vec![("metadata", object(vec![]))]);
-    let _returned = applied_flag_with_clock(flag_result(), &mut request_data, ticking_clock).await;
+    let _returned = applied_flag(&mut request_data).await;
     let records = records_of(&request_data);
     assert_eq!(records.len(), 1);
     let record = record_fields(&records[0]);
@@ -237,18 +240,6 @@ async fn flag_records_a_guardrail_flagged_entry_with_the_clock_times() {
     assert_eq!(
         record.get("guardrail_status"),
         Some(&text("guardrail_flagged"))
-    );
-    let start = decimal(record, "start_time");
-    let end = decimal(record, "end_time");
-    let duration = decimal(record, "duration");
-    assert!(
-        end > start,
-        "expected the clock to advance between the reads"
-    );
-    assert_ne!(
-        duration.to_bits(),
-        0.0_f64.to_bits(),
-        "a zero duration means the end time was never read"
     );
     let Some(GuardrailValue::Object(response)) = record.get("guardrail_response") else {
         panic!("expected the guardrail response");
@@ -263,10 +254,42 @@ async fn flag_records_a_guardrail_flagged_entry_with_the_clock_times() {
 }
 
 #[tokio::test]
+async fn flag_records_the_clock_times() {
+    let mut request_data = map(vec![("metadata", object(vec![]))]);
+    let _returned = applied_flag_with_clock(
+        flag_result(),
+        ASYNC_SOURCE,
+        &mut request_data,
+        ticking_clock,
+    )
+    .await;
+    let records = records_of(&request_data);
+    let fields = record_fields(&records[0]);
+    let start = decimal(fields, "start_time");
+    let end = decimal(fields, "end_time");
+    let duration = decimal(fields, "duration");
+    assert_eq!(
+        start.to_bits(),
+        Duration::from_secs(1).as_secs_f64().to_bits(),
+        "start_time must be the clock read taken at the top of apply_guardrail"
+    );
+    assert_eq!(
+        end.to_bits(),
+        Duration::from_millis(1010).as_secs_f64().to_bits()
+    );
+    assert_eq!(
+        duration.to_bits(),
+        Duration::from_millis(10).as_secs_f64().to_bits(),
+        "duration must be end_time minus start_time"
+    );
+}
+
+#[tokio::test]
 async fn flag_without_a_reason_uses_litellms_default_text() {
     let result = object(vec![("action", text("flag"))]);
     let mut request_data = map(vec![("metadata", object(vec![]))]);
-    let _returned = applied_flag_with_clock(result, &mut request_data, fixed_clock).await;
+    let _returned =
+        applied_flag_with_clock(result, ALLOW_SOURCE, &mut request_data, fixed_clock).await;
     let records = records_of(&request_data);
     let record = record_fields(&records[0]);
     let Some(GuardrailValue::Object(response)) = record.get("guardrail_response") else {
@@ -359,8 +382,9 @@ fn an_unknown_action_warns_and_allows() {
         GuardrailInputType::Request,
     );
     assert_eq!(returned.unwrap(), inputs(&["hello"]));
-    assert!(logs.contains("custom_code"));
-    assert!(logs.contains("Unknown action 'explode'"));
+    assert!(logs.contains(
+        "Custom code guardrail 'custom_code': Unknown action 'explode'. Treating as allow."
+    ));
 }
 
 #[test]
@@ -370,8 +394,9 @@ fn a_result_that_is_not_an_object_warns_and_allows() {
         GuardrailInputType::Request,
     );
     assert_eq!(returned.unwrap(), inputs(&["hello"]));
-    assert!(logs.contains("custom_code"));
-    assert!(logs.contains("Expected dict result, got str"));
+    assert!(logs.contains(
+        "Custom code guardrail 'custom_code': Expected dict result, got str. Treating as allow."
+    ));
 }
 
 #[tokio::test]

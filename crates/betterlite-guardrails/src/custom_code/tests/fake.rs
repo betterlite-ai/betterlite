@@ -153,9 +153,9 @@ pub(super) fn wall_clock() -> Duration {
         .unwrap_or_default()
 }
 
-// Advances 10 ms per read, so a record that uses one read for both times shows a zero duration.
+// Starts at 1 s and advances 10 ms per read, so a hardcoded start or a reused read stands out.
 pub(super) fn ticking_clock() -> Duration {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
+    static NEXT: AtomicU64 = AtomicU64::new(1000);
     Duration::from_millis(NEXT.fetch_add(10, Ordering::SeqCst))
 }
 
