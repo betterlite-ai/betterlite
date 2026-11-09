@@ -423,10 +423,14 @@ fn reply_reads_web_then_news() {
 #[rstest]
 #[case::no_results(b"{}", 0)]
 #[case::null_results(br#"{"results":null}"#, 0)]
+#[case::empty_results_list(br#"{"results":[]}"#, 0)]
 #[case::null_web(br#"{"results":{"web":null}}"#, 0)]
 #[case::null_news(br#"{"results":{"news":null}}"#, 0)]
 #[case::news_only(br#"{"results":{"news":[{"title":"N"}]}}"#, 1)]
-fn reply_treats_null_lists_as_empty(#[case] bytes: &[u8], #[case] expected: usize) {
+fn reply_treats_absent_empty_and_null_lists_as_empty(
+    #[case] bytes: &[u8],
+    #[case] expected: usize,
+) {
     assert_eq!(decode_you_com_reply(bytes).unwrap().results.len(), expected);
 }
 
@@ -448,7 +452,8 @@ fn reply_falls_back_to_description(#[case] bytes: &[u8], #[case] expected: &str)
 #[case::numeric_page_age(br#"{"results":{"web":[{"title":"T","page_age":7}]}}"#)]
 #[case::null_snippet(br#"{"results":{"web":[{"title":"T","snippets":[null]}]}}"#)]
 #[case::snippets_not_a_list(br#"{"results":{"web":[{"title":"T","snippets":"x"}]}}"#)]
-#[case::results_not_an_object(br#"{"results":[]}"#)]
+#[case::nonempty_results_list(br#"{"results":[[{"title":"T"}]]}"#)]
+#[case::not_an_object(b"[]")]
 #[case::web_not_a_list(br#"{"results":{"web":{}}}"#)]
 fn reply_rejects_a_shape_the_source_would_fail(#[case] bytes: &[u8]) {
     assert!(matches!(

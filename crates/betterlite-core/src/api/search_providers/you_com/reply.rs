@@ -10,7 +10,18 @@ pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
 #[derive(Deserialize, Default)]
 struct YouComReply {
     #[serde(default)]
-    results: Option<YouComResults>,
+    results: Option<ResultsField>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
+}
+
+// LiteLLM's `results or {}` turns an empty list into the default object while a nonempty list fails
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ResultsField {
+    Empty([(); 0]),
+    Results(YouComResults),
 }
 
 #[derive(Deserialize, Default)]
@@ -19,6 +30,9 @@ struct YouComResults {
     web: Option<Vec<YouComResult>>,
     #[serde(default)]
     news: Option<Vec<YouComResult>>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 type OptionalDescription = Option<Option<String>>;
@@ -36,6 +50,9 @@ struct YouComResult {
     description: OptionalDescription,
     #[serde(default)]
     page_age: Option<String>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 pub fn decode_you_com_reply(bytes: &[u8]) -> Result<SearchResponse, YouComError> {
@@ -48,7 +65,10 @@ pub fn decode_you_com_reply(bytes: &[u8]) -> Result<SearchResponse, YouComError>
     let reply: YouComReply = serde_path_to_error::deserialize(&mut decoder)
         .map_err(|source| YouComError::Reply { source })?;
     decoder.end().map_err(YouComError::TrailingBytes)?;
-    let results = reply.results.unwrap_or_default().into_results()?;
+    let results = match reply.results {
+        None | Some(ResultsField::Empty([])) => Vec::new(),
+        Some(ResultsField::Results(container)) => container.into_results()?,
+    };
     Ok(SearchResponse {
         results,
         object: SearchObject::default(),
@@ -59,7 +79,7 @@ pub fn decode_you_com_reply(bytes: &[u8]) -> Result<SearchResponse, YouComError>
 
 impl YouComResults {
     fn into_results(self) -> Result<Vec<SearchResult>, YouComError> {
-        let Self { web, news } = self;
+        let Self { web, news, .. } = self;
         web.into_iter()
             .flatten()
             .chain(news.into_iter().flatten())
@@ -75,6 +95,7 @@ fn project(item: YouComResult) -> Result<SearchResult, YouComError> {
         snippets,
         description,
         page_age,
+        ..
     } = item;
     let snippet = match snippets.and_then(|list| list.into_iter().next()) {
         Some(snippet) => snippet,

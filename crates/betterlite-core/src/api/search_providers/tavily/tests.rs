@@ -349,6 +349,7 @@ fn reply_without_results_is_empty() {
 #[case::numeric_title(br#"{"results":[{"title":7}]}"#)]
 #[case::null_results(br#"{"results":null}"#)]
 #[case::result_not_an_object(br#"{"results":["x"]}"#)]
+#[case::result_is_a_list(br#"{"results":[["t"]]}"#)]
 #[case::not_an_object(b"[]")]
 fn reply_rejects_a_shape_the_source_would_fail(#[case] bytes: &[u8]) {
     assert!(matches!(

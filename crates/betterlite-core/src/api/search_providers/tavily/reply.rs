@@ -11,6 +11,9 @@ pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
 struct TavilyReply {
     #[serde(default)]
     results: Vec<TavilyReplyResult>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 #[derive(Deserialize)]
@@ -21,6 +24,9 @@ struct TavilyReplyResult {
     url: String,
     #[serde(default)]
     content: String,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 pub fn decode_tavily_reply(bytes: &[u8]) -> Result<SearchResponse, TavilyError> {
