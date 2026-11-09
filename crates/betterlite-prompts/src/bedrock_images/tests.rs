@@ -31,6 +31,7 @@ use crate::bedrock_images::parse::{parse_content_type, parse_mime_type};
 use crate::bedrock_images::processor::{Base64Image, parse_base64_image, process_image};
 use crate::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS, post_call_image_processing};
 use crate::bedrock_images::types::ContentBlock;
+use crate::media_fetch::response::BodyReadError;
 
 const PNG: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR";
 const EXAMPLE_URL: &str = "https://example.com/image";
@@ -39,6 +40,7 @@ struct Reply {
     status: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    truncate_to: Option<usize>,
     drip: bool,
 }
 
@@ -48,6 +50,7 @@ impl Reply {
             status,
             headers: Vec::new(),
             body: Vec::new(),
+            truncate_to: None,
             drip: false,
         }
     }
@@ -57,6 +60,7 @@ impl Reply {
             status: 200,
             headers: vec![("Content-Type".to_owned(), content_type.to_owned())],
             body: body.to_vec(),
+            truncate_to: None,
             drip: false,
         }
     }
@@ -160,6 +164,11 @@ async fn write_reply(stream: &mut TcpStream, reply: &Reply) -> io::Result<()> {
         }
         return Ok(());
     }
+    if let Some(limit) = reply.truncate_to {
+        let partial = reply.body.get(..limit).unwrap_or(&reply.body);
+        stream.write_all(partial).await?;
+        return Ok(());
+    }
     stream.write_all(&reply.body).await
 }
 
@@ -183,6 +192,7 @@ fn remote_with(
             validator,
             validation,
         },
+        deadline: limits.read_timeout,
         max_download_size_mb: max_mb,
     }
 }
@@ -259,6 +269,7 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
 #[case::remote_fetch_names_the_last_request_url("remote_fetch_names_the_last_request_url")]
 #[case::remote_fetch_fails_a_body_over_the_limit("remote_fetch_fails_a_body_over_the_limit")]
 #[case::remote_fetch_rejects_a_blocked_loopback("remote_fetch_rejects_a_blocked_loopback")]
+#[case::remote_fetch_fails_a_truncated_body("remote_fetch_fails_a_truncated_body")]
 #[case::remote_fetch_ends_a_dripping_body_at_the_deadline(
     "remote_fetch_ends_a_dripping_body_at_the_deadline"
 )]
@@ -577,6 +588,7 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 status: 302,
                 headers: vec![("Location".to_owned(), "/final".to_owned())],
                 body: Vec::new(),
+                truncate_to: None,
                 drip: false,
             };
             let server = Server::start(vec![
@@ -627,6 +639,25 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             );
             assert_eq!(server.request_count(), 0);
         }
+        "remote_fetch_fails_a_truncated_body" => {
+            let reply = Reply {
+                status: 200,
+                headers: vec![("Content-Type".to_owned(), "image/png".to_owned())],
+                body: vec![0xAB_u8; 100],
+                truncate_to: Some(10),
+                drip: false,
+            };
+            let server = Server::start(vec![route("/image.png", reply)]).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                BedrockImageError::Body(BodyReadError::Read(_))
+            ));
+        }
         "remote_fetch_ends_a_dripping_body_at_the_deadline" => {
             let server = Server::start(vec![route(
                 "/drip.png",
@@ -634,6 +665,7 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                     status: 200,
                     headers: Vec::new(),
                     body: vec![b'x'; 20],
+                    truncate_to: None,
                     drip: true,
                 },
             )])
@@ -641,16 +673,16 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             let url = server.url("/drip.png");
             let limits = TransportLimits {
                 connect_timeout: Duration::from_secs(5),
-                read_timeout: Duration::from_millis(200),
+                read_timeout: Duration::from_millis(100),
                 body_bytes: TransportLimits::DEFAULT.body_bytes,
                 header_bytes: TransportLimits::DEFAULT.header_bytes,
             };
-            let outcome = timeout(
-                Duration::from_secs(5),
-                remote_with(limits, &["127.0.0.1"], 50.0, true).image_details(&url),
-            )
-            .await
-            .expect("a fetch without a total deadline would never end");
+            // the request's own 100ms timeout fires well before the 5s total deadline, exercising the body-read mapping
+            let mut client = remote_with(limits, &["127.0.0.1"], 50.0, true);
+            client.deadline = Duration::from_secs(5);
+            let outcome = timeout(Duration::from_secs(10), client.image_details(&url))
+                .await
+                .expect("a fetch without any timeout would never end");
             assert!(matches!(outcome.unwrap_err(), BedrockImageError::Deadline));
         }
         "process_dispatches_base64_before_a_url" => {

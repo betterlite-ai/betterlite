@@ -30,6 +30,8 @@ pub const TRANSPORT_LIMITS: TransportLimits = TransportLimits {
 pub struct RemoteImage<R> {
     pub client: ProxiedClient,
     pub urls: UserUrlFetcher<R>,
+    // the total bound LiteLLM lacks; the Bedrock caller and the helper pass TRANSPORT_LIMITS.read_timeout (600 seconds)
+    pub deadline: Duration,
     pub max_download_size_mb: f64,
 }
 
@@ -42,8 +44,7 @@ where
         &self,
         image_url: &str,
     ) -> Result<(String, String), BedrockImageError> {
-        let deadline = self.client.limits.read_timeout;
-        match timeout(deadline, self.fetch(image_url)).await {
+        match timeout(self.deadline, self.fetch(image_url)).await {
             Ok(result) => result,
             Err(_elapsed) => Err(BedrockImageError::Deadline),
         }
@@ -63,7 +64,7 @@ where
         let body = read_limited_body(fetched.body_stream(), image_url, self.max_download_size_mb)
             .await
             .map_err(|error| match error {
-                // The request carries the same deadline as the outer timeout, so its clock can fire first
+                // reqwest applies the read timeout to the request itself, so its clock can fire before the total deadline
                 BodyReadError::Read(HttpError::Request(source)) if source.is_timeout() => {
                     BedrockImageError::Deadline
                 }

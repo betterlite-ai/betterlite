@@ -80,6 +80,7 @@ fn remote() -> Result<RemoteImage<SystemResolver>, Box<HelperError>> {
             validator,
             validation: true,
         },
+        deadline: TRANSPORT_LIMITS.read_timeout,
         max_download_size_mb: LIMIT_MB,
     })
 }
