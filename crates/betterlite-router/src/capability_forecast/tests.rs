@@ -81,6 +81,7 @@ enum Behavior {
     ProseAfter,
     FencedThenProse,
     FirstCompleteObjectWins,
+    NonFiniteObjectWins,
     EveryRuleBoundaryPair,
     CalibrationApplied,
     CalibrationEndpoints,
@@ -98,6 +99,7 @@ enum Behavior {
 #[case::prose_after(Behavior::ProseAfter)]
 #[case::fenced_then_prose(Behavior::FencedThenProse)]
 #[case::first_complete_object_wins(Behavior::FirstCompleteObjectWins)]
+#[case::non_finite_object_wins(Behavior::NonFiniteObjectWins)]
 #[case::every_rule_boundary_pair(Behavior::EveryRuleBoundaryPair)]
 #[case::calibration_applied(Behavior::CalibrationApplied)]
 #[case::calibration_endpoints(Behavior::CalibrationEndpoints)]
@@ -129,6 +131,7 @@ fn capability_forecast_behaviors(#[case] behavior: Behavior) {
             verdict_json("SUP-1", "supported", "0.8")
         )),
         Behavior::FirstCompleteObjectWins => assert_first_object_wins(),
+        Behavior::NonFiniteObjectWins => assert_non_finite_object_wins(),
         Behavior::EveryRuleBoundaryPair => assert_every_rule_boundary_pair(),
         Behavior::CalibrationApplied => assert_calibration_applied(),
         Behavior::CalibrationEndpoints => assert_calibration_endpoints(),
@@ -173,6 +176,43 @@ fn assert_first_object_wins() {
         verdict_json("SUP-1", "supported", "0.8")
     );
     let error = parse_cap_reply(reply.as_bytes()).unwrap_err();
+    assert!(matches!(error, ForecastError::VerdictSchema { .. }));
+}
+
+fn assert_non_finite_object_wins() {
+    // Python's raw_decode accepts these literals, so the first object is the candidate and verdict validation refuses it
+    let nan = format!(
+        "{{\"crux\":\"nan\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":NaN}}\n{}",
+        verdict_json("SUP-1", "supported", "0.8")
+    );
+    let nan_error = parse_cap_reply(nan.as_bytes()).unwrap_err();
+    assert!(matches!(nan_error, ForecastError::VerdictSchema { .. }));
+    let infinity = format!(
+        "{{\"crux\":\"infinite\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":Infinity}}\n{}",
+        verdict_json("SUP-1", "supported", "0.8")
+    );
+    let infinity_error = parse_cap_reply(infinity.as_bytes()).unwrap_err();
+    assert!(matches!(
+        infinity_error,
+        ForecastError::VerdictSchema { .. }
+    ));
+    let negative = format!(
+        "{{\"crux\":\"negative\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":-Infinity}}\n{}",
+        verdict_json("SUP-1", "supported", "0.8")
+    );
+    let negative_error = parse_cap_reply(negative.as_bytes()).unwrap_err();
+    assert!(matches!(
+        negative_error,
+        ForecastError::VerdictSchema { .. }
+    ));
+    let quoted =
+        verdict_json("SUP-1", "supported", "0.5").replace("the hard part", "NaN and Infinity");
+    assert_eq!(
+        parse_cap_reply(quoted.as_bytes()).unwrap().crux,
+        "NaN and Infinity"
+    );
+    let nested = r#"{"crux":"x","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5,"extra":{"values":[NaN,Infinity,-Infinity]}}"#;
+    let error = parse_cap_reply(nested.as_bytes()).unwrap_err();
     assert!(matches!(error, ForecastError::VerdictSchema { .. }));
 }
 
