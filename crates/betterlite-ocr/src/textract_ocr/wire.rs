@@ -110,19 +110,45 @@ pub(crate) enum RelationshipType {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(from = "RawBlock")]
 pub(crate) struct Block {
-    #[serde(default)]
     pub(crate) id: String,
-    #[serde(rename = "BlockType")]
     pub(crate) kind: BlockType,
     pub(crate) text: Option<String>,
-    // absent or null is page one, matching LiteLLM's Option<i64> default
-    pub(crate) page: Option<i64>,
+    pub(crate) page: i64,
     pub(crate) row_index: Option<usize>,
     pub(crate) column_index: Option<usize>,
-    #[serde(default)]
     pub(crate) relationships: Vec<Relationship>,
+}
+
+// LiteLLM declares Page as Option<i64>, and an absent or null page is page one
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RawBlock {
+    #[serde(default)]
+    id: String,
+    #[serde(rename = "BlockType")]
+    kind: BlockType,
+    text: Option<String>,
+    page: Option<i64>,
+    row_index: Option<usize>,
+    column_index: Option<usize>,
+    #[serde(default)]
+    relationships: Vec<Relationship>,
+}
+
+impl From<RawBlock> for Block {
+    fn from(raw: RawBlock) -> Self {
+        Self {
+            id: raw.id,
+            kind: raw.kind,
+            text: raw.text,
+            page: raw.page.unwrap_or(1),
+            row_index: raw.row_index,
+            column_index: raw.column_index,
+            relationships: raw.relationships,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,9 +176,25 @@ pub(crate) struct DocumentMetadata {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(from = "RawTextractResponse")]
 pub(crate) struct TextractResponse {
-    #[serde(default)]
     pub(crate) blocks: Vec<Block>,
     pub(crate) document_metadata: Option<DocumentMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RawTextractResponse {
+    #[serde(default)]
+    blocks: Vec<RawBlock>,
+    document_metadata: Option<DocumentMetadata>,
+}
+
+impl From<RawTextractResponse> for TextractResponse {
+    fn from(raw: RawTextractResponse) -> Self {
+        Self {
+            blocks: raw.blocks.into_iter().map(Block::from).collect(),
+            document_metadata: raw.document_metadata,
+        }
+    }
 }

@@ -142,7 +142,7 @@ fn analyze_response(model: &str, response: TextractResponse) -> Result<OCRRespon
             .iter()
             .map(|block| (block.id.as_str(), block))
             .collect();
-        let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page.unwrap_or(1)).collect();
+        let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page).collect();
         let mut page_markdown = Vec::new();
         for page in pages {
             let markdown = layout_markdown(blocks, page, &by_id)?;
