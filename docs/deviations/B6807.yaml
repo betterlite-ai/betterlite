@@ -1,0 +1,14 @@
+task: B6807
+deviations:
+  - what: A region that would change the default endpoint host, such as x@evil.example/#, fails as an invalid request instead of being interpolated into https://textract.{region}.amazonaws.com/.
+    why: LiteLLM takes the region from the request options or the environment and puts it straight into the URL, so a crafted value sends the document and the SigV4 headers to another host. The pattern LiteLLM already applies to Bedrock regions applies here (valid characters are lowercase letters, digits and hyphens, and the value is non-empty); a request with its own api_base is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/common_utils.rs#L287-L293
+  - what: The layout walk has one work budget per response of OCR_RESPONSE_MAX_BYTES; each visited block charges one plus its text bytes plus its child id count, a table charges its child scan the same way, and going past the budget fails with an invalid-response error.
+    why: LiteLLM walks every path of the child graph with no work budget, so a small graph whose blocks each list the next one twice, a text block repeated many times, or a child with millions of dangling ids costs far more work than the response bytes. Every visit, id and text byte is already in the response JSON, so a real Textract answer stays far under the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L217-L228
+  - what: A Textract block graph that nests deeper than 64 levels, including a cycle, fails with an invalid-response error instead of recursing without bound.
+    why: LiteLLM's text_of recurses through child blocks with no depth limit, so a cyclic or pathologically nested provider answer overflows the stack. No working Textract answer nests that deep, and betterlite never panics on provider data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L217-L228
+  - what: A table whose highest ColumnIndex is above 1000 fails with a numeric-range error instead of rendering every column up to that index.
+    why: LiteLLM builds a string and a cell vector sized by the provider's ColumnIndex, so one huge index allocates until the process aborts. Textract's synchronous tables stay far below that width.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L235-L263
