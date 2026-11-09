@@ -2,7 +2,6 @@ import os
 from typing import TypeAlias
 
 import fastapi.applications
-from litellm.proxy import proxy_server
 from litellm.proxy import utils as proxy_utils
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -44,6 +43,9 @@ def without_lazy_plugin(page: str) -> str:
 
 
 def swagger_page(title: str, openapi_url: str, scenario: dict[str, Json]) -> str:
+    # the proxy_server import builds the whole app; url resolution stays without it
+    from litellm.proxy import proxy_server  # noqa: PLC0415
+
     server_root_path = string_value(scenario.get("server_root_path"), "server_root_path")
     proxy_server.server_root_path = server_root_path  # pyright: ignore[reportAttributeAccessIssue]
     proxy_server.mount_swagger_ui()
