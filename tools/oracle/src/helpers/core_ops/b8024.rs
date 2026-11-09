@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_core::api::search_providers::google_pse::GooglePseSearch;
-use betterlite_core::api::search_providers::searchapi::SearchApiSearch;
+use betterlite_core::api::search_providers::google_pse::{GooglePseBody, GooglePseSearch};
+use betterlite_core::api::search_providers::searchapi::{SearchApiBody, SearchApiSearch};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::SearchQuery;
 use secrecy::SecretString;
@@ -43,47 +43,102 @@ impl Helper for Op {
 
     fn run(input: &Input) -> HelperResult {
         match input.provider {
-            ProviderName::GooglePse => google_pse(input),
-            ProviderName::SearchApi => search_api(input),
+            ProviderName::GooglePse => request(
+                input,
+                GooglePseSearch {
+                    lookup: &input.environment,
+                    api_key: input.api_key.clone().map(SecretString::from),
+                    api_base: input.api_base.clone(),
+                    search_engine_id: input.search_engine_id.clone(),
+                },
+            ),
+            ProviderName::SearchApi => request(
+                input,
+                SearchApiSearch {
+                    lookup: &input.environment,
+                    api_key: input.api_key.clone().map(SecretString::from),
+                    api_base: input.api_base.clone(),
+                },
+            ),
         }
     }
 }
 
-fn google_pse(input: &Input) -> HelperResult {
-    let provider = GooglePseSearch {
-        lookup: &input.environment,
-        api_key: input.api_key.clone().map(SecretString::from),
-        api_base: input.api_base.clone(),
-        search_engine_id: input.search_engine_id.clone(),
-    };
-    let headers = provider
-        .validate_environment(input.headers.clone())
-        .map_err(value_error)?;
-    let body = provider
-        .transform_search_request(&input.query, &input.optional_params)
-        .map_err(value_error)?;
-    let url = provider
-        .complete_url(input.api_base.as_deref(), Some(&body))
-        .map_err(value_error)?;
-    Ok(serde_json::json!({ "headers": headers, "params": body, "url": url }))
+trait SearchRequest {
+    type Body: serde::Serialize;
+
+    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>>;
+    fn transform(
+        &self,
+        query: &SearchQuery,
+        params: &Object,
+    ) -> Result<Self::Body, Box<HelperError>>;
+    fn complete(
+        &self,
+        api_base: Option<&str>,
+        body: &Self::Body,
+    ) -> Result<String, Box<HelperError>>;
 }
 
-fn search_api(input: &Input) -> HelperResult {
-    let provider = SearchApiSearch {
-        lookup: &input.environment,
-        api_key: input.api_key.clone().map(SecretString::from),
-        api_base: input.api_base.clone(),
-    };
-    let headers = provider
-        .validate_environment(input.headers.clone())
-        .map_err(value_error)?;
-    let body = provider
-        .transform_search_request(&input.query, &input.optional_params)
-        .map_err(value_error)?;
-    let url = provider
-        .complete_url(input.api_base.as_deref(), Some(&body))
-        .map_err(value_error)?;
-    Ok(serde_json::json!({ "headers": headers, "params": body, "url": url }))
+impl SearchRequest for GooglePseSearch<'_> {
+    type Body = GooglePseBody;
+
+    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>> {
+        self.validate_environment(headers).map_err(value_error)
+    }
+
+    fn transform(
+        &self,
+        query: &SearchQuery,
+        params: &Object,
+    ) -> Result<Self::Body, Box<HelperError>> {
+        self.transform_search_request(query, params)
+            .map_err(value_error)
+    }
+
+    fn complete(
+        &self,
+        api_base: Option<&str>,
+        body: &Self::Body,
+    ) -> Result<String, Box<HelperError>> {
+        self.complete_url(api_base, Some(body)).map_err(value_error)
+    }
+}
+
+impl SearchRequest for SearchApiSearch<'_> {
+    type Body = SearchApiBody;
+
+    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>> {
+        self.validate_environment(headers).map_err(value_error)
+    }
+
+    fn transform(
+        &self,
+        query: &SearchQuery,
+        params: &Object,
+    ) -> Result<Self::Body, Box<HelperError>> {
+        self.transform_search_request(query, params)
+            .map_err(value_error)
+    }
+
+    fn complete(
+        &self,
+        api_base: Option<&str>,
+        body: &Self::Body,
+    ) -> Result<String, Box<HelperError>> {
+        self.complete_url(api_base, Some(body)).map_err(value_error)
+    }
+}
+
+fn request<P>(input: &Input, provider: P) -> HelperResult
+where
+    P: SearchRequest,
+{
+    let headers = provider.validate(input.headers.clone())?;
+    let body = provider.transform(&input.query, &input.optional_params)?;
+    let url = provider.complete(input.api_base.as_deref(), &body)?;
+    let params = serde_json::to_value(body).map_err(value_error)?;
+    Ok(serde_json::json!({ "headers": headers, "params": params, "url": url }))
 }
 
 fn value_error<E>(error: E) -> Box<HelperError>
