@@ -1,0 +1,15 @@
+kind: helper
+name: redis-cache-values-pipeline-namespaces-each-key
+call:
+  b4327:
+    function: write_commands
+    operation: async_set_cache_pipeline
+    namespace: ns
+    default_ttl: 60
+    flush_size: null
+    entries:
+      - {key: alpha, value: first, ttl: 2.5}
+      - {key: beta, value: second, ttl: 2.5}
+    nx: false
+env: {}
+compare: {ignore: []}
