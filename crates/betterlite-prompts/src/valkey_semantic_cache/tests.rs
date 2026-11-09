@@ -928,14 +928,11 @@ async fn info_live_index_reads_simple_string_field_names() {
 }
 
 #[rstest]
-#[case::no_ttl(None, 0)]
-#[case::a_ttl(Some(60), 1)]
-#[case::zero(Some(0), 1)]
+#[case::no_ttl(None)]
+#[case::a_ttl(Some(60))]
+#[case::zero(Some(0))]
 #[tokio::test]
-async fn store_live_index_sends_expire_only_with_a_ttl(
-    #[case] ttl: Option<i64>,
-    #[case] expires: usize,
-) {
+async fn store_live_index_sends_expire_after_the_hash_only_with_a_ttl(#[case] ttl: Option<i64>) {
     let server = FakeValkey::start(&[]).await;
     let fields = doc_mapping("user-1", PROMPT, "\"cached\"", &VECTOR);
     live_index(&server)
@@ -943,15 +940,21 @@ async fn store_live_index_sends_expire_only_with_a_ttl(
         .store_hash("doc-1", &fields, ttl)
         .await
         .expect("the stored hash");
-    assert_eq!(server.commands_named("HSET").len(), 1);
-    let sent = server.commands_named("EXPIRE");
-    assert_eq!(sent.len(), expires);
-    if let Some(seconds) = ttl {
-        assert_eq!(
-            sent[0],
-            ["EXPIRE".to_owned(), "doc-1".to_owned(), seconds.to_string()]
-        );
-    }
+    let sent = server.written();
+    let names: Vec<&[u8]> = sent.iter().map(|command| command[0].as_slice()).collect();
+    let Some(seconds) = ttl else {
+        assert_eq!(names, [b"HSET".as_slice()]);
+        return;
+    };
+    assert_eq!(names, [b"HSET".as_slice(), b"EXPIRE".as_slice()]);
+    assert_eq!(
+        sent[1],
+        [
+            b"EXPIRE".to_vec(),
+            b"doc-1".to_vec(),
+            seconds.to_string().into_bytes()
+        ]
+    );
 }
 
 #[rstest]

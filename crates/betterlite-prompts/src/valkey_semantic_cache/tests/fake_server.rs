@@ -55,7 +55,7 @@ impl FakeValkey {
         format!("redis://{}:{}", self.addr.ip(), self.addr.port())
     }
 
-    pub(crate) fn commands_named(&self, name: &str) -> Vec<Vec<String>> {
+    pub(crate) fn written(&self) -> Vec<Vec<Vec<u8>>> {
         self.commands
             .lock()
             .expect("the command log")
@@ -63,14 +63,9 @@ impl FakeValkey {
             .filter(|command| {
                 command
                     .first()
-                    .is_some_and(|first| first == name.as_bytes())
+                    .is_some_and(|name| name == b"HSET" || name == b"EXPIRE")
             })
-            .map(|command| {
-                command
-                    .iter()
-                    .map(|argument| String::from_utf8(argument.clone()).expect("a text argument"))
-                    .collect()
-            })
+            .cloned()
             .collect()
     }
 }
