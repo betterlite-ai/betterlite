@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-openai = { path = "../../betterlite-openai" }
 betterlite-provider = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
@@ -25,6 +26,13 @@ bench = false
 [[bin]]
 name = "sandbox_ndjson"
 path = "fuzz_targets/sandbox_ndjson.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "triton_reply"
+path = "fuzz_targets/triton_reply.rs"
 test = false
 doc = false
 bench = false
