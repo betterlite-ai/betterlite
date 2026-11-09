@@ -65,33 +65,17 @@ pub struct UsageRecord {
     pub cost: Option<Decimal>,
     pub inference_geo: Option<JsonValue>,
     pub speed: Option<JsonValue>,
-    #[serde(flatten)]
-    pub extra: JsonObject,
 }
 
 // The wrapper mirrors cache write and cache creation tokens into each other, and reads both from a nested cache count.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PromptTokensDetails {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub video_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub web_search_requests: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub google_maps_grounding_requests: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_token_details: Option<CacheCreationTokenDetails>,
     #[serde(flatten)]
     pub extra: JsonObject,
@@ -119,20 +103,10 @@ impl PromptTokensDetails {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CompletionTokensDetails {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub text_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub video_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub accepted_prediction_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rejected_prediction_tokens: Option<i64>,
     #[serde(flatten)]
     pub extra: JsonObject,
 }
@@ -140,9 +114,7 @@ pub struct CompletionTokensDetails {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CacheCreationTokenDetails {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ephemeral_5m_input_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ephemeral_1h_input_tokens: Option<i64>,
 }
 
@@ -156,18 +128,13 @@ pub struct ReasoningChoice {
 #[serde(default)]
 pub struct ReasoningMessage {
     pub reasoning_content: Option<String>,
-    #[serde(flatten)]
-    pub extra: JsonObject,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ServerToolUse {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub web_search_requests: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_search_requests: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_open_requests: Option<i64>,
 }
 
@@ -177,23 +144,13 @@ pub struct Usage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_input_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_read_input_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub server_tool_use: Option<ServerToolUse>,
-    #[serde(
-        with = "rust_decimal::serde::arbitrary_precision_option",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cost: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub inference_geo: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<String>,
 }

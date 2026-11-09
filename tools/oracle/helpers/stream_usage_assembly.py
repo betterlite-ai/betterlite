@@ -78,15 +78,11 @@ def usage_view(usage: Usage) -> Json:
 
 
 def details_input(value: Json) -> PromptTokensDetailsWrapper | None:
-    if value is None:
-        return None
-    return PromptTokensDetailsWrapper.model_validate(value)
+    return None if value is None else PromptTokensDetailsWrapper.model_validate(value)
 
 
 def cache_details_input(value: Json) -> CacheCreationTokenDetails | None:
-    if value is None:
-        return None
-    return CacheCreationTokenDetails.model_validate(value)
+    return None if value is None else CacheCreationTokenDetails.model_validate(value)
 
 
 def response_chunk(
@@ -184,10 +180,6 @@ def calculate_case(arguments: dict[str, Json]) -> Json:
     fixture = cast(dict[str, Json], arguments.get("counter", {}))
     counter, calls = make_counter(fixture)
     verbose: list[Json] = []
-
-    def record_verbose(message: str) -> None:
-        verbose.append(message)
-
     callback = (
         prompt_callback(arguments["count_prompt_tokens"])
         if "count_prompt_tokens" in arguments
@@ -200,7 +192,7 @@ def calculate_case(arguments: dict[str, Json]) -> Json:
             ),
             mock.patch(
                 "litellm.litellm_core_utils.streaming_chunk_builder_utils.print_verbose",
-                record_verbose,
+                verbose.append,
             ),
         ):
             usage = cast(
@@ -222,17 +214,7 @@ def calculate_case(arguments: dict[str, Json]) -> Json:
 
 
 def reasoning_case(arguments: dict[str, Json]) -> Json:
-    raw_choices = cast(list[dict[str, Json]], arguments.get("choices", []))
-    choices = [
-        {
-            "message": {
-                "role": "assistant",
-                "content": None,
-                **cast(dict[str, Json], choice["message"]),
-            }
-        }
-        for choice in raw_choices
-    ]
+    choices = cast(list[Choices], arguments.get("choices", []))
     fixture = cast(dict[str, Json], arguments.get("counter", {}))
     counter, calls = make_counter(fixture)
     processor = cast(Any, ChunkProcessor.__new__(ChunkProcessor))  # pyright: ignore[reportAny]
@@ -243,7 +225,7 @@ def reasoning_case(arguments: dict[str, Json]) -> Json:
             counted = cast(
                 int | None,
                 processor.count_reasoning_tokens(  # pyright: ignore[reportAny]
-                    ModelResponse(choices=cast(list[Choices], choices))
+                    ModelResponse(choices=choices)
                 ),
             )
     except CountFailureError:
@@ -258,15 +240,14 @@ def capture_case(arguments: dict[str, Json]) -> Json:
     return {"ok": True, "details": detail_view(captured)}
 
 
+def update_view(result: PromptTokensDetailsWrapper | None, original: object) -> Json:
+    return {"ok": True, "same_object": result is original, "details": detail_view(result)}
+
+
 def attach_case(arguments: dict[str, Json]) -> Json:
     prompt_details = details_input(arguments.get("prompt_tokens_details"))
     cache = cache_details_input(arguments.get("cache_creation_token_details"))
-    result = attach_cache_creation_token_details(prompt_details, cache)
-    return {
-        "ok": True,
-        "same_object": result is prompt_details,
-        "details": detail_view(result),
-    }
+    return update_view(attach_cache_creation_token_details(prompt_details, cache), prompt_details)
 
 
 def grounding_case(arguments: dict[str, Json]) -> Json:
@@ -276,11 +257,7 @@ def grounding_case(arguments: dict[str, Json]) -> Json:
         cast(int | None, arguments.get("web_search_requests")),
         cast(int | None, arguments.get("google_maps_grounding_requests")),
     )
-    return {
-        "ok": True,
-        "same_object": result is prompt_details,
-        "details": detail_view(result),
-    }
+    return update_view(result, prompt_details)
 
 
 def run(input_value: dict[str, Json]) -> Json:

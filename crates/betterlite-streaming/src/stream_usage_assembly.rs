@@ -8,6 +8,7 @@ use thiserror::Error;
 
 pub mod accumulate;
 pub mod details;
+mod record;
 mod tests;
 pub mod wire;
 
@@ -142,17 +143,9 @@ fn apply_reasoning_details(
         None => {
             usage.completion_tokens_details = Some(CompletionTokensDetails {
                 reasoning_tokens: Some(capped),
-                text_tokens: Some(
-                    usage
-                        .completion_tokens
-                        .checked_sub(capped)
-                        .ok_or(UsageAssemblyError::Overflow)?,
-                ),
+                text_tokens: capped_text(usage, capped)?,
                 image_tokens: None,
-                video_tokens: None,
                 audio_tokens: None,
-                accepted_prediction_tokens: None,
-                rejected_prediction_tokens: None,
                 extra: JsonObject::new(),
             });
         }
@@ -160,18 +153,21 @@ fn apply_reasoning_details(
             if details.reasoning_tokens.is_none() {
                 details.reasoning_tokens = Some(capped);
                 if details.text_tokens.is_none() {
-                    details.text_tokens = Some(
-                        usage
-                            .completion_tokens
-                            .checked_sub(capped)
-                            .ok_or(UsageAssemblyError::Overflow)?,
-                    );
+                    details.text_tokens = capped_text(usage, capped)?;
                 }
             }
             usage.completion_tokens_details = Some(details);
         }
     }
     Ok(())
+}
+
+fn capped_text(usage: &Usage, capped: i64) -> Result<Option<i64>, UsageAssemblyError> {
+    usage
+        .completion_tokens
+        .checked_sub(capped)
+        .map(Some)
+        .ok_or(UsageAssemblyError::Overflow)
 }
 
 // The final Usage(**dump) rebuild feeds the top-level cache counts back into the prompt details wrapper.
@@ -215,35 +211,11 @@ pub async fn count_reasoning_tokens(
 #[async_trait]
 impl UsageTokenCounter for Counter {
     async fn count_response_text(&self, model: &str, text: &str) -> Result<i64, CountError> {
-        let input = TextInput::One(text.to_owned());
-        let request = TokenRequest {
-            model,
-            custom_tokenizer: None,
-            text: Some(&input),
-            messages: None,
-            count_response_tokens: Some(true),
-            tools: None,
-            tool_choice: None,
-        };
-        self.count(&request)
-            .await
-            .and_then(|count| i64::try_from(count).map_err(|_conversion| CountError::Overflow))
+        response_text_tokens(self, Some(model), text).await
     }
 
     async fn count_text(&self, text: &str) -> Result<i64, CountError> {
-        let input = TextInput::One(text.to_owned());
-        let request = TokenRequest {
-            model: "",
-            custom_tokenizer: None,
-            text: Some(&input),
-            messages: None,
-            count_response_tokens: Some(true),
-            tools: None,
-            tool_choice: None,
-        };
-        self.count(&request)
-            .await
-            .and_then(|count| i64::try_from(count).map_err(|_conversion| CountError::Overflow))
+        response_text_tokens(self, None, text).await
     }
 
     async fn count_messages(
@@ -260,8 +232,31 @@ impl UsageTokenCounter for Counter {
             tools: None,
             tool_choice: None,
         };
-        self.count(&request)
-            .await
-            .and_then(|count| i64::try_from(count).map_err(|_conversion| CountError::Overflow))
+        counted_tokens(self, &request).await
     }
+}
+
+async fn response_text_tokens(
+    counter: &Counter,
+    model: Option<&str>,
+    text: &str,
+) -> Result<i64, CountError> {
+    let input = TextInput::One(text.to_owned());
+    let request = TokenRequest {
+        model: model.unwrap_or_default(),
+        custom_tokenizer: None,
+        text: Some(&input),
+        messages: None,
+        count_response_tokens: Some(true),
+        tools: None,
+        tool_choice: None,
+    };
+    counted_tokens(counter, &request).await
+}
+
+async fn counted_tokens(counter: &Counter, request: &TokenRequest<'_>) -> Result<i64, CountError> {
+    counter
+        .count(request)
+        .await
+        .and_then(|count| i64::try_from(count).map_err(|_conversion| CountError::Overflow))
 }
