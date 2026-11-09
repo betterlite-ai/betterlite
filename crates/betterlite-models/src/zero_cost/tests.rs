@@ -74,7 +74,7 @@ fn audio_counts_are_only_used_while_positive() {
     );
     assert_eq!(
         used_pricing_keys(&usage(100, 50, 10, 0)),
-        vec![TEXT_INPUT_RATE, TEXT_OUTPUT_RATE]
+        vec![TEXT_INPUT_RATE, AUDIO_INPUT_RATE, TEXT_OUTPUT_RATE]
     );
 }
 
