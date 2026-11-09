@@ -1,0 +1,5 @@
+task: B5835
+deviations:
+  - what: A model list reply with a non-200 status or a body of the wrong shape returns a typed VercelAiGatewayError, not a bare Python Exception or a KeyError.
+    why: Rust has no untyped exception. The message text for a non-200 status is the same as LiteLLM's, so a user sees the same failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/chat/transformation.py#L91-L95
