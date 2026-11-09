@@ -80,7 +80,7 @@ pub fn user_message_block_or_continue(
         return Err(ContentError::MessageNotObject);
     };
     let content = fields.get(CONTENT);
-    if continue_message.is_none() && !modify_params {
+    if matches!(continue_message, None | Some(Json::Null)) && !modify_params {
         return skip_empty_text_blocks(message);
     }
     let missing_content = matches!(content, None | Some(Json::Null));
@@ -108,7 +108,7 @@ pub fn assistant_message_or_continue(
     let Some(fields) = message.as_object() else {
         return Err(ContentError::MessageNotObject);
     };
-    if continue_message.is_none() && !modify_params {
+    if matches!(continue_message, None | Some(Json::Null)) && !modify_params {
         return skip_empty_text_blocks(message);
     }
     match fields.get(CONTENT) {

@@ -2,6 +2,7 @@ use crate::bedrock_content::continuation::{
     assistant_continue_message, assistant_message_or_continue, insert_assistant_continue,
     user_message_block_or_continue,
 };
+use crate::bedrock_content::empty_blocks::skip_empty_text_blocks;
 use crate::bedrock_content::error::ContentError;
 
 use super::prelude::{json, object};
@@ -160,6 +161,34 @@ fn bedrock_content_behavior_tests_behavior_user_continuation_replaces_blank_cont
     let message = json(message_json);
     let continued = user_message_block_or_continue(&message, None, true).unwrap();
     assert_eq!(continued, json(USER_DEFAULT_CONTINUE));
+}
+
+#[test]
+fn bedrock_content_behavior_tests_behavior_a_null_user_continue_is_absent() {
+    let message = json(r#"{"role":"user","content":"   "}"#);
+    let explicit_null = json("null");
+    let continued = user_message_block_or_continue(&message, Some(&explicit_null), false).unwrap();
+    assert_eq!(continued, message);
+}
+
+#[test]
+fn bedrock_content_behavior_tests_behavior_a_null_assistant_continue_is_absent() {
+    let message = json(r#"{"role":"assistant","content":"   "}"#);
+    let explicit_null = json("null");
+    let continued = assistant_message_or_continue(&message, Some(&explicit_null), false).unwrap();
+    assert_eq!(continued, message);
+}
+
+#[rstest::rstest]
+#[case::null_other_field(r#"{"role":"assistant","content":"   ","tool_calls":null}"#)]
+#[case::named_message(r#"{"role":"assistant","content":"   ","name":"bob"}"#)]
+fn bedrock_content_behavior_tests_behavior_name_and_null_fields_are_not_content(
+    #[case] message_json: &str,
+) {
+    let message = json(message_json);
+    assert_eq!(skip_empty_text_blocks(&message).unwrap(), message);
+    let continued = assistant_message_or_continue(&message, None, true).unwrap();
+    assert_eq!(continued, json(DEFAULT_ASSISTANT));
 }
 
 #[test]
