@@ -155,11 +155,7 @@ def map_params(input_value: Object) -> Json:
                 drop_params=False,
             )
             results.append({"options": cast("Json", options)})
-    return {
-        "results": results,
-        "supported": list(SUPPORTED(model="model")),
-        "config": config,
-    }
+    return {"results": results, "supported": list(SUPPORTED(model="model")), "config": config}
 
 
 def payload(input_value: Object) -> Json:
@@ -191,8 +187,7 @@ def url(input_value: Object) -> Json:
         litellm_params: Object = {} if tenant is None else {"predibase_tenant_id": tenant}
         try:
             found = COMPLETE_URL(
-                api_base=expect_text_or_none(entry.get("api_base")),
-                api_key=None,
+                api_base=expect_text_or_none(entry.get("api_base")), api_key=None,
                 model=expect_text(entry["model"]),
                 optional_params=dict(expect_object(entry.get("options") or {})),
                 litellm_params=litellm_params,
@@ -211,30 +206,25 @@ def headers(input_value: Object) -> Json:
         try:
             merged = VALIDATE(
                 dict(expect_object(entry.get("headers") or {})),
-                "model",
-                [],
-                {},
-                {},
+                "model", [],
+                {}, {},
                 api_key=expect_text_or_none(entry.get("api_key")),
             )
             found.append({"ok": True, "headers": cast("Json", merged)})
         except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
             found.append({"ok": False, "status": status_of(error)})
     class_error = GET_ERROR_CLASS("boom", 418, {"x-a": "1"})
-    return {
-        "requests": found,
-        "error_class": {
-            "status_code": int(class_error.status_code),
-            "headers": cast("Json", class_error.headers),
-        },
+    class_headers: Json = {
+        "status_code": int(class_error.status_code),
+        "headers": cast("Json", class_error.headers),
     }
+    return {"requests": found, "error_class": class_headers}
 
 
 def describe(result: Completion) -> Json:
     choices: list[Json] = [
         {
-            "index": choice.index,
-            "content": choice.message.content,
+            "index": choice.index, "content": choice.message.content,
             "finish_reason": choice.finish_reason,
             "logprobs": cast("Json", getattr(choice.message, "logprobs", None)),
             "logprob": cast("Json", getattr(choice.message, "_logprob", None)),
@@ -243,8 +233,7 @@ def describe(result: Completion) -> Json:
     ]
     hidden = result._hidden_params  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
     return {
-        "ok": True,
-        "model": result.model,
+        "ok": True, "model": result.model,
         "created": result.created,
         "usage": {
             "prompt_tokens": result.usage.prompt_tokens,
@@ -259,8 +248,7 @@ def describe(result: Completion) -> Json:
 def one_reply(entry: Object) -> Json:
     body = expect_text(entry["body"])
     response = httpx.Response(
-        optional_int(entry.get("status"), 200),
-        content=body.encode(),
+        optional_int(entry.get("status"), 200), content=body.encode(),
         headers={
             key: expect_text(value)
             for key, value in expect_object(entry.get("headers") or {}).items()
@@ -314,12 +302,8 @@ def output_parser(input_value: Object) -> Json:
 
 
 OPS: dict[str, Callable[[Object], Json]] = {
-    "map_params": map_params,
-    "payload": payload,
-    "url": url,
-    "headers": headers,
-    "reply": reply,
-    "output_parser": output_parser,
+    "map_params": map_params, "payload": payload, "url": url,
+    "headers": headers, "reply": reply, "output_parser": output_parser,
 }
 
 

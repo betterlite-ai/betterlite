@@ -119,24 +119,18 @@ fn read_fields(fields: &Object, bytes: &[u8]) -> Result<DecodedReply, PredibaseE
 
 // serde also builds a struct from a JSON array, so the shape pass keeps each nested container an object
 fn check_shape(fields: &Object) -> Result<(), PredibaseError> {
-    let Some(details) = details_object(fields)? else {
-        return Ok(());
+    let details = match fields.get("details") {
+        None | Some(Json::Null) => return Ok(()),
+        Some(Json::Object(details)) => details,
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(wrong_object_shape("details"));
+        }
     };
     object_entries(details.get("tokens"), "tokens")?;
     for sequence in object_entries(details.get("best_of_sequences"), "best_of_sequences")? {
         object_entries(sequence.get("tokens"), "tokens")?;
     }
     Ok(())
-}
-
-fn details_object(fields: &Object) -> Result<Option<&Object>, PredibaseError> {
-    match fields.get("details") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(details)) => Ok(Some(details)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(wrong_object_shape("details"))
-        }
-    }
 }
 
 fn object_entries<'json>(
