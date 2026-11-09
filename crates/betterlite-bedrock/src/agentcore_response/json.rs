@@ -1,4 +1,4 @@
-use betterlite_context::a2a_text::{A2aResponse, extract_text_from_a2a_response};
+use betterlite_a2a::a2a_text::{A2aResponse, extract_text_from_a2a_response};
 use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
