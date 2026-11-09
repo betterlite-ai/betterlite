@@ -3,7 +3,6 @@ use http::HeaderMap;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
-use crate::oci_common::base_url::{OCI_API_VERSION, get_oci_base_url};
 use crate::oci_common::credentials::OciCredentials;
 use crate::oci_common::environment::{OciEnvironment, validate_oci_environment};
 use crate::oci_common::{OciError, OciServingMode};
@@ -99,14 +98,6 @@ pub fn validate_environment(
         });
     }
     validate_oci_environment(headers, environment)
-}
-
-pub fn get_complete_url(
-    credentials: &OciCredentials,
-    api_base: Option<&str>,
-) -> Result<String, OciError> {
-    let base = get_oci_base_url(&credentials.oci_region, api_base)?;
-    Ok(format!("{base}/{OCI_API_VERSION}/actions/embedText"))
 }
 
 pub fn transform_embedding_request(

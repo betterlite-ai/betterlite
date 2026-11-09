@@ -9,13 +9,14 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use crate::oci_common::OciServingMode;
+use crate::oci_common::base_url::{OCI_API_VERSION, get_oci_base_url};
 use crate::oci_common::credentials::{DEFAULT_OCI_REGION, OciCredentials};
 use crate::oci_common::environment::OciEnvironment;
 
 use super::response::decode_embed_response;
 use super::{
     OCI_EMBED_BATCH_LIMIT, OciEmbedParams, OciEmbedRequest, SUPPORTED_OPENAI_PARAMS,
-    get_complete_url, map_openai_params, transform_embedding_request, validate_environment,
+    map_openai_params, transform_embedding_request, validate_environment,
 };
 
 const COMPARTMENT: &str = "ocid1.compartment.oc1..aaaa";
@@ -440,32 +441,44 @@ fn validate_environment_treats_empty_values_as_missing() {
 }
 
 #[test]
-fn complete_url_appends_the_embed_text_action_to_the_region_base() {
-    let url = get_complete_url(&credentials(), None).unwrap();
+fn embed_text_url_appends_the_action_to_the_region_base() {
+    let credentials = credentials();
+    let base = get_oci_base_url(&credentials.oci_region, None).unwrap();
     assert_eq!(
-        url,
+        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
         "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/embedText"
     );
 }
 
 #[test]
-fn complete_url_strips_a_previous_action_path_from_the_api_base() {
-    let url =
-        get_complete_url(&credentials(), Some("https://host/20231130/actions/chat/")).unwrap();
-    assert_eq!(url, "https://host/20231130/actions/embedText");
+fn embed_text_url_strips_a_previous_action_path_from_the_api_base() {
+    let credentials = credentials();
+    let base = get_oci_base_url(
+        &credentials.oci_region,
+        Some("https://host/20231130/actions/chat/"),
+    )
+    .unwrap();
+    assert_eq!(
+        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
+        "https://host/20231130/actions/embedText"
+    );
 }
 
 #[test]
-fn complete_url_trims_a_trailing_slash_from_the_api_base() {
-    let url = get_complete_url(&credentials(), Some("https://host/base///")).unwrap();
-    assert_eq!(url, "https://host/base/20231130/actions/embedText");
+fn embed_text_url_trims_a_trailing_slash_from_the_api_base() {
+    let credentials = credentials();
+    let base = get_oci_base_url(&credentials.oci_region, Some("https://host/base///")).unwrap();
+    assert_eq!(
+        format!("{base}/{OCI_API_VERSION}/actions/embedText"),
+        "https://host/base/20231130/actions/embedText"
+    );
 }
 
 #[test]
-fn complete_url_rejects_an_invalid_region() {
+fn embed_text_url_rejects_an_invalid_region() {
     let mut credentials = credentials();
     credentials.oci_region = "US_ASHBURN".to_owned();
-    let error = get_complete_url(&credentials, None).unwrap_err();
+    let error = get_oci_base_url(&credentials.oci_region, None).unwrap_err();
     assert_eq!(error.status, 400);
 }
 
