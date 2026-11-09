@@ -10,14 +10,33 @@ fn projected(response: &Json, call_type: Option<&str>) -> String {
 }
 
 #[test]
-fn reads_a_multi_line_python_literal_response_string() {
+fn reads_a_pretty_printed_python_literal_response_string() {
     let response = Json::Text(
-        "{'choices': [\n  {'message': {'role': 'assistant', 'content': 'Hello',\n               'tool_calls': [{'id': 'call_9', 'type': 'function',\n                               'function': {'name': 'f', 'arguments': '{\"a\": 1}'}}]}}\n]}\n"
+        "{'choices': [{'message': {'content': 'word word word word word word word '\n                                    'word word word word',\n                          'role': 'assistant',\n                          'tool_calls': [{'function': {'arguments': '{\"a\": 1}',\n                                                       'name': 'f'},\n                                          'id': 'call_9',\n                                          'type': 'function'}]}}]}\n"
             .to_owned(),
     );
     assert_eq!(
         projected(&response, Some("acompletion")),
-        r#"[{"role":"assistant","content":"Hello","tool_calls":[{"name":"f","arguments":{"a":1},"tool_id":"call_9","type":"function"}]}]"#
+        r#"[{"role":"assistant","content":"word word word word word word word word word word word","tool_calls":[{"name":"f","arguments":{"a":1},"tool_id":"call_9","type":"function"}]}]"#
+    );
+}
+
+#[rstest]
+#[case::non_string_key("{1: 2}")]
+#[case::bytes("b'a'")]
+#[case::complex("1j")]
+#[case::empty_set("set()")]
+#[case::surrogate(r"'\ud83d'")]
+#[case::unicode_name(r"'\N{SNOWMAN}'")]
+#[case::infinite_float("1e400")]
+#[case::integer_past_u128("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")]
+fn a_sibling_value_json_cannot_hold_still_projects_the_message(#[case] sibling: &str) {
+    let literal = format!(
+        "{{'choices': [{{'message': {{'role': 'assistant', 'content': 'x'}}}}], 'z': {sibling}}}"
+    );
+    assert_eq!(
+        projected(&Json::Text(literal), Some("completion")),
+        r#"[{"role":"assistant","content":"x"}]"#
     );
 }
 

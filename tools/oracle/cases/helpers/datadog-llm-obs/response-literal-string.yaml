@@ -5,11 +5,13 @@ call:
     function: response_messages
     call_type: acompletion
     response: |
-      {'choices': [
-        {'message': {'role': 'assistant', 'content': 'Hello',
-                     'tool_calls': [{'id': 'call_9', 'type': 'function',
-                                     'function': {'name': 'f', 'arguments': '{"a": 1}'}}]}}
-      ]}
+      {'choices': [{'message': {'content': 'word word word word word word word '
+                                            'word word word word',
+                                'role': 'assistant',
+                                'tool_calls': [{'function': {'arguments': '{"a": 1}',
+                                                             'name': 'f'},
+                                                'id': 'call_9',
+                                                'type': 'function'}]}}]}
 env: {}
 compare:
   ignore: []

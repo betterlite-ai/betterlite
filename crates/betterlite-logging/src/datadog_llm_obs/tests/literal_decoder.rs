@@ -33,7 +33,18 @@ fn nested_lists(depth: usize) -> String {
 #[case::float_leading_zeros("01.5", "1.5")]
 #[case::integer_with_underscores_in_fraction("1_0.5", "10.5")]
 #[case::float_leading_dot(".5", "0.5")]
+#[case::float_leading_dot_exponent(".5e3", "500.0")]
 #[case::exponent("1e3", "1000.0")]
+#[case::hex_underscore("0x_ff", "255")]
+#[case::octal_underscore("0o_7", "7")]
+#[case::binary_underscore("0b_1", "1")]
+#[case::space_after_sign("- 1", "-1")]
+#[case::space_after_sign_in_list("[ - 1 ]", "[-1]")]
+#[case::adjacent_strings("'a' 'b'", "\"ab\"")]
+#[case::adjacent_strings_parenthesized("('a' 'b')", "\"ab\"")]
+#[case::adjacent_string_keys("{'a' 'b': 1}", r#"{"ab":1}"#)]
+#[case::adjacent_strings_across_lines("['word '\n 'word']", r#"["word word"]"#)]
+#[case::empty_set_call("set()", "[]")]
 #[case::negative("-2", "-2")]
 #[case::negative_zero("-0", "0")]
 #[case::nested("{'a': [1, (2, {'b': None})]}", r#"{"a":[1,[2,{"b":null}]]}"#)]
@@ -63,19 +74,44 @@ fn escapes_decode_like_python(#[case] source: &str, #[case] expected: &str) {
 #[case::leading_zero("01")]
 #[case::double_underscore("1__0")]
 #[case::binary_expression("1+2")]
-#[case::imaginary("2j")]
-#[case::bytes("b'abc'")]
 #[case::formatted_string("f'{x}'")]
-#[case::unicode_name(r"'\N{SNOWMAN}'")]
 #[case::bare_dot(".")]
 #[case::double_sign("--1")]
 #[case::exponent_without_digits("1e")]
 #[case::newline_between_tokens("1\n+2")]
 #[case::missing_value("[1, 2")]
 #[case::missing_separator("{'a': 1, 'b'}")]
-#[case::non_string_key("{1: 2}")]
+#[case::bare_base_prefix("0x")]
+#[case::adjacent_bytes_and_string("'a' b'c'")]
 fn unsupported_literals_decode_to_none(#[case] source: &str) {
     assert_eq!(literal_json(source), None);
+}
+
+#[rstest]
+#[case::non_string_key("{1: 2}", r#"{"<unrepresentable literal>":2}"#)]
+#[case::bytes("b'abc'", r#""<unrepresentable literal>""#)]
+#[case::complex("2j", r#""<unrepresentable literal>""#)]
+#[case::complex_with_a_real_part("(1+2j)", r#""<unrepresentable literal>""#)]
+#[case::complex_with_a_subtracted_part("1-2j", r#""<unrepresentable literal>""#)]
+#[case::ellipsis("...", r#""<unrepresentable literal>""#)]
+#[case::ellipsis_name("Ellipsis", r#""<unrepresentable literal>""#)]
+#[case::overflowing_float("1e400", r#""<unrepresentable literal>""#)]
+#[case::integer_past_u128(
+    "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    r#""<unrepresentable literal>""#
+)]
+#[case::surrogate_escape(r"'\ud83d'", "\"\u{fffd}\"")]
+#[case::unicode_name_escape(r"'\N{SNOWMAN}'", r#""\\N{SNOWMAN}""#)]
+fn unrepresentable_values_decode_to_a_placeholder(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(decoded(source), expected);
+}
+
+#[test]
+fn a_pretty_printed_wrap_inside_a_bracket_joins_its_strings() {
+    assert_eq!(
+        decoded("{'a': 'word '\n         'word'}"),
+        r#"{"a":"word word"}"#
+    );
 }
 
 #[test]

@@ -1,6 +1,22 @@
 use super::Parser;
 
-pub(super) fn text(parser: &mut Parser<'_>, raw: bool) -> Option<String> {
+// One string token, joined with the adjacent tokens Python concatenates it with.
+pub(super) fn text(parser: &mut Parser<'_>) -> Option<String> {
+    let mut out = one_string(parser)?;
+    loop {
+        parser.skip(parser.depth > 0);
+        match parser.bytes.get(parser.position).copied() {
+            Some(b'\'' | b'"' | b'u' | b'U' | b'r' | b'R') => out.push_str(&one_string(parser)?),
+            Some(_) | None => return Some(out),
+        }
+    }
+}
+
+pub(super) fn one_string(parser: &mut Parser<'_>) -> Option<String> {
+    let raw = matches!(
+        parser.bytes.get(parser.position).copied(),
+        Some(b'r' | b'R')
+    );
     if !matches!(parser.bytes.get(parser.position).copied()?, b'\'' | b'"') {
         parser.position = parser.position.saturating_add(1);
     }
@@ -66,10 +82,6 @@ fn escape(parser: &mut Parser<'_>, out: &mut String) -> Option<()> {
         out.push(escaped_char(parser, byte)?);
         return Some(());
     }
-    // \N{name} needs the Unicode name table, which the workspace does not carry.
-    if byte == b'N' {
-        return None;
-    }
     out.push('\\');
     push_char(parser, out)
 }
@@ -98,9 +110,11 @@ fn escaped_char(parser: &mut Parser<'_>, marker: u8) -> Option<char> {
             b'u' => 4_u32,
             _ => 8_u32,
         };
-        return char::from_u32(digit_run(parser, 16, width, true)?);
+        let value = digit_run(parser, 16, width, true)?;
+        return Some(char::from_u32(value).unwrap_or('\u{fffd}'));
     }
-    char::from_u32(digit_run(parser, 8, 3, false)?)
+    let value = digit_run(parser, 8, 3, false)?;
+    Some(char::from_u32(value).unwrap_or('\u{fffd}'))
 }
 
 // At most `width` digits in `radix`; a fixed-width escape refuses a shorter run.

@@ -7,6 +7,9 @@ mod strings;
 // Above this nesting the decoder would recurse past a gateway stack, so the literal is refused.
 pub const MAX_LITERAL_DEPTH: usize = 128;
 
+// Stands in for a value Python reads and JSON cannot carry, so the rest of the literal survives.
+const PLACEHOLDER_LITERAL: &str = "<unrepresentable literal>";
+
 // Python's ast.literal_eval, as LiteLLM reads a captured response string back, in linear time.
 #[must_use]
 pub fn literal_json(text: &str) -> Option<Json> {
@@ -42,9 +45,16 @@ impl Parser<'_> {
             b'[' => self.sequence(b']', false),
             b'(' => self.sequence(b')', true),
             b'{' => self.braced(),
-            b'\'' | b'"' | b'u' | b'U' => strings::text(self, false).map(Json::Text),
-            b'r' | b'R' => strings::text(self, true).map(Json::Text),
-            b'+' | b'-' | b'.' | b'0'..=b'9' => numbers::number(self),
+            b'\'' | b'"' | b'u' | b'U' | b'r' | b'R' => strings::text(self).map(Json::Text),
+            b'b' | b'B' => {
+                self.position = self.position.saturating_add(1);
+                strings::one_string(self)?;
+                Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
+            }
+            b's' => self.keyword("set()", Json::List(Vec::new())),
+            b'.' => self.dot_led(),
+            b'E' => self.keyword("Ellipsis", Json::Text(PLACEHOLDER_LITERAL.to_owned())),
+            b'+' | b'-' | b'0'..=b'9' => numbers::number(self),
             b'T' => self.keyword("True", Json::Bool(true)),
             b'F' => self.keyword("False", Json::Bool(false)),
             b'N' => self.keyword("None", Json::Null),
@@ -63,6 +73,16 @@ impl Parser<'_> {
         }
         self.position = end;
         Some(value)
+    }
+
+    // Python's Ellipsis, which JSON cannot carry, or else a float written with a leading dot.
+    fn dot_led(&mut self) -> Option<Json> {
+        let end = self.position.saturating_add(3);
+        if self.bytes.get(self.position..end) != Some(b"...".as_slice()) {
+            return numbers::number(self);
+        }
+        self.position = end;
+        Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
     }
 
     // A lone parenthesized value without a comma is the value itself, as in Python.
@@ -125,8 +145,11 @@ impl Parser<'_> {
         let mut key = first;
         loop {
             self.position = self.position.saturating_add(1);
-            let Json::Text(name) = key else {
-                return None;
+            let name = match key {
+                Json::Text(name) => name,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    PLACEHOLDER_LITERAL.to_owned()
+                }
             };
             fields.insert(name, self.value()?);
             if !matches!(self.separator(b'}')?, Next::Element) {
