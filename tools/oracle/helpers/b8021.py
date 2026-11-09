@@ -66,7 +66,7 @@ def _apply_environment(environment: dict[str, str]) -> None:
 def _validate_environment(config: Config, call: ValidateEnvironment) -> Json:
     return cast(
         Json,
-        config.validate_environment(
+        config.validate_environment(  # pyright: ignore[reportUnknownMemberType]
             headers=dict(call.get("headers", {})),
             api_key=call.get("api_key"),
             api_base=call.get("api_base"),
@@ -75,7 +75,7 @@ def _validate_environment(config: Config, call: ValidateEnvironment) -> Json:
 
 
 def _complete_url(config: Config, call: CompleteUrl) -> Json:
-    return config.get_complete_url(
+    return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]
         api_base=call.get("api_base"),
         optional_params={},
         api_key=call.get("api_key"),
@@ -85,7 +85,7 @@ def _complete_url(config: Config, call: CompleteUrl) -> Json:
 def _transform_search_request(config: Config, call: TransformSearchRequest) -> Json:
     return cast(
         Json,
-        config.transform_search_request(
+        config.transform_search_request(  # pyright: ignore[reportUnknownMemberType]
             query=call["query"],
             optional_params=dict(call.get("optional_params", {})),
         ),
@@ -98,7 +98,9 @@ def _transform_search_response(config: Config, call: TransformSearchResponse) ->
         headers=call.get("headers", {}),
         json=call["body"],
     )
-    transformed = config.transform_search_response(raw_response=response, logging_obj=None)
+    transformed = config.transform_search_response(  # pyright: ignore[reportUnknownMemberType]
+        raw_response=response, logging_obj=None  # pyright: ignore[reportArgumentType]
+    )
     return cast(Json, transformed.model_dump())
 
 
