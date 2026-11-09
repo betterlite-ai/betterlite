@@ -5,20 +5,16 @@ use super::base::{AttributeMap, AttributeMapper, AttributeTable, SpanData};
 use super::utils::collect;
 use crate::otel::model::payloads::llm_call::LLMCallSpanData;
 
-const DISPLAY_NAME: &str = "weave.display_name";
-const CALL_ID: &str = "weave.call_id";
-const OUTPUT: &str = "weave.output";
-
 // one attribute per line keeps a table readable; rustfmt stacks every closure vertically
 #[rustfmt::skip]
 const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
-    (DISPLAY_NAME, |data| (!data.request_model.is_empty()).then(|| Value::from(format!("{} {}", data.operation, data.request_model)))),
-    (CALL_ID, |data| data.identity.call_id.as_deref().filter(|call_id| !call_id.is_empty()).map(|call_id| Value::from(call_id.to_owned()))),
+    ("weave.display_name", |data| (!data.request_model.is_empty()).then(|| Value::from(format!("{} {}", data.operation, data.request_model)))),
+    ("weave.call_id", |data| data.identity.call_id.as_deref().filter(|call_id| !call_id.is_empty()).map(|call_id| Value::from(call_id.to_owned()))),
 ];
 
 #[rustfmt::skip]
 const BLOB_ATTRS: AttributeTable<LLMCallSpanData> = &[
-    (OUTPUT, |data| {
+    ("weave.output", |data| {
         let text = (!data.choices_out.is_empty()).then(|| serde_json::to_string(&data.choices_out)).and_then(Result::ok);
         text.map(Value::from)
     }),

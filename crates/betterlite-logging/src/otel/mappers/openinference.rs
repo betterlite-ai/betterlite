@@ -9,23 +9,6 @@ use crate::otel::model::payloads::llm_call::LLMCallSpanData;
 use crate::otel::model::payloads::tool_definition::ToolDefinition;
 use crate::otel::model::utils::coercion::OtelModelValue;
 
-const SPAN_KIND: &str = "openinference.span.kind";
-const MODEL_NAME: &str = "llm.model_name";
-const PROVIDER: &str = "llm.provider";
-const TOKEN_COUNT_PROMPT: &str = "llm.token_count.prompt";
-const TOKEN_COUNT_COMPLETION: &str = "llm.token_count.completion";
-const TOKEN_COUNT_TOTAL: &str = "llm.token_count.total";
-const INVOCATION_PARAMETERS: &str = "llm.invocation_parameters";
-const INPUT_MESSAGES: &str = "llm.input_messages";
-const OUTPUT_MESSAGES: &str = "llm.output_messages";
-const MESSAGE_ROLE: &str = "message.role";
-const MESSAGE_CONTENT: &str = "message.content";
-const INPUT_VALUE: &str = "input.value";
-const OUTPUT_VALUE: &str = "output.value";
-const TOOL_KEY_PREFIX: &str = "llm.tools.";
-const INPUT_FAMILY: &str = "llm.input_messages.";
-const OUTPUT_FAMILY: &str = "llm.output_messages.";
-
 #[derive(serde::Serialize)]
 struct InvocationParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,12 +46,12 @@ pub struct OpenInferenceMapper {
 // one attribute per line keeps a table readable; rustfmt stacks every closure vertically
 #[rustfmt::skip]
 const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
-    (SPAN_KIND, |_data| Some(Value::from("LLM"))),
-    (MODEL_NAME, |data| (!data.request_model.is_empty()).then(|| Value::from(data.request_model.clone()))),
-    (PROVIDER, |data| (!data.provider.is_empty()).then(|| Value::from(data.provider.clone()))),
-    (TOKEN_COUNT_PROMPT, |data| data.usage.input_tokens.map(Value::I64)),
-    (TOKEN_COUNT_COMPLETION, |data| data.usage.output_tokens.map(Value::I64)),
-    (TOKEN_COUNT_TOTAL, |data| data.usage.total_tokens.map(Value::I64)),
+    ("openinference.span.kind", |_data| Some(Value::from("LLM"))),
+    ("llm.model_name", |data| (!data.request_model.is_empty()).then(|| Value::from(data.request_model.clone()))),
+    ("llm.provider", |data| (!data.provider.is_empty()).then(|| Value::from(data.provider.clone()))),
+    ("llm.token_count.prompt", |data| data.usage.input_tokens.map(Value::I64)),
+    ("llm.token_count.completion", |data| data.usage.output_tokens.map(Value::I64)),
+    ("llm.token_count.total", |data| data.usage.total_tokens.map(Value::I64)),
 ];
 
 #[rustfmt::skip]
@@ -95,17 +78,17 @@ impl OpenInferenceMapper {
         let mut attrs = collect(LLM_CALL_ATTRS, data);
         attrs.extend(invocation_parameters(data));
         attrs.extend(indexed_messages(
-            INPUT_MESSAGES,
-            INPUT_VALUE,
+            "llm.input_messages",
+            "input.value",
             &input_entries(&data.messages_in),
         ));
         attrs.extend(indexed_messages(
-            OUTPUT_MESSAGES,
-            OUTPUT_VALUE,
+            "llm.output_messages",
+            "output.value",
             &output_entries(&data.choices_out),
         ));
         attrs.extend(tool_definition_attrs(
-            TOOL_KEY_PREFIX,
+            "llm.tools.",
             &data.tools,
             TOOL_ATTRS,
             self.tool_attr_budget,
@@ -130,7 +113,7 @@ fn invocation_parameters(data: &LLMCallSpanData) -> AttributeMap {
     if text == "{}" {
         return AttributeMap::new();
     }
-    AttributeMap::from([(INVOCATION_PARAMETERS.to_owned(), Value::from(text))])
+    AttributeMap::from([("llm.invocation_parameters".to_owned(), Value::from(text))])
 }
 
 fn input_entries(messages: &[MetadataMap]) -> Vec<(Option<&str>, Option<String>)> {
@@ -171,13 +154,13 @@ fn indexed_messages(
     for (index, (role, content)) in entries.iter().enumerate() {
         if let Some(found_role) = role {
             attrs.insert(
-                format!("{prefix}.{index}.{MESSAGE_ROLE}"),
+                format!("{prefix}.{index}.message.role"),
                 Value::from((*found_role).to_owned()),
             );
         }
         if let Some(found_content) = content {
             attrs.insert(
-                format!("{prefix}.{index}.{MESSAGE_CONTENT}"),
+                format!("{prefix}.{index}.message.content"),
                 Value::from(found_content.clone()),
             );
         }
@@ -234,7 +217,14 @@ pub fn fit_indexed_messages(attrs: AttributeMap, budget: Option<usize>) -> Attri
 fn message_key_groups(attrs: &AttributeMap) -> BTreeMap<(Family, usize), Vec<String>> {
     let mut groups: BTreeMap<(Family, usize), Vec<String>> = BTreeMap::new();
     for key in attrs.keys() {
-        let Some((family, index)) = message_group(key) else {
+        let family = if key.starts_with("llm.input_messages.") {
+            Family::Input
+        } else if key.starts_with("llm.output_messages.") {
+            Family::Output
+        } else {
+            continue;
+        };
+        let Some(index) = key.split('.').nth(2).and_then(|index| index.parse().ok()) else {
             continue;
         };
         groups.entry((family, index)).or_default().push(key.clone());
@@ -242,21 +232,16 @@ fn message_key_groups(attrs: &AttributeMap) -> BTreeMap<(Family, usize), Vec<Str
     groups
 }
 
-fn message_group(key: &str) -> Option<(Family, usize)> {
-    let family = if key.starts_with(INPUT_FAMILY) {
-        Family::Input
-    } else if key.starts_with(OUTPUT_FAMILY) {
-        Family::Output
-    } else {
-        return None;
-    };
-    let index = key.split('.').nth(2)?.parse().ok()?;
-    Some((family, index))
-}
-
 fn shed_order(groups: &BTreeMap<(Family, usize), Vec<String>>) -> Vec<(Family, usize)> {
-    let inputs: Vec<usize> = group_indexes(groups, Family::Input);
-    let outputs: Vec<usize> = group_indexes(groups, Family::Output);
+    let indexes = |family: Family| -> Vec<usize> {
+        groups
+            .keys()
+            .filter(|(kind, _index)| *kind == family)
+            .map(|(_kind, index)| *index)
+            .collect()
+    };
+    let inputs = indexes(Family::Input);
+    let outputs = indexes(Family::Output);
     let first_input = inputs.first().copied();
     let mut order = Vec::new();
     order.extend(
@@ -283,14 +268,6 @@ fn shed_order(groups: &BTreeMap<(Family, usize), Vec<String>>) -> Vec<(Family, u
         order.push((Family::Output, *first));
     }
     order
-}
-
-fn group_indexes(groups: &BTreeMap<(Family, usize), Vec<String>>, family: Family) -> Vec<usize> {
-    groups
-        .keys()
-        .filter(|(kind, _index)| *kind == family)
-        .map(|(_kind, index)| *index)
-        .collect()
 }
 
 #[path = "openinference/message_shedding/tests.rs"]

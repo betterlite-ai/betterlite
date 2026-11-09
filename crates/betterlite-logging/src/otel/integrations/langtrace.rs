@@ -7,52 +7,29 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 pub const LANGTRACE_DEFAULT_HOST: &str = "https://app.langtrace.ai";
 pub const LANGTRACE_TRACE_PATH: &str = "/api/trace";
 
-const OPERATION_NAME: &str = "gen_ai.operation.name";
-const SERVICE_NAME: &str = "langtrace.service.name";
-const REQUEST_MODEL: &str = "gen_ai.request.model";
-const IS_STREAMING: &str = "llm.is_streaming";
-const TEMPERATURE: &str = "gen_ai.request.temperature";
-const TOP_K: &str = "llm.top_k";
-const TOP_P: &str = "gen_ai.request.top_p";
-const USER: &str = "llm.user";
-const MAX_TOKENS: &str = "gen_ai.request.max_tokens";
-const STOP_REASON: &str = "llm.response.stop_reason";
-const FREQUENCY_PENALTY: &str = "llm.frequency_penalty";
-const PRESENCE_PENALTY: &str = "llm.presence_penalty";
-const PROMPT_EVENT: &str = "gen_ai.content.prompt";
-const PROMPTS: &str = "gen_ai.prompt";
-const COMPLETION_EVENT: &str = "gen_ai.content.completion";
-const COMPLETIONS: &str = "gen_ai.completion";
-const RESPONSE_ID: &str = "gen_ai.response_id";
-const SYSTEM_FINGERPRINT: &str = "gen_ai.system_fingerprint";
-const RESPONSE_MODEL: &str = "gen_ai.response.model";
-const USAGE_PROMPT_TOKENS: &str = "gen_ai.usage.prompt_tokens";
-const USAGE_COMPLETION_TOKENS: &str = "gen_ai.usage.completion_tokens";
-const USAGE_TOTAL_TOKENS: &str = "llm.usage.total_tokens";
-
 const REQUEST_ATTRIBUTES: [(&str, &str); 10] = [
-    (REQUEST_MODEL, "model"),
-    (IS_STREAMING, "stream"),
-    (TEMPERATURE, "temperature"),
-    (TOP_K, "top_k"),
-    (TOP_P, "top_p"),
-    (USER, "user"),
-    (MAX_TOKENS, "max_tokens"),
-    (STOP_REASON, "stop"),
-    (FREQUENCY_PENALTY, "frequency_penalty"),
-    (PRESENCE_PENALTY, "presence_penalty"),
+    ("gen_ai.request.model", "model"),
+    ("llm.is_streaming", "stream"),
+    ("gen_ai.request.temperature", "temperature"),
+    ("llm.top_k", "top_k"),
+    ("gen_ai.request.top_p", "top_p"),
+    ("llm.user", "user"),
+    ("gen_ai.request.max_tokens", "max_tokens"),
+    ("llm.response.stop_reason", "stop"),
+    ("llm.frequency_penalty", "frequency_penalty"),
+    ("llm.presence_penalty", "presence_penalty"),
 ];
 
 const RESPONSE_ATTRIBUTES: [(&str, &str); 3] = [
-    (RESPONSE_ID, "id"),
-    (SYSTEM_FINGERPRINT, "system_fingerprint"),
-    (RESPONSE_MODEL, "model"),
+    ("gen_ai.response_id", "id"),
+    ("gen_ai.system_fingerprint", "system_fingerprint"),
+    ("gen_ai.response.model", "model"),
 ];
 
 const USAGE_ATTRIBUTES: [(&str, &str); 3] = [
-    (USAGE_PROMPT_TOKENS, "prompt_tokens"),
-    (USAGE_COMPLETION_TOKENS, "completion_tokens"),
-    (USAGE_TOTAL_TOKENS, "total_tokens"),
+    ("gen_ai.usage.prompt_tokens", "prompt_tokens"),
+    ("gen_ai.usage.completion_tokens", "completion_tokens"),
+    ("llm.usage.total_tokens", "total_tokens"),
 ];
 
 #[derive(serde::Serialize)]
@@ -110,9 +87,9 @@ impl LangtraceAttributes {
         S: Span,
     {
         if let Some(service) = vendor {
-            span.set_attribute(KeyValue::new(SERVICE_NAME, service.to_owned()));
+            span.set_attribute(KeyValue::new("langtrace.service.name", service.to_owned()));
         }
-        span.set_attribute(KeyValue::new(OPERATION_NAME, "chat"));
+        span.set_attribute(KeyValue::new("gen_ai.operation.name", "chat"));
         for (key, source) in REQUEST_ATTRIBUTES {
             if let Some(value) = options.get(source).and_then(attribute_value) {
                 span.set_attribute(KeyValue::new(key, value));
@@ -125,7 +102,10 @@ impl LangtraceAttributes {
         if let Some(messages) = declared
             && let Ok(text) = serde_json::to_string(messages)
         {
-            span.add_event(PROMPT_EVENT, vec![KeyValue::new(PROMPTS, text)]);
+            span.add_event(
+                "gen_ai.content.prompt",
+                vec![KeyValue::new("gen_ai.prompt", text)],
+            );
         }
     }
 
@@ -135,7 +115,10 @@ impl LangtraceAttributes {
     {
         let completions = completion_entries(response_obj);
         if let Ok(text) = serde_json::to_string(&completions) {
-            span.add_event(COMPLETION_EVENT, vec![KeyValue::new(COMPLETIONS, text)]);
+            span.add_event(
+                "gen_ai.content.completion",
+                vec![KeyValue::new("gen_ai.completion", text)],
+            );
         }
         for (key, source) in RESPONSE_ATTRIBUTES {
             if let Some(value) = response_obj.get(source).and_then(attribute_value) {

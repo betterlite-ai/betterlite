@@ -15,17 +15,6 @@ pub(super) fn attributes_record(attributes: &AttributeMap) -> Value {
     )
 }
 
-pub(super) fn events_record(events: &[(String, AttributeMap)]) -> Value {
-    Value::Array(
-        events
-            .iter()
-            .map(|(name, attributes)| {
-                json!({"name": name, "attributes": attributes_record(attributes)})
-            })
-            .collect(),
-    )
-}
-
 pub(super) fn recorded_span<F>(record: F) -> Result<RecordedSpan, Box<crate::helpers::HelperError>>
 where
     F: FnOnce(&mut SdkSpan),
@@ -85,7 +74,9 @@ fn json_value(value: &OtelValue) -> Value {
         OtelValue::Bool(flag) => json!(flag),
         OtelValue::I64(integer) => json!(integer),
         OtelValue::F64(float) => json!(float),
-        OtelValue::String(text) => json_attribute_text(text.as_str()),
+        OtelValue::String(text) => {
+            serde_json::from_str(text.as_str()).unwrap_or_else(|_error| json!(text.as_str()))
+        }
         OtelValue::Array(array) => array_record(array),
         _ => Value::Null,
     }
@@ -98,12 +89,5 @@ fn array_record(array: &Array) -> Value {
         Array::F64(floats) => json!(floats),
         Array::String(texts) => json!(texts.iter().map(StringValue::as_str).collect::<Vec<_>>()),
         _ => Value::Null,
-    }
-}
-
-fn json_attribute_text(text: &str) -> Value {
-    match serde_json::from_str(text) {
-        Ok(parsed) => parsed,
-        Err(_failure) => json!(text),
     }
 }

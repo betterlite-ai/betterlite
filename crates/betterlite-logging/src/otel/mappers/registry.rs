@@ -23,24 +23,14 @@ type ToolDefinitionFactory = fn(usize) -> Mapper;
 type PlainFactory = fn() -> Mapper;
 
 // config.mapper_names resolves against these two tables; only the first spells tools out per index
+#[rustfmt::skip]
 const TOOL_DEFINITION_MAPPERS: &[(&str, ToolDefinitionFactory)] = &[
-    ("genai", |budget| {
-        Mapper::Genai(GenAIMapper {
-            tool_attr_budget: budget,
-        })
-    }),
-    ("legacy", |budget| {
-        Mapper::Legacy(LegacyMapper {
-            tool_attr_budget: budget,
-        })
-    }),
-    ("openinference", |budget| {
-        Mapper::OpenInference(OpenInferenceMapper {
-            tool_attr_budget: budget,
-        })
-    }),
+    ("genai", |budget| Mapper::Genai(GenAIMapper { tool_attr_budget: budget })),
+    ("legacy", |budget| Mapper::Legacy(LegacyMapper { tool_attr_budget: budget })),
+    ("openinference", |budget| Mapper::OpenInference(OpenInferenceMapper { tool_attr_budget: budget })),
 ];
 
+#[rustfmt::skip]
 const PLAIN_MAPPERS: &[(&str, PlainFactory)] = &[
     ("langfuse", || Mapper::Langfuse(LangfuseMapper)),
     ("langtrace", || Mapper::Langtrace(LangtraceMapper)),

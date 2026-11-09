@@ -7,22 +7,6 @@ use super::utils::{collect, output_messages, serialize_messages, string_array};
 use crate::otel::model::payloads::llm_call::LLMCallSpanData;
 use crate::otel::model::trace_controls::TraceControls;
 
-const OBSERVATION_TYPE: &str = "langfuse.observation.type";
-const OBSERVATION_MODEL_NAME: &str = "langfuse.observation.model.name";
-const OBSERVATION_PROVIDER: &str = "langfuse.observation.metadata.provider";
-const OBSERVATION_ID: &str = "langfuse.observation.id";
-const OBSERVATION_MODEL_PARAMETERS: &str = "langfuse.observation.model.parameters";
-const OBSERVATION_INPUT: &str = "langfuse.observation.input";
-const OBSERVATION_OUTPUT: &str = "langfuse.observation.output";
-const OBSERVATION_USAGE_DETAILS: &str = "langfuse.observation.usage_details";
-const OBSERVATION_COST_DETAILS: &str = "langfuse.observation.cost_details";
-const TRACE_NAME: &str = "langfuse.trace.name";
-const TRACE_USER_ID: &str = "user.id";
-const TRACE_SESSION_ID: &str = "session.id";
-const TRACE_TAGS: &str = "langfuse.trace.tags";
-const TRACE_TEAM_ID: &str = "langfuse.trace.metadata.team_id";
-const TRACE_TEAM_ALIAS: &str = "langfuse.trace.metadata.team_alias";
-
 #[derive(serde::Serialize)]
 struct ModelParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,17 +48,17 @@ struct CostDetails {
 // one attribute per line keeps a table readable; rustfmt stacks every closure vertically
 #[rustfmt::skip]
 const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
-    (OBSERVATION_TYPE, |_data| Some(Value::from("generation"))),
-    (OBSERVATION_MODEL_NAME, |data| (!data.request_model.is_empty()).then(|| Value::from(data.request_model.clone()))),
-    (OBSERVATION_PROVIDER, |data| (!data.provider.is_empty()).then(|| Value::from(data.provider.clone()))),
-    (OBSERVATION_ID, |data| data.identity.call_id.as_deref().filter(|call_id| !call_id.is_empty()).map(|call_id| Value::from(call_id.to_owned()))),
-    (TRACE_TEAM_ID, |data| data.identity.team_id.as_deref().filter(|team_id| !team_id.is_empty()).map(|team_id| Value::from(team_id.to_owned()))),
-    (TRACE_TEAM_ALIAS, |data| data.identity.team_alias.as_deref().filter(|alias| !alias.is_empty()).map(|alias| Value::from(alias.to_owned()))),
+    ("langfuse.observation.type", |_data| Some(Value::from("generation"))),
+    ("langfuse.observation.model.name", |data| (!data.request_model.is_empty()).then(|| Value::from(data.request_model.clone()))),
+    ("langfuse.observation.metadata.provider", |data| (!data.provider.is_empty()).then(|| Value::from(data.provider.clone()))),
+    ("langfuse.observation.id", |data| data.identity.call_id.as_deref().filter(|call_id| !call_id.is_empty()).map(|call_id| Value::from(call_id.to_owned()))),
+    ("langfuse.trace.metadata.team_id", |data| data.identity.team_id.as_deref().filter(|team_id| !team_id.is_empty()).map(|team_id| Value::from(team_id.to_owned()))),
+    ("langfuse.trace.metadata.team_alias", |data| data.identity.team_alias.as_deref().filter(|alias| !alias.is_empty()).map(|alias| Value::from(alias.to_owned()))),
 ];
 
 #[rustfmt::skip]
 const BLOB_ATTRS: AttributeTable<LLMCallSpanData> = &[
-    (OBSERVATION_MODEL_PARAMETERS, |data| {
+    ("langfuse.observation.model.parameters", |data| {
         let parameters = ModelParameters {
             temperature: data.request_params.temperature,
             top_p: data.request_params.top_p,
@@ -85,9 +69,9 @@ const BLOB_ATTRS: AttributeTable<LLMCallSpanData> = &[
         };
         serde_json::to_string(&parameters).ok().filter(|text| text != "{}").map(Value::from)
     }),
-    (OBSERVATION_INPUT, |data| serialize_messages(&data.messages_in).map(Value::from)),
-    (OBSERVATION_OUTPUT, |data| output_json(data).map(Value::from)),
-    (OBSERVATION_USAGE_DETAILS, |data| {
+    ("langfuse.observation.input", |data| serialize_messages(&data.messages_in).map(Value::from)),
+    ("langfuse.observation.output", |data| output_json(data).map(Value::from)),
+    ("langfuse.observation.usage_details", |data| {
         let details = UsageDetails {
             input: data.usage.uncached_input_tokens(),
             input_cached_tokens: data.usage.cache_read_input_tokens,
@@ -98,7 +82,7 @@ const BLOB_ATTRS: AttributeTable<LLMCallSpanData> = &[
         };
         serde_json::to_string(&details).ok().filter(|text| text != "{}").map(Value::from)
     }),
-    (OBSERVATION_COST_DETAILS, |data| data.response_cost.and_then(|cost| serde_json::to_string(&CostDetails { total: cost }).ok()).map(Value::from)),
+    ("langfuse.observation.cost_details", |data| data.response_cost.and_then(|cost| serde_json::to_string(&CostDetails { total: cost }).ok()).map(Value::from)),
 ];
 
 pub struct LangfuseMapper;
@@ -108,7 +92,7 @@ impl AttributeMapper for LangfuseMapper {
         match data {
             SpanData::LLMCall(call) => {
                 let mut attrs = collect(LLM_CALL_ATTRS, call);
-                attrs.extend(trace_attributes(&call.trace));
+                attrs.extend(collect(TRACE_ATTRS, &call.trace));
                 attrs.extend(collect(BLOB_ATTRS, call));
                 attrs
             }
@@ -127,33 +111,13 @@ fn output_json(data: &LLMCallSpanData) -> Option<String> {
     )
 }
 
-fn trace_attributes(trace: &TraceControls) -> AttributeMap {
-    let mut attrs = AttributeMap::new();
-    if let Some(name) = trace.name.as_deref().filter(|name| !name.is_empty()) {
-        attrs.insert(TRACE_NAME.to_owned(), Value::from(name.to_owned()));
-    }
-    if let Some(user_id) = trace
-        .user_id
-        .as_deref()
-        .filter(|user_id| !user_id.is_empty())
-    {
-        attrs.insert(TRACE_USER_ID.to_owned(), Value::from(user_id.to_owned()));
-    }
-    if let Some(session_id) = trace
-        .session_id
-        .as_deref()
-        .filter(|session_id| !session_id.is_empty())
-    {
-        attrs.insert(
-            TRACE_SESSION_ID.to_owned(),
-            Value::from(session_id.to_owned()),
-        );
-    }
-    if !trace.tags.is_empty() {
-        attrs.insert(TRACE_TAGS.to_owned(), string_array(&trace.tags));
-    }
-    attrs
-}
+#[rustfmt::skip]
+const TRACE_ATTRS: AttributeTable<TraceControls> = &[
+    ("langfuse.trace.name", |trace| trace.name.clone().filter(|name| !name.is_empty()).map(Value::from)),
+    ("user.id", |trace| trace.user_id.clone().filter(|user_id| !user_id.is_empty()).map(Value::from)),
+    ("session.id", |trace| trace.session_id.clone().filter(|session_id| !session_id.is_empty()).map(Value::from)),
+    ("langfuse.trace.tags", |trace| (!trace.tags.is_empty()).then(|| string_array(&trace.tags))),
+];
 
 #[path = "langfuse/tests.rs"]
 mod tests;

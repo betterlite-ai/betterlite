@@ -7,27 +7,17 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 const LLM_TOOLS: &str = "llm.tools";
 const INVOCATION_PARAMETERS: &str = "llm.invocation_parameters";
 
+// passthrough is the spelling real call types use: allm_passthrough_route
+#[rustfmt::skip]
 const LLM_KEYWORDS: [&str; 14] = [
-    "completion",
-    "chat",
-    "image",
-    "audio",
-    "speech",
-    "transcription",
-    "generate_content",
-    "response",
-    "videos",
-    "realtime",
-    "pass_through",
-    // passthrough is the spelling real call types use: allm_passthrough_route
-    "passthrough",
-    "anthropic_messages",
-    "ocr",
+    "completion", "chat", "image", "audio", "speech", "transcription", "generate_content",
+    "response", "videos", "realtime", "pass_through", "passthrough", "anthropic_messages", "ocr",
 ];
 
 const CHAIN_KEYWORDS: [&str; 4] = ["file", "batch", "container", "fine_tuning_job"];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum OpenInferenceSpanKind {
     Tool,
     Chain,
@@ -38,23 +28,6 @@ pub enum OpenInferenceSpanKind {
     Reranker,
     Unknown,
     Guardrail,
-}
-
-impl OpenInferenceSpanKind {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Tool => "TOOL",
-            Self::Chain => "CHAIN",
-            Self::Llm => "LLM",
-            Self::Retriever => "RETRIEVER",
-            Self::Embedding => "EMBEDDING",
-            Self::Agent => "AGENT",
-            Self::Reranker => "RERANKER",
-            Self::Unknown => "UNKNOWN",
-            Self::Guardrail => "GUARDRAIL",
-        }
-    }
 }
 
 #[must_use]

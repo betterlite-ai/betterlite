@@ -6,21 +6,21 @@ use betterlite_logging::otel::integrations::arize_span_kind::{
     infer_open_inference_span_kind, set_tool_attributes,
 };
 use betterlite_logging::otel::integrations::langtrace::LangtraceAttributes;
-use betterlite_logging::otel::mappers::base::{AttributeMapper as _, SpanData};
+use betterlite_logging::otel::mappers::base::{AttributeMap, AttributeMapper as _, SpanData};
 use betterlite_logging::otel::mappers::langfuse::LangfuseMapper;
 use betterlite_logging::otel::mappers::langtrace::LangtraceMapper;
 use betterlite_logging::otel::mappers::openinference::{OpenInferenceMapper, fit_indexed_messages};
 use betterlite_logging::otel::mappers::registry::resolve_mappers;
 use betterlite_logging::otel::mappers::weave::WeaveMapper;
+use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::payloads::llm_call::{LLMCallOptions, LLMCallSpanData};
 use betterlite_logging::otel::model::trace_controls::TraceControls;
+use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-use input::{
-    Input, IntegrationInput, LlmCallInput, RegistryInput, SheddingInput, ToolsInput, TraceInput,
-};
-use values::{attributes_record, events_record, helper_error, recorded_span};
+use input::{Input, LlmCallInput, TraceInput};
+use values::{attributes_record, helper_error, recorded_span};
 
 pub(crate) struct Op;
 
@@ -32,14 +32,24 @@ impl crate::helpers::Helper for Op {
             Input::LangfuseLlmCall(call) => plain_record(call, Vocabulary::Langfuse)?,
             Input::LangtraceLlmCall(call) => plain_record(call, Vocabulary::Langtrace)?,
             Input::WeaveLlmCall(call) => plain_record(call, Vocabulary::Weave)?,
-            Input::OpenInferenceLlmCall(call) => open_inference_record(call)?,
-            Input::OpenInferenceMessageShedding(shedding) => shedding_record(shedding)?,
-            Input::MapperRegistry(registry) => registry_record(registry)?,
-            Input::LangtraceIntegration(integration) => integration_record(integration)?,
-            Input::InferSpanKind(kind) => {
-                json!({"kind": infer_open_inference_span_kind(kind.call_type.as_deref()).as_str()})
+            Input::OpenInferenceLlmCall(call) => {
+                attributes_record(&open_inference_attributes(call)?)
             }
-            Input::ToolAttributes(tools) => tool_attributes_record(tools)?,
+            Input::OpenInferenceMessageShedding(shedding) => {
+                let attributes = open_inference_attributes(&shedding.call)?;
+                attributes_record(&fit_indexed_messages(attributes, shedding.budget))
+            }
+            Input::MapperRegistry { names } => registry_record(names)?,
+            Input::LangtraceIntegration { kwargs, response } => {
+                integration_record(kwargs, response)?
+            }
+            Input::InferSpanKind { call_type } => {
+                json!({"kind": infer_open_inference_span_kind(call_type.as_deref()).to_string()})
+            }
+            Input::ToolAttributes {
+                optional_tools,
+                metadata_tools,
+            } => tool_attributes_record(optional_tools.as_deref(), metadata_tools.as_deref())?,
         };
         Ok(json!({"result": value}))
     }
@@ -66,30 +76,19 @@ fn plain_record(
     Ok(attributes_record(&mapped))
 }
 
-fn open_inference_record(call: &LlmCallInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn open_inference_attributes(
+    call: &LlmCallInput,
+) -> Result<AttributeMap, Box<crate::helpers::HelperError>> {
     let span = llm_call_span(call)?;
     let mapper = OpenInferenceMapper {
         tool_attr_budget: call.tool_attr_budget,
     };
-    let attributes = mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new());
-    Ok(attributes_record(&attributes))
+    Ok(mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new()))
 }
 
-fn shedding_record(shedding: &SheddingInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = llm_call_span(&shedding.call)?;
-    let mapper = OpenInferenceMapper {
-        tool_attr_budget: shedding.call.tool_attr_budget,
-    };
-    let attributes = mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new());
-    Ok(attributes_record(&fit_indexed_messages(
-        attributes,
-        shedding.budget,
-    )))
-}
-
-fn registry_record(registry: &RegistryInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let mappers = resolve_mappers(&registry.names)
-        .map_err(|error| helper_error("MapperError", error.to_string()))?;
+fn registry_record(names: &[String]) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let mappers =
+        resolve_mappers(names).map_err(|error| helper_error("MapperError", error.to_string()))?;
     let entries: Vec<Value> = mappers
         .iter()
         .map(|mapper| {
@@ -100,25 +99,25 @@ fn registry_record(registry: &RegistryInput) -> Result<Value, Box<crate::helpers
 }
 
 fn integration_record(
-    integration: &IntegrationInput,
+    kwargs: &MetadataMap,
+    response: &MetadataMap,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let (attributes, events) = recorded_span(|span| {
-        LangtraceAttributes::set_langtrace_attributes(
-            span,
-            &integration.kwargs,
-            &integration.response,
-        );
+        LangtraceAttributes::set_langtrace_attributes(span, kwargs, response);
     })?;
-    Ok(json!({"attributes": attributes_record(&attributes), "events": events_record(&events)}))
+    let recorded: Vec<Value> = events
+        .iter()
+        .map(|(name, fields)| json!({"name": name, "attributes": attributes_record(fields)}))
+        .collect();
+    Ok(json!({"attributes": attributes_record(&attributes), "events": recorded}))
 }
 
-fn tool_attributes_record(tools: &ToolsInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn tool_attributes_record(
+    optional_tools: Option<&[OtelModelValue]>,
+    metadata_tools: Option<&[OtelModelValue]>,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
     let (attributes, _events) = recorded_span(|span| {
-        set_tool_attributes(
-            span,
-            tools.optional_tools.as_deref(),
-            tools.metadata_tools.as_deref(),
-        );
+        set_tool_attributes(span, optional_tools, metadata_tools);
     })?;
     Ok(attributes_record(&attributes))
 }

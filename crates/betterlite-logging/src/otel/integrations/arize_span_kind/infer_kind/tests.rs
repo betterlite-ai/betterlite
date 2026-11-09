@@ -68,7 +68,7 @@ fn infer_kind_checks_the_keyword_families_in_order() {
 
 #[test]
 fn infer_kind_names_the_open_inference_span_kinds() {
-    assert_eq!(OpenInferenceSpanKind::Llm.as_str(), "LLM");
-    assert_eq!(OpenInferenceSpanKind::Unknown.as_str(), "UNKNOWN");
-    assert_eq!(OpenInferenceSpanKind::Guardrail.as_str(), "GUARDRAIL");
+    assert_eq!(OpenInferenceSpanKind::Llm.to_string(), "LLM");
+    assert_eq!(OpenInferenceSpanKind::Unknown.to_string(), "UNKNOWN");
+    assert_eq!(OpenInferenceSpanKind::Guardrail.to_string(), "GUARDRAIL");
 }

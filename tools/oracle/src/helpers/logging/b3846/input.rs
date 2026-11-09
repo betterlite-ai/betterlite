@@ -19,13 +19,19 @@ pub(crate) enum Input {
     #[serde(rename = "openinference_message_shedding")]
     OpenInferenceMessageShedding(SheddingInput),
     #[serde(rename = "mapper_registry")]
-    MapperRegistry(RegistryInput),
+    MapperRegistry { names: Vec<String> },
     #[serde(rename = "langtrace_integration")]
-    LangtraceIntegration(IntegrationInput),
+    LangtraceIntegration {
+        kwargs: MetadataMap,
+        response: MetadataMap,
+    },
     #[serde(rename = "infer_span_kind")]
-    InferSpanKind(KindInput),
+    InferSpanKind { call_type: Option<String> },
     #[serde(rename = "tool_attributes")]
-    ToolAttributes(ToolsInput),
+    ToolAttributes {
+        optional_tools: Option<Vec<OtelModelValue>>,
+        metadata_tools: Option<Vec<OtelModelValue>>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -55,28 +61,6 @@ pub(crate) struct SheddingInput {
     pub(crate) budget: Option<usize>,
     #[serde(flatten)]
     pub(crate) call: LlmCallInput,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RegistryInput {
-    pub(crate) names: Vec<String>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct IntegrationInput {
-    pub(crate) kwargs: MetadataMap,
-    pub(crate) response: MetadataMap,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct KindInput {
-    pub(crate) call_type: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ToolsInput {
-    pub(crate) optional_tools: Option<Vec<OtelModelValue>>,
-    pub(crate) metadata_tools: Option<Vec<OtelModelValue>>,
 }
 
 const fn default_tool_attr_budget() -> usize {
