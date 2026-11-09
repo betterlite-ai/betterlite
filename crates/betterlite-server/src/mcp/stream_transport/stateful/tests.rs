@@ -192,10 +192,7 @@ async fn creates_a_session_from_initialize() {
     let id = session_id(&response);
     assert!(is_hex_session_id(&id), "{id}");
     let body = body_text(response).await;
-    let reply: Seen = serde_json::from_str(data(
-        body.strip_suffix("\r\n\r\n").expect("a terminated stream"),
-    ))
-    .expect("the initialize reply");
+    let reply: Seen = serde_json::from_str(data(&body)).expect("the initialize reply");
     assert_eq!(reply.id, Some(RequestId::Number(1)));
     assert_eq!(transport.live_session_ids(), vec![id.clone()]);
     assert!(transport.has_session(&id));
