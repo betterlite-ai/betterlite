@@ -542,3 +542,69 @@ fn creator_vertex_function_call_leaves_the_tool_call_flag_unset() {
     assert!(delta.function_call.is_none());
     assert!(delta.tool_calls.is_some());
 }
+
+#[test]
+fn creator_function_call_ignores_parameters_for_null_arguments() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"function_call": {"name": "f", "arguments": null, "parameters": {"x": 1}}}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let function = first_choice(&created_chunk)
+        .delta
+        .function_call
+        .as_ref()
+        .and_then(as_object)
+        .expect("the function call is kept");
+    assert_eq!(function.get("arguments"), Some(&json("\"\"")));
+}
+
+#[test]
+fn creator_custom_provider_normalizes_every_choice() {
+    let mut decode_state = custom_state("my-model");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "hi"}}, {"index": 1, "delta": {"tool_calls": [{"id": "a", "function": {"name": "f", "arguments": null}}]}}]}"#,
+    );
+    let created_chunk =
+        created("my-provider", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let second = created_chunk.choices.get(1).expect("a second choice");
+    let call = second
+        .delta
+        .tool_calls
+        .as_ref()
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
+        .and_then(as_object)
+        .expect("a call");
+    assert_eq!(call.get("type"), Some(&json("\"function\"")));
+    assert_eq!(call.get("index"), Some(&json("0")));
+    let function = call
+        .get("function")
+        .and_then(as_object)
+        .expect("a function");
+    assert_eq!(function.get("arguments"), Some(&json("\"\"")));
+}
+
+#[rstest]
+#[case::string_parameters(r#"{"name": "f", "arguments": null, "parameters": "s"}"#, "")]
+#[case::parameters_beside_arguments(
+    r#"{"name": "f", "arguments": "{}", "parameters": {"x": 1}}"#,
+    "{}"
+)]
+fn creator_tool_call_function_keeps_only_name_and_arguments(
+    #[case] function: &str,
+    #[case] arguments: &str,
+) {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(&format!(
+        r#"{{"id": "c1", "choices": [{{"index": 0, "delta": {{"tool_calls": [{{"id": "a", "function": {function}}}]}}}}]}}"#
+    ));
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let emitted = first_call_function(&created_chunk);
+    assert_eq!(emitted.get("parameters"), None);
+    assert_eq!(emitted.get("name"), Some(&json("\"f\"")));
+    assert_eq!(
+        emitted.get("arguments"),
+        Some(&JsonValue::String(arguments.to_owned()))
+    );
+}

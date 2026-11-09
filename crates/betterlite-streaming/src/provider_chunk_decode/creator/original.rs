@@ -11,17 +11,18 @@ use crate::stream_chunk_shaping::records::{
 };
 
 pub(super) fn normalize_original(original: &mut StreamChunk) {
-    let Some(choice) = original.choices.first_mut() else {
-        return;
-    };
-    let delta = &mut choice.delta;
-    if let Some(JsonValue::Object(function)) = &mut delta.function_call {
-        normalize_function(function);
-    }
-    if let Some(JsonValue::Array(tools)) = &mut delta.tool_calls {
-        let mut next_index = 0_i64;
-        for tool in tools {
-            normalize_tool(tool, &mut next_index);
+    for choice in &mut original.choices {
+        let delta = &mut choice.delta;
+        if let Some(JsonValue::Object(function)) = &mut delta.function_call
+            && matches!(function.get("arguments"), None | Some(JsonValue::Null))
+        {
+            function.insert("arguments".to_owned(), JsonValue::String(String::new()));
+        }
+        if let Some(JsonValue::Array(tools)) = &mut delta.tool_calls {
+            let mut next_index = 0_i64;
+            for tool in tools {
+                normalize_tool(tool, &mut next_index);
+            }
         }
     }
 }
@@ -49,24 +50,21 @@ fn normalize_tool(tool: &mut JsonValue, next_index: &mut i64) {
     }
 }
 
-// Function turns object arguments into a JSON string, and null ones into parameters or "".
 fn normalize_function(function: &mut JsonObject) {
-    let arguments = match function.get("arguments") {
-        None | Some(JsonValue::Null) => match function.remove("parameters") {
+    let arguments = match function.remove("arguments") {
+        None | Some(JsonValue::Null) => match function.get("parameters") {
             Some(parameters @ JsonValue::Object(_)) => {
-                serde_json::to_string(&parameters).unwrap_or_default()
+                JsonValue::String(serde_json::to_string(parameters).unwrap_or_default())
             }
-            other => {
-                if let Some(value) = other {
-                    function.insert("parameters".to_owned(), value);
-                }
-                String::new()
-            }
+            _ => JsonValue::String(String::new()),
         },
-        Some(object @ JsonValue::Object(_)) => serde_json::to_string(object).unwrap_or_default(),
-        Some(_) => return,
+        Some(object @ JsonValue::Object(_)) => {
+            JsonValue::String(serde_json::to_string(&object).unwrap_or_default())
+        }
+        Some(other) => other,
     };
-    function.insert("arguments".to_owned(), JsonValue::String(arguments));
+    function.retain(|key, _| key == "name");
+    function.insert("arguments".to_owned(), arguments);
 }
 
 pub(super) fn sync_finish(shaper: &mut ChunkShaper, state: &DecodeState) {
