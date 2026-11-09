@@ -46,7 +46,6 @@ pub enum CallOutcome {
 pub enum CallProblem {
     Error(String),
     Timeout,
-    Unexpected(String),
 }
 
 #[async_trait]
@@ -70,7 +69,6 @@ pub async fn run_test(
             ErrorType::Execution,
         ),
         CallOutcome::Failed(CallProblem::Timeout) => timeout_response(),
-        CallOutcome::Failed(CallProblem::Unexpected(error)) => unexpected_response(&error),
     }
 }
 

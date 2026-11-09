@@ -202,7 +202,7 @@ impl CodeSandbox for Scripted {
     async fn call(&self, _code: LoadedCode, arguments: TestCall) -> CallOutcome {
         self.seen.lock().unwrap().push(arguments);
         self.call.lock().unwrap().take().unwrap_or_else(|| {
-            CallOutcome::Failed(CallProblem::Unexpected("no scripted call".to_owned()))
+            CallOutcome::Failed(CallProblem::Error("no scripted call".to_owned()))
         })
     }
 }

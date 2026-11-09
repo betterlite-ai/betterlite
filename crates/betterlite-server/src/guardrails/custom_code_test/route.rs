@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -132,7 +133,15 @@ impl CodeSandbox for SandboxedCode {
         .await;
         match loaded {
             Ok(module) => LoadOutcome::Loaded(LoadedCode(module)),
-            Err(error) => LoadOutcome::Failed(load_problem(error)),
+            Err(failure) => LoadOutcome::Failed(match execution_failure(failure) {
+                ExecutionFailure::Timeout => LoadProblem::Timeout,
+                ExecutionFailure::Exit(message) => LoadProblem::Compile(message),
+                ExecutionFailure::Unexpected(message) => LoadProblem::Unexpected(message),
+                ExecutionFailure::Failed(SandboxLoad::Compile(error)) => {
+                    LoadProblem::Syntax(error.to_string())
+                }
+                ExecutionFailure::Failed(SandboxLoad::Module(module)) => module_problem(module),
+            }),
         }
     }
 
@@ -179,41 +188,44 @@ fn module_error(error: SandboxError<ModuleLoadFailure>) -> SandboxError<SandboxL
     }
 }
 
-fn load_problem(source: ExecutionError<SandboxLoad>) -> LoadProblem {
+enum ExecutionFailure<E> {
+    Timeout,
+    Exit(String),
+    Failed(E),
+    Unexpected(String),
+}
+
+fn execution_failure<E>(source: ExecutionError<E>) -> ExecutionFailure<E>
+where
+    E: StdError,
+{
     match source {
         ExecutionError::Timeout(_) | ExecutionError::Sandbox(SandboxError::Interrupted(_)) => {
-            LoadProblem::Timeout
+            ExecutionFailure::Timeout
         }
-        ExecutionError::Sandbox(SandboxError::Failed(SandboxLoad::Compile(error))) => {
-            LoadProblem::Syntax(error.to_string())
+        ExecutionError::Sandbox(SandboxError::Exit(exit)) => {
+            ExecutionFailure::Exit(exit.to_string())
         }
-        ExecutionError::Sandbox(SandboxError::Failed(SandboxLoad::Module(
-            ModuleLoadFailure::MissingFunction,
-        ))) => LoadProblem::MissingFunction,
-        ExecutionError::Sandbox(SandboxError::Failed(SandboxLoad::Module(
-            ModuleLoadFailure::NotCallable,
-        ))) => LoadProblem::NotCallable,
-        ExecutionError::Sandbox(SandboxError::Failed(SandboxLoad::Module(
-            ModuleLoadFailure::Runtime(failure),
-        ))) => LoadProblem::Compile(failure.to_string()),
-        ExecutionError::Sandbox(SandboxError::Exit(exit)) => LoadProblem::Compile(exit.to_string()),
+        ExecutionError::Sandbox(SandboxError::Failed(error)) => ExecutionFailure::Failed(error),
         other @ (ExecutionError::Spawn { .. } | ExecutionError::TimeoutOutOfRange { .. }) => {
-            LoadProblem::Unexpected(other.to_string())
+            ExecutionFailure::Unexpected(other.to_string())
         }
     }
 }
 
+fn module_problem(failure: ModuleLoadFailure) -> LoadProblem {
+    match failure {
+        ModuleLoadFailure::MissingFunction => LoadProblem::MissingFunction,
+        ModuleLoadFailure::NotCallable => LoadProblem::NotCallable,
+        ModuleLoadFailure::Runtime(error) => LoadProblem::Compile(error.to_string()),
+    }
+}
+
 fn call_problem(source: ExecutionError<RuntimeFailure>) -> CallProblem {
-    match source {
-        ExecutionError::Timeout(_) | ExecutionError::Sandbox(SandboxError::Interrupted(_)) => {
-            CallProblem::Timeout
-        }
-        ExecutionError::Sandbox(SandboxError::Failed(failure)) => {
-            CallProblem::Error(failure.to_string())
-        }
-        ExecutionError::Sandbox(SandboxError::Exit(exit)) => CallProblem::Error(exit.to_string()),
-        other @ (ExecutionError::Spawn { .. } | ExecutionError::TimeoutOutOfRange { .. }) => {
-            CallProblem::Unexpected(other.to_string())
-        }
+    match execution_failure(source) {
+        ExecutionFailure::Timeout => CallProblem::Timeout,
+        ExecutionFailure::Exit(message)
+        | ExecutionFailure::Unexpected(message)
+        | ExecutionFailure::Failed(RuntimeFailure { message }) => CallProblem::Error(message),
     }
 }
