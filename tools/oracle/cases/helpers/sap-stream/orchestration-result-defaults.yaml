@@ -7,7 +7,9 @@ call:
       lines:
         - 'data: {"orchestration_result": {"choices": [{"delta": {"content": "a"}}]}}'
         - 'data: {"request_id": "req-1", "created": 11, "orchestration_result": {"choices": []}}'
+        - 'data: {"request_id": "req-1", "created": 11, "orchestration_result": {"id": "r1", "created": 12, "choices": []}}'
         - 'data: {"orchestration_result": {"id": "r1", "created": 12, "model": "m1", "choices": [{"index": 1, "delta": {"role": "assistant", "content": "hi"}, "finish_reason": null}]}}'
+        - 'data: {"orchestration_result": {"id": "r4", "created": 13, "choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}, "system_fingerprint": "fp-1"}}'
         - 'data: {"orchestration_result": {"id": "r2", "choices": [{"index": 0, "delta": {"content": "x"}, "finish_reason": null, "text": "dropped"}]}}'
         - 'data: {"orchestration_result": {"id": "r3", "choices": []}}'
         - 'data: {"orchestration_result": {"object": "strange", "choices": []}}'

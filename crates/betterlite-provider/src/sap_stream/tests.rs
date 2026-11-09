@@ -111,6 +111,33 @@ fn falls_back_to_request_id_then_created() {
     );
 }
 
+#[test]
+fn prefers_the_orchestration_result_identity_over_the_event() {
+    let chunk = event_to_chunk(
+        &json(
+            r#"{"request_id":"req-1","created":11,"orchestration_result":{"id":"r1","created":12,"choices":[]}}"#,
+        ),
+        FIXED_NOW,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(chunk.id, "r1");
+    assert_eq!(chunk.created, 12);
+}
+
+#[test]
+fn drops_usage_and_fingerprint_from_an_orchestration_result() {
+    assert_eq!(
+        mapped(
+            r#"{"orchestration_result":{"id":"r4","created":13,"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5},"system_fingerprint":"fp-1"}}"#,
+            FIXED_NOW,
+        ),
+        Some(json(
+            r#"{"id":"r4","object":"chat.completion.chunk","created":13,"model":"unknown","choices":[]}"#
+        ))
+    );
+}
+
 #[rstest]
 #[case::null(r#"{"orchestration_result":null}"#)]
 #[case::empty_object(r#"{"orchestration_result":{}}"#)]
@@ -186,6 +213,19 @@ fn rejects_a_chunk_event_with_an_unknown_field(#[case] event: &str) {
         rejected(event, FIXED_NOW),
         SapStreamError::Chunk { .. }
     ));
+}
+
+#[rstest]
+#[case::final_result_before_orchestration_result(
+    r#"{"final_result":{"id":"f","created":1,"model":"m","choices":[]},"orchestration_result":{"id":"o","created":2,"model":"m2","choices":[]}}"#,
+    r#"{"id":"f","object":"chat.completion.chunk","created":1,"model":"m","choices":[]}"#
+)]
+#[case::orchestration_result_before_passthrough(
+    r#"{"object":"chat.completion.chunk","id":"p","created":3,"model":"m3","choices":[],"orchestration_result":{"id":"o","created":4,"model":"m4","choices":[]}}"#,
+    r#"{"id":"o","object":"chat.completion.chunk","created":4,"model":"m4","choices":[]}"#
+)]
+fn prefers_the_earlier_event_shape(#[case] event: &str, #[case] expected: &str) {
+    assert_eq!(mapped(event, FIXED_NOW), Some(json(expected)));
 }
 
 #[test]
@@ -429,7 +469,10 @@ fn keeps_reading_while_the_finish_reason_is_null() {
 fn surfaces_an_error_event_in_sync_mode() {
     let mut stream = new_stream();
     let failure = next(&mut stream, r#"data: {"error":"boom"}"#, Mode::Sync).unwrap_err();
-    assert!(matches!(failure, SapStreamError::Event { .. }));
+    let SapStreamError::Event { message } = failure else {
+        panic!("expected an event error");
+    };
+    assert!(message.contains(r#"{"error":"boom"}"#));
     assert!(stream.done);
     assert!(matches!(
         next(
@@ -450,7 +493,7 @@ fn wraps_an_error_event_in_async_mode() {
         panic!("expected an orchestration error");
     };
     assert_eq!(error.status_code, 502);
-    assert!(error.message.contains("error"));
+    assert!(error.message.contains(r#"{"error":"boom"}"#));
     assert!(stream.done);
 }
 
