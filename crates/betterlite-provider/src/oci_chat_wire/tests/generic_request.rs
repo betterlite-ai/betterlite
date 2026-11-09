@@ -1,3 +1,4 @@
+use betterlite_openai::chat::{ChatRequest, RequestError};
 use rstest::rstest;
 
 use crate::oci_chat_wire::generic::request::{adapt_generic_messages, adapt_generic_tools};
@@ -9,6 +10,18 @@ use super::support::{assert_json, messages, tools};
 fn vendor_api_format_uses_generic_for_any_non_cohere_vendor() {
     assert_eq!(OciVendor::Cohere.api_format(), "COHERE");
     assert_eq!(OciVendor::Generic.api_format(), "GENERIC");
+}
+
+#[test]
+fn a_tool_call_without_arguments_fails_the_shared_request_parse() {
+    // documented in docs/deviations/B5942.yaml: LiteLLM defaults the absent value
+    let error = ChatRequest::parse(
+        br#"{"model": "m", "messages": [{"role": "assistant", "tool_calls": [
+            {"id": "call_1", "type": "function", "function": {"name": "f"}}
+        ]}]}"#,
+    )
+    .unwrap_err();
+    assert!(matches!(error, RequestError::Body { .. }));
 }
 
 #[test]
