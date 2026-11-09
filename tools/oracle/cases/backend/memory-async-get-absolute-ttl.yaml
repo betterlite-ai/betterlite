@@ -7,6 +7,7 @@ call:
       ttl: 30.0
       key: cache-key
       value: cached-value
+      read_at: 2000.0
 env: {}
 compare:
   ignore: []

@@ -111,11 +111,6 @@ def _memory(now: list[float]) -> InMemoryCache:
     return InMemoryCache(clock=lambda: now[0])
 
 
-async def _stored_ttl(cache: InMemoryCache, key: str, value: str, ttl: float) -> float | None:
-    await cache.async_set_cache(key, value, ttl=ttl)  # pyright: ignore[reportUnknownMemberType]
-    return await cache.async_get_ttl(key)
-
-
 def _base_cache_contract_get() -> Json:
     probe = _BaseProbe()
     return cast(Json, probe.get_cache("key"))  # pyright: ignore[reportUnknownMemberType]
@@ -131,16 +126,7 @@ def _base_cache_test_connection() -> Json:
     return cast(Json, asyncio.run(probe.test_connection()))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
 
-def _memory_async_get_absolute_ttl(data: dict[str, Json]) -> Json:
-    clock = number_value(data.get("clock"), "clock")
-    ttl = number_value(data.get("ttl"), "ttl")
-    key = string_value(data.get("key"), "key")
-    value = string_value(data.get("value"), "value")
-    stored = asyncio.run(_stored_ttl(_memory([clock]), key, value, ttl))
-    return cast(Json, {"ttl": stored})
-
-
-async def _expired_ttl(
+async def _absolute_ttl(
     cache: InMemoryCache, now: list[float], entry: tuple[str, str, float], read_at: float
 ) -> Json:
     (key, value, ttl) = entry
@@ -156,7 +142,7 @@ async def _expired_ttl(
     )
 
 
-def _memory_async_get_expired_ttl(data: dict[str, Json]) -> Json:
+def _memory_async_get_absolute_ttl(data: dict[str, Json]) -> Json:
     now = [number_value(data.get("clock"), "clock")]
     entry = (
         string_value(data.get("key"), "key"),
@@ -164,7 +150,7 @@ def _memory_async_get_expired_ttl(data: dict[str, Json]) -> Json:
         number_value(data.get("ttl"), "ttl"),
     )
     read_at = number_value(data.get("read_at"), "read_at")
-    return asyncio.run(_expired_ttl(_memory(now), now, entry, read_at))
+    return asyncio.run(_absolute_ttl(_memory(now), now, entry, read_at))
 
 
 def _increment_operation(entry: Json) -> RedisPipelineIncrementOperation:
@@ -318,8 +304,6 @@ def run(  # noqa: C901, PLR0911, PLR0912 - one branch per b4290 operation
             return _base_cache_test_connection()
         case "memory_async_get_absolute_ttl":
             return _memory_async_get_absolute_ttl(data)
-        case "memory_async_get_expired_ttl":
-            return _memory_async_get_expired_ttl(data)
         case "memory_async_increment_pipeline":
             return _memory_async_increment_pipeline(data)
         case "dynamic_cache_control_ttl":

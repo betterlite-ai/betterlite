@@ -27,12 +27,6 @@ pub(crate) enum Input {
         ttl: f64,
         key: String,
         value: String,
-    },
-    MemoryAsyncGetExpiredTtl {
-        clock: f64,
-        ttl: f64,
-        key: String,
-        value: String,
         read_at: f64,
     },
     MemoryAsyncIncrementPipeline {
@@ -106,14 +100,8 @@ impl crate::helpers::Helper for Op {
                 ttl,
                 key,
                 value,
-            } => cases::memory_ttl(*clock, *ttl, key, value, None),
-            Input::MemoryAsyncGetExpiredTtl {
-                clock,
-                ttl,
-                key,
-                value,
                 read_at,
-            } => cases::memory_ttl(*clock, *ttl, key, value, Some(*read_at)),
+            } => cases::memory_ttl(*clock, *ttl, key, value, *read_at),
             Input::MemoryAsyncIncrementPipeline { clock, increments } => {
                 cases::memory_increments(*clock, increments)
             }
