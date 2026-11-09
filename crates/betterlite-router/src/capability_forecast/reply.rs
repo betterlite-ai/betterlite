@@ -72,7 +72,8 @@ fn mask_constants(content: &str) -> String {
     while let Some(byte) = bytes.get(index).copied() {
         if let Some((replacement, length)) = masked_constant(bytes, index) {
             masked.extend_from_slice(replacement);
-            index = index.saturating_add(length);
+            // every replacement advances, so a degenerate zero-length one cannot stall the walk
+            index = index.saturating_add(length.max(1));
             continue;
         }
         masked.push(byte);

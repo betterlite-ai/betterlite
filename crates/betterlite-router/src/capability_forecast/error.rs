@@ -30,33 +30,23 @@ pub enum ForecastError {
     },
     #[error("p_solve must be a finite number between 0 and 1, got {value}")]
     SolveProbability { value: f64 },
-    #[error(
-        "capability_classifier_config.base_threshold must be a finite number between 0 and 1, got {value}"
-    )]
+    #[error("base_threshold must be a finite number between 0 and 1, got {value}")]
     BaseThreshold { value: f64 },
-    #[error(
-        "capability_classifier_config.threshold_step must be a finite number at least 0, got {value}"
-    )]
+    #[error("threshold_step must be a finite number at least 0, got {value}")]
     ThresholdStep { value: f64 },
-    #[error("capability_classifier_config.base_threshold + 2 * threshold_step must be at most 1")]
+    #[error("base_threshold + 2 * threshold_step must be at most 1")]
     ThresholdRange,
-    #[error("capability_classifier_config.max_output_tokens must be at least 1")]
+    #[error("max_output_tokens must be at least 1")]
     MaxOutputTokens,
-    #[error("capability_classifier_config.efficient_tier must be non-empty")]
+    #[error("efficient_tier must be non-empty")]
     EmptyEfficientTier,
-    #[error("capability_classifier_config.capable_tier must be non-empty")]
+    #[error("capable_tier must be non-empty")]
     EmptyCapableTier,
-    #[error(
-        "capability_classifier_config.calibration.version must be 1 to 128 non-space characters with no leading or trailing whitespace"
-    )]
+    #[error("calibration.version must be 1 to 128 non-space characters, no outer whitespace")]
     CalibrationVersion,
-    #[error(
-        "capability_classifier_config.calibration.slope must be a finite number between 0 and 20, got {value}"
-    )]
+    #[error("calibration.slope must be a finite number between 0 and 20, got {value}")]
     CalibrationSlope { value: f64 },
-    #[error(
-        "capability_classifier_config.calibration.intercept must be a finite number between -20 and 20, got {value}"
-    )]
+    #[error("calibration.intercept must be a finite number between -20 and 20, got {value}")]
     CalibrationIntercept { value: f64 },
     #[error("the classifier prompt schema could not be serialized")]
     Serialization {

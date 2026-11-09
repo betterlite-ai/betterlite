@@ -13,7 +13,7 @@ use super::prompt::{SYSTEM_PROMPT, response_format, schema, system_prompt};
 use super::reply::{MAX_REPLY_BYTES, SCAN_BUDGET, first_object, parse_cap_reply};
 use super::verdict::{Boundary, Rule};
 
-const JSON_SCHEMA_FORMAT: &str = r#"{"type":"json_schema","json_schema":{"name":"CapabilityClassifierDecision","strict":true,"schema":{"additionalProperties":false,"properties":{"capability_boundary":{"enum":["supported","uncertain","unsupported","unmatched"],"type":"string"},"crux":{"minLength":1,"type":"string"},"p_solve":{"maximum":1.0,"minimum":0.0,"type":"number"},"primary_rule":{"enum":["SUP-1","SUP-2","SUP-3","SUP-4","SUP-5","UNC-1","UNC-2","LIM-1","LIM-2","none"],"type":"string"}},"required":["crux","primary_rule","capability_boundary","p_solve"],"type":"object"}}}"#;
+const JSON_SCHEMA_FORMAT: &str = r#"{"type":"json_schema","json_schema":{"name":"CapabilityClassifierDecision","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["crux","primary_rule","capability_boundary","p_solve"],"properties":{"crux":{"type":"string","minLength":1},"primary_rule":{"type":"string","enum":["SUP-1","SUP-2","SUP-3","SUP-4","SUP-5","UNC-1","UNC-2","LIM-1","LIM-2","none"]},"capability_boundary":{"type":"string","enum":["supported","uncertain","unsupported","unmatched"]},"p_solve":{"type":"number","minimum":0.0,"maximum":1.0}}}}}"#;
 
 fn number(text: &str) -> f64 {
     text.parse().unwrap()
@@ -157,9 +157,12 @@ fn assert_system_prompt_schema() {
 
 fn assert_system_prompt_object() {
     let prompt = system_prompt(ResponseFormat::JsonObject).unwrap();
-    let schema = serde_json::to_string_pretty(&schema()).unwrap();
+    let sorted = serde_json::to_value(schema()).unwrap();
+    let schema = serde_json::to_string_pretty(&sorted).unwrap();
     assert_eq!(prompt.len(), 5358);
     assert!(prompt.starts_with(SYSTEM_PROMPT));
+    // sort_keys=True puts additionalProperties before properties, unlike the packaged literal
+    assert!(prompt.contains("\"additionalProperties\": false,\n  \"properties\": {"));
     assert!(prompt.ends_with(&schema));
 }
 

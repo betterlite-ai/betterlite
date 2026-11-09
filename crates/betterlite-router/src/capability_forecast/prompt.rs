@@ -103,55 +103,55 @@ pub struct JsonSchemaWrapper {
     pub schema: Schema,
 }
 
-// fields stay in sorted order so the pretty schema matches LiteLLM's json.dumps(sort_keys=True)
+// declaration order is the packaged literal's order; the json_object prompt re-sorts the schema through Value
 #[derive(Debug, Serialize)]
 pub struct Schema {
-    #[serde(rename = "additionalProperties")]
-    pub additional_properties: bool,
-    pub properties: Properties,
-    pub required: [&'static str; 4],
     #[serde(rename = "type")]
     pub kind: &'static str,
+    #[serde(rename = "additionalProperties")]
+    pub additional_properties: bool,
+    pub required: [&'static str; 4],
+    pub properties: Properties,
 }
 
 #[derive(Debug, Serialize)]
 pub struct Properties {
-    pub capability_boundary: BoundarySchema,
     pub crux: CruxSchema,
-    pub p_solve: SolveSchema,
     pub primary_rule: RuleSchema,
+    pub capability_boundary: BoundarySchema,
+    pub p_solve: SolveSchema,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CruxSchema {
-    #[serde(rename = "minLength")]
-    pub min_length: u8,
     #[serde(rename = "type")]
     pub kind: &'static str,
+    #[serde(rename = "minLength")]
+    pub min_length: u8,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RuleSchema {
-    #[serde(rename = "enum")]
-    pub choices: [Rule; 10],
     #[serde(rename = "type")]
     pub kind: &'static str,
+    #[serde(rename = "enum")]
+    pub choices: [Rule; 10],
 }
 
 #[derive(Debug, Serialize)]
 pub struct BoundarySchema {
-    #[serde(rename = "enum")]
-    pub choices: [Boundary; 4],
     #[serde(rename = "type")]
     pub kind: &'static str,
+    #[serde(rename = "enum")]
+    pub choices: [Boundary; 4],
 }
 
 #[derive(Debug, Serialize)]
 pub struct SolveSchema {
-    pub maximum: f64,
-    pub minimum: f64,
     #[serde(rename = "type")]
     pub kind: &'static str,
+    pub minimum: f64,
+    pub maximum: f64,
 }
 
 #[must_use]
@@ -201,10 +201,11 @@ pub fn system_prompt(mode: ResponseFormat) -> Result<String, ForecastError> {
         ResponseFormat::JsonObject => {
             let mut prompt = SYSTEM_PROMPT.to_owned();
             prompt.push_str(JSON_OBJECT_SUFFIX);
-            prompt.push_str(
-                &serde_json::to_string_pretty(&schema())
-                    .map_err(|source| ForecastError::Serialization { source })?,
-            );
+            // serde_json::Map sorts its keys, so going through Value matches json.dumps(sort_keys=True)
+            let sorted = serde_json::to_value(schema())
+                .and_then(|value| serde_json::to_string_pretty(&value))
+                .map_err(|source| ForecastError::Serialization { source })?;
+            prompt.push_str(&sorted);
             Ok(prompt)
         }
     }
