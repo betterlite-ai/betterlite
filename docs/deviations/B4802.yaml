@@ -6,9 +6,9 @@ deviations:
       Costs, prices and spend are Decimal by project rule, so a stored price reproduces exactly and an overflow is reported rather than producing a non-finite charge.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L99-L103'
   - what: >-
-      Cost parameters are parsed from the logging state into rust_decimal::Decimal. A string price is accepted when it reads as a decimal or scientific-notation number; Python's float() also accepts "inf", "nan" and digit-grouping underscores, which Decimal cannot hold, so those are an error that names the field.
+      Cost parameters are parsed from the logging state into rust_decimal::Decimal. A string price is accepted when it reads as a decimal or scientific-notation number; Python's float() also accepts "inf", "nan", digit-grouping underscores and JSON booleans, which betterlite rejects with an error that names the field.
     why: >-
-      Costs, prices and spend are Decimal from the moment they are read, so betterlite never multiplies Python floats. A non-finite or digit-grouped price is not a value a working agent setup relies on.
+      Costs, prices and spend are Decimal from the moment they are read, so betterlite never multiplies Python floats. A non-finite, digit-grouped or boolean price is not a value a working agent setup relies on.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L48-L57'
   - what: >-
       The usage in model_call_details is read from its JSON object as prompt_tokens and completion_tokens. LiteLLM reads those fields as attributes of a Usage object, and a plain dict usage has no such attributes there, which prices it at zero.
