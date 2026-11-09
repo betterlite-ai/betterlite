@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use betterlite_logging::private_json::files::{PrivateFiles, StagedFile};
+use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
 
 use super::error::TokenRecordError;
-use super::file::{prepare_private_directory, private_document};
+use super::file::prepare_private_directory;
 use super::record::CliTokenRecord;
 
 pub async fn stage_token_file(
@@ -12,8 +12,10 @@ pub async fn stage_token_file(
     record: &CliTokenRecord,
 ) -> Result<StagedFile, TokenRecordError> {
     prepare_private_directory(files, path).await?;
+    let document =
+        PrivateDocument::json(record).map_err(|source| TokenRecordError::Encode { source })?;
     files
-        .stage_private(path, private_document(record)?)
+        .stage_private(path, document)
         .await
         .map_err(|source| TokenRecordError::Stage { source })
 }

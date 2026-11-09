@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
+use betterlite_logging::private_json::files::PrivateFiles;
 
 use super::error::TokenRecordError;
 use super::record::CliTokenRecord;
@@ -30,13 +30,4 @@ pub(super) async fn prepare_private_directory(
         .ensure_private_dir(&directory)
         .await
         .map_err(|source| TokenRecordError::Directory { source })
-}
-
-pub(super) fn private_document(
-    record: &CliTokenRecord,
-) -> Result<PrivateDocument, TokenRecordError> {
-    match PrivateDocument::json(record) {
-        Ok(document) => Ok(document),
-        Err(source) => Err(TokenRecordError::Encode { source }),
-    }
 }
