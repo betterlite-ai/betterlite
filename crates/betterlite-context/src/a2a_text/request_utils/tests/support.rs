@@ -19,7 +19,7 @@ use betterlite_tokenizer::count::settings::Settings;
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::error::EngineError;
 use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
-use betterlite_tokenizer::engine::hub::{Clock, HubDownloader};
+use betterlite_tokenizer::engine::hub::HubDownloader;
 use betterlite_tokenizer::engine::limits::{
     BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService,
 };

@@ -3,6 +3,8 @@ use betterlite_tokenizer::count::request::{TextInput, TokenRequest};
 
 use super::{A2aResponse, A2aTextError, Field, ListValue, RecordOr, RecordValue, Shape};
 
+mod tests;
+
 #[must_use]
 pub async fn count_tokens(counter: &Counter, text: &str) -> usize {
     if text.is_empty() {
