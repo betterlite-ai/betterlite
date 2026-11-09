@@ -26,7 +26,6 @@ pub(super) fn normalize_original(original: &mut StreamChunk) {
     }
 }
 
-// Delta numbers the calls that come without an index from one running counter.
 fn normalize_tool(tool: &mut JsonValue, next_index: &mut i64) {
     let JsonValue::Object(fields) = tool else {
         return;
@@ -100,12 +99,10 @@ pub(super) fn fill_decoded(
     if let Some(fields) = &decoded.provider_specific_fields {
         apply_provider_fields(model_response, fields);
     }
-    // The wrapper's model comes last, so a provider field named model cannot replace it.
     shaper.model.clone_from(&state.model);
     model_response.model.clone_from(&state.model);
 }
 
-// An OpenAI-shaped chunk's own usage replaces whatever the reader put on the response.
 pub(super) fn apply_chunk_usage(chunk: &ProviderChunk, model_response: &mut StreamChunk) {
     if !chunk.is_openai_chunk() {
         return;

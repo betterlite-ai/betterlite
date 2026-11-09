@@ -7,7 +7,6 @@ use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
 use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
-// The OpenAI SDK hands these providers' chunks over with the raw finish reason, so "error" raises.
 pub fn handle_openai_chat_chunk(
     provider: Option<&str>,
     chunk: &StreamChunk,

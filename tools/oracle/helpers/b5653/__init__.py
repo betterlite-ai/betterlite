@@ -152,11 +152,6 @@ def _vllm_chunk(value: list[Json]) -> list[SimpleNamespace]:
     ]
 
 
-def _azure_text_chunk(value: Step) -> SimpleNamespace:
-    choices = [SimpleNamespace(**_obj(choice)) for choice in _list(value.get("choices", []))]
-    return SimpleNamespace(choices=choices)
-
-
 def _completion_chunk(value: Step) -> Completion:
     data = {"id": "", "object": "text_completion", "created": 0, "model": "", **value}
     return cast(Completion, construct_type(type_=Completion, value=data))
@@ -165,7 +160,7 @@ def _completion_chunk(value: Step) -> Completion:
 _DICT_READERS: dict[str, tuple[str, Callable[[Step], object]]] = {
     "vertex_ai": ("candidates", _vertex_chunk),
     "text-completion-openai": ("choices", _completion_chunk),
-    "azure_text": ("choices", _azure_text_chunk),
+    "azure_text": ("choices", _completion_chunk),
 }
 
 

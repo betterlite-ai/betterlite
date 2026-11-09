@@ -52,7 +52,6 @@ pub fn handle_vertex_chunk(
     Ok(decoded)
 }
 
-// True when the chunk held text or a function call; LiteLLM reads the finish reason only then.
 fn fill_vertex(
     chunk_text: Option<String>,
     parts: Option<&[JsonValue]>,
