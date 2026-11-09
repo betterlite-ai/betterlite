@@ -37,13 +37,13 @@ pub struct SecretLookup {
 impl SecretLookup {
     pub fn get_secret(
         &self,
-        environment: &BTreeMap<String, String>,
+        env: &BTreeMap<String, String>,
         secret_name: &str,
         _default_value: Option<SecretValue>,
     ) -> Result<Option<SecretValue>, SecretLookupError> {
         let resolved_name = secret_name.replace(OS_ENVIRON_PREFIX, "");
         if let Some(oidc_name) = resolved_name.strip_prefix(OIDC_PREFIX) {
-            return oidc::read(self, environment, &resolved_name, oidc_name);
+            return oidc::read(self, env, &resolved_name, oidc_name);
         }
         let managed = self.manager.as_ref().filter(|state| {
             manager_read_is_enabled(SecretManagerReadState {
@@ -54,9 +54,9 @@ impl SecretLookup {
             })
         });
         if let Some(manager) = managed {
-            return Ok(manager::read(manager, environment, &resolved_name));
+            return Ok(manager::read(manager, env, &resolved_name));
         }
-        Ok(environment
+        Ok(env
             .get(&resolved_name)
             .map(|text| values::environment_value(text)))
     }
@@ -67,7 +67,8 @@ impl SecretLookup {
         secret_name: &str,
         default_value: Option<SecretValue>,
     ) -> Result<Option<SecretString>, SecretLookupError> {
-        match self.get_secret(environment, secret_name, default_value)? {
+        let secret = self.get_secret(environment, secret_name, default_value)?;
+        match secret {
             Some(SecretValue::Text(text)) => Ok(Some(text)),
             Some(SecretValue::Bool(_)) | None => Ok(None),
         }
@@ -75,19 +76,19 @@ impl SecretLookup {
 
     pub fn get_secret_bool(
         &self,
-        environment: &BTreeMap<String, String>,
-        secret_name: &str,
+        env: &BTreeMap<String, String>,
+        name: &str,
         default_value: Option<bool>,
     ) -> Result<Option<bool>, SecretLookupError> {
-        match self.get_secret(
-            environment,
-            secret_name,
-            default_value.map(SecretValue::Bool),
-        )? {
-            Some(SecretValue::Bool(value)) => Ok(Some(value)),
-            Some(SecretValue::Text(text)) => Ok(text_to_bool(text.expose_secret())),
-            None => Ok(None),
+        let fallback = default_value.map(SecretValue::Bool);
+        let value = self.get_secret(env, name, fallback)?;
+        if let Some(SecretValue::Bool(flag)) = &value {
+            return Ok(Some(*flag));
         }
+        if let Some(SecretValue::Text(text)) = &value {
+            return Ok(text_to_bool(text.expose_secret()));
+        }
+        Ok(None)
     }
 }
 

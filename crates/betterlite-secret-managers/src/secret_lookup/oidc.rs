@@ -26,9 +26,9 @@ pub(super) fn read(
     secret_name: &str,
     oidc_name: &str,
 ) -> Result<Option<SecretValue>, SecretLookupError> {
-    let Some((provider, audience)) = oidc_name.split_once('/') else {
-        return Err(SecretLookupError::MissingOidcAudience);
-    };
+    let (provider, audience) = oidc_name
+        .split_once('/')
+        .ok_or(SecretLookupError::MissingOidcAudience)?;
     let token = provider_token(lookup, environment, provider, audience, secret_name)?;
     Ok(token.map(SecretValue::Text))
 }
@@ -54,7 +54,7 @@ fn provider_token(
             "CIRCLE_OIDC_TOKEN_V2",
             SecretLookupError::CircleCiTokenV2Missing,
         ),
-        "file" => file_token(environment, audience),
+        "file" => read_oidc_file(&resolve_oidc_file_path(audience, environment)?),
         "env" => environment_token(
             environment,
             audience,
@@ -62,7 +62,11 @@ fn provider_token(
                 name: audience.to_owned(),
             },
         ),
-        "env_path" => env_path_token(environment, audience),
+        "env_path" => read_oidc_file(Path::new(environment.get(audience).ok_or_else(|| {
+            SecretLookupError::EnvironmentVariableMissing {
+                name: audience.to_owned(),
+            }
+        })?)),
         _ => Err(SecretLookupError::UnsupportedOidcProvider),
     }
 }
@@ -78,27 +82,12 @@ fn environment_token(
     )
 }
 
-fn file_token(
-    environment: &BTreeMap<String, String>,
-    audience: &str,
-) -> Result<Option<SecretString>, SecretLookupError> {
-    let path = resolve_oidc_file_path(audience, environment)?;
-    let token = read_token_file(&path)?;
-    Ok(Some(token))
-}
-
-fn env_path_token(
-    environment: &BTreeMap<String, String>,
-    audience: &str,
-) -> Result<Option<SecretString>, SecretLookupError> {
-    let path =
-        environment
-            .get(audience)
-            .ok_or_else(|| SecretLookupError::EnvironmentVariableMissing {
-                name: audience.to_owned(),
-            })?;
-    let token = read_token_file(Path::new(path))?;
-    Ok(Some(token))
+fn read_oidc_file(path: &Path) -> Result<Option<SecretString>, SecretLookupError> {
+    let content = fs::read_to_string(path).map_err(|source| SecretLookupError::TokenFileRead {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(Some(SecretString::from(content)))
 }
 
 fn google(
@@ -184,33 +173,21 @@ fn azure(
     audience: &str,
 ) -> Result<Option<SecretString>, SecretLookupError> {
     if let Some(path) = environment.get("AZURE_FEDERATED_TOKEN_FILE") {
-        return read_token_file(Path::new(path)).map(Some);
+        return read_oidc_file(Path::new(path));
     }
     tracing::warn!(
         "AZURE_FEDERATED_TOKEN_FILE not found in environment will use Azure AD token provider"
     );
-    match lookup.azure_tokens.token(audience) {
-        Ok(Some(token)) => Ok(Some(token)),
-        Ok(None) => {
-            let error = SecretLookupError::AzureProviderReturnedNone;
-            tracing::error!("{error}");
-            Err(error)
-        }
-        Err(source) => {
-            let error = SecretLookupError::AzureProvider { source };
-            tracing::error!("{error}");
-            Err(error)
-        }
-    }
-}
-
-fn read_token_file(path: &Path) -> Result<SecretString, SecretLookupError> {
-    fs::read_to_string(path)
-        .map(SecretString::from)
-        .map_err(|source| SecretLookupError::TokenFileRead {
-            path: path.to_path_buf(),
-            source,
-        })
+    let token = lookup
+        .azure_tokens
+        .token(audience)
+        .map_err(|source| SecretLookupError::AzureProvider { source })
+        .and_then(|token| {
+            token
+                .map(Some)
+                .ok_or(SecretLookupError::AzureProviderReturnedNone)
+        });
+    token.inspect_err(|error| tracing::error!("{error}"))
 }
 
 fn cached_token(lookup: &SecretLookup, secret_name: &str) -> Option<SecretString> {
