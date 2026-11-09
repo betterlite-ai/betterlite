@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::chat::response::{AssistantMessage, ChatResponse, ChatUsage};
 use betterlite_openai::chat::{FunctionCall, ToolCall};
-use betterlite_openai::stream::chunk::ToolCall as StreamToolCall;
-use betterlite_openai::stream::chunk::{Choice, Delta, Function};
+use betterlite_openai::stream::chunk::{Choice, Delta};
 use betterlite_prompts::arguments::json::Json;
 use chrono::DateTime;
 
+use crate::oci_chat_wire::deltas::stream_tool_calls;
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
 use crate::oci_chat_wire::parse::parse;
 use crate::oci_chat_wire::types::oci::{
@@ -70,7 +70,7 @@ pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> 
         .as_ref()
         .and_then(|message| message.tool_calls.as_ref())
         .filter(|calls| !calls.is_empty())
-        .map(|calls| stream_tool_calls(calls));
+        .map(|calls| stream_tool_calls(adapt_tool_calls(calls)));
     Ok(Choice {
         index: typed.index.unwrap_or(0),
         delta: Delta {
@@ -204,21 +204,4 @@ fn fill_missing_tool_call_fields(chunk: &mut Json) {
                 .or_insert_with(|| Json::Text(String::new()));
         }
     }
-}
-
-fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Vec<StreamToolCall> {
-    let mut adapted = Vec::with_capacity(tool_calls.len());
-    for (position, tool_call) in tool_calls.iter().enumerate() {
-        let index = u32::try_from(position).unwrap_or(u32::MAX);
-        adapted.push(StreamToolCall {
-            index,
-            id: Some(tool_call_id(position, tool_call)),
-            kind: Some(String::from("function")),
-            function: Some(Function {
-                name: Some(tool_call.name.clone()),
-                arguments: tool_call.arguments.clone(),
-            }),
-        });
-    }
-    adapted
 }

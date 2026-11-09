@@ -4,10 +4,10 @@ use betterlite_openai::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
 use betterlite_openai::chat::{FunctionCall, ToolCall};
-use betterlite_openai::stream::chunk::ToolCall as StreamToolCall;
-use betterlite_openai::stream::chunk::{Choice, Delta, Function};
+use betterlite_openai::stream::chunk::{Choice, Delta};
 use betterlite_prompts::arguments::json::Json;
 
+use crate::oci_chat_wire::deltas::stream_tool_calls;
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
 use crate::oci_chat_wire::parse::parse;
 use crate::oci_chat_wire::types::cohere::{CohereChatResult, CohereStreamChunk, CohereToolCall};
@@ -87,7 +87,7 @@ pub fn handle_cohere_stream_chunk(
     };
     let tool_calls = remaining_calls
         .filter(|calls| !calls.is_empty())
-        .map(stream_tool_calls);
+        .map(|calls| stream_tool_calls(adapt_tool_calls(calls)));
     Ok(Choice {
         index: typed.index.unwrap_or(0),
         delta: Delta {
@@ -124,24 +124,6 @@ fn adapt_tool_calls(calls: &[CohereToolCall]) -> Vec<ToolCall> {
             }
         })
         .collect()
-}
-
-fn stream_tool_calls(calls: &[CohereToolCall]) -> Vec<StreamToolCall> {
-    let mut adapted = Vec::with_capacity(calls.len());
-    for (position, call) in calls.iter().enumerate() {
-        let index = u32::try_from(position).unwrap_or(u32::MAX);
-        let adapted_call = adapt_call(position, call);
-        adapted.push(StreamToolCall {
-            index,
-            id: Some(adapted_call.id),
-            kind: Some(String::from("function")),
-            function: Some(Function {
-                name: Some(adapted_call.name),
-                arguments: adapted_call.arguments,
-            }),
-        });
-    }
-    adapted
 }
 
 fn adapt_call(position: usize, call: &CohereToolCall) -> AdaptedCall {
