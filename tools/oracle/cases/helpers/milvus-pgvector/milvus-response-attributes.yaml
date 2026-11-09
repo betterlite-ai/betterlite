@@ -1,0 +1,70 @@
+kind: helper
+name: milvus-response-attributes
+call:
+  b7810:
+    calls:
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {x-request-id: req_1}
+          body: '{"data":[{"id":"pk1","text":"hello","distance":0.25,"title":"T","rank":2},{"id":"pk2","content":"stale","text":"world","distance":0.5}]}'
+          query_text: find me
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{}'
+          query_text: find me
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"data":[]}'
+          query_text: ""
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"data":[{"text":null,"distance":null}]}'
+          query_text: q
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"data":[{"id":"1","title":"T","text":"body","distance":0.5}]}'
+          query_text: q
+          text_field: title
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"data":[{"id":"1","":"empty-key","text":"kept"}]}'
+          query_text: q
+          text_field: ""
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"data":[{"text":"zero"}]}'
+          query_text: q
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 502
+          headers: {x-request-id: req_2, content-length: "13"}
+          body: '{"data":[42]}'
+          query_text: q
+          text_field: text
+      - call: milvus_decode_search
+        input:
+          status_code: 200
+          headers: {x-request-id: req_3, content-length: "8"}
+          body: 'not json'
+          query_text: q
+          text_field: text
+env: {}
+compare: {ignore: []}
