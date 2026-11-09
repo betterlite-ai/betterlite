@@ -366,3 +366,24 @@ async fn the_swagger_page_takes_the_swagger_mount_path_when_configured_there() {
         "text/html; charset=utf-8"
     );
 }
+
+#[tokio::test]
+async fn a_docs_page_on_the_swagger_directory_keeps_the_assets_served() {
+    let router = router(
+        urls(
+            Some("/swagger/"),
+            Some("/redoc"),
+            Some("/openapi.json"),
+            None,
+        ),
+        "",
+    );
+    let (page_status, _, _) = send(&router, Method::GET, "/swagger/").await;
+    let (asset_status, _, body) = send(&router, Method::GET, "/swagger/swagger-ui.css").await;
+    assert_eq!(page_status, StatusCode::OK);
+    assert_eq!(asset_status, StatusCode::OK);
+    assert_eq!(
+        body.as_slice(),
+        swagger_asset("swagger-ui.css").unwrap().bytes
+    );
+}

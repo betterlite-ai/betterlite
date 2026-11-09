@@ -32,7 +32,8 @@ type PageRoute = (String, MethodRouter<ConfigState>);
 pub fn docs_router(config: DocsRouteConfig) -> Router {
     // the caller registers the OpenAPI route, and FastAPI adds it before these pages
     let mut paths: BTreeSet<String> = config.urls.openapi_url.iter().cloned().collect();
-    let mut router: Router<ConfigState> = Router::new();
+    // Starlette reads a colon or asterisk at the start of a segment as a literal character
+    let mut router = Router::<ConfigState>::new().without_v07_checks();
     for (path, route) in page_routes(&config) {
         if paths.insert(path.clone()) {
             router = router.route(&path, route);
@@ -42,16 +43,17 @@ pub fn docs_router(config: DocsRouteConfig) -> Router {
         router = router.route("/swagger", any(swagger_slash_redirect));
     }
     if paths.insert("/swagger/".to_owned()) {
-        router = router
-            .route(
-                "/swagger/",
-                get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
-                    .fallback(method_not_allowed),
-            )
-            .route(
-                "/swagger/{*path}",
-                get(swagger_file).fallback(method_not_allowed),
-            );
+        router = router.route(
+            "/swagger/",
+            get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
+                .fallback(method_not_allowed),
+        );
+    }
+    if paths.insert("/swagger/{*path}".to_owned()) {
+        router = router.route(
+            "/swagger/{*path}",
+            get(swagger_file).fallback(method_not_allowed),
+        );
     }
     if config.urls.docs_url.as_deref() != Some("/")
         && config.urls.root_redirect_url.is_some()
