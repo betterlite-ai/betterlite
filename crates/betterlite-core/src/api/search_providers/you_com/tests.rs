@@ -531,6 +531,53 @@ fn trait_hooks_shape_headers_url_and_reply() {
     assert_eq!(parsed.results.len(), 1);
 }
 
+#[test]
+fn trait_validate_environment_prefers_the_caller_key() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let validated = search.validate_environment(Headers::new(), Some(&key("sk-caller")), None);
+    assert_eq!(
+        validated.get("X-API-Key").map(String::as_str),
+        Some("sk-caller")
+    );
+}
+
+#[test]
+fn trait_validate_environment_uses_a_caller_key_without_an_environment_key() {
+    let search = load(&[]);
+    let validated = search.validate_environment(Headers::new(), Some(&key("sk-caller")), None);
+    assert_eq!(
+        validated.get("X-API-Key").map(String::as_str),
+        Some("sk-caller")
+    );
+}
+
+#[test]
+fn server_key_trust_follows_the_configured_base() {
+    let search = load(&[
+        ("YOUCOM_API_KEY", "sk-env"),
+        ("YOUCOM_API_BASE", "https://proxy.test"),
+    ]);
+    let prepared = search
+        .prepare_headers(Headers::new(), None, Some("https://proxy.test/v1/search"))
+        .unwrap();
+    assert_eq!(
+        prepared.get("X-API-Key").map(String::as_str),
+        Some("sk-env")
+    );
+}
+
+#[test]
+fn server_key_is_trusted_for_the_keyed_default_host() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    let prepared = search
+        .prepare_headers(Headers::new(), None, Some("https://ydc-index.io/v1/search"))
+        .unwrap();
+    assert_eq!(
+        prepared.get("X-API-Key").map(String::as_str),
+        Some("sk-env")
+    );
+}
+
 #[rstest]
 fn replays_the_you_com_corpus(#[files("fuzz/corpus/you_com_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();

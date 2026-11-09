@@ -407,6 +407,26 @@ fn trait_hooks_shape_headers_url_and_reply() {
     assert_eq!(parsed.results.len(), 1);
 }
 
+#[test]
+fn trait_validate_environment_prefers_the_caller_key() {
+    let search = load(&[("TAVILY_API_KEY", "sk-env")]);
+    let validated = search.validate_environment(Headers::new(), Some(&key("sk-caller")), None);
+    assert_eq!(
+        validated.get("Authorization").map(String::as_str),
+        Some("Bearer sk-caller")
+    );
+}
+
+#[test]
+fn trait_validate_environment_uses_a_caller_key_without_an_environment_key() {
+    let search = load(&[]);
+    let validated = search.validate_environment(Headers::new(), Some(&key("sk-caller")), None);
+    assert_eq!(
+        validated.get("Authorization").map(String::as_str),
+        Some("Bearer sk-caller")
+    );
+}
+
 #[rstest]
 fn replays_the_tavily_corpus(#[files("fuzz/corpus/tavily_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
