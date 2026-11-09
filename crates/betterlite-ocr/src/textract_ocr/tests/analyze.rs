@@ -252,11 +252,17 @@ fn table_columns_are_limited(#[case] column: usize, #[case] allowed: bool) {
 fn the_block_visit_budget_is_enforced(#[case] children: usize, #[case] allowed: bool) {
     let response = analyze(&wide_blocks(children));
 
-    assert_eq!(response.is_ok(), allowed, "children {children}");
-    if !allowed {
+    if allowed {
+        let answer = response.expect("the last visit inside the budget passes");
+        assert_eq!(answer.pages.len(), 1);
+        assert_eq!(
+            answer.pages[0].markdown.len(),
+            children.saturating_mul(2).saturating_sub(1)
+        );
+    } else {
         assert!(
             matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("budget")),
-            "children {children}"
+            "the visit past the budget is refused"
         );
     }
 }
