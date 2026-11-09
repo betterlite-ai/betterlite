@@ -1,8 +1,9 @@
-use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role, ToolCall};
+use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role, Tool, ToolCall};
 
+use crate::oci_chat_wire::tool_schema::resolved_tool_schema;
 use crate::oci_chat_wire::types::oci::{
     OciContentPart, OciFunctionType, OciImagePart, OciImageType, OciImageUrl, OciMessage, OciRole,
-    OciTextPart, OciTextType, OciToolCall,
+    OciTextPart, OciTextType, OciToolCall, OciToolDefinition,
 };
 use crate::oci_common::OciError;
 
@@ -12,6 +13,10 @@ const IMAGE_URL_FIELD: &str =
     "Prop `image_url` must be a string or an object with a `url` property";
 
 const TOOL_CALL_KIND: &str = "OCI only supports function tool calls";
+
+const TOOL_KIND: &str = "OCI only supports function tools";
+
+const FUNCTION_OBJECT: &str = "Tool `function` must be a dictionary";
 
 const TOOL_RESULT_ID: &str = "Tool result message must have a string `tool_call_id`";
 
@@ -34,6 +39,31 @@ pub fn adapt_generic_messages(messages: &[ChatMessage]) -> Result<Vec<OciMessage
         }
     }
     Ok(adapted)
+}
+
+pub fn adapt_generic_tools(tools: &[Tool]) -> Result<Vec<OciToolDefinition>, OciError> {
+    let mut definitions = Vec::with_capacity(tools.len());
+    for tool in tools {
+        if tool.kind != "function" {
+            return Err(OciError {
+                status: 400,
+                message: String::from(TOOL_KIND),
+            });
+        }
+        let Some(function) = &tool.function else {
+            return Err(OciError {
+                status: 400,
+                message: String::from(FUNCTION_OBJECT),
+            });
+        };
+        definitions.push(OciToolDefinition {
+            kind: OciFunctionType::Function,
+            name: Some(function.name.clone()),
+            description: Some(function.description.clone().unwrap_or_default()),
+            parameters: Some(resolved_tool_schema(Some(function))?),
+        });
+    }
+    Ok(definitions)
 }
 
 fn push_content(
