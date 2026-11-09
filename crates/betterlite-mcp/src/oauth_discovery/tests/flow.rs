@@ -183,14 +183,6 @@ async fn flow_well_known_lookup_reports_every_absence() {
 }
 
 #[tokio::test]
-async fn flow_well_known_without_a_usable_url_tries_nothing() {
-    let fetcher = FakeFetcher::default();
-    let lookup = attempt_well_known_discovery(&fetcher, "", settings()).await;
-    assert!(lookup.statuses.is_empty());
-    assert!(fetcher.urls().is_empty());
-}
-
-#[tokio::test]
 async fn flow_resource_scopes_override_the_authorization_server_scopes() {
     let fetcher = FakeFetcher::new(vec![
         ("https://mcp.test/mcp", document("{}")),
@@ -624,6 +616,120 @@ async fn flow_a_transport_failure_on_the_server_url_is_recorded() {
     );
     assert_eq!(report.attempts.len(), 1);
     assert!(report.attempts[0].contains("transport error: connect to <url> failed"));
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::no_scheme("//mcp.test/mcp")]
+#[case::no_authority("mailto:issuer@mcp.test")]
+#[tokio::test]
+async fn flow_well_known_without_a_usable_url_tries_nothing(#[case] server_url: &'static str) {
+    let fetcher = FakeFetcher::default();
+    let lookup = attempt_well_known_discovery(&fetcher, server_url, settings()).await;
+    assert!(lookup.statuses.is_empty());
+    assert!(fetcher.urls().is_empty());
+}
+
+#[rstest]
+#[case::no_scheme("//idp.test")]
+#[case::no_authority("mailto:issuer@idp.test")]
+#[tokio::test]
+async fn flow_an_issuer_without_an_authority_tries_nothing(#[case] issuer: &'static str) {
+    let fetcher = FakeFetcher::default();
+    let lookup = fetch_single_issuer_metadata(&fetcher, issuer, None, settings()).await;
+    assert!(lookup.metadata.is_none());
+    assert!(fetcher.urls().is_empty());
+}
+
+#[rstest]
+#[case::scopes_only("{\"scopes_supported\":[\"read\"]}")]
+#[case::authorization_only("{\"authorization_endpoint\":\"https://idp.test/authorize\"}")]
+#[case::token_only("{\"token_endpoint\":\"https://idp.test/token\"}")]
+#[case::registration_only("{\"registration_endpoint\":\"https://idp.test/register\"}")]
+#[tokio::test]
+async fn flow_a_document_with_one_field_is_enough(#[case] body: &str) {
+    let fetcher = FakeFetcher::new(vec![(
+        "https://idp.test/.well-known/oauth-authorization-server",
+        document(body),
+    )]);
+    let lookup = fetch_single_issuer_metadata(&fetcher, "https://idp.test", None, settings()).await;
+    assert!(lookup.metadata.is_some());
+}
+
+#[tokio::test]
+async fn flow_a_document_without_fields_is_not_metadata() {
+    let fetcher = FakeFetcher::new(vec![(
+        "https://idp.test/.well-known/oauth-authorization-server",
+        document("{}"),
+    )]);
+    let lookup = fetch_single_issuer_metadata(&fetcher, "https://idp.test", None, settings()).await;
+    assert!(lookup.metadata.is_none());
+    assert_eq!(fetcher.urls().len(), 3);
+}
+
+#[tokio::test]
+async fn flow_found_metadata_without_resource_scopes_does_not_warn() {
+    let (log, _guard) = capture();
+    let fetcher = FakeFetcher::new(vec![
+        ("https://mcp.test/mcp", document("{}")),
+        (
+            "https://mcp.test/.well-known/oauth-protected-resource/mcp",
+            document(&resource_document(&["https://idp.test"], None)),
+        ),
+        (
+            "https://idp.test/.well-known/oauth-authorization-server",
+            document(&authorization_server_document("https://idp.test")),
+        ),
+    ]);
+    let outcome = discover_metadata(&fetcher, settings(), request("https://mcp.test/mcp")).await;
+    assert!(matches!(outcome, DiscoveryOutcome::Found(_)));
+    assert!(
+        !log.text()
+            .contains("received 200 OK without an RFC 9728 challenge")
+    );
+}
+
+#[tokio::test]
+async fn flow_a_200_server_without_authorization_servers_does_not_warn() {
+    let (log, _guard) = capture();
+    let fetcher = FakeFetcher::new(vec![
+        ("https://mcp.test/mcp", document("{}")),
+        (
+            "https://mcp.test/.well-known/oauth-protected-resource/mcp",
+            status_document(StatusCode::NOT_FOUND),
+        ),
+        (
+            "https://mcp.test/.well-known/oauth-protected-resource",
+            status_document(StatusCode::NOT_FOUND),
+        ),
+    ]);
+    let report =
+        discover_recording_attempts(&fetcher, settings(), request("https://mcp.test/mcp")).await;
+    assert_eq!(
+        report.attempts,
+        strings(&[
+            "GET https://mcp.test: HTTP 200 (no RFC 9728 challenge)",
+            "well-known protected-resource lookup found no authorization servers",
+        ])
+    );
+    assert!(
+        !log.text()
+            .contains("received 200 OK without an RFC 9728 challenge")
+    );
+}
+
+#[rstest]
+#[case::no_scheme("//mcp.test/mcp")]
+#[case::no_authority("mailto:issuer@mcp.test")]
+#[tokio::test]
+async fn flow_origin_fallback_needs_a_server_authority(#[case] server_url: &'static str) {
+    let fetcher = FakeFetcher::new(vec![(
+        server_url,
+        challenge_document("Bearer realm=\"mcp\""),
+    )]);
+    let report = discover_recording_attempts(&fetcher, settings(), request(server_url)).await;
+    assert_eq!(report.attempts.len(), 2);
+    assert!(matches!(report.outcome, DiscoveryOutcome::Failed(_)));
 }
 
 #[rstest]

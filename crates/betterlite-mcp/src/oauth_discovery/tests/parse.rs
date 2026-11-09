@@ -94,6 +94,7 @@ fn parse_www_authenticate_never_panics_on_arbitrary_bytes(#[case] header: &[u8])
 #[case::other_port("https://mcp.test:8443/prm", "https://mcp.test/mcp", false)]
 #[case::other_host("https://idp.test/prm", "https://mcp.test/mcp", false)]
 #[case::other_scheme("http://mcp.test/prm", "https://mcp.test/mcp", false)]
+#[case::other_scheme_same_port("https://mcp.test:8443/prm", "http://mcp.test:8443/mcp", false)]
 #[case::case_insensitive_host("https://MCP.test/prm", "https://mcp.test/mcp", true)]
 #[case::userinfo_is_ignored("https://user:pw@mcp.test/prm", "https://mcp.test/mcp", true)]
 #[case::relative_hint("/prm", "https://mcp.test/mcp", false)]
