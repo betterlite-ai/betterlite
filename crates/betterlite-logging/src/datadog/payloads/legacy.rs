@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, SecondsFormat};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::{As, DefaultOnNull};
 
@@ -20,6 +20,16 @@ use super::types::DatadogPayload;
 
 const CLEANED_METADATA_KEYS: [&str; 3] = ["endpoint", "caching_groups", "previous_models"];
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct CallType(pub String);
+
+impl Default for CallType {
+    fn default() -> Self {
+        Self("litellm.completion".to_owned())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct LegacyLoggingKwargs {
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
@@ -33,10 +43,10 @@ pub struct LegacyLoggingKwargs {
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub optional_params: IndexMap<String, Json>,
     #[serde(
-        default = "default_call_type",
-        deserialize_with = "call_type_or_default"
+        default = "CallType::default",
+        deserialize_with = "As::<DefaultOnNull>::deserialize"
     )]
-    pub call_type: String,
+    pub call_type: CallType,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub cache_hit: bool,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
@@ -45,22 +55,6 @@ pub struct LegacyLoggingKwargs {
 
 const fn default_messages() -> Json {
     Json::Null
-}
-
-fn default_call_type() -> String {
-    "litellm.completion".to_owned()
-}
-
-// DefaultOnNull would give String's empty default here, but a null key takes this field's default too
-pub(crate) fn call_type_or_default<'de, Input>(deserializer: Input) -> Result<String, Input::Error>
-where
-    Input: Deserializer<'de>,
-{
-    let call_type = Option::<String>::deserialize(deserializer)?;
-    if let Some(present) = call_type {
-        return Ok(present);
-    }
-    Ok(default_call_type())
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -142,7 +136,7 @@ fn legacy_record(
     let metadata = Json::Object(clean_metadata(&kwargs.litellm_params.metadata));
     let entries = [
         ("id", Json::Text(id)),
-        ("call_type", Json::Text(kwargs.call_type.clone())),
+        ("call_type", Json::Text(kwargs.call_type.0.clone())),
         ("cache_hit", Json::Bool(kwargs.cache_hit)),
         ("start_time", Json::Text(start_time)),
         ("end_time", Json::Text(end_time)),
