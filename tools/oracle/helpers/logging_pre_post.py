@@ -89,9 +89,10 @@ def run(value: dict[str, Json]) -> Json:
     events: list[Json] = []
     capture = _Capture(events)
     previous_level = verbose_logger.level
+    previous_handlers = verbose_logger.handlers
     previous_global = (litellm.turn_off_message_logging, litellm.log_raw_request_response)
     previous_inputs = cast("list[object]", litellm.input_callback)  # pyright: ignore[reportUnknownMemberType]
-    verbose_logger.addHandler(capture)
+    verbose_logger.handlers = [capture]
     verbose_logger.setLevel(logging.DEBUG)
     litellm.turn_off_message_logging = value.get("turn_off_message_logging") is True
     litellm.log_raw_request_response = False
@@ -108,7 +109,7 @@ def run(value: dict[str, Json]) -> Json:
             error = _call(logging_obj, value)
         return _output(logging_obj, events, error)
     finally:
-        verbose_logger.removeHandler(capture)
+        verbose_logger.handlers = previous_handlers
         verbose_logger.setLevel(previous_level)
         litellm.turn_off_message_logging, litellm.log_raw_request_response = previous_global
         litellm.input_callback = cast("list[str]", previous_inputs)
