@@ -196,6 +196,23 @@ fn exa_ai_sign_request_signs_with_the_key_and_content_type(
 }
 
 #[test]
+fn exa_ai_validate_environment_adds_the_key_and_content_type() {
+    let config = config(&[("EXA_API_KEY", "sk-server")]);
+    let mut headers = Headers::new();
+    headers.insert("A".to_owned(), "b".to_owned());
+    let validated = config.validate_environment(headers, None, None);
+    assert_eq!(
+        validated.get("x-api-key").map(String::as_str),
+        Some("sk-server")
+    );
+    assert_eq!(
+        validated.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    assert_eq!(validated.get("A").map(String::as_str), Some("b"));
+}
+
+#[test]
 fn exa_ai_validate_environment_leaves_headers_alone_on_a_missing_key() {
     let config = config(&[]);
     let mut headers = Headers::new();
@@ -252,6 +269,11 @@ fn exa_ai_url_appends_search_without_trimming(
     "\"q\"",
     r#"{"numResults": 3, "query": "x", "type": "neural", "country": "GB"}"#,
     r#"{"query": "q", "userLocation": "GB", "type": "neural", "numResults": 3, "contents": {"text": true}}"#
+)]
+#[case::unified_wins_over_passthrough(
+    "\"q\"",
+    r#"{"max_results": 5, "numResults": 3, "search_domain_filter": ["a.com"], "includeDomains": ["b.com"], "country": "US", "userLocation": "GB"}"#,
+    r#"{"query": "q", "numResults": 5, "includeDomains": ["a.com"], "userLocation": "US", "contents": {"text": true}}"#
 )]
 #[case::null_max_results(
     "\"q\"",
@@ -360,6 +382,14 @@ fn exa_ai_reply_rejects_a_reply_over_the_bound() {
         decode_exa_ai_search(&oversized),
         Err(ExaAiSearchError::ReplyTooLarge { .. })
     ));
+}
+
+#[test]
+fn exa_ai_reply_accepts_a_reply_at_the_bound() {
+    let mut at_bound = vec![b' '; REPLY_MAX_BYTES];
+    at_bound[..2].copy_from_slice(b"{}");
+    let response = decode_exa_ai_search(&at_bound).unwrap();
+    assert!(response.results.is_empty());
 }
 
 #[rstest]
