@@ -416,6 +416,8 @@ fn debug_never_shows_the_key() {
     let rendered = format!("{:?}", provider(&lookup));
 
     assert!(!rendered.contains("caller-key"));
+    assert!(rendered.contains("SearchApiSearch"));
+    assert!(rendered.contains("[REDACTED]"));
 }
 
 #[test]
