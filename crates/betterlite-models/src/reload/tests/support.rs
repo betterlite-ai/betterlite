@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::future::{Future, ready};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -329,6 +330,33 @@ impl RuntimeRegistrations for RecordingRegistrations {
         live.clear();
         live.extend(catalog.entries.keys().cloned());
         live.insert("runtime-override".to_owned());
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLog(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    pub(crate) fn text(&self) -> String {
+        let bytes = match self.0.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        String::from_utf8(bytes).unwrap()
+    }
+}
+
+impl io::Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.0.lock() {
+            Ok(mut guard) => guard.extend_from_slice(buf),
+            Err(poisoned) => poisoned.into_inner().extend_from_slice(buf),
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

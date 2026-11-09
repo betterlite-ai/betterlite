@@ -12,6 +12,9 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
+use tracing::Level;
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt;
 
 use crate::reload::{ReloadOutcome, RetryOutcome, StartupOutcome};
 use crate::source::CatalogSnapshot;
@@ -19,9 +22,9 @@ use crate::source::CatalogSnapshot;
 use plans::Plan;
 
 use support::{
-    BlockingSleeper, RecordingRegistrations, RecordingSleeper, Reply, ScriptedClient,
-    ScriptedJitter, StopFlag, TestService, blob, body_with_entry, bundled_service, catalog_body,
-    limits, local_service, registrations_service, wide_bundled_service,
+    BlockingSleeper, CapturedLog, RecordingRegistrations, RecordingSleeper, Reply, ScriptedClient,
+    ScriptedJitter, StopFlag, TestService, URL, blob, body_with_entry, bundled_service,
+    catalog_body, limits, local_service, registrations_service, wide_bundled_service,
 };
 
 fn runtime() -> Runtime {
@@ -336,4 +339,41 @@ fn a_shrunk_fetched_map_is_validated_against_the_bundled_count() {
             Some("Remote data failed integrity validation")
         );
     });
+}
+
+#[test]
+fn fetched_unknown_fields_are_logged_with_their_paths() {
+    let first = catalog_body("first", 60);
+    let unknown = body_with_entry(
+        "unknown",
+        "\"unknown-bad\":{\"litellm_provider\":\"openai\",\"future_flag\":true}",
+    );
+    let service = bundled_service();
+    let client = Arc::new(ScriptedClient::new(vec![
+        Reply::ok(&first),
+        Reply::ok(&unknown),
+    ]));
+    let runtime = runtime();
+    runtime.block_on(start(&service, Arc::clone(&client)));
+    let log = CapturedLog::default();
+    let writer = log.clone();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .with_max_level(Level::WARN)
+        .with_writer(move || writer.clone())
+        .finish();
+    let sleeper = RecordingSleeper::default();
+    let outcome = with_default(subscriber, || {
+        runtime.block_on(reload_once(&service, &client, &sleeper))
+    });
+    let snapshot = adopted(outcome);
+    let text = log.text();
+    assert!(text.contains(URL), "{text}");
+    assert!(text.contains("unknown-bad.future_flag"), "{text}");
+    assert!(
+        snapshot
+            .catalog
+            .warnings
+            .contains(&"unknown-bad.future_flag".to_owned())
+    );
 }

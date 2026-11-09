@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::catalog::{CatalogError, ModelCatalog, UnknownFields};
 use crate::fetch_policy::client::{CatalogClient, CatalogRequest};
 use crate::fetch_policy::encoding::{DecodeError, decode_json_bytes};
-use crate::fetch_policy::integrity::{IntegrityPolicy, validate_model_cost_map};
+use crate::fetch_policy::integrity::{IntegrityError, IntegrityPolicy, validate_model_cost_map};
 use crate::fetch_policy::outcome::{FetchResult, FetchedCatalog, Unavailable};
 use crate::fetch_policy::retry::{CatalogSleeper, JitterSource, fetch_with_retry};
 use crate::reload::{CatalogService, FetchLimits, ReloadOutcome};
@@ -14,7 +14,11 @@ use crate::source::{CatalogProvenance, CatalogSnapshot, SourceKind};
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AdoptionError {
     #[error("model cost map from {url} failed integrity validation")]
-    Integrity { url: String },
+    Integrity {
+        url: String,
+        #[source]
+        source: IntegrityError,
+    },
     #[error("model cost map from {url} is not valid JSON")]
     Encoding {
         url: String,
@@ -106,8 +110,9 @@ where
 {
     let backup = service.bundled_catalog().entries.len();
     validate_model_cost_map(&fetched.models, backup, IntegrityPolicy::default()).map_err(
-        |_error| AdoptionError::Integrity {
+        |source| AdoptionError::Integrity {
             url: url.to_owned(),
+            source,
         },
     )?;
     let text = decode_json_bytes(&fetched.body).map_err(|source| AdoptionError::Encoding {
@@ -120,6 +125,7 @@ where
             source,
         }
     })?;
+    log_unknown_fields(url, &parsed);
     let provenance = CatalogProvenance {
         kind: SourceKind::Remote,
         url: Some(url.to_owned()),
@@ -137,4 +143,14 @@ where
     service.current.store(Arc::clone(&snapshot));
     service.registrations.reapply(&catalog);
     Ok(snapshot)
+}
+
+fn log_unknown_fields(url: &str, catalog: &ModelCatalog) {
+    for path in &catalog.warnings {
+        tracing::warn!(
+            url = %url,
+            field = %path,
+            "unknown field in the fetched model catalog; ignoring it"
+        );
+    }
 }

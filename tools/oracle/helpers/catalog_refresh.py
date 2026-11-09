@@ -136,15 +136,19 @@ class _Jitter:
         return self.values.pop(0) if self.values else 0.0
 
 
+class InputError(ValueError):
+    pass
+
+
 def string_value(value: Json, name: str) -> str:
     if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
+        raise InputError(f"{name} must be a string")
     return value
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
     if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
+        raise InputError(f"{name} must be an object")
     return value
 
 
@@ -158,21 +162,21 @@ def _int(input_value: dict[str, Json], name: str, default: int) -> int:
     if value is None:
         return default
     if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
+        raise InputError(f"{name} must be an integer")
     return value
 
 
 def _strings(input_value: dict[str, Json], name: str) -> list[str]:
     value = input_value.get(name, [])
     if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
+        raise InputError(f"{name} must be a list")
     return [string_value(entry, name) for entry in value]
 
 
 def _reply_inputs(input_value: dict[str, Json]) -> list[_Reply]:
     replies = input_value.get("replies", [])
     if not isinstance(replies, list):
-        raise ValueError("replies must be a list")
+        raise InputError("replies must be a list")
     parsed: list[_Reply] = []
     for entry in replies:
         reply = object_value(entry, "reply")

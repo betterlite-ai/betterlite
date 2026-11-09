@@ -64,10 +64,10 @@ fn service(input: &Input) -> Result<Arc<Service>, Box<HelperError>> {
     }))
 }
 
-fn limits(input: &Input) -> FetchLimits {
+const fn limits(input: &Input) -> FetchLimits {
     FetchLimits {
-        timeout: Duration::from_secs(input.timeout.unwrap_or(5)),
-        max_attempts: input.max_attempts.unwrap_or(3),
+        timeout: Duration::from_secs(input.timeout),
+        max_attempts: input.max_attempts,
     }
 }
 
