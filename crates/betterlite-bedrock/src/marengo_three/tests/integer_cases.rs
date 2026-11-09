@@ -25,26 +25,16 @@ fn fixed_duration_body(duration: &str) -> String {
 #[case::negative_at_the_limit(format!("-{}", "1".repeat(4299)), true)]
 #[case::negative_over_the_limit(format!("-{}", "1".repeat(4300)), false)]
 #[case::plus_sign_does_not_count(format!("+{}", "1".repeat(4300)), true)]
-fn text_length_limit(#[case] digits: String, #[case] accepted: bool) {
-    let call = fixed_duration_call(&format!("\"{digits}\""));
-    if accepted {
-        let significant = digits.trim_start_matches(['+', '0']);
-        check(&call, &Expected::Built(&fixed_duration_body(significant)));
-    } else {
-        check(&call, &Expected::Rejected(BAD_DURATION));
-    }
-}
-
-#[rstest]
 #[case::underscored_at_the_limit(format!("{}1", "1_".repeat(4299)), true)]
 #[case::underscored_over_the_limit(format!("{}1", "1_".repeat(4300)), false)]
 #[case::underscored_negative_at_the_limit(format!("-{}1", "1_".repeat(4298)), true)]
 #[case::underscored_negative_over_the_limit(format!("-{}1", "1_".repeat(4299)), false)]
-fn underscored_text_length_limit(#[case] text: String, #[case] accepted: bool) {
-    let call = fixed_duration_call(&format!("\"{text}\""));
+fn text_length_limit(#[case] digits: String, #[case] accepted: bool) {
+    let call = fixed_duration_call(&format!("\"{digits}\""));
     if accepted {
-        let digits = text.replace('_', "");
-        check(&call, &Expected::Built(&fixed_duration_body(&digits)));
+        let plain = digits.replace('_', "");
+        let significant = plain.trim_start_matches(['+', '0']);
+        check(&call, &Expected::Built(&fixed_duration_body(significant)));
     } else {
         check(&call, &Expected::Rejected(BAD_DURATION));
     }
