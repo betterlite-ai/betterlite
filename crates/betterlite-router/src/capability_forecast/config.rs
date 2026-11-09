@@ -64,7 +64,11 @@ impl Config {
 impl Calibration {
     fn validate(self) -> Result<Self, ForecastError> {
         let characters = self.version.chars().count();
-        if characters == 0 || characters > 128 || self.version.trim() != self.version {
+        if characters == 0
+            || characters > 128
+            || self.version.trim() != self.version
+            || self.version.contains('\n')
+        {
             return Err(ForecastError::CalibrationVersion);
         }
         if !(self.slope.is_finite() && (0.0_f64..=20.0_f64).contains(&self.slope)) {

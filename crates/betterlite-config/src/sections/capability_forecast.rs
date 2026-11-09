@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, parse_integer, resolve_number, resolve_string};
 use crate::sections::Section;
+use crate::sections::settings::JsonValue;
 
 mod tests;
 
@@ -15,29 +18,34 @@ const PATH_ROOT: &str = "litellm_params.complexity_router_config.capability_clas
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    model_list: Vec<RawDeployment>,
+    pub model_list: Vec<RawDeployment>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct RawDeployment {
+pub struct RawDeployment {
     #[serde(default)]
-    litellm_params: RawParams,
+    pub litellm_params: RawParams,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct RawParams {
+pub struct RawParams {
     #[serde(default)]
-    complexity_router_config: Option<RawRouterConfig>,
+    pub complexity_router_config: Option<RawRouterConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct RawRouterConfig {
+pub struct RawRouterConfig {
     #[serde(default)]
-    capability_classifier_config: Option<RawCapability>,
+    pub capability_classifier_config: Option<RawCapability>,
+    // accepted so the loader does not refuse them; B331 and B332 own their meaning
+    #[serde(default)]
+    pub classifier_type: Option<String>,
+    #[serde(default)]
+    pub classifier_llm_config: Option<BTreeMap<String, JsonValue>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct RawCapability {
+pub struct RawCapability {
     base_threshold: RawNumber,
     threshold_step: Option<RawNumber>,
     efficient_tier: Option<String>,
@@ -149,13 +157,11 @@ fn limits<L>(
 where
     L: EnvironmentLookup,
 {
-    let threshold_step = resolve_number(
-        step,
-        &format!("{prefix}.threshold_step"),
-        lookup,
-        parse_float,
-    )?
-    .unwrap_or(0.0_f64);
+    let step_path = format!("{prefix}.threshold_step");
+    if let Some(value) = &step {
+        reject_quoted_number(value, &step_path)?;
+    }
+    let threshold_step = resolve_number(step, &step_path, lookup, parse_float)?.unwrap_or(0.0_f64);
     let max_output_tokens = resolve_number(
         tokens,
         &format!("{prefix}.max_output_tokens"),
@@ -209,6 +215,7 @@ fn required_number<L>(value: RawNumber, path: &str, lookup: &L) -> Result<f64, C
 where
     L: EnvironmentLookup,
 {
+    reject_quoted_number(&value, path)?;
     resolve_number(Some(value), path, lookup, parse_float)?.map_or_else(
         || {
             Err(ConfigError::InvalidScalar {
@@ -218,6 +225,22 @@ where
         },
         Ok,
     )
+}
+
+// a quoted float is a string to pydantic's StrictFloat; only an os.environ reference may be text
+fn reject_quoted_number(value: &RawNumber, path: &str) -> Result<(), ConfigError> {
+    match value {
+        RawNumber::Text(text) if !text.starts_with("os.environ/") => {
+            Err(ConfigError::InvalidScalar {
+                path: path.to_owned(),
+                value: false,
+            })
+        }
+        RawNumber::Integer(_)
+        | RawNumber::Float(_)
+        | RawNumber::Boolean(_)
+        | RawNumber::Text(_) => Ok(()),
+    }
 }
 
 impl RawCalibration {

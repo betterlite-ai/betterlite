@@ -364,23 +364,15 @@ fn assert_solve_range() {
         above.unwrap_err(),
         ForecastError::SolveProbability { .. }
     ));
+    // the object is located first, then the typed decode refuses the non-finite or out-of-range value
     let nan = parse_cap_reply(verdict_json("SUP-1", "supported", "NaN").as_bytes()).unwrap_err();
-    assert!(matches!(
-        nan,
-        ForecastError::NoVerdictObject | ForecastError::VerdictSchema { .. }
-    ));
+    assert!(matches!(nan, ForecastError::VerdictSchema { .. }));
     let infinite =
         parse_cap_reply(verdict_json("SUP-1", "supported", "Infinity").as_bytes()).unwrap_err();
-    assert!(matches!(
-        infinite,
-        ForecastError::NoVerdictObject | ForecastError::VerdictSchema { .. }
-    ));
+    assert!(matches!(infinite, ForecastError::VerdictSchema { .. }));
     let overflow =
         parse_cap_reply(verdict_json("SUP-1", "supported", "1e999").as_bytes()).unwrap_err();
-    assert!(matches!(
-        overflow,
-        ForecastError::NoVerdictObject | ForecastError::SolveProbability { .. }
-    ));
+    assert!(matches!(overflow, ForecastError::VerdictSchema { .. }));
 }
 
 fn assert_rule_boundary_pair() {
@@ -533,27 +525,19 @@ fn assert_tier_names() {
     ));
 }
 
+fn rejects_version(version: &str) -> bool {
+    matches!(
+        draft_calibrated(calibration(version, 1.0_f64, 0.0_f64)).validate(),
+        Err(ForecastError::CalibrationVersion)
+    )
+}
+
 fn assert_calibration_version() {
-    let empty = draft_calibrated(calibration("", 1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        empty.unwrap_err(),
-        ForecastError::CalibrationVersion
-    ));
-    let space = draft_calibrated(calibration(" ", 1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        space.unwrap_err(),
-        ForecastError::CalibrationVersion
-    ));
-    let trailing = draft_calibrated(calibration("v1 ", 1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        trailing.unwrap_err(),
-        ForecastError::CalibrationVersion
-    ));
-    let leading = draft_calibrated(calibration(" v1", 1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        leading.unwrap_err(),
-        ForecastError::CalibrationVersion
-    ));
+    assert!(rejects_version(""));
+    assert!(rejects_version(" "));
+    assert!(rejects_version("v1 "));
+    assert!(rejects_version(" v1"));
+    assert!(rejects_version("a\nb"));
     let longest = "v".repeat(128);
     assert!(
         draft_calibrated(calibration(&longest, 1.0_f64, 0.0_f64))
@@ -563,11 +547,7 @@ fn assert_calibration_version() {
             .is_some()
     );
     let too_long = "v".repeat(129);
-    let too_long_error = draft_calibrated(calibration(&too_long, 1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        too_long_error.unwrap_err(),
-        ForecastError::CalibrationVersion
-    ));
+    assert!(rejects_version(&too_long));
 }
 
 fn calibration_error(slope: f64, intercept: f64) -> ForecastError {
@@ -616,11 +596,10 @@ fn assert_calibration_coefficients() {
 }
 
 fn assert_reply_byte_bound() {
-    let at_limit = format!(
-        "{:<width$}",
-        verdict_json("SUP-1", "supported", "0.5"),
-        width = MAX_REPLY_BYTES
-    );
+    let verdict = verdict_json("SUP-1", "supported", "0.5");
+    let padding = " ".repeat(MAX_REPLY_BYTES.saturating_sub(verdict.len()));
+    let mut at_limit = verdict;
+    at_limit.push_str(&padding);
     assert_eq!(at_limit.len(), MAX_REPLY_BYTES);
     let parsed = parse_cap_reply(at_limit.as_bytes()).unwrap();
     assert_eq!(parsed.crux, "the hard part");

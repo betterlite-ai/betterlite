@@ -148,17 +148,35 @@ fn one_setting_leaves_the_other_deployment_absent(#[case] params: &str) {
 #[case::unknown_inner_key(
     "        capability_classifier_config:\n          base_threshold: 0.5\n          threshold_steps: 0.2\n"
 )]
-#[case::unknown_router_key("        classifier_type: capability\n")]
 #[case::unquoted_response_format(
     "        capability_classifier_config:\n          base_threshold: 0.5\n          response_format: json\n"
 )]
 #[case::text_base_threshold(
     "        capability_classifier_config:\n          base_threshold: soon\n"
 )]
+#[case::quoted_base_threshold(
+    "        capability_classifier_config:\n          base_threshold: \"0.5\"\n"
+)]
+#[case::quoted_threshold_step(
+    "        capability_classifier_config:\n          base_threshold: 0.5\n          threshold_step: \"0.1\"\n"
+)]
+#[case::quoted_calibration_slope(
+    "        capability_classifier_config:\n          base_threshold: 0.5\n          calibration:\n            version: v1\n            slope: \"1.0\"\n            intercept: 0.0\n"
+)]
 fn rejects_configurations_lite_proxy_would_refuse(#[case] fields: &str) {
     let source = router_config(fields);
     let error = settings(&source, &[]).unwrap_err();
     assert!(!error.is_empty());
+}
+
+#[test]
+fn the_router_siblings_lite_llm_requires_are_accepted() {
+    let source = router_config(
+        "        classifier_type: capability\n        classifier_llm_config:\n          model: judge-model\n          timeout_ms: 400\n        capability_classifier_config:\n          base_threshold: 0.5\n",
+    );
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(resolved.deployments.len(), 1);
+    assert!(resolved.deployments[0].is_some());
 }
 
 #[test]

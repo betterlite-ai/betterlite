@@ -3,6 +3,10 @@ model_list:
     litellm_params:
       model: openai/gpt-4o
       complexity_router_config:
+        classifier_type: capability
+        classifier_llm_config:
+          model: judge-model
+          timeout_ms: 400
         capability_classifier_config:
           efficient_tier: SIMPLE
           capable_tier: REASONING
