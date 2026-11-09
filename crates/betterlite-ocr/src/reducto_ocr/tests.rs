@@ -7,7 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::Number;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::json::{Json, Object};
@@ -21,8 +21,8 @@ use crate::ocr_http::tests::support::{
 };
 use crate::ocr_http::{CallHooks, OcrWireRequest, ocr};
 use crate::ocr_settings::OcrSettings;
-use crate::request_format::RequestFormat;
-use crate::response::OCRPage;
+
+mod response;
 
 use super::ReductoProviderBody as _;
 use super::{ReductoParseLegacyConfig, ReductoParseV3Config};
@@ -45,14 +45,6 @@ impl CallHooks for NoHooks {
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
-}
-
-fn number(value: i64) -> Json {
-    Json::Number(Number::from(value))
-}
-
-fn decimal(value: f64) -> Json {
-    Json::Number(Number::from_f64(value).expect("the test number is finite"))
 }
 
 fn decode(bytes: &[u8]) -> Json {
@@ -90,25 +82,17 @@ fn v3_request(api_base: String, optional_params: Object) -> PreparedOcrRequest {
     request
 }
 
+async fn recorded(server: MockServer) -> Vec<String> {
+    timeout(Duration::from_secs(5), server.requests())
+        .await
+        .expect("the provider saw every request it was owed")
+}
+
 fn request_body(request: &str) -> Json {
     let (_, body) = request
         .split_once("\r\n\r\n")
         .expect("the request carries a body");
     decode(body.as_bytes())
-}
-
-fn block_values(page: &OCRPage) -> Vec<Json> {
-    match page.extra.get("blocks") {
-        Some(Json::List(blocks)) => blocks.clone(),
-        Some(_) | None => Vec::new(),
-    }
-}
-
-fn page_index_markdown(page: &OCRPage) -> Json {
-    Json::Object(object(&[
-        ("index", number(page.index)),
-        ("markdown", text(&page.markdown)),
-    ]))
 }
 
 #[tokio::test]
@@ -148,7 +132,7 @@ async fn data_uri_is_uploaded_once_and_the_parse_body_carries_the_file_id() {
     assert_eq!(usage.pages_processed, Some(1));
     assert_eq!(usage.credits, Some(2.0_f64));
 
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 2);
     assert_upload_request(&requests[0]);
     assert_parse_request(&requests[1]);
@@ -222,7 +206,7 @@ async fn a_reducto_id_skips_the_upload_and_a_blank_one_is_a_request_field_error(
         .await
         .expect("the call succeeds");
     assert_eq!(response.pages[0].markdown, "kept");
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 1);
     assert!(
         requests[0].starts_with("POST /parse HTTP/1.1"),
@@ -244,7 +228,7 @@ async fn a_reducto_id_skips_the_upload_and_a_blank_one_is_a_request_field_error(
         matches!(&error, OcrError::RequestField { path } if path == "document file id"),
         "{error:?}"
     );
-    assert!(blank.requests().await.is_empty());
+    assert!(recorded(blank).await.is_empty());
 }
 
 #[rstest]
@@ -262,7 +246,7 @@ async fn a_source_that_is_neither_an_id_nor_a_data_uri_fails_before_a_request(
         .await
         .expect_err("a plain URL is not a Reducto source");
     assert!(matches!(error, OcrError::ReductoSource), "{error:?}");
-    assert!(server.requests().await.is_empty());
+    assert!(recorded(server).await.is_empty());
 }
 
 #[rstest]
@@ -279,7 +263,7 @@ async fn a_data_uri_the_parsers_refuse_is_invalid_data_uri(#[case] source: &str)
         .await
         .expect_err("the data URI is refused");
     assert!(matches!(error, OcrError::InvalidDataUri), "{error:?}");
-    assert!(server.requests().await.is_empty());
+    assert!(recorded(server).await.is_empty());
 }
 
 #[tokio::test]
@@ -297,7 +281,7 @@ async fn a_data_uri_without_a_mime_type_sends_the_default_type() {
     ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect("the call succeeds");
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 2);
     assert!(
         requests[0].contains("Content-Type: text/plain;charset=us-ascii"),
@@ -474,7 +458,7 @@ async fn the_guardrail_sees_the_source_document_and_its_headers_reach_the_parse_
             ]))
         );
     };
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 1);
     assert_eq!(
         request_body(&requests[0]),
@@ -535,7 +519,7 @@ async fn the_guardrail_headers_reach_both_the_upload_and_the_parse_call(#[case] 
     }
     .expect("the call succeeds");
     assert_eq!(response.pages[0].markdown, "kept");
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 2);
     assert!(
         requests[0]
@@ -598,7 +582,7 @@ async fn the_response_hook_sees_the_parse_answer_once() {
         assert_eq!(bodies.len(), 1);
         assert_eq!(bodies[0], parsed.to_vec());
     };
-    assert_eq!(server.requests().await.len(), 2);
+    assert_eq!(recorded(server).await.len(), 2);
 }
 
 #[tokio::test]
@@ -621,7 +605,7 @@ async fn upload_keeps_auth_headers_and_drops_content_type_and_content_length() {
     ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect("the call succeeds");
-    let requests = server.requests().await;
+    let requests = recorded(server).await;
     assert_eq!(requests.len(), 2);
     let upload_request = &requests[0];
     let lowered = upload_request.to_ascii_lowercase();
@@ -674,7 +658,7 @@ async fn an_invalid_upload_header_is_a_request_field_error() {
         "{error:?}"
     );
     assert_eq!(error.http_status_code(), Some(400));
-    assert!(server.requests().await.is_empty());
+    assert!(recorded(server).await.is_empty());
 }
 
 #[tokio::test]
@@ -734,6 +718,12 @@ async fn a_missing_key_and_a_blank_key_are_missing_reducto_api_key() {
         matches!(blank_error, OcrError::MissingReductoApiKey),
         "{blank_error:?}"
     );
+}
+
+#[test]
+fn both_configs_name_the_reducto_api_key_secret() {
+    assert_eq!(v3().secret_names(), vec!["REDUCTO_API_KEY"]);
+    assert_eq!(legacy().secret_names(), vec!["REDUCTO_API_KEY"]);
 }
 
 #[tokio::test]
@@ -810,180 +800,6 @@ fn the_default_parse_url_is_the_reducto_platform() {
         .get_complete_url(&request, &Object::new(), &Vec::new())
         .expect("the URL builds");
     assert_eq!(url, "https://platform.reducto.ai/parse");
-}
-
-#[rstest]
-#[case::null_result(r#"{"result":null,"chunks":[{"content":"ignored"}]}"#, Vec::new())]
-#[case::absent_result(
-    r#"{"chunks":[{"content":"text"}]}"#,
-    vec![Json::Object(object(&[("index", number(0)), ("markdown", text("text"))]))]
-)]
-#[case::object_result(
-    r#"{"result":{"chunks":[{"content":"kept"}]}}"#,
-    vec![Json::Object(object(&[("index", number(0)), ("markdown", text("kept"))]))]
-)]
-fn the_result_shapes_choose_their_own_pages(#[case] raw: &str, #[case] expected: Vec<Json>) {
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect("the response normalizes");
-    let pages: Vec<Json> = response.pages.iter().map(page_index_markdown).collect();
-    assert_eq!(pages, expected);
-}
-
-#[test]
-fn pages_group_blocks_by_page_and_usage_accepts_lax_numbers() {
-    let raw = br#"{"usage":{"num_pages":"2","credits":true},"result":{"type":"full","chunks":[{"blocks":[{"type":"Table","content":"B","bbox":{"left":0.1,"page":2,"original_page":4},"confidence":"high","image_url":null}]},{"blocks":[{"content":"A","bbox":{"page":1}},{"content":"C","bbox":{"page":1}}]}]}}"#;
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
-        .expect("the response normalizes");
-    assert_eq!(response.model, "parse-v3");
-    assert_eq!(response.pages.len(), 2);
-    assert_eq!(response.pages[0].index, 0);
-    assert_eq!(response.pages[0].markdown, "A\n\nC");
-    assert_eq!(response.pages[1].index, 1);
-    assert_eq!(response.pages[1].markdown, "B");
-    assert_eq!(
-        block_values(&response.pages[1]),
-        vec![Json::Object(object(&[
-            ("type", text("Table")),
-            ("content", text("B")),
-            (
-                "bbox",
-                Json::Object(object(&[
-                    ("left", decimal(0.1)),
-                    ("page", number(2)),
-                    ("original_page", number(4)),
-                ]))
-            ),
-            ("confidence", text("high")),
-            ("image_url", Json::Null),
-        ]))]
-    );
-    let usage = response.usage_info.expect("usage is reported");
-    assert_eq!(usage.pages_processed, Some(2));
-    assert_eq!(usage.credits, Some(1.0_f64));
-}
-
-#[test]
-fn a_response_without_a_page_number_joins_the_chunk_content() {
-    let raw = br#"{"chunks":[{"content":"one"},{"content":""},{"content":"two"}]}"#;
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
-        .expect("the response normalizes");
-    assert_eq!(response.pages.len(), 1);
-    assert_eq!(response.pages[0].index, 0);
-    assert_eq!(response.pages[0].markdown, "one\n\ntwo");
-    assert!(response.pages[0].extra.is_empty());
-    assert!(response.usage_info.is_some());
-}
-
-#[test]
-fn a_block_content_that_is_not_text_fails_with_a_response_field() {
-    let raw = br#"{"result":{"chunks":[{"blocks":[{"content":5,"bbox":{"page":1}}]}]}}"#;
-    let error = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
-        .expect_err("a non-text block content fails");
-    assert!(
-        matches!(&error, OcrError::ResponseField { path } if path == "result.chunks.blocks.content"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn a_bad_block_page_number_leaves_the_block_out() {
-    let raw = br#"{"result":{"chunks":[{"blocks":[{"content":"ignored","bbox":{"page":"invalid"}},{"content":"kept","bbox":{"page":2.5},"extra":null}]}]}}"#;
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
-        .expect("a bad page number is best effort");
-    assert_eq!(response.pages.len(), 1);
-    assert_eq!(response.pages[0].index, 1);
-    assert_eq!(response.pages[0].markdown, "kept");
-    assert_eq!(
-        block_values(&response.pages[0]),
-        vec![Json::Object(object(&[
-            ("content", text("kept")),
-            ("bbox", Json::Object(object(&[("page", decimal(2.5))])),),
-            ("extra", Json::Null),
-        ]))]
-    );
-}
-
-#[test]
-fn a_block_page_number_at_two_pow_63_saturates_at_i64_max() {
-    let raw =
-        br#"{"chunks":[{"blocks":[{"content":"kept","bbox":{"page":9223372036854775808.0}}]}]}"#;
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
-        .expect("the block page saturates");
-    assert_eq!(response.pages.len(), 1);
-    assert_eq!(response.pages[0].index, i64::MAX - 1);
-    assert_eq!(response.pages[0].markdown, "kept");
-}
-
-#[rstest]
-#[case::pages_integral_float(r#"{"usage":{"num_pages":2.0}}"#, Some(2), None)]
-#[case::pages_numeric_string_with_fraction(r#"{"usage":{"num_pages":"2.0"}}"#, Some(2), None)]
-#[case::pages_numeric_string_with_underscore(
-    r#"{"usage":{"num_pages":"1_000"}}"#,
-    Some(1000),
-    None
-)]
-#[case::pages_boolean(r#"{"usage":{"num_pages":true}}"#, Some(1), None)]
-#[case::credits_numeric_string(r#"{"usage":{"credits":"3"}}"#, None, Some(3.0_f64))]
-#[case::credits_boolean(r#"{"usage":{"credits":true}}"#, None, Some(1.0_f64))]
-fn usage_numbers_accept_the_forms_litellm_accepts(
-    #[case] raw: &str,
-    #[case] pages: Option<i64>,
-    #[case] credits: Option<f64>,
-) {
-    let usage = v3()
-        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect("the usage parses")
-        .usage_info
-        .expect("usage is reported");
-    assert_eq!(usage.pages_processed, pages);
-    assert_eq!(usage.credits, credits);
-}
-
-#[rstest]
-#[case::trimmed_string(
-    r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":" 3 "}}]}]}"#,
-    2
-)]
-#[case::boolean(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":true}}]}]}"#, 0)]
-#[case::zero(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":0}}]}]}"#, 0)]
-#[case::negative(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":-1}}]}]}"#, 0)]
-fn block_page_numbers_coerce_and_clamp(#[case] raw: &str, #[case] expected: i64) {
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect("the page parses");
-    assert_eq!(response.pages.len(), 1);
-    assert_eq!(response.pages[0].index, expected);
-    assert_eq!(response.pages[0].markdown, "a");
-}
-
-#[rstest]
-#[case::fractional_pages(r#"{"usage":{"num_pages":1.5}}"#)]
-#[case::array_pages(r#"{"usage":{"num_pages":[]}}"#)]
-#[case::object_credits(r#"{"usage":{"credits":{}}}"#)]
-#[case::pages_over_i64(r#"{"usage":{"num_pages":9223372036854775808}}"#)]
-#[case::infinite_credits(r#"{"usage":{"credits":"inf"}}"#)]
-#[case::pages_exactly_two_pow_63(r#"{"usage":{"num_pages":9223372036854775808.0}}"#)]
-#[case::text_credits(r#"{"usage":{"credits":"much"}}"#)]
-fn a_usage_value_of_the_wrong_type_fails_with_a_response_field(#[case] raw: &str) {
-    let error = v3()
-        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
-        .expect_err("a mistyped usage value fails");
-    assert!(matches!(error, OcrError::ResponseField { .. }), "{error:?}");
-}
-
-#[test]
-fn the_native_request_format_keeps_the_provider_json() {
-    let raw = br#"{"chunks":[{"content":"text"}],"job_id":"job_1"}"#;
-    let response = v3()
-        .transform_ocr_response("parse-v3", raw, RequestFormat::Native)
-        .expect("the response normalizes");
-    assert_eq!(response.provider_native_response, Some(decode(raw)));
 }
 
 fn test_connection() -> OcrConnection {
