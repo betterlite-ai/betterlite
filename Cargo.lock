@@ -2126,6 +2126,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "rcgen",
  "rstest",
  "rust_decimal",
  "rustls",
@@ -2134,11 +2135,13 @@ dependencies = [
  "serde",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "testcontainers",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "url",
  "uuid",
 ]
