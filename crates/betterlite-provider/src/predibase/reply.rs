@@ -221,16 +221,23 @@ fn additional_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, St
 }
 
 fn sum_logprobs(tokens: &[Token]) -> Result<Number, PredibaseError> {
-    let sum = if all_integers(tokens) {
-        integer_sum(tokens)
-    } else {
-        float_sum(tokens)
-    };
-    sum.ok_or_else(|| PredibaseError {
+    logprob_total(tokens).ok_or_else(|| PredibaseError {
         status_code: 500,
         message: String::from("the predibase reply logprob sum is not a JSON number"),
         headers: BTreeMap::new(),
     })
+}
+
+fn logprob_total(tokens: &[Token]) -> Option<Number> {
+    let numbers = tokens.iter().filter_map(token_logprob);
+    if all_integers(tokens) {
+        let total = numbers
+            .map(integer_logprob)
+            .try_fold(0_i128, i128::checked_add)?;
+        return Number::from_i128(total);
+    }
+    let fractions: Vec<f64> = numbers.filter_map(Number::as_f64).collect();
+    Number::from_f64(fractions.iter().sum())
 }
 
 const fn token_logprob(token: &Token) -> Option<&Number> {
@@ -240,31 +247,17 @@ const fn token_logprob(token: &Token) -> Option<&Number> {
     }
 }
 
+fn integer_logprob(number: &Number) -> i128 {
+    match (number.as_i64(), number.as_u64()) {
+        (Some(value), _) => i128::from(value),
+        (None, Some(value)) => i128::from(value),
+        (None, None) => 0,
+    }
+}
+
 fn all_integers(tokens: &[Token]) -> bool {
     tokens
         .iter()
         .filter_map(token_logprob)
         .all(|number| number.is_i64() || number.is_u64())
-}
-
-fn integer_sum(tokens: &[Token]) -> Option<Number> {
-    let mut total = 0_i128;
-    for number in tokens.iter().filter_map(token_logprob) {
-        let value = match (number.as_i64(), number.as_u64()) {
-            (Some(value), _) => i128::from(value),
-            (None, Some(value)) => i128::from(value),
-            (None, None) => continue,
-        };
-        total = total.checked_add(value)?;
-    }
-    Number::from_i128(total)
-}
-
-fn float_sum(tokens: &[Token]) -> Option<Number> {
-    let values: Vec<f64> = tokens
-        .iter()
-        .filter_map(token_logprob)
-        .filter_map(Number::as_f64)
-        .collect();
-    Number::from_f64(values.iter().sum())
 }
