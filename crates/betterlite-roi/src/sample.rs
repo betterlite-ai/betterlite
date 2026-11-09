@@ -7,6 +7,8 @@ use crate::settings::DEFAULT_PROMPT;
 const REPO: &str = "example/gateway";
 const ESTIMATOR_MODEL: &str = "your-estimator-model";
 const ESTIMATE_REASONING: &str = "Sample estimate of engineering effort without AI assistance. Live estimates use PR descriptions, file change counts, and commit metadata.";
+// Python's date type starts at 1 January 1, so the demo clamps there where Python would raise OverflowError
+const EARLIEST_DAY: NaiveDate = NaiveDate::from_ymd_opt(1, 1, 1).unwrap();
 
 struct Example {
     index: i64,
@@ -19,7 +21,7 @@ struct Example {
     merge_days_before_end: u64,
 }
 
-// start is 29 days before now, so a merge 2, 4 or 6 days after it lands 27, 25 and 23 days before now
+// start is 29 days before end, so a merge 2, 4 or 6 days after it lands 27, 25 and 23 days before end
 const EXAMPLES: [Example; 3] = [
     Example {
         index: 0,
@@ -50,16 +52,11 @@ const EXAMPLES: [Example; 3] = [
     },
 ];
 
-fn estimate(hours: f64) -> ROIEstimate {
-    ROIEstimate {
-        status: ROIEstimateStatus::Estimated,
-        hours: Some(hours),
-        reasoning: ESTIMATE_REASONING.to_owned(),
-        model: Some(ESTIMATOR_MODEL.to_owned()),
-        effort_basis: Some("without_ai".to_owned()),
-        evidence_source: Some("pr_metadata".to_owned()),
-        cached: Some(false),
-    }
+fn clamped_day_before(end: NaiveDate, days: u64) -> NaiveDate {
+    let Some(day) = end.checked_sub_days(Days::new(days)) else {
+        return EARLIEST_DAY;
+    };
+    day.max(EARLIEST_DAY)
 }
 
 fn pull_record(example: &Example, merged: NaiveDate) -> ROIPullRecord {
@@ -83,18 +80,16 @@ fn pull_record(example: &Example, merged: NaiveDate) -> ROIPullRecord {
         changed_files: 3,
         commit_count: 1,
         incomplete_metadata: false,
-        estimate: estimate(example.hours),
+        estimate: ROIEstimate {
+            status: ROIEstimateStatus::Estimated,
+            hours: Some(example.hours),
+            reasoning: ESTIMATE_REASONING.to_owned(),
+            model: Some(ESTIMATOR_MODEL.to_owned()),
+            effort_basis: Some("without_ai".to_owned()),
+            evidence_source: Some("pr_metadata".to_owned()),
+            cached: Some(false),
+        },
         cache_key: None,
-    }
-}
-
-fn spend_record(example: &Example, merged: NaiveDate) -> ROISpendRecord {
-    ROISpendRecord {
-        date: merged.to_string(),
-        user_id: example.login.to_owned(),
-        email: example.email.to_owned(),
-        spend: Decimal::new(example.cost_in_tenths, 1),
-        requests: 150,
     }
 }
 
@@ -109,20 +104,21 @@ fn iso_timestamp(now: DateTime<Utc>) -> String {
 
 #[must_use]
 pub fn sample_report(now: DateTime<Utc>) -> ROIReport {
-    let end = now.date_naive();
-    // Python's date subtraction raises an OverflowError before year 1, so a demo date that far back clamps instead
-    let start = end
-        .checked_sub_days(Days::new(29))
-        .unwrap_or(NaiveDate::MIN);
+    let end = now.date_naive().max(EARLIEST_DAY);
+    let start = clamped_day_before(end, 29);
     let mut pulls = Vec::with_capacity(EXAMPLES.len());
     let mut spend = Vec::new();
     for example in &EXAMPLES {
-        let merged = end
-            .checked_sub_days(Days::new(example.merge_days_before_end))
-            .unwrap_or(NaiveDate::MIN);
+        let merged = clamped_day_before(end, example.merge_days_before_end);
         pulls.push(pull_record(example, merged));
         if !example.email.is_empty() {
-            spend.push(spend_record(example, merged));
+            spend.push(ROISpendRecord {
+                date: merged.to_string(),
+                user_id: example.login.to_owned(),
+                email: example.email.to_owned(),
+                spend: Decimal::new(example.cost_in_tenths, 1),
+                requests: 150,
+            });
         }
     }
     ROIReport {

@@ -219,19 +219,18 @@ fn sample_report_summarizes_without_error() {
 #[test]
 fn sample_report_clamps_dates_before_the_calendar() {
     let report = sample_report(DateTime::<Utc>::MIN_UTC);
-    let first_day = NaiveDate::MIN.to_string();
-    assert_eq!(report.start, first_day);
-    assert_eq!(report.end, first_day);
-    assert_eq!(
-        report.pulls[0].merged_at,
-        format!("{}T14:20:00Z", NaiveDate::MIN)
-    );
-    assert_eq!(report.spend[0].date, first_day);
+    assert_eq!(report.start, "0001-01-01");
+    assert_eq!(report.end, "0001-01-01");
+    assert_eq!(report.pulls[0].merged_at, "0001-01-01T14:20:00Z");
+    assert_eq!(report.pulls[2].merged_at, "0001-01-01T14:20:00Z");
+    assert_eq!(report.spend[0].date, "0001-01-01");
+    assert_eq!(report.spend[1].date, "0001-01-01");
 }
 
 #[test]
 fn sample_report_clamps_a_year_one_start() {
     let report = sample_report(instant("0001-01-05T00:00:00+00:00"));
-    assert_eq!(report.start, NaiveDate::MIN.to_string());
+    assert_eq!(report.start, "0001-01-01");
     assert_eq!(report.end, "0001-01-05");
+    assert_eq!(report.pulls[0].merged_at, "0001-01-01T14:20:00Z");
 }
