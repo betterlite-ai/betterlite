@@ -83,8 +83,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fastcrw_reply"
+path = "fuzz_targets/fastcrw_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "exa_ai_reply"
 path = "fuzz_targets/exa_ai_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "firecrawl_reply"
+path = "fuzz_targets/firecrawl_reply.rs"
 test = false
 doc = false
 bench = false
