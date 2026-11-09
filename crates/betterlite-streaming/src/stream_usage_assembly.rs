@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
+use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_redact::structured::Payload;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{Message, TextInput, TokenRequest};
@@ -20,19 +22,11 @@ use wire::{CompletionTokensDetails, ReasoningChoice, Usage};
 #[derive(Debug, Error)]
 pub enum UsageAssemblyError {
     #[error("the completion token count failed")]
-    CompletionCount {
-        #[from]
-        source: CountError,
-    },
+    CompletionCount(#[from] CountError),
     #[error("the server tool use record has an invalid {field} field")]
     ServerToolUse { field: String },
     #[error("the token count does not fit in a signed 64-bit integer")]
     Overflow,
-}
-
-// B2239 owns the utils.print_verbose guards; the assembly crate only names the call site.
-pub trait VerboseHook: Send + Sync {
-    fn print_verbose(&self, message: &str);
 }
 
 #[async_trait]
@@ -55,15 +49,19 @@ pub struct UsageRequest<'request> {
     pub count_prompt_tokens: Option<&'request (dyn Fn() -> Result<i64, CountError> + Send + Sync)>,
 }
 
-pub async fn calculate_usage(
+pub async fn calculate_usage<L, C>(
     counter: &dyn UsageTokenCounter,
-    verbose: &dyn VerboseHook,
+    hooks: &VerboseHooks<L, C>,
     request: &UsageRequest<'_>,
-) -> Result<Usage, UsageAssemblyError> {
+) -> Result<Usage, UsageAssemblyError>
+where
+    L: LoggerSink + Sync,
+    C: ConsoleSink + Sync,
+{
     let per_chunk = calculate_usage_per_chunk(request.chunks)?;
     let prompt_tokens = match per_chunk.prompt_tokens {
         Some(count) => count,
-        None => prompt_tokens_fallback(counter, verbose, request).await,
+        None => prompt_tokens_fallback(counter, hooks, request).await,
     };
     let completion_tokens = match per_chunk.completion_tokens {
         Some(count) => count,
@@ -85,23 +83,26 @@ pub async fn calculate_usage(
         speed: per_chunk.speed,
     };
     apply_reasoning_details(&mut usage, request.reasoning_tokens)?;
-    let grounded = apply_grounding_request_counts(
+    usage.prompt_tokens_details = apply_grounding_request_counts(
         usage.prompt_tokens_details.as_ref(),
         per_chunk.web_search_requests,
         per_chunk.google_maps_grounding_requests,
     )
     .map(Cow::into_owned);
-    usage.prompt_tokens_details = grounded;
     apply_reported_cache_counts(&mut usage);
     Ok(usage)
 }
 
 // LiteLLM swallows a prompt count failure so a finished stream still returns a usage record.
-async fn prompt_tokens_fallback(
+async fn prompt_tokens_fallback<L, C>(
     counter: &dyn UsageTokenCounter,
-    verbose: &dyn VerboseHook,
+    hooks: &VerboseHooks<L, C>,
     request: &UsageRequest<'_>,
-) -> i64 {
+) -> i64
+where
+    L: LoggerSink + Sync,
+    C: ConsoleSink + Sync,
+{
     let tokens = match request.count_prompt_tokens {
         Some(callback) => callback(),
         None => {
@@ -113,7 +114,12 @@ async fn prompt_tokens_fallback(
     match tokens {
         Ok(count) => count,
         Err(_count_error) => {
-            verbose.print_verbose("token_counter failed, assuming prompt tokens is 0");
+            // litellm.utils.print_verbose defaults to log_level DEBUG and logger_only false.
+            let _printed = hooks.utils_print_verbose(
+                Payload::String("token_counter failed, assuming prompt tokens is 0".to_owned()),
+                "DEBUG",
+                &Payload::Bool(false),
+            );
             0
         }
     }
@@ -190,13 +196,11 @@ pub async fn count_reasoning_tokens(
     choices: &[ReasoningChoice],
 ) -> Result<Option<i64>, UsageAssemblyError> {
     let mut total: Option<i64> = None;
-    for choice in choices {
-        let Some(text) = choice.message.reasoning_content.as_deref() else {
-            continue;
-        };
-        if text.is_empty() {
-            continue;
-        }
+    let texts = choices
+        .iter()
+        .filter_map(|choice| choice.message.reasoning_content.as_deref())
+        .filter(|text| !text.is_empty());
+    for text in texts {
         let tokens = counter.count_text(text).await?;
         total = Some(
             total
@@ -232,7 +236,8 @@ impl UsageTokenCounter for Counter {
             tools: None,
             tool_choice: None,
         };
-        counted_tokens(self, &request).await
+        let counted = self.count(&request).await?;
+        i64::try_from(counted).map_err(|_conversion| CountError::Overflow)
     }
 }
 
@@ -251,12 +256,6 @@ async fn response_text_tokens(
         tools: None,
         tool_choice: None,
     };
-    counted_tokens(counter, &request).await
-}
-
-async fn counted_tokens(counter: &Counter, request: &TokenRequest<'_>) -> Result<i64, CountError> {
-    counter
-        .count(request)
-        .await
-        .and_then(|count| i64::try_from(count).map_err(|_conversion| CountError::Overflow))
+    let counted = counter.count(&request).await?;
+    i64::try_from(counted).map_err(|_conversion| CountError::Overflow)
 }

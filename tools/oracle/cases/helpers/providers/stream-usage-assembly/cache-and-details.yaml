@@ -66,7 +66,19 @@ call:
       counter: {text: 7, messages: 4}
     - function: calculate_usage
       chunks:
+      - usage: {prompt_tokens: 1, server_tool_use: {web_search_requests: 2, code_execution_requests: 1}}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
       - usage: {prompt_tokens: 1, server_tool_use: "x"}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, server_tool_use: {web_search_requests: two}}
       model: gpt-4o
       completion_output: hi
       counter: {text: 7, messages: 4}

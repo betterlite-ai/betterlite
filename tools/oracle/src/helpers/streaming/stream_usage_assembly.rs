@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 mod fixture;
 
-use fixture::{CounterFixture, FixtureCounter, RecordedVerbose, failure};
+use fixture::{CounterFixture, FixtureCounter, failure, hooks};
 
 #[path = "stream_usage_assembly/tests.rs"]
 mod tests;
@@ -208,7 +208,7 @@ fn calculate(
     counter: &CounterFixture,
 ) -> crate::helpers::HelperResult {
     let fixture = FixtureCounter::new(counter, request.messages.map(<[Value]>::to_vec));
-    let verbose = RecordedVerbose::default();
+    let hooks = hooks()?;
     let typed_messages = decode_messages(request.messages)?;
     let callback = prompt_callback(request.count_prompt_tokens);
     let usage_request = UsageRequest {
@@ -219,7 +219,7 @@ fn calculate(
         reasoning_tokens: request.reasoning_tokens,
         count_prompt_tokens: callback.as_deref(),
     };
-    let usage = match runtime.block_on(calculate_usage(&fixture, &verbose, &usage_request)) {
+    let usage = match runtime.block_on(calculate_usage(&fixture, &hooks, &usage_request)) {
         Ok(usage) => usage,
         Err(error) => return Ok(error_output(&error)),
     };
@@ -227,7 +227,7 @@ fn calculate(
         "ok": true,
         "usage": rendered(&usage)?,
         "counter_calls": fixture.calls(),
-        "verbose": verbose.messages(),
+        "verbose": hooks.logger.messages(),
     }))
 }
 
@@ -257,7 +257,7 @@ fn prompt_callback(
 
 fn error_output(error: &UsageAssemblyError) -> Value {
     let kind = match error {
-        UsageAssemblyError::CompletionCount { .. } => "count_failed",
+        UsageAssemblyError::CompletionCount(..) => "count_failed",
         UsageAssemblyError::ServerToolUse { .. } => "invalid_server_tool_use",
         UsageAssemblyError::Overflow => "overflow",
     };

@@ -1,11 +1,14 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_streaming::stream_usage_assembly::{UsageTokenCounter, VerboseHook};
+use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
+use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -108,25 +111,65 @@ impl UsageTokenCounter for FixtureCounter {
 }
 
 #[derive(Default)]
-pub(crate) struct RecordedVerbose {
-    messages: Mutex<Vec<String>>,
+pub(crate) struct FixtureLogger {
+    records: Mutex<Vec<Payload>>,
 }
 
-impl VerboseHook for RecordedVerbose {
-    fn print_verbose(&self, message: &str) {
-        if let Ok(mut messages) = self.messages.lock() {
-            messages.push(message.to_owned());
+impl LoggerSink for FixtureLogger {
+    fn debug(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn info(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn error(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn debug_enabled(&self) -> bool {
+        false
+    }
+}
+
+impl FixtureLogger {
+    fn record(&self, payload: &Payload) -> bool {
+        if let Ok(mut records) = self.records.lock() {
+            records.push(payload.clone());
         }
+        true
+    }
+
+    pub(crate) fn messages(&self) -> Value {
+        let records = self
+            .records
+            .lock()
+            .map(|records| records.clone())
+            .unwrap_or_default();
+        Value::Array(records)
     }
 }
 
-impl RecordedVerbose {
-    pub(crate) fn messages(&self) -> Value {
-        let Ok(messages) = self.messages.lock() else {
-            return Value::Array(Vec::new());
-        };
-        json!(*messages)
+#[derive(Default)]
+pub(crate) struct FixtureConsole;
+
+impl ConsoleSink for FixtureConsole {
+    fn print(&self, _payload: &Payload) -> bool {
+        true
     }
+}
+
+pub(crate) fn hooks()
+-> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
+    let redactor =
+        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
+    Ok(VerboseHooks {
+        logger: FixtureLogger::default(),
+        console: FixtureConsole,
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::new(redactor),
+    })
 }
 
 pub(crate) fn failure(message: String) -> Box<crate::helpers::HelperError> {

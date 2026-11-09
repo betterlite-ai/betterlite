@@ -51,30 +51,20 @@ def optional_attribute(value: object, name: str) -> Json:
 
 
 def usage_view(usage: Usage) -> Json:
-    return prune(
-        cast(
-            Json,
-            {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-                "cache_creation_input_tokens": optional_attribute(
-                    usage, "cache_creation_input_tokens"
-                ),
-                "cache_read_input_tokens": optional_attribute(usage, "cache_read_input_tokens"),
-                "completion_tokens_details": detail_view(
-                    optional_attribute(usage, "completion_tokens_details")
-                ),
-                "prompt_tokens_details": detail_view(
-                    optional_attribute(usage, "prompt_tokens_details")
-                ),
-                "server_tool_use": detail_view(optional_attribute(usage, "server_tool_use")),
-                "cost": optional_attribute(usage, "cost"),
-                "inference_geo": optional_attribute(usage, "inference_geo"),
-                "speed": optional_attribute(usage, "speed"),
-            },
-        )
-    )
+    fields: dict[str, Json] = {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+        "cache_creation_input_tokens": optional_attribute(usage, "cache_creation_input_tokens"),
+        "cache_read_input_tokens": optional_attribute(usage, "cache_read_input_tokens"),
+        "completion_tokens_details": detail_view(usage.completion_tokens_details),
+        "prompt_tokens_details": detail_view(usage.prompt_tokens_details),
+        "server_tool_use": detail_view(optional_attribute(usage, "server_tool_use")),
+        "cost": optional_attribute(usage, "cost"),
+        "inference_geo": optional_attribute(usage, "inference_geo"),
+        "speed": optional_attribute(usage, "speed"),
+    }
+    return prune(fields)
 
 
 def details_input(value: Json) -> PromptTokensDetailsWrapper | None:
@@ -83,34 +73,6 @@ def details_input(value: Json) -> PromptTokensDetailsWrapper | None:
 
 def cache_details_input(value: Json) -> CacheCreationTokenDetails | None:
     return None if value is None else CacheCreationTokenDetails.model_validate(value)
-
-
-def response_chunk(
-    form: str,
-    choices: list[Json],
-    raw_usage: Json,
-    hidden: dict[str, object],
-    *,
-    has_usage: bool,
-) -> object:
-    if form == "model_response_stream":
-        chunk: ModelResponse | ModelResponseStream = ModelResponseStream(
-            choices=cast(list[StreamingChoices], choices),
-            id="chatcmpl-fixture",
-            created=0,
-            model="gpt-4o",
-        )
-    else:
-        chunk = ModelResponse(
-            choices=cast(list[Choices], choices),
-            id="chatcmpl-fixture",
-            created=0,
-            model="gpt-4o",
-        )
-    if has_usage:
-        chunk.usage = None if raw_usage is None else Usage.model_validate(raw_usage)  # pyright: ignore[reportAttributeAccessIssue]
-    chunk._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    return chunk
 
 
 def build_chunk(spec: dict[str, Json]) -> object:
@@ -124,9 +86,25 @@ def build_chunk(spec: dict[str, Json]) -> object:
         if "usage" in spec:
             chunk["usage"] = spec["usage"]
         return chunk
-    return response_chunk(
-        form, choices, spec.get("usage"), hidden, has_usage="usage" in spec
-    )
+    if form == "model_response_stream":
+        response: ModelResponse | ModelResponseStream = ModelResponseStream(
+            choices=cast(list[StreamingChoices], choices),
+            id="chatcmpl-fixture",
+            created=0,
+            model="gpt-4o",
+        )
+    else:
+        response = ModelResponse(
+            choices=cast(list[Choices], choices),
+            id="chatcmpl-fixture",
+            created=0,
+            model="gpt-4o",
+        )
+    if "usage" in spec:
+        raw_usage = spec["usage"]
+        response.usage = None if raw_usage is None else Usage.model_validate(raw_usage)  # pyright: ignore[reportAttributeAccessIssue]
+    response._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    return response
 
 
 def make_counter(fixture: dict[str, Json]) -> tuple[Callable[..., int], list[Json]]:
@@ -147,13 +125,12 @@ def make_counter(fixture: dict[str, Json]) -> tuple[Callable[..., int], list[Jso
                 raise CountFailureError
             return cast(int, fixture.get("text", 0))
         raw_messages = kwargs.get("messages")
-        calls.append(
-            {
-                "kind": "messages",
-                "model": cast(str, kwargs.get("model", "")),
-                "messages": raw_messages,
-            }
-        )
+        messages_call: dict[str, Json] = {
+            "kind": "messages",
+            "model": cast(str, kwargs.get("model", "")),
+            "messages": raw_messages,
+        }
+        calls.append(messages_call)
         if raw_messages is None or fixture.get("fail_messages") is True:
             raise CountFailureError
         return cast(int, fixture.get("messages", 0))
@@ -264,15 +241,14 @@ def run(input_value: dict[str, Json]) -> Json:
     function = input_value["function"]
     if function == "batch":
         return [run(case) for case in cast(list[dict[str, Json]], input_value["cases"])]
-    arguments = input_value
     if function == "calculate_usage":
-        return calculate_case(arguments)
+        return calculate_case(input_value)
     if function == "count_reasoning_tokens":
-        return reasoning_case(arguments)
+        return reasoning_case(input_value)
     if function == "capture_cache_creation":
-        return capture_case(arguments)
+        return capture_case(input_value)
     if function == "attach_cache_creation":
-        return attach_case(arguments)
+        return attach_case(input_value)
     if function == "apply_grounding":
-        return grounding_case(arguments)
+        return grounding_case(input_value)
     raise ValueError(f"unknown stream_usage_assembly function: {function}")

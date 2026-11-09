@@ -8,6 +8,8 @@ publish.workspace = true
 [dependencies]
 async-trait = "0.1.92"
 base64 = "0.23.1"
+betterlite-logging = { path = "../betterlite-logging" }
+betterlite-redact = { path = "../betterlite-redact" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 rust_decimal.workspace = true
 serde.workspace = true

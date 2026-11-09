@@ -115,11 +115,7 @@ pub(crate) fn server_tool_use(raw: &JsonValue) -> Result<ServerToolUse, UsageAss
             "web_search_requests" => &mut parsed.web_search_requests,
             "tool_search_requests" => &mut parsed.tool_search_requests,
             "browser_open_requests" => &mut parsed.browser_open_requests,
-            other => {
-                return Err(UsageAssemblyError::ServerToolUse {
-                    field: other.to_owned(),
-                });
-            }
+            _other => continue,
         };
         if !matches!(value, JsonValue::Null) {
             *slot = Some(
@@ -173,12 +169,10 @@ impl UsagePerChunk {
             self.completion_tokens_details = Some(details);
         }
         if let Some(details) = record.prompt_tokens_details.clone() {
-            if let Some(requests) = details.web_search_requests {
-                self.web_search_requests = Some(requests);
-            }
-            if let Some(requests) = details.google_maps_grounding_requests {
-                self.google_maps_grounding_requests = Some(requests);
-            }
+            self.web_search_requests = details.web_search_requests.or(self.web_search_requests);
+            self.google_maps_grounding_requests = details
+                .google_maps_grounding_requests
+                .or(self.google_maps_grounding_requests);
             self.prompt_tokens_details = Some(details);
         }
         let current = self.cache_creation_token_details.take();

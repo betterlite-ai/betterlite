@@ -297,11 +297,32 @@ async fn server_tool_use_is_coerced() {
     assert_eq!(tool_use.web_search_requests, Some(4));
     assert_eq!(tool_use.browser_open_requests, Some(1));
 
+    let extra_key = simple_usage(
+        &counter,
+        r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2,"code_execution_requests":1}}}]"#,
+    )
+    .await;
+    assert_eq!(
+        extra_key
+            .server_tool_use
+            .and_then(|recorded| recorded.web_search_requests),
+        Some(2)
+    );
+
     let malformed = chunks(r#"[{"usage":{"prompt_tokens":1,"server_tool_use":"x"}}]"#);
     let (result, _) = simple_case(&counter, &malformed).run().await;
     assert!(matches!(
         result,
         Err(UsageAssemblyError::ServerToolUse { field }) if field == "server_tool_use"
+    ));
+
+    let bad_count = chunks(
+        r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":"two"}}}]"#,
+    );
+    let (rejected, _) = simple_case(&counter, &bad_count).run().await;
+    assert!(matches!(
+        rejected,
+        Err(UsageAssemblyError::ServerToolUse { field }) if field == "web_search_requests"
     ));
 }
 
@@ -651,7 +672,7 @@ async fn failed_completion_count_propagates() {
     let (result, _) = case.run().await;
     assert!(matches!(
         result,
-        Err(UsageAssemblyError::CompletionCount { .. })
+        Err(UsageAssemblyError::CompletionCount(..))
     ));
 }
 
@@ -714,7 +735,7 @@ async fn reasoning_content_is_counted() {
     let failing = FixtureCounter::failing_text();
     assert!(matches!(
         count_reasoning_tokens(&failing, &single).await,
-        Err(UsageAssemblyError::CompletionCount { .. })
+        Err(UsageAssemblyError::CompletionCount(..))
     ));
 }
 

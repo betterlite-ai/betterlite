@@ -37,16 +37,12 @@ pub enum UsageSlot {
 pub struct HiddenParams {
     pub usage: Option<UsageRecord>,
     pub custom_llm_provider: Option<String>,
-    #[serde(flatten)]
-    pub extra: JsonObject,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Choice {
     pub finish_reason: Option<String>,
-    #[serde(flatten)]
-    pub extra: JsonObject,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]

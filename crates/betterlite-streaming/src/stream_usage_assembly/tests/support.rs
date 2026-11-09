@@ -1,6 +1,9 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 
@@ -8,7 +11,7 @@ use crate::stream_usage_assembly::wire::{
     Chunk, CompletionTokensDetails, PromptTokensDetails, ReasoningChoice, Usage,
 };
 use crate::stream_usage_assembly::{
-    UsageAssemblyError, UsageRequest, UsageTokenCounter, VerboseHook, calculate_usage,
+    UsageAssemblyError, UsageRequest, UsageTokenCounter, calculate_usage,
 };
 
 #[derive(Clone, Copy)]
@@ -117,22 +120,66 @@ impl UsageTokenCounter for FixtureCounter {
 }
 
 #[derive(Default)]
-struct RecordedVerbose {
-    messages: Mutex<Vec<String>>,
+pub(super) struct FixtureLogger {
+    records: Mutex<Vec<Payload>>,
 }
 
-impl VerboseHook for RecordedVerbose {
-    fn print_verbose(&self, message: &str) {
-        self.messages
+impl FixtureLogger {
+    fn record(&self, payload: &Payload) -> bool {
+        self.records
             .lock()
             .expect("fixture verbose log")
-            .push(message.to_owned());
+            .push(payload.clone());
+        true
+    }
+
+    pub(super) fn messages(&self) -> Vec<String> {
+        self.records
+            .lock()
+            .expect("fixture verbose log")
+            .iter()
+            .map(|payload| match payload {
+                Payload::String(text) => text.clone(),
+                other @ (Payload::Null
+                | Payload::Bool(_)
+                | Payload::Number(_)
+                | Payload::Array(_)
+                | Payload::Object(_)) => other.to_string(),
+            })
+            .collect()
     }
 }
 
-impl RecordedVerbose {
-    fn messages(&self) -> Vec<String> {
-        self.messages.lock().expect("fixture verbose log").clone()
+impl LoggerSink for FixtureLogger {
+    fn debug(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn info(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn error(&self, payload: &Payload) -> bool {
+        self.record(payload)
+    }
+
+    fn debug_enabled(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Default)]
+pub(super) struct FixtureConsole {
+    printed: Mutex<Vec<Payload>>,
+}
+
+impl ConsoleSink for FixtureConsole {
+    fn print(&self, payload: &Payload) -> bool {
+        self.printed
+            .lock()
+            .expect("fixture console log")
+            .push(payload.clone());
+        true
     }
 }
 
@@ -147,7 +194,13 @@ pub(super) struct UsageCase<'fixture> {
 
 impl UsageCase<'_> {
     pub(super) async fn run(&self) -> (Result<Usage, UsageAssemblyError>, Vec<String>) {
-        let verbose = RecordedVerbose::default();
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
+        let hooks = VerboseHooks {
+            logger: FixtureLogger::default(),
+            console: FixtureConsole::default(),
+            set_verbose: Payload::Bool(false),
+            redactor: Arc::new(redactor),
+        };
         let request = UsageRequest {
             chunks: self.chunks,
             model: "gpt-4o",
@@ -156,8 +209,8 @@ impl UsageCase<'_> {
             reasoning_tokens: self.reasoning_tokens,
             count_prompt_tokens: self.count_prompt_tokens,
         };
-        let result = calculate_usage(self.counter, &verbose, &request).await;
-        (result, verbose.messages())
+        let result = calculate_usage(self.counter, &hooks, &request).await;
+        (result, hooks.logger.messages())
     }
 }
 
