@@ -17,6 +17,8 @@ enum Check {
     FullRateSamplesEverything,
     HalfRateKeepsLowDigests,
     HalfRateDropsHighDigests,
+    QuarterRateKeepsLowDigests,
+    QuarterRateDropsHigherDigests,
     TinyRateKeepsOnlyTheLowestDigests,
     SampledDecisionKeepsAttributes,
     DroppedDecisionDropsAttributes,
@@ -50,6 +52,8 @@ fn parent_context(trace_state: TraceState) -> Context {
 #[case::full_rate_samples_everything(Check::FullRateSamplesEverything)]
 #[case::half_rate_keeps_low_digests(Check::HalfRateKeepsLowDigests)]
 #[case::half_rate_drops_high_digests(Check::HalfRateDropsHighDigests)]
+#[case::quarter_rate_keeps_low_digests(Check::QuarterRateKeepsLowDigests)]
+#[case::quarter_rate_drops_higher_digests(Check::QuarterRateDropsHigherDigests)]
 #[case::tiny_rate_keeps_only_the_lowest_digests(Check::TinyRateKeepsOnlyTheLowestDigests)]
 #[case::sampled_decision_keeps_attributes(Check::SampledDecisionKeepsAttributes)]
 #[case::dropped_decision_drops_attributes(Check::DroppedDecisionDropsAttributes)]
@@ -84,6 +88,18 @@ fn observation_attributes_tests_behavior(#[case] check: Check) {
         Check::HalfRateDropsHighDigests => {
             assert_eq!(
                 decision(0.5, trace("00000000000000000000000000000003"), &[]),
+                SamplingDecision::Drop
+            );
+        }
+        Check::QuarterRateKeepsLowDigests => {
+            assert_eq!(
+                decision(0.25, trace("00000000000000000000000000000000"), &[]),
+                SamplingDecision::RecordAndSample
+            );
+        }
+        Check::QuarterRateDropsHigherDigests => {
+            assert_eq!(
+                decision(0.25, trace("00000000000000000000000000000001"), &[]),
                 SamplingDecision::Drop
             );
         }
