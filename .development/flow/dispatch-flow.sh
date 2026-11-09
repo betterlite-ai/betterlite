@@ -11,7 +11,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged, then is pushed, gets its PR with auto-merge and its done mark, and is watched until main's run on it finishes; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, three rounds at most; once it merged, its checkout (target included) and temp folder are removed whatever main's run says, since refs/betterlite/completed keeps its head. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until main's run on it finishes; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, three rounds at most; once it merged, its checkout (target included) and temp folder are removed whatever main's run says, since refs/betterlite/completed keeps its head. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 export GH_TOKEN="$(gh auth token --user HardMax71)"
 id=$1
 [[ $id =~ ^B[0-9]+$ ]] || exit 2
@@ -44,6 +44,13 @@ worktree=$worktrees/$id
 events=$L/flow-events.log
 say() { echo "$(date +%H:%M) $id $*" >> "$events"; }
 park() { say "blocked: $*"; printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %H:%M')" "$id" "$run" "$main/.git/betterlite/$id" "$(tr '\t\n' '  ' <<< "$*")" >> "$L/parked.tsv"; }
+# GitHub refuses a push or a new PR now and then with a short-lived error (HTTP 408, a bare remote rejected, a TLS timeout), so a ready branch lands again
+land_again() {
+  [ "${LANDS:-0}" -lt 3 ] || { say "$1"; exit 4; }
+  say "$1; landing again in 5 minutes"
+  sleep 300
+  LANDS=$(( ${LANDS:-0} + 1 )) LAND_ONLY=1 exec bash "$P/dispatch-flow.sh" "$id" "$run" ""
+}
 if [ -z "$LAND_ONLY" ]; then
 while ! (cd "$main" && cargo gate availability) > "$L/availability-$id.log" 2>&1; do
   maintenance
@@ -118,7 +125,7 @@ size=$(git diff --shortstat origin/main...HEAD -- . ':(exclude)Cargo.lock' | sed
 if ! pushed=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
   echo "$pushed"
   grep -q GH013 <<<"$pushed" && { say "ready, but GitHub push protection blocked the push, see logs/land-$id.log"; exit 5; }
-  say "ready, but the PR did not open: the push failed, see logs/land-$id.log"; exit 4
+  land_again "ready, but the PR did not open: the push failed, see logs/land-$id.log"
 fi
 body=$L/pr-body-$id.md
 printf 'Builds %s, from [its task file](https://github.com/betterlite-ai/betterlite/blob/%s/.development/%s). %s, Cargo.lock aside. The lint checks pass locally and the review approved it. CI runs the tests, the oracle cases and mutants. The PR also marks %s done in the backlog.\n' "$title" "$branch" "$file" "$size" "$id" > "$body"
@@ -135,15 +142,15 @@ git log --reverse --format=%H --grep="^docs(tasks): $id " origin/main..HEAD | wh
   printf "\nThe architect changed its task file: %s\n" "$(git log -1 --format=%b "$c" | head -n 1)" >> "$body"
 done
 pr=$(gh pr list --head "$branch" --state open --json number -q ".[0].number")
-[ -n "$pr" ] || gh pr create --base main --head "$branch" --title "$id: $title" --body-file "$body" ${PR_LABEL:+--label "$PR_LABEL"} > /dev/null || { say "ready, but the PR did not open"; exit 4; }
+[ -n "$pr" ] || gh pr create --base main --head "$branch" --title "$id: $title" --body-file "$body" ${PR_LABEL:+--label "$PR_LABEL"} > /dev/null || land_again "ready, but the PR did not open, see logs/land-$id.log"
 for try in 1 2 3; do pr=$(gh pr view "$branch" --json number -q .number 2>/dev/null); [ -n "$pr" ] && break; sleep 10; done
-[ -n "$pr" ] || { say "ready, but the PR did not open"; exit 4; }
+[ -n "$pr" ] || land_again "ready, but the PR did not open, see logs/land-$id.log"
 sed -i "s/^status: .*/status: done/; s/^resolution: .*/resolution: merged/; s/^pr: .*/pr: $pr/" ".development/backlog/$id.yaml"
 if ! git diff --quiet -- ".development/backlog/$id.yaml"; then
   git add ".development/backlog/$id.yaml" && git commit -q -m "docs(backlog): $id done"
   if ! pushed=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
     echo "$pushed"
-    say "PR #$pr open, but the done-mark push failed, see logs/land-$id.log"; exit 4
+    land_again "PR #$pr open, but the done-mark push failed, see logs/land-$id.log"
   fi
 fi
 gh pr merge "$branch" --auto --squash > /dev/null 2>&1
