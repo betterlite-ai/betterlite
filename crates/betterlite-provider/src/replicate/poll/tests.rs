@@ -9,6 +9,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
+use betterlite_tokenizer::count::error::CountError;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
@@ -21,9 +22,7 @@ use super::{
     OutputPolicy, ReplicateChunk, ReplicateCompletion, ReplicatePolling, ReplicateSleeper,
 };
 use crate::replicate::error::ReplicateFailure;
-use crate::replicate::reply::{
-    CountFailure, PostCall, PostCallLogger, ReplicateReply, TokenCounter,
-};
+use crate::replicate::reply::{PostCall, PostCallLogger, ReplicateReply, TokenCounter};
 use crate::replicate::request::ReplicateDefaults;
 
 const CREATE: &str = r#"{"urls":{"get":"https://poll/1"}}"#;
@@ -109,16 +108,12 @@ struct Counting;
 
 #[async_trait]
 impl TokenCounter for Counting {
-    async fn count_messages(
-        &self,
-        _model: &str,
-        messages: &[Message],
-    ) -> Result<i64, CountFailure> {
-        Ok(i64::try_from(messages.len())?)
+    async fn count_messages(&self, _model: &str, messages: &[Message]) -> Result<i64, CountError> {
+        i64::try_from(messages.len()).map_err(|_overflow| CountError::Overflow)
     }
 
-    async fn count_response_tokens(&self, _model: &str, text: &str) -> Result<i64, CountFailure> {
-        Ok(i64::try_from(text.chars().count())?)
+    async fn count_response_tokens(&self, _model: &str, text: &str) -> Result<i64, CountError> {
+        i64::try_from(text.chars().count()).map_err(|_overflow| CountError::Overflow)
     }
 }
 

@@ -1,9 +1,9 @@
-use std::error::Error as StdError;
 use std::str::Utf8Error;
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::analytics::python::FormatError;
 use betterlite_prompts::error::FactoryError;
+use betterlite_tokenizer::count::error::CountError;
 use http::HeaderMap;
 use http::header::InvalidHeaderValue;
 use thiserror::Error;
@@ -69,7 +69,7 @@ pub enum ReplicateFailure {
     #[error("the tokens of the Replicate call cannot be counted")]
     TokenCount {
         #[source]
-        source: Box<dyn StdError + Send + Sync>,
+        source: CountError,
     },
     #[error("the token usage overflows")]
     UsageOverflow,

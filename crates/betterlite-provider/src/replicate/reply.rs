@@ -1,10 +1,10 @@
-use std::error::Error;
 use std::str::from_utf8;
 
 use async_trait::async_trait;
 use betterlite_logging::analytics::python;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::builtin::Message;
+use betterlite_tokenizer::count::error::CountError;
 use http::HeaderMap;
 
 use super::error::{ReplicateError, ReplicateFailure};
@@ -26,12 +26,10 @@ pub struct ReplicateReply {
     pub usage: ReplicateUsage,
 }
 
-pub type CountFailure = Box<dyn Error + Send + Sync>;
-
 #[async_trait]
 pub trait TokenCounter: Send + Sync {
-    async fn count_messages(&self, model: &str, messages: &[Message]) -> Result<i64, CountFailure>;
-    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<i64, CountFailure>;
+    async fn count_messages(&self, model: &str, messages: &[Message]) -> Result<i64, CountError>;
+    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<i64, CountError>;
 }
 
 pub struct PostCall<'request> {

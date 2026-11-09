@@ -5,12 +5,13 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::builtin::Message;
+use betterlite_tokenizer::count::error::CountError;
 use http::HeaderMap;
 use rstest::rstest;
 
 use super::{
-    CountFailure, PostCall, PostCallLogger, ReplicateReply, ReplyInput, TokenCounter,
-    get_prediction_url, transform_response,
+    PostCall, PostCallLogger, ReplicateReply, ReplyInput, TokenCounter, get_prediction_url,
+    transform_response,
 };
 use crate::replicate::error::ReplicateFailure;
 use crate::replicate::request::ReplicateBody;
@@ -22,18 +23,12 @@ struct FixedCounter {
 
 #[async_trait]
 impl TokenCounter for FixedCounter {
-    async fn count_messages(
-        &self,
-        _model: &str,
-        _messages: &[Message],
-    ) -> Result<i64, CountFailure> {
-        self.prompt
-            .ok_or_else(|| CountFailure::from("no prompt count"))
+    async fn count_messages(&self, _model: &str, _messages: &[Message]) -> Result<i64, CountError> {
+        self.prompt.ok_or_else(|| CountError::MissingInput)
     }
 
-    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<i64, CountFailure> {
-        self.completion
-            .ok_or_else(|| CountFailure::from("no completion count"))
+    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
+        self.completion.ok_or_else(|| CountError::MissingInput)
     }
 }
 
