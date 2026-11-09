@@ -10,6 +10,7 @@ use crate::redis_client_reuse::service_event::ServiceEvent;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::store::RedisClientStore;
 use crate::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
+use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
 use crate::redis_live_client::LiveClientFactory;
 use crate::redis_live_client::tests::fake_server::FakeServer;
@@ -135,8 +136,10 @@ impl ServiceHooks for TestHooks {
     }
 
     fn failure(&self, event: &ServiceEvent, error: &(dyn Error + Send + Sync)) {
-        self.log
-            .push(format!("failure:{}:{error}", event.call_type));
+        self.log.push(format!(
+            "failure:{}:{:?}:{error}",
+            event.call_type, event.key
+        ));
         match self.durations.lock() {
             Ok(mut durations) => durations.push(event.duration),
             Err(poisoned) => poisoned.into_inner().push(event.duration),
@@ -237,6 +240,30 @@ pub(crate) fn harness_with_missing_credentials(
     let mut connection = connection_settings(&server.host(), server.port());
     connection.credential_provider = true;
     build(settings, build_transport(connection), TestGate::never())
+}
+
+pub(crate) fn sentinel_transport() -> Arc<RedisTransport> {
+    let mut connection = connection_settings("127.0.0.1", 1);
+    connection.sentinel_nodes = Some(vec![("127.0.0.1".to_owned(), 1)]);
+    connection.service_name = Some("missing-service".to_owned());
+    build_transport(connection)
+}
+
+pub(crate) fn missing_tls_transport() -> Arc<RedisTransport> {
+    let mut connection = connection_settings("127.0.0.1", 1);
+    connection.ssl = Some(true);
+    connection.passthrough = BTreeMap::from([(
+        "ssl_ca_certs".to_owned(),
+        PassthroughValue::Text("/nonexistent-ca.pem".to_owned()),
+    )]);
+    build_transport(connection)
+}
+
+pub(crate) fn harness_on_transport(
+    settings: RedisCacheValuesSettings,
+    transport: Arc<RedisTransport>,
+) -> Harness {
+    build(settings, transport, TestGate::never())
 }
 
 fn build(

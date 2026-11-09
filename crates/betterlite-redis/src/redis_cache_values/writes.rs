@@ -71,13 +71,23 @@ pub(crate) async fn write_sadd(
 
 pub(crate) async fn send_ttls_pipeline(
     values: &RedisCacheValues,
-    commands: Vec<Cmd>,
+    built: Result<Vec<Cmd>, RedisCacheValuesError>,
     admission: BreakerAdmission,
     started: Instant,
 ) -> Result<(), RedisCacheValuesError> {
-    let outcome = match values.transport.async_client().await {
-        Ok(client) => execute_pipeline(&client, commands).await,
-        Err(source) => Err(RedisCacheValuesError::ClientReuse(source)),
+    let outcome = match built {
+        Ok(commands) => match values.transport.async_client().await {
+            Ok(client) => execute_pipeline(&client, commands).await,
+            Err(source) => Err(RedisCacheValuesError::ClientReuse(source)),
+        },
+        // a finite TTL beyond i64 raises inside LiteLLM's timedelta() and is swallowed
+        Err(RedisCacheValuesError::TtlOutOfRange { seconds }) if seconds.is_finite() => {
+            Err(RedisCacheValuesError::TtlOutOfRange { seconds })
+        }
+        Err(error) => {
+            values.gate.record_failure(&error);
+            return Err(error);
+        }
     };
     let finished = event("async_set_cache_pipeline_with_ttls", started, None);
     let _stored = finish_outcome(values, &finished, admission, outcome);
@@ -100,8 +110,5 @@ where
             set_command(values.settings.default_ttl, &namespaced, value, ttl, false)
         })
         .collect();
-    match built {
-        Ok(commands) => execute_pipeline(client, commands).await,
-        Err(error) => Err(error),
-    }
+    execute_pipeline(client, built?).await
 }

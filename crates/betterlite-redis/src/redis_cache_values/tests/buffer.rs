@@ -6,7 +6,10 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use tokio::time;
 
-use super::support::{TestGate, harness, harness_with_gate, harness_without_server, settings};
+use super::support::{
+    TestGate, harness, harness_on_transport, harness_with_gate, harness_without_server,
+    sentinel_transport, settings,
+};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -141,6 +144,17 @@ async fn drops_the_entries_when_the_flush_cannot_connect() {
         .batch_cache_write("alpha", "first")
         .await
         .expect("the swallowed connection failure");
+    assert_eq!(harness.values.buffered_count(), 0);
+}
+
+#[tokio::test]
+async fn drops_the_entries_when_the_flush_cannot_resolve_the_master() {
+    let harness = harness_on_transport(settings(Some("ns"), None, Some(1)), sentinel_transport());
+    harness
+        .values
+        .batch_cache_write("alpha", "first")
+        .await
+        .expect("the swallowed sentinel failure");
     assert_eq!(harness.values.buffered_count(), 0);
 }
 

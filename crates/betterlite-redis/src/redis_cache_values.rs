@@ -67,10 +67,10 @@ impl RedisCacheValues {
 
     #[must_use]
     pub fn buffered_count(&self) -> usize {
-        self.buffer.lock().map_or_else(
-            |poisoned| poisoned.into_inner().len(),
-            |buffer| buffer.len(),
-        )
+        match self.buffer.lock() {
+            Ok(buffer) => buffer.len(),
+            Err(poisoned) => poisoned.into_inner().len(),
+        }
     }
 
     pub fn set_cache<V>(&self, key: &str, value: &V, ttl: Option<f64>)
@@ -110,7 +110,8 @@ impl RedisCacheValues {
         let client = match open_client(self).await {
             Ok(client) => client,
             Err(error) => {
-                let failed = event("async_set_cache", started, None);
+                let event_key = connection_failure(&error).then(|| namespaced.clone());
+                let failed = event("async_set_cache", started, event_key);
                 return failed_client(self, &failed, admission, error, None);
             }
         };
@@ -173,7 +174,7 @@ impl RedisCacheValues {
             return Ok(());
         }
         let started = Instant::now();
-        let commands = self.prepare_ttl_commands(cache_list)?;
+        let commands = self.prepare_ttl_commands(cache_list);
         send_ttls_pipeline(self, commands, admission, started).await
     }
 
@@ -190,8 +191,7 @@ impl RedisCacheValues {
                 let namespaced = apply_namespace(self, key);
                 set_command(self.settings.default_ttl, &namespaced, value, *ttl, false)
             })
-            .collect::<Result<Vec<_>, _>>()
-            .inspect_err(|error| self.gate.record_failure(error))
+            .collect()
     }
 
     pub async fn async_set_cache_sadd(

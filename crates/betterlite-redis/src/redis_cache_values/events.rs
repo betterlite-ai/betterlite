@@ -106,7 +106,11 @@ pub(crate) async fn open_client(
 pub(crate) const fn connection_failure(error: &RedisCacheValuesError) -> bool {
     matches!(
         error,
-        RedisCacheValuesError::ClientReuse(ClientReuseError::Live(LiveClientError::Redis(_)))
+        RedisCacheValuesError::ClientReuse(ClientReuseError::Live(
+            LiveClientError::Redis(_)
+                | LiveClientError::NoSentinelMaster { .. }
+                | LiveClientError::TlsFile { .. }
+        ))
     )
 }
 

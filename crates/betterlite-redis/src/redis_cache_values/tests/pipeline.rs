@@ -1,4 +1,7 @@
-use super::support::{harness, harness_with_missing_credentials, harness_without_server, settings};
+use super::support::{
+    harness, harness_on_transport, harness_with_missing_credentials, harness_without_server,
+    missing_tls_transport, sentinel_transport, settings,
+};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -58,6 +61,43 @@ async fn swallows_an_unreachable_client() {
     let hooks = harness.hooks.entries();
     assert_eq!(hooks.len(), 1);
     assert!(hooks[0].starts_with("failure:async_set_cache_pipeline:"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_set_cache_pipeline");
+    assert!(gate[1].starts_with("swallowed:1:"));
+    assert_eq!(gate[2], "exit:1");
+}
+
+#[tokio::test]
+async fn swallows_an_unreachable_sentinel() {
+    let harness = harness_on_transport(settings(Some("ns"), Some(60), None), sentinel_transport());
+    harness
+        .values
+        .async_set_cache_pipeline(&entries(), None)
+        .await
+        .expect("the swallowed sentinel failure");
+    let hooks = harness.hooks.entries();
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_set_cache_pipeline:None:"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_set_cache_pipeline");
+    assert!(gate[1].starts_with("swallowed:1:"));
+    assert_eq!(gate[2], "exit:1");
+}
+
+#[tokio::test]
+async fn swallows_a_missing_tls_file() {
+    let harness = harness_on_transport(
+        settings(Some("ns"), Some(60), None),
+        missing_tls_transport(),
+    );
+    harness
+        .values
+        .async_set_cache_pipeline(&entries(), None)
+        .await
+        .expect("the swallowed TLS file failure");
+    let hooks = harness.hooks.entries();
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_set_cache_pipeline:None:"));
     let gate = harness.gate.entries();
     assert_eq!(gate[0], "enter:async_set_cache_pipeline");
     assert!(gate[1].starts_with("swallowed:1:"));

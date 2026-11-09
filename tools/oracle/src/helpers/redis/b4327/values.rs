@@ -126,8 +126,12 @@ fn write_plan(call: &WriteCall) -> Result<WriteStep, Box<HelperError>> {
     match call.operation {
         WriteOperation::AsyncSetCache => {
             let entry = first_entry(call)?;
-            let single = (entry.key.clone(), entry.value.clone(), entry.ttl, call.nx);
-            Ok(WriteStep::Single(single.0, single.1, single.2, single.3))
+            Ok(WriteStep::Single(
+                entry.key.clone(),
+                entry.value.clone(),
+                entry.ttl,
+                call.nx,
+            ))
         }
         WriteOperation::AsyncSetCachePipeline => Ok(WriteStep::Pipeline(
             keyed_entries(call)?,
@@ -142,7 +146,8 @@ fn write_plan(call: &WriteCall) -> Result<WriteStep, Box<HelperError>> {
         }
         WriteOperation::AsyncSetCacheSadd => {
             let entry = first_entry(call)?;
-            let members = string_array(&entry.value)?;
+            let members = serde_json::from_value(entry.value.clone())
+                .map_err(|error| helper_error("InvalidInput", error))?;
             Ok(WriteStep::Sadd(required_key(entry)?, members, entry.ttl))
         }
         WriteOperation::BatchCacheWrite => Ok(WriteStep::Buffered(keyed_entries(call)?)),
@@ -199,26 +204,6 @@ fn required_key(entry: &EntryInput) -> Result<String, Box<HelperError>> {
         .key
         .clone()
         .ok_or_else(|| helper_error("InvalidInput", "this operation needs a key"))
-}
-
-fn string_array(value: &Value) -> Result<Vec<String>, Box<HelperError>> {
-    let Value::Array(items) = value else {
-        return Err(helper_error("InvalidInput", "the members must be a list"));
-    };
-    items
-        .iter()
-        .map(|item| match item {
-            Value::String(text) => Ok(text.clone()),
-            Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::Array(_)
-            | Value::Object(_) => Err(helper_error(
-                "InvalidInput",
-                "every member must be a string",
-            )),
-        })
-        .collect()
 }
 
 fn keys_sent(server: &FakeServer, name: &str) -> Vec<String> {
