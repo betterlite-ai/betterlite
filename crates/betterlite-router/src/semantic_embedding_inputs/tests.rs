@@ -2,9 +2,12 @@
 
 mod support;
 
+use betterlite_tokenizer::engine::error::EngineError;
+use betterlite_tokenizer::engine::selection::SelectionError;
 use rstest::rstest;
 use serde_json::json;
 
+use super::error::EmbeddingInputError;
 use super::{
     ConfiguredTokenLimits, EMBEDDING_METADATA_FLAG, MetadataMap, ModelListEntry,
     build_router_embedding_metadata, resolve_embedding_max_input_tokens, resolve_embedding_router,
@@ -141,12 +144,49 @@ fn timeout_resolution_prefers_the_configured_value(
 }
 
 #[tokio::test]
-async fn truncate_returns_the_prompt_without_a_limit() {
+async fn truncate_returns_the_prompt_without_a_limit_before_any_selection() {
     let prompt = "hello world";
-    let truncated = truncate_embedding_input(&support::selector(), prompt, MODEL, None)
+    let truncated = truncate_embedding_input(&support::failing_selector(), prompt, MODEL, None)
         .await
         .unwrap();
     assert_eq!(truncated, prompt);
+}
+
+// the anthropic tokenizer decodes the <EOT> special token away, so a decode round trip changes the prompt
+#[rstest]
+#[case::at_the_limit(3, "<EOT>hello world")]
+#[case::below_the_limit(5, "<EOT>hello world")]
+#[tokio::test]
+async fn truncate_returns_the_prompt_when_decoding_would_change_it(
+    #[case] max_input_tokens: i64,
+    #[case] expected: &str,
+) {
+    let prompt = "<EOT>hello world";
+    let truncated = truncate_embedding_input(
+        &support::selector(),
+        prompt,
+        "claude-2.1",
+        Some(max_input_tokens),
+    )
+    .await
+    .unwrap();
+    assert_eq!(truncated, expected);
+}
+
+#[tokio::test]
+async fn truncate_reports_a_failed_tokenizer_selection() {
+    let error =
+        truncate_embedding_input(&support::failing_selector(), "hello world", MODEL, Some(1))
+            .await
+            .unwrap_err();
+    let EmbeddingInputError::Select { model, source } = error else {
+        panic!("expected a tokenizer selection error");
+    };
+    assert_eq!(model, MODEL);
+    assert!(matches!(
+        *source,
+        SelectionError::Engine(EngineError::PoolClosed)
+    ));
 }
 
 #[rstest]

@@ -23,6 +23,8 @@ use betterlite_tokenizer::engine::limits::{
 use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::Instant;
 
+const CATALOG: &str = r#"{"claude-2.1": {"litellm_provider": "anthropic"}}"#;
+
 struct InlineCounter;
 
 #[async_trait]
@@ -40,8 +42,34 @@ impl BlockingCounter for InlineCounter {
     }
 }
 
-// offline and with an empty catalog, so every selection uses the bundled cl100k vocabulary
+struct FailingCounter;
+
+#[async_trait]
+impl BlockingCounter for FailingCounter {
+    async fn count(&self, _job: CountJob) -> Result<usize, EngineError> {
+        Err(EngineError::PoolClosed)
+    }
+
+    async fn build(&self, _job: BuildJob) -> Result<Engine, EngineError> {
+        Err(EngineError::PoolClosed)
+    }
+
+    async fn convert(&self, _job: ConvertJob) -> Result<Vec<u8>, EngineError> {
+        Err(EngineError::PoolClosed)
+    }
+}
+
+// offline; claude-2.1 uses the bundled Anthropic tokenizer and every other model the bundled cl100k
 pub(crate) fn selector() -> Selector {
+    selector_with(Arc::new(InlineCounter))
+}
+
+// every tokenizer build fails, so selection reports EngineError::PoolClosed
+pub(crate) fn failing_selector() -> Selector {
+    selector_with(Arc::new(FailingCounter))
+}
+
+fn selector_with(facility: Arc<dyn BlockingCounter>) -> Selector {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).unwrap());
     let settings = HubSettings {
@@ -71,9 +99,8 @@ pub(crate) fn selector() -> Selector {
         tokens,
         Arc::new(Instant::now),
     ));
-    let facility: Arc<dyn BlockingCounter> = Arc::new(InlineCounter);
     let counter = Arc::new(CountingService::new(4, facility, EncodeLimits::default()));
     let fetcher = Arc::new(TiktokenFetcher::new(client, None, Arc::clone(&counter)));
-    let catalog = Arc::new(ModelCatalog::parse(b"{}", UnknownFields::Reject).unwrap());
+    let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
     Selector::new(fetcher, hub, catalog, counter, false)
 }
