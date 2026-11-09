@@ -1,9 +1,10 @@
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_tokenizer::engine::error::EngineError;
-use betterlite_tokenizer::engine::selection::{SelectionError, Selector};
+use betterlite_tokenizer::engine::selection::Selector;
 use indexmap::IndexMap;
-use thiserror::Error;
 
+use self::error::EmbeddingInputError;
+
+pub mod error;
 mod tests;
 
 const EMBEDDING_METADATA_FLAG: &str = "semantic-cache-embedding";
@@ -66,26 +67,6 @@ pub const fn resolve_embedding_timeout(configured: Option<f64>, default_seconds:
         return default_seconds;
     };
     value
-}
-
-#[derive(Debug, Error)]
-pub enum EmbeddingInputError {
-    #[error("the tokenizer for {model} could not be selected")]
-    Select {
-        model: String,
-        #[source]
-        source: Box<SelectionError>,
-    },
-    #[error("the embedding prompt could not be encoded")]
-    Encode {
-        #[source]
-        source: EngineError,
-    },
-    #[error("the truncated embedding prompt could not be decoded")]
-    Decode {
-        #[source]
-        source: EngineError,
-    },
 }
 
 pub async fn truncate_embedding_input(
