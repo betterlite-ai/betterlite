@@ -228,13 +228,13 @@ fn embedding_replies(replies: &[EmbeddingReplyCase]) -> Vec<Value> {
 }
 
 fn embedding_splits(split: &[SplitCase]) -> Vec<Value> {
-    split
-        .iter()
-        .map(
-            |case| match split_embedding_by_shape(&case.data, &case.shape) {
-                Ok(chunks) => json!({"ok": true, "chunks": chunks}),
-                Err(error) => json!({"ok": false, "status": error.status().unwrap_or(500)}),
-            },
-        )
-        .collect()
+    let mut results = Vec::with_capacity(split.len());
+    for case in split {
+        let found = match split_embedding_by_shape(&case.data, &case.shape) {
+            Ok(chunks) => json!({"ok": true, "chunks": chunks}),
+            Err(error) => json!({"ok": false, "status": error.status().unwrap_or(500)}),
+        };
+        results.push(found);
+    }
+    results
 }
