@@ -69,17 +69,17 @@ struct Server {
 }
 
 impl Server {
-    async fn start(reply: Reply) -> Self {
+    async fn start(routes: Vec<(String, Reply)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
-        let shared_reply = Arc::new(reply);
+        let shared = Arc::new(routes.into_iter().collect::<BTreeMap<String, Reply>>());
         let state = Arc::clone(&requests);
         let mut tasks = JoinSet::new();
         tasks.spawn(async move {
             let mut open = JoinSet::new();
             while let Ok((stream, _)) = listener.accept().await {
-                open.spawn(serve(stream, Arc::clone(&shared_reply), Arc::clone(&state)));
+                open.spawn(serve(stream, Arc::clone(&shared), Arc::clone(&state)));
             }
         });
         Self {
@@ -107,15 +107,21 @@ impl Drop for Server {
     }
 }
 
-async fn serve(mut stream: TcpStream, reply: Arc<Reply>, requests: Arc<Mutex<Vec<String>>>) {
+async fn serve(
+    mut stream: TcpStream,
+    routes: Arc<BTreeMap<String, Reply>>,
+    requests: Arc<Mutex<Vec<String>>>,
+) {
     let Some(path) = request_path(&mut stream).await else {
         return;
     };
     requests
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .push(path);
-    let _outcome = write_reply(&mut stream, &reply).await;
+        .push(path.clone());
+    let missing = Reply::status(404);
+    let reply = routes.get(&path).unwrap_or(&missing);
+    let _outcome = write_reply(&mut stream, reply).await;
 }
 
 async fn request_path(stream: &mut TcpStream) -> Option<String> {
@@ -157,10 +163,15 @@ async fn write_reply(stream: &mut TcpStream, reply: &Reply) -> io::Result<()> {
     stream.write_all(&reply.body).await
 }
 
+fn route(path: &str, reply: Reply) -> (String, Reply) {
+    (path.to_owned(), reply)
+}
+
 fn remote_with(
     limits: TransportLimits,
     allowed: &[&str],
     max_mb: f64,
+    validation: bool,
 ) -> RemoteImage<SystemResolver> {
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::build(base_builder(), &policy, limits).unwrap();
@@ -170,14 +181,26 @@ fn remote_with(
         client,
         urls: UserUrlFetcher {
             validator,
-            validation: true,
+            validation,
         },
         max_download_size_mb: max_mb,
     }
 }
 
 fn remote(allowed: &[&str], max_mb: f64) -> RemoteImage<SystemResolver> {
-    remote_with(TRANSPORT_LIMITS, allowed, max_mb)
+    remote_with(TRANSPORT_LIMITS, allowed, max_mb, true)
+}
+
+fn assert_video_block(format: &str) {
+    assert_eq!(
+        serde_json::to_string(&create_bedrock_block(
+            "QUJD",
+            &format!("video/{format}"),
+            format
+        ))
+        .unwrap(),
+        format!(r#"{{"video":{{"format":"{format}","source":{{"bytes":"QUJD"}}}}}}"#)
+    );
 }
 
 fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
@@ -207,6 +230,7 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
 )]
 #[case::format_validation_maps_document_mime_types("format_validation_maps_document_mime_types")]
 #[case::format_validation_rejects_unknown_documents("format_validation_rejects_unknown_documents")]
+#[case::video_blocks_wrap_every_supported_format("video_blocks_wrap_every_supported_format")]
 #[case::blocks_wrap_image_video_and_document_content(
     "blocks_wrap_image_video_and_document_content"
 )]
@@ -224,6 +248,12 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
     "remote_fetch_returns_base64_and_content_type"
 )]
 #[case::remote_fetch_fails_with_httpx_status_text("remote_fetch_fails_with_httpx_status_text")]
+#[case::remote_fetch_fails_with_server_error_text("remote_fetch_fails_with_server_error_text")]
+#[case::remote_fetch_fails_with_invalid_status_text("remote_fetch_fails_with_invalid_status_text")]
+#[case::remote_fetch_fails_with_redirect_status_text(
+    "remote_fetch_fails_with_redirect_status_text"
+)]
+#[case::remote_fetch_names_the_last_request_url("remote_fetch_names_the_last_request_url")]
 #[case::remote_fetch_fails_a_body_over_the_limit("remote_fetch_fails_a_body_over_the_limit")]
 #[case::remote_fetch_rejects_a_blocked_loopback("remote_fetch_rejects_a_blocked_loopback")]
 #[case::remote_fetch_ends_a_dripping_body_at_the_deadline(
@@ -232,6 +262,8 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
 #[case::process_dispatches_base64_before_a_url("process_dispatches_base64_before_a_url")]
 #[case::process_rejects_an_unsupported_image_url("process_rejects_an_unsupported_image_url")]
 #[case::process_overrides_the_media_type_and_format("process_overrides_the_media_type_and_format")]
+#[case::process_override_sets_the_mime_type("process_override_sets_the_mime_type")]
+#[case::process_override_without_a_subtype_fails("process_override_without_a_subtype_fails")]
 #[case::process_fetches_a_remote_image("process_fetches_a_remote_image")]
 #[case::process_rejects_an_unsupported_format("process_rejects_an_unsupported_format")]
 #[case::process_returns_a_document_block("process_returns_a_document_block")]
@@ -314,7 +346,14 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(validate_format("image/gif", "gif").unwrap(), "gif");
             assert_eq!(validate_format("image/webp", "webp").unwrap(), "webp");
             assert_eq!(validate_format("video/mp4", "mp4").unwrap(), "mp4");
+            assert_eq!(validate_format("video/mov", "mov").unwrap(), "mov");
+            assert_eq!(validate_format("video/mkv", "mkv").unwrap(), "mkv");
             assert_eq!(validate_format("video/webm", "webm").unwrap(), "webm");
+            assert_eq!(validate_format("video/flv", "flv").unwrap(), "flv");
+            assert_eq!(validate_format("video/mpeg", "mpeg").unwrap(), "mpeg");
+            assert_eq!(validate_format("video/mpg", "mpg").unwrap(), "mpg");
+            assert_eq!(validate_format("video/wmv", "wmv").unwrap(), "wmv");
+            assert_eq!(validate_format("video/3gp", "3gp").unwrap(), "3gp");
         }
         "format_validation_rejects_unknown_image_formats" => {
             let error = validate_format("image/tiff", "tiff").unwrap_err();
@@ -350,6 +389,7 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(validate_format("text/html", "html").unwrap(), "html");
             assert_eq!(validate_format("text/plain", "plain").unwrap(), "txt");
             assert_eq!(validate_format("text/markdown", "markdown").unwrap(), "md");
+            assert_eq!(validate_format("application/PDF", "PDF").unwrap(), "pdf");
         }
         "format_validation_rejects_unknown_documents" => {
             let error = validate_format("application/x-unknown", "unknown").unwrap_err();
@@ -357,6 +397,17 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 error.to_string(),
                 "No supported extensions for MIME type: application/x-unknown. Supported formats: ['pdf', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'html', 'txt', 'md']"
             );
+        }
+        "video_blocks_wrap_every_supported_format" => {
+            assert_video_block("mp4");
+            assert_video_block("mov");
+            assert_video_block("mkv");
+            assert_video_block("webm");
+            assert_video_block("flv");
+            assert_video_block("mpeg");
+            assert_video_block("mpg");
+            assert_video_block("wmv");
+            assert_video_block("3gp");
         }
         "blocks_wrap_image_video_and_document_content" => {
             let image = create_bedrock_block("QUJD", "image/png", "png");
@@ -433,7 +484,11 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(TRANSPORT_LIMITS.read_timeout, Duration::from_secs(600));
         }
         "remote_fetch_returns_base64_and_content_type" => {
-            let server = Server::start(Reply::image("image/png; charset=utf-8", PNG)).await;
+            let server = Server::start(vec![route(
+                "/image.png",
+                Reply::image("image/png; charset=utf-8", PNG),
+            )])
+            .await;
             let url = server.url("/image.png");
             let (base64, content_type) = remote(&["127.0.0.1"], 50.0)
                 .image_details(&url)
@@ -444,7 +499,7 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 1);
         }
         "remote_fetch_fails_with_httpx_status_text" => {
-            let server = Server::start(Reply::status(404)).await;
+            let server = Server::start(vec![route("/image.png", Reply::status(404))]).await;
             let url = server.url("/image.png");
             let error = remote(&["127.0.0.1"], 50.0)
                 .image_details(&url)
@@ -458,8 +513,79 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             );
             assert_eq!(server.request_count(), 1);
         }
+        "remote_fetch_fails_with_server_error_text" => {
+            let server = Server::start(vec![route("/image.png", Reply::status(503))]).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Server error '503 Service Unavailable' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503"
+                )
+            );
+        }
+        "remote_fetch_fails_with_invalid_status_text" => {
+            let server = Server::start(vec![route("/image.png", Reply::status(600))]).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Invalid status code '600 ' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/600"
+                )
+            );
+        }
+        "remote_fetch_fails_with_redirect_status_text" => {
+            let server = Server::start(vec![route("/image.png", Reply::status(304))]).await;
+            let url = server.url("/image.png");
+            let error = remote_with(TRANSPORT_LIMITS, &[], 50.0, false)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Redirect response '304 Not Modified' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/304"
+                )
+            );
+        }
+        "remote_fetch_names_the_last_request_url" => {
+            let redirect = Reply {
+                status: 302,
+                headers: vec![("Location".to_owned(), "/final".to_owned())],
+                body: Vec::new(),
+                drip: false,
+            };
+            let server = Server::start(vec![
+                route("/image.png", redirect),
+                route("/final", Reply::status(404)),
+            ])
+            .await;
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&server.url("/image.png"))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Client error '404 Not Found' for url '{}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+                    server.url("/final")
+                )
+            );
+            assert_eq!(server.request_count(), 2);
+        }
         "remote_fetch_fails_a_body_over_the_limit" => {
-            let server = Server::start(Reply::image("image/png", &vec![0xAB_u8; 2000])).await;
+            let server = Server::start(vec![route(
+                "/image.png",
+                Reply::image("image/png", &vec![0xAB_u8; 2000]),
+            )])
+            .await;
             let url = server.url("/image.png");
             let error = remote(&["127.0.0.1"], 0.001)
                 .image_details(&url)
@@ -474,7 +600,8 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 1);
         }
         "remote_fetch_rejects_a_blocked_loopback" => {
-            let server = Server::start(Reply::image("image/png", PNG)).await;
+            let server =
+                Server::start(vec![route("/image.png", Reply::image("image/png", PNG))]).await;
             let url = server.url("/image.png");
             let error = remote(&[], 50.0).image_details(&url).await.unwrap_err();
             assert_eq!(
@@ -484,12 +611,15 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 0);
         }
         "remote_fetch_ends_a_dripping_body_at_the_deadline" => {
-            let server = Server::start(Reply {
-                status: 200,
-                headers: Vec::new(),
-                body: vec![b'x'; 20],
-                drip: true,
-            })
+            let server = Server::start(vec![route(
+                "/drip.png",
+                Reply {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: vec![b'x'; 20],
+                    drip: true,
+                },
+            )])
             .await;
             let url = server.url("/drip.png");
             let limits = TransportLimits {
@@ -500,7 +630,7 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             };
             let outcome = timeout(
                 Duration::from_secs(5),
-                remote_with(limits, &["127.0.0.1"], 50.0).image_details(&url),
+                remote_with(limits, &["127.0.0.1"], 50.0, true).image_details(&url),
             )
             .await
             .expect("a fetch without a total deadline would never end");
@@ -534,8 +664,35 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 r#"{"image":{"format":"jpeg","source":{"bytes":"QUJD"}}}"#
             );
         }
+        "process_override_sets_the_mime_type" => {
+            let block = process_image(
+                "data:image/png;base64,QUJD",
+                Some("application/pdf"),
+                &remote(&[], 50.0),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                serde_json::to_string(&block).unwrap(),
+                r#"{"document":{"format":"pdf","source":{"bytes":"QUJD"},"name":"DocumentPDFmessages_0a702913308f6ec6_pdf"}}"#
+            );
+        }
+        "process_override_without_a_subtype_fails" => {
+            let error = process_image(
+                "data:image/png;base64,QUJD",
+                Some("png"),
+                &remote(&[], 50.0),
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                BedrockImageError::MissingFormatSubtype { .. }
+            ));
+        }
         "process_fetches_a_remote_image" => {
-            let server = Server::start(Reply::image("image/png", PNG)).await;
+            let server =
+                Server::start(vec![route("/image.png", Reply::image("image/png", PNG))]).await;
             let url = server.url("/image.png");
             let block = process_image(&url, None, &remote(&["127.0.0.1"], 50.0))
                 .await
@@ -569,7 +726,11 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             assert_eq!(document.source.bytes, "QUJD");
         }
         "process_uses_the_fetched_content_type" => {
-            let server = Server::start(Reply::image("video/mp4", b"mp4-body")).await;
+            let server = Server::start(vec![route(
+                "/clip.mp4",
+                Reply::image("video/mp4", b"mp4-body"),
+            )])
+            .await;
             let url = server.url("/clip.mp4");
             let block = process_image(&url, None, &remote(&["127.0.0.1"], 50.0))
                 .await
