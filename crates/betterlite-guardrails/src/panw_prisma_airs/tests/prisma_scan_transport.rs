@@ -1,4 +1,4 @@
-use std::fs::{read, read_dir};
+use std::fs::{read, read_dir, write};
 use std::io::Error as IoError;
 use std::path::Path;
 use std::str;
@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use rstest::rstest;
 use rustls::ServerConfig;
 use rustls::crypto::aws_lc_rs;
-use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -29,11 +29,33 @@ use crate::panw_prisma_airs::tool_scan::ToolCall;
 use crate::panw_prisma_airs::verdict::{Action, Failure, ScanVerdict};
 
 const ALLOW: &[u8] = br#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
-const TLS_SERVER_CERT: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
-const TLS_SERVER_KEY: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
 const MAX_REQUEST_BYTES: usize = 8192;
+
+struct Authority {
+    ca_pem: String,
+    leaf: CertificateDer<'static>,
+    key: PrivateKeyDer<'static>,
+}
+
+fn authority() -> Authority {
+    let ca_key = KeyPair::generate().expect("a CA key");
+    let mut ca_params = CertificateParams::new(Vec::<String>::new()).expect("CA parameters");
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    let ca_certificate = ca_params.self_signed(&ca_key).expect("a CA certificate");
+    let issuer = Issuer::from_params(&ca_params, &ca_key);
+    let leaf_key = KeyPair::generate().expect("a leaf key");
+    let leaf_params =
+        CertificateParams::new(vec!["localhost".to_owned()]).expect("leaf parameters");
+    let leaf_certificate = leaf_params
+        .signed_by(&leaf_key, &issuer)
+        .expect("a leaf certificate");
+    Authority {
+        ca_pem: ca_certificate.pem(),
+        leaf: leaf_certificate.der().clone(),
+        key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der())),
+    }
+}
 
 fn request<'req>(content: &'req str, metadata: Option<&'req ScanMetadata>) -> ScanRequest<'req> {
     ScanRequest {
@@ -261,24 +283,18 @@ fn construct_rejects_an_api_key_that_is_not_a_header_value() {
     ));
 }
 
-fn scan_tls_ca_file() -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/postgres-fixture/fixtures/tls/ca.pem")
-        .to_str()
-        .expect("the CA path is UTF-8")
-        .to_owned()
+fn ca_file(authority: &Authority) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().expect("a CA file");
+    write(file.path(), authority.ca_pem.as_bytes()).expect("the CA");
+    file
 }
 
-fn scan_tls_server_config() -> Result<ServerConfig, IoError> {
-    let certificates = CertificateDer::pem_slice_iter(TLS_SERVER_CERT)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(IoError::other)?;
-    let private_key = PrivateKeyDer::from_pem_slice(TLS_SERVER_KEY).map_err(IoError::other)?;
+fn scan_tls_server_config(authority: &Authority) -> Result<ServerConfig, IoError> {
     ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
         .with_safe_default_protocol_versions()
         .map_err(IoError::other)?
         .with_no_client_auth()
-        .with_single_cert(certificates, private_key)
+        .with_single_cert(vec![authority.leaf.clone()], authority.key.clone_key())
         .map_err(IoError::other)
 }
 
@@ -317,9 +333,9 @@ fn content_length(headers: &[u8]) -> usize {
     0
 }
 
-async fn serve_scan_over_tls(listener: &TcpListener) -> Result<(), IoError> {
+async fn serve_scan_over_tls(listener: &TcpListener, authority: &Authority) -> Result<(), IoError> {
     let (tcp, _) = listener.accept().await?;
-    let config = Arc::new(scan_tls_server_config()?);
+    let config = Arc::new(scan_tls_server_config(authority)?);
     let mut stream = TlsAcceptor::from(config)
         .accept(tcp)
         .await
@@ -336,15 +352,20 @@ async fn serve_scan_over_tls(listener: &TcpListener) -> Result<(), IoError> {
 
 #[tokio::test]
 async fn a_configured_ca_bundle_reaches_the_scan_client() {
+    let authority = authority();
+    let ca = ca_file(&authority);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let port = listener.local_addr().expect("address").port();
     let settings = settings(&format!("https://localhost:{port}"));
-    let guardrail =
-        PanwPrismaAirs::new(settings, &tls_with_ca(&scan_tls_ca_file())).expect("client builds");
+    let guardrail = PanwPrismaAirs::new(
+        settings,
+        &tls_with_ca(ca.path().to_str().expect("a UTF-8 CA path")),
+    )
+    .expect("client builds");
     let (verdict, served) = timeout(Duration::from_secs(10), async {
         tokio::join!(
             call_panw_api(&guardrail, request("hello", None)),
-            serve_scan_over_tls(&listener)
+            serve_scan_over_tls(&listener, &authority)
         )
     })
     .await
@@ -355,6 +376,7 @@ async fn a_configured_ca_bundle_reaches_the_scan_client() {
 
 #[tokio::test]
 async fn an_scan_endpoint_outside_the_trusted_cas_is_a_transient_network_error() {
+    let authority = authority();
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let port = listener.local_addr().expect("address").port();
     let settings = settings(&format!("https://localhost:{port}"));
@@ -362,7 +384,7 @@ async fn an_scan_endpoint_outside_the_trusted_cas_is_a_transient_network_error()
     let (verdict, served) = timeout(Duration::from_secs(10), async {
         tokio::join!(
             call_panw_api(&guardrail, request("hello", None)),
-            serve_scan_over_tls(&listener)
+            serve_scan_over_tls(&listener, &authority)
         )
     })
     .await

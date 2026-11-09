@@ -1,0 +1,9 @@
+kind: helper
+name: cloudflare-wire-decisions-unwrap-seed
+call:
+  b5836:
+    unwrap:
+      - {result: {answers: {q: {type: noul, noul: 1}}}}
+      - {answers: null, result: {}}
+env: {}
+compare: {ignore: []}

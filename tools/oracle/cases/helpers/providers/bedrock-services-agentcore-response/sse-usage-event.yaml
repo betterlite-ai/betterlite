@@ -1,0 +1,25 @@
+kind: helper
+name: sse-usage-event
+call:
+  bedrock_services_agentcore_response:
+    status: 200
+    headers: [[content-type, text/event-stream]]
+    body: |-
+      data: {"event":{"contentBlockDelta":{"delta":{"text":"hello"}}}}
+      data: {"event":{"metadata":{"usage":{"inputTokens":7,"outputTokens":2}}}}
+      data: {"event":{"metadata":{"usage":null}}}
+      data: {"event":{"metadata":{"usage":{}}}}
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    content: hello
+    tokens: {prompt: 3, completion: 5}
+    response:
+      id: chatcmpl-fixture
+      object: chat.completion
+      created: 123
+      model: supplied
+      system_fingerprint: fp-fixture
+      choices: []
+      usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}
