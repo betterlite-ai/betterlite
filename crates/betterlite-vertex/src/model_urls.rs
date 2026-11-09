@@ -9,6 +9,20 @@ pub mod vertex;
 mod path;
 mod tests;
 
+// The four closed vocabularies below carry a wire spelling; one implementation keeps them in step.
+macro_rules! wire_names {
+    ($enum:ident { $($variant:ident => $wire:literal),* $(,)? }) => {
+        impl $enum {
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $wire,)*
+                }
+            }
+        }
+    };
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UrlMode {
     Chat,
@@ -18,18 +32,13 @@ pub enum UrlMode {
     CountTokens,
 }
 
-impl UrlMode {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Chat => "chat",
-            Self::Embedding => "embedding",
-            Self::BatchEmbedding => "batch_embedding",
-            Self::ImageGeneration => "image_generation",
-            Self::CountTokens => "count_tokens",
-        }
-    }
-}
+wire_names!(UrlMode {
+    Chat => "chat",
+    Embedding => "embedding",
+    BatchEmbedding => "batch_embedding",
+    ImageGeneration => "image_generation",
+    CountTokens => "count_tokens",
+});
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Endpoint {
@@ -41,19 +50,14 @@ pub enum Endpoint {
     BatchEmbedContents,
 }
 
-impl Endpoint {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::GenerateContent => "generateContent",
-            Self::StreamGenerateContent => "streamGenerateContent",
-            Self::EmbedContent => "embedContent",
-            Self::Predict => "predict",
-            Self::CountTokens => "countTokens",
-            Self::BatchEmbedContents => "batchEmbedContents",
-        }
-    }
-}
+wire_names!(Endpoint {
+    GenerateContent => "generateContent",
+    StreamGenerateContent => "streamGenerateContent",
+    EmbedContent => "embedContent",
+    Predict => "predict",
+    CountTokens => "countTokens",
+    BatchEmbedContents => "batchEmbedContents",
+});
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApiVersion {
@@ -61,15 +65,10 @@ pub enum ApiVersion {
     V1Beta1,
 }
 
-impl ApiVersion {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::V1 => "v1",
-            Self::V1Beta1 => "v1beta1",
-        }
-    }
-}
+wire_names!(ApiVersion {
+    V1 => "v1",
+    V1Beta1 => "v1beta1",
+});
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GeminiApiVersion {
@@ -77,15 +76,10 @@ pub enum GeminiApiVersion {
     V1Beta,
 }
 
-impl GeminiApiVersion {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::V1Alpha => "v1alpha",
-            Self::V1Beta => "v1beta",
-        }
-    }
-}
+wire_names!(GeminiApiVersion {
+    V1Alpha => "v1alpha",
+    V1Beta => "v1beta",
+});
 
 // LiteLLM returns the URL and endpoint name as a tuple; both travel together to the call site.
 #[derive(Clone, Debug, Eq, PartialEq)]
