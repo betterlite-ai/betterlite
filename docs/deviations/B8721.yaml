@@ -12,3 +12,6 @@ deviations:
   - what: A request body larger than 4 MiB is refused with the SDK's 413 only after the Accept and Content-Type checks, where the SDK's body-limit middleware answers it first.
     why: betterlite reads the body after the header checks so an unstorable request never allocates; the status and body text match the middleware's.
     link: ""
+  - what: A session whose rmcp service ended, such as one opened by a malformed initialize, is removed from the live map once the service or the message router stops, where the SDK keeps its transport until a DELETE, an idle timeout or a shutdown.
+    why: The rmcp service owns the only channel a client's later request could reach, so a session without it can never answer; keeping it would report a dead session as live and leak one map entry per failed initialize.
+    link: ""

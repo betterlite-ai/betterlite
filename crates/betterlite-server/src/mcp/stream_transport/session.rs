@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::task::{Context, Poll};
 
 use axum::body::Bytes;
@@ -11,8 +12,8 @@ use futures_util::StreamExt as _;
 use futures_util::stream::Stream;
 use indexmap::IndexMap;
 use rmcp::model::{
-    ClientJsonRpcMessage, GetExtensions as _, JsonRpcMessage, ProgressToken, RequestId,
-    ServerNotification,
+    ClientJsonRpcMessage, ErrorCode, ErrorData, GetExtensions as _, JsonRpcMessage, ProgressToken,
+    RequestId, ServerNotification,
 };
 use rmcp::service::{OriginatingRequestId, TxJsonRpcMessage};
 use rmcp::{RoleServer, ServerHandler, serve_server};
@@ -23,39 +24,81 @@ use super::wire;
 
 pub(super) const SERVICE_CHANNEL_CAPACITY: usize = 32;
 pub(super) const REQUEST_STREAM_CAPACITY: usize = 16;
+// LSP's RequestCancelled, the code the SDK writes for a request that settled unanswered
+const REQUEST_CANCELLED: i32 = -32800;
+
+pub(super) type SessionMap = Arc<Mutex<IndexMap<String, Session>>>;
 
 pub(super) struct Session {
     pub(super) streams: Arc<Mutex<SessionStreams>>,
-    pub(super) service: Option<mpsc::Sender<ClientJsonRpcMessage>>,
-    pub(super) tasks: JoinSet<()>,
+    pub(super) service: mpsc::Sender<ClientJsonRpcMessage>,
+    pub(super) ended: Arc<AtomicBool>,
+    // holding the tasks here stops them with the session, so only the drop matters
+    _tasks: JoinSet<()>,
 }
 
-impl Session {
-    pub(super) fn new() -> Self {
-        Self {
-            streams: Arc::new(Mutex::new(SessionStreams::default())),
-            service: None,
-            tasks: JoinSet::new(),
+pub(super) fn start_session<H>(
+    id: &str,
+    sessions: &Weak<Mutex<IndexMap<String, Session>>>,
+    handler: H,
+) -> Session
+where
+    H: ServerHandler,
+{
+    let (to_service, to_service_rx) = mpsc::channel(SERVICE_CHANNEL_CAPACITY);
+    let (from_service, from_service_rx) = mpsc::channel(SERVICE_CHANNEL_CAPACITY);
+    let streams = Arc::new(Mutex::new(SessionStreams::default()));
+    let ended = Arc::new(AtomicBool::new(false));
+    let mut tasks = JoinSet::new();
+    let service_streams = Arc::clone(&streams);
+    let service_ended = Arc::clone(&ended);
+    let service_sessions = Weak::clone(sessions);
+    let service_id = id.to_owned();
+    tasks.spawn(async move {
+        match serve_server(handler, (from_service, to_service_rx)).await {
+            Ok(running) => drop(running.waiting().await),
+            Err(error) => tracing::warn!(%error, "an MCP streamable HTTP session failed"),
         }
+        discard_session(
+            &service_sessions,
+            &service_id,
+            &service_streams,
+            &service_ended,
+        );
+    });
+    let router_streams = Arc::clone(&streams);
+    let router_ended = Arc::clone(&ended);
+    let router_sessions = Weak::clone(sessions);
+    let router_id = id.to_owned();
+    tasks.spawn(async move {
+        route_session_messages(Arc::clone(&router_streams), from_service_rx).await;
+        discard_session(&router_sessions, &router_id, &router_streams, &router_ended);
+    });
+    Session {
+        streams,
+        service: to_service,
+        ended,
+        _tasks: tasks,
     }
+}
 
-    pub(super) fn start<H>(&mut self, handler: H)
-    where
-        H: ServerHandler,
-    {
-        let (to_service, to_service_rx) = mpsc::channel(SERVICE_CHANNEL_CAPACITY);
-        let (from_service, from_service_rx) = mpsc::channel(SERVICE_CHANNEL_CAPACITY);
-        self.tasks.spawn(async move {
-            match serve_server(handler, (from_service, to_service_rx)).await {
-                Ok(running) => drop(running.waiting().await),
-                Err(error) => tracing::warn!(%error, "an MCP streamable HTTP session failed"),
-            }
-        });
-        let streams = Arc::clone(&self.streams);
-        self.tasks
-            .spawn(route_session_messages(streams, from_service_rx));
-        self.service = Some(to_service);
-    }
+fn discard_session(
+    sessions: &Weak<Mutex<IndexMap<String, Session>>>,
+    id: &str,
+    streams: &Arc<Mutex<SessionStreams>>,
+    ended: &AtomicBool,
+) {
+    streams
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .close_all();
+    let Some(live) = sessions.upgrade() else {
+        ended.store(true, Ordering::Release);
+        return;
+    };
+    let mut map = live.lock().unwrap_or_else(PoisonError::into_inner);
+    ended.store(true, Ordering::Release);
+    map.shift_remove(id);
 }
 
 #[derive(Default)]
@@ -90,7 +133,11 @@ async fn route_session_messages(
     mut outgoing: mpsc::Receiver<TxJsonRpcMessage<RoleServer>>,
 ) {
     while let Some(message) = outgoing.next().await {
-        let key = stream_key(&message, &shared);
+        let key = {
+            let streams = shared.lock().unwrap_or_else(PoisonError::into_inner);
+            routed_request(&message, &streams.progress_tokens)
+                .map_or(StreamKey::Standalone, StreamKey::Request)
+        };
         let terminal = terminal_request(&message).is_some();
         let sender = shared
             .lock()
@@ -113,35 +160,6 @@ async fn route_session_messages(
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .close(&key);
-        }
-    }
-}
-
-fn stream_key(message: &TxJsonRpcMessage<RoleServer>, shared: &Mutex<SessionStreams>) -> StreamKey {
-    match message {
-        JsonRpcMessage::Response(response) => StreamKey::Request(response.id.clone()),
-        JsonRpcMessage::Error(error) => error
-            .id
-            .as_ref()
-            .map_or(StreamKey::Standalone, |id| StreamKey::Request(id.clone())),
-        JsonRpcMessage::Request(request) => request
-            .request
-            .extensions()
-            .get::<OriginatingRequestId>()
-            .map_or(StreamKey::Standalone, |originating| {
-                StreamKey::Request(originating.0.clone())
-            }),
-        JsonRpcMessage::Notification(notification) => {
-            let ServerNotification::ProgressNotification(progress) = &notification.notification
-            else {
-                return StreamKey::Standalone;
-            };
-            shared
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .progress_tokens
-                .get(&progress.params.progress_token)
-                .map_or(StreamKey::Standalone, |id| StreamKey::Request(id.clone()))
         }
     }
 }
@@ -178,25 +196,39 @@ pub(super) const fn terminal_request(message: &TxJsonRpcMessage<RoleServer>) -> 
     }
 }
 
+// The SDK answers a request that settled unanswered with -32800 and ends its stream
+pub(super) async fn cancel_request(shared: &Arc<Mutex<SessionStreams>>, request_id: &RequestId) {
+    let key = StreamKey::Request(request_id.clone());
+    let sender = shared
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .streams
+        .get(&key)
+        .cloned();
+    let Some(mut sink) = sender else {
+        return;
+    };
+    let error = JsonRpcMessage::error(
+        ErrorData::new(ErrorCode(REQUEST_CANCELLED), "Request cancelled", None),
+        Some(request_id.clone()),
+    );
+    let _sent = sink.send(wire::sse_event(&error)).await;
+    shared
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .close(&key);
+}
+
 pub(super) struct SseState {
     events: mpsc::Receiver<Bytes>,
     ping: Interval,
-    release: Option<StreamRelease>,
+    // dropping the body releases the stream entry, so only the drop matters
+    _release: StreamRelease,
 }
 
 pub(super) struct StreamRelease {
     shared: Arc<Mutex<SessionStreams>>,
     key: StreamKey,
-}
-
-impl SseState {
-    pub(super) fn new(events: mpsc::Receiver<Bytes>) -> Self {
-        Self {
-            events,
-            ping: ping_interval(),
-            release: None,
-        }
-    }
 }
 
 impl Stream for SseState {
@@ -245,12 +277,14 @@ pub(super) fn insert_stream(
 pub(super) fn stream_state(
     shared: &Arc<Mutex<SessionStreams>>,
     key: StreamKey,
-    receiver: mpsc::Receiver<Bytes>,
+    events: mpsc::Receiver<Bytes>,
 ) -> SseState {
-    let mut state = SseState::new(receiver);
-    state.release = Some(StreamRelease {
-        shared: Arc::clone(shared),
-        key,
-    });
-    state
+    SseState {
+        events,
+        ping: ping_interval(),
+        _release: StreamRelease {
+            shared: Arc::clone(shared),
+            key,
+        },
+    }
 }

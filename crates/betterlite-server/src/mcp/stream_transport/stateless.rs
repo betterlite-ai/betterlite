@@ -122,6 +122,8 @@ where
             ping: ping_interval(),
             request_id,
             progress_tokens,
+            // the service quits when its input closes, so the sender lives as long as the stream
+            _service: to_service,
             _running: running,
             finished: false,
         }),
@@ -149,6 +151,7 @@ where
     ping: Interval,
     request_id: RequestId,
     progress_tokens: HashMap<ProgressToken, RequestId>,
+    _service: mpsc::Sender<ClientJsonRpcMessage>,
     // dropping the running service cancels it, which an ended or disconnected stream must do
     _running: RunningService<RoleServer, H>,
     finished: bool,

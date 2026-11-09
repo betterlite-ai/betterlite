@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::body::Body;
@@ -6,9 +7,15 @@ use futures_channel::mpsc;
 use futures_util::SinkExt as _;
 use indexmap::IndexMap;
 use rmcp::ServerHandler;
-use rmcp::model::{ClientJsonRpcMessage, ClientRequest, ErrorCode, GetMeta as _, JsonRpcRequest};
+use rmcp::model::{
+    ClientJsonRpcMessage, ClientNotification, ClientRequest, ErrorCode, GetMeta as _,
+    JsonRpcRequest, RequestId,
+};
 
-use super::session::{Session, SessionStreams, StreamKey, insert_stream, stream_state};
+use super::session::{
+    Session, SessionMap, SessionStreams, StreamKey, cancel_request, insert_stream, start_session,
+    stream_state,
+};
 use super::wire;
 
 struct SessionHandle {
@@ -18,7 +25,7 @@ struct SessionHandle {
 }
 
 pub(super) async fn handle<H>(
-    sessions: &Mutex<IndexMap<String, Session>>,
+    sessions: &SessionMap,
     request: Request<Body>,
     handler: H,
 ) -> Response<Body>
@@ -28,9 +35,7 @@ where
     let id = match session_header(&request) {
         SessionHeader::Absent => {
             let id = uuid::Uuid::new_v4().simple().to_string();
-            let mut session = Session::new();
-            let response = new_session_response(&mut session, &id, request, handler).await;
-            return keep_if_established(sessions, id, session, response);
+            return new_session_response(sessions, &id, request, handler).await;
         }
         SessionHeader::Invalid => return unknown_session(),
         SessionHeader::Id(id) => id,
@@ -43,6 +48,23 @@ where
         Method::GET => existing_get(&target, &request),
         Method::DELETE => delete_session(sessions, &target),
         _ => wire::method_not_allowed(Some(&target.id)),
+    }
+}
+
+async fn new_session_response<H>(
+    sessions: &SessionMap,
+    id: &str,
+    request: Request<Body>,
+    handler: H,
+) -> Response<Body>
+where
+    H: ServerHandler,
+{
+    match *request.method() {
+        Method::POST => new_session_post(sessions, id, request, handler).await,
+        Method::GET => new_session_get(id, &request),
+        Method::DELETE => missing_session_id(id),
+        _ => wire::method_not_allowed(Some(id)),
     }
 }
 
@@ -64,7 +86,7 @@ fn session_header(request: &Request<Body>) -> SessionHeader {
 fn lookup(sessions: &Mutex<IndexMap<String, Session>>, id: &str) -> Option<SessionHandle> {
     let map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
     let entry = map.get(id)?;
-    let service = entry.service.clone()?;
+    let service = entry.service.clone();
     let streams = Arc::clone(&entry.streams);
     drop(map);
     Some(SessionHandle {
@@ -81,38 +103,6 @@ fn unknown_session() -> Response<Body> {
         "Session not found",
         None,
     )
-}
-
-fn keep_if_established(
-    sessions: &Mutex<IndexMap<String, Session>>,
-    id: String,
-    session: Session,
-    response: Response<Body>,
-) -> Response<Body> {
-    if response.status().as_u16() < 400 {
-        sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(id, session);
-    }
-    response
-}
-
-async fn new_session_response<H>(
-    session: &mut Session,
-    id: &str,
-    request: Request<Body>,
-    handler: H,
-) -> Response<Body>
-where
-    H: ServerHandler,
-{
-    match *request.method() {
-        Method::POST => open_session_post(session, id, request, handler).await,
-        Method::GET => new_session_get(id, &request),
-        Method::DELETE => missing_session_id(id),
-        _ => wire::method_not_allowed(Some(id)),
-    }
 }
 
 fn new_session_get(id: &str, request: &Request<Body>) -> Response<Body> {
@@ -137,8 +127,8 @@ fn missing_session_id(id: &str) -> Response<Body> {
     )
 }
 
-async fn open_session_post<H>(
-    session: &mut Session,
+async fn new_session_post<H>(
+    sessions: &SessionMap,
     id: &str,
     request: Request<Body>,
     handler: H,
@@ -156,17 +146,19 @@ where
     if call.request.method() != "initialize" {
         return missing_session_id(id);
     }
-    session.start(handler);
-    let Some(service) = session.service.clone() else {
-        return wire::error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ErrorCode::INTERNAL_ERROR,
-            "Error handling POST request",
-            Some(id),
-        );
-    };
-    let streams = Arc::clone(&session.streams);
-    serve_request(&streams, id, service, call).await
+    let mut session = start_session(id, &Arc::downgrade(sessions), handler);
+    let response = serve_request(&session.streams, id, &mut session.service, call).await;
+    keep_if_live(sessions, id.to_owned(), session);
+    response
+}
+
+fn keep_if_live(sessions: &Mutex<IndexMap<String, Session>>, id: String, session: Session) {
+    let mut map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
+    if session.ended.load(Ordering::Acquire) {
+        drop(map);
+        return;
+    }
+    map.insert(id, session);
 }
 
 async fn existing_post(target: SessionHandle, request: Request<Body>) -> Response<Body> {
@@ -174,15 +166,30 @@ async fn existing_post(target: SessionHandle, request: Request<Body>) -> Respons
         Ok(message) => message,
         Err(response) => return *response,
     };
+    let cancelled = cancelled_request(&message);
     let mut service = target.service;
-    match message {
+    let response = match message {
         ClientJsonRpcMessage::Request(call) => {
-            serve_request(&target.streams, &target.id, service, call).await
+            serve_request(&target.streams, &target.id, &mut service, call).await
         }
         other @ (ClientJsonRpcMessage::Response(_)
         | ClientJsonRpcMessage::Notification(_)
         | ClientJsonRpcMessage::Error(_)) => accept_message(&mut service, other, &target.id).await,
+    };
+    if let Some(request_id) = cancelled {
+        cancel_request(&target.streams, &request_id).await;
     }
+    response
+}
+
+fn cancelled_request(message: &ClientJsonRpcMessage) -> Option<RequestId> {
+    let ClientJsonRpcMessage::Notification(notification) = message else {
+        return None;
+    };
+    let ClientNotification::CancelledNotification(cancelled) = &notification.notification else {
+        return None;
+    };
+    cancelled.params.request_id.clone()
 }
 
 fn existing_get(target: &SessionHandle, request: &Request<Body>) -> Response<Body> {
@@ -227,8 +234,7 @@ fn delete_session(
             .streams
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        streams.streams.clear();
-        streams.progress_tokens.clear();
+        streams.close_all();
     }
     wire::json_body(StatusCode::OK, Body::empty(), Some(&target.id))
 }
@@ -236,7 +242,7 @@ fn delete_session(
 async fn serve_request(
     shared: &Arc<Mutex<SessionStreams>>,
     id: &str,
-    mut service: mpsc::Sender<ClientJsonRpcMessage>,
+    service: &mut mpsc::Sender<ClientJsonRpcMessage>,
     call: JsonRpcRequest<ClientRequest>,
 ) -> Response<Body> {
     let request_id = call.id.clone();

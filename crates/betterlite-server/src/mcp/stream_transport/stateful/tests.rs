@@ -16,7 +16,7 @@ use rmcp::model::{
     ServerRequest,
 };
 use rmcp::service::{PeerRequestOptions, RequestContext};
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use tower::ServiceExt as _;
 
 use crate::mcp::stream_transport::StreamTransport;
@@ -149,6 +149,14 @@ async fn refusal(response: Response<Body>) -> Refusal {
 struct Seen {
     id: Option<RequestId>,
     method: Option<String>,
+    #[serde(default)]
+    error: Option<SeenError>,
+}
+
+#[derive(serde::Deserialize)]
+struct SeenError {
+    code: i32,
+    message: String,
 }
 
 fn data(event: &str) -> &str {
@@ -386,4 +394,55 @@ async fn streams_progress_and_a_sampling_answer_on_the_requests_stream() {
     assert_eq!(reply.id, Some(RequestId::Number(7)));
     assert!(stream.next().await.is_none(), "the request stream ended");
     assert!(transport.has_session(&id));
+}
+
+#[tokio::test]
+async fn ends_a_cancelled_requests_stream_with_the_sdk_error() {
+    let (_, router) = app();
+    let id = initialize(&router).await;
+    let response = send(&router, post(TOOLS_LIST, Some(&id))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut stream = response.into_body().into_data_stream();
+    let _progress = next_message(&mut stream).await;
+    let _question = next_message(&mut stream).await;
+    let cancel = concat!(
+        r#"{"jsonrpc":"2.0","method":"notifications/cancelled","#,
+        r#""params":{"requestId":7,"reason":"user"}}"#
+    );
+    let accepted = send(&router, post(cancel, Some(&id))).await;
+    assert_eq!(accepted.status(), StatusCode::ACCEPTED);
+    let reply = next_message(&mut stream).await;
+    assert_eq!(reply.id, Some(RequestId::Number(7)));
+    let error = reply.error.expect("the cancellation error");
+    assert_eq!(error.code, -32800_i32);
+    assert_eq!(error.message, "Request cancelled");
+    assert!(stream.next().await.is_none(), "the request stream ended");
+}
+
+#[tokio::test]
+async fn discards_a_session_whose_initialize_fails() {
+    let (transport, router) = app();
+    let response = send(
+        &router,
+        post(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let id = session_id(&response);
+    let _body = body_text(response).await;
+    wait_for_no_session(&transport, &id).await;
+    assert!(transport.live_session_ids().is_empty());
+}
+
+async fn wait_for_no_session(transport: &StreamTransport, id: &str) {
+    timeout(Duration::from_secs(5), async {
+        while transport.has_session(id) {
+            sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the failed session to be discarded");
 }

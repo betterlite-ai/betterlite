@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -13,6 +14,7 @@ use rmcp::model::{
     ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, RequestId, ServerConfig,
 };
 use rmcp::service::RequestContext;
+use tokio::time::sleep;
 use tower::ServiceExt as _;
 
 use crate::mcp::stream_transport::StreamTransport;
@@ -23,7 +25,9 @@ const TOOLS_LIST: &str = concat!(
 );
 
 #[derive(Clone, Copy)]
-struct FakeHandler;
+struct FakeHandler {
+    slow: bool,
+}
 
 impl ServerHandler for FakeHandler {
     fn get_info(&self) -> ServerConfig {
@@ -35,6 +39,9 @@ impl ServerHandler for FakeHandler {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        if self.slow {
+            sleep(Duration::from_secs(6)).await;
+        }
         if let Some(token) = context.meta.get_progress_token() {
             let _sent = context
                 .peer
@@ -45,7 +52,10 @@ impl ServerHandler for FakeHandler {
     }
 }
 
-fn app() -> (Arc<StreamTransport>, Router) {
+fn app<H>(handler: H) -> (Arc<StreamTransport>, Router)
+where
+    H: ServerHandler + Clone,
+{
     let transport = Arc::new(StreamTransport::new(true));
     let router = Router::new().route(
         "/mcp",
@@ -53,7 +63,8 @@ fn app() -> (Arc<StreamTransport>, Router) {
             let shared = Arc::clone(&transport);
             move |request: Request<Body>| {
                 let manager = Arc::clone(&shared);
-                async move { manager.handle(request, FakeHandler).await }
+                let per_request = handler.clone();
+                async move { manager.handle(request, per_request).await }
             }
         }),
     );
@@ -113,7 +124,7 @@ fn data(event: &str) -> &str {
 
 #[tokio::test]
 async fn serves_a_request_without_initialize() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(&router, post(TOOLS_LIST)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_text(response).await;
@@ -125,9 +136,19 @@ async fn serves_a_request_without_initialize() {
     assert!(reply.method.is_none());
 }
 
+#[tokio::test(start_paused = true)]
+async fn keeps_the_service_alive_while_a_slow_handler_runs() {
+    let (_, router) = app(FakeHandler { slow: true });
+    let response = send(&router, post(TOOLS_LIST)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_text(response).await;
+    assert!(body.contains("\"id\":7"), "{body}");
+    assert!(body.contains("\"result\""), "{body}");
+}
+
 #[tokio::test]
 async fn keeps_no_session_after_a_request() {
-    let (transport, router) = app();
+    let (transport, router) = app(FakeHandler { slow: false });
     let response = send(&router, post(TOOLS_LIST)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let _body = body_text(response).await;
@@ -137,7 +158,7 @@ async fn keeps_no_session_after_a_request() {
 
 #[tokio::test]
 async fn answers_a_notification_without_initialize() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(
         &router,
         post(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#),
@@ -152,14 +173,14 @@ async fn answers_a_notification_without_initialize() {
 
 #[tokio::test]
 async fn rejects_a_get_that_does_not_accept_event_stream() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(&router, get("application/json")).await;
     assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
 }
 
 #[tokio::test]
 async fn opens_a_standalone_stream_for_get() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(&router, get("text/event-stream")).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
@@ -171,7 +192,7 @@ async fn opens_a_standalone_stream_for_get() {
 
 #[tokio::test]
 async fn answers_a_delete_as_unsupported() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(&router, request(Method::DELETE, "*/*", Body::empty())).await;
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     let body = body_text(response).await;
@@ -183,7 +204,7 @@ async fn answers_a_delete_as_unsupported() {
 
 #[tokio::test]
 async fn answers_an_unsupported_method_with_allow() {
-    let (_, router) = app();
+    let (_, router) = app(FakeHandler { slow: false });
     let response = send(&router, request(Method::PUT, "*/*", Body::empty())).await;
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(

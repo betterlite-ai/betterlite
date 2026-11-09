@@ -5,7 +5,7 @@ use axum::http::{Request, Response};
 use indexmap::IndexMap;
 use rmcp::ServerHandler;
 
-use session::Session;
+use session::SessionMap;
 
 mod session;
 mod stateful;
@@ -14,7 +14,7 @@ pub mod wire;
 
 pub struct StreamTransport {
     stateless: bool,
-    sessions: Arc<Mutex<IndexMap<String, Session>>>,
+    sessions: SessionMap,
 }
 
 impl StreamTransport {
