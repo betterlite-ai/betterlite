@@ -7,11 +7,6 @@ pub enum FastcrwError {
     Credential(#[from] CredentialError),
     #[error("CRW_API_KEY is not set. Set `CRW_API_KEY` environment variable.")]
     MissingApiKey,
-    #[error("the fastCRW search request could not be encoded: {source}")]
-    Request {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the fastCRW search reply is larger than {limit} bytes")]
     ReplyTooLarge { limit: usize },
     #[error("the fastCRW search reply does not match the search response shape: {source}")]

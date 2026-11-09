@@ -2,7 +2,14 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::provider::{PERPLEXITY_PARAMS, SearchQuery};
 use serde::Serialize;
 
-use super::error::FastcrwError;
+#[derive(Serialize)]
+pub struct SearchBody {
+    query: String,
+    #[serde(flatten)]
+    extra: Object,
+    #[serde(rename = "scrapeOptions", skip_serializing_if = "Option::is_none")]
+    scrape_options: Option<ScrapeOptions>,
+}
 
 #[derive(Serialize)]
 struct ScrapeOptions {
@@ -17,33 +24,29 @@ const DEFAULT_SCRAPE: ScrapeOptions = ScrapeOptions {
 };
 
 // LiteLLM reshapes every provider-neutral parameter and then copies the rest through untouched
-pub(super) fn search_body(
-    query: &SearchQuery,
-    optional_params: &Object,
-) -> Result<Object, FastcrwError> {
-    let text = match query {
-        SearchQuery::Single(text) => text.clone(),
-        SearchQuery::Multiple(parts) => parts.join(" "),
-    };
-    let mut body = Object::new();
-    body.insert(
-        "query".to_owned(),
-        serde_json::to_value(text).map_err(|source| FastcrwError::Request { source })?,
-    );
+pub(super) fn search_body(query: &SearchQuery, optional_params: &Object) -> SearchBody {
+    let mut extra = Object::new();
     if let Some(limit) = optional_params.get("max_results") {
-        body.insert("limit".to_owned(), limit.clone());
+        extra.insert("limit".to_owned(), limit.clone());
     }
     for (name, value) in optional_params {
-        if !PERPLEXITY_PARAMS.contains(&name.as_str()) && !body.contains_key(name) {
-            body.insert(name.clone(), value.clone());
+        let reserved = name == "query" || PERPLEXITY_PARAMS.contains(&name.as_str());
+        if !reserved && !extra.contains_key(name) {
+            extra.insert(name.clone(), value.clone());
         }
     }
-    if !body.contains_key("scrapeOptions") {
-        body.insert(
-            "scrapeOptions".to_owned(),
-            serde_json::to_value(DEFAULT_SCRAPE)
-                .map_err(|source| FastcrwError::Request { source })?,
-        );
+    // fastCRW returns no page content unless scrapeOptions asks for it
+    let scrape_options = (!extra.contains_key("scrapeOptions")).then_some(DEFAULT_SCRAPE);
+    SearchBody {
+        query: query_text(query),
+        extra,
+        scrape_options,
     }
-    Ok(body)
+}
+
+fn query_text(query: &SearchQuery) -> String {
+    match query {
+        SearchQuery::Single(text) => text.clone(),
+        SearchQuery::Multiple(parts) => parts.join(" "),
+    }
 }

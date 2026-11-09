@@ -15,6 +15,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::FirecrawlError;
 use super::reply::{MAX_REPLY_BYTES, decode_firecrawl_reply};
+use super::request::SearchBody;
 use super::{FIRECRAWL_API_BASE, FirecrawlSearch};
 
 fn load(environment: &[(&str, &str)]) -> FirecrawlSearch {
@@ -38,6 +39,13 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
 
 fn params(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
+}
+
+fn body_object<T>(body: &T) -> Object
+where
+    T: serde::Serialize,
+{
+    serde_json::from_str(&serde_json::to_string(body).unwrap()).unwrap()
 }
 
 fn result(title: &str, url: &str, snippet: &str, date: Option<&str>) -> SearchResult {
@@ -250,8 +258,8 @@ fn trait_hooks_shape_headers_url_and_options() {
 fn outbound<'call>(
     api_base: &'call str,
     params: &'call Object,
-    body: &'call Object,
-) -> OutboundSearch<'call, Object> {
+    body: &'call SearchBody,
+) -> OutboundSearch<'call, SearchBody> {
     OutboundSearch {
         api_base,
         api_key: None,
@@ -260,11 +268,17 @@ fn outbound<'call>(
     }
 }
 
+fn empty_body(search: &FirecrawlSearch) -> SearchBody {
+    search
+        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &Object::new())
+        .unwrap()
+}
+
 #[test]
 fn trait_sign_request_returns_auth_headers() {
     let search = load(&[("FIRECRAWL_API_KEY", "fc-env")]);
     let params = Object::new();
-    let body = Object::new();
+    let body = empty_body(&search);
     let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
     let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
     assert_eq!(
@@ -278,7 +292,7 @@ fn trait_sign_request_returns_auth_headers() {
 fn trait_sign_request_reports_a_missing_key() {
     let search = load(&[]);
     let params = Object::new();
-    let body = Object::new();
+    let body = empty_body(&search);
     let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
     assert!(matches!(
         search.sign_request(Headers::new(), &request),
@@ -290,7 +304,7 @@ fn trait_sign_request_reports_a_missing_key() {
 fn trait_sign_request_rejects_an_untrusted_base() {
     let search = load(&[("FIRECRAWL_API_KEY", "fc-server")]);
     let params = Object::new();
-    let body = Object::new();
+    let body = empty_body(&search);
     let request = outbound("https://evil.test/search", &params, &body);
     let error = search.sign_request(Headers::new(), &request).unwrap_err();
     assert!(matches!(
@@ -310,7 +324,7 @@ fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
         .transform_search_request(&query, &Object::new())
         .unwrap();
     assert_eq!(
-        body,
+        body_object(&body),
         params(&format!(
             r#"{{"query":"{expected}","scrapeOptions":{{"formats":["markdown"],"onlyMainContent":true}}}}"#
         ))
@@ -326,7 +340,7 @@ fn body_maps_limit_and_keeps_country_as_given() {
         .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
         .unwrap();
     assert_eq!(
-        body,
+        body_object(&body),
         params(
             r#"{"query":"rust","limit":7,"country":"US","sources":["web","news"],"timeout":30000,"scrapeOptions":{"formats":["markdown"],"onlyMainContent":true}}"#
         )
@@ -340,7 +354,7 @@ fn body_keeps_a_lowercase_country_as_given() {
         .transform_search_request(&SearchQuery::Single("q".to_owned()), &optional_params)
         .unwrap();
     assert_eq!(
-        body,
+        body_object(&body),
         params(
             r#"{"query":"q","country":"us","scrapeOptions":{"formats":["markdown"],"onlyMainContent":true}}"#
         )
@@ -353,13 +367,16 @@ fn body_keeps_a_caller_scrape_options_even_when_empty() {
     let body = load(&[])
         .transform_search_request(&SearchQuery::Single("q".to_owned()), &empty)
         .unwrap();
-    assert_eq!(body, params(r#"{"query":"q","scrapeOptions":{}}"#));
+    assert_eq!(
+        body_object(&body),
+        params(r#"{"query":"q","scrapeOptions":{}}"#)
+    );
     let custom = params(r#"{"scrapeOptions":{"formats":["html"]}}"#);
     let custom_body = load(&[])
         .transform_search_request(&SearchQuery::Single("q".to_owned()), &custom)
         .unwrap();
     assert_eq!(
-        custom_body,
+        body_object(&custom_body),
         params(r#"{"query":"q","scrapeOptions":{"formats":["html"]}}"#)
     );
 }
@@ -371,7 +388,7 @@ fn body_never_overwrites_a_mapped_name() {
         .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
         .unwrap();
     assert_eq!(
-        body,
+        body_object(&body),
         params(
             r#"{"query":"rust","limit":3,"country":"US","scrapeOptions":{"formats":["markdown"],"onlyMainContent":true}}"#
         )
@@ -500,7 +517,6 @@ fn rejection_kind(error: &FirecrawlError) -> &'static str {
         FirecrawlError::TrailingBytes(_) => "trailing",
         FirecrawlError::Credential(_) => "credential",
         FirecrawlError::MissingApiKey => "missing key",
-        FirecrawlError::Request { .. } => "request",
         FirecrawlError::ReplyTooLarge { .. } => "too large",
     }
 }

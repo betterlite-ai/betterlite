@@ -1,6 +1,6 @@
 pub mod error;
 pub mod reply;
-mod request;
+pub mod request;
 mod tests;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use error::FirecrawlError;
 use reply::decode_firecrawl_reply;
-use request::search_body;
+use request::{SearchBody, search_body};
 
 pub const FIRECRAWL_API_BASE: &str = "https://api.firecrawl.dev/v2";
 pub const FIRECRAWL_CREDENTIAL: ServerCredential = ServerCredential {
@@ -93,7 +93,7 @@ impl EnvironmentLookup for FirecrawlEnvironment<'_> {
 }
 
 impl SearchProvider for FirecrawlSearch {
-    type Body = Object;
+    type Body = SearchBody;
     type Error = FirecrawlError;
 
     fn ui_friendly_name() -> &'static str {
@@ -119,7 +119,7 @@ impl SearchProvider for FirecrawlSearch {
         &self,
         api_base: Option<&str>,
         _optional_params: &Object,
-        _body: Option<&Object>,
+        _body: Option<&SearchBody>,
     ) -> Result<String, FirecrawlError> {
         Ok(self.endpoint(api_base))
     }
@@ -138,8 +138,8 @@ impl SearchProvider for FirecrawlSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
-    ) -> Result<Object, FirecrawlError> {
-        search_body(query, optional_params)
+    ) -> Result<SearchBody, FirecrawlError> {
+        Ok(search_body(query, optional_params))
     }
 
     fn transform_search_response(

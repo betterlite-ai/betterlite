@@ -1,6 +1,6 @@
 pub mod error;
 pub mod reply;
-mod request;
+pub mod request;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -16,7 +16,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use error::FastcrwError;
 use reply::decode_fastcrw_reply;
-use request::search_body;
+use request::{SearchBody, search_body};
 
 pub const FASTCRW_API_BASE: &str = "https://fastcrw.com/api/v1";
 pub const FASTCRW_CREDENTIAL: ServerCredential = ServerCredential {
@@ -79,7 +79,7 @@ fn auth_headers(mut headers: Headers, key: &SecretString) -> Headers {
 }
 
 impl SearchProvider for FastcrwSearch {
-    type Body = Object;
+    type Body = SearchBody;
     type Error = FastcrwError;
 
     fn ui_friendly_name() -> &'static str {
@@ -105,7 +105,7 @@ impl SearchProvider for FastcrwSearch {
         &self,
         api_base: Option<&str>,
         _optional_params: &Object,
-        _body: Option<&Object>,
+        _body: Option<&SearchBody>,
     ) -> Result<String, FastcrwError> {
         Ok(self.endpoint(api_base))
     }
@@ -124,8 +124,8 @@ impl SearchProvider for FastcrwSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
-    ) -> Result<Object, FastcrwError> {
-        search_body(query, optional_params)
+    ) -> Result<SearchBody, FastcrwError> {
+        Ok(search_body(query, optional_params))
     }
 
     fn transform_search_response(

@@ -7,11 +7,6 @@ pub enum FirecrawlError {
     Credential(#[from] CredentialError),
     #[error("FIRECRAWL_API_KEY is not set. Set `FIRECRAWL_API_KEY` environment variable.")]
     MissingApiKey,
-    #[error("the Firecrawl search request could not be encoded: {source}")]
-    Request {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the Firecrawl search reply is larger than {limit} bytes")]
     ReplyTooLarge { limit: usize },
     #[error("the Firecrawl search reply does not match the search response shape: {source}")]
