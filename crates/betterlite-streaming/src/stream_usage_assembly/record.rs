@@ -3,7 +3,6 @@ use rust_decimal::Decimal;
 use super::wire::{CompletionTokensDetails, DetailsField, PromptTokensDetails, UsageRecord};
 use crate::stream_chunk_shaping::records::JsonValue;
 
-// The Usage object LiteLLM builds from one usage record before the accumulator reads it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RecordedUsage {
     pub(crate) prompt_tokens: i64,
@@ -19,7 +18,6 @@ pub(crate) struct RecordedUsage {
 }
 
 impl RecordedUsage {
-    // Usage(**record) applies the constructor's cache and reasoning mappings before any accumulator sees it.
     pub(crate) fn from_record(record: UsageRecord) -> Self {
         let mut completion_tokens_details = record
             .completion_tokens_details
