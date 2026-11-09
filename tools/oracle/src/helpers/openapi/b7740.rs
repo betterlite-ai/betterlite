@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openapi::docs_settings::{DocsEnv, DocsUrls};
-use betterlite_server::docs_routes::{DocsRouteConfig, swagger_page_body};
+use betterlite_server::docs_routes::{DocsPage, DocsRouteConfig, page_body};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -61,7 +61,7 @@ fn swagger_page(
         title: title.to_owned(),
         server_root_path: scenario.server_root_path.clone(),
     };
-    swagger_page_body(&config).ok_or_else(|| Box::new(missing_page_error()))
+    page_body(&config, DocsPage::Swagger).ok_or_else(|| Box::new(missing_page_error()))
 }
 
 fn resolution(scenario: &BTreeMap<String, String>) -> serde_json::Value {

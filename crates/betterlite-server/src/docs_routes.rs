@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse as _, Redirect, Response};
-use axum::routing::{any, get};
+use axum::routing::{MethodRouter, any, get};
 use betterlite_openapi::docs_pages::{
     SwaggerPageInputs, oauth2_redirect_page, redoc_page, swagger_asset, swagger_ui_page,
 };
@@ -20,83 +20,24 @@ pub struct DocsRouteConfig {
     pub server_root_path: String,
 }
 
+#[derive(Clone, Copy)]
+pub enum DocsPage {
+    Swagger,
+    Redoc,
+}
+
+type ConfigState = Arc<DocsRouteConfig>;
+type PageRoute = (String, MethodRouter<ConfigState>);
+
 pub fn docs_router(config: DocsRouteConfig) -> Router {
     // the caller registers the OpenAPI route, and FastAPI adds it before these pages
     let mut paths: BTreeSet<String> = config.urls.openapi_url.iter().cloned().collect();
-    let mut router: Router<Arc<DocsRouteConfig>> = Router::new();
-    router = add_page_routes(router, &config, &mut paths);
-    router = add_swagger_mount(router, &mut paths);
-    router = add_root_redirect(router, &config, &mut paths);
-    router.with_state(Arc::new(config))
-}
-
-#[must_use]
-pub fn swagger_page_body(config: &DocsRouteConfig) -> Option<String> {
-    let openapi_url = config.urls.openapi_url.as_deref()?;
-    let prefix = config.server_root_path.trim_end_matches('/');
-    Some(swagger_ui_page(&SwaggerPageInputs {
-        title: format!("{} - Swagger UI", config.title),
-        openapi_url: format!("{prefix}{openapi_url}"),
-        oauth2_redirect_url: Some(format!("{prefix}/docs/oauth2-redirect")),
-        swagger_base: swagger_base(&config.server_root_path),
-    }))
-}
-
-#[must_use]
-pub fn redoc_page_body(config: &DocsRouteConfig) -> Option<String> {
-    let openapi_url = config.urls.openapi_url.as_deref()?;
-    let prefix = config.server_root_path.trim_end_matches('/');
-    Some(redoc_page(
-        &format!("{} - ReDoc", config.title),
-        &format!("{prefix}{openapi_url}"),
-    ))
-}
-
-fn add_page_routes(
-    mut router: Router<Arc<DocsRouteConfig>>,
-    config: &DocsRouteConfig,
-    paths: &mut BTreeSet<String>,
-) -> Router<Arc<DocsRouteConfig>> {
-    if config.urls.openapi_url.is_none() {
-        return router;
+    let mut router: Router<ConfigState> = Router::new();
+    for (path, route) in page_routes(&config) {
+        if paths.insert(path.clone()) {
+            router = router.route(&path, route);
+        }
     }
-    router = add_swagger_routes(router, config, paths);
-    let Some(url) = config.urls.redoc_url.as_deref() else {
-        return router;
-    };
-    if paths.insert(url.to_owned()) {
-        router = router.route(url, get(redoc_page_response).fallback(method_not_allowed));
-    }
-    router
-}
-
-fn add_swagger_routes(
-    mut router: Router<Arc<DocsRouteConfig>>,
-    config: &DocsRouteConfig,
-    paths: &mut BTreeSet<String>,
-) -> Router<Arc<DocsRouteConfig>> {
-    let Some(docs_url) = config.urls.docs_url.as_deref() else {
-        return router;
-    };
-    if paths.insert(docs_url.to_owned()) {
-        router = router.route(
-            docs_url,
-            get(swagger_page_response).fallback(method_not_allowed),
-        );
-    }
-    if paths.insert("/docs/oauth2-redirect".to_owned()) {
-        router = router.route(
-            "/docs/oauth2-redirect",
-            get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
-        );
-    }
-    router
-}
-
-fn add_swagger_mount(
-    mut router: Router<Arc<DocsRouteConfig>>,
-    paths: &mut BTreeSet<String>,
-) -> Router<Arc<DocsRouteConfig>> {
     if paths.insert("/swagger".to_owned()) {
         router = router.route("/swagger", any(swagger_slash_redirect));
     }
@@ -112,27 +53,67 @@ fn add_swagger_mount(
                 get(swagger_file).fallback(method_not_allowed),
             );
     }
-    router
-}
-
-fn add_root_redirect(
-    mut router: Router<Arc<DocsRouteConfig>>,
-    config: &DocsRouteConfig,
-    paths: &mut BTreeSet<String>,
-) -> Router<Arc<DocsRouteConfig>> {
-    if config.urls.docs_url.as_deref() == Some("/") {
-        return router;
-    }
-    if config.urls.root_redirect_url.is_none() {
-        return router;
-    }
-    if paths.insert("/".to_owned()) {
+    if config.urls.docs_url.as_deref() != Some("/")
+        && config.urls.root_redirect_url.is_some()
+        && paths.insert("/".to_owned())
+    {
         router = router.route(
             "/",
             get(root_redirect_response).fallback(method_not_allowed),
         );
     }
-    router
+    router.with_state(Arc::new(config))
+}
+
+#[must_use]
+pub fn page_body(config: &DocsRouteConfig, page: DocsPage) -> Option<String> {
+    let openapi_url = config.urls.openapi_url.as_deref()?;
+    let prefix = config.server_root_path.trim_end_matches('/');
+    let body = match page {
+        DocsPage::Swagger => swagger_ui_page(&SwaggerPageInputs {
+            title: format!("{} - Swagger UI", config.title),
+            openapi_url: format!("{prefix}{openapi_url}"),
+            oauth2_redirect_url: Some(format!("{prefix}/docs/oauth2-redirect")),
+            swagger_base: swagger_base(&config.server_root_path),
+        }),
+        DocsPage::Redoc => redoc_page(
+            &format!("{} - ReDoc", config.title),
+            &format!("{prefix}{openapi_url}"),
+        ),
+    };
+    Some(body)
+}
+
+fn page_routes(config: &DocsRouteConfig) -> Vec<PageRoute> {
+    let mut routes = Vec::new();
+    if config.urls.openapi_url.is_none() {
+        return routes;
+    }
+    if let Some(docs_url) = config.urls.docs_url.as_deref() {
+        routes.push((docs_url.to_owned(), page_router(config, DocsPage::Swagger)));
+        routes.push((
+            "/docs/oauth2-redirect".to_owned(),
+            get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
+        ));
+    }
+    if let Some(url) = config.urls.redoc_url.as_deref() {
+        routes.push((url.to_owned(), page_router(config, DocsPage::Redoc)));
+    }
+    routes
+}
+
+fn page_router(config: &DocsRouteConfig, kind: DocsPage) -> MethodRouter<ConfigState> {
+    let body = page_body(config, kind);
+    get(move || {
+        let content = body.clone();
+        async move {
+            content.map_or_else(
+                || detail_response(StatusCode::NOT_FOUND, "Not Found"),
+                |page| Html(page).into_response(),
+            )
+        }
+    })
+    .fallback(method_not_allowed)
 }
 
 fn swagger_base(server_root_path: &str) -> String {
@@ -143,21 +124,7 @@ fn swagger_base(server_root_path: &str) -> String {
     }
 }
 
-async fn swagger_page_response(State(config): State<Arc<DocsRouteConfig>>) -> Response {
-    swagger_page_body(&config).map_or_else(
-        || detail_response(StatusCode::NOT_FOUND, "Not Found"),
-        |page| Html(page).into_response(),
-    )
-}
-
-async fn redoc_page_response(State(config): State<Arc<DocsRouteConfig>>) -> Response {
-    redoc_page_body(&config).map_or_else(
-        || detail_response(StatusCode::NOT_FOUND, "Not Found"),
-        |page| Html(page).into_response(),
-    )
-}
-
-async fn root_redirect_response(State(config): State<Arc<DocsRouteConfig>>) -> Response {
+async fn root_redirect_response(State(config): State<ConfigState>) -> Response {
     config.urls.root_redirect_url.as_ref().map_or_else(
         || detail_response(StatusCode::NOT_FOUND, "Not Found"),
         |url| Redirect::temporary(url).into_response(),
