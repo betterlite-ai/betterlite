@@ -1,4 +1,4 @@
-use crate::newrelic_extraction::ids::{IdSource, SystemIds};
+use crate::newrelic_extraction::ids::{IdSource as _, SystemIds};
 
 #[test]
 fn newrelic_extraction_tests_behavior_system_ids_are_random_v4_uuids() {
