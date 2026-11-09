@@ -79,7 +79,7 @@ async fn flush_cache_and_flushall_each_send_flushall() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn info_takes_one_node_reply_from_a_cluster_client() {
+async fn cluster_reads_take_one_reply_and_writes_reach_every_primary() {
     let (first, second) = cluster_pair().await;
     first.script(
         "INFO",
@@ -101,6 +101,12 @@ async fn info_takes_one_node_reply_from_a_cluster_client() {
         version == "7.2.4" || version == "7.4.0",
         "the cluster info comes from one node, got {version}"
     );
+    assert!(fixture.admin.sync_ping(None).expect("a cluster sync ping"));
+    fixture.admin.flushall().expect("a cluster flush");
     assert_eq!(first.commands_named("INFO").len(), 1);
     assert_eq!(second.commands_named("INFO").len(), 1);
+    assert_eq!(first.commands_named("PING").len(), 1);
+    assert_eq!(second.commands_named("PING").len(), 1);
+    assert_eq!(first.commands_named("FLUSHALL").len(), 1);
+    assert_eq!(second.commands_named("FLUSHALL").len(), 1);
 }

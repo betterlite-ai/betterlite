@@ -51,6 +51,16 @@ fn a_value_parses_by_its_shape(#[case] line: &str, #[case] expected: InfoValue) 
     assert_eq!(info.values().next(), Some(&expected));
 }
 
+// python's int() and float() accept these forms, but redis never writes them and i64 does not parse them
+#[rstest]
+#[case::underscored("1_000")]
+#[case::surrounding_space(" 7")]
+#[case::past_i64("9223372036854775808")]
+fn a_number_python_accepts_but_i64_does_not_stays_text(#[case] value: &str) {
+    let info = parse_info(&format!("v:{value}"));
+    assert_eq!(info.get("v"), Some(&InfoValue::Text(value.to_owned())));
+}
+
 #[test]
 fn section_headings_and_empty_lines_are_skipped() {
     let info = parse_info("# Server\n\nredis_version:7.2.4\n\n# Clients\nconnected_clients:3\n");
