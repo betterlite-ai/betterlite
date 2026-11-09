@@ -24,8 +24,8 @@ const TEXT: &str = "text";
 const THINKING: &str = "thinking";
 const THINKING_BLOCKS: &str = "thinking_blocks";
 const TOOL_CALLS: &str = "tool_calls";
-const TOOL_RESULT_SUFFIX: &str = "_tool_result";
 const TOOL_RESULTS: &str = "tool_results";
+const TOOL_RESULT_SUFFIX: &str = "_tool_result";
 const TOOL_USE: &str = "tool_use";
 const TYPE: &str = "type";
 const WEB_SEARCH_RESULTS: &str = "web_search_results";
@@ -466,7 +466,6 @@ fn group_tool_invokes(invokes: Vec<Object>) -> (Vec<Vec<Object>>, Vec<Object>) {
                 }
                 current.push(block);
             }
-            kind if kind.ends_with(TOOL_RESULT_SUFFIX) => current.push(block),
             TOOL_USE => regular.push(block),
             _ => current.push(block),
         }

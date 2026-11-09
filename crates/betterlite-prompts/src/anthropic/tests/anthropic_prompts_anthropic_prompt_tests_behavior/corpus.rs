@@ -43,6 +43,14 @@ fn anthropic_prompts_anthropic_prompt_tests_behavior_rejects_input_over_the_byte
 }
 
 #[test]
+fn anthropic_prompts_anthropic_prompt_tests_behavior_accepts_input_at_the_byte_limit() {
+    let mut bytes = br#"{"messages":[],"model":"m","llm_provider":"p"}"#.to_vec();
+    bytes.resize(MAX_PROMPT_INPUT_BYTES, b' ');
+    let input = parse_prompt_anthropic_input(&bytes).expect("an input at the limit parses");
+    assert!(input.messages.is_empty());
+}
+
+#[test]
 fn anthropic_prompts_anthropic_prompt_tests_behavior_rejects_json_of_the_wrong_shape() {
     let error =
         parse_prompt_anthropic_input(b"{\"messages\":[]}").expect_err("the input is refused");

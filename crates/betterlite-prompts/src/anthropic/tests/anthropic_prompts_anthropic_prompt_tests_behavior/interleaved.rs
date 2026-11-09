@@ -115,3 +115,18 @@ async fn anthropic_prompts_anthropic_prompt_tests_behavior_server_calls_without_
     ]);
     assert_eq!(converted(&input, false).await, output);
 }
+
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_server_calls_with_text_keep_the_text_first()
+ {
+    let results = format!(r#""web_search_results":[{FIRST_RESULT}]"#);
+    let input = format!(
+        r#"[{{"role":"user","content":"search"}},{{"role":"assistant","content":"answer","tool_calls":[{SEARCH_CALL}],"provider_specific_fields":{{{results}}}}}]"#
+    );
+    let output = assistant_output(&[
+        r#"{"type":"text","text":"answer"}"#.to_owned(),
+        server_tool_use("srvtoolu_1", "web_search"),
+        FIRST_RESULT.to_owned(),
+    ]);
+    assert_eq!(converted(&input, false).await, output);
+}
