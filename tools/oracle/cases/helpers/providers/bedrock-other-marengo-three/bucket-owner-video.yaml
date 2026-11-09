@@ -8,7 +8,7 @@ call:
       inference_params:
         inputType: video
         bucketOwner: "123456789012"
-        startSec: 1
+        startSec: 1.5
 env: {}
 compare:
   ignore: []

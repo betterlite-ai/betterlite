@@ -108,18 +108,27 @@ fn parse_numeric_text(text: &str) -> Option<Number> {
     whole.or_else(|| trimmed.parse::<f64>().ok().and_then(Number::from_f64))
 }
 
+fn whole_digits(text: &str) -> Option<Number> {
+    let unsigned = text.strip_prefix('+').unwrap_or(text);
+    let digits = unsigned.strip_prefix('-').unwrap_or(unsigned);
+    let all_digits = !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
+    all_digits.then_some(unsigned)?.parse::<Number>().ok()
+}
+
 pub fn integer(value: &Given, location: &str) -> Parsed<Number> {
     let invalid = || vec![format!("{location}: Input should be a valid integer")];
     if matches!(value, Given::Text(text) if text.contains(['e', 'E'])) {
         return Err(invalid());
     }
+    let written = match value {
+        Given::Number(literal) => Some(literal.to_string()),
+        Given::Text(text) => Some(text.trim().to_owned()),
+        Given::Null | Given::Bool(_) | Given::List(_) | Given::Mapping(_) => None,
+    };
+    if let Some(whole) = written.as_deref().and_then(whole_digits) {
+        return Ok(whole);
+    }
     let parsed = number(value, location).map_err(|_unparsed| invalid())?;
-    if let Some(whole) = parsed.as_i64() {
-        return Ok(Number::from(whole));
-    }
-    if let Some(large) = parsed.as_u64() {
-        return Ok(Number::from(large));
-    }
     let float = parsed.as_f64().ok_or_else(invalid)?;
     // A whole float prints without a fraction, so it reads back as an integer
     let rendered = float.to_string();

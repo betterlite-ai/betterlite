@@ -149,6 +149,30 @@ fn builds(#[case] call: &str, #[case] expected: Expected<'_>) {
         r#"{"inputType": "audio", "audio": {"mediaSource": {"base64String": "AAA"}, "startSec": 0, "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 4}}}}"#
     )
 )]
+#[case::huge_whole_duration_number(
+    r#"{"input": "AAA", "params": {"inputType": "video", "segmentation": {"method": "fixed", "fixed": {"durationSec": 100000000000000000000}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "video", "video": {"mediaSource": {"base64String": "AAA"}, "segmentation": {"method": "fixed", "fixed": {"durationSec": 100000000000000000000}}}}"#
+    )
+)]
+#[case::huge_whole_duration_text(
+    r#"{"input": "AAA", "params": {"inputType": "video", "segmentation": {"method": "fixed", "fixed": {"durationSec": " 100000000000000000000 "}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "video", "video": {"mediaSource": {"base64String": "AAA"}, "segmentation": {"method": "fixed", "fixed": {"durationSec": 100000000000000000000}}}}"#
+    )
+)]
+#[case::max_u64_duration_text(
+    r#"{"input": "AAA", "params": {"inputType": "audio", "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": "18446744073709551615"}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "audio", "audio": {"mediaSource": {"base64String": "AAA"}, "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 18446744073709551615}}}}"#
+    )
+)]
+#[case::signed_and_padded_duration_text(
+    r#"{"input": "AAA", "params": {"inputType": "audio", "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": "+007"}}}}"#,
+    Expected::Built(
+        r#"{"inputType": "audio", "audio": {"mediaSource": {"base64String": "AAA"}, "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 7}}}}"#
+    )
+)]
 #[case::dynamic_segmentation(
     r#"{"input": "AAA", "params": {"inputType": "audio", "segmentation": {"method": "dynamic", "dynamic": {"minDurationSec": 3.0}}, "inferenceId": "id-1"}}"#,
     Expected::Built(
@@ -183,6 +207,10 @@ fn policy(#[case] call: &str, #[case] expected: Expected<'_>) {
 #[case::bad_numeric_text(
     r#"{"startSec": "", "endSec": "abc", "segmentation": {"method": "fixed", "fixed": {"durationSec": "1e2"}}}"#,
     "startSec: Input should be a valid number; endSec: Input should be a valid number; segmentation.TwelveLabsMarengo3FixedSegmentation.fixed.durationSec: Input should be a valid integer; segmentation.TwelveLabsMarengo3DynamicSegmentation.method: Input should be 'dynamic'; segmentation.TwelveLabsMarengo3DynamicSegmentation.dynamic: Field required"
+)]
+#[case::float_duration_beyond_integer_range(
+    r#"{"segmentation": {"method": "fixed", "fixed": {"durationSec": 1e19}}}"#,
+    "segmentation.TwelveLabsMarengo3FixedSegmentation.fixed.durationSec: Input should be a valid integer; segmentation.TwelveLabsMarengo3DynamicSegmentation.method: Input should be 'dynamic'; segmentation.TwelveLabsMarengo3DynamicSegmentation.dynamic: Field required"
 )]
 #[case::bad_option_items(
     r#"{"embeddingOption": ["visual", "bad", "worse"], "embeddingType": "fused_embedding", "embeddingScope": ["wide"]}"#,
