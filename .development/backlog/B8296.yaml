@@ -1,7 +1,7 @@
 id: B8296
 milestone: M8 platform
 title: Valkey semantic cache
-status: todo
+status: in-progress
 depends_on: [B4382, B4380, B7813]
 file: tasks/B8296-valkey-semantic-cache.yaml
 covers:
