@@ -1,0 +1,1 @@
+{"deployments":[{"tags":["default","team-a"],"tag_regex":["^User-Agent: claude-code/"]},{"tags":["team-b"]}],"tags":["&team-a","!team-b","alpha"],"inherited_tags":["&plan:enterprise","!trial"],"header_strings":["User-Agent: claude-code/1.0"],"match_any":false,"routing_prefix":"group:"}
