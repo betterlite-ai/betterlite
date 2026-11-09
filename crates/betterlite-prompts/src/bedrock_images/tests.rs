@@ -273,6 +273,9 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
 #[case::remote_fetch_ends_a_dripping_body_at_the_deadline(
     "remote_fetch_ends_a_dripping_body_at_the_deadline"
 )]
+#[case::remote_fetch_ends_a_dripping_body_at_the_total_deadline(
+    "remote_fetch_ends_a_dripping_body_at_the_total_deadline"
+)]
 #[case::process_dispatches_base64_before_a_url("process_dispatches_base64_before_a_url")]
 #[case::process_rejects_an_unsupported_image_url("process_rejects_an_unsupported_image_url")]
 #[case::process_overrides_the_media_type_and_format("process_overrides_the_media_type_and_format")]
@@ -683,6 +686,33 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
             let outcome = timeout(Duration::from_secs(5), client.image_details(&url))
                 .await
                 .expect("a fetch without any timeout would never end");
+            assert!(matches!(outcome.unwrap_err(), BedrockImageError::Deadline));
+        }
+        "remote_fetch_ends_a_dripping_body_at_the_total_deadline" => {
+            let server = Server::start(vec![route(
+                "/drip.png",
+                Reply {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: vec![b'x'; 20],
+                    truncate_to: None,
+                    drip: true,
+                },
+            )])
+            .await;
+            let url = server.url("/drip.png");
+            let limits = TransportLimits {
+                connect_timeout: Duration::from_secs(5),
+                read_timeout: Duration::from_secs(5),
+                body_bytes: TransportLimits::DEFAULT.body_bytes,
+                header_bytes: TransportLimits::DEFAULT.header_bytes,
+            };
+            // the client's 5-second read and request timeouts never fire, so only the 100ms total deadline ends the fetch
+            let mut client = remote_with(limits, &["127.0.0.1"], 50.0, true);
+            client.deadline = Duration::from_millis(100);
+            let outcome = timeout(Duration::from_secs(5), client.image_details(&url))
+                .await
+                .expect("a fetch without a total deadline would never end");
             assert!(matches!(outcome.unwrap_err(), BedrockImageError::Deadline));
         }
         "process_dispatches_base64_before_a_url" => {
