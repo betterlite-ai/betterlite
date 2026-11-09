@@ -25,6 +25,9 @@ call:
         width: 2
         height: 3
       - function: resize_image_high_res
+        width: 2605
+        height: 1000
+      - function: resize_image_high_res
         width: 2001
         height: 769
       - function: resize_image_high_res

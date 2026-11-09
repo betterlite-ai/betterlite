@@ -6,6 +6,7 @@ mod corpus;
 mod dimensions;
 mod geometry;
 mod media_corpus;
+mod names;
 mod settings;
 mod support;
 mod tiles;

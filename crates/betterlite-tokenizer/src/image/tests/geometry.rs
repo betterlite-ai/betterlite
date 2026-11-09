@@ -19,6 +19,7 @@ use super::support::{DEFAULT, SMALL_LIMITS};
 #[case::widest_header(0xFFFF_FFFF, 2, &DEFAULT, (2000, 0))]
 #[case::tallest_header(2, 0xFFFF_FFFF, &DEFAULT, (0, 2000))]
 #[case::zero_both(0, 0, &DEFAULT, (0, 0))]
+#[case::scaled_long_at_limit(2605, 1000, &DEFAULT, (2000, 768))]
 #[case::exact_integer_aspect(800, 6, &DEFAULT, (2000, 15))]
 #[case::exact_integer_aspect_portrait(6, 800, &DEFAULT, (15, 2000))]
 #[case::exact_integer_aspect_thirds(1200, 9, &DEFAULT, (2000, 15))]

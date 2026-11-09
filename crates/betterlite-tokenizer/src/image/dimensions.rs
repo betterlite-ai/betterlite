@@ -98,17 +98,13 @@ fn jpeg_dimensions(data: &[u8]) -> Result<(u32, u32), ImageError> {
         let size = i64::from(length)
             .checked_sub(2)
             .ok_or(ImageError::Overflow)?;
-        position = seek_relative(position, size)?;
-    }
-}
-
-fn seek_relative(position: usize, size: i64) -> Result<usize, ImageError> {
-    if size >= 0 {
-        let forward = usize::try_from(size).map_err(|_error| ImageError::Overflow)?;
-        position.checked_add(forward).ok_or(ImageError::Overflow)
-    } else {
-        let backward =
-            usize::try_from(size.unsigned_abs()).map_err(|_error| ImageError::Overflow)?;
-        position.checked_sub(backward).ok_or(ImageError::Overflow)
+        if size.is_negative() {
+            let backward =
+                usize::try_from(size.unsigned_abs()).map_err(|_error| ImageError::Overflow)?;
+            position = position.checked_sub(backward).ok_or(ImageError::Overflow)?;
+        } else {
+            let forward = usize::try_from(size).map_err(|_error| ImageError::Overflow)?;
+            position = position.checked_add(forward).ok_or(ImageError::Overflow)?;
+        }
     }
 }
