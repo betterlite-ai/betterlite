@@ -81,3 +81,17 @@ path = "fuzz_targets/response_schema.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tavily_reply"
+path = "fuzz_targets/tavily_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "you_com_reply"
+path = "fuzz_targets/you_com_reply.rs"
+test = false
+doc = false
+bench = false

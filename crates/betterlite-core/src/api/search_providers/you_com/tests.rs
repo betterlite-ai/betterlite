@@ -1,0 +1,463 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+
+use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::search::credentials::CredentialError;
+use betterlite_openai::search::provider::{
+    HttpMethod, ProviderResponse, SearchProvider, SearchQuery,
+};
+use betterlite_openai::search::records::SearchResult;
+use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
+
+use super::error::YouComError;
+use super::reply::{MAX_REPLY_BYTES, decode_you_com_reply};
+use super::{YOU_COM_FREE_API_BASE, YouComSearch};
+
+fn load(environment: &[(&str, &str)]) -> YouComSearch {
+    let lookup: BTreeMap<String, String> = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    YouComSearch::load(&lookup)
+}
+fn key(text: &str) -> SecretString {
+    SecretString::from(text)
+}
+fn headers(entries: &[(&str, &str)]) -> Headers {
+    entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+fn object(text: &str) -> Object {
+    serde_json::from_str(text).unwrap()
+}
+
+#[test]
+fn settings_default_to_unset() {
+    let search = load(&[]);
+    assert!(search.api_key.is_none());
+    assert!(search.api_base.is_none());
+}
+
+#[rstest]
+#[case::key_and_base(
+    &[("YOUCOM_API_KEY", "sk-test"), ("YOUCOM_API_BASE", "https://proxy.test")],
+    Some("sk-test"),
+    Some("https://proxy.test")
+)]
+#[case::empty_key_is_unset(&[("YOUCOM_API_KEY", "")], None, None)]
+#[case::empty_base_is_unset(&[("YOUCOM_API_BASE", "")], None, None)]
+#[case::unrelated_variables_are_ignored(&[("OTHER", "x")], None, None)]
+fn settings_read_the_environment(
+    #[case] environment: &[(&str, &str)],
+    #[case] expected_key: Option<&str>,
+    #[case] expected_base: Option<&str>,
+) {
+    let search = load(environment);
+    assert_eq!(
+        search.api_key.as_ref().map(ExposeSecret::expose_secret),
+        expected_key
+    );
+    assert_eq!(search.api_base.as_deref(), expected_base);
+}
+
+#[test]
+fn display_name_and_method_match_the_source() {
+    assert_eq!(
+        <YouComSearch as SearchProvider>::ui_friendly_name(),
+        "You.com"
+    );
+    assert_eq!(load(&[]).http_method(), HttpMethod::Post);
+}
+
+#[test]
+fn keyless_settings_resolve_to_no_key() {
+    assert!(load(&[]).resolve_api_key(None, None).unwrap().is_none());
+}
+
+#[test]
+fn environment_key_resolves_when_the_base_is_absent() {
+    let resolved = load(&[("YOUCOM_API_KEY", "sk-env")])
+        .resolve_api_key(None, None)
+        .unwrap();
+    assert_eq!(
+        resolved.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-env")
+    );
+}
+
+#[test]
+fn caller_key_skips_the_trust_check() {
+    let resolved = load(&[("YOUCOM_API_KEY", "sk-env")])
+        .resolve_api_key(Some(&key("sk-caller")), Some("https://evil.test"))
+        .unwrap();
+    assert_eq!(
+        resolved.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-caller")
+    );
+}
+
+#[test]
+fn environment_key_refuses_an_untrusted_caller_base() {
+    let error = load(&[("YOUCOM_API_KEY", "sk-env")])
+        .resolve_api_key(None, Some("https://evil.test"))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        YouComError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+    assert!(!error.to_string().contains("sk-env"));
+}
+
+#[test]
+fn environment_key_refuses_the_keyless_free_host() {
+    let error = load(&[("YOUCOM_API_KEY", "sk-env")])
+        .prepare_headers(Headers::new(), None, Some(YOU_COM_FREE_API_BASE))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        YouComError::Credential(CredentialError::UntrustedBase { .. })
+    ));
+}
+
+#[test]
+fn untrusted_base_without_a_server_key_is_keyless() {
+    assert!(
+        load(&[])
+            .resolve_api_key(None, Some("https://evil.test"))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn keyless_headers_pin_content_type_and_identity_encoding() {
+    let prepared = load(&[])
+        .prepare_headers(headers(&[("X-Trace", "1")]), None, None)
+        .unwrap();
+    assert_eq!(
+        prepared,
+        headers(&[
+            ("Accept-Encoding", "identity"),
+            ("Content-Type", "application/json"),
+            ("X-Trace", "1"),
+        ])
+    );
+}
+
+#[rstest]
+#[case::exact_key("Accept-Encoding", "gzip", "gzip", 2)]
+#[case::other_case("accept-encoding", "gzip", "identity", 3)]
+fn identity_encoding_is_set_only_when_the_exact_key_is_absent(
+    #[case] name: &str,
+    #[case] value: &str,
+    #[case] expected_encoding: &str,
+    #[case] expected_len: usize,
+) {
+    let prepared = load(&[])
+        .prepare_headers(headers(&[(name, value)]), None, None)
+        .unwrap();
+    assert_eq!(prepared.get(name).map(String::as_str), Some(value));
+    assert_eq!(
+        prepared.get("Accept-Encoding").map(String::as_str),
+        Some(expected_encoding)
+    );
+    assert_eq!(prepared.len(), expected_len);
+}
+
+#[test]
+fn headers_carry_the_resolved_key() {
+    let prepared = load(&[("YOUCOM_API_KEY", "sk-env")])
+        .prepare_headers(Headers::new(), None, None)
+        .unwrap();
+    assert_eq!(
+        prepared.get("X-API-Key").map(String::as_str),
+        Some("sk-env")
+    );
+    let caller = load(&[])
+        .prepare_headers(Headers::new(), Some(&key("sk-caller")), None)
+        .unwrap();
+    assert_eq!(
+        caller.get("X-API-Key").map(String::as_str),
+        Some("sk-caller")
+    );
+}
+
+#[rstest]
+#[case::keyless_free_url(None, None, &[], "https://api.you.com/v1/agents/search")]
+#[case::caller_key_selects_the_keyed_default(
+    None,
+    Some("sk-caller"),
+    &[],
+    "https://ydc-index.io/v1/search"
+)]
+#[case::environment_key_selects_the_keyed_default(
+    None,
+    None,
+    &[("YOUCOM_API_KEY", "sk-env")],
+    "https://ydc-index.io/v1/search"
+)]
+#[case::environment_base_wins_over_the_keyed_default(
+    None,
+    Some("sk-caller"),
+    &[("YOUCOM_API_BASE", "https://env.test")],
+    "https://env.test/v1/search"
+)]
+#[case::caller_base_wins_over_the_environment_base(
+    Some("https://caller.test"),
+    None,
+    &[("YOUCOM_API_BASE", "https://env.test")],
+    "https://caller.test/v1/search"
+)]
+#[case::trailing_slashes_are_trimmed(
+    Some("https://caller.test///"),
+    None,
+    &[],
+    "https://caller.test/v1/search"
+)]
+#[case::search_suffix_is_kept(
+    Some("https://caller.test/v1/search"),
+    None,
+    &[],
+    "https://caller.test/v1/search"
+)]
+#[case::agents_suffix_is_kept(
+    Some("https://caller.test/v1/agents/search"),
+    None,
+    &[],
+    "https://caller.test/v1/agents/search"
+)]
+#[case::other_path_gets_the_suffix(
+    Some("https://caller.test/v1"),
+    None,
+    &[],
+    "https://caller.test/v1/v1/search"
+)]
+#[case::empty_caller_base_is_used_as_given(Some(""), None, &[], "/v1/search")]
+fn endpoint_picks_the_keyed_or_free_base(
+    #[case] api_base: Option<&str>,
+    #[case] api_key: Option<&str>,
+    #[case] environment: &[(&str, &str)],
+    #[case] expected: &str,
+) {
+    let caller_key = api_key.map(key);
+    assert_eq!(
+        load(environment).endpoint(api_base, caller_key.as_ref()),
+        expected
+    );
+}
+
+#[test]
+fn trait_complete_url_uses_the_environment_key() {
+    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+    assert_eq!(
+        search.complete_url(None, &Object::new(), None).unwrap(),
+        "https://ydc-index.io/v1/search"
+    );
+    let keyless = load(&[]);
+    assert_eq!(
+        keyless.complete_url(None, &Object::new(), None).unwrap(),
+        YOU_COM_FREE_API_BASE
+    );
+}
+
+#[rstest]
+#[case::single(SearchQuery::Single("rust".to_owned()), r#"{"query":"rust"}"#)]
+#[case::multiple(
+    SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
+    r#"{"query":"rust search"}"#
+)]
+fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
+    let body = load(&[])
+        .transform_search_request(&query, &Object::new())
+        .unwrap();
+    assert_eq!(body, object(expected));
+}
+
+#[test]
+fn body_maps_unified_parameters_and_copies_the_rest() {
+    let optional_params = object(
+        r#"{
+            "max_results": 7,
+            "search_domain_filter": ["docs.rs"],
+            "include_domains": ["ignored.test"],
+            "safesearch": "strict",
+            "country": "FR",
+            "max_tokens_per_page": 512
+        }"#,
+    );
+    let body = load(&[])
+        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .unwrap();
+    assert_eq!(
+        body,
+        object(
+            r#"{
+                "query": "rust",
+                "count": 7,
+                "include_domains": ["docs.rs"],
+                "country": "fr",
+                "safesearch": "strict"
+            }"#
+        )
+    );
+}
+
+#[test]
+fn body_keeps_a_caller_include_domains_without_the_filter() {
+    let optional_params = object(r#"{"include_domains": ["kept.test"]}"#);
+    let body = load(&[])
+        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .unwrap();
+    assert_eq!(
+        body,
+        object(r#"{"query": "rust", "include_domains": ["kept.test"]}"#)
+    );
+}
+
+#[test]
+fn body_rejects_a_non_string_country() {
+    let optional_params = object(r#"{"country": []}"#);
+    let error = load(&[])
+        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .unwrap_err();
+    assert!(matches!(error, YouComError::CountryNotString));
+}
+
+#[test]
+fn reply_reads_web_then_news() {
+    let response = decode_you_com_reply(
+        br#"{"results":{"web":[{"title":"Web","url":"https://web.test","snippets":["first","second"],"description":"ignored","page_age":"2024-01-02"}],"news":[{"title":"News","url":"https://news.test","snippets":[],"description":"fallback"}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(response.object.0, "search");
+    assert_eq!(
+        response.results,
+        vec![
+            SearchResult {
+                title: "Web".to_owned(),
+                url: "https://web.test".to_owned(),
+                snippet: "first".to_owned(),
+                date: Some("2024-01-02".to_owned()),
+                last_updated: None,
+                extra: Object::new(),
+            },
+            SearchResult {
+                title: "News".to_owned(),
+                url: "https://news.test".to_owned(),
+                snippet: "fallback".to_owned(),
+                date: None,
+                last_updated: None,
+                extra: Object::new(),
+            },
+        ]
+    );
+}
+
+#[rstest]
+#[case::no_results(b"{}", 0)]
+#[case::null_results(br#"{"results":null}"#, 0)]
+#[case::null_web(br#"{"results":{"web":null}}"#, 0)]
+#[case::null_news(br#"{"results":{"news":null}}"#, 0)]
+#[case::news_only(br#"{"results":{"news":[{"title":"N"}]}}"#, 1)]
+fn reply_treats_null_lists_as_empty(#[case] bytes: &[u8], #[case] expected: usize) {
+    assert_eq!(decode_you_com_reply(bytes).unwrap().results.len(), expected);
+}
+
+#[rstest]
+#[case::missing_description(br#"{"results":{"web":[{"title":"T","snippets":[]}]}}"#, "")]
+#[case::null_snippets(
+    br#"{"results":{"web":[{"title":"T","snippets":null,"description":"d"}]}}"#,
+    "d"
+)]
+#[case::missing_snippets(br#"{"results":{"web":[{"title":"T","description":"d"}]}}"#, "d")]
+fn reply_falls_back_to_description(#[case] bytes: &[u8], #[case] expected: &str) {
+    let response = decode_you_com_reply(bytes).unwrap();
+    assert_eq!(response.results[0].snippet, expected);
+}
+
+#[rstest]
+#[case::null_title(br#"{"results":{"web":[{"title":null}]}}"#)]
+#[case::null_url(br#"{"results":{"web":[{"url":null}]}}"#)]
+#[case::null_description(
+    br#"{"results":{"web":[{"title":"T","snippets":[],"description":null}]}}"#
+)]
+#[case::numeric_page_age(br#"{"results":{"web":[{"title":"T","page_age":7}]}}"#)]
+#[case::null_snippet(br#"{"results":{"web":[{"title":"T","snippets":[null]}]}}"#)]
+#[case::snippets_not_a_list(br#"{"results":{"web":[{"title":"T","snippets":"x"}]}}"#)]
+#[case::results_not_an_object(br#"{"results":[]}"#)]
+#[case::web_not_a_list(br#"{"results":{"web":{}}}"#)]
+fn reply_rejects_a_shape_the_source_would_fail(#[case] bytes: &[u8]) {
+    assert!(matches!(
+        decode_you_com_reply(bytes),
+        Err(YouComError::Reply { .. })
+    ));
+}
+
+#[test]
+fn reply_rejects_invalid_json() {
+    assert!(matches!(
+        decode_you_com_reply(b"not json"),
+        Err(YouComError::Reply { .. })
+    ));
+}
+
+#[test]
+fn reply_rejects_trailing_bytes() {
+    assert!(matches!(
+        decode_you_com_reply(br#"{"results":{}}x"#),
+        Err(YouComError::TrailingBytes(_))
+    ));
+}
+
+#[test]
+fn reply_is_bounded() {
+    let mut bytes = vec![b' '; MAX_REPLY_BYTES + 1];
+    assert!(matches!(
+        decode_you_com_reply(&bytes),
+        Err(YouComError::ReplyTooLarge {
+            limit: MAX_REPLY_BYTES
+        })
+    ));
+    bytes.truncate(MAX_REPLY_BYTES);
+    assert!(matches!(
+        decode_you_com_reply(&bytes),
+        Err(YouComError::Reply { .. })
+    ));
+}
+
+#[test]
+fn trait_hooks_shape_headers_url_and_reply() {
+    let search = load(&[]);
+    let validated = search.validate_environment(headers(&[("X-Trace", "1")]), None, None);
+    assert_eq!(
+        validated.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    let response = ProviderResponse {
+        status_code: 200,
+        headers: &Headers::new(),
+        text: r#"{"results":{"web":[{"title":"T"}]}}"#,
+    };
+    let parsed = search.transform_search_response(&response).unwrap();
+    assert_eq!(parsed.results.len(), 1);
+}
+
+#[rstest]
+fn replays_the_you_com_corpus(#[files("fuzz/corpus/you_com_reply/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
+    if let Ok(response) = decode_you_com_reply(&bytes) {
+        assert_eq!(response.object.0, "search");
+        assert!(
+            response
+                .results
+                .iter()
+                .all(|result| result.last_updated.is_none())
+        );
+    }
+}
