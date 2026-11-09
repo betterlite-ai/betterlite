@@ -1,5 +1,11 @@
 import asyncio
+import importlib.util
+import sys
+import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from tempfile import TemporaryDirectory
+from types import ModuleType
 from typing import TypeAlias, cast
 
 from litellm.caching.disk_cache import DiskCache
@@ -14,6 +20,55 @@ Value: TypeAlias = bool | int | float | str | list["Value"] | dict[str, "Value"]
 _ABSENT_KEY = "absent-key"
 _COORDINATION_KEY = "key"
 _SETTLE_ROUNDS = 8
+
+
+class StorageStandIn:
+    # diskcache 5.6.3 stores expire_time = now + expire and reads a row only while expire_time > now
+    def __init__(self, directory: str) -> None:
+        self.directory = directory
+        self.rows: dict[str, tuple[Json, float | None]] = {}
+
+    def set(self, key: str, value: Json, expire: float | None = None) -> bool:
+        expire_time = None if expire is None else time.time() + expire
+        self.rows[key] = (value, expire_time)
+        return True
+
+    def get(self, key: str, default: Json = None) -> Json:
+        return self._live(key, default)
+
+    def pop(self, key: str, default: Json = None) -> Json:
+        value = self._live(key, default)
+        self.rows.pop(key, None)
+        return value
+
+    def clear(self) -> int:
+        count = len(self.rows)
+        self.rows.clear()
+        return count
+
+    @contextmanager
+    def transact(self) -> Generator[None, None, None]:
+        yield
+
+    def _live(self, key: str, default: Json) -> Json:
+        stored = self.rows.get(key)
+        if stored is None:
+            return default
+        (value, expire_time) = stored
+        if expire_time is not None and expire_time <= time.time():
+            return default
+        return value
+
+
+def disk_storage() -> None:
+    # the oracle pins litellm[proxy], which leaves out the caching extra that carries diskcache
+    if "diskcache" in sys.modules:
+        return
+    if importlib.util.find_spec("diskcache") is not None:
+        return
+    module = ModuleType("diskcache")
+    setattr(module, "Cache", StorageStandIn)  # noqa: B010 - pyright rejects unknown ModuleType attributes
+    sys.modules["diskcache"] = module
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
@@ -57,6 +112,7 @@ def integer_list(value: Json, name: str) -> list[int]:
 
 
 def disk_cache(directory: str) -> DiskCache:
+    disk_storage()
     return DiskCache(disk_cache_dir=directory)
 
 
