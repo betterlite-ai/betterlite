@@ -105,11 +105,11 @@ fn models_url_joins_the_resolved_base_without_trimming(
     #[case] env_base: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let environment = environment(env_base, None, None);
-    let resolved = provider_info(api_base, None, &environment);
+    let resolved_environment = environment(env_base, None, None);
+    let resolved = provider_info(api_base, None, &resolved_environment);
     assert_eq!(resolved.api_base, expected_base);
     assert_eq!(
-        models_url(api_base, &environment),
+        models_url(api_base, &resolved_environment),
         format!("{}/models", resolved.api_base)
     );
 }
