@@ -1,0 +1,9 @@
+kind: helper
+name: sap-models-tool-parameters-normalized
+call:
+  b5951:
+    calls:
+      - model: chat_completion_tool
+        data: {function: {name: n, parameters: {a: 1}}}
+env: {}
+compare: {ignore: []}

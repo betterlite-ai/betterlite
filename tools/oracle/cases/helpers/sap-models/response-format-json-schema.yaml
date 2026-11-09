@@ -1,0 +1,31 @@
+kind: helper
+name: sap-models-response-format-json-schema
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              - prompt_templating:
+                  prompt:
+                    template: []
+                    response_format: {type: json_schema, json_schema: {name: n}}
+                  model: {name: m}
+              - prompt_templating:
+                  prompt:
+                    template: [{role: user, content: hi}]
+                    response_format: {type: json_object}
+                  model: {name: m}
+              - prompt_templating:
+                  prompt:
+                    template: []
+                    response_format: {type: json_schema, json_schema: {name: n, description: d, schema: {type: object}, strict: true}}
+                  model: {name: m}
+              - prompt_templating:
+                  prompt:
+                    template: []
+                    response_format: {type: text}
+                  model: {name: m}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: searxng-pubdate-fallback
+call:
+  b8023:
+    operation: searxng_reply
+    params:
+      body: |-
+        {"results":[
+          {"title":"T","url":"u","content":"c","publishedDate":"2024-01-02","pubdate":"2023-05-06"},
+          {"title":"T2","url":"u2","content":"c2","pubdate":"2023-05-06"},
+          {"title":"T3","url":"u3","content":"c3","publishedDate":null,"pubdate":"2021-01-01"},
+          {"title":"T4","url":"u4"}
+        ]}
+env: {}
+compare: {ignore: []}

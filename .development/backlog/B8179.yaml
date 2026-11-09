@@ -1,7 +1,7 @@
 id: B8179
 milestone: M3 providers
 title: NLP Cloud chat config and stream cleaner
-status: todo
+status: done
 depends_on: [B2202, B2214]
 file: tasks/B8179-nlp-cloud-chat.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/nlp_cloud/common_utils.py"
 parent: B043
 split_from: B043
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1031
