@@ -1,6 +1,5 @@
 pub(crate) mod cas;
 pub(crate) mod codec;
-pub(crate) mod float;
 pub(crate) mod typed;
 
 use std::collections::BTreeMap;
@@ -147,9 +146,10 @@ fn pool_environment(settings: &RedisSettings) -> BTreeMap<String, String> {
     )])
 }
 
-pub(crate) async fn guarded<T, F, Fut>(
+pub(crate) async fn run_observed<T, F, Fut>(
     state: &RedisState,
     operation: &'static str,
+    fallback: Option<T>,
     invoke: F,
 ) -> Result<Observed<T>, StateStoreError>
 where
@@ -165,39 +165,18 @@ where
             value: outcome.value,
             warning: outcome.warning.map(StoreWarning::Breaker),
         }),
-        Err(CallError::Open(error)) => Err(StateStoreError::CircuitOpen {
-            operation: error.operation,
-        }),
-        Err(CallError::Failed { error, .. }) => Err(error),
-    }
-}
-
-pub(crate) async fn observe<T, F, Fut>(
-    state: &RedisState,
-    operation: &'static str,
-    fallback: T,
-    invoke: F,
-) -> Result<Observed<T>, StateStoreError>
-where
-    F: FnOnce() -> Fut + Send,
-    Fut: Future<Output = Result<T, StateStoreError>> + Send,
-{
-    match run_async(&state.policy, state.clock.as_ref(), operation, |_guard| {
-        invoke()
-    })
-    .await
-    {
-        Ok(outcome) => Ok(Observed {
-            value: outcome.value,
-            warning: outcome.warning.map(StoreWarning::Breaker),
-        }),
-        Err(CallError::Failed { warning, .. }) => Ok(Observed {
-            value: fallback,
-            warning: Some(StoreWarning::Unavailable {
-                operation,
-                event: warning,
-            }),
-        }),
+        Err(CallError::Failed { error, warning }) => {
+            let Some(value) = fallback else {
+                return Err(error);
+            };
+            Ok(Observed {
+                value,
+                warning: Some(StoreWarning::Unavailable {
+                    operation,
+                    event: warning,
+                }),
+            })
+        }
         Err(CallError::Open(error)) => Err(StateStoreError::CircuitOpen {
             operation: error.operation,
         }),

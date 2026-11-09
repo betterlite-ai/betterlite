@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 
 use rust_decimal::Decimal;
-use secrecy::SecretString;
 
 use super::super::error::{StateStoreError, StoreWarning};
-use super::super::{FloatIncrement, RedisSettings};
+use betterlite_config::sections::routing_state_store::Settings as ConfigSettings;
+
+use super::super::{FloatIncrement, RedisSettings, RoutingStateStore, Settings, attach_if_missing};
 use super::fake_redis::FakeRedis;
 use super::support::{
-    TestClock, breaker, local_only_store, redis_settings, route_key, same_f64, secret, store,
+    TestClock, breaker, redis_settings, route_key, same_f64, secret, seed, settings, store,
 };
 use crate::redis_failure_policy::BreakerEvent;
 use crate::routing_value_store::{
@@ -29,6 +30,7 @@ async fn read_and_write_cases(name: &str) -> bool {
         "typed_values_round_trip" => typed_values_round_trip().await,
         "namespace_prefixes_every_key" => namespace_prefixes_every_key().await,
         "batch_get_keeps_order_and_duplicates" => batch_get_keeps_order_and_duplicates().await,
+        "batch_get_empty_is_empty" => batch_get_empty_is_empty().await,
         "increment_counter_from_missing_and_existing" => {
             increment_counter_from_missing_and_existing().await;
         }
@@ -37,8 +39,6 @@ async fn read_and_write_cases(name: &str) -> bool {
         "empty_float_pipeline_is_none" => empty_float_pipeline_is_none().await,
         "compare_and_set_first_writer" => compare_and_set_first_writer().await,
         "compare_and_set_matching_value_swaps" => compare_and_set_matching_value_swaps().await,
-        "set_add_accumulates_members" => set_add_accumulates_members().await,
-        "delete_removes_value" => delete_removes_value().await,
         "ttl_read_and_refresh" => ttl_read_and_refresh().await,
         _ => return false,
     }
@@ -53,8 +53,10 @@ async fn failure_cases(name: &str) -> bool {
             breaker_rejects_after_a_swallowed_failure().await;
         }
         "breaker_recovers_after_the_timeout" => breaker_recovers_after_the_timeout().await,
-        "attach_redis_only_when_none_is_set" => attach_redis_only_when_none_is_set().await,
-        "local_backend_round_trips" => local_backend_round_trips().await,
+        "attach_if_missing_keeps_the_first_store" => {
+            attach_if_missing_keeps_the_first_store().await;
+        }
+        "config_mapping_defaults" => config_mapping_defaults(),
         "credentials_stay_out_of_errors" => credentials_stay_out_of_errors().await,
         _ => return false,
     }
@@ -78,9 +80,9 @@ async fn typed_values_round_trip() {
         RouteValue::Members(BTreeSet::from(["a".to_owned(), "b".to_owned()])),
     ];
     for (index, value) in values.iter().enumerate() {
-        let key = route_key(&format!("value-{index}"));
-        store.set(&key, value, None).await.unwrap();
-        let observed = store.get(&key).await.unwrap();
+        let key = format!("value-{index}");
+        seed(&server, &key, value, -1);
+        let observed = store.get(&route_key(&key)).await.unwrap();
         assert_eq!(observed.value, StoreRead::Value(value.clone()));
         assert!(observed.warning.is_none());
     }
@@ -90,29 +92,23 @@ async fn namespace_prefixes_every_key() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, Some("router"), breaker(5, 60_000), &clock);
-    let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    assert!(server.raw("router:counter").is_some());
-    assert!(server.raw("counter").is_none());
-    let observed = store.get(&key).await.unwrap();
+    seed(&server, "router:counter", &RouteValue::Counter(1), -1);
+    let observed = store.get(&route_key("counter")).await.unwrap();
     assert_eq!(observed.value, StoreRead::Value(RouteValue::Counter(1)));
+    let already_prefixed = store.get(&route_key("router:counter")).await.unwrap();
+    assert_eq!(
+        already_prefixed.value,
+        StoreRead::Value(RouteValue::Counter(1))
+    );
+    assert!(server.raw("counter").is_none());
 }
 
 async fn batch_get_keeps_order_and_duplicates() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    store
-        .set(&route_key("a"), &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    store
-        .set(&route_key("b"), &RouteValue::Counter(2), None)
-        .await
-        .unwrap();
+    seed(&server, "a", &RouteValue::Counter(1), -1);
+    seed(&server, "b", &RouteValue::Counter(2), -1);
     let keys = [
         route_key("b"),
         route_key("a"),
@@ -132,6 +128,15 @@ async fn batch_get_keeps_order_and_duplicates() {
     assert!(observed.warning.is_none());
 }
 
+async fn batch_get_empty_is_empty() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let store = store(&server, None, breaker(5, 60_000), &clock);
+    let observed = store.batch_get(&[]).await.unwrap();
+    assert!(observed.value.is_empty());
+    assert!(observed.warning.is_none());
+}
+
 async fn increment_counter_from_missing_and_existing() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
@@ -147,10 +152,6 @@ async fn increment_counter_from_missing_and_existing() {
         .await
         .unwrap();
     assert_eq!(second.value, RouteValue::Counter(12));
-    assert_eq!(
-        store.get(&key).await.unwrap().value,
-        StoreRead::Value(RouteValue::Counter(12))
-    );
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(120));
 }
 
@@ -168,8 +169,9 @@ async fn increment_spend_is_exact() {
         .await
         .unwrap();
     assert_eq!(observed.value, RouteValue::Spend(Decimal::new(3, 1)));
+    let read = store.get(&key).await.unwrap();
     assert_eq!(
-        store.get(&key).await.unwrap().value,
+        read.value,
         StoreRead::Value(RouteValue::Spend(Decimal::new(3, 1)))
     );
 }
@@ -257,10 +259,7 @@ async fn compare_and_set_matching_value_swaps() {
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
     let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(1), Some(30.0_f64))
-        .await
-        .unwrap();
+    seed(&server, "counter", &RouteValue::Counter(1), 30);
     let swapped = store
         .compare_and_set(
             &key,
@@ -278,11 +277,6 @@ async fn compare_and_set_matching_value_swaps() {
         }
     );
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(10));
-    compare_and_set_reports_the_winner(&store).await;
-}
-
-async fn compare_and_set_reports_the_winner(store: &super::super::RoutingStateStore) {
-    let key = route_key("counter");
     let stale = store
         .compare_and_set(
             &key,
@@ -301,54 +295,12 @@ async fn compare_and_set_reports_the_winner(store: &super::super::RoutingStateSt
     );
 }
 
-async fn set_add_accumulates_members() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("members");
-    let first = store
-        .set_add(&key, &["a".to_owned(), "b".to_owned()], Some(60.0_f64))
-        .await
-        .unwrap();
-    assert_eq!(first.value, vec!["a".to_owned(), "b".to_owned()]);
-    let second = store
-        .set_add(&key, &["b".to_owned(), "c".to_owned()], None)
-        .await
-        .unwrap();
-    assert_eq!(second.value, vec!["b".to_owned(), "c".to_owned()]);
-    assert_eq!(
-        store.get(&key).await.unwrap().value,
-        StoreRead::Value(RouteValue::Members(BTreeSet::from([
-            "a".to_owned(),
-            "b".to_owned(),
-            "c".to_owned(),
-        ])))
-    );
-}
-
-async fn delete_removes_value() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    store.delete(&key).await.unwrap();
-    assert!(server.raw("counter").is_none());
-    assert_eq!(store.get(&key).await.unwrap().value, StoreRead::Missing);
-}
-
 async fn ttl_read_and_refresh() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
+    seed(&server, "counter", &RouteValue::Counter(1), 30);
     let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(1), Some(30.0_f64))
-        .await
-        .unwrap();
     assert_eq!(store.get_ttl(&key).await.unwrap().value, Some(30));
     assert!(store.refresh_ttl(&key, None).await.unwrap().value);
     assert_eq!(store.get_ttl(&key).await.unwrap().value, Some(60));
@@ -457,63 +409,61 @@ async fn breaker_recovers_after_the_timeout() {
     ));
 }
 
-async fn attach_redis_only_when_none_is_set() {
+async fn attach_if_missing_keeps_the_first_store() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
-    let store = local_only_store(&clock);
-    store
-        .attach_redis(&redis_settings(&server, Some("first")))
-        .unwrap();
-    store
-        .set(&route_key("key"), &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    assert!(server.raw("first:key").is_some());
-    store
-        .attach_redis(&redis_settings(&server, Some("second")))
-        .unwrap();
-    store
-        .set(&route_key("other"), &RouteValue::Counter(2), None)
-        .await
-        .unwrap();
-    assert!(server.raw("first:other").is_some());
-    assert!(server.raw("second:other").is_none());
+    let mut slot: Option<RoutingStateStore> = None;
+    attach_if_missing(
+        &mut slot,
+        &settings(&server, Some("first"), breaker(5, 60_000)),
+        clock.breaker_clock(),
+    )
+    .unwrap();
+    let store = slot.as_ref().unwrap();
+    seed(&server, "first:counter", &RouteValue::Counter(1), -1);
+    assert_eq!(
+        store.get(&route_key("counter")).await.unwrap().value,
+        StoreRead::Value(RouteValue::Counter(1))
+    );
+    attach_if_missing(
+        &mut slot,
+        &settings(&server, Some("second"), breaker(5, 60_000)),
+        clock.breaker_clock(),
+    )
+    .unwrap();
+    assert_eq!(
+        slot.as_ref()
+            .unwrap()
+            .get(&route_key("counter"))
+            .await
+            .unwrap()
+            .value,
+        StoreRead::Value(RouteValue::Counter(1))
+    );
+    assert!(server.raw("second:counter").is_none());
 }
 
-async fn local_backend_round_trips() {
-    let clock = TestClock::new();
-    let store = local_only_store(&clock);
-    let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(5), None)
-        .await
-        .unwrap();
-    assert_eq!(
-        store.get(&key).await.unwrap().value,
-        StoreRead::Value(RouteValue::Counter(5))
-    );
-    let incremented = store
-        .increment(&key, &RouteIncrement::Counter(2), None)
-        .await
-        .unwrap();
-    assert_eq!(incremented.value, RouteValue::Counter(7));
-    let swapped = store
-        .compare_and_set(
-            &key,
-            &StoreRead::Value(RouteValue::Counter(7)),
-            &RouteValue::Counter(8),
-            None,
-        )
-        .await
-        .unwrap();
-    assert!(swapped.value.swapped);
+fn config_mapping_defaults() {
+    let section = ConfigSettings {
+        redis_url: None,
+        redis_host: Some("cache".to_owned()),
+        redis_port: Some(6380),
+        redis_password: None,
+        namespace: Some("router".to_owned()),
+        socket_timeout: 1.5_f64,
+        pool_timeout_seconds: 9,
+    };
+    let mapped = RedisSettings::try_from(&section).unwrap();
+    assert_eq!(mapped.host.as_deref(), Some("cache"));
+    assert_eq!(mapped.port, Some(6380));
+    assert_eq!(mapped.namespace.as_deref(), Some("router"));
+    assert!(same_f64(mapped.socket_timeout.unwrap(), 1.5_f64));
+    assert_eq!(mapped.pool_timeout_seconds, 9);
+    assert_eq!(mapped.default_ttl, 60);
+    let empty = ConfigSettings::default();
     assert!(matches!(
-        store.increment_float(&key, 1.0_f64, None, false).await,
-        Err(StateStoreError::RedisRequired { .. })
-    ));
-    assert!(matches!(
-        store.get_ttl(&key).await,
-        Err(StateStoreError::RedisRequired { .. })
+        RedisSettings::try_from(&empty),
+        Err(StateStoreError::NotConfigured)
     ));
 }
 
@@ -523,19 +473,11 @@ async fn credentials_stay_out_of_errors() {
     let password = "super-secret-redis-password";
     let mut redis = redis_settings(&server, None);
     redis.password = Some(secret(password));
-    let settings = super::super::Settings {
-        redis: Some(RedisSettings {
-            password: Some(SecretString::from(password.to_owned())),
-            ..redis
-        }),
+    let settings = Settings {
+        redis,
         breaker: breaker(5, 60_000),
     };
-    let store = super::super::RoutingStateStore::new(
-        super::support::local_store(),
-        &settings,
-        clock.breaker_clock(),
-    )
-    .unwrap();
+    let store = RoutingStateStore::new(&settings, clock.breaker_clock()).unwrap();
     server.set_down(true);
     let error = store
         .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)

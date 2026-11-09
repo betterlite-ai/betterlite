@@ -2,18 +2,19 @@ pub mod error;
 mod redis_state;
 mod tests;
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::routing_state_store as config;
+use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
+use betterlite_redis::cache_primitives::protocol::AsyncRedisCommands as _;
+use redis::cmd;
 use secrecy::SecretString;
 
 use self::error::{Observed, StateStoreError};
 use self::redis_state::RedisState;
 use crate::redis_failure_policy;
-use crate::routing_value_store::{
-    CompareOutcome, RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
-};
+use crate::routing_value_store::{CompareOutcome, RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 pub type BreakerClock = Arc<dyn Fn() -> Duration + Send + Sync>;
 
@@ -36,9 +37,7 @@ impl TryFrom<&config::Settings> for RedisSettings {
 
     fn try_from(section: &config::Settings) -> Result<Self, StateStoreError> {
         if section.redis_url.is_none() && section.redis_host.is_none() {
-            return Err(StateStoreError::RedisRequired {
-                operation: "configure",
-            });
+            return Err(StateStoreError::NotConfigured);
         }
         Ok(Self {
             url: section.redis_url.clone(),
@@ -55,7 +54,7 @@ impl TryFrom<&config::Settings> for RedisSettings {
 
 #[derive(Debug, Clone)]
 pub struct Settings {
-    pub redis: Option<RedisSettings>,
+    pub redis: RedisSettings,
     pub breaker: redis_failure_policy::Settings,
 }
 
@@ -67,118 +66,64 @@ pub struct FloatIncrement {
 }
 
 pub struct RoutingStateStore {
-    local: RoutingValueStore,
-    redis: Mutex<Option<Arc<RedisState>>>,
-    breaker: redis_failure_policy::Settings,
-    clock: BreakerClock,
+    redis: RedisState,
 }
 
 impl RoutingStateStore {
-    pub fn new(
-        local: RoutingValueStore,
-        settings: &Settings,
-        clock: BreakerClock,
-    ) -> Result<Self, StateStoreError> {
-        let store = Self {
-            local,
-            redis: Mutex::new(None),
-            breaker: settings.breaker,
-            clock,
-        };
-        if let Some(redis) = settings.redis.as_ref() {
-            store.attach_redis(redis)?;
-        }
-        Ok(store)
-    }
-
-    pub fn attach_redis(&self, settings: &RedisSettings) -> Result<(), StateStoreError> {
-        if self.backend().is_some() {
-            return Ok(());
-        }
-        let state = Arc::new(redis_state::open(
-            settings,
-            self.breaker,
-            Arc::clone(&self.clock),
-        )?);
-        let mut backend = self.redis.lock().unwrap_or_else(PoisonError::into_inner);
-        if backend.is_none() {
-            *backend = Some(state);
-        }
-        drop(backend);
-        Ok(())
-    }
-
-    fn backend(&self) -> Option<Arc<RedisState>> {
-        self.redis
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+    pub fn new(settings: &Settings, clock: BreakerClock) -> Result<Self, StateStoreError> {
+        Ok(Self {
+            redis: redis_state::open(&settings.redis, settings.breaker, clock)?,
+        })
     }
 
     pub async fn get(&self, key: &RouteKey) -> Result<Observed<StoreRead>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.get(key)?));
-        };
-        redis_state::typed::get(&redis, key).await
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        redis_state::run_observed(
+            &self.redis,
+            "async_get_cache",
+            Some(StoreRead::Missing),
+            move || async move {
+                let client = self.redis.transport.async_client().await?;
+                let mut command = cmd("GET");
+                command.arg(&namespaced);
+                let reply: Option<Vec<u8>> =
+                    client
+                        .query(&command)
+                        .await
+                        .map_err(|source| StateStoreError::Redis {
+                            operation: "async_get_cache",
+                            source,
+                        })?;
+                redis_state::codec::decode(reply)
+            },
+        )
+        .await
     }
 
     pub async fn batch_get(
         &self,
         keys: &[RouteKey],
     ) -> Result<Observed<Vec<StoreRead>>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.batch_get(keys)?));
-        };
-        redis_state::typed::batch_get(&redis, keys).await
-    }
-
-    pub async fn set(
-        &self,
-        key: &RouteKey,
-        value: &RouteValue,
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<()>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.set(key, value, ttl_seconds)?));
-        };
-        redis_state::typed::set(&redis, key, value, ttl_seconds).await
-    }
-
-    pub async fn set_pipeline(
-        &self,
-        entries: &[(RouteKey, RouteValue)],
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<()>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(
-                self.local.set_pipeline(entries, ttl_seconds)?,
-            ));
-        };
-        redis_state::typed::set_pipeline(&redis, entries, ttl_seconds).await
-    }
-
-    pub async fn set_add(
-        &self,
-        key: &RouteKey,
-        values: &[String],
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<Vec<String>>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.set_add(
-                key,
-                values,
-                ttl_seconds,
-            )?));
-        };
-        redis_state::typed::set_add(&redis, key, values, ttl_seconds).await
-    }
-
-    pub async fn delete(&self, key: &RouteKey) -> Result<Observed<()>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            self.local.delete(key);
-            return Ok(local_observed(()));
-        };
-        redis_state::typed::delete(&redis, key).await
+        let namespaced: Vec<String> = keys
+            .iter()
+            .map(|key| redis_state::namespaced(&self.redis, key))
+            .collect();
+        let fallback = vec![StoreRead::Missing; keys.len()];
+        redis_state::run_observed(
+            &self.redis,
+            "async_batch_get_cache",
+            Some(fallback),
+            move || async move {
+                let replies = self.redis.transport.async_mget(&namespaced).await?;
+                let mut values = Vec::with_capacity(replies.len());
+                for reply in replies {
+                    let raw = redis_state::codec::reply_bytes("async_batch_get_cache", reply)?;
+                    values.push(redis_state::codec::decode(raw)?);
+                }
+                Ok(values)
+            },
+        )
+        .await
     }
 
     pub async fn increment(
@@ -187,14 +132,14 @@ impl RoutingStateStore {
         by: &RouteIncrement,
         ttl_seconds: Option<f64>,
     ) -> Result<Observed<RouteValue>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.increment(
-                key,
-                by,
-                ttl_seconds,
-            )?));
-        };
-        redis_state::typed::increment(&redis, key, by, ttl_seconds).await
+        let ttl = redis_state::typed_ttl(ttl_seconds)?;
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        let key_name = key.as_ref().to_owned();
+        redis_state::run_observed(&self.redis, "async_increment", None, move || async move {
+            redis_state::typed::increment_until_written(&self.redis, &namespaced, by, ttl, key_name)
+                .await
+        })
+        .await
     }
 
     pub async fn compare_and_set(
@@ -204,15 +149,12 @@ impl RoutingStateStore {
         value: &RouteValue,
         ttl_seconds: Option<f64>,
     ) -> Result<Observed<CompareOutcome>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Ok(local_observed(self.local.compare_and_set(
-                key,
-                expected,
-                value,
-                ttl_seconds,
-            )?));
-        };
-        redis_state::typed::compare_and_set(&redis, key, expected, value, ttl_seconds).await
+        let ttl = redis_state::typed_ttl(ttl_seconds)?;
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        redis_state::run_observed(&self.redis, "compare_and_set", None, move || async move {
+            redis_state::cas::compare_and_set(&self.redis, &namespaced, expected, value, ttl).await
+        })
+        .await
     }
 
     pub async fn increment_float(
@@ -222,33 +164,72 @@ impl RoutingStateStore {
         ttl_seconds: Option<f64>,
         refresh_ttl: bool,
     ) -> Result<Observed<f64>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Err(StateStoreError::RedisRequired {
-                operation: "async_increment",
-            });
-        };
-        redis_state::float::increment(&redis, key, value, ttl_seconds, refresh_ttl).await
+        let ttl = redis_state::resolve_float_ttl(&self.redis, ttl_seconds);
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        redis_state::run_observed(&self.redis, "async_increment", None, move || async move {
+            self.redis
+                .counters
+                .incr_by_float_with_ttl(&namespaced, value, Some(ttl), refresh_ttl)
+                .await
+                .map_err(|source| StateStoreError::Counters {
+                    operation: "async_increment",
+                    source,
+                })
+        })
+        .await
     }
 
     pub async fn increment_float_pipeline(
         &self,
         entries: &[FloatIncrement],
     ) -> Result<Observed<Option<Vec<f64>>>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Err(StateStoreError::RedisRequired {
-                operation: "async_increment_pipeline",
+        if entries.is_empty() {
+            return Ok(Observed {
+                value: None,
+                warning: None,
             });
-        };
-        redis_state::float::increment_pipeline(&redis, entries).await
+        }
+        let mut operations = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let ttl = match entry.ttl_seconds {
+                None => None,
+                Some(seconds) => Some(
+                    redis_state::truncate_seconds(seconds)
+                        .ok_or(StateStoreError::InvalidTtl { seconds })?,
+                ),
+            };
+            operations.push(IncrementOperation {
+                key: redis_state::namespaced(&self.redis, &entry.key),
+                increment_value: entry.value,
+                ttl,
+            });
+        }
+        redis_state::run_observed(
+            &self.redis,
+            "async_increment_pipeline",
+            None,
+            move || async move {
+                self.redis
+                    .counters
+                    .pipeline_increment(&operations)
+                    .await
+                    .map(Some)
+                    .map_err(|source| StateStoreError::Counters {
+                        operation: "async_increment_pipeline",
+                        source,
+                    })
+            },
+        )
+        .await
     }
 
     pub async fn get_ttl(&self, key: &RouteKey) -> Result<Observed<Option<i64>>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Err(StateStoreError::RedisRequired {
-                operation: "async_get_ttl",
-            });
-        };
-        redis_state::typed::get_ttl(&redis, key).await
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        redis_state::run_observed(&self.redis, "async_get_ttl", None, move || async move {
+            let ttl = redis_state::typed::read_ttl(&self.redis, &namespaced).await?;
+            Ok((ttl > -1).then_some(ttl))
+        })
+        .await
     }
 
     pub async fn refresh_ttl(
@@ -256,18 +237,29 @@ impl RoutingStateStore {
         key: &RouteKey,
         ttl_seconds: Option<f64>,
     ) -> Result<Observed<bool>, StateStoreError> {
-        let Some(redis) = self.backend() else {
-            return Err(StateStoreError::RedisRequired {
-                operation: "async_refresh_ttl",
-            });
-        };
-        redis_state::typed::refresh_ttl(&redis, key, ttl_seconds).await
+        let ttl = redis_state::resolve_float_ttl(&self.redis, ttl_seconds);
+        let namespaced = redis_state::namespaced(&self.redis, key);
+        redis_state::run_observed(&self.redis, "async_refresh_ttl", None, move || async move {
+            let client = self.redis.transport.async_client().await?;
+            client
+                .expire(&namespaced, ttl)
+                .await
+                .map_err(|source| StateStoreError::Redis {
+                    operation: "async_refresh_ttl",
+                    source,
+                })
+        })
+        .await
     }
 }
 
-const fn local_observed<T>(value: T) -> Observed<T> {
-    Observed {
-        value,
-        warning: None,
+pub fn attach_if_missing(
+    slot: &mut Option<RoutingStateStore>,
+    settings: &Settings,
+    clock: BreakerClock,
+) -> Result<(), StateStoreError> {
+    if slot.is_none() {
+        *slot = Some(RoutingStateStore::new(settings, clock)?);
     }
+    Ok(())
 }

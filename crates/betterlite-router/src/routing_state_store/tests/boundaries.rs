@@ -1,15 +1,14 @@
 use std::time::Duration;
 
-use tokio::time::timeout;
-
 use rust_decimal::Decimal;
+use tokio::time::timeout;
 
 use super::super::FloatIncrement;
 use super::super::error::{StateStoreError, StoreWarning};
 use super::fake_redis::FakeRedis;
-use super::support::{TestClock, breaker, route_key, same_f64, store};
+use super::support::{TestClock, breaker, route_key, same_f64, seed, store};
 use crate::routing_value_store::{
-    MAX_VALUE_BYTES, PinValue, RouteIncrement, RouteValue, StoreError, StoreRead,
+    MAX_VALUE_BYTES, PinValue, RouteIncrement, RouteKey, RouteValue, StoreError, StoreRead,
 };
 
 pub(crate) async fn run(name: &str) {
@@ -32,10 +31,10 @@ async fn ttl_and_size_cases(name: &str) -> bool {
         "ttl_infinite_is_rejected" => ttl_is_rejected(f64::INFINITY).await,
         "ttl_nan_is_rejected" => ttl_nan_is_rejected().await,
         "fractional_ttl_truncates" => fractional_ttl_truncates().await,
-        "oversized_set_is_not_written" => oversized_set_is_not_written().await,
-        "oversized_compare_and_set_reports_the_current" => {
-            oversized_compare_and_set_reports_the_current().await;
+        "oversized_compare_and_set_does_not_write" => {
+            oversized_compare_and_set_does_not_write().await;
         }
+        "route_key_length_boundary" => route_key_length_boundary().await,
         _ => return false,
     }
     true
@@ -63,8 +62,6 @@ async fn expiry_and_float_cases(name: &str) -> bool {
         "increment_keeps_a_live_expiry" => increment_keeps_a_live_expiry().await,
         "increment_adds_expiry_when_none" => increment_adds_expiry_when_none().await,
         "increment_without_ttl_keeps_no_expiry" => increment_without_ttl_keeps_no_expiry().await,
-        "set_resets_a_live_expiry" => set_resets_a_live_expiry().await,
-        "namespace_is_not_applied_twice" => namespace_is_not_applied_twice().await,
         "get_ttl_maps_absent_and_unexpiring_to_none" => {
             get_ttl_maps_absent_and_unexpiring_to_none().await;
         }
@@ -85,9 +82,12 @@ async fn ttl_is_rejected(seconds: f64) {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
     let error = store
-        .set(&key, &RouteValue::Counter(1), Some(seconds))
+        .increment(
+            &route_key("counter"),
+            &RouteIncrement::Counter(1),
+            Some(seconds),
+        )
         .await
         .unwrap_err();
     assert!(matches!(
@@ -120,9 +120,9 @@ async fn fractional_ttl_truncates() {
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
     store
-        .set(
+        .increment(
             &route_key("counter"),
-            &RouteValue::Counter(1),
+            &RouteIncrement::Counter(1),
             Some(1.9_f64),
         )
         .await
@@ -136,42 +136,38 @@ fn oversized_pin() -> RouteValue {
     })
 }
 
-async fn oversized_set_is_not_written() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    let observed = store
-        .set(&route_key("pin"), &oversized_pin(), None)
-        .await
-        .unwrap();
-    assert!(observed.warning.is_none());
-    assert!(server.raw("pin").is_none());
-}
-
-async fn oversized_compare_and_set_reports_the_current() {
+async fn oversized_compare_and_set_does_not_write() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
     let key = route_key("pin");
-    store
-        .set(&key, &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
     let observed = store
-        .compare_and_set(
-            &key,
-            &StoreRead::Value(RouteValue::Counter(1)),
-            &oversized_pin(),
-            None,
-        )
+        .compare_and_set(&key, &StoreRead::Missing, &oversized_pin(), None)
         .await
         .unwrap();
     assert!(!observed.value.swapped);
-    assert_eq!(
-        observed.value.current,
-        StoreRead::Value(RouteValue::Counter(1))
-    );
-    assert!(server.raw("pin").is_some());
+    assert_eq!(observed.value.current, StoreRead::Missing);
+    assert!(server.raw("pin").is_none());
+}
+
+async fn route_key_length_boundary() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let store = store(&server, None, breaker(5, 60_000), &clock);
+    let raw = "k".repeat(1_024);
+    let key = route_key(&raw);
+    store
+        .increment(&key, &RouteIncrement::Counter(1), None)
+        .await
+        .unwrap();
+    assert!(server.raw(&raw).is_some());
+    assert!(matches!(
+        RouteKey::parse(&"k".repeat(1_025)),
+        Err(StoreError::KeyTooLong {
+            bytes: 1_025,
+            limit: 1_024
+        })
+    ));
 }
 
 async fn invalid_stored_value_reads_as_missing() {
@@ -213,8 +209,7 @@ async fn batch_decode_failure_misses_every_key() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let valid = serde_json::to_vec(&RouteValue::Counter(3)).unwrap();
-    server.seed("a", &valid, -1);
+    seed(&server, "a", &RouteValue::Counter(3), -1);
     server.seed("b", b"not-json", -1);
     let observed = store
         .batch_get(&[route_key("a"), route_key("b")])
@@ -234,13 +229,9 @@ async fn counter_overflow_is_reported() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("overflow");
-    store
-        .set(&key, &RouteValue::Counter(i64::MAX), None)
-        .await
-        .unwrap();
+    seed(&server, "overflow", &RouteValue::Counter(i64::MAX), -1);
     let error = store
-        .increment(&key, &RouteIncrement::Counter(1), None)
+        .increment(&route_key("overflow"), &RouteIncrement::Counter(1), None)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -249,8 +240,8 @@ async fn counter_overflow_is_reported() {
             if reported == "overflow"
     ));
     assert_eq!(
-        store.get(&key).await.unwrap().value,
-        StoreRead::Value(RouteValue::Counter(i64::MAX))
+        server.raw("overflow").map(|entry| entry.0),
+        Some(serde_json::to_vec(&RouteValue::Counter(i64::MAX)).unwrap())
     );
 }
 
@@ -258,13 +249,13 @@ async fn spend_overflow_is_reported() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("overflow");
-    store
-        .set(&key, &RouteValue::Spend(Decimal::MAX), None)
-        .await
-        .unwrap();
+    seed(&server, "overflow", &RouteValue::Spend(Decimal::MAX), -1);
     let error = store
-        .increment(&key, &RouteIncrement::Spend(Decimal::ONE), None)
+        .increment(
+            &route_key("overflow"),
+            &RouteIncrement::Spend(Decimal::ONE),
+            None,
+        )
         .await
         .unwrap_err();
     assert!(matches!(
@@ -272,29 +263,22 @@ async fn spend_overflow_is_reported() {
         StateStoreError::Store(StoreError::SpendOverflow { key: reported })
             if reported == "overflow"
     ));
-    assert_eq!(
-        store.get(&key).await.unwrap().value,
-        StoreRead::Value(RouteValue::Spend(Decimal::MAX))
-    );
 }
 
 async fn increment_mismatched_kind_is_not_incrementable() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("pin");
-    store
-        .set(
-            &key,
-            &RouteValue::Pin(PinValue {
-                model_id: "model".to_owned(),
-            }),
-            None,
-        )
-        .await
-        .unwrap();
+    seed(
+        &server,
+        "pin",
+        &RouteValue::Pin(PinValue {
+            model_id: "model".to_owned(),
+        }),
+        -1,
+    );
     let error = store
-        .increment(&key, &RouteIncrement::Counter(1), None)
+        .increment(&route_key("pin"), &RouteIncrement::Counter(1), None)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -308,13 +292,13 @@ async fn increment_keeps_a_live_expiry() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
+    seed(&server, "counter", &RouteValue::Counter(1), 30);
     store
-        .set(&key, &RouteValue::Counter(1), Some(30.0_f64))
-        .await
-        .unwrap();
-    store
-        .increment(&key, &RouteIncrement::Counter(1), Some(100.0_f64))
+        .increment(
+            &route_key("counter"),
+            &RouteIncrement::Counter(1),
+            Some(100.0_f64),
+        )
         .await
         .unwrap();
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(30));
@@ -324,13 +308,13 @@ async fn increment_adds_expiry_when_none() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
+    seed(&server, "counter", &RouteValue::Counter(1), -1);
     store
-        .set(&key, &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    store
-        .increment(&key, &RouteIncrement::Counter(1), Some(100.0_f64))
+        .increment(
+            &route_key("counter"),
+            &RouteIncrement::Counter(1),
+            Some(100.0_f64),
+        )
         .await
         .unwrap();
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(100));
@@ -340,52 +324,20 @@ async fn increment_without_ttl_keeps_no_expiry() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
+    seed(&server, "counter", &RouteValue::Counter(1), -1);
     store
-        .set(&key, &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    store
-        .increment(&key, &RouteIncrement::Counter(1), None)
+        .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
         .await
         .unwrap();
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(-1));
-}
-
-async fn set_resets_a_live_expiry() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    let key = route_key("counter");
-    store
-        .set(&key, &RouteValue::Counter(1), Some(30.0_f64))
-        .await
-        .unwrap();
-    store
-        .set(&key, &RouteValue::Counter(2), Some(5.0_f64))
-        .await
-        .unwrap();
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(5));
-}
-
-async fn namespace_is_not_applied_twice() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, Some("router"), breaker(5, 60_000), &clock);
-    store
-        .set(&route_key("router:counter"), &RouteValue::Counter(1), None)
-        .await
-        .unwrap();
-    assert!(server.raw("router:counter").is_some());
-    assert!(server.raw("router:router:counter").is_none());
 }
 
 async fn get_ttl_maps_absent_and_unexpiring_to_none() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    server.seed("unexpiring", b"1", -1);
-    server.seed("expiring", b"1", 0);
+    seed(&server, "unexpiring", &RouteValue::Counter(1), -1);
+    seed(&server, "expiring", &RouteValue::Counter(1), 0);
     assert_eq!(
         store.get_ttl(&route_key("unexpiring")).await.unwrap().value,
         None

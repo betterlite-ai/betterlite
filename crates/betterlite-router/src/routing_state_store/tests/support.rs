@@ -5,10 +5,9 @@ use std::time::Duration;
 use secrecy::SecretString;
 
 use super::super::{BreakerClock, RedisSettings, RoutingStateStore, Settings};
-use crate::redis_failure_policy::Settings as BreakerSettings;
-use crate::routing_value_store::{Clock, RouteKey, RoutingValueStore, StoreSettings};
-
 use super::fake_redis::FakeRedis;
+use crate::redis_failure_policy::Settings as BreakerSettings;
+use crate::routing_value_store::{RouteKey, RouteValue};
 
 pub(crate) struct TestClock(Arc<AtomicU64>);
 
@@ -29,20 +28,6 @@ impl TestClock {
 
 pub(crate) fn route_key(raw: &str) -> RouteKey {
     RouteKey::parse(raw).unwrap()
-}
-
-pub(crate) fn local_store() -> RoutingValueStore {
-    let clock: Clock = Arc::new(|| 0.0_f64);
-    RoutingValueStore::new(
-        StoreSettings {
-            max_size_in_memory: None,
-            default_ttl_seconds: None,
-            max_size_per_item: None,
-            loaded_max_size_per_item_kib: 1024,
-        },
-        clock,
-    )
-    .unwrap()
 }
 
 pub(crate) fn breaker(threshold: u32, recovery_millis: u64) -> BreakerSettings {
@@ -68,25 +53,32 @@ pub(crate) fn redis_settings(server: &FakeRedis, namespace: Option<&str>) -> Red
     }
 }
 
+pub(crate) fn settings(
+    server: &FakeRedis,
+    namespace: Option<&str>,
+    breaker_settings: BreakerSettings,
+) -> Settings {
+    Settings {
+        redis: redis_settings(server, namespace),
+        breaker: breaker_settings,
+    }
+}
+
 pub(crate) fn store(
     server: &FakeRedis,
     namespace: Option<&str>,
     breaker_settings: BreakerSettings,
     clock: &TestClock,
 ) -> RoutingStateStore {
-    let settings = Settings {
-        redis: Some(redis_settings(server, namespace)),
-        breaker: breaker_settings,
-    };
-    RoutingStateStore::new(local_store(), &settings, clock.breaker_clock()).unwrap()
+    RoutingStateStore::new(
+        &settings(server, namespace, breaker_settings),
+        clock.breaker_clock(),
+    )
+    .unwrap()
 }
 
-pub(crate) fn local_only_store(clock: &TestClock) -> RoutingStateStore {
-    let settings = Settings {
-        redis: None,
-        breaker: breaker(5, 60_000),
-    };
-    RoutingStateStore::new(local_store(), &settings, clock.breaker_clock()).unwrap()
+pub(crate) fn seed(server: &FakeRedis, key: &str, value: &RouteValue, ttl: i64) {
+    server.seed(key, &serde_json::to_vec(value).unwrap(), ttl);
 }
 
 pub(crate) fn secret(text: &str) -> SecretString {
