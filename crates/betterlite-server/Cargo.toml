@@ -42,7 +42,7 @@ multipart-rs = "0.2.3"
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true
-rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
+rmcp = { version = "=3.4.1", default-features = false, features = ["server"] }
 rust_decimal.workspace = true
 scrypt = { version = "0.11.0", default-features = false }
 secrecy.workspace = true
