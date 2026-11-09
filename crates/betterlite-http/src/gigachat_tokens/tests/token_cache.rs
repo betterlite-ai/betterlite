@@ -337,6 +337,21 @@ async fn token_cache_replaces_an_expired_entry_with_its_new_expiry() {
 }
 
 #[tokio::test]
+async fn token_cache_concurrent_misses_each_fetch_their_own_token() {
+    let server = support::Server::start().await;
+    server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
+    server.answer(200, "{\"tok\":\"token-2\",\"exp\":4102444800000}");
+    let auth = authenticator(&server.url);
+    let supplied = request(&server.url);
+
+    let (first, second) = tokio::join!(auth.access_token(&supplied), auth.access_token(&supplied));
+
+    first.expect("the first concurrent call fetches a token");
+    second.expect("the second concurrent call fetches a token");
+    assert_eq!(server.requests().len(), 2);
+}
+
+#[tokio::test]
 async fn token_cache_hit_logs_the_cached_token() {
     let (logs, _guard) = support::Logs::capture();
     let server = support::Server::start().await;
