@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-internal-filter
+call:
+  dynamic_callbacks: {"action": "filter", "callbacks": ["langfuse", "not_a_callback", {"logger": "otel"}], "known": ["langfuse"]}
+env: {}
+compare: {ignore: []}
