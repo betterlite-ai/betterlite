@@ -126,6 +126,7 @@ fn gives_no_chunk_for_an_empty_or_unknown_event(#[case] event: &str) {
 #[case::list(r#"{"orchestration_result":[1]}"#)]
 #[case::text(r#"{"orchestration_result":"x"}"#)]
 #[case::number(r#"{"orchestration_result":0}"#)]
+#[case::boolean(r#"{"orchestration_result":false}"#)]
 fn rejects_an_orchestration_result_that_is_not_an_object(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
@@ -244,6 +245,19 @@ fn rejects_a_negative_creation_time(#[case] event: &str, #[case] now: i64) {
     assert!(matches!(
         rejected(event, now),
         SapStreamError::Timestamp { .. }
+    ));
+}
+
+#[rstest]
+#[case::id(r#"{"request_id":5,"orchestration_result":{"choices":[]}}"#)]
+#[case::model(r#"{"orchestration_result":{"model":5,"choices":[]}}"#)]
+#[case::finish_reason(r#"{"orchestration_result":{"choices":[{"finish_reason":5}]}}"#)]
+#[case::created_text(r#"{"orchestration_result":{"created":"5","choices":[]}}"#)]
+#[case::created_boolean(r#"{"orchestration_result":{"created":true,"choices":[]}}"#)]
+fn rejects_a_text_or_number_field_of_the_wrong_type(#[case] event: &str) {
+    assert!(matches!(
+        rejected(event, FIXED_NOW),
+        SapStreamError::EventField(_)
     ));
 }
 
