@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-content-thinking-order
+call:
+  bedrock_content:
+    function: sort_assistant_content
+    blocks:
+      - toolUse: {toolUseId: tu-1, name: first, input: {}}
+      - text: answer
+      - reasoningContent: {reasoningText: {text: because}}
+      - cachePoint: {type: default}
+      - image: {format: png, source: {bytes: QUFB}}
+      - toolUse: {toolUseId: tu-2, name: second, input: {}}
+      - toolUse: {toolUseId: tu-3, name: third, input: {}}
+        reasoningContent: {reasoningText: {text: also}}
+      - toolUse: {toolUseId: tu-4, name: fourth, input: {}}
+        cachePoint: {type: default}
+      - text: second text
+env: {}
+compare:
+  ignore: []

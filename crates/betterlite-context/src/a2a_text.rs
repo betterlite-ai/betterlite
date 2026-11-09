@@ -5,6 +5,7 @@ use serde::de::IgnoredAny;
 use thiserror::Error;
 
 mod record_or;
+pub mod request_utils;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum A2aTextError {
@@ -82,6 +83,8 @@ pub struct A2aResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct A2aResult {
+    #[serde(default)]
+    pub kind: Field<Shape>,
     #[serde(default)]
     pub parts: Field<ListValue>,
     pub message: Option<RecordValue>,
