@@ -487,3 +487,10 @@ pub(crate) fn vector_attribute_without_marker() -> Json {
 pub(crate) const SIMPLE_STRING_INFO: &str = "*6\r\n+index_name\r\n$3\r\nidx\r\n+attributes\r\n*1\r\n*3\r\n+identifier\r\n+embedding\r\n*4\r\n+dimensions\r\n:3\r\n+type\r\n+VECTOR\r\n+num_docs\r\n:2\r\n";
 
 pub(crate) const ONE_HIT: &str = "*3\r\n:1\r\n$5\r\ndoc-a\r\n*4\r\n$8\r\nresponse\r\n$8\r\n\"cached\"\r\n$15\r\nvector_distance\r\n$4\r\n0.25\r\n";
+
+pub(crate) fn index_schema() -> IndexSchema {
+    IndexSchema {
+        prefix: format!("{INDEX_NAME}:"),
+        dimension: 3,
+    }
+}

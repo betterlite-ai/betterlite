@@ -10,12 +10,13 @@ use betterlite_redis::valkey::pack_vector;
 use redis::Value;
 use rstest::rstest;
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use self::fake_server::FakeValkey;
 use self::fixtures::{
     FakeEmbedder, FakeIndex, INDEX_NAME, ONE_HIT, PROMPT, SIMPLE_STRING_INFO, VECTOR,
     alternative_error, assert_similarity, build, cache_with, cache_with_injected_index,
-    command_args, empty_env, exists_error, hit, info_reply, info_with_attributes,
+    command_args, empty_env, exists_error, hit, index_schema, info_reply, info_with_attributes,
     kwargs_with_message, kwargs_without_prompt, live_index, options, packed_vector, server_error,
     tag_attribute, text_args, url_of, vector_attribute, vector_attribute_without_marker,
 };
@@ -26,7 +27,9 @@ use crate::valkey_semantic_cache::live::{
     create_command, parse_search_reply, search_command, store_command,
 };
 use crate::valkey_semantic_cache::options::ValkeyEnv;
-use crate::valkey_semantic_cache::ports::{Hit, IndexSchema, ValkeyIndex};
+use crate::valkey_semantic_cache::ports::{
+    DocIdSource as _, Hit, IndexSchema, UuidDocIds, ValkeyIndex,
+};
 use crate::valkey_semantic_cache::schema::{
     assert_dim_matches, doc_mapping, extract_index_dim, knn_query, scope_tag,
 };
@@ -304,6 +307,30 @@ async fn tag_doc_mapping_carries_the_litellm_fields() {
 }
 
 #[test]
+fn tag_generated_document_ids_are_distinct_uuid_v4() {
+    let first = UuidDocIds.next_id();
+    let second = UuidDocIds.next_id();
+    assert_ne!(first, second);
+    let parsed = Uuid::parse_str(&first).expect("a uuid text");
+    assert_eq!(parsed.get_version_num(), 4);
+}
+
+#[tokio::test]
+async fn schema_live_index_sends_ft_create() {
+    let server = FakeValkey::start(&[]).await;
+    let schema = index_schema();
+    live_index(&server)
+        .await
+        .ft_create(INDEX_NAME, &schema)
+        .await
+        .expect("the created index");
+    assert_eq!(
+        server.received(b"FT.CREATE"),
+        [command_args(&create_command(INDEX_NAME, &schema))]
+    );
+}
+
+#[test]
 fn tag_pack_vector_is_little_endian_f32() {
     assert_eq!(
         pack_vector(&[1.0_f32, -2.5_f32]),
@@ -313,10 +340,7 @@ fn tag_pack_vector_is_little_endian_f32() {
 
 #[test]
 fn schema_index_schema_matches_litellm() {
-    let schema = IndexSchema {
-        prefix: format!("{INDEX_NAME}:"),
-        dimension: 3,
-    };
+    let schema = index_schema();
     assert_eq!(
         text_args(&create_command(INDEX_NAME, &schema)),
         vec![
@@ -872,29 +896,20 @@ async fn lookup_without_metadata_returns_the_hit() {
 }
 
 #[tokio::test]
-async fn info_returns_the_ft_info_reply() {
+async fn info_returns_the_ft_info_reply_from_the_injected_index_without_connecting() {
     let index = Arc::new(FakeIndex::default().with_info(INDEX_NAME, info_reply(3)));
-    let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
-    let reply = cache.index_info().await.expect("the FT.INFO reply");
-    assert_eq!(reply, info_reply(3));
+    let (cache, connector) = cache_with_injected_index(&index);
+    assert_eq!(cache.index_info().await.expect("the reply"), info_reply(3));
+    assert!(connector.connects().is_empty());
 }
 
 #[tokio::test]
 async fn info_opens_the_connector_once_with_the_resolved_url() {
     let index = Arc::new(FakeIndex::default().with_info(INDEX_NAME, info_reply(3)));
     let (cache, connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
-    cache.index_info().await.expect("the first reply");
+    assert_eq!(cache.index_info().await.expect("the first"), info_reply(3));
     cache.index_info().await.expect("the second reply");
     assert_eq!(connector.connects(), vec!["redis://:pw@localhost:6379"]);
-}
-
-#[tokio::test]
-async fn info_uses_an_injected_index_without_connecting() {
-    let index = Arc::new(FakeIndex::default().with_info(INDEX_NAME, info_reply(3)));
-    let (cache, connector) = cache_with_injected_index(&index);
-    let reply = cache.index_info().await.expect("the FT.INFO reply");
-    assert_eq!(reply, info_reply(3));
-    assert!(connector.connects().is_empty());
 }
 
 #[tokio::test]
