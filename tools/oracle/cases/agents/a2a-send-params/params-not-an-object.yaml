@@ -1,0 +1,7 @@
+kind: helper
+name: a2a-send-params-params-not-an-object
+call:
+  b6950:
+    params: [1, 2]
+env: {}
+compare: {ignore: []}

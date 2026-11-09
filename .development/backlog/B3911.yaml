@@ -1,7 +1,7 @@
 id: B3911
 milestone: M7 observability
 title: LangSmith credentials and run payloads
-status: todo
+status: done
 depends_on: [B002, B188, B254]
 file: tasks/B3911-langsmith-payloads.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/integrations/langsmith.py"
 parent: B112
 split_from: B112
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1000
