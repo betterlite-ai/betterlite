@@ -1,4 +1,5 @@
 use rstest::rstest;
+use secrecy::SecretString;
 
 use crate::sap_auth::deployment::{
     DeploymentMode, orchestration_headers, pick_orchestration_deployment,
@@ -180,11 +181,11 @@ fn a_listing_without_a_match_is_an_error(#[case] listing: &str) {
 
 #[test]
 fn the_orchestration_headers_carry_the_four_values() {
-    let headers = orchestration_headers("Bearer token", "rg1").unwrap();
-    assert_eq!(
-        headers.get("Authorization").unwrap().to_str().unwrap(),
-        "Bearer token"
-    );
+    let token = SecretString::from("Bearer token".to_owned());
+    let headers = orchestration_headers(&token, "rg1").unwrap();
+    let authorization = headers.get("Authorization").unwrap();
+    assert_eq!(authorization.to_str().unwrap(), "Bearer token");
+    assert!(authorization.is_sensitive());
     assert_eq!(
         headers.get("AI-Resource-Group").unwrap().to_str().unwrap(),
         "rg1"
@@ -196,6 +197,7 @@ fn the_orchestration_headers_carry_the_four_values() {
 
 #[test]
 fn a_token_that_a_header_cannot_carry_is_an_error() {
-    let error = orchestration_headers("Bearer bad\nvalue", "rg1").unwrap_err();
+    let token = SecretString::from("Bearer bad\nvalue".to_owned());
+    let error = orchestration_headers(&token, "rg1").unwrap_err();
     assert!(matches!(error, SapAuthError::InvalidHeader { .. }));
 }

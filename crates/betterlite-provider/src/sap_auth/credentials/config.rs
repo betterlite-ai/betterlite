@@ -30,7 +30,7 @@ pub(super) fn load_config(environment: &dyn SapEnvironment) -> Result<Json, SapA
                 source,
             })?;
         return serde_json::from_str::<Json>(&text)
-            .map_err(|_source| SapAuthError::ConfigNotJson { path });
+            .map_err(|source| SapAuthError::ConfigNotJson { path, source });
     }
     if explicit_config || named_profile {
         return Err(SapAuthError::ConfigFileNotFound { path, home });

@@ -1,12 +1,12 @@
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_prompts::arguments::json::Json;
 use chrono::{DateTime, Duration, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::credentials::{Credentials, validate_credentials};
-use super::error::SapAuthError;
+use super::error::{SapAuthError, TokenFailure};
 
 pub const GRANT_TYPE: &str = "client_credentials";
 pub const DEFAULT_EXPIRY_SECONDS: i64 = 3600;
@@ -33,10 +33,21 @@ pub struct TokenRequest {
     pub identity: ClientIdentity,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BearerToken {
-    pub header: String,
+    pub header: SecretString,
     pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+struct TokenBody {
+    access_token: String,
+    #[serde(default = "default_expires_in")]
+    expires_in: i64,
+}
+
+const fn default_expires_in() -> i64 {
+    DEFAULT_EXPIRY_SECONDS
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -104,33 +115,25 @@ fn choose_cert_identity(credentials: &Credentials) -> Result<ClientIdentity, Sap
 }
 
 pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToken, SapAuthError> {
-    let failure = || SapAuthError::TokenRequest {
-        text: body.to_owned(),
+    let parsed = match serde_json::from_str::<TokenBody>(body) {
+        Ok(parsed) => parsed,
+        Err(source) => {
+            return Err(SapAuthError::TokenRequest {
+                text: body.to_owned(),
+                source: Box::new(TokenFailure::Response(source)),
+            });
+        }
     };
-    let Ok(payload) = serde_json::from_str::<Json>(body) else {
-        return Err(failure());
-    };
-    let Json::Object(fields) = payload else {
-        return Err(failure());
-    };
-    let expires_in = match fields.get("expires_in") {
-        None => DEFAULT_EXPIRY_SECONDS,
-        Some(Json::Number(number)) => match number.as_i64() {
-            Some(seconds) => seconds,
-            None => return Err(failure()),
-        },
-        Some(_) => return Err(failure()),
-    };
-    let Some(Json::Text(access_token)) = fields.get("access_token") else {
-        return Err(failure());
-    };
-    let Some(expires_at) =
-        Duration::try_seconds(expires_in).and_then(|duration| now.checked_add_signed(duration))
+    let Some(expires_at) = Duration::try_seconds(parsed.expires_in)
+        .and_then(|duration| now.checked_add_signed(duration))
     else {
-        return Err(failure());
+        return Err(SapAuthError::TokenRequest {
+            text: body.to_owned(),
+            source: Box::new(TokenFailure::Expiry(parsed.expires_in)),
+        });
     };
     Ok(BearerToken {
-        header: format!("Bearer {access_token}"),
+        header: SecretString::from(format!("Bearer {}", parsed.access_token)),
         expires_at,
     })
 }
@@ -155,7 +158,7 @@ impl TokenCache {
         &self,
         clock: &dyn SapClock,
         transport: &dyn SapTokenTransport,
-    ) -> Result<String, SapAuthError> {
+    ) -> Result<SecretString, SapAuthError> {
         let now = clock.now();
         let mut cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(token) = cached.as_ref()
@@ -166,7 +169,10 @@ impl TokenCache {
         }
         let body = transport
             .post(&self.request)
-            .map_err(|error| SapAuthError::TokenRequest { text: error.text })?;
+            .map_err(|source| SapAuthError::TokenRequest {
+                text: source.text.clone(),
+                source: Box::new(TokenFailure::Transport(source)),
+            })?;
         let token = parse_token_response(&body, now)?;
         let header = token.header.clone();
         *cached = Some(token);

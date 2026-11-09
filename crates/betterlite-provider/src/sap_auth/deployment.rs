@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::error::{ConfigurationLookupError, SapAuthError};
@@ -20,12 +21,15 @@ pub trait DeploymentConfigurations: Send + Sync {
     fn configuration(&self, configuration_id: &str) -> Result<Json, ConfigurationLookupError>;
 }
 
-pub fn orchestration_headers(token: &str, resource_group: &str) -> Result<HeaderMap, SapAuthError> {
+pub fn orchestration_headers(
+    token: &SecretString,
+    resource_group: &str,
+) -> Result<HeaderMap, SapAuthError> {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(token).map_err(|source| SapAuthError::InvalidHeader { source })?,
-    );
+    let mut authorization = HeaderValue::from_str(token.expose_secret())
+        .map_err(|source| SapAuthError::InvalidHeader { source })?;
+    authorization.set_sensitive(true);
+    headers.insert(AUTHORIZATION, authorization);
     headers.insert(
         RESOURCE_GROUP_HEADER,
         HeaderValue::from_str(resource_group)

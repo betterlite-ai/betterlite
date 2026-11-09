@@ -134,17 +134,13 @@ fn select_service_key(
     candidates
         .into_iter()
         .flatten()
-        .find(|value| is_selectable(value))
+        .find(|value| match value {
+            Json::Null => false,
+            Json::Text(text) => !text.is_empty(),
+            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => true,
+        })
         .cloned()
         .or_else(|| environment.var(SERVICE_KEY_ENV_VAR).map(Json::Text))
-}
-
-const fn is_selectable(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Text(text) => !text.is_empty(),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => true,
-    }
 }
 
 fn parse_service_key(value: &Json) -> Option<Json> {
@@ -193,14 +189,14 @@ fn service_key_lookup(
     name: &str,
     vcap_key: Option<&'static [&'static str]>,
 ) -> Option<String> {
-    let mut value = lookup(document, &prefixed_path(name, vcap_key));
+    let mut value =
+        lookup(document, &prefixed_path(name, vcap_key)).and_then(|found| string_value(&found));
     if value.is_none()
         && let Some(keys) = vcap_key
     {
-        value = lookup(document, keys);
+        value = lookup(document, keys).and_then(|found| string_value(&found));
     }
-    let found = value?;
-    string_value(&found)
+    value
 }
 
 fn prefixed_path<'name>(

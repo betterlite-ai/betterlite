@@ -234,6 +234,14 @@ fn the_credentials_path_is_tried_before_the_document_root() {
 }
 
 #[test]
+fn a_null_at_the_credentials_path_falls_back_to_the_document_root() {
+    let service_key = json(r#"{"credentials": {"clientid": null}, "clientid": "root"}"#);
+    let environment = FakeEnvironment::default().with_home("/home/sap");
+    let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
+    assert_eq!(credentials.client_id.as_deref(), Some("root"));
+}
+
+#[test]
 fn certificate_paths_are_read_at_their_bare_name_in_a_service_key() {
     let service_key = json(
         r#"{"credentials": {"cert_file_path": "nested.crt", "key_file_path": "nested.key", "clientid": "c"}, "cert_file_path": "root.crt", "key_file_path": "root.key"}"#,

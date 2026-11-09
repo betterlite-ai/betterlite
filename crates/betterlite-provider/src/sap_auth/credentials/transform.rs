@@ -10,23 +10,19 @@ pub(super) enum Transform {
 impl Transform {
     fn apply(self, value: &str) -> String {
         match self {
-            Self::AuthEndpoint => {
-                let trimmed = value.trim_end_matches('/');
-                let suffix = if value.ends_with(AUTH_ENDPOINT_SUFFIX) {
-                    ""
-                } else {
-                    AUTH_ENDPOINT_SUFFIX
-                };
-                format!("{trimmed}{suffix}")
-            }
-            Self::ApiBase => {
-                let trimmed = value.trim_end_matches('/');
-                let suffix = if value.ends_with("/v2") { "" } else { "/v2" };
-                format!("{trimmed}{suffix}")
-            }
+            Self::AuthEndpoint => append_suffix(value, AUTH_ENDPOINT_SUFFIX),
+            Self::ApiBase => append_suffix(value, "/v2"),
             Self::PemText => value.replace("\\n", "\n"),
         }
     }
+}
+
+fn append_suffix(value: &str, suffix: &str) -> String {
+    let trimmed = value.trim_end_matches('/');
+    if value.ends_with(suffix) {
+        return trimmed.to_owned();
+    }
+    format!("{trimmed}{suffix}")
 }
 
 pub(super) type CredentialSpec = (

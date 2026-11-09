@@ -21,11 +21,13 @@ if TYPE_CHECKING:
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
+CREDENTIAL_NAMES = (
+    "client_id", "client_secret", "auth_url", "base_url",
+    "cert_file_path", "key_file_path", "cert_str", "key_str",
+)
 BASE_URL = "https://sap.example.com/v2"
 AUTHORIZATION = "Bearer case-token"
 RESOURCE_GROUP = "default"
-DEFAULT_RESPONSE_BODY = '{"access_token": "case-token", "expires_in": 3600}'
-EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
@@ -44,19 +46,6 @@ def array_value(value: Json, name: str) -> list[Json]:
     if not isinstance(value, list):
         raise ValueError(f"{name} must be a list")
     return value
-
-
-def integer_value(value: Json, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{name} must be an integer")
-    return value
-
-
-def optional_string(values: dict[str, Json], name: str) -> str | None:
-    value = values.get(name)
-    if value is None:
-        return None
-    return string_value(value, name)
 
 
 @contextmanager
@@ -146,23 +135,15 @@ def credentials_output(input_value: dict[str, Json]) -> Json:
         result = sap_credentials.fetch_credentials(  # pyright: ignore[reportUnknownMemberType]
             service_key=cast("str | dict[str, JsonValue] | None", service_key)
         )
-    return cast(Json, result)
+    fetched = cast(dict[str, Json], result)
+    return {name: fetched.get(name) for name in (*CREDENTIAL_NAMES, "resource_group")}
 
 
 def validate_output(input_value: dict[str, Json]) -> Json:
     values = object_value(input_value.get("credentials"), "credentials")
     fields = {
-        name: optional_string(values, name)
-        for name in (
-            "auth_url",
-            "base_url",
-            "client_id",
-            "client_secret",
-            "cert_str",
-            "key_str",
-            "cert_file_path",
-            "key_file_path",
-        )
+        name: None if values.get(name) is None else string_value(values.get(name), name)
+        for name in CREDENTIAL_NAMES
     }
     sap_credentials.validate_credentials(**fields)  # pyright: ignore[reportUnknownMemberType,reportArgumentType]
     return None
@@ -175,12 +156,11 @@ def token_output(input_value: dict[str, Json]) -> Json:
         for item in array_value(input_value.get("responses"), "responses")
     ]
     seconds = [
-        integer_value(item, "times")
-        for item in array_value(input_value.get("times"), "times")
+        cast(int, item) for item in array_value(input_value.get("times"), "times")
     ]
     moments = [datetime.fromtimestamp(second, UTC) for second in seconds]
     recorder = Recorder(responses=responses, requests=[])
-    holder = [moments[0] if moments else EPOCH]
+    holder = [moments[0] if moments else datetime(2024, 1, 1, tzinfo=UTC)]
     with (
         patched_token_transport(recorder),
         patch.object(sap_credentials, "datetime", FixedNow(holder)),

@@ -1,17 +1,17 @@
 use betterlite_prompts::arguments::json::Json;
 
 pub(super) fn lookup(document: &Json, path: &[&str]) -> Option<Json> {
+    let parsed;
     let mut current = match document {
         Json::Text(text) => {
-            let Ok(parsed) = serde_json::from_str::<Json>(text) else {
+            let Ok(parsed_text) = serde_json::from_str::<Json>(text) else {
                 tracing::warn!("SAP service key or VCAP service is a string but not valid JSON");
                 return None;
             };
-            parsed
+            parsed = parsed_text;
+            &parsed
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            document.clone()
-        }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => document,
     };
     for key in path {
         let Some(fields) = current.as_object() else {
@@ -21,9 +21,9 @@ pub(super) fn lookup(document: &Json, path: &[&str]) -> Option<Json> {
             );
             return None;
         };
-        current = fields.get(*key)?.clone();
+        current = fields.get(*key)?;
     }
-    Some(current)
+    Some(current.clone())
 }
 
 pub(super) fn string_value(value: &Json) -> Option<String> {

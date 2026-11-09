@@ -10,6 +10,7 @@ call:
     service_key:
       credentials:
         clientid: inner
+        clientsecret: null
         serviceurls:
           AI_API_URL: https://inner.example.com
         cert_file_path: nested.crt

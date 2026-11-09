@@ -37,18 +37,18 @@ impl SapEnvironment for EnvironmentInput {
 }
 
 pub(super) struct ScriptedClock {
-    pub(super) times: Vec<i64>,
-    pub(super) index: Mutex<usize>,
+    pub(super) times: Mutex<VecDeque<i64>>,
 }
 
 impl SapClock for ScriptedClock {
     fn now(&self) -> DateTime<Utc> {
-        let mut index = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-        let position = *index;
-        *index = position.saturating_add(1);
-        drop(index);
-        DateTime::from_timestamp(self.times.get(position).copied().unwrap_or(0), 0)
-            .unwrap_or(DateTime::UNIX_EPOCH)
+        let seconds = self
+            .times
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or(0);
+        DateTime::from_timestamp(seconds, 0).unwrap_or(DateTime::UNIX_EPOCH)
     }
 }
 
@@ -83,8 +83,6 @@ impl DeploymentConfigurations for MapConfigurations<'_> {
         self.configurations
             .get(configuration_id)
             .cloned()
-            .ok_or_else(|| ConfigurationLookupError {
-                message: format!("the case has no configuration {configuration_id}"),
-            })
+            .ok_or_else(|| ConfigurationLookupError::Missing(configuration_id.to_owned()))
     }
 }

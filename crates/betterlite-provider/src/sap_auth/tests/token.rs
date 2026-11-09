@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::error::Error as _;
 use std::sync::Mutex;
 
 use rstest::rstest;
@@ -133,7 +134,7 @@ fn a_token_request_without_a_client_id_is_an_error() {
 #[test]
 fn a_token_response_defaults_the_expiry_to_one_hour() {
     let token = parse_token_response(r#"{"access_token": "abc"}"#, at(1_700_000_000)).unwrap();
-    assert_eq!(token.header, "Bearer abc");
+    assert_eq!(token.header.expose_secret(), "Bearer abc");
     assert_eq!(token.expires_at, at(1_700_003_600));
 }
 
@@ -186,8 +187,14 @@ fn the_token_cache_reuses_a_token_whose_life_is_outside_the_buffer() {
         ])),
         requests: Mutex::new(Vec::new()),
     };
-    assert_eq!(cache.token(&clock, &transport).unwrap(), "Bearer one");
-    assert_eq!(cache.token(&clock, &transport).unwrap(), "Bearer one");
+    assert_eq!(
+        cache.token(&clock, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
+    assert_eq!(
+        cache.token(&clock, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
     assert_eq!(transport.request_count(), 1);
     assert_eq!(
         transport.request_urls(),
@@ -211,8 +218,14 @@ fn the_token_cache_keeps_a_token_with_exactly_the_buffer_left() {
     let boundary = FixedClock {
         now: at(1_700_003_600),
     };
-    assert_eq!(cache.token(&early, &transport).unwrap(), "Bearer one");
-    assert_eq!(cache.token(&boundary, &transport).unwrap(), "Bearer one");
+    assert_eq!(
+        cache.token(&early, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
+    assert_eq!(
+        cache.token(&boundary, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
     assert_eq!(transport.request_count(), 1);
 }
 
@@ -232,8 +245,14 @@ fn the_token_cache_refetches_once_the_life_drops_under_the_buffer() {
     let later = FixedClock {
         now: at(1_700_003_601),
     };
-    assert_eq!(cache.token(&early, &transport).unwrap(), "Bearer one");
-    assert_eq!(cache.token(&later, &transport).unwrap(), "Bearer two");
+    assert_eq!(
+        cache.token(&early, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
+    assert_eq!(
+        cache.token(&later, &transport).unwrap().expose_secret(),
+        "Bearer two"
+    );
     assert_eq!(transport.request_count(), 2);
 }
 
@@ -253,9 +272,15 @@ fn a_one_hour_token_is_refetched_after_any_time_passes() {
     let one_second_later = FixedClock {
         now: at(1_700_000_001),
     };
-    assert_eq!(cache.token(&early, &transport).unwrap(), "Bearer one");
     assert_eq!(
-        cache.token(&one_second_later, &transport).unwrap(),
+        cache.token(&early, &transport).unwrap().expose_secret(),
+        "Bearer one"
+    );
+    assert_eq!(
+        cache
+            .token(&one_second_later, &transport)
+            .unwrap()
+            .expose_secret(),
         "Bearer two"
     );
     assert_eq!(transport.request_count(), 2);
@@ -292,6 +317,42 @@ fn the_token_cache_reports_a_parse_failure_with_the_body() {
     };
     let error = cache.token(&clock, &transport).unwrap_err();
     assert_eq!(error.to_string(), "Token request failed: not json");
+}
+
+#[test]
+fn a_parse_failure_keeps_the_serde_error_as_its_source() {
+    let error = parse_token_response("not json", at(1_700_000_000)).unwrap_err();
+    let failure = error.source().unwrap();
+    assert!(
+        failure
+            .source()
+            .unwrap()
+            .downcast_ref::<serde_json::Error>()
+            .is_some()
+    );
+}
+
+#[test]
+fn a_transport_failure_keeps_the_typed_transport_error_as_its_source() {
+    let cache = TokenCache::new(&secret_credentials()).unwrap();
+    let clock = FixedClock {
+        now: at(1_700_000_000),
+    };
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([Err(TokenTransportError {
+            text: "connection refused".to_owned(),
+        })])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let error = cache.token(&clock, &transport).unwrap_err();
+    let failure = error.source().unwrap();
+    assert!(
+        failure
+            .source()
+            .unwrap()
+            .downcast_ref::<TokenTransportError>()
+            .is_some()
+    );
 }
 
 #[test]

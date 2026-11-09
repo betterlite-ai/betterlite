@@ -141,16 +141,14 @@ impl MapConfigurations {
 impl DeploymentConfigurations for MapConfigurations {
     fn configuration(&self, configuration_id: &str) -> Result<Json, ConfigurationLookupError> {
         if self.failures.contains(configuration_id) {
-            return Err(ConfigurationLookupError {
-                message: "the configuration endpoint answered with an error".to_owned(),
-            });
+            return Err(ConfigurationLookupError::Missing(
+                configuration_id.to_owned(),
+            ));
         }
         self.entries
             .get(configuration_id)
             .cloned()
-            .ok_or_else(|| ConfigurationLookupError {
-                message: format!("no fixture configuration {configuration_id}"),
-            })
+            .ok_or_else(|| ConfigurationLookupError::Missing(configuration_id.to_owned()))
     }
 }
 

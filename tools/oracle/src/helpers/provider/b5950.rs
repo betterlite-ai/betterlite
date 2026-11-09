@@ -57,21 +57,13 @@ pub(crate) enum Input {
 
 #[derive(Serialize)]
 struct CredentialsView<'credentials> {
-    #[serde(skip_serializing_if = "Option::is_none")]
     client_id: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     client_secret: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     auth_url: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     base_url: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     cert_file_path: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     key_file_path: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     cert_str: Option<&'credentials str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     key_str: Option<&'credentials str>,
     resource_group: &'credentials str,
 }
@@ -148,8 +140,7 @@ fn token_output(
     let cache = TokenCache::new(&Credentials::from(input))
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     let clock = ScriptedClock {
-        times: times.to_vec(),
-        index: Mutex::new(0),
+        times: Mutex::new(times.iter().copied().collect()),
     };
     let transport = ScriptedTransport {
         script: Mutex::new(Scripted {
@@ -162,7 +153,9 @@ fn token_output(
         tokens.push(
             cache
                 .token(&clock, &transport)
-                .map_err(|error| failure("SapAuthError", &error.to_string()))?,
+                .map_err(|error| failure("SapAuthError", &error.to_string()))?
+                .expose_secret()
+                .to_owned(),
         );
     }
     let requests = transport
