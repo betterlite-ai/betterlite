@@ -175,6 +175,46 @@ fn parses_a_passthrough_chunk_with_usage_and_fingerprint() {
 }
 
 #[rstest]
+#[case::passthrough(
+    r#"{"object":"chat.completion.chunk","id":"c","created":1,"model":"m","choices":[],"extra":1}"#
+)]
+#[case::final_result(
+    r#"{"final_result":{"id":"c","created":1,"model":"m","choices":[],"extra":1}}"#
+)]
+fn rejects_a_chunk_event_with_an_unknown_field(#[case] event: &str) {
+    assert!(matches!(
+        rejected(event, FIXED_NOW),
+        SapStreamError::Chunk { .. }
+    ));
+}
+
+#[test]
+fn accepts_a_finish_reason_outside_the_openai_literal_set() {
+    assert_eq!(
+        mapped(
+            r#"{"orchestration_result":{"id":"x","choices":[{"delta":{},"finish_reason":"end_turn"}]}}"#,
+            FIXED_NOW,
+        ),
+        Some(json(
+            r#"{"id":"x","object":"chat.completion.chunk","created":1700000000,"model":"unknown","choices":[{"index":0,"delta":{},"finish_reason":"end_turn"}]}"#
+        ))
+    );
+}
+
+#[test]
+fn defaults_a_tool_call_arguments_to_empty() {
+    assert_eq!(
+        mapped(
+            r#"{"object":"chat.completion.chunk","id":"c","created":1,"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"t","type":"function","function":{"name":"f"}}]}}]}"#,
+            FIXED_NOW,
+        ),
+        Some(json(
+            r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"t","type":"function","function":{"name":"f","arguments":""}}]}}]}"#
+        ))
+    );
+}
+
+#[rstest]
 #[case::error_null(r#"{"error":null}"#)]
 #[case::code_zero(r#"{"code":0}"#)]
 #[case::before_final_result(
