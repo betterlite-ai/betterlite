@@ -141,6 +141,22 @@ async fn exec_pipes_stdin_and_closes_it() {
 }
 
 #[tokio::test]
+async fn docker_clients_inherit_the_host_environment() {
+    let dir = tempdir();
+    // a shell invents a PATH for itself but does not export it, so env sees one only when inherited
+    let program = docker_script(
+        &dir,
+        "if env | grep -q '^PATH='; then printf 'inherited'; else printf 'cleared'; fi",
+    );
+    let sandbox = sandbox(program);
+    let output = sandbox
+        .run(&command(&["env"]), Duration::from_secs(2), 1024)
+        .await
+        .unwrap();
+    assert_eq!(output.stdout, "inherited");
+}
+
+#[tokio::test]
 async fn exec_leaves_the_exit_code_to_the_caller() {
     let dir = tempdir();
     let program = docker_script(&dir, "exit 7");
