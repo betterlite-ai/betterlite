@@ -1,0 +1,45 @@
+kind: helper
+name: zero-cost-diagnostic-free-used-rates-suppress-unrelated-positive-price
+call:
+  zero_cost_diagnostic:
+    probes:
+      - usage:
+          prompt_tokens: 1
+          completion_tokens: 0
+          total_tokens: 1
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0
+          output_cost_per_token: 5
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 1
+          completion_tokens: 1
+          total_tokens: 2
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0
+          output_cost_per_token: 0
+        calculation_failed: true
+        model: model
+      - usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 5
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 1
+          completion_tokens: 0
+          total_tokens: 1
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0
+        calculation_failed: false
+        model: model
+env: {}
+compare: {ignore: []}

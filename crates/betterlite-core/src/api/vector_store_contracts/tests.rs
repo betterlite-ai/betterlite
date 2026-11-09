@@ -25,6 +25,7 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreContractError,
 };
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -342,6 +343,7 @@ fn executor_over(
             mock: MockSettings::default(),
             mock_chat,
             mock_embedding,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
         },
         deployments,
         defaults,

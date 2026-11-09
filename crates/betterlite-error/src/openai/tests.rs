@@ -4,6 +4,7 @@ use rstest::rstest;
 
 use super::body::{OpenaiErrorBody, OpenaiErrorDetail};
 use super::*;
+use crate::envelope::WireField;
 
 fn describe(class: &ErrorClass) -> (&'static str, &str) {
     match class {
@@ -44,6 +45,13 @@ fn input(error_str: &str, status_code: Option<u16>) -> OpenaiExceptionInput {
         status_code_is_synthesized: false,
         message: None,
         body: None,
+    }
+}
+
+fn synthesized(error_str: &str, status_code: u16) -> OpenaiExceptionInput {
+    OpenaiExceptionInput {
+        status_code_is_synthesized: true,
+        ..input(error_str, Some(status_code))
     }
 }
 
@@ -111,6 +119,8 @@ setting the OPENAI_API_KEY environment variable",
 #[case::status_502(input("boom", Some(502)), "bad_gateway")]
 #[case::status_503(input("boom", Some(503)), "service_unavailable")]
 #[case::status_504(input("boom", Some(504)), "timeout")]
+#[case::synthesized_status_500_picks_its_family(synthesized("boom", 500), "internal_server")]
+#[case::synthesized_status_404_picks_its_family(synthesized("boom", 404), "not_found")]
 #[case::status_other(input("boom", Some(418)), "api")]
 #[case::no_status_connection_fallback(input("boom", None), "api_connection")]
 fn openai_errors_openai_error_tests_behavior(
@@ -166,6 +176,16 @@ fn response_branches_answer_the_provider_status(
 }
 
 #[test]
+fn a_synthesized_500_answers_the_internal_server_error_type() {
+    let metadata = map_openai_exception(&synthesized("boom", 500)).metadata();
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text("internal_server_error".to_owned())
+    );
+}
+
+#[test]
 fn rate_limit_text_outranks_context_window_text() {
     let class = map_openai_exception(&input(
         "Rate limit reached: maximum context length is 4096",
@@ -179,18 +199,6 @@ fn timeout_string_preamble_check_uses_a_different_phrase_than_the_branch_check()
     // the preamble (dispatch.rs) checks "Request timed out"; this branch only recognizes "A timeout occurred"
     let class = map_openai_exception(&input("Request timed out waiting for a response", None));
     assert!(!matches!(class, ErrorClass::Timeout(_)));
-}
-
-#[test]
-fn a_synthesized_status_falls_back_to_api_connection_instead_of_its_own_family() {
-    let mut request = input("boom", Some(500));
-    request.status_code_is_synthesized = true;
-    let class = map_openai_exception(&request);
-    assert_eq!(
-        describe(&class).0,
-        "api_connection",
-        "hasattr(original_exception, \"status_code\") is false for a synthesized status"
-    );
 }
 
 #[test]

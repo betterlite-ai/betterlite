@@ -1,0 +1,28 @@
+kind: helper
+name: billing-usage-typed-duration-is-not-token-usage
+call:
+  billing_usage:
+    calls:
+      - function: get_usage_object
+        response:
+          kind: transcription
+          usage:
+            kind: transcription
+            value:
+              type: duration
+              seconds: 12.5
+      - function: get_usage_object
+        response:
+          kind: transcription
+          usage:
+            kind: transcription
+            value:
+              type: tokens
+              input_tokens: 7
+              output_tokens: 3
+              total_tokens: 10
+              input_token_details:
+                audio_tokens: 5
+                text_tokens: 2
+env: {}
+compare: {ignore: []}

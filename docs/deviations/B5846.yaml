@@ -1,0 +1,14 @@
+task: B5846
+deviations:
+  - what: A reply whose details has tokens but no finish_reason gives PredibaseError 500 naming the missing field.
+    why: Python raises KeyError there and LiteLLM's exception mapping turns an untyped KeyError into a generic server error; a typed decoder cannot keep the untyped error while naming the missing field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L186-L187
+  - what: A reply field of the wrong type gives PredibaseError 500 naming the field, where Python raises TypeError or KeyError and LiteLLM's mapping reports a generic 500.
+    why: The typed decoder rejects a generated_text that is not a string, tokens that are not a list of token objects, and a token whose logprob is not a number or null; LiteLLM reaches the same status through an uncaught exception, and the message is betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L183-L191
+  - what: An empty PREDIBASE_API_BASE value counts as unset, so the default base URL is used.
+    why: Python keeps an empty base from the environment and builds a URL that starts with a slash, which never reaches Predibase. The caller passes the resolved api_base, so this function cannot see the variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L338-L339
+  - what: A JSON body that is not an object gives PredibaseError 422 even when its text contains "error".
+    why: Python tests membership in the value before its type check, so a JSON string or list that contains "error" reaches a subscript and raises TypeError, which becomes a 500. A non-object body is the 422 case the task names, and no working Predibase setup sends one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L167-L176

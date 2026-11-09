@@ -16,6 +16,7 @@ use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::sync::{Arc, Mutex};
@@ -192,6 +193,7 @@ fn embedding_executor(base: &str, api_key: &str) -> (ChatExecutor, ChatDeploymen
         mock: MockSettings::default(),
         mock_chat: unused_chat,
         mock_embedding: unused_embedding,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     };
     (executor, deployment)
 }

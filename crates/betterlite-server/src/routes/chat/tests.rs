@@ -13,8 +13,11 @@ use crate::server::chat_setup::chat_executor;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_error::error::details::ApiDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::execution::ChatError;
+use betterlite_openai::chat::provider_error::rendered;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -654,6 +657,72 @@ async fn stream_error_preserves_param() {
     assert_eq!(error.error_type, "throttling_error");
     assert_eq!(error.param.as_deref(), Some("p"));
     assert_eq!(error.code, "429");
+}
+
+enum Failing {
+    Upstream { status: u16, body: &'static str },
+    Class(Box<ErrorClass>),
+}
+
+#[rstest]
+#[case::an_upstream_403_is_permission_denied(
+    Failing::Upstream { status: 403, body: r#"{"error":{"message":"denied"}}"# },
+    403,
+    "permission_error"
+)]
+#[case::a_timeout_preamble_on_an_upstream_500(
+    Failing::Upstream {
+        status: 500,
+        body: r#"{"error":{"message":"Request timed out"}}"#,
+    },
+    408,
+    "invalid_request_error"
+)]
+#[case::an_api_429_without_a_body_type(
+    Failing::Class(Box::new(ErrorClass::Api(Box::new(ApiDetails {
+        context: ErrorContext {
+            message: "slow down".to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        },
+        status: 429,
+    })))),
+    429,
+    "rate_limit_error"
+)]
+#[tokio::test]
+async fn openai_errors_openai_error_tests_behavior(
+    #[case] failing: Failing,
+    #[case] expected_status: u16,
+    #[case] expected_type: &str,
+) {
+    let (status, error_type) = match failing {
+        Failing::Upstream { status, body } => {
+            let answered = exchange(
+                "/v1/chat/completions",
+                r#"{"model":"g","messages":[]}"#,
+                "call-type",
+                (status, body),
+                (NO_DELAY, "0.4"),
+            )
+            .await;
+            let error = serde_json::from_slice::<ErrorReply>(&answered.body)
+                .unwrap()
+                .error;
+            (answered.status, error.error_type)
+        }
+        Failing::Class(class) => {
+            let rendered = rendered(&class);
+            (rendered.status, rendered.error_type)
+        }
+    };
+    assert_eq!(status, expected_status);
+    assert_eq!(error_type, expected_type);
 }
 
 #[rstest]
