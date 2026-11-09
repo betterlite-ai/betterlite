@@ -16,7 +16,7 @@ use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
-use crate::reload::{ReloadOutcome, RetryOutcome, StartupOutcome};
+use crate::reload::{FetchLimits, ReloadOutcome, RetryOutcome, StartupOutcome};
 use crate::source::CatalogSnapshot;
 
 use plans::Plan;
@@ -242,6 +242,17 @@ fn local_mode_never_calls_the_client() {
         assert!(matches!(outcome, ReloadOutcome::Reloaded(_)));
         assert_eq!(client.requests(), 0);
     });
+}
+
+#[test]
+fn fetch_limits_default_to_five_seconds_and_three_attempts() {
+    assert_eq!(
+        FetchLimits::default(),
+        FetchLimits {
+            timeout: Duration::from_secs(5),
+            max_attempts: 3,
+        }
+    );
 }
 
 #[test]
