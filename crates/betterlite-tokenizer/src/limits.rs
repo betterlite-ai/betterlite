@@ -1,4 +1,4 @@
-use betterlite_models::catalog::{CatalogEntry, ModelCatalog};
+use betterlite_models::catalog::ModelCatalog;
 use rust_decimal::prelude::ToPrimitive as _;
 
 mod tests;
@@ -78,11 +78,18 @@ pub fn get_modified_max_tokens(
 }
 
 fn model_limits(catalog: &ModelCatalog, models: Models<'_>) -> Result<ModelLimits, Warning> {
-    let entry = lookup(catalog, models.model).ok_or_else(|| Warning::UnknownModel {
-        model: models.model.to_owned(),
-    })?;
-    let base =
-        lookup(catalog, models.base_model).ok_or_else(|| Warning::UnknownMaxOutputTokens {
+    let entry = catalog
+        .lookup
+        .get(models.model)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .ok_or_else(|| Warning::UnknownModel {
+            model: models.model.to_owned(),
+        })?;
+    let base = catalog
+        .lookup
+        .get(models.base_model)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .ok_or_else(|| Warning::UnknownMaxOutputTokens {
             base_model: models.base_model.to_owned(),
         })?;
     let max_output_tokens = base
@@ -128,13 +135,6 @@ fn adjusted(user: i64, input: i128, buffer: i128, limits: &ModelLimits) -> Modif
         return fallback(user, Warning::Overflow);
     };
     resolved(max_tokens)
-}
-
-fn lookup<'catalog>(catalog: &'catalog ModelCatalog, name: &str) -> Option<&'catalog CatalogEntry> {
-    match catalog.lookup.get(name) {
-        Some(canonical) => catalog.entries.get(canonical.as_ref()),
-        None => None,
-    }
 }
 
 fn token_buffer(input_tokens: usize, settings: &Settings) -> Option<i128> {
