@@ -11,6 +11,8 @@ use crate::textract_ocr::analyze::TextractAnalyzeDocumentConfig;
 use crate::textract_ocr::markdown::{WorkBudget, layout_markdown};
 use crate::textract_ocr::wire::{Block, TextractResponse};
 
+const MEBIBYTE: usize = 0x0010_0000;
+
 const MODEL: &str = "analyze-document";
 
 fn analyze(blocks: &str) -> Result<OCRResponse, OcrError> {
@@ -323,6 +325,64 @@ fn a_repeated_child_with_many_dangling_ids_is_refused() {
     assert!(
         matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
         "the repeated dangling ids are refused"
+    );
+}
+
+#[test]
+fn a_repeated_table_scan_is_refused() {
+    let walked = walk(&repeated_table_blocks(20, 50), 100);
+
+    assert!(
+        matches!(&walked, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the table scan is charged by the walk"
+    );
+}
+
+fn repeated_table_blocks(renderers: usize, dangling: usize) -> String {
+    let mut blocks = Vec::new();
+    for index in 0..renderers {
+        blocks.push(format!(
+            r#"{{"Id":"lt{index}","BlockType":"LAYOUT_TABLE","Relationships":[{{"Type":"CHILD","Ids":["table"]}}]}}"#
+        ));
+    }
+    let ids = repeat_n("\"missing\"", dangling)
+        .collect::<Vec<&str>>()
+        .join(",");
+    blocks.push(format!(
+        r#"{{"Id":"table","BlockType":"TABLE","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}}"#
+    ));
+    format!("[{}]", blocks.join(","))
+}
+
+#[test]
+fn work_over_the_response_size_is_refused() {
+    let ids = repeat_n("\"line\"", 100).collect::<Vec<&str>>().join(",");
+    let text = "x".repeat(MEBIBYTE);
+    let blocks = format!(
+        r#"[{{"Id":"root","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"line","BlockType":"LINE","Text":"{text}"}}]"#
+    );
+
+    let response = analyze(&blocks);
+
+    assert!(
+        matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the body is under the response cap and the work is over it"
+    );
+}
+
+#[test]
+fn one_budget_covers_every_page() {
+    let ids = repeat_n("\"line\"", 40).collect::<Vec<&str>>().join(",");
+    let text = "x".repeat(MEBIBYTE);
+    let blocks = format!(
+        r#"[{{"Id":"first","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"second","BlockType":"LAYOUT_TEXT","Page":2,"Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"line","BlockType":"LINE","Text":"{text}"}}]"#
+    );
+
+    let response = analyze(&blocks);
+
+    assert!(
+        matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("work")),
+        "the pages share one budget"
     );
 }
 
