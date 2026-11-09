@@ -1,0 +1,23 @@
+kind: helper
+name: capture-mode-aliases
+call:
+  b3854:
+    function: capture_sample
+    environment: {}
+    configs:
+      - {capture_message_content: "TRUE"}
+      - {capture_message_content: "true"}
+      - {capture_message_content: "1"}
+      - {capture_message_content: "FALSE"}
+      - {capture_message_content: "0"}
+      - {capture_message_content: "NO_CONTENT"}
+      - {capture_message_content: "SPAN_ONLY"}
+      - {capture_message_content: "EVENT_ONLY"}
+      - {capture_message_content: "SPAN_AND_EVENT"}
+      - {capture_message_content: "span_only"}
+      - {capture_message_content: "Span_And_Event"}
+      - {capture_message_content: "span_only "}
+      - {capture_message_content: "turbo"}
+      - {}
+env: {}
+compare: {ignore: []}

@@ -444,3 +444,11 @@ fn only_resume_arguments_name_the_session() {
         ]
     );
 }
+
+#[test]
+fn a_filterset_no_test_path_can_match_is_a_problem() {
+    assert_eq!(
+        argument_problems("cargo nextest run -p a -E 'test(/^a::tests::(::|$)/)'"),
+        vec!["passes the filterset test(/^a::tests::(::|$)/) but no test path can match ::(::|$)"]
+    );
+}

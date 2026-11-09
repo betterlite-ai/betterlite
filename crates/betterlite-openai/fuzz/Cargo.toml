@@ -225,3 +225,10 @@ path = "fuzz_targets/watsonx_iam_token.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "huggingface_provider_mapping"
+path = "fuzz_targets/huggingface_provider_mapping.rs"
+test = false
+doc = false
+bench = false
