@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8192_tool_choice","call":{"b8192":{"operation":"tools","scenarios":[{"tools":null,"tool_choice":{"mode":"auto"}},{"tools":null,"tool_choice":{"mode":"required"}},{"tools":null,"tool_choice":{"mode":"none"}},{"tools":null,"tool_choice":{}},{"tools":null,"tool_choice":null}]}},"env":{},"compare":{"ignore":[]}}
