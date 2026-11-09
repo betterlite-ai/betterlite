@@ -161,8 +161,8 @@ fn cohere_tools_map_parameter_definitions() {
             "s": {"description": "S. Allowed values: ['a', 1]", "type": "str", "isRequired": true},
             "i": {"description": "Range: min=1, max=9", "type": "int", "isRequired": false},
             "u": {"description": "", "type": "weird", "isRequired": false},
-            "n": {"description": "", "type": "string", "isRequired": false},
-            "e": {"description": "", "type": "string", "isRequired": false},
+            "n": {"description": "", "type": "str", "isRequired": true},
+            "e": {"description": "", "type": "str", "isRequired": false},
             "x": {"description": "X", "type": "str", "isRequired": false}
         }}]"#,
     );
