@@ -11,10 +11,11 @@ use serde_json::Value;
 use super::Params;
 use super::create::{create_request, create_response, validate_create_vector_store};
 use super::decode::decode_mongodb_search;
-use super::environment::{MongoEnv, endpoints, get_complete_url, validate_environment};
+use super::environment::{MongoEnv, get_complete_url, validate_environment};
 use super::error::{LLM_PROVIDER, MongoDbError, error_for_status};
 use super::prepare::{PreparedSearch, prepare_search};
 use super::search::{SearchRequest, search_request};
+use crate::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
 use crate::embedding::{EmbeddingRecord, EmbeddingResponse, EmbeddingUsage, EmbeddingVector};
 use crate::vector_stores::Headers;
 use crate::vector_stores::store::{Query, SearchParams};
@@ -314,10 +315,15 @@ fn url_parse_rejects() {
 }
 
 fn endpoint_table() {
-    let table = endpoints();
-    assert_eq!(table.read, Some(Vec::new()));
-    assert_eq!(table.write, Some(Vec::new()));
-    assert!(table.extra.is_empty());
+    let table = VectorStoreIndexEndpoints {
+        read: Some(Vec::new()),
+        write: Some(Vec::new()),
+        extra: BTreeMap::new(),
+    };
+    assert_eq!(
+        serde_json::to_value(&table).expect("endpoints"),
+        json_value(r#"{"read":[],"write":[]}"#)
+    );
 }
 
 fn connection_string() {

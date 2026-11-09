@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret, SecretString};
 use url::{Host, Url};
@@ -7,7 +5,6 @@ use url::{Host, Url};
 use super::Params;
 use super::error::MongoDbError;
 use super::prepare::reject_unknown_params;
-use crate::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
 use crate::vector_stores::Headers;
 
 const MISSING_PARAMS: &str = "Configure api_base and api_key for the MongoDB BETA sidecar.";
@@ -113,14 +110,5 @@ const fn is_loopback(host: Option<&Host<&str>>) -> bool {
         Some(Host::Ipv4(address)) => address.is_loopback(),
         Some(Host::Ipv6(address)) => address.is_loopback(),
         Some(Host::Domain(_)) | None => false,
-    }
-}
-
-#[must_use]
-pub const fn endpoints() -> VectorStoreIndexEndpoints {
-    VectorStoreIndexEndpoints {
-        read: Some(Vec::new()),
-        write: Some(Vec::new()),
-        extra: BTreeMap::new(),
     }
 }
