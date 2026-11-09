@@ -6,17 +6,17 @@ use crate::stream_chunk_shaping::creation::provider_hidden_params;
 use crate::stream_chunk_shaping::extras::{
     apply_special_delta_attributes, has_any_special_attributes,
 };
-use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk, StreamDelta};
+use crate::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChunk, StreamDelta, item_count,
+};
 
 pub(super) fn normalize_original(original: &mut StreamChunk) {
     let Some(choice) = original.choices.first_mut() else {
         return;
     };
     let delta = &mut choice.delta;
-    if let Some(JsonValue::Object(function)) = &mut delta.function_call
-        && matches!(function.get("arguments"), None | Some(JsonValue::Null))
-    {
-        function.insert("arguments".to_owned(), JsonValue::String(String::new()));
+    if let Some(JsonValue::Object(function)) = &mut delta.function_call {
+        normalize_function(function);
     }
     if let Some(JsonValue::Array(tools)) = &mut delta.tool_calls {
         let mut next_index = 0_i64;
@@ -38,10 +38,8 @@ fn normalize_tool(tool: &mut JsonValue, next_index: &mut i64) {
         );
         *next_index = next_index.saturating_add(1);
     }
-    if let Some(JsonValue::Object(function)) = fields.get_mut("function")
-        && matches!(function.get("arguments"), None | Some(JsonValue::Null))
-    {
-        function.insert("arguments".to_owned(), JsonValue::String(String::new()));
+    if let Some(JsonValue::Object(function)) = fields.get_mut("function") {
+        normalize_function(function);
     }
     let needs_type = matches!(fields.get("type"), None | Some(JsonValue::Null));
     let has_function = fields
@@ -50,6 +48,26 @@ fn normalize_tool(tool: &mut JsonValue, next_index: &mut i64) {
     if needs_type && has_function {
         fields.insert("type".to_owned(), JsonValue::String("function".to_owned()));
     }
+}
+
+// Function turns object arguments into a JSON string, and null ones into parameters or "".
+fn normalize_function(function: &mut JsonObject) {
+    let arguments = match function.get("arguments") {
+        None | Some(JsonValue::Null) => match function.remove("parameters") {
+            Some(parameters @ JsonValue::Object(_)) => {
+                serde_json::to_string(&parameters).unwrap_or_default()
+            }
+            other => {
+                if let Some(value) = other {
+                    function.insert("parameters".to_owned(), value);
+                }
+                String::new()
+            }
+        },
+        Some(object @ JsonValue::Object(_)) => serde_json::to_string(object).unwrap_or_default(),
+        Some(_) => return,
+    };
+    function.insert("arguments".to_owned(), JsonValue::String(arguments));
 }
 
 pub(super) fn sync_finish(shaper: &mut ChunkShaper, state: &DecodeState) {
@@ -123,6 +141,13 @@ pub(super) fn fill_tool_use(
     state: &DecodeState,
     completion_obj: &mut StreamDelta,
 ) -> Result<(), ProviderChunkError> {
+    let has_calls = completion_obj
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| item_count(calls) > 0);
+    if !has_calls {
+        return Ok(());
+    }
     if state.options.is_function_call {
         let function = first_function(completion_obj.tool_calls.as_ref())?;
         completion_obj.function_call = Some(function);

@@ -10,9 +10,7 @@ use crate::stream_chunk_shaping::creation::{
     copy_provider_specific_fields, model_response_creator, set_model_id,
 };
 use crate::stream_chunk_shaping::decision::return_processed_chunk_logic;
-use crate::stream_chunk_shaping::records::{
-    ChunkResponseObject, StreamChunk, StreamDelta, item_count,
-};
+use crate::stream_chunk_shaping::records::{ChunkResponseObject, StreamChunk, StreamDelta};
 use crate::stream_chunk_shaping::usage_totals::record_usage_only_chunk;
 
 mod fields;
@@ -28,7 +26,10 @@ pub fn chunk_creator(
     }
     let hidden = hidden_params_of(chunk);
     let mut model_response = model_response_creator(shaper, None, hidden.as_ref())?;
-    let decoded = decode_provider_chunk(shaper.provider.as_deref(), chunk, state)?;
+    let mut decoded = decode_provider_chunk(shaper.provider.as_deref(), chunk, state)?;
+    if let Some(original) = &mut decoded.original {
+        normalize_original(original);
+    }
     if decoded.early_return {
         return Ok(decoded.original);
     }
@@ -44,13 +45,7 @@ pub fn chunk_creator(
         Prepared::Emit(ready) => return Ok(Some(ready)),
         Prepared::Skip => return Ok(None),
     };
-    if completion_obj
-        .tool_calls
-        .as_ref()
-        .is_some_and(|calls| item_count(calls) > 0)
-    {
-        fill_tool_use(shaper, state, &mut completion_obj)?;
-    }
+    fill_tool_use(shaper, state, &mut completion_obj)?;
     apply_chunk_usage(chunk, &mut processed);
     sync_finish(shaper, state);
     let result = return_processed_chunk_logic(
@@ -79,7 +74,6 @@ fn prepare_original(
     let Some(original) = &mut response_obj.original_chunk else {
         return Prepared::Continue(model_response);
     };
-    normalize_original(original);
     set_model_id(shaper, &original.id, &mut model_response);
     copy_provider_specific_fields(original, &mut model_response);
     if !original.choices.is_empty() {

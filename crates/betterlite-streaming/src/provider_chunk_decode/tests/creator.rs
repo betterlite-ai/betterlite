@@ -434,6 +434,68 @@ fn creator_tool_calls_without_an_index_are_numbered() {
     assert_eq!(arguments, [Some(""), Some("{}"), Some("")]);
 }
 
+fn first_call_function(created_chunk: &StreamChunk) -> &JsonObject {
+    first_choice(created_chunk)
+        .delta
+        .tool_calls
+        .as_ref()
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
+        .and_then(as_object)
+        .and_then(|call| call.get("function"))
+        .and_then(as_object)
+        .expect("the first call has a function")
+}
+
+#[test]
+fn creator_custom_provider_tool_calls_are_normalized() {
+    let mut decode_state = custom_state("my-model");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "a", "function": {"name": "f", "arguments": null}}]}}]}"#,
+    );
+    let created_chunk =
+        created("my-provider", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let call = first_choice(&created_chunk)
+        .delta
+        .tool_calls
+        .as_ref()
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
+        .and_then(as_object)
+        .expect("a call");
+    assert_eq!(call.get("type"), Some(&json("\"function\"")));
+    assert_eq!(call.get("index"), Some(&json("0")));
+    assert_eq!(
+        first_call_function(&created_chunk).get("arguments"),
+        Some(&json("\"\""))
+    );
+}
+
+#[derive(serde::Deserialize, Debug, PartialEq)]
+struct Arguments {
+    #[serde(rename = "x")]
+    amount: i64,
+}
+
+#[rstest]
+#[case::object_arguments(r#"{"name": "f", "arguments": {"x": 1}}"#)]
+#[case::parameters_for_null_arguments(
+    r#"{"name": "f", "arguments": null, "parameters": {"x": 1}}"#
+)]
+fn creator_tool_call_object_arguments_become_a_json_string(#[case] function: &str) {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(&format!(
+        r#"{{"id": "c1", "choices": [{{"index": 0, "delta": {{"tool_calls": [{{"id": "a", "function": {function}}}]}}}}]}}"#
+    ));
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let arguments = first_call_function(&created_chunk)
+        .get("arguments")
+        .and_then(JsonValue::as_str)
+        .expect("the arguments are a string");
+    let parsed: Arguments = from_str(arguments).expect("the string is JSON");
+    assert_eq!(parsed, Arguments { amount: 1 });
+}
+
 #[test]
 fn creator_text_completion_usage_keeps_the_chunk_details() {
     let mut decode_state = state("gpt-4");

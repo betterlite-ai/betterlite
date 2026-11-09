@@ -45,6 +45,12 @@ call:
         chunk:
           kind: json
           value: {id: chatcmpl-3, choices: [], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, prompt_tokens_details: {cached_tokens: 1}, completion_tokens_details: {reasoning_tokens: 2}}}
+      - op: creator
+        provider: text-completion-openai
+        send_stream_usage: true
+        chunk:
+          kind: json
+          value: {id: cmpl-1, choices: [{index: 0, text: hi}], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, prompt_tokens_details: {cached_tokens: 1}, completion_tokens_details: {reasoning_tokens: 2}}}
 env: {}
 compare:
   ignore: []

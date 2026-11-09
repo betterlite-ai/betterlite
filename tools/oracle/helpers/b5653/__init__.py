@@ -264,12 +264,7 @@ def _decode(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
     chunk = _chunk(step, state)
     model_response = wrapper.model_response_creator()  # pyright: ignore[reportUnknownMemberType]
     completion_obj: dict[str, object] = {"content": ""}
-    try:
-        result = wrapper._dispatch_provider_chunk(chunk, model_response, completion_obj)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
-    except StopIteration:
-        return {"raised": {"message": ""}}
-    except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
-        return {"raised": {"message": str(error)}}
+    result = wrapper._dispatch_provider_chunk(chunk, model_response, completion_obj)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
     early = result.value if isinstance(result, _ProviderChunkEarlyReturn) else None
     response: dict[str, object] = (
         {} if isinstance(result, _ProviderChunkEarlyReturn) else result.response_obj
@@ -293,13 +288,7 @@ def _decode(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
 
 
 def _create(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
-    chunk = _chunk(step, state)
-    try:
-        created = wrapper.chunk_creator(chunk)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-    except StopIteration:
-        return {"raised": {"message": ""}}
-    except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
-        return {"raised": {"message": str(error)}}
+    created = wrapper.chunk_creator(_chunk(step, state))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     return cast(
         "Json",
         [
@@ -355,5 +344,10 @@ def run(input_value: dict[str, Json]) -> Json:
         handler = _HANDLERS.get(op)
         if handler is None:
             raise ValueError(f"unsupported operation {op}")
-        outputs.append(handler(wrapper, step, state))
+        try:
+            outputs.append(handler(wrapper, step, state))
+        except StopIteration:
+            outputs.append({"raised": {"message": ""}})
+        except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
+            outputs.append({"raised": {"message": str(error)}})
     return outputs
