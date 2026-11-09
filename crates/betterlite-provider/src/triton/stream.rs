@@ -1,7 +1,11 @@
+use std::num::FpCategory;
+
+use serde::de::{Error as _, IgnoredAny};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
 
 use super::error::TritonError;
+use super::reply::ObjectOnly;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct StreamChunk {
@@ -23,6 +27,19 @@ struct StreamObject {
     index: i64,
 }
 
+// LiteLLM runs `elif stripped_json_chunk:` and then chunk.get, so a falsy value is an empty chunk and a truthy non-object fails
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StreamLine {
+    Object(ObjectOnly<StreamObject>),
+    Null(()),
+    Flag(bool),
+    Integer(i64),
+    Float(f64),
+    Text(String),
+    List(Vec<IgnoredAny>),
+}
+
 // B2214's BaseModelResponseIterator._handle_string_chunk over one transport line, then chunk_parser
 pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
     if line.contains("[DONE]") {
@@ -37,8 +54,21 @@ pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
         .strip_prefix("data: ")
         .or_else(|| line.strip_prefix("data:"))
         .unwrap_or(line);
-    let parsed: StreamObject = match serde_json::from_str(stripped) {
-        Ok(object) => object,
+    let parsed = match serde_json::from_str::<StreamLine>(stripped) {
+        Ok(StreamLine::Object(ObjectOnly { inner })) => inner,
+        Ok(StreamLine::Null(()) | StreamLine::Flag(false) | StreamLine::Integer(0)) => {
+            return Ok(StreamChunk::default());
+        }
+        Ok(StreamLine::Float(number)) if number.classify() == FpCategory::Zero => {
+            return Ok(StreamChunk::default());
+        }
+        Ok(StreamLine::Text(text)) if text.is_empty() => return Ok(StreamChunk::default()),
+        Ok(StreamLine::List(items)) if items.is_empty() => return Ok(StreamChunk::default()),
+        Ok(_) => {
+            return Err(TritonError::ReplyShape {
+                source: serde_json::Error::custom("expected a JSON object"),
+            });
+        }
         Err(source) => match source.classify() {
             Category::Syntax | Category::Eof => return Ok(StreamChunk::default()),
             Category::Data | Category::Io => return Err(TritonError::ReplyShape { source }),

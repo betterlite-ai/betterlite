@@ -42,6 +42,7 @@ EMBEDDING_REPLY = cast(
     "Callable[..., EmbeddingResponse]", EMBEDDING.transform_embedding_response
 )
 EMBEDDING_SUPPORTED = cast("Callable[..., list[str]]", EMBEDDING.get_supported_openai_params)
+EMBEDDING_MAP = cast("Callable[..., Object]", EMBEDDING.map_openai_params)
 EMBEDDING_VALIDATE = cast("Callable[..., Object]", EMBEDDING.validate_environment)
 
 
@@ -258,6 +259,12 @@ def stream_line(input_value: Object) -> Json:
     return {"chunks": chunks}
 
 
+def _words(model: str, text: str) -> int:
+    del model
+    return len(text.split())
+
+
+@patch("litellm.llms.triton.embedding.transformation.token_counter", new=_words)
 def embedding(input_value: Object) -> Json:
     inputs = [
         cast("AllEmbeddingInputValues", entry)
@@ -317,6 +324,12 @@ def embedding(input_value: Object) -> Json:
         {
             "supported": EMBEDDING_SUPPORTED(model="model"),
             "headers": validated_headers(EMBEDDING_VALIDATE),
+            "mapped": EMBEDDING_MAP(
+                non_default_params={"dimensions": 3},
+                optional_params={"kept": True},
+                model="model",
+                drop_params=False,
+            ),
             "requests": requests,
             "replies": found,
             "split": split_results,

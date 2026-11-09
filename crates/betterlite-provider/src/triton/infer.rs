@@ -4,7 +4,7 @@ use serde_json::Number;
 
 use super::datatype::TritonDatatype;
 use super::error::TritonError;
-use super::reply::decode_reply;
+use super::reply::{ObjectOnly, decode_reply};
 use super::request::TransformInput;
 
 pub const DEFAULT_MAX_TOKENS: i64 = 20;
@@ -29,7 +29,7 @@ pub struct InferReply {
 
 #[derive(Debug, Deserialize)]
 struct InferBody {
-    outputs: Vec<InferOutput>,
+    outputs: Vec<ObjectOnly<InferOutput>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,7 +80,7 @@ pub fn transform_request(input: &TransformInput<'_>) -> Result<InferRequest, Tri
 
 pub fn transform_response(status_code: u16, body: &[u8]) -> Result<InferReply, TritonError> {
     let decoded: InferBody = decode_reply(status_code, body)?;
-    let Some(output) = decoded.outputs.into_iter().next() else {
+    let Some(ObjectOnly { inner: output }) = decoded.outputs.into_iter().next() else {
         return Err(TritonError::NoOutputs);
     };
     let text = match output.data {

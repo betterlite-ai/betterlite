@@ -24,8 +24,10 @@ use super::config::complete_url;
 use super::config::map_openai_params;
 use super::config::validate_environment;
 use super::datatype::TritonDatatype;
+use super::embedding::EmbeddingConfig as _;
 use super::embedding::EmbeddingRequest;
 use super::embedding::TextTokenCounter;
+use super::embedding::TritonEmbeddingConfig;
 use super::embedding::build_embedding_usage;
 use super::embedding::split_embedding_by_shape;
 use super::embedding::transform_embedding_request;
@@ -345,6 +347,7 @@ fn generate_response_ignores_fields_it_does_not_model() {
 #[case::wrong_type(br#"{"text_output":5}"#)]
 #[case::scalar(b"5")]
 #[case::array(b"[]")]
+#[case::array_of_the_field(br#"["hi"]"#)]
 fn generate_response_rejects_a_body_of_the_wrong_shape(#[case] body: &[u8]) {
     let error = generate_response(200, body).unwrap_err();
     assert!(matches!(error, TritonError::ReplyShape { .. }));
@@ -526,6 +529,8 @@ fn infer_response_keeps_a_null_data() {
 #[case::missing_data(br#"{"outputs":[{"shape":[1]}]}"#)]
 #[case::number_data(br#"{"outputs":[{"data":5}]}"#)]
 #[case::mixed_list(br#"{"outputs":[{"data":["a",1]}]}"#)]
+#[case::array_body(br#"[[{"data":"hi"}]]"#)]
+#[case::array_output(br#"{"outputs":[["hi"]]}"#)]
 fn infer_response_rejects_a_body_it_cannot_read(#[case] body: &[u8]) {
     infer_response(200, body).unwrap_err();
 }
@@ -666,6 +671,27 @@ fn embedding_usage_counts_the_decimal_text_of_each_token_id() {
 }
 
 #[test]
+fn embedding_usage_counts_the_list_text_of_each_token_list() {
+    let request = embedding_request(
+        r#"{"inputs":[{"name":"input_text","shape":[2],"datatype":"BYTES","data":[[1,2],[3]]}]}"#,
+    );
+    let seen = Mutex::new(Vec::new());
+    let usage = build_embedding_usage("model", &request, &RecordingCounter(&seen)).unwrap();
+    assert_eq!(usage.prompt_tokens, 2);
+    assert_eq!(*seen.lock().unwrap(), ["[1, 2]", "[3]"]);
+}
+
+#[test]
+fn embedding_config_sends_no_headers_and_keeps_the_params() {
+    let params = options(r#"{"kept":true}"#);
+    assert!(TritonEmbeddingConfig.validate_environment().is_empty());
+    assert_eq!(
+        TritonEmbeddingConfig.map_openai_params(params.clone()),
+        params
+    );
+}
+
+#[test]
 fn embedding_usage_ignores_a_text_data_entry() {
     let request = embedding_request(
         r#"{"inputs":[{"name":"input_text","shape":[5],"datatype":"BYTES","data":"hello"}]}"#,
@@ -768,6 +794,17 @@ fn embedding_response_rejects_a_body_it_cannot_read() {
 }
 
 #[rstest]
+#[case::array_body(br#"[[{"shape":[1,1],"data":[1.5]}]]"#.as_slice())]
+#[case::array_output(br#"{"outputs":[[[1,1],[1.5]]]}"#.as_slice())]
+fn embedding_response_rejects_an_array_where_an_object_belongs(#[case] body: &[u8]) {
+    let request = transform_embedding_request(EmbeddingInput::Texts(vec![String::from("hello")]));
+    let error =
+        transform_embedding_response(200, body, "model", &request, &WordsCounter).unwrap_err();
+    assert!(matches!(error, TritonError::ReplyShape { .. }));
+    assert_eq!(error.status(), None);
+}
+
+#[rstest]
 #[case::object(
     r#"{"text_output":"hi","stop_reason":"stop","is_finished":true,"index":2}"#,
     "hi",
@@ -787,6 +824,11 @@ fn embedding_response_rejects_a_body_it_cannot_read() {
 #[case::data_without_space(r#"data:{"text_output":"hi"}"#, "hi", false, "", 0)]
 #[case::not_json("data: not json", "", false, "", 0)]
 #[case::empty_line("", "", false, "", 0)]
+#[case::null("data: null", "", false, "", 0)]
+#[case::zero("data: 0", "", false, "", 0)]
+#[case::false_value("data: false", "", false, "", 0)]
+#[case::empty_array("data: []", "", false, "", 0)]
+#[case::empty_string(r#"data: """#, "", false, "", 0)]
 fn stream_lines_decode_like_the_chunk_parser(
     #[case] line: &str,
     #[case] text: &str,
@@ -818,6 +860,10 @@ fn stream_done_lines_finish_the_stream(#[case] line: &str) {
 #[case::null_text(r#"data: {"text_output":null}"#)]
 #[case::bad_index(r#"data: {"index":1.5}"#)]
 #[case::array("data: [1,2]")]
+#[case::array_of_the_fields(r#"data: ["hi"]"#)]
+#[case::array_of_every_field(r#"data: ["hi","stop",true,1]"#)]
+#[case::truthy_string(r#"data: "hi""#)]
+#[case::true_value("data: true")]
 #[case::scalar("data: 5")]
 fn stream_lines_reject_a_field_of_the_wrong_type(#[case] line: &str) {
     let error = decode_stream_line(line).unwrap_err();

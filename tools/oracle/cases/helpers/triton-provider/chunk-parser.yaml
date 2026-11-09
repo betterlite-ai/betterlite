@@ -18,3 +18,10 @@ call:
       - 'data: {"index":3}'
       - '{"text_output":"a[DONE]b"}'
       - "data:5"
+      - 'data: ["hi"]'
+      - 'data: ["hi","stop",true,1]'
+      - "data: null"
+      - "data: 0"
+      - "data: []"
+      - 'data: ""'
+      - "data: true"

@@ -12,6 +12,7 @@ call:
       - {status: 200, body: '{"other":1}'}
       - {status: 200, body: '{"text_output":5}'}
       - {status: 200, body: "[1,2]"}
+      - {status: 200, body: '["hi"]'}
       - {status: 200, body: "5"}
       - {status: 503, body: "not json"}
       - {status: 400, body: ""}

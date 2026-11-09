@@ -1,15 +1,44 @@
 use betterlite_openai::embedding::{
     EmbeddingInput, EmbeddingRecord, EmbeddingUsage, EmbeddingVector,
 };
+use betterlite_prompts::builtin::Field;
+use http::HeaderMap;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 use super::datatype::TritonDatatype;
 use super::error::TritonError;
-use super::reply::decode_reply;
+use super::reply::{ObjectOnly, decode_reply};
 
 pub const INPUT_NAME: &str = "input_text";
 pub const SUPPORTED_PARAMS: [&str; 0] = [];
+
+pub trait EmbeddingConfig {
+    fn validate_environment(&self) -> HeaderMap;
+
+    fn map_openai_params(
+        &self,
+        optional_params: IndexMap<String, Field>,
+    ) -> IndexMap<String, Field>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TritonEmbeddingConfig;
+
+// LiteLLM sends the embedding call with no headers at all and keeps every optional param as given
+impl EmbeddingConfig for TritonEmbeddingConfig {
+    fn validate_environment(&self) -> HeaderMap {
+        HeaderMap::new()
+    }
+
+    fn map_openai_params(
+        &self,
+        optional_params: IndexMap<String, Field>,
+    ) -> IndexMap<String, Field> {
+        optional_params
+    }
+}
 
 pub trait TextTokenCounter {
     fn count_text(&self, model: &str, text: &str) -> Option<usize>;
@@ -37,7 +66,7 @@ pub struct EmbeddingReply {
 
 #[derive(Debug, Deserialize)]
 struct EmbeddingBody {
-    outputs: Vec<EmbeddingOutput>,
+    outputs: Vec<ObjectOnly<EmbeddingOutput>>,
     #[serde(default)]
     model_name: Option<String>,
 }
@@ -78,7 +107,7 @@ pub fn transform_embedding_response(
         model_name,
     } = decode_reply(status_code, body)?;
     let mut data = Vec::new();
-    for output in outputs {
+    for ObjectOnly { inner: output } in outputs {
         for (position, chunk) in split_embedding_by_shape(&output.data, &output.shape)?
             .into_iter()
             .enumerate()
@@ -117,7 +146,14 @@ pub fn build_embedding_usage(
     {
         Some(EmbeddingInput::Texts(values)) => values.clone(),
         Some(EmbeddingInput::Tokens(ids)) => ids.iter().map(ToString::to_string).collect(),
-        Some(EmbeddingInput::Text(_) | EmbeddingInput::TokenLists(_)) | None => Vec::new(),
+        Some(EmbeddingInput::TokenLists(lists)) => lists
+            .iter()
+            .map(|ids| {
+                let texts: Vec<String> = ids.iter().map(ToString::to_string).collect();
+                format!("[{}]", texts.join(", "))
+            })
+            .collect(),
+        Some(EmbeddingInput::Text(_)) | None => Vec::new(),
     };
     let mut prompt_tokens: u32 = 0;
     for text in &texts {

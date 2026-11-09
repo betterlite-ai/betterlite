@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_prompts::builtin::Field;
 use betterlite_provider::triton::config::{
     SUPPORTED_OPENAI_PARAMS, TritonEndpoint, complete_url, map_openai_params, validate_environment,
 };
 use betterlite_provider::triton::embedding::{
-    SUPPORTED_PARAMS as EMBEDDING_PARAMS, TextTokenCounter, split_embedding_by_shape,
-    transform_embedding_request, transform_embedding_response,
+    EmbeddingConfig as _, SUPPORTED_PARAMS as EMBEDDING_PARAMS, TextTokenCounter,
+    TritonEmbeddingConfig, split_embedding_by_shape, transform_embedding_request,
+    transform_embedding_response,
 };
 use betterlite_provider::triton::error::TritonError;
 use betterlite_provider::triton::generate::{
@@ -18,6 +20,8 @@ use betterlite_provider::triton::infer::{
 use betterlite_provider::triton::request::TransformInput;
 use betterlite_provider::triton::stream::decode_stream_line;
 use chrono::DateTime;
+use http::HeaderMap;
+use indexmap::IndexMap;
 use serde_json::Value;
 use serde_json::json;
 
@@ -73,12 +77,12 @@ pub(super) fn llm_type(bases: &[String], urls: &[UrlCase], mapping: &[MapCase]) 
         "urls": found_urls,
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": mapped,
-        "validated": validated_headers(),
+        "validated": validated_headers(&validate_environment()),
     })
 }
 
-fn validated_headers() -> BTreeMap<String, String> {
-    validate_environment()
+fn validated_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+    headers
         .iter()
         .map(|(name, value)| {
             (
@@ -191,7 +195,8 @@ pub(super) fn embedding(
         .collect();
     json!({
         "supported": EMBEDDING_PARAMS,
-        "headers": {},
+        "headers": validated_headers(&TritonEmbeddingConfig.validate_environment()),
+        "mapped": TritonEmbeddingConfig.map_openai_params(IndexMap::from([(String::from("kept"), Field::Bool(true))])),
         "requests": requests,
         "replies": embedding_replies(replies),
         "split": embedding_splits(split),
