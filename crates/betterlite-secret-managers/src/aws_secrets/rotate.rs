@@ -1,4 +1,5 @@
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{AwsOptionalParams, AwsTransport, CredentialResolver};
@@ -17,41 +18,42 @@ const ROTATION_DELETE_DAYS: u32 = 7;
 pub(super) async fn rotate<Resolver, Transport>(
     manager: &AwsSecretsManager<Resolver, Transport>,
     rotation: SecretRotation<'_, AwsOptionalParams>,
+    next_token: fn() -> Uuid,
 ) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
 where
     Resolver: CredentialResolver + Sync,
     Transport: AwsTransport,
 {
-    let mut optional_params = rotation.options.optional_params.map(super::copy_params);
     if rotation.current_secret_name == rotation.new_secret_name {
         return async_put_secret_value(
             manager,
             rotation.current_secret_name,
             rotation.new_secret_value,
-            optional_params.as_mut(),
-            rotation.options.timeout,
+            rotation.options,
+            next_token,
         )
         .await
         .map_err(|source| RotationError::Operation { source });
     }
-    rotate_to_new_name(manager, &rotation, optional_params.as_mut()).await
+    rotate_to_new_name(manager, &rotation, next_token).await
 }
 
 // the steps BaseSecretManager's default rotation takes, which Rust cannot call once this type overrides it
 async fn rotate_to_new_name<Resolver, Transport>(
     manager: &AwsSecretsManager<Resolver, Transport>,
     rotation: &SecretRotation<'_, AwsOptionalParams>,
-    mut optional_params: Option<&mut AwsOptionalParams>,
+    next_token: fn() -> Uuid,
 ) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
 where
     Resolver: CredentialResolver + Sync,
     Transport: AwsTransport,
 {
+    let mut optional_params = rotation.options.optional_params.map(super::copy_params);
     let timeout = rotation.options.timeout;
     let current = read_rotated(
         manager,
         rotation.current_secret_name,
-        optional_params.as_deref_mut(),
+        optional_params.as_mut(),
         timeout,
     )
     .await?;
@@ -59,11 +61,11 @@ where
         return Err(RotationError::CurrentSecretNotFound);
     }
     let description = format!("Rotated from {}", rotation.current_secret_name);
-    let written = write_rotated(manager, rotation, &description).await?;
+    let written = write_rotated(manager, rotation, &description, next_token).await?;
     let created = read_rotated(
         manager,
         rotation.new_secret_name,
-        optional_params.as_deref_mut(),
+        optional_params.as_mut(),
         timeout,
     )
     .await?;
@@ -74,7 +76,7 @@ where
         manager,
         rotation.current_secret_name,
         ROTATION_DELETE_DAYS,
-        optional_params,
+        optional_params.as_mut(),
         timeout,
     )
     .await

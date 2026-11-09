@@ -9,8 +9,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use betterlite_context::aws_partition::get_aws_partition;
 use betterlite_secret_managers::aws::{AwsDependencies, AwsSecretsManager};
 use betterlite_secret_managers::aws_secret_reads::AwsReadError;
+use betterlite_secret_managers::aws_secrets::AwsSecretClient;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 use script::{Resolver, Route, Script};
@@ -108,9 +110,13 @@ async fn execute(input: &Input) -> Value {
             clock: signing_time,
         },
     };
+    let client = AwsSecretClient {
+        manager: &manager,
+        next_token: Uuid::new_v4,
+    };
     let mut steps = Vec::new();
     for step in &input.steps {
-        let result = steps::run_step(&manager, step).await;
+        let result = steps::run_step(&client, step).await;
         steps.push(json!({"result": result, "requests": script.take_requests()}));
     }
     json!({"steps": steps})

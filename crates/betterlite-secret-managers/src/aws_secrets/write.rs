@@ -13,12 +13,13 @@ use super::{SecretActionResponse, replicate};
 pub(super) async fn write<Resolver, Transport>(
     manager: &AwsSecretsManager<Resolver, Transport>,
     write: SecretWrite<'_, AwsOptionalParams>,
+    next_token: fn() -> Uuid,
 ) -> Result<SecretActionResponse, AwsReadError<Resolver::Error, Transport::Error>>
 where
     Resolver: CredentialResolver + Sync,
     Transport: AwsTransport,
 {
-    let token = Uuid::new_v4().to_string();
+    let token = next_token().to_string();
     let tags = write.tags.map(normalized_tags);
     let body = CreateSecretBody {
         name: write.secret_name,

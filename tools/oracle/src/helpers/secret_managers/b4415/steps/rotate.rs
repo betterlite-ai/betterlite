@@ -1,4 +1,4 @@
-use betterlite_secret_managers::aws::AwsSecretsManager;
+use betterlite_secret_managers::aws_secrets::AwsSecretClient;
 use betterlite_secret_managers::secret_contracts::BaseSecretManager as _;
 use betterlite_secret_managers::secret_contracts::options::{SecretOptions, SecretRotation};
 use secrecy::SecretString;
@@ -9,7 +9,7 @@ use super::super::script::{Resolver, Script};
 use super::body_outcome;
 
 pub(super) async fn rotate_step(
-    manager: &AwsSecretsManager<Resolver, Script>,
+    client: &AwsSecretClient<'_, Resolver, Script>,
     step: &Step,
 ) -> Value {
     let Step::RotateSecret {
@@ -21,7 +21,7 @@ pub(super) async fn rotate_step(
         return json!({"raised": true});
     };
     let new_value = SecretString::from(value.clone());
-    let rotated = manager
+    let rotated = client
         .async_rotate_secret(SecretRotation {
             current_secret_name: current,
             new_secret_name: new,

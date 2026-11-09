@@ -5,13 +5,13 @@ use secrecy::ExposeSecret as _;
 use crate::secret_contracts::BaseSecretManager as _;
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretTimeout};
 
-use super::support::{FakeTransport, Settings, actions, answer, manager, sent_body};
+use super::support::{FakeTransport, Settings, actions, answer, manager, secret_client, sent_body};
 
 #[tokio::test]
 async fn delete_with_default_recovery_window() {
     let transport = FakeTransport::new(vec![answer(200, r#"{"ARN":"arn:one","DeletionDate":1}"#)]);
     let manager = manager(&transport, Settings::default());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_delete_secret("prod/db", DeleteOptions::default())
         .await
         .unwrap();
@@ -30,7 +30,7 @@ async fn delete_with_default_recovery_window() {
 async fn delete_with_custom_recovery_window() {
     let transport = FakeTransport::new(vec![answer(200, r#"{"ARN":"arn:one"}"#)]);
     let manager = manager(&transport, Settings::default());
-    (&manager)
+    secret_client(&manager)
         .async_delete_secret(
             "prod/db",
             DeleteOptions {

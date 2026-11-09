@@ -1,6 +1,7 @@
 use secrecy::SecretString;
 use serde::Serialize;
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{
@@ -25,6 +26,12 @@ pub mod replicate;
 #[derive(Debug, Clone)]
 pub struct SecretActionResponse {
     pub body: SecretString,
+}
+
+// The token source is a field so a test or the oracle can pin every ClientRequestToken a write sends
+pub struct AwsSecretClient<'borrowed, Resolver, Transport> {
+    pub manager: &'borrowed AwsSecretsManager<Resolver, Transport>,
+    pub next_token: fn() -> Uuid,
 }
 
 pub(crate) async fn post_reply<Body, Resolver, Transport>(

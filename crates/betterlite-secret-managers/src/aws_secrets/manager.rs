@@ -1,6 +1,5 @@
 use secrecy::SecretString;
 
-use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{AwsOptionalParams, CredentialResolver};
 use crate::aws_secret_reads::AwsReadError;
 use crate::aws_secret_reads::blocking::AwsBlockingTransport;
@@ -8,10 +7,9 @@ use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotat
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 
 use super::SecretActionResponse;
-use super::{copy_params, delete, rotate};
+use super::{AwsSecretClient, copy_params, delete, rotate};
 
-// B4414 keeps the per-call reads as inherent methods, so the contract is implemented for a shared client
-impl<Resolver, Transport> BaseSecretManager for &AwsSecretsManager<Resolver, Transport>
+impl<Resolver, Transport> BaseSecretManager for AwsSecretClient<'_, Resolver, Transport>
 where
     Resolver: CredentialResolver + Sync,
     Transport: AwsBlockingTransport,
@@ -25,7 +23,7 @@ where
         secret_name: &'borrowed str,
         options: SecretOptions<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Option<SecretString>, Self::Error> {
-        let manager = *self;
+        let manager = self.manager;
         Box::pin(async move {
             let mut params = options.optional_params.map(copy_params);
             manager
@@ -39,7 +37,7 @@ where
         secret_name: &str,
         options: SecretOptions<'_, Self::Params>,
     ) -> Result<Option<SecretString>, Self::Error> {
-        let manager = *self;
+        let manager = self.manager;
         let mut params = options.optional_params.map(copy_params);
         manager.sync_read_secret(secret_name, params.as_mut(), options.timeout, None)
     }
@@ -48,8 +46,7 @@ where
         &'borrowed self,
         write: SecretWrite<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Self::Response, Self::Error> {
-        let manager = *self;
-        Box::pin(super::write::write(manager, write))
+        Box::pin(super::write::write(self.manager, write, self.next_token))
     }
 
     fn async_delete_secret<'borrowed>(
@@ -57,14 +54,13 @@ where
         secret_name: &'borrowed str,
         options: DeleteOptions<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Self::Response, Self::Error> {
-        Box::pin(delete::delete_options(*self, secret_name, options))
+        Box::pin(delete::delete_options(self.manager, secret_name, options))
     }
 
     fn async_rotate_secret<'borrowed>(
         &'borrowed self,
         rotation: SecretRotation<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Self::Response, RotationError<Self::Error>> {
-        let manager = *self;
-        Box::pin(rotate::rotate(manager, rotation))
+        Box::pin(rotate::rotate(self.manager, rotation, self.next_token))
     }
 }

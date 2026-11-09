@@ -11,6 +11,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
+use uuid::Uuid;
 
 use crate::aws::request_signing::{
     AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver, TransportError,
@@ -18,6 +19,7 @@ use crate::aws::request_signing::{
 };
 use crate::aws::{AwsDependencies, AwsSecretsManager};
 use crate::aws_secret_reads::blocking::AwsBlockingTransport;
+use crate::aws_secrets::AwsSecretClient;
 use crate::secret_contracts::options::{SecretOptions, SecretTags, SecretTimeout, SecretWrite};
 
 const ACCESS_KEY: &str = "AKIDEXAMPLE";
@@ -25,6 +27,8 @@ const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
 
 pub(super) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 pub(super) const DEFAULT_URL: &str = "https://secretsmanager.us-east-1.amazonaws.com";
+pub(super) const FIRST_TOKEN: &str = "00000000-0000-4000-8000-000000000001";
+pub(super) const SECOND_TOKEN: &str = "00000000-0000-4000-8000-000000000002";
 
 pub(super) type Reply = Result<TransportResponse, TransportError<io::Error>>;
 
@@ -164,6 +168,23 @@ pub(super) fn answer(status: u16, body: &str) -> Reply {
 
 pub(super) fn timed_out() -> Reply {
     Err(TransportError::Timeout)
+}
+
+pub(super) fn first_token() -> Uuid {
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0001)
+}
+
+pub(super) fn second_token() -> Uuid {
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0002)
+}
+
+pub(super) fn secret_client(
+    manager: &AwsSecretsManager<Resolver, FakeTransport>,
+) -> AwsSecretClient<'_, Resolver, FakeTransport> {
+    AwsSecretClient {
+        manager,
+        next_token: first_token,
+    }
 }
 
 pub(super) fn manager(

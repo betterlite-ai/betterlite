@@ -5,7 +5,7 @@ use crate::secret_contracts::BaseSecretManager as _;
 
 use super::support::{
     DEFAULT_URL, FakeTransport, SentRegion, Settings, actions, answer, bodies, capture_logs,
-    manager, write_request,
+    manager, secret_client, write_request,
 };
 
 fn replica_settings(regions: &[&str]) -> Settings {
@@ -23,7 +23,7 @@ async fn replicate_after_create_succeeds() {
     ]);
     let manager = manager(&transport, replica_settings(&["us-west-2", "eu-west-1"]));
     let value = SecretString::from("s3cr3t".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, None))
         .await
         .unwrap();
@@ -65,7 +65,7 @@ async fn replicate_warns_on_failure() {
     ]);
     let manager = manager(&transport, replica_settings(&["us-west-2"]));
     let value = SecretString::from("s3cr3t".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, None))
         .await
         .unwrap();

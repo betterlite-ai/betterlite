@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
-use uuid::Uuid;
 
 use crate::secret_contracts::BaseSecretManager as _;
 use crate::secret_contracts::options::{
@@ -10,8 +9,8 @@ use crate::secret_contracts::options::{
 };
 
 use super::support::{
-    DEFAULT_TIMEOUT, DEFAULT_URL, FakeTransport, SentTag, Settings, actions, answer, manager,
-    sent_body, write_request,
+    DEFAULT_TIMEOUT, DEFAULT_URL, FIRST_TOKEN, FakeTransport, SentTag, Settings, actions, answer,
+    manager, secret_client, sent_body, write_request,
 };
 
 fn tags_mapping() -> SecretTags {
@@ -29,7 +28,7 @@ async fn create_secret_success() {
     )]);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, None))
         .await
         .unwrap();
@@ -47,10 +46,11 @@ async fn create_secret_success() {
     assert_eq!(body.description, None);
     assert_eq!(body.kms_key_id, None);
     assert_eq!(body.tags, None);
-    let token = body
-        .client_request_token
-        .expect("CreateSecret sends a token");
-    Uuid::parse_str(&token).expect("the token is a version 4 uuid");
+    assert_eq!(
+        body.client_request_token.as_deref(),
+        Some(FIRST_TOKEN),
+        "CreateSecret takes its ClientRequestToken from the injected token source"
+    );
 }
 
 #[tokio::test]
@@ -59,7 +59,7 @@ async fn create_with_tags_dict() {
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
     let tags = tags_mapping();
-    (&manager)
+    secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, Some(&tags), None))
         .await
         .unwrap();
@@ -95,7 +95,7 @@ async fn create_with_tags_list() {
             value: "Prod".to_owned(),
         },
     ]);
-    (&manager)
+    secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, Some(&tags), None))
         .await
         .unwrap();
@@ -138,7 +138,10 @@ async fn create_with_description_and_kms() {
         },
         tags: None,
     };
-    (&manager).async_write_secret(request).await.unwrap();
+    secret_client(&manager)
+        .async_write_secret(request)
+        .await
+        .unwrap();
     let sent = transport.sent();
     assert_eq!(sent[0].timeout, Duration::from_secs(3));
     let body = sent_body(&sent[0].body);

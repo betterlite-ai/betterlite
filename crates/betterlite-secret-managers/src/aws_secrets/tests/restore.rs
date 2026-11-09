@@ -3,7 +3,6 @@ use std::io;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
-use uuid::Uuid;
 
 use crate::aws::request_signing::AwsRequestError;
 use crate::aws_secret_reads::AwsReadError;
@@ -11,8 +10,8 @@ use crate::secret_contracts::BaseSecretManager as _;
 use crate::secret_contracts::options::{SecretTag, SecretTags, SecretTimeout};
 
 use super::support::{
-    FakeTransport, Reply, SentTag, Settings, actions, answer, bodies, manager, timed_out,
-    write_request,
+    FIRST_TOKEN, FakeTransport, Reply, SentTag, Settings, actions, answer, bodies, manager,
+    secret_client, timed_out, write_request,
 };
 
 const CREATE_COLLISION: &str = "ResourceExistsException: the secret is scheduled for deletion";
@@ -46,7 +45,7 @@ async fn restore_on_deletion_scheduled() {
     let transport = FakeTransport::new(replies);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, None))
         .await
         .unwrap();
@@ -73,11 +72,11 @@ async fn restore_on_deletion_scheduled() {
         bodies[3].client_request_token, bodies[0].client_request_token,
         "UpdateSecret reuses the create request token"
     );
-    let token = bodies[0]
-        .client_request_token
-        .clone()
-        .expect("CreateSecret sends a token");
-    Uuid::parse_str(&token).expect("the token is a version 4 uuid");
+    assert_eq!(
+        bodies[0].client_request_token.as_deref(),
+        Some(FIRST_TOKEN),
+        "the created token comes from the injected source"
+    );
 }
 
 #[tokio::test]
@@ -89,7 +88,7 @@ async fn restore_with_separate_tags() {
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
     let tags = tag();
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, Some(&tags), None))
         .await
         .unwrap();
@@ -120,7 +119,7 @@ async fn update_tag_re_deletion_on_tag_error() {
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
     let tags = tag();
-    let error = (&manager)
+    let error = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, Some(&tags), None))
         .await
         .unwrap_err();
@@ -149,7 +148,7 @@ async fn http_error_raises_value_error() {
     let transport = FakeTransport::new(vec![answer(409, CREATE_COLLISION), answer(200, "{}")]);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
-    let error = (&manager)
+    let error = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, None))
         .await
         .unwrap_err();
@@ -170,7 +169,7 @@ async fn timeout_propagates_without_a_restore_check() {
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("s3cr3t".to_owned());
     let timeout = Some(SecretTimeout::Total(Duration::from_secs(1)));
-    let error = (&manager)
+    let error = secret_client(&manager)
         .async_write_secret(write_request("prod/db", &value, None, timeout))
         .await
         .unwrap_err();

@@ -1,12 +1,14 @@
 use secrecy::{ExposeSecret as _, SecretString};
-use uuid::Uuid;
 
 use crate::aws::request_signing::AwsOptionalParams;
 use crate::aws_secrets::put_value::async_put_secret_value;
 use crate::secret_contracts::BaseSecretManager as _;
 use crate::secret_contracts::options::{SecretOptions, SecretRotation};
 
-use super::support::{FakeTransport, Settings, actions, answer, manager, sent_body};
+use super::support::{
+    FIRST_TOKEN, FakeTransport, SECOND_TOKEN, Settings, actions, answer, first_token, manager,
+    second_token, secret_client, sent_body,
+};
 
 fn rotation<'borrowed>(
     current: &'borrowed str,
@@ -26,7 +28,7 @@ async fn same_name_rotation_uses_put_value() {
     let transport = FakeTransport::new(vec![answer(200, r#"{"ARN":"arn:put","VersionId":"v2"}"#)]);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("rotated-value".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_rotate_secret(rotation("prod/db", "prod/db", &value))
         .await
         .unwrap();
@@ -43,10 +45,11 @@ async fn same_name_rotation_uses_put_value() {
         "PutSecretValue addresses the secret by SecretId"
     );
     assert_eq!(body.secret_string.as_deref(), Some("rotated-value"));
-    let token = body
-        .client_request_token
-        .expect("PutSecretValue sends a token");
-    Uuid::parse_str(&token).expect("a version 4 uuid");
+    assert_eq!(
+        body.client_request_token.as_deref(),
+        Some(FIRST_TOKEN),
+        "in-place rotation takes its ClientRequestToken from the injected source"
+    );
 }
 
 #[tokio::test]
@@ -59,7 +62,7 @@ async fn different_name_rotation_uses_base() {
     ]);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("new-value".to_owned());
-    let response = (&manager)
+    let response = secret_client(&manager)
         .async_rotate_secret(rotation("prod/db", "prod/new", &value))
         .await
         .unwrap();
@@ -79,6 +82,7 @@ async fn different_name_rotation_uses_base() {
     assert_eq!(create.secret_string.as_deref(), Some("new-value"));
     assert_eq!(create.description.as_deref(), Some("Rotated from prod/db"));
     assert_eq!(create.tags, None);
+    assert_eq!(create.client_request_token.as_deref(), Some(FIRST_TOKEN));
     let delete = sent_body(&sent[3].body);
     assert_eq!(delete.secret_id.as_deref(), Some("prod/db"));
     assert_eq!(delete.recovery_window_in_days, Some(7));
@@ -92,25 +96,35 @@ async fn put_secret_value_generates_token() {
     ]);
     let manager = manager(&transport, Settings::default());
     let value = SecretString::from("rotated-value".to_owned());
-    let first = async_put_secret_value(&manager, "prod/db", &value, None, None)
-        .await
-        .unwrap();
-    let second = async_put_secret_value(&manager, "prod/db", &value, None, None)
-        .await
-        .unwrap();
+    let first = async_put_secret_value(
+        &manager,
+        "prod/db",
+        &value,
+        SecretOptions::default(),
+        first_token,
+    )
+    .await
+    .unwrap();
+    let second = async_put_secret_value(
+        &manager,
+        "prod/db",
+        &value,
+        SecretOptions::default(),
+        second_token,
+    )
+    .await
+    .unwrap();
     assert_eq!(first.body.expose_secret(), r#"{"VersionId":"v2"}"#);
     assert_eq!(second.body.expose_secret(), r#"{"VersionId":"v3"}"#);
     let sent = transport.sent();
-    let first_token = sent_body(&sent[0].body)
-        .client_request_token
-        .expect("the first put sends a token");
-    let second_token = sent_body(&sent[1].body)
-        .client_request_token
-        .expect("the second put sends a token");
-    Uuid::parse_str(&first_token).expect("a version 4 uuid");
-    Uuid::parse_str(&second_token).expect("a version 4 uuid");
-    assert_ne!(
-        first_token, second_token,
-        "each PutSecretValue carries a fresh ClientRequestToken"
+    assert_eq!(
+        sent_body(&sent[0].body).client_request_token.as_deref(),
+        Some(FIRST_TOKEN),
+        "the first put sends its injected token"
+    );
+    assert_eq!(
+        sent_body(&sent[1].body).client_request_token.as_deref(),
+        Some(SECOND_TOKEN),
+        "a different token source produces a different ClientRequestToken"
     );
 }

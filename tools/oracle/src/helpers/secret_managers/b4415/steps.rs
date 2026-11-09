@@ -1,7 +1,7 @@
 mod rotate;
 mod value;
 
-use betterlite_secret_managers::aws::AwsSecretsManager;
+use betterlite_secret_managers::aws_secrets::AwsSecretClient;
 use betterlite_secret_managers::aws_secrets::SecretActionResponse;
 use betterlite_secret_managers::secret_contracts::BaseSecretManager as _;
 use betterlite_secret_managers::secret_contracts::options::{
@@ -13,13 +13,13 @@ use serde_json::{Value, json};
 use super::script::{Resolver, Script};
 use super::{Failure, Step};
 
-pub(super) async fn run_step(manager: &AwsSecretsManager<Resolver, Script>, step: &Step) -> Value {
+pub(super) async fn run_step(client: &AwsSecretClient<'_, Resolver, Script>, step: &Step) -> Value {
     match step {
         Step::DeleteSecret {
             name,
             recovery_window_in_days,
         } => {
-            let deleted = manager
+            let deleted = client
                 .async_delete_secret(
                     name,
                     DeleteOptions {
@@ -33,15 +33,15 @@ pub(super) async fn run_step(manager: &AwsSecretsManager<Resolver, Script>, step
                 .await;
             write_outcome(deleted)
         }
-        Step::WriteSecret { .. } => write_step(manager, step).await,
-        Step::RotateSecret { .. } => rotate::rotate_step(manager, step).await,
+        Step::WriteSecret { .. } => write_step(client, step).await,
+        Step::RotateSecret { .. } => rotate::rotate_step(client, step).await,
         Step::ReplicateSecret { .. } | Step::PutSecretValue { .. } => {
-            value::value_step(manager, step).await
+            value::value_step(client, step).await
         }
     }
 }
 
-async fn write_step(manager: &AwsSecretsManager<Resolver, Script>, step: &Step) -> Value {
+async fn write_step(client: &AwsSecretClient<'_, Resolver, Script>, step: &Step) -> Value {
     let Step::WriteSecret {
         name,
         value,
@@ -55,7 +55,7 @@ async fn write_step(manager: &AwsSecretsManager<Resolver, Script>, step: &Step) 
         return json!({"raised": true});
     };
     let secret_value = SecretString::from(value.clone());
-    let written = manager
+    let written = client
         .async_write_secret(SecretWrite {
             secret_name: name,
             secret_value: &secret_value,
