@@ -33,3 +33,10 @@ path = "fuzz_targets/cap_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tag_match"
+path = "fuzz_targets/tag_match.rs"
+test = false
+doc = false
+bench = false
