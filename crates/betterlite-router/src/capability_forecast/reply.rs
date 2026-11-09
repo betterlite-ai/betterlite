@@ -7,6 +7,7 @@ use super::error::ForecastError;
 use super::verdict::Verdict;
 
 pub const MAX_REPLY_BYTES: usize = 0x0010_0000;
+const SCAN_BUDGET: usize = MAX_REPLY_BYTES.saturating_mul(16);
 
 // same-length stand-ins so the decoder locates the object Python's raw_decode would have accepted
 const MASKED_CONSTANTS: [(&[u8], &[u8]); 3] = [
@@ -23,16 +24,22 @@ pub fn parse_cap_reply(reply: &[u8]) -> Result<Verdict, ForecastError> {
         });
     }
     let content = str::from_utf8(reply).map_err(|source| ForecastError::ReplyNotText { source })?;
-    let object = first_object(content).ok_or(ForecastError::NoVerdictObject)?;
+    let object = first_object(content, SCAN_BUDGET).ok_or(ForecastError::NoVerdictObject)?;
     let verdict: Verdict =
         serde_json::from_str(object).map_err(|source| ForecastError::VerdictSchema { source })?;
     verdict.validate()
 }
 
-fn first_object(content: &str) -> Option<&str> {
+pub(super) fn first_object(content: &str, budget: usize) -> Option<&str> {
     let masked = mask_constants(content);
-    let mut starts = content.match_indices('{').map(|(start, _)| start);
-    starts.find_map(|start| object_at(content, &masked, start))
+    let mut remaining = budget;
+    for (start, _) in content.match_indices('{') {
+        if let Some(object) = object_at(content, &masked, start) {
+            return Some(object);
+        }
+        remaining = remaining.checked_sub(content.len().saturating_sub(start))?;
+    }
+    None
 }
 
 fn object_at<'input>(content: &'input str, masked: &str, start: usize) -> Option<&'input str> {

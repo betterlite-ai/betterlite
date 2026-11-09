@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use rstest::rstest;
 
@@ -9,7 +10,7 @@ use super::config::{Calibration, Config, ResponseFormat};
 use super::error::ForecastError;
 use super::forecast::route;
 use super::prompt::{SYSTEM_PROMPT, response_format, schema, system_prompt};
-use super::reply::{MAX_REPLY_BYTES, parse_cap_reply};
+use super::reply::{MAX_REPLY_BYTES, first_object, parse_cap_reply};
 use super::verdict::{Boundary, Rule};
 
 const JSON_SCHEMA_FORMAT: &str = r#"{"type":"json_schema","json_schema":{"name":"CapabilityClassifierDecision","strict":true,"schema":{"additionalProperties":false,"properties":{"capability_boundary":{"enum":["supported","uncertain","unsupported","unmatched"],"type":"string"},"crux":{"minLength":1,"type":"string"},"p_solve":{"maximum":1.0,"minimum":0.0,"type":"number"},"primary_rule":{"enum":["SUP-1","SUP-2","SUP-3","SUP-4","SUP-5","UNC-1","UNC-2","LIM-1","LIM-2","none"],"type":"string"}},"required":["crux","primary_rule","capability_boundary","p_solve"],"type":"object"}}}"#;
@@ -309,6 +310,7 @@ fn assert_calibration_endpoints() {
 #[case::calibration_version(assert_calibration_version)]
 #[case::calibration_coefficients(assert_calibration_coefficients)]
 #[case::reply_byte_bound(assert_reply_byte_bound)]
+#[case::scan_budget(assert_scan_budget)]
 #[case::reply_encoding(assert_reply_encoding)]
 #[case::selection(assert_selection)]
 fn capability_forecast_boundaries(#[case] check: fn()) {
@@ -610,6 +612,22 @@ fn assert_reply_byte_bound() {
         ForecastError::ReplyTooLarge { bytes, limit }
             if bytes == MAX_REPLY_BYTES.saturating_add(1) && limit == MAX_REPLY_BYTES
     ));
+}
+
+fn scan(content: &str) -> Option<&str> {
+    first_object(content, content.len())
+}
+
+fn assert_scan_budget() {
+    let started = Instant::now();
+    let flood = "{\"a\":".repeat(209_715);
+    let error = parse_cap_reply(flood.as_bytes()).unwrap_err();
+    assert!(matches!(error, ForecastError::NoVerdictObject));
+    assert!(started.elapsed() < Duration::from_secs(10));
+    // one failed start charges the whole budget, and the next start still reaches the object
+    assert_eq!(scan("{abc{}"), Some("{}"));
+    // one more failed start cannot be charged, so the walk stops before the object
+    assert_eq!(scan("{abc{d{}"), None);
 }
 
 fn assert_reply_encoding() {
