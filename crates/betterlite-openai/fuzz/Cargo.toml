@@ -94,6 +94,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "infinity_embedding"
+path = "fuzz_targets/infinity_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "voyage_embedding_reply"
 path = "fuzz_targets/voyage_embedding_reply.rs"
 test = false
