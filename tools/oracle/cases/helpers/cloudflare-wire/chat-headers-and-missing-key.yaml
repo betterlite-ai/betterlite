@@ -1,0 +1,15 @@
+kind: helper
+name: cloudflare-wire-chat-headers-and-missing-key
+call:
+  b5836:
+    chat_headers:
+      - {api_key: null}
+      - {api_key: ""}
+      - {api_key: key}
+      - {api_key: key, headers: {X-Caller: kept}}
+      - {api_key: key, headers: {content-type: text/plain}}
+      - {api_key: key, headers: {Content-Type: text/plain}}
+      - {api_key: key, headers: {CONTENT-TYPE: application/xml}}
+      - {api_key: key, headers: {Authorization: "Bearer old"}}
+env: {}
+compare: {ignore: []}
