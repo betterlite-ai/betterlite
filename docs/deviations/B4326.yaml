@@ -1,0 +1,57 @@
+task: B4326
+deviations:
+  - what: >-
+      `disconnect` has no step that closes the sync Redis connection, and on the Cluster family
+      it leaves the per-instance async client open until the cache drops.
+    why: >-
+      B4325's `LiveSyncClient` has no close method and `RedisTransport` holds the Cluster client
+      in a private cell. A dropped connection closes when its last clone is dropped.
+    link: ""
+  - what: >-
+      `disconnect` does not force-close connections that a running request still holds.
+      LiteLLM's pool disconnect passes `inuse_connections=True`.
+    why: >-
+      Removing the store entry drops the cache's own reference, and an in-flight clone closes
+      the connection as soon as it finishes. redis-rs has no pool to disconnect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1841-L1881
+  - what: >-
+      `disconnect` cannot log a failed pub/sub close at debug level, because the close is a
+      store removal whose dropped client has no error to report.
+    why: >-
+      LiteLLM catches the exception from `aclose()` and logs it; B4325's
+      `close_pubsub_client` returns `()` after dropping the stored entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1841-L1881
+  - what: >-
+      On a Cluster client, async `ping` (and so the startup async ping and the Cluster
+      `test_connection`) sends PING to every primary and fails unless all of them answer, where
+      LiteLLM's `await _redis_client.ping()` reaches the default node only. With a healthy
+      default node next to one failing primary, LiteLLM answers true and betterlite returns an
+      error, so the connection test reports failed where LiteLLM reports success.
+    why: >-
+      redis-rs 1.7.0 routes PING to all primaries with `ResponsePolicy::AllSucceeded`, and
+      `LiveAsyncClient::query` takes no routing argument, so the async client cannot address one
+      node the way redis-py's PING under `DEFAULT_NODE` does.
+    link: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/cluster_handling/routing.rs
+  - what: >-
+      On a Cluster client, `sync_ping` and the startup sync probe reach every primary, `info`
+      takes the first node's reply, and `client_list` goes to whichever node redis-rs picks.
+      redis-py sends all three to the default node.
+    why: >-
+      `LiveSyncClient::query` takes no routing argument and redis-rs 1.7.0 routes PING and INFO
+      to all primaries. A Cluster INFO then comes back as a map of node to text, and the first
+      entry stands in for the default node.
+    link: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/cluster_handling/routing.rs
+  - what: >-
+      FLUSHALL on a Cluster client reaches every primary in both clients.
+    why: >-
+      redis-py also sends FLUSHALL to all primaries on RedisCluster, so nothing differs. Listed
+      because INFO and PING differ.
+    link: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/cluster_handling/routing.rs
+  - what: >-
+      `parse_info` reads a number only when `i64` or `f64` parses it. A value that Python's
+      `int` or `float` accepts with underscores or surrounding spaces stays text, and an
+      integer past `i64` stays text.
+    why: >-
+      Redis writes plain decimal numbers in INFO, and `i64` is the type the INFO route returns.
+      A server never sends the other forms.
+    link: https://github.com/redis/redis-py/blob/v8.1.0/redis/_parsers/helpers.py
