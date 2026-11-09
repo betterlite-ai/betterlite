@@ -83,14 +83,7 @@ impl EventDrivenCacheCoordinator {
         Load: AsyncFnOnce() -> Result<CacheValue, LoadError>,
         LoadError: Error,
     {
-        let cached =
-            cache
-                .async_get_cache(cache_key)
-                .await
-                .map_err(|source| CoordinatorError::Cache {
-                    key: cache_key.to_owned(),
-                    source,
-                })?;
+        let cached = cache_read(cache, cache_key).await?;
         if let Some(value) = cached {
             self.log_step("Cache hit");
             return Ok(Some(value));
@@ -158,14 +151,7 @@ impl EventDrivenCacheCoordinator {
             }
         }
         self.log_step("Signal received, reading from cache");
-        let value =
-            cache
-                .async_get_cache(cache_key)
-                .await
-                .map_err(|source| CoordinatorError::Cache {
-                    key: cache_key.to_owned(),
-                    source,
-                })?;
+        let value = cache_read(cache, cache_key).await?;
         if value.is_some() {
             self.log_step("Cache filled by other request");
         } else {
@@ -185,14 +171,7 @@ impl EventDrivenCacheCoordinator {
         Load: AsyncFnOnce() -> Result<CacheValue, LoadError>,
         LoadError: Error,
     {
-        let rechecked =
-            cache
-                .async_get_cache(cache_key)
-                .await
-                .map_err(|source| CoordinatorError::Cache {
-                    key: cache_key.to_owned(),
-                    source,
-                })?;
+        let rechecked = cache_read(cache, cache_key).await?;
         if let Some(value) = rechecked {
             self.log_step("Cache filled while acquiring lock");
             return Ok(value);
@@ -229,4 +208,19 @@ impl Drop for LoadSignal<'_> {
     fn drop(&mut self) {
         self.coordinator.signal_done();
     }
+}
+
+async fn cache_read<Cache, LoadError>(
+    cache: &Cache,
+    cache_key: &str,
+) -> Result<Option<CacheValue>, CoordinatorError<Cache::Error, LoadError>>
+where
+    Cache: AsyncCacheProtocol,
+    LoadError: Error,
+{
+    let value = cache.async_get_cache(cache_key).await;
+    value.map_err(|source| CoordinatorError::Cache {
+        key: cache_key.to_owned(),
+        source,
+    })
 }

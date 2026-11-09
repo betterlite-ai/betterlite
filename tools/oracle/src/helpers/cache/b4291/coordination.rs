@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::ready;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -16,13 +15,17 @@ use tokio::sync::Notify;
 use tokio::task::{JoinSet, yield_now};
 
 use super::super::b4290::{failure, runtime};
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 const SETTLE_ROUNDS: usize = 8;
 
 const PROBE_KEY: &str = "key";
+
+type Failure = Box<HelperError>;
+
+type Outcome = Result<Option<CacheValue>, CoordinatorError<ProbeError, ProbeError>>;
 
 #[derive(Debug, Error)]
 enum ProbeError {
@@ -84,51 +87,41 @@ impl Probe {
     }
 }
 
-type Outcome = Result<Option<CacheValue>, CoordinatorError<ProbeError, ProbeError>>;
-
-async fn counted_load(probe: Arc<Probe>) -> Result<CacheValue, ProbeError> {
-    probe.loads.fetch_add(1, Ordering::SeqCst);
-    probe.started.notify_one();
-    probe.release.notified().await;
-    Ok(probe.value.clone())
+#[derive(Clone, Copy)]
+enum LoadKind {
+    Blocked,
+    Unblocked,
+    Failing,
 }
 
-fn unblocked_value(probe: &Probe) -> CacheValue {
-    probe.loads.fetch_add(1, Ordering::SeqCst);
-    probe.value.clone()
+struct Request {
+    probe: Arc<Probe>,
+    kind: LoadKind,
 }
 
-async fn failing_load(probe: Arc<Probe>) -> Result<CacheValue, ProbeError> {
-    probe.started.notify_one();
-    probe.release.notified().await;
-    Err(ProbeError::LoadFailed)
+async fn probe_load(request: Arc<Request>) -> Result<CacheValue, ProbeError> {
+    request.probe.loads.fetch_add(1, Ordering::SeqCst);
+    match request.kind {
+        LoadKind::Blocked => {
+            request.probe.started.notify_one();
+            request.probe.release.notified().await;
+            Ok(request.probe.value.clone())
+        }
+        LoadKind::Unblocked => Ok(request.probe.value.clone()),
+        LoadKind::Failing => {
+            request.probe.started.notify_one();
+            request.probe.release.notified().await;
+            Err(ProbeError::LoadFailed)
+        }
+    }
 }
 
-async fn run_blocking_request(probe: Arc<Probe>) -> Outcome {
-    let cache = Arc::clone(&probe.cache);
-    let coordinator = Arc::clone(&probe.coordinator);
-    let loader = Arc::clone(&probe);
-    coordinator
-        .get_or_load(PROBE_KEY, cache.as_ref(), move || counted_load(loader))
-        .await
-}
-
-async fn run_unblocked_request(probe: Arc<Probe>) -> Outcome {
-    let cache = Arc::clone(&probe.cache);
-    let coordinator = Arc::clone(&probe.coordinator);
-    let loader = Arc::clone(&probe);
-    let load = move || ready(Ok::<_, ProbeError>(unblocked_value(&loader)));
+async fn run_request(request: Arc<Request>) -> Outcome {
+    let cache = Arc::clone(&request.probe.cache);
+    let coordinator = Arc::clone(&request.probe.coordinator);
+    let load = move || probe_load(request);
     coordinator
         .get_or_load(PROBE_KEY, cache.as_ref(), load)
-        .await
-}
-
-async fn run_failing_request(probe: Arc<Probe>) -> Outcome {
-    let cache = Arc::clone(&probe.cache);
-    let coordinator = Arc::clone(&probe.coordinator);
-    let loader = Arc::clone(&probe);
-    coordinator
-        .get_or_load(PROBE_KEY, cache.as_ref(), move || failing_load(loader))
         .await
 }
 
@@ -139,9 +132,29 @@ async fn settle() {
     }
 }
 
-async fn collect(
+fn request(probe: &Arc<Probe>, kind: LoadKind) -> Arc<Request> {
+    Arc::new(Request {
+        probe: Arc::clone(probe),
+        kind,
+    })
+}
+
+async fn start_requests(
+    probe: &Arc<Probe>,
     tasks: &mut JoinSet<Outcome>,
-) -> Result<Vec<Option<CacheValue>>, Box<crate::helpers::HelperError>> {
+    first: LoadKind,
+    waiters: usize,
+) {
+    tasks.spawn(run_request(request(probe, first)));
+    probe.started.notified().await;
+    for _ in 0..waiters {
+        tasks.spawn(run_request(request(probe, LoadKind::Unblocked)));
+    }
+    settle().await;
+    probe.release.notify_one();
+}
+
+async fn collect(tasks: &mut JoinSet<Outcome>) -> Result<Vec<Option<CacheValue>>, Failure> {
     let mut results = Vec::new();
     while let Some(joined) = tasks.join_next().await {
         results.push(joined.map_err(failure)?.map_err(failure)?);
@@ -149,77 +162,68 @@ async fn collect(
     Ok(results)
 }
 
-pub(crate) fn single_loader(value: &CacheValue, requests: usize) -> HelperResult {
-    let runtime = runtime()?;
-    let outcome: HelperResult = runtime.block_on(async move {
-        let probe = Arc::new(Probe::new(value));
-        let mut tasks = JoinSet::new();
-        tasks.spawn(run_blocking_request(Arc::clone(&probe)));
-        probe.started.notified().await;
-        for _ in 0..requests.saturating_sub(1) {
-            tasks.spawn(run_unblocked_request(Arc::clone(&probe)));
-        }
-        settle().await;
-        probe.release.notify_one();
-        let results = collect(&mut tasks).await?;
-        Ok(json!({"loads": probe.loads.load(Ordering::SeqCst), "results": results}))
-    });
-    outcome
+async fn single_loader(probe: &Arc<Probe>, requests: usize) -> Result<serde_json::Value, Failure> {
+    let mut tasks = JoinSet::new();
+    let waiters = requests.saturating_sub(1);
+    start_requests(probe, &mut tasks, LoadKind::Blocked, waiters).await;
+    let results = collect(&mut tasks).await?;
+    Ok(json!({"loads": probe.loads.load(Ordering::SeqCst), "results": results}))
 }
 
-pub(crate) fn waiter_gets_cached(value: &CacheValue) -> HelperResult {
-    let runtime = runtime()?;
-    let outcome: HelperResult = runtime.block_on(async move {
-        let probe = Arc::new(Probe::new(value));
-        let mut tasks = JoinSet::new();
-        tasks.spawn(run_blocking_request(Arc::clone(&probe)));
-        probe.started.notified().await;
-        tasks.spawn(run_unblocked_request(Arc::clone(&probe)));
-        settle().await;
-        probe.release.notify_one();
-        let results = collect(&mut tasks).await?;
-        let cached = probe
-            .cache
-            .async_get_cache(PROBE_KEY)
-            .await
-            .map_err(failure)?;
-        Ok(json!({
-            "loads": probe.loads.load(Ordering::SeqCst),
-            "results": results,
-            "cached": cached,
-        }))
-    });
-    outcome
+async fn waiter_gets_cached(probe: &Arc<Probe>) -> Result<serde_json::Value, Failure> {
+    let mut tasks = JoinSet::new();
+    start_requests(probe, &mut tasks, LoadKind::Blocked, 1).await;
+    let results = collect(&mut tasks).await?;
+    let cached = probe
+        .cache
+        .async_get_cache(PROBE_KEY)
+        .await
+        .map_err(failure)?;
+    Ok(json!({
+        "loads": probe.loads.load(Ordering::SeqCst),
+        "results": results,
+        "cached": cached,
+    }))
 }
 
-pub(crate) fn loader_failure(value: &CacheValue) -> HelperResult {
+async fn loader_failure(probe: &Arc<Probe>) -> Result<serde_json::Value, Failure> {
+    let mut tasks = JoinSet::new();
+    start_requests(probe, &mut tasks, LoadKind::Failing, 1).await;
+    let mut failed = false;
+    let mut waited = None;
+    while let Some(joined) = tasks.join_next().await {
+        match joined.map_err(failure)? {
+            Err(CoordinatorError::Load { .. }) => failed = true,
+            Ok(stored) => waited = stored,
+            Err(other) => return Err(failure(other)),
+        }
+    }
+    let retried = run_request(request(probe, LoadKind::Unblocked))
+        .await
+        .map_err(failure)?;
+    Ok(json!({
+        "failed": failed,
+        "waiter": waited,
+        "retry": retried,
+        "loads": probe.loads.load(Ordering::SeqCst),
+    }))
+}
+
+pub(crate) enum Scenario {
+    SingleLoader { requests: usize },
+    WaiterGetsCached,
+    LoaderFailure,
+}
+
+pub(crate) fn run_scenario(value: &CacheValue, scenario: Scenario) -> HelperResult {
     let runtime = runtime()?;
     let outcome: HelperResult = runtime.block_on(async move {
         let probe = Arc::new(Probe::new(value));
-        let mut tasks = JoinSet::new();
-        tasks.spawn(run_failing_request(Arc::clone(&probe)));
-        probe.started.notified().await;
-        tasks.spawn(run_unblocked_request(Arc::clone(&probe)));
-        settle().await;
-        probe.release.notify_one();
-        let mut failed = false;
-        let mut waited = None;
-        while let Some(joined) = tasks.join_next().await {
-            match joined.map_err(failure)? {
-                Err(CoordinatorError::Load { .. }) => failed = true,
-                Ok(stored) => waited = stored,
-                Err(other) => return Err(failure(other)),
-            }
+        match scenario {
+            Scenario::SingleLoader { requests } => single_loader(&probe, requests).await,
+            Scenario::WaiterGetsCached => waiter_gets_cached(&probe).await,
+            Scenario::LoaderFailure => loader_failure(&probe).await,
         }
-        let retried = run_unblocked_request(Arc::clone(&probe))
-            .await
-            .map_err(failure)?;
-        Ok(json!({
-            "failed": failed,
-            "waiter": waited,
-            "retry": retried,
-            "loads": probe.loads.load(Ordering::SeqCst),
-        }))
     });
     outcome
 }

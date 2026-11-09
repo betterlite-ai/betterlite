@@ -77,13 +77,11 @@ impl DiskStore {
     }
 
     // LiteLLM pops the key, and diskcache's pop returns None for a key that is absent or expired
-    pub(super) fn delete(&self, key: &str, now: f64) -> Result<(), DiskError> {
+    pub(super) fn delete(&self, key: &str, now: f64) -> Result<usize, DiskError> {
         let connection = self.connect()?;
         connection
             .execute(DELETE_UNEXPIRED, params![key, now])
-            .map_err(|source| DiskError::Store { source })?;
-        drop(connection);
-        Ok(())
+            .map_err(|source| DiskError::Store { source })
     }
 
     pub(super) fn clear(&self) -> Result<usize, DiskError> {

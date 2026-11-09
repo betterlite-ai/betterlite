@@ -1,16 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::CacheValue;
-use std::future::pending;
 use thiserror::Error;
 use tokio::sync::Notify;
-use tokio::task::{JoinSet, yield_now};
+use tokio::task::{AbortHandle, JoinSet, yield_now};
 
 use super::{AsyncCacheProtocol, CoordinatorError, EventDrivenCacheCoordinator};
 use crate::backend::Ttl;
@@ -98,10 +98,75 @@ impl AsyncCacheProtocol for FakeCache {
 
 type Outcome = Result<Option<CacheValue>, CoordinatorError<FakeError, FakeError>>;
 
-// a current-thread runtime runs each ready task on every yield, so eight yields settle both loaders
-async fn settle() {
-    for _ in 0..8_usize {
-        yield_now().await;
+#[derive(Clone, Copy)]
+enum LoadKind {
+    Blocked,
+    Unblocked,
+    Failing,
+    Pending,
+}
+
+struct TestLoader {
+    kind: LoadKind,
+    loads: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+async fn run_load(loader: Arc<TestLoader>) -> Result<CacheValue, FakeError> {
+    loader.loads.fetch_add(1, Ordering::SeqCst);
+    match loader.kind {
+        LoadKind::Blocked => {
+            loader.started.notify_one();
+            loader.release.notified().await;
+            Ok(CacheValue::Integer(42))
+        }
+        LoadKind::Unblocked => Ok(CacheValue::Integer(42)),
+        LoadKind::Failing => {
+            loader.started.notify_one();
+            loader.release.notified().await;
+            Err(FakeError::LoadFailed)
+        }
+        LoadKind::Pending => {
+            loader.started.notify_one();
+            pending().await
+        }
+    }
+}
+
+struct Scenario {
+    cache: Arc<FakeCache>,
+    coordinator: Arc<EventDrivenCacheCoordinator>,
+    loads: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+impl Scenario {
+    fn new(wait_timeout: Duration) -> Self {
+        Self {
+            cache: Arc::new(FakeCache::new(false)),
+            coordinator: Arc::new(EventDrivenCacheCoordinator::new(
+                "[CACHE]".to_owned(),
+                wait_timeout,
+            )),
+            loads: Arc::new(AtomicUsize::new(0)),
+            started: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        }
+    }
+
+    fn spawn(&self, tasks: &mut JoinSet<Outcome>, kind: LoadKind) -> AbortHandle {
+        let loader = Arc::new(TestLoader {
+            kind,
+            loads: Arc::clone(&self.loads),
+            started: Arc::clone(&self.started),
+            release: Arc::clone(&self.release),
+        });
+        let cache = Arc::clone(&self.cache);
+        let coordinator = Arc::clone(&self.coordinator);
+        let load = move || run_load(loader);
+        tasks.spawn(async move { coordinator.get_or_load("key", cache.as_ref(), load).await })
     }
 }
 
@@ -112,70 +177,11 @@ fn coordinator(wait_timeout: Duration) -> Arc<EventDrivenCacheCoordinator> {
     ))
 }
 
-async fn blocked_load(
-    loads: Arc<AtomicUsize>,
-    started: Arc<Notify>,
-    release: Arc<Notify>,
-) -> Result<CacheValue, FakeError> {
-    loads.fetch_add(1, Ordering::SeqCst);
-    started.notify_one();
-    release.notified().await;
-    Ok(CacheValue::Integer(42))
-}
-
-async fn failing_load(started: Arc<Notify>, release: Arc<Notify>) -> Result<CacheValue, FakeError> {
-    started.notify_one();
-    release.notified().await;
-    Err(FakeError::LoadFailed)
-}
-
-async fn pending_load(started: Arc<Notify>) -> Result<CacheValue, FakeError> {
-    started.notify_one();
-    pending().await
-}
-
-fn instant_value(loads: &AtomicUsize) -> CacheValue {
-    loads.fetch_add(1, Ordering::SeqCst);
-    CacheValue::Integer(0)
-}
-
-async fn run_blocked_loader(
-    cache: Arc<FakeCache>,
-    coordinator: Arc<EventDrivenCacheCoordinator>,
-    loads: Arc<AtomicUsize>,
-    started: Arc<Notify>,
-    release: Arc<Notify>,
-) -> Outcome {
-    let load = || blocked_load(loads, started, release);
-    coordinator.get_or_load("key", cache.as_ref(), load).await
-}
-
-async fn run_failing_loader(
-    cache: Arc<FakeCache>,
-    coordinator: Arc<EventDrivenCacheCoordinator>,
-    started: Arc<Notify>,
-    release: Arc<Notify>,
-) -> Outcome {
-    let load = || failing_load(started, release);
-    coordinator.get_or_load("key", cache.as_ref(), load).await
-}
-
-async fn run_pending_loader(
-    cache: Arc<FakeCache>,
-    coordinator: Arc<EventDrivenCacheCoordinator>,
-    started: Arc<Notify>,
-) -> Outcome {
-    let load = || pending_load(started);
-    coordinator.get_or_load("key", cache.as_ref(), load).await
-}
-
-async fn run_instant_loader(
-    cache: Arc<FakeCache>,
-    coordinator: Arc<EventDrivenCacheCoordinator>,
-    loads: Arc<AtomicUsize>,
-) -> Outcome {
-    let load = || async { Ok::<_, FakeError>(instant_value(&loads)) };
-    coordinator.get_or_load("key", cache.as_ref(), load).await
+// a current-thread runtime runs each ready task on every yield, so eight yields settle both requests
+async fn settle() {
+    for _ in 0..8_usize {
+        yield_now().await;
+    }
 }
 
 #[tokio::test]
@@ -278,89 +284,53 @@ async fn cache_coordination_claim_role_hands_waiters_the_inflight_signal() {
 
 #[tokio::test]
 async fn cache_coordination_single_loader_serves_every_request() {
-    let cache = Arc::new(FakeCache::new(false));
-    let coordinator = coordinator(Duration::from_secs(5));
-    let loads = Arc::new(AtomicUsize::new(0));
-    let started = Arc::new(Notify::new());
-    let release = Arc::new(Notify::new());
+    let scenario = Scenario::new(Duration::from_secs(5));
     let mut loader = JoinSet::new();
-    loader.spawn(run_blocked_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&loads),
-        Arc::clone(&started),
-        Arc::clone(&release),
-    ));
-    started.notified().await;
+    scenario.spawn(&mut loader, LoadKind::Blocked);
+    scenario.started.notified().await;
     let mut waiter = JoinSet::new();
-    waiter.spawn(run_instant_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&loads),
-    ));
+    scenario.spawn(&mut waiter, LoadKind::Unblocked);
     settle().await;
-    release.notify_one();
+    scenario.release.notify_one();
     let from_load = loader.join_next().await.unwrap().unwrap().unwrap();
     let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
     assert_eq!(from_load, Some(CacheValue::Integer(42)));
     assert_eq!(from_wait, Some(CacheValue::Integer(42)));
-    assert_eq!(loads.load(Ordering::SeqCst), 1);
+    assert_eq!(scenario.loads.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
 async fn cache_coordination_loader_failure_signals_waiters() {
-    let cache = Arc::new(FakeCache::new(false));
-    let coordinator = coordinator(Duration::from_secs(5));
-    let loads = Arc::new(AtomicUsize::new(0));
-    let started = Arc::new(Notify::new());
-    let release = Arc::new(Notify::new());
+    let scenario = Scenario::new(Duration::from_secs(5));
     let mut loader = JoinSet::new();
-    loader.spawn(run_failing_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&started),
-        Arc::clone(&release),
-    ));
-    started.notified().await;
+    scenario.spawn(&mut loader, LoadKind::Failing);
+    scenario.started.notified().await;
     let mut waiter = JoinSet::new();
-    waiter.spawn(run_instant_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&loads),
-    ));
+    scenario.spawn(&mut waiter, LoadKind::Unblocked);
     settle().await;
-    release.notify_one();
-    let from_load = loader.join_next().await.unwrap().unwrap();
-    assert!(matches!(from_load, Err(CoordinatorError::Load { .. })));
-    assert_eq!(waiter.join_next().await.unwrap().unwrap().unwrap(), None);
-    assert_eq!(loads.load(Ordering::SeqCst), 0);
+    scenario.release.notify_one();
+    let failed = loader.join_next().await.unwrap().unwrap();
+    let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
+    assert!(matches!(failed, Err(CoordinatorError::Load { .. })));
+    assert_eq!(from_wait, None);
+    assert_eq!(scenario.loads.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
 async fn cache_coordination_cancelled_loader_signals_waiters() {
-    let cache = Arc::new(FakeCache::new(false));
-    let coordinator = coordinator(Duration::from_secs(5));
-    let loads = Arc::new(AtomicUsize::new(0));
-    let started = Arc::new(Notify::new());
+    let scenario = Scenario::new(Duration::from_secs(5));
     let mut loader = JoinSet::new();
-    let pending = loader.spawn(run_pending_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&started),
-    ));
-    started.notified().await;
+    let pending_request = scenario.spawn(&mut loader, LoadKind::Pending);
+    scenario.started.notified().await;
     let mut waiter = JoinSet::new();
-    waiter.spawn(run_instant_loader(
-        Arc::clone(&cache),
-        Arc::clone(&coordinator),
-        Arc::clone(&loads),
-    ));
+    scenario.spawn(&mut waiter, LoadKind::Unblocked);
     settle().await;
-    pending.abort();
+    pending_request.abort();
     let cancelled = loader.join_next().await.unwrap().unwrap_err();
+    let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
     assert!(cancelled.is_cancelled());
-    assert_eq!(waiter.join_next().await.unwrap().unwrap().unwrap(), None);
-    assert_eq!(loads.load(Ordering::SeqCst), 0);
+    assert_eq!(from_wait, None);
+    assert_eq!(scenario.loads.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

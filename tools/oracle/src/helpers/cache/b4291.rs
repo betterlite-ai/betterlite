@@ -62,11 +62,18 @@ impl crate::helpers::Helper for Op {
                 increments,
             } => disk::increment(key, initial.as_ref(), increments),
             Input::DiskDelete { key, value, kept } => disk::delete(key, value, kept),
-            Input::CoordinatorSingleLoader { value, requests } => {
-                coordination::single_loader(value, *requests)
+            Input::CoordinatorSingleLoader { value, requests } => coordination::run_scenario(
+                value,
+                coordination::Scenario::SingleLoader {
+                    requests: *requests,
+                },
+            ),
+            Input::CoordinatorWaiterGetsCached { value } => {
+                coordination::run_scenario(value, coordination::Scenario::WaiterGetsCached)
             }
-            Input::CoordinatorWaiterGetsCached { value } => coordination::waiter_gets_cached(value),
-            Input::CoordinatorLoaderFailure { value } => coordination::loader_failure(value),
+            Input::CoordinatorLoaderFailure { value } => {
+                coordination::run_scenario(value, coordination::Scenario::LoaderFailure)
+            }
         }
     }
 }

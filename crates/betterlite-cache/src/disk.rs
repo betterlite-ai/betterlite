@@ -147,19 +147,21 @@ impl DiskCache {
     }
 
     pub async fn async_increment(&self, key: &str, value: i64, ttl: Ttl) -> Result<i64, DiskError> {
-        let store = Arc::clone(&self.store);
-        let now = self.now()?;
-        let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
-        let cache_key = key.to_owned();
-        let next = run_blocking(move || store.increment(&cache_key, value, now, expire_at)).await?;
+        let next = self
+            .run_keyed(key, move |store, cache_key, now| {
+                let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
+                store.increment(cache_key, value, now, expire_at)
+            })
+            .await?;
         Ok(next)
     }
 
     pub async fn async_delete_cache(&self, key: &str) -> Result<(), DiskError> {
-        let store = Arc::clone(&self.store);
-        let now = self.now()?;
-        let cache_key = key.to_owned();
-        run_blocking(move || store.delete(&cache_key, now)).await
+        self.run_keyed(key, |store, cache_key, now| {
+            store.delete(cache_key, now)?;
+            Ok(())
+        })
+        .await
     }
 
     pub async fn async_flush_cache(&self) -> Result<(), DiskError> {
@@ -168,6 +170,21 @@ impl DiskCache {
         tracing::debug!(cleared, "disk cache flushed");
         Ok(())
     }
+
+    async fn run_keyed<Value, Operation>(
+        &self,
+        key: &str,
+        operation: Operation,
+    ) -> Result<Value, DiskError>
+    where
+        Value: Send + 'static,
+        Operation: FnOnce(&DiskStore, &str, f64) -> Result<Value, DiskError> + Send + 'static,
+    {
+        let store = Arc::clone(&self.store);
+        let now = self.now()?;
+        let cache_key = key.to_owned();
+        run_blocking(move || operation(store.as_ref(), &cache_key, now)).await
+    }
 }
 
 #[async_trait]
@@ -175,12 +192,9 @@ impl AsyncCacheProtocol for DiskCache {
     type Error = DiskError;
 
     async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, DiskError> {
-        let store = Arc::clone(&self.store);
-        let now = self.now()?;
-        let cache_key = key.to_owned();
-        run_blocking(move || {
+        self.run_keyed(key, |store, cache_key, now| {
             store
-                .get(&cache_key, now)
+                .get(cache_key, now)
                 .map(|stored| stored.filter(carries_value))
         })
         .await
@@ -192,11 +206,11 @@ impl AsyncCacheProtocol for DiskCache {
         value: CacheValue,
         ttl: Ttl,
     ) -> Result<(), DiskError> {
-        let store = Arc::clone(&self.store);
-        let now = self.now()?;
-        let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
-        let cache_key = key.to_owned();
-        run_blocking(move || store.set(&cache_key, &value, expire_at)).await
+        self.run_keyed(key, move |store, cache_key, now| {
+            let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
+            store.set(cache_key, &value, expire_at)
+        })
+        .await
     }
 }
 
