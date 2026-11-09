@@ -11,7 +11,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L753-L761
   - what: The fallback id for a response object without an id is supplied by the caller instead of being generated inside the payload builder.
     why: The random source is injected so the builder is a pure function a test can pin; LiteLLM evaluates uuid.uuid4() eagerly at the same point and nothing relies on the value.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L700
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L700-L701
   - what: The standard builder takes its status as an input; DataDogStatus::from_logging_status carries LiteLLM's rule of INFO for a success payload and ERROR for a failure payload.
     why: The task's interface names the status as a parameter, so the batch logger maps the payload's status through the ported rule at the call site.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L562-L564
