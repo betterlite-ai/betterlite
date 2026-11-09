@@ -37,11 +37,9 @@ pub struct RawParams {
 pub struct RawRouterConfig {
     #[serde(default)]
     pub capability_classifier_config: Option<RawCapability>,
-    // accepted so the loader does not refuse them; B331 and B332 own their meaning
-    #[serde(default)]
-    pub classifier_type: Option<String>,
-    #[serde(default)]
-    pub classifier_llm_config: Option<BTreeMap<String, JsonValue>>,
+    // ComplexityRouterConfig is extra=allow; these keys belong to B331, B332 and B374
+    #[serde(flatten)]
+    pub siblings: BTreeMap<String, JsonValue>,
 }
 
 #[derive(Debug, Deserialize)]

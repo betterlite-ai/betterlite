@@ -172,7 +172,7 @@ fn rejects_configurations_lite_proxy_would_refuse(#[case] fields: &str) {
 #[test]
 fn the_router_siblings_lite_llm_requires_are_accepted() {
     let source = router_config(
-        "        classifier_type: capability\n        classifier_llm_config:\n          model: judge-model\n          timeout_ms: 400\n        capability_classifier_config:\n          base_threshold: 0.5\n",
+        "        classifier_type: capability\n        classifier_llm_config:\n          model: judge-model\n          timeout_ms: 400\n        tiers:\n          SIMPLE: efficient-model\n          REASONING: capable-model\n        undeclared_router_key: true\n        capability_classifier_config:\n          base_threshold: 0.5\n",
     );
     let resolved = settings(&source, &[]).unwrap();
     assert_eq!(resolved.deployments.len(), 1);

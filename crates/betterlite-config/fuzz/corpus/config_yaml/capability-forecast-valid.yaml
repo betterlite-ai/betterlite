@@ -7,6 +7,9 @@ model_list:
         classifier_llm_config:
           model: judge-model
           timeout_ms: 400
+        tiers:
+          SIMPLE: efficient-model
+          REASONING: capable-model
         capability_classifier_config:
           efficient_tier: SIMPLE
           capable_tier: REASONING
