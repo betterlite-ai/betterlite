@@ -112,5 +112,14 @@ call:
       model: claude-3
       completion_output: hello world
       counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response
+        _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: []
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}
