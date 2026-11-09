@@ -21,7 +21,9 @@ use super::{
     OutputPolicy, ReplicateChunk, ReplicateCompletion, ReplicatePolling, ReplicateSleeper,
 };
 use crate::replicate::error::ReplicateFailure;
-use crate::replicate::reply::{PostCall, PostCallLogger, ReplicateReply, TokenCounter};
+use crate::replicate::reply::{
+    CountFailure, PostCall, PostCallLogger, ReplicateReply, TokenCounter,
+};
 use crate::replicate::request::ReplicateDefaults;
 
 const CREATE: &str = r#"{"urls":{"get":"https://poll/1"}}"#;
@@ -38,6 +40,12 @@ fn reply(status: u16, body: &str) -> ScriptedResponse {
         status,
         body: String::from(body),
     }
+}
+
+fn reply_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-replicate", "1".parse().unwrap());
+    headers
 }
 
 struct ScriptedTransport {
@@ -66,7 +74,7 @@ impl ReplicateTransport for ScriptedTransport {
         match next {
             Some(response) => Ok(ReplicateResponse {
                 status: response.status,
-                headers: HeaderMap::new(),
+                headers: reply_headers(),
                 body: response.body.into_bytes(),
             }),
             None => Err(TransportError::Closed),
@@ -101,12 +109,16 @@ struct Counting;
 
 #[async_trait]
 impl TokenCounter for Counting {
-    async fn count_messages(&self, _model: &str, messages: &[Message]) -> Option<i64> {
-        i64::try_from(messages.len()).ok()
+    async fn count_messages(
+        &self,
+        _model: &str,
+        messages: &[Message],
+    ) -> Result<i64, CountFailure> {
+        Ok(i64::try_from(messages.len())?)
     }
 
-    async fn count_response_tokens(&self, _model: &str, text: &str) -> Option<i64> {
-        i64::try_from(text.chars().count()).ok()
+    async fn count_response_tokens(&self, _model: &str, text: &str) -> Result<i64, CountFailure> {
+        Ok(i64::try_from(text.chars().count())?)
     }
 }
 
@@ -135,7 +147,7 @@ impl Harness {
     }
 }
 
-fn settings(retries: i64, retry_delay: f64) -> ReplicatePolling {
+fn settings(retries: i32, retry_delay: f64) -> ReplicatePolling {
     ReplicatePolling {
         retries,
         retry_delay_seconds: retry_delay,
@@ -265,7 +277,7 @@ fn streamed(completion: ReplicateCompletion) -> ReplicateReply {
 #[test]
 fn polling_defaults_come_from_the_litellm_constants() {
     let polling = ReplicatePolling::from_env_values(None, None, None, None).unwrap();
-    assert_eq!(polling.retries, 5);
+    assert_eq!(polling.retries, 5_i32);
     assert_eq!(polling.retry_delay_seconds.to_bits(), 1.0_f64.to_bits());
     assert_eq!(polling.polling_delay_seconds.to_bits(), 0.5_f64.to_bits());
     assert_eq!(polling.model_name_with_id_length, 64);
@@ -275,7 +287,7 @@ fn polling_defaults_come_from_the_litellm_constants() {
 fn polling_reads_each_environment_text() {
     let polling =
         ReplicatePolling::from_env_values(Some("2"), Some("4"), Some("0.25"), Some("8")).unwrap();
-    assert_eq!(polling.retries, 2);
+    assert_eq!(polling.retries, 2_i32);
     assert_eq!(polling.retry_delay_seconds.to_bits(), 4.0_f64.to_bits());
     assert_eq!(polling.polling_delay_seconds.to_bits(), 0.25_f64.to_bits());
     assert_eq!(polling.model_name_with_id_length, 8);
@@ -285,7 +297,7 @@ fn polling_reads_each_environment_text() {
 fn an_empty_environment_text_takes_the_default() {
     let polling =
         ReplicatePolling::from_env_values(Some(""), Some(""), Some(""), Some("")).unwrap();
-    assert_eq!(polling.retries, 5);
+    assert_eq!(polling.retries, 5_i32);
     assert_eq!(polling.retry_delay_seconds.to_bits(), 1.0_f64.to_bits());
     assert_eq!(polling.polling_delay_seconds.to_bits(), 0.5_f64.to_bits());
     assert_eq!(polling.model_name_with_id_length, 64);
@@ -489,6 +501,7 @@ async fn the_strict_policy_fails_on_a_null_output() {
     let error = failure.unwrap();
     assert_eq!(status(&error), Some(422));
     assert_eq!(message(&error), Some("Unable to parse response. Got=None"));
+    assert_eq!(headers_of(&error), Some(reply_headers()));
 }
 
 #[tokio::test]
@@ -545,6 +558,7 @@ async fn a_failed_prediction_yields_its_last_chunk_then_fails() {
     let error = failure.unwrap();
     assert_eq!(status(&error), Some(400));
     assert_eq!(message(&error), Some("Error: bad"));
+    assert_eq!(headers_of(&error), Some(reply_headers()));
 }
 
 #[tokio::test]
@@ -648,6 +662,10 @@ async fn a_stream_value_that_is_not_exactly_true_stays_non_streaming() {
 
 fn status(failure: &ReplicateFailure) -> Option<u16> {
     failure.api().map(|error| error.status_code)
+}
+
+fn headers_of(failure: &ReplicateFailure) -> Option<HeaderMap> {
+    failure.api()?.headers.clone()
 }
 
 fn message(failure: &ReplicateFailure) -> Option<&str> {

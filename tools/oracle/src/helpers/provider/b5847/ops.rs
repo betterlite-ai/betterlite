@@ -19,7 +19,7 @@ use super::{HeaderRequest, MapCase, ReplyCase, RequestCase};
 use crate::helpers::{HelperError, HelperResult};
 
 pub(super) const fn polling_for(
-    retries: i64,
+    retries: i32,
     retry_delay_seconds: f64,
     polling_delay_seconds: f64,
 ) -> ReplicatePolling {

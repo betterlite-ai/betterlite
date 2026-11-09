@@ -281,6 +281,7 @@ async fn a_prompt_that_is_not_a_string_fails_400() {
         message(&error),
         Some("LiteLLM Error - prompt is not a string - None")
     );
+    assert_eq!(headers_of(&error), Some(HeaderMap::new()));
 }
 
 #[tokio::test]
@@ -321,6 +322,10 @@ async fn a_long_hash_model_never_adds_a_version_key() {
 
 fn status(failure: &ReplicateFailure) -> Option<u16> {
     failure.api().map(|error| error.status_code)
+}
+
+fn headers_of(failure: &ReplicateFailure) -> Option<HeaderMap> {
+    failure.api()?.headers.clone()
 }
 
 fn message(failure: &ReplicateFailure) -> Option<&str> {

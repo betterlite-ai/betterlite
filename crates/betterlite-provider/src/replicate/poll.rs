@@ -12,7 +12,7 @@ pub mod transport;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReplicatePolling {
-    pub retries: i64,
+    pub retries: i32,
     pub retry_delay_seconds: f64,
     pub polling_delay_seconds: f64,
     pub model_name_with_id_length: usize,
@@ -26,7 +26,7 @@ impl ReplicatePolling {
         model_name_with_id_length: Option<&str>,
     ) -> Result<Self, EnvError> {
         Ok(Self {
-            retries: number::<i64>(
+            retries: number::<i32>(
                 "DEFAULT_REPLICATE_POLLING_RETRIES",
                 retries.unwrap_or_default(),
             )?

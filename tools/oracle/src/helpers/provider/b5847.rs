@@ -83,7 +83,7 @@ pub(super) struct PollCase {
     #[serde(default)]
     pub(super) custom_prompt_dict: BTreeMap<String, CustomPromptTemplate>,
     #[serde(default = "default_retries")]
-    pub(super) retries: i64,
+    pub(super) retries: i32,
     #[serde(default = "default_retry_delay")]
     pub(super) retry_delay: f64,
     #[serde(default = "default_now")]
@@ -122,7 +122,7 @@ pub(super) enum Policy {
     Lenient,
 }
 
-const fn default_retries() -> i64 {
+const fn default_retries() -> i32 {
     5
 }
 

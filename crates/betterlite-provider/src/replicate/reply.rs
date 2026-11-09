@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::str::from_utf8;
 
 use async_trait::async_trait;
@@ -25,10 +26,12 @@ pub struct ReplicateReply {
     pub usage: ReplicateUsage,
 }
 
+pub type CountFailure = Box<dyn Error + Send + Sync>;
+
 #[async_trait]
 pub trait TokenCounter: Send + Sync {
-    async fn count_messages(&self, model: &str, messages: &[Message]) -> Option<i64>;
-    async fn count_response_tokens(&self, model: &str, text: &str) -> Option<i64>;
+    async fn count_messages(&self, model: &str, messages: &[Message]) -> Result<i64, CountFailure>;
+    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<i64, CountFailure>;
 }
 
 pub struct PostCall<'request> {
@@ -164,11 +167,14 @@ async fn count_usage(
     messages: &[Message],
     text: &str,
 ) -> Result<ReplicateUsage, ReplicateFailure> {
-    let prompt_tokens = counter.count_messages(model, messages).await.unwrap_or(0);
+    let prompt_tokens = counter
+        .count_messages(model, messages)
+        .await
+        .map_err(|source| ReplicateFailure::TokenCount { source })?;
     let completion_tokens = counter
         .count_response_tokens(model, text)
         .await
-        .unwrap_or(0);
+        .map_err(|source| ReplicateFailure::TokenCount { source })?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(ReplicateFailure::UsageOverflow)?;

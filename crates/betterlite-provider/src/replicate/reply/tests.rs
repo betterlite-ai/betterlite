@@ -9,8 +9,8 @@ use http::HeaderMap;
 use rstest::rstest;
 
 use super::{
-    PostCall, PostCallLogger, ReplicateReply, ReplyInput, TokenCounter, get_prediction_url,
-    transform_response,
+    CountFailure, PostCall, PostCallLogger, ReplicateReply, ReplyInput, TokenCounter,
+    get_prediction_url, transform_response,
 };
 use crate::replicate::error::ReplicateFailure;
 use crate::replicate::request::ReplicateBody;
@@ -22,12 +22,18 @@ struct FixedCounter {
 
 #[async_trait]
 impl TokenCounter for FixedCounter {
-    async fn count_messages(&self, _model: &str, _messages: &[Message]) -> Option<i64> {
+    async fn count_messages(
+        &self,
+        _model: &str,
+        _messages: &[Message],
+    ) -> Result<i64, CountFailure> {
         self.prompt
+            .ok_or_else(|| CountFailure::from("no prompt count"))
     }
 
-    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Option<i64> {
+    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<i64, CountFailure> {
         self.completion
+            .ok_or_else(|| CountFailure::from("no completion count"))
     }
 }
 
@@ -185,6 +191,7 @@ async fn a_null_output_fails_422() {
     .unwrap_err();
     assert_eq!(status(&error), Some(422));
     assert_eq!(message(&error), Some("Unable to parse response. Got=None"));
+    assert_eq!(headers_of(&error), Some(headers()));
 }
 
 #[tokio::test]
@@ -215,6 +222,7 @@ async fn a_status_other_than_succeeded_fails_422_with_the_reply() {
         message(&error),
         Some("LiteLLM Error - prediction not succeeded - {'status': 'failed', 'error': 'x'}")
     );
+    assert_eq!(headers_of(&error), Some(headers()));
 }
 
 #[tokio::test]
@@ -233,23 +241,24 @@ async fn a_missing_status_is_not_succeeded() {
     );
 }
 
+#[rstest]
+#[case::prompt(None, Some(1))]
+#[case::completion(Some(1), None)]
 #[tokio::test]
-async fn usage_falls_back_to_zero_when_the_counter_fails() {
-    let counter = FixedCounter {
-        prompt: None,
-        completion: None,
-    };
-    let reply = transform(
+async fn a_failing_token_counter_fails_the_reply(
+    #[case] prompt: Option<i64>,
+    #[case] completion: Option<i64>,
+) {
+    let counter = FixedCounter { prompt, completion };
+    let error = transform(
         r#"{"status":"succeeded","output":["ok"]}"#,
         &parse_messages("[]"),
         &counter,
         &RecordingLogger::default(),
     )
     .await
-    .unwrap();
-    assert_eq!(reply.usage.prompt_tokens, 0);
-    assert_eq!(reply.usage.completion_tokens, 0);
-    assert_eq!(reply.usage.total_tokens, 0);
+    .unwrap_err();
+    assert!(matches!(error, ReplicateFailure::TokenCount { .. }));
 }
 
 #[tokio::test]
@@ -280,6 +289,10 @@ async fn a_reply_that_is_not_json_is_a_typed_error() {
 
 fn status(failure: &ReplicateFailure) -> Option<u16> {
     failure.api().map(|error| error.status_code)
+}
+
+fn headers_of(failure: &ReplicateFailure) -> Option<HeaderMap> {
+    failure.api()?.headers.clone()
 }
 
 fn message(failure: &ReplicateFailure) -> Option<&str> {

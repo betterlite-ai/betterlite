@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::str::Utf8Error;
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -65,6 +66,11 @@ pub enum ReplicateFailure {
         #[source]
         source: FormatError,
     },
+    #[error("the tokens of the Replicate call cannot be counted")]
+    TokenCount {
+        #[source]
+        source: Box<dyn StdError + Send + Sync>,
+    },
     #[error("the token usage overflows")]
     UsageOverflow,
 }
@@ -98,6 +104,7 @@ impl ReplicateFailure {
             | Self::Transport { .. }
             | Self::Header { .. }
             | Self::Format { .. }
+            | Self::TokenCount { .. }
             | Self::UsageOverflow => None,
         }
     }

@@ -11,7 +11,7 @@ use betterlite_provider::replicate::poll::ReplicateSleeper;
 use betterlite_provider::replicate::poll::transport::{
     ReplicateRequest, ReplicateResponse, ReplicateTransport,
 };
-use betterlite_provider::replicate::reply::{PostCall, PostCallLogger, TokenCounter};
+use betterlite_provider::replicate::reply::{CountFailure, PostCall, PostCallLogger, TokenCounter};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -180,12 +180,16 @@ pub(super) struct StandInCounter;
 
 #[async_trait]
 impl TokenCounter for StandInCounter {
-    async fn count_messages(&self, _model: &str, messages: &[Message]) -> Option<i64> {
-        i64::try_from(messages.len()).ok()
+    async fn count_messages(
+        &self,
+        _model: &str,
+        messages: &[Message],
+    ) -> Result<i64, CountFailure> {
+        Ok(i64::try_from(messages.len())?)
     }
 
-    async fn count_response_tokens(&self, _model: &str, text: &str) -> Option<i64> {
-        i64::try_from(text.chars().count()).ok()
+    async fn count_response_tokens(&self, _model: &str, text: &str) -> Result<i64, CountFailure> {
+        Ok(i64::try_from(text.chars().count())?)
     }
 }
 

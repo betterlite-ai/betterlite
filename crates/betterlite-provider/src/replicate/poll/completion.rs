@@ -83,16 +83,6 @@ const fn created_at(policy: OutputPolicy, now: DateTime<Utc>) -> Option<i64> {
     }
 }
 
-fn poll_request(url: &str, headers: &HeaderMap) -> ReplicateRequest {
-    ReplicateRequest {
-        method: Method::GET,
-        url: url.to_owned(),
-        headers: headers.clone(),
-        body: None,
-        timeout: REQUEST_TIMEOUT,
-    }
-}
-
 fn is_processing(response: &ReplicateResponse) -> Result<bool, ReplicateFailure> {
     if response.status != 200 {
         return Ok(false);
@@ -128,53 +118,59 @@ impl Replicate<'_> {
         get_prediction_url(&response.body, &response.headers)
     }
 
-    async fn wait_and_poll(
+    async fn await_prediction(
         &self,
         request: &PollRequest<'_>,
-        retry: u32,
     ) -> Result<ReplicateResponse, ReplicateFailure> {
-        let delay = f64::from(retry).mul_add(2.0, self.polling.retry_delay_seconds);
-        self.sleeper.sleep(delay).await;
-        self.transport
-            .send(poll_request(&request.prediction_url, &request.headers))
-            .await
-            .map_err(|source| ReplicateFailure::Transport { source })
-    }
-
-    async fn poll_reply(
-        &self,
-        request: PollRequest<'_>,
-    ) -> Result<ReplicateReply, ReplicateFailure> {
-        for retry in 0..u32::try_from(self.polling.retries).unwrap_or(0) {
-            let response = self.wait_and_poll(&request, retry).await?;
-            if is_processing(&response)? {
-                continue;
+        for retry in 0_i32..self.polling.retries {
+            let delay = f64::from(retry).mul_add(2.0, self.polling.retry_delay_seconds);
+            self.sleeper.sleep(delay).await;
+            let response = self
+                .transport
+                .send(ReplicateRequest {
+                    method: Method::GET,
+                    url: request.prediction_url.clone(),
+                    headers: request.headers.clone(),
+                    body: None,
+                    timeout: REQUEST_TIMEOUT,
+                })
+                .await
+                .map_err(|source| ReplicateFailure::Transport { source })?;
+            if !is_processing(&response)? {
+                return Ok(response);
             }
-            let reply = transform_response(
-                &ReplyInput {
-                    model: request.model,
-                    body: &response.body,
-                    headers: &response.headers,
-                    messages: request.messages,
-                    request_data: request.request_data,
-                    api_key: request.api_key,
-                },
-                self.counter,
-                self.logger,
-            )
-            .await?;
-            return Ok(ReplicateReply {
-                model: reply.model,
-                created: request.created,
-                text: reply.text,
-                usage: reply.usage,
-            });
         }
         Err(ReplicateFailure::Api(Box::new(ReplicateError {
             status_code: 500,
             message: String::from("No response received from Replicate API after max retries"),
             headers: None,
         })))
+    }
+
+    async fn poll_reply(
+        &self,
+        request: PollRequest<'_>,
+    ) -> Result<ReplicateReply, ReplicateFailure> {
+        let response = self.await_prediction(&request).await?;
+        let reply = transform_response(
+            &ReplyInput {
+                model: request.model,
+                body: &response.body,
+                headers: &response.headers,
+                messages: request.messages,
+                request_data: request.request_data,
+                api_key: request.api_key,
+            },
+            self.counter,
+            self.logger,
+        )
+        .await?;
+        Ok(ReplicateReply {
+            model: reply.model,
+            created: request.created,
+            text: reply.text,
+            usage: reply.usage,
+        })
     }
 
     pub async fn complete(

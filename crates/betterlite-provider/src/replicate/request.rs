@@ -141,13 +141,13 @@ async fn render_prompt(
             Err(ReplicateFailure::Api(Box::new(ReplicateError {
                 status_code: 400,
                 message: format!("LiteLLM Error - prompt is not a string - {rendered}"),
-                headers: None,
+                headers: Some(HeaderMap::new()),
             })))
         }
         Output::None => Err(ReplicateFailure::Api(Box::new(ReplicateError {
             status_code: 400,
             message: String::from("LiteLLM Error - prompt is not a string - None"),
-            headers: None,
+            headers: Some(HeaderMap::new()),
         }))),
     }
 }
