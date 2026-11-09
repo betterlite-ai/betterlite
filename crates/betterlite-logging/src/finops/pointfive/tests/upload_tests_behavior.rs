@@ -571,6 +571,28 @@ async fn a_blocked_presigned_url_is_refused_before_the_put() {
 }
 
 #[tokio::test]
+async fn a_malformed_presigned_url_is_refused_without_a_put() {
+    let http = FakeHttp::answering(vec![Reply::answer(
+        200,
+        target_body("http://public.test:99999/object", "objects/1"),
+    )]);
+    let check = Arc::new(UrlValidator::new(FakeResolver, &[], &Verification::Enabled));
+    let outcome = client(&http, check, &RecordingSleeper::default(), 3)
+        .upload(b"payload")
+        .await;
+    let failure = outcome.expect_err("the URL does not parse");
+    assert!(!failure.retryable);
+    assert!(
+        failure
+            .detail
+            .starts_with("presigned upload url refused: Port out of range"),
+        "{}",
+        failure.detail
+    );
+    assert_eq!(http.requests().len(), 1);
+}
+
+#[tokio::test]
 async fn a_validated_url_is_rewritten_to_its_ip_with_the_original_host() {
     let http = FakeHttp::answering(vec![
         Reply::answer(
