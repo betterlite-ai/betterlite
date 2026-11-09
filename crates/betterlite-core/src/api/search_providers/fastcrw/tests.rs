@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -240,6 +240,58 @@ fn trait_hooks_shape_headers_url_and_options() {
     };
     let parsed = search.transform_search_response(&response).unwrap();
     assert_eq!(parsed.results, vec![result("T", "https://e.test", "md")]);
+}
+
+fn outbound<'call>(
+    api_base: &'call str,
+    params: &'call Object,
+    body: &'call Object,
+) -> OutboundSearch<'call, Object> {
+    OutboundSearch {
+        api_base,
+        api_key: None,
+        optional_params: params,
+        body,
+    }
+}
+
+#[test]
+fn trait_sign_request_returns_auth_headers() {
+    let search = load(&[("CRW_API_KEY", "crw-env")]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://fastcrw.com/api/v1/search", &params, &body);
+    let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        signed.get("Authorization").map(String::as_str),
+        Some("Bearer crw-env")
+    );
+    assert!(signed_body.is_none());
+}
+
+#[test]
+fn trait_sign_request_reports_a_missing_key() {
+    let search = load(&[]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://fastcrw.com/api/v1/search", &params, &body);
+    assert!(matches!(
+        search.sign_request(Headers::new(), &request),
+        Err(FastcrwError::MissingApiKey)
+    ));
+}
+
+#[test]
+fn trait_sign_request_rejects_an_untrusted_base() {
+    let search = load(&[("CRW_API_KEY", "crw-server")]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://evil.test/search", &params, &body);
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(
+        error,
+        FastcrwError::Credential(CredentialError::UntrustedBase { .. })
+    ));
 }
 
 #[rstest]

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -238,6 +238,58 @@ fn trait_hooks_shape_headers_url_and_options() {
         parsed.results,
         vec![result("T", "https://e.test", "md", None)]
     );
+}
+
+fn outbound<'call>(
+    api_base: &'call str,
+    params: &'call Object,
+    body: &'call Object,
+) -> OutboundSearch<'call, Object> {
+    OutboundSearch {
+        api_base,
+        api_key: None,
+        optional_params: params,
+        body,
+    }
+}
+
+#[test]
+fn trait_sign_request_returns_auth_headers() {
+    let search = load(&[("FIRECRAWL_API_KEY", "fc-env")]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
+    let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        signed.get("Authorization").map(String::as_str),
+        Some("Bearer fc-env")
+    );
+    assert!(signed_body.is_none());
+}
+
+#[test]
+fn trait_sign_request_reports_a_missing_key() {
+    let search = load(&[]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
+    assert!(matches!(
+        search.sign_request(Headers::new(), &request),
+        Err(FirecrawlError::MissingApiKey)
+    ));
+}
+
+#[test]
+fn trait_sign_request_rejects_an_untrusted_base() {
+    let search = load(&[("FIRECRAWL_API_KEY", "fc-server")]);
+    let params = Object::new();
+    let body = Object::new();
+    let request = outbound("https://evil.test/search", &params, &body);
+    let error = search.sign_request(Headers::new(), &request).unwrap_err();
+    assert!(matches!(
+        error,
+        FirecrawlError::Credential(CredentialError::UntrustedBase { .. })
+    ));
 }
 
 #[rstest]

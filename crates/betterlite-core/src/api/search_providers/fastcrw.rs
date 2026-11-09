@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::ServerCredential;
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider, SearchQuery};
+use betterlite_openai::search::provider::{
+    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+};
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -106,6 +108,16 @@ impl SearchProvider for FastcrwSearch {
         _body: Option<&Object>,
     ) -> Result<String, FastcrwError> {
         Ok(self.endpoint(api_base))
+    }
+
+    // LiteLLM raises the credential and host checks from validate_environment, which cannot fail here
+    fn sign_request(
+        &self,
+        headers: Headers,
+        request: &OutboundSearch<'_, Self::Body>,
+    ) -> Result<(Headers, Option<Vec<u8>>), FastcrwError> {
+        let signed = self.prepare_headers(headers, request.api_key, Some(request.api_base))?;
+        Ok((signed, None))
     }
 
     fn transform_search_request(
