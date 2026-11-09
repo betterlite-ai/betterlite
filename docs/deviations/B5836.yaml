@@ -1,0 +1,11 @@
+task: B5836
+deviations:
+  - what: The missing account id and missing key ValueError cases are typed errors (CloudflareChatError) instead of exceptions, and the HTTP status a client sees for them is chosen by the caller that wires the call.
+    why: A Rust function returns a typed error, not an exception. Mapping it to an HTTP status belongs to B8310 and the shared error mapping, and this task has no route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/chat/transformation.py#L50-L55
+  - what: CLOUDFLARE_ACCOUNT_ID is read by the caller and passed as an argument, and CloudflareDecisionsConfig stores the trimmed id when it is constructed instead of looking the environment up in get_default_api_base.
+    why: Provider modules take credentials from the caller, so tests need no process state; the default base is computed from the stored value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/decisions/transformation.py#L19-L23
+  - what: unwrap_response takes the raw reply bytes and returns a borrowed slice of them, where LiteLLM takes the parsed payload object and returns a Python mapping; invalid JSON passes through unchanged so the base parser reports it.
+    why: The decisions contract works on response bytes, and the result object's original JSON text is the byte-level equivalent of LiteLLM's parsed mapping without a second allocation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/decisions/transformation.py#L44-L54

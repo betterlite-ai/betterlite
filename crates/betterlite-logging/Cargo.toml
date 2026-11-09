@@ -105,3 +105,7 @@ path = "src/s3_v2/tests/suite.rs"
 [[test]]
 name = "langsmith_payloads"
 path = "src/langsmith_payloads/tests.rs"
+
+[[test]]
+name = "zerobus"
+path = "src/zerobus/client/tests/suite.rs"
