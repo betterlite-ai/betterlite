@@ -1,0 +1,162 @@
+use std::str::{Utf8Error, from_utf8};
+
+use jiff::civil;
+use jiff::tz::{AmbiguousOffset, TimeZone};
+use thiserror::Error;
+
+const MAX_TIMESTAMP_BYTES: usize = 64;
+
+#[derive(Clone, Debug)]
+pub struct LocalTimeContext {
+    zone: TimeZone,
+}
+
+impl From<TimeZone> for LocalTimeContext {
+    fn from(zone: TimeZone) -> Self {
+        Self { zone }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum VertexTimestampError {
+    #[error("the vertex timestamp is {size} bytes, over the {limit} byte limit")]
+    TooLong { size: usize, limit: usize },
+    #[error("the vertex timestamp is not valid UTF-8")]
+    Utf8(#[source] Utf8Error),
+    #[error("the vertex timestamp does not match the %Y-%m-%dT%H:%M:%S.%fZ format")]
+    Format,
+    #[error("the vertex timestamp names an invalid date or time")]
+    InvalidCalendar(#[source] jiff::Error),
+    #[error("the vertex timestamp is out of the supported range")]
+    OutOfRange,
+}
+
+#[derive(Clone, Copy)]
+struct TimestampParts<'text> {
+    year: &'text str,
+    month: &'text str,
+    day: &'text str,
+    hour: &'text str,
+    minute: &'text str,
+    second: &'text str,
+    fraction: &'text str,
+}
+
+pub fn decode_vertex_timestamp(
+    bytes: &[u8],
+    local: &LocalTimeContext,
+) -> Result<i64, VertexTimestampError> {
+    if bytes.len() > MAX_TIMESTAMP_BYTES {
+        return Err(VertexTimestampError::TooLong {
+            size: bytes.len(),
+            limit: MAX_TIMESTAMP_BYTES,
+        });
+    }
+    let text = from_utf8(bytes).map_err(VertexTimestampError::Utf8)?;
+    let civil = civil_from_parts(split_timestamp(text)?)?;
+    // the source reads a naive datetime in the process's local zone; fold=0 and mktime both take the offset before a transition
+    let offset = match local.zone.to_ambiguous_timestamp(civil).offset() {
+        AmbiguousOffset::Unambiguous { offset } => offset,
+        AmbiguousOffset::Gap { before, .. } | AmbiguousOffset::Fold { before, .. } => before,
+    };
+    let timestamp = offset
+        .to_timestamp(civil)
+        .map_err(VertexTimestampError::InvalidCalendar)?;
+    let seconds = timestamp.as_second();
+    if seconds < 0 && timestamp.subsec_nanosecond() > 0_i32 {
+        return seconds
+            .checked_add(1)
+            .ok_or(VertexTimestampError::OutOfRange);
+    }
+    Ok(seconds)
+}
+
+fn split_timestamp(text: &str) -> Result<TimestampParts<'_>, VertexTimestampError> {
+    let Some((date, rest)) = text.split_once(['T', 't']) else {
+        return Err(VertexTimestampError::Format);
+    };
+    let Some(clock) = rest.strip_suffix(['Z', 'z']) else {
+        return Err(VertexTimestampError::Format);
+    };
+    let Some((time, fraction)) = clock.split_once('.') else {
+        return Err(VertexTimestampError::Format);
+    };
+    let mut date_fields = date.split('-');
+    let year = date_fields.next().ok_or(VertexTimestampError::Format)?;
+    let month = date_fields.next().ok_or(VertexTimestampError::Format)?;
+    let day = date_fields.next().ok_or(VertexTimestampError::Format)?;
+    if date_fields.next().is_some() {
+        return Err(VertexTimestampError::Format);
+    }
+    let mut time_fields = time.split(':');
+    let hour = time_fields.next().ok_or(VertexTimestampError::Format)?;
+    let minute = time_fields.next().ok_or(VertexTimestampError::Format)?;
+    let second = time_fields.next().ok_or(VertexTimestampError::Format)?;
+    if time_fields.next().is_some() {
+        return Err(VertexTimestampError::Format);
+    }
+    Ok(TimestampParts {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        fraction,
+    })
+}
+
+fn civil_from_parts(parts: TimestampParts<'_>) -> Result<civil::DateTime, VertexTimestampError> {
+    let year = parse_digits(parts.year, 4, 4).ok_or(VertexTimestampError::Format)?;
+    if year == 0 {
+        return Err(VertexTimestampError::Format);
+    }
+    let month = parse_digits(parts.month, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let day = parse_digits(parts.day, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let hour = parse_digits(parts.hour, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let minute = parse_digits(parts.minute, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let second = parse_digits(parts.second, 1, 2).ok_or(VertexTimestampError::Format)?;
+    let nanosecond = subsec_nanoseconds(parts.fraction)?;
+    let year_number = i16::try_from(year).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    let month_number = i8::try_from(month).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    let day_number = i8::try_from(day).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    let hour_number = i8::try_from(hour).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    let minute_number = i8::try_from(minute).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    let second_number = i8::try_from(second).map_err(|_error| VertexTimestampError::OutOfRange)?;
+    civil::DateTime::new(
+        year_number,
+        month_number,
+        day_number,
+        hour_number,
+        minute_number,
+        second_number,
+        nanosecond,
+    )
+    .map_err(VertexTimestampError::InvalidCalendar)
+}
+
+fn subsec_nanoseconds(fraction: &str) -> Result<i32, VertexTimestampError> {
+    let microsecond_scale = match fraction.len() {
+        1 => 100_000,
+        2 => 10_000,
+        3 => 1_000,
+        4 => 100,
+        5 => 10,
+        _ => 1,
+    };
+    let micros = parse_digits(fraction, 1, 6)
+        .ok_or(VertexTimestampError::Format)?
+        .checked_mul(microsecond_scale)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    let nanos = micros
+        .checked_mul(1_000)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    i32::try_from(nanos).map_err(|_error| VertexTimestampError::OutOfRange)
+}
+
+fn parse_digits(text: &str, min: usize, max: usize) -> Option<u32> {
+    if !(min..=max).contains(&text.len()) || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}

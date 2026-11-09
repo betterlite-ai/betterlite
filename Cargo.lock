@@ -2779,7 +2779,9 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-models",
+ "jiff",
  "regex",
  "rstest",
  "rust_decimal",
@@ -2787,6 +2789,15 @@ dependencies = [
  "thiserror",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-vertex",
+ "jiff",
+ "libfuzzer-sys",
 ]
 
 [[package]]
