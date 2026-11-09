@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from litellm.types.llms.openai import AllMessageValues
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+ChoiceValue: TypeAlias = dict[str, object]
 ENDPOINT = "https://bedrock-agentcore.example/runtime"
 
 
@@ -48,7 +49,7 @@ class SuppliedResponse(BaseModel):
     created: int
     model: str
     system_fingerprint: str | None = None
-    choices: list[Json] = []
+    choices: list[ChoiceValue] = []
     usage: TokenUsage | None = None
 
 

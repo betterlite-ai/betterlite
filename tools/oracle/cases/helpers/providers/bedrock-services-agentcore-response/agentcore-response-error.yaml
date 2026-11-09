@@ -3,7 +3,7 @@ name: agentcore-response-error
 call:
   bedrock_services_agentcore_response:
     status: 200
-    headers: [[content-type, application/json], [x-request-id, raw]]
+    headers: [[content-type, application/json], [x-request-id, raw], [content-length, '10']]
     body: '{"result":'
     model: gpt-4
     messages: [{role: user, content: hi}]
