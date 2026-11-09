@@ -1,0 +1,20 @@
+kind: helper
+name: aws-secrets-different-name-rotation-delegates-to-base
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [], kms_key_id: null}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"SecretString":"old-value"}'}
+          - {status: 200, body: '{"ARN":"arn:new"}'}
+          - {status: 200, body: '{"SecretString":"new-value"}'}
+          - {status: 200, body: '{"ARN":"arn:old","DeletionDate":1}'}
+    steps:
+      - {op: async_rotate_secret, current: prod/db, new: prod/new, value: new-value}
