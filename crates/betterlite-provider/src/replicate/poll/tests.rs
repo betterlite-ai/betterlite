@@ -540,6 +540,30 @@ async fn the_sync_path_reads_the_clock_right_before_the_create_post() {
 }
 
 #[tokio::test]
+async fn a_failing_request_build_reads_no_clock_and_sends_nothing() {
+    let harness = Harness::new();
+    let mut options = Object::new();
+    options.insert(
+        String::from("supports_system_prompt"),
+        serde_json::from_str(r#""yes""#).unwrap(),
+    );
+    let (result, requests, _) = run_complete(
+        &harness,
+        vec![reply(200, CREATE)],
+        settings(1, 1.0_f64),
+        OutputPolicy::Strict,
+        &options,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(ReplicateFailure::SupportsSystemPrompt)
+    ));
+    assert!(requests.is_empty());
+    assert!(harness.events.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn the_async_path_never_reads_the_clock() {
     let harness = Harness::new();
     let (result, _, _) = run_complete(
