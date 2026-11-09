@@ -36,6 +36,7 @@ pub enum ResponseKind {
     TextCompletion,
     SendMessage,
     DecisionsIr,
+    #[serde(rename = "decisions_openai")]
     DecisionsOpenAi,
     Responses,
     Other,

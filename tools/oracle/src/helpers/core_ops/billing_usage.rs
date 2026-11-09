@@ -61,6 +61,7 @@ enum UsageKindInput {
     Responses,
     Transcription,
     DecisionsIr,
+    #[serde(rename = "decisions_openai")]
     DecisionsOpenAi,
     Interactions,
     Mapping,
