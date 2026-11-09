@@ -348,8 +348,9 @@ fn emit_reserves_room_for_error_attributes() {
         &options(None, None),
     );
     let written = attributes(&exported(&exporter)[0]);
-    assert_eq!(written.len(), 10);
+    assert_eq!(written.len(), 9);
     assert!(!written.contains_key("llm.input_messages.1.message.content"));
+    assert!(!written.contains_key("llm.input_messages.2.message.content"));
     assert_eq!(
         written.get("error.type"),
         Some(&Value::from("RateLimitError"))
@@ -645,7 +646,7 @@ fn an_llm_call_error_reaches_the_event_recorder() {
 
 #[test]
 fn finish_span_rebuilds_the_name_from_the_payload() {
-    let (_exporter, provider) = exporter_and_provider();
+    let (exporter, provider) = exporter_and_provider();
     let emitter = emitter(provider.tracer("span-emission"), Vec::new(), None);
     let mut data = call_data("call-1");
     let start = StartOptions {
@@ -662,10 +663,7 @@ fn finish_span_rebuilds_the_name_from_the_payload() {
         &SpanData::LLMCall(&data),
         None,
     );
-    assert_eq!(
-        span.exported_data().expect("span data").name,
-        "chat gpt-4o-mini"
-    );
+    assert_eq!(exported(&exporter)[0].name, "chat gpt-4o-mini");
 }
 
 #[test]
@@ -767,8 +765,8 @@ fn emit_attaches_the_links_it_is_given() {
 
 #[test]
 fn an_invalid_link_is_dropped() {
-    use opentelemetry::trace::{Span as _, Tracer as _};
-    let provider = SdkTracerProvider::builder().build();
+    use opentelemetry::trace::Tracer as _;
+    let (exporter, provider) = exporter_and_provider();
     let tracer = provider.tracer("span-emission");
     let invalid = Link::with_context(SpanContext::NONE);
     let mut span = tracer
@@ -776,10 +774,7 @@ fn an_invalid_link_is_dropped() {
         .with_links(vec![invalid])
         .start(&tracer);
     span.end();
-    assert_eq!(
-        span.exported_data().expect("span data").links.links.len(),
-        0
-    );
+    assert!(exported(&exporter)[0].links.links.is_empty());
 }
 
 #[test]

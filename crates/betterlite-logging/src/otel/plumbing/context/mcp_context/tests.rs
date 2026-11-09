@@ -117,7 +117,8 @@ fn an_explicitly_empty_carrier_replaces_the_stored_one() {
 #[rstest]
 #[case::missing_traceparent("")]
 #[case::malformed("00-not-a-traceparent")]
-#[case::wrong_version("99-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")]
+#[case::unsupported_version("ff-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")]
+#[case::zero_trace_id("00-00000000000000000000000000000000-b7ad6b7169203331-01")]
 fn a_carrier_that_does_not_extract_produces_no_link(#[case] traceparent: &str) {
     let trace = RequestTraceContext::default();
     let client = carrier(&[("traceparent", traceparent)]);
