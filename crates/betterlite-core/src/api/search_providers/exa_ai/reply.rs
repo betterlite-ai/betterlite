@@ -3,27 +3,31 @@ use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchRes
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
+use serde_with::rust::double_option;
 
 use super::ExaAiSearchError;
 
 pub(super) const REPLY_MAX_BYTES: usize = 0x0100_0000;
 
+// outer None is a missing member and inner None is a null one, so the two stay apart
+type Member = Option<Option<Box<RawValue>>>;
+
 #[derive(Debug, Deserialize)]
 struct ExaReply {
-    #[serde(default)]
-    results: Option<Box<RawValue>>,
+    #[serde(default, with = "double_option")]
+    results: Member,
 }
 
 #[derive(Debug, Deserialize)]
 struct ExaReplyResult {
-    #[serde(default)]
-    title: Option<Box<RawValue>>,
-    #[serde(default)]
-    url: Option<Box<RawValue>>,
-    #[serde(default)]
-    text: Option<Box<RawValue>>,
-    #[serde(default, rename = "publishedDate")]
-    published_date: Option<Box<RawValue>>,
+    #[serde(default, with = "double_option")]
+    title: Member,
+    #[serde(default, with = "double_option")]
+    url: Member,
+    #[serde(default, with = "double_option")]
+    text: Member,
+    #[serde(default, rename = "publishedDate", with = "double_option")]
+    published_date: Member,
 }
 
 pub fn decode_exa_ai_search(bytes: &[u8]) -> Result<SearchResponse, ExaAiSearchError> {
@@ -35,10 +39,8 @@ pub fn decode_exa_ai_search(bytes: &[u8]) -> Result<SearchResponse, ExaAiSearchE
     let reply: ExaReply = parse_object(bytes)?;
     let results = match reply.results {
         None => Vec::new(),
-        Some(raw) => {
-            if serde_json::from_str::<()>(raw.get()).is_ok() {
-                return Err(ExaAiSearchError::ResultsShape);
-            }
+        Some(None) => return Err(ExaAiSearchError::ResultsShape),
+        Some(Some(raw)) => {
             let items: Vec<Box<RawValue>> =
                 serde_json::from_str(raw.get()).map_err(ExaAiSearchError::ReplyDecode)?;
             let mut results = Vec::with_capacity(items.len());
@@ -69,11 +71,10 @@ where
 
 fn exa_result(result: ExaReplyResult) -> Result<SearchResult, ExaAiSearchError> {
     // a missing date and a null date are both absent; a present non-string date fails like the source
-    let date = result
-        .published_date
-        .filter(|raw| serde_json::from_str::<()>(raw.get()).is_err())
-        .map(|raw| parse_text(&raw, "publishedDate"))
-        .transpose()?;
+    let date = match result.published_date {
+        Some(Some(raw)) => Some(parse_text(&raw, "publishedDate")?),
+        Some(None) | None => None,
+    };
     Ok(SearchResult {
         title: text_member(result.title, "title")?,
         url: text_member(result.url, "url")?,
@@ -84,17 +85,12 @@ fn exa_result(result: ExaReplyResult) -> Result<SearchResult, ExaAiSearchError> 
     })
 }
 
-fn text_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<String, ExaAiSearchError> {
-    let Some(raw) = value else {
-        return Ok(String::new());
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Err(ExaAiSearchError::ResultField { field: name });
+fn text_member(value: Member, name: &'static str) -> Result<String, ExaAiSearchError> {
+    match value {
+        None => Ok(String::new()),
+        Some(None) => Err(ExaAiSearchError::ResultField { field: name }),
+        Some(Some(raw)) => parse_text(&raw, name),
     }
-    parse_text(&raw, name)
 }
 
 fn parse_text(raw: &RawValue, name: &'static str) -> Result<String, ExaAiSearchError> {

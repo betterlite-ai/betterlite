@@ -3,27 +3,31 @@ use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchRes
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
+use serde_with::rust::double_option;
 
 use super::SerperSearchError;
 
 pub(super) const REPLY_MAX_BYTES: usize = 0x0100_0000;
 
+// outer None is a missing member and inner None is a null one, so the two stay apart
+type Member = Option<Option<Box<RawValue>>>;
+
 #[derive(Debug, Deserialize)]
 struct SerperReply {
-    #[serde(default)]
-    organic: Option<Box<RawValue>>,
+    #[serde(default, with = "double_option")]
+    organic: Member,
 }
 
 #[derive(Debug, Deserialize)]
 struct SerperReplyResult {
-    #[serde(default)]
-    title: Option<Box<RawValue>>,
-    #[serde(default)]
-    link: Option<Box<RawValue>>,
-    #[serde(default)]
-    snippet: Option<Box<RawValue>>,
-    #[serde(default)]
-    date: Option<Box<RawValue>>,
+    #[serde(default, with = "double_option")]
+    title: Member,
+    #[serde(default, with = "double_option")]
+    link: Member,
+    #[serde(default, with = "double_option")]
+    snippet: Member,
+    #[serde(default, with = "double_option")]
+    date: Member,
 }
 
 pub fn decode_serper_search(bytes: &[u8]) -> Result<SearchResponse, SerperSearchError> {
@@ -35,10 +39,8 @@ pub fn decode_serper_search(bytes: &[u8]) -> Result<SearchResponse, SerperSearch
     let reply: SerperReply = parse_object(bytes)?;
     let results = match reply.organic {
         None => Vec::new(),
-        Some(raw) => {
-            if serde_json::from_str::<()>(raw.get()).is_ok() {
-                return Err(SerperSearchError::OrganicShape);
-            }
+        Some(None) => return Err(SerperSearchError::OrganicShape),
+        Some(Some(raw)) => {
             let items: Vec<Box<RawValue>> =
                 serde_json::from_str(raw.get()).map_err(SerperSearchError::ReplyDecode)?;
             let mut results = Vec::with_capacity(items.len());
@@ -69,11 +71,10 @@ where
 
 fn serper_result(result: SerperReplyResult) -> Result<SearchResult, SerperSearchError> {
     // a missing date and a null date are both absent; a present non-string date fails like the source
-    let date = result
-        .date
-        .filter(|raw| serde_json::from_str::<()>(raw.get()).is_err())
-        .map(|raw| parse_text(&raw, "date"))
-        .transpose()?;
+    let date = match result.date {
+        Some(Some(raw)) => Some(parse_text(&raw, "date")?),
+        Some(None) | None => None,
+    };
     Ok(SearchResult {
         title: text_member(result.title, "title")?,
         url: text_member(result.link, "link")?,
@@ -84,17 +85,12 @@ fn serper_result(result: SerperReplyResult) -> Result<SearchResult, SerperSearch
     })
 }
 
-fn text_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<String, SerperSearchError> {
-    let Some(raw) = value else {
-        return Ok(String::new());
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Err(SerperSearchError::ResultField { field: name });
+fn text_member(value: Member, name: &'static str) -> Result<String, SerperSearchError> {
+    match value {
+        None => Ok(String::new()),
+        Some(None) => Err(SerperSearchError::ResultField { field: name }),
+        Some(Some(raw)) => parse_text(&raw, name),
     }
-    parse_text(&raw, name)
 }
 
 fn parse_text(raw: &RawValue, name: &'static str) -> Result<String, SerperSearchError> {
