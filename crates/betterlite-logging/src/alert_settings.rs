@@ -1,5 +1,6 @@
 use betterlite_config::sections::alert_settings::types::AlertType;
 use rust_decimal::Decimal;
+use strum::{EnumCount as _, IntoEnumIterator as _};
 
 pub mod cache_keys;
 pub mod records;
@@ -17,33 +18,7 @@ pub const LITELLM_SUPPORT_CONTACT: &str = "support@berri.ai";
 // LiteLLM's SlackAlerting._all_possible_alert_types feeds the UI, so every enum member appears here
 #[must_use]
 pub fn all_possible_alert_types() -> Vec<AlertType> {
-    vec![
-        AlertType::LlmExceptions,
-        AlertType::LlmTooSlow,
-        AlertType::LlmRequestsHanging,
-        AlertType::BudgetAlerts,
-        AlertType::SpendReports,
-        AlertType::FailedTrackingSpend,
-        AlertType::UserSpendThresholds,
-        AlertType::UserSpendAnomalies,
-        AlertType::DbExceptions,
-        AlertType::DailyReports,
-        AlertType::CooldownDeployment,
-        AlertType::NewModelAdded,
-        AlertType::ModelDeprecationWarnings,
-        AlertType::OutageAlerts,
-        AlertType::RegionOutageAlerts,
-        AlertType::FallbackReports,
-        AlertType::NewVirtualKeyCreated,
-        AlertType::VirtualKeyUpdated,
-        AlertType::VirtualKeyDeleted,
-        AlertType::NewTeamCreated,
-        AlertType::TeamUpdated,
-        AlertType::TeamDeleted,
-        AlertType::NewInternalUserCreated,
-        AlertType::InternalUserUpdated,
-        AlertType::InternalUserDeleted,
-        AlertType::McpToolDescriptionBlocked,
-        AlertType::McpPinnedToolsChanged,
-    ]
+    let mut alert_types = Vec::with_capacity(AlertType::COUNT);
+    alert_types.extend(AlertType::iter());
+    alert_types
 }

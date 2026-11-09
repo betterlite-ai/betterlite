@@ -5,15 +5,16 @@ use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AlertText {
     pub text: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct AlertQueueItem {
-    pub url: String,
+    pub url: SecretString,
     pub headers: BTreeMap<String, String>,
     pub payload: AlertText,
     pub alert_type: AlertType,
@@ -28,12 +29,27 @@ pub struct HangingRequestData {
     pub key_alias: Option<String>,
     pub team_alias: Option<String>,
     pub alerting_metadata: Option<IndexMap<String, Json>>,
-    // LiteLLM fills created_at from the wall clock; betterlite takes the caller's clock reading
     pub created_at: f64,
     pub alerted: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl HangingRequestData {
+    #[must_use]
+    pub const fn new(request_id: String, model: String, created_at: f64) -> Self {
+        Self {
+            request_id,
+            model,
+            api_base: None,
+            key_alias: None,
+            team_alias: None,
+            alerting_metadata: None,
+            created_at,
+            alerted: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct DigestEntry {
     pub alert_type: String,
     pub request_model: String,

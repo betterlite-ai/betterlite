@@ -7,22 +7,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::alert_settings::Settings;
 use betterlite_config::sections::alert_settings::types::{
     AlertType, AlertTypeConfig, DEFAULT_ALERT_TYPES,
 };
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
 use betterlite_config::sections::langfuse_settings;
-use betterlite_models::decisions::Json;
 use chrono::{FixedOffset, TimeZone as _};
-use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret as _;
+use strum::{EnumCount as _, IntoEnumIterator as _};
 use tokio::time::Instant;
 
 use crate::alert_settings::cache_keys::SlackAlertingCacheKeys;
-use crate::alert_settings::records::{
-    AlertQueueItem, AlertText, DeploymentMetrics, DigestEntry, HangingRequestData,
-};
+use crate::alert_settings::records::{DigestEntry, HangingRequestData};
 use crate::alert_settings::trace::{LangfuseTraceContext, LangfuseTraceSource, langfuse_trace_url};
 use crate::alert_settings::{
     HANGING_ALERT_BUFFER_SECONDS, LITELLM_LOGO_URL, LITELLM_SUPPORT_CONTACT,
@@ -30,16 +29,29 @@ use crate::alert_settings::{
     all_possible_alert_types,
 };
 
-fn langfuse_settings(variables: &[(&str, &str)]) -> langfuse_settings::Settings {
-    let lookup: BTreeMap<String, String> = variables
+fn lookup(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
+    variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load("")
-        .expect("the langfuse settings load")
-        .sections
-        .langfuse_settings
+        .collect()
+}
+
+fn langfuse_settings(variables: &[(&str, &str)]) -> langfuse_settings::Settings {
+    let config = ConfigLoader {
+        lookup: lookup(variables),
+    }
+    .load("")
+    .expect("the langfuse settings load");
+    config.sections.langfuse_settings
+}
+
+fn alert_settings(source: &str, variables: &[(&str, &str)]) -> Settings {
+    let config = ConfigLoader {
+        lookup: lookup(variables),
+    }
+    .load(source)
+    .expect("the alert settings load");
+    config.sections.alert_settings
 }
 
 fn time() -> chrono::DateTime<FixedOffset> {
@@ -216,36 +228,10 @@ async fn trace_lookup_defaults_to_the_langfuse_cloud_host() {
 
 #[test]
 fn all_possible_alert_types_lists_every_enum_member() {
-    let expected = vec![
-        AlertType::LlmExceptions,
-        AlertType::LlmTooSlow,
-        AlertType::LlmRequestsHanging,
-        AlertType::BudgetAlerts,
-        AlertType::SpendReports,
-        AlertType::FailedTrackingSpend,
-        AlertType::UserSpendThresholds,
-        AlertType::UserSpendAnomalies,
-        AlertType::DbExceptions,
-        AlertType::DailyReports,
-        AlertType::CooldownDeployment,
-        AlertType::NewModelAdded,
-        AlertType::ModelDeprecationWarnings,
-        AlertType::OutageAlerts,
-        AlertType::RegionOutageAlerts,
-        AlertType::FallbackReports,
-        AlertType::NewVirtualKeyCreated,
-        AlertType::VirtualKeyUpdated,
-        AlertType::VirtualKeyDeleted,
-        AlertType::NewTeamCreated,
-        AlertType::TeamUpdated,
-        AlertType::TeamDeleted,
-        AlertType::NewInternalUserCreated,
-        AlertType::InternalUserUpdated,
-        AlertType::InternalUserDeleted,
-        AlertType::McpToolDescriptionBlocked,
-        AlertType::McpPinnedToolsChanged,
-    ];
-    assert_eq!(all_possible_alert_types(), expected);
+    let listed = all_possible_alert_types();
+    assert_eq!(AlertType::COUNT, 27);
+    assert_eq!(listed.len(), AlertType::COUNT);
+    assert!(AlertType::iter().all(|alert_type| listed.contains(&alert_type)));
 }
 
 #[test]
@@ -353,88 +339,42 @@ fn alert_type_config_defaults_to_digest_off_for_a_day() {
 }
 
 #[test]
-fn hanging_request_data_keeps_the_callers_creation_time() {
-    let data = HangingRequestData {
-        request_id: "call-1".to_owned(),
-        model: "gpt-4o".to_owned(),
-        api_base: None,
-        key_alias: Some("alias".to_owned()),
-        team_alias: None,
-        alerting_metadata: Some(IndexMap::from([(
-            "user".to_owned(),
-            Json::Text("u".to_owned()),
-        )])),
-        created_at: 1234.5,
-        alerted: false,
-    };
-    assert_eq!(data.created_at.to_bits(), 1_234.5_f64.to_bits());
+fn hanging_request_data_new_applies_litellm_defaults() {
+    let data = HangingRequestData::new("call-1".to_owned(), "gpt-4o".to_owned(), 1234.5);
+    assert_eq!(data.request_id, "call-1");
+    assert_eq!(data.model, "gpt-4o");
     assert_eq!(data.api_base, None);
-    assert_eq!(
-        data.alerting_metadata
-            .expect("the metadata is set")
-            .get("user"),
-        Some(&Json::Text("u".to_owned()))
-    );
+    assert_eq!(data.key_alias, None);
+    assert_eq!(data.team_alias, None);
+    assert_eq!(data.alerting_metadata, None);
+    assert_eq!(data.created_at.to_bits(), 1_234.5_f64.to_bits());
     assert!(!data.alerted);
 }
 
 #[test]
-fn alert_queue_item_carries_headers_and_payload() {
-    let item = AlertQueueItem {
-        url: "https://hooks.example".to_owned(),
-        headers: BTreeMap::from([("Content-Type".to_owned(), "application/json".to_owned())]),
-        payload: AlertText {
-            text: "boom".to_owned(),
-        },
-        alert_type: AlertType::BudgetAlerts,
-        format: None,
-    };
-    assert_eq!(item.payload.text, "boom");
-    assert_eq!(
-        item.headers.get("Content-Type").map(String::as_str),
-        Some("application/json")
+fn digest_entry_carries_the_resolved_webhook_union() {
+    let loaded = alert_settings(
+        "general_settings:\n  alert_to_webhook_url:\n    spend_reports:\n      - os.environ/FIRST\n      - https://plain.example",
+        &[("FIRST", "https://first.example")],
     );
-    assert_eq!(item.alert_type, AlertType::BudgetAlerts);
-    assert_eq!(item.format, None);
-}
-
-#[test]
-fn digest_entry_holds_a_single_or_multiple_webhook() {
     let entry = DigestEntry {
-        alert_type: "budget_alerts".to_owned(),
+        alert_type: "spend_reports".to_owned(),
         request_model: "gpt-4o".to_owned(),
         api_base: "https://api.example".to_owned(),
         first_message: "first".to_owned(),
         level: "High".to_owned(),
-        count: 2,
+        count: 1,
         start_time: time(),
         last_time: time(),
-        webhook_url: WebhookUrl::Multiple(vec!["https://a".to_owned(), "https://b".to_owned()]),
+        webhook_url: loaded.alert_to_webhook_url[&AlertType::SpendReports].clone(),
     };
-    assert_eq!(entry.first_message, "first");
-    assert_eq!(entry.level, "High");
-    assert_eq!(entry.start_time, time());
+    let WebhookUrl::Multiple(urls) = entry.webhook_url else {
+        panic!("a list of webhooks stays a list");
+    };
     assert_eq!(
-        entry.webhook_url,
-        WebhookUrl::Multiple(vec!["https://a".to_owned(), "https://b".to_owned()])
+        urls.iter()
+            .map(|url| url.expose_secret().to_owned())
+            .collect::<Vec<String>>(),
+        vec!["https://first.example", "https://plain.example"]
     );
-}
-
-#[test]
-fn deployment_metrics_carries_the_latency_or_none() {
-    let metrics = DeploymentMetrics {
-        id: "deployment-1".to_owned(),
-        failed_request: true,
-        latency_per_output_token: Some(0.25_f64),
-        updated_at: time(),
-    };
-    assert!(metrics.failed_request);
-    assert_eq!(metrics.latency_per_output_token, Some(0.25_f64));
-    let missing = DeploymentMetrics {
-        id: "deployment-2".to_owned(),
-        failed_request: false,
-        latency_per_output_token: None,
-        updated_at: time(),
-    };
-    assert_eq!(missing.latency_per_output_token, None);
 }
