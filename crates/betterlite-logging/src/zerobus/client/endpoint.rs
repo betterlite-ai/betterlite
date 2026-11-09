@@ -19,7 +19,7 @@ struct Privilege {
 // The token endpoint refuses a token that does not carry the table's Unity Catalog privileges
 fn authorization_details(table_name: &str) -> Result<String, ZerobusClientError> {
     let mut parts = table_name.splitn(3, '.');
-    let (Some(catalog), Some(schema), Some(table)) = (parts.next(), parts.next(), parts.next())
+    let (Some(catalog), Some(schema), Some(_table)) = (parts.next(), parts.next(), parts.next())
     else {
         return Err(ZerobusClientError::TableName {
             table_name: table_name.to_owned(),
@@ -42,7 +42,7 @@ fn authorization_details(table_name: &str) -> Result<String, ZerobusClientError>
             kind: "unity_catalog_privileges",
             privileges: &["SELECT", "MODIFY"],
             object_type: "TABLE",
-            object_full_path: table.to_owned(),
+            object_full_path: table_name.to_owned(),
         },
     ];
     serde_json::to_string(&details).map_err(ZerobusClientError::AuthorizationDetails)

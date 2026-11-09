@@ -7,7 +7,7 @@ fn the_defaults_are_batch_size_one_hundred_and_flush_interval_ten() {
     let params = ZerobusInitParams::default();
     assert_eq!(params.batch_size.get(), 100);
     assert_eq!(params.flush_interval.get(), 10);
-    assert_eq!(params.turn_off_message_logging, None);
+    assert!(!params.turn_off_message_logging);
     assert!(params.workspace_url.is_none());
     assert!(params.server_endpoint.is_none());
     assert!(params.client_id.is_none());
@@ -20,14 +20,14 @@ fn an_empty_configuration_takes_the_same_defaults() {
     let params: ZerobusInitParams = serde_json::from_str("{}").unwrap();
     assert_eq!(params.batch_size.get(), 100);
     assert_eq!(params.flush_interval.get(), 10);
-    assert_eq!(params.turn_off_message_logging, None);
+    assert!(!params.turn_off_message_logging);
 }
 
 #[test]
-fn a_null_message_logging_mode_is_absent() {
+fn a_null_message_logging_mode_takes_the_default() {
     let params: ZerobusInitParams =
         serde_json::from_str(r#"{"turn_off_message_logging": null}"#).unwrap();
-    assert_eq!(params.turn_off_message_logging, None);
+    assert!(!params.turn_off_message_logging);
 }
 
 #[rstest]
@@ -78,7 +78,7 @@ fn the_connection_fields_and_message_logging_mode_parse() {
     assert_eq!(params.table_name.as_deref(), Some("main.litellm.traces"));
     assert_eq!(params.batch_size.get(), 7);
     assert_eq!(params.flush_interval.get(), 3);
-    assert_eq!(params.turn_off_message_logging, Some(true));
+    assert!(params.turn_off_message_logging);
 }
 
 #[test]

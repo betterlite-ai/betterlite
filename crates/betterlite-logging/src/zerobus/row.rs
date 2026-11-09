@@ -11,7 +11,6 @@ use crate::zerobus::row::error::TraceRowError;
 
 const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
-// One row of the Unity Catalog trace table: fixed scalar columns plus JSON text for the VARIANT columns
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TraceRow {
     pub id: Option<String>,

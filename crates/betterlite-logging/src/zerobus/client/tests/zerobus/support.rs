@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use url::form_urlencoded;
@@ -242,7 +243,13 @@ pub(crate) fn client_with(
     clock: &FakeClock,
     timeout: Duration,
 ) -> ZerobusIngestClient {
-    ZerobusIngestClient::new(connection, proxied_client(), clock.handle(), timeout)
+    ZerobusIngestClient {
+        connection,
+        http: proxied_client(),
+        clock: clock.handle(),
+        timeout,
+        token: AsyncMutex::new(None),
+    }
 }
 
 pub(crate) async fn closed_endpoint() -> String {

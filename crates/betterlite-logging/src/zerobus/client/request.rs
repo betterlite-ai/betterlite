@@ -49,7 +49,7 @@ pub(crate) fn outbound_request(
             RequestBody::Json(rows),
         ),
     };
-    let target = parsed_url(&url, what)?;
+    let target = Url::parse(&url).map_err(|source| ZerobusClientError::Url { what, source })?;
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, authorization);
     Ok(OutboundRequest {
@@ -60,13 +60,6 @@ pub(crate) fn outbound_request(
         body,
         deadline: timeout,
     })
-}
-
-fn parsed_url(url: &str, what: &'static str) -> Result<Url, ZerobusClientError> {
-    match Url::parse(url) {
-        Ok(parsed) => Ok(parsed),
-        Err(source) => Err(ZerobusClientError::Url { what, source }),
-    }
 }
 
 fn basic_authorization(

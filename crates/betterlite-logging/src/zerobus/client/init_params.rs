@@ -2,6 +2,7 @@ use std::num::{NonZeroU64, NonZeroUsize};
 
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde_with::{As, DefaultOnNull};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
@@ -13,7 +14,8 @@ pub struct ZerobusInitParams {
     pub table_name: Option<String>,
     pub batch_size: NonZeroUsize,
     pub flush_interval: NonZeroU64,
-    pub turn_off_message_logging: Option<bool>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub turn_off_message_logging: bool,
 }
 
 impl Default for ZerobusInitParams {
@@ -24,10 +26,10 @@ impl Default for ZerobusInitParams {
             client_id: None,
             client_secret: None,
             table_name: None,
-            // NonZeroUsize::new cannot be called in a const expression, so a default counts up from one
+            // NonZeroUsize::new returns an Option and the default has no failure path, so the value counts up from MIN
             batch_size: NonZeroUsize::MIN.saturating_add(99),
             flush_interval: NonZeroU64::MIN.saturating_add(9),
-            turn_off_message_logging: None,
+            turn_off_message_logging: false,
         }
     }
 }

@@ -24,30 +24,14 @@ use crate::zerobus::row::TraceRow;
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
 pub struct ZerobusIngestClient {
-    connection: ZerobusConnection,
-    http: ProxiedClient,
-    clock: Clock,
-    timeout: Duration,
-    token: Mutex<Option<ZerobusAccessToken>>,
+    pub connection: ZerobusConnection,
+    pub http: ProxiedClient,
+    pub clock: Clock,
+    pub timeout: Duration,
+    pub token: Mutex<Option<ZerobusAccessToken>>,
 }
 
 impl ZerobusIngestClient {
-    #[must_use]
-    pub fn new(
-        connection: ZerobusConnection,
-        http: ProxiedClient,
-        clock: Clock,
-        timeout: Duration,
-    ) -> Self {
-        Self {
-            connection,
-            http,
-            clock,
-            timeout,
-            token: Mutex::new(None),
-        }
-    }
-
     pub async fn insert(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure> {
         let token = self.access_token().await?;
         let body = serde_json::to_vec(rows).map_err(ZerobusClientError::Rows)?;
