@@ -199,6 +199,18 @@ async fn run_times_out_and_kills_the_docker_client() {
 }
 
 #[tokio::test]
+async fn run_accepts_output_at_the_byte_cap() {
+    let dir = tempdir();
+    let program = docker_script(&dir, "printf '0123456789'");
+    let sandbox = sandbox(program);
+    let output = sandbox
+        .run(&command(&["echo"]), Duration::from_secs(2), 10)
+        .await
+        .unwrap();
+    assert_eq!(output.stdout, "0123456789");
+}
+
+#[tokio::test]
 async fn run_caps_its_output_and_kills_the_client() {
     let dir = tempdir();
     let program = docker_script(&dir, "printf '0123456789'");

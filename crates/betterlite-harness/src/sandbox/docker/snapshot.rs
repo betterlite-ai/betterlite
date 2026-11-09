@@ -62,6 +62,7 @@ fn splitlines(text: &str) -> Vec<&str> {
     let mut start = 0;
     let mut characters = text.char_indices().peekable();
     while let Some((index, character)) = characters.next() {
+        // Python's str.splitlines breaks on these, where str::lines only knows \n
         let boundary = matches!(
             character,
             '\n' | '\u{b}'

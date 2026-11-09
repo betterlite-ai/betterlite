@@ -9,6 +9,9 @@ deviations:
   - what: The docker client is started in its own process group and killed when its handle or the sandbox is dropped.
     why: The processes-die-with-owner rule; LiteLLM leaves the client to the event loop.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L88-L100
+  - what: The container id read from docker run is decoded with U+FFFD replacement instead of LiteLLM's strict decode.
+    why: LiteLLM raises an unhandled UnicodeDecodeError when docker writes a non-UTF-8 id; no working setup can rely on that crash, and the replacement keeps the failure in the sandbox error path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L178
   - what: The docker program path is set through with_docker_program instead of being the sixth constructor argument.
     why: Tests need a fake docker without changing the process environment, and clippy's five-argument threshold refuses a sixth parameter on new; with no path configured the PATH lookup is LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L80-L100

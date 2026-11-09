@@ -66,6 +66,14 @@ async fn read_reports_the_target_and_stderr() {
 }
 
 #[tokio::test]
+async fn read_accepts_output_at_the_byte_cap() {
+    let dir = tempdir();
+    let program = docker_script(&dir, "printf '12345'");
+    let sandbox = sandbox(program);
+    assert_eq!(sandbox.read("file", 5).await.unwrap(), b"12345");
+}
+
+#[tokio::test]
 async fn read_enforces_the_byte_cap() {
     let dir = tempdir();
     let program = docker_script(&dir, "printf '12345'");

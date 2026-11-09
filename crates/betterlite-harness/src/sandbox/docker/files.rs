@@ -19,7 +19,7 @@ pub(super) async fn read(
         )
         .await?;
     match code {
-        0_i32 if stdout.get(max_bytes..).is_some() => Err(HarnessError::ContentLimitExceeded {
+        0_i32 if stdout.len() > max_bytes => Err(HarnessError::ContentLimitExceeded {
             operation: CappedOperation::Read,
             limit: max_bytes,
         }),

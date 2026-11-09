@@ -9,6 +9,7 @@ pub(super) fn normalize_path(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();
     }
+    // posixpath.normpath keeps exactly two leading slashes and folds three or more into one
     let slash_count = path.bytes().take_while(|byte| *byte == b'/').count();
     let leading = match slash_count {
         0 => 0_usize,

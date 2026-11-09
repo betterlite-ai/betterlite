@@ -44,7 +44,7 @@ fn docker_script_with(dir: &TempDir, run_body: &str, exec_body: &str, rm_body: &
 }
 
 fn docker_script(dir: &TempDir, exec_body: &str) -> PathBuf {
-    docker_script_with(dir, "printf 'container-1\\n'", exec_body, "exit 0")
+    docker_script_with(dir, "printf '  container-1  \\n'", exec_body, "exit 0")
 }
 
 fn invocations(dir: &TempDir) -> Vec<Vec<String>> {
