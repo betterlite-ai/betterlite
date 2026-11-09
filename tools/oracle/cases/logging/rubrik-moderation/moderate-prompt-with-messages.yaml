@@ -14,18 +14,16 @@ call:
       model: request-model
       user: u1
       correlation_key: ck
-    actions:
-      - do: apply_guardrail
-        input_type: request
-        inputs:
-          structured_messages:
-            - {role: user, content: "hello"}
-            - role: assistant
-              content:
-                - {type: text, text: part}
-              tool_calls:
-                - function: {arguments: '{"x":1}'}
-          model: gpt-4o
-          tools: []
+    input_type: request
+    inputs:
+      structured_messages:
+        - {role: user, content: "hello"}
+        - role: assistant
+          content:
+            - {type: text, text: part}
+          tool_calls:
+            - function: {arguments: '{"x":1}'}
+      model: gpt-4o
+      tools: []
 env: {}
 compare: {ignore: []}

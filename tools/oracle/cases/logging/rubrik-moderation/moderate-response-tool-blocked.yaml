@@ -14,13 +14,11 @@ call:
       litellm_call_id: call-1
       model: gpt-4o
       tools: []
-    actions:
-      - do: apply_guardrail
-        input_type: response
-        inputs:
-          texts: ["I'll check."]
-          tool_calls:
-            - {id: call_1, type: function, function: {name: a, arguments: "{}"}}
-            - {id: call_2, type: function, function: {name: b, arguments: "{}"}}
+    input_type: response
+    inputs:
+      texts: ["I'll check."]
+      tool_calls:
+        - {id: call_1, type: function, function: {name: a, arguments: "{}"}}
+        - {id: call_2, type: function, function: {name: b, arguments: "{}"}}
 env: {}
 compare: {ignore: []}

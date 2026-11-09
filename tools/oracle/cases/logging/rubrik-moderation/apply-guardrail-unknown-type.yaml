@@ -8,10 +8,8 @@ call:
     replies: []
     logging_obj: null
     request_data: null
-    actions:
-      - do: apply_guardrail
-        input_type: stream
-        inputs:
-          texts: [hello]
+    input_type: stream
+    inputs:
+      texts: [hello]
 env: {}
 compare: {ignore: []}

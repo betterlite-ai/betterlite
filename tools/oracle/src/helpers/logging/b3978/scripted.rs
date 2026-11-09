@@ -1,5 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -8,7 +7,7 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::rubrik_delivery::clock::Clock;
 use betterlite_logging::rubrik_delivery::transport::{
-    ClientTier, JsonPost, Transport, TransportFailure, TransportResponse,
+    JsonPost, Transport, TransportFailure, TransportResponse,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -56,33 +55,10 @@ impl ScriptedTransport {
 
     fn record(&self, request: &JsonPost) {
         let payload: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-        let headers: BTreeMap<String, String> = request
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str().to_ascii_lowercase(),
-                    value.to_str().unwrap_or_default().to_owned(),
-                )
-            })
-            .collect();
-        let tier = match request.tier {
-            ClientTier::Moderation => "moderation",
-            ClientTier::Logging => "logging",
-        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({
-                "tier": tier,
-                "url": request.url,
-                "headers": headers,
-                "payload": payload,
-                "timeout": {
-                    "total": request.timeout.total.as_secs_f64(),
-                    "connect": request.timeout.connect.as_secs_f64(),
-                },
-            }));
+            .push(json!({"url": request.url, "payload": payload}));
     }
 }
 
@@ -147,46 +123,23 @@ impl Clock for ScriptedClock {
     }
 }
 
-#[derive(Debug)]
-struct LogEvent {
-    level: Level,
-    message: String,
-    severity: Option<String>,
-    litellm_call_id: Option<String>,
-    label: Option<String>,
+#[derive(Default)]
+struct Captured {
+    warnings: Vec<String>,
+    critical: usize,
+    errors: usize,
 }
 
 #[derive(Clone, Default)]
-pub(super) struct LogCapture {
-    events: Arc<Mutex<Vec<LogEvent>>>,
-    critical: Arc<AtomicUsize>,
-    errors: Arc<AtomicUsize>,
-}
+pub(super) struct LogCapture(Arc<Mutex<Captured>>);
 
 impl LogCapture {
     pub(super) fn report(&self) -> Value {
-        let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut warnings = Vec::new();
-        let mut call_ids = Vec::new();
-        let mut labels = Vec::new();
-        for event in events.iter() {
-            if event.level == Level::WARN {
-                warnings.push(event.message.clone());
-            }
-            if let Some(call_id) = &event.litellm_call_id {
-                call_ids.push(call_id.clone());
-            }
-            if let Some(label) = &event.label {
-                labels.push(label.clone());
-            }
-        }
-        drop(events);
+        let captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         json!({
-            "warnings": warnings,
-            "critical": self.critical.load(Ordering::SeqCst),
-            "errors": self.errors.load(Ordering::SeqCst),
-            "error_call_ids": call_ids,
-            "error_labels": labels,
+            "warnings": &captured.warnings,
+            "critical": captured.critical,
+            "errors": captured.errors,
         })
     }
 }
@@ -195,8 +148,6 @@ impl LogCapture {
 struct EventFields {
     message: Option<String>,
     severity: Option<String>,
-    litellm_call_id: Option<String>,
-    label: Option<String>,
 }
 
 impl EventFields {
@@ -204,8 +155,6 @@ impl EventFields {
         match field.name() {
             "message" => self.message = Some(value.to_owned()),
             "severity" => self.severity = Some(value.to_owned()),
-            "litellm_call_id" => self.litellm_call_id = Some(value.to_owned()),
-            "label" => self.label = Some(value.to_owned()),
             _ => {}
         }
     }
@@ -230,29 +179,19 @@ impl<Inner: Subscriber> Layer<Inner> for LogCapture {
         {
             return;
         }
+        let level = *event.metadata().level();
+        if !matches!(level, Level::WARN | Level::ERROR) {
+            return;
+        }
         let mut fields = EventFields::default();
         event.record(&mut fields);
-        let recorded = LogEvent {
-            level: *event.metadata().level(),
-            message: fields.message.unwrap_or_default(),
-            severity: fields.severity,
-            litellm_call_id: fields.litellm_call_id,
-            label: fields.label,
-        };
-        match recorded.level {
-            Level::ERROR => {
-                if recorded.severity.as_deref() == Some("critical") {
-                    self.critical.fetch_add(1, Ordering::SeqCst);
-                } else {
-                    self.errors.fetch_add(1, Ordering::SeqCst);
-                }
-            }
-            Level::WARN => {}
-            Level::INFO | Level::DEBUG | Level::TRACE => return,
+        let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if level == Level::WARN {
+            captured.warnings.push(fields.message.unwrap_or_default());
+        } else if fields.severity.as_deref() == Some("critical") {
+            captured.critical = captured.critical.saturating_add(1);
+        } else {
+            captured.errors = captured.errors.saturating_add(1);
         }
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded);
     }
 }

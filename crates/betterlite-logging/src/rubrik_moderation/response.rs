@@ -13,8 +13,8 @@ use crate::rubrik_delivery::logger::RubrikLogger;
 use crate::rubrik_delivery::post::post_response_moderation;
 
 use super::context::{
-    LoggingObject, RequestData, call_details, request_context, request_data_json,
-    stash_block_context, text_field,
+    LoggingObject, RequestData, call_details, request_context, request_context_source,
+    request_data_json, response_source, stash_block_context, text_field,
 };
 use super::error::{ModerationError, ModifyResponseException};
 use super::inputs::GuardrailInputs;
@@ -31,7 +31,6 @@ pub async fn moderate_response(
     }
     let message_tool_calls = normalize_tool_calls(&inputs.tool_calls)?;
     let sent_content = join_texts(&inputs.texts);
-
     let details = call_details(logging_obj);
     if logging_obj.is_some() && details.is_empty() {
         tracing::warn!(
@@ -45,7 +44,6 @@ pub async fn moderate_response(
         &message_tool_calls,
         &sent_content,
     )?;
-
     let fields = post_response_moderation(logger, &response_data, &request_body).await?;
     let block = extract_response_block(
         &service_response(&fields)?,
@@ -55,11 +53,30 @@ pub async fn moderate_response(
     let Some(blocked) = block else {
         return Ok(inputs);
     };
-    let model = resolve_model(&request_data.response, text_field(&details, "model")?);
+    Err(block_error(
+        logger,
+        request_data,
+        &details,
+        logging_obj,
+        blocked.explanation,
+    )?)
+}
+
+fn block_error(
+    logger: &RubrikLogger,
+    request_data: &mut RequestData,
+    details: &IndexMap<String, Json>,
+    logging_obj: Option<&Arc<LoggingObject>>,
+    explanation: String,
+) -> Result<ModerationError, ModerationError> {
+    let model = resolve_model(
+        &response_source(&request_data.fields)?,
+        text_field(details, "model")?,
+    );
     stash_block_context(logging_obj, request_data);
-    Err(ModerationError::Blocked(Box::new(
+    Ok(ModerationError::Blocked(Box::new(
         ModifyResponseException {
-            message: blocked.explanation,
+            message: explanation,
             model,
             request_data: Box::new(request_data.clone()),
             guardrail_name: logger.settings.guardrail_name.clone(),
@@ -76,7 +93,7 @@ fn build_payloads(
 ) -> Result<(ResponseModerationPayload, Json), ModerationError> {
     let request_id = correlation_id(
         text_field(details, "litellm_call_id")?,
-        request_data.litellm_call_id.as_deref(),
+        text_field(&request_data.fields, "litellm_call_id")?,
     );
     let created = i64::try_from(logger.clock.now_unix().as_secs())
         .map_err(|_overflow| ModerationError::Timestamp)?;
@@ -87,10 +104,10 @@ fn build_payloads(
     } else {
         Some(request_context(details)?)
     };
-    let request_source = if request_data.is_empty() {
+    let request_source = if request_data.fields.is_empty() {
         None
     } else {
-        Some(request_data.request_context_source())
+        Some(request_context_source(&request_data.fields))
     };
     let request_body = match extract_request_data(call_source.as_ref(), request_source.as_ref()) {
         None => Json::Object(IndexMap::new()),

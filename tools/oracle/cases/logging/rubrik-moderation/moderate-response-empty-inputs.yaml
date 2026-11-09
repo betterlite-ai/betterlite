@@ -8,9 +8,7 @@ call:
     replies: []
     logging_obj: null
     request_data: {litellm_call_id: call-1}
-    actions:
-      - do: apply_guardrail
-        input_type: response
-        inputs: {}
+    input_type: response
+    inputs: {}
 env: {}
 compare: {ignore: []}

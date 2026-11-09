@@ -8,9 +8,7 @@ call:
     replies: []
     logging_obj: null
     request_data: null
-    actions:
-      - do: apply_guardrail
-        input_type: request
-        inputs: {}
+    input_type: request
+    inputs: {}
 env: {}
 compare: {ignore: []}

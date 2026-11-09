@@ -22,62 +22,12 @@ pub enum LoggingObjectStash {
     Present(Option<Arc<LoggingObject>>),
 }
 
-#[derive(Clone, Debug)]
+// The request mapping LiteLLM carries as dict[str, Any]; fields stay JSON, and the stashed logging
+// object rides beside them because it is not a JSON value the caller wrote.
+#[derive(Clone, Debug, Default)]
 pub struct RequestData {
-    pub litellm_call_id: Option<String>,
-    pub model: Option<String>,
-    pub user: Option<String>,
-    pub correlation_key: Option<String>,
-    pub tools: TrackedField<Json>,
-    pub response: ResponseSource,
+    pub fields: IndexMap<String, Json>,
     pub logging_obj: LoggingObjectStash,
-}
-
-impl Default for RequestData {
-    fn default() -> Self {
-        Self {
-            litellm_call_id: None,
-            model: None,
-            user: None,
-            correlation_key: None,
-            tools: TrackedField::Missing,
-            response: ResponseSource::Absent,
-            logging_obj: LoggingObjectStash::Missing,
-        }
-    }
-}
-
-impl RequestData {
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.litellm_call_id.is_none()
-            && self.model.is_none()
-            && self.user.is_none()
-            && self.correlation_key.is_none()
-            && matches!(self.tools, TrackedField::Missing)
-            && matches!(self.response, ResponseSource::Absent)
-            && matches!(self.logging_obj, LoggingObjectStash::Missing)
-    }
-
-    #[must_use]
-    pub fn prompt_request(&self) -> PromptModerationRequest<'_> {
-        PromptModerationRequest {
-            model: self.model.as_deref(),
-            user: self.user.as_deref(),
-            correlation_key: self.correlation_key.as_deref(),
-            litellm_call_id: self.litellm_call_id.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn request_context_source(&self) -> RequestContextSource {
-        RequestContextSource {
-            messages: None,
-            model: None,
-            tools: self.tools.clone(),
-            optional_params_tools: None,
-        }
-    }
 }
 
 #[must_use]
@@ -99,10 +49,23 @@ pub fn text_field<'fields>(
     match fields.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
-        Some(_) => Err(ModerationError::FieldType { field }),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(ModerationError::FieldType { field })
+        }
     }
 }
 
+fn text_value(value: &Json, field: &'static str) -> Result<Option<String>, ModerationError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Text(text) => Ok(Some(text.clone())),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(ModerationError::FieldType { field })
+        }
+    }
+}
+
+// The call-details half of the after_completion envelope's request.
 pub fn request_context(
     fields: &IndexMap<String, Json>,
 ) -> Result<RequestContextSource, ModerationError> {
@@ -128,6 +91,46 @@ pub fn request_context(
     })
 }
 
+// The request-data half: tools are read by presence so an explicit empty list still wins.
+#[must_use]
+pub fn request_context_source(fields: &IndexMap<String, Json>) -> RequestContextSource {
+    let tools = fields.get("tools").map_or_else(
+        || TrackedField::Missing,
+        |tools| TrackedField::Present(tools.clone()),
+    );
+    RequestContextSource {
+        messages: None,
+        model: None,
+        tools,
+        optional_params_tools: None,
+    }
+}
+
+pub fn response_source(fields: &IndexMap<String, Json>) -> Result<ResponseSource, ModerationError> {
+    match fields.get("response") {
+        None | Some(Json::Null) => Ok(ResponseSource::Absent),
+        Some(Json::Object(response)) => match response.get("model") {
+            Some(model) => Ok(ResponseSource::WithModel(text_value(
+                model,
+                "response.model",
+            )?)),
+            None => Ok(ResponseSource::WithoutModel),
+        },
+        Some(_) => Err(ModerationError::FieldType { field: "response" }),
+    }
+}
+
+pub fn prompt_request(
+    fields: &IndexMap<String, Json>,
+) -> Result<PromptModerationRequest<'_>, ModerationError> {
+    Ok(PromptModerationRequest {
+        model: text_field(fields, "model")?,
+        user: text_field(fields, "user")?,
+        correlation_key: text_field(fields, "correlation_key")?,
+        litellm_call_id: text_field(fields, "litellm_call_id")?,
+    })
+}
+
 // The request half of the after_completion envelope: LiteLLM sends all three keys, nulls included,
 // whenever either source carries any data.
 #[must_use]
@@ -148,7 +151,10 @@ pub fn stash_block_context(
     request_data: &mut RequestData,
 ) {
     let Some(present) = logging_obj else {
-        let call_id = request_data.litellm_call_id.as_deref().unwrap_or("None");
+        let call_id = text_field(&request_data.fields, "litellm_call_id")
+            .ok()
+            .flatten()
+            .unwrap_or("None");
         tracing::error!(
             litellm_call_id = %call_id,
             "Rubrik: moderation block fired with logging_obj=None for litellm_call_id={call_id}; cannot suppress success event or attach failure payload."

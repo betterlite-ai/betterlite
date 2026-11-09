@@ -10,10 +10,8 @@ call:
         body: "{}"
     logging_obj: null
     request_data: null
-    actions:
-      - do: apply_guardrail
-        input_type: request
-        inputs:
-          texts: [one, second]
+    input_type: request
+    inputs:
+      texts: [one, second]
 env: {}
 compare: {ignore: []}

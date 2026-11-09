@@ -9,10 +9,8 @@ call:
       - fail: true
     logging_obj: null
     request_data: {litellm_call_id: call-1}
-    actions:
-      - do: apply_guardrail
-        input_type: response
-        inputs:
-          texts: [hello]
+    input_type: response
+    inputs:
+      texts: [hello]
 env: {}
 compare: {ignore: []}

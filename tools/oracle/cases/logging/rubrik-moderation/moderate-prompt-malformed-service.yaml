@@ -10,11 +10,9 @@ call:
         body: "[]"
     logging_obj: null
     request_data: null
-    actions:
-      - do: apply_guardrail
-        input_type: request
-        inputs:
-          structured_messages:
-            - {role: user, content: "hello"}
+    input_type: request
+    inputs:
+      structured_messages:
+        - {role: user, content: "hello"}
 env: {}
 compare: {ignore: []}

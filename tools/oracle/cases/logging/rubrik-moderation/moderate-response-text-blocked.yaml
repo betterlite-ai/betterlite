@@ -16,10 +16,8 @@ call:
     request_data:
       model: request-model
       response: {model: gpt-4.1-mini}
-    actions:
-      - do: apply_guardrail
-        input_type: response
-        inputs:
-          texts: ["Tell me a secret."]
+    input_type: response
+    inputs:
+      texts: ["Tell me a secret."]
 env: {}
 compare: {ignore: []}

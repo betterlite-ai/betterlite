@@ -4,14 +4,14 @@ call:
   b3978:
     environment: {}
     init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
-    clock: []
-    replies: []
+    clock: [1700000000.0, 1700000001.0]
+    replies:
+      - status: 200
+        body: '{"choices": []}'
     logging_obj: null
     request_data: null
-    actions:
-      - do: guarded
-        fault: malformed
-        inputs:
-          texts: [hello]
+    input_type: response
+    inputs:
+      texts: [hello]
 env: {}
 compare: {ignore: []}

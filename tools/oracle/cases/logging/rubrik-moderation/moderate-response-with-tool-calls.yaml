@@ -19,12 +19,10 @@ call:
           tools:
             - {type: function, function: {name: get_weather}}
     request_data: {litellm_call_id: call-1}
-    actions:
-      - do: apply_guardrail
-        input_type: response
-        inputs:
-          texts: ["The weather is sunny."]
-          tool_calls:
-            - {id: call_1, type: function, function: {name: get_weather, arguments: "{}"}}
+    input_type: response
+    inputs:
+      texts: ["The weather is sunny."]
+      tool_calls:
+        - {id: call_1, type: function, function: {name: get_weather, arguments: "{}"}}
 env: {}
 compare: {ignore: []}

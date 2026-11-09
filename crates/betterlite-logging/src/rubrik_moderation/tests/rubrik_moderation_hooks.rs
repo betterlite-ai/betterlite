@@ -3,7 +3,6 @@ mod support;
 use std::sync::Arc;
 
 use betterlite_logging::rubrik::block_decision::ResponseBlockError;
-use betterlite_logging::rubrik::request_data::{ResponseSource, TrackedField};
 use betterlite_logging::rubrik::tool_calls::ToolCallSource;
 use betterlite_logging::rubrik_delivery::transport::{ClientTier, MODERATION_TIMEOUT};
 use betterlite_logging::rubrik_moderation::apply::apply_guardrail;
@@ -43,16 +42,16 @@ fn text_inputs(texts: &[&str]) -> GuardrailInputs {
     }
 }
 
-fn request_data() -> RequestData {
-    RequestData {
-        litellm_call_id: None,
-        model: None,
-        user: None,
-        correlation_key: None,
-        tools: TrackedField::Missing,
-        response: ResponseSource::Absent,
-        logging_obj: LoggingObjectStash::Missing,
+fn text_field(value: &str) -> Json {
+    Json::Text(value.to_owned())
+}
+
+fn request_fields(pairs: &[(&str, Json)]) -> RequestData {
+    let mut data = RequestData::default();
+    for (name, value) in pairs {
+        data.fields.insert((*name).to_owned(), value.clone());
     }
+    data
 }
 
 fn block(result: Result<GuardrailInputs, ModerationError>) -> ModifyResponseException {
@@ -133,7 +132,7 @@ async fn apply_guardrail_routes_request_inputs_to_prompt_moderation() {
         model: Some("gpt-4o".to_owned()),
         tools: None,
     };
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = apply_guardrail(
         &harness.logger,
         inputs.clone(),
@@ -165,8 +164,10 @@ async fn apply_guardrail_routes_response_inputs_to_response_moderation() {
         r#"{"choices":[{"message":{"content":"hello"}}]}"#,
     )]);
     let inputs = text_inputs(&["hello"]);
-    let mut request_data = request_data();
-    request_data.litellm_call_id = Some("call-1".to_owned());
+    let mut request_data = RequestData::default();
+    request_data
+        .fields
+        .insert("litellm_call_id".to_owned(), text_field("call-1"));
     let returned = apply_guardrail(
         &harness.logger,
         inputs.clone(),
@@ -190,7 +191,7 @@ async fn apply_guardrail_routes_response_inputs_to_response_moderation() {
 async fn apply_guardrail_returns_inputs_unchanged_for_an_unrecognized_type() {
     let harness = Harness::new(Vec::new());
     let inputs = text_inputs(&["hello"]);
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = apply_guardrail(
         &harness.logger,
         inputs.clone(),
@@ -211,7 +212,7 @@ async fn guarded_rethrows_a_modify_response_exception_without_logging() {
     let exception = ModifyResponseException {
         message: "blocked".to_owned(),
         model: "gpt-4o".to_owned(),
-        request_data: Box::new(request_data()),
+        request_data: Box::new(RequestData::default()),
         guardrail_name: "safety".to_owned(),
     };
     let operation = async {
@@ -287,8 +288,10 @@ async fn moderate_response_sends_normalized_tool_calls_and_the_request_envelope(
         model: None,
         tools: None,
     };
-    let mut request_data = request_data();
-    request_data.litellm_call_id = Some("call-1".to_owned());
+    let mut request_data = RequestData::default();
+    request_data
+        .fields
+        .insert("litellm_call_id".to_owned(), text_field("call-1"));
     let returned = moderate_response(
         &harness.logger,
         inputs.clone(),
@@ -313,7 +316,7 @@ async fn moderate_response_returns_inputs_when_both_tool_calls_and_texts_are_emp
         model: Some("gpt-4o".to_owned()),
         tools: None,
     };
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = moderate_response(&harness.logger, inputs.clone(), &mut request_data, None)
         .await
         .expect("nothing to moderate");
@@ -328,7 +331,7 @@ async fn moderate_response_warns_when_the_logging_object_has_empty_call_details(
         r#"{"choices":[{"message":{"content":"hello"}}]}"#,
     )]);
     let logging_obj = logging_object("{}");
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = moderate_response(
         &harness.logger,
         text_inputs(&["hello"]),
@@ -355,9 +358,10 @@ async fn moderate_response_raises_a_text_block_with_the_response_model_and_stash
         r#"{"choices":[{"message":{"content":"I cannot help with that."}}]}"#,
     )]);
     let logging_obj = logging_object(r#"{"litellm_call_id":"call-1","model":"gpt-4o"}"#);
-    let mut request_data = request_data();
-    request_data.model = Some("request-model".to_owned());
-    request_data.response = ResponseSource::WithModel(Some("gpt-4.1-mini".to_owned()));
+    let mut request_data = request_fields(&[
+        ("model", text_field("request-model")),
+        ("response", json(r#"{"model":"gpt-4.1-mini"}"#)),
+    ]);
     let exception = block(
         moderate_response(
             &harness.logger,
@@ -411,10 +415,11 @@ async fn moderate_response_raises_a_tool_block_with_an_unknown_model_without_a_l
         model: None,
         tools: None,
     };
-    let mut request_data = request_data();
-    request_data.litellm_call_id = Some("call-1".to_owned());
-    request_data.model = Some("request-model".to_owned());
-    request_data.tools = TrackedField::Present(Json::List(Vec::new()));
+    let mut request_data = request_fields(&[
+        ("litellm_call_id", text_field("call-1")),
+        ("model", text_field("request-model")),
+        ("tools", Json::List(Vec::new())),
+    ]);
     let exception =
         block(moderate_response(&harness.logger, inputs, &mut request_data, None).await);
     assert_eq!(exception.message, "Tool call blocked by policy.");
@@ -434,22 +439,21 @@ async fn moderate_response_raises_a_tool_block_with_an_unknown_model_without_a_l
     );
 }
 
+#[derive(Clone, Copy)]
+enum ResponseCase {
+    Absent,
+    WithoutModel,
+    WithModel(&'static str),
+}
+
 #[rstest]
-#[case::response_model_wins(
-    ResponseSource::WithModel(Some("gpt-4.1-mini".to_owned())),
-    None,
-    "gpt-4.1-mini"
-)]
-#[case::empty_response_model_is_unknown(
-    ResponseSource::WithModel(Some(String::new())),
-    None,
-    "unknown"
-)]
-#[case::response_without_model_falls_back(ResponseSource::WithoutModel, Some("gpt-4o"), "gpt-4o")]
-#[case::no_response_and_no_call_details_model_is_unknown(ResponseSource::Absent, None, "unknown")]
+#[case::response_model_wins(ResponseCase::WithModel("gpt-4.1-mini"), None, "gpt-4.1-mini")]
+#[case::empty_response_model_is_unknown(ResponseCase::WithModel(""), None, "unknown")]
+#[case::response_without_model_falls_back(ResponseCase::WithoutModel, Some("gpt-4o"), "gpt-4o")]
+#[case::no_response_and_no_call_details_model_is_unknown(ResponseCase::Absent, None, "unknown")]
 #[tokio::test]
 async fn moderate_response_resolves_the_block_model(
-    #[case] response: ResponseSource,
+    #[case] response: ResponseCase,
     #[case] call_details_model: Option<&str>,
     #[case] expected: &str,
 ) {
@@ -461,8 +465,21 @@ async fn moderate_response_resolves_the_block_model(
             "{{\"litellm_call_id\":\"call-1\",\"model\":\"{model}\"}}"
         ))
     });
-    let mut request_data = request_data();
-    request_data.response = response;
+    let mut request_data = RequestData::default();
+    match response {
+        ResponseCase::Absent => {}
+        ResponseCase::WithoutModel => {
+            request_data
+                .fields
+                .insert("response".to_owned(), json("{}"));
+        }
+        ResponseCase::WithModel(model) => {
+            request_data.fields.insert(
+                "response".to_owned(),
+                json(&format!("{{\"model\":\"{model}\"}}")),
+            );
+        }
+    }
     let exception = block(
         moderate_response(
             &harness.logger,
@@ -478,7 +495,7 @@ async fn moderate_response_resolves_the_block_model(
 #[tokio::test]
 async fn moderate_response_reports_an_empty_choices_response_as_malformed() {
     let harness = Harness::new(vec![ScriptedReply::json(r#"{"choices": []}"#)]);
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let error = moderate_response(
         &harness.logger,
         text_inputs(&["hello"]),
@@ -531,8 +548,10 @@ async fn moderate_response_rejects_a_wrong_typed_call_details_field(
 ) {
     let harness = Harness::new(Vec::new());
     let logging_obj = logging_object(details);
-    let mut request_data = request_data();
-    request_data.litellm_call_id = Some("call-1".to_owned());
+    let mut request_data = RequestData::default();
+    request_data
+        .fields
+        .insert("litellm_call_id".to_owned(), text_field("call-1"));
     let error = moderate_response(
         &harness.logger,
         text_inputs(&["hello"]),
@@ -547,7 +566,7 @@ async fn moderate_response_rejects_a_wrong_typed_call_details_field(
 #[tokio::test]
 async fn moderate_response_reports_a_clock_reading_past_the_unix_range() {
     let harness = Harness::with_clock(vec![], Arc::new(FarFutureClock));
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let error = moderate_response(
         &harness.logger,
         text_inputs(&["hello"]),
@@ -574,15 +593,12 @@ async fn moderate_prompt_sends_flattened_messages_and_the_request_fields() {
         model: Some("gpt-4o".to_owned()),
         tools: Some(Json::List(Vec::new())),
     };
-    let mut request_data = RequestData {
-        litellm_call_id: Some("call-1".to_owned()),
-        model: Some("request-model".to_owned()),
-        user: Some("u1".to_owned()),
-        correlation_key: Some("ck".to_owned()),
-        tools: TrackedField::Missing,
-        response: ResponseSource::Absent,
-        logging_obj: LoggingObjectStash::Missing,
-    };
+    let mut request_data = request_fields(&[
+        ("litellm_call_id", text_field("call-1")),
+        ("model", text_field("request-model")),
+        ("user", text_field("u1")),
+        ("correlation_key", text_field("ck")),
+    ]);
     let returned = moderate_prompt(&harness.logger, inputs.clone(), &mut request_data, None)
         .await
         .expect("an empty choices answer is a pass");
@@ -596,7 +612,7 @@ async fn moderate_prompt_sends_flattened_messages_and_the_request_fields() {
 async fn moderate_prompt_calls_the_webhook_for_text_only_requests() {
     let harness = Harness::new(vec![ScriptedReply::json("{}")]);
     let inputs = text_inputs(&["one", "", "two"]);
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = moderate_prompt(&harness.logger, inputs.clone(), &mut request_data, None)
         .await
         .expect("an empty choices answer is a pass");
@@ -625,7 +641,7 @@ async fn moderate_prompt_returns_inputs_without_a_call_when_nothing_is_moderated
         model: None,
         tools: None,
     };
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = moderate_prompt(&harness.logger, inputs.clone(), &mut request_data, None)
         .await
         .expect("nothing to moderate");
@@ -655,8 +671,12 @@ async fn moderate_prompt_raises_a_block_with_the_resolved_model(
         model: input_model.map(str::to_owned),
         tools: None,
     };
-    let mut request_data = request_data();
-    request_data.model = request_model.map(str::to_owned);
+    let mut request_data = RequestData::default();
+    if let Some(model) = request_model {
+        request_data
+            .fields
+            .insert("model".to_owned(), text_field(model));
+    }
     let exception = block(moderate_prompt(&harness.logger, inputs, &mut request_data, None).await);
     assert_eq!(exception.message, "Prompt blocked by policy.");
     assert_eq!(exception.model, expected);
@@ -677,7 +697,7 @@ async fn moderate_prompt_returns_inputs_when_the_service_passes_through() {
         model: None,
         tools: None,
     };
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = moderate_prompt(&harness.logger, inputs.clone(), &mut request_data, None)
         .await
         .expect("an empty choices answer is a pass");
@@ -692,7 +712,7 @@ async fn moderate_prompt_returns_inputs_when_the_service_passes_through() {
 async fn stash_block_context_marks_the_logging_object_and_stashes_it() {
     let _harness = Harness::new(Vec::new());
     let logging_obj: Arc<LoggingObject> = logging_object(r#"{"model":"gpt-4o"}"#);
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     stash_block_context(Some(&logging_obj), &mut request_data);
     let details = logging_obj
         .model_call_details
@@ -718,8 +738,12 @@ async fn stash_block_context_without_a_logging_object_stashes_none_and_logs(
     #[case] logged_call_id: &str,
 ) {
     let harness = Harness::new(Vec::new());
-    let mut request_data = request_data();
-    request_data.litellm_call_id = call_id.map(str::to_owned);
+    let mut request_data = RequestData::default();
+    if let Some(present) = call_id {
+        request_data
+            .fields
+            .insert("litellm_call_id".to_owned(), text_field(present));
+    }
     stash_block_context(None, &mut request_data);
     assert!(matches!(
         request_data.logging_obj,
@@ -739,7 +763,7 @@ async fn stash_block_context_without_a_logging_object_stashes_none_and_logs(
 async fn apply_guardrail_fails_open_on_a_response_transport_error() {
     let harness = Harness::new(vec![ScriptedReply::network()]);
     let inputs = text_inputs(&["hello"]);
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = apply_guardrail(
         &harness.logger,
         inputs.clone(),
@@ -765,7 +789,7 @@ async fn apply_guardrail_fails_open_on_a_prompt_non_object_response() {
         model: None,
         tools: None,
     };
-    let mut request_data = request_data();
+    let mut request_data = RequestData::default();
     let returned = apply_guardrail(
         &harness.logger,
         inputs.clone(),

@@ -10,12 +10,10 @@ call:
         body: "{}"
     logging_obj: null
     request_data: null
-    actions:
-      - do: apply_guardrail
-        input_type: request
-        inputs:
-          structured_messages:
-            - {role: user, content: "hello"}
-          model: gpt-4o
+    input_type: request
+    inputs:
+      structured_messages:
+        - {role: user, content: "hello"}
+      model: gpt-4o
 env: {}
 compare: {ignore: []}
