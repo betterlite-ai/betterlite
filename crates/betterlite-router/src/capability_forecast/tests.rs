@@ -10,7 +10,7 @@ use super::config::{Calibration, Config, ResponseFormat};
 use super::error::ForecastError;
 use super::forecast::route;
 use super::prompt::{SYSTEM_PROMPT, response_format, schema, system_prompt};
-use super::reply::{MAX_REPLY_BYTES, first_object, parse_cap_reply};
+use super::reply::{MAX_REPLY_BYTES, SCAN_BUDGET, first_object, parse_cap_reply};
 use super::verdict::{Boundary, Rule};
 
 const JSON_SCHEMA_FORMAT: &str = r#"{"type":"json_schema","json_schema":{"name":"CapabilityClassifierDecision","strict":true,"schema":{"additionalProperties":false,"properties":{"capability_boundary":{"enum":["supported","uncertain","unsupported","unmatched"],"type":"string"},"crux":{"minLength":1,"type":"string"},"p_solve":{"maximum":1.0,"minimum":0.0,"type":"number"},"primary_rule":{"enum":["SUP-1","SUP-2","SUP-3","SUP-4","SUP-5","UNC-1","UNC-2","LIM-1","LIM-2","none"],"type":"string"}},"required":["crux","primary_rule","capability_boundary","p_solve"],"type":"object"}}}"#;
@@ -619,6 +619,7 @@ fn scan(content: &str) -> Option<&str> {
 }
 
 fn assert_scan_budget() {
+    assert_eq!(SCAN_BUDGET, 0x0100_0000);
     let started = Instant::now();
     let flood = "{\"a\":".repeat(209_715);
     let error = parse_cap_reply(flood.as_bytes()).unwrap_err();

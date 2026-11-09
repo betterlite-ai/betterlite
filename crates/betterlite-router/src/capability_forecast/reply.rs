@@ -7,7 +7,7 @@ use super::error::ForecastError;
 use super::verdict::Verdict;
 
 pub const MAX_REPLY_BYTES: usize = 0x0010_0000;
-const SCAN_BUDGET: usize = MAX_REPLY_BYTES.saturating_mul(16);
+pub(super) const SCAN_BUDGET: usize = MAX_REPLY_BYTES.saturating_mul(16);
 
 // same-length stand-ins so the decoder locates the object Python's raw_decode would have accepted
 const MASKED_CONSTANTS: [(&[u8], &[u8]); 3] = [
