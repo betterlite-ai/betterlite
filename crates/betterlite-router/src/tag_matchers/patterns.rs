@@ -159,7 +159,8 @@ fn unsupported_syntax(source: &str) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClassState {
     Outside,
-    Start,
+    Open,
+    Negated,
     Body,
 }
 
@@ -183,7 +184,7 @@ impl Scanner<'_> {
             return self.class_char(character);
         }
         if character == '[' {
-            self.class = ClassState::Start;
+            self.class = ClassState::Open;
             return false;
         }
         character == '(' && self.characters.peek() == Some(&'?') && self.group()
@@ -209,14 +210,23 @@ impl Scanner<'_> {
 
     fn group(&mut self) -> bool {
         self.characters.next();
-        self.characters.peek() == Some(&'(') || enables_verbose(&self.characters)
+        self.characters.peek() == Some(&'(')
+            || self.characters.peek() == Some(&'#')
+            || enables_verbose(&self.characters)
     }
 
     fn class_char(&mut self, character: char) -> bool {
-        let class_start = self.class == ClassState::Start;
-        match class_step(character, self.characters.peek(), class_start) {
+        // only a caret directly after [ keeps the start position, so a second one is a literal
+        if self.class == ClassState::Open && character == '^' {
+            self.class = ClassState::Negated;
+            return false;
+        }
+        if self.class != ClassState::Body && character == ']' {
+            self.class = ClassState::Body;
+            return false;
+        }
+        match class_step(character, self.characters.peek()) {
             ClassStep::Unsupported => true,
-            ClassStep::Start => false,
             ClassStep::Close => {
                 self.class = ClassState::Outside;
                 false
@@ -267,23 +277,16 @@ where
 
 enum ClassStep {
     Unsupported,
-    Start,
     Close,
     Literal,
 }
 
-fn class_step(character: char, next: Option<&char>, class_start: bool) -> ClassStep {
+fn class_step(character: char, next: Option<&char>) -> ClassStep {
     if character == '[' {
         return ClassStep::Unsupported;
     }
     if character == ']' {
-        if class_start {
-            return ClassStep::Literal;
-        }
         return ClassStep::Close;
-    }
-    if class_start && character == '^' {
-        return ClassStep::Start;
     }
     let doubled = next.is_some_and(|following| {
         (*following == '&' && character == '&')

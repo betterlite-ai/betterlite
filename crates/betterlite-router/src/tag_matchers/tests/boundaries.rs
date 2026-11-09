@@ -18,6 +18,7 @@ enum Boundary {
     FancyMatch,
     Unsupported(&'static str),
     Supported(&'static str),
+    ManyGroups(usize, &'static str),
     EmptyPrefix,
     DefaultMatchAny,
     PooledKnown,
@@ -42,13 +43,15 @@ enum Boundary {
 #[case::nested_class(Boundary::Unsupported("[a[bc]]"))]
 #[case::nested_class_at_start(Boundary::Unsupported("[[ab]]"))]
 #[case::negated_nested_class_at_start(Boundary::Unsupported("[^[ab]]"))]
-#[case::octal_escape(Boundary::Unsupported(r"(a)\012"))]
-#[case::nul_octal_escape(Boundary::Unsupported(r"\0"))]
-#[case::three_digit_octal(Boundary::Unsupported(r"\101"))]
+#[case::leading_zero_octal(Boundary::ManyGroups(12, r"\012"))]
+#[case::three_digit_octal(Boundary::ManyGroups(101, r"\101"))]
 #[case::absolute_end(Boundary::Unsupported(r"a\Z"))]
 #[case::conditional(Boundary::Unsupported("(?P<a>x)(?(a)y|z)"))]
 #[case::verbose_mode(Boundary::Unsupported("(?x)a # note [x\n\\<tag"))]
+#[case::inline_comment(Boundary::Unsupported(r"(?#[)\<tag"))]
 #[case::class_escape_before_word(Boundary::Unsupported(r"[\d]\<tag"))]
+#[case::caret_before_word(Boundary::Unsupported(r"[^^]\<tag"))]
+#[case::caret_class(Boundary::Supported("[^^][ab]"))]
 #[case::engine_refused(Boundary::Unsupported("(?~|abc|def)"))]
 #[case::escaped_backslash_escape(Boundary::Supported(r"\\N\{"))]
 #[case::escaped_backslash_bracket(Boundary::Supported(r"\\<tag"))]
@@ -72,6 +75,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::FancyMatch => fancy_match_boundary(),
         Boundary::Unsupported(pattern) => unsupported_construct_boundary(pattern),
         Boundary::Supported(pattern) => supported_construct_boundary(pattern),
+        Boundary::ManyGroups(groups, suffix) => many_groups_boundary(groups, suffix),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
         Boundary::DefaultMatchAny => default_match_any_boundary(),
         Boundary::PooledKnown => pooled_known_boundary(),
@@ -181,6 +185,12 @@ fn unsupported_construct_boundary(pattern: &str) {
 fn supported_construct_boundary(pattern: &str) {
     let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
     assert!(matcher.warnings.is_empty());
+}
+
+fn many_groups_boundary(groups: usize, suffix: &str) {
+    let mut pattern = "()".repeat(groups);
+    pattern.push_str(suffix);
+    unsupported_construct_boundary(&pattern);
 }
 
 fn match_steps_boundary() {
