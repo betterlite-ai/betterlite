@@ -1,0 +1,11 @@
+task: B8202
+deviations:
+  - what: "Each well-known path attempt is cut at one total 10 second deadline (DEFAULT_DISCOVERY_TIMEOUT). httpx gives its 10 second timeout to connect, read, write and pool separately, so an upstream that trickles bytes can keep a path alive longer there before LiteLLM gives up on it."
+    why: "betterlite's pooled client takes one deadline per request and this route has no client of its own to configure, so the attempt gets the whole budget as its deadline."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/discovery.py#L47"
+  - what: "A path whose response body is larger than the transport's body limit (16 MiB by default) counts as a failed path and discovery moves on. LiteLLM reads a body of any size into memory and parses it."
+    why: "Every inbound body has a size limit; an agent card is a small JSON document, and an unbounded read from an upstream agent is a free denial of service."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/discovery.py#L139-L147"
+  - what: "A request admitted with the master key carries a principal with no roles in the current auth stage, so this route answers 403 where LiteLLM's master key is a proxy admin. Once the auth pipeline fills the principal's roles, the same check admits it."
+    why: "The role check reads the authenticated principal's roles like every other admin-only server route; mapping the master key to proxy_admin belongs to the auth pipeline (B052/B756), not to one route."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2085-L2092"
