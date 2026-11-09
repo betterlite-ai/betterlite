@@ -1,0 +1,34 @@
+kind: probe
+name: user-agent-pattern
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["^User-Agent: other-tool", "^User-Agent: claude-code/", "(?i)internal"]
+        tags: []
+        header_strings: ["User-Agent: claude-code/1.0", "User-Agent: internal"]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["^User-Agent: other-tool", "^User-Agent: claude-code/", "(?i)internal"]
+        tags: []
+        header_strings: ["Other: x", "user-agent: internal"]
+        match_any: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: agent
+            tag_regex: ["^User-Agent: other-tool"]
+        tags: []
+        header_strings: []
+        match_any: true
+compare: {ignore: []}

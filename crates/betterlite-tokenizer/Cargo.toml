@@ -10,6 +10,7 @@ base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hex.workspace = true
 hf-hub = { version = "=1.0.0", features = ["rustls-tls"] }
