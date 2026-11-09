@@ -230,7 +230,7 @@ async fn reports_what_went_wrong_upstream(
     let error = answered.err().unwrap();
     assert!(error.to_string().contains(message), "{error}");
     if delay > Duration::ZERO {
-        assert_eq!(error.failure().status, 408);
+        assert_eq!(error.failure(&chat.redactor).status, 408);
     }
 }
 
@@ -320,7 +320,7 @@ async fn stream_distinguishes_status(#[case] status: u16) {
         assert_eq!(response.status, status);
         assert_eq!(response.body, body.as_bytes());
     } else {
-        let failure = result.err().unwrap().failure();
+        let failure = result.err().unwrap().failure(&chat.redactor);
         assert_eq!(failure.status, status);
         assert_eq!(failure.error_type, "throttling_error");
         assert_eq!(failure.param.as_deref(), Some("p"));
@@ -506,7 +506,7 @@ async fn mock_calls_behavior_tests_behavior(
         }
         Expected::Failure(status, error_type) => {
             let error = chat.send(deployment, &request).await.err().unwrap();
-            let failure = error.failure();
+            let failure = error.failure(&chat.redactor);
             assert_eq!(failure.status, status);
             assert_eq!(failure.error_type, error_type);
         }
