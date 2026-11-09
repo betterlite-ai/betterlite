@@ -57,51 +57,44 @@ pub(super) fn compiled_code(
     }
 }
 
-// LiteLLM awaits an async function on the event loop under the full execution budget.
-pub(super) async fn call_async(
-    guardrail: &CustomCodeGuardrail,
-    module: &Arc<dyn LoadedModule>,
-    arguments: CallArguments,
-    input_type: GuardrailInputType,
-) -> Result<GuardrailValue, CustomCodeGuardrailError> {
-    match module.call(arguments) {
-        Ok(CallOutput::Pending(pending)) => await_with_timeout(
-            pending,
-            guardrail.execution_budget,
-            &guardrail.guardrail_name,
-        )
-        .await
-        .map_err(|source| classify(guardrail, input_type, source)),
-        Ok(CallOutput::Value(value)) => Ok(value),
-        Err(source) => Err(classify(
-            guardrail,
-            input_type,
-            ExecutionError::Sandbox(source),
-        )),
-    }
+pub(super) enum CallMode {
+    Async,
+    Sync,
 }
 
-// A plain function runs on a worker thread; an awaitable it returns gets only the time left.
-pub(super) async fn call_sync(
+// Async code awaits on the loop; a plain function runs off it and keeps the deadline's time left.
+pub(super) async fn call(
     guardrail: &CustomCodeGuardrail,
     module: &Arc<dyn LoadedModule>,
     arguments: CallArguments,
     input_type: GuardrailInputType,
+    mode: CallMode,
 ) -> Result<GuardrailValue, CustomCodeGuardrailError> {
     let started = Instant::now();
-    let shared_module = Arc::clone(module);
-    let output = call_off_loop_with_timeout(
-        move || shared_module.call(arguments),
-        guardrail.execution_budget,
-        &guardrail.guardrail_name,
-    )
-    .await
-    .map_err(|source| classify(guardrail, input_type, source))?;
+    let (output, timeout) = match mode {
+        CallMode::Async => (
+            module.call(arguments).map_err(|source| {
+                classify(guardrail, input_type, ExecutionError::Sandbox(source))
+            })?,
+            guardrail.execution_budget,
+        ),
+        CallMode::Sync => {
+            let shared_module = Arc::clone(module);
+            let output = call_off_loop_with_timeout(
+                move || shared_module.call(arguments),
+                guardrail.execution_budget,
+                &guardrail.guardrail_name,
+            )
+            .await
+            .map_err(|source| classify(guardrail, input_type, source))?;
+            let remaining = guardrail.execution_budget.saturating_sub(started.elapsed());
+            (output, remaining)
+        }
+    };
     match output {
         CallOutput::Value(value) => Ok(value),
         CallOutput::Pending(pending) => {
-            let remaining = guardrail.execution_budget.saturating_sub(started.elapsed());
-            await_with_timeout(pending, remaining, &guardrail.guardrail_name)
+            await_with_timeout(pending, timeout, &guardrail.guardrail_name)
                 .await
                 .map_err(|source| classify(guardrail, input_type, source))
         }

@@ -217,10 +217,12 @@ impl CustomCodeGuardrail {
             request_data: safe_request_data.to_value(),
             input_type,
         };
-        if code.program.is_async(APPLY_GUARDRAIL).unwrap_or(false) {
-            return dispatch::call_async(self, &code.module, arguments, input_type).await;
-        }
-        dispatch::call_sync(self, &code.module, arguments, input_type).await
+        let mode = if code.program.is_async(APPLY_GUARDRAIL).unwrap_or(false) {
+            dispatch::CallMode::Async
+        } else {
+            dispatch::CallMode::Sync
+        };
+        dispatch::call(self, &code.module, arguments, input_type, mode).await
     }
 
     // LiteLLM's _prepare_safe_request_data keeps only these five keys; credentials stay out.

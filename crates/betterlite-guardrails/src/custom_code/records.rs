@@ -32,21 +32,21 @@ pub(super) fn append_flag_record(
 }
 
 fn flag_response(record: &FlagRecord) -> GuardrailValue {
-    GuardrailValue::Object(BTreeMap::from([
-        ("action".to_owned(), GuardrailValue::Text("flag".to_owned())),
-        (
-            "reason".to_owned(),
-            GuardrailValue::Text(record.reason.clone()),
-        ),
-        (
-            "input_type".to_owned(),
-            GuardrailValue::Text(input_type_name(record.input_type).to_owned()),
-        ),
-        (
-            "metadata".to_owned(),
-            GuardrailValue::Object(record.metadata.clone()),
-        ),
-    ]))
+    let mut response = BTreeMap::new();
+    response.insert("action".to_owned(), GuardrailValue::Text("flag".to_owned()));
+    response.insert(
+        "reason".to_owned(),
+        GuardrailValue::Text(record.reason.clone()),
+    );
+    response.insert(
+        "input_type".to_owned(),
+        GuardrailValue::Text(input_type_name(record.input_type).to_owned()),
+    );
+    response.insert(
+        "metadata".to_owned(),
+        GuardrailValue::Object(record.metadata.clone()),
+    );
+    GuardrailValue::Object(response)
 }
 
 fn flag_entry(record: &FlagRecord) -> GuardrailValue {

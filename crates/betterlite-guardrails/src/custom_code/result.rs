@@ -170,15 +170,18 @@ pub(super) fn modify(
         .filter(|value| !matches!(value, GuardrailValue::Null))
     {
         let GuardrailValue::Array(calls) = value else {
-            return Err(CustomCodeGuardrailError::Execution {
-                message: "custom code guardrail result field 'tool_calls' must be a list"
-                    .to_owned(),
-                details: ErrorDetails::new(),
-            });
+            return Err(invalid_field("tool_calls", "a list"));
         };
         inputs.tool_calls = Some(calls.clone());
     }
     Ok(inputs)
+}
+
+fn invalid_field(key: &str, expected: &str) -> CustomCodeGuardrailError {
+    CustomCodeGuardrailError::Execution {
+        message: format!("custom code guardrail result field '{key}' must be {expected}"),
+        details: ErrorDetails::new(),
+    }
 }
 
 fn text_field(
@@ -189,10 +192,7 @@ fn text_field(
     match fields.get(key) {
         None | Some(GuardrailValue::Null) => Ok(default.to_owned()),
         Some(GuardrailValue::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(CustomCodeGuardrailError::Execution {
-            message: format!("custom code guardrail result field '{key}' must be text"),
-            details: ErrorDetails::new(),
-        }),
+        Some(_) => Err(invalid_field(key, "text")),
     }
 }
 
@@ -200,41 +200,28 @@ fn object_field(
     fields: &BTreeMap<String, GuardrailValue>,
     key: &str,
 ) -> Result<BTreeMap<String, GuardrailValue>, CustomCodeGuardrailError> {
-    match fields.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(BTreeMap::new()),
-        Some(GuardrailValue::Object(object)) => Ok(object.clone()),
-        Some(_) => Err(CustomCodeGuardrailError::Execution {
-            message: format!("custom code guardrail result field '{key}' must be an object"),
-            details: ErrorDetails::new(),
-        }),
-    }
+    let present = fields
+        .get(key)
+        .filter(|value| !matches!(value, GuardrailValue::Null));
+    let Some(value) = present else {
+        return Ok(BTreeMap::new());
+    };
+    let GuardrailValue::Object(object) = value else {
+        return Err(invalid_field(key, "an object"));
+    };
+    Ok(object.clone())
 }
 
 fn text_list(field: &str, value: &GuardrailValue) -> Result<Vec<String>, CustomCodeGuardrailError> {
     let GuardrailValue::Array(items) = value else {
-        return Err(CustomCodeGuardrailError::Execution {
-            message: format!(
-                "custom code guardrail result field '{field}' must be a list of texts"
-            ),
-            details: ErrorDetails::new(),
-        });
+        return Err(invalid_field(field, "a list of texts"));
     };
-    items
-        .iter()
-        .map(|item| match item {
-            GuardrailValue::Text(text) => Ok(text.clone()),
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_) => Err(CustomCodeGuardrailError::Execution {
-                message: format!(
-                    "custom code guardrail result field '{field}' must be a list of texts"
-                ),
-                details: ErrorDetails::new(),
-            }),
-        })
-        .collect()
+    let mut texts = Vec::with_capacity(items.len());
+    for item in items {
+        let GuardrailValue::Text(text) = item else {
+            return Err(invalid_field(field, "a list of texts"));
+        };
+        texts.push(text.clone());
+    }
+    Ok(texts)
 }
