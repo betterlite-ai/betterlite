@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]

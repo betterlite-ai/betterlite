@@ -992,10 +992,12 @@ dependencies = [
  "nix",
  "rand 0.10.3",
  "regex",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -1515,6 +1517,7 @@ version = "0.1.0"
 name = "betterlite-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite",
  "libfuzzer-sys",
 ]
 
@@ -1964,6 +1967,7 @@ dependencies = [
  "aws-types",
  "axum",
  "base64 0.23.1",
+ "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
