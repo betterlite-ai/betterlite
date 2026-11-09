@@ -81,3 +81,17 @@ path = "fuzz_targets/response_schema.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "exa_ai_reply"
+path = "fuzz_targets/exa_ai_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serper_reply"
+path = "fuzz_targets/serper_reply.rs"
+test = false
+doc = false
+bench = false

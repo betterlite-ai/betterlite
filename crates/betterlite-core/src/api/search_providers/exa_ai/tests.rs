@@ -12,9 +12,8 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
-use super::{
-    EXA_AI_API_BASE, ExaAiSearchConfig, ExaAiSearchError, ExaAiSearchSettings, decode_exa_ai_search,
-};
+use super::reply::{REPLY_MAX_BYTES, decode_exa_ai_search};
+use super::{EXA_AI_API_BASE, ExaAiSearchConfig, ExaAiSearchError, ExaAiSearchSettings};
 
 fn environment(values: &[(&str, &str)]) -> BTreeMap<String, String> {
     values
@@ -267,7 +266,7 @@ fn exa_ai_reply_rejects_a_broken_shape(#[case] payload: &str) {
 
 #[test]
 fn exa_ai_reply_rejects_a_reply_over_the_bound() {
-    let oversized = vec![b' '; super::REPLY_MAX_BYTES + 1];
+    let oversized = vec![b' '; REPLY_MAX_BYTES + 1];
     assert!(matches!(
         decode_exa_ai_search(&oversized),
         Err(ExaAiSearchError::ReplyTooLarge { .. })

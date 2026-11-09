@@ -2,13 +2,18 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    OutboundSearch, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
-use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
+use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::value::{RawValue, to_raw_value};
+use serde_json::value::RawValue;
 use thiserror::Error;
+
+pub mod reply;
+
+mod request;
+mod tests;
 
 pub const EXA_AI_API_BASE: &str = "https://api.exa.ai";
 const API_KEY_VARIABLE: &str = "EXA_API_KEY";
@@ -17,7 +22,6 @@ const API_KEY_HEADER: &str = "x-api-key";
 const CONTENT_TYPE_HEADER: &str = "Content-Type";
 const JSON_CONTENT_TYPE: &str = "application/json";
 const SEARCH_SUFFIX: &str = "/search";
-const REPLY_MAX_BYTES: usize = 0x0100_0000;
 
 const CREDENTIAL: ServerCredential = ServerCredential {
     key_vars: &[API_KEY_VARIABLE],
@@ -92,11 +96,6 @@ pub struct ExaAiSearchRequest {
     pub extra: Object,
 }
 
-#[derive(Debug, Serialize)]
-struct DefaultContents {
-    text: bool,
-}
-
 #[derive(Debug, Clone)]
 pub struct ExaAiSearchConfig {
     pub settings: ExaAiSearchSettings,
@@ -166,155 +165,13 @@ impl SearchProvider for ExaAiSearchConfig {
         query: &SearchQuery,
         optional_params: &Object,
     ) -> Result<Self::Body, Self::Error> {
-        let joined = match query {
-            SearchQuery::Single(text) => text.clone(),
-            SearchQuery::Multiple(queries) => queries.join(" "),
-        };
-        let mut extra = Object::new();
-        for (name, value) in optional_params {
-            if PERPLEXITY_PARAMS.contains(&name.as_str()) || name == "contents" {
-                continue;
-            }
-            if is_already_in_body(name, optional_params) {
-                continue;
-            }
-            extra.insert(name.clone(), value.clone());
-        }
-        let contents = match raw_field(optional_params, "contents")? {
-            Some(contents) => contents,
-            None => to_raw_value(&DefaultContents { text: true })
-                .map_err(ExaAiSearchError::RequestJson)?,
-        };
-        Ok(ExaAiSearchRequest {
-            query: joined,
-            num_results: raw_field(optional_params, "max_results")?,
-            include_domains: raw_field(optional_params, "search_domain_filter")?,
-            user_location: raw_field(optional_params, "country")?,
-            contents,
-            extra,
-        })
+        request::build(query, optional_params)
     }
 
     fn transform_search_response(
         &self,
         response: &ProviderResponse<'_>,
     ) -> Result<SearchResponse, Self::Error> {
-        decode_exa_ai_search(response.text.as_bytes())
+        reply::decode_exa_ai_search(response.text.as_bytes())
     }
 }
-
-fn raw_field(
-    optional_params: &Object,
-    name: &str,
-) -> Result<Option<Box<RawValue>>, ExaAiSearchError> {
-    optional_params
-        .get(name)
-        .map(|value| to_raw_value(value).map_err(ExaAiSearchError::RequestJson))
-        .transpose()
-}
-
-// the unified name only fills its Exa field when it is present, and the copy check runs after that
-fn is_already_in_body(name: &str, optional_params: &Object) -> bool {
-    let source = match name {
-        "query" => return true,
-        "numResults" => "max_results",
-        "includeDomains" => "search_domain_filter",
-        "userLocation" => "country",
-        _ => return false,
-    };
-    optional_params.contains_key(source)
-}
-
-#[derive(Debug, Deserialize)]
-struct ExaReply {
-    #[serde(default)]
-    results: Option<Box<RawValue>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExaReplyResult {
-    #[serde(default)]
-    title: Option<Box<RawValue>>,
-    #[serde(default)]
-    url: Option<Box<RawValue>>,
-    #[serde(default)]
-    text: Option<Box<RawValue>>,
-    #[serde(default, rename = "publishedDate")]
-    published_date: Option<Box<RawValue>>,
-}
-
-pub fn decode_exa_ai_search(bytes: &[u8]) -> Result<SearchResponse, ExaAiSearchError> {
-    if bytes.len() > REPLY_MAX_BYTES {
-        return Err(ExaAiSearchError::ReplyTooLarge {
-            limit: REPLY_MAX_BYTES,
-        });
-    }
-    let reply: ExaReply = serde_json::from_slice(bytes).map_err(ExaAiSearchError::ReplyDecode)?;
-    let results = match reply.results {
-        None => Vec::new(),
-        Some(raw) => {
-            if serde_json::from_str::<()>(raw.get()).is_ok() {
-                return Err(ExaAiSearchError::ResultsShape);
-            }
-            let items: Vec<ExaReplyResult> =
-                serde_json::from_str(raw.get()).map_err(ExaAiSearchError::ReplyDecode)?;
-            items
-                .into_iter()
-                .map(exa_result)
-                .collect::<Result<Vec<_>, _>>()?
-        }
-    };
-    Ok(SearchResponse {
-        results,
-        object: SearchObject::default(),
-        extra: Object::new(),
-        hidden_params: Object::new(),
-    })
-}
-
-fn exa_result(result: ExaReplyResult) -> Result<SearchResult, ExaAiSearchError> {
-    Ok(SearchResult {
-        title: text_member(result.title, "title")?,
-        url: text_member(result.url, "url")?,
-        snippet: text_member(result.text, "text")?,
-        date: date_member(result.published_date, "publishedDate")?,
-        last_updated: None,
-        extra: Object::new(),
-    })
-}
-
-fn text_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<String, ExaAiSearchError> {
-    let Some(raw) = value else {
-        return Ok(String::new());
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Err(ExaAiSearchError::ResultField { field: name });
-    }
-    serde_json::from_str(raw.get()).map_err(|source| ExaAiSearchError::ReplyField {
-        field: name,
-        source,
-    })
-}
-
-fn date_member(
-    value: Option<Box<RawValue>>,
-    name: &'static str,
-) -> Result<Option<String>, ExaAiSearchError> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    if serde_json::from_str::<()>(raw.get()).is_ok() {
-        return Ok(None);
-    }
-    serde_json::from_str(raw.get())
-        .map(Some)
-        .map_err(|source| ExaAiSearchError::ReplyField {
-            field: name,
-            source,
-        })
-}
-
-mod tests;

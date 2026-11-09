@@ -12,10 +12,8 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
-use super::{
-    SERPER_API_BASE, SerperSearchConfig, SerperSearchError, SerperSearchSettings,
-    decode_serper_search,
-};
+use super::reply::{REPLY_MAX_BYTES, decode_serper_search};
+use super::{SERPER_API_BASE, SerperSearchConfig, SerperSearchError, SerperSearchSettings};
 
 fn environment(values: &[(&str, &str)]) -> BTreeMap<String, String> {
     values
@@ -263,7 +261,7 @@ fn serper_reply_rejects_a_broken_shape(#[case] payload: &str) {
 
 #[test]
 fn serper_reply_rejects_a_reply_over_the_bound() {
-    let oversized = vec![b' '; super::REPLY_MAX_BYTES + 1];
+    let oversized = vec![b' '; REPLY_MAX_BYTES + 1];
     assert!(matches!(
         decode_serper_search(&oversized),
         Err(SerperSearchError::ReplyTooLarge { .. })
