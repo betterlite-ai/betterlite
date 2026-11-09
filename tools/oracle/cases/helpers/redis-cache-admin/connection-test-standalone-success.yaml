@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-admin-connection-test-standalone-success
+call:
+  b4326:
+    function: connection_test
+    family: standalone
+    ping: true
+env: {}
+compare: {ignore: []}
