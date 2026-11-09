@@ -1,0 +1,12 @@
+kind: helper
+name: agent-search-model-before-router
+call:
+  b4783:
+    function: search_agents
+    query: query
+    agents:
+      - {agent_id: a1, agent_name: alpha, agent_card_params: {}}
+    top_k: 5
+    embedding_model: test-embedding
+env: {}
+compare: {ignore: []}
