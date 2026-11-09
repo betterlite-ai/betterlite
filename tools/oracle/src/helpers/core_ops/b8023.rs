@@ -62,14 +62,16 @@ pub(crate) enum Input {
     SearxngUrl(UrlInput),
 }
 
+struct Connection<'call> {
+    environment: &'call BTreeMap<String, String>,
+    api_key: Option<String>,
+    api_base: Option<&'call str>,
+}
+
 trait SearchMapping {
     type Config: SearchProvider;
 
-    fn load(
-        environment: &BTreeMap<String, String>,
-        api_key: Option<String>,
-        api_base: Option<&str>,
-    ) -> Loaded<Self>;
+    fn load(connection: &Connection<'_>) -> Loaded<Self>;
 
     fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>>;
 
@@ -81,13 +83,9 @@ struct LinkupMapping;
 impl SearchMapping for LinkupMapping {
     type Config = LinkupSearchConfig;
 
-    fn load(
-        environment: &BTreeMap<String, String>,
-        api_key: Option<String>,
-        api_base: Option<&str>,
-    ) -> Loaded<Self> {
-        LinkupSearchConfig::load(api_key.map(SecretString::from), api_base, environment)
-            .map_err(failure)
+    fn load(connection: &Connection<'_>) -> Loaded<Self> {
+        let key = connection.api_key.clone().map(SecretString::from);
+        LinkupSearchConfig::load(key, connection.api_base, connection.environment).map_err(failure)
     }
 
     fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>> {
@@ -104,13 +102,9 @@ struct SearxngMapping;
 impl SearchMapping for SearxngMapping {
     type Config = SearxngSearchConfig;
 
-    fn load(
-        environment: &BTreeMap<String, String>,
-        api_key: Option<String>,
-        api_base: Option<&str>,
-    ) -> Loaded<Self> {
-        SearxngSearchConfig::load(api_key.map(SecretString::from), api_base, environment)
-            .map_err(failure)
+    fn load(connection: &Connection<'_>) -> Loaded<Self> {
+        let key = connection.api_key.clone().map(SecretString::from);
+        SearxngSearchConfig::load(key, connection.api_base, connection.environment).map_err(failure)
     }
 
     fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>> {
@@ -151,24 +145,33 @@ fn bodies<M>(input: &BodyInput) -> HelperResult
 where
     M: SearchMapping,
 {
-    let mut rendered = Vec::new();
-    for request in &input.requests {
-        let body = M::body(request)?;
-        rendered.push(serde_json::to_value(body).map_err(failure)?);
-    }
-    Ok(json!({"bodies": rendered}))
+    input
+        .requests
+        .iter()
+        .map(|request| serde_json::to_value(M::body(request)?).map_err(failure))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|bodies| json!({"bodies": bodies}))
 }
 
 fn urls<M>(input: &UrlInput) -> HelperResult
 where
     M: SearchMapping,
 {
-    let config = M::load(&input.environment, None, input.api_base.as_deref())?;
+    let connection = Connection {
+        environment: &input.environment,
+        api_key: None,
+        api_base: input.api_base.as_deref(),
+    };
+    let config = M::load(&connection)?;
     let mut rendered = Vec::new();
     for request in &input.requests {
         let body = M::body(request)?;
         let url = config
-            .complete_url(input.api_base.as_deref(), &request.optional_params, Some(&body))
+            .complete_url(
+                input.api_base.as_deref(),
+                &request.optional_params,
+                Some(&body),
+            )
             .map_err(failure)?;
         let (address, params) = split_url(&url);
         rendered.push(json!({"address": address, "params": params}));
@@ -176,21 +179,11 @@ where
     Ok(json!({"urls": rendered}))
 }
 
-fn environments<M>(input: &EnvironmentInput) -> HelperResult
-where
-    M: SearchMapping,
-{
-    let config = M::load(&input.environment, input.api_key.clone(), input.api_base.as_deref())?;
-    let headers = config.validate_environment(input.headers.clone(), None, None);
-    Ok(json!({"headers": headers}))
-}
-
 fn replies<M>(input: &ReplyInput) -> HelperResult
 where
     M: SearchMapping,
 {
-    let response = M::reply(&input.body)?;
-    let rendered = serde_json::to_value(response).map_err(failure)?;
+    let rendered = serde_json::to_value(M::reply(&input.body)?).map_err(failure)?;
     Ok(json!({"response": rendered}))
 }
 
@@ -202,13 +195,37 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::LinkupBody(request) => bodies::<LinkupMapping>(request),
-            Input::LinkupEnvironment(request) => environments::<LinkupMapping>(request),
             Input::LinkupReply(request) => replies::<LinkupMapping>(request),
             Input::LinkupUrl(request) => urls::<LinkupMapping>(request),
+            Input::LinkupEnvironment(request) => {
+                let connection = Connection {
+                    environment: &request.environment,
+                    api_key: request.api_key.clone(),
+                    api_base: request.api_base.as_deref(),
+                };
+                let headers = LinkupMapping::load(&connection)?.validate_environment(
+                    request.headers.clone(),
+                    None,
+                    None,
+                );
+                Ok(json!({"headers": headers}))
+            }
             Input::SearxngBody(request) => bodies::<SearxngMapping>(request),
-            Input::SearxngEnvironment(request) => environments::<SearxngMapping>(request),
             Input::SearxngReply(request) => replies::<SearxngMapping>(request),
             Input::SearxngUrl(request) => urls::<SearxngMapping>(request),
+            Input::SearxngEnvironment(request) => {
+                let connection = Connection {
+                    environment: &request.environment,
+                    api_key: request.api_key.clone(),
+                    api_base: request.api_base.as_deref(),
+                };
+                let headers = SearxngMapping::load(&connection)?.validate_environment(
+                    request.headers.clone(),
+                    None,
+                    None,
+                );
+                Ok(json!({"headers": headers}))
+            }
         }
     }
 }
