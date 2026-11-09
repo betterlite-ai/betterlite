@@ -84,12 +84,7 @@ fn scripted_client(
 ) -> Scripted<'_> {
     let recorder = Arc::new(ScriptedTransport::new(responses));
     let sleeper = Arc::new(RecordingSleeper::default());
-    let client = fixture.client(
-        Arc::clone(&recorder),
-        Arc::clone(&sleeper),
-        polling,
-        policy,
-    );
+    let client = fixture.client(Arc::clone(&recorder), Arc::clone(&sleeper), polling, policy);
     Scripted {
         client,
         recorder,

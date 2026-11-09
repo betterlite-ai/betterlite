@@ -74,7 +74,9 @@ pub(super) fn header_map(
     Ok(headers)
 }
 
-pub(crate) fn header_map_output(headers: &HeaderMap) -> Result<Map<String, Value>, Box<HelperError>> {
+pub(crate) fn header_map_output(
+    headers: &HeaderMap,
+) -> Result<Map<String, Value>, Box<HelperError>> {
     let mut found = Map::new();
     for (name, value) in headers {
         let text = value
