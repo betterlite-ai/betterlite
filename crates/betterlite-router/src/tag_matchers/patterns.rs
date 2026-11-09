@@ -222,6 +222,12 @@ impl Scanner<'_> {
             return false;
         }
         if self.class != ClassState::Body && character == ']' {
+            // Python reads ]-x after the opening bracket as a range; []-] is a literal bracket and a hyphen
+            if self.characters.clone().next() == Some('-')
+                && self.characters.clone().nth(1) != Some(']')
+            {
+                return true;
+            }
             self.class = ClassState::Body;
             return false;
         }

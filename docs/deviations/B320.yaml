@@ -11,8 +11,10 @@ deviations:
       engine read differently are warned about as unsupported_pattern and skipped: \N{...} named escapes,
       \Z (the absolute end in Python), \< and \> (literal brackets in Python, word boundaries here), any
       unescaped [ inside a character class (POSIX classes such as [[:digit:]], nested classes such as
-      [a[bc]] and [[ab]], and the [[.a.]] and [[=a=]] forms), the &&, ~~ and -- set operators inside a
-      class, leading-zero and three-digit octal escapes such as \0, \012 and \101, conditional groups such as
+      [a[bc]] and [[ab]], and the [[.a.]] and [[=a=]] forms), a leading ] that starts a range such as
+      []-x] (Python reads ]-x as a range while the engine reads the three literals), the &&, ~~ and --
+      set operators inside a class, leading-zero and three-digit octal escapes such as \0, \012 and \101,
+      conditional groups such as
       (?(name)yes|no), patterns that turn on verbose mode with the x flag or use an inline (?#...) comment
       because their comment text can hide later constructs from the scan, and any pattern fancy-regex's
       compiler refuses. Other patterns the engine's parser rejects are warned about as invalid_pattern and
