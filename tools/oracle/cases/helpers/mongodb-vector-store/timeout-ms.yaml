@@ -1,0 +1,105 @@
+kind: helper
+name: timeout-ms
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: null}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 7}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 2.5}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 0.0015}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 0.0004}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: {read: 2.5}}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: {connect: 1}}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: {read: null}}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: {}}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 0}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: -1}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: "5"}
+          optional_params: {}
+          query: q
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 2.5}
+          optional_params: {}
+          query: q
+          embedding: [[0.5]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 1e3}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 2.50}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 1.10}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: 1e-05}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, timeout: {read: 2.50}}
+          optional_params: {}
+          query: q
+env: {}
+compare: {ignore: []}

@@ -10,6 +10,7 @@ async-trait = "0.1.92"
 aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
@@ -18,6 +19,7 @@ chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 hex.workspace = true
 http = "1.5.0"
+indexmap = { version = "2.14.2", features = ["serde"] }
 pem = "4.0.0"
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
@@ -32,6 +34,7 @@ tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+mutants = "0.0.4"
 rstest = "=0.27.0"
 tokio.workspace = true
 tracing-subscriber.workspace = true

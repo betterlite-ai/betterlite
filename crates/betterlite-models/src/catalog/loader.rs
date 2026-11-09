@@ -59,6 +59,8 @@ pub(super) fn build_catalog(
         lookup: accumulators.lookup,
         generalizations,
         warnings: accumulators.warnings.messages,
+        revision: None,
+        adopted_size: 0,
     })
 }
 
