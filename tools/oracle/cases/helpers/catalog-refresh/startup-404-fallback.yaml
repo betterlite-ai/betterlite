@@ -1,0 +1,13 @@
+kind: helper
+name: catalog-refresh-startup-404-fallback
+call:
+  catalog_refresh:
+    operation: startup
+    environment: {}
+    replies:
+      - status: 404
+    max_attempts: 3
+    probe_models: [gpt-4o]
+env: {}
+compare:
+  ignore: []
