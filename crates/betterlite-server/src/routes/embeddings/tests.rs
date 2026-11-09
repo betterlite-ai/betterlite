@@ -105,10 +105,10 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
 #[rstest::rstest]
 #[case::invalid(400, "invalid_request_error", 400, "invalid_request_error", None)]
 #[case::rate_limit(429, "requests", 429, "throttling_error", None)]
-#[case::model_missing(
+#[case::model_missing_keeps_the_upstream_status(
     400,
     "invalid_request_error model_not_found",
-    404,
+    400,
     "invalid_request_error",
     None
 )]
