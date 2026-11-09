@@ -1,0 +1,93 @@
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
+mod tests;
+#[derive(Clone, Debug, Default)]
+pub struct V1Kwargs {
+    pub call_type: Option<String>,
+    pub cache_hit: Option<bool>,
+    pub model: Option<String>,
+    pub user: Option<String>,
+    pub model_parameters: Option<IndexMap<String, Json>>,
+    pub messages: Option<Json>,
+    pub metadata: Option<IndexMap<String, Json>>,
+    pub cost: Option<Decimal>,
+}
+#[derive(Debug, thiserror::Error)]
+pub enum V1PayloadError {
+    #[error("the response is not a JSON object")]
+    ResponseNotObject,
+    #[error("the response carries no usage")]
+    MissingUsage,
+}
+
+// docs/compatibility.md leaves Python's repr and str text out, so each value prints as its standard JSON text
+#[must_use]
+pub fn string_form(value: &Json) -> String {
+    match value {
+        Json::Null => "null".to_owned(),
+        Json::Bool(flag) => flag.to_string(),
+        Json::Number(number) => number.to_string(),
+        Json::Text(text) => text.clone(),
+        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+fn object_form(object: Option<&IndexMap<String, Json>>) -> String {
+    let Some(fields) = object else {
+        return "{}".to_owned();
+    };
+    string_form(&Json::Object(fields.clone()))
+}
+fn messages_form(messages: Option<&Json>) -> String {
+    let Some(value) = messages else {
+        return "null".to_owned();
+    };
+    string_form(value)
+}
+fn id_form(fields: &IndexMap<String, Json>) -> String {
+    match fields.get("id") {
+        Some(Json::Text(text)) => text.clone(),
+        Some(Json::Null) | None => uuid::Uuid::new_v4().to_string(),
+        Some(other) => string_form(other),
+    }
+}
+pub fn v1_logging_payload(
+    kwargs: &V1Kwargs,
+    response: &Json,
+    start_time: Decimal,
+    end_time: Decimal,
+) -> Result<IndexMap<String, String>, V1PayloadError> {
+    let Json::Object(fields) = response else {
+        return Err(V1PayloadError::ResponseNotObject);
+    };
+    let usage = fields.get("usage").ok_or(V1PayloadError::MissingUsage)?;
+    let call_type = kwargs
+        .call_type
+        .clone()
+        .unwrap_or_else(|| "litellm.completion".to_owned());
+    let entries = [
+        ("id", id_form(fields)),
+        ("call_type", call_type),
+        (
+            "cache_hit",
+            string_form(&Json::Bool(kwargs.cache_hit.unwrap_or(false))),
+        ),
+        ("startTime", start_time.to_string()),
+        ("endTime", end_time.to_string()),
+        ("model", kwargs.model.clone().unwrap_or_default()),
+        ("user", kwargs.user.clone().unwrap_or_default()),
+        (
+            "modelParameters",
+            object_form(kwargs.model_parameters.as_ref()),
+        ),
+        ("messages", messages_form(kwargs.messages.as_ref())),
+        ("response", string_form(response)),
+        ("usage", string_form(usage)),
+        ("metadata", object_form(kwargs.metadata.as_ref())),
+        ("cost", kwargs.cost.unwrap_or_default().to_string()),
+    ];
+    Ok(entries
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect())
+}
