@@ -95,23 +95,22 @@ fn provider_info_falls_through_empty_values_in_order(#[case] case: ProviderCase)
 #[case::explicit_base(
     Some("https://explicit.example/v1/"),
     None,
-    "https://explicit.example/v1//models"
+    "https://explicit.example/v1/"
 )]
-#[case::empty_explicit_base(
-    Some(""),
-    Some("https://env.example/v1"),
-    "https://env.example/v1/models"
-)]
-#[case::environment_base(None, Some("https://env.example/v1"), "https://env.example/v1/models")]
-#[case::default_base(None, None, "https://ai-gateway.vercel.sh/v1/models")]
+#[case::empty_explicit_base(Some(""), Some("https://env.example/v1"), "https://env.example/v1")]
+#[case::environment_base(None, Some("https://env.example/v1"), "https://env.example/v1")]
+#[case::default_base(None, None, "https://ai-gateway.vercel.sh/v1")]
 fn models_url_joins_the_resolved_base_without_trimming(
     #[case] api_base: Option<&str>,
     #[case] env_base: Option<&str>,
-    #[case] expected: &str,
+    #[case] expected_base: &str,
 ) {
+    let environment = environment(env_base, None, None);
+    let resolved = provider_info(api_base, None, &environment);
+    assert_eq!(resolved.api_base, expected_base);
     assert_eq!(
-        models_url(api_base, &environment(env_base, None, None)),
-        expected
+        models_url(api_base, &environment),
+        format!("{}/models", resolved.api_base)
     );
 }
 
