@@ -1,0 +1,24 @@
+kind: helper
+name: crawl-search-providers-firecrawl-domain-filter-dropped
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_request
+    query: "fire"
+    optional_params:
+      max_results: 4
+      search_domain_filter: ["docs.rs"]
+      max_tokens_per_page: 256
+      country: "DE"
+      categories:
+        - {type: github}
+    environment:
+      FIRECRAWL_API_KEY: "fc-oracle-key"
+      FIRECRAWL_API_BASE: "https://proxy.oracle.test/v2/"
+    api_key: null
+    api_base: "https://proxy.oracle.test/v2/"
+env:
+  FIRECRAWL_API_KEY: "fc-oracle-key"
+  FIRECRAWL_API_BASE: "https://proxy.oracle.test/v2/"
+compare:
+  ignore: []
