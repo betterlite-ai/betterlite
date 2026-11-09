@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Literal, TypeAlias, cast
 
+import litellm
 from litellm.llms.vertex_ai.common_utils import (
     _get_embedding_url,  # pyright: ignore[reportPrivateUsage]
     _get_gemini_url,  # pyright: ignore[reportPrivateUsage]
@@ -10,6 +11,9 @@ from litellm.llms.vertex_ai.common_utils import (
     get_vertex_base_url,
 )
 from litellm.llms.vertex_ai.gemini.vertex_and_google_ai_studio_gemini import VertexGeminiConfig
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Params: TypeAlias = dict[str, Json]
