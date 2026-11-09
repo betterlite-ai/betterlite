@@ -125,6 +125,13 @@ fn pages(response: &OCRResponse) -> Vec<(i64, &str)> {
         {"Id":"p","BlockType":"LAYOUT_TEXT","Relationships":[{"Type":"CHILD","Ids":["l1"]}]}]"#,
     vec![(0, "Body")]
 )]
+#[case::a_child_without_text_adds_nothing(
+    r#"[
+        {"Id":"l1","BlockType":"LINE","Text":"Body"},
+        {"Id":"empty","BlockType":"PAGE"},
+        {"Id":"p","BlockType":"LAYOUT_TEXT","Relationships":[{"Type":"CHILD","Ids":["l1","empty"]}]}]"#,
+    vec![(0, "Body")]
+)]
 #[case::without_layout_blocks_lines_are_used(
     r#"[
         {"Id":"l1","BlockType":"LINE","Text":"first"},
@@ -187,21 +194,56 @@ fn a_cyclic_block_graph_is_refused_instead_of_nesting_forever() {
     );
 }
 
-#[test]
-fn an_absurd_table_column_count_is_refused() {
-    let error = analyze(
-        r#"[
-            {"Id":"w","BlockType":"WORD","Text":"a"},
-            {"Id":"tb","BlockType":"TABLE","Relationships":[{"Type":"CHILD","Ids":["c"]}]},
-            {"Id":"c","BlockType":"CELL","RowIndex":1,"ColumnIndex":1000000,"Relationships":[{"Type":"CHILD","Ids":["w"]}]},
-            {"Id":"lt","BlockType":"LAYOUT_TABLE","Relationships":[{"Type":"CHILD","Ids":["tb"]}]}]"#,
-    )
-    .unwrap_err();
-
-    assert!(
-        matches!(&error, OcrError::NumericRange("table columns")),
-        "{error}"
+#[rstest]
+#[case::at_the_limit(1000, true)]
+#[case::over_the_limit(1001, false)]
+fn table_columns_are_limited(#[case] column: usize, #[case] allowed: bool) {
+    let blocks = format!(
+        r#"[{{"Id":"w","BlockType":"WORD","Text":"x"}},
+            {{"Id":"tb","BlockType":"TABLE","Relationships":[{{"Type":"CHILD","Ids":["c"]}}]}},
+            {{"Id":"c","BlockType":"CELL","RowIndex":1,"ColumnIndex":{column},"Relationships":[{{"Type":"CHILD","Ids":["w"]}}]}},
+            {{"Id":"lt","BlockType":"LAYOUT_TABLE","Relationships":[{{"Type":"CHILD","Ids":["tb"]}}]}}]"#
     );
+
+    let response = analyze(&blocks);
+
+    assert_eq!(response.is_ok(), allowed, "{response:?}");
+    if !allowed {
+        assert!(
+            matches!(&response, Err(OcrError::NumericRange("table columns"))),
+            "{response:?}"
+        );
+    }
+}
+
+#[rstest]
+#[case::text_at_the_limit(64, true)]
+#[case::a_link_block_past_the_limit(65, false)]
+fn block_nesting_is_limited(#[case] depth: usize, #[case] allowed: bool) {
+    let response = analyze(&nested_blocks(depth));
+
+    assert_eq!(response.is_ok(), allowed, "{response:?}");
+    if allowed {
+        assert_eq!(
+            pages(&response.expect("the answer decodes")),
+            vec![(0, "deep")]
+        );
+    }
+}
+
+fn nested_blocks(depth: usize) -> String {
+    let mut blocks = Vec::new();
+    for level in 0..depth {
+        let kind = if level == 0 { "LAYOUT_TEXT" } else { "PAGE" };
+        blocks.push(format!(
+            r#"{{"Id":"b{level}","BlockType":"{kind}","Relationships":[{{"Type":"CHILD","Ids":["b{}"]}}]}}"#,
+            level.saturating_add(1)
+        ));
+    }
+    blocks.push(format!(
+        r#"{{"Id":"b{depth}","BlockType":"LINE","Text":"deep"}}"#
+    ));
+    blocks.join(",")
 }
 
 #[test]
