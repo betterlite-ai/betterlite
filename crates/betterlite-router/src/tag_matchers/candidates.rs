@@ -96,6 +96,12 @@ impl Deployment {
     }
 }
 
+#[derive(Clone, Copy)]
+enum PoolFilter<'tags> {
+    Exclude(&'tags BTreeSet<String>),
+    Default,
+}
+
 #[must_use]
 pub fn exclude(
     deployments: &[Deployment],
@@ -105,20 +111,7 @@ pub fn exclude(
     if excluded.is_empty() {
         return pool.to_vec();
     }
-    let mut kept = Vec::new();
-    for index in pool {
-        let Some(deployment) = deployments.get(*index) else {
-            continue;
-        };
-        let carries_excluded = deployment
-            .tags
-            .as_ref()
-            .is_some_and(|tags| tags.iter().any(|tag| excluded.contains(tag)));
-        if !carries_excluded {
-            kept.push(*index);
-        }
-    }
-    kept
+    filter_pool(deployments, pool, PoolFilter::Exclude(excluded))
 }
 
 #[must_use]
@@ -130,41 +123,49 @@ pub fn require_all(
     if required.is_empty() {
         return pool.to_vec();
     }
+    pool.iter()
+        .copied()
+        .filter(|index| {
+            deployments.get(*index).is_some_and(|deployment| {
+                deployment
+                    .tags
+                    .as_ref()
+                    .is_some_and(|tags| required.iter().all(|tag| tags.contains(tag)))
+            })
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn default_tagged(deployments: &[Deployment], pool: &[usize]) -> Vec<usize> {
+    let defaults = filter_pool(deployments, pool, PoolFilter::Default);
+    if defaults.is_empty() {
+        return pool.to_vec();
+    }
+    defaults
+}
+
+fn filter_pool(deployments: &[Deployment], pool: &[usize], filter: PoolFilter<'_>) -> Vec<usize> {
     let mut kept = Vec::new();
     for index in pool {
         let Some(deployment) = deployments.get(*index) else {
             continue;
         };
-        let has_all = deployment.tags.as_ref().is_some_and(|tags| {
-            let present: BTreeSet<&String> = tags.iter().collect();
-            required.iter().all(|tag| present.contains(tag))
-        });
-        if has_all {
+        let keep = match filter {
+            PoolFilter::Exclude(excluded) => deployment
+                .tags
+                .as_ref()
+                .is_none_or(|tags| tags.iter().all(|tag| !excluded.contains(tag))),
+            PoolFilter::Default => deployment
+                .tags
+                .as_ref()
+                .is_some_and(|tags| tags.iter().any(|tag| tag == "default")),
+        };
+        if keep {
             kept.push(*index);
         }
     }
     kept
-}
-
-#[must_use]
-pub fn default_tagged(deployments: &[Deployment], pool: &[usize]) -> Vec<usize> {
-    let mut defaults = Vec::new();
-    for index in pool {
-        let Some(deployment) = deployments.get(*index) else {
-            continue;
-        };
-        let tagged = deployment
-            .tags
-            .as_ref()
-            .is_some_and(|tags| tags.iter().any(|tag| tag == "default"));
-        if tagged {
-            defaults.push(*index);
-        }
-    }
-    if defaults.is_empty() {
-        return pool.to_vec();
-    }
-    defaults
 }
 
 #[must_use]

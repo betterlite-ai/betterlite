@@ -75,13 +75,12 @@ impl Patterns {
     #[must_use]
     pub fn find(&self, headers: &[String]) -> Search {
         let mut warnings = Vec::new();
+        let mut matched = None;
         for pattern in &self.compiled {
             match pattern.find(headers) {
                 PatternOutcome::Matched => {
-                    return Search {
-                        matched: Some(pattern.source.clone()),
-                        warnings,
-                    };
+                    matched = Some(pattern.source.clone());
+                    break;
                 }
                 PatternOutcome::Missing => {}
                 PatternOutcome::Limit => warnings.push(TagWarning {
@@ -90,27 +89,29 @@ impl Patterns {
                 }),
             }
         }
-        Search {
-            matched: None,
-            warnings,
-        }
+        Search { matched, warnings }
     }
 }
 
 impl CompiledPattern {
     fn find(&self, headers: &[String]) -> PatternOutcome {
-        let Some(regex) = &self.regex else {
-            return PatternOutcome::Missing;
-        };
-        for header in headers {
-            match regex.find(header) {
-                Ok(Some(_)) => return PatternOutcome::Matched,
-                Ok(None) => {}
-                Err(_) => return PatternOutcome::Limit,
-            }
-        }
-        PatternOutcome::Missing
+        self.regex
+            .as_ref()
+            .map_or(PatternOutcome::Missing, |regex| {
+                header_outcome(regex, headers)
+            })
     }
+}
+
+fn header_outcome(regex: &Regex, headers: &[String]) -> PatternOutcome {
+    for header in headers {
+        match regex.find(header) {
+            Ok(Some(_)) => return PatternOutcome::Matched,
+            Ok(None) => {}
+            Err(_) => return PatternOutcome::Limit,
+        }
+    }
+    PatternOutcome::Missing
 }
 
 fn build(source: &str) -> Result<Regex, Error> {
