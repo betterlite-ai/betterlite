@@ -1,0 +1,11 @@
+kind: helper
+name: gigachat-environment-token-without-credentials
+call:
+  b7325:
+    operation: access_token
+    request:
+      auth_url: http://127.0.0.1:9/api/v2/oauth
+    environment:
+      GIGACHAT_ACCESS_TOKEN: environment-token
+env: {}
+compare: {ignore: []}
