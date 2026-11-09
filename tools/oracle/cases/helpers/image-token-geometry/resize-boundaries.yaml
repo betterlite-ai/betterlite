@@ -1,0 +1,58 @@
+kind: helper
+name: image-token-geometry-resize-boundaries
+call:
+  image_tokens:
+    settings:
+      tile_width: 100
+      tile_height: 50
+    calls:
+      - function: resize_image_high_res
+        width: 768
+        height: 768
+      - function: resize_image_high_res
+        width: 769
+        height: 768
+      - function: resize_image_high_res
+        width: 768
+        height: 769
+      - function: resize_image_high_res
+        width: 4096
+        height: 4096
+      - function: resize_image_high_res
+        width: 8000
+        height: 3072
+      - function: resize_image_high_res
+        width: 2
+        height: 3
+      - function: resize_image_high_res
+        width: 2605
+        height: 1000
+      - function: resize_image_high_res
+        width: 2001
+        height: 769
+      - function: resize_image_high_res
+        width: 769
+        height: 2001
+      - function: resize_image_high_res
+        width: 1
+        height: 10000
+      - function: resize_image_high_res
+        width: 10000
+        height: 1
+      - function: calculate_tiles_needed
+        resized_width: 512
+        resized_height: 512
+      - function: calculate_tiles_needed
+        resized_width: 513
+        resized_height: 512
+      - function: calculate_tiles_needed
+        resized_width: 2000
+        resized_height: 768
+      - function: calculate_tiles_needed
+        resized_width: 400
+        resized_height: 100
+      - function: high_detail_image_token_upper_bound
+      - function: high_detail_image_token_upper_bound
+        base_tokens: 100
+env: {}
+compare: {ignore: []}

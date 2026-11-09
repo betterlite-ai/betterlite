@@ -1144,13 +1144,13 @@ fn the_parity_rules_are_reviewed_rules() {
 
 const APPROVE: &str = r#"{"task":"B000","verdict":"approve","findings":[]}"#;
 
-fn review_answers(agents: &mut Agents, parity: &str) {
+fn review_answers(agents: &mut Agents, general: &str, parity: &str) {
     for runner in &mut agents.runners {
         "sh".clone_into(&mut runner.program);
         runner.args = vec![
             "-c".to_owned(),
             format!(
-                "cat > /dev/null; basename '{{output}}' .json >> '{{home}}/seats'; case '{{output}}' in *parity-reviewer*) printf '{parity}' ;; *) printf '{APPROVE}' ;; esac > '{{output}}'"
+                "cat > /dev/null; basename '{{output}}' .json >> '{{home}}/seats'; case '{{output}}' in *parity-reviewer*) printf '{parity}' ;; *) printf '{general}' ;; esac > '{{output}}'"
             ),
         ];
         runner.output = OutputMode::File;
@@ -1189,16 +1189,18 @@ fn run_review(
     };
     let worker = find_runner(agents, "claude-worker").unwrap();
     let step = review(&attempt, worker, folder.path());
-    let seats = fs::read_to_string(folder.path().join("seats")).unwrap();
-    (step, seats)
+    let written = fs::read_to_string(folder.path().join("seats")).unwrap();
+    let mut seats: Vec<&str> = written.lines().collect();
+    seats.sort_unstable();
+    (step, seats.join("\n"))
 }
 
 #[test]
 fn a_standard_approval_of_a_task_that_cites_litellm_gets_a_parity_pass() {
     let (mut agents, task) = fixtures();
-    review_answers(&mut agents, APPROVE);
+    review_answers(&mut agents, APPROVE, APPROVE);
     let (step, seats) = run_review(&agents, &task, None);
-    assert_eq!(seats, "attempt-1-reviewer\nattempt-1-parity-reviewer\n");
+    assert_eq!(seats, "attempt-1-parity-reviewer\nattempt-1-reviewer");
     let Ok(Step::Reviewed(round)) = step else {
         panic!("the review should end in a round");
     };
@@ -1210,9 +1212,9 @@ fn a_standard_approval_of_a_task_that_cites_litellm_gets_a_parity_pass() {
 fn a_task_without_references_gets_one_review() {
     let (mut agents, mut task) = fixtures();
     task.references.clear();
-    review_answers(&mut agents, APPROVE);
+    review_answers(&mut agents, APPROVE, APPROVE);
     let (step, seats) = run_review(&agents, &task, None);
-    assert_eq!(seats, "attempt-1-reviewer\n");
+    assert_eq!(seats, "attempt-1-reviewer");
     let Ok(Step::Reviewed(round)) = step else {
         panic!("the review should end in a round");
     };
@@ -1222,14 +1224,14 @@ fn a_task_without_references_gets_one_review() {
 #[test]
 fn a_round_after_the_parity_pass_goes_to_the_parity_reviewer() {
     let (mut agents, task) = fixtures();
-    review_answers(&mut agents, APPROVE);
+    review_answers(&mut agents, APPROVE, APPROVE);
     let pinned = ReviewerPin {
         runner: "claude-reviewer".to_owned(),
         model: "claude-opus-5-5".to_owned(),
         panel: Panel::Parity,
     };
     let (step, seats) = run_review(&agents, &task, Some(&pinned));
-    assert_eq!(seats, "attempt-1-parity-reviewer\n");
+    assert_eq!(seats, "attempt-1-parity-reviewer");
     let Ok(Step::Reviewed(round)) = step else {
         panic!("the review should end in a round");
     };
@@ -1240,11 +1242,11 @@ fn a_round_after_the_parity_pass_goes_to_the_parity_reviewer() {
 fn a_parity_finding_under_another_rule_goes_back_once_then_fails() {
     let (mut agents, task) = fixtures();
     let style = r#"{"task":"B000","verdict":"changes","findings":[{"rule":"clear-names","origin":"ours","location":".development/rules.yaml:1","problem":"a vague name","fix":"rename it"}]}"#;
-    review_answers(&mut agents, style);
+    review_answers(&mut agents, APPROVE, style);
     let (step, seats) = run_review(&agents, &task, None);
     assert_eq!(
         seats,
-        "attempt-1-reviewer\nattempt-1-parity-reviewer\nattempt-1-parity-reviewer-again\n"
+        "attempt-1-parity-reviewer\nattempt-1-parity-reviewer-again\nattempt-1-reviewer"
     );
     let Err(error) = step else {
         panic!("the review should fail");
@@ -1254,4 +1256,81 @@ fn a_parity_finding_under_another_rule_goes_back_once_then_fails() {
             .to_string()
             .contains("cites clear-names, and the parity review reports only")
     );
+}
+
+const GENERAL_FINDING: &str = r#"{"task":"B000","verdict":"changes","findings":[{"rule":"clear-names","origin":"ours","location":".development/rules.yaml:1","problem":"a vague name","fix":"rename it"}]}"#;
+const PARITY_FINDING: &str = r#"{"task":"B000","verdict":"changes","findings":[{"rule":"owned-behavior-is-built","origin":"ours","location":".development/rules.yaml:1","problem":"a missing default","fix":"build it"}]}"#;
+
+fn general_pin() -> ReviewerPin {
+    ReviewerPin {
+        runner: "claude-reviewer".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
+        panel: Panel::Standard,
+    }
+}
+
+#[test]
+fn a_first_round_sends_both_lists_and_the_general_reviewer_checks_the_fixes() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, GENERAL_FINDING, PARITY_FINDING);
+    let (step, seats) = run_review(&agents, &task, None);
+    assert_eq!(seats, "attempt-1-parity-reviewer\nattempt-1-reviewer");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Changes);
+    assert_eq!(round.reviewer.panel, Panel::Standard);
+    assert_eq!(round.review.findings.len(), 2);
+}
+
+#[test]
+fn a_first_round_with_only_general_findings_still_asks_for_changes() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, GENERAL_FINDING, APPROVE);
+    let (step, _) = run_review(&agents, &task, None);
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Changes);
+    assert_eq!(round.reviewer.panel, Panel::Standard);
+}
+
+#[test]
+fn a_first_round_with_only_parity_findings_stays_with_the_parity_reviewer() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, APPROVE, PARITY_FINDING);
+    let (step, _) = run_review(&agents, &task, None);
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Changes);
+    assert_eq!(round.reviewer.panel, Panel::Parity);
+}
+
+#[test]
+fn a_later_general_round_with_changes_runs_alone() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, GENERAL_FINDING, APPROVE);
+    let pinned = general_pin();
+    let (step, seats) = run_review(&agents, &task, Some(&pinned));
+    assert_eq!(seats, "attempt-1-reviewer");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Changes);
+    assert_eq!(round.reviewer.panel, Panel::Standard);
+}
+
+#[test]
+fn a_later_general_approval_brings_the_parity_pass_back() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, APPROVE, PARITY_FINDING);
+    let pinned = general_pin();
+    let (step, seats) = run_review(&agents, &task, Some(&pinned));
+    assert_eq!(seats, "attempt-1-parity-reviewer\nattempt-1-reviewer");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Changes);
+    assert_eq!(round.reviewer.panel, Panel::Parity);
 }

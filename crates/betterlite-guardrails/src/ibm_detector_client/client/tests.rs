@@ -13,9 +13,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::tls::Verification;
+use rcgen::{CertificateParams, KeyPair};
 use rustls::crypto::aws_lc_rs;
-use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::server::Acceptor;
 use rustls::{ServerConfig, StreamOwned};
 use secrecy::SecretString;
@@ -28,10 +28,6 @@ use super::IbmDetectorClient;
 use super::error::IbmClientError;
 use crate::ibm_detector_client::config::IbmDetectorConfig;
 
-const SERVER_CERT: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
-const SERVER_KEY: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
 const TLS_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct CapturedRequest {
@@ -293,16 +289,23 @@ async fn client_reads_an_orchestrator_answer_without_detections() {
     server.shutdown().await;
 }
 
+fn server_identity() -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
+    let key = KeyPair::generate().expect("a server key");
+    let params = CertificateParams::new(vec!["localhost".to_owned()]).expect("server parameters");
+    let certificate = params.self_signed(&key).expect("a server certificate");
+    (
+        certificate.der().clone(),
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+    )
+}
+
 fn server_config() -> Arc<ServerConfig> {
-    let certificates = CertificateDer::pem_slice_iter(SERVER_CERT)
-        .collect::<Result<Vec<_>, _>>()
-        .expect("certificates");
-    let private_key = PrivateKeyDer::from_pem_slice(SERVER_KEY).expect("private key");
+    let (certificate, private_key) = server_identity();
     let config = ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
         .with_safe_default_protocol_versions()
         .expect("protocol versions")
         .with_no_client_auth()
-        .with_single_cert(certificates, private_key)
+        .with_single_cert(vec![certificate], private_key)
         .expect("server config");
     Arc::new(config)
 }

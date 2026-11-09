@@ -21,7 +21,7 @@ use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 
-use super::{TEST_CA, TIMEOUT, server_config};
+use super::{TIMEOUT, authority, server_config};
 use crate::proxy::ProxiedClient;
 
 #[rstest]
@@ -32,8 +32,9 @@ use crate::proxy::ProxiedClient;
 #[case::http2_from_configuration("configured", Version::HTTP_2)]
 #[case::http2_falls_back_to_http1("fallback", Version::HTTP_11)]
 fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Version) {
+    let authority = authority();
     let ca_file = tempfile::NamedTempFile::new().unwrap();
-    fs::write(ca_file.path(), TEST_CA).unwrap();
+    fs::write(ca_file.path(), authority.ca_pem.as_bytes()).unwrap();
     let mut environment = BTreeMap::from([(
         "SSL_CERT_FILE".to_owned(),
         ca_file.path().to_str().unwrap().to_owned(),
@@ -66,7 +67,7 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Version) {
         "https://localhost:{}/policy",
         listener.local_addr().unwrap().port()
     );
-    let mut origin = server_config("").as_ref().clone();
+    let mut origin = server_config("", &authority).as_ref().clone();
     origin.alpn_protocols = if mode == "fallback" {
         vec![b"http/1.1".to_vec()]
     } else {

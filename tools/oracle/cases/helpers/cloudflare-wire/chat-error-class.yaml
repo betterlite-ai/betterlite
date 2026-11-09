@@ -1,0 +1,9 @@
+kind: helper
+name: cloudflare-wire-chat-error-class
+call:
+  b5836:
+    chat_errors:
+      - {message: boom, status_code: 500}
+      - {message: "", status_code: 400, headers: {X-Ignored: value}}
+env: {}
+compare: {ignore: []}
