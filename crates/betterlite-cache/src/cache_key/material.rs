@@ -49,7 +49,21 @@ fn param_value(
     param: &KeyParam,
 ) -> Result<Option<KeyValue>, CacheKeyError> {
     match param.name.as_str() {
-        "model" => model_value(request, &param.value).map(Some),
+        // A request routed through a caching group keys on the group, then on the router's model group, and last on the model name.
+        "model" => {
+            let litellm_params_metadata = request
+                .litellm_params
+                .as_ref()
+                .and_then(|params| params.metadata.as_ref());
+            let model_group = field(request.metadata.as_ref(), "model_group")
+                .or_else(|| field(litellm_params_metadata, "model_group"));
+            let caching_group = caching_group(request.metadata.as_ref(), model_group)?;
+            Ok(Some(
+                caching_group
+                    .or_else(|| model_group.cloned())
+                    .unwrap_or_else(|| param.value.clone()),
+            ))
+        }
         "file" => Ok(file_value(request, &param.value)),
         _ => match &param.value {
             KeyValue::Null => Ok(None),
@@ -60,23 +74,6 @@ fn param_value(
             | KeyValue::Object(_) => Ok(Some(param.value.clone())),
         },
     }
-}
-
-// A request routed through a caching group keys on the group, then on the router's model group, and only last on the model name.
-fn model_value(
-    request: &CacheKeyRequest,
-    param_value: &KeyValue,
-) -> Result<KeyValue, CacheKeyError> {
-    let litellm_params_metadata = request
-        .litellm_params
-        .as_ref()
-        .and_then(|params| params.metadata.as_ref());
-    let model_group = field(request.metadata.as_ref(), "model_group")
-        .or_else(|| field(litellm_params_metadata, "model_group"));
-    let caching_group = caching_group(request.metadata.as_ref(), model_group)?;
-    Ok(caching_group
-        .or_else(|| model_group.cloned())
-        .unwrap_or_else(|| param_value.clone()))
 }
 
 // LiteLLM returns str(group) for the first caching group that holds the model group.
@@ -104,20 +101,21 @@ fn caching_group(
 // Transcription caching identifies the upload by checksum first, then the file object's name, then a caller-supplied file name.
 fn file_value(request: &CacheKeyRequest, param_value: &KeyValue) -> Option<KeyValue> {
     let file_name = match param_value {
-        KeyValue::String(_) => Some(param_value),
+        KeyValue::String(_) => Some(param_value.clone()),
         KeyValue::Null
         | KeyValue::Bool(_)
         | KeyValue::Number(_)
         | KeyValue::Array(_)
         | KeyValue::Object(_) => None,
     };
-    let params_file_name = request
-        .litellm_params
-        .as_ref()
-        .and_then(|params| params.file_name.as_ref());
-    field(request.metadata.as_ref(), "file_checksum")
-        .or(file_name)
-        .or_else(|| field(request.metadata.as_ref(), "file_name"))
-        .or(params_file_name)
-        .cloned()
+    let candidates = [
+        field(request.metadata.as_ref(), "file_checksum").cloned(),
+        file_name,
+        field(request.metadata.as_ref(), "file_name").cloned(),
+        request
+            .litellm_params
+            .as_ref()
+            .and_then(|params| params.file_name.clone()),
+    ];
+    candidates.into_iter().flatten().next()
 }
