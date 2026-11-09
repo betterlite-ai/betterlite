@@ -17,7 +17,6 @@ use super::{
     model_to_version_id, transform_request, validate_environment,
 };
 use crate::replicate::error::ReplicateFailure;
-use crate::replicate::poll::ReplicatePolling;
 
 fn params(wire: &str) -> Object {
     serde_json::from_str(wire).unwrap()
@@ -35,15 +34,6 @@ fn factory() -> PromptFactory {
     PromptFactory {
         cache: Mutex::new(builtin_entries()),
         hub: Hub::Unreachable,
-    }
-}
-
-fn polling() -> ReplicatePolling {
-    ReplicatePolling {
-        retries: 5,
-        retry_delay_seconds: 1.0,
-        polling_delay_seconds: 0.5,
-        model_name_with_id_length: 64,
     }
 }
 
@@ -91,7 +81,6 @@ async fn request(
         },
         &RequestContext {
             prompts: &prompts,
-            polling: &polling(),
             now: now(),
         },
     )

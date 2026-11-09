@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 use super::error::{ReplicateError, ReplicateFailure};
-use super::poll::ReplicatePolling;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplicateBody {
@@ -47,7 +46,6 @@ pub struct RequestInput<'request> {
 
 pub struct RequestContext<'deps> {
     pub prompts: &'deps PromptFactory,
-    pub polling: &'deps ReplicatePolling,
     pub now: DateTime<Utc>,
 }
 
@@ -162,18 +160,6 @@ fn input_data(prompt: String, system_prompt: Option<String>, optional_params: &O
     input
 }
 
-// the guard needs a colon inside the already-split version id, which cannot hold; it stays as the source writes it
-fn version_of(model: &str, polling: &ReplicatePolling) -> Option<String> {
-    let version_id = model_to_version_id(model);
-    if !version_id.contains(':') || version_id.chars().count() <= polling.model_name_with_id_length
-    {
-        return None;
-    }
-    let parts: Vec<&str> = version_id.split(':').collect();
-    let part = parts.get(1)?;
-    (part.chars().count() == polling.model_name_with_id_length).then(|| (*part).to_owned())
-}
-
 pub async fn transform_request(
     input: RequestInput<'_>,
     context: &RequestContext<'_>,
@@ -191,7 +177,8 @@ pub async fn transform_request(
     let prompt = render_prompt(model, messages, custom_prompts, context).await?;
     Ok(ReplicateBody {
         input: input_data(prompt, system_prompt, optional_params),
-        version: version_of(model, context.polling),
+        // LiteLLM adds the version only when the id, already split on colons, holds a colon; that never happens
+        version: None,
     })
 }
 

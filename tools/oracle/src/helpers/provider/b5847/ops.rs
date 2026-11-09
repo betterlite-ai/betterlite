@@ -92,7 +92,6 @@ pub(super) fn headers(requests: &[HeaderRequest]) -> HelperResult {
 fn request_outcome(
     runtime: &tokio::runtime::Runtime,
     prompts: &PromptFactory,
-    polling: &ReplicatePolling,
     case: &RequestCase,
 ) -> Value {
     let mut messages = case.messages.clone();
@@ -107,7 +106,6 @@ fn request_outcome(
         },
         &RequestContext {
             prompts,
-            polling,
             now: DateTime::from_timestamp(FIXED_NOW, 0).unwrap_or_default(),
         },
     ));
@@ -125,10 +123,9 @@ fn request_outcome(
 pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
     let runtime = runtime()?;
     let prompts = factory();
-    let polling = polling_for(5, 1.0_f64, 0.5_f64);
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
-        results.push(request_outcome(&runtime, &prompts, &polling, case));
+        results.push(request_outcome(&runtime, &prompts, case));
     }
     Ok(json!({"requests": results}))
 }

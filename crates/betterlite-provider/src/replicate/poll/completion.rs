@@ -47,7 +47,6 @@ impl ReplicateCall<'_> {
     async fn build_body(
         &mut self,
         prompts: &PromptFactory,
-        polling: &ReplicatePolling,
     ) -> Result<ReplicateBody, ReplicateFailure> {
         transform_request(
             RequestInput {
@@ -59,7 +58,6 @@ impl ReplicateCall<'_> {
             },
             &RequestContext {
                 prompts,
-                polling,
                 now: self.now,
             },
         )
@@ -173,7 +171,7 @@ impl Replicate<'_> {
     ) -> Result<ReplicateCompletion, ReplicateFailure> {
         let mut invocation = call;
         let headers = validate_environment(&HeaderMap::new(), invocation.api_key)?;
-        let body = invocation.build_body(self.prompts, &self.polling).await?;
+        let body = invocation.build_body(self.prompts).await?;
         // the sync path stamps the reply with the clock right before the create POST; the async twin leaves it unset
         let created = match self.policy {
             OutputPolicy::Strict => Some(self.clock.now().timestamp()),
