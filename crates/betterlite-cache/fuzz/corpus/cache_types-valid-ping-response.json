@@ -1,0 +1,1 @@
+{"cache_ping_response":{"status":"success","cache_type":"redis","ping_response":true,"set_cache_response":"ok","litellm_cache_params":null,"health_check_cache_params":{"host":"localhost","port":6379,"redis_kwargs":{"db":0},"namespace":"ns","redis_version":"7.0.1"}}}

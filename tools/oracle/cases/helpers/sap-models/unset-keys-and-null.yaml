@@ -1,0 +1,27 @@
+kind: helper
+name: sap-models-unset-keys-and-null
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              prompt_templating:
+                prompt:
+                  template: [{role: assistant}]
+                  defaults: null
+                  response_format: null
+                  tools: null
+                model: {name: m, params: null}
+              grounding:
+                config:
+                  filters:
+                    - {id: null, data_repository_type: vector, search_config: null, data_repositories: null}
+                  placeholders: {input: [q], output: o}
+              masking:
+                providers:
+                  - {method: anonymization, entities: [], allowlist: null, mask_grounding_input: null}
+            stream: {chunk_size: null, delimiters: null}
+env: {}
+compare: {ignore: []}
