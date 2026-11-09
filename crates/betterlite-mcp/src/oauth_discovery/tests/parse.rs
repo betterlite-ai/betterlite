@@ -23,6 +23,14 @@
     "Bearer error=\"invalid_token\", resource_metadata=\"https://mcp.test/prm\"",
     Some("https://mcp.test/prm")
 )]
+#[case::comma_inside_a_quoted_value(
+    "Bearer error=\"a,b\", resource_metadata=\"https://mcp.test/prm\"",
+    Some("https://mcp.test/prm")
+)]
+#[case::spaces_around_equals(
+    "Bearer error=\"x\", resource_metadata = \"https://mcp.test/prm\"",
+    Some("https://mcp.test/prm")
+)]
 #[case::after_another_challenge(
     "DPoP algs=\"ES256\", Bearer resource_metadata=\"https://mcp.test/prm\"",
     Some("https://mcp.test/prm")
