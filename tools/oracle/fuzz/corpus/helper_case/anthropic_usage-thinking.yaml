@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic_usage-thinking
+call:
+  anthropic_usage:
+    usage: {input_tokens: 1, output_tokens: 10}
+    reasoning_content: hello world
+    completion_response: {content: [{type: thinking, thinking: secret}]}
+    speed: fast
+env: {}
+compare: {ignore: []}

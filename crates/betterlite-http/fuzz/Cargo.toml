@@ -65,3 +65,10 @@ path = "fuzz_targets/url_policy.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gigachat_token_reply"
+path = "fuzz_targets/gigachat_token_reply.rs"
+test = false
+doc = false
+bench = false
