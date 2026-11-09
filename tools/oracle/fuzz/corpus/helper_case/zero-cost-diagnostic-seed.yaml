@@ -1,0 +1,17 @@
+kind: helper
+name: zero-cost-diagnostic-seed
+call:
+  zero_cost_diagnostic:
+    probes:
+      - usage:
+          prompt_tokens: 2
+          completion_tokens: 3
+          total_tokens: 5
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0.001
+          output_cost_per_token: 0.002
+        calculation_failed: false
+        model: model
+env: {}
+compare: {ignore: []}
