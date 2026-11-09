@@ -2370,6 +2370,7 @@ name = "betterlite-roi"
 version = "0.1.0"
 dependencies = [
  "caseless",
+ "chrono",
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
