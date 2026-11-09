@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-other-count-tokens-system
+call:
+  bedrock_other_count_tokens:
+    converse_content_system:
+      requests:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system: be nice
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: [text, {toolUse: {name: t}}]
+          system:
+            - text: a
+            - skip
+            - 3
+env: {}
+compare: {ignore: []}
