@@ -1,0 +1,17 @@
+task: B4802
+deviations:
+  - what: >-
+      Cost parameters are parsed from the logging state into rust_decimal::Decimal. A string price is accepted when it reads as a decimal or scientific-notation number; Python's float() also accepts "inf", "nan" and digit-grouping underscores, which Decimal cannot hold, so those are an error that names the field.
+    why: >-
+      Costs, prices and spend are Decimal from the moment they are read, so betterlite never multiplies Python floats. A non-finite or digit-grouped price is not a value a working agent setup relies on.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L48-L57'
+  - what: >-
+      The usage in model_call_details is read from its JSON object as prompt_tokens and completion_tokens. LiteLLM reads those fields as attributes of a Usage object, and a plain dict usage has no such attributes there, which prices it at zero.
+    why: >-
+      betterlite's logging state keeps model_call_details as typed JSON, so the usage the A2A logging helper writes is an object; reading it as token counts keeps the token-based price that LiteLLM's Usage object produces.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L90-L101'
+  - what: >-
+      A contextId that is present but not a string is an error naming the field. LiteLLM returns it untyped: the AgentCore hop treats a non-string contextId as no session, and the LangFlow merge formats it into the scoped session id.
+    why: >-
+      get_session_id_from_a2a_params is declared str | None, and betterlite answers a value of the wrong type with an error naming the field instead of formatting or silently dropping it.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L145-L149'
