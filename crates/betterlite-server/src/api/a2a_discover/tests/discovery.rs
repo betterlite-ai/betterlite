@@ -195,8 +195,33 @@ async fn a_json_value_that_is_not_an_object_is_skipped(#[case] body: &str) {
 }
 
 #[tokio::test]
-async fn the_last_error_names_the_json_kind_it_rejected() {
-    let source = responses(&[(200, "[1]"), (200, "\"text\""), (200, "null")]);
+async fn the_last_error_names_the_json_error() {
+    let source = responses(&[(200, "not json"), (200, "not json"), (200, "not json")]);
+    let error = fetch_well_known_card(
+        &source,
+        "https://agent.test",
+        DiscoveryMode::WellKnownFallback,
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("https://agent.test/agent.json: invalid JSON ("),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::array("[1,2]", "an array")]
+#[case::string("\"text\"", "a string")]
+#[case::number("1", "a number")]
+#[case::boolean("true", "a boolean")]
+#[case::null("null", "null")]
+#[tokio::test]
+async fn the_last_error_names_the_json_kind_it_rejected(#[case] body: &str, #[case] kind: &str) {
+    let source = responses(&[(200, body), (200, body), (200, body)]);
     let error = fetch_well_known_card(
         &source,
         "https://agent.test",
@@ -207,7 +232,9 @@ async fn the_last_error_names_the_json_kind_it_rejected() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Could not fetch agent card from https://agent.test (mode=well_known_fallback). Last error: https://agent.test/agent.json: expected a JSON object, got null"
+        format!(
+            "Could not fetch agent card from https://agent.test (mode=well_known_fallback). Last error: https://agent.test/agent.json: expected a JSON object, got {kind}"
+        )
     );
 }
 
@@ -374,7 +401,7 @@ async fn a_slow_answer_is_cut_at_the_deadline() {
     let server = Server::start(vec![
         (
             "/.well-known/agent-card.json",
-            Reply::delayed(Duration::from_millis(300), CARD),
+            Reply::delayed(Duration::from_secs(3), CARD),
         ),
         ("/.well-known/agent.json", Reply::json(CARD)),
     ])
@@ -384,7 +411,7 @@ async fn a_slow_answer_is_cut_at_the_deadline() {
     let source = SafeCardSource {
         client: &client,
         urls: &urls,
-        timeout: Duration::from_millis(50),
+        timeout: Duration::from_millis(300),
     };
     let fetched = fetch_well_known_card(
         &source,

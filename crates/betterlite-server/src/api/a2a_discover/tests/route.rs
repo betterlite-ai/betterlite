@@ -260,6 +260,24 @@ async fn langgraph_platform_reaches_the_discovery_with_its_params() {
 }
 
 #[tokio::test]
+async fn trailing_data_after_the_json_body_is_a_bad_request() {
+    let discovery = FakeDiscovery::answering(card());
+    let (status, body) = call(
+        discovery,
+        r#"{"url":"https://agent.test"} trailing"#,
+        &[Role::PlatformAdmin],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("invalid request body:")
+    );
+}
+
+#[tokio::test]
 async fn a_params_value_of_the_wrong_type_is_a_bad_request_that_names_it() {
     let discovery = FakeDiscovery::answering(card());
     let (status, body) = call(
