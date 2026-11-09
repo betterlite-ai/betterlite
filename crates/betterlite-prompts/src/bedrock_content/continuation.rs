@@ -4,7 +4,7 @@ use super::empty_blocks::{process_empty_text_blocks, skip_empty_text_blocks};
 use super::error::ContentError;
 use super::messages::{
     CONTENT, DEFAULT_CONTINUE_TEXT, ROLE, TEXT, TEXT_TYPE, TYPE, content_list_to_str,
-    has_non_content_values,
+    has_non_content_values, is_blank,
 };
 
 const ASSISTANT: &str = "assistant";
@@ -84,9 +84,7 @@ pub fn user_message_block_or_continue(
         return skip_empty_text_blocks(message);
     }
     let missing_content = matches!(content, None | Some(Json::Null));
-    let blank_text = content
-        .and_then(Json::as_str)
-        .is_some_and(|text| text.trim().is_empty());
+    let blank_text = content.and_then(Json::as_str).is_some_and(is_blank);
     if missing_content || blank_text {
         return Ok(Json::Object(user_continue_message(continue_message)?));
     }
@@ -134,7 +132,7 @@ fn assistant_text_content(
     text: &str,
     continue_message: Option<&Json>,
 ) -> Json {
-    if !text.trim().is_empty() {
+    if !is_blank(text) {
         return message.clone();
     }
     if has_non_content_values(fields) {
@@ -194,7 +192,7 @@ fn replace_empty_user_text(
         let Json::Text(text) = text_value else {
             return Err(ContentError::TextPartNotText { index });
         };
-        if !text.trim().is_empty() {
+        if !is_blank(text) {
             modified_parts.push(part.clone());
             continue;
         }

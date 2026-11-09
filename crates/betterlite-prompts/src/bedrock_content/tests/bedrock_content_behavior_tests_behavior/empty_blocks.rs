@@ -46,11 +46,21 @@ fn bedrock_content_behavior_tests_behavior_skip_keeps_a_blank_user_string() {
 #[test]
 fn bedrock_content_behavior_tests_behavior_skip_drops_empty_text_parts() {
     let message = json(
-        r#"{"role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"keep"}]}"#,
+        r#"{"role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"\u001c"},{"type":"text","text":"keep"}]}"#,
     );
     assert_eq!(
         skip_empty_text_blocks(&message).unwrap(),
         json(r#"{"role":"assistant","content":[{"type":"text","text":"keep"}]}"#)
+    );
+}
+
+#[test]
+fn bedrock_content_behavior_tests_behavior_skip_treats_a_python_separator_as_blank() {
+    let message = json(r#"{"role":"assistant","content":"\u001c","tool_calls":[{"id":"call-1"}]}"#);
+    let skipped = skip_empty_text_blocks(&message).unwrap();
+    assert_eq!(
+        skipped,
+        json(r#"{"role":"assistant","content":null,"tool_calls":[{"id":"call-1"}]}"#)
     );
 }
 
@@ -141,7 +151,7 @@ fn bedrock_content_behavior_tests_behavior_process_replaces_an_empty_list_with_c
 #[test]
 fn bedrock_content_behavior_tests_behavior_process_replaces_all_empty_text_blocks_with_continue() {
     let message = json(
-        r#"{"role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":""}]}"#,
+        r#"{"role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":""},{"type":"text","text":"\u001c"}]}"#,
     );
     assert_eq!(
         process_empty_text_blocks(&message, None).unwrap(),

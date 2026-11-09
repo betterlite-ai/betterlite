@@ -153,6 +153,7 @@ fn bedrock_content_behavior_tests_behavior_user_continuation_without_modify_para
 #[case::absent(r#"{"role":"user"}"#)]
 #[case::null(r#"{"role":"user","content":null}"#)]
 #[case::empty_list(r#"{"role":"user","content":[]}"#)]
+#[case::python_separator(r#"{"role":"user","content":"\u001c"}"#)]
 fn bedrock_content_behavior_tests_behavior_user_continuation_replaces_blank_content(
     #[case] message_json: &str,
 ) {
@@ -199,6 +200,16 @@ fn bedrock_content_behavior_tests_behavior_user_continuation_keeps_a_list_withou
     assert_eq!(
         user_message_block_or_continue(&message, None, true).unwrap(),
         message
+    );
+}
+
+#[test]
+fn bedrock_content_behavior_tests_behavior_a_python_separator_text_is_replaced() {
+    let message = json(r#"{"role":"user","content":[{"type":"text","text":"\u001c"}]}"#);
+    let continued = user_message_block_or_continue(&message, None, true).unwrap();
+    assert_eq!(
+        continued,
+        json(r#"{"role":"user","content":[{"type":"text","text":"Please continue."}]}"#)
     );
 }
 
@@ -313,6 +324,13 @@ fn bedrock_content_behavior_tests_behavior_assistant_empty_list_gets_the_continu
         assistant_message_or_continue(&message, None, true).unwrap(),
         json(r#"{"role":"assistant","content":[{"type":"text","text":"Please continue."}]}"#)
     );
+}
+
+#[test]
+fn bedrock_content_behavior_tests_behavior_a_python_separator_string_gets_continue() {
+    let message = json(r#"{"role":"assistant","content":"\u001c"}"#);
+    let continued = assistant_message_or_continue(&message, None, true).unwrap();
+    assert_eq!(continued, json(DEFAULT_ASSISTANT));
 }
 
 #[test]

@@ -3,7 +3,7 @@ use crate::arguments::json::{Json, Object};
 use super::continuation::assistant_continue_message;
 use super::error::ContentError;
 use super::messages::{
-    CONTENT, ROLE, TEXT, TEXT_TYPE, TYPE, content_list_to_str, has_non_content_values,
+    CONTENT, ROLE, TEXT, TEXT_TYPE, TYPE, content_list_to_str, has_non_content_values, is_blank,
 };
 
 pub fn skip_empty_text_blocks(message: &Json) -> Result<Json, ContentError> {
@@ -60,7 +60,7 @@ fn skip_blank_text_content(
     fields: &Object,
     text: &str,
 ) -> Result<Json, ContentError> {
-    if !text.trim().is_empty() || !has_non_content_values(fields) {
+    if !is_blank(text) || !has_non_content_values(fields) {
         return Ok(message.clone());
     }
     let Some(role) = fields.get(ROLE).and_then(Json::as_str) else {
@@ -105,7 +105,7 @@ fn part_kept_by_empty_filter(part: &Json, index: usize) -> Result<bool, ContentE
     }
     match fields.get(TEXT) {
         None => Ok(false),
-        Some(Json::Text(text)) => Ok(!text.trim().is_empty()),
+        Some(Json::Text(text)) => Ok(!is_blank(text)),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(ContentError::TextPartNotText { index })
         }
@@ -128,5 +128,5 @@ fn part_is_empty_text(part: &Json, index: usize) -> Result<bool, ContentError> {
     let Json::Text(text) = text_value else {
         return Err(ContentError::TextPartNotText { index });
     };
-    Ok(text.trim().is_empty())
+    Ok(is_blank(text))
 }

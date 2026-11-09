@@ -44,37 +44,43 @@ pub fn with_text_when_document_only(message: &Json) -> Result<Json, ContentError
         return Ok(message.clone());
     }
     let mut has_document = false;
-    let mut all_blocks_have_text = true;
+    let mut any_block_has_text = false;
     for (index, block) in blocks.iter().enumerate() {
         let Some(block_fields) = block.as_object() else {
             return Err(ContentError::BlockNotObject { index });
         };
         has_document |= block_fields.contains_key(DOCUMENT);
-        all_blocks_have_text &= block_fields.contains_key(TEXT);
+        any_block_has_text |= block_fields.contains_key(TEXT);
     }
-    if !has_document || all_blocks_have_text {
+    if !has_document || any_block_has_text {
         return Ok(message.clone());
     }
     Ok(insert_document_placeholder(blocks))
 }
 
 fn insert_document_placeholder(blocks: &[Json]) -> Json {
-    let last_index = blocks.len().checked_sub(1);
-    let insert_before_last = last_index.is_some_and(|last| {
-        blocks
-            .get(last)
-            .and_then(Json::as_object)
-            .is_some_and(|last_fields| last_fields.contains_key(CACHE_POINT))
-    });
+    let cut = if blocks
+        .last()
+        .and_then(Json::as_object)
+        .is_some_and(|last_fields| last_fields.contains_key(CACHE_POINT))
+    {
+        blocks.len().saturating_sub(1)
+    } else {
+        blocks.len()
+    };
+    let placeholder = Json::Object(Object::from_iter([(
+        TEXT.to_owned(),
+        Json::Text(DOCUMENT_PLACEHOLDER_TEXT.to_owned()),
+    )]));
     let mut rewritten = Vec::with_capacity(blocks.len().saturating_add(1));
     for (index, block) in blocks.iter().enumerate() {
-        if insert_before_last && Some(index) == last_index {
-            rewritten.push(Json::Object(Object::from_iter([(
-                TEXT.to_owned(),
-                Json::Text(DOCUMENT_PLACEHOLDER_TEXT.to_owned()),
-            )])));
+        if index == cut {
+            rewritten.push(placeholder.clone());
         }
         rewritten.push(block.clone());
+    }
+    if cut == blocks.len() {
+        rewritten.push(placeholder);
     }
     Json::Object(Object::from_iter([
         (ROLE.to_owned(), Json::Text(USER.to_owned())),

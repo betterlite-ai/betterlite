@@ -10,6 +10,14 @@ pub(super) const TEXT_TYPE: &str = "text";
 pub(super) const SEARCH_RESULTS: &str = "search_results";
 pub(super) const DEFAULT_CONTINUE_TEXT: &str = "Please continue.";
 
+// str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not.
+pub(super) fn is_blank(text: &str) -> bool {
+    text.trim_matches(|character: char| {
+        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+    })
+    .is_empty()
+}
+
 pub(super) fn has_non_content_values(message: &Object) -> bool {
     message.iter().any(|(key, value)| {
         !matches!(key.as_str(), CONTENT | ROLE | NAME) && !matches!(value, Json::Null)
