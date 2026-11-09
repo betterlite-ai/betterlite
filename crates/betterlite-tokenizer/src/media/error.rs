@@ -16,12 +16,9 @@ pub enum MediaError {
     MissingType,
     #[error("content block type {kind} is not counted")]
     UnsupportedBlock { kind: String },
-    #[error("the {field} field of the {block} block is missing or has the wrong type")]
-    Field {
-        block: &'static str,
-        field: &'static str,
-    },
-    #[error("the {kind} document source is not counted")]
+    #[error("the {field} field is missing or has the wrong type")]
+    Field { field: &'static str },
+    #[error("the {kind} source is not counted")]
     UnsupportedSource { kind: String },
     #[error("an image needs its exact dimensions and no local bytes were given")]
     RemoteNeedsDefaultCount,

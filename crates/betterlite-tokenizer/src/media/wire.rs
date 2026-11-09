@@ -29,6 +29,20 @@ pub enum ContentItem {
     Block(RawBlock),
 }
 
+impl ContentItem {
+    pub(crate) fn from_json(value: &Json) -> Result<Self, MediaError> {
+        if let Json::Text(text) = value {
+            return Ok(Self::Text(text.clone()));
+        }
+        match value {
+            Json::Object(object) => Ok(Self::Block(RawBlock::from_object(object)?)),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Text(_) => {
+                Err(MediaError::ContentItem)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawBlock {
     #[serde(rename = "type", default)]
@@ -46,7 +60,7 @@ pub(crate) enum Block<'block> {
         image: ImageUrl,
     },
     Image {
-        source: ImageSource,
+        source: Source,
     },
     Document(Document),
     File {
@@ -59,7 +73,7 @@ pub(crate) enum Block<'block> {
         caller: Option<&'block Object>,
     },
     ToolResult {
-        content: Option<ToolContent>,
+        content: Option<NestedContent>,
     },
     Thinking {
         text: Option<String>,
@@ -80,33 +94,22 @@ pub(crate) struct ImageUrl {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Document {
-    pub(crate) source: DocumentSource,
+    pub(crate) source: Source,
     pub(crate) title: Option<String>,
     pub(crate) context: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ImageSource {
+pub(crate) enum Source {
+    Base64,
+    File,
     Url { url: Option<String> },
-    Local,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum DocumentSource {
     Text { data: String },
-    Content(DocumentContent),
-    Url { url: Option<String> },
-    Local,
+    Content(NestedContent),
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum DocumentContent {
-    Text(String),
-    Items(Vec<ContentItem>),
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum ToolContent {
+pub(crate) enum NestedContent {
     Text(String),
     Items(Vec<ContentItem>),
 }

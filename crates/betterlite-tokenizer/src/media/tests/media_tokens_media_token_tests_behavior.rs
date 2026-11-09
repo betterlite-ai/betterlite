@@ -130,32 +130,32 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::image_url_empty_string(
     image_url_string(""),
     EXACT,
-    failed("the image_url field of the image_url block is missing or has the wrong type")
+    failed("the image_url field is missing or has the wrong type")
 )]
 #[case::image_url_whitespace_string(
     image_url_string("  "),
     EXACT,
-    failed("the image_url field of the image_url block is missing or has the wrong type")
+    failed("the image_url field is missing or has the wrong type")
 )]
 #[case::image_url_missing(
     plain(r#"{"type":"image_url"}"#),
     EXACT,
-    failed("the image_url field of the image_url block is missing or has the wrong type")
+    failed("the image_url field is missing or has the wrong type")
 )]
 #[case::image_url_null(
     plain(r#"{"type":"image_url","image_url":null}"#),
     EXACT,
-    failed("the image_url field of the image_url block is missing or has the wrong type")
+    failed("the image_url field is missing or has the wrong type")
 )]
 #[case::image_url_empty_url(
     image_url("", "auto"),
     EXACT,
-    failed("the url field of the image_url block is missing or has the wrong type")
+    failed("the url field is missing or has the wrong type")
 )]
 #[case::image_url_bad_detail(
     image_url(PNG, "medium"),
     EXACT,
-    failed("the detail field of the image_url block is missing or has the wrong type")
+    failed("the detail field is missing or has the wrong type")
 )]
 #[case::image_base64(
     plain(r#"{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}"#),
@@ -180,12 +180,12 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::image_source_unsupported(
     plain(r#"{"type":"image","source":{"type":"text","data":"hello"}}"#),
     EXACT,
-    failed("the text document source is not counted")
+    failed("the text source is not counted")
 )]
 #[case::image_missing_source(
     plain(r#"{"type":"image"}"#),
     EXACT,
-    failed("the source field of the image block is missing or has the wrong type")
+    failed("the source field is missing or has the wrong type")
 )]
 #[case::document_title_context_text(
     r#"{"content":[{"type":"document","title":"hello","context":"world","source":{"type":"text","media_type":"text/plain","data":"hello world"}}]}"#,
@@ -236,17 +236,17 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::document_missing_source(
     plain(r#"{"type":"document","title":"hello"}"#),
     EXACT,
-    failed("the source field of the document block is missing or has the wrong type")
+    failed("the source field is missing or has the wrong type")
 )]
 #[case::document_text_without_data(
     plain(r#"{"type":"document","source":{"type":"text"}}"#),
     EXACT,
-    failed("the data field of the document source block is missing or has the wrong type")
+    failed("the data field is missing or has the wrong type")
 )]
 #[case::document_unknown_source(
     plain(r#"{"type":"document","source":{"type":"blob"}}"#),
     EXACT,
-    failed("the blob document source is not counted")
+    failed("the blob source is not counted")
 )]
 #[case::file_name_and_data(file("hello", PNG), EXACT, tokens(86))]
 #[case::file_name_only(file("hello world", ""), EXACT, tokens(2))]
@@ -255,7 +255,7 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::file_missing(
     plain(r#"{"type":"file"}"#),
     EXACT,
-    failed("the file field of the file block is missing or has the wrong type")
+    failed("the file field is missing or has the wrong type")
 )]
 #[case::tool_use_name(plain(r#"{"type":"tool_use","name":"hello world"}"#), EXACT, tokens(2))]
 #[case::tool_use_input(
@@ -278,7 +278,7 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::tool_result_missing_id(
     plain(r#"{"type":"tool_result","content":"hello"}"#),
     EXACT,
-    failed("the tool_use_id field of the tool_result block is missing or has the wrong type")
+    failed("the tool_use_id field is missing or has the wrong type")
 )]
 #[case::tool_result_missing_id_fallback(
     plain(r#"{"type":"tool_result","content":"hello"}"#),
