@@ -1,0 +1,32 @@
+task: B249
+deviations:
+  - what: Callbacks, logger_fn and the sentry breadcrumb receive a sanitized snapshot of the call details. The privacy decision redacts messages, prompt, input and response, and the credential scrubber runs over the rest. LiteLLM passes the live model_call_details.
+    why: A callback that stores or forwards the live dict can leak content or credentials the request asked to hide. The snapshot keeps the same fields and order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1402
+  - what: The call's api_key is not stored in the call details, and additional_args keeps a masked copy of api_base and headers instead of the live values.
+    why: LiteLLM stores the raw key and raw Authorization header in model_call_details, where every later callback and log line can read them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1333
+  - what: When content logging is off, raw_request_typed_dict.raw_request_body holds the redacted text, and so does the text complete_input_dict in the call-detail snapshot handed to callbacks and logger_fn. LiteLLM stores the parsed body, hands it to callbacks and redacts only the curl text kept in the metadata.
+    why: The body carries the messages that the privacy decision says must not be logged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1373
+  - what: With json_logs on, the api_base log field is the masked string. LiteLLM writes a one-element Python set by mistake.
+    why: A set literal in extra is not valid JSON and prints as a repr.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1500
+  - what: post_call does not rewrite the stored response in place when message logging is off. The state keeps the response and the callback snapshot carries the redacted text in place of original_response.
+    why: Mutating the shared details dict changes what later steps of the same call see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1587
+  - what: The call-detail snapshot handed to callbacks and logger_fn replaces original_response, a text complete_input_dict and request_str with the redacted text when content logging is off. LiteLLM hands those live fields to callbacks and only rewrites the response after them.
+    why: The provider response and the request body carry the content the privacy decision says must not leave the logging layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1587
+  - what: The curl debug text and the RAW RESPONSE text pass through the credential scrubber before they are logged.
+    why: A key= query value or a bearer token in a body or response would otherwise reach the log.
+    link: ""
+  - what: Log lines go to a local LogSink trait with a warning level.
+    why: The shared verbose-hooks sink has no warning level, and request debug logs at warning.
+    link: ""
+  - what: The sentry breadcrumb text is Python-style JSON, not a Python dict repr.
+    why: Parity stops at the declared types and docs/compatibility.md says output is standard JSON.
+    link: ""
+  - what: The pre-call failure headline reads "Exception occurred" where LiteLLM misspells the word.
+    why: The spelling is a typo in LiteLLM and the repository typo check rejects it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1467

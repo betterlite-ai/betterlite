@@ -1,0 +1,16 @@
+kind: helper
+name: replicate-prediction-not-succeeded
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: reply
+    replies:
+      - model: m
+        body: '{"status":"failed","error":"x"}'
+      - model: m
+        body: '{"output":["a"]}'
+      - model: m
+        body: '{"status":null,"output":["a"]}'
+      - model: m
+        body: '{"status":"starting","output":["a"]}'

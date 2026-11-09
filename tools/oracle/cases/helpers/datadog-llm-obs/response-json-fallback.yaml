@@ -1,0 +1,10 @@
+kind: helper
+name: datadog-llm-obs-response-json-fallback
+call:
+  b3935:
+    function: response_messages
+    call_type: completion
+    response: '{"choices": [{"message": {"role": "assistant", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/c.png", "detail": null}}]}}]}'
+env: {}
+compare:
+  ignore: []

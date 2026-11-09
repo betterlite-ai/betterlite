@@ -1,0 +1,23 @@
+kind: helper
+name: replicate-map-params
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: map_params
+    cases:
+      - model: owner/model
+        non_default: {stream: true, temperature: 0.5, max_tokens: 9, top_p: 0.9, stop: [a], seed: 1, tools: [], tool_choice: auto}
+        optional_params: {max_tokens: 3}
+      - model: owner/model
+        non_default: {stop: x, functions: [{name: f}], function_call: auto}
+      - model: owner/vicuna-13b
+        non_default: {max_tokens: 4}
+      - model: owner/flan-t5-xl
+        non_default: {max_tokens: 4}
+      - model: meta/codellama-13b-instruct
+        non_default: {max_tokens: 4}
+      - model: vicuna-meta/codellama-13b
+        non_default: {max_tokens: 4}
+      - model: flan-meta/codellama-13b
+        non_default: {max_tokens: 4}

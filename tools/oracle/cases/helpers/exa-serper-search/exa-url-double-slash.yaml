@@ -1,0 +1,19 @@
+kind: helper
+name: exa_url_double_slash
+call:
+  b8020:
+    environment:
+      EXA_API_KEY: sk-exa
+    calls:
+      - provider: exa_ai
+        call: {kind: complete_url, api_base: "https://x.test/"}
+      - provider: exa_ai
+        call: {kind: complete_url, api_base: "https://x.test/search"}
+      - provider: exa_ai
+        call: {kind: complete_url, api_base: "https://x.test/search/"}
+      - provider: exa_ai
+        call: {kind: complete_url}
+      - provider: exa_ai
+        call: {kind: complete_url, api_base: ""}
+env: {}
+compare: {ignore: []}
