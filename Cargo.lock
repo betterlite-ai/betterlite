@@ -1015,15 +1015,21 @@ dependencies = [
  "base64 0.22.1",
  "betterlite-config",
  "betterlite-core",
+ "betterlite-cost",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
  "chrono",
  "futures-core",
  "futures-util",
  "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "lru",
  "num-traits",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1058,6 +1064,7 @@ dependencies = [
  "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
@@ -1331,9 +1338,12 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1342,6 +1352,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1413,6 +1424,7 @@ name = "betterlite-cost"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "rstest",
  "rust_decimal",
  "strum",
  "thiserror",
@@ -1892,6 +1904,7 @@ dependencies = [
  "data-url",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mime",
  "mutants",
  "rstest",
  "secrecy",
@@ -1902,6 +1915,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2013,6 +2027,7 @@ dependencies = [
  "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-semantic",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
@@ -2319,6 +2334,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2556,6 +2572,7 @@ dependencies = [
  "email_address",
  "encoding_rs",
  "form_urlencoded",
+ "futures-channel",
  "futures-util",
  "getrandom 0.4.3",
  "hex",
@@ -2568,6 +2585,7 @@ dependencies = [
  "percent-encoding",
  "rand 0.10.3",
  "regex",
+ "rmcp",
  "rquickjs",
  "rstest",
  "rust_decimal",
@@ -7201,6 +7219,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmcp"
+version = "3.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b6317cd8c13e3ec9033cf2aa5aa92cd743f0f4f8a93cddc42ea0ae6ce3b8898"
+dependencies = [
+ "chrono",
+ "futures",
+ "indexmap 2.14.2",
+ "pastey",
+ "pin-project-lite",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "rquickjs"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7484,10 +7523,24 @@ version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1c3a92094fa7d61aa124645844facb6b554dfc797136d0f5fd1f890e2bffc69"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -7604,6 +7657,17 @@ name = "serde_derive"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
