@@ -1,9 +1,18 @@
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::request::{TextInput, TokenRequest};
+use thiserror::Error;
 
 use super::{A2aResponse, A2aTextError, Field, ListValue, RecordOr, RecordValue, Shape};
 
 mod tests;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum RequestUtilsError {
+    #[error(transparent)]
+    Text(#[from] A2aTextError),
+    #[error("A2A usage token total overflows")]
+    UsageOverflow,
+}
 
 #[must_use]
 pub async fn count_tokens(counter: &Counter, text: &str) -> usize {
@@ -53,14 +62,14 @@ pub async fn usage_from_request_response(
     counter: &Counter,
     message: Option<&RecordValue>,
     response: &A2aResponse,
-) -> Result<(usize, usize, usize), A2aTextError> {
+) -> Result<(usize, usize, usize), RequestUtilsError> {
     let prompt_text = extract_text_from_message(message)?;
     let completion_text = extract_text_from_response(response)?;
     let prompt_tokens = count_tokens(counter, &prompt_text).await;
     let completion_tokens = count_tokens(counter, &completion_text).await;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
-        .ok_or(A2aTextError::UsageOverflow)?;
+        .ok_or(RequestUtilsError::UsageOverflow)?;
     Ok((prompt_tokens, completion_tokens, total_tokens))
 }
 

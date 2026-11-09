@@ -6,7 +6,7 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::{
-    count_tokens, extract_text_from_message, extract_text_from_response,
+    RequestUtilsError, count_tokens, extract_text_from_message, extract_text_from_response,
     usage_from_request_response,
 };
 use crate::a2a_text::{A2aResponse, A2aTextError, RecordValue};
@@ -197,7 +197,10 @@ async fn usage_propagates_a_malformed_request_message() {
     let usage =
         usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response).await;
 
-    assert_eq!(usage, Err(A2aTextError::PartsNotIterable));
+    assert_eq!(
+        usage,
+        Err(RequestUtilsError::Text(A2aTextError::PartsNotIterable))
+    );
 }
 
 #[tokio::test]
@@ -209,5 +212,8 @@ async fn usage_propagates_a_malformed_response() {
     let usage =
         usage_from_request_response(&counter(), probe.message.as_ref(), &probe.response).await;
 
-    assert_eq!(usage, Err(A2aTextError::TextNotString));
+    assert_eq!(
+        usage,
+        Err(RequestUtilsError::Text(A2aTextError::TextNotString))
+    );
 }

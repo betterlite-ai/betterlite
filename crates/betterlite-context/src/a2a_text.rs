@@ -21,8 +21,6 @@ pub enum A2aTextError {
     ArtifactsNotSized,
     #[error("A2A artifacts object has no first item")]
     ArtifactsNotIndexed,
-    #[error("A2A usage token total overflows")]
-    UsageOverflow,
 }
 
 // serde_json::Number serializes as a struct named this way, so flatten can surface it as a fake record field
