@@ -325,7 +325,7 @@ async fn schema_live_index_sends_ft_create() {
         .await
         .expect("the created index");
     assert_eq!(
-        server.received(b"FT.CREATE"),
+        server.received(&[b"FT.CREATE"]),
         [command_args(&create_command(INDEX_NAME, &schema))]
     );
 }
@@ -955,7 +955,7 @@ async fn store_live_index_sends_expire_after_the_hash_only_with_a_ttl(#[case] tt
         .store_hash("doc-1", &fields, ttl)
         .await
         .expect("the stored hash");
-    let sent = server.written();
+    let sent = server.received(&[b"HSET", b"EXPIRE"]);
     let names: Vec<&[u8]> = sent.iter().map(|command| command[0].as_slice()).collect();
     let Some(seconds) = ttl else {
         assert_eq!(names, [b"HSET".as_slice()]);
