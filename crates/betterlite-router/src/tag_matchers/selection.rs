@@ -76,6 +76,7 @@ impl TagMatcher {
             rewritten,
             routing_confirmed: routing_confirmed.clone(),
             unknown_required_hides_answer: self.unknown_required_hides_answer(
+                &pool,
                 &excluded,
                 &required,
                 &routing_confirmed,
@@ -87,7 +88,7 @@ impl TagMatcher {
             candidates,
             matches: matched.matches,
             defaults: default_tagged(&self.deployments, &pool),
-            known_tags: known_tag_values(&self.deployments),
+            known_tags: known_tag_values(&self.deployments, &pool),
             warnings,
         }
     }
@@ -121,18 +122,18 @@ impl TagMatcher {
     #[must_use]
     pub fn unknown_required_hides_answer(
         &self,
+        pool: &[usize],
         excluded: &BTreeSet<String>,
         required: &BTreeSet<String>,
         confirmed: &BTreeSet<String>,
     ) -> bool {
-        let mut known = known_tag_values(&self.deployments);
+        let mut known = known_tag_values(&self.deployments, pool);
         known.extend(confirmed.iter().cloned());
         let known_required: BTreeSet<String> = required.intersection(&known).cloned().collect();
         if known_required.is_empty() || known_required == *required {
             return false;
         }
-        let pool: Vec<usize> = (0..self.deployments.len()).collect();
-        let allowed = exclude(&self.deployments, &pool, excluded);
+        let allowed = exclude(&self.deployments, pool, excluded);
         !require_all(&self.deployments, &allowed, &known_required).is_empty()
     }
 }

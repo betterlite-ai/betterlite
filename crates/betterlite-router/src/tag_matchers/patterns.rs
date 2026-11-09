@@ -29,7 +29,7 @@ pub struct Patterns {
 #[derive(Debug)]
 pub struct CompiledPattern {
     pub source: String,
-    pub regex: Option<Regex>,
+    pub regex: Regex,
 }
 
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl Patterns {
             match build(source) {
                 Ok(regex) => compiled.push(CompiledPattern {
                     source: source.clone(),
-                    regex: Some(regex),
+                    regex,
                 }),
                 Err(error) => warnings.push(TagWarning {
                     kind: classify(source, &error),
@@ -77,7 +77,7 @@ impl Patterns {
         let mut warnings = Vec::new();
         let mut matched = None;
         for pattern in &self.compiled {
-            match pattern.find(headers) {
+            match header_outcome(&pattern.regex, headers) {
                 PatternOutcome::Matched => {
                     matched = Some(pattern.source.clone());
                     break;
@@ -90,16 +90,6 @@ impl Patterns {
             }
         }
         Search { matched, warnings }
-    }
-}
-
-impl CompiledPattern {
-    fn find(&self, headers: &[String]) -> PatternOutcome {
-        self.regex
-            .as_ref()
-            .map_or(PatternOutcome::Missing, |regex| {
-                header_outcome(regex, headers)
-            })
     }
 }
 

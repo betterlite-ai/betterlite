@@ -217,15 +217,31 @@ fn known_and_unknown_tags() {
         deployment(Some(&["known", "other"]), None),
     ]);
     assert!(hidden.unknown_required_hides_answer(
+        &[0, 1],
         &set(&[]),
         &set(&["known", "unknown"]),
         &set(&[])
     ));
-    assert!(!hidden.unknown_required_hides_answer(&set(&[]), &set(&["unknown"]), &set(&[])));
-    assert!(!hidden.unknown_required_hides_answer(&set(&[]), &set(&["known", "other"]), &set(&[])));
+    assert!(!hidden.unknown_required_hides_answer(
+        &[0, 1],
+        &set(&[]),
+        &set(&["unknown"]),
+        &set(&[])
+    ));
+    assert!(!hidden.unknown_required_hides_answer(
+        &[0, 1],
+        &set(&[]),
+        &set(&["known", "other"]),
+        &set(&[])
+    ));
     let routed = TagMatcher::new(vec![deployment(Some(&["a"]), None)]);
-    assert!(routed.unknown_required_hides_answer(&set(&[]), &set(&["a", "b"]), &set(&[])));
-    assert!(!routed.unknown_required_hides_answer(&set(&[]), &set(&["a", "b"]), &set(&["b"])));
+    assert!(routed.unknown_required_hides_answer(&[0], &set(&[]), &set(&["a", "b"]), &set(&[])));
+    assert!(!routed.unknown_required_hides_answer(
+        &[0],
+        &set(&[]),
+        &set(&["a", "b"]),
+        &set(&["b"])
+    ));
     let selection = hidden.select(&query(&["&known", "&unknown"], None, &[], true, ""));
     assert!(selection.unknown_required_hides_answer);
 }

@@ -169,10 +169,13 @@ fn filter_pool(deployments: &[Deployment], pool: &[usize], filter: PoolFilter<'_
 }
 
 #[must_use]
-pub fn known_tag_values(deployments: &[Deployment]) -> BTreeSet<String> {
+pub fn known_tag_values(deployments: &[Deployment], pool: &[usize]) -> BTreeSet<String> {
     let mut known = BTreeSet::new();
-    for deployment in deployments {
-        if let Some(tags) = &deployment.tags {
+    for index in pool {
+        if let Some(tags) = deployments
+            .get(*index)
+            .and_then(|deployment| deployment.tags.as_ref())
+        {
             known.extend(tags.iter().cloned());
         }
     }

@@ -19,6 +19,7 @@ enum Boundary {
     UnsupportedConstruct,
     EmptyPrefix,
     DefaultMatchAny,
+    PooledKnown,
     Selection,
 }
 
@@ -33,6 +34,7 @@ enum Boundary {
 #[case::unsupported_construct(Boundary::UnsupportedConstruct)]
 #[case::empty_prefix(Boundary::EmptyPrefix)]
 #[case::default_match_any(Boundary::DefaultMatchAny)]
+#[case::pooled_known(Boundary::PooledKnown)]
 #[case::selection(Boundary::Selection)]
 fn tag_matchers_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -44,6 +46,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::UnsupportedConstruct => unsupported_construct_boundary(),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
         Boundary::DefaultMatchAny => default_match_any_boundary(),
+        Boundary::PooledKnown => pooled_known_boundary(),
         Boundary::Selection => selection_boundary(),
     }
 }
@@ -107,6 +110,34 @@ fn fancy_match_boundary() {
     assert_eq!(selection.matches.len(), 1);
     assert_eq!(selection.matches[0].value, r"(a)\1");
     assert!(selection.warnings.is_empty());
+}
+
+fn pooled_known_boundary() {
+    let matcher = TagMatcher::new(vec![
+        deployment(Some(&["known"]), None),
+        deployment(Some(&["outside"]), None),
+    ]);
+    // the pool knows only "known", so "outside" is still the unknown tag that hides an answer
+    assert!(matcher.unknown_required_hides_answer(
+        &[0],
+        &set(&[]),
+        &set(&["known", "outside"]),
+        &set(&[])
+    ));
+    // the pool holding only the "outside" deployment knows that tag and not "known"
+    assert!(matcher.unknown_required_hides_answer(
+        &[1],
+        &set(&[]),
+        &set(&["known", "outside"]),
+        &set(&[])
+    ));
+    // excluding "known" empties the pool, so no answer is left to hide
+    assert!(!matcher.unknown_required_hides_answer(
+        &[0],
+        &set(&["known"]),
+        &set(&["known", "outside"]),
+        &set(&[])
+    ));
 }
 
 fn unsupported_construct_boundary() {
