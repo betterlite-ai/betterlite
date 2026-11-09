@@ -71,7 +71,7 @@ where
     let router_sessions = Weak::clone(sessions);
     let router_id = id.to_owned();
     tasks.spawn(async move {
-        route_session_messages(Arc::clone(&router_streams), from_service_rx).await;
+        route_session_messages(&router_streams, from_service_rx).await;
         discard_session(&router_sessions, &router_id, &router_streams, &router_ended);
     });
     Session {
@@ -129,7 +129,7 @@ pub(super) enum StreamKey {
 }
 
 async fn route_session_messages(
-    shared: Arc<Mutex<SessionStreams>>,
+    shared: &Mutex<SessionStreams>,
     mut outgoing: mpsc::Receiver<TxJsonRpcMessage<RoleServer>>,
 ) {
     while let Some(message) = outgoing.next().await {
