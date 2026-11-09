@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
+use uuid::Uuid;
 
 use crate::json::{Json, Object};
 use crate::ocr_config::OcrProviderConfig as _;
@@ -21,7 +22,7 @@ use crate::ocr_settings::OcrSettings;
 use crate::request_format::RequestFormat;
 use crate::response::OCRPage;
 
-use super::request::legacy_body;
+use super::ReductoProviderBody as _;
 use super::{ReductoParseLegacyConfig, ReductoParseV3Config};
 
 struct NoHooks;
@@ -60,6 +61,22 @@ fn document(source: &str) -> OcrDocument {
     OcrDocument::DocumentUrl {
         document_url: source.to_owned(),
         extra: BTreeMap::new(),
+    }
+}
+
+fn pinned_boundary() -> Uuid {
+    Uuid::from_u128(1)
+}
+
+fn v3() -> ReductoParseV3Config {
+    ReductoParseV3Config {
+        boundaries: pinned_boundary,
+    }
+}
+
+fn legacy() -> ReductoParseLegacyConfig {
+    ReductoParseLegacyConfig {
+        boundaries: pinned_boundary,
     }
 }
 
@@ -119,7 +136,7 @@ async fn data_uri_is_uploaded_once_and_the_parse_body_carries_the_file_id() {
             ),
         ]),
     );
-    let response = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let response = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect("the call succeeds");
     assert_eq!(response.pages.len(), 1);
@@ -151,6 +168,10 @@ fn assert_upload_request(upload_request: &str) {
     );
     assert!(
         lowered.contains("content-type: application/pdf"),
+        "{upload_request}"
+    );
+    assert!(
+        lowered.contains("boundary=00000000000000000000000000000001"),
         "{upload_request}"
     );
     assert!(
@@ -195,7 +216,7 @@ async fn a_reducto_id_skips_the_upload_and_a_blank_one_is_a_request_field_error(
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let mut request = v3_request(server.base.clone(), Object::new());
     request.document = document("reducto://already-uploaded.pdf");
-    let response = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let response = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect("the call succeeds");
     assert_eq!(response.pages[0].markdown, "kept");
@@ -214,7 +235,7 @@ async fn a_reducto_id_skips_the_upload_and_a_blank_one_is_a_request_field_error(
     let blank = MockServer::start(Vec::new()).await;
     let mut blank_request = v3_request(blank.base.clone(), Object::new());
     blank_request.document = document("reducto://   ");
-    let error = ocr(&ReductoParseV3Config, &client, &blank_request, &NoHooks)
+    let error = ocr(&v3(), &client, &blank_request, &NoHooks)
         .await
         .expect_err("a blank id fails");
     assert!(
@@ -235,7 +256,7 @@ async fn a_source_that_is_neither_an_id_nor_a_data_uri_fails_before_a_request(
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let mut request = v3_request(server.base.clone(), Object::new());
     request.document = document(source);
-    let error = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let error = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect_err("a plain URL is not a Reducto source");
     assert!(matches!(error, OcrError::ReductoSource), "{error:?}");
@@ -248,7 +269,7 @@ async fn a_malformed_data_uri_is_invalid_data_uri() {
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let mut request = v3_request(server.base.clone(), Object::new());
     request.document = document("data:application/pdf");
-    let error = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let error = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect_err("a data URI without a comma fails");
     assert!(matches!(error, OcrError::InvalidDataUri), "{error:?}");
@@ -257,7 +278,7 @@ async fn a_malformed_data_uri_is_invalid_data_uri() {
 
 #[tokio::test]
 async fn v3_body_keeps_supported_options_and_drops_unknown_ones() {
-    let config = ReductoParseV3Config;
+    let config = v3();
     let selected = config
         .map_ocr_params(
             &object(&[
@@ -287,7 +308,7 @@ async fn v3_body_keeps_supported_options_and_drops_unknown_ones() {
 
 #[test]
 fn the_sync_transform_accepts_only_a_reducto_id() {
-    let config = ReductoParseV3Config;
+    let config = v3();
     let transform = OcrTransform {
         model: "parse-v3",
         optional_params: &Object::new(),
@@ -312,7 +333,7 @@ fn the_sync_transform_accepts_only_a_reducto_id() {
 async fn v3_body_for(selected: &Object) -> Json {
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let connection = test_connection();
-    let body = ReductoParseV3Config
+    let body = v3()
         .async_transform_ocr_request(
             document("reducto://ready.pdf"),
             OcrTransform {
@@ -359,10 +380,10 @@ fn legacy_body_wraps_enhance_only_when_it_is_not_null(
     #[case] overrides: Object,
     #[case] expected: Json,
 ) {
-    let selected = ReductoParseLegacyConfig
+    let selected = legacy()
         .map_ocr_params(&overrides, "parse-legacy")
         .expect("the options map");
-    let body = legacy_body("reducto://ready.pdf".to_owned(), &selected);
+    let body = ReductoParseLegacyConfig::body("reducto://ready.pdf".to_owned(), &selected);
     assert_eq!(
         decode(&serde_json::to_vec(&body).expect("the body encodes")),
         expected
@@ -414,7 +435,7 @@ async fn the_guardrail_sees_the_source_document_and_its_headers_reach_the_parse_
     let server = MockServer::start(vec![reply("200 OK", &[], parsed)]).await;
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let request = v3_request(server.base.clone(), Object::new());
-    let response = ocr(&ReductoParseV3Config, &client, &request, &hook)
+    let response = ocr(&v3(), &client, &request, &hook)
         .await
         .expect("the call succeeds");
     assert_eq!(response.pages[0].markdown, "hooked");
@@ -459,7 +480,7 @@ async fn upload_keeps_auth_headers_and_drops_content_type_and_content_length() {
         ("content-length".to_owned(), "3".to_owned()),
         ("x-extra".to_owned(), "kept".to_owned()),
     ];
-    ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect("the call succeeds");
     let requests = server.requests().await;
@@ -492,7 +513,7 @@ async fn an_upload_failure_surfaces_the_provider_status_and_body() {
     .await;
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let request = v3_request(server.base.clone(), Object::new());
-    let error = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let error = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect_err("an upload failure fails the call");
     assert!(
@@ -510,7 +531,7 @@ async fn an_upload_answer_without_a_file_id_fails_with_a_response_field() {
     let server = MockServer::start(vec![reply("200 OK", &[], br#"{"file_id":"  "}"#)]).await;
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let request = v3_request(server.base.clone(), Object::new());
-    let error = ocr(&ReductoParseV3Config, &client, &request, &NoHooks)
+    let error = ocr(&v3(), &client, &request, &NoHooks)
         .await
         .expect_err("a blank file id fails");
     assert!(
@@ -524,14 +545,14 @@ async fn a_missing_key_and_a_blank_key_are_missing_reducto_api_key() {
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let mut request = prepared_request("https://platform.reducto.ai".to_owned(), Object::new());
     request.connection.api_key = None;
-    let error = ReductoParseV3Config
+    let error = v3()
         .validate_environment(&request, &client)
         .await
         .expect_err("no key is an error");
     assert!(matches!(error, OcrError::MissingReductoApiKey), "{error:?}");
 
     request.connection.api_key = Some(SecretString::from("   "));
-    let blank_error = ReductoParseV3Config
+    let blank_error = v3()
         .validate_environment(&request, &client)
         .await
         .expect_err("a blank key falls through to the environment");
@@ -550,7 +571,7 @@ async fn the_environment_key_is_used_when_the_request_has_none() {
         "REDUCTO_API_KEY".to_owned(),
         SecretString::from(" env-key "),
     );
-    let headers = ReductoParseV3Config
+    let headers = v3()
         .validate_environment(&request, &client)
         .await
         .expect("the environment key resolves");
@@ -569,7 +590,7 @@ async fn a_supplied_authorization_header_wins_over_the_key_lookup() {
         ("Authorization".to_owned(), "Bearer supplied".to_owned()),
         ("x-extra".to_owned(), "kept".to_owned()),
     ];
-    let headers = ReductoParseV3Config
+    let headers = v3()
         .validate_environment(&request, &client)
         .await
         .expect("a supplied header needs no key");
@@ -583,7 +604,7 @@ async fn a_supplied_authorization_header_wins_over_the_key_lookup() {
 #[case::trailing_slash("https://example.test/v2/", "https://example.test/v2/parse")]
 fn the_parse_url_completes_the_configured_base(#[case] api_base: &str, #[case] expected: &str) {
     let request = prepared_request(api_base.to_owned(), Object::new());
-    let url = ReductoParseV3Config
+    let url = v3()
         .get_complete_url(&request, &Object::new(), &Vec::new())
         .expect("the URL builds");
     assert_eq!(url, expected);
@@ -592,7 +613,7 @@ fn the_parse_url_completes_the_configured_base(#[case] api_base: &str, #[case] e
 #[test]
 fn the_default_parse_url_is_the_reducto_platform() {
     let request = prepared_request(String::new(), Object::new());
-    let url = ReductoParseV3Config
+    let url = v3()
         .get_complete_url(&request, &Object::new(), &Vec::new())
         .expect("the URL builds");
     assert_eq!(url, "https://platform.reducto.ai/parse");
@@ -609,7 +630,7 @@ fn the_default_parse_url_is_the_reducto_platform() {
     vec![Json::Object(object(&[("index", number(0)), ("markdown", text("kept"))]))]
 )]
 fn the_result_shapes_choose_their_own_pages(#[case] raw: &str, #[case] expected: Vec<Json>) {
-    let response = ReductoParseV3Config
+    let response = v3()
         .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
         .expect("the response normalizes");
     let pages: Vec<Json> = response.pages.iter().map(page_index_markdown).collect();
@@ -619,7 +640,7 @@ fn the_result_shapes_choose_their_own_pages(#[case] raw: &str, #[case] expected:
 #[test]
 fn pages_group_blocks_by_page_and_usage_accepts_lax_numbers() {
     let raw = br#"{"usage":{"num_pages":"2","credits":true},"result":{"type":"full","chunks":[{"blocks":[{"type":"Table","content":"B","bbox":{"left":0.1,"page":2,"original_page":4},"confidence":"high","image_url":null}]},{"blocks":[{"content":"A","bbox":{"page":1}},{"content":"C","bbox":{"page":1}}]}]}}"#;
-    let response = ReductoParseV3Config
+    let response = v3()
         .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
         .expect("the response normalizes");
     assert_eq!(response.model, "parse-v3");
@@ -653,7 +674,7 @@ fn pages_group_blocks_by_page_and_usage_accepts_lax_numbers() {
 #[test]
 fn a_response_without_a_page_number_joins_the_chunk_content() {
     let raw = br#"{"chunks":[{"content":"one"},{"content":""},{"content":"two"}]}"#;
-    let response = ReductoParseV3Config
+    let response = v3()
         .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
         .expect("the response normalizes");
     assert_eq!(response.pages.len(), 1);
@@ -666,7 +687,7 @@ fn a_response_without_a_page_number_joins_the_chunk_content() {
 #[test]
 fn a_block_content_that_is_not_text_fails_with_a_response_field() {
     let raw = br#"{"result":{"chunks":[{"blocks":[{"content":5,"bbox":{"page":1}}]}]}}"#;
-    let error = ReductoParseV3Config
+    let error = v3()
         .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
         .expect_err("a non-text block content fails");
     assert!(
@@ -678,7 +699,7 @@ fn a_block_content_that_is_not_text_fails_with_a_response_field() {
 #[test]
 fn a_bad_block_page_number_leaves_the_block_out() {
     let raw = br#"{"result":{"chunks":[{"blocks":[{"content":"ignored","bbox":{"page":"invalid"}},{"content":"kept","bbox":{"page":2.5},"extra":null}]}]}}"#;
-    let response = ReductoParseV3Config
+    let response = v3()
         .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
         .expect("a bad page number is best effort");
     assert_eq!(response.pages.len(), 1);
@@ -694,13 +715,27 @@ fn a_bad_block_page_number_leaves_the_block_out() {
     );
 }
 
+#[test]
+fn a_block_page_number_at_two_pow_63_saturates_at_i64_max() {
+    let raw =
+        br#"{"chunks":[{"blocks":[{"content":"kept","bbox":{"page":9223372036854775808.0}}]}]}"#;
+    let response = v3()
+        .transform_ocr_response("parse-v3", raw, RequestFormat::Litellm)
+        .expect("the block page saturates");
+    assert_eq!(response.pages.len(), 1);
+    assert_eq!(response.pages[0].index, i64::MAX - 1);
+    assert_eq!(response.pages[0].markdown, "kept");
+}
+
 #[rstest]
 #[case::fractional_pages(r#"{"usage":{"num_pages":1.5}}"#)]
 #[case::array_pages(r#"{"usage":{"num_pages":[]}}"#)]
 #[case::object_credits(r#"{"usage":{"credits":{}}}"#)]
+#[case::pages_over_i64(r#"{"usage":{"num_pages":9223372036854775808}}"#)]
+#[case::pages_exactly_two_pow_63(r#"{"usage":{"num_pages":9223372036854775808.0}}"#)]
 #[case::text_credits(r#"{"usage":{"credits":"much"}}"#)]
 fn a_usage_value_of_the_wrong_type_fails_with_a_response_field(#[case] raw: &str) {
-    let error = ReductoParseV3Config
+    let error = v3()
         .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
         .expect_err("a mistyped usage value fails");
     assert!(matches!(error, OcrError::ResponseField { .. }), "{error:?}");
@@ -709,7 +744,7 @@ fn a_usage_value_of_the_wrong_type_fails_with_a_response_field(#[case] raw: &str
 #[test]
 fn the_native_request_format_keeps_the_provider_json() {
     let raw = br#"{"chunks":[{"content":"text"}],"job_id":"job_1"}"#;
-    let response = ReductoParseV3Config
+    let response = v3()
         .transform_ocr_response("parse-v3", raw, RequestFormat::Native)
         .expect("the response normalizes");
     assert_eq!(response.provider_native_response, Some(decode(raw)));

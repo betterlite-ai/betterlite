@@ -7,23 +7,21 @@ use serde::Serialize;
 
 use super::{REDUCTO_API_KEY_ENV, REDUCTO_ID_PREFIX};
 
+// the V3 body is the file id under "input" with the selected options beside it
 #[derive(Debug, Serialize)]
-pub struct ReductoV3Request {
-    pub(super) input: String,
-    #[serde(flatten)]
-    pub(super) params: Object,
-}
+#[serde(transparent)]
+pub struct ReductoV3Request(pub(super) Object);
 
 #[derive(Debug, Serialize)]
 pub struct ReductoLegacyRequest {
-    document_url: String,
+    pub(super) document_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    options: Option<ReductoLegacyOptions>,
+    pub(super) options: Option<ReductoLegacyOptions>,
 }
 
 #[derive(Debug, Serialize)]
-struct ReductoLegacyOptions {
-    enhance: Json,
+pub(super) struct ReductoLegacyOptions {
+    pub(super) enhance: Json,
 }
 
 pub(super) fn select_params(non_default_params: &Object, supported: &[&str]) -> Object {
@@ -44,19 +42,6 @@ pub(super) fn reducto_id(source: &str) -> Result<String, OcrError> {
         });
     }
     Ok(source.to_owned())
-}
-
-pub(super) fn legacy_body(input: String, params: &Object) -> ReductoLegacyRequest {
-    let options = params
-        .get("enhance")
-        .filter(|value| !matches!(value, Json::Null))
-        .map(|enhance| ReductoLegacyOptions {
-            enhance: enhance.clone(),
-        });
-    ReductoLegacyRequest {
-        document_url: input,
-        options,
-    }
 }
 
 pub(super) fn resolve_headers(

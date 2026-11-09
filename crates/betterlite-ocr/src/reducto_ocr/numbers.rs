@@ -14,14 +14,15 @@ pub(super) fn lax_i64(value: &Json) -> Option<i64> {
     }
 }
 
+// LiteLLM's LaxI64 accepts an integral float only below 2^63; the cast there does not saturate
 fn integral_i64(value: f64) -> Option<i64> {
-    if value.fract() != 0.0_f64 {
+    if value.fract() != 0.0_f64 || value >= 2.0_f64.powi(63_i32) {
         return None;
     }
     truncated_i64(value)
 }
 
-// the reference saturates a f64 holding exactly 2^63 at the top of the i64 range
+// the page-number reference saturates a f64 holding exactly 2^63 at the top of the i64 range
 pub(super) fn truncated_i64(value: f64) -> Option<i64> {
     if !value.is_finite() {
         return None;

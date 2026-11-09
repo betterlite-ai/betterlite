@@ -84,9 +84,21 @@ async fn execute(input: &Input) -> crate::helpers::HelperResult {
     let request = prepared_request(input, model, &server.base);
     let client = client::ocr_client()?;
     let response = if model.eq_ignore_ascii_case("parse-legacy") {
-        ocr(&ReductoParseLegacyConfig, &client, &request, &NoHooks).await
+        ocr(
+            &ReductoParseLegacyConfig::default(),
+            &client,
+            &request,
+            &NoHooks,
+        )
+        .await
     } else {
-        ocr(&ReductoParseV3Config, &client, &request, &NoHooks).await
+        ocr(
+            &ReductoParseV3Config::default(),
+            &client,
+            &request,
+            &NoHooks,
+        )
+        .await
     }
     .map_err(|error| ocr_failure(&error))?;
     let captured = server.finish().await?;

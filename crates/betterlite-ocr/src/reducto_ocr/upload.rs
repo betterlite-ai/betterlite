@@ -14,6 +14,7 @@ use crate::ocr_document::InlineDocument;
 use crate::ocr_error::{OcrError, OcrHeaderError, OcrTransportError};
 use crate::ocr_http::read_response_bytes;
 
+use super::Boundaries;
 use super::REDUCTO_ID_PREFIX;
 use super::request::reducto_id;
 use super::url::complete_endpoint_url;
@@ -27,6 +28,7 @@ pub(super) async fn ensure_file_id(
     source: &str,
     headers: &[(String, String)],
     context: OcrRequestContext<'_>,
+    boundaries: Boundaries,
 ) -> Result<String, OcrError> {
     if source.starts_with(REDUCTO_ID_PREFIX) {
         return reducto_id(source);
@@ -34,7 +36,7 @@ pub(super) async fn ensure_file_id(
     let inline = InlineDocument::parse(source)?.ok_or(OcrError::ReductoSource)?;
     let mime = inline.0.mime_type().to_string();
     let bytes = inline.decode(OCR_INLINE_MAX_BYTES)?;
-    upload_bytes(bytes, &mime, headers, context).await
+    upload_bytes(bytes, &mime, headers, context, boundaries).await
 }
 
 async fn upload_bytes(
@@ -42,9 +44,17 @@ async fn upload_bytes(
     mime: &str,
     headers: &[(String, String)],
     context: OcrRequestContext<'_>,
+    boundaries: Boundaries,
 ) -> Result<String, OcrError> {
     let url = complete_endpoint_url(context.connection.api_base.as_deref(), "upload")?;
-    let outbound = upload_request(context.connection, &url, headers, bytes, mime)?;
+    let outbound = upload_request(Upload {
+        connection: context.connection,
+        url,
+        headers,
+        bytes,
+        mime: mime.to_owned(),
+        boundary: boundaries(),
+    })?;
     let response = context
         .client
         .provider_http
@@ -64,32 +74,35 @@ async fn upload_bytes(
         })
 }
 
-// LiteLLM's multipart part keeps the document under field "file" with the data URI's own type
-fn upload_request(
-    connection: &OcrConnection,
-    url: &str,
-    headers: &[(String, String)],
+struct Upload<'call> {
+    connection: &'call OcrConnection,
+    url: String,
+    headers: &'call [(String, String)],
     bytes: Vec<u8>,
-    mime: &str,
-) -> Result<OutboundRequest, OcrError> {
-    let parsed = Url::parse(url).map_err(|_source| OcrError::RequestField {
+    mime: String,
+    boundary: Uuid,
+}
+
+// LiteLLM's multipart part keeps the document under field "file" with the data URI's own type
+fn upload_request(upload: Upload<'_>) -> Result<OutboundRequest, OcrError> {
+    let parsed = Url::parse(&upload.url).map_err(|_source| OcrError::RequestField {
         path: "url".to_owned(),
     })?;
     Ok(OutboundRequest {
         method: Method::POST,
         url: parsed,
         query: Vec::new(),
-        headers: upload_headers(headers)?,
+        headers: upload_headers(upload.headers)?,
         body: RequestBody::Multipart {
-            boundary: Uuid::new_v4().simple().to_string(),
+            boundary: upload.boundary.simple().to_string(),
             parts: vec![MultipartPart {
                 name: "file".to_owned(),
                 file_name: Some("document".to_owned()),
-                content_type: Some(mime.to_owned()),
-                data: bytes,
+                content_type: Some(upload.mime),
+                data: upload.bytes,
             }],
         },
-        deadline: connection.timeout,
+        deadline: upload.connection.timeout,
     })
 }
 
