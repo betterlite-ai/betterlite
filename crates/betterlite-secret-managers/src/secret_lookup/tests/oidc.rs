@@ -140,10 +140,8 @@ fn oidc_google_caches_a_token_for_the_default_ttl() {
 #[test]
 fn oidc_google_cache_entry_expires_exactly_at_its_ttl() {
     let clock = Arc::new(ManualClock::at(1_700_000_000));
-    let (lookup, http) = scripted_lookup(
-        vec![answer("google-token"), answer("second-token")],
-        &clock,
-    );
+    let (lookup, http) =
+        scripted_lookup(vec![answer("google-token"), answer("second-token")], &clock);
     let first = lookup
         .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
         .expect("the first read should succeed");
