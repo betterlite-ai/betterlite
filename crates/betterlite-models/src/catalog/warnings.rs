@@ -1,5 +1,6 @@
 use super::{CatalogError, MAX_CATALOG_WARNING_BYTES, MAX_CATALOG_WARNINGS};
 
+#[derive(Default)]
 pub(super) struct WarningState {
     pub(super) messages: Vec<String>,
     pub(super) bytes: usize,

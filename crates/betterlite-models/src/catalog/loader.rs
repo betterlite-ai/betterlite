@@ -14,6 +14,7 @@ use crate::catalog_generalizations::{CatalogGeneralizations, decode_generalizati
 use crate::entry::{ModelFieldError, ModelFields};
 use crate::price_fields::PriceFields;
 
+#[derive(Default)]
 struct Accumulators {
     entries: BTreeMap<String, CatalogEntry>,
     lookup: BTreeMap<String, Arc<str>>,
@@ -25,15 +26,33 @@ pub(super) fn build_catalog(
     raw: IndexMap<String, Box<RawValue>>,
     unknown: UnknownFields,
 ) -> Result<ModelCatalog, CatalogError> {
-    let mut accumulators = Accumulators {
-        entries: BTreeMap::new(),
-        lookup: BTreeMap::new(),
-        warnings: WarningState {
-            messages: Vec::new(),
-            bytes: 0,
-        },
-        alias_claims: Vec::new(),
-    };
+    let source_entries = raw.len();
+    let has_generalizations = raw.contains_key(FALLBACK_GENERALIZATIONS);
+    let mut accumulators = Accumulators::default();
+    let generalizations = collect_entries(raw, unknown, &mut accumulators)?;
+    install_aliases(&mut accumulators)?;
+    let aliases = accumulators
+        .lookup
+        .len()
+        .saturating_sub(accumulators.entries.len());
+    let adopted_size = source_entries
+        .saturating_sub(usize::from(has_generalizations))
+        .saturating_add(aliases);
+    Ok(ModelCatalog {
+        entries: accumulators.entries,
+        lookup: accumulators.lookup,
+        generalizations,
+        warnings: accumulators.warnings.messages,
+        revision: None,
+        adopted_size,
+    })
+}
+
+fn collect_entries(
+    raw: IndexMap<String, Box<RawValue>>,
+    unknown: UnknownFields,
+    accumulators: &mut Accumulators,
+) -> Result<CatalogGeneralizations, CatalogError> {
     let mut generalizations = CatalogGeneralizations::default();
     for (name, value) in raw {
         if name == SAMPLE_SPEC {
@@ -44,8 +63,12 @@ pub(super) fn build_catalog(
                 install_generalizations(value.as_ref(), unknown, &mut accumulators.warnings)?;
             continue;
         }
-        add_entry(&name, value.as_ref(), unknown, &mut accumulators)?;
+        add_entry(&name, value.as_ref(), unknown, accumulators)?;
     }
+    Ok(generalizations)
+}
+
+fn install_aliases(accumulators: &mut Accumulators) -> Result<(), CatalogError> {
     for (alias, canonical) in mem::take(&mut accumulators.alias_claims) {
         insert_lookup(
             &mut accumulators.lookup,
@@ -54,12 +77,7 @@ pub(super) fn build_catalog(
             &mut accumulators.warnings,
         )?;
     }
-    Ok(ModelCatalog {
-        entries: accumulators.entries,
-        lookup: accumulators.lookup,
-        generalizations,
-        warnings: accumulators.warnings.messages,
-    })
+    Ok(())
 }
 
 fn add_entry(
