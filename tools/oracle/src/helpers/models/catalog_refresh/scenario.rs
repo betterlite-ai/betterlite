@@ -150,13 +150,23 @@ fn facts(input: &Input, facts: &Facts<'_>) -> Value {
         .iter()
         .map(|seconds| seconds.normalize().to_string())
         .collect::<Vec<_>>();
+    let probes = input
+        .probe_models
+        .iter()
+        .map(|name| {
+            let provider = catalog
+                .metadata(name)
+                .map(|projection| projection.provider.to_owned());
+            (name.clone(), provider)
+        })
+        .collect::<BTreeMap<_, _>>();
     json!({
         "kind": facts.kind,
-        "reason_kind": facts.reason.map(reason_kind),
+        "reason_kind": facts.reason.map(classify_reason),
         "before": provenance_facts(&facts.immediate.provenance),
         "after": provenance_facts(&facts.final_snapshot.provenance),
         "catalog": {"count": catalog.adopted_size, "models": model_names(catalog)},
-        "probes": probe_facts(input, catalog),
+        "probes": probes,
         "generalization": generalization(input, catalog),
         "requests": facts.client.requests.load(Ordering::SeqCst),
         "sleeps": sleeps,
@@ -168,7 +178,7 @@ fn provenance_facts(provenance: &CatalogProvenance) -> Value {
         "source": source_name(provenance.kind),
         "url": &provenance.url,
         "is_env_forced": provenance.is_env_forced,
-        "fallback": provenance.fallback_reason.as_deref().map(fallback_kind),
+        "fallback": provenance.fallback_reason.as_deref().map(classify_reason),
         "loaded_at_set": provenance.loaded_at.is_some(),
         "revision": &provenance.source_revision,
         "etag": &provenance.etag,
@@ -188,20 +198,6 @@ fn model_names(catalog: &ModelCatalog) -> Value {
     json!(names)
 }
 
-fn probe_facts(input: &Input, catalog: &ModelCatalog) -> Value {
-    let probes = input
-        .probe_models
-        .iter()
-        .map(|name| {
-            let provider = catalog
-                .metadata(name)
-                .map(|projection| projection.provider.to_owned());
-            (name.clone(), provider)
-        })
-        .collect::<BTreeMap<_, _>>();
-    json!(probes)
-}
-
 fn generalization(input: &Input, catalog: &ModelCatalog) -> Option<String> {
     input
         .probe_generalization
@@ -217,23 +213,13 @@ const fn source_name(kind: SourceKind) -> &'static str {
     }
 }
 
-fn fallback_kind(reason: &str) -> &'static str {
-    if reason == "Remote data failed integrity validation" {
-        "integrity"
-    } else if reason.starts_with("Remote fetch failed:") {
-        "fetch"
-    } else if reason.starts_with("Remote data failed to load") {
-        "load"
-    } else {
-        "other"
-    }
-}
-
-fn reason_kind(reason: &str) -> &'static str {
+fn classify_reason(reason: &str) -> &'static str {
     if reason.starts_with("HTTP ") {
         "http"
     } else if reason.starts_with("invalid JSON") {
         "invalid_json"
+    } else if reason.starts_with("Remote fetch failed:") {
+        "fetch"
     } else if reason.contains("integrity validation") {
         "integrity"
     } else if reason.contains("failed to load") {

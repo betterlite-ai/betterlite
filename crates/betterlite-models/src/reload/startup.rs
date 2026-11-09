@@ -9,8 +9,7 @@ use crate::fetch_policy::outcome::{
 };
 use crate::fetch_policy::retry::{CatalogSleeper, JitterSource};
 use crate::reload::refresh::{self, AdoptionError};
-use crate::reload::{CatalogService, FetchLimits, RetryTask, StartupOutcome};
-use crate::source::CatalogSnapshot;
+use crate::reload::{BundledSource, CatalogService, FetchLimits, RetryTask, StartupOutcome};
 
 pub(crate) struct RetryDeps<C, S, J> {
     pub(crate) client: Arc<C>,
@@ -35,28 +34,39 @@ where
         url: url.to_owned(),
         timeout: limits.timeout,
     };
-    let outcome = match deps.client.get_async(&request).await {
-        Ok(response) => classify_fetch_response(response, &request.url),
-        Err(error) => classify_fetch_error(&error, &request.url),
-    };
+    let outcome = attempt(deps.client.as_ref(), &request).await;
     match outcome {
         AttemptOutcome::Reloaded(fetched) => reloaded(service, &request.url, &fetched, loaded_at),
         AttemptOutcome::Unavailable(unavailable) => StartupOutcome {
-            snapshot: service.fallback_snapshot(
-                &request.url,
-                format!("Remote fetch failed: {}", unavailable.reason),
+            snapshot: service.bundled_snapshot(
+                BundledSource::Fallback {
+                    url: &request.url,
+                    reason: format!("Remote fetch failed: {}", unavailable.reason),
+                },
                 loaded_at,
             ),
             retry: None,
         },
         AttemptOutcome::Retryable(retryable) => StartupOutcome {
-            snapshot: service.fallback_snapshot(
-                &request.url,
-                format!("Remote fetch failed: {}", retryable.reason),
+            snapshot: service.bundled_snapshot(
+                BundledSource::Fallback {
+                    url: &request.url,
+                    reason: format!("Remote fetch failed: {}", retryable.reason),
+                },
                 loaded_at,
             ),
             retry: retry_task(&request, limits, retryable, deps),
         },
+    }
+}
+
+async fn attempt<C>(client: &C, request: &CatalogRequest) -> AttemptOutcome
+where
+    C: CatalogClient,
+{
+    match client.get_async(request).await {
+        Ok(response) => classify_fetch_response(response, &request.url),
+        Err(error) => classify_fetch_error(&error, &request.url),
     }
 }
 
@@ -75,32 +85,24 @@ where
             retry: None,
         },
         Err(error) => StartupOutcome {
-            snapshot: fallback(service, url, &error, loaded_at),
+            snapshot: service.bundled_snapshot(
+                BundledSource::Fallback {
+                    url,
+                    reason: failure_reason(&error),
+                },
+                loaded_at,
+            ),
             retry: None,
         },
     }
 }
 
-fn fallback<F>(
-    service: &CatalogService<F>,
-    url: &str,
-    error: &AdoptionError,
-    loaded_at: DateTime<Utc>,
-) -> Arc<CatalogSnapshot>
-where
-    F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync,
-{
+fn failure_reason(error: &AdoptionError) -> String {
     match error {
-        AdoptionError::Integrity { .. } => service.fallback_snapshot(
-            url,
-            "Remote data failed integrity validation".to_owned(),
-            loaded_at,
-        ),
-        AdoptionError::Encoding { .. } | AdoptionError::Load { .. } => service.fallback_snapshot(
-            url,
-            format!("Remote data failed to load: {error}"),
-            loaded_at,
-        ),
+        AdoptionError::Integrity { .. } => "Remote data failed integrity validation".to_owned(),
+        AdoptionError::Encoding { .. } | AdoptionError::Load { .. } => {
+            format!("Remote data failed to load: {error}")
+        }
     }
 }
 

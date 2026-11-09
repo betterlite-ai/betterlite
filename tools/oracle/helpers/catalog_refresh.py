@@ -2,9 +2,9 @@ import asyncio
 import os
 import random
 import threading
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 from decimal import Decimal
-from typing import NamedTuple, Protocol, TypeAlias, cast
+from typing import NamedTuple, TypeAlias, cast
 
 import httpx
 import litellm
@@ -23,39 +23,18 @@ LOCAL_ENV: str = "LITELLM_LOCAL_MODEL_COST_MAP"
 MODEL_LIMIT: int = 50
 
 
-class _LoadCostMap(Protocol):
-    def __call__(  # noqa: PLR0913
-        self,
-        *,
-        url: str,
-        timeout: int,
-        max_attempts: int,
-        sleep: Callable[[float], None],
-        rng: random.Random | None,
-        client: object,
-    ) -> dict[str, Json]: ...
+load_model_cost_map = cast(Callable[..., dict[str, Json]], cost_map.get_model_cost_map)
+refetch_model_cost_map = cast(
+    Callable[
+        ...,
+        Coroutine[
+            object, object, ModelCostMapReloaded | ModelCostMapReloadUnavailable
+        ],
+    ],
+    cost_map.refetch_model_cost_map,
+)
+adopt_model_cost_map = cast(Callable[[dict[str, Json]], int], cost_map.adopt_model_cost_map)
 
-
-class _RefetchCostMap(Protocol):
-    def __call__(  # noqa: PLR0913
-        self,
-        *,
-        url: str,
-        timeout: int,
-        max_attempts: int,
-        sleep: Callable[[float], Awaitable[None]],
-        rng: random.Random | None,
-        client: object,
-    ) -> Coroutine[object, object, ModelCostMapReloaded | ModelCostMapReloadUnavailable]: ...
-
-
-class _AdoptCostMap(Protocol):
-    def __call__(self, new_model_cost_map: dict[str, Json]) -> int: ...
-
-
-load_model_cost_map = cast(_LoadCostMap, cost_map.get_model_cost_map)
-refetch_model_cost_map = cast(_RefetchCostMap, cost_map.refetch_model_cost_map)
-adopt_model_cost_map = cast(_AdoptCostMap, cost_map.adopt_model_cost_map)
 
 class _Reply(NamedTuple):
     status: int
@@ -81,32 +60,22 @@ class _Facts(NamedTuple):
     sleeps: list[float]
 
 
-class _SleepLog:
-    def __init__(self) -> None:
-        self.values: list[float] = []
-        self._lock = threading.Lock()
-
-    def record(self, seconds: float) -> None:
-        with self._lock:
-            self.values.append(seconds)
-
-
 class _GatedSleeper:
-    def __init__(self, log: _SleepLog) -> None:
+    def __init__(self, log: list[float]) -> None:
         self._log = log
         self.release = threading.Event()
 
     def __call__(self, seconds: float) -> None:
-        self._log.record(seconds)
+        self._log.append(seconds)
         self.release.wait(timeout=10)
 
 
 class _AsyncSleeper:
-    def __init__(self, log: _SleepLog) -> None:
+    def __init__(self, log: list[float]) -> None:
         self._log = log
 
     async def sleep(self, seconds: float) -> None:
-        self._log.record(seconds)
+        self._log.append(seconds)
 
 
 class _Replies:
@@ -250,17 +219,15 @@ def _restore_environment(saved: dict[str, str | None]) -> None:
             os.environ[name] = value
 
 
-def _source_info() -> CostMapSourceInfo:
-    return cost_map.get_model_cost_map_source_info()
-
-
 def _join_retry_threads(before: set[threading.Thread]) -> None:
     for thread in threading.enumerate():
         if thread not in before:
             thread.join(timeout=10)
 
 
-def _load(url: str, request: _Request, replies: _Replies, log: _SleepLog) -> CostMapSourceInfo:
+def _load(
+    url: str, request: _Request, replies: _Replies, log: list[float]
+) -> CostMapSourceInfo:
     sleeper = _GatedSleeper(log)
     before = set(threading.enumerate())
     model_cost = load_model_cost_map(
@@ -272,7 +239,7 @@ def _load(url: str, request: _Request, replies: _Replies, log: _SleepLog) -> Cos
         client=_SyncClient(replies),
     )
     litellm.model_cost = model_cost
-    immediate = _source_info()
+    immediate = cost_map.get_model_cost_map_source_info()
     sleeper.release.set()
     _join_retry_threads(before)
     return immediate
@@ -280,14 +247,15 @@ def _load(url: str, request: _Request, replies: _Replies, log: _SleepLog) -> Cos
 
 def _startup(request: _Request) -> _Facts:
     replies = _Replies(request.replies)
-    log = _SleepLog()
+    log: list[float] = []
     immediate = _load(request.url, request, replies, log)
-    return _Facts("startup", None, immediate, _source_info(), replies.requests, log.values)
+    source = cost_map.get_model_cost_map_source_info()
+    return _Facts("startup", None, immediate, source, replies.requests, log)
 
 
 def _reload(request: _Request) -> _Facts:
     replies = _Replies(request.replies)
-    log = _SleepLog()
+    log: list[float] = []
     immediate = _load(request.url, request, replies, log)
     result = asyncio.run(
         refetch_model_cost_map(
@@ -301,29 +269,16 @@ def _reload(request: _Request) -> _Facts:
     )
     if isinstance(result, ModelCostMapReloaded):
         adopt_model_cost_map(cast(dict[str, Json], result.model_cost_map))
-        return _Facts("reloaded", None, immediate, _source_info(), replies.requests, log.values)
+        source = cost_map.get_model_cost_map_source_info()
+        return _Facts("reloaded", None, immediate, source, replies.requests, log)
     return _Facts(
         "unavailable",
         result.reason,
         immediate,
-        _source_info(),
+        cost_map.get_model_cost_map_source_info(),
         replies.requests,
-        log.values,
+        log,
     )
-
-
-def _seconds(value: float) -> str:
-    return format(Decimal(str(value)).normalize(), "f")
-
-
-def _fallback_kind(reason: str) -> str:
-    if reason == "Remote data failed integrity validation":
-        return "integrity"
-    if reason.startswith("Remote fetch failed:"):
-        return "fetch"
-    if reason.startswith("Remote data failed to load"):
-        return "load"
-    return "other"
 
 
 def _reason_kind(reason: str) -> str:
@@ -331,6 +286,8 @@ def _reason_kind(reason: str) -> str:
         return "http"
     if reason.startswith("invalid JSON"):
         return "invalid_json"
+    if reason.startswith("Remote fetch failed:"):
+        return "fetch"
     if "integrity validation" in reason:
         return "integrity"
     if "failed to load" in reason:
@@ -342,7 +299,7 @@ def _provenance_facts(info: CostMapSourceInfo) -> Json:
     reason = info.get("fallback_reason")
     fallback: Json = None
     if isinstance(reason, str):
-        fallback = _fallback_kind(reason)
+        fallback = _reason_kind(reason)
     return {
         "source": info.get("source"),
         "url": info.get("url"),
@@ -354,12 +311,8 @@ def _provenance_facts(info: CostMapSourceInfo) -> Json:
     }
 
 
-def _model_cost() -> dict[str, Json]:
-    return cast(dict[str, Json], litellm.model_cost)
-
-
 def _catalog_facts() -> Json:
-    model_cost = _model_cost()
+    model_cost = cast(dict[str, Json], litellm.model_cost)
     count = len(model_cost)
     names: list[Json] = []
     names.extend(sorted(model_cost))
@@ -368,7 +321,7 @@ def _catalog_facts() -> Json:
 
 
 def _probe_facts(probe_models: list[str]) -> Json:
-    model_cost = _model_cost()
+    model_cost = cast(dict[str, Json], litellm.model_cost)
     probes: dict[str, Json] = {}
     for name in probe_models:
         entry = model_cost.get(name)
@@ -381,13 +334,8 @@ def _probe_facts(probe_models: list[str]) -> Json:
     return probes
 
 
-def _generalization(probe: str | None) -> Json:
-    if probe is None:
-        return None
-    return match_routing_generalization(probe)
-
-
 def _facts_json(input_value: dict[str, Json], facts: _Facts) -> Json:
+    probe = _optional_string(input_value, "probe_generalization")
     return {
         "kind": facts.kind,
         "reason_kind": None if facts.reason is None else _reason_kind(facts.reason),
@@ -395,9 +343,9 @@ def _facts_json(input_value: dict[str, Json], facts: _Facts) -> Json:
         "after": _provenance_facts(facts.final),
         "catalog": _catalog_facts(),
         "probes": _probe_facts(_strings(input_value, "probe_models")),
-        "generalization": _generalization(_optional_string(input_value, "probe_generalization")),
+        "generalization": None if probe is None else match_routing_generalization(probe),
         "requests": facts.requests,
-        "sleeps": [_seconds(value) for value in facts.sleeps],
+        "sleeps": [format(Decimal(str(value)).normalize(), "f") for value in facts.sleeps],
     }
 
 

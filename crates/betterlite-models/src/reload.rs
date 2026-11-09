@@ -41,6 +41,11 @@ impl Default for FetchLimits {
     }
 }
 
+pub(crate) enum BundledSource<'source> {
+    Local,
+    Fallback { url: &'source str, reason: String },
+}
+
 pub struct CatalogService<F = fn() -> Result<Vec<u8>, CatalogError>> {
     pub source: CatalogSource,
     pub bundled: Mutex<BundledCatalog<F>>,
@@ -57,38 +62,31 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
         }
     }
 
-    fn local_snapshot(&self, loaded_at: DateTime<Utc>) -> Arc<CatalogSnapshot> {
-        let catalog = self.bundled_catalog();
-        let provenance = CatalogProvenance {
-            kind: SourceKind::Local,
-            url: None,
-            is_env_forced: true,
-            fallback_reason: None,
-            loaded_at: Some(loaded_at),
-            source_revision: catalog.revision.clone(),
-            etag: None,
-        };
-        Arc::new(CatalogSnapshot {
-            catalog,
-            provenance,
-        })
-    }
-
-    fn fallback_snapshot(
+    fn bundled_snapshot(
         &self,
-        url: &str,
-        reason: String,
+        source: BundledSource<'_>,
         loaded_at: DateTime<Utc>,
     ) -> Arc<CatalogSnapshot> {
         let catalog = self.bundled_catalog();
-        let provenance = CatalogProvenance {
-            kind: SourceKind::Local,
-            url: Some(url.to_owned()),
-            is_env_forced: false,
-            fallback_reason: Some(reason),
-            loaded_at: Some(loaded_at),
-            source_revision: catalog.revision.clone(),
-            etag: None,
+        let provenance = match source {
+            BundledSource::Local => CatalogProvenance {
+                kind: SourceKind::Local,
+                url: None,
+                is_env_forced: true,
+                fallback_reason: None,
+                loaded_at: Some(loaded_at),
+                source_revision: catalog.revision.clone(),
+                etag: None,
+            },
+            BundledSource::Fallback { url, reason } => CatalogProvenance {
+                kind: SourceKind::Local,
+                url: Some(url.to_owned()),
+                is_env_forced: false,
+                fallback_reason: Some(reason),
+                loaded_at: Some(loaded_at),
+                source_revision: catalog.revision.clone(),
+                etag: None,
+            },
         };
         Arc::new(CatalogSnapshot {
             catalog,
@@ -97,7 +95,7 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
     }
 
     fn adopt_local(&self, loaded_at: DateTime<Utc>) -> Arc<CatalogSnapshot> {
-        let snapshot = self.local_snapshot(loaded_at);
+        let snapshot = self.bundled_snapshot(BundledSource::Local, loaded_at);
         self.current.store(Arc::clone(&snapshot));
         snapshot
     }
@@ -114,22 +112,16 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError> + Send + Sync> CatalogService<F> {
         S: CatalogSleeper,
         J: JitterSource,
     {
-        match &self.source {
-            CatalogSource::Local => {
-                let snapshot = self.local_snapshot((self.clock)());
-                self.current.store(Arc::clone(&snapshot));
-                ReloadOutcome::Reloaded(snapshot)
-            }
-            CatalogSource::Remote { url } => {
-                let fetch = refresh::ReloadFetch {
-                    limits,
-                    client,
-                    sleeper,
-                    jitter,
-                };
-                refresh::reload_remote(self, url, fetch).await
-            }
-        }
+        let CatalogSource::Remote { url } = &self.source else {
+            return ReloadOutcome::Reloaded(self.adopt_local((self.clock)()));
+        };
+        let fetch = refresh::ReloadFetch {
+            limits,
+            client,
+            sleeper,
+            jitter,
+        };
+        refresh::reload_remote(self, url, fetch).await
     }
 
     pub async fn startup<C, S, J>(

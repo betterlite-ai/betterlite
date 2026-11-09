@@ -116,7 +116,13 @@ impl ModelCatalog {
                 limit: MAX_CATALOG_ENTRIES,
             });
         }
+        let source_entries = raw.len();
+        let has_generalizations = raw.contains_key(FALLBACK_GENERALIZATIONS);
         let mut catalog = loader::build_catalog(raw, unknown)?;
+        let aliases = catalog.lookup.len().saturating_sub(catalog.entries.len());
+        catalog.adopted_size = source_entries
+            .saturating_sub(usize::from(has_generalizations))
+            .saturating_add(aliases);
         catalog.revision = Some(git_blob_id(bytes));
         Ok(catalog)
     }

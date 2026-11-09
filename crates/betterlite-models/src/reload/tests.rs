@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod plans;
 mod support;
 
 use std::sync::Arc;
@@ -13,36 +14,21 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
 
 use crate::reload::{ReloadOutcome, RetryOutcome, StartupOutcome};
-use crate::source::{CatalogSnapshot, SourceKind};
+use crate::source::CatalogSnapshot;
+
+use plans::Plan;
 
 use support::{
     BlockingSleeper, RecordingRegistrations, RecordingSleeper, Reply, ScriptedClient,
-    ScriptedJitter, StopFlag, TestService, URL, blob, body_with_entry, bundled_service,
-    catalog_body, fixed_moment, limits, local_service, registrations_service, wide_bundled_service,
+    ScriptedJitter, StopFlag, TestService, blob, body_with_entry, bundled_service, catalog_body,
+    limits, local_service, registrations_service, wide_bundled_service,
 };
-
-#[derive(Clone, Copy, Debug)]
-enum Plan {
-    StartupLocal,
-    StartupRemote,
-    StartupFallback,
-    StartupTransport,
-    StartupInvalidUrl,
-    StartupIntegrityFallback,
-    StartupParseFallback,
-    StartupRetry,
-    ReloadLocal,
-    ReloadRemote,
-    ReloadMiss,
-    ReloadShrunk,
-    ReloadUnknownField,
-}
 
 fn runtime() -> Runtime {
     Builder::new_current_thread().build().unwrap()
 }
 
-fn decimal(text: &str) -> Decimal {
+pub(super) fn decimal(text: &str) -> Decimal {
     text.parse().unwrap()
 }
 
@@ -59,7 +45,7 @@ fn catalog_prefix<'revision>(
     }
 }
 
-async fn start(
+pub(super) async fn start(
     service: &TestService,
     client: Arc<ScriptedClient>,
 ) -> StartupOutcome<ScriptedClient, RecordingSleeper, ScriptedJitter> {
@@ -73,7 +59,7 @@ async fn start(
         .await
 }
 
-async fn reload_once(
+pub(super) async fn reload_once(
     service: &TestService,
     client: &ScriptedClient,
     sleeper: &RecordingSleeper,
@@ -83,7 +69,7 @@ async fn reload_once(
         .await
 }
 
-fn adopted(outcome: ReloadOutcome) -> Arc<CatalogSnapshot> {
+pub(super) fn adopted(outcome: ReloadOutcome) -> Arc<CatalogSnapshot> {
     match outcome {
         ReloadOutcome::Reloaded(snapshot) => snapshot,
         ReloadOutcome::Unavailable(unavailable) => {
@@ -107,275 +93,7 @@ fn adopted(outcome: ReloadOutcome) -> Arc<CatalogSnapshot> {
 #[case::reload_shrunk(Plan::ReloadShrunk)]
 #[case::reload_unknown_field(Plan::ReloadUnknownField)]
 fn catalog_refresh_tests_behavior(#[case] plan: Plan) {
-    runtime().block_on(run_plan(plan));
-}
-
-async fn run_plan(plan: Plan) {
-    match plan {
-        Plan::StartupLocal => plan_startup_local().await,
-        Plan::StartupRemote => plan_startup_remote().await,
-        Plan::StartupFallback => plan_startup_fallback().await,
-        Plan::StartupTransport => plan_startup_transport().await,
-        Plan::StartupInvalidUrl => plan_startup_invalid_url().await,
-        Plan::StartupIntegrityFallback => plan_startup_integrity_fallback().await,
-        Plan::StartupParseFallback => plan_startup_parse_fallback().await,
-        Plan::StartupRetry => plan_startup_retry().await,
-        Plan::ReloadLocal => plan_reload_local().await,
-        Plan::ReloadRemote => plan_reload_remote().await,
-        Plan::ReloadMiss => plan_reload_miss().await,
-        Plan::ReloadShrunk => plan_reload_shrunk().await,
-        Plan::ReloadUnknownField => plan_reload_unknown_field().await,
-    }
-}
-
-async fn plan_startup_local() {
-    let revision = blob(&catalog_body("bundled", 60));
-    let service = local_service();
-    let client = Arc::new(ScriptedClient::new(Vec::new()));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    let provenance = &outcome.snapshot.provenance;
-    assert_eq!(provenance.kind, SourceKind::Local);
-    assert_eq!(provenance.url, None);
-    assert!(provenance.is_env_forced);
-    assert_eq!(provenance.fallback_reason, None);
-    assert_eq!(provenance.loaded_at, Some(fixed_moment()));
-    assert_eq!(provenance.source_revision, Some(revision));
-    assert_eq!(provenance.etag, None);
-    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
-    assert!(outcome.retry.is_none());
-    assert_eq!(client.requests(), 0);
-}
-
-async fn plan_startup_remote() {
-    let body = catalog_body("remote", 60);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::ok_with_etag(
-        &body, "\"v1\"",
-    )]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    let provenance = &outcome.snapshot.provenance;
-    assert_eq!(provenance.kind, SourceKind::Remote);
-    assert_eq!(provenance.url.as_deref(), Some(URL));
-    assert!(!provenance.is_env_forced);
-    assert_eq!(provenance.fallback_reason, None);
-    assert_eq!(provenance.source_revision, Some(blob(&body)));
-    assert_eq!(provenance.etag.as_deref(), Some("\"v1\""));
-    assert_eq!(outcome.snapshot.catalog.entries.len(), 60);
-    assert_eq!(client.requests(), 1);
-    assert_eq!(client.timeouts(), [Duration::from_secs(5)]);
-}
-
-async fn plan_startup_fallback() {
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::status(404)]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    let provenance = &outcome.snapshot.provenance;
-    assert_eq!(provenance.kind, SourceKind::Local);
-    assert_eq!(provenance.url.as_deref(), Some(URL));
-    assert!(!provenance.is_env_forced);
-    assert_eq!(
-        provenance.fallback_reason,
-        Some(format!("Remote fetch failed: HTTP 404 from {URL}"))
-    );
-    assert_eq!(provenance.etag, None);
-    assert!(provenance.source_revision.is_some());
-    assert!(outcome.retry.is_none());
-    assert_eq!(client.requests(), 1);
-}
-
-async fn plan_startup_transport() {
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::transport(
-        "connection refused",
-    )]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_none());
-    let reason = outcome
-        .snapshot
-        .provenance
-        .fallback_reason
-        .as_deref()
-        .unwrap();
-    assert!(reason.starts_with("Remote fetch failed:"));
-    assert!(reason.contains(URL));
-    assert_eq!(client.requests(), 1);
-}
-
-async fn plan_startup_invalid_url() {
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::InvalidUrl {
-        detail: "unsupported scheme".to_owned(),
-    }]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_none());
-    assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
-    assert_eq!(client.requests(), 1);
-}
-
-async fn plan_startup_integrity_fallback() {
-    let shrunk = catalog_body("shrunk", 20);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&shrunk)]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    assert_eq!(
-        outcome.snapshot.provenance.fallback_reason.as_deref(),
-        Some("Remote data failed integrity validation")
-    );
-    assert!(
-        !outcome
-            .snapshot
-            .catalog
-            .entries
-            .keys()
-            .any(|name| name.starts_with("shrunk"))
-    );
-}
-
-async fn plan_startup_parse_fallback() {
-    let broken = body_with_entry(
-        "broken",
-        "\"broken-bad\":{\"litellm_provider\":\"openai\",\"mode\":5}",
-    );
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&broken)]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    let reason = outcome
-        .snapshot
-        .provenance
-        .fallback_reason
-        .as_deref()
-        .unwrap();
-    assert!(reason.starts_with("Remote data failed to load:"));
-    assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
-}
-
-async fn plan_startup_retry() {
-    let body = catalog_body("retried", 60);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![
-        Reply::status(503),
-        Reply::ok(&body),
-    ]));
-    let sleeper = Arc::new(RecordingSleeper::default());
-    let outcome = service
-        .startup(
-            limits(3),
-            Arc::clone(&client),
-            Arc::clone(&sleeper),
-            ScriptedJitter::new(&[decimal("0.5")]),
-        )
-        .await;
-    assert!(outcome.snapshot.provenance.fallback_reason.is_some());
-    let adopted = outcome.retry.unwrap().run(Arc::clone(&service)).await;
-    assert!(matches!(adopted, RetryOutcome::Adopted(_)));
-    let provenance = &service.current.load().provenance;
-    assert_eq!(provenance.kind, SourceKind::Remote);
-    assert_eq!(provenance.fallback_reason, None);
-    assert_eq!(provenance.source_revision, Some(blob(&body)));
-    assert_eq!(client.requests(), 2);
-    assert_eq!(sleeper.recorded(), [decimal("2.5")]);
-}
-
-async fn plan_reload_local() {
-    let service = local_service();
-    let client = Arc::new(ScriptedClient::new(Vec::new()));
-    let sleeper = RecordingSleeper::default();
-    let snapshot = adopted(reload_once(&service, &client, &sleeper).await);
-    assert_eq!(snapshot.provenance.kind, SourceKind::Local);
-    assert_eq!(snapshot.provenance.loaded_at, Some(fixed_moment()));
-    assert_eq!(client.requests(), 0);
-}
-
-async fn plan_reload_remote() {
-    let first = catalog_body("first", 60);
-    let second = catalog_body("second", 60);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![
-        Reply::ok(&first),
-        Reply::ok_with_etag(&second, "\"v2\""),
-    ]));
-    let startup = start(&service, Arc::clone(&client)).await;
-    assert_eq!(
-        startup.snapshot.provenance.source_revision,
-        Some(blob(&first))
-    );
-    let sleeper = RecordingSleeper::default();
-    let snapshot = adopted(reload_once(&service, &client, &sleeper).await);
-    assert_eq!(snapshot.provenance.source_revision, Some(blob(&second)));
-    assert_eq!(snapshot.provenance.etag.as_deref(), Some("\"v2\""));
-    assert!(
-        snapshot
-            .catalog
-            .entries
-            .keys()
-            .any(|name| name.starts_with("second"))
-    );
-    assert_eq!(client.requests(), 2);
-}
-
-async fn plan_reload_miss() {
-    let first = catalog_body("first", 60);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![
-        Reply::ok(&first),
-        Reply::status(404),
-    ]));
-    let startup = start(&service, Arc::clone(&client)).await;
-    let before = startup.snapshot;
-    let sleeper = RecordingSleeper::default();
-    let outcome = reload_once(&service, &client, &sleeper).await;
-    match outcome {
-        ReloadOutcome::Unavailable(unavailable) => {
-            assert_eq!(unavailable.reason, format!("HTTP 404 from {URL}"));
-        }
-        ReloadOutcome::Reloaded(_) => panic!("a 404 must not adopt"),
-    }
-    let after = service.current.load();
-    assert!(Arc::ptr_eq(&before, &after));
-    assert_eq!(after.provenance.source_revision, Some(blob(&first)));
-}
-
-async fn plan_reload_shrunk() {
-    let first = catalog_body("first", 60);
-    let shrunk = catalog_body("shrunk", 20);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![
-        Reply::ok(&first),
-        Reply::ok(&shrunk),
-    ]));
-    let startup = start(&service, Arc::clone(&client)).await;
-    let before = startup.snapshot;
-    let sleeper = RecordingSleeper::default();
-    let outcome = reload_once(&service, &client, &sleeper).await;
-    match outcome {
-        ReloadOutcome::Unavailable(unavailable) => {
-            assert!(unavailable.reason.contains("failed integrity validation"));
-        }
-        ReloadOutcome::Reloaded(_) => panic!("a shrunken map must not adopt"),
-    }
-    assert!(Arc::ptr_eq(&before, &service.current.load()));
-}
-
-async fn plan_reload_unknown_field() {
-    let unknown = body_with_entry(
-        "unknown",
-        "\"unknown-bad\":{\"litellm_provider\":\"openai\",\"future_flag\":true}",
-    );
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![
-        Reply::ok(&catalog_body("first", 60)),
-        Reply::ok(&unknown),
-    ]));
-    start(&service, Arc::clone(&client)).await;
-    let sleeper = RecordingSleeper::default();
-    let snapshot = adopted(reload_once(&service, &client, &sleeper).await);
-    assert!(
-        snapshot
-            .catalog
-            .warnings
-            .contains(&"unknown-bad.future_flag".to_owned())
-    );
-    assert!(snapshot.catalog.lookup.contains_key("unknown-bad"));
+    runtime().block_on(plans::run_plan(plan));
 }
 
 fn read_until_stopped(
