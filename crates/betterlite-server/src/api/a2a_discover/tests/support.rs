@@ -130,6 +130,13 @@ pub(super) fn safe_fetcher(allowed_hosts: &[&str]) -> UserUrlFetcher<SystemResol
     }
 }
 
+pub(super) enum ReplyKind {
+    Json,
+    Redirect(String),
+    Delayed(Duration),
+    Stalled(Duration),
+}
+
 pub(super) struct Reply {
     status: u16,
     body: Vec<u8>,
@@ -139,44 +146,53 @@ pub(super) struct Reply {
 }
 
 impl Reply {
-    pub(super) fn json(body: &str) -> Self {
-        Self {
-            status: 200,
-            body: body.as_bytes().to_vec(),
-            location: None,
-            delay: Duration::ZERO,
-            stall: Duration::ZERO,
+    fn shaped(kind: ReplyKind, body: &str) -> Self {
+        match kind {
+            ReplyKind::Json => Self {
+                status: 200,
+                body: body.as_bytes().to_vec(),
+                location: None,
+                delay: Duration::ZERO,
+                stall: Duration::ZERO,
+            },
+            ReplyKind::Redirect(target) => Self {
+                status: 302,
+                body: Vec::new(),
+                location: Some(target),
+                delay: Duration::ZERO,
+                stall: Duration::ZERO,
+            },
+            ReplyKind::Delayed(delay) => Self {
+                status: 200,
+                body: body.as_bytes().to_vec(),
+                location: None,
+                delay,
+                stall: Duration::ZERO,
+            },
+            ReplyKind::Stalled(stall) => Self {
+                status: 200,
+                body: body.as_bytes().to_vec(),
+                location: None,
+                delay: Duration::ZERO,
+                stall,
+            },
         }
+    }
+
+    pub(super) fn json(body: &str) -> Self {
+        Self::shaped(ReplyKind::Json, body)
     }
 
     pub(super) fn redirect(target: &str) -> Self {
-        Self {
-            status: 302,
-            body: Vec::new(),
-            location: Some(target.to_owned()),
-            delay: Duration::ZERO,
-            stall: Duration::ZERO,
-        }
+        Self::shaped(ReplyKind::Redirect(target.to_owned()), "")
     }
 
     pub(super) fn delayed(delay: Duration, body: &str) -> Self {
-        Self {
-            status: 200,
-            body: body.as_bytes().to_vec(),
-            location: None,
-            delay,
-            stall: Duration::ZERO,
-        }
+        Self::shaped(ReplyKind::Delayed(delay), body)
     }
 
     pub(super) fn stalled(stall: Duration, body: &str) -> Self {
-        Self {
-            status: 200,
-            body: body.as_bytes().to_vec(),
-            location: None,
-            delay: Duration::ZERO,
-            stall,
-        }
+        Self::shaped(ReplyKind::Stalled(stall), body)
     }
 }
 
