@@ -151,7 +151,7 @@ fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
     let bad = [
         "litellm/policy_templates_backup.json",
         "policy_templates.json",
-        "packaging/homebrew/lite.rb",
+        "not-a-root-entry/homebrew/lite.rb",
     ];
     task.scope.paths = good
         .iter()
