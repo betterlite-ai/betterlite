@@ -214,30 +214,24 @@ where
     L: EnvironmentLookup,
 {
     reject_quoted_number(&value, path)?;
-    resolve_number(Some(value), path, lookup, parse_float)?.map_or_else(
-        || {
-            Err(ConfigError::InvalidScalar {
-                path: path.to_owned(),
-                value: false,
-            })
-        },
-        Ok,
-    )
+    resolve_number(Some(value), path, lookup, parse_float)?.ok_or_else(|| invalid_scalar(path))
 }
 
 // a quoted float is a string to pydantic's StrictFloat; only an os.environ reference may be text
 fn reject_quoted_number(value: &RawNumber, path: &str) -> Result<(), ConfigError> {
     match value {
-        RawNumber::Text(text) if !text.starts_with("os.environ/") => {
-            Err(ConfigError::InvalidScalar {
-                path: path.to_owned(),
-                value: false,
-            })
-        }
+        RawNumber::Text(text) if !text.starts_with("os.environ/") => Err(invalid_scalar(path)),
         RawNumber::Integer(_)
         | RawNumber::Float(_)
         | RawNumber::Boolean(_)
         | RawNumber::Text(_) => Ok(()),
+    }
+}
+
+fn invalid_scalar(path: &str) -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: path.to_owned(),
+        value: false,
     }
 }
 

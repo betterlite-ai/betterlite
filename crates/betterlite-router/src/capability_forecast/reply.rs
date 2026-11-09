@@ -34,19 +34,35 @@ pub(super) fn first_object(content: &str, budget: usize) -> Option<&str> {
     let masked = mask_constants(content);
     let mut remaining = budget;
     for (start, _) in content.match_indices('{') {
-        if let Some(object) = object_at(content, &masked, start) {
-            return Some(object);
+        match object_at(content, &masked, start) {
+            Ok(object) => return Some(object),
+            Err(consumed) => remaining = remaining.checked_sub(consumed)?,
         }
-        remaining = remaining.checked_sub(content.len().saturating_sub(start))?;
     }
     None
 }
 
-fn object_at<'input>(content: &'input str, masked: &str, start: usize) -> Option<&'input str> {
-    let mut values = Deserializer::from_str(masked.get(start..)?).into_iter::<&RawValue>();
-    values.next()?.ok()?;
-    let end = values.byte_offset();
-    content.get(start..start.saturating_add(end))
+// a failed start is charged the byte the decoder stopped at, so a fast failure costs a few bytes, not the remainder
+type Scan<'input> = Result<&'input str, usize>;
+
+fn object_at<'input>(content: &'input str, masked: &str, start: usize) -> Scan<'input> {
+    let tail = masked.get(start..).unwrap_or_default();
+    let mut values = Deserializer::from_str(tail).into_iter::<&RawValue>();
+    let decoded = match values.next() {
+        Some(Ok(_)) => values.byte_offset(),
+        Some(Err(error)) => {
+            let base = tail
+                .split('\n')
+                .take(error.line().saturating_sub(1))
+                .map(|part| part.len().saturating_add(1))
+                .sum::<usize>();
+            return Err(base.saturating_add(error.column()).min(tail.len()));
+        }
+        None => return Err(tail.len()),
+    };
+    content
+        .get(start..start.saturating_add(decoded))
+        .ok_or(decoded)
 }
 
 fn mask_constants(content: &str) -> String {

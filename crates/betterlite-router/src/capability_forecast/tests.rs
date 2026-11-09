@@ -614,10 +614,6 @@ fn assert_reply_byte_bound() {
     ));
 }
 
-fn scan(content: &str) -> Option<&str> {
-    first_object(content, content.len())
-}
-
 fn assert_scan_budget() {
     assert_eq!(SCAN_BUDGET, 0x0100_0000);
     let started = Instant::now();
@@ -625,10 +621,28 @@ fn assert_scan_budget() {
     let error = parse_cap_reply(flood.as_bytes()).unwrap_err();
     assert!(matches!(error, ForecastError::NoVerdictObject));
     assert!(started.elapsed() < Duration::from_secs(10));
-    // one failed start charges the whole budget, and the next start still reaches the object
-    assert_eq!(scan("{abc{}"), Some("{}"));
-    // one more failed start cannot be charged, so the walk stops before the object
-    assert_eq!(scan("{abc{d{}"), None);
+    // fast failures are charged what they read, so their remaining bytes do not exhaust an explicit budget
+    let fast = format!("{}{}", "{x ".repeat(300), "{}");
+    assert_eq!(first_object(&fast, 600), Some("{}"));
+    // one fast failure past the budget stops the walk before the object
+    let over = format!("{}{}", "{x ".repeat(301), "{}");
+    assert_eq!(first_object(&over, 600), None);
+    // a failure that reads to the end of the reply is still charged the whole remainder
+    let unterminated = format!("{}{}", "{\"a\":", " ".repeat(90));
+    assert_eq!(first_object(&unterminated, 94), None);
+    // the worst-case charge would refuse this reply at the byte limit, while its failed starts read 2 bytes each
+    let verdict = verdict_json("SUP-1", "supported", "0.8");
+    let padding = " ".repeat(
+        MAX_REPLY_BYTES
+            .saturating_sub(60)
+            .saturating_sub(verdict.len()),
+    );
+    let large = format!("{}{padding}{verdict}", "{x ".repeat(20));
+    assert_eq!(large.len(), MAX_REPLY_BYTES);
+    assert_eq!(
+        parse_cap_reply(large.as_bytes()).unwrap().primary_rule,
+        Rule::Sup1
+    );
 }
 
 fn assert_reply_encoding() {
