@@ -8,12 +8,15 @@ use betterlite_core::api::search_providers::searxng::{
     SearxngSearchConfig, build_request as build_searxng_request, decode_searxng_reply,
 };
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{SearchProvider, SearchQuery};
+use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
+
+type Loaded<M> = Result<<M as SearchMapping>::Config, Box<HelperError>>;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Request {
@@ -59,6 +62,66 @@ pub(crate) enum Input {
     SearxngUrl(UrlInput),
 }
 
+trait SearchMapping {
+    type Config: SearchProvider;
+
+    fn load(
+        environment: &BTreeMap<String, String>,
+        api_key: Option<String>,
+        api_base: Option<&str>,
+    ) -> Loaded<Self>;
+
+    fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>>;
+
+    fn reply(body: &str) -> Result<SearchResponse, Box<HelperError>>;
+}
+
+struct LinkupMapping;
+
+impl SearchMapping for LinkupMapping {
+    type Config = LinkupSearchConfig;
+
+    fn load(
+        environment: &BTreeMap<String, String>,
+        api_key: Option<String>,
+        api_base: Option<&str>,
+    ) -> Loaded<Self> {
+        LinkupSearchConfig::load(api_key.map(SecretString::from), api_base, environment)
+            .map_err(failure)
+    }
+
+    fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>> {
+        build_linkup_request(&request.query, &request.optional_params).map_err(failure)
+    }
+
+    fn reply(body: &str) -> Result<SearchResponse, Box<HelperError>> {
+        decode_linkup_reply(body.as_bytes()).map_err(failure)
+    }
+}
+
+struct SearxngMapping;
+
+impl SearchMapping for SearxngMapping {
+    type Config = SearxngSearchConfig;
+
+    fn load(
+        environment: &BTreeMap<String, String>,
+        api_key: Option<String>,
+        api_base: Option<&str>,
+    ) -> Loaded<Self> {
+        SearxngSearchConfig::load(api_key.map(SecretString::from), api_base, environment)
+            .map_err(failure)
+    }
+
+    fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>> {
+        build_searxng_request(&request.query, &request.optional_params).map_err(failure)
+    }
+
+    fn reply(body: &str) -> Result<SearchResponse, Box<HelperError>> {
+        decode_searxng_reply(body.as_bytes()).map_err(failure)
+    }
+}
+
 fn failure<E>(error: E) -> Box<HelperError>
 where
     E: Display,
@@ -84,100 +147,51 @@ fn split_url(url: &str) -> (&str, Vec<&str>) {
     }
 }
 
-fn linkup_body(input: &BodyInput) -> HelperResult {
-    let mut bodies = Vec::new();
+fn bodies<M>(input: &BodyInput) -> HelperResult
+where
+    M: SearchMapping,
+{
+    let mut rendered = Vec::new();
     for request in &input.requests {
-        let body =
-            build_linkup_request(&request.query, &request.optional_params).map_err(failure)?;
-        bodies.push(serde_json::to_value(body).map_err(failure)?);
+        let body = M::body(request)?;
+        rendered.push(serde_json::to_value(body).map_err(failure)?);
     }
-    Ok(json!({"bodies": bodies}))
+    Ok(json!({"bodies": rendered}))
 }
 
-fn searxng_body(input: &BodyInput) -> HelperResult {
-    let mut bodies = Vec::new();
+fn urls<M>(input: &UrlInput) -> HelperResult
+where
+    M: SearchMapping,
+{
+    let config = M::load(&input.environment, None, input.api_base.as_deref())?;
+    let mut rendered = Vec::new();
     for request in &input.requests {
-        let body =
-            build_searxng_request(&request.query, &request.optional_params).map_err(failure)?;
-        bodies.push(serde_json::to_value(body).map_err(failure)?);
-    }
-    Ok(json!({"bodies": bodies}))
-}
-
-fn linkup_url(input: &UrlInput) -> HelperResult {
-    let config = LinkupSearchConfig::load(None, input.api_base.as_deref(), &input.environment)
-        .map_err(failure)?;
-    let mut urls = Vec::new();
-    for request in &input.requests {
-        let body =
-            build_linkup_request(&request.query, &request.optional_params).map_err(failure)?;
+        let body = M::body(request)?;
         let url = config
-            .complete_url(
-                input.api_base.as_deref(),
-                &request.optional_params,
-                Some(&body),
-            )
+            .complete_url(input.api_base.as_deref(), &request.optional_params, Some(&body))
             .map_err(failure)?;
         let (address, params) = split_url(&url);
-        urls.push(json!({"address": address, "params": params}));
+        rendered.push(json!({"address": address, "params": params}));
     }
-    Ok(json!({"urls": urls}))
+    Ok(json!({"urls": rendered}))
 }
 
-fn searxng_url(input: &UrlInput) -> HelperResult {
-    let config = SearxngSearchConfig::load(None, input.api_base.as_deref(), &input.environment)
-        .map_err(failure)?;
-    let mut urls = Vec::new();
-    for request in &input.requests {
-        let body =
-            build_searxng_request(&request.query, &request.optional_params).map_err(failure)?;
-        let url = config
-            .complete_url(
-                input.api_base.as_deref(),
-                &request.optional_params,
-                Some(&body),
-            )
-            .map_err(failure)?;
-        let (address, params) = split_url(&url);
-        urls.push(json!({"address": address, "params": params}));
-    }
-    Ok(json!({"urls": urls}))
-}
-
-fn linkup_environment(input: &EnvironmentInput) -> HelperResult {
-    let config = LinkupSearchConfig::load(
-        input.api_key.clone().map(SecretString::from),
-        input.api_base.as_deref(),
-        &input.environment,
-    )
-    .map_err(failure)?;
+fn environments<M>(input: &EnvironmentInput) -> HelperResult
+where
+    M: SearchMapping,
+{
+    let config = M::load(&input.environment, input.api_key.clone(), input.api_base.as_deref())?;
     let headers = config.validate_environment(input.headers.clone(), None, None);
     Ok(json!({"headers": headers}))
 }
 
-fn searxng_environment(input: &EnvironmentInput) -> HelperResult {
-    let config = SearxngSearchConfig::load(
-        input.api_key.clone().map(SecretString::from),
-        input.api_base.as_deref(),
-        &input.environment,
-    )
-    .map_err(failure)?;
-    let headers = config.validate_environment(input.headers.clone(), None, None);
-    Ok(json!({"headers": headers}))
-}
-
-fn linkup_reply(input: &ReplyInput) -> HelperResult {
-    decode_linkup_reply(input.body.as_bytes())
-        .map_err(failure)
-        .and_then(|response| serde_json::to_value(response).map_err(failure))
-        .map(|response| json!({"response": response}))
-}
-
-fn searxng_reply(input: &ReplyInput) -> HelperResult {
-    decode_searxng_reply(input.body.as_bytes())
-        .map_err(failure)
-        .and_then(|response| serde_json::to_value(response).map_err(failure))
-        .map(|response| json!({"response": response}))
+fn replies<M>(input: &ReplyInput) -> HelperResult
+where
+    M: SearchMapping,
+{
+    let response = M::reply(&input.body)?;
+    let rendered = serde_json::to_value(response).map_err(failure)?;
+    Ok(json!({"response": rendered}))
 }
 
 pub(crate) struct Op;
@@ -187,14 +201,14 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::LinkupBody(request) => linkup_body(request),
-            Input::LinkupEnvironment(request) => linkup_environment(request),
-            Input::LinkupReply(request) => linkup_reply(request),
-            Input::LinkupUrl(request) => linkup_url(request),
-            Input::SearxngBody(request) => searxng_body(request),
-            Input::SearxngEnvironment(request) => searxng_environment(request),
-            Input::SearxngReply(request) => searxng_reply(request),
-            Input::SearxngUrl(request) => searxng_url(request),
+            Input::LinkupBody(request) => bodies::<LinkupMapping>(request),
+            Input::LinkupEnvironment(request) => environments::<LinkupMapping>(request),
+            Input::LinkupReply(request) => replies::<LinkupMapping>(request),
+            Input::LinkupUrl(request) => urls::<LinkupMapping>(request),
+            Input::SearxngBody(request) => bodies::<SearxngMapping>(request),
+            Input::SearxngEnvironment(request) => environments::<SearxngMapping>(request),
+            Input::SearxngReply(request) => replies::<SearxngMapping>(request),
+            Input::SearxngUrl(request) => urls::<SearxngMapping>(request),
         }
     }
 }
