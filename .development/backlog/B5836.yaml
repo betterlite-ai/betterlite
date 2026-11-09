@@ -1,14 +1,14 @@
 id: B5836
 milestone: M3 providers
 title: Cloudflare Workers AI provider
-status: todo
+status: done
 depends_on: [B2202, B3511]
 file: tasks/B5836-cloudflare-chat-decisions.yaml
 covers:
   - "litellm/llms/cloudflare/**"
 parent: B041
 split_from: B041
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1003

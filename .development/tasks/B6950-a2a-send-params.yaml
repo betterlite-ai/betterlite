@@ -21,6 +21,8 @@ description: >-
   No route calls this yet. B4789 (stream relay) and B8589's route handler call it. Cases are helper cases on the pure function; a route-level case comes with B8589.
 scope:
   paths:
+    - "tools/oracle/litellm/uv.lock"
+    - "tools/oracle/litellm/pyproject.toml"
     - crates/betterlite-a2a/src/send_params.rs
     - crates/betterlite-a2a/src/send_params/**
     - tools/oracle/cases/agents/a2a-send-params/**
