@@ -117,7 +117,7 @@ fn models_url_joins_the_resolved_base_without_trimming(
 }
 
 #[rstest]
-#[case::non_catalog("custom-model", &[], &[], false, false)]
+#[case::non_catalog("custom-model", &[], &[], true, false)]
 #[case::catalog_chat("gpt-4o", &["gpt-4o"], &[], true, true)]
 #[case::catalog_text("text-davinci-003", &[], &["text-davinci-003"], true, true)]
 #[case::old_gpt_has_no_response_format("gpt-4", &[], &[], false, false)]
