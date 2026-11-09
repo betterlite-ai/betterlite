@@ -200,11 +200,17 @@ pub(super) fn check(world: &World, cases: &[Case]) {
 }
 
 pub(super) fn check_classes(world: &World, cases: &[(ProviderId, &'static str, &'static str)]) {
-    for &(provider, model, class) in cases {
-        let selection = world
-            .select(&CallSpec::plain(provider, model))
-            .unwrap()
-            .unwrap();
-        assert_eq!(selection.tag.class_name(), class, "{model}");
-    }
+    let classes: Vec<&str> = cases
+        .iter()
+        .map(|&(provider, model, _)| {
+            world
+                .select(&CallSpec::plain(provider, model))
+                .unwrap()
+                .unwrap()
+                .tag
+                .class_name()
+        })
+        .collect();
+    let expected: Vec<&str> = cases.iter().map(|&(_, _, class)| class).collect();
+    assert_eq!(classes, expected);
 }

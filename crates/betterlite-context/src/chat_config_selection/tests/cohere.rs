@@ -111,32 +111,38 @@ fn cohere_selection(world: &World) {
 }
 
 fn bedrock_selection(world: &World) {
-    for case in BEDROCK_CASES {
-        let spec = CallSpec {
-            provider: ProviderId::Bedrock,
-            model: case.model,
-            base_model: None,
-            bedrock: BedrockFacts {
-                route: case.route,
-                invoke_provider: case.invoke_provider,
-                base_model: case.base_model,
-            },
-        };
-        let selection = world.select(&spec).unwrap().unwrap();
-        assert_eq!(
-            selection.tag,
-            ChatConfigTag::Bedrock(case.tag),
-            "{}",
-            case.model
-        );
-        assert_eq!(selection.tag.class_name(), case.class, "{}", case.model);
-        assert_eq!(
-            selection.construction,
-            ConfigConstruction::New(vec![case.model.to_owned()]),
-            "{}",
-            case.model
-        );
-    }
+    let selected: Vec<(ChatConfigTag, &str, ConfigConstruction)> = BEDROCK_CASES
+        .iter()
+        .map(|case| {
+            let spec = CallSpec {
+                provider: ProviderId::Bedrock,
+                model: case.model,
+                base_model: None,
+                bedrock: BedrockFacts {
+                    route: case.route,
+                    invoke_provider: case.invoke_provider,
+                    base_model: case.base_model,
+                },
+            };
+            let selection = world.select(&spec).unwrap().unwrap();
+            (
+                selection.tag,
+                selection.tag.class_name(),
+                selection.construction,
+            )
+        })
+        .collect();
+    let expected: Vec<(ChatConfigTag, &str, ConfigConstruction)> = BEDROCK_CASES
+        .iter()
+        .map(|case| {
+            (
+                ChatConfigTag::Bedrock(case.tag),
+                case.class,
+                ConfigConstruction::New(vec![case.model.to_owned()]),
+            )
+        })
+        .collect();
+    assert_eq!(selected, expected);
 }
 
 fn helper_factories(world: &World) {

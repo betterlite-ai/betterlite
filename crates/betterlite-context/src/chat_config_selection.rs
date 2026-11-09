@@ -1,5 +1,4 @@
 pub mod azure;
-pub mod class_names;
 pub mod cohere;
 pub mod facts;
 pub mod foundry;

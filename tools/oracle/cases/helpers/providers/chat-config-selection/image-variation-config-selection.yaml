@@ -1,0 +1,15 @@
+kind: helper
+name: chat-config-selection-image-variation
+call:
+  chat_config_selection:
+    function: image_variation_config_selection
+    calls:
+      - {provider: openai, model: dall-e-2}
+      - {provider: openai, model: gpt-image-1}
+      - {provider: topaz, model: topaz-upscale}
+      - {provider: groq, model: dall-e-2}
+      - {provider: azure, model: dall-e-2}
+      - {provider: azure_ai, model: dall-e-2}
+      - {provider: publicai, model: dall-e-2}
+env: {}
+compare: {ignore: []}
