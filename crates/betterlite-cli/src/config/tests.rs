@@ -412,10 +412,12 @@ fn get_config_reports_a_key_that_is_not_stored() {
         },
         &environment,
     );
-    assert_eq!(
-        output.result.unwrap_err().to_string(),
-        "hidden_commands is not set"
+    let error = output.result.unwrap_err();
+    assert!(
+        matches!(&error, ConfigError::KeyNotSet(key) if key.as_str() == HIDDEN_COMMANDS_KEY),
+        "{error:?}"
     );
+    assert_eq!(error.to_string(), "hidden_commands is not set");
     assert_eq!(output.stdout, "");
 }
 
@@ -456,6 +458,7 @@ fn unset_config_reports_a_key_that_was_not_set() {
     );
     output.result.unwrap();
     assert_eq!(output.stdout, "hidden_commands was not set\n");
+    assert!(!home.path().join(".litellm").exists());
 }
 
 #[test]
@@ -591,6 +594,10 @@ fn normalize_hidden_commands_sorts_and_joins_names() {
 #[case::https("https://proxy.example.com", "https://proxy.example.com")]
 #[case::one_trailing_slash("https://proxy.example.com/", "https://proxy.example.com")]
 #[case::every_trailing_slash("https://proxy.example.com///", "https://proxy.example.com")]
+#[case::at_sign_in_path(
+    "https://proxy.example.com/team@acme",
+    "https://proxy.example.com/team@acme"
+)]
 #[case::port_and_path(
     "https://proxy.example.com:8443/v1",
     "https://proxy.example.com:8443/v1"
@@ -644,6 +651,7 @@ fn normalize_base_url_rejects_a_query_or_fragment(#[case] value: &str) {
 #[case::user_and_password("https://user:pass@proxy.example.com")]
 #[case::user_only("https://user@proxy.example.com")]
 #[case::empty_user("https://@proxy.example.com")]
+#[case::backslash_before_userinfo(r"https://DOMAIN\user@proxy.example.com")]
 fn normalize_base_url_rejects_credentials(#[case] value: &str) {
     assert_eq!(
         normalize_base_url(value).unwrap_err().to_string(),

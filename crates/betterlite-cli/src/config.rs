@@ -131,7 +131,7 @@ pub fn normalize_base_url(value: &str) -> Result<String, ConfigError> {
     let after_scheme = value.get(parsed.scheme().len()..).unwrap_or_default();
     let has_authority = after_scheme
         .strip_prefix("://")
-        .is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/') && !rest.starts_with('\\'));
+        .is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/'));
     if !matches!(parsed.scheme(), "http" | "https") || !has_authority || parsed.host_str().is_none()
     {
         return Err(ConfigError::Usage(FULL_URL_MESSAGE.to_owned()));
@@ -156,7 +156,7 @@ fn has_credentials(value: &str, parsed: &Url) -> bool {
     let Some((_, rest)) = value.split_once("://") else {
         return false;
     };
-    rest.split(['/', '\\'])
+    rest.split('/')
         .next()
         .is_some_and(|authority| authority.contains('@'))
 }
