@@ -6,10 +6,11 @@ use http::HeaderMap;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use serde_json::value::RawValue;
 
 use super::datatype::TritonDatatype;
 use super::error::TritonError;
-use super::reply::{ObjectOnly, decode_reply};
+use super::reply::{decode_reply, parse_object};
 
 pub const INPUT_NAME: &str = "input_text";
 pub const SUPPORTED_PARAMS: [&str; 0] = [];
@@ -66,7 +67,7 @@ pub struct EmbeddingReply {
 
 #[derive(Debug, Deserialize)]
 struct EmbeddingBody {
-    outputs: Vec<ObjectOnly<EmbeddingOutput>>,
+    outputs: Vec<Box<RawValue>>,
     #[serde(default)]
     model_name: Option<String>,
 }
@@ -113,11 +114,11 @@ pub fn transform_embedding_response(
     })
 }
 
-fn embedding_records(
-    outputs: Vec<ObjectOnly<EmbeddingOutput>>,
-) -> Result<Vec<EmbeddingRecord>, TritonError> {
+fn embedding_records(outputs: Vec<Box<RawValue>>) -> Result<Vec<EmbeddingRecord>, TritonError> {
     let mut data = Vec::new();
-    for ObjectOnly { inner: output } in outputs {
+    for raw in outputs {
+        let output: EmbeddingOutput =
+            parse_object(&raw).map_err(|source| TritonError::ReplyShape { source })?;
         for (position, chunk) in split_embedding_by_shape(&output.data, &output.shape)?
             .into_iter()
             .enumerate()

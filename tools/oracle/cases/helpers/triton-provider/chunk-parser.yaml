@@ -25,3 +25,6 @@ call:
       - "data: []"
       - 'data: ""'
       - "data: true"
+      - "data: 0.0"
+      - "data: -0.0"
+      - "data: 1.5"

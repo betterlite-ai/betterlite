@@ -476,6 +476,7 @@ fn infer_request_rejects_an_empty_message_list() {
 #[case::list(br#"{"outputs":[{"data":["he","llo"]}]}"#, Some("hello"))]
 #[case::empty_list(br#"{"outputs":[{"data":[]}]}"#, Some(""))]
 #[case::null(br#"{"outputs":[{"data":null}]}"#, None)]
+#[case::later_outputs_unread(br#"{"outputs":[{"data":"a"},["x"]]}"#, Some("a"))]
 fn infer_response_reads_the_data(#[case] body: &[u8], #[case] expected: Option<&str>) {
     let reply = infer_response(200, body).unwrap();
     assert_eq!(reply.text.as_deref(), expected);
@@ -766,6 +767,8 @@ fn embedding_response_rejects_an_array_where_an_object_belongs(#[case] body: &[u
 #[case::empty_line("", "", false, "", 0)]
 #[case::null("data: null", "", false, "", 0)]
 #[case::zero("data: 0", "", false, "", 0)]
+#[case::zero_float("data: 0.0", "", false, "", 0)]
+#[case::negative_zero_float("data: -0.0", "", false, "", 0)]
 #[case::false_value("data: false", "", false, "", 0)]
 #[case::empty_array("data: []", "", false, "", 0)]
 #[case::empty_string(r#"data: """#, "", false, "", 0)]
@@ -805,6 +808,7 @@ fn stream_done_lines_finish_the_stream(#[case] line: &str) {
 #[case::truthy_string(r#"data: "hi""#)]
 #[case::true_value("data: true")]
 #[case::scalar("data: 5")]
+#[case::float("data: 1.5")]
 fn stream_lines_reject_a_field_of_the_wrong_type(#[case] line: &str) {
     let error = decode_stream_line(line).unwrap_err();
     assert!(matches!(error, TritonError::ReplyShape { .. }));

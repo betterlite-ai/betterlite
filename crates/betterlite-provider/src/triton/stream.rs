@@ -1,9 +1,8 @@
 use serde::de::{Error as _, IgnoredAny};
 use serde::{Deserialize, Serialize};
-use serde_json::error::Category;
+use serde_json::value::RawValue;
 
 use super::error::TritonError;
-use super::reply::ObjectOnly;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct StreamChunk {
@@ -25,18 +24,6 @@ struct StreamObject {
     index: i64,
 }
 
-// LiteLLM runs `elif stripped_json_chunk:` and then chunk.get, so a falsy value is an empty chunk and a truthy non-object fails
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum StreamLine {
-    Object(ObjectOnly<StreamObject>),
-    Null(()),
-    Flag(bool),
-    Float(f64),
-    Text(String),
-    List(Vec<IgnoredAny>),
-}
-
 // B2214's BaseModelResponseIterator._handle_string_chunk over one transport line, then chunk_parser
 pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
     if line.contains("[DONE]") {
@@ -51,27 +38,33 @@ pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
         .strip_prefix("data: ")
         .or_else(|| line.strip_prefix("data:"))
         .unwrap_or(line);
-    let parsed = match serde_json::from_str::<StreamLine>(stripped) {
-        Ok(StreamLine::Object(ObjectOnly { inner })) => inner,
-        Ok(StreamLine::Null(()) | StreamLine::Flag(false) | StreamLine::Float(0.0_f64)) => {
-            return Ok(StreamChunk::default());
-        }
-        Ok(StreamLine::Text(text)) if text.is_empty() => return Ok(StreamChunk::default()),
-        Ok(StreamLine::List(items)) if items.is_empty() => return Ok(StreamChunk::default()),
-        Ok(_) => {
-            return Err(TritonError::ReplyShape {
-                source: serde_json::Error::custom("expected a JSON object"),
-            });
-        }
-        Err(source) => match source.classify() {
-            Category::Syntax | Category::Eof => return Ok(StreamChunk::default()),
-            Category::Data | Category::Io => return Err(TritonError::ReplyShape { source }),
-        },
+    let Ok(raw) = serde_json::from_str::<Box<RawValue>>(stripped) else {
+        return Ok(StreamChunk::default());
     };
-    Ok(StreamChunk {
-        text: parsed.text_output,
-        is_finished: parsed.is_finished,
-        finish_reason: parsed.stop_reason,
-        index: parsed.index,
+    let text = raw.get();
+    if text.starts_with('{') {
+        let parsed = serde_json::from_str::<StreamObject>(text)
+            .map_err(|source| TritonError::ReplyShape { source })?;
+        return Ok(StreamChunk {
+            text: parsed.text_output,
+            is_finished: parsed.is_finished,
+            finish_reason: parsed.stop_reason,
+            index: parsed.index,
+        });
+    }
+    // LiteLLM runs `elif stripped_json_chunk:` and then chunk.get, so a falsy value is an empty chunk and a truthy non-object fails
+    let falsy = match text.as_bytes().first() {
+        Some(b'"') => serde_json::from_str::<String>(text).is_ok_and(|value| value.is_empty()),
+        Some(b'[') => {
+            serde_json::from_str::<Vec<IgnoredAny>>(text).is_ok_and(|items| items.is_empty())
+        }
+        Some(b'n' | b'f') => true,
+        _ => text.parse::<f64>().is_ok_and(|number| number == 0.0_f64),
+    };
+    if falsy {
+        return Ok(StreamChunk::default());
+    }
+    Err(TritonError::ReplyShape {
+        source: serde_json::Error::custom("expected a JSON object"),
     })
 }

@@ -1,10 +1,11 @@
 use betterlite_prompts::builtin::{Content, Field};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use serde_json::value::RawValue;
 
 use super::datatype::TritonDatatype;
 use super::error::TritonError;
-use super::reply::{ObjectOnly, decode_reply};
+use super::reply::{decode_reply, parse_object};
 use super::request::TransformInput;
 
 pub const DEFAULT_MAX_TOKENS: i64 = 20;
@@ -29,7 +30,7 @@ pub struct InferReply {
 
 #[derive(Debug, Deserialize)]
 struct InferBody {
-    outputs: Vec<ObjectOnly<InferOutput>>,
+    outputs: Vec<Box<RawValue>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,9 +81,11 @@ pub fn transform_request(input: &TransformInput<'_>) -> Result<InferRequest, Tri
 
 pub fn transform_response(status_code: u16, body: &[u8]) -> Result<InferReply, TritonError> {
     let decoded: InferBody = decode_reply(status_code, body)?;
-    let Some(ObjectOnly { inner: output }) = decoded.outputs.into_iter().next() else {
+    let Some(first) = decoded.outputs.first() else {
         return Err(TritonError::NoOutputs);
     };
+    let output: InferOutput =
+        parse_object(first).map_err(|source| TritonError::ReplyShape { source })?;
     let text = match output.data {
         None => None,
         Some(InferData::Text(text)) => Some(text),

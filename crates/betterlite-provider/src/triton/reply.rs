@@ -1,17 +1,20 @@
 use std::str;
 
 use http::HeaderMap;
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use serde_json::error::Category;
+use serde::de::{DeserializeOwned, Error as _};
+use serde_json::value::RawValue;
 
 use super::error::TritonError;
 
-// a derived struct also reads a JSON array by position, but a flattened field reads only a JSON object, as LiteLLM's key lookups do
-#[derive(Debug, Deserialize)]
-pub(super) struct ObjectOnly<T> {
-    #[serde(flatten)]
-    pub(super) inner: T,
+// a derived struct also reads a JSON array by position, so the first byte decides, as LiteLLM's key lookups need an object
+pub(super) fn parse_object<T>(raw: &RawValue) -> Result<T, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
+    if !raw.get().starts_with('{') {
+        return Err(serde_json::Error::custom("expected a JSON object"));
+    }
+    serde_json::from_str(raw.get())
 }
 
 // an unreadable body carries the response status, while a JSON value of the wrong shape ends as LiteLLM's generic 500
@@ -26,14 +29,10 @@ where
             headers: HeaderMap::new(),
         });
     };
-    serde_json::from_str::<ObjectOnly<T>>(text)
-        .map(|decoded| decoded.inner)
-        .map_err(|source| match source.classify() {
-            Category::Syntax | Category::Eof => TritonError::Api {
-                status_code,
-                message: text.to_owned(),
-                headers: HeaderMap::new(),
-            },
-            Category::Data | Category::Io => TritonError::ReplyShape { source },
-        })
+    let raw = serde_json::from_str::<Box<RawValue>>(text).map_err(|_error| TritonError::Api {
+        status_code,
+        message: text.to_owned(),
+        headers: HeaderMap::new(),
+    })?;
+    parse_object(&raw).map_err(|source| TritonError::ReplyShape { source })
 }
