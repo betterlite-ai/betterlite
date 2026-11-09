@@ -1,0 +1,57 @@
+kind: helper
+name: gemini-media-part-key-equivalence
+call:
+  gemini_media:
+    call: part_key_equivalence
+    cases:
+      - parts:
+          - functionCall:
+              name: "f"
+        part:
+          function_call:
+            name: "f"
+      - parts:
+          - function_call:
+              name: "f"
+        part:
+          function_call:
+            name: "g"
+      - parts:
+          - function_call:
+              name: "f"
+            thoughtSignature: "sig"
+        part:
+          function_call:
+            name: "f"
+      - parts:
+          - function_call:
+              name: "f"
+            thoughtSignature: "sig"
+        part:
+          function_call:
+            name: "f"
+          thoughtSignature: "other"
+        excluded_keys:
+          - thoughtSignature
+      - parts:
+          - text: "hi"
+        part:
+          thoughtSignature: "sig"
+        excluded_keys:
+          - thoughtSignature
+      - parts: []
+        part:
+          text: "hi"
+      - parts:
+          - function_call:
+              name: "f"
+              args:
+                a: 1
+        part:
+          function_call:
+            name: "f"
+            args:
+              a: 2
+env: {}
+compare:
+  ignore: []

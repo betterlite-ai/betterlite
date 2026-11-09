@@ -7,8 +7,11 @@ publish.workspace = true
 
 [dependencies]
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 regex.workspace = true
 rust_decimal.workspace = true
+serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 thiserror.workspace = true
 tracing.workspace = true

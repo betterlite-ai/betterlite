@@ -2792,9 +2792,12 @@ name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
  "regex",
  "rstest",
  "rust_decimal",
+ "serde",
  "serde_json",
  "thiserror",
  "tracing",
