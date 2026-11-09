@@ -157,9 +157,9 @@ impl DynamicCallbackLists {
         Ok(())
     }
 
-    fn check_list_bounds(&self) -> Result<(), DynamicCallbackError> {
+    fn check_list_bounds(&mut self) -> Result<(), DynamicCallbackError> {
         for kind in DynamicCallbackKind::ALL {
-            let Some(callbacks) = self.slot(kind) else {
+            let Some(callbacks) = self.slot_mut(kind).as_ref() else {
                 continue;
             };
             if callbacks.len() > MAX_CALLBACKS_PER_LIST {
@@ -171,16 +171,6 @@ impl DynamicCallbackLists {
             }
         }
         Ok(())
-    }
-
-    const fn slot(&self, kind: DynamicCallbackKind) -> Option<&Vec<DynamicCallback>> {
-        match kind {
-            DynamicCallbackKind::Input => self.input.as_ref(),
-            DynamicCallbackKind::Success => self.success.as_ref(),
-            DynamicCallbackKind::AsyncSuccess => self.async_success.as_ref(),
-            DynamicCallbackKind::Failure => self.failure.as_ref(),
-            DynamicCallbackKind::AsyncFailure => self.async_failure.as_ref(),
-        }
     }
 
     fn process_dynamic_callback_list(
