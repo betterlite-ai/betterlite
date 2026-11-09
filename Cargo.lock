@@ -2596,6 +2596,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
