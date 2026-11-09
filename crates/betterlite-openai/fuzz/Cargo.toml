@@ -31,6 +31,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cloudflare_decisions_reply"
+path = "fuzz_targets/cloudflare_decisions_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "code_execution_arguments"
 path = "fuzz_targets/code_execution_arguments.rs"
 test = false
