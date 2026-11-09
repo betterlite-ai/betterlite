@@ -156,7 +156,19 @@ fn run_call(call: &Call) -> Value {
         Call::MilvusMapParams(input) => json!({"ok": true, "value": milvus_mapping(input)}),
         Call::MilvusSearchRequest(input) => outcome(milvus_search(input)),
         Call::MilvusDecodeSearch(input) => decode_outcome(input),
-        Call::PgVectorValidateEnvironment(input) => outcome(pg_environment(input)),
+        Call::PgVectorValidateEnvironment(input) => {
+            let params = PgVectorParams {
+                api_key: input.api_key.as_deref().map(SecretString::from),
+            };
+            outcome(
+                pg_validate_environment(
+                    secret_headers(&input.headers),
+                    Some(&params),
+                    &pg_env(&input.env),
+                )
+                .map(|headers| headers_value(&headers)),
+            )
+        }
         Call::PgVectorCompleteUrl(input) => pg_url(input),
         Call::PgVectorSearchRequest(input) => outcome(pg_search(input)),
     }
@@ -256,18 +268,6 @@ fn decode_outcome(call: &MilvusDecodeCall) -> Value {
         }) => json!({"ok": true, "value": {"status_code": status, "headers": headers}}),
         Err(_error) => json!({"ok": false}),
     }
-}
-
-fn pg_environment(call: &PgKeyCall) -> Result<Value, PgVectorError> {
-    let params = PgVectorParams {
-        api_key: call.api_key.as_deref().map(SecretString::from),
-    };
-    pg_validate_environment(
-        secret_headers(&call.headers),
-        Some(&params),
-        &pg_env(&call.env),
-    )
-    .map(|headers| headers_value(&headers))
 }
 
 fn pg_url(call: &PgUrlCall) -> Value {
