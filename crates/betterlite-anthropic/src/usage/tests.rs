@@ -424,6 +424,13 @@ fn cache_read_write_total_extras() {
     assert_eq!(zeroed.completion_tokens, 0);
     assert_eq!(zeroed.cache_creation_input_tokens, 0);
     assert_eq!(zeroed.prompt_tokens_details.text, 0);
+    let negative = project(
+        r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "cache_creation_input_tokens": -3}}"#,
+    )
+    .unwrap();
+    assert_eq!(negative.cache_creation_input_tokens, -3);
+    assert_eq!(negative.prompt_tokens, -2);
+    assert_eq!(negative.prompt_tokens_details.text, 1);
 }
 
 fn five_minute_one_hour_breakdown_extras() {
@@ -508,6 +515,26 @@ fn iteration_usage_sum_extras() {
         project(r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "iterations": [[5, 6]]}}"#)
             .unwrap_err();
     assert!(matches!(listed_entry, UsageError::Decode { .. }));
+    iteration_container_extras();
+}
+
+fn iteration_container_extras() {
+    let empty_containers = project(
+        r#"{"usage": {"input_tokens": 9, "output_tokens": 9, "iterations": [{"input_tokens": [], "output_tokens": 2, "cache_read_input_tokens": {}}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(empty_containers.prompt_tokens, 0);
+    assert_eq!(empty_containers.completion_tokens, 2);
+    let listed_counts = project(
+        r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "iterations": [{"input_tokens": [1], "output_tokens": 1}]}}"#,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        listed_counts,
+        UsageError::FieldType {
+            field: "iterations.input_tokens"
+        }
+    ));
 }
 
 fn partial_iteration_detail_extras() {
@@ -534,6 +561,21 @@ fn partial_iteration_detail_extras() {
         })
     );
     assert_eq!(fallback.cache_creation_input_tokens, 2);
+    coerced_text_extras();
+}
+
+fn coerced_text_extras() {
+    let coerced = project(
+        r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "iterations": [{"input_tokens": 1, "output_tokens": 1, "cache_creation_input_tokens": 7, "cache_creation": {"ephemeral_5m_input_tokens": "", "ephemeral_1h_input_tokens": "7"}}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        coerced.prompt_tokens_details.cache_creation_details,
+        Some(CacheCreationTokenDetails {
+            ephemeral_5m: Some(0),
+            ephemeral_1h: Some(7),
+        })
+    );
 }
 
 fn completion_split(source: &str) -> (Option<i64>, Option<i64>) {
