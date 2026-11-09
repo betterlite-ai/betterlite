@@ -22,7 +22,6 @@ Mode: TypeAlias = Literal[
 ]
 Version: TypeAlias = Literal["v1", "v1beta1"]
 Provider: TypeAlias = Literal["vertex_ai", "vertex_ai_beta", "gemini"]
-Partner: TypeAlias = Literal["llama", "mistralai", "ai21", "claude"]
 Handler: TypeAlias = Callable[[Params], Json]
 
 PARTNERS: dict[str, VertexPartnerProvider] = {
@@ -39,17 +38,13 @@ def object_of(value: Json, name: str) -> dict[str, Json]:
     return value
 
 
-def list_of(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return value
-
-
 def list_field(params: Params, name: str) -> list[Json]:
     value = params.get(name)
     if value is None:
         return []
-    return list_of(value, name)
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list")
+    return value
 
 
 def string_of(params: Params, name: str) -> str:
@@ -70,17 +65,7 @@ def optional_bool(params: Params, name: str) -> bool | None:
 
 
 def bool_of(params: Params, name: str) -> bool:
-    value = params.get(name)
-    return value if isinstance(value, bool) else False
-
-
-def optional_version(params: Params, name: str) -> Version | None:
-    value = optional_string(params, name)
-    return cast(Version, value) if value is not None else None
-
-
-def partner_of(params: Params, name: str) -> VertexPartnerProvider:
-    return PARTNERS[string_of(params, name)]
+    return optional_bool(params, name) is True
 
 
 class WarningCapture(logging.Handler):
@@ -131,7 +116,7 @@ def complete_row(item: Json) -> Json:
             vertex_location=optional_string(fields, "location"),
             vertex_project=optional_string(fields, "project"),
             project_id=project_id if project_id is not None else "",
-            partner=partner_of(fields, "partner"),
+            partner=PARTNERS[string_of(fields, "partner")],
             stream=optional_bool(fields, "stream"),
             model=string_of(fields, "model"),
         )
@@ -146,7 +131,7 @@ def create_row(item: Json) -> Json:
         url = VertexBase.create_vertex_url(
             vertex_location=string_of(fields, "location"),
             vertex_project=string_of(fields, "project"),
-            partner=partner_of(fields, "partner"),
+            partner=PARTNERS[string_of(fields, "partner")],
             stream=optional_bool(fields, "stream"),
             model=string_of(fields, "model"),
             api_base=optional_string(fields, "api_base"),
@@ -196,7 +181,7 @@ def proxy_row(item: Json) -> Json:
             model=optional_string(fields, "model"),
             vertex_project=optional_string(fields, "project"),
             vertex_location=optional_string(fields, "location"),
-            vertex_api_version=optional_version(fields, "version"),
+            vertex_api_version=cast(Version, optional_string(fields, "version")),
             use_psc_endpoint_format=bool_of(fields, "use_psc_endpoint_format"),
         )
     except ValueError:
@@ -254,63 +239,36 @@ def route_operation(params: Params) -> Json:
     return {"urls": urls, "targets": targets}
 
 
-def unsupported_region_warning(params: Params) -> Json:
-    regions: list[Json] = [region_row(item) for item in list_field(params, "regions")]
-    api_bases: list[Json] = [api_base_row(item) for item in list_field(params, "api_bases")]
-    return {"regions": regions, "api_bases": api_bases}
-
-
-def llama_openapi(params: Params) -> Json:
-    return {"urls": [complete_row(item) for item in list_field(params, "complete")]}
-
-
-def ai21_stream(params: Params) -> Json:
-    return {
-        "complete": [complete_row(item) for item in list_field(params, "complete")],
-        "create": [create_row(item) for item in list_field(params, "create")],
-    }
-
-
-def host_and_version_grafts(params: Params) -> Json:
-    return {
-        "proxies": [proxy_row(item) for item in list_field(params, "proxies")],
-        "tokens": [token_row(item) for item in list_field(params, "tokens")],
-    }
-
-
-def psc_required_fields(params: Params) -> Json:
+def target_rows(params: Params) -> Json:
     return {"targets": [proxy_row(item) for item in list_field(params, "targets")]}
-
-
-def gemini_custom_key(params: Params) -> Json:
-    return {
-        "tokens": [token_row(item) for item in list_field(params, "tokens")],
-        "proxies": [proxy_row(item) for item in list_field(params, "proxies")],
-    }
-
-
-def query_preserved(params: Params) -> Json:
-    return {"targets": [proxy_row(item) for item in list_field(params, "targets")]}
-
-
-def header_override(params: Params) -> Json:
-    return {"headers": [header_row(item) for item in list_field(params, "headers")]}
-
-
-def cache_passthrough_path(params: Params) -> Json:
-    return route_operation(params)
 
 
 HANDLERS: dict[str, Handler] = {
-    "unsupported_region_warning": unsupported_region_warning,
-    "llama_openapi": llama_openapi,
-    "ai21_stream": ai21_stream,
-    "host_and_version_grafts": host_and_version_grafts,
-    "psc_required_fields": psc_required_fields,
-    "gemini_custom_key": gemini_custom_key,
-    "query_preserved": query_preserved,
-    "header_override": header_override,
-    "cache_passthrough_path": cache_passthrough_path,
+    "unsupported_region_warning": lambda params: {
+        "regions": [region_row(item) for item in list_field(params, "regions")],
+        "api_bases": [api_base_row(item) for item in list_field(params, "api_bases")],
+    },
+    "llama_openapi": lambda params: {
+        "urls": [complete_row(item) for item in list_field(params, "complete")],
+    },
+    "ai21_stream": lambda params: {
+        "complete": [complete_row(item) for item in list_field(params, "complete")],
+        "create": [create_row(item) for item in list_field(params, "create")],
+    },
+    "host_and_version_grafts": lambda params: {
+        "proxies": [proxy_row(item) for item in list_field(params, "proxies")],
+        "tokens": [token_row(item) for item in list_field(params, "tokens")],
+    },
+    "psc_required_fields": target_rows,
+    "gemini_custom_key": lambda params: {
+        "tokens": [token_row(item) for item in list_field(params, "tokens")],
+        "proxies": [proxy_row(item) for item in list_field(params, "proxies")],
+    },
+    "query_preserved": target_rows,
+    "header_override": lambda params: {
+        "headers": [header_row(item) for item in list_field(params, "headers")],
+    },
+    "cache_passthrough_path": route_operation,
 }
 
 

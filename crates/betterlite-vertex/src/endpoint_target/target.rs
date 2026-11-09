@@ -8,7 +8,7 @@ use crate::model_urls::base_url::get_vertex_base_url;
 use crate::model_urls::gemini::{GeminiUrlInput, get_gemini_url};
 use crate::model_urls::model_name::get_vertex_base_model_name;
 use crate::model_urls::vertex::{VertexUrlInput, get_vertex_url};
-use crate::model_urls::{ApiVersion, UrlMode};
+use crate::model_urls::{ApiVersion, UrlMode, VertexUrl};
 
 use super::error::EndpointTargetError;
 use super::graft::{graft_default_vertex_path, parse_base};
@@ -104,54 +104,68 @@ pub struct TokenUrlInput<'text> {
     pub use_psc_endpoint_format: bool,
 }
 
+type NativeSelection = (
+    VertexUrl,
+    Option<AuthHeader>,
+    Option<ApiVersion>,
+    Option<String>,
+);
+
 pub fn get_token_and_url(
     catalog: &ModelCatalog,
     input: &TokenUrlInput<'_>,
 ) -> Result<EndpointTarget, EndpointTargetError> {
-    if input.provider == TargetProvider::Gemini {
-        return gemini_target(input);
-    }
-    vertex_target(catalog, input)
+    let (url, auth, version, location) = if input.provider == TargetProvider::Gemini {
+        gemini_target(input)?
+    } else {
+        vertex_target(catalog, input)?
+    };
+    check_custom_proxy(&CustomProxyInput {
+        api_base: input.api_base,
+        provider: input.provider,
+        gemini_api_key: input.gemini_api_key,
+        endpoint: url.endpoint.as_str(),
+        stream: input.stream,
+        auth_header: auth.as_ref(),
+        url: &url.url,
+        model: Some(input.model),
+        project: input.project,
+        location: location.as_deref(),
+        api_version: version,
+        use_psc_endpoint_format: input.use_psc_endpoint_format,
+    })
 }
 
-fn gemini_target(input: &TokenUrlInput<'_>) -> Result<EndpointTarget, EndpointTargetError> {
+fn gemini_target(input: &TokenUrlInput<'_>) -> Result<NativeSelection, EndpointTargetError> {
     let key = input
         .gemini_api_key
         .ok_or(EndpointTargetError::GeminiApiKey)?;
-    let native = get_gemini_url(&GeminiUrlInput {
+    let url = get_gemini_url(&GeminiUrlInput {
         mode: input.mode,
         model: input.model,
         stream: input.stream,
     })?;
     let mut headers = BTreeMap::new();
     headers.insert("x-goog-api-key".to_owned(), key.clone());
-    check_custom_proxy(&CustomProxyInput {
-        api_base: input.api_base,
-        provider: input.provider,
-        gemini_api_key: Some(key),
-        endpoint: native.endpoint.as_str(),
-        stream: input.stream,
-        auth_header: Some(&AuthHeader::Headers(headers)),
-        url: &native.url,
-        model: Some(input.model),
-        project: input.project,
-        location: input.location,
-        api_version: None,
-        use_psc_endpoint_format: input.use_psc_endpoint_format,
-    })
+    Ok((
+        url,
+        Some(AuthHeader::Headers(headers)),
+        None,
+        input.location.map(str::to_owned),
+    ))
 }
 
 fn vertex_target(
     catalog: &ModelCatalog,
     input: &TokenUrlInput<'_>,
-) -> Result<EndpointTarget, EndpointTargetError> {
+) -> Result<NativeSelection, EndpointTargetError> {
     let region = select_region(catalog, input.model, input.location).region;
     let version = if input.use_v1beta1_features {
         ApiVersion::V1Beta1
     } else {
         ApiVersion::V1
     };
-    let native = get_vertex_url(
+    let url = get_vertex_url(
         catalog,
         &VertexUrlInput {
             mode: input.mode,
@@ -163,20 +177,7 @@ fn vertex_target(
         },
     )?;
     let auth = input.auth_token.cloned().map(AuthHeader::Token);
-    check_custom_proxy(&CustomProxyInput {
-        api_base: input.api_base,
-        provider: input.provider,
-        gemini_api_key: input.gemini_api_key,
-        endpoint: native.endpoint.as_str(),
-        stream: input.stream,
-        auth_header: auth.as_ref(),
-        url: &native.url,
-        model: Some(input.model),
-        project: input.project,
-        location: Some(&region),
-        api_version: Some(version),
-        use_psc_endpoint_format: input.use_psc_endpoint_format,
-    })
+    Ok((url, auth, Some(version), Some(region)))
 }
 
 pub struct PartnerRequest<'text> {

@@ -44,7 +44,6 @@ pub fn select_region(
     tracing::warn!(
         model,
         configured = region,
-        supported = ?supported,
         selected = %first,
         "vertex model does not support the configured region"
     );

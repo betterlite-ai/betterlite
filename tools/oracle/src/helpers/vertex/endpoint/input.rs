@@ -198,14 +198,25 @@ pub(crate) enum ProviderName {
     Gemini,
 }
 
-impl ProviderName {
-    pub(crate) const fn provider(self) -> TargetProvider {
-        match self {
-            Self::VertexAi | Self::VertexAiBeta => TargetProvider::Vertex,
-            Self::Gemini => TargetProvider::Gemini,
+macro_rules! map_variants {
+    ($name:ident, $target:ty, $method:ident {
+        $($variant:ident => $value:expr),* $(,)?
+    }) => {
+        impl $name {
+            pub(crate) const fn $method(self) -> $target {
+                match self {
+                    $(Self::$variant => $value,)*
+                }
+            }
         }
-    }
+    };
 }
+
+map_variants!(ProviderName, TargetProvider, provider {
+    VertexAi => TargetProvider::Vertex,
+    VertexAiBeta => TargetProvider::Vertex,
+    Gemini => TargetProvider::Gemini,
+});
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -216,16 +227,12 @@ pub(crate) enum PartnerName {
     Claude,
 }
 
-impl PartnerName {
-    pub(crate) const fn partner(self) -> Partner {
-        match self {
-            Self::Llama => Partner::Llama,
-            Self::Mistralai => Partner::MistralAi,
-            Self::Ai21 => Partner::Ai21,
-            Self::Claude => Partner::Claude,
-        }
-    }
-}
+map_variants!(PartnerName, Partner, partner {
+    Llama => Partner::Llama,
+    Mistralai => Partner::MistralAi,
+    Ai21 => Partner::Ai21,
+    Claude => Partner::Claude,
+});
 
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -238,17 +245,13 @@ pub(crate) enum ModeName {
     CountTokens,
 }
 
-impl ModeName {
-    pub(crate) const fn mode(self) -> UrlMode {
-        match self {
-            Self::Chat => UrlMode::Chat,
-            Self::Embedding => UrlMode::Embedding,
-            Self::BatchEmbedding => UrlMode::BatchEmbedding,
-            Self::ImageGeneration => UrlMode::ImageGeneration,
-            Self::CountTokens => UrlMode::CountTokens,
-        }
-    }
-}
+map_variants!(ModeName, UrlMode, mode {
+    Chat => UrlMode::Chat,
+    Embedding => UrlMode::Embedding,
+    BatchEmbedding => UrlMode::BatchEmbedding,
+    ImageGeneration => UrlMode::ImageGeneration,
+    CountTokens => UrlMode::CountTokens,
+});
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub(crate) enum EndpointName {
@@ -266,18 +269,14 @@ pub(crate) enum EndpointName {
     BatchEmbedContents,
 }
 
-impl EndpointName {
-    pub(crate) const fn endpoint(self) -> Endpoint {
-        match self {
-            Self::GenerateContent => Endpoint::GenerateContent,
-            Self::StreamGenerateContent => Endpoint::StreamGenerateContent,
-            Self::EmbedContent => Endpoint::EmbedContent,
-            Self::Predict => Endpoint::Predict,
-            Self::CountTokens => Endpoint::CountTokens,
-            Self::BatchEmbedContents => Endpoint::BatchEmbedContents,
-        }
-    }
-}
+map_variants!(EndpointName, Endpoint, endpoint {
+    GenerateContent => Endpoint::GenerateContent,
+    StreamGenerateContent => Endpoint::StreamGenerateContent,
+    EmbedContent => Endpoint::EmbedContent,
+    Predict => Endpoint::Predict,
+    CountTokens => Endpoint::CountTokens,
+    BatchEmbedContents => Endpoint::BatchEmbedContents,
+});
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub(crate) enum VersionName {
@@ -287,11 +286,7 @@ pub(crate) enum VersionName {
     V1Beta1,
 }
 
-impl VersionName {
-    pub(crate) const fn version(self) -> ApiVersion {
-        match self {
-            Self::V1 => ApiVersion::V1,
-            Self::V1Beta1 => ApiVersion::V1Beta1,
-        }
-    }
-}
+map_variants!(VersionName, ApiVersion, version {
+    V1 => ApiVersion::V1,
+    V1Beta1 => ApiVersion::V1Beta1,
+});
