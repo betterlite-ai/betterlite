@@ -239,3 +239,10 @@ path = "fuzz_targets/milvus_vector_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ragflow_vector_store"
+path = "fuzz_targets/ragflow_vector_store.rs"
+test = false
+doc = false
+bench = false
