@@ -57,7 +57,6 @@ async fn usage_source_and_counts() {
     absent_usage_is_estimated().await;
     usage_sources_are_preferred().await;
     hidden_usage_needs_a_response_object().await;
-    an_explicit_null_usage_stops_the_hidden_lookup().await;
 }
 
 async fn counts_replace_and_report_zero() {
@@ -169,40 +168,31 @@ async fn usage_sources_are_preferred() {
 
 async fn hidden_usage_needs_a_response_object() {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let messages = fixture_messages();
-    let dict_hidden = chunks(
+    assert_hidden_usage_ignored(
+        &counter,
         r#"[{"choices":[],"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
-    );
-    let case = UsageCase {
-        counter: &counter,
-        chunks: &dict_hidden,
-        messages: Some(&messages),
-        reasoning_tokens: None,
-        count_prompt_tokens: None,
-    };
-    let (result, _) = case.run().await;
-    assert_eq!(
-        result.expect("a dict chunk never reads hidden usage"),
-        fixture_usage(r#"{"prompt_tokens":4,"completion_tokens":7,"total_tokens":11}"#)
-    );
+    )
+    .await;
+    assert_hidden_usage_ignored(
+        &counter,
+        r#"[{"form":"model_response_stream","choices":[],"usage":null,"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
+    )
+    .await;
 }
 
-async fn an_explicit_null_usage_stops_the_hidden_lookup() {
-    let counter = FixtureCounter::counting(7, 2, 4);
+async fn assert_hidden_usage_ignored(counter: &FixtureCounter, source: &str) {
     let messages = fixture_messages();
-    let explicit_null = chunks(
-        r#"[{"form":"model_response_stream","choices":[],"usage":null,"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
-    );
+    let parsed = chunks(source);
     let case = UsageCase {
-        counter: &counter,
-        chunks: &explicit_null,
+        counter,
+        chunks: &parsed,
         messages: Some(&messages),
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
     let (result, _) = case.run().await;
     assert_eq!(
-        result.expect("an explicit null usage attribute stops the hidden lookup"),
+        result.expect("hidden usage stays unused"),
         fixture_usage(r#"{"prompt_tokens":4,"completion_tokens":7,"total_tokens":11}"#)
     );
 }
@@ -688,7 +678,6 @@ async fn reported_zero_is_never_estimated() {
 async fn reasoning_usage() {
     reasoning_content_is_counted().await;
     supplied_reasoning_creates_details().await;
-    reported_details_are_preserved().await;
     reasoning_is_capped().await;
 }
 
@@ -731,30 +720,47 @@ async fn reasoning_content_is_counted() {
 
 async fn supplied_reasoning_creates_details() {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let created = reasoning_case(
+    let plain = r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10}}]"#;
+    assert_reasoning_details(
         &counter,
-        Some(4),
-        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10}}]"#,
+        plain,
+        4,
+        r#"{"reasoning_tokens":4,"text_tokens":6}"#,
     )
     .await;
-    assert_eq!(
-        created.completion_tokens_details,
-        Some(fixture_completion_details(
-            r#"{"reasoning_tokens":4,"text_tokens":6}"#
-        ))
-    );
+    assert_reasoning_details(
+        &counter,
+        plain,
+        0,
+        r#"{"reasoning_tokens":0,"text_tokens":10}"#,
+    )
+    .await;
+    assert_reasoning_details(
+        &counter,
+        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"reasoning_tokens":2,"text_tokens":3}}}]"#,
+        4,
+        r#"{"reasoning_tokens":2,"text_tokens":3}"#,
+    )
+    .await;
+    assert_reasoning_details(
+        &counter,
+        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"text_tokens":3}}}]"#,
+        4,
+        r#"{"reasoning_tokens":4,"text_tokens":3}"#,
+    )
+    .await;
+}
 
-    let zero = reasoning_case(
-        &counter,
-        Some(0),
-        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10}}]"#,
-    )
-    .await;
+async fn assert_reasoning_details(
+    counter: &FixtureCounter,
+    source: &str,
+    reasoning: i64,
+    expected: &str,
+) {
+    let usage = reasoning_case(counter, Some(reasoning), source).await;
     assert_eq!(
-        zero.completion_tokens_details,
-        Some(fixture_completion_details(
-            r#"{"reasoning_tokens":0,"text_tokens":10}"#
-        ))
+        usage.completion_tokens_details,
+        Some(fixture_completion_details(expected))
     );
 }
 
@@ -771,35 +777,6 @@ async fn reasoning_case(counter: &FixtureCounter, reasoning: Option<i64>, source
         .await
         .0
         .expect("the reasoning usage is calculated")
-}
-
-async fn reported_details_are_preserved() {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let reported = reasoning_case(
-        &counter,
-        Some(4),
-        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"reasoning_tokens":2,"text_tokens":3}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        reported.completion_tokens_details,
-        Some(fixture_completion_details(
-            r#"{"reasoning_tokens":2,"text_tokens":3}"#
-        ))
-    );
-
-    let partial = reasoning_case(
-        &counter,
-        Some(4),
-        r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"text_tokens":3}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        partial.completion_tokens_details,
-        Some(fixture_completion_details(
-            r#"{"reasoning_tokens":4,"text_tokens":3}"#
-        ))
-    );
 }
 
 async fn reasoning_is_capped() {
