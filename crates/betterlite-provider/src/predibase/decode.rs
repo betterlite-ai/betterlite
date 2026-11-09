@@ -105,6 +105,7 @@ fn read_fields(fields: &Object, bytes: &[u8]) -> Result<DecodedReply, PredibaseE
             headers: BTreeMap::new(),
         });
     };
+    check_shape(fields)?;
     let reply: RawReply = serde_json::from_slice(bytes).map_err(|source| PredibaseError {
         status_code: 500,
         message: format!("the predibase reply has an invalid field - {source}"),
@@ -114,6 +115,57 @@ fn read_fields(fields: &Object, bytes: &[u8]) -> Result<DecodedReply, PredibaseE
         generated_text: text.clone(),
         details: reply.details,
     }))
+}
+
+// serde also builds a struct from a JSON array, so the shape pass keeps each nested container an object
+fn check_shape(fields: &Object) -> Result<(), PredibaseError> {
+    let Some(details) = details_object(fields)? else {
+        return Ok(());
+    };
+    object_entries(details.get("tokens"), "tokens")?;
+    for sequence in object_entries(details.get("best_of_sequences"), "best_of_sequences")? {
+        object_entries(sequence.get("tokens"), "tokens")?;
+    }
+    Ok(())
+}
+
+fn details_object(fields: &Object) -> Result<Option<&Object>, PredibaseError> {
+    match fields.get("details") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(details)) => Ok(Some(details)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(wrong_object_shape("details"))
+        }
+    }
+}
+
+fn object_entries<'json>(
+    value: Option<&'json Json>,
+    field: &'static str,
+) -> Result<Vec<&'json Object>, PredibaseError> {
+    match value {
+        None | Some(Json::Null) => Ok(Vec::new()),
+        Some(Json::List(items)) => items
+            .iter()
+            .map(|item| match item {
+                Json::Object(object) => Ok(object),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    Err(wrong_object_shape(field))
+                }
+            })
+            .collect(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            Err(wrong_object_shape(field))
+        }
+    }
+}
+
+fn wrong_object_shape(field: &'static str) -> PredibaseError {
+    PredibaseError {
+        status_code: 500,
+        message: format!("the predibase reply {field} is not an object or a list of objects"),
+        headers: BTreeMap::new(),
+    }
 }
 
 fn error_message(value: &Json) -> Result<String, PredibaseError> {

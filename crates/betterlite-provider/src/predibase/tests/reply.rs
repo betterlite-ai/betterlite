@@ -473,9 +473,14 @@ async fn a_null_error_is_still_an_error() {
 #[case::number_generated_text(r#"{"generated_text":5}"#, 500)]
 #[case::array_generated_text(r#"{"generated_text":[]}"#, 500)]
 #[case::wrong_details(r#"{"generated_text":"x","details":[]}"#, 500)]
+#[case::details_array_of_fields(r#"{"generated_text":"x","details":["stop"]}"#, 500)]
 #[case::wrong_tokens(r#"{"generated_text":"x","details":{"tokens":5}}"#, 500)]
 #[case::token_without_logprob(
     r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{}]}}"#,
+    500
+)]
+#[case::token_entry_not_an_object(
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[null]}}"#,
     500
 )]
 #[case::string_logprob(
@@ -483,8 +488,12 @@ async fn a_null_error_is_still_an_error() {
     500
 )]
 #[case::sequence_without_tokens(r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop"}]}}"#, 500)]
-#[case::integer_sum_too_large(
-    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{"logprob":9223372036854775807},{"logprob":9223372036854775807},{"logprob":9223372036854775807}]}}"#,
+#[case::sequence_entry_not_an_object(
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[["b","stop",[]]]}}"#,
+    500
+)]
+#[case::sequence_tokens_entry_not_an_object(
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[7]}]}}"#,
     500
 )]
 #[case::float_sum_not_finite(
@@ -498,6 +507,50 @@ async fn bad_replies_give_a_predibase_error(#[case] body: &str, #[case] status: 
         .await
         .unwrap_err();
     assert_eq!(error.status_code, status);
+}
+
+#[tokio::test]
+async fn null_details_and_token_containers_count_as_absent() {
+    let details = reply_fixture(r#"{"generated_text":"x","details":null}"#);
+    let from_details = transform_response(&details.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(from_details.choices[0].finish_reason, "stop");
+    assert_eq!(from_details.choices[0].private_logprob, None);
+    let tokens = reply_fixture(
+        r#"{"generated_text":"x","details":{"finish_reason":"length","tokens":null}}"#,
+    );
+    let from_tokens = transform_response(&tokens.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(from_tokens.choices[0].finish_reason, "stop");
+    let mut sequences = reply_fixture(
+        r#"{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":null}}"#,
+    );
+    sequences.options = params(r#"{"best_of":2}"#);
+    let from_sequences = transform_response(&sequences.input(), &Counting::working())
+        .await
+        .unwrap();
+    assert_eq!(from_sequences.choices.len(), 1_usize);
+}
+
+#[tokio::test]
+async fn a_wrongly_shaped_details_container_names_the_field() {
+    let details = reply_fixture(r#"{"generated_text":"x","details":[]}"#);
+    let details_error = transform_response(&details.input(), &Counting::working())
+        .await
+        .unwrap_err();
+    assert!(details_error.message.contains("details"));
+    let tokens = reply_fixture(r#"{"generated_text":"x","details":{"tokens":[null]}}"#);
+    let tokens_error = transform_response(&tokens.input(), &Counting::working())
+        .await
+        .unwrap_err();
+    assert!(tokens_error.message.contains("tokens"));
+    let sequences = reply_fixture(r#"{"generated_text":"x","details":{"best_of_sequences":[7]}}"#);
+    let sequences_error = transform_response(&sequences.input(), &Counting::working())
+        .await
+        .unwrap_err();
+    assert!(sequences_error.message.contains("best_of_sequences"));
 }
 
 #[test]
