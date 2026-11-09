@@ -1,0 +1,10 @@
+kind: helper
+name: count-messages-empty
+call:
+  bedrock_other_count_tokens:
+    count_messages_empty:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages: []
+env: {}
+compare: {ignore: []}
