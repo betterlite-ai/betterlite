@@ -18,8 +18,10 @@ use chrono::DateTime;
 use opentelemetry::trace::{
     SpanContext, SpanId, SpanKind, TraceContextExt as _, TraceFlags, TraceId, TraceState,
 };
-use opentelemetry::{KeyValue, Value};
-use opentelemetry_sdk::trace::{IdGenerator, RandomIdGenerator, SamplingDecision, ShouldSample};
+use opentelemetry::{KeyValue, StringValue, Value};
+use opentelemetry_sdk::trace::{
+    IdGenerator, RandomIdGenerator, SamplingDecision, ShouldSample as _,
+};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
@@ -163,123 +165,279 @@ fn run_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
         Step::ResolveObservationId { input } => Ok(json!(
             resolve_observation_id(input.as_deref()).map(|id| id.to_string())
         )),
-        Step::ToUnixNanos { seconds, datetime } => {
-            Ok(json!(to_unix_nanos(timestamp(*seconds, datetime)?)))
-        }
-        Step::TraceAttributes { fields } => Ok(pairs(&trace_attributes(&TraceAttributes {
-            name: fields.name.as_ref(),
-            user_id: fields.user_id.as_ref(),
-            session_id: fields.session_id.as_ref(),
-            version: fields.version.as_ref(),
-            release: fields.release.as_ref(),
-            tags: fields.tags.as_ref(),
-            metadata: fields.metadata.as_ref(),
-            public: fields.public,
-            input: fields.input.as_ref(),
-            output: fields.output.as_ref(),
-        }))),
-        Step::ObservationAttributes { fields } => {
-            Ok(pairs(&observation_attributes(&ObservationAttributes {
-                observation_type: observation_type(&fields.observation_type)?,
-                input: fields.input.as_ref(),
-                output: fields.output.as_ref(),
-                metadata: fields.metadata.as_ref(),
-                level: fields.level.as_ref(),
-                status_message: fields.status_message.as_ref(),
-                version: fields.version.as_ref(),
-                model: fields.model.as_ref(),
-                model_parameters: fields.model_parameters.as_ref(),
-                usage_details: fields.usage_details.as_ref(),
-                cost_details: fields.cost_details.as_ref(),
-                completion_start_time: fields
-                    .completion_start_time
-                    .as_deref()
-                    .map(parse_datetime)
-                    .transpose()?
-                    .map(Timestamp::DateTime),
-                prompt: fields.prompt.as_ref().map(prompt_link),
-            })))
-        }
-        Step::RequestedIds { trace_id, span_id } => {
-            Ok(requested_ids(parse_trace(trace_id)?, parse_span(span_id)?))
-        }
+        Step::ToUnixNanos { seconds, datetime } => nanos(*seconds, datetime.as_deref()),
+        Step::TraceAttributes { fields } => Ok(trace_projection(fields)),
+        Step::ObservationAttributes { fields } => observation_projection(fields),
+        Step::RequestedIds { trace_id, span_id } => requested_ids_step(trace_id, span_id),
         Step::Sampler {
             rate,
             trace_id,
             attributes,
-        } => sampler(*rate, parse_trace(trace_id)?, attributes),
+        } => sampler_step(*rate, trace_id, attributes),
         Step::ParentContext {
             trace_id,
             parent_observation_id,
             existing_trace,
             fallback_span_id,
-        } => parent(
-            parse_trace(trace_id)?,
-            parent_observation_id
-                .as_deref()
-                .map(parse_span)
-                .transpose()?,
+        } => parent_step(
+            trace_id,
+            parent_observation_id.as_deref(),
             *existing_trace,
-            parse_span(fallback_span_id)?,
+            fallback_span_id,
         ),
         Step::Observation {
             span_id,
             public,
             seconds,
             datetime,
-        } => observation(parse_span(span_id)?, *public, *seconds, datetime),
-        Step::StartGeneration {
-            trace_id,
-            observation_id,
-            parent_observation_id,
-            existing_trace,
-            name,
-            seconds,
-            datetime,
-            public,
-            attributes,
-            span_id,
-        } => generation(
-            GenerationStart {
-                trace_id: parse_trace(trace_id)?,
-                parent_observation_id: parent_observation_id
-                    .as_deref()
-                    .map(parse_span)
-                    .transpose()?,
-                existing_trace: *existing_trace,
-                observation_id: observation_id.as_deref().map(parse_span).transpose()?,
-                name: name.clone(),
-                start_time: timestamp(*seconds, datetime)?,
-                public: *public,
-                attributes: key_values(attributes),
-            },
-            parse_span(span_id)?,
-        ),
-        Step::StartChildSpan {
-            parent_trace_id,
-            parent_span_id,
-            parent_public,
-            name,
-            seconds,
-            datetime,
-            attributes,
-            child_span_id,
-        } => child(
-            child_parameters(
-                ParentSpec {
-                    trace_id: parse_trace(parent_trace_id)?,
-                    span_id: parse_span(parent_span_id)?,
-                    public: *parent_public,
-                },
-                name.clone(),
-                timestamp(*seconds, datetime)?,
-                key_values(attributes),
-            ),
-            parse_span(child_span_id)?,
-        ),
+        } => observation_step(span_id, *public, *seconds, datetime.as_deref()),
+        Step::StartGeneration { .. } => generation_step(step),
+        Step::StartChildSpan { .. } => child_step(step),
     }
 }
 
+fn nanos(
+    seconds: Option<Decimal>,
+    datetime: Option<&str>,
+) -> Result<serde_json::Value, Box<HelperError>> {
+    if let Some(text) = datetime {
+        return Ok(json!(to_unix_nanos(Some(Timestamp::DateTime(
+            parse_datetime(text)?
+        )))));
+    }
+    Ok(json!(to_unix_nanos(seconds.map(Timestamp::Seconds))))
+}
+
+fn trace_projection(fields: &TraceFields) -> serde_json::Value {
+    pairs(&trace_attributes(&TraceAttributes {
+        name: fields.name.as_ref(),
+        user_id: fields.user_id.as_ref(),
+        session_id: fields.session_id.as_ref(),
+        version: fields.version.as_ref(),
+        release: fields.release.as_ref(),
+        tags: fields.tags.as_ref(),
+        metadata: fields.metadata.as_ref(),
+        public: fields.public,
+        input: fields.input.as_ref(),
+        output: fields.output.as_ref(),
+    }))
+}
+
+fn observation_projection(
+    fields: &ObservationFields,
+) -> Result<serde_json::Value, Box<HelperError>> {
+    let prompt = fields.prompt.as_ref().map(prompt_link);
+    Ok(pairs(&observation_attributes(&ObservationAttributes {
+        observation_type: observation_type(&fields.observation_type)?,
+        input: fields.input.as_ref(),
+        output: fields.output.as_ref(),
+        metadata: fields.metadata.as_ref(),
+        level: fields.level.as_ref(),
+        status_message: fields.status_message.as_ref(),
+        version: fields.version.as_ref(),
+        model: fields.model.as_ref(),
+        model_parameters: fields.model_parameters.as_ref(),
+        usage_details: fields.usage_details.as_ref(),
+        cost_details: fields.cost_details.as_ref(),
+        completion_start_time: fields
+            .completion_start_time
+            .as_deref()
+            .map(parse_datetime)
+            .transpose()?
+            .map(Timestamp::DateTime),
+        prompt: prompt.as_ref(),
+    })))
+}
+
+fn requested_ids_step(
+    trace_id: &str,
+    span_id: &str,
+) -> Result<serde_json::Value, Box<HelperError>> {
+    let requested_trace = parse_trace(trace_id)?;
+    let requested_span = parse_span(span_id)?;
+    let id_generator = RequestedIdGenerator::default();
+    let requested = {
+        let _scope = RequestedIds::enter(Some(requested_trace), Some(requested_span));
+        (id_generator.new_trace_id(), id_generator.new_span_id())
+    };
+    let after = (id_generator.new_trace_id(), id_generator.new_span_id());
+    Ok(json!({
+        "trace_id": requested.0.to_string(),
+        "span_id": requested.1.to_string(),
+        "after_trace_id_length": after.0.to_string().len(),
+        "after_span_id_length": after.1.to_string().len(),
+        "after_trace_id_nonzero": after.0 != TraceId::INVALID,
+        "after_span_id_nonzero": after.1 != SpanId::INVALID,
+    }))
+}
+
+fn sampler_step(
+    rate: f64,
+    trace_id: &str,
+    attributes: &[(String, Json)],
+) -> Result<serde_json::Value, Box<HelperError>> {
+    let sampled_trace = parse_trace(trace_id)?;
+    let converted = key_values(attributes);
+    let result = TraceIdHashSampler { rate }.should_sample(
+        None,
+        sampled_trace,
+        "span",
+        &SpanKind::Internal,
+        &converted,
+        &[],
+    );
+    let sampled = result.decision == SamplingDecision::RecordAndSample;
+    Ok(json!({
+        "decision": decision_name(&result.decision),
+        "attributes": if sampled { pairs(&result.attributes) } else { serde_json::Value::Null },
+    }))
+}
+
+const fn decision_name(decision: &SamplingDecision) -> &'static str {
+    match decision {
+        SamplingDecision::Drop => "drop",
+        SamplingDecision::RecordOnly => "record_only",
+        SamplingDecision::RecordAndSample => "record_and_sample",
+    }
+}
+
+fn parent_step(
+    trace_id: &str,
+    parent_observation_id: Option<&str>,
+    existing_trace: bool,
+    fallback_span_id: &str,
+) -> Result<serde_json::Value, Box<HelperError>> {
+    let id_generator = FixedIdGenerator {
+        span_id: parse_span(fallback_span_id)?,
+    };
+    let parent = parent_observation_id.map(parse_span).transpose()?;
+    let context = parent_context(
+        parse_trace(trace_id)?,
+        parent,
+        existing_trace,
+        &id_generator,
+    );
+    let span_context = context.span().span_context().clone();
+    Ok(json!({
+        "valid": span_context.is_valid(),
+        "trace_id": span_context.is_valid().then(|| span_context.trace_id().to_string()),
+        "span_id": span_context.is_valid().then(|| span_context.span_id().to_string()),
+        "is_remote": span_context.is_remote(),
+        "sampled": span_context.is_sampled(),
+    }))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FixedIdGenerator {
+    span_id: SpanId,
+}
+
+impl IdGenerator for FixedIdGenerator {
+    fn new_trace_id(&self) -> TraceId {
+        TraceId::INVALID
+    }
+
+    fn new_span_id(&self) -> SpanId {
+        self.span_id
+    }
+}
+
+fn observation_step(
+    span_id: &str,
+    public: Option<bool>,
+    seconds: Option<Decimal>,
+    datetime: Option<&str>,
+) -> Result<serde_json::Value, Box<HelperError>> {
+    let context = SpanContext::new(
+        TraceId::INVALID,
+        parse_span(span_id)?,
+        TraceFlags::SAMPLED,
+        false,
+        TraceState::NONE,
+    );
+    let mut observation = LangfuseObservation::new(
+        ScriptedSpan {
+            context,
+            parent: SpanContext::NONE,
+            name: String::new(),
+            start_time: None,
+            attributes: Vec::new(),
+            requested_trace_id: None,
+            requested_span_id: None,
+            end_time: None,
+        },
+        public,
+    );
+    if let Some(end_time) = timestamp(seconds, datetime)? {
+        observation.end(Some(end_time));
+    }
+    Ok(json!({
+        "id": observation.id,
+        "public": observation.public,
+        "end_time": observation.span.end_time.and_then(system_nanos),
+    }))
+}
+
+fn generation_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
+    let Step::StartGeneration {
+        trace_id,
+        observation_id,
+        parent_observation_id,
+        existing_trace,
+        name,
+        seconds,
+        datetime,
+        public,
+        attributes,
+        span_id,
+    } = step
+    else {
+        return Err(invalid("not a generation step"));
+    };
+    let start = GenerationStart {
+        trace_id: parse_trace(trace_id)?,
+        parent_observation_id: parent_observation_id
+            .as_deref()
+            .map(parse_span)
+            .transpose()?,
+        existing_trace: *existing_trace,
+        observation_id: observation_id.as_deref().map(parse_span).transpose()?,
+        name: name.clone(),
+        start_time: timestamp(*seconds, datetime.as_deref())?,
+        public: *public,
+        attributes: key_values(attributes),
+    };
+    Ok(generation(start, parse_span(span_id)?))
+}
+
+fn child_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
+    let Step::StartChildSpan {
+        parent_trace_id,
+        parent_span_id,
+        parent_public,
+        name,
+        seconds,
+        datetime,
+        attributes,
+        child_span_id,
+    } = step
+    else {
+        return Err(invalid("not a child span step"));
+    };
+    let parameters = child_parameters(
+        ParentSpec {
+            trace_id: parse_trace(parent_trace_id)?,
+            span_id: parse_span(parent_span_id)?,
+            public: *parent_public,
+        },
+        name.clone(),
+        timestamp(*seconds, datetime.as_deref())?,
+        key_values(attributes),
+    );
+    Ok(child(parameters, parse_span(child_span_id)?))
+}
+
+#[derive(Clone, Copy, Debug)]
 struct ParentSpec {
     trace_id: TraceId,
     span_id: SpanId,
@@ -326,127 +484,6 @@ fn child_parameters(
     }
 }
 
-fn requested_ids(trace_id: TraceId, span_id: SpanId) -> serde_json::Value {
-    let id_generator = RequestedIdGenerator::default();
-    let requested = {
-        let _scope = RequestedIds::enter(Some(trace_id), Some(span_id));
-        (id_generator.new_trace_id(), id_generator.new_span_id())
-    };
-    let after = (id_generator.new_trace_id(), id_generator.new_span_id());
-    json!({
-        "trace_id": requested.0.to_string(),
-        "span_id": requested.1.to_string(),
-        "after_trace_id_length": after.0.to_string().len(),
-        "after_span_id_length": after.1.to_string().len(),
-        "after_trace_id_nonzero": after.0 != TraceId::INVALID,
-        "after_span_id_nonzero": after.1 != SpanId::INVALID,
-    })
-}
-
-fn sampler(
-    rate: f64,
-    trace_id: TraceId,
-    attributes: &[(String, Json)],
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let attributes = key_values(attributes);
-    let result = TraceIdHashSampler { rate }.should_sample(
-        None,
-        trace_id,
-        "span",
-        &SpanKind::Internal,
-        &attributes,
-        &[],
-    );
-    let sampled = result.decision == SamplingDecision::RecordAndSample;
-    Ok(json!({
-        "decision": decision_name(&result.decision),
-        "attributes": if sampled { pairs(&result.attributes) } else { serde_json::Value::Null },
-    }))
-}
-
-fn decision_name(decision: &SamplingDecision) -> &'static str {
-    match decision {
-        SamplingDecision::Drop => "drop",
-        SamplingDecision::RecordOnly => "record_only",
-        SamplingDecision::RecordAndSample => "record_and_sample",
-    }
-}
-
-fn parent(
-    trace_id: TraceId,
-    parent_observation_id: Option<SpanId>,
-    existing_trace: bool,
-    fallback_span_id: SpanId,
-) -> serde_json::Value {
-    let id_generator = FixedIdGenerator {
-        span_id: fallback_span_id,
-    };
-    let context = parent_context(
-        trace_id,
-        parent_observation_id,
-        existing_trace,
-        &id_generator,
-    );
-    let span_context = context.span().span_context().clone();
-    json!({
-        "valid": span_context.is_valid(),
-        "trace_id": span_context.is_valid().then(|| span_context.trace_id().to_string()),
-        "span_id": span_context.is_valid().then(|| span_context.span_id().to_string()),
-        "is_remote": span_context.is_remote(),
-        "sampled": span_context.is_sampled(),
-    })
-}
-
-struct FixedIdGenerator {
-    span_id: SpanId,
-}
-
-impl IdGenerator for FixedIdGenerator {
-    fn new_trace_id(&self) -> TraceId {
-        TraceId::INVALID
-    }
-
-    fn new_span_id(&self) -> SpanId {
-        self.span_id
-    }
-}
-
-fn observation(
-    span_id: SpanId,
-    public: Option<bool>,
-    seconds: Option<Decimal>,
-    datetime: &Option<String>,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let context = SpanContext::new(
-        TraceId::INVALID,
-        span_id,
-        TraceFlags::SAMPLED,
-        false,
-        TraceState::NONE,
-    );
-    let mut observation = LangfuseObservation::new(
-        ScriptedSpan {
-            context,
-            parent: SpanContext::NONE,
-            name: String::new(),
-            start_time: None,
-            attributes: Vec::new(),
-            requested_trace_id: None,
-            requested_span_id: None,
-            end_time: None,
-        },
-        public,
-    );
-    if let Some(end_time) = timestamp(seconds, datetime)? {
-        observation.end(Some(end_time));
-    }
-    Ok(json!({
-        "id": observation.id,
-        "public": observation.public,
-        "end_time": observation.span.end_time.and_then(system_nanos),
-    }))
-}
-
 fn generation(start: GenerationStart, span_id: SpanId) -> serde_json::Value {
     let tracer = ScriptedTracer { span_id };
     let observation = start_generation(&tracer, &RandomIdGenerator::default(), start);
@@ -487,7 +524,7 @@ fn child(parameters: ChildParameters, span_id: SpanId) -> serde_json::Value {
 
 fn timestamp(
     seconds: Option<Decimal>,
-    datetime: &Option<String>,
+    datetime: Option<&str>,
 ) -> Result<Option<Timestamp>, Box<HelperError>> {
     if let Some(text) = datetime {
         return Ok(Some(Timestamp::DateTime(parse_datetime(text)?)));
@@ -577,7 +614,7 @@ fn array_value(array: &opentelemetry::Array) -> serde_json::Value {
         opentelemetry::Array::I64(items) => json!(items),
         opentelemetry::Array::F64(items) => json!(items),
         opentelemetry::Array::String(items) => {
-            json!(items.iter().map(|item| item.as_str()).collect::<Vec<_>>())
+            json!(items.iter().map(StringValue::as_str).collect::<Vec<_>>())
         }
         _ => serde_json::Value::Null,
     }
