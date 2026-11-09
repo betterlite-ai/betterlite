@@ -76,7 +76,8 @@ pub fn provider_failure(
 }
 
 // LiteLLM's openai_error_type: the exception's own type unless it is the string "None", else the client type from the status
-fn rendered(class: &ErrorClass) -> ProviderFailure {
+#[must_use]
+pub fn rendered(class: &ErrorClass) -> ProviderFailure {
     let metadata = class.metadata();
     let error_type = match metadata.error_type {
         WireField::Text(text) if text != "None" => text,
