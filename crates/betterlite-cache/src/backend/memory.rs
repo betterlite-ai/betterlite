@@ -1,13 +1,13 @@
 mod operations;
 
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
-use self::operations::{increment, oldest_keys, read, whole_seconds, write};
+use self::operations::increment;
 use async_trait::async_trait;
-use betterlite_context::local_ttl_cache::{CacheLimits, CacheValue, LocalTtlCache};
+use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 
-use super::{CacheBackend, CacheResult, Ttl};
+use super::{BackendError, CacheBackend, CacheResult, Ttl};
 use crate::types::pipeline::RedisPipelineIncrement;
 
 pub const DEFAULT_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
@@ -15,12 +15,7 @@ pub const DEFAULT_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
 pub struct MemoryCache {
-    state: Mutex<MemoryState>,
-    settings: MemorySettings,
-}
-
-struct MemorySettings {
-    limits: CacheLimits,
+    values: Mutex<LocalTtlCache>,
     construction: Construction,
     clock: Clock,
     default_ttl_seconds: i64,
@@ -31,11 +26,6 @@ struct Construction {
     default_ttl: Option<f64>,
     max_size_per_item: Option<i64>,
     loaded_item_kib: i64,
-}
-
-struct MemoryState {
-    values: LocalTtlCache,
-    expiries: BTreeMap<String, f64>,
 }
 
 impl MemoryCache {
@@ -53,29 +43,17 @@ impl MemoryCache {
             loaded_item_kib,
             Arc::clone(&clock),
         )?;
-        let resolved = values.as_ref();
-        let limits = CacheLimits {
-            capacity: resolved.capacity,
-            default_ttl: resolved.default_ttl,
-            max_size_per_item: resolved.max_size_per_item,
-        };
-        let settings = MemorySettings {
+        let default_ttl_seconds = whole_seconds(values.as_ref().default_ttl)?;
+        Ok(Self {
+            values: Mutex::new(values),
             construction: Construction {
                 capacity,
                 default_ttl,
                 max_size_per_item,
                 loaded_item_kib,
             },
-            default_ttl_seconds: whole_seconds(limits.default_ttl)?,
-            limits,
             clock,
-        };
-        Ok(Self {
-            state: Mutex::new(MemoryState {
-                values,
-                expiries: BTreeMap::new(),
-            }),
-            settings,
+            default_ttl_seconds,
         })
     }
 }
@@ -83,40 +61,38 @@ impl MemoryCache {
 #[async_trait]
 impl CacheBackend for MemoryCache {
     fn default_ttl(&self) -> i64 {
-        self.settings.default_ttl_seconds
+        self.default_ttl_seconds
     }
 
     fn get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        read(&mut state, key)
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        values.get(key).map_err(BackendError::from)
     }
 
     fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        write(&mut state, &self.settings, key, value, ttl)
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        values.set(key, value, ttl).map_err(BackendError::from)
     }
 
     fn delete_cache(&self, key: &str) -> CacheResult<()> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.values.delete(key);
-        state.expiries.remove(key);
-        drop(state);
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        values.delete(key);
+        drop(values);
         Ok(())
     }
 
     fn flush_cache(&self) -> CacheResult<()> {
-        let construction = &self.settings.construction;
-        let values = LocalTtlCache::with_clock(
+        let construction = &self.construction;
+        let fresh = LocalTtlCache::with_clock(
             construction.capacity,
             construction.default_ttl,
             construction.max_size_per_item,
             construction.loaded_item_kib,
-            Arc::clone(&self.settings.clock),
+            Arc::clone(&self.clock),
         )?;
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.values = values;
-        state.expiries.clear();
-        drop(state);
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        *values = fresh;
+        drop(values);
         Ok(())
     }
 
@@ -144,8 +120,8 @@ impl CacheBackend for MemoryCache {
     }
 
     async fn async_increment(&self, key: &str, value: f64, ttl: Ttl) -> CacheResult<f64> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        increment(&mut state, &self.settings, key, value, ttl)
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        increment(&mut values, key, value, ttl)
     }
 
     async fn async_increment_pipeline(
@@ -163,16 +139,47 @@ impl CacheBackend for MemoryCache {
     }
 
     async fn async_get_ttl(&self, key: &str) -> CacheResult<Option<f64>> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(state.expiries.get(key).copied())
+        let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(values
+            .ttl_entries()
+            .into_iter()
+            .find(|(name, _)| name.as_str() == key)
+            .map(|(_, expiry)| expiry))
     }
 
     async fn async_get_oldest_n_keys(&self, limit: usize) -> CacheResult<Vec<String>> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(oldest_keys(&state.expiries, limit))
+        let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(values
+            .ttl_entries()
+            .into_iter()
+            .take(limit)
+            .map(|(key, _)| key)
+            .collect())
     }
 
     async fn disconnect(&self) -> CacheResult<()> {
         Ok(())
+    }
+}
+
+fn whole_seconds(seconds: f64) -> Result<i64, BackendError> {
+    let magnitude = Duration::try_from_secs_f64(seconds.abs()).map_err(|source| {
+        BackendError::InvalidDefaultDuration {
+            value: seconds,
+            source,
+        }
+    })?;
+    let whole = i64::try_from(magnitude.as_secs()).map_err(|source| {
+        BackendError::InvalidDefaultSeconds {
+            value: seconds,
+            source,
+        }
+    })?;
+    if seconds.is_sign_negative() {
+        0_i64
+            .checked_sub(whole)
+            .ok_or(BackendError::InvalidDefaultTtl { value: seconds })
+    } else {
+        Ok(whole)
     }
 }

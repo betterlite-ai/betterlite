@@ -178,6 +178,16 @@ impl LocalTtlCache {
         self.expiries.remove(key);
     }
 
+    #[must_use]
+    pub fn ttl_entries(&self) -> Vec<(String, f64)> {
+        let mut entries = self.expiries.iter().collect::<Vec<(&String, &f64)>>();
+        entries.sort_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)));
+        entries
+            .into_iter()
+            .map(|(key, expiry)| (key.clone(), *expiry))
+            .collect()
+    }
+
     fn read_clock(&self) -> Result<f64, CacheError> {
         let now = (self.clock)();
         if now.is_finite() {

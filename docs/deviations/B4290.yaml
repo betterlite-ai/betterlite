@@ -15,6 +15,3 @@ deviations:
   - what: The BaseCache get_ttl contract returns whole seconds, so a fractional default ttl given to the memory cache is truncated there.
     why: LiteLLM declares default_ttl as int and get_ttl as int or None, and betterlite keeps the declared type for the contract value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L30
-  - what: A write with a zero or negative ttl is confirmed by reading the key back, so the entry can be removed at write time and async_get_ttl reports nothing where LiteLLM keeps the value and its past expiry until a later read.
-    why: LocalTtlCache returns no admission result, so a read at the same clock is the only way to learn whether a new key was stored, and an entry already at or past its expiry does not survive it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177

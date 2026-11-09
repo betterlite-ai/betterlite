@@ -194,14 +194,39 @@ async fn memory_get_ttl_uses_the_default_without_an_explicit_ttl() {
 }
 
 #[tokio::test]
-async fn memory_negative_ttl_is_read_back_and_dropped() {
+async fn memory_negative_ttl_is_reported_as_written() {
     let cache = cache_at(0.0_f64);
     cache
         .async_set_cache("key", CacheValue::Integer(1), Some(-5.0_f64))
         .await
         .expect("a stored value");
+    assert_eq!(
+        cache.async_get_ttl("key").await.expect("a ttl"),
+        Some(-5.0_f64)
+    );
     assert_eq!(cache.async_get_cache("key").await.expect("a read"), None);
-    assert_eq!(cache.async_get_ttl("key").await.expect("a ttl"), None);
+}
+
+#[tokio::test]
+async fn memory_nan_ttl_keeps_the_key_and_its_expiry() {
+    let cache = cache_at(0.0_f64);
+    cache
+        .async_set_cache("key", CacheValue::Integer(1), Some(f64::NAN))
+        .await
+        .expect("a stored value");
+    assert_eq!(
+        cache.async_get_cache("key").await.expect("a read"),
+        Some(CacheValue::Integer(1))
+    );
+    let ttl = cache.async_get_ttl("key").await.expect("a ttl");
+    assert!(ttl.is_some_and(f64::is_nan));
+    assert_eq!(
+        cache
+            .async_get_oldest_n_keys(1)
+            .await
+            .expect("the oldest keys"),
+        vec!["key".to_owned()]
+    );
 }
 
 #[tokio::test]
