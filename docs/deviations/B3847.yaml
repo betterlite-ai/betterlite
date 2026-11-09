@@ -63,3 +63,20 @@ deviations:
       publisher observed. The message handler restores the slot when the message ends, which is the same
       boundary LiteLLM's recording check protects.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L158-L172
+  - what: >-
+      The root span's http.route is captured when the request root is anchored; LiteLLM reads the
+      attribute off the anchored span each time request_root_http_route runs.
+    why: >-
+      The OpenTelemetry Rust SDK exposes no reader for a span's attributes, so the anchor records the
+      route the HTTP instrumentation reported at auth time. The LLM call span therefore still carries the
+      same litellm.request.route value its parent server span was named with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L68-L84
+  - what: >-
+      resolve_service_span_context takes the parent span's end time from its caller; LiteLLM reads
+      parent.end_time off the ambient span. Without a supplied end time only the post-response phase
+      marker can move a service span to a linked root.
+    why: >-
+      The Rust span API has no readable end time, so a parent that has ended is only knowable from the
+      request lifecycle that ended it. The phase marker, the primary signal in LiteLLM too, still links
+      every span emitted from the post-response phase.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L249-L256

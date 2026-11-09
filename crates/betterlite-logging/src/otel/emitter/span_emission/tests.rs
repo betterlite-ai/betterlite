@@ -7,11 +7,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
-use opentelemetry::Value;
 use opentelemetry::trace::{
-    Link, Span as _, SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
-    TracerProvider as _,
+    Link, Span as _, SpanContext, SpanId, SpanKind, Status, TraceContextExt as _, TraceFlags,
+    TraceId, TraceState, Tracer as _, TracerProvider as _,
 };
+use opentelemetry::{Context, Value};
 use opentelemetry_sdk::logs::InMemoryLogExporter;
 use opentelemetry_sdk::trace::SpanData as ExportedSpan;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvider, SpanLimits};
@@ -107,6 +107,32 @@ fn options<'source>(
         tracer: None,
         links: &[],
     }
+}
+
+fn emitter_with_event_recorder() -> (
+    InMemoryLogExporter,
+    InMemorySpanExporter,
+    SpanEmitter<SdkTracer>,
+) {
+    let log_exporter = InMemoryLogExporter::default();
+    let logger_provider = build_logger_provider(
+        &OtelConfig::default(),
+        LogSink::InMemory(log_exporter.clone()),
+    );
+    let recorder = GenAIEventRecorder {
+        event_logger: get_event_logger(&logger_provider, "litellm"),
+        clock: Box::new(SystemClock),
+    };
+    let (exporter, provider) = exporter_and_provider();
+    let emitter = SpanEmitter {
+        tracer: provider.tracer("span-emission"),
+        environment: Arc::new(BTreeMap::<String, String>::new()),
+        mappers: Vec::new(),
+        event_recorder: Some(Arc::new(recorder)),
+        attribute_limit: None,
+        emitted: DedupCache::default(),
+    };
+    (log_exporter, exporter, emitter)
 }
 
 fn exported(exporter: &InMemorySpanExporter) -> Vec<ExportedSpan> {
@@ -566,24 +592,7 @@ fn a_guardrail_error_reaches_the_span() {
 
 #[test]
 fn an_mcp_error_never_reaches_the_event_recorder() {
-    let log_exporter = InMemoryLogExporter::default();
-    let logger_provider = build_logger_provider(
-        &OtelConfig::default(),
-        LogSink::InMemory(log_exporter.clone()),
-    );
-    let recorder = GenAIEventRecorder {
-        event_logger: get_event_logger(&logger_provider, "litellm"),
-        clock: Box::new(SystemClock),
-    };
-    let (exporter, provider) = exporter_and_provider();
-    let emitter = SpanEmitter {
-        tracer: provider.tracer("span-emission"),
-        environment: Arc::new(BTreeMap::<String, String>::new()),
-        mappers: Vec::new(),
-        event_recorder: Some(Arc::new(recorder)),
-        attribute_limit: None,
-        emitted: DedupCache::default(),
-    };
+    let (log_exporter, exporter, emitter) = emitter_with_event_recorder();
     let mut data = mcp_data("call-1");
     data.error = Some(SpanError {
         error_type: Some("MCPError".to_owned()),
@@ -603,24 +612,7 @@ fn an_mcp_error_never_reaches_the_event_recorder() {
 
 #[test]
 fn an_llm_call_error_reaches_the_event_recorder() {
-    let log_exporter = InMemoryLogExporter::default();
-    let logger_provider = build_logger_provider(
-        &OtelConfig::default(),
-        LogSink::InMemory(log_exporter.clone()),
-    );
-    let recorder = GenAIEventRecorder {
-        event_logger: get_event_logger(&logger_provider, "litellm"),
-        clock: Box::new(SystemClock),
-    };
-    let (exporter, provider) = exporter_and_provider();
-    let emitter = SpanEmitter {
-        tracer: provider.tracer("span-emission"),
-        environment: Arc::new(BTreeMap::<String, String>::new()),
-        mappers: Vec::new(),
-        event_recorder: Some(Arc::new(recorder)),
-        attribute_limit: None,
-        emitted: DedupCache::default(),
-    };
+    let (log_exporter, exporter, emitter) = emitter_with_event_recorder();
     let mut data = call_data("call-1");
     data.error = Some(SpanError {
         error_type: Some("RateLimitError".to_owned()),
@@ -642,6 +634,7 @@ fn an_llm_call_error_reaches_the_event_recorder() {
     let record = &logs[0].record;
     let context = record.trace_context().expect("trace context");
     assert_eq!(context.trace_id, span.span_context.trace_id());
+    assert_eq!(span.end_time, end);
     assert_eq!(record.timestamp(), Some(end));
 }
 
@@ -748,6 +741,50 @@ fn start_span_applies_the_kind_and_the_start_time() {
 }
 
 #[test]
+fn emit_parents_the_span_to_the_context_it_is_given() {
+    let (exporter, provider) = exporter_and_provider();
+    let tracer = provider.tracer("span-emission");
+    let mut root = tracer.start("root");
+    let parent = Context::new().with_remote_span_context(root.span_context().clone());
+    let emitter = emitter(tracer, Vec::new(), None);
+    let data = call_data("call-1");
+    let options = EmitOptions {
+        parent: Some(&parent),
+        start_time: None,
+        end_time: None,
+        tracer: None,
+        links: &[],
+    };
+    emitter.emit(SpanRole::LlmCall, &SpanData::LLMCall(&data), &options);
+    root.end();
+    let finished = exported(&exporter);
+    let child = finished
+        .iter()
+        .find(|span| span.name == "chat gpt-4o")
+        .expect("child");
+    assert_eq!(child.parent_span_id, parent.span().span_context().span_id());
+}
+
+#[test]
+fn a_per_request_tracer_override_creates_the_span() {
+    let (default_exporter, default_provider) = exporter_and_provider();
+    let (override_exporter, override_provider) = exporter_and_provider();
+    let emitter = emitter(default_provider.tracer("default"), Vec::new(), None);
+    let override_tracer = override_provider.tracer("override");
+    let options = EmitOptions {
+        parent: None,
+        start_time: None,
+        end_time: None,
+        tracer: Some(&override_tracer),
+        links: &[],
+    };
+    let data = call_data("call-1");
+    emitter.emit(SpanRole::LlmCall, &SpanData::LLMCall(&data), &options);
+    assert!(exported(&default_exporter).is_empty());
+    assert_eq!(exported(&override_exporter).len(), 1);
+}
+
+#[test]
 fn emit_attaches_the_links_it_is_given() {
     let (exporter, provider) = exporter_and_provider();
     let emitter = emitter(provider.tracer("span-emission"), Vec::new(), None);
@@ -778,7 +815,6 @@ fn emit_attaches_the_links_it_is_given() {
 
 #[test]
 fn an_invalid_link_is_dropped() {
-    use opentelemetry::trace::Tracer as _;
     let (exporter, provider) = exporter_and_provider();
     let tracer = provider.tracer("span-emission");
     let invalid = Link::with_context(SpanContext::NONE);

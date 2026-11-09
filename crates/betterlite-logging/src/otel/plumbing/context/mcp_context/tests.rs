@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use opentelemetry::Context;
 use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::{
     SpanContext, SpanId, TraceContextExt as _, TraceFlags, TraceId, TraceState,
@@ -123,6 +124,17 @@ fn a_carrier_that_does_not_extract_produces_no_link(#[case] traceparent: &str) {
     let trace = RequestTraceContext::default();
     let client = carrier(&[("traceparent", traceparent)]);
     let (_context, links) = resolve_mcp_span_context(&trace, Some(&client));
+    assert!(links.is_empty());
+}
+
+#[test]
+fn the_mcp_carrier_never_falls_back_to_the_ambient_span() {
+    let ambient = Context::new().with_remote_span_context(span_context(1, 2));
+    let _guard = ambient.attach();
+    let trace = RequestTraceContext::default();
+    let client = carrier(&[("traceparent", "00-not-a-traceparent")]);
+    let (context, links) = resolve_mcp_span_context(&trace, Some(&client));
+    assert!(!context.span().span_context().is_valid());
     assert!(links.is_empty());
 }
 

@@ -175,6 +175,19 @@ fn an_upstream_traceparent_of_the_same_trace_is_replaced() {
 }
 
 #[test]
+fn an_invalid_explicit_parent_falls_back_to_the_anchored_root() {
+    let injected = inject_trace_context(
+        &trace_with_root(7),
+        &BTreeMap::new(),
+        Some(&SpanContext::NONE),
+    );
+    assert_eq!(
+        injected.get("traceparent").map(String::as_str),
+        Some("00-00000000000000000000000000000007-000000000000002a-01")
+    );
+}
+
+#[test]
 fn inject_trace_context_falls_back_to_the_anchored_root() {
     let injected = inject_trace_context(&trace_with_root(7), &BTreeMap::new(), None);
     assert_eq!(
