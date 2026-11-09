@@ -1142,6 +1142,7 @@ dependencies = [
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
@@ -1154,6 +1155,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",

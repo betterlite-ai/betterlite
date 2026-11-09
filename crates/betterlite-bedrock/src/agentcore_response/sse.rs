@@ -102,7 +102,7 @@ fn content_delta(event: &IndexMap<String, Json>) -> Result<Option<String>, Agent
     };
     match delta_fields.get("text") {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) if text.is_empty() => Ok(None),
+        // concatenating an empty delta text changes nothing, so there is no separate empty branch
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(AgentCoreResponseError::DeltaTextNotString)

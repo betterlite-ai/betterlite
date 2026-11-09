@@ -159,6 +159,14 @@ fn sse_usage_event() {
     assert_eq!(found.input_tokens, 0);
     assert_eq!(found.output_tokens, 0);
     assert_eq!(found.total_tokens, 0);
+    let negative = parse_sse_stream(r#"data: {"event":{"metadata":{"usage":{"inputTokens":-1}}}}"#)
+        .unwrap_err();
+    assert!(matches!(
+        negative,
+        AgentCoreResponseError::UsageFieldNegative {
+            field: "inputTokens"
+        }
+    ));
     let last_wins = run(&sse_response(body), &[], "hello", (Some(1), Some(2)));
     assert_eq!(last_wins.usage, usage(0, 0, 0));
     let total_only = "data: {\"event\":{\"metadata\":{\"usage\":{\"totalTokens\":5}}}}";

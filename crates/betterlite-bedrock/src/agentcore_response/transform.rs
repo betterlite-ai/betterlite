@@ -155,15 +155,10 @@ where
 }
 
 fn content_type(headers: &[(String, String)]) -> Option<String> {
-    let mut joined = String::new();
-    for (name, value) in headers {
-        if !name.eq_ignore_ascii_case("content-type") {
-            continue;
-        }
-        if !joined.is_empty() {
-            joined.push_str(", ");
-        }
-        joined.push_str(value);
-    }
-    (!joined.is_empty()).then_some(joined)
+    let values: Vec<&str> = headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    (!values.is_empty()).then(|| values.join(", "))
 }
