@@ -6,6 +6,8 @@ use crate::image::error::ImageError;
 use crate::image::geometry::{resize_high_res, tiles_needed};
 use crate::image::settings::Settings;
 
+pub const DEFAULT_BASE_TOKENS: u64 = 85;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {

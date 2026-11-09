@@ -3,7 +3,7 @@ use rstest::rstest;
 use crate::image::geometry::tiles_needed;
 use crate::image::settings::Settings;
 
-use super::support::{DEFAULT, SMALL_LIMITS};
+use super::support::{DEFAULT, RECT_TILES, SMALL_LIMITS};
 
 #[rstest]
 #[case::exact_tile(512, 512, &DEFAULT, 1)]
@@ -15,6 +15,7 @@ use super::support::{DEFAULT, SMALL_LIMITS};
 #[case::empty(0, 0, &DEFAULT, 0)]
 #[case::max_width(0xFFFF_FFFF, 1, &DEFAULT, 0x0080_0000)]
 #[case::custom_tiles(400, 100, &SMALL_LIMITS, 16)]
+#[case::unequal_tiles(400, 100, &RECT_TILES, 8)]
 fn image_token_geometry_behavior_tests_behavior(
     #[case] resized_width: u32,
     #[case] resized_height: u32,

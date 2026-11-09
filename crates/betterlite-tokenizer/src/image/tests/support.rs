@@ -40,6 +40,16 @@ pub(crate) const SMALL_LIMITS: Settings = Settings {
     tile_height: 50,
 };
 
+pub(crate) const RECT_TILES: Settings = Settings {
+    default_width: 300,
+    default_height: 300,
+    default_token_count: 250,
+    max_short_side: 768,
+    max_long_side: 2000,
+    tile_width: 100,
+    tile_height: 50,
+};
+
 pub(crate) const ZERO_TILE: Settings = Settings {
     default_width: 300,
     default_height: 300,

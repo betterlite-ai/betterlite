@@ -1,7 +1,7 @@
 use crate::image::error::ImageError;
 use crate::image::settings::Settings;
 
-// Python divides in binary64; the integer quotient agrees at every limit at or below 2^21, which docs/deviations/B258.yaml records
+// Python truncates a binary64 quotient; integer division scores one pixel higher on some exact-integer aspects, recorded in docs/deviations/B258.yaml
 pub fn resize_high_res(
     width: u32,
     height: u32,
