@@ -1,5 +1,3 @@
-use std::num::FpCategory;
-
 use serde::de::{Error as _, IgnoredAny};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
@@ -55,10 +53,7 @@ pub fn decode_stream_line(line: &str) -> Result<StreamChunk, TritonError> {
         .unwrap_or(line);
     let parsed = match serde_json::from_str::<StreamLine>(stripped) {
         Ok(StreamLine::Object(ObjectOnly { inner })) => inner,
-        Ok(StreamLine::Null(()) | StreamLine::Flag(false)) => {
-            return Ok(StreamChunk::default());
-        }
-        Ok(StreamLine::Float(number)) if number.classify() == FpCategory::Zero => {
+        Ok(StreamLine::Null(()) | StreamLine::Flag(false) | StreamLine::Float(0.0)) => {
             return Ok(StreamChunk::default());
         }
         Ok(StreamLine::Text(text)) if text.is_empty() => return Ok(StreamChunk::default()),

@@ -106,11 +106,6 @@ def offline() -> Generator[None]:
         yield
 
 
-def default_max_tokens(env: Object) -> int:
-    value = env.get("DEFAULT_MAX_TOKENS_FOR_TRITON")
-    return 2000 if value is None else int(expect_text(value))
-
-
 def response(status: Json, body: Json) -> httpx.Response:
     return httpx.Response(
         cast("int", status),
@@ -190,7 +185,8 @@ def transform_requests(input_value: Object, transform: Callable[..., Object]) ->
 
 
 def generate_request(input_value: Object) -> Json:
-    default = default_max_tokens(expect_object(input_value.get("env") or {}))
+    configured = expect_object(input_value.get("env") or {}).get("DEFAULT_MAX_TOKENS_FOR_TRITON")
+    default = 2000 if configured is None else int(expect_text(configured))
     with offline(), patch.object(transformation, "DEFAULT_MAX_TOKENS_FOR_TRITON", default):
         return transform_requests(input_value, GENERATE_REQUEST)
 
