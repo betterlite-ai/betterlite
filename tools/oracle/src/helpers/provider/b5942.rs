@@ -130,6 +130,12 @@ fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
     encoded(&normalized)
 }
 
+fn generic_response(body: &Json, status: u16) -> crate::helpers::HelperResult {
+    let mut response = base_response();
+    handle_generic_response(body, status, &mut response).map_err(oci_failure)?;
+    encoded(&response)
+}
+
 fn stream_choices<T, F>(items: &[T], handle: F) -> crate::helpers::HelperResult
 where
     F: Fn(&T) -> Result<Choice, OciError>,
@@ -158,11 +164,7 @@ impl crate::helpers::Helper for Op {
             Input::CohereTools { tools } => {
                 encoded(&adapt_cohere_tools(tools).map_err(oci_failure)?)
             }
-            Input::GenericResponse { body, status } => {
-                let mut response = base_response();
-                handle_generic_response(body, *status, &mut response).map_err(oci_failure)?;
-                encoded(&response)
-            }
+            Input::GenericResponse { body, status } => generic_response(body, *status),
             Input::CohereResponse {
                 body,
                 model,
