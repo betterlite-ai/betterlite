@@ -9,11 +9,13 @@ use betterlite_openai::stream::chunk::{Choice, Delta, Function};
 use betterlite_prompts::arguments::json::Json;
 
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
-use crate::oci_chat_wire::parse::{parse_chunk, parse_response};
+use crate::oci_chat_wire::parse::parse;
 use crate::oci_chat_wire::types::cohere::{CohereChatResult, CohereStreamChunk, CohereToolCall};
 use crate::oci_common::OciError;
 
 const TOOL_INDEX: &str = "the OCI stream has more tool calls than a chunk can index";
+
+const CAST_PREFIX: &str = "Response cannot be casted to CohereChatResult";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CohereEmitted {
@@ -28,7 +30,7 @@ pub fn handle_cohere_response(
     status: u16,
     response: &mut ChatResponse,
 ) -> Result<(), OciError> {
-    let result: CohereChatResult = parse_response(body, "CohereChatResult", status)?;
+    let result: CohereChatResult = parse(body, status, CAST_PREFIX)?;
     model.clone_into(&mut response.model);
     response.created = created;
     let text = result.chat_response.text;
@@ -71,7 +73,8 @@ pub fn handle_cohere_stream_chunk(
     chunk: &Json,
     emitted: CohereEmitted,
 ) -> Result<Choice, OciError> {
-    let typed: CohereStreamChunk = parse_chunk(chunk, "CohereStreamChunk")?;
+    let typed: CohereStreamChunk =
+        parse(chunk, 500, "Chunk cannot be parsed as CohereStreamChunk")?;
     let restates_text = typed.chat_history.is_some() || typed.tool_calls.is_some();
     let restates_tool_calls = typed.chat_history.is_some();
     let text = if restates_text && emitted.text {

@@ -8,7 +8,7 @@ use betterlite_prompts::arguments::json::Json;
 use chrono::DateTime;
 
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
-use crate::oci_chat_wire::parse::{parse_chunk, parse_response};
+use crate::oci_chat_wire::parse::parse;
 use crate::oci_chat_wire::types::oci::{
     OciCompletionResponse, OciContentPart, OciMessage, OciResponseUsage, OciStreamChunk,
     OciToolCall,
@@ -33,7 +33,11 @@ pub fn handle_generic_response(
     status: u16,
     response: &mut ChatResponse,
 ) -> Result<(), OciError> {
-    let completion: OciCompletionResponse = parse_response(body, "OCICompletionResponse", status)?;
+    let completion: OciCompletionResponse = parse(
+        body,
+        status,
+        "Response cannot be casted to OCICompletionResponse",
+    )?;
     response.created = parse_time_created(&completion.chat_response.time_created, status)?;
     response.model = completion.model_id;
     let Some(response_choice) = completion.chat_response.choices.first() else {
@@ -58,7 +62,7 @@ pub fn handle_generic_response(
 
 pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> {
     fill_missing_tool_call_fields(&mut chunk);
-    let typed: OciStreamChunk = parse_chunk(&chunk, "OCIStreamChunk")?;
+    let typed: OciStreamChunk = parse(&chunk, 500, "Chunk cannot be parsed as OCIStreamChunk")?;
     let text = match &typed.message {
         Some(message) => stream_text(message.content.as_deref())?,
         None => None,
@@ -118,18 +122,22 @@ fn fill_message(target: &mut AssistantMessage, source: &OciMessage) {
     }
 }
 
+fn tool_call_id(position: usize, tool_call: &OciToolCall) -> String {
+    tool_call
+        .id
+        .clone()
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| {
+            synthesize_oci_tool_call_id(position, &tool_call.name, &tool_call.arguments)
+        })
+}
+
 fn adapt_tool_calls(tool_calls: &[OciToolCall]) -> Vec<ToolCall> {
     tool_calls
         .iter()
         .enumerate()
         .map(|(position, tool_call)| ToolCall {
-            id: tool_call
-                .id
-                .clone()
-                .filter(|id| !id.is_empty())
-                .unwrap_or_else(|| {
-                    synthesize_oci_tool_call_id(position, &tool_call.name, &tool_call.arguments)
-                }),
+            id: tool_call_id(position, tool_call),
             kind: String::from("function"),
             function: FunctionCall {
                 name: tool_call.name.clone(),
@@ -214,15 +222,7 @@ fn stream_tool_calls(tool_calls: &[OciToolCall]) -> Result<Vec<StreamToolCall>, 
         })?;
         adapted.push(StreamToolCall {
             index,
-            id: Some(
-                tool_call
-                    .id
-                    .clone()
-                    .filter(|id| !id.is_empty())
-                    .unwrap_or_else(|| {
-                        synthesize_oci_tool_call_id(position, &tool_call.name, &tool_call.arguments)
-                    }),
-            ),
+            id: Some(tool_call_id(position, tool_call)),
             kind: Some(String::from("function")),
             function: Some(Function {
                 name: Some(tool_call.name.clone()),

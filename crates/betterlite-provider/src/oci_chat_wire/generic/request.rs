@@ -96,30 +96,6 @@ fn content_message(role: OciRole, content: &MessageContent) -> Result<OciMessage
     })
 }
 
-fn content_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
-    match part.kind.as_str() {
-        "text" => text_part(part),
-        "image_url" => image_part(part),
-        other => Err(OciError {
-            status: 400,
-            message: format!("Content type `{other}` is not supported by OCI"),
-        }),
-    }
-}
-
-fn text_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
-    let Some(text) = part.fields.get("text").and_then(|value| value.as_str()) else {
-        return Err(OciError {
-            status: 400,
-            message: String::from(TEXT_FIELD),
-        });
-    };
-    Ok(OciContentPart::Text(OciTextPart {
-        kind: OciTextType::Text,
-        text: text.to_owned(),
-    }))
-}
-
 fn image_url(part: &ContentPart) -> Option<&str> {
     let image = part.fields.get("image_url")?;
     if let Some(url) = image.as_str() {
@@ -128,20 +104,40 @@ fn image_url(part: &ContentPart) -> Option<&str> {
     image.get("url")?.as_str()
 }
 
-fn image_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
-    let Some(url) = image_url(part) else {
-        return Err(OciError {
+fn content_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
+    match part.kind.as_str() {
+        "text" => {
+            let Some(text) = part.fields.get("text").and_then(|value| value.as_str()) else {
+                return Err(OciError {
+                    status: 400,
+                    message: String::from(TEXT_FIELD),
+                });
+            };
+            Ok(OciContentPart::Text(OciTextPart {
+                kind: OciTextType::Text,
+                text: text.to_owned(),
+            }))
+        }
+        "image_url" => {
+            let Some(url) = image_url(part) else {
+                return Err(OciError {
+                    status: 400,
+                    message: String::from(IMAGE_URL_FIELD),
+                });
+            };
+            Ok(OciContentPart::Image(OciImagePart {
+                kind: OciImageType::Image,
+                image_url: OciImageUrl {
+                    url: url.to_owned(),
+                    detail: None,
+                },
+            }))
+        }
+        other => Err(OciError {
             status: 400,
-            message: String::from(IMAGE_URL_FIELD),
-        });
-    };
-    Ok(OciContentPart::Image(OciImagePart {
-        kind: OciImageType::Image,
-        image_url: OciImageUrl {
-            url: url.to_owned(),
-            detail: None,
-        },
-    }))
+            message: format!("Content type `{other}` is not supported by OCI"),
+        }),
+    }
 }
 
 fn tool_call_message(tool_calls: &[ToolCall]) -> Result<OciMessage, OciError> {
