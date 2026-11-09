@@ -121,5 +121,5 @@ fn status(call: &StatusCall) -> Value {
         MongoDbError::Timeout { .. } => 408,
         MongoDbError::ServiceUnavailable { .. } => 503,
     };
-    json!({"status": code})
+    json!({"ok": true, "value": {"status": code}})
 }
