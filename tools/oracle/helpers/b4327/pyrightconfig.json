@@ -1,6 +1,1 @@
-{
-  "include": ["../b4327.py"],
-  "typeCheckingMode": "strict",
-  "reportAny": "error",
-  "reportMissingTypeStubs": "none"
-}
+{"include": ["../b4327.py"], "typeCheckingMode": "strict", "reportAny": "error", "reportMissingTypeStubs": "none"}

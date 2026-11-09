@@ -1,4 +1,4 @@
-use super::support::{harness, harness_without_server};
+use super::support::{harness, harness_without_server, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -9,7 +9,7 @@ fn entries() -> Vec<(String, &'static str)> {
 #[tokio::test]
 async fn sends_one_pipeline_of_namespaced_sets_in_order() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache_pipeline(&entries(), Some(30.0_f64))
@@ -29,7 +29,7 @@ async fn sends_one_pipeline_of_namespaced_sets_in_order() {
 #[tokio::test]
 async fn an_empty_list_sends_nothing_and_opens_no_client() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let empty: Vec<(String, &str)> = Vec::new();
     harness
         .values
@@ -49,7 +49,7 @@ async fn an_empty_list_sends_nothing_and_opens_no_client() {
 
 #[tokio::test]
 async fn returns_a_client_failure() {
-    let harness = harness_without_server(Some("ns"), Some(60));
+    let harness = harness_without_server(settings(Some("ns"), Some(60), None));
     let error = harness
         .values
         .async_set_cache_pipeline(&entries(), None)
@@ -67,7 +67,7 @@ async fn returns_a_client_failure() {
 async fn swallows_an_execute_failure() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache_pipeline(&entries(), None)

@@ -1,10 +1,10 @@
-use super::support::{harness, harness_without_server};
+use super::support::{harness, harness_without_server, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 #[tokio::test]
 async fn returns_a_client_failure_after_the_failure_hook() {
-    let harness = harness_without_server(Some("ns"), Some(60));
+    let harness = harness_without_server(settings(Some("ns"), Some(60), None));
     let error = harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)
@@ -24,7 +24,7 @@ async fn returns_a_client_failure_after_the_failure_hook() {
 async fn swallows_a_set_failure_through_the_gate() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let stored = harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)

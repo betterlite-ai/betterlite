@@ -1,11 +1,15 @@
-use super::support::{harness, harness_with_open_gate};
+use super::support::{TestGate, harness, harness_with_gate, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 #[tokio::test]
 async fn an_open_breaker_rejects_every_guarded_write_without_a_command() {
     let server = FakeServer::start().await;
-    let harness = harness_with_open_gate(&server, Some("ns"), Some(60), Some(2));
+    let harness = harness_with_gate(
+        &server,
+        settings(Some("ns"), Some(60), Some(2)),
+        TestGate::always(),
+    );
     let values = &harness.values;
     let single = values
         .async_set_cache(Some("alpha"), "cached", None, false)
@@ -41,7 +45,11 @@ async fn an_open_breaker_rejects_every_guarded_write_without_a_command() {
 #[tokio::test]
 async fn an_open_breaker_rejects_both_reads_without_a_command() {
     let server = FakeServer::start().await;
-    let harness = harness_with_open_gate(&server, Some("ns"), Some(60), None);
+    let harness = harness_with_gate(
+        &server,
+        settings(Some("ns"), Some(60), None),
+        TestGate::always(),
+    );
     let single = harness.values.get_cache("alpha");
     assert!(matches!(single, Err(RedisCacheValuesError::BreakerOpen(_))));
     let batch = harness.values.batch_get_cache(&[Some("alpha")]);
@@ -53,7 +61,7 @@ async fn an_open_breaker_rejects_both_reads_without_a_command() {
 #[tokio::test]
 async fn a_success_exits_the_gate_once() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)
@@ -69,7 +77,7 @@ async fn a_success_exits_the_gate_once() {
 async fn a_swallowed_failure_is_recorded_before_the_exit() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)

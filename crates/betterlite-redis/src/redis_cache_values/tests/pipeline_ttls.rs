@@ -1,4 +1,4 @@
-use super::support::{harness, harness_without_server};
+use super::support::{harness, harness_without_server, settings};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 fn mixed_entries() -> Vec<(String, &'static str, Option<f64>)> {
@@ -11,7 +11,7 @@ fn mixed_entries() -> Vec<(String, &'static str, Option<f64>)> {
 #[tokio::test]
 async fn gives_each_entry_its_own_ttl_and_uses_the_default_for_none() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache_pipeline_with_ttls(&mixed_entries())
@@ -30,7 +30,7 @@ async fn gives_each_entry_its_own_ttl_and_uses_the_default_for_none() {
 #[tokio::test]
 async fn sends_no_ex_when_neither_ttl_exists() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_pipeline_with_ttls(&mixed_entries())
@@ -44,7 +44,7 @@ async fn sends_no_ex_when_neither_ttl_exists() {
 #[tokio::test]
 async fn an_empty_list_sends_nothing() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let empty: Vec<(String, &str, Option<f64>)> = Vec::new();
     harness
         .values
@@ -57,7 +57,7 @@ async fn an_empty_list_sends_nothing() {
 
 #[tokio::test]
 async fn swallows_a_client_failure() {
-    let harness = harness_without_server(Some("ns"), Some(60));
+    let harness = harness_without_server(settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache_pipeline_with_ttls(&mixed_entries())
@@ -76,7 +76,7 @@ async fn swallows_a_client_failure() {
 async fn swallows_an_execute_failure() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache_pipeline_with_ttls(&mixed_entries())

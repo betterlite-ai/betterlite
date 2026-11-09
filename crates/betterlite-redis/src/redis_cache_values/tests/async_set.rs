@@ -1,4 +1,4 @@
-use super::support::harness;
+use super::support::{harness, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_client_reuse::breaker::BreakerOpen;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
@@ -6,7 +6,7 @@ use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 #[tokio::test]
 async fn sends_a_namespaced_set_with_the_json_text_and_the_default_ttl() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let stored = harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)
@@ -25,7 +25,7 @@ async fn sends_a_namespaced_set_with_the_json_text_and_the_default_ttl() {
 #[tokio::test]
 async fn adds_nx_only_when_it_is_asked_for() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     harness
         .values
         .async_set_cache(Some("alpha"), "cached", Some(5.9_f64), true)
@@ -42,7 +42,7 @@ async fn adds_nx_only_when_it_is_asked_for() {
 async fn a_nil_reply_means_the_key_already_existed() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Nil);
-    let harness = harness(&server, None, None, None);
+    let harness = harness(&server, settings(None, None, None));
     let stored = harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, true)
@@ -54,7 +54,7 @@ async fn a_nil_reply_means_the_key_already_existed() {
 #[tokio::test]
 async fn sends_a_zero_ttl_as_given() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, None, Some(60), None);
+    let harness = harness(&server, settings(None, Some(60), None));
     harness
         .values
         .async_set_cache(Some("alpha"), "cached", Some(0.0_f64), false)
@@ -69,7 +69,7 @@ async fn sends_a_zero_ttl_as_given() {
 #[tokio::test]
 async fn a_none_key_sends_nothing() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let stored = harness
         .values
         .async_set_cache(None, "cached", None, false)
@@ -89,7 +89,7 @@ async fn a_none_key_sends_nothing() {
 async fn an_unexpected_reply_is_still_a_stored_value() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Simple("LOOKS-ODD".to_owned()));
-    let harness = harness(&server, None, None, None);
+    let harness = harness(&server, settings(None, None, None));
     let stored = harness
         .values
         .async_set_cache(Some("alpha"), "cached", None, false)

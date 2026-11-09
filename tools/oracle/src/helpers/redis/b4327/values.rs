@@ -1,9 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_cache_values::{RedisCacheValues, RedisCacheValuesSettings};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
@@ -11,7 +13,10 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
-use betterlite_redis::redis_connection_settings::model::settings::RedisConnectionSettings;
+use betterlite_redis::redis_connection_settings::model::settings::{
+    ClientKind, RedisConnectionSettings,
+};
+use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use serde_json::{Map, Value, json};
 
@@ -49,7 +54,7 @@ pub(crate) fn build(
     flush_size: Option<usize>,
 ) -> Result<RedisCacheValues, Box<HelperError>> {
     let transport = RedisTransport::new(
-        connection_settings(server.addr),
+        connection_settings(server.addr)?,
         RedisCacheFamily::Standalone,
         Arc::new(LiveClientFactory::new(None)),
         Arc::new(RedisClientStore::new()),
@@ -68,43 +73,86 @@ pub(crate) fn build(
     ))
 }
 
-fn connection_settings(addr: SocketAddr) -> RedisConnectionSettings {
-    RedisConnectionSettings {
-        host: Some(addr.ip().to_string()),
-        port: Some(i64::from(addr.port())),
-        db: None,
-        username: None,
-        password: None,
-        url: None,
-        ssl: None,
-        socket_timeout: Some(2.0_f64),
-        socket_connect_timeout: Some(2.0_f64),
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
-        credential_provider: false,
-        credential_provider_settings: None,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        passthrough: BTreeMap::new(),
+fn connection_settings(addr: SocketAddr) -> Result<RedisConnectionSettings, Box<HelperError>> {
+    let overrides = serde_json::from_value(json!({
+        "host": addr.ip().to_string(),
+        "port": addr.port(),
+        "socket_timeout": 2.0_f64,
+        "socket_connect_timeout": 2.0_f64,
+    }))
+    .map_err(|error| helper_error("InvalidInput", error))?;
+    resolve_redis_kwargs(overrides, ClientKind::Async, &BTreeMap::new())
+        .map_err(|error| helper_error("RedisError", error))
+}
+
+type Outcome = Result<(), Box<HelperError>>;
+
+pub(crate) async fn run_write(call: &WriteCall, values: &RedisCacheValues) -> Outcome {
+    let step = write_plan(call)?;
+    step.execute(values)
+        .await
+        .map_err(|error| helper_error("RedisError", error))
+}
+
+enum WriteStep {
+    Single(Option<String>, Value, Option<f64>, bool),
+    Pipeline(Vec<(String, Value)>, Option<f64>),
+    PipelineTtls(Vec<(String, Value, Option<f64>)>),
+    Sadd(String, Vec<String>, Option<f64>),
+    Buffered(Vec<(String, Value)>),
+}
+
+impl WriteStep {
+    async fn execute(&self, values: &RedisCacheValues) -> Result<(), RedisCacheValuesError> {
+        match self {
+            Self::Single(key, value, ttl, nx) => values
+                .async_set_cache(key.as_deref(), value, *ttl, *nx)
+                .await
+                .map(|_stored| ()),
+            Self::Pipeline(entries, ttl) => values.async_set_cache_pipeline(entries, *ttl).await,
+            Self::PipelineTtls(entries) => values.async_set_cache_pipeline_with_ttls(entries).await,
+            Self::Sadd(key, members, ttl) => values.async_set_cache_sadd(key, members, *ttl).await,
+            Self::Buffered(entries) => {
+                for (key, value) in entries {
+                    values.batch_cache_write(key, value).await?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
-pub(crate) async fn run_write(
-    call: &WriteCall,
-    values: &RedisCacheValues,
-) -> Result<(), Box<HelperError>> {
+fn write_plan(call: &WriteCall) -> Result<WriteStep, Box<HelperError>> {
     match call.operation {
-        WriteOperation::AsyncSetCache => write_one(call, values).await,
-        WriteOperation::AsyncSetCachePipeline => write_pipeline(call, values).await,
-        WriteOperation::AsyncSetCachePipelineWithTtls => {
-            write_pipeline_with_ttls(call, values).await
+        WriteOperation::AsyncSetCache => {
+            let entry = first_entry(call)?;
+            Ok(WriteStep::Single(
+                entry.key.clone(),
+                entry.value.clone(),
+                entry.ttl,
+                call.nx,
+            ))
         }
-        WriteOperation::AsyncSetCacheSadd => write_set(call, values).await,
-        WriteOperation::BatchCacheWrite => write_buffered(call, values).await,
+        WriteOperation::AsyncSetCachePipeline => Ok(WriteStep::Pipeline(
+            keyed_entries(call)?,
+            call.entries.first().and_then(|entry| entry.ttl),
+        )),
+        WriteOperation::AsyncSetCachePipelineWithTtls => {
+            let mut entries = Vec::with_capacity(call.entries.len());
+            for entry in &call.entries {
+                entries.push((required_key(entry)?, entry.value.clone(), entry.ttl));
+            }
+            Ok(WriteStep::PipelineTtls(entries))
+        }
+        WriteOperation::AsyncSetCacheSadd => {
+            let entry = first_entry(call)?;
+            Ok(WriteStep::Sadd(
+                required_key(entry)?,
+                string_array(&entry.value)?,
+                entry.ttl,
+            ))
+        }
+        WriteOperation::BatchCacheWrite => Ok(WriteStep::Buffered(keyed_entries(call)?)),
     }
 }
 
@@ -115,11 +163,9 @@ pub(crate) fn run_read(
 ) -> Result<Value, Box<HelperError>> {
     match call.operation {
         ReadOperation::GetCache => {
-            let key = call
-                .keys
-                .first()
-                .and_then(Option::as_deref)
-                .ok_or_else(|| helper_error("InvalidInput", "get_cache needs a key"))?;
+            let Some(key) = call.keys.first().and_then(Option::as_deref) else {
+                return Err(helper_error("InvalidInput", "get_cache needs a key"));
+            };
             let cached = values
                 .get_cache(key)
                 .map_err(|error| helper_error("RedisError", error))?;
@@ -141,78 +187,18 @@ pub(crate) fn run_read(
     }
 }
 
-async fn write_one(call: &WriteCall, values: &RedisCacheValues) -> Result<(), Box<HelperError>> {
-    let entry = call
-        .entries
+fn first_entry(call: &WriteCall) -> Result<&EntryInput, Box<HelperError>> {
+    call.entries
         .first()
-        .ok_or_else(|| helper_error("InvalidInput", "async_set_cache needs an entry"))?;
-    let key = entry.key.as_deref();
-    values
-        .async_set_cache(key, &entry.value, entry.ttl, call.nx)
-        .await
-        .map_err(|error| helper_error("RedisError", error))?;
-    Ok(())
+        .ok_or_else(|| helper_error("InvalidInput", "this operation needs an entry"))
 }
 
-async fn write_pipeline(
-    call: &WriteCall,
-    values: &RedisCacheValues,
-) -> Result<(), Box<HelperError>> {
-    let list = entry_pairs(call)?;
-    let ttl = call.entries.first().and_then(|entry| entry.ttl);
-    values
-        .async_set_cache_pipeline(&list, ttl)
-        .await
-        .map_err(|error| helper_error("RedisError", error))
-}
-
-async fn write_pipeline_with_ttls(
-    call: &WriteCall,
-    values: &RedisCacheValues,
-) -> Result<(), Box<HelperError>> {
-    let mut list = Vec::with_capacity(call.entries.len());
+fn keyed_entries(call: &WriteCall) -> Result<Vec<(String, Value)>, Box<HelperError>> {
+    let mut entries = Vec::with_capacity(call.entries.len());
     for entry in &call.entries {
-        list.push((required_key(entry)?, entry.value.clone(), entry.ttl));
+        entries.push((required_key(entry)?, entry.value.clone()));
     }
-    values
-        .async_set_cache_pipeline_with_ttls(&list)
-        .await
-        .map_err(|error| helper_error("RedisError", error))
-}
-
-async fn write_set(call: &WriteCall, values: &RedisCacheValues) -> Result<(), Box<HelperError>> {
-    let entry = call
-        .entries
-        .first()
-        .ok_or_else(|| helper_error("InvalidInput", "async_set_cache_sadd needs an entry"))?;
-    let key = required_key(entry)?;
-    let members = string_array(&entry.value)?;
-    values
-        .async_set_cache_sadd(&key, &members, entry.ttl)
-        .await
-        .map_err(|error| helper_error("RedisError", error))
-}
-
-async fn write_buffered(
-    call: &WriteCall,
-    values: &RedisCacheValues,
-) -> Result<(), Box<HelperError>> {
-    for entry in &call.entries {
-        let key = required_key(entry)?;
-        values
-            .batch_cache_write(&key, &entry.value)
-            .await
-            .map_err(|error| helper_error("RedisError", error))?;
-    }
-    Ok(())
-}
-
-fn entry_pairs(call: &WriteCall) -> Result<Vec<(String, Value)>, Box<HelperError>> {
-    let mut list = Vec::with_capacity(call.entries.len());
-    for entry in &call.entries {
-        list.push((required_key(entry)?, entry.value.clone()));
-    }
-    Ok(list)
+    Ok(entries)
 }
 
 fn required_key(entry: &EntryInput) -> Result<String, Box<HelperError>> {
@@ -243,11 +229,11 @@ fn string_array(value: &Value) -> Result<Vec<String>, Box<HelperError>> {
 }
 
 fn keys_sent(server: &FakeServer, name: &str) -> Vec<String> {
-    server
+    let sent = server
         .commands()
         .into_iter()
-        .find(|command| command.first().is_some_and(|first| first.as_str() == name))
-        .map_or_else(Vec::new, |command| command.into_iter().skip(1).collect())
+        .find(|command| command.first().is_some_and(|first| first.as_str() == name));
+    sent.map_or_else(Vec::new, |command| command.into_iter().skip(1).collect())
 }
 
 fn cached_json(value: &CachedValue) -> Value {

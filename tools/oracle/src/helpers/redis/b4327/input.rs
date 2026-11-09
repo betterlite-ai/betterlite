@@ -12,11 +12,8 @@ pub(crate) enum Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct WriteCall {
     pub(crate) operation: WriteOperation,
-    #[serde(default)]
     pub(crate) namespace: Option<String>,
-    #[serde(default)]
     pub(crate) default_ttl: Option<i64>,
-    #[serde(default)]
     pub(crate) flush_size: Option<usize>,
     #[serde(default)]
     pub(crate) entries: Vec<EntryInput>,
@@ -37,11 +34,9 @@ pub(crate) enum WriteOperation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EntryInput {
-    #[serde(default)]
     pub(crate) key: Option<String>,
     #[serde(default)]
     pub(crate) value: Value,
-    #[serde(default)]
     pub(crate) ttl: Option<f64>,
 }
 
@@ -49,7 +44,6 @@ pub(crate) struct EntryInput {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReadCall {
     pub(crate) operation: ReadOperation,
-    #[serde(default)]
     pub(crate) namespace: Option<String>,
     #[serde(default)]
     pub(crate) keys: Vec<Option<String>>,

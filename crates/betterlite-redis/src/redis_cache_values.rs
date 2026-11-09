@@ -13,15 +13,15 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use self::buffer::{buffered_entries, buffered_reaches_flush, remove_sent, serialize_entries};
+use self::buffer::{buffered_reaches_flush, remove_sent, serialize_entries};
 use self::error::RedisCacheValuesError;
-use self::events::{event, finish_outcome};
-use self::naming::apply_namespace;
-use self::reads::batch_values;
-use self::writes::{
-    execute_pipeline, one_ttl_commands, per_entry_commands, set_command, write_sadd,
+use self::events::{
+    async_client_or_fail, enter_unless_empty, event, finish_get, finish_outcome, recorded_client,
 };
-use crate::cache_primitives::decode::{CachedValue, decode_cached_value};
+use self::naming::{apply_namespace, namespaced_keys};
+use self::reads::{batch_values, read_value};
+use self::writes::{send_shared_pipeline, send_ttls_pipeline, set_command, write_sadd};
+use crate::cache_primitives::decode::CachedValue;
 use crate::redis_client_reuse::breaker_gate::BreakerGate;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::transport::RedisTransport;
@@ -66,10 +66,10 @@ impl RedisCacheValues {
 
     #[must_use]
     pub fn buffered_count(&self) -> usize {
-        match self.buffer.lock() {
-            Ok(buffer) => buffer.len(),
-            Err(poisoned) => poisoned.into_inner().len(),
-        }
+        self.buffer.lock().map_or_else(
+            |poisoned| poisoned.into_inner().len(),
+            |buffer| buffer.len(),
+        )
     }
 
     pub fn set_cache<V>(&self, key: &str, value: &V, ttl: Option<f64>)
@@ -105,15 +105,7 @@ impl RedisCacheValues {
             return Ok(None);
         };
         let namespaced = apply_namespace(self, provided);
-        let client = match self.transport.async_client().await {
-            Ok(client) => client,
-            Err(source) => {
-                let failed = event("async_set_cache", started, None);
-                self.hooks.failure(&failed, &source);
-                self.gate.record_failure(&source);
-                return Err(RedisCacheValuesError::ClientReuse(source));
-            }
-        };
+        let client = async_client_or_fail(self, "async_set_cache", started).await?;
         let outcome = match set_command(self.default_ttl, &namespaced, value, ttl, nx) {
             Ok(command) => match client.query::<Option<String>>(&command).await {
                 Ok(reply) => Ok(reply.map(|_stored| true)),
@@ -133,23 +125,14 @@ impl RedisCacheValues {
     where
         V: Serialize + Sync,
     {
-        let started = Instant::now();
-        let admission = self.gate.enter("async_set_cache_pipeline")?;
-        if cache_list.is_empty() {
-            self.gate.exit(admission);
+        let Some(admission) =
+            enter_unless_empty(self, "async_set_cache_pipeline", cache_list.is_empty())?
+        else {
             return Ok(());
-        }
-        let client = match self.transport.async_client().await {
-            Ok(client) => client,
-            Err(source) => {
-                self.gate.record_failure(&source);
-                return Err(RedisCacheValuesError::ClientReuse(source));
-            }
         };
-        let outcome = match one_ttl_commands(self, cache_list, ttl) {
-            Ok(commands) => execute_pipeline(&client, commands).await,
-            Err(error) => Err(error),
-        };
+        let client = recorded_client(self).await?;
+        let started = Instant::now();
+        let outcome = send_shared_pipeline(self, &client, cache_list, ttl).await;
         let finished = event("async_set_cache_pipeline", started, None);
         let _stored = finish_outcome(self, &finished, admission, outcome);
         Ok(())
@@ -163,22 +146,31 @@ impl RedisCacheValues {
     where
         V: Serialize + Sync,
     {
-        let started = Instant::now();
         let admission = self.gate.enter("async_set_cache_pipeline_with_ttls")?;
         if cache_list.is_empty() {
             self.gate.exit(admission);
             return Ok(());
         }
-        let outcome = match per_entry_commands(self, cache_list) {
-            Ok(commands) => match self.transport.async_client().await {
-                Ok(client) => execute_pipeline(&client, commands).await,
-                Err(source) => Err(RedisCacheValuesError::ClientReuse(source)),
-            },
-            Err(error) => Err(error),
-        };
-        let finished = event("async_set_cache_pipeline_with_ttls", started, None);
-        let _stored = finish_outcome(self, &finished, admission, outcome);
-        Ok(())
+        let started = Instant::now();
+        let commands = self.prepare_ttl_commands(cache_list)?;
+        send_ttls_pipeline(self, commands, admission, started).await
+    }
+
+    fn prepare_ttl_commands<V>(
+        &self,
+        cache_list: &[(String, V, Option<f64>)],
+    ) -> Result<Vec<redis::Cmd>, RedisCacheValuesError>
+    where
+        V: Serialize,
+    {
+        cache_list
+            .iter()
+            .map(|(key, value, ttl)| {
+                let namespaced = apply_namespace(self, key);
+                set_command(self.default_ttl, &namespaced, value, *ttl, false)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .inspect_err(|error| self.gate.record_failure(error))
     }
 
     pub async fn async_set_cache_sadd(
@@ -189,15 +181,7 @@ impl RedisCacheValues {
     ) -> Result<(), RedisCacheValuesError> {
         let started = Instant::now();
         let admission = self.gate.enter("async_set_cache_sadd")?;
-        let client = match self.transport.async_client().await {
-            Ok(client) => client,
-            Err(source) => {
-                let failed = event("async_set_cache_sadd", started, None);
-                self.hooks.failure(&failed, &source);
-                self.gate.record_failure(&source);
-                return Err(RedisCacheValuesError::ClientReuse(source));
-            }
-        };
+        let client = async_client_or_fail(self, "async_set_cache_sadd", started).await?;
         let namespaced = apply_namespace(self, key);
         let outcome = write_sadd(&client, &namespaced, value, ttl, self.default_ttl).await;
         let finished = event("async_set_cache_sadd", started, None);
@@ -233,7 +217,10 @@ impl RedisCacheValues {
     }
 
     pub async fn flush_cache_buffer(&self) -> Result<(), RedisCacheValuesError> {
-        let entries = buffered_entries(self);
+        let entries = match self.buffer.lock() {
+            Ok(buffer) => buffer.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
         let raw = serialize_entries(&entries)?;
         self.async_set_cache_pipeline(&raw, None).await?;
         remove_sent(self, raw.len());
@@ -244,33 +231,9 @@ impl RedisCacheValues {
         let started = Instant::now();
         let admission = self.gate.enter("get_cache")?;
         let namespaced = apply_namespace(self, key);
-        let mut command = redis::cmd("GET");
-        command.arg(&namespaced);
-        let reply = match self
-            .transport
-            .sync_client
-            .query::<Option<Vec<u8>>>(&command)
-        {
-            Ok(reply) => reply,
-            Err(source) => {
-                self.gate.swallowed(&admission, &source);
-                self.gate.exit(admission);
-                return Ok(None);
-            }
-        };
+        let reply = read_value(&self.transport, &namespaced);
         let finished = event("get_cache", started, None);
-        self.hooks.success(&finished);
-        match decode_cached_value(reply.as_deref()) {
-            Ok(value) => {
-                self.gate.exit(admission);
-                Ok(value)
-            }
-            Err(error) => {
-                self.gate.swallowed(&admission, &error);
-                self.gate.exit(admission);
-                Ok(None)
-            }
-        }
+        Ok(finish_get(self, &finished, admission, reply))
     }
 
     pub fn batch_get_cache(
@@ -280,10 +243,7 @@ impl RedisCacheValues {
         let originals: Vec<&str> = key_list.iter().filter_map(|key| *key).collect();
         let started = Instant::now();
         let admission = self.gate.enter("batch_get_cache")?;
-        let namespaced: Vec<String> = originals
-            .iter()
-            .map(|key| apply_namespace(self, key))
-            .collect();
+        let namespaced = namespaced_keys(self, &originals);
         let finished = event("batch_get_cache", started, None);
         let replies = match self.transport.mget(&namespaced) {
             Ok(replies) => replies,

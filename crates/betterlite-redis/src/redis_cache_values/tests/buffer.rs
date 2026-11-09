@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use tokio::time;
 
-use super::support::{TestGate, harness, harness_with_gate};
+use super::support::{TestGate, harness, harness_with_gate, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 #[tokio::test]
 async fn buffers_namespaced_entries_below_the_flush_size() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), Some(3));
+    let harness = harness(&server, settings(Some("ns"), Some(60), Some(3)));
     harness
         .values
         .batch_cache_write("alpha", "first")
@@ -38,7 +38,7 @@ async fn buffers_namespaced_entries_below_the_flush_size() {
 #[tokio::test]
 async fn flushes_at_the_flush_size_with_the_default_ttl() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), Some(2));
+    let harness = harness(&server, settings(Some("ns"), Some(60), Some(2)));
     harness
         .values
         .batch_cache_write("alpha", "first")
@@ -59,7 +59,7 @@ async fn flushes_at_the_flush_size_with_the_default_ttl() {
 #[tokio::test]
 async fn keeps_entries_appended_during_the_flush() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"), Some(60), Some(10));
+    let harness = harness(&server, settings(Some("ns"), Some(60), Some(10)));
     harness
         .values
         .batch_cache_write("alpha", "first")
@@ -98,9 +98,7 @@ async fn keeps_the_buffer_when_the_flush_returns_an_error() {
     let server = FakeServer::start().await;
     let harness = harness_with_gate(
         &server,
-        Some("ns"),
-        Some(60),
-        Some(1),
+        settings(Some("ns"), Some(60), Some(1)),
         TestGate::named("async_set_cache_pipeline"),
     );
     let error = harness
@@ -117,7 +115,7 @@ async fn keeps_the_buffer_when_the_flush_returns_an_error() {
 async fn drops_the_entries_when_the_flush_swallows_an_error() {
     let server = FakeServer::start().await;
     server.script("SET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), Some(1));
+    let harness = harness(&server, settings(Some("ns"), Some(60), Some(1)));
     harness
         .values
         .batch_cache_write("alpha", "first")

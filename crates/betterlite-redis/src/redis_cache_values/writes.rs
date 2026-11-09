@@ -1,11 +1,15 @@
+use std::time::Instant;
+
 use redis::Cmd;
 use serde::Serialize;
 
 use super::RedisCacheValues;
 use super::error::RedisCacheValuesError;
+use super::events::{event, finish_outcome};
 use super::naming::apply_namespace;
 use super::ttl::resolve_ttl;
 use crate::cache_primitives::protocol::AsyncRedisCommands as _;
+use crate::redis_client_reuse::breaker::BreakerAdmission;
 use crate::redis_live_client::LiveAsyncClient;
 
 pub(crate) fn set_command<V>(
@@ -29,39 +33,6 @@ where
         command.arg("EX").arg(expiry);
     }
     Ok(command)
-}
-
-pub(crate) fn one_ttl_commands<V>(
-    values: &RedisCacheValues,
-    cache_list: &[(String, V)],
-    ttl: Option<f64>,
-) -> Result<Vec<Cmd>, RedisCacheValuesError>
-where
-    V: Serialize,
-{
-    cache_list
-        .iter()
-        .map(|(key, value)| {
-            let namespaced = apply_namespace(values, key);
-            set_command(values.default_ttl, &namespaced, value, ttl, false)
-        })
-        .collect()
-}
-
-pub(crate) fn per_entry_commands<V>(
-    values: &RedisCacheValues,
-    cache_list: &[(String, V, Option<f64>)],
-) -> Result<Vec<Cmd>, RedisCacheValuesError>
-where
-    V: Serialize,
-{
-    cache_list
-        .iter()
-        .map(|(key, value, ttl)| {
-            let namespaced = apply_namespace(values, key);
-            set_command(values.default_ttl, &namespaced, value, *ttl, false)
-        })
-        .collect()
 }
 
 pub(crate) async fn execute_pipeline(
@@ -96,4 +67,41 @@ pub(crate) async fn write_sadd(
         let _expired: bool = client.query(&expire).await?;
     }
     Ok(())
+}
+
+pub(crate) async fn send_ttls_pipeline(
+    values: &RedisCacheValues,
+    commands: Vec<Cmd>,
+    admission: BreakerAdmission,
+    started: Instant,
+) -> Result<(), RedisCacheValuesError> {
+    let outcome = match values.transport.async_client().await {
+        Ok(client) => execute_pipeline(&client, commands).await,
+        Err(source) => Err(RedisCacheValuesError::ClientReuse(source)),
+    };
+    let finished = event("async_set_cache_pipeline_with_ttls", started, None);
+    let _stored = finish_outcome(values, &finished, admission, outcome);
+    Ok(())
+}
+
+pub(crate) async fn send_shared_pipeline<V>(
+    values: &RedisCacheValues,
+    client: &LiveAsyncClient,
+    cache_list: &[(String, V)],
+    ttl: Option<f64>,
+) -> Result<(), RedisCacheValuesError>
+where
+    V: Serialize + Sync,
+{
+    let built: Result<Vec<Cmd>, RedisCacheValuesError> = cache_list
+        .iter()
+        .map(|(key, value)| {
+            let namespaced = apply_namespace(values, key);
+            set_command(values.default_ttl, &namespaced, value, ttl, false)
+        })
+        .collect();
+    match built {
+        Ok(commands) => execute_pipeline(client, commands).await,
+        Err(error) => Err(error),
+    }
 }

@@ -12,13 +12,6 @@ pub(crate) fn buffered_reaches_flush(values: &RedisCacheValues, key: String, tex
     buffer.len() >= values.flush_size
 }
 
-pub(crate) fn buffered_entries(values: &RedisCacheValues) -> Vec<(String, String)> {
-    match values.buffer.lock() {
-        Ok(buffer) => buffer.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
-    }
-}
-
 pub(crate) fn serialize_entries(
     entries: &[(String, String)],
 ) -> Result<Vec<(String, Box<RawValue>)>, RedisCacheValuesError> {

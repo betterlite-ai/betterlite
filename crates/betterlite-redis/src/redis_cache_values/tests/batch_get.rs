@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use super::support::harness;
+use super::support::{harness, settings};
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -20,7 +20,7 @@ async fn reads_the_namespaced_keys_with_one_mget_and_maps_the_original_keys() {
         "MGET",
         Reply::Array(vec![Reply::Bulk("{\"answer\": 1}".to_owned()), Reply::Nil]),
     );
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness
         .values
         .batch_get_cache(&[Some("alpha"), Some("missing")])
@@ -46,7 +46,7 @@ async fn drops_none_keys() {
         "MGET",
         Reply::Array(vec![Reply::Nil, Reply::Bulk("2".to_owned())]),
     );
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness
         .values
         .batch_get_cache(&[Some("alpha"), None, Some("beta")])
@@ -70,7 +70,7 @@ async fn a_duplicate_key_keeps_the_last_value() {
             Reply::Bulk("2".to_owned()),
         ]),
     );
-    let harness = harness(&server, None, None, None);
+    let harness = harness(&server, settings(None, None, None));
     let cached = harness
         .values
         .batch_get_cache(&[Some("alpha"), Some("alpha")])
@@ -88,7 +88,7 @@ async fn exits_the_gate_before_decoding_a_bad_reply() {
         "MGET",
         Reply::Array(vec![Reply::Bulk("not a cached value".to_owned())]),
     );
-    let harness = harness(&server, None, None, None);
+    let harness = harness(&server, settings(None, None, None));
     let cached = harness
         .values
         .batch_get_cache(&[Some("alpha")])
@@ -108,7 +108,7 @@ async fn exits_the_gate_before_decoding_a_bad_reply() {
 async fn a_read_error_gives_an_empty_map() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, None, None, None);
+    let harness = harness(&server, settings(None, None, None));
     let cached = harness
         .values
         .batch_get_cache(&[Some("alpha"), Some("beta")])

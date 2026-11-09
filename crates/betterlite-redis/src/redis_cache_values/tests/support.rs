@@ -181,7 +181,23 @@ pub(crate) fn unreachable_transport() -> Arc<RedisTransport> {
     transport_to("127.0.0.1", 1)
 }
 
-fn harness_from(
+pub(crate) fn harness(server: &FakeServer, settings: RedisCacheValuesSettings) -> Harness {
+    harness_with_gate(server, settings, TestGate::never())
+}
+
+pub(crate) fn harness_with_gate(
+    server: &FakeServer,
+    settings: RedisCacheValuesSettings,
+    gate: Arc<TestGate>,
+) -> Harness {
+    build(settings, transport_to(&server.host(), server.port()), gate)
+}
+
+pub(crate) fn harness_without_server(settings: RedisCacheValuesSettings) -> Harness {
+    build(settings, unreachable_transport(), TestGate::never())
+}
+
+fn build(
     settings: RedisCacheValuesSettings,
     transport: Arc<RedisTransport>,
     gate: Arc<TestGate>,
@@ -194,54 +210,4 @@ fn harness_from(
         gate: gate_log,
         hooks: hook_log,
     }
-}
-
-pub(crate) fn harness(
-    server: &FakeServer,
-    namespace: Option<&str>,
-    default_ttl: Option<i64>,
-    flush_size: Option<usize>,
-) -> Harness {
-    harness_from(
-        settings(namespace, default_ttl, flush_size),
-        transport_to(&server.host(), server.port()),
-        TestGate::never(),
-    )
-}
-
-pub(crate) fn harness_with_gate(
-    server: &FakeServer,
-    namespace: Option<&str>,
-    default_ttl: Option<i64>,
-    flush_size: Option<usize>,
-    gate: Arc<TestGate>,
-) -> Harness {
-    harness_from(
-        settings(namespace, default_ttl, flush_size),
-        transport_to(&server.host(), server.port()),
-        gate,
-    )
-}
-
-pub(crate) fn harness_without_server(namespace: Option<&str>, default_ttl: Option<i64>) -> Harness {
-    harness_from(
-        settings(namespace, default_ttl, None),
-        unreachable_transport(),
-        TestGate::never(),
-    )
-}
-
-pub(crate) fn harness_with_open_gate(
-    server: &FakeServer,
-    namespace: Option<&str>,
-    default_ttl: Option<i64>,
-    flush_size: Option<usize>,
-) -> Harness {
-    harness_with_gate(
-        server,
-        namespace,
-        default_ttl,
-        flush_size,
-        TestGate::always(),
-    )
 }

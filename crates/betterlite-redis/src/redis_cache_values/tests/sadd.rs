@@ -1,4 +1,4 @@
-use super::support::{harness, harness_without_server};
+use super::support::{harness, harness_without_server, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -11,7 +11,7 @@ async fn sends_sadd_then_expire_when_a_ttl_resolves() {
     let server = FakeServer::start().await;
     server.script("SADD", Reply::Int(2));
     server.script("EXPIRE", Reply::Int(1));
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_sadd("members", &members(), Some(45.0_f64))
@@ -35,7 +35,7 @@ async fn sends_sadd_then_expire_when_a_ttl_resolves() {
 async fn sends_only_sadd_when_no_ttl_resolves() {
     let server = FakeServer::start().await;
     server.script("SADD", Reply::Int(2));
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_sadd("members", &members(), None)
@@ -50,7 +50,7 @@ async fn uses_the_default_ttl_when_the_entry_has_none() {
     let server = FakeServer::start().await;
     server.script("SADD", Reply::Int(2));
     server.script("EXPIRE", Reply::Int(1));
-    let harness = harness(&server, None, Some(60), None);
+    let harness = harness(&server, settings(None, Some(60), None));
     harness
         .values
         .async_set_cache_sadd("members", &members(), None)
@@ -64,7 +64,7 @@ async fn uses_the_default_ttl_when_the_entry_has_none() {
 
 #[tokio::test]
 async fn returns_a_client_failure() {
-    let harness = harness_without_server(Some("ns"), None);
+    let harness = harness_without_server(settings(Some("ns"), None, None));
     let error = harness
         .values
         .async_set_cache_sadd("members", &members(), None)
@@ -79,7 +79,7 @@ async fn returns_a_client_failure() {
 async fn swallows_a_sadd_failure() {
     let server = FakeServer::start().await;
     server.script("SADD", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_sadd("members", &members(), Some(45.0_f64))
@@ -105,7 +105,7 @@ async fn swallows_an_expire_failure_after_the_set_is_written() {
     let server = FakeServer::start().await;
     server.script("SADD", Reply::Int(2));
     server.script("EXPIRE", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_sadd("members", &members(), Some(45.0_f64))
@@ -129,7 +129,7 @@ async fn sends_sadd_with_no_members_and_swallows_the_server_error() {
         "SADD",
         Reply::Error("ERR wrong number of arguments".to_owned()),
     );
-    let harness = harness(&server, Some("ns"), None, None);
+    let harness = harness(&server, settings(Some("ns"), None, None));
     harness
         .values
         .async_set_cache_sadd("members", &[], Some(45.0_f64))

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::support::harness;
+use super::support::{harness, settings};
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -15,7 +15,7 @@ fn answer() -> CachedValue {
 async fn decodes_a_json_reply() {
     let server = FakeServer::start().await;
     server.script("GET", Reply::Bulk("{\"answer\": 42}".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness.values.get_cache("alpha").expect("the read");
     assert_eq!(cached, Some(answer()));
     assert_eq!(server.commands_named("GET")[0].args, ["GET", "ns:alpha"]);
@@ -29,7 +29,7 @@ async fn decodes_a_json_reply() {
 async fn decodes_a_python_literal_reply() {
     let server = FakeServer::start().await;
     server.script("GET", Reply::Bulk("{'answer': 42}".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness.values.get_cache("alpha").expect("the read");
     assert_eq!(cached, Some(answer()));
 }
@@ -38,7 +38,7 @@ async fn decodes_a_python_literal_reply() {
 async fn a_miss_returns_none() {
     let server = FakeServer::start().await;
     server.script("GET", Reply::Nil);
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness.values.get_cache("alpha").expect("the read");
     assert_eq!(cached, None);
     assert_eq!(
@@ -51,7 +51,7 @@ async fn a_miss_returns_none() {
 async fn an_undecodable_reply_is_swallowed() {
     let server = FakeServer::start().await;
     server.script("GET", Reply::Bulk("not a cached value".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness.values.get_cache("alpha").expect("the read");
     assert_eq!(cached, None);
     let gate = harness.gate.entries();
@@ -68,7 +68,7 @@ async fn an_undecodable_reply_is_swallowed() {
 async fn a_read_error_is_swallowed() {
     let server = FakeServer::start().await;
     server.script("GET", Reply::Error("ERR broken".to_owned()));
-    let harness = harness(&server, Some("ns"), Some(60), None);
+    let harness = harness(&server, settings(Some("ns"), Some(60), None));
     let cached = harness.values.get_cache("alpha").expect("the read");
     assert_eq!(cached, None);
     let gate = harness.gate.entries();
