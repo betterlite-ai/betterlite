@@ -278,8 +278,9 @@ fn list_service_key_values_are_skipped() {
 
 #[test]
 fn the_service_key_resource_group_is_read_at_its_bare_name() {
-    let service_key =
-        json(r#"{"credentials": {"resource_group": "nested-rg"}, "resource_group": "bare-rg"}"#);
+    let service_key = json(
+        r#"{"credentials": {"clientid": "c", "resource_group": "nested-rg"}, "resource_group": "bare-rg"}"#,
+    );
     let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.resource_group, "bare-rg");
