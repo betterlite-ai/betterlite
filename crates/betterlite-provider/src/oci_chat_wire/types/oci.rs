@@ -41,7 +41,6 @@ pub enum OciFunctionType {
 pub enum OciContentPart {
     Text(OciTextPart),
     Image(OciImagePart),
-    Other(OciOtherPart),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -71,12 +70,6 @@ pub enum OciImageType {
     #[default]
     #[serde(rename = "IMAGE")]
     Image,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct OciOtherPart {
-    #[serde(rename = "type")]
-    pub kind: String,
 }
 
 #[skip_serializing_none]

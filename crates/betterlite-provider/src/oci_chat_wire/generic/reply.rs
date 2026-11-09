@@ -10,8 +10,8 @@ use chrono::DateTime;
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
 use crate::oci_chat_wire::parse::{parse_chunk, parse_response};
 use crate::oci_chat_wire::types::oci::{
-    OciCompletionResponse, OciContentPart, OciMessage, OciResponseChoice, OciResponseUsage,
-    OciStreamChunk, OciToolCall,
+    OciCompletionResponse, OciContentPart, OciMessage, OciResponseUsage, OciStreamChunk,
+    OciToolCall,
 };
 use crate::oci_common::OciError;
 
@@ -42,7 +42,6 @@ pub fn handle_generic_response(
             message: String::from(NO_CHOICES),
         });
     };
-    reject_unknown_parts(&completion.chat_response.choices, status)?;
     let Some(target) = response.choices.first_mut() else {
         return Err(OciError {
             status,
@@ -119,29 +118,6 @@ fn fill_message(target: &mut AssistantMessage, source: &OciMessage) {
     }
 }
 
-fn reject_unknown_parts(choices: &[OciResponseChoice], status: u16) -> Result<(), OciError> {
-    for choice in choices {
-        let Some(message) = &choice.message else {
-            continue;
-        };
-        let Some(parts) = &message.content else {
-            continue;
-        };
-        for part in parts {
-            if let OciContentPart::Other(other) = part {
-                return Err(OciError {
-                    status,
-                    message: format!(
-                        "Response cannot be casted to OCICompletionResponse: unsupported content type `{}`",
-                        other.kind
-                    ),
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 fn adapt_tool_calls(tool_calls: &[OciToolCall]) -> Vec<ToolCall> {
     tool_calls
         .iter()
@@ -200,15 +176,6 @@ fn stream_text(parts: Option<&[OciContentPart]>) -> Result<Option<String>, OciEr
                 return Err(OciError {
                     status: 500,
                     message: String::from(IMAGE_STREAM),
-                });
-            }
-            OciContentPart::Other(other) => {
-                return Err(OciError {
-                    status: 500,
-                    message: format!(
-                        "Unsupported content type in OCI streaming response: {}",
-                        other.kind
-                    ),
                 });
             }
         }
