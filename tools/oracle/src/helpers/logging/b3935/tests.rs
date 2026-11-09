@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use betterlite_logging::datadog_llm_obs::arguments::{ToolArguments, decode_tool_arguments};
+use betterlite_logging::datadog_llm_obs::literal::literal_json;
 use rstest::rstest;
 
 #[rstest]
@@ -19,6 +20,7 @@ fn replays_the_datadog_llm_argument_decoder_corpus() {
             continue;
         };
         seen = seen.saturating_add(1);
+        let _literal = literal_json(text);
         let decoded = decode_tool_arguments(text);
         if name.starts_with("object")
             || name.starts_with("nested")
