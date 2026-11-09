@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-marengo-three-timed
+call:
+  bedrock_other_marengo_three:
+    text_versus_timed_options:
+      model: marengo-embed-3-0-v1:0
+      input: AAA
+      inference_params:
+        inputType: video
+        startSec: 1.5
+        endSec: 2.5
+        segmentation:
+          method: fixed
+          fixed:
+            durationSec: 4
+            extra: 1
+          ignored: 1
+        embeddingOption: [visual, audio]
+        embeddingType: [fused_embedding]
+        embeddingScope: [clip, asset]
+env: {}
+compare:
+  ignore: []
