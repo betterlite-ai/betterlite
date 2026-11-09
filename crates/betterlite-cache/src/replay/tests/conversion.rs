@@ -50,10 +50,9 @@ fn conversion_transcription_gets_whisper_hidden_params(
         &fake,
     )
     .unwrap();
-    let Replayed::Response(kind, response) = outcome else {
-        panic!("the cached transcription did not replay as a model response");
+    let Replayed::Transcription(response) = outcome else {
+        panic!("the cached transcription did not replay as a transcription response");
     };
-    assert_eq!(kind, ResponseKind::Transcription);
     assert!(response.cache_hit);
     let calls = fake.calls();
     assert_eq!(calls.transcription_calls, 1);
@@ -99,7 +98,11 @@ fn conversion_a_stream_request_still_returns_the_typed_response(
 ) {
     let fake = Fake::new();
     let outcome = replay(call_type, &stream_request(), &fake);
-    assert!(matches!(outcome, Replayed::Response(..)));
+    let streamed = matches!(
+        outcome,
+        Replayed::Stream(_) | Replayed::ResponsesStream(_) | Replayed::MessagesStream(_)
+    );
+    assert!(!streamed);
     assert!(fake.calls().wraps.is_empty());
 }
 

@@ -26,6 +26,7 @@ fn metadata_cache_hit_is_stamped_on_every_converted_response(
     let outcome = replay(call_type, &non_stream_request(), &fake);
     let stamped = match &outcome {
         Replayed::Response(_, response)
+        | Replayed::Transcription(response)
         | Replayed::Responses(response)
         | Replayed::Stream(response)
         | Replayed::ResponsesStream(response)

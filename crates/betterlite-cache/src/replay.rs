@@ -47,7 +47,6 @@ pub enum ResponseKind {
     Text,
     Embedding,
     Rerank,
-    Transcription,
 }
 
 pub trait CacheHitMetadata {
@@ -111,6 +110,7 @@ pub trait ReplayConversions {
 
 pub enum Replayed<Response> {
     Response(ResponseKind, Response),
+    Transcription(Response),
     Responses(Response),
     Stream(Response),
     ResponsesStream(Response),
@@ -133,13 +133,17 @@ where
     pub const fn defers_success_callbacks(&self) -> bool {
         match self {
             Self::Stream(_) | Self::ResponsesStream(_) | Self::MessagesStream(_) => true,
-            Self::Response(..) | Self::Responses(_) | Self::Unchanged(_) => false,
+            Self::Response(..)
+            | Self::Transcription(_)
+            | Self::Responses(_)
+            | Self::Unchanged(_) => false,
         }
     }
 
     pub fn stamp_cache_hit(&mut self) {
         match self {
             Self::Response(_, response)
+            | Self::Transcription(response)
             | Self::Responses(response)
             | Self::Stream(response)
             | Self::ResponsesStream(response)
@@ -237,7 +241,7 @@ where
                 cache_hit: true,
             };
             let response = conversions.transcription_response(&cached, &hidden)?;
-            Ok(Replayed::Response(ResponseKind::Transcription, response))
+            Ok(Replayed::Transcription(response))
         }
         CachingSupportedCallType::AnthropicMessages
         | CachingSupportedCallType::AanthropicMessages => {
