@@ -1,0 +1,1 @@
+{"id":"row-1","embeddings":[[0.125,-0.5],[1.0,2.5]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0","inputTextTokenCounts":[3,4],"usage":{"promptTokens":9,"totalTokens":10}}
