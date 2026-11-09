@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 
 use super::presence::Given;
@@ -28,7 +28,7 @@ pub struct JSONResponseSchema {
     pub description: Given<String>,
     pub name: String,
     #[serde(rename = "schema", default, skip_serializing_if = "Given::is_missing")]
-    pub schema: Given<Json>,
+    pub schema: Given<Object>,
     #[serde(default, skip_serializing_if = "Given::is_missing")]
     pub strict: Given<bool>,
 }

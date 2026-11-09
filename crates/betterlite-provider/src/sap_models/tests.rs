@@ -304,6 +304,26 @@ fn json_schema_response_format_uses_the_schema_alias() {
 }
 
 #[test]
+fn json_schema_rejects_a_null_schema_and_a_non_object_schema() {
+    let null_schema = error_text(validate_response_format(&parse_json(
+        r#"{"type":"json_schema","json_schema":{"name":"n","schema":null}}"#,
+    )));
+    assert!(null_schema.contains("schema"), "{null_schema}");
+    let list_schema = error_text(validate_response_format(&parse_json(
+        r#"{"type":"json_schema","json_schema":{"name":"n","schema":[]}}"#,
+    )));
+    assert!(list_schema.contains("schema"), "{list_schema}");
+}
+
+#[test]
+fn model_params_must_be_an_object() {
+    let error = error_text(validate_orchestration_request(&parse_json(
+        r#"{"config":{"modules":{"prompt_templating":{"prompt":{"template":[]},"model":{"name":"m","params":[]}}}}}"#,
+    )));
+    assert!(error.contains("params"), "{error}");
+}
+
+#[test]
 fn response_format_choice_prefers_the_plain_format_without_a_type() {
     let output = validate_response_format(&parse_json(r#"{"json_schema":{"name":"n"}}"#)).unwrap();
     assert_eq!(dump_text(&output), "{}");
@@ -363,7 +383,7 @@ fn document_grounding_placeholders_need_one_input() {
 
 #[test]
 fn grounding_filter_uses_the_id_alias_and_the_repository_literal() {
-    let fields = r#""grounding":{"type":"document_grounding_service","config":{"placeholders":{"input":["q"],"output":"o"},"filters":[{"id":"f","data_repository_type":"help.sap.com"}],"metadata_params":["m"]}}"#;
+    let fields = r#""grounding":{"type":"document_grounding_service","config":{"filters":[{"id":"f","data_repository_type":"help.sap.com"}],"placeholders":{"input":["q"],"output":"o"},"metadata_params":["m"]}}"#;
     let text = module_fields(fields);
     assert_request_dump(&text, &text);
     let invalid = r#""grounding":{"config":{"placeholders":{"input":["q"],"output":"o"},"filters":[{"data_repository_type":"nope"}]}}"#;
@@ -375,7 +395,7 @@ fn grounding_filter_uses_the_id_alias_and_the_repository_literal() {
 
 #[test]
 fn document_metadata_pairs_keep_their_select_mode() {
-    let fields = r#""grounding":{"config":{"placeholders":{"input":["q"],"output":"o"},"filters":[{"data_repository_type":"vector","document_metadata":[{"key":"k","value":["v"],"select_mode":["ignoreIfKeyAbsent"]}]}]}}"#;
+    let fields = r#""grounding":{"config":{"filters":[{"data_repository_type":"vector","document_metadata":[{"key":"k","value":["v"],"select_mode":["ignoreIfKeyAbsent"]}]}],"placeholders":{"input":["q"],"output":"o"}}}"#;
     let text = module_fields(fields);
     assert_request_dump(&text, &text);
     let invalid = r#""grounding":{"config":{"placeholders":{"input":["q"],"output":"o"},"filters":[{"data_repository_type":"vector","document_metadata":[{"key":"k","value":[],"select_mode":["nope"]}]}]}}"#;
@@ -640,8 +660,8 @@ fn request_ignores_unknown_keys() {
 
 #[test]
 fn request_dump_keeps_the_declared_field_order() {
-    let input = r#"{"config":{"modules":[{"prompt_templating":{"prompt":{"template":[{"role":"system","content":[{"text":"a"},"b"]},{"role":"user","content":[{"text":"hi"},{"image_url":{"url":"u","detail":"low"}}]},{"role":"assistant","content":"","refusal":"r","tool_calls":[{"id":"1","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"tool","tool_call_id":"1","content":"ok"}],"defaults":{"a":"1"},"tools":[{"type":"function","function":{"name":"f","description":"d","parameters":{"type":"object","properties":{}},"strict":true}}]},"model":{"name":"gpt-4o","version":"latest","params":{"temperature":0}}},{"prompt_templating":{"prompt":{"template":[]},"model":{"name":"m"}},"filtering":{"input":{"filters":[{"type":"azure_content_safety","config":{"hate":2,"prompt_shield":true}}]},"output":{"filters":[{"type":"llama_guard_3_8b","config":{"hate":true}}],"stream_options":{"overlap":10}}},"masking":{"providers":[{"type":"sap_data_privacy_integration","method":"anonymization","entities":[{"type":"profile-email"},{"regex":"r","replacement_strategy":{"method":"constant","value":"x"}}],"allowlist":["a"],"mask_grounding_input":{"enabled":true}}]},"grounding":{"type":"document_grounding_service","config":{"filters":[{"id":"f","data_repository_type":"vector","search_config":{"max_chunk_count":1}}],"placeholders":{"input":["q"],"output":"o"},"metadata_params":["m"]}},"translation":{"input":{"type":"sap_document_translation","translate_messages_history":true,"config":{"source_language":"de-DE","target_language":"en-US","apply_to":[{"category":"placeholders","items":["q"],"source_language":"de-DE"}]}},"output":{"config":{"target_language":{"category":"template_roles","items":["system"],"source_language":"de-DE"}}}}}],"stream":{"enabled":true,"chunk_size":1,"delimiters":["\n"]}},"placeholder_values":{"q":"v"}}"#;
-    let expected = r#"{"config":{"modules":[{"prompt_templating":{"prompt":{"template":[{"role":"system","content":"a\nb"},{"role":"user","content":[{"text":"hi"},{"image_url":{"url":"u","detail":"low"}}]},{"role":"assistant","content":"","refusal":"r","tool_calls":[{"id":"1","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"tool","tool_call_id":"1","content":"ok"}],"defaults":{"a":"1"},"tools":[{"type":"function","function":{"name":"f","description":"d","parameters":{"type":"object","properties":{}},"strict":true}}]},"model":{"name":"gpt-4o","version":"latest","params":{"temperature":0}}},{"prompt_templating":{"prompt":{"template":[]},"model":{"name":"m"}},"filtering":{"input":{"filters":[{"type":"azure_content_safety","config":{"hate":2,"prompt_shield":true}}]},"output":{"filters":[{"type":"llama_guard_3_8b","config":{"hate":true}}],"stream_options":{"overlap":10}}},"masking":{"providers":[{"type":"sap_data_privacy_integration","method":"anonymization","entities":[{"type":"profile-email"},{"regex":"r","replacement_strategy":{"method":"constant","value":"x"}}],"allowlist":["a"],"mask_grounding_input":{"enabled":true}}]},"grounding":{"type":"document_grounding_service","config":{"filters":[{"id":"f","data_repository_type":"vector","search_config":{"max_chunk_count":1}}],"placeholders":{"input":["q"],"output":"o"},"metadata_params":["m"]}},"translation":{"input":{"type":"sap_document_translation","translate_messages_history":true,"config":{"source_language":"de-DE","target_language":"en-US","apply_to":[{"category":"placeholders","items":["q"],"source_language":"de-DE"}]}},"output":{"config":{"target_language":{"category":"template_roles","items":["system"],"source_language":"de-DE"}}}}}],"stream":{"enabled":true,"chunk_size":1,"delimiters":["\n"]}},"placeholder_values":{"q":"v"}}"#;
+    let input = r#"{"config":{"modules":[{"prompt_templating":{"prompt":{"template":[{"role":"system","content":[{"text":"a"},"b"]},{"role":"user","content":[{"text":"hi"},{"image_url":{"url":"u","detail":"low"}}]},{"role":"assistant","content":"","refusal":"r","tool_calls":[{"id":"1","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"tool","tool_call_id":"1","content":"ok"}],"defaults":{"a":"1"},"tools":[{"type":"function","function":{"name":"f","description":"d","parameters":{"type":"object","properties":{}},"strict":true}}]},"model":{"name":"gpt-4o","version":"latest","params":{"temperature":0}}}},{"prompt_templating":{"prompt":{"template":[]},"model":{"name":"m"}},"filtering":{"input":{"filters":[{"type":"azure_content_safety","config":{"hate":2,"prompt_shield":true}}]},"output":{"filters":[{"type":"llama_guard_3_8b","config":{"hate":true}}],"stream_options":{"overlap":10}}},"masking":{"providers":[{"type":"sap_data_privacy_integration","method":"anonymization","entities":[{"type":"profile-email"},{"regex":"r","replacement_strategy":{"method":"constant","value":"x"}}],"allowlist":["a"],"mask_grounding_input":{"enabled":true}}]},"grounding":{"type":"document_grounding_service","config":{"filters":[{"id":"f","data_repository_type":"vector","search_config":{"max_chunk_count":1}}],"placeholders":{"input":["q"],"output":"o"},"metadata_params":["m"]}},"translation":{"input":{"type":"sap_document_translation","translate_messages_history":true,"config":{"source_language":"de-DE","target_language":"en-US","apply_to":[{"category":"placeholders","items":["q"],"source_language":"de-DE"}]}},"output":{"config":{"target_language":{"category":"template_roles","items":["system"],"source_language":"de-DE"}}}}}],"stream":{"enabled":true,"chunk_size":1,"delimiters":["\n"]}},"placeholder_values":{"q":"v"}}"#;
+    let expected = r#"{"config":{"modules":[{"prompt_templating":{"prompt":{"template":[{"role":"system","content":"a\nb"},{"role":"user","content":[{"text":"hi"},{"image_url":{"url":"u","detail":"low"}}]},{"role":"assistant","content":"","refusal":"r","tool_calls":[{"id":"1","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"tool","tool_call_id":"1","content":"ok"}],"defaults":{"a":"1"},"tools":[{"type":"function","function":{"description":"d","name":"f","parameters":{"type":"object","properties":{}},"strict":true}}]},"model":{"name":"gpt-4o","version":"latest","params":{"temperature":0}}}},{"prompt_templating":{"prompt":{"template":[]},"model":{"name":"m"}},"filtering":{"input":{"filters":[{"type":"azure_content_safety","config":{"hate":2,"prompt_shield":true}}]},"output":{"filters":[{"type":"llama_guard_3_8b","config":{"hate":true}}],"stream_options":{"overlap":10}}},"masking":{"providers":[{"type":"sap_data_privacy_integration","method":"anonymization","entities":[{"type":"profile-email"},{"regex":"r","replacement_strategy":{"method":"constant","value":"x"}}],"allowlist":["a"],"mask_grounding_input":{"enabled":true}}]},"grounding":{"type":"document_grounding_service","config":{"filters":[{"id":"f","data_repository_type":"vector","search_config":{"max_chunk_count":1}}],"placeholders":{"input":["q"],"output":"o"},"metadata_params":["m"]}},"translation":{"input":{"type":"sap_document_translation","translate_messages_history":true,"config":{"source_language":"de-DE","target_language":"en-US","apply_to":[{"category":"placeholders","items":["q"],"source_language":"de-DE"}]}},"output":{"config":{"target_language":{"category":"template_roles","items":["system"],"source_language":"de-DE"}}}}}],"stream":{"enabled":true,"chunk_size":1,"delimiters":["\n"]}},"placeholder_values":{"q":"v"}}"#;
     assert_request_dump(input, expected);
 }
 

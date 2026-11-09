@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_error::facts::presence::Field;
+use super::presence::Field;
+use super::presence::optional;
 use betterlite_prompts::arguments::json::Json;
 use serde::{Deserialize, Serialize};
 
@@ -16,13 +17,13 @@ use super::translation::TranslationModuleConfig;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModuleConfig {
     pub prompt_templating: PromptTemplatingModuleConfig,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub filtering: Field<FilteringModuleConfig>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub masking: Field<MaskingModuleConfig>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub grounding: Field<GroundingModuleConfig>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub translation: Field<TranslationModuleConfig>,
 }
 
@@ -47,9 +48,9 @@ impl TryFrom<i64> for ChunkSize {
 pub struct GlobalStreamOptions {
     #[serde(default, skip_serializing_if = "Given::is_missing")]
     pub enabled: Given<bool>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub chunk_size: Field<ChunkSize>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub delimiters: Field<Vec<String>>,
 }
 
@@ -79,7 +80,7 @@ impl TryFrom<Json> for Modules {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OrchestrationConfig {
     pub modules: Modules,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub stream: Field<GlobalStreamOptions>,
 }
 
@@ -89,7 +90,8 @@ pub struct OrchestrationRequest {
     #[serde(
         rename = "placeholder_values",
         default,
-        skip_serializing_if = "Field::is_missing"
+        with = "optional",
+        skip_serializing_if = "Option::is_none"
     )]
     pub placeholder_values: Field<BTreeMap<String, String>>,
 }

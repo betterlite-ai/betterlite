@@ -56,3 +56,8 @@ impl<T> TryFrom<Vec<T>> for NonEmpty<T> {
         Ok(Self(items))
     }
 }
+
+// pydantic's Field(default=None): absent, explicit null, or a value. serde_with's option visitor reads the inner type through the same deserializer, so its own error and path survive.
+pub type Field<T> = Option<Option<T>>;
+
+pub(crate) mod optional;

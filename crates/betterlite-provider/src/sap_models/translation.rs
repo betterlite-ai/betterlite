@@ -1,4 +1,5 @@
-use betterlite_error::facts::presence::Field;
+use super::presence::Field;
+use super::presence::optional;
 use serde::{Deserialize, Serialize};
 
 use super::SapModelError;
@@ -20,10 +21,10 @@ pub struct TranslationSelector {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InputTranslationConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub source_language: Field<String>,
     pub target_language: String,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub apply_to: Field<Vec<TranslationSelector>>,
 }
 
@@ -36,7 +37,7 @@ pub enum TargetLanguage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OutputTranslationConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub source_language: Field<String>,
     pub target_language: TargetLanguage,
 }
@@ -51,7 +52,7 @@ pub enum TranslationKind {
 pub struct SAPDocumentTranslationInput {
     #[serde(rename = "type", default, skip_serializing_if = "Given::is_missing")]
     pub type_: Given<TranslationKind>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub translate_messages_history: Field<bool>,
     pub config: InputTranslationConfig,
 }
@@ -74,9 +75,9 @@ struct TranslationModuleConfigRaw {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "TranslationModuleConfigRaw")]
 pub struct TranslationModuleConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub input: Field<SAPDocumentTranslationInput>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub output: Field<SAPDocumentTranslationOutput>,
 }
 
@@ -84,7 +85,7 @@ impl TryFrom<TranslationModuleConfigRaw> for TranslationModuleConfig {
     type Error = SapModelError;
 
     fn try_from(raw: TranslationModuleConfigRaw) -> Result<Self, Self::Error> {
-        if raw.input.as_ref().is_none() && raw.output.as_ref().is_none() {
+        if matches!(&raw.input, None | Some(None)) && matches!(&raw.output, None | Some(None)) {
             return Err(SapModelError::Rejected {
                 message: String::from(
                     "TranslationModuleConfig requires at least one of 'input' or 'output'.",

@@ -1,4 +1,5 @@
-use betterlite_error::facts::presence::Field;
+use super::presence::Field;
+use super::presence::optional;
 use serde::{Deserialize, Serialize};
 
 use super::SapModelError;
@@ -102,7 +103,7 @@ pub struct DPICustomEntity {
 pub struct DPIStandardEntity {
     #[serde(rename = "type")]
     pub type_: MaskingEntity,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub replacement_strategy: Field<ReplacementStrategy>,
 }
 
@@ -138,9 +139,9 @@ pub struct MaskingProviderConfig {
     pub type_: Given<PrivacyKind>,
     pub method: MaskingMethod,
     pub entities: Vec<MaskingEntityChoice>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub allowlist: Field<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub mask_grounding_input: Field<MaskGroundingInput>,
 }
 
@@ -155,9 +156,9 @@ struct MaskingModuleConfigRaw {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "MaskingModuleConfigRaw")]
 pub struct MaskingModuleConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub providers: Field<NonEmpty<MaskingProviderConfig>>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub masking_providers: Field<NonEmpty<MaskingProviderConfig>>,
 }
 
@@ -165,8 +166,8 @@ impl TryFrom<MaskingModuleConfigRaw> for MaskingModuleConfig {
     type Error = SapModelError;
 
     fn try_from(raw: MaskingModuleConfigRaw) -> Result<Self, Self::Error> {
-        let has_providers = raw.providers.as_ref().is_some();
-        let has_masking_providers = raw.masking_providers.as_ref().is_some();
+        let has_providers = matches!(&raw.providers, Some(Some(_)));
+        let has_masking_providers = matches!(&raw.masking_providers, Some(Some(_)));
         if !has_providers && !has_masking_providers {
             return Err(SapModelError::Rejected {
                 message: String::from(

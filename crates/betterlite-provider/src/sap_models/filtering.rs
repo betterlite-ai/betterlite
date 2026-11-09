@@ -1,4 +1,5 @@
-use betterlite_error::facts::presence::Field;
+use super::presence::Field;
+use super::presence::optional;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -16,41 +17,41 @@ pub enum AzureThreshold {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AzureContentFilter {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub hate: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub sexual: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub violence: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub self_harm: Field<AzureThreshold>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AzureContentSafetyInput {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub hate: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub sexual: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub violence: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub self_harm: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub prompt_shield: Field<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AzureContentSafetyOutput {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub hate: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub sexual: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub violence: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub self_harm: Field<AzureThreshold>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub protected_material_code: Field<bool>,
 }
 
@@ -109,7 +110,7 @@ pub struct LlamaGuard38bFilterConfig {
 pub struct AzureInputFilterConfig {
     #[serde(rename = "type", default, skip_serializing_if = "Given::is_missing")]
     pub type_: Given<AzureKind>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub config: Field<AzureContentSafetyInput>,
 }
 
@@ -117,7 +118,7 @@ pub struct AzureInputFilterConfig {
 pub struct AzureOutputFilterConfig {
     #[serde(rename = "type", default, skip_serializing_if = "Given::is_missing")]
     pub type_: Given<AzureKind>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub config: Field<AzureContentSafetyOutput>,
 }
 
@@ -141,7 +142,7 @@ impl TryFrom<i64> for Overlap {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FilteringStreamOptions {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub overlap: Field<Overlap>,
 }
 
@@ -167,7 +168,7 @@ pub struct InputFiltering {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OutputFiltering {
     pub filters: NonEmpty<OutputFilterConfig>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub stream_options: Field<FilteringStreamOptions>,
 }
 
@@ -182,9 +183,9 @@ struct FilteringModuleConfigRaw {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "FilteringModuleConfigRaw")]
 pub struct FilteringModuleConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub input: Field<InputFiltering>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub output: Field<OutputFiltering>,
 }
 
@@ -192,8 +193,8 @@ impl TryFrom<FilteringModuleConfigRaw> for FilteringModuleConfig {
     type Error = SapModelError;
 
     fn try_from(raw: FilteringModuleConfigRaw) -> Result<Self, Self::Error> {
-        let has_input = raw.input.as_ref().is_some();
-        let has_output = raw.output.as_ref().is_some();
+        let has_input = matches!(&raw.input, Some(Some(_)));
+        let has_output = matches!(&raw.output, Some(Some(_)));
         if !has_input && !has_output {
             return Err(SapModelError::Rejected {
                 message: String::from(

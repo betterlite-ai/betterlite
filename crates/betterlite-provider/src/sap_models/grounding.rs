@@ -1,4 +1,5 @@
-use betterlite_error::facts::presence::Field;
+use super::presence::Field;
+use super::presence::optional;
 use serde::{Deserialize, Serialize};
 
 use super::SapModelError;
@@ -37,7 +38,7 @@ pub enum SelectMode {
 pub struct MetadataPairs {
     pub key: String,
     pub value: Vec<String>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub select_mode: Field<Vec<SelectMode>>,
 }
 
@@ -52,9 +53,9 @@ struct GroundingSearchConfigRaw {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "GroundingSearchConfigRaw")]
 pub struct GroundingSearchConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub max_chunk_count: Field<Count>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub max_document_count: Field<Count>,
 }
 
@@ -62,8 +63,8 @@ impl TryFrom<GroundingSearchConfigRaw> for GroundingSearchConfig {
     type Error = SapModelError;
 
     fn try_from(raw: GroundingSearchConfigRaw) -> Result<Self, Self::Error> {
-        let chunk_count = raw.max_chunk_count.as_ref().is_some();
-        let document_count = raw.max_document_count.as_ref().is_some();
+        let chunk_count = matches!(&raw.max_chunk_count, Some(Some(_)));
+        let document_count = matches!(&raw.max_document_count, Some(Some(_)));
         if chunk_count && document_count {
             return Err(SapModelError::Rejected {
                 message: String::from("Cannot specify both maxChunkCount and maxDocumentCount."),
@@ -86,18 +87,23 @@ pub enum DataRepositoryType {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DocumentGroundingFilter {
-    #[serde(rename = "id", default, skip_serializing_if = "Field::is_missing")]
+    #[serde(
+        rename = "id",
+        default,
+        with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub id: Field<String>,
     pub data_repository_type: DataRepositoryType,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub search_config: Field<GroundingSearchConfig>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub data_repositories: Field<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub data_repository_metadata: Field<Vec<KeyValueListPair>>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub document_metadata: Field<Vec<MetadataPairs>>,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub chunk_metadata: Field<Vec<KeyValueListPair>>,
 }
 
@@ -109,10 +115,10 @@ pub struct DocumentGroundingPlaceholders {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DocumentGroundingConfig {
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub filters: Field<Vec<DocumentGroundingFilter>>,
     pub placeholders: DocumentGroundingPlaceholders,
-    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub metadata_params: Field<Vec<String>>,
 }
 
