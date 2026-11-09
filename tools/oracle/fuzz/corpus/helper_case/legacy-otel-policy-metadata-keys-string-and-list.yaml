@@ -1,0 +1,12 @@
+kind: helper
+name: metadata-keys-string-and-list
+call:
+  b3854:
+    function: metadata_keys
+    values:
+      - " one, two ,, three "
+      - [" one ", "", "two"]
+      - " , , "
+      - []
+env: {}
+compare: {ignore: []}

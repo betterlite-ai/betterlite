@@ -1,0 +1,9 @@
+kind: helper
+name: cron-weekday-zero
+call:
+  b8370:
+    cron: "0 3 * * 0"
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,3 @@
+mod genai {
+    mod tests;
+}

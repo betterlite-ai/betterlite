@@ -1,0 +1,25 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-llm-call-failure-error-type",
+  "call": {
+    "b3845": {
+      "function": "genai_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "call_type": "completion",
+        "custom_llm_provider": "openai",
+        "status": "failure",
+        "error_information": {
+          "error_class": "RateLimitError",
+          "error_code": "429",
+          "error_message": "slow down"
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
