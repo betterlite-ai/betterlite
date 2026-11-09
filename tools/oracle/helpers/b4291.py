@@ -17,9 +17,6 @@ from litellm.proxy.common_utils.cache_coordinator import (
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Value: TypeAlias = bool | int | float | str | list["Value"] | dict[str, "Value"]
 
-_ABSENT_KEY = "absent-key"
-_COORDINATION_KEY = "key"
-_SETTLE_ROUNDS = 8
 
 
 class StorageStandIn:
@@ -107,10 +104,6 @@ def integer_value(value: Json, name: str) -> int:
     return value
 
 
-def integer_list(value: Json, name: str) -> list[int]:
-    return [integer_value(entry, name) for entry in list_value(value, name)]
-
-
 def disk_cache(directory: str) -> DiskCache:
     disk_storage()
     return DiskCache(disk_cache_dir=directory)
@@ -123,7 +116,7 @@ def _set_and_get(data: dict[str, Json]) -> Json:
         cache = disk_cache(directory)
         cache.set_cache(key, value)  # pyright: ignore[reportUnknownMemberType]
         read = cast(Json, cache.get_cache(key))  # pyright: ignore[reportUnknownMemberType]
-        missing = cast(Json, cache.get_cache(_ABSENT_KEY))  # pyright: ignore[reportUnknownMemberType]
+        missing = cast(Json, cache.get_cache("absent-key"))  # pyright: ignore[reportUnknownMemberType]
     return cast(Json, {"read": read, "missing": missing})
 
 
@@ -169,7 +162,8 @@ def _batch_get(data: dict[str, Json]) -> Json:
 
 def _increment(data: dict[str, Json]) -> Json:
     key = string_value(data.get("key"), "key")
-    increments = integer_list(data.get("increments"), "increments")
+    raw = list_value(data.get("increments"), "increments")
+    increments = [integer_value(entry, "increments") for entry in raw]
     results: list[Json] = []
     with TemporaryDirectory() as directory:
         cache = disk_cache(directory)
@@ -191,7 +185,7 @@ def _delete(data: dict[str, Json]) -> Json:
         cache.set_cache(key, data.get("value"))  # pyright: ignore[reportUnknownMemberType]
         cache.set_cache(kept_key, kept.get("value"))  # pyright: ignore[reportUnknownMemberType]
         cache.delete_cache(key)  # pyright: ignore[reportUnknownMemberType]
-        cache.delete_cache(_ABSENT_KEY)  # pyright: ignore[reportUnknownMemberType]
+        cache.delete_cache("absent-key")  # pyright: ignore[reportUnknownMemberType]
         deleted = cast(Json, cache.get_cache(key))  # pyright: ignore[reportUnknownMemberType]
         still_kept = cast(Json, cache.get_cache(kept_key))  # pyright: ignore[reportUnknownMemberType]
     return cast(Json, {"deleted": deleted, "kept": still_kept})
@@ -252,14 +246,14 @@ class _FailingLoader:
         self.release = asyncio.Event()
 
     async def load(self) -> Value:
-        self.loads.append(_COORDINATION_KEY)
+        self.loads.append("key")
         self.started.set()
         await self.release.wait()
         raise ValueError("load failed")
 
 
 async def _settle() -> None:
-    for _ in range(_SETTLE_ROUNDS):
+    for _ in range(8):
         await asyncio.sleep(0)
 
 
@@ -272,11 +266,11 @@ async def _single_loader(value: Value, requests: int) -> Json:
     coordinator = _coordinator()
     loads: list[Value] = []
     loader = _BlockingLoader(value, loads)
-    first = asyncio.create_task(coordinator.get_or_load(_COORDINATION_KEY, cache, loader.load))
+    first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
     await loader.started.wait()
     waiters = [
         asyncio.create_task(
-            coordinator.get_or_load(_COORDINATION_KEY, cache, _UnblockedLoader(value, loads).load)
+            coordinator.get_or_load("key", cache, _UnblockedLoader(value, loads).load)
         )
         for _ in range(max(requests - 1, 0))
     ]
@@ -292,15 +286,15 @@ async def _waiter_gets_cached(value: Value) -> Json:
     coordinator = _coordinator()
     loads: list[Value] = []
     loader = _BlockingLoader(value, loads)
-    first = asyncio.create_task(coordinator.get_or_load(_COORDINATION_KEY, cache, loader.load))
+    first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
     await loader.started.wait()
     waiter = asyncio.create_task(
-        coordinator.get_or_load(_COORDINATION_KEY, cache, _UnblockedLoader(value, loads).load)
+        coordinator.get_or_load("key", cache, _UnblockedLoader(value, loads).load)
     )
     await _settle()
     loader.release.set()
     results = [await first, await waiter]
-    cached = await cache.async_get_cache(_COORDINATION_KEY)
+    cached = await cache.async_get_cache("key")
     return cast(Json, {"loads": len(loads), "results": results, "cached": cached})
 
 
@@ -309,10 +303,10 @@ async def _loader_failure(value: Value) -> Json:
     coordinator = _coordinator()
     loads: list[Value] = []
     loader = _FailingLoader(loads)
-    first = asyncio.create_task(coordinator.get_or_load(_COORDINATION_KEY, cache, loader.load))
+    first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
     await loader.started.wait()
     waiter = asyncio.create_task(
-        coordinator.get_or_load(_COORDINATION_KEY, cache, _UnblockedLoader(value, loads).load)
+        coordinator.get_or_load("key", cache, _UnblockedLoader(value, loads).load)
     )
     await _settle()
     loader.release.set()
@@ -323,7 +317,7 @@ async def _loader_failure(value: Value) -> Json:
         failed = True
     waited = await waiter
     retried = await coordinator.get_or_load(
-        _COORDINATION_KEY, cache, _UnblockedLoader(value, loads).load
+        "key", cache, _UnblockedLoader(value, loads).load
     )
     return cast(
         Json,

@@ -125,8 +125,7 @@ impl DiskCache {
     }
 
     pub fn flush_cache(&self) -> DiskResult<()> {
-        let cleared = self.store.clear()?;
-        tracing::debug!(cleared, "disk cache flushed");
+        self.store.clear()?;
         Ok(())
     }
 
@@ -179,8 +178,7 @@ impl DiskCache {
 
     pub async fn async_flush_cache(&self) -> DiskResult<()> {
         let store = Arc::clone(&self.store);
-        let cleared = run_blocking(move || store.clear()).await?;
-        tracing::debug!(cleared, "disk cache flushed");
+        run_blocking(move || store.clear()).await?;
         Ok(())
     }
 
