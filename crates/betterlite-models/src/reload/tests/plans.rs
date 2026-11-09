@@ -32,10 +32,21 @@ pub(super) async fn run_plan(plan: Plan) {
         Plan::StartupLocal => plan_startup_local().await,
         Plan::StartupRemote => plan_startup_remote().await,
         Plan::StartupFallback => plan_startup_fallback().await,
-        Plan::StartupTransport => plan_startup_transport().await,
+        Plan::StartupTransport => {
+            plan_startup_failure(Reply::transport("connection refused"), Fallback::Transport).await;
+        }
         Plan::StartupInvalidUrl => plan_startup_invalid_url().await,
-        Plan::StartupIntegrityFallback => plan_startup_integrity_fallback().await,
-        Plan::StartupParseFallback => plan_startup_parse_fallback().await,
+        Plan::StartupIntegrityFallback => {
+            let shrunk = catalog_body("shrunk", 20);
+            plan_startup_failure(Reply::ok(&shrunk), Fallback::Integrity).await;
+        }
+        Plan::StartupParseFallback => {
+            let broken = body_with_entry(
+                "broken",
+                "\"broken-bad\":{\"litellm_provider\":\"openai\",\"mode\":5}",
+            );
+            plan_startup_failure(Reply::ok(&broken), Fallback::Parse).await;
+        }
         Plan::StartupRetry => plan_startup_retry().await,
         Plan::ReloadLocal => plan_reload_local().await,
         Plan::ReloadRemote => plan_reload_remote().await,
@@ -121,21 +132,42 @@ async fn plan_startup_fallback() {
     assert_eq!(client.requests(), 1);
 }
 
-async fn plan_startup_transport() {
+enum Fallback {
+    Transport,
+    Integrity,
+    Parse,
+}
+
+async fn plan_startup_failure(reply: Reply, fallback: Fallback) {
     let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::transport(
-        "connection refused",
-    )]));
+    let client = Arc::new(ScriptedClient::new(vec![reply]));
     let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_some());
-    let reason = outcome
-        .snapshot
-        .provenance
-        .fallback_reason
-        .as_deref()
-        .unwrap();
-    assert!(reason.starts_with("Remote fetch failed:"));
-    assert!(reason.contains(URL));
+    let provenance = &outcome.snapshot.provenance;
+    match fallback {
+        Fallback::Transport => {
+            assert!(outcome.retry.is_some());
+            let reason = provenance.fallback_reason.as_deref().unwrap();
+            assert!(reason.starts_with("Remote fetch failed:"));
+            assert!(reason.contains(URL));
+        }
+        Fallback::Integrity => {
+            assert!(outcome.retry.is_none());
+            assert_eq!(
+                provenance.fallback_reason.as_deref(),
+                Some("Remote data failed integrity validation")
+            );
+        }
+        Fallback::Parse => {
+            assert!(outcome.retry.is_none());
+            assert_eq!(provenance.kind, SourceKind::Local);
+            assert!(
+                provenance
+                    .fallback_reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.starts_with("Remote data failed to load:"))
+            );
+        }
+    }
     assert_published(&service, &outcome);
     assert_eq!(client.requests(), 1);
 }
@@ -150,47 +182,6 @@ async fn plan_startup_invalid_url() {
     assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
     assert_published(&service, &outcome);
     assert_eq!(client.requests(), 1);
-}
-
-async fn plan_startup_integrity_fallback() {
-    let shrunk = catalog_body("shrunk", 20);
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&shrunk)]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_none());
-    assert_eq!(
-        outcome.snapshot.provenance.fallback_reason.as_deref(),
-        Some("Remote data failed integrity validation")
-    );
-    assert_published(&service, &outcome);
-    assert!(
-        !outcome
-            .snapshot
-            .catalog
-            .entries
-            .keys()
-            .any(|name| name.starts_with("shrunk"))
-    );
-}
-
-async fn plan_startup_parse_fallback() {
-    let broken = body_with_entry(
-        "broken",
-        "\"broken-bad\":{\"litellm_provider\":\"openai\",\"mode\":5}",
-    );
-    let service = bundled_service();
-    let client = Arc::new(ScriptedClient::new(vec![Reply::ok(&broken)]));
-    let outcome = start(&service, Arc::clone(&client)).await;
-    assert!(outcome.retry.is_none());
-    let reason = outcome
-        .snapshot
-        .provenance
-        .fallback_reason
-        .as_deref()
-        .unwrap();
-    assert!(reason.starts_with("Remote data failed to load:"));
-    assert_eq!(outcome.snapshot.provenance.kind, SourceKind::Local);
-    assert_published(&service, &outcome);
 }
 
 async fn plan_startup_retry() {
