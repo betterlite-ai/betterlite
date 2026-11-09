@@ -113,7 +113,7 @@ async fn a_proxy_admin_gets_the_url_and_the_card() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url, "https://agent.test/");
     assert_eq!(requests[0].discovery_mode, DiscoveryMode::WellKnownFallback);
-    assert!(requests[0].params.is_none());
+    assert!(requests[0].params.is_empty());
 }
 
 #[rstest]
@@ -239,6 +239,19 @@ async fn an_explicit_null_discovery_mode_takes_the_default() {
 }
 
 #[tokio::test]
+async fn an_explicit_null_params_becomes_an_empty_map() {
+    let discovery = FakeDiscovery::answering(card());
+    let (status, _body) = call(
+        Arc::clone(&discovery),
+        r#"{"url":"https://agent.test","params":null}"#,
+        &[Role::PlatformAdmin],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(discovery.requests()[0].params.is_empty());
+}
+
+#[tokio::test]
 async fn langgraph_platform_reaches_the_discovery_with_its_params() {
     let discovery = FakeDiscovery::answering(card());
     let (status, _body) = call(
@@ -251,10 +264,7 @@ async fn langgraph_platform_reaches_the_discovery_with_its_params() {
     let request = &discovery.requests()[0];
     assert_eq!(request.discovery_mode, DiscoveryMode::LanggraphPlatform);
     assert_eq!(
-        request
-            .params
-            .as_ref()
-            .and_then(|params| params.get("assistant_id")),
+        request.params.get("assistant_id"),
         Some(&AgentJson::String("a1".to_owned()))
     );
 }

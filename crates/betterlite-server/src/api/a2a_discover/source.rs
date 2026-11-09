@@ -21,20 +21,20 @@ pub struct SafeCardSource<'source> {
 #[async_trait]
 impl CardSource for SafeCardSource<'_> {
     async fn get(&self, url: &str) -> Result<CardResponse, CardTransportError> {
-        let headers = HeaderMap::new();
-        let fetched = match timeout(self.timeout, self.urls.fetch(self.client, url, &headers)).await
-        {
-            Ok(result) => result?,
-            Err(_) => {
-                return Err(CardTransportError::Deadline {
-                    timeout: self.timeout,
-                });
-            }
+        // The deadline covers the body read too: fetch returns at the head, so a stalling body would otherwise wait for the client's read timeout
+        let attempt = async {
+            let headers = HeaderMap::new();
+            let fetched = self.urls.fetch(self.client, url, &headers).await?;
+            let response = fetched.buffered(self.client.limits.body_bytes).await?;
+            Ok(CardResponse {
+                status: response.status,
+                body: response.body,
+            })
         };
-        let response = fetched.buffered(self.client.limits.body_bytes).await?;
-        Ok(CardResponse {
-            status: response.status,
-            body: response.body,
+        timeout(self.timeout, attempt).await.unwrap_or_else(|_| {
+            Err(CardTransportError::Deadline {
+                timeout: self.timeout,
+            })
         })
     }
 }
@@ -60,7 +60,7 @@ impl DiscoverAgentCard for LiveDiscovery {
             &source,
             &request.url,
             request.discovery_mode,
-            request.params.as_ref(),
+            &request.params,
         )
         .await
         {

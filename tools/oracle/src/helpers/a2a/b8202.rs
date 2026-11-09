@@ -130,11 +130,12 @@ impl Helper for Op {
             urls: Mutex::new(Vec::new()),
         };
         let base_url = input.base_url.as_deref().unwrap_or_default();
+        let params = input.params.clone().unwrap_or_default();
         let result = runtime.block_on(fetch_well_known_card(
             &script,
             base_url,
             input.mode.unwrap_or_default(),
-            input.params.as_ref(),
+            &params,
         ));
         let urls = script.recorded_urls();
         if matches!(input.operation, Operation::Urls) && !urls.is_empty() {

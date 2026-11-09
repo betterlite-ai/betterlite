@@ -64,10 +64,10 @@ def discovery_mode(input_value: Object) -> discovery.DiscoveryMode:
     return discovery.DiscoveryMode(cast(str, mode))
 
 
-def params(input_value: Object) -> dict[str, object] | None:
+def params(input_value: Object) -> dict[str, object]:
     value = input_value.get("params")
     if value is None:
-        return None
+        return {}
     if not isinstance(value, dict):
         raise TypeError("params must be an object or null")
     return cast(dict[str, object], value)

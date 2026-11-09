@@ -48,7 +48,7 @@ pub enum DiscoveryFailure {
 pub struct DiscoverAgentRequest {
     pub url: String,
     pub discovery_mode: DiscoveryMode,
-    pub params: Option<BTreeMap<String, AgentJson>>,
+    pub params: BTreeMap<String, AgentJson>,
 }
 
 #[derive(Deserialize)]
@@ -60,13 +60,13 @@ struct RawDiscoverAgentRequest {
     params: Option<BTreeMap<String, AgentJson>>,
 }
 
-// An absent or null discovery_mode takes the default, resolved here where the body enters
+// An absent or null discovery_mode and absent or null params take their defaults, resolved here where the body enters
 impl From<RawDiscoverAgentRequest> for DiscoverAgentRequest {
     fn from(raw: RawDiscoverAgentRequest) -> Self {
         Self {
             url: raw.url,
             discovery_mode: raw.discovery_mode.unwrap_or_default(),
-            params: raw.params,
+            params: raw.params.unwrap_or_default(),
         }
     }
 }

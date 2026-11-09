@@ -135,6 +135,7 @@ pub(super) struct Reply {
     body: Vec<u8>,
     location: Option<String>,
     delay: Duration,
+    stall: Duration,
 }
 
 impl Reply {
@@ -144,6 +145,7 @@ impl Reply {
             body: body.as_bytes().to_vec(),
             location: None,
             delay: Duration::ZERO,
+            stall: Duration::ZERO,
         }
     }
 
@@ -153,6 +155,7 @@ impl Reply {
             body: Vec::new(),
             location: Some(target.to_owned()),
             delay: Duration::ZERO,
+            stall: Duration::ZERO,
         }
     }
 
@@ -162,6 +165,17 @@ impl Reply {
             body: body.as_bytes().to_vec(),
             location: None,
             delay,
+            stall: Duration::ZERO,
+        }
+    }
+
+    pub(super) fn stalled(stall: Duration, body: &str) -> Self {
+        Self {
+            status: 200,
+            body: body.as_bytes().to_vec(),
+            location: None,
+            delay: Duration::ZERO,
+            stall,
         }
     }
 }
@@ -247,7 +261,7 @@ async fn converse(
         .unwrap_or_else(PoisonError::into_inner)
         .push(path.clone());
     let Some(reply) = routes.get(&path) else {
-        return write_reply(&mut stream, 404, None, &[]).await;
+        return write_reply(&mut stream, 404, None, &[], Duration::ZERO).await;
     };
     if !reply.delay.is_zero() {
         sleep(reply.delay).await;
@@ -257,6 +271,7 @@ async fn converse(
         reply.status,
         reply.location.as_deref(),
         &reply.body,
+        reply.stall,
     )
     .await
 }
@@ -266,6 +281,7 @@ async fn write_reply(
     status: u16,
     location: Option<&str>,
     body: &[u8],
+    stall: Duration,
 ) -> io::Result<()> {
     let mut head = format!(
         "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n",
@@ -278,5 +294,8 @@ async fn write_reply(
     }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes()).await?;
+    if !stall.is_zero() {
+        sleep(stall).await;
+    }
     stream.write_all(body).await
 }

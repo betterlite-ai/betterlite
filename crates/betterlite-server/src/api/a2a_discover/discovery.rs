@@ -85,7 +85,7 @@ pub async fn fetch_well_known_card<S>(
     source: &S,
     base_url: &str,
     discovery_mode: DiscoveryMode,
-    params: Option<&BTreeMap<String, AgentJson>>,
+    params: &BTreeMap<String, AgentJson>,
 ) -> Result<AgentJson, AgentCardDiscoveryError>
 where
     S: CardSource + ?Sized,
@@ -123,9 +123,9 @@ where
 }
 
 fn langgraph_paths(
-    params: Option<&BTreeMap<String, AgentJson>>,
+    params: &BTreeMap<String, AgentJson>,
 ) -> Result<Vec<String>, AgentCardDiscoveryError> {
-    let assistant_id = match params.and_then(|entries| entries.get("assistant_id")) {
+    let assistant_id = match params.get("assistant_id") {
         None | Some(AgentJson::Null) => {
             return Err(AgentCardDiscoveryError::MissingAssistantId);
         }

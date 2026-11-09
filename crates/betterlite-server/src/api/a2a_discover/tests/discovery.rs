@@ -44,7 +44,7 @@ async fn well_known_fallback_tries_the_three_paths_in_order() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -69,7 +69,7 @@ async fn langgraph_platform_appends_the_assistant_id_to_every_path() {
         &source,
         "https://agent.test",
         DiscoveryMode::LanggraphPlatform,
-        Some(&params),
+        &params,
     )
     .await
     .unwrap_err();
@@ -84,22 +84,22 @@ async fn langgraph_platform_appends_the_assistant_id_to_every_path() {
 }
 
 #[rstest]
-#[case::absent(None)]
-#[case::empty(Some(BTreeMap::new()))]
-#[case::null(Some(BTreeMap::from([(
-    "assistant_id".to_owned(),
-    AgentJson::Null,
-)])))]
+#[case::empty(BTreeMap::new())]
+#[case::without_the_key(BTreeMap::from([(
+    "other".to_owned(),
+    AgentJson::Bool(true),
+)]))]
+#[case::null(BTreeMap::from([("assistant_id".to_owned(), AgentJson::Null)]))]
 #[tokio::test]
 async fn langgraph_platform_without_an_assistant_id_fails_at_once(
-    #[case] params: Option<BTreeMap<String, AgentJson>>,
+    #[case] params: BTreeMap<String, AgentJson>,
 ) {
     let source = ScriptedSource::failing(3);
     let error = fetch_well_known_card(
         &source,
         "https://agent.test",
         DiscoveryMode::LanggraphPlatform,
-        params.as_ref(),
+        &params,
     )
     .await
     .unwrap_err();
@@ -113,9 +113,14 @@ async fn langgraph_platform_without_an_assistant_id_fails_at_once(
 #[tokio::test]
 async fn an_empty_base_url_fails_at_once() {
     let source = ScriptedSource::failing(3);
-    let error = fetch_well_known_card(&source, "", DiscoveryMode::WellKnownFallback, None)
-        .await
-        .unwrap_err();
+    let error = fetch_well_known_card(
+        &source,
+        "",
+        DiscoveryMode::WellKnownFallback,
+        &BTreeMap::new(),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.to_string(), "base_url is required");
     assert!(source.urls().is_empty());
 }
@@ -127,7 +132,7 @@ async fn a_trailing_slash_on_the_base_url_is_dropped() {
         &source,
         "https://agent.test///",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -148,7 +153,7 @@ async fn the_first_card_below_four_hundred_wins() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -169,7 +174,7 @@ async fn a_non_json_body_is_skipped() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -190,7 +195,7 @@ async fn a_json_value_that_is_not_an_object_is_skipped(#[case] body: &str) {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -205,7 +210,7 @@ async fn the_last_error_names_the_json_error() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -230,7 +235,7 @@ async fn the_last_error_names_the_json_kind_it_rejected(#[case] body: &str, #[ca
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -264,7 +269,7 @@ fn every_attempt_is_logged_at_debug() {
                 &source,
                 "https://agent.test",
                 DiscoveryMode::WellKnownFallback,
-                None,
+                &BTreeMap::new(),
             ))
             .unwrap();
         assert_eq!(fetched, card());
@@ -283,7 +288,7 @@ async fn a_status_of_three_hundred_ninety_nine_is_still_read() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -298,7 +303,7 @@ async fn a_status_of_four_hundred_is_not_read() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -318,7 +323,7 @@ async fn a_blocked_path_moves_to_the_next_one() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -339,7 +344,7 @@ async fn a_failed_request_moves_to_the_next_one() {
         &source,
         "https://agent.test",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -355,7 +360,7 @@ async fn the_error_names_the_base_url_the_mode_and_the_last_failure() {
         &source,
         "https://agent.test",
         DiscoveryMode::LanggraphPlatform,
-        Some(&params),
+        &params,
     )
     .await
     .unwrap_err();
@@ -386,7 +391,7 @@ async fn a_loopback_url_is_blocked_before_any_request() {
         &source,
         "http://127.0.0.1:9",
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap_err();
@@ -418,7 +423,7 @@ async fn a_redirect_to_a_blocked_host_is_not_followed() {
         &source,
         &server.url(""),
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -450,7 +455,39 @@ async fn a_slow_answer_is_cut_at_the_deadline() {
         &source,
         &server.url(""),
         DiscoveryMode::WellKnownFallback,
-        None,
+        &BTreeMap::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fetched, card());
+    assert_eq!(
+        server.requests(),
+        ["/.well-known/agent-card.json", "/.well-known/agent.json"]
+    );
+}
+
+#[tokio::test]
+async fn a_stalled_body_is_cut_at_the_deadline() {
+    let server = Server::start(vec![
+        (
+            "/.well-known/agent-card.json",
+            Reply::stalled(Duration::from_secs(3), CARD),
+        ),
+        ("/.well-known/agent.json", Reply::json(CARD)),
+    ])
+    .await;
+    let client = proxied_client(Duration::from_secs(5));
+    let urls = safe_fetcher(&["127.0.0.1"]);
+    let source = SafeCardSource {
+        client: &client,
+        urls: &urls,
+        timeout: Duration::from_millis(300),
+    };
+    let fetched = fetch_well_known_card(
+        &source,
+        &server.url(""),
+        DiscoveryMode::WellKnownFallback,
+        &BTreeMap::new(),
     )
     .await
     .unwrap();
