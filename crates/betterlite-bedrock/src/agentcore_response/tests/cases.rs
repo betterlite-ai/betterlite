@@ -197,11 +197,11 @@ fn missing_usage() {
         logs.text()
             .contains("Calculated usage - prompt: 3, completion: 5, total: 8")
     );
-    let prompt_failed = run(&raw, &request_messages, "hello", (None, None));
+    let prompt_failed = run(&raw, &request_messages, "hello", (None, Some(5)));
     assert_eq!(prompt_failed.usage, usage(1, 2, 3));
     assert_eq!(
         logs.text()
-            .matches("Failed to calculate token usage")
+            .matches("Failed to calculate token usage: fixture counter unavailable")
             .count(),
         1
     );
@@ -209,7 +209,7 @@ fn missing_usage() {
     assert_eq!(completion_failed.usage, usage(1, 2, 3));
     assert_eq!(
         logs.text()
-            .matches("Failed to calculate token usage")
+            .matches("Failed to calculate token usage: fixture counter unavailable")
             .count(),
         2
     );
