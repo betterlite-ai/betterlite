@@ -125,6 +125,34 @@ fn pages(response: &OCRResponse) -> Vec<(i64, &str)> {
         {"Id":"p","BlockType":"LAYOUT_TEXT","Relationships":[{"Type":"CHILD","Ids":["l1"]}]}]"#,
     vec![(0, "Body")]
 )]
+#[case::a_table_cell_repeated_at_one_position_keeps_the_last(
+    r#"[
+        {"Id":"w1","BlockType":"WORD","Text":"first"},
+        {"Id":"w2","BlockType":"WORD","Text":"second"},
+        {"Id":"tb","BlockType":"TABLE","Relationships":[{"Type":"CHILD","Ids":["c1","c2"]}]},
+        {"Id":"c1","BlockType":"CELL","RowIndex":1,"ColumnIndex":1,"Relationships":[{"Type":"CHILD","Ids":["w1"]}]},
+        {"Id":"c2","BlockType":"CELL","RowIndex":1,"ColumnIndex":1,"Relationships":[{"Type":"CHILD","Ids":["w2"]}]},
+        {"Id":"lt","BlockType":"LAYOUT_TABLE","Relationships":[{"Type":"CHILD","Ids":["tb"]}]}]"#,
+    vec![(0, "| second |\n| --- |")]
+)]
+#[case::a_cell_without_its_column_is_skipped(
+    r#"[
+        {"Id":"w1","BlockType":"WORD","Text":"kept"},
+        {"Id":"w2","BlockType":"WORD","Text":"dropped"},
+        {"Id":"tb","BlockType":"TABLE","Relationships":[{"Type":"CHILD","Ids":["c1","c2"]}]},
+        {"Id":"c1","BlockType":"CELL","RowIndex":1,"ColumnIndex":1,"Relationships":[{"Type":"CHILD","Ids":["w1"]}]},
+        {"Id":"c2","BlockType":"CELL","RowIndex":2,"Relationships":[{"Type":"CHILD","Ids":["w2"]}]},
+        {"Id":"lt","BlockType":"LAYOUT_TABLE","Relationships":[{"Type":"CHILD","Ids":["tb"]}]}]"#,
+    vec![(0, "| kept |\n| --- |")]
+)]
+#[case::a_layout_block_without_a_page_belongs_to_page_one(
+    r#"[
+        {"Id":"l1","BlockType":"LINE","Text":"one"},
+        {"Id":"p","BlockType":"LAYOUT_TEXT","Relationships":[{"Type":"CHILD","Ids":["l1"]}]},
+        {"Id":"l2","BlockType":"LINE","Text":"two","Page":2},
+        {"Id":"q","BlockType":"LAYOUT_TEXT","Page":2,"Relationships":[{"Type":"CHILD","Ids":["l2"]}]}]"#,
+    vec![(0, "one"), (1, "two")]
+)]
 #[case::a_child_without_text_adds_nothing(
     r#"[
         {"Id":"l1","BlockType":"LINE","Text":"Body"},

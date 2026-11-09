@@ -1,7 +1,7 @@
 use http::Method;
 use rstest::rstest;
 
-use crate::json::Object;
+use crate::json::{Json, Object};
 use crate::ocr_config::{OcrProviderConfig as _, PreparedOcrRequest};
 use crate::ocr_error::OcrError;
 use crate::ocr_http::OcrClient;
@@ -188,6 +188,20 @@ async fn the_region_falls_back_to_the_region_environment_variable() {
     with_secret(&mut request, "AWS_REGION", "sa-east-1");
 
     assert_eq!(regional_url(&request, &client).await, "sa-east-1");
+}
+
+#[tokio::test]
+async fn a_non_text_region_option_falls_back_to_the_environment() {
+    let (_log, client) = signing_client();
+    let mut arguments = Object::new();
+    let _previous = arguments.insert(
+        "aws_region_name".to_owned(),
+        Json::Number(serde_json::Number::from(5_i64)),
+    );
+    let mut request = request("detect-document-text", None, arguments);
+    with_secret(&mut request, "AWS_REGION_NAME", "ap-south-1");
+
+    assert_eq!(regional_url(&request, &client).await, "ap-south-1");
 }
 
 #[tokio::test]

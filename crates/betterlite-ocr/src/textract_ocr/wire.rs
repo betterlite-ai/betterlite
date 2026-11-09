@@ -117,16 +117,12 @@ pub(crate) struct Block {
     #[serde(rename = "BlockType")]
     pub(crate) kind: BlockType,
     pub(crate) text: Option<String>,
-    #[serde(default = "default_page")]
-    pub(crate) page: i64,
+    // absent or null is page one, matching LiteLLM's Option<i64> default
+    pub(crate) page: Option<i64>,
     pub(crate) row_index: Option<usize>,
     pub(crate) column_index: Option<usize>,
     #[serde(default)]
     pub(crate) relationships: Vec<Relationship>,
-}
-
-const fn default_page() -> i64 {
-    1
 }
 
 #[derive(Debug, Deserialize)]

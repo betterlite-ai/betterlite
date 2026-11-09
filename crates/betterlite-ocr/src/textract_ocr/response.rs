@@ -5,13 +5,13 @@ use crate::response::{OCRPage, OCRResponse, OCRUsageInfo};
 use crate::textract_ocr::wire::{Block, BlockType, DocumentMetadata};
 
 pub(crate) fn lines_by_page(blocks: &[Block]) -> Vec<(i64, String)> {
-    let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page).collect();
+    let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page.unwrap_or(1)).collect();
     pages
         .into_iter()
         .map(|page| {
             let lines: Vec<&str> = blocks
                 .iter()
-                .filter(|block| block.kind == BlockType::Line && block.page == page)
+                .filter(|block| block.kind == BlockType::Line && block.page.unwrap_or(1) == page)
                 .filter_map(|block| block.text.as_deref())
                 .collect();
             (page, lines.join("\n"))

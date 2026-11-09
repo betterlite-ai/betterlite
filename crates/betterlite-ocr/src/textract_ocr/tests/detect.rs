@@ -62,6 +62,18 @@ fn detect_response(raw: &str) -> OCRResponse {
     vec![(0, "explicit\nimplicit")],
     Some(1)
 )]
+#[case::a_null_page_belongs_to_page_one(
+    r#"{"Blocks":[
+        {"BlockType":"LINE","Text":"explicit","Page":1},
+        {"BlockType":"LINE","Text":"null","Page":null}]}"#,
+    vec![(0, "explicit\nnull")],
+    Some(1)
+)]
+#[case::metadata_without_pages_counts_the_pages_with_text(
+    r#"{"DocumentMetadata":{},"Blocks":[{"BlockType":"LINE","Text":"only"}]}"#,
+    vec![(0, "only")],
+    Some(1)
+)]
 #[case::blank_document(
     r#"{"DocumentMetadata":{"Pages":1}}"#,
     vec![],

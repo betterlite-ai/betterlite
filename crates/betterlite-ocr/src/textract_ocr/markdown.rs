@@ -13,7 +13,10 @@ pub(crate) fn layout_markdown(
     page: i64,
     by_id: &HashMap<&str, &Block>,
 ) -> Result<String, OcrError> {
-    let on_page: Vec<&Block> = blocks.iter().filter(|block| block.page == page).collect();
+    let on_page: Vec<&Block> = blocks
+        .iter()
+        .filter(|block| block.page.unwrap_or(1) == page)
+        .collect();
     let list_items: BTreeSet<&str> = on_page
         .iter()
         .filter(|block| block.kind == BlockType::LayoutList)
