@@ -18,3 +18,6 @@ deviations:
   - what: The same assistant tool call without arguments fails the request parse where LiteLLM gives the OCI COHERE tool call empty parameters.
     why: The shared FunctionCall requires arguments before the Cohere adapter runs; the empty-map default belongs in that shared type, not in this module.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/cohere.py#L97-L100
+  - what: A stream chunk with an image part and one with another unknown part type fail with a different 500 message than LiteLLM's; both still fail with status 500.
+    why: The content parts are a closed enum, so an unknown type fails the typed chunk parse, and the image message uses a comma where LiteLLM uses an em dash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L389-L398
