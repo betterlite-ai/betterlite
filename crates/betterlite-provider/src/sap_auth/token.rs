@@ -132,28 +132,21 @@ fn error_text(body: &str) -> String {
     body.replace(&literal, "\"<redacted>\"")
 }
 
+fn token_error(text: String, source: TokenFailure) -> SapAuthError {
+    SapAuthError::TokenRequest {
+        text,
+        source: Box::new(source),
+    }
+}
+
 pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToken, SapAuthError> {
-    let parsed = match serde_json::from_str::<TokenBody>(body) {
-        Ok(parsed) => parsed,
-        Err(source) => {
-            return Err(SapAuthError::TokenRequest {
-                text: error_text(body),
-                source: Box::new(TokenFailure::Response(source)),
-            });
-        }
-    };
-    let Some(expires_at) = Duration::try_seconds(parsed.expires_in)
+    let parsed = serde_json::from_str::<TokenBody>(body)
+        .map_err(|source| token_error(error_text(body), TokenFailure::Response(source)))?;
+    let expires_at = Duration::try_seconds(parsed.expires_in)
         .and_then(|duration| now.checked_add_signed(duration))
-    else {
-        return Err(SapAuthError::TokenRequest {
-            text: error_text(body),
-            source: Box::new(TokenFailure::Expiry(parsed.expires_in)),
-        });
-    };
-    Ok(BearerToken {
-        header: SecretString::from(format!("Bearer {}", parsed.access_token.expose_secret())),
-        expires_at,
-    })
+        .ok_or_else(|| token_error(error_text(body), TokenFailure::Expiry(parsed.expires_in)))?;
+    let header = SecretString::from(format!("Bearer {}", parsed.access_token.expose_secret()));
+    Ok(BearerToken { header, expires_at })
 }
 
 #[derive(Debug)]
@@ -187,10 +180,7 @@ impl TokenCache {
         }
         let body = transport
             .post(&self.request)
-            .map_err(|source| SapAuthError::TokenRequest {
-                text: source.to_string(),
-                source: Box::new(TokenFailure::Transport(source)),
-            })?;
+            .map_err(|source| token_error(source.to_string(), TokenFailure::Transport(source)))?;
         let token = parse_token_response(&body, now)?;
         let header = token.header.clone();
         *cached = Some(token);

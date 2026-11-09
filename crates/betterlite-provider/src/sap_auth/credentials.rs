@@ -71,9 +71,7 @@ pub fn fetch_credentials(
         if resolved.is_none() && !source.values.is_empty() {
             resolved = Some(source.values);
         }
-        if resource_group.is_none() {
-            resource_group = source.resource_group;
-        }
+        resource_group = resource_group.or(source.resource_group);
     }
     let mut values = resolved.ok_or(SapAuthError::NoCredentials)?;
     if let Some(cert_url) = values.remove("cert_url") {
