@@ -205,6 +205,25 @@ async fn swagger_head_reports_the_length_without_the_body() {
     );
 }
 
+// the documented deviation: embedded bytes have no byte-range source, so a Range request gets the full body
+#[tokio::test]
+async fn a_range_request_gets_the_full_body() {
+    let router = router(default_urls(), "");
+    let request = Request::builder()
+        .uri("/swagger/swagger-ui.css")
+        .header(header::RANGE, "bytes=0-9")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get(header::CONTENT_RANGE).is_none());
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        body.as_ref(),
+        swagger_asset("swagger-ui.css").unwrap().bytes
+    );
+}
+
 #[tokio::test]
 async fn a_missing_swagger_file_is_fastapis_not_found_body() {
     let router = router(default_urls(), "");
