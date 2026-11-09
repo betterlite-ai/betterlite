@@ -7,9 +7,9 @@ call:
     replies:
       - data:
           news:
-            - {title: "N", url: "https://n.test", snippet: "news snippet", date: "2024-06-01"}
+            - {title: "N", url: "https://n.test", snippet: "news snippet", date: "2024-06-01", last_updated: "2024-06-02"}
           web:
-            - {title: "W", url: "https://w.test", markdown: "web markdown"}
+            - {title: "W", url: "https://w.test", markdown: "web markdown", date: "2024-03-04", last_updated: "2024-04-05"}
 env: {}
 compare:
   ignore: []

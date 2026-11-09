@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
-use serde::Deserialize;
 use serde_json::Deserializer;
 use serde_json::value::RawValue;
 
@@ -12,12 +11,6 @@ pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
 
 type RawFields = BTreeMap<String, Box<RawValue>>;
 
-#[derive(Deserialize)]
-struct FastcrwReply {
-    #[serde(default)]
-    data: Option<Box<RawValue>>,
-}
-
 pub fn decode_fastcrw_reply(bytes: &[u8]) -> Result<SearchResponse, FastcrwError> {
     if bytes.len() > MAX_REPLY_BYTES {
         return Err(FastcrwError::ReplyTooLarge {
@@ -25,13 +18,14 @@ pub fn decode_fastcrw_reply(bytes: &[u8]) -> Result<SearchResponse, FastcrwError
         });
     }
     let mut decoder = Deserializer::from_slice(bytes);
-    let reply: FastcrwReply = serde_path_to_error::deserialize(&mut decoder)
+    // a bare list or scalar document fails here, as response_json.get does in the source
+    let reply: RawFields = serde_path_to_error::deserialize(&mut decoder)
         .map_err(|source| FastcrwError::Reply { source })?;
     decoder.end().map_err(FastcrwError::TrailingBytes)?;
-    let results = reply
-        .data
-        .as_deref()
-        .map_or_else(|| Ok(Vec::new()), |data| project_data(data.get()))?;
+    let results = match reply.get("data") {
+        Some(data) => project_data(data.get())?,
+        None => Vec::new(),
+    };
     Ok(SearchResponse {
         results,
         object: SearchObject::default(),

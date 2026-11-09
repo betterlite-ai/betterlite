@@ -9,6 +9,7 @@ call:
         data:
           - {title: "A", url: "https://a.test", description: "description only"}
           - {title: "B", url: "https://b.test", markdown: "markdown body", description: "ignored"}
+          - {title: "C", url: "https://c.test", description: "dated", date: "2024-01-02", last_updated: "2024-02-03"}
       - success: true
         data:
           web:

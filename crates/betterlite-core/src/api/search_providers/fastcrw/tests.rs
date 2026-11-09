@@ -259,12 +259,13 @@ fn trait_hooks_shape_headers_url_and_options() {
 
 fn outbound<'call>(
     api_base: &'call str,
+    api_key: Option<&'call SecretString>,
     params: &'call Object,
     body: &'call SearchBody,
 ) -> OutboundSearch<'call, SearchBody> {
     OutboundSearch {
         api_base,
-        api_key: None,
+        api_key,
         optional_params: params,
         body,
     }
@@ -281,7 +282,7 @@ fn trait_sign_request_returns_auth_headers() {
     let search = load(&[("CRW_API_KEY", "crw-env")]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://fastcrw.com/api/v1/search", &params, &body);
+    let request = outbound("https://fastcrw.com/api/v1/search", None, &params, &body);
     let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
     assert_eq!(
         signed.get("Authorization").map(String::as_str),
@@ -295,7 +296,7 @@ fn trait_sign_request_reports_a_missing_key() {
     let search = load(&[]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://fastcrw.com/api/v1/search", &params, &body);
+    let request = outbound("https://fastcrw.com/api/v1/search", None, &params, &body);
     assert!(matches!(
         search.sign_request(Headers::new(), &request),
         Err(FastcrwError::MissingApiKey)
@@ -303,11 +304,26 @@ fn trait_sign_request_reports_a_missing_key() {
 }
 
 #[test]
+fn trait_sign_request_sends_the_caller_key_to_an_untrusted_base() {
+    let search = load(&[("CRW_API_KEY", "crw-server")]);
+    let caller = key("crw-caller");
+    let params = Object::new();
+    let body = empty_body(&search);
+    let request = outbound("https://evil.test/search", Some(&caller), &params, &body);
+    let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        signed.get("Authorization").map(String::as_str),
+        Some("Bearer crw-caller")
+    );
+    assert!(signed_body.is_none());
+}
+
+#[test]
 fn trait_sign_request_rejects_an_untrusted_base() {
     let search = load(&[("CRW_API_KEY", "crw-server")]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://evil.test/search", &params, &body);
+    let request = outbound("https://evil.test/search", None, &params, &body);
     let error = search.sign_request(Headers::new(), &request).unwrap_err();
     assert!(matches!(
         error,
@@ -451,6 +467,7 @@ fn rejection_kind(error: &FastcrwError) -> &'static str {
 
 #[rstest]
 #[case::array_document(b"[]", "reply")]
+#[case::nested_array_document(br#"[[{"title":"x"}]]"#, "reply")]
 #[case::string_document(br#""text""#, "reply")]
 #[case::item_not_an_object(br#"{"data":["x"]}"#, "result")]
 #[case::null_item(br#"{"data":[null]}"#, "result")]
@@ -475,6 +492,17 @@ fn reply_accepts_a_null_markdown() {
     let parsed =
         decode_fastcrw_reply(br#"{"data":[{"markdown":null,"description":"d"}]}"#).unwrap();
     assert_eq!(parsed.results, vec![result("", "", "d")]);
+}
+
+#[test]
+fn reply_ignores_item_dates() {
+    let parsed = decode_fastcrw_reply(
+        br#"{"data":[{"title":"A","url":"https://a.test","date":"2024-01-02","last_updated":"2024-02-03"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(parsed.results, vec![result("A", "https://a.test", "")]);
+    assert!(parsed.results[0].date.is_none());
+    assert!(parsed.results[0].last_updated.is_none());
 }
 
 #[test]

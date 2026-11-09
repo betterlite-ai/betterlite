@@ -257,12 +257,13 @@ fn trait_hooks_shape_headers_url_and_options() {
 
 fn outbound<'call>(
     api_base: &'call str,
+    api_key: Option<&'call SecretString>,
     params: &'call Object,
     body: &'call SearchBody,
 ) -> OutboundSearch<'call, SearchBody> {
     OutboundSearch {
         api_base,
-        api_key: None,
+        api_key,
         optional_params: params,
         body,
     }
@@ -279,7 +280,7 @@ fn trait_sign_request_returns_auth_headers() {
     let search = load(&[("FIRECRAWL_API_KEY", "fc-env")]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
+    let request = outbound("https://api.firecrawl.dev/v2/search", None, &params, &body);
     let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
     assert_eq!(
         signed.get("Authorization").map(String::as_str),
@@ -293,7 +294,7 @@ fn trait_sign_request_reports_a_missing_key() {
     let search = load(&[]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://api.firecrawl.dev/v2/search", &params, &body);
+    let request = outbound("https://api.firecrawl.dev/v2/search", None, &params, &body);
     assert!(matches!(
         search.sign_request(Headers::new(), &request),
         Err(FirecrawlError::MissingApiKey)
@@ -301,11 +302,26 @@ fn trait_sign_request_reports_a_missing_key() {
 }
 
 #[test]
+fn trait_sign_request_sends_the_caller_key_to_an_untrusted_base() {
+    let search = load(&[("FIRECRAWL_API_KEY", "fc-server")]);
+    let caller = key("fc-caller");
+    let params = Object::new();
+    let body = empty_body(&search);
+    let request = outbound("https://evil.test/search", Some(&caller), &params, &body);
+    let (signed, signed_body) = search.sign_request(Headers::new(), &request).unwrap();
+    assert_eq!(
+        signed.get("Authorization").map(String::as_str),
+        Some("Bearer fc-caller")
+    );
+    assert!(signed_body.is_none());
+}
+
+#[test]
 fn trait_sign_request_rejects_an_untrusted_base() {
     let search = load(&[("FIRECRAWL_API_KEY", "fc-server")]);
     let params = Object::new();
     let body = empty_body(&search);
-    let request = outbound("https://evil.test/search", &params, &body);
+    let request = outbound("https://evil.test/search", None, &params, &body);
     let error = search.sign_request(Headers::new(), &request).unwrap_err();
     assert!(matches!(
         error,
@@ -469,6 +485,28 @@ fn web_uses_description_and_ignores_a_caller_snippet() {
 }
 
 #[test]
+fn list_and_web_items_ignore_dates_but_news_keeps_its_date() {
+    let list = decode_firecrawl_reply(
+        br#"{"data":[{"title":"A","url":"https://a.test","date":"2024-01-02","last_updated":"2024-02-03"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(list.results, vec![result("A", "https://a.test", "", None)]);
+    assert!(list.results[0].last_updated.is_none());
+    let cloud = decode_firecrawl_reply(
+        br#"{"data":{"web":[{"title":"W","url":"https://w.test","date":"2024-01-02","last_updated":"2024-02-03"}],"news":[{"title":"N","url":"https://n.test","snippet":"s","date":"2024-05-06","last_updated":"2024-06-07"}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(cloud.results[0], result("W", "https://w.test", "", None));
+    assert!(cloud.results[0].date.is_none());
+    assert!(cloud.results[0].last_updated.is_none());
+    assert_eq!(
+        cloud.results[1],
+        result("N", "https://n.test", "s", Some("2024-05-06"))
+    );
+    assert!(cloud.results[1].last_updated.is_none());
+}
+
+#[test]
 fn news_without_a_date_keeps_null() {
     let parsed = decode_firecrawl_reply(
         br#"{"data":{"news":[{"title":"N","url":"https://n.test","snippet":"s"}]}}"#,
@@ -523,6 +561,7 @@ fn rejection_kind(error: &FirecrawlError) -> &'static str {
 
 #[rstest]
 #[case::array_document(b"[]", "reply")]
+#[case::nested_array_document(br#"[[{"title":"x"}]]"#, "reply")]
 #[case::string_document(br#""text""#, "reply")]
 #[case::web_null(br#"{"data":{"web":null}}"#, "result")]
 #[case::news_null(br#"{"data":{"news":null}}"#, "result")]
