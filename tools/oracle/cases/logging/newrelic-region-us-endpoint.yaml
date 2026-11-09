@@ -1,0 +1,8 @@
+kind: helper
+name: newrelic-region-us-endpoint
+call:
+  b3943:
+    operation: region
+    region: us
+env: {}
+compare: {ignore: []}

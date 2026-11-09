@@ -1,0 +1,40 @@
+kind: helper
+name: langfuse-observation-attributes-generation
+call:
+  b3901:
+    steps:
+      - function: observation_attributes
+        fields:
+          observation_type: generation
+          input: prompt
+          output: answer
+          metadata:
+            provider: openai
+            cached: false
+          level: WARNING
+          status_message: slow
+          version: "2"
+          model: gpt-4o
+          model_parameters: {}
+          usage_details: {}
+          cost_details: {}
+          completion_start_time: "2026-01-01T00:00:00Z"
+          prompt:
+            name: support-bot
+            version: 3
+            is_fallback: false
+      - function: observation_attributes
+        fields:
+          observation_type: generation
+          completion_start_time: 1234.5
+      - function: observation_attributes
+        fields:
+          observation_type: generation
+          prompt:
+            name: local
+            version: 1
+            is_fallback: true
+env:
+  TZ: UTC
+compare:
+  ignore: []

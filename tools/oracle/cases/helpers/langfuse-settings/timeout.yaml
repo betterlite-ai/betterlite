@@ -1,0 +1,20 @@
+kind: helper
+name: langfuse-settings-timeout
+call:
+  b3900:
+    function: read
+    reading: timeout
+    steps:
+      - environment: {}
+      - environment:
+          LANGFUSE_TIMEOUT: "30"
+      - environment:
+          LANGFUSE_TIMEOUT: " 2.5 "
+      - environment:
+          LANGFUSE_TIMEOUT: "1e3"
+      - environment:
+          LANGFUSE_TIMEOUT: "soon"
+      - environment:
+          LANGFUSE_TIMEOUT: ""
+env: {}
+compare: {ignore: []}

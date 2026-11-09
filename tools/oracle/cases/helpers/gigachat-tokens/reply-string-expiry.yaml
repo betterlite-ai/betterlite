@@ -1,0 +1,8 @@
+kind: helper
+name: gigachat-reply-string-expiry
+call:
+  b7325:
+    operation: reply
+    body: '{"tok":"tok-6","exp":"1735689600000"}'
+env: {}
+compare: {ignore: []}

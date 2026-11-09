@@ -1,0 +1,14 @@
+task: B5990
+deviations:
+  - what: The provider mapping cache is held by a ProviderMappingCache value passed in by the caller, not by a function-level lru_cache.
+    why: The code rules forbid module state; the size (128) and the failures-not-cached rule stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/common_utils.py#L60-L102
+  - what: transform_request strips cache_control from the messages it sends to the Hugging Face router.
+    why: The task reuses B503's shared OpenAI message transform, which removes cache_control for every provider that is not OpenAI; LiteLLM's HuggingFaceChatConfig.transform_request only calls _transform_messages, so the field reaches the router there. A working Hugging Face setup cannot rely on an Anthropic-only cache field surviving the router, and copying the media and file transform a second time would duplicate it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/chat/transformation.py#L123-L156
+  - what: betterlite-openai pins lru to 0.18.5 instead of the newest 0.19.0.
+    why: lru 0.19.0 adds a second lru entry to Cargo.lock, because aws-sdk-s3, reached through betterlite-cache, requires ^0.18.4 and cannot move to 0.19.0; cargo deny's multiple-versions rule then fails with "found 2 duplicate entries for crate 'lru'", and deny.toml is outside this task's scope. 0.18.5 is the newest release that keeps a single lru entry, was released 2026-09-23, and keeps the LruCache::new, get and put calls unchanged.
+    link: ""
+  - what: An assistant tool-call or function-call turn and a legacy function message keep content null, and one of those turns that omitted content gains content null.
+    why: betterlite's typed ChatMessage cannot tell an omitted content from an explicit null, so the two collapse. A null is kept so the turns LiteLLM declares with null content reach the provider unchanged; a message of those shapes that omitted the key gains it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/chat/transformation.py#L131-L156

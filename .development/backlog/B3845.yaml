@@ -1,7 +1,7 @@
 id: B3845
 milestone: M7 observability
 title: OTel GenAI and legacy attribute mapping
-status: todo
+status: done
 depends_on: [B3840, B3843, B3844, B3848]
 file: tasks/B3845-otel-genai-mapping.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/opentelemetry.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 957

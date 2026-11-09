@@ -1,7 +1,7 @@
 id: B305
 milestone: M2 routing
 title: Resolve router and provider timeouts
-status: todo
+status: done
 depends_on: [B009, B002, B005, B011, B301]
 file: tasks/B305-routing-timeouts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/timeout.py"
 parent: B017
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 947

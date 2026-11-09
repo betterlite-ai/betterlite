@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-usage-signed-thinking-without-count
+call:
+  anthropic_usage:
+    usage: {input_tokens: 1, output_tokens: 10}
+    reasoning_content: null
+    completion_response: {content: [{type: thinking, thinking: secret}, {type: redacted_thinking, data: opaque}]}
+    speed: null
+env: {}
+compare: {ignore: []}

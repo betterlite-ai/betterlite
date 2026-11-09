@@ -1,0 +1,40 @@
+kind: helper
+name: langfuse-sampler-rate-boundary
+call:
+  b3901:
+    steps:
+      - function: sampler
+        rate: 0.5
+        trace_id: "00000000000000000000000000000000"
+        attributes: [[marker, kept]]
+      - function: sampler
+        rate: 0.5
+        trace_id: "00000000000000000000000000000003"
+        attributes: [[marker, kept]]
+      - function: sampler
+        rate: 0.25
+        trace_id: "00000000000000000000000000000000"
+        attributes: []
+      - function: sampler
+        rate: 0.25
+        trace_id: "00000000000000000000000000000001"
+        attributes: []
+      - function: sampler
+        rate: 0.0
+        trace_id: "00000000000000000000000000000000"
+        attributes: []
+      - function: sampler
+        rate: 0.0001
+        trace_id: "000000000000000000000000000009be"
+        attributes: []
+      - function: sampler
+        rate: 0.0001
+        trace_id: "00000000000000000000000000000000"
+        attributes: []
+      - function: sampler
+        rate: 1.0
+        trace_id: "00000000000000000000000000000003"
+        attributes: []
+env: {}
+compare:
+  ignore: []
