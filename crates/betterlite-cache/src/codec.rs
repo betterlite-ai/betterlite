@@ -11,32 +11,27 @@ mod codec_tests;
 #[derive(Debug, Error)]
 pub enum CodecError {
     #[error("the value cannot be written as json")]
-    Serialize {
-        #[source]
-        source: serde_json::Error,
-    },
+    Serialize(#[source] serde_json::Error),
     #[error("the payload does not match the model")]
-    Validation {
-        #[source]
-        source: serde_json::Error,
-    },
+    Validation(#[source] serde_json::Error),
 }
+
+pub type CodecResult<Value> = Result<Value, CodecError>;
 
 pub struct CacheCodec;
 
 impl CacheCodec {
     // a model instance dumps straight to its json form, without the validation round trip LiteLLM skips too
-    pub fn encode<Model>(value: &Model) -> Result<CacheValue, CodecError>
+    pub fn encode<Model>(value: &Model) -> CodecResult<CacheValue>
     where
         Model: Serialize,
     {
-        let json =
-            serde_json::to_value(value).map_err(|source| CodecError::Serialize { source })?;
-        serde_json::from_value(json).map_err(|source| CodecError::Serialize { source })
+        serde_json::from_value(serde_json::to_value(value).map_err(CodecError::Serialize)?)
+            .map_err(CodecError::Serialize)
     }
 
     // an untyped payload is validated against the model first, and the validated fields are what gets dumped
-    pub fn encode_validated<Model>(value: &CacheValue) -> Result<CacheValue, CodecError>
+    pub fn encode_validated<Model>(value: &CacheValue) -> CodecResult<CacheValue>
     where
         Model: DeserializeOwned + Serialize,
     {
@@ -44,10 +39,8 @@ impl CacheCodec {
             // LiteLLM validates a mapping or a model and returns any other payload unchanged
             return Ok(value.clone());
         }
-        let json =
-            serde_json::to_value(value).map_err(|source| CodecError::Serialize { source })?;
-        let model: Model =
-            serde_json::from_value(json).map_err(|source| CodecError::Validation { source })?;
+        let json = serde_json::to_string(value).map_err(CodecError::Serialize)?;
+        let model: Model = serde_json::from_str(&json).map_err(CodecError::Validation)?;
         Self::encode(&model)
     }
 

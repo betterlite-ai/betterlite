@@ -64,6 +64,8 @@ pub enum DiskError {
     BlockingMissing,
 }
 
+pub type DiskResult<Value> = Result<Value, DiskError>;
+
 pub struct DiskCache {
     store: Arc<DiskStore>,
     clock: Clock,
@@ -90,19 +92,19 @@ impl DiskCache {
     }
 
     // the sync calls block the calling thread, and the async twins run them on the blocking pool
-    pub fn set_cache(&self, key: &str, value: &CacheValue, ttl: Ttl) -> Result<(), DiskError> {
+    pub fn set_cache(&self, key: &str, value: &CacheValue, ttl: Ttl) -> DiskResult<()> {
         let now = self.now()?;
         let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
         self.store.set(key, value, expire_at)
     }
 
-    pub fn get_cache(&self, key: &str) -> Result<Option<CacheValue>, DiskError> {
+    pub fn get_cache(&self, key: &str) -> DiskResult<Option<CacheValue>> {
         let now = self.now()?;
         let stored = self.store.get(key, now)?;
         Ok(stored.filter(carries_value))
     }
 
-    pub fn batch_get_cache(&self, keys: &[String]) -> Result<Vec<Option<CacheValue>>, DiskError> {
+    pub fn batch_get_cache(&self, keys: &[String]) -> DiskResult<Vec<Option<CacheValue>>> {
         let mut values = Vec::with_capacity(keys.len());
         for key in keys {
             values.push(self.get_cache(key)?);
@@ -110,19 +112,19 @@ impl DiskCache {
         Ok(values)
     }
 
-    pub fn increment_cache(&self, key: &str, value: i64, ttl: Ttl) -> Result<i64, DiskError> {
+    pub fn increment_cache(&self, key: &str, value: i64, ttl: Ttl) -> DiskResult<i64> {
         let now = self.now()?;
         let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
         self.store.increment(key, value, now, expire_at)
     }
 
-    pub fn delete_cache(&self, key: &str) -> Result<(), DiskError> {
+    pub fn delete_cache(&self, key: &str) -> DiskResult<()> {
         let now = self.now()?;
         self.store.delete(key, now)?;
         Ok(())
     }
 
-    pub fn flush_cache(&self) -> Result<(), DiskError> {
+    pub fn flush_cache(&self) -> DiskResult<()> {
         let cleared = self.store.clear()?;
         tracing::debug!(cleared, "disk cache flushed");
         Ok(())
@@ -131,7 +133,7 @@ impl DiskCache {
     pub async fn async_batch_get_cache(
         &self,
         keys: &[String],
-    ) -> Result<Vec<Option<CacheValue>>, DiskError> {
+    ) -> DiskResult<Vec<Option<CacheValue>>> {
         let store = Arc::clone(&self.store);
         let now = self.now()?;
         let cache_keys = keys.to_vec();
@@ -146,7 +148,7 @@ impl DiskCache {
         Ok(values)
     }
 
-    pub async fn async_increment(&self, key: &str, value: i64, ttl: Ttl) -> Result<i64, DiskError> {
+    pub async fn async_increment(&self, key: &str, value: i64, ttl: Ttl) -> DiskResult<i64> {
         let next = self
             .run_keyed(key, move |store, cache_key, now| {
                 let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
@@ -156,7 +158,7 @@ impl DiskCache {
         Ok(next)
     }
 
-    pub async fn async_delete_cache(&self, key: &str) -> Result<(), DiskError> {
+    pub async fn async_delete_cache(&self, key: &str) -> DiskResult<()> {
         self.run_keyed(key, |store, cache_key, now| {
             store.delete(cache_key, now)?;
             Ok(())
@@ -164,7 +166,7 @@ impl DiskCache {
         .await
     }
 
-    pub async fn async_flush_cache(&self) -> Result<(), DiskError> {
+    pub async fn async_flush_cache(&self) -> DiskResult<()> {
         let store = Arc::clone(&self.store);
         let cleared = run_blocking(move || store.clear()).await?;
         tracing::debug!(cleared, "disk cache flushed");
@@ -175,7 +177,7 @@ impl DiskCache {
         &self,
         key: &str,
         operation: Operation,
-    ) -> Result<Value, DiskError>
+    ) -> DiskResult<Value>
     where
         Value: Send + 'static,
         Operation: FnOnce(&DiskStore, &str, f64) -> Result<Value, DiskError> + Send + 'static,
@@ -191,7 +193,7 @@ impl DiskCache {
 impl AsyncCacheProtocol for DiskCache {
     type Error = DiskError;
 
-    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, DiskError> {
+    async fn async_get_cache(&self, key: &str) -> DiskResult<Option<CacheValue>> {
         self.run_keyed(key, |store, cache_key, now| {
             store
                 .get(cache_key, now)
@@ -200,12 +202,7 @@ impl AsyncCacheProtocol for DiskCache {
         .await
     }
 
-    async fn async_set_cache(
-        &self,
-        key: &str,
-        value: CacheValue,
-        ttl: Ttl,
-    ) -> Result<(), DiskError> {
+    async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> DiskResult<()> {
         self.run_keyed(key, move |store, cache_key, now| {
             let expire_at = ttl.map(|seconds| seconds.mul_add(1.0_f64, now));
             store.set(cache_key, &value, expire_at)
@@ -229,7 +226,7 @@ fn carries_value(value: &CacheValue) -> bool {
     }
 }
 
-async fn run_blocking<Value, Operation>(operation: Operation) -> Result<Value, DiskError>
+async fn run_blocking<Value, Operation>(operation: Operation) -> DiskResult<Value>
 where
     Value: Send + 'static,
     Operation: FnOnce() -> Result<Value, DiskError> + Send + 'static,

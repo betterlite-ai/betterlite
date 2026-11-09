@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -83,15 +84,14 @@ impl EventDrivenCacheCoordinator {
         Load: AsyncFnOnce() -> Result<CacheValue, LoadError>,
         LoadError: Error,
     {
-        let cached = cache_read(cache, cache_key).await?;
-        if let Some(value) = cached {
+        if let Some(value) = cache_read(cache, cache_key).await? {
             self.log_step("Cache hit");
             return Ok(Some(value));
         }
         self.log_step("Cache miss");
         let Some(signal) = self.claim_role() else {
             let _signal = LoadSignal { coordinator: self };
-            let value = self.load_and_cache(cache_key, cache, load_fn).await?;
+            let value = Self::load_and_cache(self, cache, cache_key, load_fn()).await?;
             return Ok(Some(value));
         };
         self.wait_for_signal_and_get(signal, cache_key, cache).await
@@ -160,24 +160,25 @@ impl EventDrivenCacheCoordinator {
         Ok(value)
     }
 
+    // the loader rechecks the cache, loads once and signals the waiters through its guard
     async fn load_and_cache<Cache, Load, LoadError>(
-        &self,
-        cache_key: &str,
+        owner: &Self,
         cache: &Cache,
-        load_fn: Load,
+        cache_key: &str,
+        load: Load,
     ) -> Result<CacheValue, CoordinatorError<Cache::Error, LoadError>>
     where
         Cache: AsyncCacheProtocol,
-        Load: AsyncFnOnce() -> Result<CacheValue, LoadError>,
+        Load: Future<Output = Result<CacheValue, LoadError>>,
         LoadError: Error,
     {
         let rechecked = cache_read(cache, cache_key).await?;
         if let Some(value) = rechecked {
-            self.log_step("Cache filled while acquiring lock");
+            owner.log_step("Cache filled while acquiring lock");
             return Ok(value);
         }
-        self.log_step("Running load");
-        let value = load_fn().await.map_err(|source| CoordinatorError::Load {
+        owner.log_step("Running load");
+        let value = load.await.map_err(|source| CoordinatorError::Load {
             key: cache_key.to_owned(),
             source,
         })?;
@@ -188,7 +189,7 @@ impl EventDrivenCacheCoordinator {
                 key: cache_key.to_owned(),
                 source,
             })?;
-        self.log_step("Result cached");
+        owner.log_step("Result cached");
         Ok(value)
     }
 
