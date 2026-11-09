@@ -65,6 +65,14 @@ fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_unit_separators_from
     );
 }
 
+#[test]
+fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_unit_separators_from_string_content() {
+    assert_eq!(
+        stripped(r#"[{"role":"assistant","content":"answer\u001d"}]"#),
+        expected(r#"[{"role":"assistant","content":"answer"}]"#)
+    );
+}
+
 #[rstest]
 #[case::non_text_block_without_a_type(r#"[{"role":"assistant","content":[{"content":"x"}]}]"#)]
 #[case::text_block_without_text(r#"[{"role":"assistant","content":[{"type":"text"}]}]"#)]
