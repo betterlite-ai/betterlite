@@ -146,19 +146,24 @@ fn assistant_text_content(
 }
 
 fn user_continue_message(continue_message: Option<&Json>) -> Result<Object, ContentError> {
-    match continue_message {
-        Some(Json::Object(fields)) if !fields.is_empty() => Ok(fields.clone()),
-        Some(Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
-            Err(ContentError::ContinueMessageNotObject)
-        }
-        None | Some(Json::Null | Json::Object(_)) => Ok(Object::from_iter([
-            (ROLE.to_owned(), Json::Text(USER.to_owned())),
-            (
-                CONTENT.to_owned(),
-                Json::Text(DEFAULT_CONTINUE_TEXT.to_owned()),
-            ),
-        ])),
+    if let Some(Json::Object(fields)) = continue_message
+        && !fields.is_empty()
+    {
+        return Ok(fields.clone());
     }
+    if matches!(
+        continue_message,
+        Some(Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_))
+    ) {
+        return Err(ContentError::ContinueMessageNotObject);
+    }
+    let mut message = Object::new();
+    message.insert(ROLE.to_owned(), Json::Text(USER.to_owned()));
+    message.insert(
+        CONTENT.to_owned(),
+        Json::Text(DEFAULT_CONTINUE_TEXT.to_owned()),
+    );
+    Ok(message)
 }
 
 fn replace_empty_user_text(

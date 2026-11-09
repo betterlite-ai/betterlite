@@ -8,6 +8,7 @@ use super::prelude::{json, object};
 
 const DEFAULT_ASSISTANT: &str =
     r#"{"role":"assistant","content":[{"type":"text","text":"Please continue."}]}"#;
+const USER_DEFAULT_CONTINUE: &str = r#"{"role":"user","content":"Please continue."}"#;
 
 #[test]
 fn bedrock_content_behavior_tests_behavior_insert_adds_nothing_without_modify_params() {
@@ -156,10 +157,8 @@ fn bedrock_content_behavior_tests_behavior_user_continuation_replaces_blank_cont
     #[case] message_json: &str,
 ) {
     let message = json(message_json);
-    assert_eq!(
-        user_message_block_or_continue(&message, None, true).unwrap(),
-        json(r#"{"role":"user","content":"Please continue."}"#)
-    );
+    let continued = user_message_block_or_continue(&message, None, true).unwrap();
+    assert_eq!(continued, json(USER_DEFAULT_CONTINUE));
 }
 
 #[test]
@@ -210,10 +209,8 @@ fn bedrock_content_behavior_tests_behavior_user_continuation_rejects_unknown_con
     #[case] message_json: &str,
 ) {
     let message = json(message_json);
-    assert_eq!(
-        user_message_block_or_continue(&message, None, true),
-        Err(ContentError::UnsupportedContent)
-    );
+    let rejected = user_message_block_or_continue(&message, None, true);
+    assert_eq!(rejected, Err(ContentError::UnsupportedContent));
 }
 
 #[test]
@@ -261,10 +258,8 @@ fn bedrock_content_behavior_tests_behavior_assistant_continuation_keeps_missing_
     #[case] message_json: &str,
 ) {
     let message = json(message_json);
-    assert_eq!(
-        assistant_message_or_continue(&message, None, true).unwrap(),
-        message
-    );
+    let continued = assistant_message_or_continue(&message, None, true).unwrap();
+    assert_eq!(continued, message);
 }
 
 #[rstest::rstest]
