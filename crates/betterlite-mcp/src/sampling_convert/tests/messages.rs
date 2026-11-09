@@ -303,14 +303,9 @@ fn an_empty_system_prompt_is_omitted() {
 }
 
 #[rstest]
-#[case::camel("camel")]
-#[case::snake("snake")]
-fn sampling_messages_decode_from_both_mcp_spellings(#[case] spelling: &str) {
-    let document = if spelling == "camel" {
-        r#"{"role":"user","content":{"type":"image","data":"AAA","mimeType":"image/png"}}"#
-    } else {
-        r#"{"role":"user","content":{"type":"image","data":"AAA","mime_type":"image/png"}}"#
-    };
+#[case::camel(r#"{"role":"user","content":{"type":"image","data":"AAA","mimeType":"image/png"}}"#)]
+#[case::snake(r#"{"role":"user","content":{"type":"image","data":"AAA","mime_type":"image/png"}}"#)]
+fn sampling_messages_decode_from_both_mcp_spellings(#[case] document: &str) {
     let message: SamplingMessage = serde_json::from_str(document).expect("message");
     assert_eq!(
         message.content,
