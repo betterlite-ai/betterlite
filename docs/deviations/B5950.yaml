@@ -18,6 +18,6 @@ deviations:
   - what: A credential value that is a JSON array or object is skipped with a warning, and the document-root path is still tried; LiteLLM turns the value into Python's str() of it.
     why: LiteLLM writes Python repr text into a client id or URL, and betterlite does not port repr text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L68-L72
-  - what: A token response that carries a parseable access token but then fails is reported with that token redacted from the body text, and every other failure keeps the body as it is.
+  - what: A token response whose body holds a string access_token is reported with the exact bytes that value has in the body replaced by "<redacted>", whatever spelling the body uses, even when the rest of the body does not parse; a body without a string access_token keeps its text as it is.
     why: LiteLLM builds the RuntimeError from the whole response text, so a valid access token whose expiry overflows ends up in the error message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L394-L396
