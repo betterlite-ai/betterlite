@@ -51,10 +51,16 @@ impl fmt::Debug for SearchApiSearch<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchApiBody {
     #[serde(rename = "_searchapi_params")]
     pub params: IndexMap<String, SearchParam>,
+}
+
+impl fmt::Debug for SearchApiBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        wire::debug_body(f, "SearchApiBody", "api_key", &self.params)
+    }
 }
 
 #[derive(Debug, Deserialize)]

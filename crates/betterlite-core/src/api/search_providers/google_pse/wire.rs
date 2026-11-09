@@ -1,3 +1,5 @@
+use std::fmt;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -31,6 +33,29 @@ impl SearchParam {
             Self::Many(_) => None,
         }
     }
+}
+
+pub(crate) fn debug_body(
+    formatter: &mut fmt::Formatter<'_>,
+    struct_name: &str,
+    credential: &str,
+    params: &IndexMap<String, SearchParam>,
+) -> fmt::Result {
+    let fields: Vec<(&str, String)> = params
+        .iter()
+        .map(|(name, param)| {
+            let rendered = if name.as_str() == credential {
+                String::from("[REDACTED]")
+            } else {
+                format!("{param:?}")
+            };
+            (name.as_str(), rendered)
+        })
+        .collect();
+    formatter
+        .debug_struct(struct_name)
+        .field("params", &fields)
+        .finish()
 }
 
 pub fn query_string(

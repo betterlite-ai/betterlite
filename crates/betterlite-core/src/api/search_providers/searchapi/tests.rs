@@ -418,6 +418,20 @@ fn debug_never_shows_the_key() {
     assert!(!rendered.contains("caller-key"));
 }
 
+#[test]
+fn a_transformed_body_debug_hides_the_key() {
+    let lookup = environment(&[]);
+    let body = provider(&lookup)
+        .transform_search_request(&single("rust"), &Object::new())
+        .unwrap();
+
+    let rendered = format!("{body:?}");
+
+    assert!(!rendered.contains("caller-key"));
+    assert!(rendered.contains("[REDACTED]"));
+    assert!(rendered.contains("rust"));
+}
+
 #[rstest]
 fn replays_the_searchapi_corpus(#[files("fuzz/corpus/searchapi_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();

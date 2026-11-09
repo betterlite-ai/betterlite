@@ -64,10 +64,16 @@ impl fmt::Debug for GooglePseSearch<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GooglePseBody {
     #[serde(rename = "_google_pse_params")]
     pub params: IndexMap<String, SearchParam>,
+}
+
+impl fmt::Debug for GooglePseBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        wire::debug_body(f, "GooglePseBody", "key", &self.params)
+    }
 }
 
 #[derive(Debug, Deserialize)]
