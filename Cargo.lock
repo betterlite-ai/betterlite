@@ -2624,6 +2624,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-prompts",
  "futures-util",
  "hex",
  "hf-hub",
