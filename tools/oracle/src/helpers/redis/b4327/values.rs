@@ -126,12 +126,8 @@ fn write_plan(call: &WriteCall) -> Result<WriteStep, Box<HelperError>> {
     match call.operation {
         WriteOperation::AsyncSetCache => {
             let entry = first_entry(call)?;
-            Ok(WriteStep::Single(
-                entry.key.clone(),
-                entry.value.clone(),
-                entry.ttl,
-                call.nx,
-            ))
+            let single = (entry.key.clone(), entry.value.clone(), entry.ttl, call.nx);
+            Ok(WriteStep::Single(single.0, single.1, single.2, single.3))
         }
         WriteOperation::AsyncSetCachePipeline => Ok(WriteStep::Pipeline(
             keyed_entries(call)?,
@@ -146,11 +142,8 @@ fn write_plan(call: &WriteCall) -> Result<WriteStep, Box<HelperError>> {
         }
         WriteOperation::AsyncSetCacheSadd => {
             let entry = first_entry(call)?;
-            Ok(WriteStep::Sadd(
-                required_key(entry)?,
-                string_array(&entry.value)?,
-                entry.ttl,
-            ))
+            let members = string_array(&entry.value)?;
+            Ok(WriteStep::Sadd(required_key(entry)?, members, entry.ttl))
         }
         WriteOperation::BatchCacheWrite => Ok(WriteStep::Buffered(keyed_entries(call)?)),
     }

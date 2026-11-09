@@ -19,14 +19,12 @@ impl Helper for Op {
             .enable_all()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
-        runtime.block_on(dispatch(input))
-    }
-}
-
-async fn dispatch(input: &Input) -> HelperResult {
-    match input {
-        Input::WriteCommands(call) => dispatch_write(call).await,
-        Input::ReadValues(call) => dispatch_read(call),
+        runtime.block_on(async {
+            match input {
+                Input::WriteCommands(call) => dispatch_write(call).await,
+                Input::ReadValues(call) => dispatch_read(call),
+            }
+        })
     }
 }
 

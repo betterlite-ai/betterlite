@@ -13,10 +13,11 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use self::buffer::{buffered_reaches_flush, remove_sent, serialize_entries};
+use self::buffer::{buffered_reaches_flush, remove_sent};
 use self::error::RedisCacheValuesError;
 use self::events::{
-    async_client_or_fail, enter_unless_empty, event, finish_get, finish_outcome, recorded_client,
+    connection_failure, enter_unless_empty, event, failed_client, finish_get, finish_outcome,
+    open_client,
 };
 use self::naming::{apply_namespace, namespaced_keys};
 use self::reads::{batch_values, read_value};
@@ -24,6 +25,8 @@ use self::writes::{send_shared_pipeline, send_ttls_pipeline, set_command, write_
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_client_reuse::breaker_gate::BreakerGate;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
+use serde_json::value::RawValue;
+
 use crate::redis_client_reuse::transport::RedisTransport;
 
 const DEFAULT_FLUSH_SIZE: usize = 100;
@@ -36,8 +39,7 @@ pub struct RedisCacheValuesSettings {
 }
 
 pub struct RedisCacheValues {
-    namespace: Option<String>,
-    default_ttl: Option<i64>,
+    settings: RedisCacheValuesSettings,
     flush_size: usize,
     transport: Arc<RedisTransport>,
     hooks: Arc<dyn ServiceHooks>,
@@ -54,9 +56,8 @@ impl RedisCacheValues {
         gate: Arc<dyn BreakerGate>,
     ) -> Self {
         Self {
-            namespace: settings.namespace,
-            default_ttl: settings.default_ttl,
             flush_size: settings.redis_flush_size.unwrap_or(DEFAULT_FLUSH_SIZE),
+            settings,
             transport,
             hooks,
             gate,
@@ -78,7 +79,8 @@ impl RedisCacheValues {
     {
         let started = Instant::now();
         let namespaced = apply_namespace(self, key);
-        let Ok(command) = set_command(self.default_ttl, &namespaced, value, ttl, false) else {
+        let Ok(command) = set_command(self.settings.default_ttl, &namespaced, value, ttl, false)
+        else {
             return;
         };
         if self.transport.sync_client.query::<()>(&command).is_err() {
@@ -105,8 +107,14 @@ impl RedisCacheValues {
             return Ok(None);
         };
         let namespaced = apply_namespace(self, provided);
-        let client = async_client_or_fail(self, "async_set_cache", started).await?;
-        let outcome = match set_command(self.default_ttl, &namespaced, value, ttl, nx) {
+        let client = match open_client(self).await {
+            Ok(client) => client,
+            Err(error) => {
+                let failed = event("async_set_cache", started, None);
+                return failed_client(self, &failed, admission, error, None);
+            }
+        };
+        let outcome = match set_command(self.settings.default_ttl, &namespaced, value, ttl, nx) {
             Ok(command) => match client.query::<Option<String>>(&command).await {
                 Ok(reply) => Ok(reply.map(|_stored| true)),
                 Err(source) => Err(RedisCacheValuesError::Live(source)),
@@ -130,8 +138,21 @@ impl RedisCacheValues {
         else {
             return Ok(());
         };
-        let client = recorded_client(self).await?;
         let started = Instant::now();
+        let client = match open_client(self).await {
+            Ok(client) => client,
+            Err(error) if connection_failure(&error) => {
+                let failed = event("async_set_cache_pipeline", started, None);
+                self.hooks.failure(&failed, &error);
+                self.gate.swallowed(&admission, &error);
+                self.gate.exit(admission);
+                return Ok(());
+            }
+            Err(error) => {
+                self.gate.record_failure(&error);
+                return Err(error);
+            }
+        };
         let outcome = send_shared_pipeline(self, &client, cache_list, ttl).await;
         let finished = event("async_set_cache_pipeline", started, None);
         let _stored = finish_outcome(self, &finished, admission, outcome);
@@ -167,7 +188,7 @@ impl RedisCacheValues {
             .iter()
             .map(|(key, value, ttl)| {
                 let namespaced = apply_namespace(self, key);
-                set_command(self.default_ttl, &namespaced, value, *ttl, false)
+                set_command(self.settings.default_ttl, &namespaced, value, *ttl, false)
             })
             .collect::<Result<Vec<_>, _>>()
             .inspect_err(|error| self.gate.record_failure(error))
@@ -181,9 +202,15 @@ impl RedisCacheValues {
     ) -> Result<(), RedisCacheValuesError> {
         let started = Instant::now();
         let admission = self.gate.enter("async_set_cache_sadd")?;
-        let client = async_client_or_fail(self, "async_set_cache_sadd", started).await?;
+        let client = match open_client(self).await {
+            Ok(client) => client,
+            Err(error) => {
+                let failed = event("async_set_cache_sadd", started, None);
+                return failed_client(self, &failed, admission, error, ());
+            }
+        };
         let namespaced = apply_namespace(self, key);
-        let outcome = write_sadd(&client, &namespaced, value, ttl, self.default_ttl).await;
+        let outcome = write_sadd(&client, &namespaced, value, ttl, self.settings.default_ttl).await;
         let finished = event("async_set_cache_sadd", started, None);
         let _stored = finish_outcome(self, &finished, admission, outcome);
         Ok(())
@@ -221,7 +248,14 @@ impl RedisCacheValues {
             Ok(buffer) => buffer.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
         };
-        let raw = serialize_entries(&entries)?;
+        let raw = entries
+            .iter()
+            .map(|(key, text)| {
+                RawValue::from_string(text.clone())
+                    .map(|value| (key.clone(), value))
+                    .map_err(RedisCacheValuesError::Serialize)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.async_set_cache_pipeline(&raw, None).await?;
         remove_sent(self, raw.len());
         Ok(())

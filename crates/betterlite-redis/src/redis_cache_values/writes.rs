@@ -97,7 +97,7 @@ where
         .iter()
         .map(|(key, value)| {
             let namespaced = apply_namespace(values, key);
-            set_command(values.default_ttl, &namespaced, value, ttl, false)
+            set_command(values.settings.default_ttl, &namespaced, value, ttl, false)
         })
         .collect();
     match built {

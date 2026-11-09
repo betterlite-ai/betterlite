@@ -169,30 +169,24 @@ def members(entry: dict[str, Json]) -> list[str]:
     return [string_value(member, "member") for member in raw]
 
 
-def install(cache: RedisCache, fields: dict[str, object]) -> Cache:
-    for name, value in fields.items():
-        object.__setattr__(cache, name, value)
-    return cast(Cache, cache)
-
-
 def build_cache(input_value: dict[str, Json], recorder: AsyncRecorder | SyncRecorder) -> Cache:
     cache = object.__new__(RedisCache)
     flush_size = optional_integer(input_value.get("flush_size"), "flush_size")
     breaker = RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60)
-    return install(
-        cache,
-        {
-            "namespace": optional_string(input_value.get("namespace"), "namespace"),
-            "default_ttl": optional_integer(input_value.get("default_ttl"), "default_ttl"),
-            "redis_flush_size": 100 if flush_size is None else flush_size,
-            "redis_version": "Unknown",
-            "redis_batch_writing_buffer": [],
-            "_circuit_breaker": breaker,
-            "service_logger_obj": Logger(),
-            "init_async_client": lambda: recorder,
-            "redis_client": recorder,
-        },
-    )
+    fields: dict[str, object] = {
+        "namespace": optional_string(input_value.get("namespace"), "namespace"),
+        "default_ttl": optional_integer(input_value.get("default_ttl"), "default_ttl"),
+        "redis_flush_size": 100 if flush_size is None else flush_size,
+        "redis_version": "Unknown",
+        "redis_batch_writing_buffer": [],
+        "_circuit_breaker": breaker,
+        "service_logger_obj": Logger(),
+        "init_async_client": lambda: recorder,
+        "redis_client": recorder,
+    }
+    for name, value in fields.items():
+        object.__setattr__(cache, name, value)
+    return cast(Cache, cache)
 
 
 async def run_write(input_value: dict[str, Json], cache: Cache) -> None:

@@ -1,4 +1,4 @@
-use super::support::{harness, harness_without_server, settings};
+use super::support::{harness, harness_with_missing_credentials, harness_without_server, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -63,16 +63,39 @@ async fn uses_the_default_ttl_when_the_entry_has_none() {
 }
 
 #[tokio::test]
-async fn returns_a_client_failure() {
+async fn swallows_an_unreachable_client() {
     let harness = harness_without_server(settings(Some("ns"), None, None));
+    harness
+        .values
+        .async_set_cache_sadd("members", &members(), None)
+        .await
+        .expect("the swallowed connection failure");
+    let hooks = harness.hooks.entries();
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_set_cache_sadd:"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_set_cache_sadd");
+    assert!(gate[1].starts_with("swallowed:1:"));
+    assert_eq!(gate[2], "exit:1");
+}
+
+#[tokio::test]
+async fn returns_a_client_construction_failure() {
+    let server = FakeServer::start().await;
+    let harness = harness_with_missing_credentials(&server, settings(Some("ns"), None, None));
     let error = harness
         .values
         .async_set_cache_sadd("members", &members(), None)
         .await
-        .expect_err("the unreachable client fails");
+        .expect_err("the missing credential source fails");
     assert!(matches!(error, RedisCacheValuesError::ClientReuse(_)));
     let hooks = harness.hooks.entries();
+    assert_eq!(hooks.len(), 1);
     assert!(hooks[0].starts_with("failure:async_set_cache_sadd:"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_set_cache_sadd");
+    assert!(gate[1].starts_with("failure:"));
+    assert_eq!(gate.len(), 2);
 }
 
 #[tokio::test]

@@ -5,8 +5,9 @@ use super::RedisCacheValues;
 use super::error::RedisCacheValuesError;
 use crate::cache_primitives::decode::{CachedValue, decode_cached_value};
 use crate::redis_client_reuse::breaker::BreakerAdmission;
+use crate::redis_client_reuse::error::ClientReuseError;
 use crate::redis_client_reuse::service_event::ServiceEvent;
-use crate::redis_live_client::LiveAsyncClient;
+use crate::redis_live_client::{LiveAsyncClient, LiveClientError};
 
 pub(crate) fn event(kind: &'static str, started: Instant, key: Option<String>) -> ServiceEvent {
     ServiceEvent {
@@ -41,9 +42,9 @@ pub(crate) fn finish_get(
     values: &RedisCacheValues,
     event: &ServiceEvent,
     admission: BreakerAdmission,
-    reply: Result<Option<Vec<u8>>, RedisCacheValuesError>,
+    read: Result<Option<Vec<u8>>, RedisCacheValuesError>,
 ) -> Option<CachedValue> {
-    let bytes = match reply {
+    let bytes = match read {
         Ok(bytes) => bytes,
         Err(error) => {
             swallow_read(values, admission, &error);
@@ -92,27 +93,36 @@ pub(crate) fn enter_unless_empty(
     Ok(Some(admission))
 }
 
-pub(crate) async fn recorded_client(
+pub(crate) async fn open_client(
     values: &RedisCacheValues,
 ) -> Result<LiveAsyncClient, RedisCacheValuesError> {
-    let opened = values.transport.async_client().await;
-    opened.map_err(|source| {
-        values.gate.record_failure(&source);
-        RedisCacheValuesError::ClientReuse(source)
-    })
+    match values.transport.async_client().await {
+        Ok(client) => Ok(client),
+        Err(source) => Err(RedisCacheValuesError::ClientReuse(source)),
+    }
 }
 
-pub(crate) async fn async_client_or_fail(
+// litellm's init_async_client only builds an unconnected client, so a connect error belongs to the command phase
+pub(crate) const fn connection_failure(error: &RedisCacheValuesError) -> bool {
+    matches!(
+        error,
+        RedisCacheValuesError::ClientReuse(ClientReuseError::Live(LiveClientError::Redis(_)))
+    )
+}
+
+pub(crate) fn failed_client<T>(
     values: &RedisCacheValues,
-    name: &'static str,
-    started: Instant,
-) -> Result<LiveAsyncClient, RedisCacheValuesError> {
-    match recorded_client(values).await {
-        Ok(client) => Ok(client),
-        Err(error) => {
-            let failed = event(name, started, None);
-            values.hooks.failure(&failed, &error);
-            Err(error)
-        }
+    event: &ServiceEvent,
+    admission: BreakerAdmission,
+    error: RedisCacheValuesError,
+    fallback: T,
+) -> Result<T, RedisCacheValuesError> {
+    values.hooks.failure(event, &error);
+    if connection_failure(&error) {
+        values.gate.swallowed(&admission, &error);
+        values.gate.exit(admission);
+        return Ok(fallback);
     }
+    values.gate.record_failure(&error);
+    Err(error)
 }

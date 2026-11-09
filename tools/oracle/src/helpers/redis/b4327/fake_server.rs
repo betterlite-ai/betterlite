@@ -45,19 +45,15 @@ impl FakeServer {
             Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
+}
 
-    fn shutdown(&mut self) {
+impl Drop for FakeServer {
+    fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         let _wake = TcpStream::connect(self.addr);
         if let Some(accept) = self.accept.take() {
             let _joined = accept.join();
         }
-    }
-}
-
-impl Drop for FakeServer {
-    fn drop(&mut self) {
-        self.shutdown();
     }
 }
 

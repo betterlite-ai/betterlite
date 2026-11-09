@@ -2,9 +2,10 @@ use std::future::Future as _;
 use std::task::{Context, Waker};
 use std::time::Duration;
 
+use futures_util::future::join_all;
 use tokio::time;
 
-use super::support::{TestGate, harness, harness_with_gate, settings};
+use super::support::{TestGate, harness, harness_with_gate, harness_without_server, settings};
 use crate::redis_cache_values::error::RedisCacheValuesError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
@@ -109,6 +110,12 @@ async fn keeps_the_buffer_when_the_flush_returns_an_error() {
     assert!(matches!(error, RedisCacheValuesError::BreakerOpen(_)));
     assert_eq!(harness.values.buffered_count(), 1);
     assert!(server.commands().is_empty());
+    let gate = harness.gate.entries();
+    assert_eq!(gate.len(), 3);
+    assert_eq!(gate[0], "enter:batch_cache_write");
+    assert_eq!(gate[1], "enter:async_set_cache_pipeline");
+    assert!(gate[2].starts_with("failure:"));
+    assert!(!gate.iter().any(|entry| entry.starts_with("exit")));
 }
 
 #[tokio::test]
@@ -123,4 +130,39 @@ async fn drops_the_entries_when_the_flush_swallows_an_error() {
         .expect("the swallowed flush failure");
     assert_eq!(harness.values.buffered_count(), 0);
     assert_eq!(server.commands_named("SET").len(), 1);
+}
+
+#[tokio::test]
+async fn drops_the_entries_when_the_flush_cannot_connect() {
+    let harness = harness_without_server(settings(Some("ns"), None, Some(1)));
+    harness
+        .values
+        .batch_cache_write("alpha", "first")
+        .await
+        .expect("the swallowed connection failure");
+    assert_eq!(harness.values.buffered_count(), 0);
+}
+
+#[tokio::test]
+async fn flushes_at_one_hundred_when_no_size_is_given() {
+    let server = FakeServer::start().await;
+    let harness = harness(&server, settings(Some("ns"), None, None));
+    let keys: Vec<String> = (0_i32..99_i32)
+        .map(|index| format!("key-{index}"))
+        .collect();
+    let writes = keys
+        .iter()
+        .map(|key| harness.values.batch_cache_write(key, "value"));
+    let completed = join_all(writes).await;
+    assert!(completed.iter().all(Result::is_ok));
+    assert_eq!(completed.len(), 99);
+    assert!(server.commands().is_empty());
+    assert_eq!(harness.values.buffered_count(), 99);
+    harness
+        .values
+        .batch_cache_write("key-99", "value")
+        .await
+        .expect("the flush write");
+    assert_eq!(server.commands_named("SET").len(), 100);
+    assert_eq!(harness.values.buffered_count(), 0);
 }

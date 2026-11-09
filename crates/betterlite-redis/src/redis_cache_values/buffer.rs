@@ -1,7 +1,4 @@
-use serde_json::value::RawValue;
-
 use super::RedisCacheValues;
-use super::error::RedisCacheValuesError;
 
 pub(crate) fn buffered_reaches_flush(values: &RedisCacheValues, key: String, text: String) -> bool {
     let mut buffer = match values.buffer.lock() {
@@ -10,19 +7,6 @@ pub(crate) fn buffered_reaches_flush(values: &RedisCacheValues, key: String, tex
     };
     buffer.push((key, text));
     buffer.len() >= values.flush_size
-}
-
-pub(crate) fn serialize_entries(
-    entries: &[(String, String)],
-) -> Result<Vec<(String, Box<RawValue>)>, RedisCacheValuesError> {
-    entries
-        .iter()
-        .map(|(key, text)| {
-            RawValue::from_string(text.clone())
-                .map(|value| (key.clone(), value))
-                .map_err(RedisCacheValuesError::Serialize)
-        })
-        .collect()
 }
 
 pub(crate) fn remove_sent(values: &RedisCacheValues, sent: usize) {

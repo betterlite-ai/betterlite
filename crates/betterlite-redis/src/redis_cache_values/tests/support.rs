@@ -230,6 +230,15 @@ pub(crate) fn harness_without_server(settings: RedisCacheValuesSettings) -> Harn
     build(settings, unreachable_transport(), TestGate::never())
 }
 
+pub(crate) fn harness_with_missing_credentials(
+    server: &FakeServer,
+    settings: RedisCacheValuesSettings,
+) -> Harness {
+    let mut connection = connection_settings(&server.host(), server.port());
+    connection.credential_provider = true;
+    build(settings, build_transport(connection), TestGate::never())
+}
+
 fn build(
     settings: RedisCacheValuesSettings,
     transport: Arc<RedisTransport>,
