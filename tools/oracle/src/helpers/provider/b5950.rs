@@ -14,9 +14,7 @@ use crate::helpers::HelperError;
 
 mod support;
 
-use self::support::{
-    MapConfigurations, MapEnvironment, Scripted, ScriptedClock, ScriptedTransport,
-};
+use self::support::{MapConfigurations, Scripted, ScriptedClock, ScriptedTransport};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,13 +29,6 @@ pub(crate) struct EnvironmentInput {
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
 pub(crate) struct CredentialsInput(BTreeMap<String, String>);
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ModeInput {
-    Chat,
-    Embedding,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -58,7 +49,7 @@ pub(crate) enum Input {
         times: Vec<i64>,
     },
     Deployment {
-        mode: ModeInput,
+        mode: DeploymentMode,
         listing: Json,
         configurations: BTreeMap<String, Json>,
     },
@@ -121,12 +112,8 @@ fn credentials_output(
     service_key: Option<&Json>,
     settings: Option<&Json>,
 ) -> crate::helpers::HelperResult {
-    let credentials = fetch_credentials(
-        &MapEnvironment::from_input(environment),
-        service_key,
-        settings,
-    )
-    .map_err(|error| failure("SapAuthError", &error.to_string()))?;
+    let credentials = fetch_credentials(environment, service_key, settings)
+        .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     let view = CredentialsView {
         client_id: credentials.client_id.as_deref(),
         client_secret: credentials
@@ -187,16 +174,12 @@ fn token_output(
 }
 
 fn deployment_output(
-    mode: &ModeInput,
+    mode: DeploymentMode,
     listing: &Json,
     configurations: &BTreeMap<String, Json>,
 ) -> crate::helpers::HelperResult {
-    let deployment_mode = match mode {
-        ModeInput::Chat => DeploymentMode::Chat,
-        ModeInput::Embedding => DeploymentMode::Embedding,
-    };
     let source = MapConfigurations { configurations };
-    let url = pick_orchestration_deployment(listing, deployment_mode, &source)
+    let url = pick_orchestration_deployment(listing, mode, &source)
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     Ok(serde_json::json!(url))
 }
@@ -227,7 +210,7 @@ impl crate::helpers::Helper for Op {
                 mode,
                 listing,
                 configurations,
-            } => deployment_output(mode, listing, configurations),
+            } => deployment_output(*mode, listing, configurations),
         }
     }
 }

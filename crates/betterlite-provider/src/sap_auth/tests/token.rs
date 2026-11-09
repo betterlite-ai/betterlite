@@ -1,10 +1,13 @@
+use std::collections::VecDeque;
+use std::sync::Mutex;
+
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::sap_auth::credentials::Credentials;
 use crate::sap_auth::error::SapAuthError;
 use crate::sap_auth::token::{
-    ClientIdentity, TokenCache, build_token_request, parse_token_response,
+    ClientIdentity, TokenCache, TokenTransportError, build_token_request, parse_token_response,
 };
 
 use super::support::{FixedClock, ScriptedTransport, at, base_credentials};
@@ -176,10 +179,13 @@ fn the_token_cache_reuses_a_token_whose_life_is_outside_the_buffer() {
     let clock = FixedClock {
         now: at(1_700_000_000),
     };
-    let transport = ScriptedTransport::new(&[
-        r#"{"access_token": "one", "expires_in": 7200}"#,
-        r#"{"access_token": "two", "expires_in": 7200}"#,
-    ]);
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([
+            Ok(r#"{"access_token": "one", "expires_in": 7200}"#.to_owned()),
+            Ok(r#"{"access_token": "two", "expires_in": 7200}"#.to_owned()),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
     assert_eq!(cache.token(&clock, &transport).unwrap(), "Bearer one");
     assert_eq!(cache.token(&clock, &transport).unwrap(), "Bearer one");
     assert_eq!(transport.request_count(), 1);
@@ -192,10 +198,13 @@ fn the_token_cache_reuses_a_token_whose_life_is_outside_the_buffer() {
 #[test]
 fn the_token_cache_keeps_a_token_with_exactly_the_buffer_left() {
     let cache = TokenCache::new(&secret_credentials()).unwrap();
-    let transport = ScriptedTransport::new(&[
-        r#"{"access_token": "one", "expires_in": 7200}"#,
-        r#"{"access_token": "two", "expires_in": 7200}"#,
-    ]);
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([
+            Ok(r#"{"access_token": "one", "expires_in": 7200}"#.to_owned()),
+            Ok(r#"{"access_token": "two", "expires_in": 7200}"#.to_owned()),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
     let early = FixedClock {
         now: at(1_700_000_000),
     };
@@ -210,10 +219,13 @@ fn the_token_cache_keeps_a_token_with_exactly_the_buffer_left() {
 #[test]
 fn the_token_cache_refetches_once_the_life_drops_under_the_buffer() {
     let cache = TokenCache::new(&secret_credentials()).unwrap();
-    let transport = ScriptedTransport::new(&[
-        r#"{"access_token": "one", "expires_in": 7200}"#,
-        r#"{"access_token": "two", "expires_in": 7200}"#,
-    ]);
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([
+            Ok(r#"{"access_token": "one", "expires_in": 7200}"#.to_owned()),
+            Ok(r#"{"access_token": "two", "expires_in": 7200}"#.to_owned()),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
     let early = FixedClock {
         now: at(1_700_000_000),
     };
@@ -228,8 +240,13 @@ fn the_token_cache_refetches_once_the_life_drops_under_the_buffer() {
 #[test]
 fn a_one_hour_token_is_refetched_after_any_time_passes() {
     let cache = TokenCache::new(&secret_credentials()).unwrap();
-    let transport =
-        ScriptedTransport::new(&[r#"{"access_token": "one"}"#, r#"{"access_token": "two"}"#]);
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([
+            Ok(r#"{"access_token": "one"}"#.to_owned()),
+            Ok(r#"{"access_token": "two"}"#.to_owned()),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
     let early = FixedClock {
         now: at(1_700_000_000),
     };
@@ -250,7 +267,12 @@ fn the_token_cache_reports_a_transport_failure_with_its_text() {
     let clock = FixedClock {
         now: at(1_700_000_000),
     };
-    let transport = ScriptedTransport::failing("connection refused");
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([Err(TokenTransportError {
+            text: "connection refused".to_owned(),
+        })])),
+        requests: Mutex::new(Vec::new()),
+    };
     let error = cache.token(&clock, &transport).unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -264,7 +286,10 @@ fn the_token_cache_reports_a_parse_failure_with_the_body() {
     let clock = FixedClock {
         now: at(1_700_000_000),
     };
-    let transport = ScriptedTransport::new(&["not json"]);
+    let transport = ScriptedTransport {
+        responses: Mutex::new(VecDeque::from([Ok("not json".to_owned())])),
+        requests: Mutex::new(Vec::new()),
+    };
     let error = cache.token(&clock, &transport).unwrap_err();
     assert_eq!(error.to_string(), "Token request failed: not json");
 }

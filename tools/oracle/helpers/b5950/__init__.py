@@ -110,17 +110,6 @@ class FakeResponse:
         return cast(Json, json.loads(self.body))
 
 
-class FakeSapClient:
-    def __init__(self, cert: tuple[str, str] | None = None, **_kwargs: object) -> None:
-        self.cert = cert
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        return None
-
-
 class FakeSapHandler:
     def __init__(self, recorder: Recorder, **_kwargs: object) -> None:
         self.recorder = recorder
@@ -142,7 +131,7 @@ def patched_token_transport(recorder: Recorder) -> Generator[None, None, None]:
     with (
         patch.object(sap_credentials, "_get_httpx_client", handler),
         patch.object(sap_credentials, "HTTPHandler", handler),
-        patch.object(httpx, "Client", FakeSapClient),
+        patch.object(httpx, "Client"),
     ):
         yield
 
@@ -153,10 +142,6 @@ class FixedNow:
 
     def now(self, *_args: object) -> datetime:
         return self.holder[0]
-
-
-def resolved_credentials(values: dict[str, Json]) -> dict[str, str]:
-    return {name: string_value(value, name) for name, value in values.items()}
 
 
 def credentials_output(input_value: dict[str, Json]) -> Json:
@@ -174,16 +159,20 @@ def credentials_output(input_value: dict[str, Json]) -> Json:
 
 def validate_output(input_value: dict[str, Json]) -> Json:
     values = object_value(input_value.get("credentials"), "credentials")
-    sap_credentials.validate_credentials(  # pyright: ignore[reportUnknownMemberType]
-        auth_url=optional_string(values, "auth_url"),
-        base_url=optional_string(values, "base_url"),
-        client_id=optional_string(values, "client_id"),
-        client_secret=optional_string(values, "client_secret"),
-        cert_str=optional_string(values, "cert_str"),
-        key_str=optional_string(values, "key_str"),
-        cert_file_path=optional_string(values, "cert_file_path"),
-        key_file_path=optional_string(values, "key_file_path"),
-    )
+    fields = {
+        name: optional_string(values, name)
+        for name in (
+            "auth_url",
+            "base_url",
+            "client_id",
+            "client_secret",
+            "cert_str",
+            "key_str",
+            "cert_file_path",
+            "key_file_path",
+        )
+    }
+    sap_credentials.validate_credentials(**fields)  # pyright: ignore[reportUnknownMemberType,reportArgumentType]
     return None
 
 
@@ -206,7 +195,9 @@ def token_output(input_value: dict[str, Json]) -> Json:
         patch.object(
             sap_credentials,
             "fetch_credentials",
-            return_value=resolved_credentials(values),
+            return_value={
+                name: string_value(value, name) for name, value in values.items()
+            },
         ),
     ):
         creator, _base_url, _resource_group = sap_credentials.get_token_creator()  # pyright: ignore[reportUnknownMemberType]

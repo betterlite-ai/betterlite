@@ -167,15 +167,23 @@ fn parse_service_key(value: &Json) -> Option<Json> {
     }
 }
 
-fn extract_service_key(document: &Json) -> Extracted {
+fn extract_with<F>(mut lookup: F) -> Extracted
+where
+    F: FnMut(&'static str, Option<&'static [&'static str]>) -> Option<String>,
+{
     let mut extracted = Extracted::default();
     for (name, vcap_key, transform) in CREDENTIAL_VALUES {
-        if let Some(value) = service_key_lookup(document, name, vcap_key) {
+        if let Some(value) = lookup(name, vcap_key) {
             extracted
                 .values
                 .insert(name, transformed(transform, &value));
         }
     }
+    extracted
+}
+
+fn extract_service_key(document: &Json) -> Extracted {
+    let mut extracted = extract_with(|name, vcap_key| service_key_lookup(document, name, vcap_key));
     extracted.resource_group = service_key_lookup(document, RESOURCE_GROUP_NAME, None);
     extracted
 }
@@ -210,35 +218,21 @@ fn prefixed_path<'name>(
 }
 
 fn extract_environment(environment: &dyn SapEnvironment) -> Extracted {
-    let mut extracted = Extracted::default();
-    for (name, _, transform) in CREDENTIAL_VALUES {
-        let variable = format!("AICORE_{}", name.to_ascii_uppercase());
-        if let Some(value) = environment.var(&variable) {
-            extracted
-                .values
-                .insert(name, transformed(transform, &value));
-        }
-    }
+    let mut extracted =
+        extract_with(|name, _| environment.var(&format!("AICORE_{}", name.to_ascii_uppercase())));
     extracted.resource_group = environment.var(RESOURCE_GROUP_ENV_VAR);
     extracted
 }
 
 fn extract_config(config: &Json) -> Extracted {
-    let mut extracted = Extracted::default();
     let Json::Object(fields) = config else {
-        tracing::warn!(
-            "the SAP AI Core config file is not a JSON object, so it provides no values"
-        );
-        return extracted;
+        tracing::warn!("the SAP AI Core config file is not a JSON object; it provides no values");
+        return Extracted::default();
     };
-    for (name, _, transform) in CREDENTIAL_VALUES {
+    let mut extracted = extract_with(|name, _| {
         let variable = format!("AICORE_{}", name.to_ascii_uppercase());
-        if let Some(value) = config_value(fields, &variable, name) {
-            extracted
-                .values
-                .insert(name, transformed(transform, &value));
-        }
-    }
+        config_value(fields, &variable, name)
+    });
     extracted.resource_group = config_value(fields, RESOURCE_GROUP_ENV_VAR, RESOURCE_GROUP_NAME);
     extracted
 }
@@ -253,15 +247,11 @@ fn config_value(fields: &Object, variable: &str, name: &str) -> Option<String> {
 }
 
 fn extract_vcap(service: &Json) -> Extracted {
-    let mut extracted = Extracted::default();
-    for (name, vcap_key, transform) in CREDENTIAL_VALUES {
+    let mut extracted = extract_with(|name, vcap_key| {
         let path = prefixed_path(name, vcap_key);
-        if let Some(value) = lookup(service, &path).and_then(|found| string_value(&found)) {
-            extracted
-                .values
-                .insert(name, transformed(transform, &value));
-        }
-    }
+        let found = lookup(service, &path)?;
+        string_value(&found)
+    });
     extracted.resource_group =
         lookup(service, &[RESOURCE_GROUP_NAME]).and_then(|found| string_value(&found));
     extracted

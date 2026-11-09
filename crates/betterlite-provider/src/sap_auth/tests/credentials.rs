@@ -21,7 +21,8 @@ fn service_key_wins_over_every_other_source_without_merging() {
     let service_key = json(
         r#"{"credentials": {"clientid": "key-client"}, "clientsecret": "key-secret", "url": "https://key.example.com"}"#,
     );
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_CLIENT_ID", "env-client")
         .with_var("AICORE_BASE_URL", "https://env.example.com")
         .with_var("AICORE_RESOURCE_GROUP", "env-rg")
@@ -49,7 +50,8 @@ fn service_key_wins_over_every_other_source_without_merging() {
 
 #[test]
 fn service_key_is_read_from_the_environment_variable() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_SERVICE_KEY", r#"{"clientid": "env-service-key"}"#);
     let credentials = fetch_credentials(&environment, None, None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("env-service-key"));
@@ -59,7 +61,8 @@ fn service_key_is_read_from_the_environment_variable() {
 #[test]
 fn the_litellm_setting_is_used_before_the_environment_variable() {
     let setting = json(r#"{"clientid": "setting-client"}"#);
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_SERVICE_KEY", r#"{"clientid": "env-client"}"#);
     let credentials = fetch_credentials(&environment, None, Some(&setting)).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("setting-client"));
@@ -69,7 +72,7 @@ fn the_litellm_setting_is_used_before_the_environment_variable() {
 fn an_empty_service_key_argument_falls_through() {
     let empty = json("\"\"");
     let setting = json(r#"{"clientid": "setting-client"}"#);
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&empty), Some(&setting)).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("setting-client"));
 }
@@ -77,7 +80,9 @@ fn an_empty_service_key_argument_falls_through() {
 #[test]
 fn invalid_json_in_a_service_key_is_skipped_for_later_sources() {
     let broken = json("\"not json\"");
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_CLIENT_ID", "env-client");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_CLIENT_ID", "env-client");
     let credentials = fetch_credentials(&environment, Some(&broken), None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("env-client"));
 }
@@ -85,7 +90,9 @@ fn invalid_json_in_a_service_key_is_skipped_for_later_sources() {
 #[test]
 fn a_service_key_null_document_provides_nothing() {
     let null = json("null");
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_CLIENT_ID", "env-client");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_CLIENT_ID", "env-client");
     let credentials = fetch_credentials(&environment, Some(&null), None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("env-client"));
 }
@@ -93,14 +100,15 @@ fn a_service_key_null_document_provides_nothing() {
 #[test]
 fn a_service_key_that_is_not_an_object_provides_nothing() {
     let number = json("7");
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let error = fetch_credentials(&environment, Some(&number), None).unwrap_err();
     assert!(matches!(error, SapAuthError::NoCredentials));
 }
 
 #[test]
 fn environment_wins_over_the_config_file_and_vcap_without_merging() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_CLIENT_ID", "env-client")
         .with_var(
             "VCAP_SERVICES",
@@ -118,7 +126,8 @@ fn environment_wins_over_the_config_file_and_vcap_without_merging() {
 
 #[test]
 fn an_empty_environment_value_is_a_found_credential() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_CLIENT_ID", "")
         .with_file(
             "/home/sap/.aicore/config.json",
@@ -130,14 +139,17 @@ fn an_empty_environment_value_is_a_found_credential() {
 
 #[test]
 fn the_resource_group_defaults_to_default() {
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_CLIENT_ID", "env-client");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_CLIENT_ID", "env-client");
     let credentials = fetch_credentials(&environment, None, None).unwrap();
     assert_eq!(credentials.resource_group, "default");
 }
 
 #[test]
 fn an_empty_resource_group_is_used_as_given() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_CLIENT_ID", "env-client")
         .with_var("AICORE_RESOURCE_GROUP", "");
     let credentials = fetch_credentials(&environment, None, None).unwrap();
@@ -157,7 +169,9 @@ fn an_empty_resource_group_is_used_as_given() {
 #[case::trailing_slashes("https://auth.example.com///", "https://auth.example.com/oauth/token")]
 #[case::empty("", "/oauth/token")]
 fn the_auth_url_gets_the_token_endpoint_suffix(#[case] input: &str, #[case] expected: &str) {
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_AUTH_URL", input);
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_AUTH_URL", input);
     let credentials = fetch_credentials(&environment, None, None).unwrap();
     assert_eq!(credentials.auth_url.as_deref(), Some(expected));
 }
@@ -168,14 +182,17 @@ fn the_auth_url_gets_the_token_endpoint_suffix(#[case] input: &str, #[case] expe
 #[case::trailing_slash("https://api.example.com/v2/", "https://api.example.com/v2/v2")]
 #[case::trailing_slashes("https://api.example.com///", "https://api.example.com/v2")]
 fn the_base_url_gets_the_v2_suffix(#[case] input: &str, #[case] expected: &str) {
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_BASE_URL", input);
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_BASE_URL", input);
     let credentials = fetch_credentials(&environment, None, None).unwrap();
     assert_eq!(credentials.base_url.as_deref(), Some(expected));
 }
 
 #[test]
 fn pem_strings_turn_escaped_newlines_into_newlines() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_CERT_STR", "cert-line\\nmore-cert")
         .with_var("AICORE_KEY_STR", "key-line\\nmore-key");
     let credentials = fetch_credentials(&environment, None, None).unwrap();
@@ -191,7 +208,8 @@ fn pem_strings_turn_escaped_newlines_into_newlines() {
 
 #[test]
 fn a_cert_url_replaces_the_auth_url() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_AUTH_URL", "https://auth.example.com")
         .with_var("AICORE_CERT_URL", "https://cert.example.com");
     let credentials = fetch_credentials(&environment, None, None).unwrap();
@@ -206,7 +224,7 @@ fn the_credentials_path_is_tried_before_the_document_root() {
     let service_key = json(
         r#"{"credentials": {"clientid": "inner"}, "clientid": "outer", "clientsecret": "root-secret"}"#,
     );
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("inner"));
     assert_eq!(
@@ -220,7 +238,7 @@ fn certificate_paths_are_read_at_their_bare_name_in_a_service_key() {
     let service_key = json(
         r#"{"credentials": {"cert_file_path": "nested.crt", "key_file_path": "nested.key", "clientid": "c"}, "cert_file_path": "root.crt", "key_file_path": "root.key"}"#,
     );
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.cert_file_path.as_deref(), Some("root.crt"));
     assert_eq!(credentials.key_file_path.as_deref(), Some("root.key"));
@@ -229,7 +247,7 @@ fn certificate_paths_are_read_at_their_bare_name_in_a_service_key() {
 #[test]
 fn a_service_key_string_document_is_parsed_again() {
     let service_key = json(r#""{\"clientid\": \"double-encoded\"}""#);
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("double-encoded"));
 }
@@ -237,7 +255,7 @@ fn a_service_key_string_document_is_parsed_again() {
 #[test]
 fn numeric_service_key_values_become_text() {
     let service_key = json(r#"{"clientid": 123}"#);
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.client_id.as_deref(), Some("123"));
 }
@@ -245,7 +263,7 @@ fn numeric_service_key_values_become_text() {
 #[test]
 fn list_service_key_values_are_skipped() {
     let service_key = json(r#"{"clientid": ["a"]}"#);
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let error = fetch_credentials(&environment, Some(&service_key), None).unwrap_err();
     assert!(matches!(error, SapAuthError::NoCredentials));
 }
@@ -254,14 +272,14 @@ fn list_service_key_values_are_skipped() {
 fn the_service_key_resource_group_is_read_at_its_bare_name() {
     let service_key =
         json(r#"{"credentials": {"resource_group": "nested-rg"}, "resource_group": "bare-rg"}"#);
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let credentials = fetch_credentials(&environment, Some(&service_key), None).unwrap();
     assert_eq!(credentials.resource_group, "bare-rg");
 }
 
 #[test]
 fn vcap_picks_the_first_aicore_service_in_document_order() {
-    let environment = FakeEnvironment::at("/home/sap").with_var(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_var(
         "VCAP_SERVICES",
         r#"{"z": [{"label": "other"}, {"label": "aicore", "credentials": {"clientid": "z"}}], "a": [{"label": "aicore", "credentials": {"clientid": "a"}}]}"#,
     );
@@ -271,7 +289,7 @@ fn vcap_picks_the_first_aicore_service_in_document_order() {
 
 #[test]
 fn vcap_reads_only_the_credentials_path_for_keyed_values() {
-    let environment = FakeEnvironment::at("/home/sap").with_var(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_var(
         "VCAP_SERVICES",
         r#"{"aicore": [{"label": "aicore", "credentials": {"clientid": "v", "cert_file_path": "nested.crt"}, "cert_file_path": "bare.crt", "key_file_path": "bare.key", "resource_group": "vcap-rg"}]}"#,
     );
@@ -288,14 +306,16 @@ fn vcap_reads_only_the_credentials_path_for_keyed_values() {
 #[case::json_null("null")]
 #[case::json_list("[]")]
 fn vcap_invalid_or_empty_json_means_no_service(#[case] raw: &str) {
-    let environment = FakeEnvironment::at("/home/sap").with_var("VCAP_SERVICES", raw);
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("VCAP_SERVICES", raw);
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert!(matches!(error, SapAuthError::NoCredentials));
 }
 
 #[test]
 fn vcap_entries_that_are_not_objects_are_skipped() {
-    let environment = FakeEnvironment::at("/home/sap").with_var(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_var(
         "VCAP_SERVICES",
         r#"{"aicore": ["text", {"label": "aicore", "credentials": {"clientid": "v"}}]}"#,
     );
@@ -305,7 +325,7 @@ fn vcap_entries_that_are_not_objects_are_skipped() {
 
 #[test]
 fn the_config_file_is_read_from_the_default_home() {
-    let environment = FakeEnvironment::at("/home/sap").with_file(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_file(
         "/home/sap/.aicore/config.json",
         r#"{"client_id": "config-client"}"#,
     );
@@ -315,7 +335,8 @@ fn the_config_file_is_read_from_the_default_home() {
 
 #[test]
 fn aicore_home_overrides_the_default_home() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_HOME", "/custom/home")
         .with_file(
             "/custom/home/config.json",
@@ -327,7 +348,8 @@ fn aicore_home_overrides_the_default_home() {
 
 #[test]
 fn a_profile_reads_the_profile_config_file() {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_PROFILE", "dev")
         .with_file(
             "/home/sap/.aicore/config_dev.json",
@@ -341,7 +363,8 @@ fn a_profile_reads_the_profile_config_file() {
 #[case::empty("")]
 #[case::default("default")]
 fn an_empty_or_default_profile_reads_config_json(#[case] profile: &str) {
-    let environment = FakeEnvironment::at("/home/sap")
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
         .with_var("AICORE_PROFILE", profile)
         .with_file(
             "/home/sap/.aicore/config.json",
@@ -353,15 +376,16 @@ fn an_empty_or_default_profile_reads_config_json(#[case] profile: &str) {
 
 #[test]
 fn a_missing_default_config_file_provides_nothing() {
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert!(matches!(error, SapAuthError::NoCredentials));
 }
 
 #[test]
 fn an_explicit_config_path_that_is_missing_is_an_error() {
-    let environment =
-        FakeEnvironment::at("/home/sap").with_var("AICORE_CONFIG", "/missing/config.json");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_CONFIG", "/missing/config.json");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     let message = error.to_string();
     assert!(matches!(error, SapAuthError::ConfigFileNotFound { .. }));
@@ -373,7 +397,9 @@ fn an_explicit_config_path_that_is_missing_is_an_error() {
 
 #[test]
 fn a_missing_profile_config_file_is_an_error() {
-    let environment = FakeEnvironment::at("/home/sap").with_var("AICORE_PROFILE", "prod");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_var("AICORE_PROFILE", "prod");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -383,8 +409,9 @@ fn a_missing_profile_config_file_is_an_error() {
 
 #[test]
 fn an_invalid_config_file_is_an_error_that_names_the_path() {
-    let environment =
-        FakeEnvironment::at("/home/sap").with_file("/home/sap/.aicore/config.json", "not json");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .with_file("/home/sap/.aicore/config.json", "not json");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -394,14 +421,16 @@ fn an_invalid_config_file_is_an_error_that_names_the_path() {
 
 #[test]
 fn a_config_file_that_cannot_be_read_is_an_error() {
-    let environment = FakeEnvironment::at("/home/sap").unreadable("/home/sap/.aicore/config.json");
+    let environment = FakeEnvironment::default()
+        .with_home("/home/sap")
+        .unreadable("/home/sap/.aicore/config.json");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert!(matches!(error, SapAuthError::ConfigRead { .. }));
 }
 
 #[test]
 fn aicore_config_keys_win_and_null_falls_back_to_the_plain_name() {
-    let environment = FakeEnvironment::at("/home/sap").with_file(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_file(
         "/home/sap/.aicore/config.json",
         r#"{"AICORE_CLIENT_ID": "upper", "client_id": "plain", "AICORE_CLIENT_SECRET": null, "client_secret": "plain-secret"}"#,
     );
@@ -415,7 +444,7 @@ fn aicore_config_keys_win_and_null_falls_back_to_the_plain_name() {
 
 #[test]
 fn a_config_file_that_is_not_an_object_provides_nothing() {
-    let environment = FakeEnvironment::at("/home/sap").with_file(
+    let environment = FakeEnvironment::default().with_home("/home/sap").with_file(
         "/home/sap/.aicore/config.json",
         r#"[{"client_id": "list-client"}]"#,
     );
@@ -425,7 +454,7 @@ fn a_config_file_that_is_not_an_object_provides_nothing() {
 
 #[test]
 fn no_credentials_is_an_error() {
-    let environment = FakeEnvironment::at("/home/sap");
+    let environment = FakeEnvironment::default().with_home("/home/sap");
     let error = fetch_credentials(&environment, None, None).unwrap_err();
     assert_eq!(error.to_string(), "No credentials found in any source");
 }
@@ -571,11 +600,13 @@ fn replays_the_sap_credentials_corpus() {
             let Ok(text) = String::from_utf8(bytes) else {
                 return;
             };
-            let service_key = FakeEnvironment::at("/fuzz")
+            let service_key = FakeEnvironment::default()
+                .with_home("/fuzz")
                 .with_var("AICORE_SERVICE_KEY", &text)
                 .with_var("VCAP_SERVICES", &text);
             let _decoded = fetch_credentials(&service_key, None, None);
-            let config = FakeEnvironment::at("/fuzz")
+            let config = FakeEnvironment::default()
+                .with_home("/fuzz")
                 .with_var("AICORE_CONFIG", "/fuzz/config.json")
                 .with_file("/fuzz/config.json", &text);
             let _configured = fetch_credentials(&config, None, None);

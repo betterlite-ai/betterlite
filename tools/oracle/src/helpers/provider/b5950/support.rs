@@ -14,44 +14,25 @@ use chrono::{DateTime, Utc};
 
 use super::EnvironmentInput;
 
-pub(super) struct MapEnvironment {
-    vars: BTreeMap<String, String>,
-    files: BTreeMap<PathBuf, String>,
-    home: PathBuf,
-}
-
-impl MapEnvironment {
-    pub(super) fn from_input(input: &EnvironmentInput) -> Self {
-        Self {
-            vars: input.vars.clone(),
-            files: input
-                .files
-                .iter()
-                .map(|(path, contents)| (PathBuf::from(path), contents.clone()))
-                .collect(),
-            home: PathBuf::from(input.home.as_str()),
-        }
-    }
-}
-
-impl SapEnvironment for MapEnvironment {
+impl SapEnvironment for EnvironmentInput {
     fn var(&self, name: &str) -> Option<String> {
         self.vars.get(name).cloned()
     }
 
     fn file_exists(&self, path: &Path) -> bool {
-        self.files.contains_key(path)
+        path.to_str()
+            .is_some_and(|text| self.files.contains_key(text))
     }
 
     fn read_file(&self, path: &Path) -> Result<String, io::Error> {
-        self.files
-            .get(path)
+        path.to_str()
+            .and_then(|text| self.files.get(text))
             .cloned()
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 
     fn home_dir(&self) -> PathBuf {
-        self.home.clone()
+        PathBuf::from(self.home.as_str())
     }
 }
 

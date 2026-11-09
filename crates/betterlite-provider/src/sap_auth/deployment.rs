@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use serde::Deserialize;
 
 use super::error::{ConfigurationLookupError, SapAuthError};
 
@@ -8,7 +9,8 @@ pub const CLIENT_TYPE_HEADER: &str = "ai-client-type";
 pub const CLIENT_TYPE_VALUE: &str = "LiteLLM";
 pub const ORCHESTRATION: &str = "orchestration";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DeploymentMode {
     Chat,
     Embedding,

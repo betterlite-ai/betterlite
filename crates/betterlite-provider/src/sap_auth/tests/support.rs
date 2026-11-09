@@ -21,13 +21,9 @@ pub(super) struct FakeEnvironment {
 }
 
 impl FakeEnvironment {
-    pub(super) fn at(home: &str) -> Self {
-        Self {
-            vars: BTreeMap::new(),
-            files: BTreeMap::new(),
-            unreadable: BTreeSet::new(),
-            home: PathBuf::from(home),
-        }
+    pub(super) fn with_home(mut self, home: &str) -> Self {
+        self.home = PathBuf::from(home);
+        self
     }
 
     pub(super) fn with_var(mut self, name: &str, value: &str) -> Self {
@@ -86,34 +82,11 @@ impl SapClock for FixedClock {
 }
 
 pub(super) struct ScriptedTransport {
-    responses: Mutex<VecDeque<Result<String, TokenTransportError>>>,
-    requests: Mutex<Vec<String>>,
+    pub(super) responses: Mutex<VecDeque<Result<String, TokenTransportError>>>,
+    pub(super) requests: Mutex<Vec<String>>,
 }
 
 impl ScriptedTransport {
-    pub(super) fn new(responses: &[&str]) -> Self {
-        Self {
-            responses: Mutex::new(
-                responses
-                    .iter()
-                    .map(|body| Ok((*body).to_owned()))
-                    .collect(),
-            ),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(super) fn failing(text: &str) -> Self {
-        let mut responses = VecDeque::new();
-        responses.push_back(Err(TokenTransportError {
-            text: text.to_owned(),
-        }));
-        Self {
-            responses: Mutex::new(responses),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(super) fn request_count(&self) -> usize {
         self.requests
             .lock()
