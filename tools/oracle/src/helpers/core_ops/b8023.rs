@@ -76,6 +76,11 @@ trait SearchMapping {
     fn body(request: &Request) -> Result<<Self::Config as SearchProvider>::Body, Box<HelperError>>;
 
     fn reply(body: &str) -> Result<SearchResponse, Box<HelperError>>;
+
+    fn answer(body: &str) -> HelperResult {
+        let rendered = serde_json::to_value(Self::reply(body)?).map_err(failure)?;
+        Ok(json!({"response": rendered}))
+    }
 }
 
 struct LinkupMapping;
@@ -179,15 +184,6 @@ where
     Ok(json!({"urls": rendered}))
 }
 
-fn replies<M>(input: &ReplyInput) -> HelperResult
-where
-    M: SearchMapping,
-{
-    serde_json::to_value(M::reply(&input.body)?)
-        .map_err(failure)
-        .map(|rendered| json!({"response": rendered}))
-}
-
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -196,7 +192,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::LinkupBody(request) => bodies::<LinkupMapping>(request),
-            Input::LinkupReply(request) => replies::<LinkupMapping>(request),
+            Input::LinkupReply(request) => LinkupMapping::answer(&request.body),
             Input::LinkupUrl(request) => urls::<LinkupMapping>(request),
             Input::LinkupEnvironment(request) => {
                 let connection = Connection {
@@ -212,7 +208,7 @@ impl Helper for Op {
                 Ok(json!({"headers": headers}))
             }
             Input::SearxngBody(request) => bodies::<SearxngMapping>(request),
-            Input::SearxngReply(request) => replies::<SearxngMapping>(request),
+            Input::SearxngReply(request) => SearxngMapping::answer(&request.body),
             Input::SearxngUrl(request) => urls::<SearxngMapping>(request),
             Input::SearxngEnvironment(request) => {
                 let connection = Connection {
