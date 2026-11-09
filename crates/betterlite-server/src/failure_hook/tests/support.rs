@@ -50,6 +50,7 @@ pub(super) struct FakeLogging {
     journal: Journal,
     baseline: bool,
     langfuse: Option<String>,
+    on_langfuse: Option<Arc<dyn Fn() + Send + Sync>>,
     state: Mutex<LoggingState>,
 }
 
@@ -59,12 +60,18 @@ impl FakeLogging {
             journal: journal.clone(),
             baseline,
             langfuse,
+            on_langfuse: None,
             state: Mutex::default(),
         }
     }
 
     pub(super) fn with_call_type(self, call_type: CallType) -> Self {
         self.state.lock().expect("state lock").details.call_type = call_type_name(call_type);
+        self
+    }
+
+    pub(super) fn with_langfuse_hook(mut self, hook: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.on_langfuse = Some(hook);
         self
     }
 
@@ -155,6 +162,9 @@ impl FailureLogging for FakeLogging {
 
     async fn langfuse_trace_url(&self) -> Option<String> {
         yield_now().await;
+        if let Some(hook) = &self.on_langfuse {
+            hook();
+        }
         self.langfuse.clone()
     }
 }
@@ -537,6 +547,32 @@ impl Clock for FixedClock {
     }
 }
 
+pub(super) struct SteppingClock {
+    state: Mutex<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
+}
+
+impl SteppingClock {
+    pub(super) fn new(first: &str, next: &str) -> Self {
+        Self {
+            state: Mutex::new((
+                DateTime::parse_from_rfc3339(first).expect("first timestamp"),
+                DateTime::parse_from_rfc3339(next).expect("next timestamp"),
+            )),
+        }
+    }
+
+    pub(super) fn advance(&self) {
+        let mut state = self.state.lock().expect("clock lock");
+        state.0 = state.1;
+    }
+}
+
+impl Clock for SteppingClock {
+    fn now(&self) -> DateTime<FixedOffset> {
+        self.state.lock().expect("clock lock").0
+    }
+}
+
 pub(super) struct FakeCallback {
     journal: Journal,
     name: String,
@@ -692,6 +728,7 @@ pub(super) struct AlertParts {
     pub email: Option<Arc<FakeEmail>>,
     pub sentry: Option<Arc<FakeSentry>>,
     pub redactor: Option<Arc<Redactor>>,
+    pub clock: Option<Arc<dyn Clock>>,
 }
 
 impl AlertParts {
@@ -704,6 +741,7 @@ impl AlertParts {
             email: None,
             sentry: None,
             redactor: None,
+            clock: None,
         }
     }
 }
@@ -733,7 +771,7 @@ pub(super) fn proxy_alerts(
         service_logging,
         sentry: parts.sentry.map(sentry_port),
         redactor: parts.redactor,
-        clock: Arc::new(FixedClock::new()),
+        clock: parts.clock.unwrap_or_else(|| Arc::new(FixedClock::new())),
         tasks: TaskTracker::new(),
     })
 }

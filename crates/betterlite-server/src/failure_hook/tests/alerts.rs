@@ -4,13 +4,15 @@ use std::time::Duration;
 use rstest::rstest;
 
 use super::super::alerts::{AlertError, AlertRequestData, ProxyAlerts, alerting_metadata_from};
+use betterlite_openai::openai_base_config::Object as JsonMap;
+
 use super::super::ports::{
-    AlertLevel, AlertType, AlertingClient, BudgetAlertKind, FailureLogging, FailureService,
+    AlertLevel, AlertType, AlertingClient, BudgetAlertKind, Clock, FailureLogging, FailureService,
     RequestStatus,
 };
 use super::support::{
     AlertParts, FakeEmail, FakeLogging, FakeSentry, FakeServiceLogging, FakeSlack, FakeUsageCache,
-    Journal, call_info, drain, http_error, json, object, proxy_alerts, redactor,
+    Journal, SteppingClock, call_info, drain, http_error, json, object, proxy_alerts, redactor,
 };
 
 #[tokio::test]
@@ -166,6 +168,7 @@ async fn budget_alerts_follow_the_alerting_flags(#[case] case: BudgetCase) {
         email: case.email_wired.then(|| Arc::clone(&email)),
         sentry: None,
         redactor: None,
+        clock: None,
     };
     let alerts = proxy_alerts(
         parts,
@@ -289,6 +292,63 @@ async fn alerting_handler_fails_without_a_sentry_instance() {
         .expect("alerting off is not a failure");
 }
 
+fn sentry_alert_with_clock(
+    journal: &Journal,
+    sentry: &Arc<FakeSentry>,
+    clock: Arc<dyn Clock>,
+) -> Arc<ProxyAlerts> {
+    let mut parts = AlertParts::new(Some(vec![AlertingClient::Sentry]), Vec::new());
+    parts.sentry = Some(Arc::clone(sentry));
+    parts.clock = Some(clock);
+    proxy_alerts(
+        parts,
+        Arc::new(FakeUsageCache::new(journal)),
+        Arc::new(FakeSlack::new(journal, true)),
+        Arc::new(FakeServiceLogging::default()),
+    )
+}
+
+#[tokio::test]
+async fn the_alert_timestamp_is_taken_before_the_langfuse_lookup() {
+    let journal = Journal::default();
+    let clock = Arc::new(SteppingClock::new(
+        "2026-01-01T12:00:00+00:00",
+        "2026-01-01T12:00:09+00:00",
+    ));
+    let advancing = Arc::clone(&clock);
+    let sentry = Arc::new(FakeSentry::default());
+    let shared_clock: Arc<dyn Clock> = clock;
+    let alerts = sentry_alert_with_clock(&journal, &sentry, shared_clock);
+    let logging: Arc<dyn FailureLogging> = Arc::new(
+        FakeLogging::new(
+            &journal,
+            false,
+            Some("https://langfuse.example/trace/abc".to_owned()),
+        )
+        .with_langfuse_hook(Arc::new(move || advancing.advance())),
+    );
+    let request = AlertRequestData {
+        alerting_metadata: JsonMap::new(),
+        logging: Some(logging),
+    };
+    alerts
+        .alerting_handler(
+            "boom",
+            AlertLevel::High,
+            AlertType::LlmExceptions,
+            Some(request),
+        )
+        .await
+        .expect("sent");
+    assert_eq!(
+        sentry.messages(),
+        vec![
+            "Level: `High`\nTimestamp: `12:00:00`\n\nMessage: boom\n\n\u{1faa2} Langfuse Trace: https://langfuse.example/trace/abc"
+                .to_owned()
+        ]
+    );
+}
+
 struct SendCase {
     alerting: Vec<AlertingClient>,
     sends: usize,
@@ -338,6 +398,7 @@ async fn failure_handler_skips_everything_without_db_exceptions() {
         email: None,
         sentry: Some(Arc::clone(&sentry)),
         redactor: None,
+        clock: None,
     };
     let alerts = proxy_alerts(
         parts,
@@ -373,6 +434,7 @@ async fn failure_handler_reports_the_redacted_message_and_the_service_failure() 
         email: None,
         sentry: Some(Arc::clone(&sentry)),
         redactor: Some(redactor()),
+        clock: None,
     };
     let alerts = proxy_alerts(
         parts,

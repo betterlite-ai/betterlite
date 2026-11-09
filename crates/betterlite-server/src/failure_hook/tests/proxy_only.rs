@@ -173,7 +173,7 @@ async fn a_created_logging_object_gets_the_identity_input_and_key_metadata() {
     );
     let details = logging.details();
     assert_eq!(details.call_type, Some("acompletion".to_owned()));
-    assert_eq!(details.messages, Some(vec![messages]));
+    assert_eq!(details.messages, messages.as_array().cloned());
     assert!(details.no_upstream_llm_call);
     assert_eq!(lifted.get("litellm_call_id"), Some(&json("\"call-1\"")));
     let metadata = lifted

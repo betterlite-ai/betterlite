@@ -133,8 +133,9 @@ impl ProxyAlerts {
         let Some(clients) = &self.alerting else {
             return Ok(());
         };
+        let timestamp = self.clock.now().format("%H:%M:%S").to_string();
         let (alerting_metadata, langfuse) = alert_context(request_data).await;
-        let formatted = self.format_alert(message, level, langfuse.as_deref());
+        let formatted = self.format_alert(message, level, &timestamp, langfuse.as_deref());
         if clients
             .iter()
             .any(|client| matches!(client, AlertingClient::Slack | AlertingClient::MsTeams))
@@ -162,8 +163,13 @@ impl ProxyAlerts {
         Ok(())
     }
 
-    fn format_alert(&self, message: &str, level: AlertLevel, langfuse: Option<&str>) -> String {
-        let timestamp = self.clock.now().format("%H:%M:%S").to_string();
+    fn format_alert(
+        &self,
+        message: &str,
+        level: AlertLevel,
+        timestamp: &str,
+        langfuse: Option<&str>,
+    ) -> String {
         let mut formatted =
             format!("Level: `{level}`\nTimestamp: `{timestamp}`\n\nMessage: {message}");
         let proxy_line = self
