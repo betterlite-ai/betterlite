@@ -255,65 +255,24 @@ fn assert_calibration_endpoints() {
     assert!(middle.forecast.p_solve < ceiling.forecast.p_solve);
 }
 
-#[derive(Debug, Clone, Copy)]
-enum BoundaryCase {
-    EpsilonInclusive,
-    DecimalRounding,
-    SolveRange,
-    RuleBoundaryPair,
-    SchemaShape,
-    BaseThreshold,
-    ThresholdStep,
-    ThresholdSum,
-    TokenCount,
-    TierNames,
-    CalibrationVersion,
-    CalibrationSlopes,
-    CalibrationIntercepts,
-    CalibrationBounds,
-    ReplyByteBound,
-    ReplyEncoding,
-    Selection,
-}
-
 #[rstest]
-#[case::epsilon_inclusive(BoundaryCase::EpsilonInclusive)]
-#[case::decimal_rounding(BoundaryCase::DecimalRounding)]
-#[case::solve_range(BoundaryCase::SolveRange)]
-#[case::rule_boundary_pair(BoundaryCase::RuleBoundaryPair)]
-#[case::schema_shape(BoundaryCase::SchemaShape)]
-#[case::base_threshold(BoundaryCase::BaseThreshold)]
-#[case::threshold_step(BoundaryCase::ThresholdStep)]
-#[case::threshold_sum(BoundaryCase::ThresholdSum)]
-#[case::token_count(BoundaryCase::TokenCount)]
-#[case::tier_names(BoundaryCase::TierNames)]
-#[case::calibration_version(BoundaryCase::CalibrationVersion)]
-#[case::calibration_slopes(BoundaryCase::CalibrationSlopes)]
-#[case::calibration_intercepts(BoundaryCase::CalibrationIntercepts)]
-#[case::calibration_bounds(BoundaryCase::CalibrationBounds)]
-#[case::reply_byte_bound(BoundaryCase::ReplyByteBound)]
-#[case::reply_encoding(BoundaryCase::ReplyEncoding)]
-#[case::selection(BoundaryCase::Selection)]
-fn capability_forecast_boundaries(#[case] boundary: BoundaryCase) {
-    match boundary {
-        BoundaryCase::EpsilonInclusive => assert_epsilon_inclusive(),
-        BoundaryCase::DecimalRounding => assert_decimal_rounding(),
-        BoundaryCase::SolveRange => assert_solve_range(),
-        BoundaryCase::RuleBoundaryPair => assert_rule_boundary_pair(),
-        BoundaryCase::SchemaShape => assert_schema_shape(),
-        BoundaryCase::BaseThreshold => assert_base_threshold(),
-        BoundaryCase::ThresholdStep => assert_threshold_step(),
-        BoundaryCase::ThresholdSum => assert_threshold_sum(),
-        BoundaryCase::TokenCount => assert_token_count(),
-        BoundaryCase::TierNames => assert_tier_names(),
-        BoundaryCase::CalibrationVersion => assert_calibration_version(),
-        BoundaryCase::CalibrationSlopes => assert_calibration_slopes(),
-        BoundaryCase::CalibrationIntercepts => assert_calibration_intercepts(),
-        BoundaryCase::CalibrationBounds => assert_calibration_bounds(),
-        BoundaryCase::ReplyByteBound => assert_reply_byte_bound(),
-        BoundaryCase::ReplyEncoding => assert_reply_encoding(),
-        BoundaryCase::Selection => assert_selection(),
-    }
+#[case::epsilon_inclusive(assert_epsilon_inclusive)]
+#[case::decimal_rounding(assert_decimal_rounding)]
+#[case::solve_range(assert_solve_range)]
+#[case::rule_boundary_pair(assert_rule_boundary_pair)]
+#[case::schema_shape(assert_schema_shape)]
+#[case::base_threshold(assert_base_threshold)]
+#[case::threshold_step(assert_threshold_step)]
+#[case::threshold_sum(assert_threshold_sum)]
+#[case::token_count(assert_token_count)]
+#[case::tier_names(assert_tier_names)]
+#[case::calibration_version(assert_calibration_version)]
+#[case::calibration_coefficients(assert_calibration_coefficients)]
+#[case::reply_byte_bound(assert_reply_byte_bound)]
+#[case::reply_encoding(assert_reply_encoding)]
+#[case::selection(assert_selection)]
+fn capability_forecast_boundaries(#[case] check: fn()) {
+    check();
 }
 
 fn assert_epsilon_inclusive() {
@@ -571,53 +530,35 @@ fn assert_calibration_version() {
     ));
 }
 
-fn assert_calibration_slopes() {
-    let negative = draft_calibrated(calibration("v1", -1.0_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        negative.unwrap_err(),
-        ForecastError::CalibrationSlope { .. }
-    ));
-    let steep = draft_calibrated(calibration("v1", 20.5_f64, 0.0_f64)).validate();
-    assert!(matches!(
-        steep.unwrap_err(),
-        ForecastError::CalibrationSlope { .. }
-    ));
-    let not_a_number = draft_calibrated(calibration("v1", f64::NAN, 0.0_f64)).validate();
-    assert!(matches!(
-        not_a_number.unwrap_err(),
-        ForecastError::CalibrationSlope { .. }
-    ));
-    let infinite = draft_calibrated(calibration("v1", f64::INFINITY, 0.0_f64)).validate();
-    assert!(matches!(
-        infinite.unwrap_err(),
-        ForecastError::CalibrationSlope { .. }
-    ));
+fn calibration_error(slope: f64, intercept: f64) -> ForecastError {
+    draft_calibrated(calibration("v1", slope, intercept))
+        .validate()
+        .unwrap_err()
 }
 
-fn assert_calibration_intercepts() {
-    let low = draft_calibrated(calibration("v1", 1.0_f64, -20.5_f64)).validate();
-    assert!(matches!(
-        low.unwrap_err(),
-        ForecastError::CalibrationIntercept { .. }
-    ));
-    let high = draft_calibrated(calibration("v1", 1.0_f64, 20.5_f64)).validate();
-    assert!(matches!(
-        high.unwrap_err(),
-        ForecastError::CalibrationIntercept { .. }
-    ));
-    let not_a_number = draft_calibrated(calibration("v1", 1.0_f64, f64::NAN)).validate();
-    assert!(matches!(
-        not_a_number.unwrap_err(),
-        ForecastError::CalibrationIntercept { .. }
-    ));
-    let infinite = draft_calibrated(calibration("v1", 1.0_f64, f64::NEG_INFINITY)).validate();
-    assert!(matches!(
-        infinite.unwrap_err(),
-        ForecastError::CalibrationIntercept { .. }
-    ));
+fn rejects_slope(slope: f64) -> bool {
+    matches!(
+        calibration_error(slope, 0.0_f64),
+        ForecastError::CalibrationSlope { .. }
+    )
 }
 
-fn assert_calibration_bounds() {
+fn rejects_intercept(intercept: f64) -> bool {
+    matches!(
+        calibration_error(1.0_f64, intercept),
+        ForecastError::CalibrationIntercept { .. }
+    )
+}
+
+fn assert_calibration_coefficients() {
+    assert!(rejects_slope(-1.0_f64));
+    assert!(rejects_slope(20.5_f64));
+    assert!(rejects_slope(f64::NAN));
+    assert!(rejects_slope(f64::INFINITY));
+    assert!(rejects_intercept(-20.5_f64));
+    assert!(rejects_intercept(20.5_f64));
+    assert!(rejects_intercept(f64::NAN));
+    assert!(rejects_intercept(f64::NEG_INFINITY));
     assert!(
         draft_calibrated(calibration("v1", 0.0_f64, -20.0_f64))
             .validate()

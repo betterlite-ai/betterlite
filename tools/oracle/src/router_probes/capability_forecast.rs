@@ -1,12 +1,16 @@
 use betterlite_router::capability_forecast::config::{Calibration, Config, ResponseFormat};
 use betterlite_router::capability_forecast::forecast::route;
 use betterlite_router::capability_forecast::prompt::{response_format, system_prompt};
-use betterlite_router::capability_forecast::verdict::{Boundary, Rule};
 use serde::{Deserialize, Serialize};
 
+use self::wire::{
+    CalibrationInput, ConfigInput, ConfigOutcome, Fields, Format, Function, Reply, RouteOutcome,
+};
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
+
+mod wire;
 
 const MAX_PADDED_BYTES: u64 = 0x0020_0000;
 const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 4096;
@@ -14,122 +18,11 @@ const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 4096;
 // the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Input(Box<Payload>);
+pub struct Input(Box<wire::Payload>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Payload {
-    pub function: Function,
-    #[serde(default)]
-    pub mode: Option<Format>,
-    #[serde(default)]
-    pub reply: Option<Reply>,
-    #[serde(default)]
-    pub config: Option<ConfigInput>,
-    #[serde(default)]
-    pub calibration: Option<CalibrationInput>,
-    #[serde(default)]
-    pub probabilities: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Function {
-    ResponseFormat,
-    SystemPrompt,
-    Evaluate,
-    Calibrate,
-    ValidateConfig,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Format {
-    JsonSchema,
-    JsonObject,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Reply {
-    Text {
-        content: String,
-    },
-    Padded {
-        content: String,
-        pad: String,
-        pad_len: u64,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConfigInput {
-    pub efficient_tier: String,
-    pub capable_tier: String,
-    pub base_threshold: String,
-    #[serde(default)]
-    pub threshold_step: Option<String>,
-    #[serde(default)]
-    pub max_output_tokens: Option<u32>,
-    #[serde(default)]
-    pub calibration: Option<CalibrationInput>,
-    #[serde(default)]
-    pub response_format: Option<Format>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CalibrationInput {
-    pub version: String,
-    pub slope: String,
-    pub intercept: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Fields {
-    pub response_format: Option<String>,
-    pub system_prompt: Option<String>,
-    pub route: Option<RouteOutcome>,
-    pub config: Option<ConfigOutcome>,
-    pub calibrated: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum RouteOutcome {
-    Routed {
-        tier: String,
-        threshold: String,
-        crux: String,
-        p_solve: String,
-        meets: bool,
-        primary_rule: Rule,
-        capability_boundary: Boundary,
-        calibration_version: Option<String>,
-    },
-    Rejected,
-    InvalidConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ConfigOutcome {
-    Valid {
-        efficient_tier: String,
-        capable_tier: String,
-        base_threshold: String,
-        threshold_step: String,
-        max_output_tokens: u32,
-        response_format: ResponseFormat,
-        calibration_version: Option<String>,
-    },
-    Invalid,
-}
 
 pub(crate) fn run(
     input: &Input,
@@ -253,7 +146,7 @@ fn draft_config(input: &ConfigInput) -> Result<Config, OperationError> {
 }
 
 fn evaluate(config: &ConfigInput, reply: &Reply) -> Result<RouteOutcome, OperationError> {
-    let Ok(checked) = draft_config(config)?.validate() else {
+    let Some(checked) = draft_config(config)?.validate().ok() else {
         return Ok(RouteOutcome::InvalidConfig);
     };
     let Ok(routed) = route(&checked, &reply_bytes(reply)?) else {
@@ -303,16 +196,22 @@ fn calibrated(
 }
 
 fn validate_config(input: &ConfigInput) -> Result<ConfigOutcome, OperationError> {
-    let Ok(checked) = draft_config(input)?.validate() else {
-        return Ok(ConfigOutcome::Invalid);
-    };
-    Ok(ConfigOutcome::Valid {
-        efficient_tier: checked.efficient_tier,
-        capable_tier: checked.capable_tier,
+    draft_config(input)?
+        .validate()
+        .ok()
+        .map_or(Ok(ConfigOutcome::Invalid), |checked| {
+            Ok(valid_config(checked))
+        })
+}
+
+fn valid_config(checked: Config) -> ConfigOutcome {
+    ConfigOutcome::Valid {
+        calibration_version: checked.calibration.map(|calibration| calibration.version),
         base_threshold: format!("{:.6}", checked.base_threshold),
         threshold_step: format!("{:.6}", checked.threshold_step),
         max_output_tokens: checked.max_output_tokens,
         response_format: checked.response_format,
-        calibration_version: checked.calibration.map(|calibration| calibration.version),
-    })
+        efficient_tier: checked.efficient_tier,
+        capable_tier: checked.capable_tier,
+    }
 }
