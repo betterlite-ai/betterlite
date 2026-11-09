@@ -3,13 +3,12 @@ use rstest::rstest;
 use crate::ocr_config::{OcrProviderConfig as _, OcrTransform};
 use crate::ocr_error::OcrError;
 use crate::ocr_http::tests::support::{MockServer, reply};
-use crate::textract_ocr::detect::TextractDetectTextConfig;
+use crate::textract_ocr::detect::{DetectDocumentTextRequest, TextractDetectTextConfig};
 use crate::textract_ocr::document::{SYNC_DOCUMENT_MAX_BYTES, document_bytes};
-use crate::textract_ocr::wire::TextractDocument;
 
 use super::support::{NoHooks, body_json, document, json, region_params, request, signing_client};
 
-fn sync_transform(source: &str) -> Result<TextractDocument, OcrError> {
+fn sync_transform(source: &str) -> Result<DetectDocumentTextRequest, OcrError> {
     TextractDetectTextConfig.transform_ocr_request(
         document(source),
         OcrTransform {

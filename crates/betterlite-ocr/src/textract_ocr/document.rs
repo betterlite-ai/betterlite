@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
-use crate::ocr_document::{InlineDocument, OcrDocument};
+use crate::ocr_config::{OcrProviderConfig, OcrRequestContext, OcrTransform};
+use crate::ocr_document::{InlineDocument, OcrDocument, inline_remote_document};
 use crate::ocr_error::OcrError;
 use crate::textract_ocr::wire::TextractDocument;
 
@@ -23,4 +24,19 @@ pub(crate) fn document_bytes(document: &OcrDocument) -> Result<TextractDocument,
     Ok(TextractDocument {
         bytes: STANDARD.encode(inline.decode(SYNC_DOCUMENT_MAX_BYTES)?),
     })
+}
+
+pub(crate) async fn inlined_request<C>(
+    config: &C,
+    document: OcrDocument,
+    transform: OcrTransform<'_, C::OcrParams>,
+    context: OcrRequestContext<'_>,
+) -> Result<C::ProviderRequest, OcrError>
+where
+    C: OcrProviderConfig,
+{
+    config.transform_ocr_request(
+        inline_remote_document(context.client, document, context.connection).await?,
+        transform,
+    )
 }

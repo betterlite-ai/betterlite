@@ -5,13 +5,13 @@ use serde::Serialize;
 use crate::json::Object;
 use crate::ocr_config::decode::decode_and_normalize_response;
 use crate::ocr_config::{OcrProviderConfig, OcrRequestContext, OcrTransform, PreparedOcrRequest};
-use crate::ocr_document::{OcrDocument, inline_remote_document};
+use crate::ocr_document::OcrDocument;
 use crate::ocr_error::OcrError;
 use crate::ocr_http::OcrClient;
 use crate::request_format::RequestFormat;
 use crate::response::OCRResponse;
 use crate::textract_ocr::TextractOperation;
-use crate::textract_ocr::document::{document_bytes, health_check_document};
+use crate::textract_ocr::document::{document_bytes, health_check_document, inlined_request};
 use crate::textract_ocr::environment::{
     AWS_SECRET_NAMES, TextractEnvironment, endpoint, textract_environment,
 };
@@ -80,14 +80,13 @@ impl OcrProviderConfig for TextractDetectTextConfig {
         })
     }
 
-    async fn async_transform_ocr_request(
+    fn async_transform_ocr_request(
         &self,
         document: OcrDocument,
         transform: OcrTransform<'_, Self::OcrParams>,
         context: OcrRequestContext<'_>,
-    ) -> Result<Self::ProviderRequest, OcrError> {
-        let inlined = inline_remote_document(context.client, document, context.connection).await?;
-        self.transform_ocr_request(inlined, transform)
+    ) -> impl Future<Output = Result<Self::ProviderRequest, OcrError>> + Send {
+        inlined_request(self, document, transform, context)
     }
 
     fn transform_ocr_response(
