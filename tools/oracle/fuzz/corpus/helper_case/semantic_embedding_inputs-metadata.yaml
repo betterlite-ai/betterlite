@@ -1,0 +1,8 @@
+kind: helper
+name: semantic_embedding_inputs-metadata-seed
+call:
+  b4310:
+    operation: metadata
+    metadata: null
+env: {}
+compare: {ignore: []}

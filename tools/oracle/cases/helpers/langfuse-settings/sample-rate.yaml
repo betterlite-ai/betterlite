@@ -1,0 +1,24 @@
+kind: helper
+name: langfuse-settings-sample-rate
+call:
+  b3900:
+    function: read
+    reading: sample_rate
+    steps:
+      - environment: {}
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "0.5"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "0"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "1"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "1.5"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "nan"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: "half"
+      - environment:
+          LANGFUSE_SAMPLE_RATE: ""
+env: {}
+compare: {ignore: []}

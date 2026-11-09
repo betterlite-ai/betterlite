@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-service-db-attributes",
+  "call": {
+    "b3845": {
+      "function": "genai_service",
+      "service": "postgres",
+      "call_type": "postgres_query",
+      "caller": "litellm.completion",
+      "error": "connection refused",
+      "event_metadata": {
+        "batch_size": 10,
+        "operation": "query"
+      },
+      "environment": {
+        "DATABASE_URL": "postgresql://user:pass@db.example.com:5433/app?schema=tenant"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
