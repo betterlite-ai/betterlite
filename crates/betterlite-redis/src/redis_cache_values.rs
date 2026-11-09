@@ -244,21 +244,23 @@ impl RedisCacheValues {
         let started = Instant::now();
         let admission = self.gate.enter("batch_get_cache")?;
         let namespaced = namespaced_keys(self, &originals);
-        let finished = event("batch_get_cache", started, None);
         let replies = match self.transport.mget(&namespaced) {
             Ok(replies) => replies,
             Err(source) => {
-                self.hooks.failure(&finished, &source);
+                let failed = event("batch_get_cache", started, None);
+                self.hooks.failure(&failed, &source);
                 self.gate.swallowed(&admission, &source);
                 return Ok(HashMap::new());
             }
         };
         self.gate.exit(admission);
-        self.hooks.success(&finished);
+        let loaded = event("batch_get_cache", started, None);
+        self.hooks.success(&loaded);
         match batch_values(&originals, replies) {
             Ok(values) => Ok(values),
             Err(error) => {
-                self.hooks.failure(&finished, &error);
+                let failed = event("batch_get_cache", started, None);
+                self.hooks.failure(&failed, &error);
                 self.gate.swallowed(&admission, &error);
                 Ok(HashMap::new())
             }

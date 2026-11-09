@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::redis_cache_values::{RedisCacheValues, RedisCacheValuesSettings};
 use crate::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
@@ -100,12 +101,26 @@ impl BreakerGate for TestGate {
 
 pub(crate) struct TestHooks {
     log: TestLog,
+    durations: Arc<Mutex<Vec<Duration>>>,
 }
 
 impl TestHooks {
     pub(crate) fn new() -> (Arc<Self>, TestLog) {
         let log = TestLog::default();
-        (Arc::new(Self { log: log.clone() }), log)
+        (
+            Arc::new(Self {
+                log: log.clone(),
+                durations: Arc::new(Mutex::new(Vec::new())),
+            }),
+            log,
+        )
+    }
+
+    pub(crate) fn durations(&self) -> Vec<Duration> {
+        match self.durations.lock() {
+            Ok(durations) => durations.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 }
 
@@ -113,11 +128,19 @@ impl ServiceHooks for TestHooks {
     fn success(&self, event: &ServiceEvent) {
         self.log
             .push(format!("success:{}:{:?}", event.call_type, event.key));
+        match self.durations.lock() {
+            Ok(mut durations) => durations.push(event.duration),
+            Err(poisoned) => poisoned.into_inner().push(event.duration),
+        }
     }
 
     fn failure(&self, event: &ServiceEvent, error: &(dyn Error + Send + Sync)) {
         self.log
             .push(format!("failure:{}:{error}", event.call_type));
+        match self.durations.lock() {
+            Ok(mut durations) => durations.push(event.duration),
+            Err(poisoned) => poisoned.into_inner().push(event.duration),
+        }
     }
 }
 
@@ -164,10 +187,10 @@ fn connection_settings(host: &str, port: u16) -> RedisConnectionSettings {
     }
 }
 
-pub(crate) fn transport_to(host: &str, port: u16) -> Arc<RedisTransport> {
+fn build_transport(settings: RedisConnectionSettings) -> Arc<RedisTransport> {
     Arc::new(
         RedisTransport::new(
-            connection_settings(host, port),
+            settings,
             RedisCacheFamily::Standalone,
             Arc::new(LiveClientFactory::new(None)),
             Arc::new(RedisClientStore::new()),
@@ -177,8 +200,18 @@ pub(crate) fn transport_to(host: &str, port: u16) -> Arc<RedisTransport> {
     )
 }
 
+pub(crate) fn transport_to(host: &str, port: u16) -> Arc<RedisTransport> {
+    build_transport(connection_settings(host, port))
+}
+
 pub(crate) fn unreachable_transport() -> Arc<RedisTransport> {
     transport_to("127.0.0.1", 1)
+}
+
+pub(crate) fn transport_with_timeout(host: &str, port: u16, timeout: f64) -> Arc<RedisTransport> {
+    let mut settings = connection_settings(host, port);
+    settings.socket_timeout = Some(timeout);
+    build_transport(settings)
 }
 
 pub(crate) fn harness(server: &FakeServer, settings: RedisCacheValuesSettings) -> Harness {

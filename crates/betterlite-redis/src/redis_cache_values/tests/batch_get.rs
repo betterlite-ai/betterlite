@@ -1,8 +1,11 @@
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use std::time::Duration;
 
-use super::support::{harness, settings};
+use super::support::{TestGate, TestHooks, harness, settings, transport_with_timeout};
 use crate::cache_primitives::decode::CachedValue;
+use crate::redis_cache_values::RedisCacheValues;
+use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 fn number(value: i64) -> CachedValue {
@@ -121,4 +124,30 @@ async fn a_read_error_gives_an_empty_map() {
     let hooks = harness.hooks.entries();
     assert_eq!(hooks.len(), 1);
     assert!(hooks[0].starts_with("failure:batch_get_cache:"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_hook_duration_covers_the_read() {
+    let server = FakeServer::start().await;
+    server.silence("MGET");
+    let (hooks, _hook_log) = TestHooks::new();
+    let hooks_arc = Arc::clone(&hooks);
+    let service_hooks: Arc<dyn ServiceHooks> = hooks_arc;
+    let values = RedisCacheValues::new(
+        settings(Some("ns"), None, None),
+        transport_with_timeout(&server.host(), server.port(), 0.2_f64),
+        service_hooks,
+        TestGate::never(),
+    );
+    let cached = values
+        .batch_get_cache(&[Some("alpha")])
+        .expect("the swallowed read failure");
+    assert!(cached.is_empty());
+    let durations = hooks.durations();
+    assert_eq!(durations.len(), 1);
+    assert!(
+        durations[0] >= Duration::from_millis(150),
+        "the event duration {} left out the read",
+        durations[0].as_millis()
+    );
 }
