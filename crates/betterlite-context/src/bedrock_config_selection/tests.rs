@@ -358,6 +358,36 @@ fn legacy_anthropic_names() {
     }
 }
 
+const CHAT_CLASS_NAMES: [&str; 21] = [
+    "AmazonAI21Config",
+    "AmazonAnthropicClaudeConfig",
+    "AmazonAnthropicConfig",
+    "AmazonBedrockOpenAIConfig",
+    "AmazonBedrockRuntimeChatCompletionsConfig",
+    "AmazonCohereConfig",
+    "AmazonConverseConfig",
+    "AmazonDeepSeekR1Config",
+    "AmazonInvokeAgentConfig",
+    "AmazonInvokeConfig",
+    "AmazonInvokeNovaConfig",
+    "AmazonLlamaConfig",
+    "AmazonMantleConfig",
+    "AmazonMistralConfig",
+    "AmazonMoonshotConfig",
+    "AmazonQwen2Config",
+    "AmazonQwen3Config",
+    "AmazonTitanConfig",
+    "AmazonTwelveLabsPegasusConfig",
+    "AmazonAgentCoreConfig",
+    "BedrockClaudePlatformConfig",
+];
+
+const MESSAGES_CLASS_NAMES: [&str; 3] = [
+    "AmazonAnthropicClaudeMessagesConfig",
+    "AmazonMantleMessagesConfig",
+    "BedrockClaudePlatformMessagesConfig",
+];
+
 fn selection_without_construction() {
     let mut classes: Vec<&str> = CONSTRUCTION_CHAT
         .iter()
@@ -368,8 +398,9 @@ fn selection_without_construction() {
         })
         .collect();
     classes.sort_unstable();
-    classes.dedup();
-    assert_eq!(classes.len(), 21);
+    let mut expected_classes = CHAT_CLASS_NAMES;
+    expected_classes.sort_unstable();
+    assert_eq!(classes, expected_classes);
 
     let mut messages: Vec<&str> = CONSTRUCTION_MESSAGES
         .iter()
@@ -380,6 +411,5 @@ fn selection_without_construction() {
         })
         .collect();
     messages.sort_unstable();
-    messages.dedup();
-    assert_eq!(messages.len(), 3);
+    assert_eq!(messages, MESSAGES_CLASS_NAMES);
 }

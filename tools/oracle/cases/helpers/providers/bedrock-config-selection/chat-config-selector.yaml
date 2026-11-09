@@ -18,7 +18,10 @@ call:
       - anthropic.claude-v2
       - anthropic.claude-instant-v1
       - anthropic.claude-v2:1
+      - us.anthropic.claude-v2
+      - anthropic.claude-v2:1:0k
       - anthropic.claude-3-5-sonnet-20240620-v1:0
+      - us.anthropic.claude-3-5-sonnet[1m]
       - meta.llama3-8b-instruct-v1:0
       - llama/arn:aws:bedrock:us-east-1:1:imported-model/x
       - ai21.j2-mid-v1
