@@ -8,8 +8,8 @@ use super::support::{json, serialized};
 use crate::datadog_llm_obs::arguments::ToolArguments;
 use crate::datadog_llm_obs::records::{DdMessage, InputMessage, Message, ToolDefinition};
 use crate::datadog_llm_obs::span_records::{
-    DDIntakePayload, DDLLMObsError, DDLLMObsSpendMetrics, DDSpanAttributes, InputMeta, LLMMetrics,
-    LLMObsPayload, Meta, OutputMeta, SpanKind, SpanStatus,
+    DDIntakePayload, DDLLMObsError, DDLLMObsLatencyMetrics, DDLLMObsSpendMetrics, DDSpanAttributes,
+    InputMeta, LLMMetrics, LLMObsPayload, Meta, OutputMeta, SpanKind, SpanStatus,
 };
 
 #[test]
@@ -189,6 +189,23 @@ fn an_empty_metadata_map_is_kept_when_it_is_present() {
         tool_definitions: Vec::new(),
     };
     assert_eq!(serialized(&meta), r#"{"metadata":{},"error":null}"#);
+}
+
+#[test]
+fn latency_metrics_omit_absent_values_and_keep_their_keys() {
+    assert_eq!(serialized(&DDLLMObsLatencyMetrics::default()), "{}");
+    let metrics = DDLLMObsLatencyMetrics {
+        time_to_first_token_ms: Some(12.5_f64),
+        litellm_overhead_time_ms: Some(0.5_f64),
+        guardrail_overhead_time_ms: Some(3.0_f64),
+    };
+    assert_eq!(
+        serialized(&metrics),
+        concat!(
+            r#"{"time_to_first_token_ms":12.5,"litellm_overhead_time_ms":0.5,"#,
+            r#""guardrail_overhead_time_ms":3.0}"#
+        )
+    );
 }
 
 #[test]

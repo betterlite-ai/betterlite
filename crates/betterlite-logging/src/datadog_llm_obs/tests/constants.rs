@@ -37,38 +37,85 @@ fn the_parsed_argument_bound_is_256_kibibytes() {
 
 #[test]
 fn the_dimension_sets_cover_the_router_and_cost_dimensions() {
-    assert!(
-        ROUTER_DIMENSIONS
-            .iter()
-            .all(|dimension| COST_DIMENSIONS.contains(dimension))
+    assert_eq!(
+        ROUTER_DIMENSIONS,
+        [
+            "router_tier",
+            "router_cause",
+            "router_escalated",
+            "routed_model"
+        ]
     );
-    assert_eq!(COST_DIMENSIONS.len(), 8);
-    assert!(COST_DIMENSIONS.contains(&"team"));
-    assert!(COST_DIMENSIONS.contains(&"user"));
-    assert!(COST_DIMENSIONS.contains(&"key_alias"));
-    assert!(COST_DIMENSIONS.contains(&"model_group"));
+    assert_eq!(
+        COST_DIMENSIONS,
+        [
+            "team",
+            "user",
+            "key_alias",
+            "model_group",
+            "router_tier",
+            "router_cause",
+            "router_escalated",
+            "routed_model",
+        ]
+    );
 }
 
 #[test]
 fn the_router_span_fields_map_onto_the_router_dimensions() {
-    assert_eq!(ROUTER_SPAN_FIELDS.len(), 6);
-    assert!(ROUTER_SPAN_FIELDS.contains(&("tier", "router_tier")));
-    assert!(ROUTER_SPAN_FIELDS.contains(&("routed_model", "routed_model")));
+    assert_eq!(
+        ROUTER_SPAN_FIELDS,
+        [
+            ("tier", "router_tier"),
+            ("cause", "router_cause"),
+            ("score", "router_score"),
+            ("escalated", "router_escalated"),
+            ("signals", "router_signals"),
+            ("routed_model", "routed_model"),
+        ]
+    );
 }
 
 #[test]
 fn the_guardrail_sets_split_audit_fields_from_prompt_carriers() {
-    assert_eq!(AUDIT_GUARDRAIL_FIELDS.len(), 21);
-    assert!(AUDIT_GUARDRAIL_FIELDS.contains(&"guardrail_name"));
-    assert!(AUDIT_GUARDRAIL_FIELDS.contains(&"masked_entity_count"));
-    assert_eq!(GUARDRAIL_PROMPT_FIELDS.len(), 4);
-    assert!(GUARDRAIL_PROMPT_FIELDS.contains(&"guardrail_request"));
-    assert!(GUARDRAIL_PROMPT_FIELDS.contains(&"classification"));
-    assert!(
-        AUDIT_GUARDRAIL_FIELDS
-            .iter()
-            .all(|field| !GUARDRAIL_PROMPT_FIELDS.contains(field))
-    );
+    let mut audit = AUDIT_GUARDRAIL_FIELDS;
+    let mut expected_audit = [
+        "guardrail_name",
+        "guardrail_provider",
+        "guardrail_mode",
+        "guardrail_status",
+        "start_time",
+        "end_time",
+        "duration",
+        "masked_entity_count",
+        "guardrail_id",
+        "policy_template",
+        "detection_method",
+        "confidence_score",
+        "patterns_checked",
+        "alert_recipients",
+        "risk_score",
+        "violation_categories",
+        "guardrail_action",
+        "guardrail_usage",
+        "guardrail_cost",
+        "guardrail_cost_by_unit",
+        "guardrail_cost_in_spend",
+    ];
+    let mut prompt = GUARDRAIL_PROMPT_FIELDS;
+    let mut expected_prompt = [
+        "guardrail_request",
+        "guardrail_response",
+        "match_details",
+        "classification",
+    ];
+    audit.sort_unstable();
+    expected_audit.sort_unstable();
+    prompt.sort_unstable();
+    expected_prompt.sort_unstable();
+    assert_eq!(audit, expected_audit);
+    assert_eq!(prompt, expected_prompt);
+    assert!(audit.iter().all(|field| !prompt.contains(field)));
 }
 
 #[test]
