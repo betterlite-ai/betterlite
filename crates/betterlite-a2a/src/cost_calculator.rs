@@ -29,17 +29,28 @@ pub fn a2a_call_cost(logging: Option<&LoggingState>) -> Result<Decimal, CostCalc
     };
     let details = &state.model_call_details;
     let params = cost_params(details)?;
-    // LiteLLM reads usage only in the token branch, so a fixed price never validates it
-    let usage = if params.response_cost.is_some() || params.cost_per_query.is_some() {
-        None
-    } else {
+    let fixed_price = params.response_cost.is_some() || params.cost_per_query.is_some();
+    let token_rates =
+        params.input_cost_per_token.is_some() || params.output_cost_per_token.is_some();
+    // LiteLLM reads usage only in the token branch, so a fixed price or no rate never validates it
+    let usage = if token_rates && !fixed_price {
         usage(details.get("usage"))?
+    } else {
+        None
     };
     Ok(calculate_a2a_cost(&params, usage)?)
 }
 
 fn cost_params(details: &IndexMap<String, Json>) -> Result<A2aCostParams, CostCalculatorError> {
     let response_cost = money(details.get("response_cost"), "response_cost")?;
+    if response_cost.is_some() {
+        return Ok(A2aCostParams {
+            response_cost,
+            cost_per_query: None,
+            input_cost_per_token: None,
+            output_cost_per_token: None,
+        });
+    }
     let params = match details.get("litellm_params") {
         None | Some(Json::Null) => None,
         Some(Json::Object(values)) => Some(values),

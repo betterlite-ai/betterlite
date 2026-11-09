@@ -371,6 +371,16 @@ fn a_fixed_price_does_not_validate_the_usage() {
 }
 
 #[test]
+fn no_token_rates_does_not_validate_the_usage() {
+    let details = [
+        ("litellm_params", object(&[])),
+        ("usage", Json::List(vec![number(1)])),
+    ];
+
+    assert_eq!(cost(&details), Ok(Decimal::ZERO));
+}
+
+#[test]
 fn a_response_cost_does_not_validate_litellm_params() {
     let details = [
         ("response_cost", number(5)),
