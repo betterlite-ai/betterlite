@@ -5,6 +5,7 @@ mod bounds;
 mod corpus;
 mod dimensions;
 mod geometry;
+mod media_corpus;
 mod support;
 mod tiles;
 mod tokens;
