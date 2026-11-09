@@ -60,6 +60,7 @@ class Input(BaseModel):
     body: str
     model: str
     messages: list[Message]
+    content: str
     response: SuppliedResponse
     tokens: Counts | None = None
 

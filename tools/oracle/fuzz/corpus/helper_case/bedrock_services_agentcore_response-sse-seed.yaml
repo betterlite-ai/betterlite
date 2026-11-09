@@ -8,6 +8,7 @@ call:
       data: {"event":{"contentBlockDelta":{"delta":{"text":"hi"}}}}
     model: gpt-4
     messages: [{role: user, content: hi}]
+    content: hi
     response:
       id: chatcmpl-seed
       object: chat.completion

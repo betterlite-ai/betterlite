@@ -3,7 +3,8 @@
 use std::future::Future;
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::response::ChatUsage;
+use betterlite_openai::chat::response::{ChatResponse, ChatUsage};
+use betterlite_tokenizer::count::request::Message;
 use rstest::rstest;
 use tokio::runtime::Builder;
 
@@ -12,7 +13,7 @@ use crate::agentcore_response::json::parse_json_reply;
 use crate::agentcore_response::reply::decode_agentcore_reply;
 use crate::agentcore_response::sse::parse_sse_stream;
 use crate::agentcore_response::tests::support::{
-    FixtureCounter, capture, choice_message, json_response, response, sse_response,
+    FixtureCounter, capture, choice_message, json_response, messages, response, sse_response,
 };
 use crate::agentcore_response::transform::{RawResponse, transform_agentcore_response};
 use crate::bedrock_settings::ErrorHeaders;
@@ -61,11 +62,32 @@ fn content_of(text: &str) -> String {
     parse_json_reply(&json(text)).unwrap().content
 }
 
+fn run(
+    raw: &RawResponse,
+    request_messages: &[Message],
+    content: &str,
+    counts: (Option<usize>, Option<usize>),
+) -> ChatResponse {
+    let mut response = response();
+    let counter = FixtureCounter::new("gpt-4", request_messages, content, counts.0, counts.1);
+    block_on(transform_agentcore_response(
+        "gpt-4",
+        raw,
+        request_messages,
+        &mut response,
+        &counter,
+    ))
+    .unwrap();
+    response
+}
+
 fn json_content_message() {
     let a2a = r#"{"jsonrpc":"2.0","result":{"parts":[{"kind":"text","text":"direct"}]}}"#;
     assert_eq!(content_of(a2a), "direct");
     let null_jsonrpc = r#"{"jsonrpc":null,"result":{"parts":[{"kind":"text","text":"still"}]}}"#;
     assert_eq!(content_of(null_jsonrpc), "still");
+    let without_jsonrpc = r#"{"result":{"parts":[{"kind":"text","text":"x"}]}}"#;
+    assert_eq!(content_of(without_jsonrpc), "");
     let falling_through = r#"{"jsonrpc":"2.0","result":{"content":[{"text":"fall"}]}}"#;
     assert_eq!(content_of(falling_through), "fall");
     let empty_result = r#"{"result":{},"response":"ignored"}"#;
@@ -81,6 +103,10 @@ fn json_content_message() {
         "xy"
     );
     assert_eq!(content_of(r#"{"result":"","response":"later"}"#), "");
+    assert_eq!(
+        content_of(r#"{"result":"s","response":[{"text":"list"}]}"#),
+        "list"
+    );
     assert_eq!(content_of(r#"{"response":"only"}"#), "only");
     let choices_only = r#"{"choices":[{"index":0,"message":{"role":"assistant"}}]}"#;
     assert_eq!(
@@ -90,19 +116,22 @@ fn json_content_message() {
 }
 
 fn sse_content_delta() {
-    let body = "  data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"a\"}}}}  \n\
-                \n\
-                data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"b\"}}}}\n\
-                data: 42\n\
-                data: {}\n\
-                data: {\"event\":{}}\n\
-                data: {\"event\":5}\n\
-                data: {\"message\":5}\n\
-                data: {\"event\":{\"contentBlockDelta\":{}}}\n\
-                data: {\"event\":{\"contentBlockDelta\":{\"delta\":{}}}}\n\
-                data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"\"}}}}\n\
-                data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"last\"}}}}";
-    assert_eq!(parse_sse_stream(body).unwrap().content, "ablast");
+    let body = concat!(
+        "  data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"a\"}}}}  \n",
+        "\n",
+        "  data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"c\"}}}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"b\"}}}}\n",
+        "data: 42\n",
+        "data: {}\n",
+        "data: {\"event\":{}}\n",
+        "data: {\"event\":5}\n",
+        "data: {\"message\":5}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{}}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{}}}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"\"}}}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"last\"}}}}",
+    );
+    assert_eq!(parse_sse_stream(body).unwrap().content, "acblast");
     let broken_delta =
         parse_sse_stream(r#"data: {"event":{"contentBlockDelta":true}}"#).unwrap_err();
     assert!(matches!(
@@ -130,26 +159,10 @@ fn sse_usage_event() {
     assert_eq!(found.input_tokens, 0);
     assert_eq!(found.output_tokens, 0);
     assert_eq!(found.total_tokens, 0);
-    let mut last_wins = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &sse_response(body),
-        &[],
-        &mut last_wins,
-        &FixtureCounter::counting(1, 2),
-    ))
-    .unwrap();
+    let last_wins = run(&sse_response(body), &[], "hello", (Some(1), Some(2)));
     assert_eq!(last_wins.usage, usage(0, 0, 0));
     let total_only = "data: {\"event\":{\"metadata\":{\"usage\":{\"totalTokens\":5}}}}";
-    let mut independent = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &sse_response(total_only),
-        &[],
-        &mut independent,
-        &FixtureCounter::counting(1, 2),
-    ))
-    .unwrap();
+    let independent = run(&sse_response(total_only), &[], "hello", (Some(1), Some(2)));
     assert_eq!(independent.usage, usage(0, 0, 5));
 }
 
@@ -169,15 +182,7 @@ fn plain_text_response() {
         headers: vec![("Content-Type".to_owned(), "Application/JSON".to_owned())],
         body: br#"{"result":{"content":[{"text":"named"}]}}"#.to_vec(),
     };
-    let mut named = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &raw,
-        &[],
-        &mut named,
-        &FixtureCounter::counting(1, 1),
-    ))
-    .unwrap();
+    let named = run(&raw, &[], "named", (Some(1), Some(1)));
     let (_, _, _, named_content) = choice_message(&named);
     assert_eq!(named_content.as_deref(), Some("named"));
 }
@@ -185,33 +190,28 @@ fn plain_text_response() {
 fn missing_usage() {
     let (logs, _guard) = capture();
     let raw = json_response(r#"{"result":{"content":[{"text":"hello"}]}}"#);
-    let mut calculated = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &raw,
-        &[],
-        &mut calculated,
-        &FixtureCounter::counting(3, 5),
-    ))
-    .unwrap();
+    let request_messages = messages();
+    let calculated = run(&raw, &request_messages, "hello", (Some(3), Some(5)));
     assert_eq!(calculated.usage, usage(3, 5, 8));
     assert!(
         logs.text()
             .contains("Calculated usage - prompt: 3, completion: 5, total: 8")
     );
-    let mut unchanged = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &raw,
-        &[],
-        &mut unchanged,
-        &FixtureCounter::failing(),
-    ))
-    .unwrap();
-    assert_eq!(unchanged.usage, usage(1, 2, 3));
-    assert!(
+    let prompt_failed = run(&raw, &request_messages, "hello", (None, None));
+    assert_eq!(prompt_failed.usage, usage(1, 2, 3));
+    assert_eq!(
         logs.text()
-            .contains("Failed to calculate token usage: fixture counter unavailable")
+            .matches("Failed to calculate token usage")
+            .count(),
+        1
+    );
+    let completion_failed = run(&raw, &request_messages, "hello", (Some(3), None));
+    assert_eq!(completion_failed.usage, usage(1, 2, 3));
+    assert_eq!(
+        logs.text()
+            .matches("Failed to calculate token usage")
+            .count(),
+        2
     );
 }
 
@@ -231,7 +231,7 @@ fn malformed_event_fallback() {
         &json_response("{\"result\":"),
         &[],
         &mut completed,
-        &FixtureCounter::counting(1, 1),
+        &FixtureCounter::new("gpt-4", &[], "", None, None),
     ))
     .unwrap_err();
     let AgentCoreResponseError::Bedrock {
@@ -312,15 +312,7 @@ fn json_raw_fallback() {
         AgentCoreResponseError::ContentTextNotString { index: 0 }
     ));
     let raw = json_response(r#"{"result":{"content":[{"text":"x"}]},"usage":{"inputTokens":9}}"#);
-    let mut calculated = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &raw,
-        &[],
-        &mut calculated,
-        &FixtureCounter::counting(4, 6),
-    ))
-    .unwrap();
+    let calculated = run(&raw, &[], "x", (Some(4), Some(6)));
     assert_eq!(calculated.usage, usage(4, 6, 10));
 }
 
@@ -355,7 +347,7 @@ fn error_for_malformed_body() {
         &raw,
         &[],
         &mut completed,
-        &FixtureCounter::counting(1, 1),
+        &FixtureCounter::new("gpt-4", &[], "", Some(1), Some(1)),
     ))
     .unwrap_err();
     let AgentCoreResponseError::Bedrock {
@@ -387,15 +379,7 @@ fn success_keeps_unrelated_fields() {
         headers: vec![("content-type".to_owned(), "application/json".to_owned())],
         body: br#"{"result":{"content":[{"text":"kept"}]}}"#.to_vec(),
     };
-    let mut completed = response();
-    block_on(transform_agentcore_response(
-        "gpt-4",
-        &raw,
-        &[],
-        &mut completed,
-        &FixtureCounter::counting(2, 3),
-    ))
-    .unwrap();
+    let completed = run(&raw, &[], "kept", (Some(2), Some(3)));
     assert_eq!(completed.id, "chatcmpl-fixture");
     assert_eq!(completed.object, "chat.completion");
     assert_eq!(completed.created, 42);

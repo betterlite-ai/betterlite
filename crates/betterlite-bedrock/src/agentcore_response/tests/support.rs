@@ -3,7 +3,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use betterlite_openai::chat::response::{ChatResponse, ChatUsage};
-use betterlite_tokenizer::count::request::TokenRequest;
+use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::agentcore_response::counter::TokenCounter;
@@ -44,38 +44,50 @@ pub(super) fn raw_response(status_code: u16, content_type: &str, body: &str) -> 
     }
 }
 
-pub(super) struct FixtureCounter {
+pub(super) struct FixtureCounter<'expected> {
+    pub(super) model: &'expected str,
+    pub(super) messages: &'expected [Message],
+    pub(super) content: &'expected str,
     pub(super) prompt: Option<usize>,
     pub(super) completion: Option<usize>,
 }
 
-impl FixtureCounter {
-    pub(super) const fn counting(prompt: usize, completion: usize) -> Self {
+impl<'expected> FixtureCounter<'expected> {
+    pub(super) const fn new(
+        model: &'expected str,
+        messages: &'expected [Message],
+        content: &'expected str,
+        prompt: Option<usize>,
+        completion: Option<usize>,
+    ) -> Self {
         Self {
-            prompt: Some(prompt),
-            completion: Some(completion),
-        }
-    }
-
-    pub(super) const fn failing() -> Self {
-        Self {
-            prompt: None,
-            completion: None,
+            model,
+            messages,
+            content,
+            prompt,
+            completion,
         }
     }
 }
 
-impl TokenCounter for FixtureCounter {
+impl TokenCounter for FixtureCounter<'_> {
     type Error = io::Error;
 
     fn count(&self, request: &TokenRequest<'_>) -> impl Future<Output = Result<usize, io::Error>> {
+        if request.model != self.model {
+            return future::ready(Err(io::Error::other("fixture counter model mismatch")));
+        }
         let outcome = match (
-            request.messages.is_some(),
-            request.text.is_some(),
+            request.messages,
+            request.text,
             request.count_response_tokens,
         ) {
-            (true, false, None | Some(false)) => self.prompt,
-            (false, true, Some(true)) => self.completion,
+            (Some(messages), None, Some(false)) if same_messages(messages, self.messages) => {
+                self.prompt
+            }
+            (None, Some(text), Some(true)) if text.joined().as_ref() == self.content => {
+                self.completion
+            }
             _ => {
                 return future::ready(Err(io::Error::other(
                     "fixture counter called with an unexpected request",
@@ -84,6 +96,16 @@ impl TokenCounter for FixtureCounter {
         };
         future::ready(outcome.ok_or_else(|| io::Error::other("fixture counter unavailable")))
     }
+}
+
+fn same_messages(found: &[Message], expected: &[Message]) -> bool {
+    let found_text = format!("{found:?}");
+    let expected_text = format!("{expected:?}");
+    found_text == expected_text
+}
+
+pub(super) fn messages() -> Vec<Message> {
+    serde_json::from_str(r#"[{"role":"user","content":"hi"}]"#).unwrap()
 }
 
 #[derive(Clone, Default)]

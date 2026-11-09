@@ -10,6 +10,7 @@ call:
       data: {"event":{"contentBlockDelta":{"delta":{"text":"ok"}}}}
     model: gpt-4
     messages: [{role: user, content: hi}]
+    content: ok
     tokens: {prompt: 3, completion: 5}
     response:
       id: chatcmpl-fixture

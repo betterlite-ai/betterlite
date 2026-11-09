@@ -22,6 +22,7 @@ pub(crate) struct Input {
     body: String,
     model: String,
     messages: Vec<Message>,
+    content: String,
     response: ChatResponse,
     tokens: Option<TokenCounts>,
 }
@@ -33,21 +34,31 @@ struct TokenCounts {
     completion: usize,
 }
 
-struct FixtureCounter {
+struct FixtureCounter<'input> {
     counts: Option<TokenCounts>,
+    model: &'input str,
+    messages: &'input [Message],
+    content: &'input str,
 }
 
-impl TokenCounter for FixtureCounter {
+impl TokenCounter for FixtureCounter<'_> {
     type Error = io::Error;
 
     fn count(&self, request: &TokenRequest<'_>) -> impl Future<Output = Result<usize, io::Error>> {
+        if request.model != self.model {
+            return future::ready(Err(io::Error::other("fixture counter model mismatch")));
+        }
         let counted = match (
-            request.messages.is_some(),
-            request.text.is_some(),
+            request.messages,
+            request.text,
             request.count_response_tokens,
         ) {
-            (true, false, None | Some(false)) => self.counts.map(|counts| counts.prompt),
-            (false, true, Some(true)) => self.counts.map(|counts| counts.completion),
+            (Some(messages), None, Some(false)) if same_messages(messages, self.messages) => {
+                self.counts.map(|counts| counts.prompt)
+            }
+            (None, Some(text), Some(true)) if text.joined().as_ref() == self.content => {
+                self.counts.map(|counts| counts.completion)
+            }
             _ => {
                 return future::ready(Err(io::Error::other(
                     "fixture counter called with an unexpected request",
@@ -56,6 +67,12 @@ impl TokenCounter for FixtureCounter {
         };
         future::ready(counted.ok_or_else(|| io::Error::other("fixture counter unavailable")))
     }
+}
+
+fn same_messages(found: &[Message], expected: &[Message]) -> bool {
+    let found_text = format!("{found:?}");
+    let expected_text = format!("{expected:?}");
+    found_text == expected_text
 }
 
 pub(crate) struct Op;
@@ -81,6 +98,9 @@ async fn transform(input: &Input) -> crate::helpers::HelperResult {
     let mut response = input.response.clone();
     let counter = FixtureCounter {
         counts: input.tokens,
+        model: &input.model,
+        messages: &input.messages,
+        content: &input.content,
     };
     match transform_agentcore_response(&input.model, &raw, &input.messages, &mut response, &counter)
         .await

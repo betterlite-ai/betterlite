@@ -9,6 +9,7 @@ call:
       data: {"message":{"content":[{"text":"final"}]}}
     model: gpt-4
     messages: [{role: user, content: hi}]
+    content: final
     tokens: {prompt: 3, completion: 5}
     response:
       id: chatcmpl-fixture
