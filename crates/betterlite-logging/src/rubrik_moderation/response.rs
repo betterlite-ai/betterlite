@@ -7,14 +7,16 @@ use crate::rubrik::block_decision::extract_response_block;
 use crate::rubrik::moderation_payload::{
     ResponseModerationPayload, build_response_moderation, join_texts,
 };
-use crate::rubrik::request_data::{correlation_id, extract_request_data, resolve_model};
+use crate::rubrik::request_data::{
+    ResponseSource, correlation_id, extract_request_data, resolve_model,
+};
 use crate::rubrik::tool_calls::{ChatCompletionMessageToolCall, normalize_tool_calls};
 use crate::rubrik_delivery::logger::RubrikLogger;
 use crate::rubrik_delivery::post::post_response_moderation;
 
 use super::context::{
     LoggingObject, RequestData, call_details, request_context, request_context_source,
-    request_data_json, response_source, stash_block_context, text_field,
+    request_data_json, stash_block_context, text_field,
 };
 use super::error::{ModerationError, ModifyResponseException};
 use super::inputs::GuardrailInputs;
@@ -69,10 +71,15 @@ fn block_error(
     logging_obj: Option<&Arc<LoggingObject>>,
     explanation: String,
 ) -> Result<ModerationError, ModerationError> {
-    let model = resolve_model(
-        &response_source(&request_data.fields)?,
-        text_field(details, "model")?,
-    );
+    let response = match request_data.fields.get("response") {
+        Some(Json::Object(response)) => match response.get("model") {
+            Some(_) => ResponseSource::WithModel(text_field(response, "model")?.map(str::to_owned)),
+            None => ResponseSource::WithoutModel,
+        },
+        Some(Json::Null) | None => ResponseSource::Absent,
+        Some(_) => return Err(ModerationError::FieldType { field: "response" }),
+    };
+    let model = resolve_model(&response, text_field(details, "model")?);
     stash_block_context(logging_obj, request_data);
     Ok(ModerationError::Blocked(Box::new(
         ModifyResponseException {

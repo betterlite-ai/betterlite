@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::rubrik::prompt_payload::PromptModerationRequest;
-use crate::rubrik::request_data::{RequestContextSource, ResponseSource, TrackedField};
+use crate::rubrik::request_data::{RequestContextSource, TrackedField};
 
 use super::error::ModerationError;
 
@@ -53,16 +53,6 @@ pub fn text_field<'fields>(
     }
 }
 
-fn text_value(value: &Json, field: &'static str) -> Result<Option<String>, ModerationError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(ModerationError::FieldType { field })
-        }
-    }
-}
-
 // The call-details half of the after_completion envelope's request.
 pub fn request_context(
     fields: &IndexMap<String, Json>,
@@ -101,22 +91,6 @@ pub fn request_context_source(fields: &IndexMap<String, Json>) -> RequestContext
         model: None,
         tools,
         optional_params_tools: None,
-    }
-}
-
-pub fn response_source(fields: &IndexMap<String, Json>) -> Result<ResponseSource, ModerationError> {
-    let Some(Json::Object(response)) = fields.get("response") else {
-        return match fields.get("response") {
-            None | Some(Json::Null) => Ok(ResponseSource::Absent),
-            Some(_) => Err(ModerationError::FieldType { field: "response" }),
-        };
-    };
-    match response.get("model") {
-        Some(model) => Ok(ResponseSource::WithModel(text_value(
-            model,
-            "response.model",
-        )?)),
-        None => Ok(ResponseSource::WithoutModel),
     }
 }
 
