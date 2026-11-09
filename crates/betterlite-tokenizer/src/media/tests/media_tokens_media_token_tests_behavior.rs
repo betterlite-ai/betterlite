@@ -261,12 +261,12 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::tool_use_input(
     plain(r#"{"type":"tool_use","input":{"city":"Paris"}}"#),
     EXACT,
-    tokens(1)
+    tokens(5)
 )]
 #[case::tool_use_input_and_caller(
     plain(r#"{"type":"tool_use","input":{"a":1},"caller":{"type":"direct"}}"#),
     EXACT,
-    tokens(2)
+    tokens(10)
 )]
 #[case::tool_use_null_input(plain(r#"{"type":"tool_use","input":null}"#), EXACT, tokens(0))]
 #[case::tool_result_string(
