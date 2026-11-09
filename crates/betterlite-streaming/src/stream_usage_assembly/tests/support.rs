@@ -93,7 +93,7 @@ impl FixtureCounter {
     }
 
     pub(super) fn failing_text() -> Self {
-        Self::new(Outcome::Fail, Outcome::Count(0), Outcome::Count(0))
+        Self::new(Outcome::Fail, Outcome::Fail, Outcome::Count(0))
     }
 
     pub(super) fn failing_messages() -> Self {

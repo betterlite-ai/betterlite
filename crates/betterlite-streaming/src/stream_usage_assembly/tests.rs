@@ -640,6 +640,20 @@ async fn finish_reasons_are_evidence() {
     )
     .await;
     assert_eq!(missing.completion_tokens, 7);
+
+    let response_without_choices = simple_usage(
+        &counter,
+        r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[]}]"#,
+    )
+    .await;
+    assert_eq!(response_without_choices.completion_tokens, 7);
+
+    let response_choice = simple_usage(
+        &counter,
+        r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{}]}]"#,
+    )
+    .await;
+    assert_eq!(response_choice.completion_tokens, 8);
 }
 
 async fn other_providers_keep_their_counts() {

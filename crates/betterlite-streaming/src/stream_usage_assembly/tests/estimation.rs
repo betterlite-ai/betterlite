@@ -468,10 +468,11 @@ async fn real_counter_estimates_unreported_counts() {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
     let hooks = fixture_hooks();
+    let text = "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}, \u{43a}\u{430}\u{43a} \u{434}\u{435}\u{43b}\u{430}? The quick brown fox jumps over 12345 lazy dogs!";
     let request = UsageRequest {
         chunks: &parsed,
         model: "gpt-4o",
-        completion_output: "hi",
+        completion_output: text,
         messages: Some(&messages),
         reasoning_tokens: None,
         count_prompt_tokens: None,
@@ -481,12 +482,14 @@ async fn real_counter_estimates_unreported_counts() {
         .expect("the real counter estimates");
     // The messages estimate keeps the reply-priming tokens LiteLLM adds (5 without them).
     assert_eq!(usage.prompt_tokens, 8);
-    assert_eq!(usage.completion_tokens, 1);
-    let choices = fixture_choices(r#"[{"message":{"reasoning_content":"abc"}}]"#);
+    // The same text is 20 through the no-model counter, so 18 pins the gpt-4o tokenizer.
+    assert_eq!(usage.completion_tokens, 18);
+    let reasoning = format!(r#"[{{"message":{{"reasoning_content":"{text}"}}}}]"#);
+    let choices = fixture_choices(&reasoning);
     assert_eq!(
         count_reasoning_tokens(&counter, &choices)
             .await
             .expect("the real counter counts reasoning"),
-        Some(1)
+        Some(20)
     );
 }
