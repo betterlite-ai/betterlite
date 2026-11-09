@@ -1,0 +1,197 @@
+use std::collections::BTreeMap;
+use std::fmt;
+
+use betterlite_openai::chat::response::{
+    AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
+};
+use betterlite_tokenizer::count::request::{Message, TextInput, TokenRequest};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::agentcore_response::counter::TokenCounter;
+use crate::agentcore_response::error::AgentCoreReplyError;
+use crate::agentcore_response::reply::decode_agentcore_reply;
+use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, HeaderError};
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct RawResponse {
+    pub status_code: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+// B682's BedrockError implements no Display or Error, so the derived wrapper carries the cause instead.
+#[derive(Debug, Error)]
+#[error("bedrock provider error")]
+pub struct BedrockFailure {
+    pub cause: Box<BedrockError>,
+}
+
+#[derive(Debug, Error)]
+pub enum AgentCoreResponseError {
+    #[error("bedrock provider error ({status})")]
+    Bedrock {
+        status: u16,
+        #[source]
+        error: BedrockFailure,
+    },
+    #[error(transparent)]
+    Header(#[from] HeaderError),
+}
+
+pub async fn transform_agentcore_response<C>(
+    model: &str,
+    raw: &RawResponse,
+    messages: &[Message],
+    response: &mut ChatResponse,
+    counter: &C,
+) -> Result<(), AgentCoreResponseError>
+where
+    C: TokenCounter + Sync,
+{
+    if let Err(error) = apply(model, raw, messages, response, counter).await {
+        tracing::error!("Error processing Bedrock AgentCore response: {error}");
+        let input = ErrorInput {
+            status_code: raw.status_code,
+            message: format!("Error processing response: {error}"),
+            request: None,
+            body: None,
+            status_code_is_synthesized: false,
+            headers: Some(ErrorHeaders::Http(raw.headers.clone())),
+            response: None,
+        };
+        let bedrock = BedrockError::try_from(input).map_err(AgentCoreResponseError::Header)?;
+        return Err(AgentCoreResponseError::Bedrock {
+            status: raw.status_code,
+            error: BedrockFailure {
+                cause: Box::new(bedrock),
+            },
+        });
+    }
+    Ok(())
+}
+
+async fn apply<C>(
+    model: &str,
+    raw: &RawResponse,
+    messages: &[Message],
+    response: &mut ChatResponse,
+    counter: &C,
+) -> Result<(), AgentCoreReplyError>
+where
+    C: TokenCounter + Sync,
+{
+    let reply = decode_agentcore_reply(&raw.body, content_type(&raw.headers).as_deref())?;
+    response.choices = vec![ChatChoice {
+        index: 0,
+        message: AssistantMessage {
+            role: "assistant".to_owned(),
+            content: Some(reply.content.clone()),
+            tool_calls: None,
+            annotations: None,
+            audio: None,
+            refusal: None,
+            provider_specific_fields: MessageProviderFields { refusal: None },
+        },
+        finish_reason: Some("stop".to_owned()),
+        logprobs: None,
+        provider_specific_fields: BTreeMap::new(),
+    }];
+    response.model = String::from(model);
+    if let Some(usage) = reply.usage {
+        response.usage = usage.to_chat_usage()?;
+    } else {
+        tracing::debug!("No usage data from AgentCore - calculating tokens");
+        if let Some(usage) = calculate_usage(model, messages, &reply.content, counter).await {
+            response.usage = usage;
+        }
+    }
+    Ok(())
+}
+
+async fn calculate_usage<C>(
+    model: &str,
+    messages: &[Message],
+    content: &str,
+    counter: &C,
+) -> Option<ChatUsage>
+where
+    C: TokenCounter + Sync,
+{
+    let prompt_request = prompt_request(model, messages);
+    let prompt = match counter.count(&prompt_request).await {
+        Ok(count) => count,
+        Err(error) => return counter_failed(error),
+    };
+    let text = TextInput::One(content.to_owned());
+    let completion_request = completion_request(model, &text);
+    let completion = match counter.count(&completion_request).await {
+        Ok(count) => count,
+        Err(error) => return counter_failed(error),
+    };
+    let prompt_tokens = u64::try_from(prompt).ok()?;
+    let completion_tokens = u64::try_from(completion).ok()?;
+    let total_tokens = u64::try_from(prompt.checked_add(completion)?).ok()?;
+    tracing::debug!(
+        "Calculated usage - prompt: {prompt_tokens}, completion: {completion_tokens}, total: {total_tokens}"
+    );
+    Some(ChatUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+    })
+}
+
+const fn prompt_request<'request>(
+    model: &'request str,
+    messages: &'request [Message],
+) -> TokenRequest<'request> {
+    TokenRequest {
+        model,
+        custom_tokenizer: None,
+        text: None,
+        messages: Some(messages),
+        count_response_tokens: Some(false),
+        tools: None,
+        tool_choice: None,
+    }
+}
+
+const fn completion_request<'request>(
+    model: &'request str,
+    text: &'request TextInput,
+) -> TokenRequest<'request> {
+    TokenRequest {
+        model,
+        custom_tokenizer: None,
+        text: Some(text),
+        messages: None,
+        count_response_tokens: Some(true),
+        tools: None,
+        tool_choice: None,
+    }
+}
+
+fn counter_failed<E>(error: E) -> Option<ChatUsage>
+where
+    E: fmt::Display,
+{
+    tracing::warn!("Failed to calculate token usage: {error}");
+    None
+}
+
+fn content_type(headers: &[(String, String)]) -> Option<String> {
+    let mut joined = String::new();
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("content-type") {
+            continue;
+        }
+        if !joined.is_empty() {
+            joined.push_str(", ");
+        }
+        joined.push_str(value);
+    }
+    (!joined.is_empty()).then_some(joined)
+}

@@ -1152,6 +1152,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "bytes",
  "chrono",
  "crc32fast",
