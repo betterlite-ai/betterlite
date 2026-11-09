@@ -102,7 +102,7 @@ pub(crate) fn local_service() -> Arc<TestService> {
 
 pub(crate) fn wide_bundled_service() -> Arc<TestService> {
     let asset: fn() -> Result<Vec<u8>, CatalogError> =
-        || Ok(catalog_body("bundled", 100).into_bytes());
+        || Ok(catalog_body("bundled", 200).into_bytes());
     build(remote_source(), asset, Arc::new(NoRuntimeRegistrations))
 }
 
