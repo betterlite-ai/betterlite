@@ -33,8 +33,6 @@ pub enum BackendError {
     NotNumeric { key: String },
     #[error("the increment under {key} left the finite range")]
     IncrementOutOfRange { key: String },
-    #[error("the expiry of {key} left the finite range")]
-    InvalidExpiry { key: String },
     #[error("the cache default ttl {value} is not a finite duration")]
     InvalidDefaultDuration {
         value: f64,

@@ -41,11 +41,6 @@ pub(super) fn write(
     state.values.set(key, value, ttl)?;
     if accepted && previous.is_none_or(|expiry| expiry < now) {
         let expiry = now.mul_add(1.0_f64, ttl.unwrap_or(settings.limits.default_ttl));
-        if !expiry.is_finite() {
-            return Err(BackendError::InvalidExpiry {
-                key: key.to_owned(),
-            });
-        }
         state.expiries.insert(key.to_owned(), expiry);
     }
     Ok(())

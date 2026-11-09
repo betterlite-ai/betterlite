@@ -194,6 +194,23 @@ async fn memory_get_ttl_uses_the_default_without_an_explicit_ttl() {
 }
 
 #[tokio::test]
+async fn memory_set_accepts_a_non_finite_ttl() {
+    let cache = cache_at(0.0_f64);
+    cache
+        .async_set_cache("key", CacheValue::Integer(1), Some(f64::INFINITY))
+        .await
+        .expect("a stored value");
+    assert_eq!(
+        cache.async_get_cache("key").await.expect("a read"),
+        Some(CacheValue::Integer(1))
+    );
+    assert_eq!(
+        cache.async_get_ttl("key").await.expect("a ttl"),
+        Some(f64::INFINITY)
+    );
+}
+
+#[tokio::test]
 async fn memory_read_allows_a_key_at_its_expiry() {
     let (ticks, clock) = mutable_clock();
     let cache = MemoryCache::new(None, None, None, DEFAULT_MAX_SIZE_PER_ITEM_KIB, clock)
