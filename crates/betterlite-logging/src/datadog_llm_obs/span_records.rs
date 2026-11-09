@@ -102,6 +102,14 @@ pub struct DDIntakePayload {
 }
 
 #[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct DDLLMObsLatencyMetrics {
+    pub time_to_first_token_ms: Option<f64>,
+    pub litellm_overhead_time_ms: Option<f64>,
+    pub guardrail_overhead_time_ms: Option<f64>,
+}
+
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct DDLLMObsSpendMetrics {
     #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]

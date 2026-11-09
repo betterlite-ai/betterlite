@@ -1,6 +1,5 @@
 use super::Parser;
 
-// Adjacent tokens join the way Python joins them; a bytes group only has to be accepted.
 pub(super) fn group(parser: &mut Parser<'_>, bytes: bool) -> Option<String> {
     let mut out = String::new();
     loop {
@@ -26,13 +25,40 @@ pub(super) fn group(parser: &mut Parser<'_>, bytes: bool) -> Option<String> {
     }
 }
 
-// A bytes body keeps every escape undecoded.
-pub(super) fn one_string(parser: &mut Parser<'_>, force_raw: bool) -> Option<String> {
-    let (quote, quote_raw) = prefix(parser)?;
+fn prefix(parser: &mut Parser<'_>) -> Option<(u8, bool, bool)> {
+    let first = parser.bytes.get(parser.position).copied()?;
+    let (raw, bytes) = match first {
+        b'\'' | b'"' => return Some((first, false, false)),
+        b'r' | b'R' => (true, false),
+        b'b' | b'B' => (false, true),
+        b'u' | b'U' => (false, false),
+        _ => return None,
+    };
+    parser.position = parser.position.saturating_add(1);
+    let second = parser.bytes.get(parser.position).copied()?;
+    if matches!(second, b'\'' | b'"') {
+        return Some((second, raw, bytes));
+    }
+    let paired = matches!(
+        (first, second),
+        (b'r' | b'R', b'b' | b'B') | (b'b' | b'B', b'r' | b'R')
+    );
+    if !paired {
+        return None;
+    }
+    parser.position = parser.position.saturating_add(1);
+    let quote = parser.bytes.get(parser.position).copied()?;
     if quote != b'\'' && quote != b'"' {
         return None;
     }
-    let raw = quote_raw || force_raw;
+    Some((quote, true, true))
+}
+
+pub(super) fn one_string(parser: &mut Parser<'_>, bytes: bool) -> Option<String> {
+    let (quote, raw, carries_bytes) = prefix(parser)?;
+    if (quote != b'\'' && quote != b'"') || carries_bytes != bytes {
+        return None;
+    }
     parser.position = parser.position.saturating_add(1);
     let triple = parser.bytes.get(parser.position).copied() == Some(quote)
         && parser.bytes.get(parser.position.saturating_add(1)).copied() == Some(quote);
@@ -43,7 +69,11 @@ pub(super) fn one_string(parser: &mut Parser<'_>, force_raw: bool) -> Option<Str
     loop {
         let byte = parser.bytes.get(parser.position).copied()?;
         if byte == b'\\' {
-            backslash(parser, raw, &mut out)?;
+            if raw {
+                backslash(parser, &mut out)?;
+            } else {
+                escape(parser, &mut out, bytes)?;
+            }
             continue;
         }
         if byte == quote && !triple {
@@ -63,32 +93,13 @@ pub(super) fn one_string(parser: &mut Parser<'_>, force_raw: bool) -> Option<Str
     }
 }
 
-// The r, b and u prefix letters the token carries, and whether it is raw.
-fn prefix(parser: &mut Parser<'_>) -> Option<(u8, bool)> {
-    let mut byte = parser.bytes.get(parser.position).copied()?;
-    let mut raw = false;
-    for _ in 0..2_u8 {
-        if !matches!(byte, b'r' | b'R' | b'b' | b'B' | b'u' | b'U') {
-            break;
-        }
-        raw |= matches!(byte, b'r' | b'R');
-        parser.position = parser.position.saturating_add(1);
-        byte = parser.bytes.get(parser.position).copied()?;
-    }
-    Some((byte, raw))
-}
-
-fn backslash(parser: &mut Parser<'_>, raw: bool, out: &mut String) -> Option<()> {
+fn backslash(parser: &mut Parser<'_>, out: &mut String) -> Option<()> {
     parser.position = parser.position.saturating_add(1);
-    if raw {
-        out.push('\\');
-        push_char(parser, out)
-    } else {
-        escape(parser, out)
-    }
+    out.push('\\');
+    push_char(parser, out)
 }
 
-fn escape(parser: &mut Parser<'_>, out: &mut String) -> Option<()> {
+fn escape(parser: &mut Parser<'_>, out: &mut String, bytes: bool) -> Option<()> {
     let byte = parser.bytes.get(parser.position).copied()?;
     if let Some(character) = simple_escape(byte) {
         parser.position = parser.position.saturating_add(1);
@@ -101,21 +112,23 @@ fn escape(parser: &mut Parser<'_>, out: &mut String) -> Option<()> {
         parser.position = parser.position.saturating_add(usize::from(continuation));
         return Some(());
     }
-    if matches!(byte, b'0'..=b'7' | b'x' | b'u' | b'U') {
+    if matches!(byte, b'x' | b'0'..=b'7') || (!bytes && matches!(byte, b'u' | b'U')) {
         out.push(escaped_char(parser, byte)?);
         return Some(());
     }
-    if byte == b'N' {
+    if !bytes && byte == b'N' {
         // No name table exists here, so a well-formed \N{name} keeps its text.
         let rest = parser
             .bytes
             .get(parser.position.saturating_add(1)..)?
             .strip_prefix(b"{")?;
-        let close = rest
+        let stop = rest
             .iter()
-            .position(|candidate| *candidate == b'}')
-            .filter(|close| *close > 0)?;
-        let end = parser.position.saturating_add(close).saturating_add(3);
+            .position(|candidate| matches!(candidate, b'}' | b'\'' | b'"' | b'\n' | b'\r'))?;
+        if rest.get(stop) != Some(&b'}') || stop == 0 {
+            return None;
+        }
+        let end = parser.position.saturating_add(stop).saturating_add(3);
         out.push_str(parser.text.get(parser.position.saturating_sub(1)..end)?);
         parser.position = end;
         return Some(());

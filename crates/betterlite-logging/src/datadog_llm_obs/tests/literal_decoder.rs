@@ -46,6 +46,7 @@ fn nested_lists(depth: usize) -> String {
 #[case::adjacent_strings_across_lines("['word '\n 'word']", r#"["word word"]"#)]
 #[case::empty_set_call("set()", "[]")]
 #[case::empty_set_call_with_spaces("set( )", "[]")]
+#[case::empty_set_call_with_a_comment("{'a': set( # c\n)}", r#"{"a":[]}"#)]
 #[case::negative("-2", "-2")]
 #[case::negative_zero("-0", "0")]
 #[case::nested("{'a': [1, (2, {'b': None})]}", r#"{"a":[1,[2,{"b":null}]]}"#)]
@@ -90,6 +91,15 @@ fn escapes_decode_like_python(#[case] source: &str, #[case] expected: &str) {
 #[case::codepoint_past_the_range(r"'\U00110000'")]
 #[case::hex_with_an_imaginary_unit("0xffj")]
 #[case::non_ascii_bytes("b'\u{e9}'")]
+#[case::unicode_prefix_with_bytes("ub'a'")]
+#[case::repeated_raw_prefix("rr'a'")]
+#[case::unicode_prefix_before_raw("ur'a'")]
+#[case::str_then_raw_bytes("'a' rb'c'")]
+#[case::bytes_then_raw_str("b'a' r'c'")]
+#[case::short_hex_escape_in_bytes(r"b'\x1'")]
+#[case::empty_hex_escape_in_bytes(r"b'\x'")]
+#[case::unicode_name_running_past_the_quote("{'z': '\\N{a', 'b': '}'}")]
+#[case::non_ascii_space_in_a_set("{\"a\": set(\u{a0})}")]
 fn unsupported_literals_decode_to_none(#[case] source: &str) {
     assert_eq!(literal_json(source), None);
 }
@@ -101,6 +111,7 @@ fn unsupported_literals_decode_to_none(#[case] source: &str) {
 #[case::raw_bytes("rb'a'", r#""<unrepresentable literal>""#)]
 #[case::raw_bytes_other_order("Rb'a'", r#""<unrepresentable literal>""#)]
 #[case::bytes_keeping_a_unicode_escape(r"b'\u12'", r#""<unrepresentable literal>""#)]
+#[case::bytes_with_a_wide_octal_escape(r"b'\777'", r#""<unrepresentable literal>""#)]
 #[case::complex("2j", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_real_part("(1+2j)", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_subtracted_part("1-2j", r#""<unrepresentable literal>""#)]

@@ -55,7 +55,6 @@ pub const fn as_text(value: &Json) -> Option<&str> {
     }
 }
 
-// The Python truthiness LiteLLM's `tools or functions` and `input or {}` guards test.
 #[must_use]
 pub fn is_filled(value: &Json) -> bool {
     match value {

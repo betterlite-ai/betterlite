@@ -18,9 +18,12 @@ def run(input_value: dict[str, Json]) -> Json:
         messages = input_value.get("messages")
         return plain(datadog_llm_obs._to_dd_messages(messages))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     if function == "tool_arguments":
+        arguments = input_value.get("arguments")
+        if not isinstance(arguments, list):
+            raise ValueError("arguments must be a list")
         return [
             plain(datadog_llm_obs._to_dd_arguments(piece))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            for piece in argument_pieces(input_value.get("arguments"))
+            for piece in arguments
         ]
     if function == "tool_definitions":
         model_parameters = input_value.get("model_parameters")
@@ -32,26 +35,6 @@ def run(input_value: dict[str, Json]) -> Json:
         payload = cast("StandardLoggingPayload", {"response": input_value.get("response")})
         return plain(_LOGGER._get_response_messages(payload, call_type))  # pyright: ignore[reportPrivateUsage]
     raise ValueError(f"unknown {litellm.__name__} helper function {function}")
-
-
-def argument_pieces(value: Json) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError("arguments must be a list")
-    pieces: list[Json] = []
-    for piece in value:
-        if not isinstance(piece, Mapping):
-            raise ValueError("a tool argument must be a mapping")
-        fields = cast("Mapping[str, Json]", piece)
-        text = fields.get("text", "")
-        prefix = fields.get("prefix", "")
-        suffix = fields.get("suffix", "")
-        times = fields.get("times", 1)
-        if not (isinstance(text, str) and isinstance(prefix, str) and isinstance(suffix, str)):
-            raise ValueError("a tool argument needs string text, prefix and suffix")
-        if isinstance(times, bool) or not isinstance(times, int):
-            raise ValueError("a repeated argument needs an integer times")
-        pieces.append(cast(Json, prefix + text * times + suffix))
-    return pieces
 
 
 def plain(value: object) -> Json:

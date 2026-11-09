@@ -16,7 +16,7 @@ pub(crate) enum Input {
     #[serde(rename = "messages")]
     Messages { messages: Option<Json> },
     #[serde(rename = "tool_arguments")]
-    ToolArguments { arguments: Vec<ArgumentPiece> },
+    ToolArguments { arguments: Vec<Json> },
     #[serde(rename = "tool_definitions")]
     ToolDefinitions { model_parameters: Option<Json> },
     #[serde(rename = "response_messages")]
@@ -24,24 +24,6 @@ pub(crate) enum Input {
         response: Option<Json>,
         call_type: Option<String>,
     },
-}
-
-// One tool argument: its text, or the text repeated between a prefix and a suffix.
-#[derive(Deserialize)]
-pub(crate) struct ArgumentPiece {
-    text: String,
-    prefix: Option<String>,
-    suffix: Option<String>,
-    times: Option<usize>,
-}
-
-fn expanded(piece: &ArgumentPiece) -> Json {
-    let repeated = piece.text.repeat(piece.times.unwrap_or(1));
-    Json::Text(format!(
-        "{}{repeated}{}",
-        piece.prefix.as_deref().unwrap_or_default(),
-        piece.suffix.as_deref().unwrap_or_default()
-    ))
 }
 
 impl crate::helpers::Helper for Op {
@@ -53,9 +35,7 @@ impl crate::helpers::Helper for Op {
             Input::ToolArguments { arguments } => Ok(Value::Array(
                 arguments
                     .iter()
-                    .map(|piece| {
-                        serde_json::to_value(to_dd_arguments(&expanded(piece))).unwrap_or_default()
-                    })
+                    .map(|piece| serde_json::to_value(to_dd_arguments(piece)).unwrap_or_default())
                     .collect(),
             )),
             Input::ToolDefinitions { model_parameters } => {

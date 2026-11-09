@@ -71,10 +71,18 @@ impl Parser<'_> {
     }
 
     fn empty_set(&mut self) -> Option<Json> {
-        let rest = self.text.get(self.position..)?.strip_prefix("set")?;
-        let open = rest.trim_start().strip_prefix('(')?;
-        let after = open.trim_start().strip_prefix(')')?;
-        self.position = self.text.len().saturating_sub(after.len());
+        let end = self.position.saturating_add(3);
+        if self.bytes.get(self.position..end) != Some(b"set".as_slice()) {
+            return None;
+        }
+        self.position = end;
+        for (bracket, newlines) in [(b'(', self.depth > 0), (b')', true)] {
+            self.skip(newlines);
+            if self.bytes.get(self.position).copied()? != bracket {
+                return None;
+            }
+            self.position = self.position.saturating_add(1);
+        }
         Some(Json::List(Vec::new()))
     }
 
@@ -98,15 +106,6 @@ impl Parser<'_> {
             return Some(Json::List(Vec::new()));
         }
         self.enter()?;
-        let (mut items, separated) = self.items(close)?;
-        self.depth = self.depth.saturating_sub(1);
-        if tuple && items.len() == 1 && !separated {
-            return items.pop();
-        }
-        Some(Json::List(items))
-    }
-
-    fn items(&mut self, close: u8) -> Option<(Vec<Json>, bool)> {
         let mut items = Vec::new();
         let separated = loop {
             items.push(self.value()?);
@@ -116,7 +115,11 @@ impl Parser<'_> {
                 Next::TrailingComma => break true,
             }
         };
-        Some((items, separated))
+        self.depth = self.depth.saturating_sub(1);
+        if tuple && items.len() == 1 && !separated {
+            return items.pop();
+        }
+        Some(Json::List(items))
     }
 
     fn braced(&mut self) -> Option<Json> {
@@ -129,13 +132,17 @@ impl Parser<'_> {
         self.enter()?;
         let first = self.value()?;
         self.skip(true);
-        let value = if self.bytes.get(self.position).copied()? == b':' {
-            Json::Object(self.dictionary(first)?)
-        } else {
-            Json::List(self.set_tail(first)?)
-        };
+        if self.bytes.get(self.position).copied()? == b':' {
+            let object = Json::Object(self.dictionary(first)?);
+            self.depth = self.depth.saturating_sub(1);
+            return Some(object);
+        }
+        let mut items = vec![first];
+        while matches!(self.separator(b'}')?, Next::Element) {
+            items.push(self.value()?);
+        }
         self.depth = self.depth.saturating_sub(1);
-        Some(value)
+        Some(Json::List(items))
     }
 
     fn dictionary(&mut self, first: Json) -> Option<IndexMap<String, Json>> {
@@ -158,16 +165,6 @@ impl Parser<'_> {
         }
         self.position = self.position.saturating_add(1);
         self.value()
-    }
-
-    fn set_tail(&mut self, first: Json) -> Option<Vec<Json>> {
-        let mut items = vec![first];
-        loop {
-            if !matches!(self.separator(b'}')?, Next::Element) {
-                return Some(items);
-            }
-            items.push(self.value()?);
-        }
     }
 
     fn separator(&mut self, close: u8) -> Option<Next> {

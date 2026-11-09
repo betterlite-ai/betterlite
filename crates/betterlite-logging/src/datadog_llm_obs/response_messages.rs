@@ -5,16 +5,10 @@ use super::messages::to_dd_messages;
 use super::records::DdMessage;
 use super::values::as_object;
 
+#[rustfmt::skip]
 const LLM_OBS_CALL_TYPES: [&str; 9] = [
-    "completion",
-    "acompletion",
-    "text_completion",
-    "atext_completion",
-    "generate_content",
-    "agenerate_content",
-    "generate_content_stream",
-    "agenerate_content_stream",
-    "anthropic_messages",
+    "completion", "acompletion", "text_completion", "atext_completion", "generate_content",
+    "agenerate_content", "generate_content_stream", "agenerate_content_stream", "anthropic_messages",
 ];
 
 #[must_use]

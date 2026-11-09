@@ -34,7 +34,15 @@ pub(super) fn number(parser: &mut Parser<'_>) -> Option<Json> {
     parser.skip(parser.depth > 0);
     let byte = parser.bytes.get(parser.position).copied();
     if matches!(byte, Some(b'+' | b'-')) {
-        return imaginary_tail(parser);
+        parser.position = parser.position.saturating_add(1);
+        parser.skip(parser.depth > 0);
+        unsigned_number(parser)?;
+        let unit = parser.bytes.get(parser.position).copied();
+        if !matches!(unit, Some(b'j' | b'J')) {
+            return None;
+        }
+        parser.position = parser.position.saturating_add(1);
+        return Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()));
     }
     parser.position = sign_at;
     signed_value(numeric, negative)
@@ -59,32 +67,16 @@ fn signed_value(numeric: Numeric, negative: bool) -> Option<Json> {
     }
 }
 
-fn imaginary_tail(parser: &mut Parser<'_>) -> Option<Json> {
-    parser.position = parser.position.saturating_add(1);
-    parser.skip(parser.depth > 0);
-    unsigned_number(parser)?;
-    let unit = parser.bytes.get(parser.position).copied();
-    if !matches!(unit, Some(b'j' | b'J')) {
-        return None;
-    }
-    parser.position = parser.position.saturating_add(1);
-    Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
-}
-
-fn leading_dot(parser: &mut Parser<'_>) -> Option<Numeric> {
-    parser.position = parser.position.saturating_add(1);
-    let fraction = digits(parser, 10)?;
-    if fraction.is_empty() {
-        return None;
-    }
-    let mut literal = format!("0.{fraction}");
-    exponent(parser, &mut literal)?;
-    literal.parse::<f64>().ok().map(Numeric::Float)
-}
-
 fn unsigned_number(parser: &mut Parser<'_>) -> Option<Numeric> {
     if parser.bytes.get(parser.position).copied() == Some(b'.') {
-        return leading_dot(parser);
+        parser.position = parser.position.saturating_add(1);
+        let fraction = digits(parser, 10)?;
+        if fraction.is_empty() {
+            return None;
+        }
+        let mut literal = format!("0.{fraction}");
+        exponent(parser, &mut literal)?;
+        return literal.parse::<f64>().ok().map(Numeric::Float);
     }
     if parser.bytes.get(parser.position).copied() == Some(b'0')
         && let Some(radix) = parser
@@ -118,7 +110,6 @@ fn unsigned_number(parser: &mut Parser<'_>) -> Option<Numeric> {
     decimal_integer(&integer)
 }
 
-// A base-prefixed integer, where a trailing imaginary unit is a syntax error.
 fn base_number(parser: &mut Parser<'_>, radix: u32) -> Option<Numeric> {
     parser.position = parser.position.saturating_add(2);
     if parser.bytes.get(parser.position).copied() == Some(b'_') {
