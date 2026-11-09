@@ -1,0 +1,24 @@
+kind: helper
+name: legacy-enhance
+call:
+  b6806:
+    model: reducto/parse-legacy
+    document:
+      type: document_url
+      document_url: "reducto://ready.pdf"
+    api_key: case-key
+    optional_params:
+      enhance: {task: extract}
+    upload:
+      status: 200
+      body: {file_id: "reducto://unused.pdf"}
+    parse:
+      status: 200
+      body:
+        usage: {num_pages: 1, credits: 1}
+        chunks:
+          - content: "Legacy text"
+            blocks:
+              - {content: "Legacy text", bbox: {page: 1}}
+compare: {ignore: []}
+env: {}

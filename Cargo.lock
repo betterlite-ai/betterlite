@@ -1059,6 +1059,7 @@ dependencies = [
  "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
@@ -1893,6 +1894,7 @@ dependencies = [
  "data-url",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mime",
  "mutants",
  "rstest",
  "secrecy",
@@ -1903,6 +1905,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2321,6 +2324,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "prometheus-client",
  "py_literal",
  "rcgen",
