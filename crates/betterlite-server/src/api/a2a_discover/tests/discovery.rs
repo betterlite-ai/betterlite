@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
+use std::fs::read_to_string;
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
+use tokio::runtime::Builder;
+use tracing::subscriber::with_default;
 
 use crate::api::a2a_discover::discovery::{
     AgentCardDiscoveryError, DEFAULT_DISCOVERY_TIMEOUT, DiscoveryMode, fetch_well_known_card,
@@ -241,6 +245,35 @@ async fn the_last_error_names_the_json_kind_it_rejected(#[case] body: &str, #[ca
 #[test]
 fn the_default_discovery_timeout_is_ten_seconds() {
     assert_eq!(DEFAULT_DISCOVERY_TIMEOUT, Duration::from_secs(10));
+}
+
+#[test]
+fn every_attempt_is_logged_at_debug() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let source = responses(&[(404, "not found"), (200, CARD)]);
+    with_default(subscriber, || {
+        let fetched = runtime
+            .block_on(fetch_well_known_card(
+                &source,
+                "https://agent.test",
+                DiscoveryMode::WellKnownFallback,
+                None,
+            ))
+            .unwrap();
+        assert_eq!(fetched, card());
+    });
+    let output = read_to_string(log.path()).unwrap();
+    assert!(output.contains("A2A discovery path failed"));
+    assert!(output.contains("https://agent.test/.well-known/agent-card.json"));
+    assert!(output.contains("A2A discovery succeeded"));
+    assert!(output.contains("https://agent.test/.well-known/agent.json"));
 }
 
 #[tokio::test]
