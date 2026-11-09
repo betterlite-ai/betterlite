@@ -17,12 +17,14 @@ use sink::{CallbackEvent, CallbackSink};
 
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::resolver::LoggerResolver;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Registration {
     Registered,
     AlreadyRegistered,
     SkippedCapacity,
+    NotBuilt,
 }
 
 struct Entry {
@@ -48,6 +50,7 @@ pub struct CallbackRegistry {
     entries: Vec<Entry>,
     lists: BTreeMap<CallbackList, Vec<CallbackIdentity>>,
     configured_vars: Vec<CallbackVars>,
+    resolver: Option<Arc<dyn LoggerResolver>>,
 }
 
 impl CallbackRegistry {
@@ -58,7 +61,14 @@ impl CallbackRegistry {
             entries: Vec::new(),
             lists: BTreeMap::new(),
             configured_vars: Vec::new(),
+            resolver: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_resolver(mut self, resolver: Arc<dyn LoggerResolver>) -> Self {
+        self.resolver = Some(resolver);
+        self
     }
 
     // LiteLLM checks a list's capacity before it looks for the duplicate, so a full list skips
@@ -114,13 +124,20 @@ impl CallbackRegistry {
         flags: FeatureFlags,
     ) -> Result<Registration, RegistryError> {
         catalog::validate_callback_vars(Some(name), vars, &self.configured_vars, flags)?;
-        let sink = catalog::adapter_for(name)?;
+        let Some(resolver) = &self.resolver else {
+            return Err(RegistryError::UnavailableAdapter {
+                name: name.to_owned(),
+            });
+        };
+        let Some(logger) = resolver.resolve(name, &BTreeMap::new())? else {
+            return Ok(Registration::NotBuilt);
+        };
         let identity = CallbackIdentity {
             class_name: name.to_owned(),
             attributes: IndexMap::new(),
         };
         self.configured_vars.push(vars.clone());
-        Ok(self.register(identity, sink, list))
+        Ok(self.register(identity, CallbackSink::Logger(logger), list))
     }
 
     pub fn remove_from_list(&mut self, identity: &CallbackIdentity, list: CallbackList) -> bool {
