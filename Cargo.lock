@@ -1243,6 +1243,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-logging",
+ "clap",
  "dbus-secret-service-keyring-store",
  "httparse",
  "keyring-core",
