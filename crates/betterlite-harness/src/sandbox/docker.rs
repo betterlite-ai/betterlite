@@ -179,13 +179,6 @@ impl DockerSandbox {
         if let Some(program) = &self.docker_path {
             return Ok(program.clone());
         }
-        docker_on_path(which::which("docker"))
-    }
-}
-
-fn docker_on_path(found: Result<PathBuf, which::Error>) -> Result<PathBuf, DockerSandboxError> {
-    match found {
-        Ok(program) => Ok(program),
-        Err(_not_found) => Err(DockerSandboxError::DockerMissing),
+        which::which("docker").map_err(|_not_found| DockerSandboxError::DockerMissing)
     }
 }

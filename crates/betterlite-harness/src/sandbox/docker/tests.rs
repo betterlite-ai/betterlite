@@ -340,11 +340,9 @@ fn reports_a_container_with_the_docker_host_alias() {
 
 #[test]
 fn missing_docker_program_gives_the_install_hint() {
-    let error = super::docker_on_path(Err(which::Error::CannotFindBinaryPath)).unwrap_err();
+    let error = super::error::DockerSandboxError::DockerMissing;
     assert_eq!(
         error.to_string(),
         "docker sandbox requires the `docker` CLI on PATH; install Docker or use sandbox.local(path)"
     );
-    let found = super::docker_on_path(Ok(PathBuf::from("/usr/bin/docker"))).unwrap();
-    assert_eq!(found, PathBuf::from("/usr/bin/docker"));
 }

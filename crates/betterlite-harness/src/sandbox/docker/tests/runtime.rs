@@ -315,6 +315,28 @@ async fn close_reports_a_missing_docker_program() {
 }
 
 #[tokio::test]
+async fn dropping_a_process_handle_kills_the_docker_client() {
+    let dir = tempdir();
+    let program = docker_script(&dir, "exec sleep 30");
+    let sandbox = sandbox(program);
+    let client = sandbox.exec(&command(&["sleep", "30"])).await.unwrap();
+    drop(client);
+    let registered = sandbox
+        .state
+        .lock()
+        .await
+        .processes
+        .first()
+        .cloned()
+        .unwrap();
+    let status = timeout(Duration::from_secs(2), registered.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(status, -9_i32);
+}
+
+#[tokio::test]
 async fn drop_kills_the_owned_docker_client() {
     let dir = tempdir();
     let program = docker_script(&dir, "exec sleep 30");

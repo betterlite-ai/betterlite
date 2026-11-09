@@ -2,7 +2,6 @@ use std::io;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::Path;
 use std::process::Stdio;
-use std::str;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -98,6 +97,12 @@ impl OwnedChild {
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         drop(self.signal(Signal::KILL));
+    }
+}
+
+impl Drop for DockerProcess {
+    fn drop(&mut self) {
+        drop(self.child.signal(Signal::KILL));
     }
 }
 
@@ -210,30 +215,14 @@ pub(super) async fn collect(
 }
 
 pub(super) fn decode_utf8(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    let mut rest = bytes;
-    loop {
-        match str::from_utf8(rest) {
-            Ok(valid) => {
-                text.push_str(valid);
-                return text;
-            }
-            Err(error) => {
-                let valid = error.valid_up_to();
-                let prefix = rest.get(..valid).unwrap_or_default();
-                if let Ok(valid_text) = str::from_utf8(prefix) {
-                    text.push_str(valid_text);
-                }
-                text.push('\u{fffd}');
-                let invalid = error
-                    .error_len()
-                    .unwrap_or_else(|| rest.len().saturating_sub(valid));
-                rest = rest
-                    .get(valid.saturating_add(invalid)..)
-                    .unwrap_or_default();
-            }
+    let mut decoded = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        decoded.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            decoded.push(char::REPLACEMENT_CHARACTER);
         }
     }
+    decoded
 }
 
 async fn read_capped<Reader>(
