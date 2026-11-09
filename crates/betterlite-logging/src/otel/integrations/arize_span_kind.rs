@@ -5,7 +5,7 @@ use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 
 const LLM_TOOLS: &str = "llm.tools";
-const INVOCATION_PARAMETERS: &str = "llm.invocation_parameters";
+const METADATA_TOOL_PREFIX: &str = "llm.invocation_parameters.tools";
 
 // passthrough is the spelling real call types use: allm_passthrough_route
 #[rustfmt::skip]
@@ -90,8 +90,26 @@ pub fn set_tool_attributes<S>(
             let Some(fields) = tool.as_object() else {
                 continue;
             };
-            emit_metadata_tool(span, index, fields);
+            emit_name_and_description(span, METADATA_TOOL_PREFIX, index, fields);
         }
+    }
+}
+
+fn emit_name_and_description<S>(span: &mut S, prefix: &str, index: usize, fields: &MetadataMap)
+where
+    S: Span,
+{
+    if let Some(name) = fields.get("name").and_then(OtelModelValue::as_str) {
+        span.set_attribute(KeyValue::new(
+            format!("{prefix}.{index}.name"),
+            name.to_owned(),
+        ));
+    }
+    if let Some(description) = fields.get("description").and_then(OtelModelValue::as_str) {
+        span.set_attribute(KeyValue::new(
+            format!("{prefix}.{index}.description"),
+            description.to_owned(),
+        ));
     }
 }
 
@@ -99,18 +117,7 @@ fn emit_optional_tool<S>(span: &mut S, index: usize, function: &MetadataMap)
 where
     S: Span,
 {
-    if let Some(name) = function.get("name").and_then(OtelModelValue::as_str) {
-        span.set_attribute(KeyValue::new(
-            format!("{LLM_TOOLS}.{index}.name"),
-            name.to_owned(),
-        ));
-    }
-    if let Some(description) = function.get("description").and_then(OtelModelValue::as_str) {
-        span.set_attribute(KeyValue::new(
-            format!("{LLM_TOOLS}.{index}.description"),
-            description.to_owned(),
-        ));
-    }
+    emit_name_and_description(span, LLM_TOOLS, index, function);
     let declared = function
         .get("parameters")
         .filter(|value| !matches!(value, OtelModelValue::Null(())));
@@ -120,24 +127,6 @@ where
         span.set_attribute(KeyValue::new(
             format!("{LLM_TOOLS}.{index}.parameters"),
             text,
-        ));
-    }
-}
-
-fn emit_metadata_tool<S>(span: &mut S, index: usize, tool: &MetadataMap)
-where
-    S: Span,
-{
-    if let Some(name) = tool.get("name").and_then(OtelModelValue::as_str) {
-        span.set_attribute(KeyValue::new(
-            format!("{INVOCATION_PARAMETERS}.tools.{index}.name"),
-            name.to_owned(),
-        ));
-    }
-    if let Some(description) = tool.get("description").and_then(OtelModelValue::as_str) {
-        span.set_attribute(KeyValue::new(
-            format!("{INVOCATION_PARAMETERS}.tools.{index}.description"),
-            description.to_owned(),
         ));
     }
 }

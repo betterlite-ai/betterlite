@@ -80,12 +80,14 @@ impl OpenInferenceMapper {
         attrs.extend(indexed_messages(
             "llm.input_messages",
             "input.value",
-            &input_entries(&data.messages_in),
+            &data.messages_in,
+            |message| Some(message),
         ));
         attrs.extend(indexed_messages(
             "llm.output_messages",
             "output.value",
-            &output_entries(&data.choices_out),
+            &data.choices_out,
+            |choice| choice.get("message").and_then(OtelModelValue::as_object),
         ));
         attrs.extend(tool_definition_attrs(
             "llm.tools.",
@@ -116,40 +118,23 @@ fn invocation_parameters(data: &LLMCallSpanData) -> AttributeMap {
     AttributeMap::from([("llm.invocation_parameters".to_owned(), Value::from(text))])
 }
 
-fn input_entries(messages: &[MetadataMap]) -> Vec<(Option<&str>, Option<String>)> {
-    messages
-        .iter()
-        .map(|message| {
-            (
-                message.get("role").and_then(OtelModelValue::as_str),
-                message_content(message),
-            )
-        })
-        .collect()
-}
-
-fn output_entries(choices: &[MetadataMap]) -> Vec<(Option<&str>, Option<String>)> {
-    choices
-        .iter()
-        .map(|choice| {
-            choice
-                .get("message")
-                .and_then(OtelModelValue::as_object)
-                .map_or((None, None), |message| {
-                    (
-                        message.get("role").and_then(OtelModelValue::as_str),
-                        message_content(message),
-                    )
-                })
-        })
-        .collect()
-}
-
 fn indexed_messages(
     prefix: &str,
     value_key: &str,
-    entries: &[(Option<&str>, Option<String>)],
+    messages: &[MetadataMap],
+    pick: fn(&MetadataMap) -> Option<&MetadataMap>,
 ) -> AttributeMap {
+    let entries: Vec<(Option<&str>, Option<String>)> = messages
+        .iter()
+        .map(|message| {
+            pick(message).map_or((None, None), |picked| {
+                (
+                    picked.get("role").and_then(OtelModelValue::as_str),
+                    message_content(picked),
+                )
+            })
+        })
+        .collect();
     let mut attrs = AttributeMap::new();
     for (index, (role, content)) in entries.iter().enumerate() {
         if let Some(found_role) = role {

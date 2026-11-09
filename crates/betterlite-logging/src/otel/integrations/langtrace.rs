@@ -90,11 +90,7 @@ impl LangtraceAttributes {
             span.set_attribute(KeyValue::new("langtrace.service.name", service.to_owned()));
         }
         span.set_attribute(KeyValue::new("gen_ai.operation.name", "chat"));
-        for (key, source) in REQUEST_ATTRIBUTES {
-            if let Some(value) = options.get(source).and_then(attribute_value) {
-                span.set_attribute(KeyValue::new(key, value));
-            }
-        }
+        set_attributes(span, options, &REQUEST_ATTRIBUTES);
         let declared = options
             .get("messages")
             .and_then(OtelModelValue::as_array)
@@ -120,11 +116,7 @@ impl LangtraceAttributes {
                 vec![KeyValue::new("gen_ai.completion", text)],
             );
         }
-        for (key, source) in RESPONSE_ATTRIBUTES {
-            if let Some(value) = response_obj.get(source).and_then(attribute_value) {
-                span.set_attribute(KeyValue::new(key, value));
-            }
-        }
+        set_attributes(span, response_obj, &RESPONSE_ATTRIBUTES);
     }
 
     pub fn set_usage_attributes<S>(span: &mut S, response_obj: &MetadataMap)
@@ -137,10 +129,17 @@ impl LangtraceAttributes {
         else {
             return;
         };
-        for (key, source) in USAGE_ATTRIBUTES {
-            if let Some(value) = usage.get(source).and_then(attribute_value) {
-                span.set_attribute(KeyValue::new(key, value));
-            }
+        set_attributes(span, usage, &USAGE_ATTRIBUTES);
+    }
+}
+
+fn set_attributes<S>(span: &mut S, source: &MetadataMap, table: &[(&'static str, &'static str)])
+where
+    S: Span,
+{
+    for &(key, source_key) in table {
+        if let Some(value) = source.get(source_key).and_then(attribute_value) {
+            span.set_attribute(KeyValue::new(key, value));
         }
     }
 }

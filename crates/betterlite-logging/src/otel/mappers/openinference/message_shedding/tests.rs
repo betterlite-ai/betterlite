@@ -14,28 +14,15 @@ fn core_attributes(attributes: &mut AttributeMap) {
     attributes.insert("llm.token_count.total".to_owned(), Value::I64(14));
 }
 
-fn with_input_messages(attributes: &mut AttributeMap, count: usize) {
+fn with_message_family(attributes: &mut AttributeMap, prefix: &str, role: &str, count: usize) {
     for index in 0..count {
         attributes.insert(
-            format!("llm.input_messages.{index}.message.role"),
-            Value::from("user"),
+            format!("{prefix}.{index}.message.role"),
+            Value::from(role.to_owned()),
         );
         attributes.insert(
-            format!("llm.input_messages.{index}.message.content"),
-            Value::from(format!("prompt {index}")),
-        );
-    }
-}
-
-fn with_output_messages(attributes: &mut AttributeMap, count: usize) {
-    for index in 0..count {
-        attributes.insert(
-            format!("llm.output_messages.{index}.message.role"),
-            Value::from("assistant"),
-        );
-        attributes.insert(
-            format!("llm.output_messages.{index}.message.content"),
-            Value::from(format!("answer {index}")),
+            format!("{prefix}.{index}.message.content"),
+            Value::from(format!("{role} {index}")),
         );
     }
 }
@@ -43,8 +30,8 @@ fn with_output_messages(attributes: &mut AttributeMap, count: usize) {
 fn with_messages(inputs: usize, outputs: usize) -> AttributeMap {
     let mut attributes = AttributeMap::new();
     core_attributes(&mut attributes);
-    with_input_messages(&mut attributes, inputs);
-    with_output_messages(&mut attributes, outputs);
+    with_message_family(&mut attributes, "llm.input_messages", "user", inputs);
+    with_message_family(&mut attributes, "llm.output_messages", "assistant", outputs);
     attributes
 }
 
