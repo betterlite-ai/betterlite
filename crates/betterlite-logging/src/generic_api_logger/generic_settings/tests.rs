@@ -1,12 +1,9 @@
 #![cfg(test)]
-
-use std::collections::BTreeMap;
-use std::time::Duration;
-
-use indexmap::IndexMap;
-
 use super::{GenericApiArgs, GenericApiSettings, GenericApiSettingsError, LogFormat, resolve};
 use crate::generic_api_logger::tests::{ENDPOINT, args, capture_logs, environment};
+use indexmap::IndexMap;
+use std::collections::BTreeMap;
+use std::time::Duration;
 type Resolved = Result<GenericApiSettings, GenericApiSettingsError>;
 fn configured(arguments: GenericApiArgs, env: &BTreeMap<String, String>) -> Resolved {
     resolve(arguments, env, &IndexMap::new())
@@ -34,7 +31,6 @@ fn given_values_beat_the_named_config_and_the_environment() {
         settings.headers.get("Content-Type").map(String::as_str),
         Some("text/plain")
     );
-
     let mut named = args();
     named.callback_name = Some("sample_callback".to_owned());
     named.endpoint = None;
@@ -149,4 +145,5 @@ fn retries_and_the_delay_are_clamped_and_the_timeout_is_kept() {
     positive.retry_delay = Some(2.5_f64);
     let delay = configured(positive, &BTreeMap::new()).expect("settings");
     assert_eq!(delay.retry_delay.to_bits(), 2.5_f64.to_bits());
+    assert_eq!(delay.timeout, Duration::from_secs(600));
 }

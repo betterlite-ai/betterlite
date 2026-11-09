@@ -83,6 +83,8 @@ fn v1_payload_applies_the_defaults_and_fails_without_usage() {
     assert_eq!(field(&defaults, "model"), Some(""));
     assert_eq!(field(&defaults, "user"), Some(""));
     assert_eq!(field(&defaults, "metadata"), Some("{}"));
+    assert_eq!(field(&defaults, "modelParameters"), Some("{}"));
+    assert_eq!(field(&defaults, "messages"), Some("null"));
     assert_eq!(field(&defaults, "cost"), Some("0"));
     let without: Json = serde_json::from_str(r#"{"id":"chatcmpl-1"}"#).expect("a response");
     let missing = v1_logging_payload(

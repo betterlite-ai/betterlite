@@ -24,6 +24,10 @@ async fn delivery_posts_the_queue_in_the_selected_format() {
     assert_eq!(recorder.bodies().len(), 1);
     assert_eq!(entries(&recorder).len(), 2);
     let request = recorder.first();
+    assert_eq!(
+        request.headers.get("Content-Type"),
+        Some(&"application/json".to_owned())
+    );
     assert_eq!(request.headers.get("X-Test"), Some(&"yes".to_owned()));
     assert_eq!(request.timeout, Duration::from_secs(7));
     let mut ndjson_arguments = args();

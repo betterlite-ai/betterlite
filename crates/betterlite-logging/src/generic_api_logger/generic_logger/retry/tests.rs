@@ -1,8 +1,8 @@
 #![cfg(test)]
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Duration;
-
+use super::super::error::ApiError;
+use super::super::tests::{RecordingSleeper, RecordingTransport, ready, settings};
+use super::post_with_retries;
+use crate::generic_api_logger::tests::{ENDPOINT, args, capture_logs};
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -12,12 +12,10 @@ use betterlite_http::proxy::{
 };
 use http::{Method, header::HeaderMap};
 use rstest::rstest;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
-
-use super::super::error::ApiError;
-use super::super::tests::{RecordingSleeper, RecordingTransport, ready, settings};
-use super::post_with_retries;
-use crate::generic_api_logger::tests::{ENDPOINT, args, capture_logs};
 async fn run(
     max_retries: i64,
     retry_delay: Option<f64>,
@@ -62,7 +60,6 @@ async fn retry_uses_max_retries_plus_one_attempts_and_only_retries_retryable_err
     .await;
     assert!(matches!(failed, Err(ApiError::Timeout)));
     assert_eq!(attempts.bodies().len(), 3);
-
     let (client_error, single, _single_sleeper) = run(2, None, &[Ok(404)]).await;
     assert!(matches!(
         client_error,
