@@ -1,10 +1,10 @@
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_prompts::arguments::json::Json;
 use chrono::{DateTime, Duration, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde_json::value::RawValue;
 use thiserror::Error;
 
 use super::credentials::{Credentials, validate_credentials};
@@ -118,33 +118,34 @@ fn choose_cert_identity(credentials: &Credentials) -> Result<ClientIdentity, Sap
     }
 }
 
-// LiteLLM puts the whole response in the error text, so a parseable token must not reach it
-fn error_text(body: &str) -> String {
-    let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(body) else {
-        return body.to_owned();
-    };
-    let Some(Json::Text(token)) = fields.get("access_token") else {
-        return body.to_owned();
-    };
-    let Ok(literal) = serde_json::to_string(token) else {
-        return body.to_owned();
-    };
-    body.replace(&literal, "\"<redacted>\"")
+#[derive(Deserialize)]
+struct TokenText<'body> {
+    #[serde(borrow)]
+    access_token: &'body RawValue,
 }
 
-fn token_error(text: String, source: TokenFailure) -> SapAuthError {
-    SapAuthError::TokenRequest {
-        text,
-        source: Box::new(source),
+// LiteLLM puts the whole response in the error text, so a parseable token must not reach it
+fn error_text(body: &str) -> String {
+    match serde_json::from_str::<TokenText<'_>>(body) {
+        Ok(TokenText { access_token: raw }) if raw.get().starts_with('"') => {
+            body.replace(raw.get(), "\"<redacted>\"")
+        }
+        Ok(TokenText { .. }) | Err(_) => body.to_owned(),
     }
 }
 
 pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToken, SapAuthError> {
-    let parsed = serde_json::from_str::<TokenBody>(body)
-        .map_err(|source| token_error(error_text(body), TokenFailure::Response(source)))?;
+    let parsed =
+        serde_json::from_str::<TokenBody>(body).map_err(|source| SapAuthError::TokenRequest {
+            text: error_text(body),
+            source: Box::new(TokenFailure::Response(source)),
+        })?;
     let expires_at = Duration::try_seconds(parsed.expires_in)
         .and_then(|duration| now.checked_add_signed(duration))
-        .ok_or_else(|| token_error(error_text(body), TokenFailure::Expiry(parsed.expires_in)))?;
+        .ok_or_else(|| SapAuthError::TokenRequest {
+            text: error_text(body),
+            source: Box::new(TokenFailure::Expiry(parsed.expires_in)),
+        })?;
     let header = SecretString::from(format!("Bearer {}", parsed.access_token.expose_secret()));
     Ok(BearerToken { header, expires_at })
 }
@@ -180,7 +181,10 @@ impl TokenCache {
         }
         let body = transport
             .post(&self.request)
-            .map_err(|source| token_error(source.to_string(), TokenFailure::Transport(source)))?;
+            .map_err(|source| SapAuthError::TokenRequest {
+                text: source.to_string(),
+                source: Box::new(TokenFailure::Transport(source)),
+            })?;
         let token = parse_token_response(&body, now)?;
         let header = token.header.clone();
         *cached = Some(token);

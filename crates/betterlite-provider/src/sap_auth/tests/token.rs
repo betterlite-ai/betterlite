@@ -192,6 +192,14 @@ fn a_negative_expires_in_puts_the_expiry_in_the_past() {
     r#"{"access_token": "a", "expires_in": 9223372036854775807}"#,
     r#"{"access_token": "<redacted>", "expires_in": 9223372036854775807}"#
 )]
+#[case::escaped_token(
+    r#"{"access_token": "abc\/def+ghi", "expires_in": 99999999999999}"#,
+    r#"{"access_token": "<redacted>", "expires_in": 99999999999999}"#
+)]
+#[case::out_of_range_expiry(
+    r#"{"access_token": "tok", "expires_in": 1e999}"#,
+    r#"{"access_token": "<redacted>", "expires_in": 1e999}"#
+)]
 fn a_bad_token_response_fails_with_its_body(#[case] body: &str, #[case] text: &str) {
     let error = parse_token_response(body, at(1_700_000_000)).unwrap_err();
     assert_eq!(error.to_string(), format!("Token request failed: {text}"));

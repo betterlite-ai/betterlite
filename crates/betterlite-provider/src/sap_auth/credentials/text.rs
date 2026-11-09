@@ -15,10 +15,7 @@ pub(super) fn lookup(document: &Json, path: &[&str]) -> Option<Json> {
     };
     for key in path {
         let Some(fields) = current.as_object() else {
-            tracing::warn!(
-                key = *key,
-                "SAP service key or VCAP service traversal hit a non-object value"
-            );
+            tracing::warn!("the SAP or VCAP traversal hit a non-object value at {key}");
             return None;
         };
         current = fields.get(*key)?;

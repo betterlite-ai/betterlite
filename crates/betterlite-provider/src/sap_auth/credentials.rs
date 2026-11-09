@@ -147,9 +147,7 @@ fn parse_service_key(value: &Json) -> Option<Json> {
             Ok(Json::Null) => None,
             Ok(parsed) => Some(parsed),
             Err(_) => {
-                tracing::warn!(
-                    "SAP service key is a string but not valid JSON; skipping this source"
-                );
+                tracing::warn!("the SAP service key is not valid JSON; skipping it");
                 None
             }
         },
