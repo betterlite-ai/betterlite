@@ -15,7 +15,7 @@ use rust_decimal::Decimal;
 use crate::model_policy::UNSUPPORTED_DEPLOYED_PARAMS;
 use crate::model_policy::capabilities::{
     CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-    get_supports_response_schema, get_supports_system_message, supports_response_json_schema,
+    get_supports_system_message, supports_response_json_schema,
 };
 use crate::model_policy::error::{VertexAiError, classify_vertex_error};
 use crate::model_policy::lyria::{
@@ -216,11 +216,7 @@ impl ModelCapabilityLookup for FixtureLookup {
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
-        if provider != self.provider {
-            return Err(CapabilityLookupError {
-                message: format!("expected provider {}", self.provider),
-            });
-        }
+        self.check_provider(provider)?;
         self.system.value()
     }
 
@@ -229,137 +225,160 @@ impl ModelCapabilityLookup for FixtureLookup {
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
-        if provider != self.provider {
-            return Err(CapabilityLookupError {
-                message: format!("expected provider {}", self.provider),
-            });
-        }
+        self.check_provider(provider)?;
         self.schema.value()
     }
 }
 
-#[rstest]
-#[case::vertex_ai(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::True,
-    true
-)]
-#[case::vertex_ai_beta_looks_up_vertex_ai(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAiBeta,
-    "vertex_ai",
-    LookupOutcome::True,
-    true
-)]
-#[case::gemini_looks_up_gemini(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::Gemini,
-    "gemini",
-    LookupOutcome::True,
-    true
-)]
-#[case::unsupported_model_is_false(
-    "gemini-1.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::False,
-    false
-)]
-#[case::lookup_error_warns_and_returns_false(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::Error,
-    false
-)]
-#[case::gemini_spec_model_overrides_false(
-    "gemini/1234",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::False,
-    true
-)]
-#[case::gemini_spec_model_keeps_true(
-    "gemini/1234",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::True,
-    true
-)]
-fn system_message_cases(
-    #[case] model: &str,
-    #[case] provider: VertexCapabilityProvider,
-    #[case] expected_provider: &'static str,
-    #[case] outcome: LookupOutcome,
-    #[case] expected: bool,
-) {
-    let lookup = FixtureLookup {
-        system: outcome,
-        schema: LookupOutcome::False,
-        provider: expected_provider,
-    };
-    assert_eq!(
-        get_supports_system_message(model, provider, &lookup),
-        expected,
-        "model {model}"
-    );
+impl FixtureLookup {
+    fn check_provider(&self, provider: &str) -> Result<(), CapabilityLookupError> {
+        if provider == self.provider {
+            return Ok(());
+        }
+        Err(CapabilityLookupError {
+            message: format!("expected provider {}", self.provider),
+        })
+    }
+}
+
+enum CapabilityCase {
+    System {
+        model: &'static str,
+        provider: VertexCapabilityProvider,
+        lookup_provider: &'static str,
+        outcome: LookupOutcome,
+        expected: bool,
+    },
+    Schema {
+        model: &'static str,
+        provider: VertexCapabilityProvider,
+        lookup_provider: &'static str,
+        outcome: LookupOutcome,
+        expected: Option<bool>,
+    },
 }
 
 #[rstest]
-#[case::vertex_ai_supported(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::True,
-    Some(true)
-)]
-#[case::vertex_ai_unsupported(
-    "gemini-1.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::False,
-    Some(false)
-)]
-#[case::vertex_ai_beta_looks_up_vertex_ai(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAiBeta,
-    "vertex_ai",
-    LookupOutcome::True,
-    Some(true)
-)]
-#[case::gemini_looks_up_gemini(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::Gemini,
-    "gemini",
-    LookupOutcome::True,
-    Some(true)
-)]
-#[case::lookup_error_propagates(
-    "gemini-2.5-pro",
-    VertexCapabilityProvider::VertexAi,
-    "vertex_ai",
-    LookupOutcome::Error,
-    None
-)]
-fn response_schema_cases(
-    #[case] model: &str,
-    #[case] provider: VertexCapabilityProvider,
-    #[case] expected_provider: &'static str,
-    #[case] outcome: LookupOutcome,
-    #[case] expected: Option<bool>,
-) {
-    let lookup = FixtureLookup {
-        system: LookupOutcome::False,
-        schema: outcome,
-        provider: expected_provider,
-    };
-    assert_eq!(
-        get_supports_response_schema(model, provider, &lookup).ok(),
-        expected,
-        "model {model}"
-    );
+#[case::system_vertex_ai(CapabilityCase::System {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::True,
+    expected: true,
+})]
+#[case::system_vertex_ai_beta_looks_up_vertex_ai(CapabilityCase::System {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAiBeta,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::True,
+    expected: true,
+})]
+#[case::system_gemini_looks_up_gemini(CapabilityCase::System {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::Gemini,
+    lookup_provider: "gemini",
+    outcome: LookupOutcome::True,
+    expected: true,
+})]
+#[case::system_unsupported_model_is_false(CapabilityCase::System {
+    model: "gemini-1.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::False,
+    expected: false,
+})]
+#[case::system_lookup_error_warns_and_returns_false(CapabilityCase::System {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::Error,
+    expected: false,
+})]
+#[case::system_gemini_spec_model_overrides_false(CapabilityCase::System {
+    model: "gemini/1234",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::False,
+    expected: true,
+})]
+#[case::system_gemini_spec_model_keeps_true(CapabilityCase::System {
+    model: "gemini/1234",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::True,
+    expected: true,
+})]
+#[case::schema_vertex_ai_supported(CapabilityCase::Schema {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::True,
+    expected: Some(true),
+})]
+#[case::schema_vertex_ai_unsupported(CapabilityCase::Schema {
+    model: "gemini-1.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::False,
+    expected: Some(false),
+})]
+#[case::schema_vertex_ai_beta_looks_up_vertex_ai(CapabilityCase::Schema {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAiBeta,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::True,
+    expected: Some(true),
+})]
+#[case::schema_gemini_looks_up_gemini(CapabilityCase::Schema {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::Gemini,
+    lookup_provider: "gemini",
+    outcome: LookupOutcome::True,
+    expected: Some(true),
+})]
+#[case::schema_lookup_error_propagates(CapabilityCase::Schema {
+    model: "gemini-2.5-pro",
+    provider: VertexCapabilityProvider::VertexAi,
+    lookup_provider: "vertex_ai",
+    outcome: LookupOutcome::Error,
+    expected: None,
+})]
+fn capability_cases(#[case] case: CapabilityCase) {
+    match case {
+        CapabilityCase::System {
+            model,
+            provider,
+            lookup_provider,
+            outcome,
+            expected,
+        } => {
+            let lookup = FixtureLookup {
+                system: outcome,
+                schema: LookupOutcome::False,
+                provider: lookup_provider,
+            };
+            assert_eq!(
+                get_supports_system_message(model, provider, &lookup),
+                expected,
+                "model {model}"
+            );
+        }
+        CapabilityCase::Schema {
+            model,
+            provider,
+            lookup_provider,
+            outcome,
+            expected,
+        } => {
+            let lookup = FixtureLookup {
+                system: LookupOutcome::False,
+                schema: outcome,
+                provider: lookup_provider,
+            };
+            let result = lookup.supports_vertex_schema(model, provider);
+            assert_eq!(result.ok(), expected, "model {model}");
+        }
+    }
 }
 
 #[rstest]

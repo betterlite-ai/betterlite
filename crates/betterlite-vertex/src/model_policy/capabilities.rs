@@ -11,6 +11,17 @@ pub enum VertexCapabilityProvider {
     Gemini,
 }
 
+impl VertexCapabilityProvider {
+    // the model catalog has no vertex_ai_beta entries, so a lookup asks for vertex_ai instead
+    #[must_use]
+    pub const fn lookup_name(self) -> &'static str {
+        match self {
+            Self::VertexAi | Self::VertexAiBeta => "vertex_ai",
+            Self::Gemini => "gemini",
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct CapabilityLookupError {
@@ -29,6 +40,14 @@ pub trait ModelCapabilityLookup {
         model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError>;
+
+    fn supports_vertex_schema(
+        &self,
+        model: &str,
+        provider: VertexCapabilityProvider,
+    ) -> Result<bool, CapabilityLookupError> {
+        self.supports_response_schema(model, provider.lookup_name())
+    }
 }
 
 #[must_use]
@@ -37,13 +56,7 @@ pub fn get_supports_system_message(
     provider: VertexCapabilityProvider,
     lookup: &dyn ModelCapabilityLookup,
 ) -> bool {
-    let lookup_result = match provider {
-        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
-            lookup.supports_system_messages(model, "vertex_ai")
-        }
-        VertexCapabilityProvider::Gemini => lookup.supports_system_messages(model, "gemini"),
-    };
-    match lookup_result {
+    match lookup.supports_system_messages(model, provider.lookup_name()) {
         Ok(supported) => supported || model.contains("gemini/"),
         Err(error) => {
             tracing::warn!(
@@ -51,19 +64,6 @@ pub fn get_supports_system_message(
             );
             false
         }
-    }
-}
-
-pub fn get_supports_response_schema(
-    model: &str,
-    provider: VertexCapabilityProvider,
-    lookup: &dyn ModelCapabilityLookup,
-) -> Result<bool, CapabilityLookupError> {
-    match provider {
-        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
-            lookup.supports_response_schema(model, "vertex_ai")
-        }
-        VertexCapabilityProvider::Gemini => lookup.supports_response_schema(model, "gemini"),
     }
 }
 

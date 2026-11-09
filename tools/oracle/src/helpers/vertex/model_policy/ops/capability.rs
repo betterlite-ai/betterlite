@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_vertex::model_policy::capabilities::{
     CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-    get_supports_response_schema, get_supports_system_message, supports_response_json_schema,
+    get_supports_system_message, supports_response_json_schema,
 };
 use serde_json::{Value, json};
 use tracing::Subscriber;
@@ -33,10 +33,12 @@ fn capability_value(case: &CapabilityCase) -> Value {
     let system = with_default(subscriber, || {
         get_supports_system_message(&case.model, provider, &lookup)
     });
-    let schema = get_supports_response_schema(&case.model, provider, &lookup).map_or_else(
-        |_error| json!({"error": true}),
-        |supported| json!(supported),
-    );
+    let schema = lookup
+        .supports_vertex_schema(&case.model, provider)
+        .map_or_else(
+            |_error| json!({"error": true}),
+            |supported| json!(supported),
+        );
     json!({
         "system": system,
         "system_warned": counter.0.load(Ordering::Relaxed) > 0,
@@ -72,11 +74,7 @@ impl ModelCapabilityLookup for FixtureLookup {
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
-        if provider != self.provider {
-            return Err(CapabilityLookupError {
-                message: format!("expected provider {}", self.provider),
-            });
-        }
+        self.check_provider(provider)?;
         self.system.value()
     }
 
@@ -85,12 +83,19 @@ impl ModelCapabilityLookup for FixtureLookup {
         _model: &str,
         provider: &str,
     ) -> Result<bool, CapabilityLookupError> {
-        if provider != self.provider {
-            return Err(CapabilityLookupError {
-                message: format!("expected provider {}", self.provider),
-            });
-        }
+        self.check_provider(provider)?;
         self.schema.value()
+    }
+}
+
+impl FixtureLookup {
+    fn check_provider(&self, provider: &str) -> Result<(), CapabilityLookupError> {
+        if provider == self.provider {
+            return Ok(());
+        }
+        Err(CapabilityLookupError {
+            message: format!("expected provider {}", self.provider),
+        })
     }
 }
 

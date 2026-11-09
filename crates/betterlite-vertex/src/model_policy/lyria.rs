@@ -58,15 +58,13 @@ pub fn validate_lyria_model_info(raw: &Json) -> Option<LyriaModelInfo> {
 }
 
 fn audio_format(value: &Json) -> Option<AudioFormat> {
-    match value {
-        Json::Text(text) if text == "mp3" => Some(AudioFormat::Mp3),
-        Json::Text(text) if text == "wav" => Some(AudioFormat::Wav),
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => None,
+    let Json::Text(text) = value else {
+        return None;
+    };
+    match text.as_str() {
+        "mp3" => Some(AudioFormat::Mp3),
+        "wav" => Some(AudioFormat::Wav),
+        _ => None,
     }
 }
 
