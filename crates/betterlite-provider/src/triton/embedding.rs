@@ -109,17 +109,18 @@ pub fn build_embedding_usage(
     request: &EmbeddingRequest,
     counter: &dyn TextTokenCounter,
 ) -> Result<EmbeddingUsage, TritonError> {
-    let texts = match request
+    let texts: Vec<String> = match request
         .inputs
         .iter()
         .find(|entry| entry.name == INPUT_NAME)
         .map(|entry| &entry.data)
     {
-        Some(EmbeddingInput::Texts(values)) => values.as_slice(),
-        Some(_) | None => &[],
+        Some(EmbeddingInput::Texts(values)) => values.clone(),
+        Some(EmbeddingInput::Tokens(ids)) => ids.iter().map(ToString::to_string).collect(),
+        Some(EmbeddingInput::Text(_) | EmbeddingInput::TokenLists(_)) | None => Vec::new(),
     };
     let mut prompt_tokens: u32 = 0;
-    for text in texts {
+    for text in &texts {
         if text.is_empty() {
             continue;
         }

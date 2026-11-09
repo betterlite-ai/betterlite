@@ -39,6 +39,7 @@ pub struct GenerateReply {
 
 #[derive(Debug, Deserialize)]
 struct GenerateBody {
+    #[serde(deserialize_with = "Option::deserialize")]
     text_output: Option<String>,
 }
 

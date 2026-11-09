@@ -34,6 +34,7 @@ struct InferBody {
 
 #[derive(Debug, Deserialize)]
 struct InferOutput {
+    #[serde(deserialize_with = "Option::deserialize")]
     data: Option<InferData>,
 }
 

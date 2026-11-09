@@ -103,6 +103,15 @@ impl TextTokenCounter for FixedCounter {
     }
 }
 
+struct RecordingCounter<'seen>(&'seen Mutex<Vec<String>>);
+
+impl TextTokenCounter for RecordingCounter<'_> {
+    fn count_text(&self, _model: &str, text: &str) -> Option<usize> {
+        self.0.lock().unwrap().push(text.to_owned());
+        Some(1)
+    }
+}
+
 struct WordsCounter;
 
 impl TextTokenCounter for WordsCounter {
@@ -436,7 +445,9 @@ fn infer_request_maps_values_to_triton_datatypes() {
         .collect();
     assert_eq!(
         datatypes,
-        ["BYTES", "INT32", "FP32", "BYTES", "BYTES", "BYTES", "INT32"]
+        [
+            "BYTES", "INT32", "FP32", "BYTES", "BYTES", "BYTES", "INT32", "INT32"
+        ]
     );
 }
 
@@ -467,7 +478,9 @@ fn infer_request_sends_parts_as_a_list() {
     let body = infer_request(&input("model", &given, &optional)).unwrap();
     assert_eq!(
         body.inputs[0].data,
-        options_list(r#"[{"type":"text","text":"hi"}]"#)
+        vec![Field::List(options_list(
+            r#"[{"type":"text","text":"hi"}]"#
+        ))]
     );
 }
 
@@ -639,6 +652,17 @@ fn embedding_usage_is_zero_without_a_named_input() {
     let request = embedding_request(r#"{"inputs":[]}"#);
     let usage = build_embedding_usage("model", &request, &WordsCounter).unwrap();
     assert_eq!(usage.prompt_tokens, 0);
+}
+
+#[test]
+fn embedding_usage_counts_the_decimal_text_of_each_token_id() {
+    let request = embedding_request(
+        r#"{"inputs":[{"name":"input_text","shape":[3],"datatype":"BYTES","data":[1,22,333]}]}"#,
+    );
+    let seen = Mutex::new(Vec::new());
+    let usage = build_embedding_usage("model", &request, &RecordingCounter(&seen)).unwrap();
+    assert_eq!(usage.prompt_tokens, 3);
+    assert_eq!(*seen.lock().unwrap(), ["1", "22", "333"]);
 }
 
 #[test]
