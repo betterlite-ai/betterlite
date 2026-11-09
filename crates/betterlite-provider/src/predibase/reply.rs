@@ -233,19 +233,23 @@ fn sum_logprobs(tokens: &[Token]) -> Result<Number, PredibaseError> {
     })
 }
 
+const fn token_logprob(token: &Token) -> Option<&Number> {
+    match &token.logprob {
+        TokenLogprob::Number(number) => Some(number),
+        TokenLogprob::Null => None,
+    }
+}
+
 fn all_integers(tokens: &[Token]) -> bool {
-    tokens.iter().all(|token| match &token.logprob {
-        TokenLogprob::Number(number) => number.is_i64() || number.is_u64(),
-        TokenLogprob::Null => true,
-    })
+    tokens
+        .iter()
+        .filter_map(token_logprob)
+        .all(|number| number.is_i64() || number.is_u64())
 }
 
 fn integer_sum(tokens: &[Token]) -> Option<Number> {
     let mut total = 0_i128;
-    for token in tokens {
-        let TokenLogprob::Number(number) = &token.logprob else {
-            continue;
-        };
+    for number in tokens.iter().filter_map(token_logprob) {
         let value = match (number.as_i64(), number.as_u64()) {
             (Some(value), _) => i128::from(value),
             (None, Some(value)) => i128::from(value),
@@ -257,12 +261,10 @@ fn integer_sum(tokens: &[Token]) -> Option<Number> {
 }
 
 fn float_sum(tokens: &[Token]) -> Option<Number> {
-    let total: f64 = tokens
+    let values: Vec<f64> = tokens
         .iter()
-        .filter_map(|token| match &token.logprob {
-            TokenLogprob::Number(number) => number.as_f64(),
-            TokenLogprob::Null => None,
-        })
-        .sum();
-    Number::from_f64(total)
+        .filter_map(token_logprob)
+        .filter_map(Number::as_f64)
+        .collect();
+    Number::from_f64(values.iter().sum())
 }

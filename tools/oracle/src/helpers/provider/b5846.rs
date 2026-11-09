@@ -155,19 +155,18 @@ fn urls(requests: &[UrlRequest]) -> Value {
 }
 
 fn headers(requests: &[HeaderRequest]) -> Value {
-    let found: Vec<Value> = requests
-        .iter()
-        .map(|request| {
-            let key = request
-                .api_key
-                .as_ref()
-                .map(|value| SecretString::from(value.clone()));
-            match validate_environment(key.as_ref(), &request.headers) {
-                Ok(headers) => json!({"ok": true, "headers": headers}),
-                Err(_error) => json!({"ok": false, "status": 500_u16}),
-            }
-        })
-        .collect();
+    let mut found = Vec::new();
+    for request in requests {
+        let key = request
+            .api_key
+            .as_ref()
+            .map(|value| SecretString::from(value.clone()));
+        let entry = match validate_environment(key.as_ref(), &request.headers) {
+            Ok(merged) => json!({"ok": true, "headers": merged}),
+            Err(_error) => json!({"ok": false, "status": 500_u16}),
+        };
+        found.push(entry);
+    }
     let class = get_error_class(
         "boom",
         418,
