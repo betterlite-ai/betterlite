@@ -16,6 +16,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde::Serialize;
 
+use super::error::PointFiveUploadError;
 use super::types::PointFiveUploadFailure;
 use super::upload::PointFiveUploadClient;
 use super::upload::sleeper::UploadSleeper;
@@ -181,6 +182,17 @@ fn client(
         max_retries,
         request_timeout: Duration::from_secs(5),
     }
+}
+
+#[test]
+fn the_upload_error_renders_its_detail() {
+    let error = PointFiveUploadError {
+        detail: "pointfive api returned 500, gave up after 3 attempts".to_owned(),
+    };
+    assert_eq!(
+        error.to_string(),
+        "pointfive api returned 500, gave up after 3 attempts"
+    );
 }
 
 #[tokio::test]

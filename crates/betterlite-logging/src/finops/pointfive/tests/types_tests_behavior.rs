@@ -3,7 +3,10 @@
 use rstest::rstest;
 use secrecy::ExposeSecret;
 
-use super::types::{DEFAULT_API_URL, PointFiveInitParams, RETRYABLE_UPLOAD_STATUS_CODES};
+use super::types::{
+    DEFAULT_API_URL, PointFiveInitParams, PointFiveUploadFailure, PointFiveUploadTarget,
+    RETRYABLE_UPLOAD_STATUS_CODES,
+};
 
 fn parse(source: &str) -> PointFiveInitParams {
     serde_json::from_str(source).expect("the params parse")
@@ -129,6 +132,22 @@ fn a_negative_count_is_rejected() {
     let error = serde_json::from_str::<PointFiveInitParams>(r#"{"max_upload_retries": -1}"#)
         .expect_err("-1");
     assert!(error.to_string().contains("invalid value"), "{error}");
+}
+
+#[test]
+fn upload_records_carry_their_fields() {
+    let target = PointFiveUploadTarget {
+        upload_url: "https://uploads.example/object".to_owned(),
+        object_key: "objects/1".to_owned(),
+    };
+    assert_eq!(target.upload_url, "https://uploads.example/object");
+    assert_eq!(target.object_key, "objects/1");
+    let failure = PointFiveUploadFailure {
+        detail: "pointfive api returned 500".to_owned(),
+        retryable: true,
+    };
+    assert_eq!(failure.detail, "pointfive api returned 500");
+    assert!(failure.retryable);
 }
 
 #[test]
