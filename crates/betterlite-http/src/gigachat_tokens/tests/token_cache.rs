@@ -62,6 +62,30 @@ async fn token_cache_keys_on_the_first_sixteen_characters() {
 }
 
 #[tokio::test]
+async fn token_cache_serves_the_first_token_for_a_new_scope() {
+    let server = support::Server::start().await;
+    server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
+    let auth = authenticator(&server.url);
+    let mut first = request(&server.url);
+    first.scope = Some("GIGACHAT_API_PERS".to_owned());
+    let mut second = request(&server.url);
+    second.scope = Some("GIGACHAT_API_CORP".to_owned());
+
+    let first_token = auth
+        .access_token(&first)
+        .await
+        .expect("the first scope fetches a token");
+    let second_token = auth
+        .access_token(&second)
+        .await
+        .expect("the same credentials share the cached token");
+
+    assert_eq!(support::text(&first_token), "token-1");
+    assert_eq!(support::text(&second_token), "token-1");
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[tokio::test]
 async fn token_cache_counts_characters_not_bytes() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"token-1\",\"exp\":4102444800000}");
