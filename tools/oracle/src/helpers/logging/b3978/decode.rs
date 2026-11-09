@@ -92,9 +92,11 @@ pub(super) fn logging_object(
     let Value::Object(fields) = value else {
         return match value {
             Value::Null => Ok(None),
-            Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) | Value::Object(_) => {
-                Err(failure("logging_obj must be an object or null".to_owned()))
-            }
+            Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_)
+            | Value::Object(_) => Err(failure("logging_obj must be an object or null".to_owned())),
         };
     };
     let mut details = IndexMap::new();

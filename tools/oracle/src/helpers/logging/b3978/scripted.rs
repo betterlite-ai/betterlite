@@ -165,10 +165,7 @@ pub(super) struct LogCapture {
 
 impl LogCapture {
     pub(super) fn report(&self) -> Value {
-        let events = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
         let mut warnings = Vec::new();
         let mut call_ids = Vec::new();
         let mut labels = Vec::new();
