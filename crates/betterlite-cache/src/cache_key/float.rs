@@ -37,7 +37,7 @@ fn scientific(digits: &str, exponent: i32) -> String {
     } else {
         format!("{first}.{rest}")
     };
-    let sign = if exponent < 0_i32 { '-' } else { '+' };
+    let sign = if exponent.is_negative() { '-' } else { '+' };
     format!("{mantissa}e{sign}{:02}", exponent.unsigned_abs())
 }
 

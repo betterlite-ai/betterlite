@@ -669,6 +669,10 @@ fn values_render_as_python_str(#[case] value: KeyValue, #[case] expected: &str) 
     KeyValue::Object(object(&[("name", string("back\\slash\ntab\t"))])),
     "{'name': 'back\\\\slash\\ntab\\t'}"
 )]
+#[case::delimiter_inside_both_quotes(
+    KeyValue::Object(object(&[("name", string("he said \"it's\""))])),
+    "{'name': 'he said \"it\\'s\"'}"
+)]
 fn nested_strings_render_as_python_repr(#[case] value: KeyValue, #[case] expected: &str) {
     assert_eq!(value.render(), expected);
 }
