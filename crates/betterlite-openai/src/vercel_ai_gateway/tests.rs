@@ -197,7 +197,7 @@ fn the_base_mapping_drops_reasoning_effort_like_the_gpt_policy() {
         &mut optional,
         &catalog(&[], &[]),
     );
-    assert_eq!(optional, object(r#"{"temperature":0.2}"#));
+    assert_eq!(optional, object(r#"{"temperature":0.2,"extra_body":{}}"#));
 }
 
 #[rstest]
