@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::error::Error as _;
 use std::sync::Mutex;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -300,9 +301,9 @@ fn the_token_cache_reports_a_transport_failure_with_its_text() {
         now: at(1_700_000_000),
     };
     let transport = ScriptedTransport {
-        responses: Mutex::new(VecDeque::from([Err(TokenTransportError {
-            text: "connection refused".to_owned(),
-        })])),
+        responses: Mutex::new(VecDeque::from([Err(TokenTransportError::Message(
+            "connection refused".to_owned(),
+        ))])),
         requests: Mutex::new(Vec::new()),
     };
     let error = cache.token(&clock, &transport).unwrap_err();
@@ -340,24 +341,33 @@ fn a_parse_failure_keeps_the_serde_error_as_its_source() {
 }
 
 #[test]
-fn a_transport_failure_keeps_the_typed_transport_error_as_its_source() {
+fn a_transport_failure_keeps_the_transport_error_as_its_source() {
     let cache = TokenCache::new(&secret_credentials()).unwrap();
     let clock = FixedClock {
         now: at(1_700_000_000),
     };
     let transport = ScriptedTransport {
-        responses: Mutex::new(VecDeque::from([Err(TokenTransportError {
-            text: "connection refused".to_owned(),
-        })])),
+        responses: Mutex::new(VecDeque::from([Err(TokenTransportError::Transport(
+            Box::new(TransportError::Closed),
+        ))])),
         requests: Mutex::new(Vec::new()),
     };
     let error = cache.token(&clock, &transport).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Token request failed: the client is shutting down and takes no new requests"
+    );
     let failure = error.source().unwrap();
+    let transport_failure = failure.source().unwrap();
+    assert!(matches!(
+        transport_failure.downcast_ref::<TokenTransportError>(),
+        Some(TokenTransportError::Transport(_))
+    ));
     assert!(
-        failure
+        transport_failure
             .source()
             .unwrap()
-            .downcast_ref::<TokenTransportError>()
+            .downcast_ref::<TransportError>()
             .is_some()
     );
 }

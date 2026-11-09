@@ -65,12 +65,9 @@ impl SapTokenTransport for ScriptedTransport {
     fn post(&self, _request: &TokenRequest) -> Result<String, TokenTransportError> {
         let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         script.requests = script.requests.saturating_add(1);
-        script
-            .responses
-            .pop_front()
-            .ok_or_else(|| TokenTransportError {
-                text: "the case scripted no more token responses".to_owned(),
-            })
+        script.responses.pop_front().ok_or_else(|| {
+            TokenTransportError::Message("the case scripted no more token responses".to_owned())
+        })
     }
 }
 

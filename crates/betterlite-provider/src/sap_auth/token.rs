@@ -1,5 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_http::proxy::transport_error::TransportError;
 use chrono::{DateTime, Duration, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -50,10 +51,12 @@ const fn default_expires_in() -> i64 {
     DEFAULT_EXPIRY_SECONDS
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{text}")]
-pub struct TokenTransportError {
-    pub text: String,
+#[derive(Debug, Error)]
+pub enum TokenTransportError {
+    #[error("{0}")]
+    Transport(#[source] Box<TransportError>),
+    #[error("{0}")]
+    Message(String),
 }
 
 pub trait SapClock: Send + Sync {
@@ -170,7 +173,7 @@ impl TokenCache {
         let body = transport
             .post(&self.request)
             .map_err(|source| SapAuthError::TokenRequest {
-                text: source.text.clone(),
+                text: source.to_string(),
                 source: Box::new(TokenFailure::Transport(source)),
             })?;
         let token = parse_token_response(&body, now)?;
