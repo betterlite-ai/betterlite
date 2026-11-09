@@ -403,6 +403,36 @@ async fn production_transport_reports_the_status_without_a_body() {
 }
 
 #[tokio::test]
+async fn production_transport_does_not_wait_for_the_response_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let Ok((mut stream, _peer)) = listener.accept().await else {
+            return;
+        };
+        let mut buffer = [0_u8; 2048];
+        let _read = stream.read(&mut buffer).await.unwrap_or(0);
+        let head = b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\nconnection: keep-alive\r\n\r\n";
+        if stream.write_all(head).await.is_err() {
+            return;
+        }
+        let _held = stream;
+        sleep(Duration::from_secs(30)).await;
+    });
+    let transport = PooledHealthTransport {
+        client: proxied_client(),
+    };
+    let outcome = timeout(
+        Duration::from_secs(5),
+        transport.get_status(&format!("http://{address}/body"), FIVE_SECONDS),
+    )
+    .await;
+    assert!(outcome.is_ok(), "the probe waited for the response body");
+    assert_eq!(outcome.unwrap().unwrap(), 200);
+}
+
+#[tokio::test]
 async fn production_transport_times_out_when_the_server_never_answers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
