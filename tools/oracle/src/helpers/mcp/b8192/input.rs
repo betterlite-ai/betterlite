@@ -5,14 +5,40 @@ use betterlite_mcp::sampling_convert::model_preferences::{ModelInfo, ModelPrefer
 use betterlite_mcp::sampling_convert::tools::{McpTool, McpToolChoice};
 use betterlite_openai::chat::response::ChatResponse;
 use serde::Deserialize;
+use serde::de::Error as _;
+use serde_json::Value;
 
+// an internally tagged enum buffers its payload where a RawValue cannot be read, so dispatch here
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(try_from = "Value")]
 pub(crate) enum Input {
     Resolve(ResolveInput),
     Messages(MessagesInput),
     Tools(ToolsInput),
     Response(ResponseInput),
+}
+
+impl TryFrom<Value> for Input {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let operation = value
+            .get("operation")
+            .and_then(Value::as_str)
+            .ok_or_else(|| serde_json::Error::custom("the helper input names no operation"))?;
+        let input = match operation {
+            "resolve" => Self::Resolve(serde_json::from_value(value)?),
+            "messages" => Self::Messages(serde_json::from_value(value)?),
+            "tools" => Self::Tools(serde_json::from_value(value)?),
+            "response" => Self::Response(serde_json::from_value(value)?),
+            other => {
+                return Err(serde_json::Error::custom(format!(
+                    "unknown b8192 operation: {other}"
+                )));
+            }
+        };
+        Ok(input)
+    }
 }
 
 #[derive(Debug, Deserialize)]

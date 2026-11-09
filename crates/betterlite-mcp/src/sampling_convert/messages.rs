@@ -2,13 +2,14 @@ use serde::Deserialize;
 
 use super::content::{
     ConvertedPart, SamplingContent, SamplingRole, convert_content, extract_tool_calls,
-    extract_tool_results, has_tool_result, has_tool_use, text_parts,
+    extract_tool_results, has_tool_result, has_tool_use, sampling_content, text_parts,
 };
 use super::openai_wire::{OpenAiContent, OpenAiMessage, OpenAiRole};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SamplingMessage {
     pub role: SamplingRole,
+    #[serde(deserialize_with = "sampling_content")]
     pub content: SamplingContent,
 }
 

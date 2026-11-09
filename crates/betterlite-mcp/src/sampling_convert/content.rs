@@ -1,6 +1,9 @@
 use std::slice;
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Error as JsonError;
+use serde_json::value::RawValue;
 
 use super::json_object::JsonObject;
 use super::openai_wire::{
@@ -15,7 +18,7 @@ pub enum SamplingRole {
     Assistant,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum McpContentBlock {
     Text {
@@ -53,11 +56,95 @@ pub enum ToolResultBlock {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SamplingContent {
     Single(McpContentBlock),
     Many(Vec<McpContentBlock>),
+}
+
+// serde buffers tagged and untagged enums, where a RawValue tool input cannot be read, so dispatch here
+#[derive(Deserialize)]
+struct ContentTag {
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Deserialize)]
+struct TextFields {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct MediaFields {
+    data: String,
+    #[serde(rename = "mimeType", alias = "mime_type")]
+    mime_type: String,
+}
+
+#[derive(Deserialize)]
+struct ToolUseFields {
+    id: String,
+    name: String,
+    input: JsonObject,
+}
+
+#[derive(Deserialize)]
+struct ToolResultFields {
+    #[serde(rename = "toolUseId", alias = "tool_use_id")]
+    tool_use_id: String,
+    #[serde(default)]
+    content: Vec<ToolResultBlock>,
+}
+
+fn parse_content_block(text: &str) -> Result<McpContentBlock, JsonError> {
+    let tag: ContentTag = serde_json::from_str(text)?;
+    match tag.kind.as_str() {
+        "text" => serde_json::from_str::<TextFields>(text)
+            .map(|fields| McpContentBlock::Text { text: fields.text }),
+        "image" => serde_json::from_str::<MediaFields>(text).map(|fields| McpContentBlock::Image {
+            data: fields.data,
+            mime_type: fields.mime_type,
+        }),
+        "audio" => serde_json::from_str::<MediaFields>(text).map(|fields| McpContentBlock::Audio {
+            data: fields.data,
+            mime_type: fields.mime_type,
+        }),
+        "tool_use" => {
+            serde_json::from_str::<ToolUseFields>(text).map(|fields| McpContentBlock::ToolUse {
+                id: fields.id,
+                name: fields.name,
+                input: fields.input,
+            })
+        }
+        "tool_result" => serde_json::from_str::<ToolResultFields>(text).map(|fields| {
+            McpContentBlock::ToolResult {
+                tool_use_id: fields.tool_use_id,
+                content: fields.content,
+            }
+        }),
+        other => Err(JsonError::custom(format!(
+            "unknown MCP content block type `{other}`"
+        ))),
+    }
+}
+
+pub(crate) fn sampling_content<'de, D>(deserializer: D) -> Result<SamplingContent, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<RawValue>::deserialize(deserializer)?;
+    match serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) {
+        Ok(items) => {
+            let mut blocks = Vec::with_capacity(items.len());
+            for item in &items {
+                blocks.push(parse_content_block(item.get()).map_err(D::Error::custom)?);
+            }
+            Ok(SamplingContent::Many(blocks))
+        }
+        Err(_not_a_sequence) => parse_content_block(raw.get())
+            .map(SamplingContent::Single)
+            .map_err(D::Error::custom),
+    }
 }
 
 pub(crate) enum ConvertedPart {
