@@ -4,8 +4,9 @@ use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use betterlite::diagnostic_commands::{HealthTransport, ProcessLauncher, TransportError};
+use betterlite::diagnostic_commands::ProcessLauncher;
 use betterlite::startup_input::PortProber;
+use betterlite_http::health_probe::{HealthTransport, TransportError};
 
 pub(super) struct CannedTransport {
     pub(super) body: String,

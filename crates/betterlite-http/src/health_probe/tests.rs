@@ -5,7 +5,7 @@ use std::net::{SocketAddr, TcpListener};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{HealthTransport, ReqwestHealth, TransportError};
+use super::{HealthTransport as _, ReqwestHealth, TransportError};
 
 struct Serving {
     address: SocketAddr,
