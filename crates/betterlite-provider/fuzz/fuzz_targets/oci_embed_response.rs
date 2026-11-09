@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_provider::oci_embed::decode_embed_response;
+use betterlite_provider::oci_embed::response::decode_embed_response;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

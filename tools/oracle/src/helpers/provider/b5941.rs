@@ -6,9 +6,10 @@ use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
 };
 use betterlite_provider::oci_common::environment::OciEnvironment;
+use betterlite_provider::oci_embed::response::decode_embed_response;
 use betterlite_provider::oci_embed::{
-    OciEmbedParams, SUPPORTED_OPENAI_PARAMS, decode_embed_response, get_complete_url,
-    map_openai_params, transform_embedding_request, validate_environment,
+    OciEmbedParams, SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
+    transform_embedding_request, validate_environment,
 };
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};

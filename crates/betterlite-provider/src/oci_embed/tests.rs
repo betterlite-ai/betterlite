@@ -12,10 +12,10 @@ use crate::oci_common::OciServingMode;
 use crate::oci_common::credentials::{DEFAULT_OCI_REGION, OciCredentials};
 use crate::oci_common::environment::OciEnvironment;
 
+use super::response::decode_embed_response;
 use super::{
     OCI_EMBED_BATCH_LIMIT, OciEmbedParams, OciEmbedRequest, SUPPORTED_OPENAI_PARAMS,
-    decode_embed_response, get_complete_url, map_openai_params, transform_embedding_request,
-    validate_environment,
+    get_complete_url, map_openai_params, transform_embedding_request, validate_environment,
 };
 
 const COMPARTMENT: &str = "ocid1.compartment.oc1..aaaa";
