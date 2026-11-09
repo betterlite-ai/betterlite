@@ -10,6 +10,9 @@ task=$(git ls-files ".development/tasks/$id-*.yaml" | head -n 1)
 [ -n "$task" ] || exit 1
 journal=$main/.git/betterlite/$id
 commits=$(git log --format=%s origin/main..HEAD)
+indent=$(sed -n '/^  paths:$/{n;s/- .*//;p;q}' "$task")
+scope=$(sed -n '/^scope:/,/^[a-z_]*:/p' "$task" | sed -n "s/^$indent- //p" | tr -d '"')
+excluded=$(sed -n '/^out_of_scope:/,/^[a-z_]*:/p' "$task")
 
 crate_of() {
   case "$1" in
@@ -21,10 +24,43 @@ crate_of() {
 }
 
 case "$reason" in
+  *"crate cycle"*)
+    rounds=$(cat "$journal/cycle-rounds" 2> /dev/null)
+    [ "${rounds:-0}" -lt 3 ] || exit 1
+    report=$(bash "$P/crate-cycles.sh" "$2") && exit 1
+    echo "$(( ${rounds:-0} + 1 ))" > "$journal/cycle-rounds"
+    read -r -a paths <<< "$(sed -n 's/^Scope now covers: *//p' <<< "$report")"
+    added=
+    for path in "${paths[@]}"; do
+      grep -q -x -F "$path" <<< "$scope" && continue
+      grep -q -F "${path%/\*\*}" <<< "$excluded" && exit 1
+      added="$added $path"
+    done
+    read -r -a new <<< "$added"
+    for path in "${new[@]}"; do
+      sed -i "0,/^  paths:\$/s||  paths:\n$indent- \"$path\"|" "$task"
+    done
+    if [ -n "$added" ]; then
+      # a todo task may not cover a crate root, and the code has to leave and enter one
+      backlog=.development/backlog/$id.yaml
+      sed -i 's/^status: todo$/status: in-progress/' "$backlog"
+      git add "$task" "$backlog"
+      git commit -q -m "docs(tasks): $id scope$added" -m "The branch closes a crate cycle, so a block rule let it move the code behind the loop." -- "$task" "$backlog" || exit 1
+    fi
+    echo "$report"
+    exit 0 ;;
   *"review rounds ran out"*)
     [ -e "$journal/auto-grant" ] && exit 1
     touch "$journal/auto-grant"
     echo "The review rounds ran out, and this is the one extra run the rules give. Fix every finding from the last review, then finish as usual."
+    exit 0 ;;
+  *RUSTSEC-*)
+    # a worker can't bump a lock, and the flow merges main before the rerun
+    [ -e "$journal/deny-rerun" ] && exit 1
+    git fetch -q origin 2> /dev/null
+    git diff --quiet "$(git merge-base HEAD origin/main)" origin/main -- Cargo.lock deny.toml && exit 1
+    touch "$journal/deny-rerun"
+    echo "The deny failure comes from an older main. The flow merges main before this run, and main has changed Cargo.lock or deny.toml since your base. Keep your work and finish the task."
     exit 0 ;;
 esac
 
@@ -50,9 +86,6 @@ fi
 
 if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']+ ){0,3}scope" <<< "$reason"; then
   [ "$(grep -c "^docs(tasks): $id scope " <<< "$commits")" -lt 3 ] || exit 1
-  indent=$(sed -n '/^  paths:$/{n;s/- .*//;p;q}' "$task")
-  scope=$(sed -n '/^scope:/,/^[a-z_]*:/p' "$task" | sed -n "s/^$indent- //p" | tr -d '"')
-  excluded=$(sed -n '/^out_of_scope:/,/^[a-z_]*:/p' "$task")
   added=
   for path in $(grep -o -E '(crates|tools)/[A-Za-z0-9_.*/-]+' <<< "$reason" | sed -E 's/[.\/]+$//' | sort -u); do
     grep -q -x -F "$path" <<< "$scope" && continue
