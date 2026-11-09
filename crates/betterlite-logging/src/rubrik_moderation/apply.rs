@@ -16,13 +16,15 @@ pub async fn apply_guardrail(
     input_type: ModerationInputType,
     logging_obj: Option<&Arc<LoggingObject>>,
 ) -> Result<GuardrailInputs, ModifyResponseException> {
-    if input_type == ModerationInputType::Request {
-        let operation = moderate_prompt(logger, inputs.clone(), request_data, logging_obj);
-        return guarded(operation, inputs, "Prompt moderation").await;
+    match input_type {
+        ModerationInputType::Request => {
+            let operation = moderate_prompt(logger, inputs.clone(), request_data, logging_obj);
+            guarded(operation, inputs, "Prompt moderation").await
+        }
+        ModerationInputType::Response => {
+            let operation = moderate_response(logger, inputs.clone(), request_data, logging_obj);
+            guarded(operation, inputs, "Response moderation").await
+        }
+        ModerationInputType::Unrecognized => Ok(inputs),
     }
-    if input_type == ModerationInputType::Response {
-        let operation = moderate_response(logger, inputs.clone(), request_data, logging_obj);
-        return guarded(operation, inputs, "Response moderation").await;
-    }
-    Ok(inputs)
 }
