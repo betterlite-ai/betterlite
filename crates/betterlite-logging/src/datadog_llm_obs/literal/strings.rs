@@ -100,6 +100,7 @@ fn backslash(parser: &mut Parser<'_>, out: &mut String) -> Option<()> {
 }
 
 fn escape(parser: &mut Parser<'_>, out: &mut String, bytes: bool) -> Option<()> {
+    parser.position = parser.position.saturating_add(1);
     let byte = parser.bytes.get(parser.position).copied()?;
     if let Some(character) = simple_escape(byte) {
         parser.position = parser.position.saturating_add(1);

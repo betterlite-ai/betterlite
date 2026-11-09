@@ -146,7 +146,11 @@ fn a_tool_result_object_serializes_with_python_json_spacing() {
         projected(
             r#"[{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": {"a": 1, "b": [true, null]}}]}]"#
         ),
-        r#"[{"role":"user","content":"","tool_results":[{"name":"","result":"{\"a\": 1, \"b\": [true, null]}","tool_id":"t","type":"function"}]}]"#
+        concat!(
+            r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","#,
+            r#""content":{"a":1,"b":[true,null]}}],"tool_results":["#,
+            r#"{"name":"","result":"{\"a\": 1, \"b\": [true, null]}","tool_id":"t","type":"function"}]}]"#
+        )
     );
 }
 
@@ -156,7 +160,11 @@ fn a_tool_result_object_loses_nul_bytes_like_safe_dumps() {
         projected(
             r#"[{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": {"a": "b\u0000c"}}]}]"#
         ),
-        r#"[{"role":"user","content":"","tool_results":[{"name":"","result":"{\"a\": \"bc\"}","tool_id":"t","type":"function"}]}]"#
+        concat!(
+            r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","#,
+            r#""content":{"a":"b\u0000c"}}],"tool_results":["#,
+            r#"{"name":"","result":"{\"a\": \"bc\"}","tool_id":"t","type":"function"}]}]"#
+        )
     );
 }
 
@@ -220,12 +228,16 @@ fn a_non_list_conversation_converts_to_an_input_record() {
 }
 
 #[test]
-fn a_tool_message_keeps_its_own_result_and_ignores_content_blocks() {
+fn a_tool_message_keeps_its_calls_and_its_own_result() {
     assert_eq!(
         projected(
             r#"[{"role": "tool", "tool_call_id": "c", "content": "r", "tool_calls": [{"id": "c", "function": {"name": "n", "arguments": "{}"}}]}]"#
         ),
-        r#"[{"role":"tool","content":"r","tool_results":[{"name":"n","result":"r","tool_id":"c","type":"function"}]}]"#
+        concat!(
+            r#"[{"role":"tool","content":"r","tool_calls":["#,
+            r#"{"name":"n","arguments":{},"tool_id":"c","type":"function"}],"#,
+            r#""tool_results":[{"name":"n","result":"r","tool_id":"c","type":"function"}]}]"#
+        )
     );
 }
 

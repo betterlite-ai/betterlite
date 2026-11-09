@@ -64,6 +64,7 @@ fn python_literals_decode_to_json(#[case] source: &str, #[case] expected: &str) 
 #[case::unknown_escape(r"'\q'", "\\q")]
 #[case::octal_escape(r"'\101'", "A")]
 #[case::hex_escape(r"'\x41'", "A")]
+#[case::newline_escape(r"'\n'", "\n")]
 #[case::unicode_escape(r"'\u00e9'", "\u{e9}")]
 #[case::raw_string(r"r'\n'", "\\n")]
 fn escapes_decode_like_python(#[case] source: &str, #[case] expected: &str) {
