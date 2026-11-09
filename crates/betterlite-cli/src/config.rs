@@ -104,6 +104,7 @@ pub fn load_config(
     match read_config(&path) {
         Ok(config) => config,
         Err(failure) => {
+            // the write cannot change the outcome: the invalid file still reads as an empty config
             let _unused = writeln!(
                 warnings,
                 "Warning: ignoring invalid config file {}: {failure}",

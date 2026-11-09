@@ -47,6 +47,7 @@ fn set_config(
     let name = config_key.name();
     config.insert(name.to_owned(), normalized.clone());
     let path = save_config(&config, environment)?;
+    // a closed stdout loses the line, not the value that already reached the file
     let _unused = writeln!(stdout, "Set {name} = {normalized} in {}", path.display());
     Ok(())
 }
