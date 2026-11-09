@@ -176,25 +176,9 @@ pub(crate) struct DocumentMetadata {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(from = "RawTextractResponse")]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct TextractResponse {
+    #[serde(default)]
     pub(crate) blocks: Vec<Block>,
     pub(crate) document_metadata: Option<DocumentMetadata>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct RawTextractResponse {
-    #[serde(default)]
-    blocks: Vec<RawBlock>,
-    document_metadata: Option<DocumentMetadata>,
-}
-
-impl From<RawTextractResponse> for TextractResponse {
-    fn from(raw: RawTextractResponse) -> Self {
-        Self {
-            blocks: raw.blocks.into_iter().map(Block::from).collect(),
-            document_metadata: raw.document_metadata,
-        }
-    }
 }
