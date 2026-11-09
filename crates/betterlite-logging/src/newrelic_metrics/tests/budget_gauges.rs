@@ -29,7 +29,7 @@ fn gauges_come_from_the_latest_record_of_each_team() {
     second.team_spend = Some(Decimal::new(25, 1));
     second.response_cost = Decimal::new(5, 1);
     let envelope = envelope(&[first, second], WINDOW_START_MS, WINDOW_END_MS);
-    assert_eq!(metric_names(&envelope).len(), 8);
+    assert_eq!(metric_names(&envelope).len(), 14);
     assert_eq!(
         gauges(&envelope),
         [Decimal::new(100, 1), Decimal::new(70, 1)]

@@ -42,9 +42,9 @@ fn team_gauges_keep_the_order_each_team_first_appeared_in() {
     second.team_id = "team-a".to_owned();
     second.model = "gpt-4o-mini".to_owned();
     let envelope = envelope(&[first, second], WINDOW_START_MS, WINDOW_END_MS);
-    assert_eq!(attribute_at(&envelope, 6, "team_id"), "team-b");
-    assert_eq!(metric_names(&envelope).len(), 10);
-    assert_eq!(attribute_at(&envelope, 8, "team_id"), "team-a");
-    assert_eq!(metric_names(&envelope)[6], METRIC_TEAM_MAX_BUDGET);
-    assert_eq!(metric_names(&envelope)[7], METRIC_TEAM_REMAINING_BUDGET);
+    assert_eq!(metric_names(&envelope).len(), 16);
+    assert_eq!(attribute_at(&envelope, 12, "team_id"), "team-b");
+    assert_eq!(attribute_at(&envelope, 14, "team_id"), "team-a");
+    assert_eq!(metric_names(&envelope)[12], METRIC_TEAM_MAX_BUDGET);
+    assert_eq!(metric_names(&envelope)[13], METRIC_TEAM_REMAINING_BUDGET);
 }
