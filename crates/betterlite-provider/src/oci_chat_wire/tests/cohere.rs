@@ -127,6 +127,24 @@ fn cohere_messages_look_up_tool_results_across_all_assistant_messages() {
 }
 
 #[test]
+fn cohere_messages_look_up_calls_in_assistant_messages_only() {
+    let history = adapt_cohere_messages(&messages(
+        r#"[
+            {"role": "user", "content": "hi", "tool_calls": [
+                {"id": "early", "type": "function", "function": {"name": "one", "arguments": "{}"}}
+            ]},
+            {"role": "tool", "tool_call_id": "early", "content": "result"}
+        ]"#,
+    ));
+    assert_json(
+        &history,
+        r#"[{"role": "TOOL", "toolResults": [
+            {"call": {"name": "", "parameters": {}}, "outputs": [{"output": "result"}]}
+        ]}]"#,
+    );
+}
+
+#[test]
 fn cohere_messages_skip_system_developer_and_function_roles() {
     let history = adapt_cohere_messages(&messages(
         r#"[
