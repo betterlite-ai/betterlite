@@ -129,9 +129,7 @@ fn gives_no_chunk_for_an_empty_or_unknown_event(#[case] event: &str) {
 fn rejects_an_orchestration_result_that_is_not_an_object(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
-        SapStreamError::EventField {
-            field: "orchestration_result"
-        }
+        SapStreamError::EventField("orchestration_result")
     ));
 }
 
@@ -158,7 +156,7 @@ fn parses_final_result_as_an_ordinary_chunk() {
 fn rejects_a_final_result_that_cannot_be_a_chunk(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
-        SapStreamError::Chunk { .. } | SapStreamError::EventField { .. }
+        SapStreamError::Chunk { .. } | SapStreamError::EventField(_)
     ));
 }
 
@@ -205,7 +203,7 @@ fn ignores_values_that_are_not_chunk_events(#[case] event: &str) {
 fn rejects_a_choice_with_an_invalid_index(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
-        SapStreamError::EventField { .. }
+        SapStreamError::EventField(_)
     ));
 }
 
@@ -217,7 +215,7 @@ fn rejects_a_choice_with_an_invalid_index(#[case] event: &str) {
 fn rejects_choices_or_deltas_that_are_not_objects(#[case] event: &str) {
     assert!(matches!(
         rejected(event, FIXED_NOW),
-        SapStreamError::EventField { .. }
+        SapStreamError::EventField(_)
     ));
 }
 

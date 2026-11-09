@@ -8,9 +8,7 @@ pub(super) fn final_result_chunk(value: &Json) -> Result<Chunk, SapStreamError> 
         Json::Null => chunk_from_object(&Object::new()),
         Json::Object(fields) => chunk_from_object(fields),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(SapStreamError::EventField {
-                field: "final_result",
-            })
+            Err(SapStreamError::EventField("final_result"))
         }
     }
 }
@@ -37,9 +35,7 @@ pub(super) fn orchestration_chunk(
         return if empty_value(result) {
             Ok(None)
         } else {
-            Err(SapStreamError::EventField {
-                field: "orchestration_result",
-            })
+            Err(SapStreamError::EventField("orchestration_result"))
         };
     };
     if orchestration.is_empty() {
@@ -87,22 +83,43 @@ fn orchestration_choices(orchestration: &Object) -> Result<Vec<Choice>, SapStrea
         None | Some(Json::Null) => Ok(Vec::new()),
         Some(Json::List(items)) => items.iter().map(choice_from).collect::<Result<Vec<_>, _>>(),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(SapStreamError::EventField {
-                field: "orchestration_result.choices",
-            })
+            Err(SapStreamError::EventField("orchestration_result.choices"))
         }
     }
 }
 
 fn choice_from(value: &Json) -> Result<Choice, SapStreamError> {
     let Json::Object(fields) = value else {
-        return Err(SapStreamError::EventField {
-            field: "orchestration_result.choices",
-        });
+        return Err(SapStreamError::EventField("orchestration_result.choices"));
+    };
+    let index = match fields.get("index") {
+        None => 0,
+        Some(Json::Number(number)) => {
+            let raw = number.as_u64().ok_or(SapStreamError::EventField(
+                "orchestration_result.choices.index",
+            ))?;
+            u32::try_from(raw).map_err(|_error| {
+                SapStreamError::EventField("orchestration_result.choices.index")
+            })?
+        }
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(SapStreamError::EventField(
+                "orchestration_result.choices.index",
+            ));
+        }
+    };
+    let delta = match fields.get("delta") {
+        None | Some(Json::Null) => Delta::default(),
+        Some(given @ Json::Object(_)) => delta_object(given)?,
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(SapStreamError::EventField(
+                "orchestration_result.choices.delta",
+            ));
+        }
     };
     Ok(Choice {
-        index: index_from(fields.get("index"))?,
-        delta: delta_from(fields.get("delta"))?,
+        index,
+        delta,
         finish_reason: text(
             fields.get("finish_reason"),
             "orchestration_result.choices.finish_reason",
@@ -112,41 +129,11 @@ fn choice_from(value: &Json) -> Result<Choice, SapStreamError> {
     })
 }
 
-fn index_from(value: Option<&Json>) -> Result<u32, SapStreamError> {
-    let Some(given) = value else {
-        return Ok(0);
-    };
-    let Json::Number(number) = given else {
-        return Err(SapStreamError::EventField {
-            field: "orchestration_result.choices.index",
-        });
-    };
-    let index = number.as_u64().ok_or(SapStreamError::EventField {
-        field: "orchestration_result.choices.index",
-    })?;
-    u32::try_from(index).map_err(|_error| SapStreamError::EventField {
-        field: "orchestration_result.choices.index",
-    })
-}
-
-fn delta_from(value: Option<&Json>) -> Result<Delta, SapStreamError> {
-    let Some(given) = value else {
-        return Ok(Delta::default());
-    };
-    match given {
-        Json::Null => Ok(Delta::default()),
-        Json::Object(_) => {
-            let raw = serde_json::to_value(given).map_err(ChunkError::from)?;
-            serde_json::from_value(raw)
-                .map_err(ChunkError::from)
-                .map_err(SapStreamError::from)
-        }
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(SapStreamError::EventField {
-                field: "orchestration_result.choices.delta",
-            })
-        }
-    }
+fn delta_object(value: &Json) -> Result<Delta, SapStreamError> {
+    let raw = serde_json::to_value(value).map_err(ChunkError::from)?;
+    serde_json::from_value(raw)
+        .map_err(ChunkError::from)
+        .map_err(SapStreamError::from)
 }
 
 fn text<'value>(
@@ -157,22 +144,23 @@ fn text<'value>(
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(SapStreamError::EventField { field })
+            Err(SapStreamError::EventField(field))
         }
     }
 }
 
 fn integer(value: Option<&Json>, field: &'static str) -> Result<Option<i64>, SapStreamError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .map(Some)
-            .ok_or(SapStreamError::EventField { field }),
+    let number = match value {
+        None | Some(Json::Null) => return Ok(None),
+        Some(Json::Number(number)) => number,
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(SapStreamError::EventField { field })
+            return Err(SapStreamError::EventField(field));
         }
-    }
+    };
+    number
+        .as_i64()
+        .map(Some)
+        .ok_or(SapStreamError::EventField(field))
 }
 
 fn empty_value(value: &Json) -> bool {

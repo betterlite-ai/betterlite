@@ -70,12 +70,10 @@ fn event_output(input: &EventInput) -> HelperResult {
 }
 
 fn lines_output(input: &LinesInput) -> HelperResult {
-    let traces = input
-        .modes
-        .iter()
-        .copied()
-        .map(|mode| trace(input, mode))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut traces = Vec::new();
+    for mode in &input.modes {
+        traces.push(trace(input, *mode)?);
+    }
     Ok(json!({"traces": traces}))
 }
 
@@ -125,7 +123,7 @@ const fn status(error: &SapStreamError) -> Option<u16> {
         SapStreamError::Orchestration(orchestration) => Some(orchestration.status_code),
         SapStreamError::Event { .. }
         | SapStreamError::Chunk { .. }
-        | SapStreamError::EventField { .. }
+        | SapStreamError::EventField(_)
         | SapStreamError::Timestamp { .. }
         | SapStreamError::ConfigBody
         | SapStreamError::StreamBody => None,

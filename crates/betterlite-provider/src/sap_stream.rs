@@ -29,8 +29,8 @@ pub enum SapStreamError {
         #[from]
         source: ChunkError,
     },
-    #[error("{field} in the SAP orchestration stream event is invalid")]
-    EventField { field: &'static str },
+    #[error("{0} in the SAP orchestration stream event is invalid")]
+    EventField(&'static str),
     #[error("the SAP orchestration stream cannot use {created} as a creation time")]
     Timestamp { created: i64 },
     #[error("the SAP orchestration request body must have a config object")]
