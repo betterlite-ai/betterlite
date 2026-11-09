@@ -1,0 +1,19 @@
+kind: helper
+name: sap-stream-done-blank-and-bad-json
+call:
+  b5952:
+    operation: lines
+    params:
+      lines:
+        - ''
+        - '   '
+        - not json
+        - 'data:{"orchestration_result": {"id": "no-space"}}'
+        - 'data: {"orchestration_result": {"id": "kept", "choices": []}}'
+        - 'data: {"status": "ok"}'
+        - 'data: [DONE]'
+        - 'data: {"orchestration_result": {"id": "never"}}'
+      modes: [sync, async]
+      now: 1700000000
+env: {}
+compare: {ignore: []}
