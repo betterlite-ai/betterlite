@@ -114,7 +114,7 @@ fn top_level_segments(header: &[u8]) -> Vec<&[u8]> {
 fn is_parameter(segment: &[u8]) -> bool {
     let name_end = segment
         .iter()
-        .position(u8::is_ascii_whitespace)
+        .position(|byte| byte.is_ascii_whitespace() || *byte == b'=')
         .unwrap_or(segment.len());
     segment.get(skip_whitespace(segment, name_end)) == Some(&b'=')
 }

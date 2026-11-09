@@ -58,6 +58,7 @@ async fn fetch_transport_errors_carry_sanitized_text() {
 
 #[rstest]
 #[case::array("[]")]
+#[case::array_of_arrays("[[\"https://idp.test\"]]")]
 #[case::text("\"metadata\"")]
 #[case::null("null")]
 #[case::number("7")]

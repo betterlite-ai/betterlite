@@ -23,6 +23,10 @@
     "Bearer error=\"invalid_token\", resource_metadata=\"https://mcp.test/prm\"",
     Some("https://mcp.test/prm")
 )]
+#[case::space_inside_a_quoted_value(
+    "Bearer error_description=\"The token expired\", resource_metadata=\"https://mcp.test/prm\"",
+    Some("https://mcp.test/prm")
+)]
 #[case::comma_inside_a_quoted_value(
     "Bearer error=\"a,b\", resource_metadata=\"https://mcp.test/prm\"",
     Some("https://mcp.test/prm")

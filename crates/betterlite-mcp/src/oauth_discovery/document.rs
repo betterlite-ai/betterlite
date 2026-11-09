@@ -1,6 +1,6 @@
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
+use serde::de::{Error as _, IgnoredAny};
 use thiserror::Error;
 
 use crate::server_oauth::merge::{ScopesInput, extract_scopes};
@@ -55,6 +55,11 @@ pub struct MetadataDocument {
 pub fn decode_metadata_document(bytes: &[u8]) -> Result<MetadataDocument, DocumentError> {
     if bytes.len() > MAX_METADATA_BYTES {
         return Err(DocumentError::TooLarge);
+    }
+    if bytes.trim_ascii_start().first() != Some(&b'{') {
+        return Err(DocumentError::Json {
+            source: serde_json::Error::custom("expected a JSON object"),
+        });
     }
     serde_json::from_slice(bytes).map_err(|source| DocumentError::Json { source })
 }
