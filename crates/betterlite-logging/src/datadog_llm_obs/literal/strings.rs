@@ -1,29 +1,27 @@
 use super::Parser;
 
-pub(super) fn text(parser: &mut Parser<'_>) -> Option<String> {
-    let mut out = one_string(parser, false)?;
-    loop {
-        parser.skip(parser.depth > 0);
-        let next = parser.bytes.get(parser.position).copied();
-        if !matches!(next, Some(b'\'' | b'"' | b'u' | b'U' | b'r' | b'R')) {
-            return Some(out);
-        }
-        out.push_str(&one_string(parser, false)?);
-    }
-}
-
-// Adjacent bytes tokens join the way Python joins them; their value is a placeholder either way.
-pub(super) fn bytes(parser: &mut Parser<'_>) -> Option<()> {
+// Adjacent tokens join the way Python joins them; a bytes group only has to be accepted.
+pub(super) fn group(parser: &mut Parser<'_>, bytes: bool) -> Option<String> {
+    let mut out = String::new();
     loop {
         let start = parser.position;
-        one_string(parser, true)?;
-        if !parser.text.get(start..parser.position)?.is_ascii() {
-            return None;
+        let piece = one_string(parser, bytes)?;
+        if bytes {
+            if !parser.text.get(start..parser.position)?.is_ascii() {
+                return None;
+            }
+        } else {
+            out.push_str(&piece);
         }
         parser.skip(parser.depth > 0);
-        match parser.bytes.get(parser.position).copied() {
-            Some(b'b' | b'B' | b'r' | b'R') => {}
-            Some(_) | None => return Some(()),
+        let next = parser.bytes.get(parser.position).copied();
+        let continues = if bytes {
+            matches!(next, Some(b'b' | b'B' | b'r' | b'R'))
+        } else {
+            matches!(next, Some(b'\'' | b'"' | b'u' | b'U' | b'r' | b'R'))
+        };
+        if !continues {
+            return Some(out);
         }
     }
 }

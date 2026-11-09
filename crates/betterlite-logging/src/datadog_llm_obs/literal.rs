@@ -46,13 +46,13 @@ impl Parser<'_> {
             b'[' => self.sequence(b']', false),
             b'(' => self.sequence(b')', true),
             b'{' => self.braced(),
-            b'\'' | b'"' | b'u' | b'U' => strings::text(self).map(Json::Text),
+            b'\'' | b'"' | b'u' | b'U' => strings::group(self, false).map(Json::Text),
             b'r' | b'R' => {
                 let second = self.bytes.get(self.position.saturating_add(1)).copied();
                 if matches!(second, Some(b'b' | b'B')) {
                     self.bytes_value()
                 } else {
-                    strings::text(self).map(Json::Text)
+                    strings::group(self, false).map(Json::Text)
                 }
             }
             b'b' | b'B' => self.bytes_value(),
@@ -66,7 +66,7 @@ impl Parser<'_> {
     }
 
     fn bytes_value(&mut self) -> Option<Json> {
-        strings::bytes(self)?;
+        strings::group(self, true)?;
         Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
     }
 
