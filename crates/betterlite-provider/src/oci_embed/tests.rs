@@ -399,14 +399,22 @@ fn validate_environment_accepts_a_key_file_as_the_key_source() {
 }
 
 #[rstest]
-#[case::user("oci_user")]
-#[case::fingerprint("oci_fingerprint")]
-#[case::tenancy("oci_tenancy")]
-#[case::compartment("oci_compartment_id")]
-#[case::key("oci_key")]
-fn validate_environment_rejects_missing_credentials(#[case] missing: &str) {
+#[case::missing_user("oci_user", None)]
+#[case::missing_fingerprint("oci_fingerprint", None)]
+#[case::missing_tenancy("oci_tenancy", None)]
+#[case::missing_compartment("oci_compartment_id", None)]
+#[case::missing_key("oci_key", None)]
+#[case::empty_user("oci_user", Some(""))]
+#[case::empty_fingerprint("oci_fingerprint", Some(""))]
+#[case::empty_tenancy("oci_tenancy", Some(""))]
+#[case::empty_compartment("oci_compartment_id", Some(""))]
+#[case::empty_key("oci_key", Some(""))]
+fn validate_environment_rejects_a_missing_or_empty_credential(
+    #[case] name: &str,
+    #[case] value: Option<&str>,
+) {
     let mut credentials = credentials();
-    remove_credential(&mut credentials, missing);
+    set_credential(&mut credentials, name, value);
     let mut headers = HeaderMap::new();
     let error =
         validate_environment(&mut headers, &credentials, &OciEnvironment::default()).unwrap_err();
@@ -414,40 +422,13 @@ fn validate_environment_rejects_missing_credentials(#[case] missing: &str) {
     assert!(headers.is_empty());
 }
 
-fn remove_credential(credentials: &mut OciCredentials, name: &str) {
+fn set_credential(credentials: &mut OciCredentials, name: &str, value: Option<&str>) {
     match name {
-        "oci_user" => credentials.oci_user = None,
-        "oci_fingerprint" => credentials.oci_fingerprint = None,
-        "oci_tenancy" => credentials.oci_tenancy = None,
-        "oci_compartment_id" => credentials.oci_compartment_id = None,
-        "oci_key" => credentials.oci_key = None,
-        other => panic!("unknown credential {other}"),
-    }
-}
-
-#[rstest]
-#[case::user("oci_user")]
-#[case::fingerprint("oci_fingerprint")]
-#[case::tenancy("oci_tenancy")]
-#[case::compartment("oci_compartment_id")]
-#[case::key("oci_key")]
-fn validate_environment_treats_an_empty_value_as_missing(#[case] empty: &str) {
-    let mut credentials = credentials();
-    empty_credential(&mut credentials, empty);
-    let mut headers = HeaderMap::new();
-    let error =
-        validate_environment(&mut headers, &credentials, &OciEnvironment::default()).unwrap_err();
-    assert_eq!(error.status, 401);
-    assert!(headers.is_empty());
-}
-
-fn empty_credential(credentials: &mut OciCredentials, name: &str) {
-    match name {
-        "oci_user" => credentials.oci_user = Some(String::new()),
-        "oci_fingerprint" => credentials.oci_fingerprint = Some(String::new()),
-        "oci_tenancy" => credentials.oci_tenancy = Some(String::new()),
-        "oci_compartment_id" => credentials.oci_compartment_id = Some(String::new()),
-        "oci_key" => credentials.oci_key = Some(SecretString::from("")),
+        "oci_user" => credentials.oci_user = value.map(str::to_owned),
+        "oci_fingerprint" => credentials.oci_fingerprint = value.map(str::to_owned),
+        "oci_tenancy" => credentials.oci_tenancy = value.map(str::to_owned),
+        "oci_compartment_id" => credentials.oci_compartment_id = value.map(str::to_owned),
+        "oci_key" => credentials.oci_key = value.map(SecretString::from),
         other => panic!("unknown credential {other}"),
     }
 }
