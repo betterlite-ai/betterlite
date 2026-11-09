@@ -1,0 +1,13 @@
+kind: helper
+name: semantic-embedding-inputs-router-resolution
+call:
+  b4310:
+    operation: router
+    embedding_model: text-embedding-3-small
+    router_present: true
+    model_list:
+      - model_name: text-embedding-3-small
+      - model_name: other-embedding-model
+env: {}
+compare:
+  ignore: []

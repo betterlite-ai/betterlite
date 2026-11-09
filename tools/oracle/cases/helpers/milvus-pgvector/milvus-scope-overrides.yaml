@@ -1,0 +1,39 @@
+kind: helper
+name: milvus-scope-overrides
+call:
+  b7810:
+    calls:
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: q
+          query_vector: [0.5]
+          optional_params: {limit: 3}
+          api_base: "https://milvus.example.test"
+          litellm_params: {milvus_db_name: main_db, milvus_partition_names: [p_one, p_two]}
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: q
+          query_vector: [0.5]
+          optional_params: {dbName: optional_db}
+          api_base: "https://milvus.example.test"
+          litellm_params: {milvus_db_name: "", milvus_partition_names: []}
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: q
+          query_vector: [0.5]
+          optional_params: {dbName: optional_db, partitionNames: [optional]}
+          api_base: "https://milvus.example.test"
+          litellm_params: {milvus_db_name: main_db, milvus_partition_names: [p_one, p_two]}
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: q
+          query_vector: [0.5]
+          optional_params: {partitionNames: [optional]}
+          api_base: "https://milvus.example.test"
+          litellm_params: {milvus_db_name: "", milvus_partition_names: null}
+env: {}
+compare: {ignore: []}

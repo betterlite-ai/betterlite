@@ -1,0 +1,11 @@
+task: B3943
+deviations:
+  - what: Remaining budget is computed as max_budget - spend - cost without clamping to zero or any minimum.
+    why: LiteLLM's NewRelicMetricsLogger._team_budget_metrics preserves the unclamped calculation; a negative remaining budget is visible and actionable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L158
+  - what: A bucket's litellm.cost.usd carries an exact decimal sum instead of Python's float sum, so its last digits can differ (0.3 where a float sum prints 0.30000000000000004).
+    why: rule money-is-decimal keeps costs exact from the moment they are read, so repeated float addition cannot drift the cost metric a team is billed from.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L127
+  - what: litellm.team.remaining_budget carries the exact decimal result of max_budget - spend - cost instead of Python's float subtraction, so its last digits can differ (0.1 where float subtraction prints 0.09999999999999998).
+    why: rule money-is-decimal keeps the remaining budget exact from the moment the values are read, rather than inheriting the drift of repeated float subtraction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L158

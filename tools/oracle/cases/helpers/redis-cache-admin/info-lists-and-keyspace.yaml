@@ -1,0 +1,14 @@
+kind: helper
+name: redis-cache-admin-info-lists-and-keyspace
+call:
+  b4326:
+    function: parse_info
+    text: |-
+      # Keyspace
+      db0:keys=1,expires=0,avg_ttl=0
+      db1:keys=0,expires=0,avg_ttl=0
+      # Replication
+      slave0:ip=10.0.0.1,port=6379,state=online,offset=42,lag=0
+      bind:127.0.0.1,::1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: milvus-param-mapping
+call:
+  b7810:
+    calls:
+      - call: milvus_map_params
+        input:
+          non_default_params: {annsField: vector, limit: 5, filter: "a > 1", offset: 2, groupingField: group, outputFields: [title], searchParams: {nprobe: 8}, consistencyLevel: Strong, unknown: 1, max_num_results: 3, filters: {eq: true}}
+          optional_params: {filters: {base: true}, max_num_results: 10}
+      - call: milvus_map_params
+        input: {non_default_params: {unknown: 1}, optional_params: {}}
+      - call: milvus_map_params
+        input: {non_default_params: {annsField: null, limit: 0}, optional_params: {}}
+env: {}
+compare: {ignore: []}

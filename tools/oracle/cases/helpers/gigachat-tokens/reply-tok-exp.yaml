@@ -1,0 +1,8 @@
+kind: helper
+name: gigachat-reply-tok-exp
+call:
+  b7325:
+    operation: reply
+    body: '{"tok":"tok-1","exp":1735689600000}'
+env: {}
+compare: {ignore: []}
