@@ -16,6 +16,13 @@ betterlite-provider = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "oci_embed_response"
+path = "fuzz_targets/oci_embed_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "opensandbox_sse"
 path = "fuzz_targets/opensandbox_sse.rs"
 test = false
