@@ -81,3 +81,17 @@ path = "fuzz_targets/response_schema.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "linkup_reply"
+path = "fuzz_targets/linkup_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "searxng_reply"
+path = "fuzz_targets/searxng_reply.rs"
+test = false
+doc = false
+bench = false
