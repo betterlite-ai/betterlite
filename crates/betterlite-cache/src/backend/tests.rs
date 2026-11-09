@@ -345,6 +345,20 @@ async fn memory_increment_pipeline_returns_each_result() {
 }
 
 #[tokio::test]
+async fn memory_increment_forwards_the_value_and_the_ttl() {
+    let cache = cache(600);
+    let result = cache
+        .async_increment("counter", 1.5_f64, Some(5.0_f64))
+        .await
+        .expect("an increment");
+    assert_eq!(Some(result), Some(1.5_f64));
+    assert_eq!(
+        cache.async_get_ttl("counter").await.expect("a ttl"),
+        Some(5.0_f64)
+    );
+}
+
+#[tokio::test]
 async fn memory_increment_rejects_a_non_number() {
     let cache = cache(600);
     cache
