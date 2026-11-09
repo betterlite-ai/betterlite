@@ -94,6 +94,14 @@ fn fetch_an_oversized_document_is_rejected_before_decoding() {
     ));
 }
 
+#[test]
+fn fetch_a_document_at_the_size_limit_is_read() {
+    let padding = "a".repeat(MAX_METADATA_BYTES.saturating_sub(15));
+    let body = format!("{{\"resource\":\"{padding}\"}}");
+    assert_eq!(body.len(), MAX_METADATA_BYTES);
+    decode_metadata_document(body.as_bytes()).unwrap();
+}
+
 #[tokio::test]
 async fn fetch_passes_the_timeout_and_no_headers_to_the_port() {
     let fetcher = FakeFetcher::new(vec![("https://mcp.test/prm", document("{}"))]);
