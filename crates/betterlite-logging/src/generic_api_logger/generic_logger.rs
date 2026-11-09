@@ -3,12 +3,13 @@ pub mod error;
 pub mod retry;
 mod tests;
 pub mod transport;
-use self::{error::ApiError, retry::RetrySleeper, transport::PostTransport};
+use self::{retry::RetrySleeper, transport::PostTransport};
 use super::generic_settings::GenericApiSettings;
 use crate::callback_logger::{CallbackLogger, error::LoggerError, event::LoggerEvent};
 use crate::fields::payload::StandardLoggingPayload;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 use tokio::sync::Mutex as AsyncMutex;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,23 +72,21 @@ impl GenericApiLogger {
             flush_lock: AsyncMutex::new(()),
         }
     }
-    fn wants(&self, kind: ApiEventType) -> bool {
-        let Some(types) = &self.settings.event_types else {
-            return true;
-        };
-        types.iter().any(|name| name == kind.name())
-    }
-    fn entry(&self, payload: &StandardLoggingPayload) -> Result<Json, ApiError> {
-        if self.use_v1 {
-            return delivery::v1_entry(payload, &(self.ids)());
-        }
-        delivery::standard_entry(payload)
-    }
     pub async fn record(&self, kind: ApiEventType, payload: &StandardLoggingPayload) {
-        if !self.wants(kind) {
+        let listed = self
+            .settings
+            .event_types
+            .as_ref()
+            .is_none_or(|types| types.iter().any(|name| name == kind.name()));
+        if !listed {
             return;
         }
-        let entry = match self.entry(payload) {
+        let queued = if self.use_v1 {
+            delivery::v1_entry(payload, &(self.ids)())
+        } else {
+            delivery::standard_entry(payload)
+        };
+        let entry = match queued {
             Ok(entry) => entry,
             Err(error) => {
                 tracing::error!(%error, "Generic API Logger Error");
@@ -106,8 +105,8 @@ impl GenericApiLogger {
     pub async fn send_batch(&self) {
         let _flush = self.flush_lock.lock().await;
         let batch = {
-            let queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
-            queue.clone()
+            let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+            mem::take(&mut *queue)
         };
         if batch.is_empty() {
             return;
@@ -117,14 +116,10 @@ impl GenericApiLogger {
             format = %self.settings.log_format,
             "Generic API Logger - about to flush events"
         );
-        // LiteLLM's finally clears the queue, so a failed batch is dropped rather than kept
+        // draining first means a cancelled or failed send cannot post the batch a second time
         if let Err(error) = delivery::deliver(self, &batch).await {
             tracing::error!(%error, "Generic API Logger Error sending batch");
         }
-        self.queue
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clear();
     }
 }
 #[async_trait]

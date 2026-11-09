@@ -32,12 +32,8 @@ pub struct CompatibleCallbacks {
 }
 impl CompatibleCallbacks {
     pub fn embedded() -> Result<Self, CompatError> {
-        // the embedded file is the only source, so a broken one fails here with its parse error
-        Self::parse(EMBEDDED)
-    }
-    pub fn parse(text: &str) -> Result<Self, CompatError> {
         let configs: BTreeMap<String, CallbackConfig> =
-            serde_json::from_str(text).map_err(CompatError::Json)?;
+            serde_json::from_str(EMBEDDED).map_err(CompatError::Json)?;
         Ok(Self { configs })
     }
 }

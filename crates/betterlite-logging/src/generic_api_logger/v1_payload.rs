@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 mod tests;
 #[derive(Clone, Debug, Default)]
 pub struct V1Kwargs {
@@ -44,6 +46,14 @@ fn messages_form(messages: Option<&Json>) -> String {
     };
     string_form(value)
 }
+// docs/compatibility.md gives timestamps as RFC 3339, so the payload's epoch seconds become a calendar time
+fn timestamp_text(seconds: Decimal) -> String {
+    let timestamp = seconds
+        .checked_mul(Decimal::from(1_000_i64))
+        .and_then(|value| value.round().to_i64())
+        .and_then(DateTime::<Utc>::from_timestamp_millis);
+    timestamp.map_or_else(String::new, |at| at.to_rfc3339())
+}
 fn id_form(fields: &IndexMap<String, Json>, generated_id: &str) -> String {
     match fields.get("id") {
         Some(Json::Text(text)) => text.clone(),
@@ -73,8 +83,8 @@ pub fn v1_logging_payload(
             "cache_hit",
             string_form(&Json::Bool(kwargs.cache_hit.unwrap_or(false))),
         ),
-        ("startTime", start_time.to_string()),
-        ("endTime", end_time.to_string()),
+        ("startTime", timestamp_text(start_time)),
+        ("endTime", timestamp_text(end_time)),
         ("model", kwargs.model.clone().unwrap_or_default()),
         ("user", kwargs.user.clone().unwrap_or_default()),
         (

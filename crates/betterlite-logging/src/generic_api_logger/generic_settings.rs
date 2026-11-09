@@ -4,7 +4,6 @@ use super::compat_callbacks::{
 use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 use betterlite_config::loader::EnvironmentLookup;
 use indexmap::IndexMap;
-use std::fmt;
 use std::str::FromStr as _;
 use std::time::Duration;
 mod tests;
@@ -39,16 +38,6 @@ pub struct GenericApiSettings {
     pub max_retries: u32,
     pub retry_delay: f64,
     pub timeout: Duration,
-}
-// the endpoint and the header values can carry a key, so only the names and the flags are printed
-impl fmt::Debug for GenericApiSettings {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GenericApiSettings")
-            .field("callback_name", &self.callback_name)
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .field("log_format", &self.log_format)
-            .finish_non_exhaustive()
-    }
 }
 #[derive(Debug, thiserror::Error)]
 pub enum GenericApiSettingsError {

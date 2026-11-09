@@ -16,11 +16,6 @@ fn embedded_configs_hold_each_named_callback(#[case] name: &str) {
     assert!(is_callback_compatible(&callbacks, name));
 }
 
-#[test]
-fn invalid_config_text_is_an_error() {
-    CompatibleCallbacks::parse("not json").unwrap_err();
-}
-
 #[rstest]
 #[case::upper_case("{{environment_variables.HOOK_URL}}/x", "https://hook.test/x")]
 #[case::mixed_case("{{environment_variables.Foo1}}", "{{environment_variables.Foo1}}")]

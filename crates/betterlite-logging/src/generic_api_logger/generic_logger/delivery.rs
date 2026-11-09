@@ -4,21 +4,14 @@ use super::GenericApiLogger;
 use super::error::ApiError;
 use super::retry::post_with_retries;
 use crate::fields::payload::StandardLoggingPayload;
-use crate::fields::payload::records::StandardLoggingMetadata;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 use betterlite_models::decisions::Json;
 use futures_util::future::join_all;
-use indexmap::IndexMap;
 mod tests;
 pub(super) fn standard_entry(payload: &StandardLoggingPayload) -> Result<Json, ApiError> {
     let value = serde_json::to_value(payload).map_err(ApiError::Payload)?;
     let entry = serde_json::from_value(value).map_err(ApiError::Payload)?;
     Ok(entry)
-}
-fn metadata_object(metadata: &StandardLoggingMetadata) -> Result<IndexMap<String, Json>, ApiError> {
-    let value = serde_json::to_value(metadata).map_err(ApiError::Payload)?;
-    let object = serde_json::from_value(value).map_err(ApiError::Payload)?;
-    Ok(object)
 }
 pub(super) fn v1_entry(
     payload: &StandardLoggingPayload,
@@ -31,7 +24,12 @@ pub(super) fn v1_entry(
         user: payload.end_user.clone(),
         model_parameters: Some(payload.model_parameters.clone()),
         messages: payload.messages.clone(),
-        metadata: Some(metadata_object(&payload.metadata)?),
+        metadata: Some(
+            serde_json::from_value(
+                serde_json::to_value(&payload.metadata).map_err(ApiError::Payload)?,
+            )
+            .map_err(ApiError::Payload)?,
+        ),
         cost: Some(payload.response_cost),
     };
     let response = payload.response.as_ref().unwrap_or(&Json::Null);

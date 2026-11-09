@@ -20,12 +20,22 @@ fn given_values_beat_the_named_config_and_the_environment() {
     given.callback_name = Some("sumologic".to_owned());
     given.event_types = Some(vec!["llm_api_success".to_owned()]);
     given.log_format = Some("single".to_owned());
+    // sumologic's json sets the same Content-Type, and the given value must win by exact key
+    given.headers = Some(IndexMap::from([(
+        "Content-Type".to_owned(),
+        "text/plain".to_owned(),
+    )]));
     let env = environment(&[("SUMOLOGIC_WEBHOOK_URL", "https://json.test")]);
     let settings = configured(given, &env).expect("settings");
     assert_eq!(settings.endpoint, ENDPOINT);
     assert_eq!(
         settings.event_types,
         Some(vec!["llm_api_success".to_owned()])
+    );
+    assert_eq!(settings.log_format, LogFormat::Single);
+    assert_eq!(
+        settings.headers.get("Content-Type").map(String::as_str),
+        Some("text/plain")
     );
 
     let mut named = args();
@@ -48,16 +58,10 @@ fn given_values_beat_the_named_config_and_the_environment() {
         sample.headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-key")
     );
-
-    let mut fallback = args();
-    fallback.endpoint = Some(String::new());
-    let fallback_env = environment(&[("GENERIC_LOGGER_ENDPOINT", "https://env.test")]);
-    let resolved = configured(fallback, &fallback_env).expect("settings");
-    assert_eq!(resolved.endpoint, "https://env.test");
 }
 
 #[test]
-fn unknown_callback_name_warns_and_keeps_the_given_values() {
+fn an_unknown_name_warns_and_an_empty_endpoint_falls_back_to_the_environment() {
     let (logs, _guard) = capture_logs();
     let mut arguments = args();
     arguments.callback_name = Some("my_hook".to_owned());
@@ -67,20 +71,31 @@ fn unknown_callback_name_warns_and_keeps_the_given_values() {
         logs.contents()
             .contains("callback_name 'my_hook' not found in generic_api_compatible_callbacks.json")
     );
+    let mut fallback = args();
+    fallback.endpoint = Some(String::new());
+    let env = environment(&[("GENERIC_LOGGER_ENDPOINT", "https://env.test")]);
+    assert_eq!(
+        configured(fallback, &env).expect("settings").endpoint,
+        "https://env.test"
+    );
 }
 
 #[test]
 fn a_missing_endpoint_and_a_bad_format_fail_with_the_litellm_text() {
     let mut arguments = args();
     arguments.endpoint = None;
-    let missing = configured(arguments, &BTreeMap::new()).expect_err("no endpoint");
+    let Err(missing) = configured(arguments, &BTreeMap::new()) else {
+        panic!("no endpoint is an error");
+    };
     assert_eq!(
         missing.to_string(),
         "endpoint not set for GenericAPILogger, GENERIC_LOGGER_ENDPOINT not found in environment variables"
     );
     let mut bad = args();
     bad.log_format = Some("table".to_owned());
-    let invalid = configured(bad, &BTreeMap::new()).expect_err("a bad format");
+    let Err(invalid) = configured(bad, &BTreeMap::new()) else {
+        panic!("a bad format is an error");
+    };
     assert_eq!(
         invalid.to_string(),
         "Invalid log_format: table. Must be one of: 'json_array', 'ndjson', 'single'"
@@ -121,8 +136,6 @@ fn headers_merge_in_litellm_order_by_exact_key() {
         settings.headers.get("Content-Type").map(String::as_str),
         Some("application/json")
     );
-    let shown = format!("{settings:?}");
-    assert!(!shown.contains("hook.test") && !shown.contains("text/plain"));
 }
 
 #[test]

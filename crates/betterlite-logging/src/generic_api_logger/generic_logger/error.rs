@@ -44,7 +44,6 @@ impl ApiError {
                     | TransportError::Deadline(_)
                     | TransportError::Request(_)
                     | TransportError::Body(_)
-                    | TransportError::TooManyRedirects { .. }
             ),
             Self::Status { status } => *status >= 500,
             Self::Payload(_)

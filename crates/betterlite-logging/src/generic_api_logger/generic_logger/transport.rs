@@ -6,7 +6,6 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
-use std::fmt;
 use std::time::Duration;
 use url::Url;
 #[derive(Clone)]
@@ -15,16 +14,6 @@ pub struct PostRequest {
     pub headers: IndexMap<String, String>,
     pub body: String,
     pub timeout: Duration,
-}
-// an endpoint and its header values can carry a key, so Debug shows only the header names
-impl fmt::Debug for PostRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PostRequest")
-            .field("endpoint", &"<redacted>")
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .field("timeout", &self.timeout)
-            .finish_non_exhaustive()
-    }
 }
 #[async_trait]
 pub trait PostTransport: Send + Sync {
