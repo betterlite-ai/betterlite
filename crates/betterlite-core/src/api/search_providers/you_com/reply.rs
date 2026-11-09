@@ -21,6 +21,8 @@ struct YouComResults {
     news: Option<Vec<YouComResult>>,
 }
 
+type OptionalDescription = Option<Option<String>>;
+
 #[derive(Deserialize)]
 struct YouComResult {
     #[serde(default)]
@@ -31,7 +33,7 @@ struct YouComResult {
     snippets: Option<Vec<String>>,
     // LiteLLM reads description only when snippets is empty, where absent means "" and null fails validation
     #[serde(default, with = "serde_with::rust::double_option")]
-    description: Option<Option<String>>,
+    description: OptionalDescription,
     #[serde(default)]
     page_age: Option<String>,
 }
@@ -79,7 +81,7 @@ fn project(item: YouComResult) -> Result<SearchResult, YouComError> {
         None => match description {
             None => String::new(),
             Some(None) => return Err(YouComError::DescriptionNotString),
-            Some(Some(description)) => description,
+            Some(Some(text)) => text,
         },
     };
     Ok(SearchResult {
