@@ -6,6 +6,7 @@ pub mod create;
 pub mod decode;
 pub mod environment;
 pub mod error;
+mod params;
 pub mod prepare;
 mod query;
 pub mod search;

@@ -3,6 +3,7 @@ use serde::Serialize;
 
 use super::Params;
 use super::error::MongoDbError;
+use super::params::typed_params;
 use super::query::query_text;
 use crate::vector_stores::store::{Query, SearchParams};
 
@@ -24,7 +25,6 @@ const KNOWN_MONGODB_PARAMS: [&str; 5] = [
 ];
 const CONNECTION_STRING: &str = "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key.";
 const EXTRA_BODY: &str = "MongoDB vector store does not support extra_body overrides.";
-const INVALID_CONFIG: &str = "Invalid MongoDB vector-store configuration. Check the database, collection, fields, and candidate count.";
 const MISSING_DATABASE: &str = "mongodb_database is required in litellm_params for the MongoDB vector store. Example: mongodb_database: sample_mflix";
 const MISSING_COLLECTION: &str = "mongodb_collection is required in litellm_params for the MongoDB vector store. Example: mongodb_collection: embedded_movies";
 const MISSING_EMBEDDING_MODEL: &str = "litellm_embedding_model is required in litellm_params for the MongoDB vector store. It must be the same model that produced the vectors stored in";
@@ -42,16 +42,6 @@ pub struct PreparedSearch {
     pub num_candidates: i64,
     pub max_num_results: i64,
     pub timeout_ms: u64,
-}
-
-struct TypedParams {
-    embedding_model: Option<String>,
-    embedding_config: Option<Params>,
-    database: Option<String>,
-    collection: Option<String>,
-    text_field: Option<String>,
-    embedding_field: Option<String>,
-    num_candidates: Option<i64>,
 }
 
 pub fn prepare_search(
@@ -135,67 +125,6 @@ fn reject_unsupported(options: &SearchParams) -> Result<(), MongoDbError> {
     };
     Err(MongoDbError::BadRequest {
         message: format!("MongoDB vector store does not support the {unsupported} parameter."),
-    })
-}
-
-fn typed_params(params: &Params) -> Result<TypedParams, MongoDbError> {
-    let embedding_config = match params.get("litellm_embedding_config") {
-        None | Some(Json::Null) => None,
-        Some(Json::Object(values)) => Some(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        ),
-        Some(_) => {
-            return Err(MongoDbError::BadRequest {
-                message: INVALID_CONFIG.to_owned(),
-            });
-        }
-    };
-    Ok(TypedParams {
-        embedding_model: text(params, "litellm_embedding_model")?,
-        embedding_config,
-        database: text(params, "mongodb_database")?,
-        collection: text(params, "mongodb_collection")?,
-        text_field: text(params, "mongodb_text_field")?,
-        embedding_field: text(params, "mongodb_embedding_field")?,
-        num_candidates: integer(params, "mongodb_num_candidates")?,
-    })
-}
-
-fn text(params: &Params, field: &str) -> Result<Option<String>, MongoDbError> {
-    let Some(value) = params.get(field) else {
-        return Ok(None);
-    };
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(MongoDbError::BadRequest {
-                message: INVALID_CONFIG.to_owned(),
-            })
-        }
-    }
-}
-
-fn integer(params: &Params, field: &str) -> Result<Option<i64>, MongoDbError> {
-    let Some(value) = params.get(field) else {
-        return Ok(None);
-    };
-    if let Json::Number(number) = value {
-        return number
-            .as_i64()
-            .map(Some)
-            .ok_or_else(|| MongoDbError::BadRequest {
-                message: INVALID_CONFIG.to_owned(),
-            });
-    }
-    if matches!(value, Json::Null) {
-        return Ok(None);
-    }
-    Err(MongoDbError::BadRequest {
-        message: INVALID_CONFIG.to_owned(),
     })
 }
 
