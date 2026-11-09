@@ -80,33 +80,37 @@ fn names_of(
 }
 
 #[rstest]
-#[case::payload_and_response_models(r#"{"model":"gpt-4o-2024-08-06"}"#, "gpt-4o", ("gpt-4o", "gpt-4o-2024-08-06"))]
-#[case::response_model_missing("{}", "gpt-4o", ("gpt-4o", "gpt-4o"))]
-#[case::response_model_empty(r#"{"model":""}"#, "gpt-4o", ("gpt-4o", "gpt-4o"))]
-#[case::response_model_number(r#"{"model":5}"#, "gpt-4o", ("gpt-4o", "5"))]
-fn newrelic_extraction_tests_behavior_model_names_from_payload(
+#[case::payload_and_response_models(
+    r#"{"model":"gpt-4o-2024-08-06"}"#,
+    Some("gpt-4o"),
+    Some("kwargs-model"),
+    ("gpt-4o", "gpt-4o-2024-08-06")
+)]
+#[case::response_model_missing("{}", Some("gpt-4o"), Some("kwargs-model"), ("gpt-4o", "gpt-4o"))]
+#[case::response_model_empty(
+    r#"{"model":""}"#,
+    Some("gpt-4o"),
+    Some("kwargs-model"),
+    ("gpt-4o", "gpt-4o")
+)]
+#[case::response_model_number(r#"{"model":5}"#, Some("gpt-4o"), Some("kwargs-model"), ("gpt-4o", "5"))]
+#[case::kwargs_model(
+    r#"{"model":"gpt-4o-mini-2024"}"#,
+    None,
+    Some("gpt-4o-mini"),
+    ("gpt-4o-mini", "gpt-4o-mini-2024")
+)]
+#[case::unknown_model("{}", None, None, ("unknown", "unknown"))]
+#[case::empty_kwargs_model("{}", None, Some(""), ("unknown", "unknown"))]
+fn newrelic_extraction_tests_behavior_model_names(
     #[case] response: &str,
-    #[case] payload_model: &str,
+    #[case] payload_model: Option<&str>,
+    #[case] kwargs_model: Option<&str>,
     #[case] expected: (&str, &str),
 ) {
     let mut standard = payload();
-    standard.model = payload_model.to_owned();
-    let names = names_of(Some(&standard), Some("kwargs-model"), response);
-    assert_eq!(names, (expected.0.to_owned(), expected.1.to_owned()));
-}
-
-#[rstest]
-#[case::kwargs_model(Some("gpt-4o-mini"), r#"{"model":"gpt-4o-mini-2024"}"#, ("gpt-4o-mini", "gpt-4o-mini-2024"))]
-#[case::unknown_model(None, "{}", ("unknown", "unknown"))]
-#[case::empty_kwargs_model(Some(""), "{}", ("unknown", "unknown"))]
-fn newrelic_extraction_tests_behavior_model_names_fall_back_to_kwargs(
-    #[case] model: Option<&str>,
-    #[case] response: &str,
-    #[case] expected: (&str, &str),
-) {
-    let mut standard = payload();
-    standard.model = String::new();
-    let names = names_of(Some(&standard), model, response);
+    standard.model = payload_model.unwrap_or_default().to_owned();
+    let names = names_of(Some(&standard), kwargs_model, response);
     assert_eq!(names, (expected.0.to_owned(), expected.1.to_owned()));
 }
 
