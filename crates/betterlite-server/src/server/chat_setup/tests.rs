@@ -8,11 +8,11 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::chat::ChatRequest;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
+use rcgen::{CertificateParams, KeyPair};
 use rstest::rstest;
 use rustls::ServerConfig;
 use rustls::crypto::aws_lc_rs;
-use rustls::pki_types::pem::PemObject as _;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -20,11 +20,17 @@ use tokio_rustls::TlsAcceptor;
 
 use super::chat_executor;
 
-const SERVER_CERT: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
-const SERVER_KEY: &[u8] =
-    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"u","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#;
+
+fn server_identity() -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
+    let key = KeyPair::generate().unwrap();
+    let params = CertificateParams::new(vec!["localhost".to_owned()]).unwrap();
+    let certificate = params.self_signed(&key).unwrap();
+    (
+        certificate.der().clone(),
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+    )
+}
 
 async fn serve_tls(listener: &TcpListener, acceptor: &TlsAcceptor) {
     let (socket, _) = listener.accept().await.unwrap();
@@ -66,17 +72,12 @@ async fn http_pool_tests_behavior(#[case] verify: &str, #[case] expected: &str) 
     .load(&yaml)
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let certificates = CertificateDer::pem_slice_iter(SERVER_CERT)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let (certificate, private_key) = server_identity();
     let origin = ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_no_client_auth()
-        .with_single_cert(
-            certificates,
-            PrivateKeyDer::from_pem_slice(SERVER_KEY).unwrap(),
-        )
+        .with_single_cert(vec![certificate], private_key)
         .unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(origin));
     let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();

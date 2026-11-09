@@ -1,0 +1,9 @@
+kind: helper
+name: sap-stream-flag-seed
+call:
+  b5952:
+    operation: flag
+    params:
+      body: {config: {stream: {chunk_size: 10}}}
+env: {}
+compare: {ignore: []}

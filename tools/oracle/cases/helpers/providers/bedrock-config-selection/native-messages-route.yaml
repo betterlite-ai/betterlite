@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-native-messages-route
+call:
+  bedrock_config_selection:
+    function: native_messages_route
+    models:
+      - claude_platform/anthropic.claude-3-5-sonnet
+      - claude_platform/converse/x
+      - converse/anthropic.claude-3
+      - converse/claude_platform/x
+      - converse_like/anthropic.claude-3
+      - mantle/anthropic.claude-3
+      - agent/mantle/claude
+      - agent/converse/claude
+      - anthropic.claude-v2
+      - anthropic.Claude-3
+      - my-claude-model
+      - amazon.titan-text-express-v1
+      - CLAUDE-3
+      - bedrock/converse/foo
+env: {}
+compare: {ignore: []}

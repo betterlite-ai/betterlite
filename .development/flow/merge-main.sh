@@ -16,7 +16,12 @@ for name in HEAD.lock index.lock; do
   fi
 done
 lock_and_check() {
-  if ! cargo metadata --offline --format-version 1 > /dev/null 2>&1 && ! cargo metadata --format-version 1 > /dev/null 2>&1; then echo "cargo metadata failed after the merge"; exit 1; fi
+  if ! problem=$(cargo metadata --offline --format-version 1 2>&1 > /dev/null) && ! cargo metadata --format-version 1 > /dev/null 2>&1; then
+    # a crate loop goes back to the worker through crate-cycles.sh
+    grep -q "cyclic package dependency" <<< "$problem" && return
+    echo "cargo metadata failed after the merge"
+    exit 1
+  fi
 }
 if git merge --no-edit origin/main > /dev/null; then
   lock_and_check

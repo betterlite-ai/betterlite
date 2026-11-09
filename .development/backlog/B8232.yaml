@@ -1,7 +1,7 @@
 id: B8232
 milestone: M8 platform
 title: Lens worker executable and image files
-status: todo
+status: done
 depends_on: [B4500, B4506, B4509]
 file: tasks/B8232-lens-worker-binary.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "deploy/lens/compose.build.yaml"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1017

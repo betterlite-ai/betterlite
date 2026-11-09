@@ -1,0 +1,20 @@
+task: B8232
+deviations:
+  - what: The image builds a Rust binary on the Wolfi base and has no Python, httpx or pydantic layer.
+    why: The worker is part of the Rust workspace.
+    link: ""
+  - what: compose.yaml has no default image digest; LENS_WORKER_IMAGE is required.
+    why: LiteLLM's default points at its own published image, and betterlite has no published worker image yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/compose.yaml#L3
+  - what: The check for the image files is a text check (packaging/lens/tests/files.sh), not a docker build.
+    why: The gate sandbox cannot reach the Docker socket.
+    link: ""
+  - what: A response body is refused with the decode text once it passes the shared client's 16 MiB body limit.
+    why: The workspace's outbound client bounds every response body, while httpx reads the body without a cap; the worker's own endpoints send paged JSON far below the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L107-L113
+  - what: The 180 second timeout is a total request timeout and connect attempts give up after the shared client's 10 second connect timeout.
+    why: The task specifies one total timeout, and the worker uses the workspace's standard outbound limits; httpx applies its 180 second timeout to each connect, read and write step instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L145-L147
+  - what: Outbound proxies come from the environment through the shared proxy policy with the default ProxyTrust, so netrc credentials are not applied to a proxy.
+    why: The worker has no litellm_settings to configure proxy trust; the environment proxy variables and NO_PROXY behave as they do for the other betterlite clients.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L144-L148
