@@ -11,7 +11,7 @@ use crate::gigachat_tokens::authenticator::{GigachatAuthenticator, oauth_request
 use crate::gigachat_tokens::error::GigachatAuthError;
 use crate::gigachat_tokens::reply::MAX_REPLY_BYTES;
 use crate::gigachat_tokens::request::GigachatTokenRequest;
-use crate::gigachat_tokens::runtime::{GigachatRuntime as _, SystemRuntime};
+use crate::gigachat_tokens::runtime::{GigachatRuntime, SystemRuntime};
 use crate::gigachat_tokens::tests::support;
 use crate::gigachat_tokens::tokens::GigachatTokens as _;
 
@@ -27,26 +27,16 @@ fn request(auth_url: &str) -> GigachatTokenRequest {
     }
 }
 
-fn authenticator(auth_url: &str) -> GigachatAuthenticator<SystemRuntime> {
+fn authenticator<R>(runtime: R, auth_url: &str) -> GigachatAuthenticator<R>
+where
+    R: GigachatRuntime,
+{
     let settings = support::settings(&[
         ("GIGACHAT_CREDENTIALS", CREDENTIALS),
         ("GIGACHAT_SCOPE", "GIGACHAT_API_PERS"),
         ("GIGACHAT_AUTH_URL", auth_url),
     ]);
-    GigachatAuthenticator::new(settings, support::client(), SystemRuntime)
-}
-
-fn scripted_authenticator(auth_url: &str) -> GigachatAuthenticator<support::ScriptedRuntime> {
-    let settings = support::settings(&[
-        ("GIGACHAT_CREDENTIALS", CREDENTIALS),
-        ("GIGACHAT_SCOPE", "GIGACHAT_API_PERS"),
-        ("GIGACHAT_AUTH_URL", auth_url),
-    ]);
-    GigachatAuthenticator::new(
-        settings,
-        support::client(),
-        support::ScriptedRuntime::new(&[0]),
-    )
+    GigachatAuthenticator::new(settings, support::client(), runtime)
 }
 
 #[tokio::test]
@@ -54,7 +44,7 @@ async fn oauth_request_posts_the_scope_form_to_the_auth_url() {
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
     let auth_url = format!("{}/oauth", server.url);
-    let auth = scripted_authenticator(&auth_url);
+    let auth = authenticator(support::ScriptedRuntime::new(&[0]), &auth_url);
 
     let token = auth
         .access_token(&request(&auth_url))
@@ -80,7 +70,7 @@ async fn oauth_request_posts_the_scope_form_to_the_auth_url() {
 async fn oauth_request_takes_the_request_scope_before_the_settings_scope() {
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
     let mut supplied = request(&server.url);
     supplied.scope = Some("GIGACHAT_API_CORP".to_owned());
 
@@ -96,7 +86,7 @@ async fn oauth_request_takes_the_request_scope_before_the_settings_scope() {
 async fn oauth_request_skips_an_empty_request_scope() {
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
     let mut supplied = request(&server.url);
     supplied.scope = Some(String::new());
 
@@ -164,7 +154,7 @@ async fn oauth_request_maps_a_non_success_status_to_rejected(
 ) {
     let server = support::Server::start().await;
     server.answer(status, body);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -189,7 +179,7 @@ async fn oauth_request_does_not_follow_a_redirect() {
     let elsewhere = support::Server::start().await;
     elsewhere.answer(200, TOKEN_REPLY);
     server.answer_redirect(302, &format!("{}/next", elsewhere.url));
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -212,7 +202,7 @@ async fn oauth_request_maps_a_connection_failure_to_transport() {
     let address = listener.local_addr().expect("the bound address is known");
     drop(listener);
     let auth_url = format!("http://{address}/oauth");
-    let auth = authenticator(&auth_url);
+    let auth = authenticator(SystemRuntime, &auth_url);
 
     let error = auth
         .access_token(&request(&format!("http://{address}/oauth")))
@@ -228,7 +218,7 @@ async fn oauth_request_keeps_at_most_1024_bytes_of_the_rejected_body() {
     let server = support::Server::start().await;
     let body = "x".repeat(2000);
     server.answer(400, &body);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -246,7 +236,7 @@ async fn oauth_request_keeps_at_most_1024_bytes_of_the_rejected_body() {
 async fn oauth_request_keeps_the_text_up_to_an_invalid_byte() {
     let server = support::Server::start().await;
     server.answer_bytes(400, b"denied\xffmore");
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -263,7 +253,7 @@ async fn oauth_request_keeps_the_text_up_to_an_invalid_byte() {
 async fn oauth_request_rejects_an_unusable_success_reply() {
     let server = support::Server::start().await;
     server.answer(200, "[]");
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -281,7 +271,7 @@ async fn oauth_request_reads_a_reply_of_exactly_64_kib() {
     body.push_str(&" ".repeat(MAX_REPLY_BYTES.saturating_sub(body.len())));
     assert_eq!(body.len(), MAX_REPLY_BYTES);
     server.answer(200, &body);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let token = auth
         .access_token(&request(&server.url))
@@ -297,7 +287,7 @@ async fn oauth_request_rejects_a_reply_over_64_kib() {
     let mut body = String::from("{\"tok\":\"fetched-token\"}");
     body.push_str(&" ".repeat(MAX_REPLY_BYTES.saturating_add(1).saturating_sub(body.len())));
     server.answer(200, &body);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     let error = auth
         .access_token(&request(&server.url))
@@ -348,7 +338,7 @@ async fn oauth_request_mints_a_new_uid_for_each_request() {
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
     server.answer(200, TOKEN_REPLY);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
     let mut first = request(&server.url);
     first.credentials = Some(SecretString::from("AAAAAAAAAAAAAAAA-one"));
     let mut second = request(&server.url);
@@ -382,7 +372,7 @@ async fn oauth_request_logs_the_request_and_the_success() {
     let (logs, _guard) = support::Logs::capture();
     let server = support::Server::start().await;
     server.answer(200, TOKEN_REPLY);
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
 
     auth.access_token(&request(&server.url))
         .await
@@ -401,7 +391,7 @@ async fn oauth_request_error_text_hides_the_credentials_and_token() {
     let server = support::Server::start().await;
     server.answer(200, "{\"tok\":\"secret-token-value\"}");
     server.answer(400, "denied");
-    let auth = authenticator(&server.url);
+    let auth = authenticator(SystemRuntime, &server.url);
     let mut supplied = request(&server.url);
     supplied.credentials = Some(SecretString::from("secret-credential-value"));
 
