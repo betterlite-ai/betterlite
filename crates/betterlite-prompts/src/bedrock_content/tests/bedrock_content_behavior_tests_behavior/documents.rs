@@ -165,6 +165,14 @@ fn bedrock_content_behavior_tests_behavior_documents_without_a_name_are_left_alo
 }
 
 #[test]
+fn bedrock_content_behavior_tests_behavior_two_empty_names_are_left_alone() {
+    let contents = vec![json(
+        r#"{"role":"user","content":[{"document":{"name":""}},{"document":{"name":""}}]}"#,
+    )];
+    assert_eq!(rename_duplicate_documents(&contents).unwrap(), contents);
+}
+
+#[test]
 fn bedrock_content_behavior_tests_behavior_non_object_documents_are_left_alone() {
     let contents = vec![json(
         r#"{"role":"user","content":[{"document":null},{"document":"text"},{"document":{"name":"same"}},{"document":{"name":"same"}}]}"#,
@@ -182,6 +190,7 @@ fn bedrock_content_behavior_tests_behavior_non_object_documents_are_left_alone()
 #[case::missing_content(r#"{"role":"user"}"#)]
 #[case::null_content(r#"{"role":"user","content":null}"#)]
 #[case::empty_content(r#"{"role":"user","content":[]}"#)]
+#[case::empty_string_content(r#"{"role":"user","content":""}"#)]
 fn bedrock_content_behavior_tests_behavior_messages_without_blocks_are_copied_unchanged(
     #[case] message_json: &str,
 ) {
