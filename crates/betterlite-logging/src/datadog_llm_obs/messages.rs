@@ -6,7 +6,7 @@ use crate::galileo_payloads::messages::convert_content_list_to_str;
 use super::records::{DdMessage, InputMessage, Message};
 use super::tool_calls::to_dd_tool_calls;
 use super::tool_results::{to_dd_tool_results, tool_call_names_by_id};
-use super::values::{Object, as_object, text_field};
+use super::values::{Object, as_object, as_text, text_field};
 
 #[must_use]
 pub fn to_dd_messages(messages: Option<&Json>) -> Vec<DdMessage> {
@@ -62,17 +62,14 @@ fn project_message(fields: &Object, tool_call_names: &IndexMap<String, String>) 
 }
 
 fn converted_messages(value: &Json) -> Vec<DdMessage> {
-    match value {
-        Json::List(items) => converted_list(items),
-        Json::Text(text) => vec![DdMessage::Input(InputMessage {
-            input: text.clone(),
-        })],
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => {
-            vec![DdMessage::Input(InputMessage {
-                input: serde_json::to_string(value).unwrap_or_default(),
-            })]
-        }
+    if let Json::List(items) = value {
+        return converted_list(items);
     }
+    let input = as_text(value).map_or_else(
+        || serde_json::to_string(value).unwrap_or_default(),
+        str::to_owned,
+    );
+    vec![DdMessage::Input(InputMessage { input })]
 }
 
 fn converted_list(items: &[Json]) -> Vec<DdMessage> {

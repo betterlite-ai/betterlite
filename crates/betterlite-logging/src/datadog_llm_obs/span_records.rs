@@ -26,10 +26,7 @@ pub struct InputMeta {
     pub messages: Vec<DdMessage>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct OutputMeta {
-    pub messages: Vec<DdMessage>,
-}
+pub type OutputMeta = InputMeta;
 
 // LiteLLM always writes message, stack and type, so an absent stack or error class goes out as null.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -102,14 +99,6 @@ pub struct DDIntakePayload {
     #[serde(rename = "type")]
     pub kind: String,
     pub attributes: DDSpanAttributes,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct DDLLMObsLatencyMetrics {
-    pub time_to_first_token_ms: Option<f64>,
-    pub litellm_overhead_time_ms: Option<f64>,
-    pub guardrail_overhead_time_ms: Option<f64>,
 }
 
 #[serde_with::skip_serializing_none]

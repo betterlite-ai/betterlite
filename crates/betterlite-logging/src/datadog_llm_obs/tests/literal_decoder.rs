@@ -45,6 +45,7 @@ fn nested_lists(depth: usize) -> String {
 #[case::adjacent_string_keys("{'a' 'b': 1}", r#"{"ab":1}"#)]
 #[case::adjacent_strings_across_lines("['word '\n 'word']", r#"["word word"]"#)]
 #[case::empty_set_call("set()", "[]")]
+#[case::empty_set_call_with_spaces("set( )", "[]")]
 #[case::negative("-2", "-2")]
 #[case::negative_zero("-0", "0")]
 #[case::nested("{'a': [1, (2, {'b': None})]}", r#"{"a":[1,[2,{"b":null}]]}"#)]
@@ -83,6 +84,12 @@ fn escapes_decode_like_python(#[case] source: &str, #[case] expected: &str) {
 #[case::missing_separator("{'a': 1, 'b'}")]
 #[case::bare_base_prefix("0x")]
 #[case::adjacent_bytes_and_string("'a' b'c'")]
+#[case::ellipsis_name("Ellipsis")]
+#[case::malformed_unicode_name(r"'\N'")]
+#[case::empty_unicode_name(r"'\N{}'")]
+#[case::codepoint_past_the_range(r"'\U00110000'")]
+#[case::hex_with_an_imaginary_unit("0xffj")]
+#[case::non_ascii_bytes("b'\u{e9}'")]
 fn unsupported_literals_decode_to_none(#[case] source: &str) {
     assert_eq!(literal_json(source), None);
 }
@@ -90,10 +97,17 @@ fn unsupported_literals_decode_to_none(#[case] source: &str) {
 #[rstest]
 #[case::non_string_key("{1: 2}", r#"{"<unrepresentable literal>":2}"#)]
 #[case::bytes("b'abc'", r#""<unrepresentable literal>""#)]
+#[case::adjacent_bytes("b'a' b'b'", r#""<unrepresentable literal>""#)]
+#[case::raw_bytes("rb'a'", r#""<unrepresentable literal>""#)]
+#[case::raw_bytes_other_order("Rb'a'", r#""<unrepresentable literal>""#)]
+#[case::bytes_keeping_a_unicode_escape(r"b'\u12'", r#""<unrepresentable literal>""#)]
 #[case::complex("2j", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_real_part("(1+2j)", r#""<unrepresentable literal>""#)]
 #[case::complex_with_a_subtracted_part("1-2j", r#""<unrepresentable literal>""#)]
-#[case::ellipsis_name("Ellipsis", r#""<unrepresentable literal>""#)]
+#[case::complex_across_spaces("1 + 2j", r#""<unrepresentable literal>""#)]
+#[case::complex_after_a_signed_number("- 1 + 2j", r#""<unrepresentable literal>""#)]
+#[case::complex_with_leading_zeros("01j", r#""<unrepresentable literal>""#)]
+#[case::ellipsis("...", r#""<unrepresentable literal>""#)]
 #[case::overflowing_float("1e400", r#""<unrepresentable literal>""#)]
 #[case::integer_past_u128(
     "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",

@@ -15,34 +15,37 @@ pub(super) enum Numeric {
 }
 
 pub(super) fn number(parser: &mut Parser<'_>) -> Option<Json> {
-    let negative = match parser.bytes.get(parser.position).copied()? {
-        b'-' => {
-            parser.position = parser.position.saturating_add(1);
-            true
-        }
-        b'+' => {
-            parser.position = parser.position.saturating_add(1);
-            false
-        }
-        _ => false,
-    };
+    let ellipsis = parser.position.saturating_add(3);
+    if parser.bytes.get(parser.position..ellipsis) == Some(b"...".as_slice()) {
+        parser.position = ellipsis;
+        return Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()));
+    }
+    let negative = parser.bytes.get(parser.position).copied()? == b'-';
+    if negative || parser.bytes.get(parser.position).copied() == Some(b'+') {
+        parser.position = parser.position.saturating_add(1);
+    }
     parser.skip(parser.depth > 0);
     let numeric = unsigned_number(parser)?;
     if let Some(b'j' | b'J') = parser.bytes.get(parser.position).copied() {
         parser.position = parser.position.saturating_add(1);
         return Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()));
     }
-    if matches!(
-        parser.bytes.get(parser.position).copied(),
-        Some(b'+' | b'-')
-    ) {
+    let sign_at = parser.position;
+    parser.skip(parser.depth > 0);
+    let byte = parser.bytes.get(parser.position).copied();
+    if matches!(byte, Some(b'+' | b'-')) {
         return imaginary_tail(parser);
     }
+    parser.position = sign_at;
+    signed_value(numeric, negative)
+}
+
+fn signed_value(numeric: Numeric, negative: bool) -> Option<Json> {
     match numeric {
         Numeric::Float(value) => {
-            let sign = if negative { -1.0 } else { 1.0 };
+            let factor = if negative { -1.0 } else { 1.0 };
             Some(
-                Number::from_f64(value.copysign(sign))
+                Number::from_f64(value.copysign(factor))
                     .map_or_else(|| Json::Text(PLACEHOLDER_LITERAL.to_owned()), Json::Number),
             )
         }
@@ -60,10 +63,8 @@ fn imaginary_tail(parser: &mut Parser<'_>) -> Option<Json> {
     parser.position = parser.position.saturating_add(1);
     parser.skip(parser.depth > 0);
     unsigned_number(parser)?;
-    if !matches!(
-        parser.bytes.get(parser.position).copied(),
-        Some(b'j' | b'J')
-    ) {
+    let unit = parser.bytes.get(parser.position).copied();
+    if !matches!(unit, Some(b'j' | b'J')) {
         return None;
     }
     parser.position = parser.position.saturating_add(1);
@@ -97,31 +98,44 @@ fn unsigned_number(parser: &mut Parser<'_>) -> Option<Numeric> {
                 _ => None,
             })
     {
-        parser.position = parser.position.saturating_add(2);
-        if parser.bytes.get(parser.position).copied() == Some(b'_') {
-            parser.position = parser.position.saturating_add(1);
-        }
-        let base_digits = digits(parser, radix)?;
-        if base_digits.is_empty() {
-            return None;
-        }
-        return Some(
-            u128::from_str_radix(&base_digits, radix)
-                .ok()
-                .map_or(Numeric::Placeholder, |value| {
-                    Numeric::Integer(value.to_string())
-                }),
-        );
+        return base_number(parser, radix);
     }
     let integer = digits(parser, 10)?;
     if integer.is_empty() {
         return None;
     }
     let (literal, is_float) = decimal_literal(parser, &integer)?;
-    if !is_float {
-        return decimal_integer(&integer);
+    if is_float {
+        return literal.parse::<f64>().ok().map(Numeric::Float);
     }
-    literal.parse::<f64>().ok().map(Numeric::Float)
+    // An imaginary literal is a float, so its digit run may carry the leading zeros an int refuses.
+    if matches!(
+        parser.bytes.get(parser.position).copied(),
+        Some(b'j' | b'J')
+    ) {
+        return Some(Numeric::Placeholder);
+    }
+    decimal_integer(&integer)
+}
+
+// A base-prefixed integer, where a trailing imaginary unit is a syntax error.
+fn base_number(parser: &mut Parser<'_>, radix: u32) -> Option<Numeric> {
+    parser.position = parser.position.saturating_add(2);
+    if parser.bytes.get(parser.position).copied() == Some(b'_') {
+        parser.position = parser.position.saturating_add(1);
+    }
+    let digits = digits(parser, radix)?;
+    let unit = parser.bytes.get(parser.position).copied();
+    if digits.is_empty() || matches!(unit, Some(b'j' | b'J')) {
+        return None;
+    }
+    Some(
+        u128::from_str_radix(&digits, radix)
+            .ok()
+            .map_or(Numeric::Placeholder, |value| {
+                Numeric::Integer(value.to_string())
+            }),
+    )
 }
 
 fn decimal_literal(parser: &mut Parser<'_>, integer: &str) -> Option<(String, bool)> {

@@ -46,14 +46,17 @@ impl Parser<'_> {
             b'[' => self.sequence(b']', false),
             b'(' => self.sequence(b')', true),
             b'{' => self.braced(),
-            b'\'' | b'"' | b'u' | b'U' | b'r' | b'R' => strings::text(self).map(Json::Text),
-            b'b' | b'B' => {
-                self.position = self.position.saturating_add(1);
-                strings::one_string(self)?;
-                Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
+            b'\'' | b'"' | b'u' | b'U' => strings::text(self).map(Json::Text),
+            b'r' | b'R' => {
+                let second = self.bytes.get(self.position.saturating_add(1)).copied();
+                if matches!(second, Some(b'b' | b'B')) {
+                    self.bytes_value()
+                } else {
+                    strings::text(self).map(Json::Text)
+                }
             }
-            b's' => self.keyword("set()", Json::List(Vec::new())),
-            b'E' => self.keyword("Ellipsis", Json::Text(PLACEHOLDER_LITERAL.to_owned())),
+            b'b' | b'B' => self.bytes_value(),
+            b's' => self.empty_set(),
             b'+' | b'-' | b'.' | b'0'..=b'9' => numbers::number(self),
             b'T' => self.keyword("True", Json::Bool(true)),
             b'F' => self.keyword("False", Json::Bool(false)),
@@ -62,13 +65,25 @@ impl Parser<'_> {
         }
     }
 
+    fn bytes_value(&mut self) -> Option<Json> {
+        strings::bytes(self)?;
+        Some(Json::Text(PLACEHOLDER_LITERAL.to_owned()))
+    }
+
+    fn empty_set(&mut self) -> Option<Json> {
+        let rest = self.text.get(self.position..)?.strip_prefix("set")?;
+        let open = rest.trim_start().strip_prefix('(')?;
+        let after = open.trim_start().strip_prefix(')')?;
+        self.position = self.text.len().saturating_sub(after.len());
+        Some(Json::List(Vec::new()))
+    }
+
     fn keyword(&mut self, word: &str, value: Json) -> Option<Json> {
         let end = self.position.saturating_add(word.len());
-        if self.bytes.get(self.position..end) != Some(word.as_bytes()) {
-            return None;
-        }
         let following = self.bytes.get(end).copied();
-        if following.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+        if self.bytes.get(self.position..end) != Some(word.as_bytes())
+            || following.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
             return None;
         }
         self.position = end;

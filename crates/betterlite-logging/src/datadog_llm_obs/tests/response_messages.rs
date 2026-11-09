@@ -24,6 +24,7 @@ fn reads_a_pretty_printed_python_literal_response_string() {
 #[rstest]
 #[case::non_string_key("{1: 2}")]
 #[case::bytes("b'a'")]
+#[case::wrapped_bytes("b'abcd '\n      b'abcd'")]
 #[case::complex("1j")]
 #[case::empty_set("set()")]
 #[case::surrogate(r"'\ud83d'")]
