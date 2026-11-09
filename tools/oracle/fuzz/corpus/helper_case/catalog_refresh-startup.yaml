@@ -1,0 +1,13 @@
+kind: helper
+name: catalog-refresh-corpus-startup
+call:
+  catalog_refresh:
+    operation: startup
+    environment: {}
+    replies:
+      - status: 200
+        body: '{"model":{"litellm_provider":"openai"}}'
+    probe_models: [model]
+env: {}
+compare:
+  ignore: []
