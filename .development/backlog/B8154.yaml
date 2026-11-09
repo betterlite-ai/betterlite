@@ -1,7 +1,7 @@
 id: B8154
 milestone: M3 providers
 title: triton completion, generate, infer and embedding configs
-status: todo
+status: done
 depends_on: [B2202, B668]
 file: tasks/B8154-triton-provider.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/triton/embedding/transformation.py"
 parent: B040
 split_from: B040
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1049
