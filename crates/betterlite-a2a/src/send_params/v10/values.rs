@@ -64,20 +64,23 @@ pub(super) fn normalize_value(
 pub(super) fn integer_from_number(
     number: &serde_json::Number,
     field: &'static str,
-) -> Result<i64, SendParamsError> {
+) -> Result<i32, SendParamsError> {
     if let Some(value) = number.as_i64() {
-        return Ok(value);
+        return i32::try_from(value).map_err(|_error| SendParamsError::InvalidValue {
+            field,
+            expected: "32-bit integer",
+        });
     }
     if let Some(value) = number.as_u64() {
-        return i64::try_from(value).map_err(|_error| SendParamsError::InvalidValue {
+        return i32::try_from(value).map_err(|_error| SendParamsError::InvalidValue {
             field,
-            expected: "64-bit integer",
+            expected: "32-bit integer",
         });
     }
     let Some(float) = number.as_f64() else {
         return Err(SendParamsError::InvalidValue {
             field,
-            expected: "64-bit integer",
+            expected: "32-bit integer",
         });
     };
     if float.fract().to_bits() != 0.0_f64.to_bits() {
@@ -86,9 +89,9 @@ pub(super) fn integer_from_number(
             expected: "integer",
         });
     }
-    float.to_i64().ok_or(SendParamsError::InvalidValue {
+    float.to_i32().ok_or(SendParamsError::InvalidValue {
         field,
-        expected: "64-bit integer",
+        expected: "32-bit integer",
     })
 }
 

@@ -225,6 +225,178 @@ fn json(text: &str) -> AgentJson {
     r#"{"message": {"messageId": "m1"}, "configuration": {"historyLength": 3.5}}"#,
     None
 )]
+#[case::v03_history_length_integral_float(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"historyLength": 3.0}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"historyLength": 3}}"#
+    )
+)]
+#[case::v03_duplicate_spellings(
+    r#"{"message": {"message_id": "m1", "messageId": "m2", "role": "user", "parts": [{"text": "hi"}], "context_id": "c1", "contextId": "c2"}, "configuration": {"historyLength": 1, "history_length": 2}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m2", "role": "user", "parts": [{"kind": "text", "text": "hi"}], "contextId": "c2"}, "configuration": {"historyLength": 1}}"#
+    )
+)]
+#[case::v10_role_numeric_string(
+    r#"{"message": {"role": "1", "messageId": "m1", "parts": [{"text": "hi"}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}}"#
+    )
+)]
+#[case::v10_history_length_max(
+    r#"{"message": {"messageId": "m1"}, "configuration": {"historyLength": 2147483647}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": []}, "configuration": {"blocking": true, "historyLength": 2147483647}}"#
+    )
+)]
+#[case::v10_history_length_over(
+    r#"{"message": {"messageId": "m1"}, "configuration": {"historyLength": 2147483648}}"#,
+    None
+)]
+#[case::v10_history_length_quoted_over(
+    r#"{"message": {"messageId": "m1"}, "configuration": {"historyLength": "2147483648"}}"#,
+    None
+)]
+#[case::v10_history_length_below_min(
+    r#"{"message": {"messageId": "m1"}, "configuration": {"historyLength": -2147483649}}"#,
+    None
+)]
+#[case::params_array_of_message(
+    r#"[{"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}]"#,
+    None
+)]
+#[case::v03_configuration_array(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": [["text"]]}"#,
+    None
+)]
+#[case::v10_null_data_then_text(
+    r#"{"message": {"messageId": "m1", "parts": [{"data": null, "text": "a"}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "a"}]}}"#
+    )
+)]
+#[case::v10_text_then_null_data(
+    r#"{"message": {"messageId": "m1", "parts": [{"text": "a", "data": null}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "agent", "parts": [{"kind": "text", "text": "a"}]}}"#
+    )
+)]
+#[case::v03_snake_case_every_key(
+    r#"{
+        "message": {
+            "message_id": "m1",
+            "role": "user",
+            "parts": [
+                {"text": "hi"},
+                {"kind": "file", "file": {"bytes": "aGk=", "mime_type": "text/plain"}}
+            ],
+            "context_id": "c1",
+            "task_id": "t1",
+            "reference_task_ids": ["r1"],
+            "extensions": ["e1"],
+            "metadata": {"k": 1}
+        },
+        "configuration": {
+            "accepted_output_modes": ["text"],
+            "blocking": false,
+            "history_length": 3,
+            "push_notification_config": {
+                "url": "https://x",
+                "id": "p1",
+                "token": "tok",
+                "authentication": {"schemes": ["Bearer"], "credentials": "cred"}
+            }
+        },
+        "metadata": {"a": 1}
+    }"#,
+    Some(
+        r#"{
+            "message": {
+                "kind": "message",
+                "messageId": "m1",
+                "role": "user",
+                "parts": [
+                    {"kind": "text", "text": "hi"},
+                    {"kind": "file", "file": {"bytes": "aGk=", "mimeType": "text/plain"}}
+                ],
+                "contextId": "c1",
+                "taskId": "t1",
+                "referenceTaskIds": ["r1"],
+                "metadata": {"k": 1},
+                "extensions": ["e1"]
+            },
+            "configuration": {
+                "acceptedOutputModes": ["text"],
+                "blocking": false,
+                "historyLength": 3,
+                "pushNotificationConfig": {
+                    "url": "https://x",
+                    "id": "p1",
+                    "token": "tok",
+                    "authentication": {"schemes": ["Bearer"], "credentials": "cred"}
+                }
+            },
+            "metadata": {"a": 1}
+        }"#
+    )
+)]
+#[case::v10_snake_case_every_key(
+    r#"{
+        "message": {
+            "message_id": "m1",
+            "context_id": "c1",
+            "task_id": "t1",
+            "role": "ROLE_USER",
+            "parts": [
+                {"text": "hi"},
+                {"raw": "aGk=", "media_type": "text/plain"}
+            ],
+            "metadata": {"k": 1},
+            "extensions": ["e1"],
+            "reference_task_ids": ["r1"]
+        },
+        "configuration": {
+            "accepted_output_modes": ["text"],
+            "task_push_notification_config": {
+                "url": "https://p",
+                "id": "p1",
+                "token": "tok",
+                "authentication": {"scheme": "Bearer", "credentials": "cred"}
+            },
+            "history_length": 3,
+            "return_immediately": true
+        }
+    }"#,
+    Some(
+        r#"{
+            "message": {
+                "kind": "message",
+                "messageId": "m1",
+                "role": "user",
+                "parts": [
+                    {"kind": "text", "text": "hi"},
+                    {"kind": "file", "file": {"bytes": "aGk=", "mimeType": "text/plain"}}
+                ],
+                "contextId": "c1",
+                "taskId": "t1",
+                "referenceTaskIds": ["r1"],
+                "metadata": {"k": 1.0},
+                "extensions": ["e1"]
+            },
+            "configuration": {
+                "acceptedOutputModes": ["text"],
+                "blocking": false,
+                "historyLength": 3,
+                "pushNotificationConfig": {
+                    "url": "https://p",
+                    "id": "p1",
+                    "token": "tok",
+                    "authentication": {"schemes": ["Bearer"], "credentials": "cred"}
+                }
+            }
+        }"#
+    )
+)]
 #[case::params_not_an_object("[1, 2]", None)]
 fn send_params_tests_behavior(#[case] input: &str, #[case] want: Option<&str>) {
     match (build_message_send_params(&json(input)), want) {

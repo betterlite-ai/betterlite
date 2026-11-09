@@ -9,7 +9,23 @@ call:
         parts:
           - text: hi
             extra: 1
+          - kind: file
+            file: {bytes: "aGk=", mime_type: text/plain}
+        context_id: c1
+        task_id: t1
+        reference_task_ids: [r1]
+        extensions: [e1]
+        metadata: {k: 1}
         unknown: true
+      configuration:
+        accepted_output_modes: [text]
+        blocking: false
+        history_length: 3
+        push_notification_config:
+          url: "https://x"
+          id: p1
+          token: tok
+          authentication: {schemes: [Bearer], credentials: cred}
       unknown: x
 env: {}
 compare: {ignore: []}

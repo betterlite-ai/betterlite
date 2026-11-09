@@ -1,4 +1,5 @@
 pub mod error;
+mod shape;
 mod tests;
 pub mod v03;
 mod v10;
@@ -12,11 +13,9 @@ use crate::send_params::v03::MessageSendParamsV03;
 pub fn build_message_send_params(
     params: &AgentJson,
 ) -> Result<MessageSendParamsV03, SendParamsError> {
-    if let Ok(parsed) = MessageSendParamsV03::deserialize(params) {
+    let prepared = shape::prepare(params)?;
+    if let Ok(parsed) = MessageSendParamsV03::deserialize(&prepared) {
         return Ok(parsed);
     }
-    if !params.is_object() {
-        return Err(SendParamsError::NotAnObject);
-    }
-    v10::parse_and_convert(params)
+    v10::parse_and_convert(&prepared)
 }

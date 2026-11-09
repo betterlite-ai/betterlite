@@ -8,8 +8,12 @@ call:
         parts:
           - text: hi
       configuration:
-        acceptedOutputModes: []
-        historyLength: 0
-        returnImmediately: true
+        accepted_output_modes: []
+        history_length: 0
+        task_push_notification_config:
+          url: "https://p"
+          id: p1
+          token: ""
+        return_immediately: true
 env: {}
 compare: {ignore: []}

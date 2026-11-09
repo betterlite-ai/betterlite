@@ -15,3 +15,13 @@ deviations:
     why: >-
       The declared type of params is an object, so a typed -32602 error is the honest answer to a list or a string.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L102-L117'
+  - what: >-
+      A record that carries a field under both its camelCase name and its snake_case name keeps the camelCase value on both paths, which is what the 0.3 pydantic model does. On the 1.0 path ParseDict keeps the spelling that comes later in the client's JSON, an order betterlite never sees because it reads a JSON object with sorted keys.
+    why: >-
+      The two spellings are one field, so one of them has to win; the pydantic rule is the one a 0.3 caller already relies on, and a caller that sends both spellings is ambiguous input.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L107-L114'
+  - what: >-
+      A part that carries a null data key next to a non-null text, raw or url key converts to the non-null content. LiteLLM applies the oneof keys in the client's JSON order, so a `data: null` written after the text replaces it and the part becomes a data part holding null.
+    why: >-
+      A null data value never conflicts with the other content keys (ParseDict does not count it), and the non-null content is the part the sender meant; the order betterlite sees is the sorted key order, not the client's.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L113-L117'

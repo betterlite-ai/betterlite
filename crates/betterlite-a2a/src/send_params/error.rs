@@ -4,7 +4,9 @@ use thiserror::Error;
 pub enum SendParamsError {
     #[error("Invalid message/send params: params must be a JSON object")]
     NotAnObject,
-    #[error("Invalid message/send params at {path}: {source}")]
+    #[error("Invalid message/send params: {field} must be a JSON object")]
+    NotAnObjectAt { field: &'static str },
+    #[error("Invalid message/send params: {path}: {source}")]
     Malformed {
         path: String,
         #[source]

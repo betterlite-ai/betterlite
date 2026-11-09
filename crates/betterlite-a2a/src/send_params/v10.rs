@@ -91,7 +91,7 @@ struct ConfigV10 {
     return_immediately: bool,
 }
 
-// protobuf JSON reads an int64 from a quoted decimal as well as from a number
+// protobuf JSON reads an int32 from a quoted decimal as well as from a number
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum IntegerV10 {

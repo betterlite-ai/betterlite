@@ -10,5 +10,7 @@ call:
           - data: scalar
             metadata: {x: 1}
           - data: null
+          - data: null
+            text: a
 env: {}
 compare: {ignore: []}

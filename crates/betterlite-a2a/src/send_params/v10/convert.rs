@@ -104,16 +104,19 @@ fn part(part: &PartV10) -> Result<PartV03, SendParamsError> {
 }
 
 fn content(part: &PartV10) -> Result<Content, SendParamsError> {
+    let null_data = matches!(part.data, DataV10::Value(AgentJson::Null));
+    // ParseDict does not count a null oneof member as set, so only non-null keys conflict
     let present = [
         part.text.is_some(),
         part.raw.is_some(),
         part.url.is_some(),
-        !matches!(part.data, DataV10::Absent),
+        !matches!(part.data, DataV10::Absent | DataV10::Value(AgentJson::Null)),
     ]
     .into_iter()
     .filter(|present| *present)
     .count();
     match present {
+        0 if null_data => return Ok(Content::DataValue(AgentJson::Null)),
         0 => return Err(SendParamsError::MissingPartContent),
         1 => {}
         _ => return Err(SendParamsError::MultiplePartContents),
@@ -177,16 +180,16 @@ fn history_length(value: Option<IntegerV10>) -> Result<Option<i64>, SendParamsEr
     match value {
         None => Ok(None),
         Some(IntegerV10::Number(number)) => {
-            integer_from_number(&number, "configuration.historyLength").map(Some)
+            integer_from_number(&number, "configuration.historyLength")
+                .map(|length| Some(i64::from(length)))
         }
-        Some(IntegerV10::Text(text)) => {
-            text.parse::<i64>()
-                .map(Some)
-                .map_err(|_error| SendParamsError::InvalidValue {
-                    field: "configuration.historyLength",
-                    expected: "64-bit integer",
-                })
-        }
+        Some(IntegerV10::Text(text)) => text
+            .parse::<i32>()
+            .map(|length| Some(i64::from(length)))
+            .map_err(|_error| SendParamsError::InvalidValue {
+                field: "configuration.historyLength",
+                expected: "32-bit integer",
+            }),
     }
 }
 

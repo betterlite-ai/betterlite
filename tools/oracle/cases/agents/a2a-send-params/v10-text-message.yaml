@@ -5,7 +5,12 @@ call:
     params:
       message:
         role: ROLE_USER
-        messageId: m1
+        message_id: m1
+        context_id: c1
+        task_id: t1
+        reference_task_ids: [r1]
+        extensions: [e1]
+        metadata: {k: 1}
         parts:
           - text: hi
 env: {}

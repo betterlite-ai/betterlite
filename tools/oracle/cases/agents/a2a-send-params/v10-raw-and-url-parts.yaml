@@ -13,6 +13,7 @@ call:
             mediaType: image/png
             filename: ""
           - raw: "-_8"
+            media_type: application/octet-stream
           - raw: "aGl="
 env: {}
 compare: {ignore: []}
