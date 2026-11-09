@@ -9,8 +9,8 @@ pub async fn commit_token_file(
     staged: &StagedFile,
     path: &Path,
 ) -> Result<(), TokenRecordError> {
-    match files.commit_staged_json(staged, path).await {
-        Ok(()) => Ok(()),
-        Err(source) => Err(TokenRecordError::Commit { source }),
-    }
+    files
+        .commit_staged_json(staged, path)
+        .await
+        .map_err(|source| TokenRecordError::Commit { source })
 }
