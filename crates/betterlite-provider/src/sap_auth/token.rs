@@ -41,7 +41,7 @@ pub struct BearerToken {
 
 #[derive(Deserialize)]
 struct TokenBody {
-    access_token: String,
+    access_token: SecretString,
     #[serde(default = "default_expires_in")]
     expires_in: i64,
 }
@@ -133,7 +133,7 @@ pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToke
         });
     };
     Ok(BearerToken {
-        header: SecretString::from(format!("Bearer {}", parsed.access_token)),
+        header: SecretString::from(format!("Bearer {}", parsed.access_token.expose_secret())),
         expires_at,
     })
 }
