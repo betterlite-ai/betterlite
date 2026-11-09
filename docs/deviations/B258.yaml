@@ -21,6 +21,16 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
   - what: >-
+      Image bytes are decoded through B183's bounded data-URL decoder: the string must be a data: URL
+      with a ;base64, marker, the base64 must be canonical, and the decoded payload may not exceed 50
+      MiB. LiteLLM splits the string on its first comma, decodes the rest leniently, and has no cap for
+      inline bytes.
+    why: >-
+      The task reuses B183's single bounded byte boundary so request bytes are counted and capped before
+      allocation; every data URL a working setup sends is canonical and under the cap.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L248-L249
+  - what: >-
       resize_image_high_res divides with integer arithmetic instead of binary64, so an image limit above
       2^21 can place a resized side one pixel away from LiteLLM's int(float) result for a header
       dimension near 2^32.
@@ -29,7 +39,7 @@ deviations:
       and 2000) and for every dimension a PNG, GIF, JPEG or WebP header can carry, the integer quotient
       equals Python's int(float) result.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L170
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L169
   - what: >-
       A negative base_tokens value is refused instead of producing a negative token count as LiteLLM
       does.

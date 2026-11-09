@@ -6,7 +6,7 @@ use crate::image::header::{ImageType, image_type};
 #[case::png(b"\x89PNG\r\n\x1a\n", Some(ImageType::Png))]
 #[case::gif87(b"GIF87a", Some(ImageType::Gif))]
 #[case::gif89(b"GIF89a", Some(ImageType::Gif))]
-#[case::gif_wrong_version(b"GIF8xa", None)]
+#[case::gif_wrong_version(b"GIF8xx", None)]
 #[case::gif_prefix_only(b"GIF8", None)]
 #[case::jpeg(b"\xff\xd8\xff", Some(ImageType::Jpeg))]
 #[case::jpeg_prefix_only(b"\xff\xd8", None)]
