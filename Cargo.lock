@@ -1562,6 +1562,7 @@ dependencies = [
  "mime_guess",
  "pem",
  "pkcs8",
+ "rcgen",
  "regex",
  "reqwest",
  "rstest",
@@ -1732,6 +1733,24 @@ dependencies = [
  "betterlite-lens",
  "libfuzzer-sys",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-lens-worker"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-lens",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -2125,6 +2144,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "rcgen",
  "rstest",
  "rust_decimal",
  "rustls",
@@ -2133,11 +2153,13 @@ dependencies = [
  "serde",
  "sha2 0.11.1",
  "subtle",
+ "tempfile",
  "testcontainers",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "url",
  "uuid",
 ]
@@ -2413,6 +2435,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
@@ -2584,6 +2607,7 @@ dependencies = [
  "multipart-rs",
  "percent-encoding",
  "rand 0.10.3",
+ "rcgen",
  "regex",
  "rmcp",
  "rquickjs",
