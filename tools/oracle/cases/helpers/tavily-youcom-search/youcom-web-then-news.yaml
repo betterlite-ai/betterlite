@@ -1,0 +1,39 @@
+kind: helper
+name: youcom-web-then-news
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: transform_search_response
+        status: 200
+        headers: {}
+        body:
+          results:
+            web:
+              - title: Web first
+                url: https://web.test
+                snippets: [first, second]
+                description: ignored
+                page_age: "2024-01-02"
+              - title: Web fallback
+                url: https://web.test/second
+                snippets: []
+                description: fallback
+            news:
+              - title: News
+                url: https://news.test
+                snippets: [news snippet]
+        environment: {}
+      - operation: transform_search_response
+        body:
+          results:
+            news:
+              - title: Only news
+        environment: {}
+      - operation: transform_search_response
+        body:
+          results: null
+        environment: {}
+env: {}
+compare:
+  ignore: []

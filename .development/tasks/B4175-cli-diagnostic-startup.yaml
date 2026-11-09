@@ -109,6 +109,7 @@ description: >-
   the adapter's internals.
 scope:
   paths:
+    - "crates/betterlite-http/src/**"
     - crates/betterlite/Cargo.toml
     - crates/betterlite/src/banner.rs
     - crates/betterlite/src/banner/**
