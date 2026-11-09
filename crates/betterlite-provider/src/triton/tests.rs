@@ -324,22 +324,13 @@ fn max_tokens_default_rejects_a_value_that_is_not_a_number() {
     assert_eq!(error.status(), None);
 }
 
-#[test]
-fn generate_response_reads_the_text_output() {
-    let reply = generate_response(200, br#"{"text_output":"hello"}"#).unwrap();
-    assert_eq!(reply.text.as_deref(), Some("hello"));
-}
-
-#[test]
-fn generate_response_keeps_a_null_text_output() {
-    let reply = generate_response(200, br#"{"text_output":null}"#).unwrap();
-    assert_eq!(reply.text, None);
-}
-
-#[test]
-fn generate_response_ignores_fields_it_does_not_model() {
-    let reply = generate_response(200, br#"{"text_output":"hi","other":{"nested":1}}"#).unwrap();
-    assert_eq!(reply.text.as_deref(), Some("hi"));
+#[rstest]
+#[case::text(br#"{"text_output":"hello"}"#, Some("hello"))]
+#[case::null(br#"{"text_output":null}"#, None)]
+#[case::extra_fields(br#"{"text_output":"hi","other":{"nested":1}}"#, Some("hi"))]
+fn generate_response_reads_the_text_output(#[case] body: &[u8], #[case] expected: Option<&str>) {
+    let reply = generate_response(200, body).unwrap();
+    assert_eq!(reply.text.as_deref(), expected);
 }
 
 #[rstest]
@@ -454,41 +445,22 @@ fn infer_request_maps_values_to_triton_datatypes() {
     );
 }
 
-#[test]
-fn infer_request_uses_the_first_message_content() {
+#[rstest]
+#[case::first_of_several(
+    r#"[{"role":"user","content":"first"},{"role":"assistant","content":"second"}]"#,
+    r#""first""#
+)]
+#[case::null(r#"[{"role":"assistant","content":null}]"#, "null")]
+#[case::parts(
+    r#"[{"role":"user","content":[{"type":"text","text":"hi"}]}]"#,
+    r#"[{"type":"text","text":"hi"}]"#
+)]
+fn infer_request_sends_the_first_message_content(#[case] json: &str, #[case] expected: &str) {
     let optional = options("{}");
-    let given =
-        messages(r#"[{"role":"user","content":"first"},{"role":"assistant","content":"second"}]"#);
+    let given = messages(json);
     let body = infer_request(&input("model", &given, &optional)).unwrap();
-    assert_eq!(
-        body.inputs[0].data,
-        vec![Field::Text(String::from("first"))]
-    );
-}
-
-#[test]
-fn infer_request_sends_a_null_content_as_null() {
-    let optional = options("{}");
-    let given = messages(r#"[{"role":"assistant","content":null}]"#);
-    let body = infer_request(&input("model", &given, &optional)).unwrap();
-    assert_eq!(body.inputs[0].data, vec![Field::Null]);
-}
-
-#[test]
-fn infer_request_sends_parts_as_a_list() {
-    let optional = options("{}");
-    let given = messages(r#"[{"role":"user","content":[{"type":"text","text":"hi"}]}]"#);
-    let body = infer_request(&input("model", &given, &optional)).unwrap();
-    assert_eq!(
-        body.inputs[0].data,
-        vec![Field::List(options_list(
-            r#"[{"type":"text","text":"hi"}]"#
-        ))]
-    );
-}
-
-fn options_list(json: &str) -> Vec<Field> {
-    serde_json::from_str(json).unwrap()
+    let field: Field = serde_json::from_str(expected).unwrap();
+    assert_eq!(body.inputs[0].data, vec![field]);
 }
 
 #[test]
@@ -499,28 +471,14 @@ fn infer_request_rejects_an_empty_message_list() {
     assert!(matches!(error, TritonError::NoMessages));
 }
 
-#[test]
-fn infer_response_reads_a_string_data() {
-    let reply = infer_response(200, br#"{"outputs":[{"data":"hello"}]}"#).unwrap();
-    assert_eq!(reply.text.as_deref(), Some("hello"));
-}
-
-#[test]
-fn infer_response_joins_a_list_data() {
-    let reply = infer_response(200, br#"{"outputs":[{"data":["he","llo"]}]}"#).unwrap();
-    assert_eq!(reply.text.as_deref(), Some("hello"));
-}
-
-#[test]
-fn infer_response_joins_an_empty_list_to_an_empty_text() {
-    let reply = infer_response(200, br#"{"outputs":[{"data":[]}]}"#).unwrap();
-    assert_eq!(reply.text.as_deref(), Some(""));
-}
-
-#[test]
-fn infer_response_keeps_a_null_data() {
-    let reply = infer_response(200, br#"{"outputs":[{"data":null}]}"#).unwrap();
-    assert_eq!(reply.text, None);
+#[rstest]
+#[case::string(br#"{"outputs":[{"data":"hello"}]}"#, Some("hello"))]
+#[case::list(br#"{"outputs":[{"data":["he","llo"]}]}"#, Some("hello"))]
+#[case::empty_list(br#"{"outputs":[{"data":[]}]}"#, Some(""))]
+#[case::null(br#"{"outputs":[{"data":null}]}"#, None)]
+fn infer_response_reads_the_data(#[case] body: &[u8], #[case] expected: Option<&str>) {
+    let reply = infer_response(200, body).unwrap();
+    assert_eq!(reply.text.as_deref(), expected);
 }
 
 #[rstest]
@@ -615,70 +573,61 @@ fn embedding_response_counts_the_request_texts() {
     assert_eq!(reply.usage.total_tokens, 2);
 }
 
-#[test]
-fn embedding_usage_uses_the_injected_counter() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[1],"datatype":"BYTES","data":["hello"]}]}"#,
-    );
-    let usage = build_embedding_usage("model", &request, &FixedCounter(Some(7))).unwrap();
-    assert_eq!(usage.prompt_tokens, 7);
-    assert_eq!(usage.total_tokens, 7);
+#[rstest]
+#[case::injected_counter(
+    r#"{"inputs":[{"name":"input_text","shape":[1],"datatype":"BYTES","data":["hello"]}]}"#,
+    &FixedCounter(Some(7)),
+    7
+)]
+#[case::skips_an_empty_text(
+    r#"{"inputs":[{"name":"input_text","shape":[2],"datatype":"BYTES","data":["","x"]}]}"#,
+    &FixedCounter(Some(5)),
+    5
+)]
+#[case::whitespace_fallback(
+    r#"{"inputs":[{"name":"input_text","shape":[1],"datatype":"BYTES","data":["a b  c"]}]}"#,
+    &FixedCounter(None),
+    3
+)]
+#[case::first_named_input(
+    r#"{"inputs":[{"name":"other","shape":[1],"datatype":"BYTES","data":["ignored ignored"]},{"name":"input_text","shape":[1],"datatype":"BYTES","data":["one two"]},{"name":"input_text","shape":[1],"datatype":"BYTES","data":["three"]}]}"#,
+    &WordsCounter,
+    2
+)]
+#[case::no_named_input(r#"{"inputs":[]}"#, &WordsCounter, 0)]
+#[case::text_data_entry(
+    r#"{"inputs":[{"name":"input_text","shape":[5],"datatype":"BYTES","data":"hello"}]}"#,
+    &WordsCounter,
+    0
+)]
+fn embedding_usage_counts_the_named_input(
+    #[case] json: &str,
+    #[case] counter: &dyn TextTokenCounter,
+    #[case] expected: u32,
+) {
+    let usage = build_embedding_usage("model", &embedding_request(json), counter).unwrap();
+    assert_eq!(usage.prompt_tokens, expected);
+    assert_eq!(usage.total_tokens, expected);
 }
 
-#[test]
-fn embedding_usage_skips_an_empty_text_before_counting() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[2],"datatype":"BYTES","data":["","x"]}]}"#,
-    );
-    let usage = build_embedding_usage("model", &request, &FixedCounter(Some(5))).unwrap();
-    assert_eq!(usage.prompt_tokens, 5);
-}
-
-#[test]
-fn embedding_usage_falls_back_to_whitespace_when_the_counter_fails() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[1],"datatype":"BYTES","data":["a b  c"]}]}"#,
-    );
-    let usage = build_embedding_usage("model", &request, &FixedCounter(None)).unwrap();
-    assert_eq!(usage.prompt_tokens, 3);
-}
-
-#[test]
-fn embedding_usage_counts_only_the_first_named_input() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"other","shape":[1],"datatype":"BYTES","data":["ignored ignored"]},{"name":"input_text","shape":[1],"datatype":"BYTES","data":["one two"]},{"name":"input_text","shape":[1],"datatype":"BYTES","data":["three"]}]}"#,
-    );
-    let usage = build_embedding_usage("model", &request, &WordsCounter).unwrap();
-    assert_eq!(usage.prompt_tokens, 2);
-}
-
-#[test]
-fn embedding_usage_is_zero_without_a_named_input() {
-    let request = embedding_request(r#"{"inputs":[]}"#);
-    let usage = build_embedding_usage("model", &request, &WordsCounter).unwrap();
-    assert_eq!(usage.prompt_tokens, 0);
-}
-
-#[test]
-fn embedding_usage_counts_the_decimal_text_of_each_token_id() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[3],"datatype":"BYTES","data":[1,22,333]}]}"#,
-    );
+#[rstest]
+#[case::token_ids(
+    r#"{"inputs":[{"name":"input_text","shape":[3],"datatype":"BYTES","data":[1,22,333]}]}"#,
+    &["1", "22", "333"]
+)]
+#[case::token_lists(
+    r#"{"inputs":[{"name":"input_text","shape":[2],"datatype":"BYTES","data":[[1,2],[3]]}]}"#,
+    &["[1, 2]", "[3]"]
+)]
+fn embedding_usage_counts_the_text_form_of_token_input(
+    #[case] json: &str,
+    #[case] counted: &[&str],
+) {
     let seen = Mutex::new(Vec::new());
-    let usage = build_embedding_usage("model", &request, &RecordingCounter(&seen)).unwrap();
-    assert_eq!(usage.prompt_tokens, 3);
-    assert_eq!(*seen.lock().unwrap(), ["1", "22", "333"]);
-}
-
-#[test]
-fn embedding_usage_counts_the_list_text_of_each_token_list() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[2],"datatype":"BYTES","data":[[1,2],[3]]}]}"#,
-    );
-    let seen = Mutex::new(Vec::new());
-    let usage = build_embedding_usage("model", &request, &RecordingCounter(&seen)).unwrap();
-    assert_eq!(usage.prompt_tokens, 2);
-    assert_eq!(*seen.lock().unwrap(), ["[1, 2]", "[3]"]);
+    let usage =
+        build_embedding_usage("model", &embedding_request(json), &RecordingCounter(&seen)).unwrap();
+    assert_eq!(usage.prompt_tokens, u32::try_from(counted.len()).unwrap());
+    assert_eq!(*seen.lock().unwrap(), counted);
 }
 
 #[test]
@@ -689,15 +638,6 @@ fn embedding_config_sends_no_headers_and_keeps_the_params() {
         TritonEmbeddingConfig.map_openai_params(params.clone()),
         params
     );
-}
-
-#[test]
-fn embedding_usage_ignores_a_text_data_entry() {
-    let request = embedding_request(
-        r#"{"inputs":[{"name":"input_text","shape":[5],"datatype":"BYTES","data":"hello"}]}"#,
-    );
-    let usage = build_embedding_usage("model", &request, &WordsCounter).unwrap();
-    assert_eq!(usage.prompt_tokens, 0);
 }
 
 #[rstest]

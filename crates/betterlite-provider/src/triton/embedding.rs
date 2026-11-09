@@ -155,19 +155,17 @@ pub fn build_embedding_usage(
             .collect(),
         Some(EmbeddingInput::Text(_)) | None => Vec::new(),
     };
-    let mut prompt_tokens: u32 = 0;
-    for text in &texts {
-        if text.is_empty() {
-            continue;
-        }
-        let available = counter
-            .count_text(model, text)
-            .unwrap_or_else(|| text.split_whitespace().count());
-        let tokens = u32::try_from(available).map_err(|_error| TritonError::UsageOverflow)?;
-        prompt_tokens = prompt_tokens
-            .checked_add(tokens)
-            .ok_or(TritonError::UsageOverflow)?;
-    }
+    let prompt_tokens = texts
+        .iter()
+        .filter(|text| !text.is_empty())
+        .try_fold(0_u32, |total, text| {
+            let words = counter
+                .count_text(model, text)
+                .unwrap_or_else(|| text.split_whitespace().count());
+            let tokens = u32::try_from(words).ok()?;
+            total.checked_add(tokens)
+        })
+        .ok_or(TritonError::UsageOverflow)?;
     Ok(EmbeddingUsage {
         prompt_tokens,
         completion_tokens: 0,
