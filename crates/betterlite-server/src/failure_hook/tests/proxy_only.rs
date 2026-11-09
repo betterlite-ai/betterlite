@@ -11,7 +11,7 @@ use super::super::ports::FailureLogging;
 use super::super::proxy_only::{handle_proxy_only_error, is_proxy_only_error};
 use super::support::{
     AlertParts, FakeCatalog, FakeCounter, FakeFactory, FakeLogging, FakeRoutes, FakeServiceLogging,
-    FakeSlack, FakeUsageCache, HookParts, Journal, auth, deployment, drain, failure_hook,
+    FakeSlack, FakeUsageCache, HookParts, Journal, auth, deployment, details, drain, failure_hook,
     http_error, json, object, other_error, proxy_alerts, redactor,
 };
 use crate::guardrails::callback_caps::errors::{
@@ -209,6 +209,35 @@ async fn an_existing_logging_object_is_reused_without_merging_key_metadata() {
     let entries = journal.entries();
     assert!(entries.contains(&"call_type:Acompletion".to_owned()));
     assert!(entries.contains(&"pre_call:messages:".to_owned()));
+}
+
+#[tokio::test]
+async fn a_cache_hit_counts_as_reaching_a_deployment() {
+    let journal = Journal::default();
+    let catalog =
+        FakeCatalog::new(&journal).with("gpt-4", vec![deployment(Some("openai"), "gpt-4")]);
+    let (hook, factory) = hook_for(&journal, chat_routes(), catalog, false);
+    let existing = Arc::new(FakeLogging::new(&journal, false, None));
+    let mut logging_details = details();
+    logging_details.cache_hit = true;
+    existing.set_details(logging_details);
+    let shared = Arc::clone(&existing);
+    let logging: Arc<dyn FailureLogging> = shared;
+    let error = http_error(500, "boom");
+    let request_data = object(&[("model", json("\"gpt-4\""))]);
+    run_proxy_only(&hook, request_data, &error, Some(logging)).await;
+    drain(&hook.alerts.tasks).await;
+    assert!(factory.created().is_empty());
+    let environment = existing.environment().expect("environment");
+    assert!(
+        !environment
+            .litellm_params
+            .contains_key("proxy_rejected_before_routing")
+    );
+    assert_eq!(
+        environment.litellm_params.get("custom_llm_provider"),
+        Some(&json("\"openai\""))
+    );
 }
 
 #[tokio::test]

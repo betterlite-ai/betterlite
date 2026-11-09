@@ -487,6 +487,10 @@ async fn a_lifted_cost_is_a_json_number() {
 }
 
 #[test]
-fn the_upstream_marker_key_matches_litellm() {
+fn the_logging_keys_are_spelled_like_litellm() {
     assert_eq!(NO_UPSTREAM_LLM_CALL_KEY, "litellm_no_upstream_llm_call");
+    assert_eq!(
+        PROXY_REJECTED_BEFORE_ROUTING,
+        "proxy_rejected_before_routing"
+    );
 }
