@@ -3,6 +3,7 @@ use opentelemetry::trace::{SpanId, TraceId};
 use opentelemetry_sdk::trace::IdGenerator;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
 const TRACE_ID_LENGTH: usize = 32;
@@ -10,7 +11,8 @@ const OBSERVATION_ID_LENGTH: usize = 16;
 const NANOS_PER_SECOND: u32 = 1_000_000_000;
 
 // litellm.integrations.langfuse.langfuse_sdk.to_unix_nanos; guardrail entries carry seconds, model calls a datetime
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
 pub enum Timestamp {
     DateTime(DateTime<Utc>),
     Seconds(Decimal),

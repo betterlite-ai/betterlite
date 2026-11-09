@@ -2,7 +2,7 @@ use betterlite_logging::langfuse_observations::attributes::{
     ObservationAttributes, TraceAttributes, observation_attributes,
 };
 
-use super::inputs::{ObservationFields, StartTime, TraceFields};
+use super::inputs::{ObservationFields, TraceFields};
 use super::values::pairs;
 
 impl<'fields> From<&'fields TraceFields> for TraceAttributes<'fields> {
@@ -35,10 +35,7 @@ pub(crate) fn observation_projection(fields: &ObservationFields) -> serde_json::
         model_parameters: fields.model_parameters.as_ref(),
         usage_details: fields.usage_details.as_ref(),
         cost_details: fields.cost_details.as_ref(),
-        completion_start_time: fields
-            .completion_start_time
-            .as_ref()
-            .map(StartTime::timestamp),
+        completion_start_time: fields.completion_start_time,
         prompt: fields.prompt.as_ref(),
     }))
 }
