@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -673,6 +674,18 @@ fn the_default_attribute_limit_matches_the_sdk() {
         usize::try_from(limits.max_attributes_per_span).expect("limit"),
         DEFAULT_SPAN_ATTRIBUTE_LIMIT
     );
+}
+
+fn assert_send_sync<T>(_marker: PhantomData<T>)
+where
+    T: Send + Sync,
+{
+}
+
+#[test]
+fn the_emitter_is_shareable_across_request_tasks() {
+    assert_send_sync(PhantomData::<SpanEmitter<SdkTracer>>);
+    assert_send_sync(PhantomData::<DedupCache>);
 }
 
 #[test]
