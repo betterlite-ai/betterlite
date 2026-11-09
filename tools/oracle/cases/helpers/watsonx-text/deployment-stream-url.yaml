@@ -1,0 +1,34 @@
+kind: helper
+name: watsonx-text-deployment-stream-url
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: url
+    env:
+      WATSONX_API_BASE: https://env-host
+    requests:
+      - api_base: null
+        model: granite
+        stream: false
+        options: {}
+      - api_base: null
+        model: granite
+        stream: true
+        options: {api_version: "2024-01-01"}
+      - api_base: null
+        model: deployment/deployment-id
+        stream: false
+        options: {}
+      - api_base: null
+        model: deployment/deployment-id
+        stream: true
+        options: {}
+      - api_base: https://host/
+        model: granite
+        stream: false
+        options: {}
+      - api_base: null
+        model: granite
+        stream: false
+        options: {api_version: null}

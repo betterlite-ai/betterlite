@@ -45,6 +45,13 @@ Parity stops at the types LiteLLM declares (its pydantic models, TypedDicts, typ
 
 Everything in LiteLLM's enterprise directory and in the litellm_enterprise package is proprietary. Don't open those files, port them or link them. LiteLLM's litellm-rust folder is MIT and fine to read.
 
+## Before you finish
+
+Once the checks pass, read your whole branch the way the parity review will, and fix what you find before your final answer. Each gap it finds costs a full round.
+
+1. Try to break each test. For every branch, guard, default, limit and constant you wrote, name the test or oracle case that fails when it is wrong. Cover both sides of each condition and the values just inside and just outside each limit. If you can't tell, change the line in the working tree, run that test, and undo the change. A test that still passes is a gap, and so is a fixture that never reaches the line.
+2. Walk the LiteLLM code your references own, branch by branch. For each field, check what LiteLLM does when it is absent, null, empty or zero. Check each default, each header, each env var both unset and empty, and the status, type, param and code of each error. Build and test what differs, or add it to docs/deviations/<ID>.yaml. docs/compatibility.md lists the Python habits we don't copy.
+
 ## Blocked
 
 When the task cannot be finished inside its scope and budgets, stop and answer with status blocked. The blocker says what you need, where, and the evidence (command, output, file and line). Typical blockers are a file outside scope, a check that can't pass without a protected file, the task text contradicting the oracle, a budget the work can't fit, and a tool missing or at the wrong version. Describe it and stop. The decision belongs to the architect.

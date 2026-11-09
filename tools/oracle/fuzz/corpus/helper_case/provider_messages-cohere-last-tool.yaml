@@ -1,0 +1,36 @@
+kind: helper
+name: provider-messages-cohere-last-tool
+call:
+  provider_messages:
+    operation: cohere_messages
+    messages:
+      - role: user
+        content: check the weather
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: get_weather
+              arguments: '{"city":"Paris"}'
+          - id: call_2
+            type: function
+            function:
+              name: describe
+              arguments: '{"unit":"celsius"}'
+      - role: tool
+        tool_call_id: call_1
+        content: '{"temperature":22}'
+      - role: tool
+        tool_call_id: call_2
+        content:
+          - type: text
+            text: '{"ok":'
+          - type: image_url
+            image_url: https://example.test/a.png
+          - type: text
+            text: 'true}'
+env: {}
+compare:
+  ignore: []

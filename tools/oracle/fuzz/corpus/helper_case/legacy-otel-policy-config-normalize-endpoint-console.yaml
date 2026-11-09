@@ -1,0 +1,11 @@
+kind: helper
+name: config-normalize-endpoint-console
+call:
+  b3854:
+    function: config_normalize
+    environment: {}
+    config:
+      endpoint: https://collector.example/v1/traces
+      headers: x-honeycomb-team=secret
+env: {}
+compare: {ignore: []}
