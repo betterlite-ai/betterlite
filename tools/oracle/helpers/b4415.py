@@ -20,13 +20,11 @@ AWS_VARIABLES = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION_NAME"
 
 
 class Manager(Protocol):
-    async def async_write_secret(  # noqa: PLR0913, PLR0917 - mirrors LiteLLM's signature
+    async def async_write_secret(
         self,
         secret_name: str,
         secret_value: str,
         description: str | None = None,
-        optional_params: Object | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
         tags: Json = None,
     ) -> Object: ...
 
@@ -34,8 +32,6 @@ class Manager(Protocol):
         self,
         secret_name: str,
         recovery_window_in_days: int | None = 7,
-        optional_params: Object | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
     async def async_rotate_secret(
@@ -43,24 +39,18 @@ class Manager(Protocol):
         current_secret_name: str,
         new_secret_name: str,
         new_secret_value: str,
-        optional_params: Object | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
     async def async_replicate_secret(
         self,
         secret_name: str,
         replica_regions: list[str],
-        optional_params: Object | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
     async def async_put_secret_value(
         self,
         secret_name: str,
         secret_value: str,
-        optional_params: Object | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
 
