@@ -208,6 +208,7 @@ enum Scenario {
     CombinedWithEmptyDynamicDeduplicatesGlobal,
     CallbackNameReadsNamesAndLoggers,
     InternalCallbackFilterKeepsNamesAndDropsLoggers,
+    UnknownCallbackNameSurvivesTheLoggerFilter,
     ParamsPrecedenceFollowsRequestSlots,
     ParamsSkipUnsupportedAndBlockedFields,
     ParamsApplyTrustedOverlay,
@@ -250,6 +251,9 @@ enum Scenario {
 #[case::callback_name_reads_names_and_loggers(Scenario::CallbackNameReadsNamesAndLoggers)]
 #[case::internal_callback_filter_keeps_names_and_drops_loggers(
     Scenario::InternalCallbackFilterKeepsNamesAndDropsLoggers
+)]
+#[case::unknown_callback_name_survives_the_logger_filter(
+    Scenario::UnknownCallbackNameSurvivesTheLoggerFilter
 )]
 #[case::params_precedence_follows_request_slots(Scenario::ParamsPrecedenceFollowsRequestSlots)]
 #[case::params_skip_unsupported_and_blocked_fields(Scenario::ParamsSkipUnsupportedAndBlockedFields)]
@@ -527,7 +531,20 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             assert!(!is_internal_callback(&entries[0]));
             assert!(is_internal_callback(&entries[1]));
             assert_eq!(labels(&remove_internal_callbacks(&entries)), ["langfuse"]);
-            assert!(remove_logger_callbacks(&entries).is_empty());
+            let known = |candidate: &str| candidate == "langfuse";
+            assert!(remove_logger_callbacks(&entries, &known).is_empty());
+        }
+        Scenario::UnknownCallbackNameSurvivesTheLoggerFilter => {
+            let entries = [name("langfuse"), name("not_a_callback"), logger("s3_v2")];
+            let known = |candidate: &str| candidate == "langfuse";
+            assert_eq!(
+                labels(&remove_logger_callbacks(&entries, &known)),
+                ["not_a_callback"]
+            );
+            assert_eq!(
+                labels(&remove_internal_callbacks(&entries)),
+                ["langfuse", "not_a_callback"]
+            );
         }
         Scenario::ParamsPrecedenceFollowsRequestSlots => {
             let standard = request_params(

@@ -54,6 +54,7 @@ pub(crate) struct Input {
     dynamic: Option<Vec<support::EntrySpec>>,
     global: Vec<support::EntrySpec>,
     callbacks: Vec<support::EntrySpec>,
+    known: Vec<String>,
     request: Value,
     inherited: bool,
 }
@@ -126,11 +127,12 @@ fn filter(input: &Input) -> Value {
         names.push(get_callback_name(callback));
         internal.push(is_internal_callback(callback));
     }
+    let known = |name: &str| input.known.iter().any(|candidate| candidate == name);
     json!({
         "names": names,
         "internal": internal,
         "litellm_kept": entry_values(&remove_internal_callbacks(&callbacks)),
-        "logger_kept": entry_values(&remove_logger_callbacks(&callbacks)),
+        "logger_kept": entry_values(&remove_logger_callbacks(&callbacks, &known)),
     })
 }
 

@@ -43,16 +43,17 @@ pub fn remove_internal_callbacks(callbacks: &[DynamicCallback]) -> Vec<DynamicCa
         .collect()
 }
 
-// LiteLLM drops CustomLogger instances and known callback names here; every betterlite entry is one of the two
+// LiteLLM drops logger instances and names in its known-callback list, and keeps every other string
 #[must_use]
-pub fn remove_logger_callbacks(callbacks: &[DynamicCallback]) -> Vec<DynamicCallback> {
+pub fn remove_logger_callbacks(
+    callbacks: &[DynamicCallback],
+    is_known: &dyn Fn(&str) -> bool,
+) -> Vec<DynamicCallback> {
     callbacks
         .iter()
-        .filter(|callback| {
-            !matches!(
-                callback,
-                DynamicCallback::Name(_) | DynamicCallback::Logger(_)
-            )
+        .filter(|callback| match callback {
+            DynamicCallback::Name(name) => !is_known(name),
+            DynamicCallback::Logger(_) => false,
         })
         .cloned()
         .collect()
