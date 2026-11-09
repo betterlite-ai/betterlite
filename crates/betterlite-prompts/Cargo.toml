@@ -12,7 +12,6 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
-betterlite-rag = { path = "../betterlite-rag" }
 betterlite-redis = { path = "../betterlite-redis" }
 chrono.workspace = true
 fancy-regex = "0.19.2"
