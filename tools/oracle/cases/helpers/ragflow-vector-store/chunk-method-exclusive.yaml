@@ -1,0 +1,33 @@
+kind: helper
+name: ragflow-chunk-method-exclusive
+call:
+  b7814:
+    calls:
+      - call: create_request
+        input:
+          optional_params:
+            name: notes
+            metadata: {chunk_method: naive, pipeline_id: d0bebe30ae2211f0970942010a8e0005}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params:
+            name: notes
+            metadata: {chunk_method: manual}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params:
+            name: notes
+            metadata: {pipeline_id: d0bebe30ae2211f0970942010a8e0005}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params: {name: ""}
+          api_base: "http://localhost:9380/api/v1/datasets"
+      - call: create_request
+        input:
+          optional_params: {}
+          api_base: "http://localhost:9380/api/v1/datasets"
+env: {}
+compare: {ignore: []}
