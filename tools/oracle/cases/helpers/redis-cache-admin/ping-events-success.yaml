@@ -1,0 +1,8 @@
+kind: helper
+name: redis-cache-admin-ping-events-success
+call:
+  b4326:
+    function: ping_events
+    outcome: success
+env: {}
+compare: {ignore: []}

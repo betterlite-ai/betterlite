@@ -1,7 +1,7 @@
 id: B7810
 milestone: M3 providers
 title: Milvus and PG Vector search providers
-status: todo
+status: done
 depends_on: [B1131, B171, B527]
 file: tasks/B7810-milvus-pgvector-stores.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/pg_vector/**"
 parent: B049
 split_from: B049
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 973

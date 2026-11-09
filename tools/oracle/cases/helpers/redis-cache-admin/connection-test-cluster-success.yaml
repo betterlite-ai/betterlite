@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-admin-connection-test-cluster-success
+call:
+  b4326:
+    function: connection_test
+    family: cluster
+    ping: true
+env: {}
+compare: {ignore: []}

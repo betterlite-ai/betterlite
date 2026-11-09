@@ -1,0 +1,14 @@
+kind: helper
+name: redis-cache-admin-info-modules-and-cmdstat-host
+call:
+  b4326:
+    function: parse_info
+    text: |-
+      # Modules
+      module:name=search,ver=20805,api=1
+      module:name=ReJSON,ver=20803,api=1
+      # Commandstats
+      cmdstat_get:calls=2,usec=9,usec_per_call=4.5,rejected_calls=0,failed_calls=0
+      cmdstat_host:10.0.0.1:6379
+env: {}
+compare: {ignore: []}
