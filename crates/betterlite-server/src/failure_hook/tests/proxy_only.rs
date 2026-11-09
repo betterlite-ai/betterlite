@@ -334,12 +334,46 @@ enum TracebackCase {
     ClientError,
     ClientErrorLogged,
     ServerError,
+    GuardrailBlock,
+    ProxyClientCode,
+    NonNumericProxyCode,
+    BelowClientRange,
+}
+
+fn proxy_code(code: &str) -> ProxyHookError {
+    ProxyHookError::Proxy(Box::new(ProxyException {
+        message: "proxy failure".to_owned(),
+        error_type: "some_error".to_owned(),
+        param: None,
+        code: code.to_owned(),
+        headers: BTreeMap::new(),
+    }))
+}
+
+fn traceback_error(case: TracebackCase) -> ProxyHookError {
+    match case {
+        TracebackCase::ClientError | TracebackCase::ClientErrorLogged => http_error(400, "bad"),
+        TracebackCase::ServerError => http_error(500, "boom"),
+        TracebackCase::GuardrailBlock => ProxyHookError::GuardrailRaised {
+            message: "blocked".to_owned(),
+            guardrail_name: Some("pii".to_owned()),
+            status: 400,
+            blocked_content: true,
+        },
+        TracebackCase::ProxyClientCode => proxy_code("429"),
+        TracebackCase::NonNumericProxyCode => proxy_code("not-a-number"),
+        TracebackCase::BelowClientRange => http_error(302, "moved"),
+    }
 }
 
 #[rstest]
 #[case::client_error_skips(TracebackCase::ClientError, false)]
 #[case::client_error_logged(TracebackCase::ClientErrorLogged, true)]
 #[case::server_error_keeps_it(TracebackCase::ServerError, true)]
+#[case::guardrail_block_skips_it(TracebackCase::GuardrailBlock, false)]
+#[case::proxy_client_code_skips_it(TracebackCase::ProxyClientCode, false)]
+#[case::non_numeric_proxy_code_keeps_it(TracebackCase::NonNumericProxyCode, true)]
+#[case::status_below_400_keeps_it(TracebackCase::BelowClientRange, true)]
 #[tokio::test]
 async fn tracebacks_follow_the_client_error_rule(
     #[case] case: TracebackCase,
@@ -353,10 +387,7 @@ async fn tracebacks_follow_the_client_error_rule(
         FakeCatalog::new(&journal),
         log_client_errors,
     );
-    let error = match case {
-        TracebackCase::ClientError | TracebackCase::ClientErrorLogged => http_error(400, "bad"),
-        TracebackCase::ServerError => http_error(500, "boom"),
-    };
+    let error = traceback_error(case);
     let request_data = object(&[("messages", json(r#"[{"role":"user"}]"#))]);
     run_proxy_only(&hook, request_data, &error, None).await;
     drain(&hook.alerts.tasks).await;

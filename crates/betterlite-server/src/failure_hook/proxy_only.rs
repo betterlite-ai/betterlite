@@ -13,7 +13,7 @@ use super::hook::{FailureHook, FailureHookInput};
 use super::lift::call_type_for_route;
 use super::lift::deployment::stamp_deployment_attribution;
 use super::ports::{CallEnvironment, FailureInput, FailureLogging};
-use crate::guardrails::callback_caps::errors::{ProxyHookError, is_client_error};
+use crate::guardrails::callback_caps::errors::ProxyHookError;
 
 const LOGGED_LITELLM_PARAMS: [&str; 18] = [
     "force_timeout",
@@ -192,13 +192,29 @@ fn pick_input(request_data: &JsonMap) -> (FailureInput, Option<CallType>) {
     (FailureInput::Empty, None)
 }
 
+// LiteLLM's expected-client-error rule, not the alert rule: a 4xx status or code, a guardrail block included
+fn is_expected_client_error(error: &ProxyHookError) -> bool {
+    match error {
+        ProxyHookError::Http { status, .. } | ProxyHookError::GuardrailRaised { status, .. } => {
+            (400..500).contains(status)
+        }
+        ProxyHookError::Proxy(exception) => exception
+            .code
+            .parse::<u16>()
+            .is_ok_and(|code| (400..500).contains(&code)),
+        ProxyHookError::SensitiveDataRoute(_)
+        | ProxyHookError::ModifyResponse(_)
+        | ProxyHookError::RejectedRequest { .. }
+        | ProxyHookError::Other(_) => false,
+    }
+}
+
 async fn dispatch_failure_handlers(
     hook: &FailureHook,
     logging: &Arc<dyn FailureLogging>,
     error: &ProxyHookError,
 ) {
-    // the proxy-only gate keeps provider exceptions out, so a client error here is the proxy's own 4xx
-    let include_traceback = hook.log_client_error_tracebacks || !is_client_error(error);
+    let include_traceback = hook.log_client_error_tracebacks || !is_expected_client_error(error);
     let traceback = if include_traceback {
         format!("{:?}", Backtrace::capture())
     } else {
