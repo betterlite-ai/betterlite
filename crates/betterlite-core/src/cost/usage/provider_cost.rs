@@ -5,6 +5,7 @@ use betterlite_logging::fields::usage::Usage;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use rust_decimal::Error as DecimalError;
 
 use super::BillingUsageError as Error;
 const RESPONSE_COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
@@ -38,17 +39,21 @@ pub fn hidden_response_cost(
         Json::Null => return Ok(None),
         Json::Number(number) => decimal_text(&number.to_string()),
         Json::Text(text) => decimal_text(text),
-        Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
+        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
+            return Err(Error::Hidden {
+                field: RESPONSE_COST_HEADER,
+            });
+        }
     };
-    parsed.map(Some).ok_or(Error::Hidden {
+    parsed.map(Some).map_err(|source| Error::HiddenNumber {
         field: RESPONSE_COST_HEADER,
+        source,
     })
 }
-fn decimal_text(text: &str) -> Option<Decimal> {
-    let parsed = if text.contains(['e', 'E']) {
+fn decimal_text(text: &str) -> Result<Decimal, DecimalError> {
+    if text.contains(['e', 'E']) {
         Decimal::from_scientific(text)
     } else {
         Decimal::from_str(text)
-    };
-    parsed.ok()
+    }
 }

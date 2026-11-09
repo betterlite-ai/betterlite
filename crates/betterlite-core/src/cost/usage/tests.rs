@@ -14,6 +14,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
+use crate::routes::CallType;
+
 use super::provider_cost::{hidden_response_cost, without_provider_stated_cost};
 use super::tiers::{normalize_service_tier, resolve_billable_service_tier, served_service_tier};
 use super::{
@@ -349,21 +351,21 @@ fn known_usage_recognizes_only_the_source_types() {
 }
 
 #[rstest]
-#[case::chat(ResponseKind::Chat, Some("completion"))]
-#[case::chat_stream(ResponseKind::ChatStream, Some("completion"))]
-#[case::embedding(ResponseKind::Embedding, Some("embedding"))]
-#[case::transcription(ResponseKind::Transcription, Some("transcription"))]
-#[case::speech(ResponseKind::Speech, Some("speech"))]
-#[case::rerank(ResponseKind::Rerank, Some("rerank"))]
-#[case::image(ResponseKind::Image, Some("image_generation"))]
-#[case::text_completion(ResponseKind::TextCompletion, Some("text_completion"))]
-#[case::send_message(ResponseKind::SendMessage, Some("send_message"))]
-#[case::responses(ResponseKind::Responses, None::<&str>)]
-#[case::decisions(ResponseKind::DecisionsIr, None::<&str>)]
-#[case::other(ResponseKind::Other, None::<&str>)]
+#[case::chat(ResponseKind::Chat, Some(CallType::Completion))]
+#[case::chat_stream(ResponseKind::ChatStream, Some(CallType::Completion))]
+#[case::embedding(ResponseKind::Embedding, Some(CallType::Embedding))]
+#[case::transcription(ResponseKind::Transcription, Some(CallType::Transcription))]
+#[case::speech(ResponseKind::Speech, Some(CallType::Speech))]
+#[case::rerank(ResponseKind::Rerank, Some(CallType::Rerank))]
+#[case::image(ResponseKind::Image, Some(CallType::ImageGeneration))]
+#[case::text_completion(ResponseKind::TextCompletion, Some(CallType::TextCompletion))]
+#[case::send_message(ResponseKind::SendMessage, Some(CallType::SendMessage))]
+#[case::responses(ResponseKind::Responses, None)]
+#[case::decisions(ResponseKind::DecisionsIr, None)]
+#[case::other(ResponseKind::Other, None)]
 fn infer_call_type_maps_tagged_response_kinds(
     #[case] kind: ResponseKind,
-    #[case] expected: Option<&str>,
+    #[case] expected: Option<CallType>,
 ) {
     assert_eq!(infer_call_type(None, kind), expected);
 }
@@ -371,8 +373,8 @@ fn infer_call_type_maps_tagged_response_kinds(
 #[test]
 fn infer_call_type_keeps_an_explicit_call_type() {
     assert_eq!(
-        infer_call_type(Some("embedding"), ResponseKind::Chat),
-        Some("embedding")
+        infer_call_type(Some(CallType::Embedding), ResponseKind::Chat),
+        Some(CallType::Embedding)
     );
 }
 
@@ -397,12 +399,45 @@ fn transcription_token_details_accept_prompt_completion_or_audio(
         usage.prompt_tokens_details = Some(record);
     }
 
-    assert_eq!(transcription_has_tokens(Some(&usage)), expected);
+    assert_eq!(
+        transcription_has_tokens(Some(&usage)).expect("counts are integers"),
+        expected
+    );
 }
 
 #[test]
 fn transcription_token_details_are_false_without_usage() {
-    assert!(!transcription_has_tokens(None));
+    assert!(!transcription_has_tokens(None).expect("an absent usage holds no tokens"),);
+}
+
+#[rstest]
+#[case::text("text_tokens", Json::Text("12".to_owned()))]
+#[case::boolean("audio_tokens", Json::Bool(true))]
+#[case::fraction("text_tokens", Json::Number(Number::from_f64(1.5).expect("finite")))]
+#[case::large("audio_tokens", Json::Number(Number::from(u64::MAX)))]
+fn transcription_token_details_reject_non_integer_counts(
+    #[case] field: &'static str,
+    #[case] value: Json,
+) {
+    let mut usage = usage(0, 0);
+    let mut record = IndexMap::new();
+    record.insert(field.to_owned(), value);
+    usage.prompt_tokens_details = Some(record);
+
+    assert!(matches!(
+        transcription_has_tokens(Some(&usage)),
+        Err(BillingUsageError::Token { field: counted }) if counted == field
+    ));
+}
+
+#[test]
+fn transcription_token_details_treat_null_as_zero() {
+    let mut usage = usage(0, 0);
+    let mut record = IndexMap::new();
+    record.insert("audio_tokens".to_owned(), Json::Null);
+    usage.prompt_tokens_details = Some(record);
+
+    assert!(!transcription_has_tokens(Some(&usage)).expect("null counts as zero"),);
 }
 
 #[test]
@@ -465,12 +500,30 @@ fn hidden_response_cost_reads_strings_and_numbers(
 #[case::malformed_string(
     r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":"abc"}}"#
 )]
-#[case::boolean(r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":true}}"#)]
-#[case::non_object_headers(r#"{"additional_headers":"nope"}"#)]
-fn hidden_response_cost_rejects_malformed_values(#[case] text: &str) {
+#[case::nan_string(r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":"NaN"}}"#)]
+fn hidden_response_cost_keeps_the_decimal_parse_error(#[case] text: &str) {
     let hidden = mapping(text);
 
-    hidden_response_cost(Some(&hidden)).unwrap_err();
+    assert!(matches!(
+        hidden_response_cost(Some(&hidden)),
+        Err(BillingUsageError::HiddenNumber {
+            field: "llm_provider-x-litellm-response-cost",
+            ..
+        })
+    ));
+}
+
+#[rstest]
+#[case::boolean(r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":true}}"#)]
+#[case::array(r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":[]}}"#)]
+#[case::non_object_headers(r#"{"additional_headers":"nope"}"#)]
+fn hidden_response_cost_rejects_non_numeric_values(#[case] text: &str) {
+    let hidden = mapping(text);
+
+    assert!(matches!(
+        hidden_response_cost(Some(&hidden)),
+        Err(BillingUsageError::Hidden { .. })
+    ));
 }
 
 #[test]

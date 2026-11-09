@@ -159,9 +159,3 @@ pub(super) fn decimal_value(cost: &Decimal) -> Value {
     serde_json::Number::from_str(&text)
         .map_or_else(|_error| Value::String(cost.to_string()), Value::Number)
 }
-pub(super) fn optional_text(value: Option<&str>) -> Value {
-    let Some(text) = value else {
-        return Value::Null;
-    };
-    Value::String(text.to_owned())
-}

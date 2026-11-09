@@ -14,9 +14,11 @@ use betterlite_models::decisions::openai::DecisionUsage;
 use betterlite_models::decisions::systemone::DecisionsUsage;
 use betterlite_openai::api::responses_objects::ResponseApiUsage;
 use indexmap::IndexMap;
+use rust_decimal::Error as DecimalError;
 use thiserror::Error;
 
 use crate::api::responses_usage::ResponsesUsageError;
+use crate::routes::CallType;
 mod convert;
 pub mod provider_cost;
 mod tests;
@@ -61,37 +63,28 @@ pub struct BillingResponse<'usage> {
 }
 #[derive(Debug, Error)]
 pub enum BillingUsageError {
-    #[error("the usage object could not be read: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the Responses usage could not be converted: {source}")]
-    Responses {
-        #[source]
-        source: ResponsesUsageError,
-    },
-    #[error("the Anthropic usage could not be converted: {source}")]
-    Anthropic {
-        #[source]
-        source: AnthropicUsageError,
-    },
-    #[error("the Interactions usage could not be converted: {source}")]
-    Interactions {
-        #[source]
-        source: CostUsageError,
-    },
-    #[error("the usage mapping could not be read: {source}")]
-    Usage {
-        #[source]
-        source: UsageParseError,
-    },
+    #[error("the usage object could not be read: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("the Responses usage could not be converted: {0}")]
+    Responses(#[source] ResponsesUsageError),
+    #[error("the Anthropic usage could not be converted: {0}")]
+    Anthropic(#[source] AnthropicUsageError),
+    #[error("the Interactions usage could not be converted: {0}")]
+    Interactions(#[source] CostUsageError),
+    #[error("the usage mapping could not be read: {0}")]
+    Usage(#[source] UsageParseError),
     #[error("the {field} token count is not representable")]
     Token { field: &'static str },
     #[error("the {kind} usage does not belong to a {kind} response")]
     Projection { kind: &'static str },
     #[error("the hidden parameter {field} is not usable")]
     Hidden { field: &'static str },
+    #[error("the hidden parameter {field} does not hold a number: {source}")]
+    HiddenNumber {
+        field: &'static str,
+        #[source]
+        source: DecimalError,
+    },
 }
 
 // The source only asks for Anthropic usage here with reasoning_content None, so the counter never runs.
@@ -126,7 +119,7 @@ fn usage_object(usage: &BillingUsage<'_>) -> Result<Option<Usage>, BillingUsageE
         BillingUsage::Mapping(found) => convert::mapping_usage(found),
         BillingUsage::TypedRecord(found) => usage_from_mapping(found)
             .map(Some)
-            .map_err(|source| BillingUsageError::Usage { source }),
+            .map_err(BillingUsageError::Usage),
         BillingUsage::DecisionsIr(_) | BillingUsage::DecisionsOpenAi(_) => {
             Err(BillingUsageError::Projection { kind: "decisions" })
         }
@@ -144,43 +137,45 @@ pub const fn is_known_usage_object(usage: &BillingUsage<'_>) -> bool {
     )
 }
 #[must_use]
-pub const fn infer_call_type(call_type: Option<&str>, kind: ResponseKind) -> Option<&str> {
+pub const fn infer_call_type(call_type: Option<CallType>, kind: ResponseKind) -> Option<CallType> {
     if let Some(explicit) = call_type {
         return Some(explicit);
     }
     match kind {
-        ResponseKind::Chat | ResponseKind::ChatStream => Some("completion"),
-        ResponseKind::Embedding => Some("embedding"),
-        ResponseKind::Transcription => Some("transcription"),
-        ResponseKind::Speech => Some("speech"),
-        ResponseKind::Rerank => Some("rerank"),
-        ResponseKind::Image => Some("image_generation"),
-        ResponseKind::TextCompletion => Some("text_completion"),
-        ResponseKind::SendMessage => Some("send_message"),
+        ResponseKind::Chat | ResponseKind::ChatStream => Some(CallType::Completion),
+        ResponseKind::Embedding => Some(CallType::Embedding),
+        ResponseKind::Transcription => Some(CallType::Transcription),
+        ResponseKind::Speech => Some(CallType::Speech),
+        ResponseKind::Rerank => Some(CallType::Rerank),
+        ResponseKind::Image => Some(CallType::ImageGeneration),
+        ResponseKind::TextCompletion => Some(CallType::TextCompletion),
+        ResponseKind::SendMessage => Some(CallType::SendMessage),
         ResponseKind::DecisionsIr
         | ResponseKind::DecisionsOpenAi
         | ResponseKind::Responses
         | ResponseKind::Other => None,
     }
 }
-#[must_use]
-pub fn transcription_has_tokens(usage: Option<&Usage>) -> bool {
+pub fn transcription_has_tokens(usage: Option<&Usage>) -> Result<bool, BillingUsageError> {
     let Some(counted) = usage else {
-        return false;
+        return Ok(false);
     };
-    if let Some(details) = counted.prompt_tokens_details.as_ref() {
-        let audio = detail_count(details, "audio_tokens");
-        let text = detail_count(details, "text_tokens");
-        if audio > 0 || text > 0 {
-            return true;
-        }
+    if let Some(details) = counted.prompt_tokens_details.as_ref()
+        && (detail_count(details, "audio_tokens")? > 0 || detail_count(details, "text_tokens")? > 0)
+    {
+        return Ok(true);
     }
-    counted.prompt_tokens > 0 || counted.completion_tokens > 0
+    Ok(counted.prompt_tokens > 0 || counted.completion_tokens > 0)
 }
-fn detail_count(details: &IndexMap<String, Json>, name: &str) -> i64 {
-    match details.get(name) {
-        Some(Json::Number(number)) => number.as_i64().unwrap_or(0),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => 0,
+fn detail_count(
+    details: &IndexMap<String, Json>,
+    field: &'static str,
+) -> Result<i64, BillingUsageError> {
+    match details.get(field) {
+        Some(Json::Number(number)) => number.as_i64().ok_or(BillingUsageError::Token { field }),
+        Some(Json::Null) | None => Ok(0),
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(BillingUsageError::Token { field })
+        }
     }
 }

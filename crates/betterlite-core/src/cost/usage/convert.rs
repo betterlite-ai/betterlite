@@ -25,24 +25,21 @@ pub(super) fn mapping_usage(mapping: &IndexMap<String, Json>) -> Result<Option<U
     let object = Json::Object(mapping.clone());
     if is_anthropic_usage_object(&object) {
         let counter = NoReasoningCounter;
-        let anthropic = calculate_usage(&object, None, None, None, &counter)
-            .map_err(|source| Error::Anthropic { source })?;
+        let anthropic =
+            calculate_usage(&object, None, None, None, &counter).map_err(Error::Anthropic)?;
         return Ok(Some(anthropic::from_usage(&anthropic)));
     }
     // B906 converts a Responses usage only when both keys are present on the same object.
     if mapping.contains_key("input_tokens") && mapping.contains_key("output_tokens") {
-        let text = serde_json::to_string(&object).map_err(|source| Error::Json { source })?;
-        let value = serde_json::from_str(&text).map_err(|source| Error::Json { source })?;
-        let converted = transform_response_api_usage(Some(&value))
-            .map_err(|source| Error::Responses { source })?;
+        let text = serde_json::to_string(&object).map_err(Error::Json)?;
+        let value = serde_json::from_str(&text).map_err(Error::Json)?;
+        let converted = transform_response_api_usage(Some(&value)).map_err(Error::Responses)?;
         return from_responses_usage(&converted).map(Some);
     }
     if let Some(interactions) = interactions_candidate(mapping)? {
         return interactions_from(&interactions).map(Some);
     }
-    usage_from_mapping(mapping)
-        .map(Some)
-        .map_err(|source| Error::Usage { source })
+    usage_from_mapping(mapping).map(Some).map_err(Error::Usage)
 }
 pub(super) fn interactions_usage(mapping: &IndexMap<String, Json>) -> Result<Usage, Error> {
     let parsed = interactions_candidate(mapping)?.ok_or(Error::Projection {
@@ -56,15 +53,12 @@ fn interactions_candidate(
     if !mapping.contains_key("total_input_tokens") && !mapping.contains_key("total_output_tokens") {
         return Ok(None);
     }
-    let text = serde_json::to_string(&Json::Object(mapping.clone()))
-        .map_err(|source| Error::Json { source })?;
-    let parsed: InteractionsUsage =
-        serde_json::from_str(&text).map_err(|source| Error::Json { source })?;
+    let text = serde_json::to_string(&Json::Object(mapping.clone())).map_err(Error::Json)?;
+    let parsed: InteractionsUsage = serde_json::from_str(&text).map_err(Error::Json)?;
     Ok(is_interactions_usage_object(&parsed).then_some(parsed))
 }
 fn interactions_from(usage: &InteractionsUsage) -> Result<Usage, Error> {
-    let cost =
-        transform_interactions_usage(usage).map_err(|source| Error::Interactions { source })?;
+    let cost = transform_interactions_usage(usage).map_err(Error::Interactions)?;
     let mut converted = Usage::from(&cost);
     let cached = cost
         .cache_read_tokens
@@ -75,15 +69,14 @@ fn interactions_from(usage: &InteractionsUsage) -> Result<Usage, Error> {
     Ok(converted)
 }
 pub(super) fn responses_usage(usage: &ResponseApiUsage) -> Result<Usage, Error> {
-    let converted = normalize_usage(UsageInput::Response(usage))
-        .map_err(|source| Error::Responses { source })?;
-    from_responses_usage(&converted)
+    normalize_usage(UsageInput::Response(usage))
+        .map_err(Error::Responses)
+        .and_then(|converted| from_responses_usage(&converted))
 }
 fn from_responses_usage(converted: &ResponsesUsage) -> Result<Usage, Error> {
     let mut extras = IndexMap::new();
     for (name, value) in &converted.extensions {
-        let field: Json =
-            serde_json::from_value(value.clone()).map_err(|source| Error::Json { source })?;
+        let field: Json = serde_json::from_value(value.clone()).map_err(Error::Json)?;
         extras.insert(name.clone(), field);
     }
     Ok(Usage {
@@ -150,20 +143,17 @@ pub(super) fn decisions_usage(usage: &BillingUsage<'_>) -> Result<Option<Usage>,
     match usage {
         BillingUsage::Absent | BillingUsage::Null => Ok(None),
         BillingUsage::DecisionsIr(found) => decision_usage(
-            token_count(&found.input_tokens, "input_tokens")?,
-            token_count(&found.output_tokens, "output_tokens")?,
-            token_count(&found.cached_tokens, "cached_tokens")?,
-            token_count(&found.cache_write_tokens, "cache_write_tokens")?,
+            &found.input_tokens,
+            &found.output_tokens,
+            &found.cached_tokens,
+            &found.cache_write_tokens,
         )
         .map(Some),
         BillingUsage::DecisionsOpenAi(found) => decision_usage(
-            token_count(&found.input_tokens, "input_tokens")?,
-            token_count(&found.output_tokens, "output_tokens")?,
-            token_count(&found.input_tokens_details.cached_tokens, "cached_tokens")?,
-            token_count(
-                &found.input_tokens_details.cache_write_tokens,
-                "cache_write_tokens",
-            )?,
+            &found.input_tokens,
+            &found.output_tokens,
+            &found.input_tokens_details.cached_tokens,
+            &found.input_tokens_details.cache_write_tokens,
         )
         .map(Some),
         BillingUsage::Chat(_)
@@ -177,11 +167,23 @@ pub(super) fn decisions_usage(usage: &BillingUsage<'_>) -> Result<Option<Usage>,
 
 // LiteLLM recomputes the total from input and output and never adds Decisions output reasoning.
 fn decision_usage(
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    cached_tokens: i64,
-    cache_write_tokens: i64,
+    input: &TokenCount,
+    output: &TokenCount,
+    cached: &TokenCount,
+    write: &TokenCount,
 ) -> Result<Usage, Error> {
+    let prompt_tokens = input.0.as_i64().ok_or(Error::Token {
+        field: "input_tokens",
+    })?;
+    let completion_tokens = output.0.as_i64().ok_or(Error::Token {
+        field: "output_tokens",
+    })?;
+    let cached_tokens = cached.0.as_i64().ok_or(Error::Token {
+        field: "cached_tokens",
+    })?;
+    let write_tokens = write.0.as_i64().ok_or(Error::Token {
+        field: "cache_write_tokens",
+    })?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(Error::Token {
@@ -189,12 +191,8 @@ fn decision_usage(
         })?;
     let mut details = IndexMap::new();
     insert_count(&mut details, "cached_tokens", Some(cached_tokens));
-    insert_count(&mut details, "cache_write_tokens", Some(cache_write_tokens));
-    insert_count(
-        &mut details,
-        "cache_creation_tokens",
-        Some(cache_write_tokens),
-    );
+    insert_count(&mut details, "cache_write_tokens", Some(write_tokens));
+    insert_count(&mut details, "cache_creation_tokens", Some(write_tokens));
     Ok(Usage {
         prompt_tokens,
         completion_tokens,
@@ -205,12 +203,6 @@ fn decision_usage(
         cost: None,
         extras: IndexMap::new(),
     })
-}
-fn token_count(count: &TokenCount, field: &'static str) -> Result<i64, Error> {
-    let Some(value) = count.0.as_i64() else {
-        return Err(Error::Token { field });
-    };
-    Ok(value)
 }
 fn insert_count(record: &mut IndexMap<String, Json>, name: &str, value: Option<i64>) {
     if let Some(count) = value {

@@ -8,9 +8,7 @@ use betterlite_core::cost::usage::{BillingResponse, ResponseKind, get_usage_obje
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use model::{
-    decimal_value, optional_mapping, optional_text, optional_usage, parse_usage, usage_projection,
-};
+use model::{decimal_value, optional_mapping, optional_usage, parse_usage, usage_projection};
 mod model;
 
 type Failure = Box<crate::helpers::HelperError>;
@@ -102,7 +100,7 @@ fn execute(call: &Call) -> Result<Value, Failure> {
                 call.requested_tier.as_deref(),
                 call.served_tier.as_deref(),
             );
-            Ok(optional_text(tier.as_deref()))
+            Ok(Value::from(tier.as_deref()))
         }
     }
 }
@@ -126,7 +124,7 @@ fn served_tier(call: &Call) -> Result<Value, Failure> {
         .response
         .as_ref()
         .ok_or_else(|| failure("response is required"))?;
-    Ok(optional_text(
+    Ok(Value::from(
         served_service_tier(
             input.service_tier.as_deref(),
             optional_mapping(input.hidden_params.as_ref())?.as_ref(),
