@@ -62,12 +62,8 @@ pub fn parse_tool_arguments(arguments: &str) -> Result<JsonObject, SamplingConve
 fn raw_tool_arguments(arguments: &str) -> Result<JsonObject, SamplingConvertError> {
     let text = serde_json::to_string(&BTreeMap::from([("raw", arguments)]))
         .map_err(|source| SamplingConvertError::ToolArgumentsEncoding { source })?;
-    let raw = RawValue::from_string(text)
-        .map_err(|source| SamplingConvertError::ToolArgumentsEncoding { source })?;
-    let Ok(object) = JsonObject::try_from(raw) else {
-        return Err(SamplingConvertError::JsonObjectExpected);
-    };
-    Ok(object)
+    serde_json::from_str(&text)
+        .map_err(|source| SamplingConvertError::ToolArgumentsEncoding { source })
 }
 
 pub fn convert_response(

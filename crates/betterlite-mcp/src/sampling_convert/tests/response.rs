@@ -6,7 +6,7 @@ use crate::sampling_convert::response::{
     StopReason, convert_response, parse_tool_arguments,
 };
 
-use super::fixtures::{choice, response, text, tool_call, tool_use};
+use super::fixtures::{choice, response, text, tool_calls, tool_use};
 
 #[test]
 fn a_text_response_becomes_a_sampling_message() {
@@ -62,7 +62,7 @@ fn tool_calls_become_tool_use_content_after_the_text() {
         "gpt-4o",
         vec![choice(
             Some("calling"),
-            Some(vec![tool_call("call-9", "lookup", r#"{"q": "x"}"#)]),
+            Some(tool_calls(&[("call-9", "lookup", r#"{"q": "x"}"#)])),
             Some("tool_calls"),
         )],
     );
@@ -86,7 +86,7 @@ fn tool_calls_without_text_have_only_tool_use_blocks() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(vec![tool_call("call-9", "lookup", "{}")]),
+            Some(tool_calls(&[("call-9", "lookup", "{}")])),
             Some("tool_calls"),
         )],
     );
@@ -107,7 +107,7 @@ fn empty_text_is_omitted_from_a_tool_call_result() {
         "gpt-4o",
         vec![choice(
             Some(""),
-            Some(vec![tool_call("call-9", "lookup", "{}")]),
+            Some(tool_calls(&[("call-9", "lookup", "{}")])),
             Some("tool_calls"),
         )],
     );
@@ -145,10 +145,10 @@ fn several_tool_calls_keep_their_order() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(vec![
-                tool_call("call-1", "first", "{}"),
-                tool_call("call-2", "second", r#"{"n": 2}"#),
-            ]),
+            Some(tool_calls(&[
+                ("call-1", "first", "{}"),
+                ("call-2", "second", r#"{"n": 2}"#),
+            ])),
             Some("tool_calls"),
         )],
     );
@@ -224,7 +224,7 @@ fn bad_tool_arguments_fail_the_response_conversion() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(vec![tool_call("call-9", "lookup", "\"hello\"")]),
+            Some(tool_calls(&[("call-9", "lookup", "\"hello\"")])),
             Some("tool_calls"),
         )],
     );

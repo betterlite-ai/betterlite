@@ -167,13 +167,13 @@ pub(crate) fn text_parts(content: &SamplingContent) -> Option<String> {
 }
 
 pub(crate) fn extract_tool_calls(content: &SamplingContent) -> Vec<OpenAiToolCall> {
-    convert_content(content)
-        .into_iter()
-        .filter_map(|part| match part {
-            ConvertedPart::ToolUse(call) => Some(call),
-            ConvertedPart::Regular(_) | ConvertedPart::ToolResult(_) => None,
-        })
-        .collect()
+    let mut calls = Vec::new();
+    for part in convert_content(content) {
+        if let ConvertedPart::ToolUse(call) = part {
+            calls.push(call);
+        }
+    }
+    calls
 }
 
 pub(crate) fn extract_tool_results(content: &SamplingContent) -> Vec<OpenAiMessage> {

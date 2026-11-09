@@ -123,30 +123,18 @@ pub(crate) fn expected_call(id: &str, name: &str, arguments: &str) -> OpenAiTool
     }
 }
 
-pub(crate) fn tool_call(id: &str, name: &str, arguments: &str) -> ToolCall {
-    ToolCall {
-        id: id.to_owned(),
-        kind: String::from("function"),
-        function: OpenAiChatFunctionCall {
-            name: name.to_owned(),
-            arguments: arguments.to_owned(),
-        },
-    }
-}
-
-pub(crate) fn assistant(
-    content: Option<&str>,
-    tool_calls: Option<Vec<ToolCall>>,
-) -> AssistantMessage {
-    AssistantMessage {
-        role: String::from("assistant"),
-        content: content.map(str::to_owned),
-        tool_calls,
-        annotations: None,
-        audio: None,
-        refusal: None,
-        provider_specific_fields: MessageProviderFields::default(),
-    }
+pub(crate) fn tool_calls(calls: &[(&str, &str, &str)]) -> Vec<ToolCall> {
+    calls
+        .iter()
+        .map(|(id, name, arguments)| ToolCall {
+            id: (*id).to_owned(),
+            kind: String::from("function"),
+            function: OpenAiChatFunctionCall {
+                name: (*name).to_owned(),
+                arguments: (*arguments).to_owned(),
+            },
+        })
+        .collect()
 }
 
 pub(crate) fn choice(
@@ -156,7 +144,15 @@ pub(crate) fn choice(
 ) -> ChatChoice {
     ChatChoice {
         index: 0,
-        message: assistant(content, tool_calls),
+        message: AssistantMessage {
+            role: String::from("assistant"),
+            content: content.map(str::to_owned),
+            tool_calls,
+            annotations: None,
+            audio: None,
+            refusal: None,
+            provider_specific_fields: MessageProviderFields::default(),
+        },
         finish_reason: finish_reason.map(str::to_owned),
         logprobs: None,
         provider_specific_fields: BTreeMap::new(),
