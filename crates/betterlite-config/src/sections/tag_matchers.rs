@@ -18,8 +18,26 @@ struct RawDeployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
-    tags: Option<Vec<String>>,
-    tag_regex: Option<Vec<String>>,
+    tags: Option<RawTags>,
+    tag_regex: Option<RawTagPatterns>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(
+    untagged,
+    expecting = "a list of tags in model_list[].litellm_params.tags"
+)]
+enum RawTags {
+    List(Vec<String>),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(
+    untagged,
+    expecting = "a list of patterns in model_list[].litellm_params.tag_regex"
+)]
+enum RawTagPatterns {
+    List(Vec<String>),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -43,17 +61,17 @@ impl Section for Raw {
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             let prefix = format!("model_list.{index}.litellm_params");
+            let tags = deployment
+                .litellm_params
+                .tags
+                .map(|RawTags::List(values)| values);
+            let tag_regex = deployment
+                .litellm_params
+                .tag_regex
+                .map(|RawTagPatterns::List(values)| values);
             deployments.push(DeploymentTags {
-                tags: resolve_list(
-                    deployment.litellm_params.tags,
-                    &format!("{prefix}.tags"),
-                    lookup,
-                )?,
-                tag_regex: resolve_list(
-                    deployment.litellm_params.tag_regex,
-                    &format!("{prefix}.tag_regex"),
-                    lookup,
-                )?,
+                tags: resolve_list(tags, &format!("{prefix}.tags"), lookup)?,
+                tag_regex: resolve_list(tag_regex, &format!("{prefix}.tag_regex"), lookup)?,
             });
         }
         Ok(Settings { deployments })

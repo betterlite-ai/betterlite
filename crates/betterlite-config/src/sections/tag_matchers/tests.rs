@@ -118,7 +118,10 @@ fn the_shipped_valid_seed_loads() {
     );
     assert_eq!(
         resolved.deployments[0].tag_regex,
-        Some(vec!["^User-Agent: claude-code/".to_owned()])
+        Some(vec![
+            "^User-Agent: claude-code/".to_owned(),
+            "(?i)internal-tool".to_owned()
+        ])
     );
     assert_eq!(resolved.deployments[1].tags, None);
 }

@@ -155,15 +155,12 @@ fn routing_prefix() {
     ));
     assert_eq!(
         selection.rewritten,
-        strings(&["alpha", "beta", "gamma", "plain"])
+        strings(&["alpha", "!group:beta", "&gamma", "plain"])
     );
     assert_eq!(selection.tags.required, strings(&["gamma"]));
     assert_eq!(selection.tags.positive, strings(&["alpha", "plain"]));
-    assert_eq!(selection.tags.excluded, strings(&["beta"]));
-    assert_eq!(
-        selection.routing_confirmed,
-        set(&["alpha", "beta", "gamma"])
-    );
+    assert_eq!(selection.tags.excluded, strings(&["group:beta"]));
+    assert_eq!(selection.routing_confirmed, set(&["alpha", "gamma"]));
     assert_eq!(selection.matches.len(), 1);
     assert_eq!(selection.matches[0].value, "alpha");
 }
