@@ -1,0 +1,38 @@
+kind: helper
+name: options_and_pages
+call:
+  b6801:
+    model: mistral-ocr-latest
+    document:
+      type: document_url
+      document_url: data:application/pdf;base64,YWJj
+    api_key: sk-test
+    options:
+      pages: [0, 2]
+      include_image_base64: true
+      image_limit: 2
+      image_min_size: 100
+      bbox_annotation_format: {type: json_schema}
+      document_annotation_format: {type: json_schema}
+      document_annotation_prompt: extract
+      extract_header: true
+      extract_footer: false
+      table_format: markdown
+      confidence_scores_granularity: word
+      include_blocks: true
+      id: req-123
+    answer:
+      pages:
+        - index: 0
+          markdown: table page
+          tables: [{rows: 2, cols: 3}]
+          hyperlinks: [https://example.com]
+          header: header
+          footer: footer
+          blocks: [{type: title, bbox: {x: 1}, confidence_scores: {mean: 0.98}}]
+          confidence_scores:
+            average_page_confidence_score: 0.99
+            minimum_page_confidence_score: 0.97
+env: {}
+compare:
+  ignore: []
