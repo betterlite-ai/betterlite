@@ -1,0 +1,40 @@
+kind: helper
+name: candidate-count-default
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 1}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 10}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 50}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_num_candidates: 10000}
+          optional_params: {max_num_results: 50}
+          query: q
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+          embedding: [[0.5]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+env: {}
+compare: {ignore: []}
