@@ -258,6 +258,18 @@ fn creator_hidden_params_include_the_provider_model() {
 }
 
 #[test]
+fn creator_hidden_params_skip_an_empty_provider_model() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"id": "c1", "model": "", "choices": [{"delta": {"content": "hi"}}]}"#);
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert_eq!(
+        created_chunk.hidden_params.get("provider_response_model"),
+        None
+    );
+}
+
+#[test]
 fn creator_carries_hidden_provider_fields() {
     let mut decode_state = state("gpt-4");
     let chunk = json_chunk(
@@ -308,6 +320,7 @@ fn creator_provider_fields_set_the_chunk_identity_but_not_the_model() {
     assert_eq!(created_chunk.id, "provider-id");
     assert_eq!(created_chunk.object, "provider.object");
     assert_eq!(created_chunk.model, "gpt-4");
+    assert_eq!(created_chunk.extra.get("model"), None);
     assert_eq!(created_chunk.created, 1234);
     assert_eq!(
         created_chunk.system_fingerprint.as_deref(),
