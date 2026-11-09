@@ -239,3 +239,10 @@ path = "fuzz_targets/milvus_vector_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vercel_ai_gateway_reply"
+path = "fuzz_targets/vercel_ai_gateway_reply.rs"
+test = false
+doc = false
+bench = false
