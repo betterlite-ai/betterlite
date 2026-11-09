@@ -231,6 +231,12 @@ fn json(text: &str) -> AgentJson {
         r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"historyLength": 3}}"#
     )
 )]
+#[case::v03_history_length_large_integer(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"historyLength": 9007199254740993}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"historyLength": 9007199254740993}}"#
+    )
+)]
 #[case::v03_duplicate_spellings(
     r#"{"message": {"message_id": "m1", "messageId": "m2", "role": "user", "parts": [{"text": "hi"}], "context_id": "c1", "contextId": "c2"}, "configuration": {"historyLength": 1, "history_length": 2}}"#,
     Some(
@@ -474,4 +480,24 @@ fn send_params_tests_behavior(#[case] input: &str, #[case] want: Option<&str>) {
         (Ok(parsed), None) => panic!("expected an error, parsed {parsed:?}"),
         (Err(error), Some(text)) => panic!("expected {text}, got {error}"),
     }
+}
+
+#[test]
+fn send_params_errors_name_the_failing_part() {
+    let missing = build_message_send_params(&json(
+        r#"{"message": {"messageId": "m1", "parts": [{"mediaType": "text/plain"}]}}"#,
+    ))
+    .unwrap_err();
+    assert!(
+        missing.to_string().contains("carries no content"),
+        "{missing}"
+    );
+    let multiple = build_message_send_params(&json(
+        r#"{"message": {"messageId": "m1", "parts": [{"text": "a", "url": "u"}]}}"#,
+    ))
+    .unwrap_err();
+    assert!(
+        multiple.to_string().contains("more than one content key"),
+        "{multiple}"
+    );
 }
