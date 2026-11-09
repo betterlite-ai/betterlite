@@ -144,6 +144,7 @@ impl PointFiveUploadClient {
             headers,
             body,
             timeout: self.request_timeout,
+            follow_redirects: true,
         };
         let response = self
             .http
@@ -182,6 +183,7 @@ impl PointFiveUploadClient {
             headers,
             body: body.to_vec(),
             timeout: self.request_timeout,
+            follow_redirects: false,
         };
         let response = self
             .http

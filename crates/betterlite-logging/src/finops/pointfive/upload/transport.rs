@@ -18,6 +18,8 @@ pub struct UploadRequest {
     pub headers: HeaderMap,
     pub body: Vec<u8>,
     pub timeout: Duration,
+    // LiteLLM's shared client follows redirects by default, and only the presigned PUT opts out
+    pub follow_redirects: bool,
 }
 
 pub struct UploadResponse {
@@ -38,6 +40,7 @@ pub struct PointFiveHttp {
 #[async_trait]
 impl UploadHttp for PointFiveHttp {
     async fn send(&self, request: UploadRequest) -> Result<UploadResponse, TransportError> {
+        let follow_redirects = request.follow_redirects;
         let body = if request.body.is_empty() {
             RequestBody::Empty
         } else {
@@ -54,12 +57,12 @@ impl UploadHttp for PointFiveHttp {
             body,
             deadline: request.timeout,
         };
-        let response = self
-            .client
-            .send(outbound)
-            .await?
-            .buffered(self.client.limits.body_bytes)
-            .await?;
+        let stream = if follow_redirects {
+            self.client.send_following(outbound).await?
+        } else {
+            self.client.send(outbound).await?
+        };
+        let response = stream.buffered(self.client.limits.body_bytes).await?;
         Ok(UploadResponse {
             status: response.status,
             body: response.body,

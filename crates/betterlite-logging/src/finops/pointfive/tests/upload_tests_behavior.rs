@@ -7,20 +7,27 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::error::UserUrlError;
 use betterlite_http::user_url::validate::{Resolve, UrlValidator};
 use http::Method;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde::Serialize;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 
 use super::error::PointFiveUploadError;
 use super::types::PointFiveUploadFailure;
 use super::upload::PointFiveUploadClient;
 use super::upload::sleeper::UploadSleeper;
-use super::upload::transport::{UploadHttp, UploadRequest, UploadResponse};
+use super::upload::transport::{PointFiveHttp, UploadHttp, UploadRequest, UploadResponse};
 use super::upload::url_check::{UploadUrlCheck, ValidatedUpload};
 
 const API_URL: &str = "https://api.pointfive.test/ingestion";
@@ -45,6 +52,7 @@ struct Seen {
     url: String,
     headers: BTreeMap<String, String>,
     body: Vec<u8>,
+    follow_redirects: bool,
 }
 
 #[derive(Clone, Default)]
@@ -84,6 +92,7 @@ impl UploadHttp for FakeHttp {
             url: request.url.to_string(),
             headers,
             body: request.body,
+            follow_redirects: request.follow_redirects,
         });
         let reply = self.replies.lock().expect("the reply script").pop_front();
         match reply {
@@ -167,6 +176,17 @@ fn allow_all(host_header: Option<&str>) -> Arc<dyn UploadUrlCheck> {
     })
 }
 
+fn put_headers(host_header: Option<&str>) -> BTreeMap<String, String> {
+    let mut headers = BTreeMap::from([
+        ("content-encoding".to_owned(), "gzip".to_owned()),
+        ("content-type".to_owned(), "application/x-ndjson".to_owned()),
+    ]);
+    if let Some(host) = host_header {
+        headers.insert("host".to_owned(), host.to_owned());
+    }
+    headers
+}
+
 fn client(
     http: &FakeHttp,
     check: Arc<dyn UploadUrlCheck>,
@@ -182,6 +202,132 @@ fn client(
         max_retries,
         request_timeout: Duration::from_secs(5),
     }
+}
+
+fn proxied_client() -> ProxiedClient {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .expect("an empty proxy policy"),
+    );
+    ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT)
+        .expect("an outbound client")
+}
+
+fn real_client(api_url: String) -> PointFiveUploadClient {
+    PointFiveUploadClient {
+        api_key: SecretString::from("key-1"),
+        api_url,
+        http: Arc::new(PointFiveHttp {
+            client: proxied_client(),
+        }),
+        url_check: allow_all(None),
+        sleeper: Arc::new(RecordingSleeper::default()),
+        max_retries: 3,
+        request_timeout: Duration::from_secs(5),
+    }
+}
+
+struct HttpReply {
+    status: u16,
+    location: Option<&'static str>,
+    body: Vec<u8>,
+}
+
+impl HttpReply {
+    fn status(status: u16) -> Self {
+        Self {
+            status,
+            location: None,
+            body: Vec::new(),
+        }
+    }
+
+    fn redirect(status: u16, location: &'static str) -> Self {
+        Self {
+            status,
+            location: Some(location),
+            body: Vec::new(),
+        }
+    }
+
+    fn json(body: Vec<u8>) -> Self {
+        Self {
+            status: 200,
+            location: None,
+            body,
+        }
+    }
+}
+
+fn serve(listener: TcpListener, replies: Vec<HttpReply>) -> JoinSet<Vec<String>> {
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let mut requests = Vec::new();
+        for reply in replies {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            requests.push(read_request(&mut stream).await);
+            let location = reply
+                .location
+                .map_or_else(String::new, |value| format!("location: {value}\r\n"));
+            let head = format!(
+                "HTTP/1.1 {status} X\r\ncontent-length: {length}\r\nconnection: close\r\n{location}\r\n",
+                status = reply.status,
+                length = reply.body.len()
+            );
+            stream
+                .write_all(head.as_bytes())
+                .await
+                .expect("a response head");
+            stream
+                .write_all(&reply.body)
+                .await
+                .expect("a response body");
+            stream.flush().await.expect("a flushed response");
+        }
+        requests
+    });
+    tasks
+}
+
+async fn read_request(stream: &mut TcpStream) -> String {
+    let mut received = Vec::new();
+    while !received.windows(4).any(|window| window == b"\r\n\r\n") {
+        let mut chunk = [0_u8; 1024];
+        let count = stream.read(&mut chunk).await.expect("a request read");
+        assert!(count > 0, "the connection closed before the head");
+        received.extend_from_slice(chunk.get(..count).expect("a read count"));
+    }
+    let head_end = received
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("a head end")
+        .saturating_add(4);
+    let head = String::from_utf8(received.get(..head_end).expect("a head slice").to_vec())
+        .expect("a utf-8 head");
+    let length = content_length(&head);
+    let mut body = received.get(head_end..).expect("a body slice").to_vec();
+    while body.len() < length {
+        let mut chunk = [0_u8; 1024];
+        let count = stream.read(&mut chunk).await.expect("a body read");
+        assert!(count > 0, "the connection closed before the body");
+        body.extend_from_slice(chunk.get(..count).expect("a read count"));
+    }
+    format!("{head}{}", String::from_utf8(body).expect("a utf-8 body"))
+}
+
+fn content_length(head: &str) -> usize {
+    head.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
 }
 
 #[test]
@@ -211,6 +357,7 @@ async fn upload_presigns_then_puts_the_batch() {
     assert_eq!(requests.len(), 2);
     let presign = &requests[0];
     assert_eq!(presign.method, Method::POST);
+    assert!(presign.follow_redirects);
     assert_eq!(
         presign.url,
         "https://api.pointfive.test/ingestion/upload-url"
@@ -229,14 +376,10 @@ async fn upload_presigns_then_puts_the_batch() {
     );
     let put = &requests[1];
     assert_eq!(put.method, Method::PUT);
+    assert!(!put.follow_redirects);
     assert_eq!(put.url, PRESIGNED);
     assert_eq!(put.body, b"payload".to_vec());
-    let expected: BTreeMap<String, String> = BTreeMap::from([
-        ("content-encoding".to_owned(), "gzip".to_owned()),
-        ("content-type".to_owned(), "application/x-ndjson".to_owned()),
-        ("host".to_owned(), "uploads.example".to_owned()),
-    ]);
-    assert_eq!(put.headers, expected);
+    assert_eq!(put.headers, put_headers(Some("uploads.example")));
 }
 
 #[tokio::test]
@@ -251,11 +394,7 @@ async fn the_put_omits_the_host_header_when_validation_gives_none() {
     assert_eq!(outcome, Ok("objects/1".to_owned()));
     let requests = http.requests();
     let put = &requests[1];
-    let expected: BTreeMap<String, String> = BTreeMap::from([
-        ("content-encoding".to_owned(), "gzip".to_owned()),
-        ("content-type".to_owned(), "application/x-ndjson".to_owned()),
-    ]);
-    assert_eq!(put.headers, expected);
+    assert_eq!(put.headers, put_headers(None));
 }
 
 #[tokio::test]
@@ -379,6 +518,77 @@ async fn a_redirected_put_is_refused(#[case] status: u16) {
     );
     assert_eq!(http.requests().len(), 2);
     assert!(sleeper.delays().is_empty());
+}
+
+#[tokio::test]
+async fn the_presign_post_follows_a_redirect() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
+    let address = listener.local_addr().expect("an address");
+    let presigned = format!("http://{address}/upload");
+    let replies = vec![
+        HttpReply::redirect(307, "/ingestion/moved"),
+        HttpReply::json(target_body(&presigned, "objects/1")),
+        HttpReply::status(200),
+    ];
+    let mut tasks = serve(listener, replies);
+    let client = real_client(format!("http://{address}/ingestion"));
+    let outcome = client.upload(b"payload").await;
+    assert_eq!(outcome, Ok("objects/1".to_owned()));
+    let requests = tasks
+        .join_next()
+        .await
+        .expect("the server task")
+        .expect("the served requests");
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests[0].starts_with("POST /ingestion/upload-url "),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        requests[1].starts_with("POST /ingestion/moved "),
+        "{}",
+        requests[1]
+    );
+    assert!(
+        requests[1].contains(r#"{"kind":"LITELLM","byteCount":7}"#),
+        "{}",
+        requests[1]
+    );
+    assert!(requests[2].starts_with("PUT /upload "), "{}", requests[2]);
+}
+
+#[tokio::test]
+async fn the_presigned_put_does_not_follow_a_redirect() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
+    let address = listener.local_addr().expect("an address");
+    let presigned = format!("http://{address}/upload");
+    let replies = vec![
+        HttpReply::json(target_body(&presigned, "objects/1")),
+        HttpReply::redirect(307, "/elsewhere"),
+    ];
+    let mut tasks = serve(listener, replies);
+    let client = real_client(format!("http://{address}/ingestion"));
+    let outcome = client.upload(b"payload").await;
+    assert_eq!(
+        outcome,
+        Err(PointFiveUploadFailure {
+            detail: "presigned upload redirected with 307, refusing to follow".to_owned(),
+            retryable: false,
+        })
+    );
+    let requests = tasks
+        .join_next()
+        .await
+        .expect("the server task")
+        .expect("the served requests");
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0].starts_with("POST /ingestion/upload-url "),
+        "{}",
+        requests[0]
+    );
+    assert!(requests[1].starts_with("PUT /upload "), "{}", requests[1]);
 }
 
 #[tokio::test]
