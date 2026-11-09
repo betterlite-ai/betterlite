@@ -1,0 +1,11 @@
+kind: helper
+name: redis-cache-values-get-cache-python-literal
+call:
+  b4327:
+    function: read_values
+    operation: get_cache
+    namespace: ns
+    keys: [alpha]
+    replies: ["{'answer': 42, 'ok': True}"]
+env: {}
+compare: {ignore: []}

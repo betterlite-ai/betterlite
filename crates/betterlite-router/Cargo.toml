@@ -9,9 +9,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 rand = { version = "0.10.3", default-features = false, features = ["alloc", "std_rng"] }
 regex.workspace = true
@@ -20,9 +22,13 @@ serde.workspace = true
 serde_json = "1.0.154"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 unicode-general-category = "1.1.0"
 
 [dev-dependencies]
+async-trait = "0.1.92"
+betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
 prometheus-client = "0.25.1"
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }

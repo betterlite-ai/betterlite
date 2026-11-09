@@ -1,0 +1,17 @@
+kind: helper
+name: langfuse-timestamp-conversion
+call:
+  b3901:
+    steps:
+      - function: to_unix_nanos
+        seconds: 1234.5
+      - function: to_unix_nanos
+        seconds: 1700000000.123456
+      - function: to_unix_nanos
+        seconds: 0
+      - function: to_unix_nanos
+        datetime: "2026-01-01T00:00:00Z"
+      - function: to_unix_nanos
+env: {}
+compare:
+  ignore: []

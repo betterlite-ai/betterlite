@@ -1,0 +1,12 @@
+kind: helper
+name: redis-cache-admin-info-line-without-colon
+call:
+  b4326:
+    function: parse_info
+    text: |-
+      # Extra
+      some raw line without a colon
+      another raw line
+      redis_version:7.2.4
+env: {}
+compare: {ignore: []}
