@@ -95,85 +95,6 @@ where
     })
 }
 
-fn arguments_json(arguments: &str) -> Value {
-    let Ok(value) = serde_json::from_str(arguments) else {
-        return Value::String(arguments.to_owned());
-    };
-    value
-}
-
-fn tool_call_json(id: Option<&str>, kind: Option<&str>, function: Option<(&str, &str)>) -> Value {
-    let (name, arguments) = function.unwrap_or_default();
-    serde_json::json!({
-        "id": id,
-        "type": kind,
-        "function": {"name": name, "arguments": arguments_json(arguments)},
-    })
-}
-
-fn choice_json(choice: &Choice) -> Value {
-    let tool_calls = choice.delta.tool_calls.as_ref().map(|calls| {
-        calls
-            .iter()
-            .map(|call| {
-                let function = call.function.as_ref().map(|function| {
-                    (
-                        function.name.as_deref().unwrap_or_default(),
-                        function.arguments.as_str(),
-                    )
-                });
-                tool_call_json(call.id.as_deref(), call.kind.as_deref(), function)
-            })
-            .collect::<Vec<Value>>()
-    });
-    serde_json::json!({
-        "index": choice.index,
-        "content": choice.delta.content,
-        "tool_calls": tool_calls,
-        "finish_reason": choice.finish_reason,
-    })
-}
-
-fn response_json(response: &ChatResponse) -> Value {
-    let choices = response
-        .choices
-        .iter()
-        .map(|choice| {
-            let tool_calls = choice.message.tool_calls.as_ref().map(|calls| {
-                calls
-                    .iter()
-                    .map(|call| {
-                        tool_call_json(
-                            Some(call.id.as_str()),
-                            Some(call.kind.as_str()),
-                            Some((&call.function.name, &call.function.arguments)),
-                        )
-                    })
-                    .collect::<Vec<Value>>()
-            });
-            serde_json::json!({
-                "index": choice.index,
-                "content": choice.message.content,
-                "tool_calls": tool_calls,
-                "finish_reason": choice.finish_reason,
-            })
-        })
-        .collect::<Vec<Value>>();
-    let details = response.usage.completion_tokens_details.as_ref();
-    serde_json::json!({
-        "created": response.created,
-        "model": response.model,
-        "choices": choices,
-        "usage": {
-            "prompt_tokens": response.usage.prompt_tokens,
-            "completion_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens,
-            "reasoning_tokens": details.and_then(|given| given.get("reasoning_tokens")).copied().flatten(),
-            "text_tokens": details.and_then(|given| given.get("text_tokens")).copied().flatten(),
-        },
-    })
-}
-
 fn base_response() -> ChatResponse {
     ChatResponse {
         id: String::from("chatcmpl-oci"),
@@ -201,23 +122,6 @@ fn base_response() -> ChatResponse {
     }
 }
 
-fn generic_response(body: &Json, status: u16) -> crate::helpers::HelperResult {
-    let mut response = base_response();
-    handle_generic_response(body, status, &mut response).map_err(oci_failure)?;
-    Ok(response_json(&response))
-}
-
-fn cohere_response(
-    body: &Json,
-    model: &str,
-    created: u64,
-    status: u16,
-) -> crate::helpers::HelperResult {
-    let mut response = base_response();
-    handle_cohere_response(body, model, created, status, &mut response).map_err(oci_failure)?;
-    Ok(response_json(&response))
-}
-
 fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
     let normalized = reasons
         .iter()
@@ -226,25 +130,13 @@ fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
     encoded(&normalized)
 }
 
-fn cohere_stream(calls: &[StreamCall]) -> crate::helpers::HelperResult {
-    stream_choices(calls, |call| {
-        handle_cohere_stream_chunk(
-            &call.chunk,
-            CohereEmitted {
-                tool_calls: call.prior_tool_calls_emitted,
-                text: call.prior_text_emitted,
-            },
-        )
-    })
-}
-
 fn stream_choices<T, F>(items: &[T], handle: F) -> crate::helpers::HelperResult
 where
     F: Fn(&T) -> Result<Choice, OciError>,
 {
     let mut choices = Vec::with_capacity(items.len());
     for item in items {
-        choices.push(choice_json(&handle(item).map_err(oci_failure)?));
+        choices.push(encoded(&handle(item).map_err(oci_failure)?)?);
     }
     Ok(Value::Array(choices))
 }
@@ -266,18 +158,35 @@ impl crate::helpers::Helper for Op {
             Input::CohereTools { tools } => {
                 encoded(&adapt_cohere_tools(tools).map_err(oci_failure)?)
             }
-            Input::GenericResponse { body, status } => generic_response(body, *status),
+            Input::GenericResponse { body, status } => {
+                let mut response = base_response();
+                handle_generic_response(body, *status, &mut response).map_err(oci_failure)?;
+                encoded(&response)
+            }
             Input::CohereResponse {
                 body,
                 model,
                 created,
                 status,
-            } => cohere_response(body, model, *created, *status),
+            } => {
+                let mut response = base_response();
+                handle_cohere_response(body, model, *created, *status, &mut response)
+                    .map_err(oci_failure)?;
+                encoded(&response)
+            }
             Input::FinishReason { reasons } => finish_reasons(reasons),
             Input::GenericStream { chunks } => {
                 stream_choices(chunks, |chunk| handle_generic_stream_chunk(chunk.clone()))
             }
-            Input::CohereStream { calls } => cohere_stream(calls),
+            Input::CohereStream { calls } => stream_choices(calls, |call| {
+                handle_cohere_stream_chunk(
+                    &call.chunk,
+                    CohereEmitted {
+                        tool_calls: call.prior_tool_calls_emitted,
+                        text: call.prior_text_emitted,
+                    },
+                )
+            }),
         }
     }
 }

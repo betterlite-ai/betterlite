@@ -1,8 +1,6 @@
+use crate::oci_common::OciError;
 use betterlite_prompts::arguments::json::Json;
 use serde::de::DeserializeOwned;
-
-use crate::oci_common::OciError;
-
 pub(crate) fn parse<T>(value: &Json, status: u16, prefix: &str) -> Result<T, OciError>
 where
     T: DeserializeOwned,

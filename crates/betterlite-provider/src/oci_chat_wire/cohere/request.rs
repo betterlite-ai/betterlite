@@ -1,15 +1,12 @@
-use std::collections::BTreeMap;
-
-use betterlite_openai::chat::{ChatMessage, MessageContent, Role, Tool, ToolCall};
-use betterlite_prompts::arguments::json::{Json, Object};
-
 use crate::oci_chat_wire::tool_schema::resolved_tool_schema;
 use crate::oci_chat_wire::types::cohere::{
     CohereMessage, CohereParameterDefinition, CohereTool, CohereToolCall, CohereToolResult,
 };
 use crate::oci_common::OciError;
 use crate::oci_common::schema::{OCI_JSON_TO_PYTHON_TYPES, enrich_cohere_description};
-
+use betterlite_openai::chat::{ChatMessage, MessageContent, Role, Tool, ToolCall};
+use betterlite_prompts::arguments::json::{Json, Object};
+use std::collections::BTreeMap;
 #[must_use]
 pub fn extract_text_content(content: Option<&MessageContent>) -> String {
     match content {
@@ -28,7 +25,6 @@ pub fn extract_text_content(content: Option<&MessageContent>) -> String {
         }
     }
 }
-
 #[must_use]
 pub fn adapt_cohere_messages(messages: &[ChatMessage]) -> Vec<CohereMessage> {
     let lookup = tool_call_lookup(messages);
@@ -44,7 +40,6 @@ pub fn adapt_cohere_messages(messages: &[ChatMessage]) -> Vec<CohereMessage> {
     }
     history
 }
-
 pub fn adapt_cohere_tools(tools: &[Tool]) -> Result<Vec<CohereTool>, OciError> {
     let mut adapted = Vec::with_capacity(tools.len());
     for tool in tools {
@@ -60,7 +55,6 @@ pub fn adapt_cohere_tools(tools: &[Tool]) -> Result<Vec<CohereTool>, OciError> {
     }
     Ok(adapted)
 }
-
 fn tool_call_lookup(messages: &[ChatMessage]) -> BTreeMap<&str, CohereToolCall> {
     let mut lookup = BTreeMap::new();
     for message in messages {
@@ -74,7 +68,6 @@ fn tool_call_lookup(messages: &[ChatMessage]) -> BTreeMap<&str, CohereToolCall> 
     }
     lookup
 }
-
 fn push_history_message(
     history: &mut Vec<CohereMessage>,
     message: &ChatMessage,
@@ -99,7 +92,6 @@ fn push_history_message(
         Role::System | Role::Developer | Role::Function => {}
     }
 }
-
 fn cohere_tool_call(tool_call: &ToolCall) -> CohereToolCall {
     CohereToolCall {
         name: tool_call.function.name.clone(),
@@ -107,7 +99,6 @@ fn cohere_tool_call(tool_call: &ToolCall) -> CohereToolCall {
             .unwrap_or_default(),
     }
 }
-
 fn push_tool_result(
     history: &mut Vec<CohereMessage>,
     message: &ChatMessage,
@@ -141,7 +132,6 @@ fn push_tool_result(
         tool_results: Some(vec![result]),
     });
 }
-
 fn parameter_definitions(resolved: &Json) -> BTreeMap<String, CohereParameterDefinition> {
     let Some(object) = resolved.as_object() else {
         return BTreeMap::new();
@@ -163,7 +153,6 @@ fn parameter_definitions(resolved: &Json) -> BTreeMap<String, CohereParameterDef
         })
         .collect()
 }
-
 fn parameter_definition(
     name: &str,
     property_schema: &Json,

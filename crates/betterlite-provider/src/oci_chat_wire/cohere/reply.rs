@@ -1,26 +1,21 @@
-use std::collections::BTreeMap;
-
+use crate::oci_chat_wire::deltas::stream_tool_calls;
+use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
+use crate::oci_chat_wire::parse::parse;
+use crate::oci_chat_wire::types::cohere::{CohereChatResult, CohereStreamChunk, CohereToolCall};
+use crate::oci_common::OciError;
 use betterlite_openai::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
 use betterlite_openai::chat::{FunctionCall, ToolCall};
 use betterlite_openai::stream::chunk::{Choice, Delta};
 use betterlite_prompts::arguments::json::Json;
-
-use crate::oci_chat_wire::deltas::stream_tool_calls;
-use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
-use crate::oci_chat_wire::parse::parse;
-use crate::oci_chat_wire::types::cohere::{CohereChatResult, CohereStreamChunk, CohereToolCall};
-use crate::oci_common::OciError;
-
+use std::collections::BTreeMap;
 const CAST_PREFIX: &str = "Response cannot be casted to CohereChatResult";
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CohereEmitted {
     pub tool_calls: bool,
     pub text: bool,
 }
-
 pub fn handle_cohere_response(
     body: &Json,
     model: &str,
@@ -66,7 +61,6 @@ pub fn handle_cohere_response(
     };
     Ok(())
 }
-
 pub fn handle_cohere_stream_chunk(
     chunk: &Json,
     emitted: CohereEmitted,
@@ -101,13 +95,11 @@ pub fn handle_cohere_stream_chunk(
         logprobs: None,
     })
 }
-
 struct AdaptedCall {
     id: String,
     name: String,
     arguments: String,
 }
-
 fn adapt_tool_calls(calls: &[CohereToolCall]) -> Vec<ToolCall> {
     calls
         .iter()
@@ -125,7 +117,6 @@ fn adapt_tool_calls(calls: &[CohereToolCall]) -> Vec<ToolCall> {
         })
         .collect()
 }
-
 fn adapt_call(position: usize, call: &CohereToolCall) -> AdaptedCall {
     let arguments = serde_json::to_string(&call.parameters).unwrap_or_default();
     let sorted: BTreeMap<&String, &Json> = call.parameters.iter().collect();

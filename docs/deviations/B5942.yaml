@@ -1,6 +1,6 @@
 task: B5942
 deviations:
-  - what: The error text for a body or chunk that does not fit its type differs from LiteLLM. LiteLLM appends the pydantic validation message. The status codes and the fixed prefix text are the same.
+  - what: The error text for a body or chunk that does not fit its type differs from LiteLLM, which appends the pydantic validation message. The status codes and the fixed prefix text are the same.
     why: The pydantic message has no Rust equivalent.
     link: ""
   - what: handle_generic_response accepts timeCreated only as RFC 3339 (for example 2025-01-01T00:00:00.000Z); Python fromisoformat also takes forms such as a date without a time. Anything else is OciError with the HTTP status.
@@ -11,4 +11,4 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L124-L135
   - what: A Cohere chat history entry in a stream chunk or response whose role is not USER, CHATBOT, SYSTEM or TOOL fails the parse; LiteLLM's base CohereMessage accepts any string role.
     why: The four roles are the ones the Cohere protocol defines and betterlite reads only whether a history is present, so its type states the closed set the adapters build.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L227-L233
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L221-L227

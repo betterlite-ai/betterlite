@@ -24,6 +24,12 @@ call:
           totalTokens: 5
 compare:
   ignore:
-    - pointer: /value/choices/0/tool_calls/0/id
+    - pointer: /value/choices/0/message/tool_calls/0/id
       why: "LiteLLM hashes Python's spaced json.dumps text and betterlite hashes compact JSON; oci-wire-tests proves the id"
+    - pointer: /value/choices/0/message/tool_calls/0/function/arguments
+      why: "LiteLLM emits Python's spaced json.dumps text and betterlite emits compact JSON; docs/compatibility.md excludes json.dumps formatting"
+    - pointer: /value/choices/0/message/provider_specific_fields
+      why: "betterlite's shared AssistantMessage always serializes this object; LiteLLM's Message drops it when unset"
+    - pointer: /value/choices/0/provider_specific_fields
+      why: "betterlite's shared ChatChoice always serializes this object; LiteLLM's Choices drops it when unset"
 env: {}

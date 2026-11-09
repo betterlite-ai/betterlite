@@ -43,6 +43,8 @@ call:
         prior_text_emitted: true
 compare:
   ignore:
-    - pointer: /value/2/tool_calls/0/id
+    - pointer: /value/2/delta/tool_calls/0/id
       why: "LiteLLM hashes Python's spaced json.dumps text and betterlite hashes compact JSON; oci-wire-tests proves the id"
+    - pointer: /value/2/delta/tool_calls/0/function/arguments
+      why: "LiteLLM emits Python's spaced json.dumps text and betterlite emits compact JSON; docs/compatibility.md excludes json.dumps formatting"
 env: {}

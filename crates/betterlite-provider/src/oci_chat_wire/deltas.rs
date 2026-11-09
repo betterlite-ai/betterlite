@@ -1,6 +1,5 @@
 use betterlite_openai::chat::ToolCall;
 use betterlite_openai::stream::chunk::{Function, ToolCall as StreamToolCall};
-
 pub(crate) fn stream_tool_calls(calls: Vec<ToolCall>) -> Vec<StreamToolCall> {
     calls
         .into_iter()

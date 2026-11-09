@@ -1,17 +1,14 @@
-use std::collections::BTreeMap;
-
 use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::skip_serializing_none;
-
+use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum CohereApiFormat {
     #[default]
     #[serde(rename = "COHERE")]
     Cohere,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "role")]
@@ -32,19 +29,16 @@ pub enum CohereMessage {
         tool_results: Option<Vec<CohereToolResult>>,
     },
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereToolCall {
     pub name: String,
     pub parameters: Object,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereToolResult {
     pub call: CohereToolCall,
     pub outputs: Vec<Object>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereParameterDefinition {
     pub description: String,
@@ -53,7 +47,6 @@ pub struct CohereParameterDefinition {
     #[serde(rename = "isRequired", default)]
     pub is_required: bool,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CohereTool {
@@ -61,7 +54,6 @@ pub struct CohereTool {
     pub description: String,
     pub parameter_definitions: BTreeMap<String, CohereParameterDefinition>,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,7 +88,6 @@ pub struct CohereChatRequest {
     pub is_stream: Option<bool>,
     pub stream_options: Option<Object>,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +98,6 @@ pub struct CohereUsage {
     pub prompt_tokens_details: Option<Object>,
     pub completion_tokens_details: Option<Object>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereCitation {
     pub start: i64,
@@ -115,13 +105,11 @@ pub struct CohereCitation {
     pub text: String,
     pub document_ids: Vec<String>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereSearchQuery {
     pub text: String,
     pub generation_id: String,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,7 +128,6 @@ pub struct CohereChatResponse {
     pub tool_calls: Option<Vec<CohereToolCall>>,
     pub usage: Option<CohereUsage>,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -149,7 +136,6 @@ pub struct CohereChatResult {
     pub model_version: String,
     pub chat_response: CohereChatResponse,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

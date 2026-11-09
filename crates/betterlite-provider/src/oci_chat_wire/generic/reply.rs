@@ -1,11 +1,3 @@
-use std::collections::BTreeMap;
-
-use betterlite_openai::chat::response::{AssistantMessage, ChatResponse, ChatUsage};
-use betterlite_openai::chat::{FunctionCall, ToolCall};
-use betterlite_openai::stream::chunk::{Choice, Delta};
-use betterlite_prompts::arguments::json::Json;
-use chrono::DateTime;
-
 use crate::oci_chat_wire::deltas::stream_tool_calls;
 use crate::oci_chat_wire::ids::{normalize_oci_finish_reason, synthesize_oci_tool_call_id};
 use crate::oci_chat_wire::parse::parse;
@@ -14,18 +6,18 @@ use crate::oci_chat_wire::types::oci::{
     OciToolCall,
 };
 use crate::oci_common::OciError;
-
+use betterlite_openai::chat::response::{AssistantMessage, ChatResponse, ChatUsage};
+use betterlite_openai::chat::{FunctionCall, ToolCall};
+use betterlite_openai::stream::chunk::{Choice, Delta};
+use betterlite_prompts::arguments::json::Json;
+use chrono::DateTime;
+use std::collections::BTreeMap;
 const NO_CHOICES: &str = "OCI response contained no choices";
-
 const FILL_NO_CHOICES: &str = "the response to fill has no choices";
-
 const TIME_CREATED: &str = "OCI returned an unreadable timeCreated value";
-
 const TIME_EPOCH: &str = "OCI returned a timeCreated before the Unix epoch";
-
 const IMAGE_STREAM: &str =
     "OCI returned image content in a streaming response, which is not supported";
-
 pub fn handle_generic_response(
     body: &Json,
     status: u16,
@@ -57,7 +49,6 @@ pub fn handle_generic_response(
     response.usage = chat_usage(&completion.chat_response.usage);
     Ok(())
 }
-
 pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> {
     fill_missing_tool_call_fields(&mut chunk);
     let typed: OciStreamChunk = parse(&chunk, 500, "Chunk cannot be parsed as OCIStreamChunk")?;
@@ -84,7 +75,6 @@ pub fn handle_generic_stream_chunk(mut chunk: Json) -> Result<Choice, OciError> 
         logprobs: None,
     })
 }
-
 fn parse_time_created(text: &str, status: u16) -> Result<u64, OciError> {
     let parsed = DateTime::parse_from_rfc3339(text).map_err(|_error| OciError {
         status,
@@ -95,7 +85,6 @@ fn parse_time_created(text: &str, status: u16) -> Result<u64, OciError> {
         message: String::from(TIME_EPOCH),
     })
 }
-
 fn fill_message(target: &mut AssistantMessage, source: &OciMessage) {
     if let Some(parts) = source.content.as_ref().filter(|parts| !parts.is_empty()) {
         let mut text = String::new();
@@ -114,7 +103,6 @@ fn fill_message(target: &mut AssistantMessage, source: &OciMessage) {
         target.tool_calls = Some(adapt_tool_calls(tool_calls));
     }
 }
-
 fn tool_call_id(position: usize, tool_call: &OciToolCall) -> String {
     tool_call
         .id
@@ -124,7 +112,6 @@ fn tool_call_id(position: usize, tool_call: &OciToolCall) -> String {
             synthesize_oci_tool_call_id(position, &tool_call.name, &tool_call.arguments)
         })
 }
-
 fn adapt_tool_calls(tool_calls: &[OciToolCall]) -> Vec<ToolCall> {
     tool_calls
         .iter()
@@ -139,7 +126,6 @@ fn adapt_tool_calls(tool_calls: &[OciToolCall]) -> Vec<ToolCall> {
         })
         .collect()
 }
-
 fn chat_usage(usage: &OciResponseUsage) -> ChatUsage {
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
     let reasoning_tokens = usage
@@ -164,7 +150,6 @@ fn chat_usage(usage: &OciResponseUsage) -> ChatUsage {
         completion_tokens_details,
     }
 }
-
 fn stream_text(parts: Option<&[OciContentPart]>) -> Result<Option<String>, OciError> {
     let Some(content_parts) = parts.filter(|given| !given.is_empty()) else {
         return Ok(None);
@@ -183,7 +168,6 @@ fn stream_text(parts: Option<&[OciContentPart]>) -> Result<Option<String>, OciEr
     }
     Ok(Some(text))
 }
-
 fn fill_missing_tool_call_fields(chunk: &mut Json) {
     let Json::Object(chunk_fields) = chunk else {
         return;

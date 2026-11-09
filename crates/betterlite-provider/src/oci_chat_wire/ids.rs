@@ -1,5 +1,4 @@
 use aws_lc_rs::digest::{SHA256, digest};
-
 #[must_use]
 pub fn normalize_oci_finish_reason(raw: Option<&str>) -> Option<String> {
     let reason = raw?;
@@ -10,7 +9,6 @@ pub fn normalize_oci_finish_reason(raw: Option<&str>) -> Option<String> {
     };
     Some(normalized.to_owned())
 }
-
 #[must_use]
 pub fn synthesize_oci_tool_call_id(position: usize, name: &str, arguments: &str) -> String {
     let text = format!("{position}|{name}|{arguments}");

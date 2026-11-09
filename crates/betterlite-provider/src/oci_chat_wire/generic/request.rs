@@ -1,27 +1,18 @@
-use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role, Tool, ToolCall};
-
 use crate::oci_chat_wire::tool_schema::resolved_tool_schema;
 use crate::oci_chat_wire::types::oci::{
     OciContentPart, OciFunctionType, OciImagePart, OciImageType, OciImageUrl, OciMessage, OciRole,
     OciTextPart, OciTextType, OciToolCall, OciToolDefinition,
 };
 use crate::oci_common::OciError;
-
+use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role, Tool, ToolCall};
 const TEXT_FIELD: &str = "Content item of type `text` must have a string `text` field";
-
 const IMAGE_URL_FIELD: &str =
     "Prop `image_url` must be a string or an object with a `url` property";
-
 const TOOL_CALL_KIND: &str = "OCI only supports function tool calls";
-
 const TOOL_KIND: &str = "OCI only supports function tools";
-
 const FUNCTION_OBJECT: &str = "Tool `function` must be a dictionary";
-
 const TOOL_RESULT_ID: &str = "Tool result message must have a string `tool_call_id`";
-
 const TOOL_RESULT_CONTENT: &str = "Tool result message `content` must be a string";
-
 pub fn adapt_generic_messages(messages: &[ChatMessage]) -> Result<Vec<OciMessage>, OciError> {
     let mut adapted = Vec::with_capacity(messages.len());
     for message in messages {
@@ -40,7 +31,6 @@ pub fn adapt_generic_messages(messages: &[ChatMessage]) -> Result<Vec<OciMessage
     }
     Ok(adapted)
 }
-
 pub fn adapt_generic_tools(tools: &[Tool]) -> Result<Vec<OciToolDefinition>, OciError> {
     let mut definitions = Vec::with_capacity(tools.len());
     for tool in tools {
@@ -65,7 +55,6 @@ pub fn adapt_generic_tools(tools: &[Tool]) -> Result<Vec<OciToolDefinition>, Oci
     }
     Ok(definitions)
 }
-
 fn push_content(
     adapted: &mut Vec<OciMessage>,
     role: OciRole,
@@ -76,7 +65,6 @@ fn push_content(
     }
     Ok(())
 }
-
 fn content_message(role: OciRole, content: &MessageContent) -> Result<OciMessage, OciError> {
     let parts = match content {
         MessageContent::Text(text) => vec![OciContentPart::Text(OciTextPart {
@@ -95,7 +83,6 @@ fn content_message(role: OciRole, content: &MessageContent) -> Result<OciMessage
         tool_call_id: None,
     })
 }
-
 fn image_url(part: &ContentPart) -> Option<&str> {
     let image = part.fields.get("image_url")?;
     if let Some(url) = image.as_str() {
@@ -103,7 +90,6 @@ fn image_url(part: &ContentPart) -> Option<&str> {
     }
     image.get("url")?.as_str()
 }
-
 fn content_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
     match part.kind.as_str() {
         "text" => {
@@ -139,7 +125,6 @@ fn content_part(part: &ContentPart) -> Result<OciContentPart, OciError> {
         }),
     }
 }
-
 fn tool_call_message(tool_calls: &[ToolCall]) -> Result<OciMessage, OciError> {
     let mut adapted = Vec::with_capacity(tool_calls.len());
     for tool_call in tool_calls {
@@ -163,7 +148,6 @@ fn tool_call_message(tool_calls: &[ToolCall]) -> Result<OciMessage, OciError> {
         tool_call_id: None,
     })
 }
-
 fn tool_response(message: &ChatMessage) -> Result<OciMessage, OciError> {
     let Some(tool_call_id) = &message.tool_call_id else {
         return Err(OciError {
