@@ -8,7 +8,7 @@ use rstest::rstest;
 
 use super::{
     CacheScope, DiscoverResult, DiscoveryRequest, ListChangedCapability, ResourcesCapability,
-    ServerCapabilities, build_discovery,
+    ServerCapabilities, build_discovery, offered_capabilities,
 };
 use crate::wire_compat::capabilities::versions::{
     GATEWAY_OPERATIONS, HANDSHAKE_VERSIONS, ResultKind, SpecVersion,
@@ -209,6 +209,23 @@ fn an_extension_offered_by_both_sides_is_still_not_granted() {
     });
     assert!(result.capabilities.extensions.is_none());
     assert!(result.capabilities.tools.is_some());
+}
+
+#[rstest]
+#[case::no_operations(&[], false)]
+#[case::an_operation(&["tools/list"], true)]
+fn a_revision_extension_both_sides_offer_is_kept_only_with_an_operation(
+    #[case] operations: &[&str],
+    #[case] kept: bool,
+) {
+    let offered = offered_capabilities(
+        capabilities(),
+        operations,
+        &["io.modelcontextprotocol/ui"],
+        &["io.modelcontextprotocol/ui"],
+        &["io.modelcontextprotocol/ui"],
+    );
+    assert_eq!(offered.extensions.is_some(), kept);
 }
 
 #[rstest]
