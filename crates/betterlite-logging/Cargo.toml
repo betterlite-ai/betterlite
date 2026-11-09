@@ -101,3 +101,7 @@ path = "src/rubrik/tests.rs"
 [[test]]
 name = "s3_v2_params"
 path = "src/s3_v2/tests/suite.rs"
+
+[[test]]
+name = "langsmith_payloads"
+path = "src/langsmith_payloads/tests.rs"
