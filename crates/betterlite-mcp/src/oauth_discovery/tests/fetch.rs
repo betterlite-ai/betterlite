@@ -73,8 +73,10 @@ async fn fetch_a_body_that_is_not_an_object_is_invalid(#[case] body: &str) {
 
 #[rstest]
 #[case::servers_type("{\"authorization_servers\": \"https://idp.test\"}")]
+#[case::scope_entry_type("{\"scopes_supported\": [\"read\", 5]}")]
 #[case::scopes_type("{\"scopes_supported\": 5}")]
 #[case::endpoint_type("{\"token_endpoint\": 5}")]
+#[case::resource_type("{\"resource\": 5}")]
 #[tokio::test]
 async fn fetch_wrong_typed_fields_are_invalid(#[case] body: &str) {
     let fetcher = FakeFetcher::new(vec![("https://mcp.test/prm", document(body))]);
@@ -84,14 +86,12 @@ async fn fetch_wrong_typed_fields_are_invalid(#[case] body: &str) {
 }
 
 #[test]
-fn fetch_wrong_typed_fields_name_the_field() {
-    let error = decode_metadata_document(b"{\"authorization_servers\": 5}").unwrap_err();
-    assert_eq!(
-        error,
-        DocumentError::Field {
-            field: "authorization_servers"
-        }
-    );
+fn fetch_an_oversized_document_is_rejected_before_decoding() {
+    let body = vec![b' '; MAX_METADATA_BYTES.saturating_add(1)];
+    assert!(matches!(
+        decode_metadata_document(&body),
+        Err(DocumentError::TooLarge)
+    ));
 }
 
 #[tokio::test]
@@ -154,23 +154,13 @@ fn fetch_an_explicit_empty_scopes_list_wins_over_the_scopes_key() {
         ),
         None
     );
-    assert_eq!(
-        document.scopes,
-        Some(ScopesValue::List(vec![JsonValue::String(String::from(
-            "read"
-        ))]))
-    );
+    assert_eq!(document.scopes, Some(ScopesValue::List(strings(&["read"]))));
 }
 
 #[test]
-fn fetch_a_resource_that_is_not_text_is_absent() {
-    let document = decode_metadata_document(b"{\"resource\":5}").unwrap();
-    assert_eq!(document_text(document.resource.as_ref()), None);
-    let text_document = decode_metadata_document(b"{\"resource\":\"https://mcp.test\"}").unwrap();
-    assert_eq!(
-        document_text(text_document.resource.as_ref()),
-        Some("https://mcp.test")
-    );
+fn fetch_a_resource_is_kept_as_text() {
+    let document = decode_metadata_document(b"{\"resource\":\"https://mcp.test\"}").unwrap();
+    assert_eq!(document.resource.as_deref(), Some("https://mcp.test"));
 }
 
 #[rstest]

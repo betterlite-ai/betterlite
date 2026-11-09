@@ -1,6 +1,4 @@
-use betterlite_db::mcp_stored_contracts::JsonValue;
-
-use super::document::{MetadataDocument, document_scopes, document_text};
+use super::document::{MetadataDocument, ServerEntry, document_scopes};
 use super::fetch::{MetadataFetcher, fetch_oauth_discovery_url};
 use super::outcome::DiscoveryStatus;
 use super::settings::DiscoverySettings;
@@ -75,19 +73,14 @@ fn resource_metadata(document: &MetadataDocument) -> ResourceMetadata {
                 .as_ref()
                 .or(document.scopes.as_ref()),
         ),
-        resource: document_text(document.resource.as_ref()).map(str::to_owned),
+        resource: document.resource.clone(),
     }
 }
 
-fn server_entry(entry: &JsonValue) -> Option<String> {
+fn server_entry(entry: &ServerEntry) -> Option<String> {
     match entry {
-        JsonValue::String(text) if !text.trim().is_empty() => Some(text.clone()),
-        JsonValue::String(_)
-        | JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => None,
+        ServerEntry::Url(url) if !url.trim().is_empty() => Some(url.clone()),
+        ServerEntry::Url(_) | ServerEntry::Other(_) => None,
     }
 }
 

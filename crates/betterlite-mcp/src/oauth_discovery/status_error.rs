@@ -3,12 +3,12 @@ use super::authorization::fetch_authorization_metadata;
 use super::fetch::{FetchedDocument, MetadataFetcher};
 use super::flow::DiscoveryRequest;
 use super::outcome::{DiscoveryReport, DiscoveryStatus, combine};
-use super::redaction::redacted_origin;
-use super::redaction::redacted_origin_list;
+use super::redaction::{UNPARSABLE_URL, redacted_origin_list};
 use super::resource::{attempt_well_known_discovery, fetch_resource_metadata};
 use super::settings::DiscoverySettings;
-use super::www_authenticate::{WwwAuthenticate, parse_www_authenticate};
+use super::www_authenticate::{WwwAuthenticate, challenge_from_headers};
 use crate::oauth_resource::python_url;
+use crate::oauth_resource::resource_identity::redact_mcp_resource_url;
 
 const NO_HINT_LOOKUP: &str = "no challenge-advertised resource metadata; well-known protected-resource lookup found no authorization servers";
 const EMPTY_HINT: &str = "challenge-advertised resource metadata yielded no authorization servers";
@@ -24,16 +24,13 @@ where
     F: MetadataFetcher,
 {
     let status_attempt = format!("GET {origin}: HTTP {}", response.status.as_u16());
-    let challenge = response
-        .headers
-        .get("www-authenticate")
-        .map(|value| parse_www_authenticate(value.as_bytes()))
-        .unwrap_or_default();
+    let challenge = challenge_from_headers(&response.headers);
     let mut statuses = vec![DiscoveryStatus::HttpError(response.status)];
     let mut stage = resource_stage(fetcher, settings, request, &challenge).await;
     statuses.append(&mut stage.statuses);
     let mut servers = stage.authorization_servers;
-    let used_origin_fallback = origin_fallback(request.server_url, &mut servers);
+    let used_origin_fallback =
+        request.allow_origin_fallback && origin_fallback(request.server_url, &mut servers);
     let mut fallback_attempt = None;
     let mut metadata = None;
     if !servers.is_empty() {
@@ -110,8 +107,10 @@ where
 }
 
 fn cross_origin_stage(hint: &str, server_url: &str) -> ResourceStage {
-    let hint_origin = redacted_origin(hint);
-    let server_origin = redacted_origin(server_url);
+    let hint_origin =
+        redact_mcp_resource_url(Some(hint)).unwrap_or_else(|| UNPARSABLE_URL.to_owned());
+    let server_origin =
+        redact_mcp_resource_url(Some(server_url)).unwrap_or_else(|| UNPARSABLE_URL.to_owned());
     tracing::warn!(
         "MCP OAuth discovery is not following a resource_metadata hint from {hint_origin} for server {server_origin}: the hint is not on the server's own authority"
     );

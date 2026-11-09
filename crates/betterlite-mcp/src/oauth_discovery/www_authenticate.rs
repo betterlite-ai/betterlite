@@ -1,6 +1,11 @@
 use std::str;
 
+use http::HeaderMap;
+use regex::bytes::Regex;
+
 use crate::server_oauth::merge::{ScopesInput, extract_scopes};
+
+const PARAMETER_PATTERN: &str = r#"([a-zA-Z0-9_]+)\s*=\s*"?([^",]+)"?"#;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WwwAuthenticate {
@@ -10,23 +15,28 @@ pub struct WwwAuthenticate {
 
 #[must_use]
 pub fn parse_www_authenticate(header: &[u8]) -> WwwAuthenticate {
-    let Some(section) = bearer_parameters(header) else {
+    let Ok(pattern) = Regex::new(PARAMETER_PATTERN) else {
         return WwwAuthenticate::default();
     };
     let mut resource_metadata_url = None;
     let mut scope = None;
-    for parameter in parameters(section) {
-        let (Ok(name), Ok(value)) = (
-            str::from_utf8(parameter.name),
-            str::from_utf8(parameter.value),
-        ) else {
-            continue;
-        };
-        if name.eq_ignore_ascii_case("resource_metadata") {
-            resource_metadata_url = Some(value.trim().to_owned());
-        }
-        if name.eq_ignore_ascii_case("scope") {
-            scope = Some(value.trim().to_owned());
+    for section in bearer_sections(header) {
+        for capture in pattern.captures_iter(section) {
+            let (Some(name), Some(value)) = (capture.get(1), capture.get(2)) else {
+                continue;
+            };
+            let (Ok(name_text), Ok(value_text)) = (
+                str::from_utf8(name.as_bytes()),
+                str::from_utf8(value.as_bytes()),
+            ) else {
+                continue;
+            };
+            if name_text.eq_ignore_ascii_case("resource_metadata") {
+                resource_metadata_url = Some(value_text.trim().to_owned());
+            }
+            if name_text.eq_ignore_ascii_case("scope") {
+                scope = Some(value_text.trim().to_owned());
+            }
         }
     }
     let scopes = scope.and_then(|text| extract_scopes(ScopesInput::Text(&text)));
@@ -36,85 +46,82 @@ pub fn parse_www_authenticate(header: &[u8]) -> WwwAuthenticate {
     }
 }
 
-fn bearer_parameters(header: &[u8]) -> Option<&[u8]> {
-    let trimmed = header.trim_ascii();
-    let scheme_end = trimmed
-        .iter()
-        .position(u8::is_ascii_whitespace)
-        .unwrap_or(trimmed.len());
-    let scheme = trimmed.get(..scheme_end)?;
-    if !scheme.eq_ignore_ascii_case(b"bearer") {
-        return None;
+#[must_use]
+pub fn challenge_from_headers(headers: &HeaderMap) -> WwwAuthenticate {
+    let mut joined = Vec::new();
+    for (index, value) in headers.get_all("www-authenticate").iter().enumerate() {
+        if index > 0 {
+            joined.extend_from_slice(b", ");
+        }
+        joined.extend_from_slice(value.as_bytes());
     }
-    let rest = trimmed.get(scheme_end..)?;
-    Some(rest.trim_ascii())
+    parse_www_authenticate(&joined)
 }
 
-struct Parameter<'section> {
-    name: &'section [u8],
-    value: &'section [u8],
-}
-
-fn parameters(section: &[u8]) -> Vec<Parameter<'_>> {
-    let mut found = Vec::new();
-    let mut index = 0;
-    while index < section.len() {
-        match parameter_at(section, index) {
-            Some((parameter, next)) => {
-                found.push(parameter);
-                index = next;
+fn bearer_sections(header: &[u8]) -> Vec<&[u8]> {
+    let mut sections = Vec::new();
+    let mut bearer = false;
+    for segment in top_level_segments(header.trim_ascii()) {
+        let body = segment.trim_ascii();
+        if body.is_empty() {
+            continue;
+        }
+        if is_parameter(body) {
+            if bearer {
+                sections.push(body);
             }
-            None => index = index.saturating_add(1),
+            continue;
+        }
+        let scheme_end = body
+            .iter()
+            .position(u8::is_ascii_whitespace)
+            .unwrap_or(body.len());
+        let scheme = body.get(..scheme_end).unwrap_or_default();
+        bearer = scheme.eq_ignore_ascii_case(b"bearer");
+        if bearer {
+            let parameters = body.get(scheme_end..).unwrap_or_default().trim_ascii();
+            if !parameters.is_empty() {
+                sections.push(parameters);
+            }
         }
     }
-    found
+    sections
 }
 
-fn parameter_at(section: &[u8], index: usize) -> Option<(Parameter<'_>, usize)> {
-    let name_end = identifier_end(section, index)?;
-    let after_name = skip_whitespace(section, name_end);
-    if section.get(after_name) != Some(&b'=') {
-        return None;
+// A comma starts a new challenge unless what follows is an auth-param, so the list is split outside quoted values first.
+fn top_level_segments(header: &[u8]) -> Vec<&[u8]> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut index = 0;
+    while let Some(byte) = header.get(index) {
+        match *byte {
+            b'\\' if quoted && !escaped => escaped = true,
+            b'"' if !escaped => quoted = !quoted,
+            b',' if !quoted && !escaped => {
+                segments.push(header.get(start..index).unwrap_or_default());
+                start = index.saturating_add(1);
+            }
+            _ => escaped = false,
+        }
+        index = index.saturating_add(1);
     }
-    let after_equals = skip_whitespace(section, after_name.saturating_add(1));
-    let quoted = section.get(after_equals) == Some(&b'"');
-    let value_start = if quoted {
-        after_equals.saturating_add(1)
-    } else {
-        after_equals
-    };
-    let rest = section.get(value_start..)?;
-    let value_length = rest
+    segments.push(header.get(start..).unwrap_or_default());
+    segments
+}
+
+fn is_parameter(segment: &[u8]) -> bool {
+    let name_end = segment
         .iter()
-        .position(|byte| *byte == b'"' || *byte == b',')
-        .unwrap_or(rest.len());
-    let value_end = value_start.saturating_add(value_length);
-    if value_end == value_start {
-        return None;
-    }
-    Some((
-        Parameter {
-            name: section.get(index..name_end)?,
-            value: section.get(value_start..value_end)?,
-        },
-        value_end,
-    ))
+        .position(u8::is_ascii_whitespace)
+        .unwrap_or(segment.len());
+    segment.get(skip_whitespace(segment, name_end)) == Some(&b'=')
 }
 
-fn identifier_end(section: &[u8], start: usize) -> Option<usize> {
-    let mut end = start;
-    while section
-        .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-    {
-        end = end.saturating_add(1);
-    }
-    (end > start).then_some(end)
-}
-
-fn skip_whitespace(section: &[u8], start: usize) -> usize {
+fn skip_whitespace(segment: &[u8], start: usize) -> usize {
     let mut index = start;
-    while section.get(index).is_some_and(u8::is_ascii_whitespace) {
+    while segment.get(index).is_some_and(u8::is_ascii_whitespace) {
         index = index.saturating_add(1);
     }
     index

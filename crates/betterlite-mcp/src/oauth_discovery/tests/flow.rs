@@ -732,6 +732,43 @@ async fn flow_origin_fallback_needs_a_server_authority(#[case] server_url: &'sta
     assert!(matches!(report.outcome, DiscoveryOutcome::Failed(_)));
 }
 
+#[tokio::test]
+async fn flow_a_bearer_challenge_in_a_later_header_field_is_read() {
+    let fetcher = FakeFetcher::new(vec![
+        (
+            "https://mcp.test/mcp",
+            challenge_fields_document(vec![
+                ("www-authenticate", "DPoP algs=\"ES256\""),
+                (
+                    "www-authenticate",
+                    "Bearer resource_metadata=\"https://mcp.test/prm\"",
+                ),
+            ]),
+        ),
+        (
+            "https://mcp.test/prm",
+            document(&resource_document(&["https://idp.test"], None)),
+        ),
+        (
+            "https://idp.test/.well-known/oauth-authorization-server",
+            document(&authorization_server_document("https://idp.test")),
+        ),
+    ]);
+    let outcome = discover_metadata(&fetcher, settings(), request("https://mcp.test/mcp")).await;
+    assert_eq!(
+        fetcher.urls(),
+        strings(&[
+            "https://mcp.test/mcp",
+            "https://mcp.test/prm",
+            "https://idp.test/.well-known/oauth-authorization-server",
+        ])
+    );
+    assert_eq!(
+        outcome,
+        DiscoveryOutcome::Found(discovered_metadata("https://idp.test"))
+    );
+}
+
 #[rstest]
 fn replays_the_oauth_metadata_corpus(#[files("fuzz/corpus/oauth_metadata/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();

@@ -32,6 +32,17 @@ fn challenge_document(value: &str) -> FakeAnswer {
     }
 }
 
+fn challenge_fields_document(headers: Vec<(&'static str, &'static str)>) -> FakeAnswer {
+    FakeAnswer::Document {
+        status: StatusCode::UNAUTHORIZED,
+        headers: headers
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect(),
+        body: String::new(),
+    }
+}
+
 fn transport_error(message: &str) -> FakeAnswer {
     FakeAnswer::Transport(message.to_owned())
 }

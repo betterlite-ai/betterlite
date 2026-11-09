@@ -1,10 +1,11 @@
 use super::authorization::fetch_single_issuer_metadata;
 use super::fetch::MetadataFetcher;
 use super::outcome::{DiscoveryOutcome, DiscoveryReport, DiscoveryStatus};
-use super::redaction::{redacted_origin, sanitized_error_text};
+use super::redaction::{UNPARSABLE_URL, sanitized_error_text};
 use super::server_document::discover_from_server_document;
 use super::settings::DiscoverySettings;
 use super::status_error::discover_after_status_error;
+use crate::oauth_resource::resource_identity::redact_mcp_resource_url;
 
 #[derive(Clone, Copy)]
 pub struct DiscoveryRequest<'url> {
@@ -36,7 +37,8 @@ pub async fn discover_recording_attempts<F>(
 where
     F: MetadataFetcher,
 {
-    let origin = redacted_origin(request.server_url);
+    let origin = redact_mcp_resource_url(Some(request.server_url))
+        .unwrap_or_else(|| UNPARSABLE_URL.to_owned());
     let response = match fetcher
         .get_json(request.server_url, &[], settings.metadata_timeout)
         .await
@@ -69,7 +71,8 @@ where
 {
     let lookup = fetch_single_issuer_metadata(fetcher, issuer, Some(issuer), settings).await;
     let Some(mut metadata) = lookup.metadata else {
-        let origin = redacted_origin(issuer);
+        let origin =
+            redact_mcp_resource_url(Some(issuer)).unwrap_or_else(|| UNPARSABLE_URL.to_owned());
         tracing::warn!(
             "MCP OAuth issuer-anchored discovery for issuer {origin} yielded no metadata whose issuer matched (RFC 8414 section 3.3); OAuth endpoints stay unresolved until a rebuild succeeds"
         );
@@ -103,7 +106,8 @@ fn warn_when_empty(server_url: &str, report: &DiscoveryReport) {
     if matches!(&report.outcome, DiscoveryOutcome::Found(_)) {
         return;
     }
-    let origin = redacted_origin(server_url);
+    let origin =
+        redact_mcp_resource_url(Some(server_url)).unwrap_or_else(|| UNPARSABLE_URL.to_owned());
     let attempts = if report.attempts.is_empty() {
         String::from("none recorded")
     } else {

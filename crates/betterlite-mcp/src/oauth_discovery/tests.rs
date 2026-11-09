@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_db::mcp_stored_contracts::JsonValue;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rstest::rstest;
 use tracing::subscriber::DefaultGuard;
@@ -19,7 +18,7 @@ use super::authorization::{
     AZURE_ENTRA_HOSTS, fetch_authorization_metadata, fetch_single_issuer_metadata,
 };
 use super::document::{
-    DocumentError, ScopesValue, decode_metadata_document, document_scopes, document_text,
+    DocumentError, MAX_METADATA_BYTES, ScopesValue, decode_metadata_document, document_scopes,
 };
 use super::fetch::{
     FetchError, FetchedDocument, MetadataFetcher, classify_status, fetch_oauth_discovery_url,

@@ -23,6 +23,14 @@
     "Bearer error=\"invalid_token\", resource_metadata=\"https://mcp.test/prm\"",
     Some("https://mcp.test/prm")
 )]
+#[case::after_another_challenge(
+    "DPoP algs=\"ES256\", Bearer resource_metadata=\"https://mcp.test/prm\"",
+    Some("https://mcp.test/prm")
+)]
+#[case::between_challenges(
+    "Basic realm=\"mcp\", Bearer resource_metadata=\"https://mcp.test/prm\", DPoP algs=\"ES256\"",
+    Some("https://mcp.test/prm")
+)]
 #[case::relative_hint("Bearer resource_metadata=\"/prm\"", Some("/prm"))]
 #[case::other_challenge("Basic resource_metadata=\"https://mcp.test/prm\"", None)]
 #[case::no_scheme("resource_metadata=\"https://mcp.test/prm\"", None)]

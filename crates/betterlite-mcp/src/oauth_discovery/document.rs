@@ -1,127 +1,82 @@
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 use thiserror::Error;
 
 use crate::server_oauth::merge::{ScopesInput, extract_scopes};
 
-#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub const MAX_METADATA_BYTES: usize = 0x0010_0000;
+
+#[derive(Debug, Error)]
 pub enum DocumentError {
-    #[error("the document is not valid JSON")]
-    Json,
-    #[error("the document root is not a JSON object")]
-    NotObject,
-    #[error("the {field} field has a type the document does not declare")]
-    Field { field: &'static str },
+    #[error("the document is larger than {MAX_METADATA_BYTES} bytes")]
+    TooLarge,
+    #[error("the document is not a metadata document: {source}")]
+    Json {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
 pub enum ScopesValue {
     Text(String),
-    List(Vec<JsonValue>),
+    List(Vec<String>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ServerEntry {
+    Url(String),
+    Other(IgnoredAny),
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct MetadataDocument {
-    pub authorization_servers: Option<Vec<JsonValue>>,
+    #[serde(default)]
+    pub authorization_servers: Option<Vec<ServerEntry>>,
+    #[serde(default)]
     pub scopes_supported: Option<ScopesValue>,
+    #[serde(default)]
     pub scopes: Option<ScopesValue>,
-    pub resource: Option<JsonValue>,
+    #[serde(default)]
+    pub resource: Option<String>,
+    #[serde(default)]
     pub issuer: Option<JsonValue>,
+    #[serde(default)]
     pub authorization_endpoint: Option<String>,
+    #[serde(default)]
     pub token_endpoint: Option<String>,
+    #[serde(default)]
     pub registration_endpoint: Option<String>,
 }
 
 pub fn decode_metadata_document(bytes: &[u8]) -> Result<MetadataDocument, DocumentError> {
-    let value: JsonValue = serde_json::from_slice(bytes).map_err(|_error| DocumentError::Json)?;
-    let JsonValue::Object(fields) = value else {
-        return Err(DocumentError::NotObject);
-    };
-    Ok(MetadataDocument {
-        authorization_servers: field(
-            fields.get("authorization_servers"),
-            "authorization_servers",
-            entries,
-        )?,
-        scopes_supported: field(
-            fields.get("scopes_supported"),
-            "scopes_supported",
-            scopes_entries,
-        )?,
-        scopes: field(fields.get("scopes"), "scopes", scopes_entries)?,
-        resource: fields.get("resource").cloned(),
-        issuer: fields.get("issuer").cloned(),
-        authorization_endpoint: field(
-            fields.get("authorization_endpoint"),
-            "authorization_endpoint",
-            text_entry,
-        )?,
-        token_endpoint: field(fields.get("token_endpoint"), "token_endpoint", text_entry)?,
-        registration_endpoint: field(
-            fields.get("registration_endpoint"),
-            "registration_endpoint",
-            text_entry,
-        )?,
-    })
+    if bytes.len() > MAX_METADATA_BYTES {
+        return Err(DocumentError::TooLarge);
+    }
+    serde_json::from_slice(bytes).map_err(|source| DocumentError::Json { source })
 }
 
 #[must_use]
 pub fn document_scopes(value: Option<&ScopesValue>) -> Option<Vec<String>> {
-    match value {
-        Some(ScopesValue::Text(text)) => extract_scopes(ScopesInput::Text(text)),
-        Some(ScopesValue::List(entries)) => extract_scopes(ScopesInput::List(entries)),
-        None => None,
+    match value? {
+        ScopesValue::Text(text) => extract_scopes(ScopesInput::Text(text)),
+        ScopesValue::List(entries) => {
+            let values: Vec<JsonValue> = entries
+                .iter()
+                .map(|entry| JsonValue::String(entry.clone()))
+                .collect();
+            extract_scopes(ScopesInput::List(&values))
+        }
     }
 }
 
 #[must_use]
 pub fn document_text(value: Option<&JsonValue>) -> Option<&str> {
-    match value {
-        Some(JsonValue::String(text)) => Some(text),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
-    }
-}
-
-fn field<T, C>(
-    value: Option<&JsonValue>,
-    name: &'static str,
-    convert: C,
-) -> Result<Option<T>, DocumentError>
-where
-    C: FnOnce(&JsonValue) -> Option<T>,
-{
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(inner) => convert(inner)
-            .map(Some)
-            .ok_or(DocumentError::Field { field: name }),
-    }
-}
-
-fn entries(value: &JsonValue) -> Option<Vec<JsonValue>> {
-    if let JsonValue::Array(values) = value {
-        return Some(values.clone());
-    }
-    None
-}
-
-fn scopes_entries(value: &JsonValue) -> Option<ScopesValue> {
-    match value {
-        JsonValue::String(text) => Some(ScopesValue::Text(text.clone())),
-        JsonValue::Array(values) => Some(ScopesValue::List(values.clone())),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_) => None,
-    }
-}
-
-fn text_entry(value: &JsonValue) -> Option<String> {
-    if let JsonValue::String(text) = value {
-        return Some(text.clone());
-    }
-    None
+    let JsonValue::String(text) = value? else {
+        return None;
+    };
+    Some(text)
 }
