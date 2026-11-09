@@ -8,8 +8,8 @@ P=$(dirname "$(readlink -f "$0")")
 cd "${BETTERLITE_ROOT:-$(git -C "$P" rev-parse --show-toplevel)}" || exit 1
 query='query($n:Int!){repository(owner:"betterlite-ai",name:"betterlite"){pullRequest(number:$n){state headRefName mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{state} mergeCommit{oid}}}}'
 failed_runs() {
-  gh run list --workflow gate.yml --branch "$1" --limit 30 --json databaseId,conclusion \
-    -q '.[] | select(.conclusion == "failure") | .databaseId' 2>/dev/null
+  gh run list --workflow gate.yml --branch "$1" --limit 30 --json databaseId,attempt,conclusion \
+    -q '.[] | select(.conclusion == "failure") | "\(.databaseId):\(.attempt)"' 2>/dev/null
 }
 last_queue_failure() {
   gh run list --workflow gate.yml --limit 30 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-$pr-\"))][0].databaseId // empty" 2>/dev/null
@@ -42,8 +42,9 @@ while true; do
     done
     echo "PR $pr merged as ${commit:0:8}; main run did not finish within an hour"; exit 1
   fi
-  for run_id in $(failed_runs "$branch"); do
-    if ! grep -qx "$run_id" <<< "$known"; then echo "PR $pr run $run_id failed: $(first_fail "$run_id")"; exit 1; fi
+  # a run that failed again after a rerun is new, so a run counts by its attempt too
+  for attempt in $(failed_runs "$branch"); do
+    if ! grep -qx "$attempt" <<< "$known"; then echo "PR $pr run ${attempt%:*} failed: $(first_fail "${attempt%:*}")"; exit 1; fi
   done
   # a job that hits its timeout ends the run as cancelled, not failed; a newer run on the branch means a push cancelled it instead
   newest=$(gh run list --workflow gate.yml --branch "$branch" --limit 1 --json databaseId,conclusion -q '.[] | select(.conclusion == "cancelled") | .databaseId' 2>/dev/null)
