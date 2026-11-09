@@ -22,10 +22,10 @@ pub(super) const FIXED_NOW: i64 = 1_700_000_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ScriptedResponse {
+pub(crate) struct ScriptedResponse {
     #[serde(default = "default_status")]
-    pub(super) status: u16,
-    pub(super) body: String,
+    pub(crate) status: u16,
+    pub(crate) body: String,
 }
 
 const fn default_status() -> u16 {

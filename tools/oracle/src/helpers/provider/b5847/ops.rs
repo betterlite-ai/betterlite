@@ -12,13 +12,13 @@ use chrono::DateTime;
 use serde_json::{Value, json};
 
 use super::script::{
-    FIXED_NOW, ScriptedTransport, SilentLogger, StandInCounter, factory, header_map, headers_output,
-    helper_error, runtime,
+    FIXED_NOW, SilentLogger, StandInCounter, factory, header_map, headers_output, helper_error,
+    runtime,
 };
 use super::{HeaderRequest, MapCase, ReplyCase, RequestCase};
 use crate::helpers::{HelperError, HelperResult};
 
-pub(super) fn polling_for(
+pub(super) const fn polling_for(
     retries: i64,
     retry_delay_seconds: f64,
     polling_delay_seconds: f64,
@@ -32,18 +32,22 @@ pub(super) fn polling_for(
 }
 
 pub(super) fn failure_output(failure: &ReplicateFailure) -> Value {
-    match failure.api() {
-        Some(error) => json!({
-            "ok": false,
-            "status": error.status_code,
-            "message": error.message,
-        }),
-        None => json!({
-            "ok": false,
-            "status": null,
-            "message": failure.to_string(),
-        }),
-    }
+    failure.api().map_or_else(
+        || {
+            json!({
+                "ok": false,
+                "status": null,
+                "message": failure.to_string(),
+            })
+        },
+        |error| {
+            json!({
+                "ok": false,
+                "status": error.status_code,
+                "message": error.message,
+            })
+        },
+    )
 }
 
 pub(super) fn usage_value(usage: &ReplicateUsage) -> Value {
