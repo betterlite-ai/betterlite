@@ -19,7 +19,7 @@ deviations:
       because their comment text can hide later constructs from the scan, and any pattern fancy-regex's
       compiler refuses. Other patterns the engine's parser rejects are warned about as invalid_pattern and
       skipped. The engine accepts constructs Python 3.13
-      rejects, such as \G and stacked repeats, and without MULTILINE $ matches only at the very end rather
+      rejects, such as \G, \N without a brace and stacked repeats, and without MULTILINE $ matches only at the very end rather
       than before one trailing newline; character classes, case folding and word boundaries follow the
       engine's Unicode tables, which can differ from Python's for a few characters. Build warnings are
       logged once when the server builds the matcher, and a selection carries only match-time warnings.

@@ -17,6 +17,7 @@ enum Boundary {
     MatchSteps,
     FancyMatch,
     Unsupported(&'static str),
+    Invalid(&'static str),
     Supported(&'static str),
     ManyGroups(usize, &'static str),
     EmptyPrefix,
@@ -34,6 +35,7 @@ enum Boundary {
 #[case::match_steps(Boundary::MatchSteps)]
 #[case::fancy_match(Boundary::FancyMatch)]
 #[case::named_escape(Boundary::Unsupported(r"\N{LATIN SMALL LETTER A}"))]
+#[case::not_newline_escape(Boundary::Supported(r"\N"))]
 #[case::word_start(Boundary::Unsupported(r"\<tag"))]
 #[case::word_end(Boundary::Unsupported(r"tag\>"))]
 #[case::posix_class(Boundary::Unsupported("[[:digit:]]+"))]
@@ -45,12 +47,19 @@ enum Boundary {
 #[case::negated_nested_class_at_start(Boundary::Unsupported("[^[ab]]"))]
 #[case::leading_zero_octal(Boundary::ManyGroups(12, r"\012"))]
 #[case::three_digit_octal(Boundary::ManyGroups(101, r"\101"))]
+#[case::two_digit_backreference(Boundary::Supported(r"()()()()()()()()()()()()\12"))]
 #[case::backreference_then_digits(Boundary::Supported(r"(a)\1-1"))]
 #[case::absolute_end(Boundary::Unsupported(r"a\Z"))]
 #[case::conditional(Boundary::Unsupported("(?P<a>x)(?(a)y|z)"))]
 #[case::verbose_mode(Boundary::Unsupported("(?x)a # note [x\n\\<tag"))]
-#[case::verbose_flag_off(Boundary::Unsupported("(?x-i:a)"))]
+#[case::verbose_x_after_flag_off(Boundary::Unsupported("(?x-i:a)"))]
 #[case::verbose_flag_combined(Boundary::Unsupported("(?ix:a)"))]
+#[case::verbose_flag_disabled(Boundary::Supported("(?-x:a)"))]
+#[case::verbose_ascii_flag(Boundary::Unsupported("(?ax:a)"))]
+#[case::verbose_multiline_flag(Boundary::Unsupported("(?mx:a)"))]
+#[case::verbose_dotall_flag(Boundary::Unsupported("(?sx:a)"))]
+#[case::verbose_unicode_flag(Boundary::Unsupported("(?ux:a)"))]
+#[case::unterminated_flags(Boundary::Invalid("(?x"))]
 #[case::inline_comment(Boundary::Unsupported(r"(?#[)\<tag"))]
 #[case::class_escape_before_word(Boundary::Unsupported(r"[\d]\<tag"))]
 #[case::caret_before_word(Boundary::Unsupported(r"[^^]\<tag"))]
@@ -59,6 +68,7 @@ enum Boundary {
 #[case::negated_range_start(Boundary::Unsupported("[^]-x]"))]
 #[case::bracket_hyphen(Boundary::Supported("[]-]"))]
 #[case::negated_bracket_hyphen(Boundary::Supported("[^]-]"))]
+#[case::literal_bracket_then_range(Boundary::Supported("[]]-x]"))]
 #[case::bracket_first_escape(Boundary::Supported(r"[]\<tag]"))]
 #[case::negated_bracket_first_escape(Boundary::Supported(r"[^]\<tag]"))]
 #[case::engine_refused(Boundary::Unsupported("(?~|abc|def)"))]
@@ -66,6 +76,7 @@ enum Boundary {
 #[case::escaped_backslash_bracket(Boundary::Supported(r"\\<tag"))]
 #[case::literal_brace(Boundary::Supported(r"\t{"))]
 #[case::escaped_digit(Boundary::Supported(r"\t0"))]
+#[case::tab_escape_then_digits(Boundary::Supported(r"\t12"))]
 #[case::set_operator_outside_class(Boundary::Supported("[a]&&"))]
 #[case::single_ampersand(Boundary::Supported("[a&b]"))]
 #[case::ampersand_first(Boundary::Supported("[&a]"))]
@@ -88,6 +99,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::MatchSteps => match_steps_boundary(),
         Boundary::FancyMatch => fancy_match_boundary(),
         Boundary::Unsupported(pattern) => unsupported_construct_boundary(pattern),
+        Boundary::Invalid(pattern) => invalid_pattern_boundary(pattern),
         Boundary::Supported(pattern) => supported_construct_boundary(pattern),
         Boundary::ManyGroups(groups, suffix) => many_groups_boundary(groups, suffix),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
@@ -194,6 +206,15 @@ fn unsupported_construct_boundary(pattern: &str) {
     let selection = matcher.select(&query(&[], None, &["anything"], true, ""));
     assert!(selection.matches.is_empty());
     assert!(selection.warnings.is_empty());
+}
+
+fn invalid_pattern_boundary(pattern: &str) {
+    let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
+    assert_eq!(matcher.warnings.len(), 1);
+    assert_eq!(matcher.warnings[0].kind, WarningKind::InvalidPattern);
+    assert_eq!(matcher.warnings[0].pattern, pattern);
+    let selection = matcher.select(&query(&[], None, &["anything"], true, ""));
+    assert!(selection.matches.is_empty());
 }
 
 fn supported_construct_boundary(pattern: &str) {
