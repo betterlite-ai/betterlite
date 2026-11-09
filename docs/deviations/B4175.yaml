@@ -1,0 +1,54 @@
+task: B4175
+deviations:
+  - what: >-
+      `--test` stops where LiteLLM's ValueError stops; the three OpenAI requests written after
+      the raise are not built.
+    why: >-
+      The option is declared flag_value=True, so click never passes a string and the request
+      lines after the raise cannot be reached by any caller at the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L233-L250
+  - what: >-
+      The health JSON parse error, the config validation failure text and the ollama spawn
+      failure text carry Rust error text (serde_json, the config loader, io::Error) instead of a
+      Python exception repr.
+    why: >-
+      Python exception wording is not part of the contract. The fixed prefixes
+      "LiteLLM: config validation failed: " and "Exception" stay where LiteLLM prints them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L201-L231
+  - what: >-
+      `--headers` accepts only a JSON object of string values, at most 65536 bytes, and rejects
+      anything else with a typed error.
+    why: >-
+      LiteLLM hands any parsed JSON value on to its worker config; headers are string pairs by
+      purpose, and bounded-inputs caps every piece of untrusted text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1070-L1121
+  - what: >-
+      WORKER_CONFIG accepts only booleans for debug and detailed_debug and at most 65536 bytes;
+      any other value, and a non-object, logs one warning and leaves the loggers alone.
+    why: >-
+      LiteLLM compares with `is True` and `is False`, so a value of another type silently does
+      nothing; betterlite rejects a value of the wrong type where it enters
+      (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L853-L922
+  - what: >-
+      `ollama serve` starts with stdin, stdout and stderr all connected to the null device.
+    why: >-
+      LiteLLM redirects stdout and stderr only, so the child inherits the terminal's stdin; a
+      background helper that is never asked anything gets all three closed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L634-L651
+  - what: >-
+      `--validate_config` prints the number of entries in `model_list`, not the length of the
+      router's expanded model list.
+    why: >-
+      LiteLLM counts `router.get_model_list()`, which adds a row per model_group_alias and routing
+      group and one deployment per `organization` entry. The config loader rejects those keys as
+      unsupported, so a config that loads has none of them and the two counts are equal; the count
+      has to follow the router once the loader reads those keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12078
+  - what: >-
+      The health command reads at most 1 MiB (MAX_HEALTH_BODY) of the /health body and rejects a
+      body that is not UTF-8 text, where LiteLLM reads a body of any size.
+    why: >-
+      bounded-inputs: a response from the network is untrusted, so its read is capped. LiteLLM
+      calls httpx.get(...).json() and prints whatever comes back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L208-L211

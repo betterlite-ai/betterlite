@@ -987,6 +987,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-server",
  "chrono",
  "clap",
@@ -998,6 +999,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -2254,6 +2256,7 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-env",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
@@ -2261,6 +2264,8 @@ dependencies = [
  "chrono",
  "futures-util",
  "http 1.5.0",
+ "indexmap 2.14.2",
+ "mutants",
  "pem",
  "rstest",
  "rust_decimal",
@@ -2281,6 +2286,7 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
 ]
