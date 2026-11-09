@@ -77,6 +77,14 @@ fn append_error(message: &str) -> AssistantError {
     r#"{"role":"assistant","content":[{"type":"thinking","thinking":"hmm","signature":""},{"type":"text","text":"answer"}]}"#,
     r#"[{"type":"text","text":"answer"}]"#
 )]
+#[case::inline_redacted_thinking_is_kept_with_the_tool_call(
+    r#"{"role":"assistant","content":[{"type":"redacted_thinking","data":"abc"},{"type":"text","text":"a"}],"tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]}"#,
+    r#"[{"type":"redacted_thinking","data":"abc"},{"type":"text","text":"a"},{"type":"tool_use","id":"call_1","name":"f","input":{}}]"#
+)]
+#[case::inline_redacted_thinking_suppresses_the_separate_blocks(
+    r#"{"role":"assistant","content":[{"type":"redacted_thinking","data":"abc"},{"type":"text","text":"answer"}],"thinking_blocks":[{"type":"thinking","thinking":"separate","signature":"sig"}]}"#,
+    r#"[{"type":"redacted_thinking","data":"abc"},{"type":"text","text":"answer"}]"#
+)]
 #[case::compaction_blocks_come_first(
     r#"{"role":"assistant","content":"answer","provider_specific_fields":{"compaction_blocks":[{"type":"compaction","content":"summary","signature":"sig"}]}}"#,
     r#"[{"type":"compaction","content":"summary","signature":"sig"},{"type":"text","text":"answer"}]"#

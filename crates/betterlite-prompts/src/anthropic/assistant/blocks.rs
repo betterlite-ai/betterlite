@@ -5,7 +5,8 @@ use crate::anthropic_invokes::cache_control::add_cache_control_to_content;
 use crate::arguments::json::{Json, Object};
 
 use super::{
-    AssistantError, AssistantRun, SERVER_TOOL_USE, TEXT, THINKING, TOOL_RESULT_SUFFIX, TYPE,
+    AssistantError, AssistantRun, REDACTED_THINKING, SERVER_TOOL_USE, TEXT, THINKING,
+    TOOL_RESULT_SUFFIX, TYPE,
 };
 
 pub(super) fn append_content_blocks(
@@ -37,7 +38,7 @@ pub(super) fn append_content_blocks(
                 run.blocks.push(block.clone());
             }
             TEXT => push_text(run, text, fields),
-            SERVER_TOOL_USE => run.blocks.push(block.clone()),
+            REDACTED_THINKING | SERVER_TOOL_USE => run.blocks.push(block.clone()),
             _ if kind.ends_with(TOOL_RESULT_SUFFIX) => run.blocks.push(block.clone()),
             _ => {}
         }

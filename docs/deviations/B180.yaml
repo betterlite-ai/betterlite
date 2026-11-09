@@ -30,3 +30,14 @@ deviations:
       The strip reads client-replayed provider blocks, so a 4xx that names the block belongs where
       LiteLLM's 500 does not say which block failed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2780-L2792
+  - what: >-
+      An inline redacted_thinking content block is kept in the assistant content, in its original
+      position, and sent to Anthropic as given. LiteLLM's sequential content loop has no
+      redacted_thinking branch and drops the block; its message-level thinking_blocks keep the
+      same block, which makes the loss a bug no working setup can rely on.
+    why: >-
+      A redacted_thinking block is signed provider state that has to be replayed byte for byte,
+      like the message-level thinking_blocks. Dropping it silently loses content the model
+      produced and changes the conversation Anthropic verifies; an inline redacted block still
+      suppresses the separate thinking_blocks, as before.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2664-L2711
