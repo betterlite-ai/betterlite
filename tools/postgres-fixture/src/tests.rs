@@ -7,9 +7,7 @@ use std::{env::split_paths, ffi::OsString, path::Path, process, time::Duration};
 use clap::Parser;
 use rstest::rstest;
 use testcontainers::core::{IntoContainerPort as _, WaitFor};
-use testcontainers::{
-    ContainerRequest, CopyTargetOptions, GenericImage, ImageExt as _, runners::AsyncRunner as _,
-};
+use testcontainers::{ContainerRequest, GenericImage, ImageExt as _, runners::AsyncRunner as _};
 use tokio::process::Command;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
@@ -34,7 +32,7 @@ fn postgres_image(image: GenericImage) -> ContainerRequest<GenericImage> {
         .with_env_var("POSTGRES_PASSWORD", "fixture+secret")
         .with_env_var("POSTGRES_DB", "postgres")
 }
-async fn postgres_server() -> (
+pub(crate) async fn postgres_server() -> (
     Option<testcontainers::ContainerAsync<GenericImage>>,
     SecretString,
 ) {
@@ -395,7 +393,7 @@ async fn cleanup_after_unclaimed_result() {
     assert!(!database_exists(&admin, "unclaimed_fixture").await);
 }
 
-struct FixedName(String);
+pub(crate) struct FixedName(pub(crate) String);
 
 impl DatabaseNameGenerator for FixedName {
     fn next_name(&mut self) -> String {
@@ -495,69 +493,4 @@ fn duplicate_identity_fails_before_connection(#[case] kind: &str) {
         seed.validate(),
         Err(FixtureError::DuplicateIdentity { .. })
     ));
-}
-
-#[rstest]
-#[case::trusted_ca_matching_hostname(ca_path(), "localhost", true)]
-#[case::untrusted_ca_rejected(server_path(), "localhost", false)]
-#[case::wrong_hostname_rejected(ca_path(), "127.0.0.1", false)]
-#[tokio::test]
-async fn verifies_tls_server(
-    #[case] certificate: &Path,
-    #[case] hostname: &str,
-    #[case] trusted: bool,
-) {
-    skip_without_docker!();
-    let (_server, fixture_url) = tls_postgres().await;
-    let connection_url = format!(
-        "{fixture_url}?sslmode=verify-full&sslrootcert={}",
-        certificate.display()
-    )
-    .replace("localhost", hostname);
-    let result = PostgresFixture::provision_with_name_generator(
-        Some(&url(&connection_url)),
-        &FixtureSeed::default(),
-        &mut RandomDatabaseName,
-    )
-    .resolve()
-    .await;
-    if trusted {
-        result.unwrap().close_async().await.unwrap();
-    } else {
-        assert!(matches!(result, Err(FixtureError::Connect(_))));
-    }
-}
-
-fn ca_path() -> &'static Path {
-    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/tls/ca.pem"))
-}
-
-fn server_path() -> &'static Path {
-    Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/fixtures/tls/server.pem"
-    ))
-}
-
-async fn tls_postgres() -> (testcontainers::ContainerAsync<GenericImage>, String) {
-    let image = postgres_image(GenericImage::new("postgres", "17").with_entrypoint("/bin/bash"))
-        .with_cmd([
-            "-c",
-            "cp /tls/server.key /var/lib/postgresql/server.key && chown postgres:postgres /var/lib/postgresql/server.key && chmod 600 /var/lib/postgresql/server.key && exec /usr/local/bin/docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tls/server.pem -c ssl_key_file=/var/lib/postgresql/server.key",
-        ])
-        .with_copy_to(
-            CopyTargetOptions::new("/tls/ca.pem").with_mode(0o644),
-            ca_path(),
-        )
-        .with_copy_to(
-            CopyTargetOptions::new("/tls/server.pem").with_mode(0o644),
-            server_path(),
-        )
-        .with_copy_to(
-            CopyTargetOptions::new("/tls/server.key").with_mode(0o600),
-            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/tls/server.key")),
-        );
-    let server = image.start().await.unwrap();
-    let connection_url = server_url(&server).await;
-    (server, connection_url)
 }

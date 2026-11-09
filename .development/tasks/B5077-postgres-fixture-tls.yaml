@@ -46,6 +46,12 @@ description: >-
   helper, 120 tests, 40 removed-and-moved lines, 20 manifest and README.
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/ibm_detector_client/client/tests.rs"
+    - "crates/betterlite-guardrails/src/panw_prisma_airs/tests/prisma_scan_transport.rs"
+    - "crates/betterlite-http/src/proxy/pool/tests.rs"
+    - "crates/betterlite-http/src/tls/tests/local_tls/protocols.rs"
+    - "crates/betterlite-http/src/tls/tests/local_tls.rs"
+    - "crates/betterlite-server/src/server/chat_setup/tests.rs"
     - tools/postgres-fixture/Cargo.toml
     - tools/postgres-fixture/README.md
     - tools/postgres-fixture/src/tests.rs
