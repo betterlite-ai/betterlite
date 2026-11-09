@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-content-user-continuation
+call:
+  bedrock_content:
+    function: user_message_block_or_continue
+    message:
+      role: user
+      content:
+        - {type: text, text: "   "}
+        - {type: image_url, image_url: {url: "https://example.test/pic.png"}}
+      cache_control: {type: ephemeral}
+    user_continue_message: {role: user, content: Carry on.}
+    modify_params: true
+env: {}
+compare:
+  ignore: []
