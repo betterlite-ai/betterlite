@@ -28,6 +28,7 @@ enum Behavior {
     KnownUnknown,
     Inherited,
     Markers,
+    WarningLabels,
 }
 
 #[rstest]
@@ -41,6 +42,7 @@ enum Behavior {
 #[case::known_unknown(Behavior::KnownUnknown)]
 #[case::inherited(Behavior::Inherited)]
 #[case::markers(Behavior::Markers)]
+#[case::warning_labels(Behavior::WarningLabels)]
 fn tag_matchers_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::AnyAndAll => any_and_all_matching(),
@@ -53,6 +55,7 @@ fn tag_matchers_behaviors(#[case] behavior: Behavior) {
         Behavior::KnownUnknown => known_and_unknown_tags(),
         Behavior::Inherited => inherited_constraints_stay_separate(),
         Behavior::Markers => token_markers(),
+        Behavior::WarningLabels => warning_labels_are_stable(),
     }
 }
 
@@ -260,6 +263,19 @@ fn inherited_constraints_stay_separate() {
     let absent = matcher.select(&query(&["alpha"], None, &[], true, ""));
     assert_eq!(absent.inherited_required, None);
     assert_eq!(absent.inherited_excluded, None);
+}
+
+fn warning_labels_are_stable() {
+    assert_eq!(WarningKind::InvalidPattern.label(), "invalid_pattern");
+    assert_eq!(
+        WarningKind::UnsupportedPattern.label(),
+        "unsupported_pattern"
+    );
+    assert_eq!(WarningKind::PatternTooLarge.label(), "pattern_too_large");
+    assert_eq!(
+        WarningKind::MatchLimitExceeded.label(),
+        "match_limit_exceeded"
+    );
 }
 
 fn token_markers() {
