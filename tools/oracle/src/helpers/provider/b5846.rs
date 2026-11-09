@@ -128,7 +128,7 @@ fn payload(
                 &request.options,
             )) {
                 Ok(body) => json!({"ok": true, "body": body}),
-                Err(_error) => json!({"ok": false, "status": 500}),
+                Err(_error) => json!({"ok": false, "status": 500_u16}),
             }
         })
         .collect();
@@ -147,7 +147,7 @@ fn urls(requests: &[UrlRequest]) -> Value {
                 request.stream,
             ) {
                 Ok(url) => json!({"ok": true, "url": url}),
-                Err(_error) => json!({"ok": false, "status": 500}),
+                Err(_error) => json!({"ok": false, "status": 500_u16}),
             }
         })
         .collect();
@@ -164,7 +164,7 @@ fn headers(requests: &[HeaderRequest]) -> Value {
                 .map(|value| SecretString::from(value.clone()));
             match validate_environment(key.as_ref(), &request.headers) {
                 Ok(headers) => json!({"ok": true, "headers": headers}),
-                Err(_error) => json!({"ok": false, "status": 500}),
+                Err(_error) => json!({"ok": false, "status": 500_u16}),
             }
         })
         .collect();

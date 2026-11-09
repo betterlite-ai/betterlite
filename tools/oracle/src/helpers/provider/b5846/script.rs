@@ -5,7 +5,6 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
-use betterlite_provider::predibase::request::CustomPrompt;
 use serde::Deserialize;
 
 use crate::helpers::HelperError;
@@ -74,7 +73,7 @@ pub(crate) struct ReplyRequest {
     pub(crate) encoding_fails: bool,
 }
 
-pub(super) fn default_max_new_tokens() -> i64 {
+pub(super) const fn default_max_new_tokens() -> i64 {
     4096
 }
 
