@@ -16,6 +16,7 @@ enum Boundary {
     InvalidDocument,
     MatchSteps,
     EmptyPrefix,
+    DefaultMatchAny,
     Selection,
 }
 
@@ -27,6 +28,7 @@ enum Boundary {
 #[case::invalid_document(Boundary::InvalidDocument)]
 #[case::match_steps(Boundary::MatchSteps)]
 #[case::empty_prefix(Boundary::EmptyPrefix)]
+#[case::default_match_any(Boundary::DefaultMatchAny)]
 #[case::selection(Boundary::Selection)]
 fn tag_matchers_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -35,6 +37,7 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::InvalidDocument => invalid_document_boundary(),
         Boundary::MatchSteps => match_steps_boundary(),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
+        Boundary::DefaultMatchAny => default_match_any_boundary(),
         Boundary::Selection => selection_boundary(),
     }
 }
@@ -81,6 +84,11 @@ fn invalid_document_boundary() {
         Err(TagMatcherError::Invalid { source }) => assert!(source.is_syntax()),
         other => panic!("expected an invalid document, got {other:?}"),
     }
+}
+
+fn default_match_any_boundary() {
+    let request = parse_tag_match(b"{\"deployments\":[]}").unwrap();
+    assert!(request.match_any);
 }
 
 fn match_steps_boundary() {

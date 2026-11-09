@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::tag_matchers::candidates::{MatchVia, is_valid_deployment_tag};
 use crate::tag_matchers::patterns::WarningKind;
 use crate::tag_matchers::selection::TagMatcher;
@@ -14,18 +16,44 @@ fn tagged() -> TagMatcher {
     ])
 }
 
-#[test]
-fn tag_matchers_behaviors() {
-    any_and_all_matching();
-    tag_validity_table();
-    strict_tags_block_regex();
-    header_patterns();
-    required_and_excluded();
-    routing_prefix();
-    default_tags();
-    known_and_unknown_tags();
-    inherited_constraints_stay_separate();
-    token_markers();
+#[derive(Clone, Copy)]
+enum Behavior {
+    AnyAndAll,
+    TagValidity,
+    StrictBlock,
+    HeaderPatterns,
+    RequiredExcluded,
+    RoutingPrefix,
+    DefaultTags,
+    KnownUnknown,
+    Inherited,
+    Markers,
+}
+
+#[rstest]
+#[case::any_and_all(Behavior::AnyAndAll)]
+#[case::tag_validity(Behavior::TagValidity)]
+#[case::strict_block(Behavior::StrictBlock)]
+#[case::header_patterns(Behavior::HeaderPatterns)]
+#[case::required_excluded(Behavior::RequiredExcluded)]
+#[case::routing_prefix(Behavior::RoutingPrefix)]
+#[case::default_tags(Behavior::DefaultTags)]
+#[case::known_unknown(Behavior::KnownUnknown)]
+#[case::inherited(Behavior::Inherited)]
+#[case::markers(Behavior::Markers)]
+fn tag_matchers_behaviors(#[case] behavior: Behavior) {
+    match behavior {
+        Behavior::AnyAndAll => any_and_all_matching(),
+        Behavior::TagValidity => tag_validity_table(),
+        Behavior::StrictBlock => strict_tags_block_regex(),
+        Behavior::HeaderPatterns => header_patterns(),
+        Behavior::RequiredExcluded => required_and_excluded(),
+        Behavior::RoutingPrefix => routing_prefix(),
+        Behavior::DefaultTags => default_tags(),
+        Behavior::KnownUnknown => known_and_unknown_tags(),
+        Behavior::Inherited => inherited_constraints_stay_separate(),
+        Behavior::Markers => token_markers(),
+    }
 }
 
 fn any_and_all_matching() {
@@ -198,6 +226,8 @@ fn known_and_unknown_tags() {
     let routed = TagMatcher::new(vec![deployment(Some(&["a"]), None)]);
     assert!(routed.unknown_required_hides_answer(&set(&[]), &set(&["a", "b"]), &set(&[])));
     assert!(!routed.unknown_required_hides_answer(&set(&[]), &set(&["a", "b"]), &set(&["b"])));
+    let selection = hidden.select(&query(&["&known", "&unknown"], None, &[], true, ""));
+    assert!(selection.unknown_required_hides_answer);
 }
 
 fn inherited_constraints_stay_separate() {
