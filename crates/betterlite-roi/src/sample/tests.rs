@@ -126,6 +126,7 @@ fn sample_report_prints_synced_at_as_python_isoformat(#[case] now: &str, #[case]
 #[test]
 fn sample_report_leaves_casey_without_spend() {
     let report = sample_report(instant(NOW));
+    assert_eq!(report.pulls.len(), 3);
     let casey = &report.pulls[2];
     assert!(casey.emails.is_empty());
     assert_eq!(casey.profile_email, "");
