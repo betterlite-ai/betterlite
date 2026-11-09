@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::CacheCreationTokenDetails;
-use super::shape::{UsageShapeError, coerced_count, optional_count};
+use super::shape::{CountMode, UsageShapeError, count_value, optional_count};
 
 #[derive(Default)]
 struct CreationTotals {
@@ -18,18 +18,20 @@ impl CreationTotals {
             self.has_breakdown = true;
             self.five_minute = self
                 .five_minute
-                .checked_add(coerced_count(
+                .checked_add(count_value(
                     creation.get("ephemeral_5m_input_tokens"),
                     "ephemeral_5m_input_tokens",
+                    CountMode::Coerced,
                 )?)
                 .ok_or(UsageShapeError::Overflow {
                     field: "cache_creation_token_details",
                 })?;
             self.one_hour = self
                 .one_hour
-                .checked_add(coerced_count(
+                .checked_add(count_value(
                     creation.get("ephemeral_1h_input_tokens"),
                     "ephemeral_1h_input_tokens",
+                    CountMode::Coerced,
                 )?)
                 .ok_or(UsageShapeError::Overflow {
                     field: "cache_creation_token_details",
@@ -37,9 +39,10 @@ impl CreationTotals {
         }
         self.total = self
             .total
-            .checked_add(coerced_count(
+            .checked_add(count_value(
                 fields.get("cache_creation_input_tokens"),
                 "cache_creation_input_tokens",
+                CountMode::Coerced,
             )?)
             .ok_or(UsageShapeError::Overflow {
                 field: "cache_creation_token_details",

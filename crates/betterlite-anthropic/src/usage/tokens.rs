@@ -1,9 +1,9 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::shape::{UsageShapeError, declared_count, top_level_count};
+use super::shape::{CountMode, UsageShapeError, count_value};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(super) struct TokenCounts {
     pub(super) prompt: i64,
     pub(super) completion: i64,
@@ -12,33 +12,40 @@ pub(super) struct TokenCounts {
 }
 
 impl TokenCounts {
-    fn accumulate(&mut self, counts: Self) -> Result<(), UsageShapeError> {
-        self.prompt = self
-            .prompt
-            .checked_add(counts.prompt)
-            .ok_or(UsageShapeError::Overflow {
-                field: "prompt_tokens",
-            })?;
-        self.completion =
-            self.completion
-                .checked_add(counts.completion)
-                .ok_or(UsageShapeError::Overflow {
-                    field: "completion_tokens",
-                })?;
-        self.cache_creation = self
-            .cache_creation
-            .checked_add(counts.cache_creation)
-            .ok_or(UsageShapeError::Overflow {
-                field: "cache_creation_input_tokens",
-            })?;
-        self.cache_read =
-            self.cache_read
-                .checked_add(counts.cache_read)
-                .ok_or(UsageShapeError::Overflow {
-                    field: "cache_read_input_tokens",
-                })?;
+    fn add_fields(&mut self, fields: &IndexMap<String, Json>) -> Result<(), UsageShapeError> {
+        add_count(
+            &mut self.prompt,
+            fields.get("input_tokens"),
+            "iterations.input_tokens",
+        )?;
+        add_count(
+            &mut self.completion,
+            fields.get("output_tokens"),
+            "iterations.output_tokens",
+        )?;
+        add_count(
+            &mut self.cache_creation,
+            fields.get("cache_creation_input_tokens"),
+            "iterations.cache_creation_input_tokens",
+        )?;
+        add_count(
+            &mut self.cache_read,
+            fields.get("cache_read_input_tokens"),
+            "iterations.cache_read_input_tokens",
+        )?;
         Ok(())
     }
+}
+
+fn add_count(
+    current: &mut i64,
+    value: Option<&Json>,
+    field: &'static str,
+) -> Result<(), UsageShapeError> {
+    *current = current
+        .checked_add(count_value(value, field, CountMode::Declared)?)
+        .ok_or(UsageShapeError::Overflow { field })?;
+    Ok(())
 }
 
 pub(super) fn iteration_blocks(
@@ -66,15 +73,25 @@ pub(super) fn token_counts(
 }
 
 fn top_level_counts(fields: &IndexMap<String, Json>) -> Result<TokenCounts, UsageShapeError> {
-    let base_prompt = top_level_count(fields.get("input_tokens"), "input_tokens")?;
-    let completion = top_level_count(fields.get("output_tokens"), "output_tokens")?;
-    let cache_creation = declared_count(
+    let base_prompt = count_value(
+        fields.get("input_tokens"),
+        "input_tokens",
+        CountMode::Lenient,
+    )?;
+    let completion = count_value(
+        fields.get("output_tokens"),
+        "output_tokens",
+        CountMode::Lenient,
+    )?;
+    let cache_creation = count_value(
         fields.get("cache_creation_input_tokens"),
         "cache_creation_input_tokens",
+        CountMode::Declared,
     )?;
-    let cache_read = declared_count(
+    let cache_read = count_value(
         fields.get("cache_read_input_tokens"),
         "cache_read_input_tokens",
+        CountMode::Declared,
     )?;
     let prompt = base_prompt
         .checked_add(cache_creation)
@@ -91,19 +108,14 @@ fn top_level_counts(fields: &IndexMap<String, Json>) -> Result<TokenCounts, Usag
 }
 
 fn iteration_counts(items: &[Json]) -> Result<TokenCounts, UsageShapeError> {
-    let mut totals = TokenCounts {
-        prompt: 0,
-        completion: 0,
-        cache_creation: 0,
-        cache_read: 0,
-    };
+    let mut totals = TokenCounts::default();
     for item in items {
         let Json::Object(fields) = item else {
             return Err(UsageShapeError::FieldType {
                 field: "iterations",
             });
         };
-        totals.accumulate(iteration_token_counts(fields)?)?;
+        totals.add_fields(fields)?;
     }
     totals.prompt = totals
         .prompt
@@ -113,19 +125,4 @@ fn iteration_counts(items: &[Json]) -> Result<TokenCounts, UsageShapeError> {
             field: "prompt_tokens",
         })?;
     Ok(totals)
-}
-
-fn iteration_token_counts(fields: &IndexMap<String, Json>) -> Result<TokenCounts, UsageShapeError> {
-    Ok(TokenCounts {
-        prompt: declared_count(fields.get("input_tokens"), "iterations.input_tokens")?,
-        completion: declared_count(fields.get("output_tokens"), "iterations.output_tokens")?,
-        cache_creation: declared_count(
-            fields.get("cache_creation_input_tokens"),
-            "iterations.cache_creation_input_tokens",
-        )?,
-        cache_read: declared_count(
-            fields.get("cache_read_input_tokens"),
-            "iterations.cache_read_input_tokens",
-        )?,
-    })
 }
