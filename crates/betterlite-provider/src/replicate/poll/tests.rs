@@ -387,9 +387,9 @@ async fn a_non_200_poll_reply_is_handed_to_the_reply_transform() {
     let Err(error) = result else {
         panic!("expected an error");
     };
-    assert_eq!(error.status_code(), Some(422));
+    assert_eq!(status(&error), Some(422));
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some("LiteLLM Error - prediction not succeeded - {'status': 'processing'}")
     );
 }
@@ -413,9 +413,9 @@ async fn non_stream_polling_fails_after_the_last_retry() {
     let Err(error) = result else {
         panic!("expected an error");
     };
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(status(&error), Some(500));
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some("No response received from Replicate API after max retries")
     );
 }
@@ -487,11 +487,8 @@ async fn the_strict_policy_fails_on_a_null_output() {
     .await;
     assert!(chunks.is_empty());
     let error = failure.unwrap();
-    assert_eq!(error.status_code(), Some(422));
-    assert_eq!(
-        error.api_message(),
-        Some("Unable to parse response. Got=None")
-    );
+    assert_eq!(status(&error), Some(422));
+    assert_eq!(message(&error), Some("Unable to parse response. Got=None"));
 }
 
 #[tokio::test]
@@ -546,8 +543,8 @@ async fn a_failed_prediction_yields_its_last_chunk_then_fails() {
     .await;
     assert_eq!(chunks, [chunk("x", "failed")]);
     let error = failure.unwrap();
-    assert_eq!(error.status_code(), Some(400));
-    assert_eq!(error.api_message(), Some("Error: bad"));
+    assert_eq!(status(&error), Some(400));
+    assert_eq!(message(&error), Some("Error: bad"));
 }
 
 #[tokio::test]
@@ -561,7 +558,7 @@ async fn a_failed_prediction_without_output_fails_at_once() {
     )
     .await;
     assert!(chunks.is_empty());
-    assert_eq!(failure.unwrap().api_message(), Some("Error: "));
+    assert_eq!(message(&failure.unwrap()), Some("Error: "));
 }
 
 #[tokio::test]
@@ -647,4 +644,12 @@ async fn a_stream_value_that_is_not_exactly_true_stays_non_streaming() {
     )
     .await;
     assert!(matches!(result.unwrap(), ReplicateCompletion::Reply(_)));
+}
+
+fn status(failure: &ReplicateFailure) -> Option<u16> {
+    failure.api().map(|error| error.status_code)
+}
+
+fn message(failure: &ReplicateFailure) -> Option<&str> {
+    failure.api().map(|error| error.message.as_str())
 }

@@ -51,49 +51,46 @@ pub struct RequestContext<'deps> {
     pub now: DateTime<Utc>,
 }
 
-fn insert_text(optional_params: &mut Object, name: &str, value: Option<&str>) {
-    if let Some(text) = value {
-        optional_params
-            .entry(name.to_owned())
-            .or_insert_with(|| Json::Text(text.to_owned()));
-    }
-}
-
-fn insert_number(optional_params: &mut Object, name: &str, value: Option<i64>) {
-    if let Some(number) = value {
-        optional_params
-            .entry(name.to_owned())
-            .or_insert(Json::Number(Number::from(number)));
-    }
-}
-
-fn insert_bool(optional_params: &mut Object, name: &str, value: Option<bool>) {
-    if let Some(flag) = value {
-        optional_params
-            .entry(name.to_owned())
-            .or_insert(Json::Bool(flag));
+fn insert(optional_params: &mut Object, name: &str, value: Option<Json>) {
+    if let Some(found) = value {
+        optional_params.entry(String::from(name)).or_insert(found);
     }
 }
 
 // config values only fill optional_params where the call has no key, so a call value always wins
 fn apply_defaults(defaults: &ReplicateDefaults, optional_params: &mut Object) {
-    insert_text(
+    let number = |raw: Option<i64>| raw.map(|value| Json::Number(Number::from(value)));
+    insert(
         optional_params,
         "system_prompt",
-        defaults.system_prompt.as_deref(),
+        defaults
+            .system_prompt
+            .as_ref()
+            .map(|value| Json::Text(value.clone())),
     );
-    insert_number(optional_params, "max_new_tokens", defaults.max_new_tokens);
-    insert_number(optional_params, "min_new_tokens", defaults.min_new_tokens);
-    insert_number(optional_params, "temperature", defaults.temperature);
-    insert_number(optional_params, "top_p", defaults.top_p);
-    insert_number(optional_params, "top_k", defaults.top_k);
-    insert_text(
+    insert(
+        optional_params,
+        "max_new_tokens",
+        number(defaults.max_new_tokens),
+    );
+    insert(
+        optional_params,
+        "min_new_tokens",
+        number(defaults.min_new_tokens),
+    );
+    insert(optional_params, "temperature", number(defaults.temperature));
+    insert(optional_params, "top_p", number(defaults.top_p));
+    insert(optional_params, "top_k", number(defaults.top_k));
+    insert(
         optional_params,
         "stop_sequences",
-        defaults.stop_sequences.as_deref(),
+        defaults
+            .stop_sequences
+            .as_ref()
+            .map(|value| Json::Text(value.clone())),
     );
-    insert_number(optional_params, "seed", defaults.seed);
-    insert_bool(optional_params, "debug", defaults.debug);
+    insert(optional_params, "seed", number(defaults.seed));
+    insert(optional_params, "debug", defaults.debug.map(Json::Bool));
 }
 
 fn take_supports_system_prompt(optional_params: &mut Object) -> Result<bool, ReplicateFailure> {
@@ -188,12 +185,10 @@ pub async fn transform_request(
         defaults,
         custom_prompts,
     } = input;
-
     apply_defaults(defaults, optional_params);
     let supports_system_prompt = take_supports_system_prompt(optional_params)?;
     let system_prompt = take_system_prompt(messages, supports_system_prompt)?;
     let prompt = render_prompt(model, messages, custom_prompts, context).await?;
-
     Ok(ReplicateBody {
         input: input_data(prompt, system_prompt, optional_params),
         version: version_of(model, context.polling),
@@ -202,10 +197,10 @@ pub async fn transform_request(
 
 #[must_use]
 pub fn model_to_version_id(model: &str) -> &str {
-    match model.split(':').nth(1) {
-        Some(version_id) => version_id,
-        None => model,
-    }
+    let Some(version_id) = model.split(':').nth(1) else {
+        return model;
+    };
+    version_id
 }
 
 #[must_use]

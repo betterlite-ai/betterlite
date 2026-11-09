@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use betterlite_env::{EnvError, number};
 use futures_util::stream::BoxStream;
@@ -18,6 +20,13 @@ pub struct ReplicatePolling {
     pub model_name_with_id_length: usize,
 }
 
+fn number_or<Number>(name: &str, text: Option<&str>, default: Number) -> Result<Number, EnvError>
+where
+    Number: FromStr,
+{
+    Ok(number::<Number>(name, text.unwrap_or_default())?.unwrap_or(default))
+}
+
 impl ReplicatePolling {
     pub fn from_env_values(
         retries: Option<&str>,
@@ -25,31 +34,23 @@ impl ReplicatePolling {
         polling_delay: Option<&str>,
         model_name_with_id_length: Option<&str>,
     ) -> Result<Self, EnvError> {
-        let retry_count = number::<i64>(
-            "DEFAULT_REPLICATE_POLLING_RETRIES",
-            retries.unwrap_or_default(),
-        )?
-        .unwrap_or(5);
-        let retry_delay_seconds = number::<f64>(
-            "DEFAULT_REPLICATE_POLLING_DELAY_SECONDS",
-            retry_delay.unwrap_or_default(),
-        )?
-        .unwrap_or(1.0_f64);
-        let polling_delay_seconds = number::<f64>(
-            "REPLICATE_POLLING_DELAY_SECONDS",
-            polling_delay.unwrap_or_default(),
-        )?
-        .unwrap_or(0.5_f64);
-        let version_id_length = number::<usize>(
-            "REPLICATE_MODEL_NAME_WITH_ID_LENGTH",
-            model_name_with_id_length.unwrap_or_default(),
-        )?
-        .unwrap_or(64);
         Ok(Self {
-            retries: retry_count,
-            retry_delay_seconds,
-            polling_delay_seconds,
-            model_name_with_id_length: version_id_length,
+            retries: number_or("DEFAULT_REPLICATE_POLLING_RETRIES", retries, 5)?,
+            retry_delay_seconds: number_or(
+                "DEFAULT_REPLICATE_POLLING_DELAY_SECONDS",
+                retry_delay,
+                1.0_f64,
+            )?,
+            polling_delay_seconds: number_or(
+                "REPLICATE_POLLING_DELAY_SECONDS",
+                polling_delay,
+                0.5_f64,
+            )?,
+            model_name_with_id_length: number_or(
+                "REPLICATE_MODEL_NAME_WITH_ID_LENGTH",
+                model_name_with_id_length,
+                64,
+            )?,
         })
     }
 }

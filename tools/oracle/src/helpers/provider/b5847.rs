@@ -11,6 +11,7 @@ use crate::helpers::{Helper, HelperResult};
 use self::script::{FIXED_NOW, ScriptedResponse};
 
 mod ops;
+mod poll_ops;
 mod script;
 
 #[derive(Deserialize)]
@@ -149,8 +150,8 @@ impl Helper for Op {
             Input::Headers { requests } => ops::headers(requests),
             Input::Request { requests } => ops::requests(requests),
             Input::Reply { replies } => ops::replies(replies),
-            Input::Poll { requests } => ops::poll(requests),
-            Input::Stream { requests } => ops::streams(requests),
+            Input::Poll { requests } => poll_ops::poll(requests),
+            Input::Stream { requests } => poll_ops::streams(requests),
         }
     }
 }

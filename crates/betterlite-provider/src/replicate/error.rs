@@ -83,29 +83,9 @@ impl From<FactoryError> for ReplicateFailure {
 
 impl ReplicateFailure {
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub const fn api(&self) -> Option<&ReplicateError> {
         match self {
-            Self::Api(error) => Some(error.status_code),
-            Self::Prompt(_)
-            | Self::Messages { .. }
-            | Self::SupportsSystemPrompt
-            | Self::Encode { .. }
-            | Self::Decode { .. }
-            | Self::ReplyNotObject
-            | Self::MissingStatus
-            | Self::PredictionUrlType
-            | Self::BodyNotUtf8 { .. }
-            | Self::Transport { .. }
-            | Self::Header { .. }
-            | Self::Format { .. }
-            | Self::UsageOverflow => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn api_message(&self) -> Option<&str> {
-        match self {
-            Self::Api(error) => Some(error.message.as_str()),
+            Self::Api(error) => Some(error),
             Self::Prompt(_)
             | Self::Messages { .. }
             | Self::SupportsSystemPrompt

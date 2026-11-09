@@ -99,9 +99,9 @@ fn the_prediction_url_is_urls_get() {
 fn a_missing_prediction_url_fails_400_with_the_reply(#[case] wire: &[u8], #[case] rendered: &str) {
     let headers = headers();
     let error = get_prediction_url(wire, &headers).unwrap_err();
-    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(status(&error), Some(400));
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some(format!("LiteLLM Error - prediction url is None - {rendered}").as_str())
     );
     let ReplicateFailure::Api(replicate) = error else {
@@ -183,11 +183,8 @@ async fn a_null_output_fails_422() {
     )
     .await
     .unwrap_err();
-    assert_eq!(error.status_code(), Some(422));
-    assert_eq!(
-        error.api_message(),
-        Some("Unable to parse response. Got=None")
-    );
+    assert_eq!(status(&error), Some(422));
+    assert_eq!(message(&error), Some("Unable to parse response. Got=None"));
 }
 
 #[tokio::test]
@@ -213,9 +210,9 @@ async fn a_status_other_than_succeeded_fails_422_with_the_reply() {
     )
     .await
     .unwrap_err();
-    assert_eq!(error.status_code(), Some(422));
+    assert_eq!(status(&error), Some(422));
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some("LiteLLM Error - prediction not succeeded - {'status': 'failed', 'error': 'x'}")
     );
 }
@@ -231,7 +228,7 @@ async fn a_missing_status_is_not_succeeded() {
     .await
     .unwrap_err();
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some("LiteLLM Error - prediction not succeeded - {'output': ['a']}")
     );
 }
@@ -279,4 +276,12 @@ async fn a_reply_that_is_not_json_is_a_typed_error() {
     .await
     .unwrap_err();
     assert!(matches!(error, ReplicateFailure::Decode { .. }));
+}
+
+fn status(failure: &ReplicateFailure) -> Option<u16> {
+    failure.api().map(|error| error.status_code)
+}
+
+fn message(failure: &ReplicateFailure) -> Option<&str> {
+    failure.api().map(|error| error.message.as_str())
 }

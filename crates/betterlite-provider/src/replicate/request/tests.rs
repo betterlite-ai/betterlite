@@ -276,9 +276,9 @@ async fn a_prompt_that_is_not_a_string_fails_400() {
     )
     .await
     .unwrap_err();
-    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(status(&error), Some(400));
     assert_eq!(
-        error.api_message(),
+        message(&error),
         Some("LiteLLM Error - prompt is not a string - None")
     );
 }
@@ -317,4 +317,12 @@ async fn a_long_hash_model_never_adds_a_version_key() {
         url,
         format!("https://api.replicate.com/v1/models/{hash}/predictions")
     );
+}
+
+fn status(failure: &ReplicateFailure) -> Option<u16> {
+    failure.api().map(|error| error.status_code)
+}
+
+fn message(failure: &ReplicateFailure) -> Option<&str> {
+    failure.api().map(|error| error.message.as_str())
 }
