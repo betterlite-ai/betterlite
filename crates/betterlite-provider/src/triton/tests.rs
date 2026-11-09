@@ -670,8 +670,7 @@ fn embedding_usage_ignores_a_text_data_entry() {
     vec![vec![1.5_f64, 2.5_f64, 3.5_f64]]
 )]
 #[case::zero_count(vec![], vec![0_i64, 3], vec![])]
-#[case::zero_width(vec![], vec![0_i64, 0], vec![])]
-#[case::empty_vectors(vec![], vec![2_i64, 0], vec![vec![], vec![]])]
+#[case::zero_width(vec![1.5_f64, 2.5_f64], vec![2_i64, 0], vec![vec![], vec![]])]
 fn split_embedding_by_shape_keeps_the_python_slices(
     #[case] data: Vec<f64>,
     #[case] shape: Vec<i64>,
