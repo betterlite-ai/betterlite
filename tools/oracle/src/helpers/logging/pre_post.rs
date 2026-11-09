@@ -87,7 +87,8 @@ struct Recorder {
 }
 
 impl Recorder {
-    fn outcome(&self) -> Result<(), PrePostError> {
+    fn finish(&self, entry: Value) -> Result<(), PrePostError> {
+        self.events.borrow_mut().push(entry);
         if self.failing {
             return Err(PrePostError::CallbackFailed {
                 message: "callback exploded".to_owned(),
@@ -121,22 +122,21 @@ impl LogSink for Recorder {
 
 impl ApiCallLogger for Recorder {
     fn log_pre_api_call(&self, event: &PreCallEvent<'_>) -> Result<(), PrePostError> {
-        self.events.borrow_mut().push(serde_json::json!({
+        let kind = detail(event.details, "log_event_type");
+        self.finish(serde_json::json!({
             "kind": "logger_pre",
             "model": event.model,
             "messages": event.messages,
-            "log_event_type": detail(event.details, "log_event_type"),
-        }));
-        self.outcome()
+            "log_event_type": kind,
+        }))
     }
 
     fn log_post_api_call(&self, event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
-        self.events.borrow_mut().push(serde_json::json!({
+        self.finish(serde_json::json!({
             "kind": "logger_post",
             "log_event_type": detail(event.details, "log_event_type"),
             "start_time": event.start_time.to_rfc3339(),
-        }));
-        self.outcome()
+        }))
     }
 }
 
