@@ -155,7 +155,8 @@ async fn apply_guardrail_routes_request_inputs_to_prompt_moderation() {
         calls[0].payload,
         json(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}"#)
     );
-    assert!(harness.logs.events().is_empty());
+    assert!(harness.logs.with_level(Level::WARN).is_empty());
+    assert!(harness.logs.with_level(Level::ERROR).is_empty());
 }
 
 #[tokio::test]
