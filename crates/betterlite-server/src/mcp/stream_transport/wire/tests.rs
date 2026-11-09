@@ -98,6 +98,10 @@ async fn body_bytes(response: Response<Body>) -> Vec<u8> {
         .to_vec()
 }
 
+async fn body_text(response: Response<Body>) -> String {
+    String::from_utf8(body_bytes(response).await).expect("a utf-8 body")
+}
+
 #[derive(serde::Deserialize)]
 struct Refusal {
     error: RefusalError,
@@ -189,6 +193,14 @@ async fn answers_json_that_is_not_a_message_with_a_validation_error() {
     let body = refusal(response).await;
     assert_eq!(body.error.code, -32602_i32);
     assert!(body.error.message.starts_with("Validation error: "));
+}
+
+#[tokio::test]
+async fn answers_an_oversized_body_with_payload_too_large() {
+    let body = "x".repeat(4 * 1024 * 1024 + 1);
+    let response = send(&stateless(), post(&body)).await;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body_text(response).await, "Request body too large");
 }
 
 #[tokio::test]
