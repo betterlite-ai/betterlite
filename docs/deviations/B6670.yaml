@@ -25,10 +25,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2135-L2150
   - what: >-
       A body whose input_type is neither "request" nor "response" reaches apply_guardrail as "request"; LiteLLM passes
-      the text unchanged.
+      the text unchanged. This route is blocked on it: B3802's CallArguments carries the input type as its two-value
+      GuardrailInputType enum, which lives outside this task's scope, so the adapter cannot carry a third text until
+      the architect widens that field; the CodeSandbox port itself keeps the raw text.
     why: >-
-      B3802's sandbox call carries the input type as its two-value GuardrailInputType enum, so the route adapter has
-      no third value to pass on; the port itself keeps the raw text.
+      The task requires the function to receive whatever text was sent, and the only channel to the sandboxed call is
+      CallArguments.input_type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2186-L2188
   - what: >-
       A body that does not decode answers {"detail": [{"type", "loc", "msg"}]} without pydantic's echoed "input"
@@ -51,3 +53,10 @@ deviations:
     why: >-
       Every inbound body in betterlite-server has a size limit; the route sends no larger limit of its own.
     link: ""
+  - what: >-
+      A test_input or request_data value nested deeper than 64 JSON levels answers 422 with type value_error, where
+      LiteLLM's json.loads accepts any depth its recursion limit allows.
+    why: >-
+      The decoder walks the body one level at a time with serde_json's RawValue slices, and the depth bound keeps the
+      recursion and the memory it allocates proportional to the body rather than to depth times size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2006-L2013

@@ -13,33 +13,36 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_error::envelope::ErrorObject;
+use betterlite_error::envelope::ErrorResponse;
+use betterlite_error::envelope::WireField;
 use betterlite_guardrails::custom_code::runtime::CallArguments;
 use betterlite_guardrails::custom_code::runtime::CallOutput;
 use betterlite_guardrails::custom_code::runtime::LoadFailure as ModuleLoadFailure;
 use betterlite_guardrails::custom_code::runtime::ModuleHost;
 use betterlite_guardrails::custom_code::runtime::RuntimeFailure;
 use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
+use betterlite_guardrails::custom_code_execution::execution::error::ExecutionTimeoutError;
 use betterlite_guardrails::custom_code_execution::execution::error::SandboxError;
+use betterlite_guardrails::custom_code_execution::execution::error::SandboxExit;
 use betterlite_guardrails::custom_code_execution::execution::eventloop::await_with_timeout;
 use betterlite_guardrails::custom_code_execution::execution::offloop::call_off_loop_with_timeout;
 use betterlite_guardrails::custom_code_execution::sandbox::DEFAULT_FILENAME;
 use betterlite_guardrails::custom_code_execution::sandbox::compile_sandboxed;
-use betterlite_guardrails::custom_code_execution::sandbox::error::CompileError;
 use betterlite_guardrails::custom_code_execution::sandbox::globals::build_sandbox_globals;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use serde::Serialize;
-use thiserror::Error;
 
 use crate::auth::auth_identity::AuthContext;
-use crate::error_body::json_error;
 
 use super::body::decode_test_request;
+use super::error::CallFailure;
+use super::error::LoadFailure;
+use super::error::SandboxLoad;
 use super::run::CallOutcome;
-use super::run::CallProblem;
 use super::run::CodeSandbox;
 use super::run::EXECUTION_TIMEOUT;
 use super::run::LoadOutcome;
-use super::run::LoadProblem;
 use super::run::LoadedCode;
 use super::run::TestCall;
 use super::run::run_test;
@@ -50,14 +53,6 @@ const UNAUTHENTICATED: &str = "the API key is not valid";
 
 pub struct SandboxedCode {
     pub host: Arc<dyn ModuleHost>,
-}
-
-#[derive(Debug, Error)]
-enum SandboxLoad {
-    #[error(transparent)]
-    Compile(CompileError),
-    #[error(transparent)]
-    Module(ModuleLoadFailure),
 }
 
 #[derive(Clone)]
@@ -82,12 +77,7 @@ async fn test_custom_code(
     body: Bytes,
 ) -> Response {
     let Some(Extension(context)) = caller else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            UNAUTHENTICATED,
-            "auth_error",
-            "401",
-        );
+        return unauthenticated();
     };
     let request = match decode_test_request(&body) {
         Ok(request) => request,
@@ -103,6 +93,19 @@ async fn test_custom_code(
 fn is_proxy_admin(caller: &AuthContext) -> bool {
     caller.principal.subject == MASTER_KEY_SUBJECT
         || caller.principal.roles.contains(&Role::PlatformAdmin)
+}
+
+// LiteLLM's auth_error carries param "None" rather than null, which WireField::MISSING serializes
+fn unauthenticated() -> Response {
+    let body = ErrorResponse {
+        error: ErrorObject {
+            message: UNAUTHENTICATED.to_owned(),
+            error_type: WireField::Text("auth_error".to_owned()),
+            param: WireField::MISSING,
+            code: WireField::Text("401".to_owned()),
+        },
+    };
+    (StatusCode::UNAUTHORIZED, Json(body)).into_response()
 }
 
 fn forbidden() -> Response {
@@ -134,13 +137,11 @@ impl CodeSandbox for SandboxedCode {
         match loaded {
             Ok(module) => LoadOutcome::Loaded(LoadedCode(module)),
             Err(failure) => LoadOutcome::Failed(match execution_failure(failure) {
-                ExecutionFailure::Timeout => LoadProblem::Timeout,
-                ExecutionFailure::Exit(message) => LoadProblem::Compile(message),
-                ExecutionFailure::Unexpected(message) => LoadProblem::Unexpected(message),
-                ExecutionFailure::Failed(SandboxLoad::Compile(error)) => {
-                    LoadProblem::Syntax(error.to_string())
-                }
-                ExecutionFailure::Failed(SandboxLoad::Module(module)) => module_problem(module),
+                ExecutionFailure::Timeout(error) => LoadFailure::Timeout(error),
+                ExecutionFailure::Exit(exit) => LoadFailure::Exit(exit),
+                ExecutionFailure::Unexpected(error) => LoadFailure::Unexpected(error),
+                ExecutionFailure::Failed(SandboxLoad::Compile(error)) => LoadFailure::Syntax(error),
+                ExecutionFailure::Failed(SandboxLoad::Module(module)) => module_failure(module),
             }),
         }
     }
@@ -166,7 +167,7 @@ impl CodeSandbox for SandboxedCode {
         .await
         {
             Ok(output) => output,
-            Err(error) => return CallOutcome::Failed(call_problem(error)),
+            Err(error) => return CallOutcome::Failed(call_failure(error)),
         };
         let pending = match output {
             CallOutput::Value(value) => return CallOutcome::Result(value),
@@ -175,7 +176,7 @@ impl CodeSandbox for SandboxedCode {
         let remaining = EXECUTION_TIMEOUT.saturating_sub(started.elapsed());
         match await_with_timeout(pending, remaining, "test").await {
             Ok(value) => CallOutcome::Result(value),
-            Err(error) => CallOutcome::Failed(call_problem(error)),
+            Err(error) => CallOutcome::Failed(call_failure(error)),
         }
     }
 }
@@ -189,10 +190,10 @@ fn module_error(error: SandboxError<ModuleLoadFailure>) -> SandboxError<SandboxL
 }
 
 enum ExecutionFailure<E> {
-    Timeout,
-    Exit(String),
+    Timeout(ExecutionTimeoutError),
+    Exit(SandboxExit),
     Failed(E),
-    Unexpected(String),
+    Unexpected(ExecutionError<E>),
 }
 
 fn execution_failure<E>(source: ExecutionError<E>) -> ExecutionFailure<E>
@@ -200,32 +201,33 @@ where
     E: StdError,
 {
     match source {
-        ExecutionError::Timeout(_) | ExecutionError::Sandbox(SandboxError::Interrupted(_)) => {
-            ExecutionFailure::Timeout
+        ExecutionError::Timeout(timeout) => ExecutionFailure::Timeout(timeout),
+        ExecutionError::Sandbox(SandboxError::Interrupted(_)) => {
+            ExecutionFailure::Timeout(ExecutionTimeoutError {
+                timeout: EXECUTION_TIMEOUT,
+            })
         }
-        ExecutionError::Sandbox(SandboxError::Exit(exit)) => {
-            ExecutionFailure::Exit(exit.to_string())
-        }
+        ExecutionError::Sandbox(SandboxError::Exit(exit)) => ExecutionFailure::Exit(exit),
         ExecutionError::Sandbox(SandboxError::Failed(error)) => ExecutionFailure::Failed(error),
         other @ (ExecutionError::Spawn { .. } | ExecutionError::TimeoutOutOfRange { .. }) => {
-            ExecutionFailure::Unexpected(other.to_string())
+            ExecutionFailure::Unexpected(other)
         }
     }
 }
 
-fn module_problem(failure: ModuleLoadFailure) -> LoadProblem {
+fn module_failure(failure: ModuleLoadFailure) -> LoadFailure {
     match failure {
-        ModuleLoadFailure::MissingFunction => LoadProblem::MissingFunction,
-        ModuleLoadFailure::NotCallable => LoadProblem::NotCallable,
-        ModuleLoadFailure::Runtime(error) => LoadProblem::Compile(error.to_string()),
+        ModuleLoadFailure::MissingFunction => LoadFailure::MissingFunction,
+        ModuleLoadFailure::NotCallable => LoadFailure::NotCallable,
+        other @ ModuleLoadFailure::Runtime(_) => LoadFailure::Load(other),
     }
 }
 
-fn call_problem(source: ExecutionError<RuntimeFailure>) -> CallProblem {
+fn call_failure(source: ExecutionError<RuntimeFailure>) -> CallFailure {
     match execution_failure(source) {
-        ExecutionFailure::Timeout => CallProblem::Timeout,
-        ExecutionFailure::Exit(message)
-        | ExecutionFailure::Unexpected(message)
-        | ExecutionFailure::Failed(RuntimeFailure { message }) => CallProblem::Error(message),
+        ExecutionFailure::Timeout(timeout) => CallFailure::Timeout(timeout),
+        ExecutionFailure::Exit(exit) => CallFailure::Exit(exit),
+        ExecutionFailure::Unexpected(error) => CallFailure::Unexpected(error),
+        ExecutionFailure::Failed(error) => CallFailure::Runtime(error),
     }
 }

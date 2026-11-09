@@ -4,16 +4,18 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::custom_code::runtime::LoadedModule;
+use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
 
 use super::body::TestCustomCodeRequest;
+use super::error::CallFailure;
+use super::error::LoadFailure;
+use super::error::SandboxLoad;
 use super::report::ErrorType;
 use super::report::TestCustomCodeResponse;
 
 pub const EXECUTION_TIMEOUT_SECONDS: u64 = 5;
 pub const EXECUTION_TIMEOUT: Duration = Duration::from_secs(EXECUTION_TIMEOUT_SECONDS);
 
-const MISSING_FUNCTION: &str = "Custom code must define an 'apply_guardrail' function. Expected signature: apply_guardrail(inputs, request_data, input_type)";
-const NOT_CALLABLE: &str = "'apply_guardrail' must be a callable function";
 const TEST_MODEL: &str = "test-model";
 
 pub struct LoadedCode(pub Box<dyn LoadedModule>);
@@ -26,26 +28,12 @@ pub struct TestCall {
 
 pub enum LoadOutcome {
     Loaded(LoadedCode),
-    Failed(LoadProblem),
-}
-
-pub enum LoadProblem {
-    Syntax(String),
-    MissingFunction,
-    NotCallable,
-    Compile(String),
-    Timeout,
-    Unexpected(String),
+    Failed(LoadFailure),
 }
 
 pub enum CallOutcome {
     Result(GuardrailValue),
-    Failed(CallProblem),
-}
-
-pub enum CallProblem {
-    Error(String),
-    Timeout,
+    Failed(CallFailure),
 }
 
 #[async_trait]
@@ -64,11 +52,13 @@ pub async fn run_test(
     };
     match sandbox.call(code, test_call(request)).await {
         CallOutcome::Result(value) => result_response(value),
-        CallOutcome::Failed(CallProblem::Error(error)) => TestCustomCodeResponse::failure(
-            format!("Execution error: {error}"),
+        CallOutcome::Failed(CallFailure::Timeout(_)) => timeout_response(),
+        CallOutcome::Failed(
+            other @ (CallFailure::Runtime(_) | CallFailure::Exit(_) | CallFailure::Unexpected(_)),
+        ) => TestCustomCodeResponse::failure(
+            format!("Execution error: {other}"),
             ErrorType::Execution,
         ),
-        CallOutcome::Failed(CallProblem::Timeout) => timeout_response(),
     }
 }
 
@@ -122,24 +112,21 @@ fn request_data_with_defaults(
     ])
 }
 
-fn load_failure_response(problem: LoadProblem) -> TestCustomCodeResponse {
+fn load_failure_response(problem: LoadFailure) -> TestCustomCodeResponse {
     match problem {
-        LoadProblem::Syntax(error) => TestCustomCodeResponse::failure(
+        LoadFailure::Syntax(error) => TestCustomCodeResponse::failure(
             format!("Syntax error in custom code: {error}"),
             ErrorType::Compilation,
         ),
-        LoadProblem::MissingFunction => {
-            TestCustomCodeResponse::failure(MISSING_FUNCTION.to_owned(), ErrorType::Compilation)
+        other @ (LoadFailure::MissingFunction | LoadFailure::NotCallable) => {
+            TestCustomCodeResponse::failure(other.to_string(), ErrorType::Compilation)
         }
-        LoadProblem::NotCallable => {
-            TestCustomCodeResponse::failure(NOT_CALLABLE.to_owned(), ErrorType::Compilation)
-        }
-        LoadProblem::Compile(error) => TestCustomCodeResponse::failure(
-            format!("Failed to compile custom code: {error}"),
+        other @ (LoadFailure::Load(_) | LoadFailure::Exit(_)) => TestCustomCodeResponse::failure(
+            format!("Failed to compile custom code: {other}"),
             ErrorType::Compilation,
         ),
-        LoadProblem::Timeout => timeout_response(),
-        LoadProblem::Unexpected(error) => unexpected_response(&error),
+        LoadFailure::Timeout(_) => timeout_response(),
+        LoadFailure::Unexpected(error) => unexpected_response(&error),
     }
 }
 
@@ -187,7 +174,7 @@ fn timeout_response() -> TestCustomCodeResponse {
     )
 }
 
-fn unexpected_response(error: &str) -> TestCustomCodeResponse {
+fn unexpected_response(error: &ExecutionError<SandboxLoad>) -> TestCustomCodeResponse {
     tracing::error!("Error testing custom code guardrail: {error}");
     TestCustomCodeResponse::failure(format!("Unexpected error: {error}"), ErrorType::Execution)
 }

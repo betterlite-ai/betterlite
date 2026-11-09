@@ -2,8 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
+use serde_json::value::RawValue;
 
 use super::error::TestRouteError;
+
+const MAX_VALUE_DEPTH: usize = 64;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestCustomCodeRequest {
@@ -14,25 +17,14 @@ pub struct TestCustomCodeRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct RawTestRequest {
+struct RawTestRequest<'body> {
     custom_code: String,
-    test_input: BTreeMap<String, WireValue>,
+    #[serde(borrow)]
+    test_input: BTreeMap<String, &'body RawValue>,
     #[serde(default = "default_input_type")]
     input_type: String,
-    #[serde(default)]
-    request_data: Option<BTreeMap<String, WireValue>>,
-}
-
-// serde_json::Number decodes the private map token arbitrary_precision uses, which an i64/f64 untagged variant cannot
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum WireValue {
-    Null,
-    Bool(bool),
-    Number(serde_json::Number),
-    Text(String),
-    List(Vec<Self>),
-    Object(BTreeMap<String, Self>),
+    #[serde(default, borrow)]
+    request_data: Option<BTreeMap<String, &'body RawValue>>,
 }
 
 fn default_input_type() -> String {
@@ -41,45 +33,73 @@ fn default_input_type() -> String {
 
 pub fn decode_test_request(body: &[u8]) -> Result<TestCustomCodeRequest, TestRouteError> {
     let mut deserializer = serde_json::Deserializer::from_slice(body);
-    let raw: RawTestRequest = serde_path_to_error::deserialize(&mut deserializer)
+    let raw: RawTestRequest<'_> = serde_path_to_error::deserialize(&mut deserializer)
         .map_err(|source| TestRouteError::Body { source })?;
     deserializer
         .end()
         .map_err(|source| TestRouteError::Trailing { source })?;
     Ok(TestCustomCodeRequest {
         custom_code: raw.custom_code,
-        test_input: to_guardrail_map(raw.test_input)?,
+        test_input: to_guardrail_map(raw.test_input, 1)?,
         input_type: raw.input_type,
-        request_data: raw.request_data.map(to_guardrail_map).transpose()?,
+        request_data: raw
+            .request_data
+            .map(|fields| to_guardrail_map(fields, 1))
+            .transpose()?,
     })
 }
 
+// RawValue captures each child as a slice of the body, so a level is read without buffering the levels below it
 fn to_guardrail_map(
-    fields: BTreeMap<String, WireValue>,
+    fields: BTreeMap<String, &RawValue>,
+    depth: usize,
 ) -> Result<BTreeMap<String, GuardrailValue>, TestRouteError> {
     let mut converted = BTreeMap::new();
-    for (key, value) in fields {
-        converted.insert(key, to_guardrail_value(value)?);
+    for (key, raw) in fields {
+        converted.insert(key, to_guardrail_value(raw, depth)?);
     }
     Ok(converted)
 }
 
-fn to_guardrail_value(value: WireValue) -> Result<GuardrailValue, TestRouteError> {
-    let converted = match value {
-        WireValue::Null => GuardrailValue::Null,
-        WireValue::Bool(flag) => GuardrailValue::Boolean(flag),
-        WireValue::Number(number) => number_to_guardrail(&number)?,
-        WireValue::Text(text) => GuardrailValue::Text(text),
-        WireValue::List(items) => {
+fn to_guardrail_value(raw: &RawValue, depth: usize) -> Result<GuardrailValue, TestRouteError> {
+    if depth > MAX_VALUE_DEPTH {
+        return Err(TestRouteError::Depth {
+            limit: MAX_VALUE_DEPTH,
+        });
+    }
+    let text = raw.get().trim_start();
+    match text.as_bytes().first() {
+        Some(b'{') => {
+            let fields: BTreeMap<String, &RawValue> =
+                serde_json::from_str(text).map_err(|source| TestRouteError::Value { source })?;
+            Ok(GuardrailValue::Object(to_guardrail_map(
+                fields,
+                depth.saturating_add(1),
+            )?))
+        }
+        Some(b'[') => {
+            let items: Vec<&RawValue> =
+                serde_json::from_str(text).map_err(|source| TestRouteError::Value { source })?;
             let mut converted = Vec::new();
             for item in items {
-                converted.push(to_guardrail_value(item)?);
+                converted.push(to_guardrail_value(item, depth.saturating_add(1))?);
             }
-            GuardrailValue::Array(converted)
+            Ok(GuardrailValue::Array(converted))
         }
-        WireValue::Object(fields) => GuardrailValue::Object(to_guardrail_map(fields)?),
-    };
-    Ok(converted)
+        Some(b'"') => {
+            let text_value: String =
+                serde_json::from_str(text).map_err(|source| TestRouteError::Value { source })?;
+            Ok(GuardrailValue::Text(text_value))
+        }
+        Some(b't') => Ok(GuardrailValue::Boolean(true)),
+        Some(b'f') => Ok(GuardrailValue::Boolean(false)),
+        Some(b'n') => Ok(GuardrailValue::Null),
+        _ => {
+            let number: serde_json::Number =
+                serde_json::from_str(text).map_err(|source| TestRouteError::Value { source })?;
+            number_to_guardrail(&number)
+        }
+    }
 }
 
 fn number_to_guardrail(number: &serde_json::Number) -> Result<GuardrailValue, TestRouteError> {

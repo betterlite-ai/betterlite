@@ -3,13 +3,17 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::pending;
+use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::thread::park_timeout;
 use std::thread::yield_now;
+use std::time::Duration;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -33,26 +37,28 @@ use betterlite_guardrails::custom_code::runtime::LoadedModule;
 use betterlite_guardrails::custom_code::runtime::ModuleHost;
 use betterlite_guardrails::custom_code::runtime::RuntimeFailure;
 use betterlite_guardrails::custom_code_execution::deadline;
+use betterlite_guardrails::custom_code_execution::execution::error::ExecutionError;
 use betterlite_guardrails::custom_code_execution::execution::error::SandboxError;
 use betterlite_guardrails::custom_code_execution::sandbox::CompiledProgram;
 use betterlite_guardrails::custom_code_execution::sandbox::globals::SandboxGlobals;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use rstest::rstest;
+use tokio::time::sleep;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
 
 use super::body::TestCustomCodeRequest;
 use super::body::decode_test_request;
+use super::error::CallFailure;
+use super::error::LoadFailure;
 use super::report::ErrorType;
 use super::report::TestCustomCodeResponse;
 use super::route::SandboxedCode;
 use super::route::routes;
 use super::run::CallOutcome;
-use super::run::CallProblem;
 use super::run::CodeSandbox;
 use super::run::LoadOutcome;
-use super::run::LoadProblem;
 use super::run::LoadedCode;
 use super::run::TestCall;
 use super::run::run_test;
@@ -69,9 +75,13 @@ const ADMIN_REQUIRED: &str = "Admin access required to test custom code guardrai
 enum Answer {
     Value(GuardrailValue),
     Pending(GuardrailValue),
+    // Three seconds before the coroutine and three inside it, so only the shared deadline cuts it at the timeout
+    Slow(GuardrailValue),
     PendingForever,
     Error(String),
 }
+
+const SLOW_STEP: Duration = Duration::from_secs(3);
 
 enum HostReply {
     Answer(Answer),
@@ -97,6 +107,17 @@ impl LoadedModule for FakeModule {
             Answer::Pending(value) => {
                 let settled = value.clone();
                 Ok(CallOutput::Pending(Box::pin(async move {
+                    Ok::<GuardrailValue, SandboxError<RuntimeFailure>>(settled)
+                })))
+            }
+            Answer::Slow(value) => {
+                let started = Instant::now();
+                while started.elapsed() < SLOW_STEP {
+                    park_timeout(SLOW_STEP.saturating_sub(started.elapsed()));
+                }
+                let settled = value.clone();
+                Ok(CallOutput::Pending(Box::pin(async move {
+                    sleep(SLOW_STEP).await;
                     Ok::<GuardrailValue, SandboxError<RuntimeFailure>>(settled)
                 })))
             }
@@ -198,14 +219,18 @@ fn scripted_sandbox(load: LoadOutcome, call: CallOutcome) -> Arc<Scripted> {
 impl CodeSandbox for Scripted {
     async fn load(&self, _source: &str) -> LoadOutcome {
         self.load.lock().unwrap().take().unwrap_or_else(|| {
-            LoadOutcome::Failed(LoadProblem::Unexpected("no scripted load".to_owned()))
+            LoadOutcome::Failed(LoadFailure::Unexpected(ExecutionError::Spawn {
+                source: IoError::other("no scripted load"),
+            }))
         })
     }
 
     async fn call(&self, _code: LoadedCode, arguments: TestCall) -> CallOutcome {
         self.seen.lock().unwrap().push(arguments);
         self.call.lock().unwrap().take().unwrap_or_else(|| {
-            CallOutcome::Failed(CallProblem::Error("no scripted call".to_owned()))
+            CallOutcome::Failed(CallFailure::Unexpected(ExecutionError::Spawn {
+                source: IoError::other("no scripted call"),
+            }))
         })
     }
 }
@@ -287,11 +312,16 @@ fn allow_answer() -> HostReply {
     ))))
 }
 
-fn body_with_inputs() -> String {
-    format!(r#"{{"custom_code":"{ALLOW_SOURCE}","test_input":{{"texts":["hello"]}}}}"#)
+fn quoted(text: &str) -> String {
+    serde_json::to_string(text).unwrap()
 }
 
-// access
+fn body_with_inputs() -> String {
+    format!(
+        r#"{{"custom_code":{},"test_input":{{"texts":["hello"]}}}}"#,
+        quoted(ALLOW_SOURCE)
+    )
+}
 
 #[tokio::test]
 async fn access_proxy_admin_reaches_the_sandbox() {
@@ -365,12 +395,10 @@ async fn access_without_a_key_is_unauthorized() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(
         body,
-        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":null,"code":"401"}}"#
+        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#
     );
     assert_eq!(fake.loads.load(Ordering::SeqCst), 0);
 }
-
-// body
 
 #[tokio::test]
 async fn body_defaults_are_applied() {
@@ -405,7 +433,8 @@ async fn body_defaults_are_applied() {
 async fn body_unknown_keys_are_ignored() {
     let fake = host(allow_answer());
     let body = format!(
-        r#"{{"custom_code":"{ALLOW_SOURCE}","test_input":{{}},"unknown":1,"nested":{{"a":true}}}}"#
+        r#"{{"custom_code":{},"test_input":{{}},"unknown":1,"nested":{{"a":true}}}}"#,
+        quoted(ALLOW_SOURCE)
     );
     let (status, _body) = post(
         routes(sandbox(&fake)),
@@ -497,7 +526,8 @@ async fn body_is_checked_before_the_role_check() {
 async fn body_json_numbers_keep_their_kind() {
     let fake = host(allow_answer());
     let body = format!(
-        r#"{{"custom_code":"{ALLOW_SOURCE}","test_input":{{"count":3,"negative":-2,"ratio":1.25,"big":18446744073709551615}}}}"#
+        r#"{{"custom_code":{},"test_input":{{"count":3,"negative":-2,"ratio":1.25,"big":18446744073709551615}}}}"#,
+        quoted(ALLOW_SOURCE)
     );
     let (status, _body) = post(
         routes(sandbox(&fake)),
@@ -519,8 +549,10 @@ async fn body_json_numbers_keep_their_kind() {
 #[tokio::test]
 async fn body_request_data_null_takes_the_default() {
     let fake = host(allow_answer());
-    let body =
-        format!(r#"{{"custom_code":"{ALLOW_SOURCE}","test_input":{{}},"request_data":null}}"#);
+    let body = format!(
+        r#"{{"custom_code":{},"test_input":{{}},"request_data":null}}"#,
+        quoted(ALLOW_SOURCE)
+    );
     let (status, _body) = post(
         routes(sandbox(&fake)),
         Some(caller(ADMIN, vec![Role::PlatformAdmin])),
@@ -538,7 +570,24 @@ async fn body_request_data_null_takes_the_default() {
     );
 }
 
-// compile
+#[tokio::test]
+async fn body_nesting_past_the_limit_is_422() {
+    let fake = host(allow_answer());
+    let deep = format!("{}null{}", "[".repeat(70), "]".repeat(70));
+    let body = format!(
+        r#"{{"custom_code":{},"test_input":{{"deep":{deep}}}}}"#,
+        quoted(ALLOW_SOURCE)
+    );
+    let (status, text) = post(
+        routes(sandbox(&fake)),
+        Some(caller(ADMIN, vec![Role::PlatformAdmin])),
+        &body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(text.contains("nests deeper than 64 levels"), "{text}");
+    assert_eq!(fake.loads.load(Ordering::SeqCst), 0);
+}
 
 #[tokio::test]
 async fn compile_syntax_error_is_reported() {
@@ -610,8 +659,6 @@ async fn compile_load_failure_is_reported() {
         "Failed to compile custom code: name 'allow' is not defined"
     );
 }
-
-// run
 
 #[rstest]
 #[case::allow(r#"{"action":"allow"}"#)]
@@ -781,8 +828,6 @@ async fn run_runtime_error_is_execution_error() {
     assert_eq!(response.error.unwrap(), "Execution error: boom");
 }
 
-// result
-
 #[rstest]
 #[case::none(GuardrailValue::Null, "NoneType")]
 #[case::bool(GuardrailValue::Boolean(true), "bool")]
@@ -843,9 +888,25 @@ async fn result_run_past_five_seconds_times_out() {
 }
 
 #[tokio::test]
+async fn result_async_result_shares_the_deadline() {
+    let fake = host(HostReply::Answer(Answer::Slow(GuardrailValue::Object(
+        object(r#"{"action":"allow"}"#),
+    ))));
+    let response = run_test(request(ALLOW_SOURCE), sandbox(&fake).as_ref()).await;
+    assert!(!response.success);
+    assert_eq!(response.error_type, Some(ErrorType::Execution));
+    assert_eq!(
+        response.error.unwrap(),
+        "Execution timeout: code took longer than 5 seconds"
+    );
+}
+
+#[tokio::test]
 async fn result_unexpected_error_is_reported() {
     let scripted = scripted_sandbox(
-        LoadOutcome::Failed(LoadProblem::Unexpected("worker unavailable".to_owned())),
+        LoadOutcome::Failed(LoadFailure::Unexpected(ExecutionError::Spawn {
+            source: IoError::other("worker unavailable"),
+        })),
         CallOutcome::Result(GuardrailValue::Null),
     );
     let response = run_test(request(ALLOW_SOURCE), scripted.as_ref()).await;
@@ -853,7 +914,7 @@ async fn result_unexpected_error_is_reported() {
     assert_eq!(response.error_type, Some(ErrorType::Execution));
     assert_eq!(
         response.error.unwrap(),
-        "Unexpected error: worker unavailable"
+        "Unexpected error: could not start the guardrail worker: worker unavailable"
     );
 }
 
