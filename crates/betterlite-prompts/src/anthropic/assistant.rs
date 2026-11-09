@@ -86,13 +86,13 @@ enum ContentField<'input> {
 
 impl AssistantRun {
     #[must_use]
-    pub fn message(&self) -> Option<Json> {
+    pub fn into_message(self) -> Option<Json> {
         if self.blocks.is_empty() {
             return None;
         }
         Some(Json::Object(Object::from_iter([
             (ROLE.to_owned(), Json::Text(ASSISTANT.to_owned())),
-            (CONTENT.to_owned(), Json::List(self.blocks.clone())),
+            (CONTENT.to_owned(), Json::List(self.blocks)),
         ])))
     }
 

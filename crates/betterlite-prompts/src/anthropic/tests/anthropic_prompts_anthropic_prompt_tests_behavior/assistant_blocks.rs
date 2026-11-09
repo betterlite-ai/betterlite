@@ -10,7 +10,7 @@ fn assistant_content(message: &str) -> Vec<Json> {
     let new_id = || GENERATED_ID.to_owned();
     run.append(&object(message), 0, &new_id)
         .expect("the message must append");
-    let Some(Json::Object(fields)) = run.message() else {
+    let Some(Json::Object(fields)) = run.into_message() else {
         return Vec::new();
     };
     match fields.get("content") {

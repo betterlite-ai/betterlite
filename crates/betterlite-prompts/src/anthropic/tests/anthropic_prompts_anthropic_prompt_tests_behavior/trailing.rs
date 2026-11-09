@@ -42,6 +42,29 @@ fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_a_string_content_ass
     );
 }
 
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_a_trailing_unit_separator() {
+    let input = r#"[{"role":"user","content":"hi"},{"role":"assistant","content":"answer\u001f"}]"#;
+    let output = r#"[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"assistant","content":[{"type":"text","text":"answer"}]}]"#;
+    assert_eq!(converted(input, false).await, expected(output));
+}
+
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_unit_separators_only_at_the_end()
+{
+    let input = r#"[{"role":"user","content":"hi"},{"role":"assistant","content":"first\u001e"},{"role":"user","content":"again"},{"role":"assistant","content":"answer  \u001f"}]"#;
+    let output = r#"[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"assistant","content":[{"type":"text","text":"first\u001e"}]},{"role":"user","content":[{"type":"text","text":"again"}]},{"role":"assistant","content":[{"type":"text","text":"answer"}]}]"#;
+    assert_eq!(converted(input, false).await, expected(output));
+}
+
+#[test]
+fn anthropic_prompts_anthropic_prompt_tests_behavior_strips_unit_separators_from_text_blocks() {
+    assert_eq!(
+        stripped(r#"[{"role":"assistant","content":[{"type":"text","text":"answer  \u001c"}]}]"#),
+        expected(r#"[{"role":"assistant","content":[{"type":"text","text":"answer"}]}]"#)
+    );
+}
+
 #[rstest]
 #[case::non_text_block_without_a_type(r#"[{"role":"assistant","content":[{"content":"x"}]}]"#)]
 #[case::text_block_without_text(r#"[{"role":"assistant","content":[{"type":"text"}]}]"#)]

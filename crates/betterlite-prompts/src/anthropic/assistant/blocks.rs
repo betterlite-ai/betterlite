@@ -21,8 +21,8 @@ pub(super) fn append_content_blocks(
             });
         };
         let kind = match fields.get(TYPE) {
-            None => String::new(),
-            Some(Json::Text(kind)) => kind.clone(),
+            None => "",
+            Some(Json::Text(kind)) => kind.as_str(),
             Some(_) => {
                 return Err(AssistantError::BlockField {
                     index,
@@ -31,8 +31,8 @@ pub(super) fn append_content_blocks(
                 });
             }
         };
-        let text = textual_field(fields, &kind, index, position)?;
-        match kind.as_str() {
+        let text = textual_field(fields, kind, index, position)?;
+        match kind {
             THINKING if !drop_unsignable(from_ref(block)).is_empty() => {
                 run.blocks.push(block.clone());
             }

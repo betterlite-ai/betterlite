@@ -118,7 +118,7 @@ where
             assistant.append(next.fields, index, self.new_id)?;
             index = index.saturating_add(1);
         }
-        if let Some(message) = assistant.message() {
+        if let Some(message) = assistant.into_message() {
             assembled.push(message);
         }
         index = append_system_messages(messages, index, assembled)?;
@@ -195,7 +195,7 @@ pub(crate) fn strip_trailing_whitespace(messages: &mut [Json]) -> Result<(), Ass
         return Ok(());
     }
     match fields.get_mut(CONTENT) {
-        Some(Json::Text(text)) => *text = text.trim_end().to_owned(),
+        Some(Json::Text(text)) => *text = text.trim_end_matches(is_rstrip_whitespace).to_owned(),
         Some(Json::List(blocks)) => strip_text_blocks(blocks)?,
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) | None => {}
     }
@@ -217,7 +217,9 @@ fn strip_text_blocks(blocks: &mut [Json]) -> Result<(), AssemblyError> {
             continue;
         }
         match fields.get_mut(TEXT) {
-            Some(Json::Text(text)) => *text = text.trim_end().to_owned(),
+            Some(Json::Text(text)) => {
+                *text = text.trim_end_matches(is_rstrip_whitespace).to_owned();
+            }
             Some(_) | None => {
                 return Err(AssemblyError::TrailingBlock {
                     block: position,
@@ -227,4 +229,12 @@ fn strip_text_blocks(blocks: &mut [Json]) -> Result<(), AssemblyError> {
         }
     }
     Ok(())
+}
+
+// Python's str.rstrip() also removes the four information separators that Rust's White_Space set omits
+const fn is_rstrip_whitespace(character: char) -> bool {
+    match character {
+        '\u{1c}'..='\u{1f}' => true,
+        _ => character.is_whitespace(),
+    }
 }

@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::arguments::json::Json;
 
 use super::fixtures::{converted, expected};
@@ -127,6 +129,65 @@ async fn anthropic_prompts_anthropic_prompt_tests_behavior_server_calls_with_tex
         r#"{"type":"text","text":"answer"}"#.to_owned(),
         server_tool_use("srvtoolu_1", "web_search"),
         FIRST_RESULT.to_owned(),
+    ]);
+    assert_eq!(converted(&input, false).await, output);
+}
+
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_repeated_ids_are_dropped_across_merged_assistants()
+ {
+    let calls = format!("{SEARCH_CALL},{CALC_CALL}");
+    let results = format!(r#""web_search_results":[{FIRST_RESULT}]"#);
+    let first = format!(
+        r#"{{"role":"assistant","content":null,"thinking_blocks":[{THINKING_ONE}],"tool_calls":[{calls}],"provider_specific_fields":{{{results}}}}}"#
+    );
+    let second = format!(
+        r#"{{"role":"assistant","content":null,"thinking_blocks":[{THINKING_TWO}],"tool_calls":[{calls}],"provider_specific_fields":{{{results}}}}}"#
+    );
+    let input = format!(r#"[{{"role":"user","content":"search"}},{first},{second}]"#);
+    let output = assistant_output(&[
+        THINKING_ONE.to_owned(),
+        server_tool_use("srvtoolu_1", "web_search"),
+        FIRST_RESULT.to_owned(),
+        r#"{"type":"tool_use","id":"call_2","name":"calc","input":{}}"#.to_owned(),
+        THINKING_TWO.to_owned(),
+        FIRST_RESULT.to_owned(),
+    ]);
+    assert_eq!(converted(&input, false).await, output);
+}
+
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_interleaved_text_keeps_the_message_cache_control()
+ {
+    let results = format!(r#""web_search_results":[{FIRST_RESULT}]"#);
+    let input = format!(
+        r#"[{{"role":"user","content":"search"}},{{"role":"assistant","content":"answer","cache_control":{{"type":"ephemeral","ttl":"1h"}},"thinking_blocks":[{THINKING_ONE}],"tool_calls":[{SEARCH_CALL}],"provider_specific_fields":{{{results}}}}}]"#
+    );
+    let output = assistant_output(&[
+        THINKING_ONE.to_owned(),
+        server_tool_use("srvtoolu_1", "web_search"),
+        FIRST_RESULT.to_owned(),
+        r#"{"type":"text","text":"answer","cache_control":{"type":"ephemeral","ttl":"1h"}}"#
+            .to_owned(),
+    ]);
+    assert_eq!(converted(&input, false).await, output);
+}
+
+#[rstest]
+#[case::empty_thinking_list("[]")]
+#[case::only_unsigned_thinking_blocks(r#"[{"type":"thinking","thinking":"x","signature":""}]"#)]
+#[tokio::test]
+async fn anthropic_prompts_anthropic_prompt_tests_behavior_filtered_thinking_still_interleaves(
+    #[case] thinking_blocks: &str,
+) {
+    let results = format!(r#""web_search_results":[{FIRST_RESULT}]"#);
+    let input = format!(
+        r#"[{{"role":"user","content":"search"}},{{"role":"assistant","content":"answer","thinking_blocks":{thinking_blocks},"tool_calls":[{SEARCH_CALL}],"provider_specific_fields":{{{results}}}}}]"#
+    );
+    let output = assistant_output(&[
+        server_tool_use("srvtoolu_1", "web_search"),
+        FIRST_RESULT.to_owned(),
+        r#"{"type":"text","text":"answer"}"#.to_owned(),
     ]);
     assert_eq!(converted(&input, false).await, output);
 }
