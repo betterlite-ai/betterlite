@@ -55,14 +55,14 @@ call:
       - call: milvus_decode_search
         input:
           status_code: 502
-          headers: {x-request-id: req_2}
+          headers: {x-request-id: req_2, content-length: "13"}
           body: '{"data":[42]}'
           query_text: q
           text_field: text
       - call: milvus_decode_search
         input:
           status_code: 200
-          headers: {x-request-id: req_3}
+          headers: {x-request-id: req_3, content-length: "8"}
           body: 'not json'
           query_text: q
           text_field: text
