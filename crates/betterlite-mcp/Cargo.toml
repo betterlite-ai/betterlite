@@ -10,6 +10,7 @@ aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
@@ -18,11 +19,12 @@ hex.workspace = true
 http = "1.5.0"
 pem = "4.0.0"
 regex.workspace = true
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
 rustix = { version = "1.1.5", features = ["process"] }
 scrypt = { version = "0.11.0", default-features = false }
 secrecy.workspace = true
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+serde_json = { version = "1.0.154", features = ["raw_value", "arbitrary_precision"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }

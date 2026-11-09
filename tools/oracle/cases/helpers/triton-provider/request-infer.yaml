@@ -1,0 +1,23 @@
+kind: helper
+name: triton-provider-request-infer
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: infer_request
+    requests:
+      - model: model
+        messages: [{role: user, content: hello}]
+        options: {max_tokens: 7, temperature: 0.5, flag: true, stream: true, max_retries: 2}
+      - model: model
+        messages: [{role: user, content: hello}]
+        options: {}
+      - model: model
+        messages: [{role: assistant, content: null}]
+        options: {max_tokens: null}
+      - model: model
+        messages: [{role: user, content: [{type: text, text: hi}]}]
+        options: {count: 3, ratio: 1.5, label: x, empty: null, items: [1]}
+      - model: model
+        messages: []
+        options: {}

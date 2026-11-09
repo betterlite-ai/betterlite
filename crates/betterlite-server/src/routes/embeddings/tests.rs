@@ -5,6 +5,7 @@ use axum::body::to_bytes;
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::collections::BTreeMap;
@@ -36,7 +37,12 @@ fn embedding_failure_returns_bad_request() {
     let error = EmbeddingError::Body {
         source: serde_json::from_str::<String>("not-json").expect_err("invalid JSON"),
     };
-    let response = failure(&error, "embedding-test", None);
+    let response = failure(
+        &error,
+        "embedding-test",
+        None,
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+    );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         response.headers().get("x-litellm-call-id").unwrap(),
@@ -54,7 +60,12 @@ async fn embedding_provider_failure_preserves_message() {
                 .to_vec(),
         }),
     };
-    let response = failure(&error, "embedding-provider", None);
+    let response = failure(
+        &error,
+        "embedding-provider",
+        None,
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+    );
     let body = to_bytes(response.into_body(), 4096)
         .await
         .expect("error body");
@@ -94,15 +105,16 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
 #[rstest::rstest]
 #[case::invalid(400, "invalid_request_error", 400, "invalid_request_error", None)]
 #[case::rate_limit(429, "requests", 429, "throttling_error", None)]
-#[case::model_missing(
+#[case::model_missing_keeps_the_upstream_status(
     400,
     "invalid_request_error model_not_found",
-    404,
+    400,
     "invalid_request_error",
     None
 )]
 #[case::custom_type(400, "provider_custom", 400, "invalid_request_error", None)]
 #[case::authentication(401, "invalid_api_key", 401, "authentication_error", None)]
+#[case::timeout_preamble(500, "Request timed out", 408, "invalid_request_error", None)]
 #[tokio::test]
 async fn embedding_error_classification(
     #[case] status: u16,
@@ -123,7 +135,12 @@ async fn embedding_error_classification(
             .into_bytes(),
         }),
     };
-    let response = failure(&error, "embedding-error", None);
+    let response = failure(
+        &error,
+        "embedding-error",
+        None,
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+    );
     assert_eq!(response.status().as_u16(), expected_status);
     assert_eq!(
         response.headers()["llm_provider-x-request-id"],
