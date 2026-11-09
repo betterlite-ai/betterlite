@@ -1,0 +1,8 @@
+kind: helper
+name: cloudflare-wire-decisions-url-seed
+call:
+  b5836:
+    decisions_urls:
+      - {api_base: "https://proxy.example/ai/v1", model: "foo"}
+env: {}
+compare: {ignore: []}
