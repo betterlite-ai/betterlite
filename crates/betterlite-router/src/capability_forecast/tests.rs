@@ -627,9 +627,17 @@ fn assert_scan_budget() {
     // one fast failure past the budget stops the walk before the object
     let over = format!("{}{}", "{x ".repeat(301), "{}");
     assert_eq!(first_object(&over, 600), None);
-    // a failure that reads to the end of the reply is still charged the whole remainder
-    let unterminated = format!("{}{}", "{\"a\":", " ".repeat(90));
-    assert_eq!(first_object(&unterminated, 94), None);
+    // a failure that reads to the end of the reply is still charged the whole remainder, not a couple of bytes
+    let unterminated = format!("{}{}", "{\"a\": {}", " ".repeat(90));
+    assert_eq!(first_object(&unterminated, 97), None);
+    assert_eq!(first_object(&unterminated, 98), Some("{}"));
+    // the same holds when the failed start crosses newlines, so the line offset belongs in the charge
+    let multiline = format!("{}{}", "{\"a\":\n\n {}", " ".repeat(10));
+    assert_eq!(
+        first_object(&multiline, multiline.len().saturating_sub(1)),
+        None
+    );
+    assert_eq!(first_object(&multiline, multiline.len()), Some("{}"));
     // the worst-case charge would refuse this reply at the byte limit, while its failed starts read 2 bytes each
     let verdict = verdict_json("SUP-1", "supported", "0.8");
     let padding = " ".repeat(
