@@ -987,6 +987,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-server",
  "chrono",
  "clap",
@@ -994,7 +995,6 @@ dependencies = [
  "nix",
  "rand 0.10.3",
  "regex",
- "reqwest",
  "rstest",
  "serde",
  "serde_json",

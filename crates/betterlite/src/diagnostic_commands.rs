@@ -1,25 +1,16 @@
 use std::io::{self, Write};
 use std::path::Path;
 use std::process as std_process;
-use std::time::Duration;
 
 use betterlite_config::loader::{ConfigLoader, EnvironmentLookup};
 use betterlite_config::sections::includes::{LoadError, load_file};
 use betterlite_config::sections::settings::JsonValue;
-use reqwest::blocking::Client;
-use reqwest::redirect::Policy;
+use betterlite_http::health_probe::{HealthTransport, TransportError};
 use serde::Serialize as _;
 use serde_json::ser::PrettyFormatter;
 
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 const TEST_DEFAULT_MODEL: &str = "gpt-3.5-turbo";
 const INDENT: &[u8] = b"    ";
-
-#[derive(Debug, thiserror::Error)]
-pub enum TransportError {
-    #[error(transparent)]
-    Request(#[from] reqwest::Error),
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum DiagnosticError {
@@ -44,31 +35,6 @@ pub enum DiagnosticError {
     },
     #[error("Invalid test value")]
     InvalidTestValue,
-}
-
-pub trait HealthTransport {
-    fn get(&self, url: &str) -> Result<String, TransportError>;
-}
-
-pub struct ReqwestHealth {
-    client: Client,
-}
-
-impl ReqwestHealth {
-    pub fn new() -> Result<Self, TransportError> {
-        let client = Client::builder()
-            .timeout(HEALTH_TIMEOUT)
-            .redirect(Policy::none())
-            .build()?;
-        Ok(Self { client })
-    }
-}
-
-impl HealthTransport for ReqwestHealth {
-    fn get(&self, url: &str) -> Result<String, TransportError> {
-        let response = self.client.get(url).send()?;
-        Ok(response.text()?)
-    }
 }
 
 pub fn version_command(
