@@ -70,11 +70,8 @@ fn datadog_legacy_v1_logging_behavior() {
     assert_eq!(message(&built), expected);
 }
 
-#[test]
-fn datadog_legacy_v1_logging_defaults() {
-    let kwargs = default_kwargs();
-    let response = json(r#"{"usage": {}}"#);
-    let expected = json(
+fn default_record() -> Json {
+    json(
         r#"{
         "id": "generated-id",
         "call_type": "litellm.completion",
@@ -91,8 +88,24 @@ fn datadog_legacy_v1_logging_defaults() {
         "usage": {},
         "metadata": {}
     }"#,
-    );
-    assert_eq!(legacy_message(&kwargs, &response), expected);
+    )
+}
+
+#[test]
+fn datadog_legacy_v1_logging_defaults() {
+    let kwargs = default_kwargs();
+    let response = json(r#"{"usage": {}}"#);
+    assert_eq!(legacy_message(&kwargs, &response), default_record());
+}
+
+#[test]
+fn datadog_legacy_v1_logging_resolves_explicit_nulls_to_defaults() {
+    let kwargs: LegacyLoggingKwargs = serde_json::from_str(
+        r#"{"model": null, "user": null, "messages": null, "litellm_params": null, "optional_params": null, "call_type": null, "cache_hit": null, "response_cost": null}"#,
+    )
+    .unwrap();
+    let response = json(r#"{"usage": {}}"#);
+    assert_eq!(legacy_message(&kwargs, &response), default_record());
 }
 
 #[test]

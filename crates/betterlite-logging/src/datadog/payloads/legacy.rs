@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, SecondsFormat};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Number;
 use serde_with::{As, DefaultOnNull};
 
@@ -34,7 +34,7 @@ pub struct LegacyLoggingKwargs {
     pub optional_params: IndexMap<String, Json>,
     #[serde(
         default = "default_call_type",
-        deserialize_with = "As::<DefaultOnNull>::deserialize"
+        deserialize_with = "call_type_or_default"
     )]
     pub call_type: String,
     #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
@@ -49,6 +49,18 @@ const fn default_messages() -> Json {
 
 fn default_call_type() -> String {
     "litellm.completion".to_owned()
+}
+
+// DefaultOnNull would give String's empty default here, but a null key takes this field's default too
+pub(crate) fn call_type_or_default<'de, Input>(deserializer: Input) -> Result<String, Input::Error>
+where
+    Input: Deserializer<'de>,
+{
+    let call_type = Option::<String>::deserialize(deserializer)?;
+    if let Some(present) = call_type {
+        return Ok(present);
+    }
+    Ok(default_call_type())
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
