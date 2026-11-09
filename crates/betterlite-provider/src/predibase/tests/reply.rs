@@ -479,6 +479,7 @@ async fn a_null_error_is_still_an_error() {
 #[case::not_json("not json", 422)]
 #[case::array("[1,2]", 422)]
 #[case::string("\"hi\"", 422)]
+#[case::string_that_contains_error(r#""error""#, 422)]
 #[case::missing_generated_text(r#"{"foo":1}"#, 422)]
 #[case::empty_object("{}", 422)]
 #[case::null_generated_text(r#"{"generated_text":null}"#, 500)]
