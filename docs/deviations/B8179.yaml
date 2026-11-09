@@ -18,3 +18,6 @@ deviations:
   - what: The stream cleaner does not yield a chunk that is empty after the NUL bytes are removed, and an empty chunk leaves the stream running.
     why: LiteLLM yields the empty string and stops at an empty chunk; the shared stream wrapper skips an empty chunk anyway, and the task's cleaner contract says a line that is empty after cleaning is skipped.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/handler.py#L112-L127
+  - what: A stream buffer that would pass 1 MiB without a NUL fails with StreamError::TooLarge.
+    why: LiteLLM buffers provider bytes without a limit; betterlite caps the buffer at the same 1 MiB SseParser uses so a provider that never sends a NUL cannot grow memory without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/handler.py#L112-L127

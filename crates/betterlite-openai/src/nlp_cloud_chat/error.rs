@@ -11,6 +11,15 @@ pub struct NlpCloudError {
     pub headers: Option<Headers>,
 }
 
+#[must_use]
+pub fn get_error_class(message: &str, status_code: u16, headers: Option<Headers>) -> NlpCloudError {
+    NlpCloudError {
+        status_code,
+        message: message.to_owned(),
+        headers,
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum NlpCloudConfigError {
     #[error("NLP Cloud has no {key} config setting")]

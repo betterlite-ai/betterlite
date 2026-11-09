@@ -9,12 +9,12 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use super::NlpCloudConfig;
-use super::error::NlpCloudError;
+use super::error::{NlpCloudError, get_error_class};
 use super::headers::validate_environment;
 use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::reply::{ReplyInput, decode_reply};
 use super::request::{CompletionInput, CompletionRequest, completion_request, transform_request};
-use super::stream::{StreamError, StreamEvent, clean_and_iterate_chunks};
+use super::stream::{MAX_BUFFER_BYTES, StreamCleaner, StreamError, decode_stream_line};
 use crate::chat::ChatMessage;
 use crate::chat::response::ChatResponse;
 use crate::openai_base_config::{Headers, Object};
@@ -335,11 +335,7 @@ fn defaults_keep_explicit_false_and_empty_values() {
 #[test]
 fn error_class_carries_the_status_message_and_headers() {
     let headers = Headers::from([(String::from("retry-after"), String::from("2"))]);
-    let error = NlpCloudError {
-        status_code: 429,
-        message: String::from("slow down"),
-        headers: Some(headers.clone()),
-    };
+    let error = get_error_class("slow down", 429, Some(headers.clone()));
     assert_eq!(error.status_code, 429);
     assert_eq!(error.message, "slow down");
     assert_eq!(error.headers, Some(headers));
@@ -472,60 +468,91 @@ fn reply_rejects_a_non_utf8_body_without_panicking() {
 
 #[test]
 fn cleaner_removes_every_nul_byte_from_a_line() {
-    let cleaned = clean_and_iterate_chunks(["a\u{0}b\u{0}c"]);
-    assert_eq!(cleaned, ["abc"]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(
+        cleaner.push("a\u{0}b\u{0}c").unwrap(),
+        Some(String::from("abc"))
+    );
+    assert_eq!(cleaner.finish(), None);
 }
 
 #[test]
 fn cleaner_flushes_the_buffer_at_each_nul_line() {
-    let cleaned = clean_and_iterate_chunks(["one\u{0}", "two"]);
-    assert_eq!(cleaned, ["one", "two"]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(cleaner.push("one\u{0}").unwrap(), Some(String::from("one")));
+    assert_eq!(cleaner.push("two").unwrap(), None);
+    assert_eq!(cleaner.finish(), Some(String::from("two")));
 }
 
 #[test]
 fn cleaner_keeps_lines_without_nuls_until_the_stream_ends() {
-    let cleaned = clean_and_iterate_chunks(["plain", "text"]);
-    assert_eq!(cleaned, ["plaintext"]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(cleaner.push("plain").unwrap(), None);
+    assert_eq!(cleaner.push("text").unwrap(), None);
+    assert_eq!(cleaner.finish(), Some(String::from("plaintext")));
 }
 
 #[test]
 fn cleaner_skips_a_line_that_is_only_nuls() {
-    let cleaned = clean_and_iterate_chunks(["\u{0}", "tail"]);
-    assert_eq!(cleaned, ["tail"]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(cleaner.push("\u{0}").unwrap(), None);
+    assert_eq!(cleaner.push("tail").unwrap(), None);
+    assert_eq!(cleaner.finish(), Some(String::from("tail")));
 }
 
 #[test]
 fn cleaner_skips_empty_lines_and_keeps_the_rest() {
-    let cleaned = clean_and_iterate_chunks(["a", "", "b"]);
-    assert_eq!(cleaned, ["ab"]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(cleaner.push("a").unwrap(), None);
+    assert_eq!(cleaner.push("").unwrap(), None);
+    assert_eq!(cleaner.push("b").unwrap(), None);
+    assert_eq!(cleaner.finish(), Some(String::from("ab")));
 }
 
 #[test]
 fn cleaner_returns_nothing_for_no_lines_or_only_empty_lines() {
-    assert!(clean_and_iterate_chunks([]).is_empty());
-    assert!(clean_and_iterate_chunks(["", ""]).is_empty());
+    let mut empty = StreamCleaner::default();
+    assert_eq!(empty.finish(), None);
+    let mut blank = StreamCleaner::default();
+    assert_eq!(blank.push("").unwrap(), None);
+    assert_eq!(blank.push("").unwrap(), None);
+    assert_eq!(blank.finish(), None);
 }
 
 #[test]
 fn cleaner_does_not_trim_spaces() {
-    let cleaned = clean_and_iterate_chunks([" a "]);
-    assert_eq!(cleaned, [" a "]);
+    let mut cleaner = StreamCleaner::default();
+    assert_eq!(cleaner.push(" a ").unwrap(), None);
+    assert_eq!(cleaner.finish(), Some(String::from(" a ")));
+}
+
+#[test]
+fn cleaner_yields_the_first_chunk_before_later_lines_are_read() {
+    let mut source = ["first\u{0}", "second", "third"]
+        .into_iter()
+        .inspect(|&line| assert_ne!(line, "third", "an eager cleaner reads past the first chunk"));
+    let mut cleaner = StreamCleaner::default();
+    let first = source.next().and_then(|line| cleaner.push(line).unwrap());
+    assert_eq!(first, Some(String::from("first")));
+}
+
+#[test]
+fn cleaner_rejects_a_buffer_that_crosses_the_byte_limit() {
+    let mut cleaner = StreamCleaner::default();
+    let full = "x".repeat(MAX_BUFFER_BYTES);
+    assert_eq!(cleaner.push(&full).unwrap(), None);
+    assert!(matches!(cleaner.push("y"), Err(StreamError::TooLarge)));
 }
 
 #[test]
 fn stream_decoder_reads_the_generated_text() {
-    let event: StreamEvent = serde_json::from_str(r#"{"generated_text": "the whole delta"}"#)
-        .map_err(|source| StreamError::Malformed { source })
-        .unwrap();
+    let event = decode_stream_line(r#"{"generated_text": "the whole delta"}"#).unwrap();
     assert_eq!(event.generated_text, "the whole delta");
 }
 
 #[test]
 fn stream_decoder_ignores_extra_keys() {
-    let event: StreamEvent =
-        serde_json::from_str(r#"{"generated_text": "hi", "details": {"x": 1}}"#)
-            .map_err(|source| StreamError::Malformed { source })
-            .unwrap();
+    let event = decode_stream_line(r#"{"generated_text": "hi", "details": {"x": 1}}"#).unwrap();
     assert_eq!(event.generated_text, "hi");
 }
 
@@ -537,9 +564,7 @@ fn stream_decoder_ignores_extra_keys() {
 #[case::numeric_generated_text(r#"{"generated_text": 5}"#)]
 #[case::array("[]")]
 fn stream_decoder_rejects_a_line_without_generated_text(#[case] line: &str) {
-    let error = serde_json::from_str::<StreamEvent>(line)
-        .map_err(|source| StreamError::Malformed { source })
-        .unwrap_err();
+    let error = decode_stream_line(line).unwrap_err();
     assert!(matches!(error, StreamError::Malformed { .. }));
 }
 
@@ -563,12 +588,17 @@ fn replays_the_nlp_cloud_stream_lines_corpus(
     let Ok(text) = str::from_utf8(&bytes) else {
         return;
     };
-    let cleaned = clean_and_iterate_chunks(text.split('\n'));
+    let mut cleaner = StreamCleaner::default();
+    let mut cleaned: Vec<String> = text
+        .split('\n')
+        .filter_map(|line| cleaner.push(line).unwrap())
+        .collect();
+    if let Some(remainder) = cleaner.finish() {
+        cleaned.push(remainder);
+    }
     let _decoded: Vec<_> = cleaned
         .iter()
-        .map(|line| {
-            serde_json::from_str::<StreamEvent>(line)
-                .map_err(|source| StreamError::Malformed { source })
-        })
+        .map(String::as_str)
+        .map(decode_stream_line)
         .collect();
 }
