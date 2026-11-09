@@ -229,7 +229,12 @@ fn one_call_id_does_not_dedup_across_roles() {
             )
             .is_some()
     );
-    assert_eq!(exported(&exporter).len(), 3);
+    let finished = exported(&exporter);
+    assert_eq!(finished.len(), 3);
+    let names: Vec<&str> = finished.iter().map(|span| span.name.as_ref()).collect();
+    assert!(names.contains(&"chat gpt-4o"));
+    assert!(names.contains(&"tools/call get-weather"));
+    assert!(names.contains(&"redis get"));
 }
 
 #[test]
@@ -582,7 +587,9 @@ fn a_guardrail_error_reaches_the_span() {
         &SpanData::Guardrail(&data),
         &options(None, None),
     );
-    let written = attributes(&exported(&exporter)[0]);
+    let span = &exported(&exporter)[0];
+    assert_eq!(span.name, "execute_guardrail guardrail");
+    let written = attributes(span);
     assert_eq!(
         written.get("error.type"),
         Some(&Value::from("guardrail_intervened"))
@@ -709,7 +716,9 @@ fn an_mcp_list_tools_span_dedups_on_its_call_id() {
             )
             .is_none()
     );
-    assert_eq!(exported(&exporter).len(), 1);
+    let finished = exported(&exporter);
+    assert_eq!(finished.len(), 1);
+    assert_eq!(finished[0].name, "tools/list");
 }
 
 #[test]
