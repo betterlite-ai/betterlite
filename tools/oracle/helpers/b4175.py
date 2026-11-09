@@ -150,7 +150,8 @@ def _verbose(input_value: HelperInput) -> Json:
     }
     for logger in loggers.values():
         logger.setLevel(_BASELINE_LEVEL)
-    with patch.dict(os.environ, {"WORKER_CONFIG": worker_config}):
+    log_lines = StringIO()
+    with patch.dict(os.environ, {"WORKER_CONFIG": worker_config}), redirect_stdout(log_lines):
         init_verbose_loggers()
     return {
         name: None if logger.level == _BASELINE_LEVEL else logging.getLevelName(logger.level)
