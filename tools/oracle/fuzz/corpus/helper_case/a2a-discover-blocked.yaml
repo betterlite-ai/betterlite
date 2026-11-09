@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-discover-blocked-seed
+call: {b8202: {operation: card, base_url: https://agent.example, replies: [{error: ssrf}, {error: transport}]}}
+env: {}
+compare: {ignore: []}

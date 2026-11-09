@@ -1,0 +1,30 @@
+kind: helper
+name: stream-lines
+call:
+  b8179:
+    steps:
+      - kind: stream_lines
+        lines:
+          - "{\"generated_text\":\"a\"}\u0000"
+          - "{\"generated_text\":\"b\"}\u0000"
+          - '{"generated_text":"c"}'
+      - kind: stream_lines
+        lines: ["plain", "text"]
+      - kind: stream_lines
+        lines: ["before\u0000after"]
+      - {kind: stream_lines, lines: ["first"]}
+      - kind: stream_lines
+        lines: ["first", "sec\u0000ond", ""]
+      - kind: completion
+        model: "dolphin"
+        api_base: "https://host/"
+        messages:
+          - {role: user, content: "hi"}
+        optional_params: {stream: true}
+        defaults: {}
+        created: 1700000000
+        chunks:
+          - "{\"generated_text\":\"a\"}\u0000"
+          - "{\"generated_text\":\"b\"}"
+env: {}
+compare: {ignore: []}

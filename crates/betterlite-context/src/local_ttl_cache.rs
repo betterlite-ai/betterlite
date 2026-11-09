@@ -178,6 +178,21 @@ impl LocalTtlCache {
         self.expiries.remove(key);
     }
 
+    // every stored absolute expiry, including keys that expired and no read has dropped yet
+    #[must_use]
+    pub fn ttl_entries(&self) -> Vec<(String, f64)> {
+        self.expiries
+            .iter()
+            .map(|(key, expiry)| (key.clone(), *expiry))
+            .collect()
+    }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
+        self.expiries.clear();
+        self.heap.clear();
+    }
+
     fn read_clock(&self) -> Result<f64, CacheError> {
         let now = (self.clock)();
         if now.is_finite() {

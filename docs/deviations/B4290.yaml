@@ -1,0 +1,17 @@
+task: B4290
+deviations:
+  - what: Rust trait methods use Result for fallible operations, and the async adapters propagate an error instead of LiteLLM's NotImplementedError.
+    why: Rust does not permit a missing return value as a silent success, and a typed Unsupported error names the operation a backend has not built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L35-L39
+  - what: async_get_oldest_n_keys orders keys with equal expiry by key, while LiteLLM's stable sort keeps ttl_dict insertion order for equal expiries.
+    why: The shared local cache keeps expiries in a BTreeMap keyed by cache key and records no insertion order to sort by.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L277-L283
+  - what: async_increment returns an error when the sum leaves the finite f64 range and leaves the stored counter as it was, while LiteLLM stores an infinite float.
+    why: A non-finite number cannot be written as standard JSON, and no working cache setup can rely on an infinite counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L230-L236
+  - what: Cache type records reject unknown JSON keys, while LiteLLM's pydantic models ignore extra fields and its TypedDicts are plain dicts.
+    why: An unmodelled key becomes an error that names it instead of being dropped before a caller learns it was ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L117-L125
+  - what: CachePingResponse.health_check_cache_params is modelled as HealthCheckCacheParams, so a health-check dict carrying a key outside that record is rejected, while LiteLLM declares the field as a free dict and stores it as given.
+    why: The field carries HealthCheckCacheParams.model_dump() with masked values, and the typed record names every key betterlite reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L124-L125

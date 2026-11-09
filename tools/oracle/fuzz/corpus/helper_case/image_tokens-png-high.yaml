@@ -1,0 +1,10 @@
+kind: helper
+name: image_tokens-png-high-seed
+call:
+  image_tokens:
+    calls:
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: high
+env: {}
+compare: {ignore: []}
