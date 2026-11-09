@@ -22,17 +22,22 @@ impl CacheHitMetadata for Model {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Recorded {
     pub(crate) model_kinds: Vec<ResponseKind>,
+    pub(crate) model_dicts: Vec<CachedDict>,
     pub(crate) transcription_calls: u32,
+    pub(crate) transcription_dict: Option<CachedDict>,
     pub(crate) transcription_hidden: Option<HiddenRecord>,
+    pub(crate) responses_dict: Option<CachedDict>,
     pub(crate) responses_calls: u32,
     pub(crate) responses_stream_calls: u32,
     pub(crate) responses_stream_stamped: bool,
     pub(crate) responses_stream_call_type: Option<CachingSupportedCallType>,
     pub(crate) messages_probes: u32,
+    pub(crate) messages_dict: Option<CachedDict>,
     pub(crate) messages_stream_calls: u32,
+    pub(crate) wrapper_dict: Option<CachedDict>,
     pub(crate) wraps: Vec<WrapRecord>,
     pub(crate) metadata: Vec<MetadataRecord>,
 }
@@ -100,20 +105,24 @@ impl ReplayConversions for Fake {
 
     fn model_response(
         &self,
-        _cached: &CachedDict,
+        cached: &CachedDict,
         kind: ResponseKind,
     ) -> Result<Self::Response, ReplayError> {
-        lock(&self.recorded).model_kinds.push(kind);
+        let mut recorded = lock(&self.recorded);
+        recorded.model_kinds.push(kind);
+        recorded.model_dicts.push(cached.clone());
+        drop(recorded);
         Ok(Model::default())
     }
 
     fn transcription_response(
         &self,
-        _cached: &CachedDict,
+        cached: &CachedDict,
         hidden: &TranscriptionHidden<'_>,
     ) -> Result<Self::Response, ReplayError> {
         let mut recorded = lock(&self.recorded);
         recorded.transcription_calls = recorded.transcription_calls.saturating_add(1);
+        recorded.transcription_dict = Some(cached.clone());
         recorded.transcription_hidden = Some(HiddenRecord {
             model: hidden.model.to_owned(),
             custom_llm_provider: hidden.custom_llm_provider.map(str::to_owned),
@@ -123,9 +132,10 @@ impl ReplayConversions for Fake {
         Ok(Model::default())
     }
 
-    fn responses_response(&self, _cached: &CachedDict) -> Result<Self::Response, ReplayError> {
+    fn responses_response(&self, cached: &CachedDict) -> Result<Self::Response, ReplayError> {
         let mut recorded = lock(&self.recorded);
         recorded.responses_calls = recorded.responses_calls.saturating_add(1);
+        recorded.responses_dict = Some(cached.clone());
         drop(recorded);
         Ok(Model::default())
     }
@@ -145,10 +155,11 @@ impl ReplayConversions for Fake {
 
     fn anthropic_messages_stream(
         &self,
-        _cached: &CachedDict,
+        cached: &CachedDict,
     ) -> Result<Option<Self::Response>, ReplayError> {
         let mut recorded = lock(&self.recorded);
         recorded.messages_probes = recorded.messages_probes.saturating_add(1);
+        recorded.messages_dict = Some(cached.clone());
         let stream = self.anthropic_events.then(Model::default);
         if stream.is_some() {
             recorded.messages_stream_calls = recorded.messages_stream_calls.saturating_add(1);
@@ -159,12 +170,13 @@ impl ReplayConversions for Fake {
 
     fn stream_wrapper(
         &self,
-        _cached: &CachedDict,
+        cached: &CachedDict,
         asynchronous: bool,
         model: &str,
         custom_llm_provider: &str,
     ) -> Result<Self::Response, ReplayError> {
         let mut recorded = lock(&self.recorded);
+        recorded.wrapper_dict = Some(cached.clone());
         recorded.wraps.push(WrapRecord {
             asynchronous,
             model: model.to_owned(),

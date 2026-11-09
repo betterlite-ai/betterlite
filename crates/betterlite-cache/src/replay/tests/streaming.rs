@@ -8,8 +8,8 @@ use crate::replay::{CacheHit, ReplayRequest, Replayed, ResponseKind, replay_cach
 use crate::types::call_type::CachingSupportedCallType;
 
 use super::shared::{
-    Fake, WrapRecord, chat_completion_dict, convert, converted_stream_request, non_stream_request,
-    stream_request, text_completion_dict,
+    Fake, WrapRecord, chat_completion_dict, convert, converted_stream_request, dict_of,
+    non_stream_request, stream_request, text_completion_dict,
 };
 
 fn expected_wrap(asynchronous: bool) -> WrapRecord {
@@ -33,6 +33,7 @@ fn streaming_stream_flag_wraps_the_cached_dict() {
     assert!(matches!(outcome, Replayed::Stream(_)));
     let calls = fake.calls();
     assert_eq!(calls.wraps, vec![expected_wrap(false)]);
+    assert_eq!(calls.wrapper_dict, Some(dict_of(chat_completion_dict())));
     assert!(calls.model_kinds.is_empty());
 }
 
@@ -52,10 +53,12 @@ fn streaming_the_converter_follows_the_call_type(
     } else {
         chat_completion_dict()
     };
+    let wrapped = dict_of(cached.clone());
     let outcome = convert(cached, call_type, &stream_request(), &fake).unwrap();
     assert!(matches!(outcome, Replayed::Stream(_)));
     let calls = fake.calls();
     assert_eq!(calls.wraps, vec![expected_wrap(asynchronous)]);
+    assert_eq!(calls.wrapper_dict, Some(wrapped));
     assert!(calls.model_kinds.is_empty());
 }
 

@@ -124,6 +124,7 @@ fn responses_bridge_chat_shaped_stream_uses_the_bridged_converter(
             custom_llm_provider: "cached_response".to_owned(),
         }]
     );
+    assert_eq!(calls.wrapper_dict, Some(dict_of(chat_completion_dict())));
     assert!(calls.model_kinds.is_empty());
     assert_eq!(calls.responses_calls, 0);
 }
@@ -143,8 +144,10 @@ fn responses_bridge_other_cache_replays_as_a_responses_result(
     } else {
         non_stream_request()
     };
+    let expected = dict_of(responses_dict());
     let outcome = convert(responses_dict(), call_type, &request, &fake).unwrap();
     let calls = fake.calls();
+    assert_eq!(calls.responses_dict, Some(expected));
     if stream {
         let Replayed::ResponsesStream(replayed) = outcome else {
             panic!("a non-chat cached responses result did not replay as a stream");

@@ -8,8 +8,8 @@ use crate::replay::{Replayed, ResponseKind};
 use crate::types::call_type::CachingSupportedCallType;
 
 use super::shared::{
-    Fake, MetadataRecord, convert, messages_dict, non_stream_request, replay, responses_dict,
-    stream_request,
+    Fake, MetadataRecord, convert, dict_of, messages_dict, non_stream_request, replay,
+    responses_dict, stream_request,
 };
 
 #[rstest]
@@ -79,6 +79,7 @@ fn metadata_cache_hit_is_stamped_on_an_anthropic_messages_stream() {
         panic!("the cached anthropic events did not replay as a stream");
     };
     assert!(stream.cache_hit);
+    assert_eq!(fake.calls().messages_dict, Some(dict_of(messages_dict())));
 }
 
 #[test]
@@ -91,9 +92,13 @@ fn metadata_an_unchanged_result_updates_metadata() {
         &fake,
     )
     .unwrap();
-    assert!(matches!(outcome, Replayed::Unchanged(_)));
+    let Replayed::Unchanged(value) = outcome else {
+        panic!("the cached anthropic messages were converted without replay events");
+    };
+    assert_eq!(value, messages_dict());
     let calls = fake.calls();
     assert_eq!(calls.messages_probes, 1);
+    assert_eq!(calls.messages_dict, Some(dict_of(messages_dict())));
     assert_eq!(calls.metadata.len(), 1);
 }
 

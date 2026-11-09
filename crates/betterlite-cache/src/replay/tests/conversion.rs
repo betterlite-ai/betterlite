@@ -9,7 +9,7 @@ use crate::replay::{ReplayRequest, Replayed, ResponseKind};
 use crate::types::call_type::CachingSupportedCallType;
 
 use super::shared::{
-    Fake, HiddenRecord, convert, fixture, non_stream_request, replay, stream_request,
+    Fake, HiddenRecord, convert, dict_of, fixture, non_stream_request, replay, stream_request,
     transcription_dict,
 };
 
@@ -27,13 +27,16 @@ fn conversion_cached_dict_becomes_its_response_kind(
     #[case] expected: ResponseKind,
 ) {
     let fake = Fake::new();
+    let cached = dict_of(fixture(call_type));
     let outcome = convert(fixture(call_type), call_type, &non_stream_request(), &fake).unwrap();
     let Replayed::Response(kind, response) = outcome else {
         panic!("the cached result did not replay as a model response");
     };
     assert_eq!(kind, expected);
     assert!(response.cache_hit);
-    assert_eq!(fake.calls().model_kinds, vec![expected]);
+    let calls = fake.calls();
+    assert_eq!(calls.model_kinds, vec![expected]);
+    assert_eq!(calls.model_dicts, vec![cached]);
 }
 
 #[rstest]
@@ -56,6 +59,10 @@ fn conversion_transcription_gets_whisper_hidden_params(
     assert!(response.cache_hit);
     let calls = fake.calls();
     assert_eq!(calls.transcription_calls, 1);
+    assert_eq!(
+        calls.transcription_dict,
+        Some(dict_of(transcription_dict()))
+    );
     assert_eq!(
         calls.transcription_hidden,
         Some(HiddenRecord {
