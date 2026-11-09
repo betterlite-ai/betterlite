@@ -1,0 +1,8 @@
+kind: helper
+name: base-cache-test-connection-unsupported
+call:
+  b4290:
+    base_cache_test_connection_unsupported: null
+env: {}
+compare:
+  ignore: []
