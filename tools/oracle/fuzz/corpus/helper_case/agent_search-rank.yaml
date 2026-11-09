@@ -1,0 +1,6 @@
+kind: helper
+name: agent_search-rank-seed
+call:
+  b4783: {function: rank, query: q, agents: [{agent_id: a1, agent_name: alpha, agent_card_params: {}}], top_k: 1, embedding_model: m, vectors: {q: [1.0, 0.0], alpha: [1.0, 0.0]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-admin-corpus-ping-events
+call:
+  b4326:
+    function: ping_events
+    outcome: error
+    error_text: fuzz connection dropped
+env: {}
+compare: {ignore: []}
