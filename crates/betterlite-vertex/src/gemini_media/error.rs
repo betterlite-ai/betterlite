@@ -54,13 +54,9 @@ impl MediaError {
     }
     #[must_use]
     pub const fn code(&self) -> Option<&'static str> {
-        match self {
-            Self::RemoteMediaRequired(MediaField::ImageUrl | MediaField::File) => {
-                Some("unsupported_remote_media")
-            }
-            Self::UnsupportedMediaType(..)
-            | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => None,
+        if self.param().is_some() {
+            return Some("unsupported_remote_media");
         }
+        None
     }
 }
