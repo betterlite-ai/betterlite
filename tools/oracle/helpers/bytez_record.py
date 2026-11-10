@@ -45,7 +45,7 @@ def at(fields: Object, name: str) -> Object:
 
 
 def messages(fields: Object) -> "list[AllMessageValues]":
-    value = fields.get("messages")
+    value = fields.get("messages", [])
     if not isinstance(value, list):
         raise TypeError("messages must be a list")
     return cast("list[AllMessageValues]", value)
@@ -131,6 +131,12 @@ def reply_entry(entry: Json) -> Json:
     model = cast(str, fields.get("model", ""))
     created = cast(int, fields.get("created", 0))
     response = ModelResponse()
+    raw_response = httpx.Response(
+        cast(int, fields.get("status", 200)),
+        headers=headers(fields),
+        stream=httpx.ByteStream(cast(str, fields.get("body", "")).encode()),
+    )
+    raw_response.read()
     try:
         with patch(
             "litellm.llms.bytez.chat.transformation.time.time",
@@ -138,11 +144,7 @@ def reply_entry(entry: Json) -> Json:
         ):
             result = TRANSFORM_RESPONSE(
                 model=model,
-                raw_response=httpx.Response(
-                    cast(int, fields.get("status", 200)),
-                    text=cast(str, fields.get("body", "")),
-                    headers=headers(fields),
-                ),
+                raw_response=raw_response,
                 model_response=response,
                 logging_obj=cast("Logging", None),
                 request_data={},
@@ -209,7 +211,8 @@ def chunks(fields: Object) -> Json:
     outcomes: list[Json] = []
     for fragment in fragments:
         try:
-            chunk = wrapper.chunk_creator(fragment)
+            with patch("litellm.suppress_debug_info", new=True):
+                chunk = wrapper.chunk_creator(fragment)
         except StopIteration:
             outcomes.append({"end": True})
             continue

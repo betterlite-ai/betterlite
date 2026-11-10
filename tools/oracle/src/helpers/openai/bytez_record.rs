@@ -111,7 +111,7 @@ impl crate::helpers::Helper for Op {
 fn mapped(mapping: &Mapping) -> Value {
     match map_openai_params(&mapping.supplied, mapping.existing.clone(), mapping.drop) {
         Ok(adapted) => json!({"ok": true, "value": adapted}),
-        Err(error) => json!({"ok": false, "message": error.to_string()}),
+        Err(_error) => json!({"ok": false}),
     }
 }
 

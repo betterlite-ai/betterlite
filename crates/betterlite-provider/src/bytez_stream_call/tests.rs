@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::pending;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,7 +22,7 @@ use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
 use serde_json::Number;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep, timeout};
 
 use super::BytezStreamCall;
 use super::error::BytezStreamError;
@@ -45,6 +46,7 @@ struct FakeTransport {
     kind: ClientKind,
     status: u16,
     failure: Option<(u16, String)>,
+    stalled: bool,
     queue: Mutex<Option<mpsc::Sender<Frame>>>,
     receiver: Mutex<Option<mpsc::Receiver<Frame>>>,
     seen: Mutex<Vec<Seen>>,
@@ -58,6 +60,7 @@ impl FakeTransport {
             kind,
             status,
             failure: None,
+            stalled: false,
             queue: Mutex::new(Some(sender)),
             receiver: Mutex::new(Some(receiver)),
             seen: Mutex::new(Vec::new()),
@@ -70,6 +73,17 @@ impl FakeTransport {
             failure: Some((status, message.to_owned())),
             ..Self::new(kind, status)
         }
+    }
+
+    fn stalled(kind: ClientKind) -> Self {
+        Self {
+            stalled: true,
+            ..Self::new(kind, 200)
+        }
+    }
+
+    fn close(&self) {
+        self.queue.lock().unwrap().take();
     }
 
     fn push(&self, chunk: &[u8]) {
@@ -125,6 +139,9 @@ impl BytezStreamTransport for FakeTransport {
             body,
             deadline: request.deadline,
         });
+        if self.stalled {
+            pending::<()>().await;
+        }
         if let Some((status_code, message)) = self.failure.clone() {
             return Err(ClientError::Status {
                 status_code,
@@ -207,7 +224,7 @@ async fn first_fragment(stream: &mut BytezCustomStream<'_>) -> String {
 }
 
 #[tokio::test]
-async fn opens_a_post_with_the_serialized_body_and_the_stream_timeout() {
+async fn opens_a_post_with_the_serialized_body_and_the_transport_deadline() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
     let (stream, _default) =
@@ -218,8 +235,7 @@ async fn opens_a_post_with_the_serialized_body_and_the_stream_timeout() {
     assert_eq!(seen[0].method, "POST");
     assert_eq!(seen[0].url, URL);
     assert_eq!(seen[0].headers["Authorization"], "Key secret");
-    assert_eq!(seen[0].deadline, super::STREAMING_TIMEOUT);
-    assert_eq!(seen[0].deadline, Duration::from_secs(300));
+    assert_eq!(seen[0].deadline, TransportLimits::DEFAULT.read_timeout);
     let sent: Json = serde_json::from_slice(&seen[0].body).expect("body");
     let fields = sent.as_object().expect("object body");
     assert_eq!(fields.get("stream"), Some(&Json::Bool(true)));
@@ -245,6 +261,7 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, status));
     transport.push(b"refused body");
+    transport.close();
     let Err(BytezStreamError::Api(failure)) = call(
         Some(Arc::clone(&transport)),
         Arc::new(FakeTransport::new(ClientKind::Async, 200)),
@@ -505,4 +522,84 @@ fn maps_other_chunk_failures_through_the_error_classifier() {
 #[test]
 fn body_limit_matches_the_transport_default() {
     assert_eq!(super::MAX_BODY_BYTES, TransportLimits::DEFAULT.body_bytes);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stream_outlasts_the_timeout_while_fragments_keep_arriving() {
+    let redactor = redactor();
+    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let (mut stream, _default) =
+        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let writer = Arc::clone(&transport);
+    let feeding = async move {
+        sleep(Duration::from_secs(200)).await;
+        writer.push(b"a");
+        sleep(Duration::from_secs(200)).await;
+        writer.push(b"b");
+        sleep(Duration::from_secs(200)).await;
+        writer.push(b"c");
+    };
+    let started = Instant::now();
+    let reading = async {
+        assert_eq!(first_fragment(&mut stream).await, "a");
+        assert_eq!(first_fragment(&mut stream).await, "b");
+        assert_eq!(first_fragment(&mut stream).await, "c");
+    };
+    tokio::join!(feeding, reading);
+    assert!(started.elapsed() > super::STREAMING_TIMEOUT);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_stream_times_out_after_three_hundred_seconds() {
+    let redactor = redactor();
+    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let (mut stream, _default) =
+        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let started = Instant::now();
+    let error = stream
+        .fragments
+        .next()
+        .await
+        .expect("fragment")
+        .expect_err("timed out");
+    assert!(matches!(error, BytezStreamError::Timeout));
+    assert_eq!(started.elapsed(), Duration::from_secs(300));
+}
+
+#[tokio::test(start_paused = true)]
+async fn opening_gives_up_after_three_hundred_seconds() {
+    let redactor = redactor();
+    let started = Instant::now();
+    let Err(error) = call(
+        Some(Arc::new(FakeTransport::stalled(ClientKind::Async))),
+        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
+        ClientKind::Async,
+        &redactor,
+    )
+    .open()
+    .await
+    else {
+        panic!("opened");
+    };
+    assert!(matches!(error, BytezStreamError::Timeout));
+    assert_eq!(started.elapsed(), Duration::from_secs(300));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_refusal_body_that_never_ends_times_out() {
+    let redactor = redactor();
+    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 500));
+    transport.push(b"partial");
+    let Err(error) = call(
+        Some(Arc::clone(&transport)),
+        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
+        ClientKind::Async,
+        &redactor,
+    )
+    .open()
+    .await
+    else {
+        panic!("opened");
+    };
+    assert!(matches!(error, BytezStreamError::Timeout));
 }

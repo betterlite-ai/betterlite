@@ -33,17 +33,6 @@ fn message(text: &str) -> RawMessage {
     serde_json::from_str(text).expect("message")
 }
 
-fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        headers.append(
-            HeaderName::from_bytes(name.as_bytes()).expect("name"),
-            HeaderValue::from_str(value).expect("header"),
-        );
-    }
-    headers
-}
-
 #[test]
 fn supported_params_lists_only_the_renamed_entries() {
     assert_eq!(
@@ -385,13 +374,13 @@ fn decode_bytez_reply_accepts_a_null_error() {
 
 #[test]
 fn decode_bytez_reply_attaches_every_header_and_the_rate_limit_fields() {
-    let response_headers = headers(&[
-        ("x-request-id", "abc"),
-        ("ratelimit-limit", "10"),
-        ("ratelimit-remaining", "9"),
-        ("ratelimit-reset", "1"),
-        ("inference-meter", "3"),
-        ("inference-time", "42ms"),
+    let response_headers = raw_headers(&[
+        ("x-request-id", b"abc"),
+        ("ratelimit-limit", b"10"),
+        ("ratelimit-remaining", b"9"),
+        ("ratelimit-reset", b"1"),
+        ("inference-meter", b"3"),
+        ("inference-time", b"42ms"),
     ]);
     let reply = decode_bytez_reply(&reply_input(
         r#"{"output":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}"#,
@@ -427,6 +416,64 @@ fn decode_bytez_reply_leaves_absent_rate_limit_fields_null() {
     assert_eq!(
         encoded,
         r#"{"ratelimit-limit":null,"ratelimit-remaining":null,"ratelimit-reset":null,"inference-meter":null,"inference-time":null}"#
+    );
+}
+
+const OK_BODY: &str = r#"{"output":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}"#;
+
+fn raw_headers(pairs: &[(&str, &[u8])]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in pairs {
+        headers.append(
+            HeaderName::from_bytes(name.as_bytes()).expect("name"),
+            HeaderValue::from_bytes(value).expect("header"),
+        );
+    }
+    headers
+}
+
+#[test]
+fn decode_bytez_reply_reads_a_present_but_empty_header_as_empty_text() {
+    let response_headers = raw_headers(&[("inference-time", b""), ("x-empty", b"")]);
+    let reply =
+        decode_bytez_reply(&reply_input(OK_BODY, 200, &[], &response_headers)).expect("reply");
+    assert_eq!(
+        reply.provider_specific_fields.inference_time,
+        Some(String::new())
+    );
+    assert_eq!(reply.provider_specific_fields.inference_meter, None);
+    assert_eq!(reply.additional_headers["x-empty"], "");
+}
+
+#[test]
+fn decode_bytez_reply_decodes_non_ascii_header_values_as_utf8() {
+    let response_headers = raw_headers(&[
+        ("x-note", "\u{e9}t\u{e9}".as_bytes()),
+        ("inference-time", b"2"),
+    ]);
+    let reply =
+        decode_bytez_reply(&reply_input(OK_BODY, 200, &[], &response_headers)).expect("reply");
+    assert_eq!(reply.additional_headers["x-note"], "\u{e9}t\u{e9}");
+    assert_eq!(
+        reply.provider_specific_fields.inference_time,
+        Some(String::from("2"))
+    );
+}
+
+#[test]
+fn decode_bytez_reply_falls_back_to_latin_1_for_the_whole_header_set() {
+    let response_headers = raw_headers(&[
+        ("x-latin", &[0x63, 0xe9]),
+        ("x-utf8", &[0xc3, 0xa9]),
+        ("inference-meter", &[0xe9]),
+    ]);
+    let reply =
+        decode_bytez_reply(&reply_input(OK_BODY, 200, &[], &response_headers)).expect("reply");
+    assert_eq!(reply.additional_headers["x-latin"], "c\u{e9}");
+    assert_eq!(reply.additional_headers["x-utf8"], "\u{c3}\u{a9}");
+    assert_eq!(
+        reply.provider_specific_fields.inference_meter,
+        Some(String::from("\u{e9}"))
     );
 }
 

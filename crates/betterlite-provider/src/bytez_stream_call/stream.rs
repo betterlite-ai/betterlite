@@ -10,7 +10,9 @@ use betterlite_streaming::stream_chunk_shaping::records::{
 };
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
+use tokio::time::timeout;
 
+use super::STREAMING_TIMEOUT;
 use super::error::BytezStreamError;
 use super::transport::BytezChunks;
 
@@ -87,7 +89,11 @@ async fn next_fragment(
     mut decoder: Decoder,
 ) -> Option<(Result<String, BytezStreamError>, Decoder)> {
     loop {
-        let bytes = match decoder.chunks.next().await? {
+        let next = match timeout(STREAMING_TIMEOUT, decoder.chunks.next()).await {
+            Ok(next) => next?,
+            Err(_elapsed) => return Some((Err(BytezStreamError::Timeout), decoder)),
+        };
+        let bytes = match next {
             Ok(bytes) => bytes,
             Err(source) => return Some((Err(BytezStreamError::Body { source }), decoder)),
         };

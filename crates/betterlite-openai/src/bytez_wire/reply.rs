@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::slice;
+use std::str;
 
 use betterlite_prompts::arguments::json::Json;
 use http::HeaderMap;
@@ -123,6 +124,7 @@ pub fn decode_bytez_reply(input: &ReplyInput<'_>) -> Result<BytezReply, BytezRep
             message,
         }));
     }
+    let headers = decoded_headers(input.headers);
     let output = body.output.ok_or(BytezReplyError::MissingOutput)?;
     let content = output_text(&output)?.to_owned();
     let prompt = normalize_messages(input.messages)?;
@@ -141,8 +143,8 @@ pub fn decode_bytez_reply(input: &ReplyInput<'_>) -> Result<BytezReply, BytezRep
             completion_tokens,
             total_tokens,
         },
-        provider_specific_fields: rate_limit_fields(input.headers),
-        additional_headers: response_headers(input.headers),
+        provider_specific_fields: rate_limit_fields(&headers),
+        additional_headers: response_headers(&headers),
     })
 }
 
@@ -163,7 +165,7 @@ fn output_text(output: &RawMessage) -> Result<&str, BytezReplyError> {
     }
 }
 
-fn rate_limit_fields(headers: &HeaderMap) -> RateLimitFields {
+fn rate_limit_fields(headers: &[(String, String)]) -> RateLimitFields {
     RateLimitFields {
         ratelimit_limit: header_text(headers, "ratelimit-limit"),
         ratelimit_remaining: header_text(headers, "ratelimit-remaining"),
@@ -173,31 +175,45 @@ fn rate_limit_fields(headers: &HeaderMap) -> RateLimitFields {
     }
 }
 
-// httpx joins repeated header values with ", " and treats names case-insensitively
-fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
-    let joined = headers
-        .get_all(name)
+// httpx joins repeated header values with ", "; a header that is present but empty reads as ""
+fn header_text(headers: &[(String, String)], name: &str) -> Option<String> {
+    let values: Vec<&str> = headers
         .iter()
-        .filter_map(|value| value.to_str().ok())
-        .collect::<Vec<_>>()
-        .join(", ");
-    (!joined.is_empty()).then_some(joined)
+        .filter(|(key, _)| key.as_str() == name)
+        .map(|(_, value)| value.as_str())
+        .collect();
+    (!values.is_empty()).then(|| values.join(", "))
 }
 
-fn response_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+// httpx decodes every header value as UTF-8, or as Latin-1 when any value is not UTF-8
+fn decoded_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    let utf8 = headers
+        .values()
+        .all(|value| str::from_utf8(value.as_bytes()).is_ok());
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let bytes = value.as_bytes();
+            let text = str::from_utf8(bytes).ok().filter(|_| utf8).map_or_else(
+                || bytes.iter().map(|byte| char::from(*byte)).collect(),
+                str::to_owned,
+            );
+            (name.as_str().to_owned(), text)
+        })
+        .collect()
+}
+
+fn response_headers(headers: &[(String, String)]) -> BTreeMap<String, String> {
     let mut mapped: BTreeMap<String, String> = BTreeMap::new();
-    for (name, value) in headers {
-        let Ok(text) = value.to_str() else {
-            continue;
-        };
-        match mapped.entry(name.as_str().to_owned()) {
+    for (name, text) in headers {
+        match mapped.entry(name.clone()) {
             Entry::Occupied(mut entry) => {
                 let joined = entry.get_mut();
                 joined.push_str(", ");
                 joined.push_str(text);
             }
             Entry::Vacant(entry) => {
-                entry.insert(text.to_owned());
+                entry.insert(text.clone());
             }
         }
     }

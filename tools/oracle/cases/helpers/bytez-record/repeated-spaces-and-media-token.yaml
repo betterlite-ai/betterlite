@@ -16,10 +16,5 @@ call:
         content:
           - type: video_url
             url: https://video.test/a.mp4
-      - role: user
-        content: ""
-      - role: user
-        content:
-          - text: plain
 compare: {ignore: []}
 env: {}

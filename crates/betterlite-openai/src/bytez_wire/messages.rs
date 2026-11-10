@@ -27,17 +27,6 @@ pub enum NormalizedBlock {
     Video { url: String },
 }
 
-// the openai to Bytez content map: the caller's type, the Bytez type and the payload key
-const CONTENT_MAP: [(&str, &str, &str); 4] = [
-    ("text", "text", "text"),
-    ("image_url", "image", "url"),
-    ("input_audio", "audio", "url"),
-    ("video_url", "video", "url"),
-];
-
-// the two OpenAI block types Bytez knows and refuses
-const UNSUPPORTED_CONTENT: [&str; 2] = ["document", "file"];
-
 pub fn normalize_messages(
     messages: &[RawMessage],
 ) -> Result<Vec<NormalizedMessage>, BytezConfigError> {
@@ -101,28 +90,35 @@ fn block_of(fields: &Object) -> Result<NormalizedBlock, BytezConfigError> {
     let kind = kind_value
         .as_str()
         .ok_or(BytezConfigError::UnknownContentType)?;
-    let Some((_, alias, value_name)) = CONTENT_MAP.iter().find(|(name, ..)| *name == kind) else {
-        if UNSUPPORTED_CONTENT.contains(&kind) {
-            return Err(BytezConfigError::UnsupportedContentType {
-                kind: kind.to_owned(),
-            });
-        }
-        return Err(BytezConfigError::UnknownContentType);
-    };
-    let value = fields
-        .get(*value_name)
+    match kind {
+        "text" => Ok(NormalizedBlock::Text {
+            text: payload(fields, "text")?,
+        }),
+        "image_url" => Ok(NormalizedBlock::Image {
+            url: payload(fields, "url")?,
+        }),
+        "input_audio" => Ok(NormalizedBlock::Audio {
+            url: payload(fields, "url")?,
+        }),
+        "video_url" => Ok(NormalizedBlock::Video {
+            url: payload(fields, "url")?,
+        }),
+        "document" | "file" => Err(BytezConfigError::UnsupportedContentType {
+            kind: kind.to_owned(),
+        }),
+        _ => Err(BytezConfigError::UnknownContentType),
+    }
+}
+
+fn payload(fields: &Object, name: &str) -> Result<String, BytezConfigError> {
+    fields
+        .get(name)
         .and_then(Json::as_str)
         .filter(|value| !value.is_empty())
+        .map(str::to_owned)
         .ok_or_else(|| BytezConfigError::ContentValue {
-            name: (*value_name).to_owned(),
-        })?
-        .to_owned();
-    match *alias {
-        "text" => Ok(NormalizedBlock::Text { text: value }),
-        "image" => Ok(NormalizedBlock::Image { url: value }),
-        "audio" => Ok(NormalizedBlock::Audio { url: value }),
-        _ => Ok(NormalizedBlock::Video { url: value }),
-    }
+            name: name.to_owned(),
+        })
 }
 
 pub fn get_tokens_from_messages(messages: &[NormalizedMessage]) -> Result<i64, BytezConfigError> {

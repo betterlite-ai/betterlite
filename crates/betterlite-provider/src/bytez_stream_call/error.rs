@@ -50,6 +50,8 @@ pub enum BytezStreamError {
         #[source]
         source: ParseError,
     },
+    #[error("the Bytez server sent nothing for 300 seconds")]
+    Timeout,
     #[error("the Bytez stream is finished")]
     StopIteration,
     #[error(transparent)]
