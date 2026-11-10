@@ -176,22 +176,13 @@ fn hold_lock(path: &Path) -> File {
     file
 }
 
-fn lock_is_held(path: &Path) -> bool {
+fn lock_state(path: &Path) -> Result<(), TryLockError> {
     let probe = OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
-        .expect("a lock file");
-    matches!(probe.try_lock(), Err(TryLockError::WouldBlock))
-}
-
-fn lock_is_free(path: &Path) -> bool {
-    let probe = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .expect("a lock file");
-    probe.try_lock().is_ok()
+        .map_err(TryLockError::Error)?;
+    probe.try_lock()
 }
 
 fn saved_setup(base_url: &str, api_key: &str, model: Option<&str>) -> Result<SavedSetup, Error> {
@@ -482,7 +473,7 @@ async fn setup_locks_dedupes_repeated_target() {
         .await
         .expect("the lock is acquired once");
     let claude = lock_path_for(Target::Claude, &environment).expect("a lock path");
-    assert!(lock_is_held(&claude));
+    assert!(matches!(lock_state(&claude), Err(TryLockError::WouldBlock)));
     drop(guard);
 }
 
@@ -507,7 +498,10 @@ async fn setup_locks_digest_keyed_by_resolved_settings_path() {
     let expected = expected_lock_path(Target::Claude, &resolved, home.path());
     assert!(expected.exists());
     assert!(!expected_lock_path(Target::Claude, &raw, home.path()).exists());
-    assert!(lock_is_held(&expected));
+    assert!(matches!(
+        lock_state(&expected),
+        Err(TryLockError::WouldBlock)
+    ));
     drop(guard);
 }
 
@@ -566,7 +560,7 @@ async fn setup_locks_releases_acquired_locks_on_timeout() {
     assert!(matches!(result, Err(Error::Locked)));
     let claude = lock_path_for(Target::Claude, &environment).expect("a lock path");
     assert!(
-        lock_is_free(&claude),
+        lock_state(&claude).is_ok(),
         "the Claude lock is released on failure"
     );
 }
