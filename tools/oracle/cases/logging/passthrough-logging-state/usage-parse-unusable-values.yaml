@@ -1,0 +1,10 @@
+kind: helper
+name: usage-parse-unusable-values
+call:
+  b3605:
+    operation: parse_usage
+    headers:
+      - [x-litellm-response-cost, "abc"]
+      - [x-litellm-total-tokens, "1.5"]
+env: {}
+compare: {ignore: []}
