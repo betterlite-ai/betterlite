@@ -42,12 +42,8 @@ impl IncrementQueue {
             .cloned()
             .collect::<Vec<_>>();
         operations.sort_by(|left, right| left.key.cmp(&right.key));
-        let mut merged = Vec::new();
+        let mut merged: Vec<QueuedIncrement> = Vec::with_capacity(operations.len());
         for operation in operations {
-            if merged.is_empty() {
-                merged.push(operation);
-                continue;
-            }
             match merged.last_mut() {
                 Some(last) if last.key == operation.key => {
                     let total = last
