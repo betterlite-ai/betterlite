@@ -4,6 +4,7 @@ use opentelemetry::Value;
 use rstest::rstest;
 
 use super::grounding::log_grounding_spans;
+use super::support::child;
 use super::support::{
     attribute, generation, grounding_enrichments, prompt_value, provider, sdk_tracer, spans,
 };
@@ -16,8 +17,9 @@ fn grounding_scalar_top_level_value_becomes_one_span(#[case] grounding: &str, #[
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let enrichments = grounding_enrichments(prompt_value(grounding));
-    log_grounding_spans(&tracer, &parent, &enrichments);
+    log_grounding_spans(&observations, &enrichments);
     let exported = spans(&exporter);
     assert_eq!(exported.len(), 1);
     let data = exported.first().expect("a span");

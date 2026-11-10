@@ -1,7 +1,9 @@
 #![cfg(test)]
 
+use crate::langfuse_rest::records::Prompt;
+
 use super::prompts::attach_generation_prompt;
-use super::support::{idle_client, metadata, prompt_value, text_client};
+use super::support::{idle_client, metadata, prompt_client, prompt_value};
 
 const WITH_TAGS: &str =
     r#"{"name": "greeting", "version": 3, "prompt": "Hello", "tags": ["alpha", "beta"]}"#;
@@ -13,8 +15,10 @@ const MALFORMED_TAGS: &str =
 async fn tags(definition: &str) -> Option<Vec<String>> {
     let client = idle_client();
     let mut clean = metadata(prompt_value(definition));
-    text_client(attach_generation_prompt(&mut clean, None, &client).await)
-        .map(|prompt| prompt.meta.tags)
+    match prompt_client(attach_generation_prompt(&mut clean, None, &client).await) {
+        Some(Prompt::Text(text)) => Some(text.meta.tags),
+        Some(Prompt::Chat(_)) | None => None,
+    }
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::guardrails::log_guardrail_spans;
+use super::support::child;
 use super::support::{attribute, generation, payload, provider, sdk_tracer, span, spans};
 
 const NON_DICT_ENTRY: &str = r#"[{"guardrail_name":"pii-detector"}, "not-a-dict"]"#;
@@ -17,8 +18,9 @@ fn guardrail_skip_an_entry_without_fields_is_still_logged() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let standard = payload(Some("[{}]")).expect("the payload parses");
-    log_guardrail_spans(&tracer, &parent, Some(&standard));
+    log_guardrail_spans(&observations, Some(&standard));
     let finished = spans(&exporter);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished.first().expect("a span").name, "guardrail");

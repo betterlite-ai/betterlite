@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::grounding::log_grounding_spans;
+use super::support::child;
 use super::support::{
     attribute_json, generation, grounding_enrichments, prompt_value, provider, sdk_tracer, span,
     spans,
@@ -11,8 +12,9 @@ fn grounding_dict_top_level_value_becomes_one_span() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let enrichments = grounding_enrichments(prompt_value(r#"{"uri": "https://example.com"}"#));
-    log_grounding_spans(&tracer, &parent, &enrichments);
+    log_grounding_spans(&observations, &enrichments);
     let finished = spans(&exporter);
     assert_eq!(finished.len(), 1);
     let data = finished.first().expect("a span");
@@ -29,7 +31,8 @@ fn grounding_dict_empty_object_still_becomes_one_span() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
-    log_grounding_spans(&tracer, &parent, &grounding_enrichments(prompt_value("{}")));
+    let observations = child(&tracer, &parent);
+    log_grounding_spans(&observations, &grounding_enrichments(prompt_value("{}")));
     let finished = spans(&exporter);
     assert_eq!(finished.len(), 1);
     assert_eq!(

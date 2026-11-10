@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rstest::rstest;
 
 use super::guardrails::log_guardrail_spans;
+use super::support::child;
 use super::support::{generation, payload, provider, sdk_tracer, spans};
 
 const START_ONLY: &str = r#"[{"guardrail_name":"pii-detector","start_time":1.5}]"#;
@@ -27,8 +28,9 @@ fn guardrail_end_time_closes_the_span_at_the_guardrail_time(
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let standard = payload(Some(guardrails)).expect("the payload parses");
-    log_guardrail_spans(&tracer, &parent, Some(&standard));
+    log_guardrail_spans(&observations, Some(&standard));
     let finished = spans(&exporter);
     let data = finished.first().expect("a span");
     if let Some(nanos) = start_nanos {

@@ -22,6 +22,7 @@ use tokio::task::JoinSet;
 use tokio_util::task::TaskTracker;
 
 use crate::fields::payload::StandardLoggingPayload;
+use crate::langfuse_child_observations::child_spans::ChildSpans;
 use crate::langfuse_child_observations::prompts::{GenerationPrompt, PromptManagementMetadata};
 use crate::langfuse_observations::requested_ids::RequestedIdGenerator;
 use crate::langfuse_observations::span::{GenerationStart, LangfuseObservation, start_generation};
@@ -29,7 +30,7 @@ use crate::langfuse_rest::cache::Clock;
 use crate::langfuse_rest::client::{
     LangfuseApiClient, LangfuseClientConfig, build_langfuse_client,
 };
-use crate::langfuse_rest::records::{ChatPrompt, Prompt, TextPrompt};
+use crate::langfuse_rest::records::Prompt;
 
 const TRACE_ID: &str = "0102030405060708090a0b0c0d0e0f10";
 const GENERATION_ID: &str = "0102030405060708";
@@ -92,6 +93,13 @@ pub(crate) fn generation(tracer: &SdkTracer) -> LangfuseObservation<SdkSpan> {
     )
 }
 
+pub(crate) fn child<'target>(
+    tracer: &'target SdkTracer,
+    parent: &'target LangfuseObservation<SdkSpan>,
+) -> ChildSpans<'target, SdkTracer> {
+    ChildSpans { tracer, parent }
+}
+
 pub(crate) fn payload(
     guardrail_information: Option<&str>,
 ) -> Result<StandardLoggingPayload, serde_json::Error> {
@@ -138,22 +146,9 @@ pub(crate) fn grounding_enrichments(grounding: Json) -> IndexMap<String, Json> {
     enrichments
 }
 
-pub(crate) fn text_client(attachment: Option<GenerationPrompt>) -> Option<TextPrompt> {
+pub(crate) fn prompt_client(attachment: Option<GenerationPrompt>) -> Option<Prompt> {
     match attachment {
-        Some(GenerationPrompt::Client(prompt)) => match *prompt {
-            Prompt::Text(text) => Some(text),
-            Prompt::Chat(_) => None,
-        },
-        Some(GenerationPrompt::Raw(_)) | None => None,
-    }
-}
-
-pub(crate) fn chat_client(attachment: Option<GenerationPrompt>) -> Option<ChatPrompt> {
-    match attachment {
-        Some(GenerationPrompt::Client(prompt)) => match *prompt {
-            Prompt::Chat(chat) => Some(chat),
-            Prompt::Text(_) => None,
-        },
+        Some(GenerationPrompt::Client(prompt)) => Some(*prompt),
         Some(GenerationPrompt::Raw(_)) | None => None,
     }
 }

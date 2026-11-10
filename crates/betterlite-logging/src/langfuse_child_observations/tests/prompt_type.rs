@@ -1,9 +1,9 @@
 #![cfg(test)]
 
+use crate::langfuse_rest::records::Prompt;
+
 use super::prompts::attach_generation_prompt;
-use super::support::{
-    chat_client, idle_client, metadata, prompt_metadata, prompt_value, text_client,
-};
+use super::support::{idle_client, metadata, prompt_client, prompt_metadata, prompt_value};
 
 const CHAT_PROMPT: &str = r#"{
     "type": "chat",
@@ -33,7 +33,9 @@ async fn prompt_type_chat_builds_a_chat_prompt_client() {
     let managed = prompt_metadata("managed", "langfuse");
     let mut clean = metadata(prompt_value(CHAT_PROMPT));
     let attachment = attach_generation_prompt(&mut clean, Some(&managed), &client).await;
-    let chat = chat_client(attachment).expect("a chat prompt client");
+    let Some(Prompt::Chat(chat)) = prompt_client(attachment) else {
+        panic!("a chat prompt client")
+    };
     assert_eq!(chat.meta.name, "greeting");
     assert_eq!(chat.meta.version, 2);
     assert_eq!(chat.meta.labels, vec!["production".to_owned()]);
@@ -46,7 +48,9 @@ async fn prompt_type_text_builds_a_text_prompt_client() {
     let client = idle_client();
     let mut clean = metadata(prompt_value(TEXT_PROMPT));
     let attachment = attach_generation_prompt(&mut clean, None, &client).await;
-    let text = text_client(attachment).expect("a text prompt client");
+    let Some(Prompt::Text(text)) = prompt_client(attachment) else {
+        panic!("a text prompt client")
+    };
     assert_eq!(text.meta.name, "farewell");
     assert_eq!(text.meta.version, 4);
     assert_eq!(text.prompt, "Goodbye {{name}}");

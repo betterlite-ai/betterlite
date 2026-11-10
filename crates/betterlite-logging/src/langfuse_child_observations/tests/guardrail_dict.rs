@@ -5,6 +5,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use opentelemetry::Value;
 
 use super::guardrails::log_guardrail_spans;
+use super::support::child;
 use super::support::{
     attribute, attribute_json, generation, payload, prompt_value, provider, sdk_tracer, span, spans,
 };
@@ -24,8 +25,9 @@ fn guardrail_dict_entry_creates_a_child_span_with_its_metadata() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let standard = payload(Some(GUARDRAILS)).expect("the payload parses");
-    log_guardrail_spans(&tracer, &parent, Some(&standard));
+    log_guardrail_spans(&observations, Some(&standard));
     let finished = spans(&exporter);
     assert_eq!(finished.len(), 1);
     let data = finished.first().expect("a span");
@@ -65,8 +67,9 @@ fn guardrail_dict_entry_keeps_its_start_and_end_time() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let standard = payload(Some(GUARDRAILS)).expect("the payload parses");
-    log_guardrail_spans(&tracer, &parent, Some(&standard));
+    log_guardrail_spans(&observations, Some(&standard));
     let finished = spans(&exporter);
     let data = finished.first().expect("a span");
     assert_eq!(

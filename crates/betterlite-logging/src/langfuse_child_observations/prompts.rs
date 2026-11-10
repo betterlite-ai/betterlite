@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::langfuse_rest::client::LangfuseApiClient;
 use crate::langfuse_rest::records::{ChatPrompt, Prompt, PromptMessage, PromptMeta, TextPrompt};
@@ -62,7 +64,8 @@ fn prompt_from_fields(fields: &IndexMap<String, Json>) -> Option<GenerationPromp
         | None => None,
     };
     if matches!(prompt_type, Some("chat" | "text")) {
-        return decode_prompt(fields).map(|prompt| GenerationPrompt::Client(Box::new(prompt)));
+        return decode(fields, "the caller's prompt")
+            .map(|prompt| GenerationPrompt::Client(Box::new(prompt)));
     }
     if fields.contains_key("version") && fields.contains_key("prompt") {
         return versioned_prompt(fields);
@@ -71,18 +74,22 @@ fn prompt_from_fields(fields: &IndexMap<String, Json>) -> Option<GenerationPromp
     None
 }
 
-fn decode_prompt(fields: &IndexMap<String, Json>) -> Option<Prompt> {
-    let encoded = match serde_json::to_value(fields) {
+fn decode<T, V>(value: &V, what: &str) -> Option<T>
+where
+    T: DeserializeOwned,
+    V: Serialize + ?Sized,
+{
+    let encoded = match serde_json::to_value(value) {
         Ok(encoded) => encoded,
         Err(error) => {
-            tracing::error!("the caller's prompt could not be read: {error}");
+            tracing::error!("{what} could not be read: {error}");
             return None;
         }
     };
     match serde_json::from_value(encoded) {
-        Ok(prompt) => Some(prompt),
+        Ok(decoded) => Some(decoded),
         Err(error) => {
-            tracing::error!("the caller's prompt is not a Langfuse prompt: {error}");
+            tracing::error!("{what} is not a Langfuse prompt: {error}");
             None
         }
     }
@@ -97,8 +104,15 @@ fn versioned_prompt(fields: &IndexMap<String, Json>) -> Option<GenerationPrompt>
                 meta,
             },
         )))),
-        Some(Json::List(messages)) => chat_prompt(messages, meta)
-            .map(|prompt| GenerationPrompt::Client(Box::new(Prompt::Chat(prompt)))),
+        Some(Json::List(messages)) => {
+            let chat_messages: Vec<PromptMessage> = decode(messages, "the caller's chat prompt")?;
+            Some(GenerationPrompt::Client(Box::new(Prompt::Chat(
+                ChatPrompt {
+                    prompt: chat_messages,
+                    meta,
+                },
+            ))))
+        }
         Some(_) | None => {
             tracing::error!(
                 "the caller's prompt content is neither text nor chat, so no prompt is logged"
@@ -144,23 +158,6 @@ fn versioned_meta(fields: &IndexMap<String, Json>) -> Option<PromptMeta> {
         commit_message: None,
         resolution_graph: None,
     })
-}
-
-fn chat_prompt(messages: &[Json], meta: PromptMeta) -> Option<ChatPrompt> {
-    let encoded = match serde_json::to_value(messages) {
-        Ok(encoded) => encoded,
-        Err(error) => {
-            tracing::error!("the caller's chat prompt could not be read: {error}");
-            return None;
-        }
-    };
-    match serde_json::from_value::<Vec<PromptMessage>>(encoded) {
-        Ok(prompt) => Some(ChatPrompt { prompt, meta }),
-        Err(error) => {
-            tracing::error!("the caller's chat prompt is not a Langfuse chat prompt: {error}");
-            None
-        }
-    }
 }
 
 // python's `labels or []`: absent and null both count as no labels, anything else must be a list of strings

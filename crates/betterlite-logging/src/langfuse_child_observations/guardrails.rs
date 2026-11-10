@@ -1,22 +1,18 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use opentelemetry::KeyValue;
 use opentelemetry::trace::Tracer;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::payload::records::GuardrailInformation;
-use crate::langfuse_observations::attributes::{
-    ObservationAttributes, ObservationType, observation_attributes,
-};
 use crate::langfuse_observations::identity::Timestamp;
-use crate::langfuse_observations::span::{ChildSpanStart, LangfuseObservation, start_child_span};
+
+use super::child_spans::{ChildSpans, span_attributes};
 
 const GUARDRAIL_SPAN_NAME: &str = "guardrail";
 
 // litellm.integrations.langfuse.langfuse.py._log_guardrail_information_as_span; the typed payload turns the source's non-list and non-dict guards into decode failures (docs/compatibility.md)
 pub fn log_guardrail_spans<T>(
-    tracer: &T,
-    parent: &LangfuseObservation<T::Span>,
+    spans: &ChildSpans<'_, T>,
     standard_logging_payload: Option<&StandardLoggingPayload>,
 ) where
     T: Tracer,
@@ -29,29 +25,33 @@ pub fn log_guardrail_spans<T>(
         return;
     };
     for entry in entries {
-        log_guardrail_span(tracer, parent, entry);
+        log_guardrail_span(spans, entry);
     }
 }
 
-fn log_guardrail_span<T>(
-    tracer: &T,
-    parent: &LangfuseObservation<T::Span>,
-    entry: &GuardrailInformation,
-) where
+fn log_guardrail_span<T>(spans: &ChildSpans<'_, T>, entry: &GuardrailInformation)
+where
     T: Tracer,
 {
-    let mut span = start_child_span(
-        tracer,
-        parent,
-        ChildSpanStart {
-            name: GUARDRAIL_SPAN_NAME.to_owned(),
-            start_time: entry
-                .start_time
+    let metadata = guardrail_metadata(entry);
+    let mut span = spans.start(
+        GUARDRAIL_SPAN_NAME,
+        entry
+            .start_time
+            .as_ref()
+            .and_then(|value| value.as_ref())
+            .map(|value| Timestamp::Seconds(value.0)),
+        span_attributes(
+            entry
+                .guardrail_request
                 .as_ref()
-                .and_then(|value| value.as_ref())
-                .map(|value| Timestamp::Seconds(value.0)),
-            attributes: guardrail_attributes(entry),
-        },
+                .and_then(|value| value.as_ref()),
+            entry
+                .guardrail_response
+                .as_ref()
+                .and_then(|value| value.as_ref()),
+            Some(&metadata),
+        ),
     );
     span.end(
         entry
@@ -60,31 +60,6 @@ fn log_guardrail_span<T>(
             .and_then(|value| value.as_ref())
             .map(|value| Timestamp::Seconds(value.0)),
     );
-}
-
-fn guardrail_attributes(entry: &GuardrailInformation) -> Vec<KeyValue> {
-    let metadata = guardrail_metadata(entry);
-    observation_attributes(&ObservationAttributes {
-        observation_type: ObservationType::Span,
-        input: entry
-            .guardrail_request
-            .as_ref()
-            .and_then(|value| value.as_ref()),
-        output: entry
-            .guardrail_response
-            .as_ref()
-            .and_then(|value| value.as_ref()),
-        metadata: Some(&metadata),
-        level: None,
-        status_message: None,
-        version: None,
-        model: None,
-        model_parameters: None,
-        usage_details: None,
-        cost_details: None,
-        completion_start_time: None,
-        prompt: None,
-    })
 }
 
 // the source maps masked_entity_count onto guardrail_masked_entity_count, a name the guardrail record does not use

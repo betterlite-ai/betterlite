@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::grounding::log_grounding_spans;
+use super::support::child;
 use super::support::{generation, prompt_value, provider, sdk_tracer, spans};
 
 fn enrichments(text: &str) -> IndexMap<String, Json> {
@@ -26,6 +27,7 @@ fn grounding_hidden_without_provider_metadata_logs_no_span(#[case] text: &str) {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
-    log_grounding_spans(&tracer, &parent, &enrichments(text));
+    let observations = child(&tracer, &parent);
+    log_grounding_spans(&observations, &enrichments(text));
     assert!(spans(&exporter).is_empty());
 }

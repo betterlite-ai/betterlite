@@ -5,6 +5,7 @@ use std::time::UNIX_EPOCH;
 use opentelemetry::Value;
 
 use super::grounding::end_grounding_span;
+use super::support::child;
 use super::support::{
     attribute, attribute_json, generation, prompt_value, provider, sdk_tracer, span, spans,
 };
@@ -14,8 +15,9 @@ fn grounding_span_creates_and_ends_a_child_span() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     let value = prompt_value(r#"{"uri": "https://example.com"}"#);
-    end_grounding_span(&tracer, &parent, "sources", &value);
+    end_grounding_span(&observations, "sources", &value);
     let finished = spans(&exporter);
     assert_eq!(finished.len(), 1);
     let data = finished.first().expect("a span");
@@ -37,9 +39,9 @@ fn grounding_span_writes_a_text_value_as_is() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
+    let observations = child(&tracer, &parent);
     end_grounding_span(
-        &tracer,
-        &parent,
+        &observations,
         "vertex_ai_grounding_metadata",
         &prompt_value(r#""grounded""#),
     );
@@ -55,7 +57,8 @@ fn grounding_span_omits_a_null_input() {
     let (provider, exporter) = provider();
     let tracer = sdk_tracer(&provider);
     let parent = generation(&tracer);
-    end_grounding_span(&tracer, &parent, "sources", &prompt_value("null"));
+    let observations = child(&tracer, &parent);
+    end_grounding_span(&observations, "sources", &prompt_value("null"));
     let data = spans(&exporter).first().cloned().expect("a span");
     assert!(attribute(&data, "langfuse.observation.input").is_none());
 }
