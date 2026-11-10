@@ -176,6 +176,22 @@ fn cache_detail_mismatches() {
         r#"{"inputTokens": 1, "outputTokens": 1, "cacheWriteInputTokens": 3, "cacheDetails": [{"inputTokens": 1.5, "ttl": "5m"}]}"#,
     );
     let _fractional = parse_cache_details(&fractional).unwrap_err();
+    cache_detail_scalars();
+}
+
+fn cache_detail_scalars() {
+    for details in ["0", "-0.0", "false", "\"\"", "{}", "null"] {
+        let falsey = usage(&format!(
+            r#"{{"inputTokens": 1, "outputTokens": 1, "cacheDetails": {details}}}"#
+        ));
+        assert_eq!(parse_cache_details(&falsey).unwrap(), None, "{details}");
+    }
+    for details in ["1", "true", "\"x\"", "{\"a\": 1}"] {
+        let truthy = usage(&format!(
+            r#"{{"inputTokens": 1, "outputTokens": 1, "cacheDetails": {details}}}"#
+        ));
+        let _not_a_list = parse_cache_details(&truthy).unwrap_err();
+    }
 }
 
 fn additional_thinking_tokens() {
