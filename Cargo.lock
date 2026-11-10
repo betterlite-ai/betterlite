@@ -1956,6 +1956,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "unicode-normalization",
  "url",
 ]
 
@@ -2785,6 +2786,7 @@ dependencies = [
  "kitoken",
  "lru",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -2804,8 +2806,10 @@ dependencies = [
 name = "betterlite-tokenizer-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "betterlite-tokenizer",
  "libfuzzer-sys",
+ "tokio",
 ]
 
 [[package]]
