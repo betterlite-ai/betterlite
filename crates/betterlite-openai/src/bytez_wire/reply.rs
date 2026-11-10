@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::error::{BytezConfigError, BytezError};
-use super::messages::{RawMessage, adapt_messages_to_bytez_standard, get_tokens_from_messages};
+use super::messages::{RawMessage, get_tokens_from_messages, normalize_messages};
 
 // the pooled transport caps a reply at 16 MiB; a decoder handed more than that refuses it
 pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
@@ -125,9 +125,9 @@ pub fn decode_bytez_reply(input: &ReplyInput<'_>) -> Result<BytezReply, BytezRep
     }
     let output = body.output.ok_or(BytezReplyError::MissingOutput)?;
     let content = output_text(&output)?.to_owned();
-    let prompt = adapt_messages_to_bytez_standard(input.messages)?;
+    let prompt = normalize_messages(input.messages)?;
     let prompt_tokens = get_tokens_from_messages(&prompt)?;
-    let completion = adapt_messages_to_bytez_standard(slice::from_ref(&output))?;
+    let completion = normalize_messages(slice::from_ref(&output))?;
     let completion_tokens = get_tokens_from_messages(&completion)?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)

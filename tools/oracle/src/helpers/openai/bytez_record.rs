@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::bytez_wire::environment::{complete_url, validate_environment};
 use betterlite_openai::bytez_wire::messages::{
-    RawMessage, adapt_messages_to_bytez_standard, get_tokens_from_messages,
+    RawMessage, normalize_messages, get_tokens_from_messages,
 };
 use betterlite_openai::bytez_wire::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use betterlite_openai::bytez_wire::reply::{ReplyInput, decode_bytez_reply};
@@ -119,7 +119,7 @@ fn mapped(mapping: &Mapping) -> Value {
 }
 
 fn usage(messages: &[RawMessage]) -> Value {
-    let Ok(normalized) = adapt_messages_to_bytez_standard(messages) else {
+    let Ok(normalized) = normalize_messages(messages) else {
         return json!({"ok": false, "status": Value::Null});
     };
     match get_tokens_from_messages(&normalized) {

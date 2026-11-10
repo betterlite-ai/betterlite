@@ -29,7 +29,7 @@ pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
 // the pooled transport's own body cap, repeated so the error body read is bounded without it
 pub const MAX_BODY_BYTES: usize = 0x0100_0000;
 
-// one call serves get_sync_custom_stream_wrapper and get_async_custom_stream_wrapper: kind picks the client
+// one call serves both LiteLLM custom stream wrappers: kind picks the sync or async client
 pub struct BytezStreamCall<'request> {
     pub model: String,
     pub provider: String,

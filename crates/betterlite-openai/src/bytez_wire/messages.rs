@@ -27,7 +27,7 @@ pub enum NormalizedBlock {
     Video { url: String },
 }
 
-// open_ai_to_bytez_content_item_map: the caller's type, the Bytez type and the payload key
+// the openai to Bytez content map: the caller's type, the Bytez type and the payload key
 const CONTENT_MAP: [(&str, &str, &str); 4] = [
     ("text", "text", "text"),
     ("image_url", "image", "url"),
@@ -38,7 +38,7 @@ const CONTENT_MAP: [(&str, &str, &str); 4] = [
 // the two OpenAI block types Bytez knows and refuses
 const UNSUPPORTED_CONTENT: [&str; 2] = ["document", "file"];
 
-pub fn adapt_messages_to_bytez_standard(
+pub fn normalize_messages(
     messages: &[RawMessage],
 ) -> Result<Vec<NormalizedMessage>, BytezConfigError> {
     messages.iter().map(normalize_message).collect()

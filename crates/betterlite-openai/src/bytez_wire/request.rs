@@ -2,7 +2,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
 use super::error::BytezConfigError;
-use super::messages::{NormalizedMessage, RawMessage, adapt_messages_to_bytez_standard};
+use super::messages::{NormalizedMessage, RawMessage, normalize_messages};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BytezRequestBody {
@@ -25,7 +25,7 @@ pub fn request_body(
         params.shift_remove("stream");
     }
     Ok(BytezRequestBody {
-        messages: adapt_messages_to_bytez_standard(messages)?,
+        messages: normalize_messages(messages)?,
         stream,
         params,
     })
