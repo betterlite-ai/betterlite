@@ -133,11 +133,9 @@ fn usage(messages: &[RawMessage]) -> Value {
 
 fn request(entry: &RequestEntry) -> Value {
     let api_key = entry.api_key.clone().map(SecretString::from);
-    let Ok(validated) = validate_environment(
-        entry.headers.clone(),
-        &entry.messages,
-        api_key.as_ref(),
-    ) else {
+    let Ok(validated) =
+        validate_environment(entry.headers.clone(), &entry.messages, api_key.as_ref())
+    else {
         return json!({"ok": false, "status": Value::Null});
     };
     let Ok(url) = complete_url(&entry.model) else {

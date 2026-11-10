@@ -3,8 +3,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::helper::validate_helper;
 use crate::case::HelperCase;
+use crate::case::helper::validate_helper;
 use crate::helpers::invoke;
 
 fn seeds() -> Vec<(String, HelperCase)> {
@@ -66,9 +66,9 @@ fn helper_seeds_normalize_messages_and_count_usage() {
         };
         assert!(!messages.is_empty(), "{path}");
         assert!(
-            messages
-                .iter()
-                .any(|message| message["content"].as_array().is_some_and(|blocks| !blocks.is_empty())),
+            messages.iter().any(|message| message["content"]
+                .as_array()
+                .is_some_and(|blocks| !blocks.is_empty())),
             "{path}"
         );
         normalized += 1;
