@@ -6,84 +6,48 @@ use crate::gemini_media::error::MediaError;
 
 #[derive(Debug, Error)]
 pub enum HistoryError {
-    #[error("the history has more than {limit} messages")]
-    TooManyMessages { limit: usize },
-    #[error("message {index} has more than {limit} content parts")]
-    TooManyParts { index: usize, limit: usize },
-    #[error("message {index} has role {role}, which a Gemini history cannot carry")]
-    UnsupportedRole { index: usize, role: String },
-    #[error("field {path} is missing")]
-    MissingField { path: String },
-    #[error("field {path} must be {expected}")]
-    WrongField {
-        path: String,
-        expected: &'static str,
-    },
-    #[error("field {path} must be a video metadata object")]
-    VideoMetadata {
-        path: String,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("{source}")]
-    Media {
-        #[from]
-        source: MediaError,
-    },
-    #[error("{source}")]
-    ToolInvoke {
-        #[from]
-        source: GeminiToolInvokesError,
-    },
-    #[error("{source}")]
-    ToolResult {
-        #[from]
-        source: GeminiToolResultsError,
-    },
-    #[error("the tool calls of a previous assistant message cannot be read")]
-    ToolCalls {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("a content part did not encode as a JSON object")]
-    PartShape,
+    #[error("{0}")]
+    Invalid(String),
+    #[error("the history has more than {0} messages")]
+    TooManyMessages(usize),
+    #[error("a message has more than {0} content parts")]
+    TooManyParts(usize),
+    #[error("a message field is not the declared type")]
+    Decode(#[source] serde_json::Error),
+    #[error("{0}")]
+    Media(#[from] MediaError),
+    #[error("{0}")]
+    ToolInvoke(#[from] GeminiToolInvokesError),
+    #[error("{0}")]
+    ToolResult(#[from] GeminiToolResultsError),
     #[error("a content part cannot be encoded")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
+    Encode(#[source] serde_json::Error),
+}
+
+#[derive(Clone, Copy)]
+pub struct WireError {
+    pub status: u16,
+    pub error_type: Option<&'static str>,
+    pub param: Option<&'static str>,
+    pub code: Option<&'static str>,
 }
 
 impl HistoryError {
     #[must_use]
-    pub const fn status(&self) -> u16 {
-        if let Self::Media { source } = self {
-            return source.status();
+    pub const fn wire(&self) -> WireError {
+        if let Self::Media(source) = self {
+            return WireError {
+                status: source.status(),
+                error_type: source.error_type(),
+                param: source.param(),
+                code: source.code(),
+            };
         }
-        400
-    }
-
-    #[must_use]
-    pub const fn error_type(&self) -> Option<&'static str> {
-        if let Self::Media { source } = self {
-            return source.error_type();
+        WireError {
+            status: 400,
+            error_type: None,
+            param: None,
+            code: Some("400"),
         }
-        None
-    }
-
-    #[must_use]
-    pub const fn param(&self) -> Option<&'static str> {
-        if let Self::Media { source } = self {
-            return source.param();
-        }
-        None
-    }
-
-    #[must_use]
-    pub const fn code(&self) -> Option<&'static str> {
-        if let Self::Media { source } = self {
-            return source.code();
-        }
-        Some("400")
     }
 }

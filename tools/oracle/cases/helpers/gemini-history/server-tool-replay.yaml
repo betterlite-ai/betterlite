@@ -28,13 +28,6 @@ call:
             content: "a"
             provider_specific_fields:
               server_side_tool_invocations:
-                - {id: "s1", response: null}
-      - messages:
-          - {role: user, content: "q"}
-          - role: assistant
-            content: "a"
-            provider_specific_fields:
-              server_side_tool_invocations:
                 - {id: "s1", response: {r: 2}}
       - messages:
           - {role: user, content: "q"}

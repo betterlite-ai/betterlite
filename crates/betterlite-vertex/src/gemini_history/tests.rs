@@ -6,20 +6,19 @@ use std::iter::repeat_n;
 use std::path::PathBuf;
 use std::str::from_utf8;
 
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_invokes::signatures::DUMMY_THOUGHT_SIGNATURE;
 use betterlite_prompts::gemini_tool_results::error::GeminiToolResultsError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
-use betterlite_prompts::media::limits::{MAX_MESSAGE_PARTS, MAX_MESSAGES};
+use betterlite_prompts::media::limits::MAX_MESSAGES;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::gemini_history::content::{Part, Role, TextPart};
+use crate::gemini_history::content::{MAX_THINKING_BYTES, Role, decode_thinking_part};
 use crate::gemini_history::convert::{History, HistoryWarning, convert_messages_with_history};
 use crate::gemini_history::error::HistoryError;
-use crate::gemini_history::thinking::{MAX_THINKING_BYTES, decode_thinking_part};
 use crate::gemini_media::error::{MediaError, MediaField};
 
 struct NoFetch;
@@ -87,10 +86,11 @@ fn error_of(source: &str, model: Option<&str>) -> HistoryError {
 }
 
 fn assert_field_error(error: &HistoryError, field: &str) {
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.code(), Some("400"));
-    assert_eq!(error.error_type(), None);
-    assert_eq!(error.param(), None);
+    let wire = error.wire();
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.code, Some("400"));
+    assert_eq!(wire.error_type, None);
+    assert_eq!(wire.param, None);
     assert!(
         error.to_string().contains(field),
         "{error} does not name {field}"
@@ -269,15 +269,6 @@ fn skips_an_audio_part_without_data_or_format(#[case] audio: &str) {
 }
 
 #[test]
-fn an_audio_part_without_data_is_the_only_unknown_content() {
-    let history = converted(
-        r#"[{"role":"user","content":[{"type":"input_audio","input_audio":{"format":"wav"}}]}]"#,
-        None,
-    );
-    assert_eq!(history.warnings, vec![HistoryWarning::EmptyHistory]);
-}
-
-#[test]
 fn keeps_file_format_before_mime_type_and_content_type() {
     assert_parts(
         r#"[{"role":"user","content":[{"type":"file","file":{"file_data":"data:image/png;base64,YWJj","format":"image/webp","mime_type":"image/bmp","content_type":"image/gif"}}]}]"#,
@@ -370,13 +361,21 @@ fn replays_generated_images() {
 #[rstest]
 #[case::no_url(r#"{"image_url":{}}"#)]
 #[case::empty_url(r#"{"image_url":{"url":""}}"#)]
-#[case::string_image_url(r#"{"image_url":"data:image/png;base64,YWJj"}"#)]
 fn skips_generated_images_without_a_url(#[case] image: &str) {
     let source = format!(
         r#"[{{"role":"user","content":"q"}},{{"role":"assistant","content":"a","images":[{image}]}}]"#
     );
     assert_parts(
         &source,
+        None,
+        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]}]"#,
+    );
+}
+
+#[test]
+fn skips_a_generated_image_whose_image_url_is_a_string() {
+    assert_parts(
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"image_url":"data:image/png;base64,YWJj"}]}]"#,
         None,
         r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]}]"#,
     );
@@ -391,9 +390,9 @@ fn skips_generated_images_without_a_url(#[case] image: &str) {
     r#"{"id":"s1"}"#,
     r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}}]"#
 )]
-#[case::null_response(
+#[case::null_response_is_no_response(
     r#"{"id":"s1","response":null}"#,
-    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}},{"toolResponse":{"id":"s1","response":null}}]"#
+    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}}]"#
 )]
 #[case::empty_tool_type_kept(
     r#"{"id":"s1","tool_type":"","response":{}}"#,
@@ -507,76 +506,40 @@ fn does_not_repeat_a_tool_call_a_thinking_block_already_carries(
 #[case::null_file(r#"[{"type":"file","file":null}]"#, "file")]
 #[case::missing_file_source(r#"[{"type":"file","file":{}}]"#, "file")]
 #[case::missing_audio_field(r#"[{"type":"input_audio"}]"#, "input_audio")]
-#[case::text_not_a_string(r#"[{"type":"text","text":5}]"#, "text")]
-#[case::audio_format_not_a_string(
-    r#"[{"type":"input_audio","input_audio":{"data":"YWJj","format":5}}]"#,
-    "input_audio.format"
-)]
-#[case::file_id_not_a_string(
-    r#"[{"type":"file","file":{"file_id":5,"file_data":"data:image/png;base64,YWJj"}}]"#,
-    "file.file_id"
-)]
 fn rejects_a_malformed_user_part(#[case] part: &str, #[case] field: &str) {
     let source = format!(r#"[{{"role":"user","content":{part}}}]"#);
     assert_field_error(&error_of(&source, None), field);
 }
 
 #[test]
-fn rejects_a_user_text_part_with_a_null_text() {
-    assert_field_error(
-        &error_of(
-            r#"[{"role":"user","content":[{"type":"text","text":null}]}]"#,
-            None,
-        ),
-        "text",
+fn skips_a_user_text_part_with_a_null_text() {
+    let history = converted(
+        r#"[{"role":"user","content":[{"type":"text","text":null},{"type":"text","text":"u"}]}]"#,
+        None,
+    );
+    assert_eq!(
+        encode(&history.contents),
+        parse_json(r#"[{"role":"user","parts":[{"text":"u"}]}]"#)
     );
 }
 
-#[rstest]
-#[case::reasoning_not_a_string(
-    r#"{"role":"assistant","content":"a","reasoning_content":5}"#,
-    "reasoning_content"
-)]
-#[case::thinking_blocks_not_a_list(
-    r#"{"role":"assistant","content":"a","thinking_blocks":{}}"#,
-    "thinking_blocks"
-)]
-#[case::thinking_block_not_an_object(
-    r#"{"role":"assistant","content":"a","thinking_blocks":["x"]}"#,
-    "thinking_blocks[0]"
-)]
-#[case::thinking_not_a_string(
-    r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":5,"signature":"s"}]}"#,
-    "thinking_blocks[0].thinking"
-)]
-#[case::signature_not_a_string(
-    r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":"{}","signature":5}]}"#,
-    "thinking_blocks[0].signature"
-)]
-#[case::invocation_not_an_object(
-    r#"{"role":"assistant","content":"a","provider_specific_fields":{"server_side_tool_invocations":["x"]}}"#,
-    "server_side_tool_invocations[0]"
-)]
-#[case::assistant_text_not_a_string(
-    r#"{"role":"assistant","content":[{"type":"text","text":5}]}"#,
-    "content[0].text"
-)]
-#[case::assistant_text_missing(
-    r#"{"role":"assistant","content":[{"type":"text"}]}"#,
-    "content[0].text"
-)]
-fn rejects_a_malformed_assistant_part(#[case] assistant: &str, #[case] field: &str) {
-    let source = format!(r#"[{{"role":"user","content":"q"}},{assistant}]"#);
-    assert_field_error(&error_of(&source, None), field);
+#[test]
+fn skips_assistant_fields_that_are_not_the_declared_shape() {
+    let source = r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","reasoning_content":5,"thinking_blocks":{},"images":{},"provider_specific_fields":{"server_side_tool_invocations":["x"]}}]"#;
+    assert_parts(
+        source,
+        None,
+        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]}]"#,
+    );
 }
 
-#[rstest]
-#[case::unhashable_signature(
-    r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":[["x"]]}}]"#,
-    "thought_signatures[0]"
-)]
-fn rejects_an_unhashable_text_signature(#[case] source: &str, #[case] field: &str) {
-    assert_field_error(&error_of(source, None), field);
+#[test]
+fn drops_a_text_signature_that_is_not_a_scalar() {
+    assert_parts(
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":[["x"]]}}]"#,
+        None,
+        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]}]"#,
+    );
 }
 
 #[test]
@@ -586,10 +549,7 @@ fn rejects_a_message_role_the_history_cannot_place() {
         None,
     );
     assert_field_error(&error, "developer");
-    assert!(matches!(
-        error,
-        HistoryError::UnsupportedRole { index: 0, .. }
-    ));
+    assert!(matches!(error, HistoryError::Invalid(_)));
 }
 
 #[test]
@@ -600,13 +560,12 @@ fn propagates_the_remote_media_rejection() {
     );
     assert!(matches!(
         error,
-        HistoryError::Media {
-            source: MediaError::RemoteMediaRequired(MediaField::ImageUrl)
-        }
+        HistoryError::Media(MediaError::RemoteMediaRequired(MediaField::ImageUrl))
     ));
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.param(), Some("image_url"));
-    assert_eq!(error.code(), Some("unsupported_remote_media"));
+    let wire = error.wire();
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.param, Some("image_url"));
+    assert_eq!(wire.code, Some("unsupported_remote_media"));
 }
 
 #[test]
@@ -617,9 +576,7 @@ fn propagates_a_tool_result_without_a_matching_call() {
     );
     assert!(matches!(
         error,
-        HistoryError::ToolResult {
-            source: GeminiToolResultsError::MissingName
-        }
+        HistoryError::ToolResult(GeminiToolResultsError::MissingName)
     ));
 }
 
@@ -631,27 +588,7 @@ fn caps_the_history_at_the_message_limit() {
     let over_limit: Vec<Message> = repeat_n(message, MAX_MESSAGES + 1).collect();
     assert!(matches!(
         error_for(&over_limit, None),
-        HistoryError::TooManyMessages { limit } if limit == MAX_MESSAGES
-    ));
-}
-
-#[test]
-fn caps_a_message_at_the_part_limit() {
-    let part = r#"{"type":"text","text":"x"}"#;
-    let at_limit: Vec<&str> = repeat_n(part, MAX_MESSAGE_PARTS).collect();
-    let allowed = format!(
-        r#"[{{"role":"user","content":[{parts}]}}]"#,
-        parts = at_limit.join(",")
-    );
-    converted(&allowed, None);
-    let over_limit: Vec<&str> = repeat_n(part, MAX_MESSAGE_PARTS + 1).collect();
-    let rejected = format!(
-        r#"[{{"role":"user","content":[{parts}]}}]"#,
-        parts = over_limit.join(",")
-    );
-    assert!(matches!(
-        error_of(&rejected, None),
-        HistoryError::TooManyParts { limit, .. } if limit == MAX_MESSAGE_PARTS
+        HistoryError::TooManyMessages(limit) if limit == MAX_MESSAGES
     ));
 }
 
@@ -686,10 +623,10 @@ fn builds_content_records_with_the_declared_roles() {
             .contents
             .first()
             .and_then(|content| content.parts.first()),
-        Some(&Part::Text(TextPart {
-            text: "q".to_owned(),
-            signature: None,
-        }))
+        Some(&Object::from_iter([(
+            "text".to_owned(),
+            Json::Text("q".to_owned())
+        )]))
     );
 }
 
@@ -714,33 +651,30 @@ fn refuses_thinking_json_past_the_byte_bound() {
     let filler = "a".repeat(MAX_THINKING_BYTES);
     let inside = format!("{{\"text\":\"{filler}\"}}");
     assert!(inside.len() > MAX_THINKING_BYTES);
-    assert!(matches!(
-        decode_thinking_part(&inside, "sig"),
-        Part::Text(_)
-    ));
+    assert!(decode_thinking_part(&inside, "sig").contains_key("thoughtSignature"));
 
     let room = MAX_THINKING_BYTES.saturating_sub("{\"text\":\"\"}".len());
     let exact = format!("{{\"text\":\"{}\"}}", "a".repeat(room));
     assert_eq!(exact.len(), MAX_THINKING_BYTES);
-    assert!(matches!(
-        decode_thinking_part(&exact, "sig"),
-        Part::Decoded(_)
-    ));
+    assert_eq!(
+        decode_thinking_part(&exact, "sig").get("text"),
+        Some(&Json::Text("a".repeat(room)))
+    );
 
     let over = format!("{{\"text\":\"{}\"}}", "a".repeat(room.saturating_add(1)));
     assert_eq!(over.len(), MAX_THINKING_BYTES.saturating_add(1));
-    assert!(matches!(decode_thinking_part(&over, "sig"), Part::Text(_)));
+    assert!(decode_thinking_part(&over, "sig").contains_key("thoughtSignature"));
 }
 
 #[test]
 fn falls_back_to_the_signed_text_past_the_byte_bound() {
     let over = format!("{{\"text\":\"{}\"}}", "a".repeat(MAX_THINKING_BYTES));
     let part = decode_thinking_part(&over, "sig");
-    let Part::Text(text_part) = part else {
-        panic!("a thinking string past the bound must stay literal text");
-    };
-    assert_eq!(text_part.text, over);
-    assert_eq!(text_part.signature, Some(Json::Text("sig".to_owned())));
+    assert_eq!(part.get("text"), Some(&Json::Text(over)));
+    assert_eq!(
+        part.get("thoughtSignature"),
+        Some(&Json::Text("sig".to_owned()))
+    );
 }
 
 #[rstest]

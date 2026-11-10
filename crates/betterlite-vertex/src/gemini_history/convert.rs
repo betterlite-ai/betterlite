@@ -1,15 +1,15 @@
 use std::mem::take;
 
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_results::convert::convert_tool_result_to_gemini;
 use betterlite_prompts::gemini_tool_results::types::{GeminiToolResult, LastToolCallMessage};
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media::limits::MAX_MESSAGES;
 use betterlite_prompts::message_content::Message;
 
-use crate::gemini_history::assistant::{AssistantOptions, append_assistant_parts};
-use crate::gemini_history::content::{Content, Part, Role, TextPart};
+use crate::gemini_history::content::{Content, Role, object, object_of};
 use crate::gemini_history::error::HistoryError;
-use crate::gemini_history::user::append_user_parts;
+use crate::gemini_history::turns::{AssistantOptions, append_assistant_parts, append_user_parts};
 use crate::model_urls::model_name::is_gemini_3_or_newer;
 
 const USER: &str = "user";
@@ -50,9 +50,7 @@ where
     Source: RemoteMediaFetcher + Sync,
 {
     if messages.len() > MAX_MESSAGES {
-        return Err(HistoryError::TooManyMessages {
-            limit: MAX_MESSAGES,
-        });
+        return Err(HistoryError::TooManyMessages(MAX_MESSAGES));
     }
     let mut walker = Walker {
         messages,
@@ -81,7 +79,7 @@ struct Walker<'walk, Source> {
     options: AssistantOptions<'walk>,
     history: History,
     last_tool_calls: Option<LastToolCallMessage>,
-    tool_responses: Vec<Part>,
+    tool_responses: Vec<Object>,
     index: usize,
 }
 
@@ -101,10 +99,10 @@ where
                     .messages
                     .get(self.index)
                     .map_or_else(String::new, |message| message.role.clone());
-                return Err(HistoryError::UnsupportedRole {
-                    index: self.index,
-                    role,
-                });
+                return Err(HistoryError::Invalid(format!(
+                    "message {} has role {role}, which a Gemini history cannot carry",
+                    self.index
+                )));
             }
         }
         self.finish();
@@ -117,19 +115,16 @@ where
             if !matches!(current.role.as_str(), USER | SYSTEM) {
                 break;
             }
-            append_user_parts(current, self.index, self.model, &mut parts)?;
+            append_user_parts(current, self.model, &mut parts)?;
             self.index = self.index.saturating_add(1);
         }
         if parts.is_empty() {
             return Ok(());
         }
-        if !parts.iter().any(|part| matches!(part, Part::Text(_))) {
+        if !parts.iter().any(|part| part.contains_key("text")) {
             self.history.warnings.push(HistoryWarning::BlankText);
             tracing::warn!("a user turn has no text part; a space part is added");
-            parts.push(Part::Text(TextPart {
-                text: SPACE.to_owned(),
-                signature: None,
-            }));
+            parts.push(object!("text" => Json::Text(SPACE.to_owned())));
         }
         self.history.contents.push(Content {
             role: Role::User,
@@ -144,13 +139,7 @@ where
             if current.role != ASSISTANT {
                 break;
             }
-            append_assistant_parts(
-                current,
-                self.index,
-                self.options,
-                &mut parts,
-                &mut self.last_tool_calls,
-            )?;
+            append_assistant_parts(current, self.options, &mut parts, &mut self.last_tool_calls)?;
             self.index = self.index.saturating_add(1);
         }
         if !parts.is_empty() {
@@ -178,12 +167,11 @@ where
         .await?;
         self.index = self.index.saturating_add(1);
         match converted {
-            GeminiToolResult::Single(part) => {
-                self.tool_responses.push(Part::FunctionResponse(part));
-            }
+            GeminiToolResult::Single(part) => self.tool_responses.push(object_of(part)?),
             GeminiToolResult::WithMedia(parts) => {
-                self.tool_responses
-                    .extend(parts.into_iter().map(Part::FunctionResponse));
+                for part in parts {
+                    self.tool_responses.push(object_of(part)?);
+                }
             }
         }
         Ok(())
@@ -197,19 +185,17 @@ where
         if tool_role_next || self.tool_responses.is_empty() {
             return;
         }
-        let parts = take(&mut self.tool_responses);
         self.history.contents.push(Content {
             role: Role::User,
-            parts,
+            parts: take(&mut self.tool_responses),
         });
     }
 
     fn finish(&mut self) {
         if !self.tool_responses.is_empty() {
-            let parts = take(&mut self.tool_responses);
             self.history.contents.push(Content {
                 role: Role::User,
-                parts,
+                parts: take(&mut self.tool_responses),
             });
         }
         if self.history.contents.is_empty() {
@@ -217,10 +203,7 @@ where
             tracing::warn!("the history has no content; a single space turn is sent instead");
             self.history.contents.push(Content {
                 role: Role::User,
-                parts: vec![Part::Text(TextPart {
-                    text: SPACE.to_owned(),
-                    signature: None,
-                })],
+                parts: vec![object!("text" => Json::Text(SPACE.to_owned()))],
             });
         }
     }

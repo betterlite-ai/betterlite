@@ -1,10 +1,7 @@
-pub mod assistant;
 pub mod content;
 pub mod convert;
 pub mod error;
-pub mod fields;
-pub mod signatures;
-pub mod thinking;
-pub mod user;
+pub mod tool_turn;
+pub mod turns;
 
 mod tests;

@@ -1,117 +1,76 @@
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::gemini_tool_invokes::types::GeminiPart;
-use betterlite_prompts::gemini_tool_results::types::GeminiFunctionResponsePart;
 use serde::Serialize;
 
 use crate::gemini_history::error::HistoryError;
-use crate::gemini_media::error::MediaField;
-use crate::gemini_media::mime::MimeHints;
-use crate::gemini_media::part::{MediaPart, MediaResolution, VideoMetadata};
 use crate::gemini_media::process::{MediaRequest, process_media};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+macro_rules! object {
+    ($($key:expr => $value:expr),* $(,)?) => {
+        Object::from_iter([$(($key.to_owned(), $value)),*])
+    };
+}
+pub(crate) use object;
+
+macro_rules! media_request {
+    ($url:expr, $hints:expr, $resolution:expr, $video:expr, $model:expr, $field:expr) => {
+        $crate::gemini_media::process::MediaRequest {
+            url: $url,
+            hints: $hints,
+            resolution: $resolution,
+            video_metadata: $video,
+            model: $model,
+            field: $field,
+        }
+    };
+}
+pub(crate) use media_request;
+
+pub const FORMAT: &str = "format";
+pub const MIME_TYPE: &str = "mime_type";
+pub const CONTENT_TYPE: &str = "content_type";
+pub const DETAIL: &str = "detail";
+const SIGNATURE_KEY: &str = "thoughtSignature";
+pub const MAX_THINKING_BYTES: usize = 0x0010_0000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     User,
     Model,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Content {
     pub role: Role,
-    pub parts: Vec<Part>,
+    pub parts: Vec<Object>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum Part {
-    Text(TextPart),
-    Thought(ThoughtPart),
-    Media(MediaPart),
-    FunctionCall(GeminiPart),
-    FunctionResponse(GeminiFunctionResponsePart),
-    ServerToolCall(ServerToolCallPart),
-    ServerToolResponse(ServerToolResponsePart),
-    Decoded(Object),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TextPart {
-    pub text: String,
-    // A null entry in thought_signatures is replayed as an explicit null signature
-    #[serde(rename = "thoughtSignature", skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Json>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ThoughtPart {
-    pub thought: bool,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ServerToolCallPart {
-    #[serde(rename = "toolCall")]
-    pub tool_call: ServerToolCall,
-    #[serde(rename = "thoughtSignature", skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Json>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ServerToolCall {
-    #[serde(rename = "toolType")]
-    pub tool_type: Json,
-    pub id: Json,
-    pub args: Json,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ServerToolResponsePart {
-    #[serde(rename = "toolResponse")]
-    pub tool_response: ServerToolResponse,
-    #[serde(rename = "thoughtSignature", skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Json>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ServerToolResponse {
-    pub id: Json,
-    pub response: Json,
-    #[serde(rename = "toolType", skip_serializing_if = "Option::is_none")]
-    pub tool_type: Option<Json>,
-}
-
-pub struct MediaInput<'media> {
-    pub url: &'media str,
-    pub hints: &'media MimeHints,
-    pub resolution: Option<MediaResolution>,
-    pub video_metadata: Option<&'media VideoMetadata>,
-    pub model: Option<&'media str>,
-    pub field: MediaField,
-}
-
-pub fn push_media(parts: &mut Vec<Part>, media: &MediaInput<'_>) -> Result<(), HistoryError> {
-    let request = MediaRequest {
-        url: media.url,
-        hints: media.hints,
-        resolution: media.resolution,
-        video_metadata: media.video_metadata,
-        model: media.model,
-        field: media.field,
-    };
-    let part = process_media(&request)?;
-    parts.push(Part::Media(part));
-    Ok(())
-}
-
-pub fn part_object(part: &Part) -> Result<Object, HistoryError> {
-    let encoded = serde_json::to_value(part).map_err(|source| HistoryError::Encode { source })?;
-    let decoded = serde_json::from_value::<Json>(encoded)
-        .map_err(|source| HistoryError::Encode { source })?;
-    match decoded {
-        Json::Object(object) => Ok(object),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(HistoryError::PartShape)
-        }
+#[must_use]
+pub fn decode_thinking_part(thinking: &str, signature: &str) -> Object {
+    if thinking.len() <= MAX_THINKING_BYTES
+        && let Ok(Json::Object(mut object)) = serde_json::from_str::<Json>(thinking)
+        && !object.contains_key(SIGNATURE_KEY)
+    {
+        object.insert(SIGNATURE_KEY.to_owned(), Json::Text(signature.to_owned()));
+        return object;
     }
+    object!("text" => Json::Text(thinking.to_owned()), SIGNATURE_KEY => Json::Text(signature.to_owned()))
+}
+
+pub fn object_of<T>(value: T) -> Result<Object, HistoryError>
+where
+    T: Serialize,
+{
+    let encoded = serde_json::to_value(value).map_err(HistoryError::Encode)?;
+    match serde_json::from_value::<Json>(encoded).map_err(HistoryError::Encode)? {
+        Json::Object(object) => Ok(object),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Err(
+            HistoryError::Invalid("a content part did not encode as an object".to_owned()),
+        ),
+    }
+}
+
+pub fn push_media(parts: &mut Vec<Object>, request: &MediaRequest<'_>) -> Result<(), HistoryError> {
+    parts.push(object_of(process_media(request)?)?);
+    Ok(())
 }

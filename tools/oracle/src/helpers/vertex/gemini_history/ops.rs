@@ -83,11 +83,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
 }
 
 fn error_value(error: &HistoryError) -> Value {
+    let wire = error.wire();
     json!({"error": {
-        "status": error.status(),
-        "type": error.error_type(),
-        "param": error.param(),
-        "code": error.code(),
+        "status": wire.status,
+        "type": wire.error_type,
+        "param": wire.param,
+        "code": wire.code,
     }})
 }
 
