@@ -13,8 +13,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use super::request::{
-    get_complete_url, map_openai_params, transform_embedding_request, transform_request,
-    validate_environment,
+    get_complete_url, get_error_class, map_openai_params, transform_embedding_request,
+    transform_request, validate_environment,
 };
 use super::response::{CohereEmbeddingResponse, DecodeInput, transform_embedding_response};
 use super::usage::calculate_usage;
@@ -194,6 +194,27 @@ fn the_wire_defaults_match_litellm() {
         get_complete_url(Some("https://h/v2/embed")),
         "https://h/v2/embed"
     );
+}
+
+#[test]
+fn a_caller_authorization_beats_the_key_bearer() {
+    let headers = validate_environment(
+        Headers::from([(String::from("Authorization"), String::from("Bearer caller"))]),
+        Some(&SecretString::from("sk-test")),
+    );
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer caller")
+    );
+}
+
+#[test]
+fn the_error_class_keeps_the_status_and_drops_the_headers() {
+    let sent = Headers::from([(String::from("retry-after"), String::from("7"))]);
+    let error = get_error_class(String::from("slow down"), 429, &sent);
+    assert_eq!(error.status_code, 429);
+    assert_eq!(error.message, "slow down");
+    assert!(error.headers.is_none());
 }
 
 #[rstest]

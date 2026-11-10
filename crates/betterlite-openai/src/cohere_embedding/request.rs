@@ -5,7 +5,9 @@ use betterlite_prompts::media::base64_string::is_base64_encoded;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{CohereEmbeddingError, DEFAULT_COMPLETE_URL, DEFAULT_EMBEDDING_INPUT_TYPE};
+use crate::cohere_streams::cohere_error;
 use crate::embedding::EmbeddingInput;
+use crate::error::ProviderError;
 use crate::openai_base_config::Headers;
 
 #[must_use]
@@ -43,6 +45,17 @@ pub fn validate_environment(headers: Headers, api_key: Option<&SecretString>) ->
     }
     merged.extend(headers);
     merged
+}
+
+// CohereError carries only the status and the message, so the response headers are dropped
+#[must_use]
+// ast-grep-ignore: no-one-line-functions
+pub fn get_error_class(
+    error_message: String,
+    status_code: u16,
+    _headers: &Headers,
+) -> ProviderError {
+    cohere_error(status_code, error_message)
 }
 
 #[must_use]
