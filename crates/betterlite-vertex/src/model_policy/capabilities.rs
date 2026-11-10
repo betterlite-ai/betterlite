@@ -49,11 +49,8 @@ pub fn get_supports_system_message(
     provider: VertexCapabilityProvider,
     lookup: &dyn ModelCapabilityLookup,
 ) -> bool {
-    match lookup.supports(
-        CapabilityKind::SystemMessages,
-        model,
-        provider.lookup_name(),
-    ) {
+    let provider_name = provider.lookup_name();
+    match lookup.supports(CapabilityKind::SystemMessages, model, provider_name) {
         Ok(supported) => supported || model.contains("gemini/"),
         Err(error) => {
             tracing::warn!(
