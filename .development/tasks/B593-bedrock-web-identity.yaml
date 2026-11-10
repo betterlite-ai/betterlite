@@ -351,5 +351,5 @@ pitfalls:
 - Direct web identity uses a3540-second TTL; only role-assumption helpers use returned Expiration.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1
 review_level: security

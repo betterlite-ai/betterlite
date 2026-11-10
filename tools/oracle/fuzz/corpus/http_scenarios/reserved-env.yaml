@@ -1,0 +1,9 @@
+kind: http_scenario
+name: corpus-reserved-env
+config: |-
+  model_list: []
+env:
+  LITELLM_MASTER_KEY: caller-key
+steps:
+  - name: one
+    request: {method: GET, path: /one}

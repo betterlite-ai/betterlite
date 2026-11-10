@@ -1,0 +1,13 @@
+kind: helper
+name: attributes-response-id-and-model
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+    response:
+      id: resp-1
+      model: gpt-4o-mini
+env: {}
+compare: {ignore: []}

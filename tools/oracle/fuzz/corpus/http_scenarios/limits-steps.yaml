@@ -1,0 +1,72 @@
+kind: http_scenario
+name: corpus-33-steps
+config: |-
+  model_list: []
+env: {}
+steps:
+  - name: step-0
+    request: {method: GET, path: /step-0}
+  - name: step-1
+    request: {method: GET, path: /step-1}
+  - name: step-2
+    request: {method: GET, path: /step-2}
+  - name: step-3
+    request: {method: GET, path: /step-3}
+  - name: step-4
+    request: {method: GET, path: /step-4}
+  - name: step-5
+    request: {method: GET, path: /step-5}
+  - name: step-6
+    request: {method: GET, path: /step-6}
+  - name: step-7
+    request: {method: GET, path: /step-7}
+  - name: step-8
+    request: {method: GET, path: /step-8}
+  - name: step-9
+    request: {method: GET, path: /step-9}
+  - name: step-10
+    request: {method: GET, path: /step-10}
+  - name: step-11
+    request: {method: GET, path: /step-11}
+  - name: step-12
+    request: {method: GET, path: /step-12}
+  - name: step-13
+    request: {method: GET, path: /step-13}
+  - name: step-14
+    request: {method: GET, path: /step-14}
+  - name: step-15
+    request: {method: GET, path: /step-15}
+  - name: step-16
+    request: {method: GET, path: /step-16}
+  - name: step-17
+    request: {method: GET, path: /step-17}
+  - name: step-18
+    request: {method: GET, path: /step-18}
+  - name: step-19
+    request: {method: GET, path: /step-19}
+  - name: step-20
+    request: {method: GET, path: /step-20}
+  - name: step-21
+    request: {method: GET, path: /step-21}
+  - name: step-22
+    request: {method: GET, path: /step-22}
+  - name: step-23
+    request: {method: GET, path: /step-23}
+  - name: step-24
+    request: {method: GET, path: /step-24}
+  - name: step-25
+    request: {method: GET, path: /step-25}
+  - name: step-26
+    request: {method: GET, path: /step-26}
+  - name: step-27
+    request: {method: GET, path: /step-27}
+  - name: step-28
+    request: {method: GET, path: /step-28}
+  - name: step-29
+    request: {method: GET, path: /step-29}
+  - name: step-30
+    request: {method: GET, path: /step-30}
+  - name: step-31
+    request: {method: GET, path: /step-31}
+  - name: step-32
+    request: {method: GET, path: /step-32}
