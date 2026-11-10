@@ -1,11 +1,23 @@
-use std::fmt::Write as _;
+use std::fmt::{Result as FormatResult, Write as _};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 use super::float::render_float;
 
 pub type KeyObject = IndexMap<String, KeyValue>;
+
+const NON_PRINTABLE: [GeneralCategory; 8] = [
+    GeneralCategory::Control,
+    GeneralCategory::Format,
+    GeneralCategory::PrivateUse,
+    GeneralCategory::Surrogate,
+    GeneralCategory::Unassigned,
+    GeneralCategory::LineSeparator,
+    GeneralCategory::ParagraphSeparator,
+    GeneralCategory::SpaceSeparator,
+];
 
 // LiteLLM builds the key from the request kwargs, so a value keeps Python's str text; the caller's order is kept because the material concatenates params in request order.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -71,7 +83,7 @@ fn number_text(number: &serde_json::Number) -> String {
         .map_or_else(|| number.to_string(), render_float)
 }
 
-// Python repr() quotes with ' unless the text holds one and no ", and escapes only what is not printable.
+// Python repr() quotes with ' unless the text holds one and no ", and escapes every character str.isprintable() rejects.
 fn quote(text: &str) -> String {
     let delimiter = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -87,12 +99,26 @@ fn quote(text: &str) -> String {
             '\r' => rendered.push_str("\\r"),
             '\t' => rendered.push_str("\\t"),
             escaped if escaped == delimiter => rendered.extend(['\\', delimiter]),
-            escaped if escaped.is_control() => {
-                let _written = write!(&mut rendered, "\\x{:02x}", u32::from(escaped));
+            // Python counts only the space as printable among the separator categories, and escapes the control, format, private-use and unassigned ones.
+            other if other == ' ' || !NON_PRINTABLE.contains(&get_general_category(other)) => {
+                rendered.push(other);
             }
-            other => rendered.push(other),
+            other => {
+                let _written = write_escape(&mut rendered, other);
+            }
         }
     }
     rendered.push(delimiter);
     rendered
+}
+
+fn write_escape(rendered: &mut String, character: char) -> FormatResult {
+    let code = u32::from(character);
+    if code < 0x100 {
+        write!(rendered, "\\x{code:02x}")
+    } else if code < 0x1_0000 {
+        write!(rendered, "\\u{code:04x}")
+    } else {
+        write!(rendered, "\\U{code:08x}")
+    }
 }

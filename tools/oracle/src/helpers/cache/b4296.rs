@@ -121,16 +121,6 @@ fn hooks(set_verbose: bool) -> Result<Hooks, Box<crate::helpers::HelperError>> {
     })
 }
 
-const fn base_settings(cache_type: LiteLlmCacheType, mode: CacheMode) -> CacheKeySettings {
-    CacheKeySettings {
-        cache_type,
-        mode,
-        namespace: None,
-        semantic_cache_scope: SemanticCacheScope::Key,
-        include_provider_params: false,
-    }
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -139,7 +129,13 @@ impl crate::helpers::Helper for Op {
             Input::GetCacheKey(case) => cache_key(case),
             Input::ShouldUseCache(case) => Ok(json!({
                 "use_cache": should_use_cache(
-                    &base_settings(LiteLlmCacheType::Local, case.mode),
+                    &CacheKeySettings {
+                        cache_type: LiteLlmCacheType::Local,
+                        mode: case.mode,
+                        namespace: None,
+                        semantic_cache_scope: SemanticCacheScope::Key,
+                        include_provider_params: false,
+                    },
                     case.cache_control.as_ref(),
                 ),
             })),
@@ -165,10 +161,13 @@ fn cache_key(case: &CacheKeyInput) -> crate::helpers::HelperResult {
         litellm_params: case.litellm_params.clone(),
         cache_control: case.cache_control.clone(),
     };
-    let mut key_settings = base_settings(case.cache_type, CacheMode::DefaultOn);
-    key_settings.namespace.clone_from(&case.namespace);
-    key_settings.semantic_cache_scope = case.semantic_cache_scope;
-    key_settings.include_provider_params = case.include_provider_params;
+    let key_settings = CacheKeySettings {
+        cache_type: case.cache_type,
+        mode: CacheMode::DefaultOn,
+        namespace: case.namespace.clone(),
+        semantic_cache_scope: case.semantic_cache_scope,
+        include_provider_params: case.include_provider_params,
+    };
     let fixture_hooks = hooks(false)?;
     let key = get_cache_key(&mut request, &key_settings, &fixture_hooks).map_err(|error| {
         Box::new(crate::helpers::HelperError {

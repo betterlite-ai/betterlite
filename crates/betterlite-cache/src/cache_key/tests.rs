@@ -293,17 +293,25 @@ fn tenant_scope_prefers_the_first_metadata_source() {
     let mut null_request = with_params(vec![param("model", string("gpt-4"))]);
     null_request.metadata = Some(object(&[("user_api_key", KeyValue::Null)]));
     null_request.litellm_metadata = Some(object(&[("user_api_key", string("second"))]));
-    let mut expected = with_params(vec![param("model", string("gpt-4"))]);
-    expected.metadata = Some(object(&[("user_api_key", string("second"))]));
     let settings = settings_for(LiteLlmCacheType::RedisSemantic);
     assert_eq!(
         derive(&mut request, &settings),
-        derive(&mut expected, &settings)
+        "fe32ab3e9b588dfbdc5d8e518b869b34cf592026c9fdec0bb04039ab26bae1a5"
     );
     assert_eq!(
         derive(&mut null_request, &settings),
-        derive(&mut expected, &settings)
+        "c95ead47a44d0dcd8a329f1bdbd46df306034e6d42e7c6822ed1a7d1afef3e92"
     );
+}
+
+#[test]
+fn tenant_scope_reads_the_litellm_params_litellm_metadata() {
+    let mut request = with_params(vec![param("model", string("gpt-4"))]);
+    let mut params = empty_litellm_params();
+    params.litellm_metadata = Some(object(&[("user_api_key", string("key-hash"))]));
+    request.litellm_params = Some(params);
+    let key = derive(&mut request, &settings_for(LiteLlmCacheType::RedisSemantic));
+    assert_eq!(key, API_KEY_SCOPE);
 }
 
 #[test]
@@ -435,9 +443,21 @@ fn malformed_caching_groups_are_rejected() {
     string("audio.mp3"),
     "bdbb9837bd9f0dada1fddec3288c1993c666c15636164ab8fa18d8658888ce96"
 )]
+#[case::file_object_name_before_metadata_file_name(
+    Some(object(&[("file_name", string("metadata-name.mp3"))])),
+    None,
+    string("audio.mp3"),
+    "bdbb9837bd9f0dada1fddec3288c1993c666c15636164ab8fa18d8658888ce96"
+)]
 #[case::metadata_file_name(
     Some(object(&[("file_name", string("metadata-name.mp3"))])),
     None,
+    KeyValue::Null,
+    "e447f71e9c0d66b789eb92b8b006e37153b2ad095bb4e3530f76f345cb986c2d"
+)]
+#[case::metadata_file_name_before_params_file_name(
+    Some(object(&[("file_name", string("metadata-name.mp3"))])),
+    Some(string("params-name.mp3")),
     KeyValue::Null,
     "e447f71e9c0d66b789eb92b8b006e37153b2ad095bb4e3530f76f345cb986c2d"
 )]
@@ -594,7 +614,7 @@ fn print_verbose_prints_derivation_steps_only_when_verbose() {
             Payload::String(format!("hashed cache key (SHA-256): {key}")),
             Payload::String(format!("final hashed key: {key}")),
             Payload::String(format!(
-                "created cache key: {key} (source material length: 10)"
+                "created cache key: {key} (source material length: 12)"
             )),
         ]
     );
@@ -673,6 +693,26 @@ fn values_render_as_python_str(#[case] value: KeyValue, #[case] expected: &str) 
     KeyValue::Object(object(&[("name", string("he said \"it's\""))])),
     "{'name': 'he said \"it\\'s\"'}"
 )]
+#[case::non_breaking_space(
+    KeyValue::Object(object(&[("name", string("a\u{a0}b"))])),
+    "{'name': 'a\\xa0b'}"
+)]
+#[case::zero_width_space(
+    KeyValue::Object(object(&[("name", string("a\u{200b}b"))])),
+    "{'name': 'a\\u200bb'}"
+)]
+#[case::line_separator(
+    KeyValue::Object(object(&[("name", string("a\u{2028}b"))])),
+    "{'name': 'a\\u2028b'}"
+)]
+#[case::astral_format_character(
+    KeyValue::Object(object(&[("name", string("a\u{e0001}b"))])),
+    "{'name': 'a\\U000e0001b'}"
+)]
+#[case::space_stays_printable(
+    KeyValue::Object(object(&[("name", string("a b"))])),
+    "{'name': 'a b'}"
+)]
 fn nested_strings_render_as_python_repr(#[case] value: KeyValue, #[case] expected: &str) {
     assert_eq!(value.render(), expected);
 }
@@ -680,6 +720,7 @@ fn nested_strings_render_as_python_repr(#[case] value: KeyValue, #[case] expecte
 #[rstest]
 #[case::tenth(0.7_f64, "0.7")]
 #[case::one(1.0_f64, "1.0")]
+#[case::fifteen(15.0_f64, "15.0")]
 #[case::hundred(100.0_f64, "100.0")]
 #[case::thousand_fraction(1_234.5_f64, "1234.5")]
 #[case::ten_thousandths(0.0001_f64, "0.0001")]

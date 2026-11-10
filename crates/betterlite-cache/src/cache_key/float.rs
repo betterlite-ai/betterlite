@@ -50,5 +50,8 @@ fn fixed(digits: &str, point: i32) -> String {
         let zeros = point_length.saturating_sub(digits.len());
         return format!("{digits}{}.0", "0".repeat(zeros));
     };
-    format!("{whole}.{fraction}")
+    // A zero decimal point has no whole part and a point at the last digit has no fraction, and Python prints both as 0.
+    let whole_part = if whole.is_empty() { "0" } else { whole };
+    let fraction_part = if fraction.is_empty() { "0" } else { fraction };
+    format!("{whole_part}.{fraction_part}")
 }
