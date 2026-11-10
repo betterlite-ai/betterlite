@@ -74,22 +74,15 @@ class PeriodicExportingMetricReader:
 
 class Resource:
     def __init__(self, attributes: Mapping[str, str | None]) -> None:
-        self._attributes = {
+        self.attributes = {
             key: value for key, value in attributes.items() if key and value is not None
         }
-
-    @property
-    def attributes(self) -> dict[str, str]:
-        return dict(self._attributes)
 
     @staticmethod
     def create(attributes: Mapping[str, str | None] | None = None) -> "Resource":
         merged = OTELResourceDetector().detect().attributes
-        merged.update(
-            {key: value for key, value in (attributes or {}).items() if key and value is not None}
-        )
-        if not merged.get(SERVICE_NAME):
-            merged[SERVICE_NAME] = "unknown_service"
+        merged.update({key: value for key, value in (attributes or {}).items() if value})
+        merged.setdefault(SERVICE_NAME, "unknown_service")
         return Resource(merged)
 
     def merge(self, other: "Resource") -> "Resource":
@@ -118,14 +111,9 @@ def _install(name: str, attributes: Mapping[str, object]) -> None:
 
 
 SDK_PACKAGES = (
-    "opentelemetry.sdk",
-    "opentelemetry.sdk.trace",
-    "opentelemetry.sdk._logs",
-    "opentelemetry.sdk.metrics",
-    "opentelemetry.exporter",
-    "opentelemetry.exporter.otlp",
-    "opentelemetry.exporter.otlp.proto",
-    "opentelemetry.exporter.otlp.proto.http",
+    "opentelemetry.sdk", "opentelemetry.sdk.trace", "opentelemetry.sdk._logs",
+    "opentelemetry.sdk.metrics", "opentelemetry.exporter", "opentelemetry.exporter.otlp",
+    "opentelemetry.exporter.otlp.proto", "opentelemetry.exporter.otlp.proto.http",
     "opentelemetry.exporter.otlp.proto.grpc",
 )
 SDK_MODULES = {
@@ -143,7 +131,9 @@ SDK_MODULES = {
         "ConsoleMetricExporter": ConsoleExporter,
         "PeriodicExportingMetricReader": PeriodicExportingMetricReader,
     },
-    "opentelemetry.sdk.resources": {"OTELResourceDetector": OTELResourceDetector},
+    "opentelemetry.sdk.resources": {
+        "OTELResourceDetector": OTELResourceDetector, "Resource": Resource
+    },
 }
 OTLP_EXPORTERS = (
     ("trace_exporter", "OTLPSpanExporter"),
