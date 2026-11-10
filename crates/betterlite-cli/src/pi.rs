@@ -129,18 +129,10 @@ impl PiSyncError {
 
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
-        match self {
-            Self::ListingStatus { status } => Some(*status),
-            Self::Unreachable { .. }
-            | Self::ListingJson { .. }
-            | Self::ListingInvalid { .. }
-            | Self::NoModels
-            | Self::NothingToRun
-            | Self::ReadModels { .. }
-            | Self::ParseModels { .. }
-            | Self::Encode { .. }
-            | Self::WriteModels { .. }
-            | Self::NoHome => None,
+        if let Self::ListingStatus { status } = self {
+            Some(*status)
+        } else {
+            None
         }
     }
 }
