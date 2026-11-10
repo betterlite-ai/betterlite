@@ -64,8 +64,8 @@ struct RawSkill {
     #[serde(default)]
     latest_version: Option<String>,
     source: String,
-    #[serde(default)]
-    r#type: Option<String>,
+    #[serde(default = "default_skill_type")]
+    r#type: String,
     updated_at: String,
     #[serde(default)]
     description: Option<String>,
@@ -78,15 +78,27 @@ struct RawSkillList {
     data: Vec<RawSkill>,
     #[serde(default)]
     next_page: Option<String>,
-    #[serde(default)]
-    has_more: Option<bool>,
+    #[serde(default = "default_has_more")]
+    has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawDeletedSkill {
     id: String,
-    #[serde(default)]
-    r#type: Option<String>,
+    #[serde(default = "default_deleted_skill_type")]
+    r#type: String,
+}
+
+fn default_skill_type() -> String {
+    SKILL_TYPE.to_owned()
+}
+
+fn default_deleted_skill_type() -> String {
+    DELETED_SKILL_TYPE.to_owned()
+}
+
+const fn default_has_more() -> bool {
+    false
 }
 
 impl From<RawSkill> for Skill {
@@ -97,7 +109,7 @@ impl From<RawSkill> for Skill {
             display_title: raw.display_title,
             latest_version: raw.latest_version,
             source: raw.source,
-            r#type: raw.r#type.unwrap_or_else(|| SKILL_TYPE.to_owned()),
+            r#type: raw.r#type,
             updated_at: raw.updated_at,
             description: raw.description,
             search_score: raw.search_score,
@@ -110,7 +122,7 @@ impl From<RawSkillList> for ListSkillsResponse {
         Self {
             data: raw.data.into_iter().map(Skill::from).collect(),
             next_page: raw.next_page,
-            has_more: raw.has_more.unwrap_or(false),
+            has_more: raw.has_more,
         }
     }
 }
@@ -119,7 +131,7 @@ impl From<RawDeletedSkill> for DeleteSkillResponse {
     fn from(raw: RawDeletedSkill) -> Self {
         Self {
             id: raw.id,
-            r#type: raw.r#type.unwrap_or_else(|| DELETED_SKILL_TYPE.to_owned()),
+            r#type: raw.r#type,
         }
     }
 }

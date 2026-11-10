@@ -107,13 +107,21 @@ fn skills_wire_types_skill_serializes_every_declared_field() {
 }
 
 #[test]
-fn skills_wire_types_skill_null_type_takes_the_default_and_ignores_unknown_fields() {
+fn skills_wire_types_skill_ignores_unknown_fields_and_keeps_null_optionals() {
     let skill = serde_json::from_slice::<Skill>(
-        br#"{"id":"skill_1","created_at":"a","source":"custom","updated_at":"b","type":null,"display_title":null,"unknown":1}"#,
+        br#"{"id":"skill_1","created_at":"a","source":"custom","updated_at":"b","display_title":null,"unknown":1}"#,
     )
     .unwrap();
     assert_eq!(skill.r#type, "skill");
     assert_eq!(skill.display_title, None);
+}
+
+#[test]
+fn skills_wire_types_skill_rejects_a_null_type() {
+    let _error = serde_json::from_slice::<Skill>(
+        br#"{"id":"skill_1","created_at":"a","source":"custom","updated_at":"b","type":null}"#,
+    )
+    .unwrap_err();
 }
 
 #[rstest]
@@ -153,12 +161,12 @@ fn skills_wire_types_list_response_defaults_next_page_and_has_more() {
     .unwrap();
     assert_eq!(full.next_page.as_deref(), Some("p2"));
     assert!(full.has_more);
-    let nulls = serde_json::from_slice::<ListSkillsResponse>(
-        br#"{"data":[],"next_page":null,"has_more":null}"#,
-    )
-    .unwrap();
-    assert_eq!(nulls.next_page, None);
-    assert!(!nulls.has_more);
+    let null_page =
+        serde_json::from_slice::<ListSkillsResponse>(br#"{"data":[],"next_page":null}"#).unwrap();
+    assert_eq!(null_page.next_page, None);
+    assert!(!null_page.has_more);
+    let _error = serde_json::from_slice::<ListSkillsResponse>(br#"{"data":[],"has_more":null}"#)
+        .unwrap_err();
 }
 
 #[test]
@@ -181,9 +189,8 @@ fn skills_wire_types_delete_response_defaults_the_type() {
         serde_json::from_slice::<DeleteSkillResponse>(br#"{"id":"skill_2","type":"custom"}"#)
             .unwrap();
     assert_eq!(typed.r#type, "custom");
-    let null_type =
-        serde_json::from_slice::<DeleteSkillResponse>(br#"{"id":"skill_3","type":null}"#).unwrap();
-    assert_eq!(null_type.r#type, "skill_deleted");
+    let _error = serde_json::from_slice::<DeleteSkillResponse>(br#"{"id":"skill_3","type":null}"#)
+        .unwrap_err();
 }
 
 #[test]
