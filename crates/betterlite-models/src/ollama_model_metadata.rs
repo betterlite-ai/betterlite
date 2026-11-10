@@ -73,11 +73,8 @@ pub struct RuntimeModelInfo {
     pub supports_function_calling: Option<bool>,
     pub input_cost_per_token: Decimal,
     pub output_cost_per_token: Decimal,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_input_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<i64>,
 }
 

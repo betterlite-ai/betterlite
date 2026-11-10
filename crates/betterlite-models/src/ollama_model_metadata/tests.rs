@@ -7,7 +7,7 @@ use std::sync::{Mutex, PoisonError};
 
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::reply::{MAX_REPLY_BYTES, OllamaMetadataError, decode_ollama_model_reply};
 use super::{
@@ -26,10 +26,10 @@ enum FixtureOutcome {
     Failure,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 struct Recorded {
     url: String,
-    authorization: Option<String>,
+    authorization: Option<SecretString>,
     name: String,
 }
 
@@ -71,6 +71,13 @@ impl FixtureTransport {
     }
 }
 
+fn authorization(recorded: &Recorded) -> Option<&str> {
+    recorded
+        .authorization
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
+}
+
 impl OllamaTransport for FixtureTransport {
     type Error = FixtureFailure;
 
@@ -79,7 +86,7 @@ impl OllamaTransport for FixtureTransport {
             .headers
             .iter()
             .find(|(name, _)| *name == "Authorization")
-            .map(|(_, value)| value.expose_secret().to_owned());
+            .map(|(_, value)| SecretString::from(value.expose_secret().to_owned()));
         self.recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -222,7 +229,7 @@ fn base_selection() {
     for (explicit_base, expected_base) in cases {
         let (recorded, _) = resolve(&fixture, "llama3", explicit_base, None);
         assert_eq!(recorded.url, format!("{expected_base}/api/show"));
-        assert_eq!(recorded.authorization, None);
+        assert!(authorization(&recorded).is_none());
     }
     let fallback = Fixture {
         settings: &without_env,
@@ -246,17 +253,11 @@ fn key_precedence_environment() {
         catalog: &empty_catalog,
     };
     let (explicit, _) = resolve(&fixture, "llama3", None, Some("explicit-key"));
-    assert_eq!(
-        explicit.authorization.as_deref(),
-        Some("Bearer explicit-key")
-    );
+    assert_eq!(authorization(&explicit), Some("Bearer explicit-key"));
     let (environment, _) = resolve(&fixture, "llama3", None, None);
-    assert_eq!(environment.authorization.as_deref(), Some("Bearer env-key"));
+    assert_eq!(authorization(&environment), Some("Bearer env-key"));
     let (empty_explicit, _) = resolve(&fixture, "llama3", None, Some(""));
-    assert_eq!(
-        empty_explicit.authorization.as_deref(),
-        Some("Bearer env-key")
-    );
+    assert_eq!(authorization(&empty_explicit), Some("Bearer env-key"));
 }
 
 fn key_precedence_globals() {
@@ -269,7 +270,7 @@ fn key_precedence_globals() {
         catalog: &empty_catalog,
     };
     let (global, _) = resolve(&global_fixture, "llama3", None, None);
-    assert_eq!(global.authorization.as_deref(), Some("Bearer global-key"));
+    assert_eq!(authorization(&global), Some("Bearer global-key"));
 
     let openai_only = globals(None, Some("openai-key"), Some("manager-key"));
     let openai_fixture = Fixture {
@@ -278,7 +279,7 @@ fn key_precedence_globals() {
         catalog: &empty_catalog,
     };
     let (openai, _) = resolve(&openai_fixture, "llama3", None, None);
-    assert_eq!(openai.authorization.as_deref(), Some("Bearer openai-key"));
+    assert_eq!(authorization(&openai), Some("Bearer openai-key"));
 
     let managed_only = globals(None, None, Some("manager-key"));
     let managed_fixture = Fixture {
@@ -287,7 +288,7 @@ fn key_precedence_globals() {
         catalog: &empty_catalog,
     };
     let (managed, _) = resolve(&managed_fixture, "llama3", None, None);
-    assert_eq!(managed.authorization.as_deref(), Some("Bearer manager-key"));
+    assert_eq!(authorization(&managed), Some("Bearer manager-key"));
 }
 
 fn key_precedence() {
@@ -305,9 +306,9 @@ fn ambient_auth_suppression() {
         catalog: &empty_catalog,
     };
     let (supplied_base, _) = resolve(&fixture, "llama3", Some("http://explicit:1"), None);
-    assert_eq!(supplied_base.authorization, None);
+    assert!(authorization(&supplied_base).is_none());
     let (supplied_empty_base, _) = resolve(&fixture, "llama3", Some(""), None);
-    assert_eq!(supplied_empty_base.authorization, None);
+    assert!(authorization(&supplied_empty_base).is_none());
     assert_eq!(
         supplied_empty_base.url,
         format!("{DEFAULT_API_BASE}/api/show")
@@ -318,17 +319,14 @@ fn ambient_auth_suppression() {
         Some("http://explicit:1"),
         Some("explicit-key"),
     );
-    assert_eq!(
-        with_key.authorization.as_deref(),
-        Some("Bearer explicit-key")
-    );
+    assert_eq!(authorization(&with_key), Some("Bearer explicit-key"));
     let (empty_base_with_key, _) = resolve(&fixture, "llama3", Some(""), Some("explicit-key"));
     assert_eq!(
-        empty_base_with_key.authorization.as_deref(),
+        authorization(&empty_base_with_key),
         Some("Bearer explicit-key")
     );
     let (empty_base_empty_key, _) = resolve(&fixture, "llama3", Some(""), Some(""));
-    assert_eq!(empty_base_empty_key.authorization, None);
+    assert!(authorization(&empty_base_empty_key).is_none());
     let (stripped, _) = resolve(&fixture, "ollama/llama3", None, None);
     assert_eq!(stripped.name, "llama3");
     let (chat_stripped, _) = resolve(&fixture, "ollama_chat/llama3", None, None);
@@ -428,7 +426,7 @@ fn query_request_shape() {
     let (recorded, info) = resolve(&fixture, "ollama/llama3:8b", None, None);
     assert_eq!(recorded.url, "http://host:9/api/show");
     assert_eq!(recorded.name, "llama3:8b");
-    assert_eq!(recorded.authorization.as_deref(), Some("Bearer secret-key"));
+    assert_eq!(authorization(&recorded), Some("Bearer secret-key"));
     assert_eq!(info, successful_info("llama3:8b", None, false));
 }
 
@@ -457,7 +455,7 @@ fn query_status_fallbacks() {
         let recorded = transport.only_request();
         assert_eq!(recorded.url, format!("{DEFAULT_API_BASE}/api/show"));
         assert_eq!(recorded.name, "llama3:8b");
-        assert_eq!(recorded.authorization, None);
+        assert!(authorization(&recorded).is_none());
     }
     let failing = FixtureTransport::failing();
     let resolver = OllamaModelInfo {
@@ -703,14 +701,8 @@ fn isolation_first_calls() {
     let second_request = second_transport.only_request();
     assert_eq!(first_request.url, "http://first:1/api/show");
     assert_eq!(second_request.url, "http://second:2/api/show");
-    assert_eq!(
-        first_request.authorization.as_deref(),
-        Some("Bearer first-key")
-    );
-    assert_eq!(
-        second_request.authorization.as_deref(),
-        Some("Bearer second-key")
-    );
+    assert_eq!(authorization(&first_request), Some("Bearer first-key"));
+    assert_eq!(authorization(&second_request), Some("Bearer second-key"));
 }
 
 fn isolation_static_checks() {
@@ -745,7 +737,7 @@ fn isolation_static_checks() {
             .unwrap()
             .is_none()
     );
-    assert!(first_transport.only_request().authorization.is_some());
+    assert!(authorization(&first_transport.only_request()).is_some());
     assert!(second_transport.recorded().is_empty());
 }
 
@@ -785,7 +777,7 @@ fn secret_safe_debug_outputs() {
     let recorded = transport.only_request();
     let expected_authorization = format!("Bearer {FIXTURE_KEY}");
     assert_eq!(
-        recorded.authorization.as_deref(),
+        authorization(&recorded),
         Some(expected_authorization.as_str())
     );
     let request = debug_request(&recorded, FIXTURE_KEY);

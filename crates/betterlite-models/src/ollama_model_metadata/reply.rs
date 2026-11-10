@@ -1,8 +1,9 @@
 use indexmap::IndexMap;
-use serde::Deserialize;
 use serde_json::value::RawValue;
 
 const CONTEXT_LENGTH_MARKER: &str = "context_length";
+const TEMPLATE_FIELD: &str = "template";
+const MODEL_INFO_FIELD: &str = "model_info";
 pub(super) const MAX_REPLY_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -29,14 +30,7 @@ pub enum OllamaMetadataError {
     },
 }
 
-#[derive(Deserialize)]
-struct RawReply {
-    #[serde(default)]
-    template: Option<String>,
-    #[serde(default)]
-    model_info: IndexMap<String, Box<RawValue>>,
-}
-
+// a struct derive would also accept a top-level array, which the source rejects on its first .get
 pub fn decode_ollama_model_reply(bytes: &[u8]) -> Result<ShowReply, OllamaMetadataError> {
     if bytes.len() > MAX_REPLY_BYTES {
         return Err(OllamaMetadataError::ReplyTooLarge {
@@ -44,30 +38,58 @@ pub fn decode_ollama_model_reply(bytes: &[u8]) -> Result<ShowReply, OllamaMetada
             limit: MAX_REPLY_BYTES,
         });
     }
+    let raw = decode_object(bytes)?;
+    Ok(ShowReply {
+        template: decode_template(&raw)?.unwrap_or_default(),
+        context_length: decode_context_length(&raw)?,
+    })
+}
+
+fn decode_object(bytes: &[u8]) -> Result<IndexMap<String, Box<RawValue>>, OllamaMetadataError> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    let raw: RawReply = serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+    serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
         OllamaMetadataError::Reply {
             path: error.path().to_string(),
             source: error.into_inner(),
         }
-    })?;
-    let first_context_length = raw
-        .model_info
-        .iter()
-        .find(|(key, _)| key.contains(CONTEXT_LENGTH_MARKER));
-    let context_length = match first_context_length {
-        Some((key, value)) => {
-            serde_json::from_str::<Option<i64>>(value.get()).map_err(|source| {
-                OllamaMetadataError::ReplyField {
-                    field: format!("model_info.{key}"),
-                    source,
-                }
+    })
+}
+
+fn decode_template(
+    raw: &IndexMap<String, Box<RawValue>>,
+) -> Result<Option<String>, OllamaMetadataError> {
+    raw.get(TEMPLATE_FIELD).map_or(Ok(None), |value| {
+        serde_json::from_str::<Option<String>>(value.get()).map_err(|source| {
+            OllamaMetadataError::ReplyField {
+                field: TEMPLATE_FIELD.to_owned(),
+                source,
+            }
+        })
+    })
+}
+
+fn decode_context_length(
+    raw: &IndexMap<String, Box<RawValue>>,
+) -> Result<Option<i64>, OllamaMetadataError> {
+    let model_info: IndexMap<String, Box<RawValue>> = match raw.get(MODEL_INFO_FIELD) {
+        Some(value) => {
+            serde_json::from_str(value.get()).map_err(|source| OllamaMetadataError::ReplyField {
+                field: MODEL_INFO_FIELD.to_owned(),
+                source,
             })?
         }
-        None => None,
+        None => IndexMap::new(),
     };
-    Ok(ShowReply {
-        template: raw.template.unwrap_or_default(),
-        context_length,
-    })
+    let first_context_length = model_info
+        .iter()
+        .find(|(key, _)| key.contains(CONTEXT_LENGTH_MARKER));
+    match first_context_length {
+        Some((key, value)) => serde_json::from_str::<Option<i64>>(value.get()).map_err(|source| {
+            OllamaMetadataError::ReplyField {
+                field: format!("{MODEL_INFO_FIELD}.{key}"),
+                source,
+            }
+        }),
+        None => Ok(None),
+    }
 }
