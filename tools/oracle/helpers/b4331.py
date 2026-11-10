@@ -51,22 +51,10 @@ def integer_value(value: Json, name: str) -> int:
     return value
 
 
-def optional_integer(value: Json, name: str) -> int | None:
-    if value is None:
-        return None
-    return integer_value(value, name)
-
-
 def number_value(value: Json, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number")
     return float(value)
-
-
-def boolean_value(value: Json, name: str) -> bool:
-    if not isinstance(value, bool):
-        raise ValueError(f"{name} must be a boolean")
-    return value
 
 
 def reply_value(spec: Json) -> object:
@@ -128,19 +116,16 @@ class FakeClient:
 def build_cache(spec: dict[str, Json], client: FakeClient) -> RedisCache:
     cache = object.__new__(RedisCache)
     logger = SimpleNamespace(
-        async_service_success_hook=noop_hook,
-        async_service_failure_hook=noop_hook,
+        async_service_success_hook=noop_hook, async_service_failure_hook=noop_hook
     )
-    fields: dict[str, object] = {
-        "namespace": spec.get("namespace"),
-        "default_ttl": DEFAULT_TTL,
-        "redis_kwargs": {"host": string_value(spec.get("setting"), "setting"), "port": 6379},
-        "_circuit_breaker": RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60),
-        "service_logger_obj": logger,
-        "init_async_client": client.init_async_client,
-    }
-    for name, value in fields.items():
-        object.__setattr__(cache, name, value)
+    kwargs = {"host": string_value(spec.get("setting"), "setting"), "port": 6379}
+    breaker = RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60)
+    object.__setattr__(cache, "namespace", spec.get("namespace"))
+    object.__setattr__(cache, "default_ttl", DEFAULT_TTL)
+    object.__setattr__(cache, "redis_kwargs", kwargs)
+    object.__setattr__(cache, "_circuit_breaker", breaker)
+    object.__setattr__(cache, "service_logger_obj", logger)
+    object.__setattr__(cache, "init_async_client", client.init_async_client)
     return cache
 
 
@@ -151,23 +136,14 @@ class BatchEntry:
         self.caches: list[int] = [cache]
 
 
-def await_value(value: object) -> Json:
-    if isinstance(value, Mapping):
-        entries = cast("Mapping[object, object]", value)
-        return {
-            string_value(cast(Json, key), "key"): item is not None
-            for key, item in entries.items()
-        }
-    if isinstance(value, float):
-        return value
-    raise ValueError(f"unexpected batch value {type(value).__name__}")
-
-
 class Scenario:
     def __init__(self, call: dict[str, Json]) -> None:
         self.call = call
         self.deadline = integer_value(call.get("deadline_millis"), "deadline_millis") / 1000
-        self.in_scope = boolean_value(call.get("in_scope"), "in_scope")
+        in_scope = call.get("in_scope")
+        if not isinstance(in_scope, bool):
+            raise ValueError("in_scope must be a boolean")
+        self.in_scope = in_scope
         self.clients: dict[str, FakeClient] = {}
         self.caches: list[RedisCache] = []
         self.requests: list[RequestRedisBatches] = []
@@ -177,9 +153,6 @@ class Scenario:
         self.awaited: list[Json] = []
         self.nested_batches: list[Json] = []
         self.prefetch_steps: list[Json] = []
-
-    def run(self) -> Json:
-        return asyncio.run(self.drive())
 
     async def drive(self) -> Json:
         self.connect_caches()
@@ -281,10 +254,11 @@ class Scenario:
         else:
             batch = self.requests[request].post_call(self.caches[cache])
         _ = self.record_batch(batch, "post_call", cache)
+        ttl = spec.get("ttl")
         handle = batch.increment(
             string_value(spec.get("key"), "key"),
             number_value(spec.get("value"), "value"),
-            optional_integer(spec.get("ttl"), "ttl"),
+            None if ttl is None else integer_value(ttl, "ttl"),
         )
         self.handles.append(handle)
 
@@ -298,9 +272,17 @@ class Scenario:
         except Exception:  # noqa: BLE001 - the wire contract carries every failure
             self.awaited.append({"handle": index, "ok": False})
             return
-        self.awaited.append(
-            {"handle": index, "ok": True, "value": await_value(value)}
-        )
+        if isinstance(value, Mapping):
+            entries = cast("Mapping[object, object]", value)
+            projected: Json = {
+                string_value(cast(Json, key), "key"): item is not None
+                for key, item in entries.items()
+            }
+        elif isinstance(value, float):
+            projected = value
+        else:
+            raise ValueError(f"unexpected batch value {type(value).__name__}")
+        self.awaited.append({"handle": index, "ok": True, "value": projected})
 
     async def nested(self, cache: int) -> None:
         cached = self.caches[cache]
@@ -334,20 +316,15 @@ class Scenario:
         request = self.active_request()
         slot = string_value(step.get("slot"), "slot")
         value = step.get("value")
+        taken: Json = None
+        action = "take"
         if value is not None:
+            action = "arm"
             request.prefetched[slot] = string_value(value, "value")
-            self.prefetch_steps.append(
-                {"action": "arm", "slot": slot, "armed": slot in request.prefetched}
-            )
-            return
-        taken = cast(Json, request.prefetched.pop(slot, None))
+        else:
+            taken = cast(Json, request.prefetched.pop(slot, None))
         self.prefetch_steps.append(
-            {
-                "action": "take",
-                "slot": slot,
-                "taken": taken,
-                "armed": slot in request.prefetched,
-            }
+            {"action": action, "slot": slot, "taken": taken, "armed": slot in request.prefetched}
         )
 
     def active_request(self) -> RequestRedisBatches:
@@ -397,4 +374,4 @@ class Scenario:
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    return Scenario(input_value).run()
+    return asyncio.run(Scenario(input_value).drive())

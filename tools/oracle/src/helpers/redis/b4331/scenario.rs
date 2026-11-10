@@ -110,7 +110,16 @@ impl<'call> Scenario<'call> {
 
     async fn connect(&mut self, spec: &CacheSpec) -> Result<(), Box<HelperError>> {
         if !self.servers.contains_key(&spec.setting) {
-            let server = self.start_server(&spec.setting).await?;
+            let server = FakeServer::start()
+                .await
+                .map_err(|error| invalid(error.to_string()))?;
+            if let Some(scripts) = self.call.replies.get(&spec.setting) {
+                for (command, replies) in scripts {
+                    for reply in replies {
+                        server.script(command, reply.clone());
+                    }
+                }
+            }
             self.servers.insert(spec.setting.clone(), server);
         }
         let cache = {
@@ -124,20 +133,6 @@ impl<'call> Scenario<'call> {
         };
         self.caches.push(cache);
         Ok(())
-    }
-
-    async fn start_server(&self, setting: &str) -> Result<FakeServer, Box<HelperError>> {
-        let server = FakeServer::start()
-            .await
-            .map_err(|error| invalid(error.to_string()))?;
-        if let Some(scripts) = self.call.replies.get(setting) {
-            for (command, replies) in scripts {
-                for reply in replies {
-                    server.script(command, reply.clone());
-                }
-            }
-        }
-        Ok(server)
     }
 
     async fn walk(&mut self) -> Result<(), Box<HelperError>> {

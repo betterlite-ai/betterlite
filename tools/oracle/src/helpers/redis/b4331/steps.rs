@@ -1,10 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::batch::MgetValues;
 use betterlite_redis::request_batch::registry::drain_post_call_redis_batches;
 use betterlite_redis::request_batch::scope::{
-    active_post_call_redis_batch, active_request_redis_batch, active_request_redis_batches,
-    flush_post_call_redis_batches, request_redis_batch_scope,
+    active_post_call_redis_batch, active_request_redis_batch, flush_post_call_redis_batches,
+    request_redis_batch_scope,
 };
 use serde_json::{Value as Json, json};
 use tokio::time::sleep;
@@ -90,10 +91,10 @@ impl Scenario<'_> {
         self.record_batch(&before_batch, "request", cache);
         let deadline = self.deadline;
         let inside = request_redis_batch_scope(deadline, async {
-            let request = Self::active_request()?;
-            let batch = active_request_redis_batch(&cached)
-                .ok_or_else(|| invalid("the nested scope has no batch"))?;
-            Ok::<_, Box<HelperError>>((request, batch))
+            match (Self::active_request(), active_request_redis_batch(&cached)) {
+                (Ok(request), Some(batch)) => Ok((request, batch)),
+                _ => Err(invalid("the nested scope lost the outer request or batch")),
+            }
         })
         .await
         .1?;
@@ -120,29 +121,22 @@ impl Scenario<'_> {
 
     fn prefetch(&mut self, action: Prefetch) -> Result<(), Box<HelperError>> {
         let request = Self::active_request()?;
-        let entry = match action {
+        let (kind, slot, taken) = match action {
             Prefetch::Arm { slot, value } => {
                 drop(request.arm_prefetch(&slot, Box::new(value)));
-                json!({
-                    "action": "arm",
-                    "slot": slot,
-                    "armed": request.prefetch_armed(&slot),
-                })
+                ("arm", slot, Json::Null)
             }
             Prefetch::Take { slot } => {
                 let taken = request
                     .take_prefetch(&slot)
                     .and_then(|value| value.downcast::<String>().ok())
                     .map(|value| *value);
-                json!({
-                    "action": "take",
-                    "slot": slot,
-                    "taken": taken,
-                    "armed": request.prefetch_armed(&slot),
-                })
+                ("take", slot, taken.map_or(Json::Null, Json::String))
             }
         };
-        self.prefetch.push(entry);
+        let armed = request.prefetch_armed(&slot);
+        self.prefetch
+            .push(json!({"action": kind, "slot": slot, "taken": taken, "armed": armed}));
         Ok(())
     }
 }

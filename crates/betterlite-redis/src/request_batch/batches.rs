@@ -85,33 +85,29 @@ impl RequestRedisBatches {
     }
 
     pub async fn flush_all(&self) {
-        let pending: Vec<Arc<RedisBatch>> = {
-            let batches = lock(&self.batches);
-            batches
-                .values()
-                .filter(|batch| batch.pending() > 0)
-                .cloned()
-                .collect()
-        };
-        join_all(pending.iter().map(|batch| batch.flush())).await;
+        join_all(
+            Self::pending(&self.batches)
+                .iter()
+                .map(|batch| batch.flush()),
+        )
+        .await;
         let post_call_pending = {
             let post_call = lock(&self.post_call);
             post_call.values().any(|batch| batch.pending() > 0)
         };
         if !post_call_pending {
-            let deadline = lock(&self.deadline).take();
-            if let Some(token) = deadline {
-                token.cancel();
-            }
+            self.cancel_deadline();
         }
     }
 
     pub async fn flush_post_call(self: &Arc<Self>) {
-        let deadline = lock(&self.deadline).take();
-        if let Some(token) = deadline {
-            token.cancel();
-        }
-        self.flush_pending_post_call().await;
+        self.cancel_deadline();
+        join_all(
+            Self::pending(&self.post_call)
+                .iter()
+                .map(|batch| batch.flush()),
+        )
+        .await;
         self.discard_if_idle();
     }
 
@@ -135,6 +131,29 @@ impl RequestRedisBatches {
         match self.prefetched.lock() {
             Ok(slots) => slots.contains_key(name),
             Err(poisoned) => poisoned.into_inner().contains_key(name),
+        }
+    }
+
+    fn pending(slots: &Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>) -> Vec<Arc<RedisBatch>> {
+        match slots.lock() {
+            Ok(batches) => batches
+                .values()
+                .filter(|batch| batch.pending() > 0)
+                .cloned()
+                .collect(),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .values()
+                .filter(|batch| batch.pending() > 0)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    fn cancel_deadline(&self) {
+        let deadline = lock(&self.deadline).take();
+        if let Some(token) = deadline {
+            token.cancel();
         }
     }
 
@@ -192,15 +211,12 @@ impl RequestRedisBatches {
     }
 
     async fn flush_pending_post_call(&self) {
-        let pending: Vec<Arc<RedisBatch>> = {
-            let post_call = lock(&self.post_call);
-            post_call
-                .values()
-                .filter(|batch| batch.pending() > 0)
-                .cloned()
-                .collect()
-        };
-        join_all(pending.iter().map(|batch| batch.flush())).await;
+        join_all(
+            Self::pending(&self.post_call)
+                .iter()
+                .map(|batch| batch.flush()),
+        )
+        .await;
     }
 
     fn discard_if_idle(self: &Arc<Self>) {
