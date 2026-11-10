@@ -18,5 +18,11 @@ call:
           - azure_ad_token: os.environ/OIDC_ASSERTION
         replies:
           - {status: 200, body: '{}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"","expires_in":3600}'}
 env: {}
 compare: {ignore: []}

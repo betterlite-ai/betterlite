@@ -220,6 +220,8 @@ fn missing_access_token() {
     assert!(matches!(&absent, OidcExchangeError::AccessTokenMissing));
     let both = token_error("{}");
     assert!(matches!(&both, OidcExchangeError::AccessTokenMissing));
+    // only null or a missing field is absent, so an empty token is sent and cached
+    cached_token_is_reused(r#"{"access_token":"","expires_in":3600}"#, "");
 }
 
 fn missing_expires_in() {
