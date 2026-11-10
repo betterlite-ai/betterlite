@@ -48,30 +48,15 @@ fn bedrock_tool_results_behavior_tests_behavior_a_call_without_a_function_is_ski
 }
 
 #[rstest]
-#[case::empty("")]
-#[case::blank("   ")]
-#[case::json_null("null")]
-#[case::json_list("[]")]
-#[case::json_string("\"\"")]
-#[case::not_json("not json")]
-#[case::truncated("{\"a\":")]
-fn bedrock_tool_results_behavior_tests_behavior_absent_or_unusable_arguments_become_an_empty_input(
-    #[case] arguments: &str,
-) {
-    let encoded = serde_json::to_string(arguments).unwrap();
-    let call = json(&format!(
-        r#"{{"id":"call_1","function":{{"name":"n","arguments":{encoded}}}}}"#
-    ));
-    assert_eq!(
-        invoke(&[call]),
-        expected(r#"[{"toolUse":{"input":{},"name":"n","toolUseId":"call_1"}}]"#)
-    );
-}
-
-#[rstest]
 #[case::absent(r#"{"id":"call_1","function":{"name":"n"}}"#)]
-#[case::null(r#"{"id":"call_1","function":{"name":"n","arguments":null}}"#)]
-fn bedrock_tool_results_behavior_tests_behavior_missing_arguments_become_an_empty_input(
+#[case::empty(r#"{"id":"call_1","function":{"name":"n","arguments":""}}"#)]
+#[case::blank(r#"{"id":"call_1","function":{"name":"n","arguments":"   "}}"#)]
+#[case::json_null(r#"{"id":"call_1","function":{"name":"n","arguments":null}}"#)]
+#[case::json_list(r#"{"id":"call_1","function":{"name":"n","arguments":[]}}"#)]
+#[case::json_string(r#"{"id":"call_1","function":{"name":"n","arguments":"\"\""}}"#)]
+#[case::not_json(r#"{"id":"call_1","function":{"name":"n","arguments":"not json"}}"#)]
+#[case::truncated(r#"{"id":"call_1","function":{"name":"n","arguments":"{\"a\":"}}"#)]
+fn bedrock_tool_results_behavior_tests_behavior_unusable_arguments_become_an_empty_input(
     #[case] call: &str,
 ) {
     assert_eq!(

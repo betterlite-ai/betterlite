@@ -89,29 +89,14 @@ fn remote() -> Result<RemoteImage<SystemResolver>, Box<HelperError>> {
     })
 }
 
-// LiteLLM wraps every failure of the invoke conversion in a BadRequestError
-fn invoke_error(error: &BedrockToolResultsError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "BadRequestError".to_owned(),
-        status: Some(400),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
-// the result conversion raises its file failure as a BadRequestError and lets every other one through
-fn result_error(error: &BedrockToolResultsError) -> Box<HelperError> {
-    let status = matches!(error, BedrockToolResultsError::FileWithoutMedia { .. }).then_some(400);
-    Box::new(HelperError {
-        class: "BedrockToolResultError".to_owned(),
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+fn conversion_error(
+    class: &str,
+    status: Option<u16>,
+    error: &BedrockToolResultsError,
+) -> Box<HelperError> {
+    let mut failure = helper_error(class, error.to_string());
+    failure.status = status;
+    failure
 }
 
 fn ok_value<Payload>(payload: &Payload) -> HelperResult
@@ -130,9 +115,10 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ToolCallInvoke { tool_calls, model } => {
+                // LiteLLM wraps every failure of the invoke conversion in a BadRequestError
                 let blocks =
                     tool_call_invoke_blocks(tool_calls, model.as_deref(), &AcceptingCachePoints)
-                        .map_err(|error| invoke_error(&error))?;
+                        .map_err(|error| conversion_error("BadRequestError", Some(400), &error))?;
                 ok_value(&blocks)
             }
             Input::ToolCallResult { message, id } => {
@@ -141,7 +127,13 @@ impl Helper for Op {
                 let ids = || id.clone();
                 let block = runtime
                     .block_on(to_bedrock_tool_result(message, &remote, &ids))
-                    .map_err(|error| result_error(&error))?;
+                    .map_err(|error| {
+                        // the result conversion raises its file failure as a BadRequestError and lets the rest through
+                        let status =
+                            matches!(&error, BedrockToolResultsError::FileWithoutMedia { .. })
+                                .then_some(400);
+                        conversion_error("BedrockToolResultError", status, &error)
+                    })?;
                 ok_value(&block)
             }
             Input::SanitizeToolUseIds { values } => {

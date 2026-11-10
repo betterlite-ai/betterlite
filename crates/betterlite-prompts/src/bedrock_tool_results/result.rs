@@ -1,6 +1,6 @@
 use betterlite_http::user_url::validate::Resolve;
 
-use crate::arguments::json::Json;
+use crate::arguments::json::{Json, Object};
 use crate::bedrock_images::processor::process_image;
 use crate::bedrock_images::remote::RemoteImage;
 use crate::bedrock_images::types::ContentBlock;
@@ -84,8 +84,14 @@ where
             TEXT => blocks.push(ToolResultPart::Text {
                 text: text_of(part, index)?,
             }),
-            IMAGE_URL => append_image_url_part(&mut blocks, part, index, remote).await?,
-            FILE => append_file_part(&mut blocks, part, index, remote).await?,
+            IMAGE_URL => {
+                let source = image_url_source(part, index)?;
+                append_media(&mut blocks, source, remote).await?;
+            }
+            FILE => {
+                let source = file_source(part, index)?;
+                append_media(&mut blocks, source, remote).await?;
+            }
             _ => {}
         }
     }
@@ -100,75 +106,85 @@ fn text_of(part: &ContentPart, index: usize) -> Result<String, BedrockToolResult
     }
 }
 
-async fn append_image_url_part<R>(
-    blocks: &mut Vec<ToolResultPart>,
-    part: &ContentPart,
-    index: usize,
-    remote: &RemoteImage<R>,
-) -> Result<(), BedrockToolResultsError>
-where
-    R: Resolve,
-{
-    let (image_url, format) = match part.fields.get(IMAGE_URL) {
-        None => return Err(BedrockToolResultsError::ImageUrlWithoutUrl { index }),
-        Some(Json::Text(image_url)) => (image_url.as_str(), None),
-        Some(Json::Object(fields)) => {
-            let image_url = match fields.get(URL) {
-                None => return Err(BedrockToolResultsError::ImageUrlWithoutAddress { index }),
-                Some(Json::Text(image_url)) => image_url.as_str(),
-                Some(_) => return Err(BedrockToolResultsError::ImageUrlNotText { index }),
-            };
-            let format = match fields.get(FORMAT) {
-                None | Some(Json::Null) => None,
-                Some(Json::Text(format)) => Some(format.as_str()),
-                Some(_) => return Err(BedrockToolResultsError::ImageFormatNotText { index }),
-            };
-            (image_url, format)
-        }
-        Some(_) => return Err(BedrockToolResultsError::ImageUrlNotTextOrObject { index }),
-    };
-    let processed = process_image(image_url, format, remote)
-        .await
-        .map_err(|source| BedrockToolResultsError::Image { source })?;
-    push_media_block(blocks, processed);
-    Ok(())
+struct MediaSource<'part> {
+    image_url: &'part str,
+    format: Option<&'part str>,
 }
 
-async fn append_file_part<R>(
-    blocks: &mut Vec<ToolResultPart>,
+fn optional_text<'fields, WrongType>(
+    fields: Option<&'fields Object>,
+    key: &str,
+    wrong_type: WrongType,
+) -> Result<Option<&'fields str>, BedrockToolResultsError>
+where
+    WrongType: FnOnce() -> BedrockToolResultsError,
+{
+    match fields.and_then(|object| object.get(key)) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.as_str())),
+        Some(_) => Err(wrong_type()),
+    }
+}
+
+fn image_url_source(
     part: &ContentPart,
     index: usize,
-    remote: &RemoteImage<R>,
-) -> Result<(), BedrockToolResultsError>
-where
-    R: Resolve,
-{
+) -> Result<MediaSource<'_>, BedrockToolResultsError> {
+    match part.fields.get(IMAGE_URL) {
+        None => Err(BedrockToolResultsError::ImageUrlWithoutUrl { index }),
+        Some(Json::Text(image_url)) => Ok(MediaSource {
+            image_url,
+            format: None,
+        }),
+        Some(Json::Object(fields)) => {
+            let image_url = optional_text(Some(fields), URL, || {
+                BedrockToolResultsError::ImageUrlNotText { index }
+            })?
+            .ok_or(BedrockToolResultsError::ImageUrlWithoutAddress { index })?;
+            let format = optional_text(Some(fields), FORMAT, || {
+                BedrockToolResultsError::ImageFormatNotText { index }
+            })?;
+            Ok(MediaSource { image_url, format })
+        }
+        Some(_) => Err(BedrockToolResultsError::ImageUrlNotTextOrObject { index }),
+    }
+}
+
+fn file_source(
+    part: &ContentPart,
+    index: usize,
+) -> Result<MediaSource<'_>, BedrockToolResultsError> {
     let file = match part.fields.get(FILE) {
         None | Some(Json::Null) => None,
         Some(Json::Object(fields)) => Some(fields),
         Some(_) => return Err(BedrockToolResultsError::FileNotObject { index }),
     };
-    let file_data = match file.and_then(|fields| fields.get(FILE_DATA)) {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(file_data)) => Some(file_data.as_str()),
-        Some(_) => return Err(BedrockToolResultsError::FileDataNotText { index }),
-    };
-    let file_id = match file.and_then(|fields| fields.get(FILE_ID)) {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(file_id)) => Some(file_id.as_str()),
-        Some(_) => return Err(BedrockToolResultsError::FileIdNotText { index }),
-    };
-    let format = match file.and_then(|fields| fields.get(FORMAT)) {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(format)) => Some(format.as_str()),
-        Some(_) => return Err(BedrockToolResultsError::FileFormatNotText { index }),
-    };
-    let Some(image_url) = file_id.or(file_data) else {
-        return Err(BedrockToolResultsError::FileWithoutMedia { index });
-    };
-    let processed = process_image(image_url, format, remote)
+    let file_data = optional_text(file, FILE_DATA, || {
+        BedrockToolResultsError::FileDataNotText { index }
+    })?;
+    let file_id = optional_text(file, FILE_ID, || BedrockToolResultsError::FileIdNotText {
+        index,
+    })?;
+    let format = optional_text(file, FORMAT, || {
+        BedrockToolResultsError::FileFormatNotText { index }
+    })?;
+    let image_url = file_id
+        .or(file_data)
+        .ok_or(BedrockToolResultsError::FileWithoutMedia { index })?;
+    Ok(MediaSource { image_url, format })
+}
+
+async fn append_media<R>(
+    blocks: &mut Vec<ToolResultPart>,
+    source: MediaSource<'_>,
+    remote: &RemoteImage<R>,
+) -> Result<(), BedrockToolResultsError>
+where
+    R: Resolve,
+{
+    let processed = process_image(source.image_url, source.format, remote)
         .await
-        .map_err(|source| BedrockToolResultsError::Image { source })?;
+        .map_err(|failure| BedrockToolResultsError::Image { source: failure })?;
     push_media_block(blocks, processed);
     Ok(())
 }
