@@ -12,22 +12,13 @@ use super::queue::{IncrementQueue, QueuedIncrement};
 use super::window::{BudgetConfig, WindowCache};
 
 pub struct BudgetIncrement<C: WindowCache + 'static> {
-    cache: Arc<C>,
-    clock: Clock,
-    queue: Arc<Mutex<IncrementQueue>>,
-    flush_lock: Arc<AsyncMutex<()>>,
+    pub cache: Arc<C>,
+    pub clock: Clock,
+    pub queue: Arc<Mutex<IncrementQueue>>,
+    pub flush_lock: Arc<AsyncMutex<()>>,
 }
 
 impl<C: WindowCache + 'static> BudgetIncrement<C> {
-    pub fn new(cache: Arc<C>, clock: Clock) -> Self {
-        Self {
-            cache,
-            clock,
-            queue: Arc::new(Mutex::new(IncrementQueue::default())),
-            flush_lock: Arc::new(AsyncMutex::new(())),
-        }
-    }
-
     pub async fn increment_spend_for_key(
         &self,
         budget: &BudgetConfig,

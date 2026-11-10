@@ -169,7 +169,12 @@ impl Fixture {
             memory: Arc::clone(&memory),
             redis: redis.clone(),
         });
-        let increment = Arc::new(BudgetIncrement::new(Arc::clone(&cache), clock.clock()));
+        let increment = Arc::new(BudgetIncrement {
+            cache: Arc::clone(&cache),
+            clock: clock.clock(),
+            queue: Arc::default(),
+            flush_lock: Arc::default(),
+        });
         Self {
             increment,
             cache,

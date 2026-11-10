@@ -36,11 +36,18 @@ impl IncrementQueue {
         let Some(detached) = &self.detached else {
             return Ok(());
         };
-        let mut operations: Vec<QueuedIncrement> =
-            detached.iter().chain(self.queued.iter()).cloned().collect();
+        let mut operations = detached
+            .iter()
+            .chain(self.queued.iter())
+            .cloned()
+            .collect::<Vec<_>>();
         operations.sort_by(|left, right| left.key.cmp(&right.key));
-        let mut merged: Vec<QueuedIncrement> = Vec::with_capacity(operations.len());
+        let mut merged = Vec::new();
         for operation in operations {
+            if merged.is_empty() {
+                merged.push(operation);
+                continue;
+            }
             match merged.last_mut() {
                 Some(last) if last.key == operation.key => {
                     let total = last
