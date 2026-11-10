@@ -6,7 +6,6 @@ use rstest::rstest;
 use betterlite_config::sections::logging_privacy::Settings;
 
 use crate::exporter_options::redaction::REDACTED_TEXT;
-use crate::logging_failure::events::payload_to_map;
 use crate::logging_failure::handlers::failure_handler;
 use crate::logging_failure::{FailureDeps, FailureRecord, FailureReport};
 use crate::logging_state::correlation::{CorrelationContext, CorrelationSettings, SecretRedaction};
