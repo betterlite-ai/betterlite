@@ -11,6 +11,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
@@ -40,6 +41,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+chrono.workspace = true
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
