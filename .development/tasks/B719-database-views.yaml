@@ -85,6 +85,7 @@ description: >-
   view definitions, runtime control flow and offline dispatch in separate modules below 300 lines.
 scope:
   paths:
+    - "tools/betterlite-db-admin/src/command_shell.rs"
     - crates/betterlite-db/src/database_views.rs
     - crates/betterlite-db/src/database_views/**
     - crates/betterlite-db/Cargo.toml
