@@ -8,11 +8,11 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::span_attributes::SafeSetAttribute as _;
 use opentelemetry::trace::Span;
 
-use super::truthy::is_worth_writing;
+use super::truthy::is_effectively_true;
 
 // passthrough is the spelling real call types use: allm_passthrough_route
 const PASSTHROUGH_KEYWORDS: [&str; 2] = ["passthrough", "pass_through"];
-const OUTPUT_MESSAGE_PREFIX: &str = "0";
+const OUTPUT_MESSAGE_INDEX: &str = "0";
 
 pub(super) fn maybe_normalize_passthrough<S>(
     span: &mut S,
@@ -50,7 +50,22 @@ fn set_input_attributes<S>(span: &mut S, kwargs: &MetadataMap)
 where
     S: Span,
 {
-    let Some(messages) = kwargs
+    let Some(messages) = passthrough_messages(kwargs) else {
+        return;
+    };
+    if let Some(text) = last_message_text(messages) {
+        span.safe_set_attribute(INPUT_VALUE, &OtelModelValue::String(text));
+    }
+    for (index, message) in messages.iter().enumerate() {
+        let Some(fields) = message.as_object() else {
+            continue;
+        };
+        write_input_message(span, index, fields);
+    }
+}
+
+fn passthrough_messages(kwargs: &MetadataMap) -> Option<&[OtelModelValue]> {
+    kwargs
         .get("additional_args")
         .and_then(OtelModelValue::as_object)
         .and_then(|args| args.get("complete_input_dict"))
@@ -58,10 +73,10 @@ where
         .and_then(|input| input.get("messages"))
         .and_then(OtelModelValue::as_array)
         .filter(|messages| !messages.is_empty())
-    else {
-        return;
-    };
-    let last_text = messages
+}
+
+fn last_message_text(messages: &[OtelModelValue]) -> Option<String> {
+    messages
         .iter()
         .rev()
         .filter_map(OtelModelValue::as_object)
@@ -70,24 +85,25 @@ where
                 .get("content")
                 .and_then(coerce_text)
                 .filter(|text| !text.is_empty())
-        });
-    if let Some(text) = last_text {
-        span.safe_set_attribute(INPUT_VALUE, &OtelModelValue::String(text));
+        })
+}
+
+fn write_input_message<S>(span: &mut S, index: usize, fields: &MetadataMap)
+where
+    S: Span,
+{
+    let prefix = format!("{LLM_INPUT_MESSAGES}.{index}");
+    if let Some(role) = fields
+        .get("role")
+        .filter(|value| is_effectively_true(value))
+    {
+        span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), role);
     }
-    for (index, message) in messages.iter().enumerate() {
-        let Some(fields) = message.as_object() else {
-            continue;
-        };
-        let prefix = format!("{LLM_INPUT_MESSAGES}.{index}");
-        if let Some(role) = fields.get("role").filter(|value| is_worth_writing(value)) {
-            span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), role);
-        }
-        if let Some(text) = fields.get("content").and_then(coerce_text) {
-            span.safe_set_attribute(
-                &format!("{prefix}.{MESSAGE_CONTENT}"),
-                &OtelModelValue::String(text),
-            );
-        }
+    if let Some(text) = fields.get("content").and_then(coerce_text) {
+        span.safe_set_attribute(
+            &format!("{prefix}.{MESSAGE_CONTENT}"),
+            &OtelModelValue::String(text),
+        );
     }
 }
 
@@ -182,7 +198,7 @@ fn write_message_output<S>(span: &mut S, text: &str, role: Option<&OtelModelValu
 where
     S: Span,
 {
-    let prefix = format!("{LLM_OUTPUT_MESSAGES}.{OUTPUT_MESSAGE_PREFIX}");
+    let prefix = format!("{LLM_OUTPUT_MESSAGES}.{OUTPUT_MESSAGE_INDEX}");
     let message_role = role
         .cloned()
         .unwrap_or_else(|| OtelModelValue::String("assistant".to_owned()));

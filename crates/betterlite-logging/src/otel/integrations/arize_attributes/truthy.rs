@@ -1,7 +1,7 @@
 use crate::otel::model::utils::coercion::OtelModelValue;
 
 #[must_use]
-pub(super) fn is_worth_writing(value: &OtelModelValue) -> bool {
+pub(super) fn is_effectively_true(value: &OtelModelValue) -> bool {
     match value {
         OtelModelValue::Null(()) => false,
         OtelModelValue::Bool(flag) => *flag,

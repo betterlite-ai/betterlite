@@ -17,7 +17,7 @@ use crate::otel::span_attributes::{LLMObsAttributes, SafeSetAttribute as _};
 use crate::otel::vocabulary::constants::attribute_keys::exception_event;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::Span;
-use truthy::is_worth_writing;
+use truthy::is_effectively_true;
 
 const MISSING_PAYLOAD: &str = "standard_logging_object not found in kwargs";
 
@@ -112,7 +112,10 @@ fn set_request_attributes<S>(span: &mut S, kwargs: &MetadataMap, payload: &Metad
 where
     S: Span,
 {
-    if let Some(model) = kwargs.get("model").filter(|value| is_worth_writing(value)) {
+    if let Some(model) = kwargs
+        .get("model")
+        .filter(|value| is_effectively_true(value))
+    {
         span.safe_set_attribute(keys::LLM_MODEL_NAME, model);
     }
     let call_type = payload
@@ -146,14 +149,14 @@ where
     ] {
         if let Some(value) = optional_params
             .get(source)
-            .filter(|value| is_worth_writing(value))
+            .filter(|value| is_effectively_true(value))
         {
             span.safe_set_attribute(attribute, value);
         }
     }
     let streaming = match optional_params.get("stream") {
         Some(OtelModelValue::Null(())) => "None",
-        Some(value) if is_worth_writing(value) => "True",
+        Some(value) if is_effectively_true(value) => "True",
         None | Some(_) => "False",
     };
     span.safe_set_attribute(
@@ -162,7 +165,7 @@ where
     );
     if let Some(user) = optional_params
         .get("user")
-        .filter(|value| is_worth_writing(value))
+        .filter(|value| is_effectively_true(value))
     {
         span.safe_set_attribute(keys::LLM_USER, user);
     }
@@ -175,10 +178,13 @@ where
     let Some(fields) = response.as_object() else {
         return;
     };
-    if let Some(id) = fields.get("id").filter(|value| is_worth_writing(value)) {
+    if let Some(id) = fields.get("id").filter(|value| is_effectively_true(value)) {
         span.safe_set_attribute(keys::LLM_RESPONSE_ID, id);
     }
-    if let Some(model) = fields.get("model").filter(|value| is_worth_writing(value)) {
+    if let Some(model) = fields
+        .get("model")
+        .filter(|value| is_effectively_true(value))
+    {
         span.safe_set_attribute(keys::LLM_RESPONSE_MODEL, model);
     }
 }
@@ -187,7 +193,7 @@ fn set_model_parameters<S>(span: &mut S, model_parameters: Option<&OtelModelValu
 where
     S: Span,
 {
-    let Some(parameters) = model_parameters.filter(|value| is_worth_writing(value)) else {
+    let Some(parameters) = model_parameters.filter(|value| is_effectively_true(value)) else {
         return;
     };
     if let Ok(text) = serde_json::to_string(parameters) {
@@ -199,7 +205,7 @@ where
     if let Some(user) = parameters
         .as_object()
         .and_then(|fields| fields.get("user"))
-        .filter(|value| is_worth_writing(value))
+        .filter(|value| is_effectively_true(value))
     {
         span.safe_set_attribute(keys::USER_ID, user);
     }

@@ -6,7 +6,7 @@ use crate::otel::span_attributes::SafeSetAttribute as _;
 use opentelemetry::trace::Span;
 
 use super::keys;
-use super::truthy::is_worth_writing;
+use super::truthy::is_effectively_true;
 
 const MCP_TOOL_CALL_TYPE: &str = "call_mcp_tool";
 
@@ -34,11 +34,11 @@ pub(super) fn maybe_set_mcp_tool_attrs<S>(
     };
     let tool_name = tool_call
         .get("name")
-        .filter(|value| is_worth_writing(value))
+        .filter(|value| is_effectively_true(value))
         .or_else(|| {
             tool_call
                 .get("namespaced_tool_name")
-                .filter(|value| is_worth_writing(value))
+                .filter(|value| is_effectively_true(value))
         });
     if let Some(name) = tool_name {
         span.safe_set_attribute(keys::TOOL_NAME, name);
@@ -91,7 +91,7 @@ where
     };
     let structured_value = structured.filter(|value| !matches!(value, OtelModelValue::Null(())));
     let payload = match content {
-        Some(value) if is_worth_writing(value) => Some(value),
+        Some(value) if is_effectively_true(value) => Some(value),
         other => structured_value.or(other),
     };
     let Some(output_payload) = payload else {

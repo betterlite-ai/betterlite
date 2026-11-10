@@ -6,7 +6,7 @@ use super::identity;
 use super::mcp;
 use super::passthrough;
 use super::set_attributes;
-use super::truthy::is_worth_writing;
+use super::truthy::is_effectively_true;
 use crate::otel::integrations::arize_messages::ArizeOtelAttributes;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -323,14 +323,12 @@ fn attributes_missing_payload_writes_span_kind_and_exception_event() {
 #[case::array("[1]", true)]
 #[case::empty_object("{}", false)]
 #[case::object(r#"{"a":1}"#, true)]
-fn attributes_is_worth_writing_matches_litellm_truthiness(
+fn attributes_is_effectively_true_matches_litellm_truthiness(
     #[case] raw: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(is_worth_writing(&value(raw)), expected);
+    assert_eq!(is_effectively_true(&value(raw)), expected);
 }
-
-// identity.rs
 
 fn session_attributes(kwargs: &str) -> BTreeMap<String, Value> {
     let source = map(kwargs);
@@ -406,19 +404,13 @@ fn session_metadata_not_an_object_is_skipped() {
     assert!(attributes.is_empty());
 }
 
-#[test]
-fn session_falsy_metadata_still_writes_trace_id() {
-    let attributes = session_attributes(
-        r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":""}}"#,
-    );
-    assert_eq!(attr(&attributes, "litellm.trace_id"), Some("trace-1"));
-}
-
-#[test]
-fn session_null_metadata_still_writes_trace_id() {
-    let attributes = session_attributes(
-        r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":null}}"#,
-    );
+#[rstest::rstest]
+#[case::null(r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":null}}"#)]
+#[case::empty_string(
+    r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":""}}"#
+)]
+fn session_missing_metadata_still_writes_trace_id(#[case] kwargs: &str) {
+    let attributes = session_attributes(kwargs);
     assert_eq!(attr(&attributes, "litellm.trace_id"), Some("trace-1"));
 }
 
@@ -476,8 +468,6 @@ fn cost_null_and_absent_write_nothing() {
             .is_empty()
     );
 }
-
-// passthrough.rs
 
 fn flow_attributes<F>(kwargs: &str, response: &str, apply: F) -> BTreeMap<String, Value>
 where
@@ -736,7 +726,34 @@ fn passthrough_call_type_spellings_run(#[case] call_type: &str) {
     assert_eq!(attributes.get("input.value"), Some(&Value::from("seen")));
 }
 
-// mcp.rs
+#[test]
+fn passthrough_full_flow_overrides_the_shared_message_writes() {
+    let recorded = flow(
+        &map(
+            r#"{"messages":[{"role":"user","content":"chat text"}],"additional_args":{"complete_input_dict":{"messages":[{"role":"system","content":"raw text"}]}},"standard_logging_object":{"call_type":"llm_passthrough_route"}}"#,
+        ),
+        &value(r#"{"choices":[{"message":{"content":"answer"}}]}"#),
+        false,
+    );
+    let attributes = &recorded.attributes;
+    assert_eq!(attr(attributes, "input.value"), Some("raw text"));
+    assert_eq!(
+        attr(attributes, "llm.input_messages.0.message.role"),
+        Some("system")
+    );
+    assert_eq!(
+        attr(attributes, "llm.input_messages.0.message.content"),
+        Some("raw text")
+    );
+    assert_eq!(
+        attr(attributes, "llm.output_messages.0.message.role"),
+        Some("assistant")
+    );
+    assert_eq!(
+        attr(attributes, "llm.output_messages.0.message.content"),
+        Some("answer")
+    );
+}
 
 fn mcp_attributes(kwargs: &str, response: &str, redact_messages: bool) -> BTreeMap<String, Value> {
     flow_attributes(kwargs, response, |span, _, response_value, payload| {
