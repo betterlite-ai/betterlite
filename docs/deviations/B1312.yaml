@@ -1,0 +1,26 @@
+task: B1312
+deviations:
+  - what: "A message whose role is not user, system, assistant, tool or function returns HTTP 400 with type null, param null and code 400, where LiteLLM's loop guard raises a bare Exception and answers HTTP 500."
+    why: "A 500 is the wrong answer for a caller's malformed history, and rule owned-behavior-is-built fixes a crash no working setup can rely on with a 4xx that names the role."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1056-L1059
+  - what: "A file content block that carries neither file_id nor file_data returns HTTP 400 naming messages[i].content[j].file, where LiteLLM raises a bare Exception and answers HTTP 500."
+    why: "The same malformed file block on the image_url path is already a 400 BadRequestError in LiteLLM, so the file path is fixed to match it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L820-L822
+  - what: "A generated image whose image_url.url is a value other than a string returns HTTP 400 naming messages[i].images[j].image_url.url, where LiteLLM passes the value to its media conversion and answers HTTP 500."
+    why: "A url that is not text is caller error, so it gets a 4xx that names the field instead of an unhandled exception."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L948-L971
+  - what: "A server_side_tool_invocations entry that is not an object returns HTTP 400 naming the entry, where LiteLLM calls .get on it and answers HTTP 500."
+    why: "The invocation shape is caller error, so it gets a 4xx that names the field instead of an unhandled exception."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1006-L1017
+  - what: "A first entry of provider_specific_fields.thought_signatures that is an array or an object returns HTTP 400 naming the entry, where LiteLLM's membership test raises TypeError on the unhashable value and answers HTTP 500."
+    why: "A signature that cannot be a thought signature is caller error, so it gets a 4xx that names the field instead of an unhandled exception."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L930-L942
+  - what: "A tool call or tool result the conversion rejects returns HTTP 400 naming the field, where LiteLLM wraps every failure of convert_to_gemini_tool_call_invoke and convert_to_gemini_tool_call_result in a bare Exception and answers HTTP 500."
+    why: "The typed errors of the two conversion helpers already say which field is wrong, and a 4xx is the answer for input the caller sent wrong."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1343-L1345
+  - what: "A thinking_blocks[].thinking string longer than 1048576 bytes, or JSON serde_json cannot read such as an over-deep nest, NaN or Infinity, is replayed as the literal signed text part, where LiteLLM's json.loads parses any size and accepts NaN and Infinity."
+    why: "Rule bounded-inputs caps untrusted JSON parsing, and the fallback is LiteLLM's own malformed-JSON path, so the part still carries the signed text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L893-L906
+  - what: "A history with more than 1024 messages or a message with more than 256 content parts returns HTTP 400, where LiteLLM converts any number of either."
+    why: "Rule bounded-inputs gives every traversal a ceiling; these are the same ceilings the media traversal uses and the walker is linear in the input."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L722-L724
