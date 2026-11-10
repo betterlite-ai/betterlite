@@ -2165,6 +2165,8 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-redact",
  "betterlite-paths",
  "betterlite-policy",
  "betterlite-postgres-fixture",
@@ -2240,6 +2242,28 @@ dependencies = [
  "serde-saphyr",
  "thiserror",
  "tl",
+]
+
+[[package]]
+name = "betterlite-oracle-helper-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
+name = "betterlite-oracle-redact"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "rstest",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
 ]
 
 [[package]]
