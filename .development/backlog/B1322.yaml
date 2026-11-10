@@ -1,7 +1,7 @@
 id: B1322
 milestone: M3 providers
 title: Gemini modality usage and grounding request accounting
-status: todo
+status: done
 depends_on: [B1323, B171]
 file: tasks/B1322-gemini-usage.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1150
