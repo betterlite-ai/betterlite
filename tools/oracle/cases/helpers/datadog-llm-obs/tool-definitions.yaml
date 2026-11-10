@@ -1,0 +1,32 @@
+kind: helper
+name: datadog-llm-obs-tool-definitions
+call:
+  b3935:
+    function: tool_definitions
+    model_parameters:
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            description: "Weather by city"
+            parameters: {type: object, properties: {city: {type: string}}, required: [city]}
+        - name: bare_tool
+          description: "Bare shape"
+          input_schema: {type: object, properties: {}}
+        - type: function
+          function:
+            description: "no name"
+            parameters: {type: object}
+        - type: function
+          function:
+            name: empty_parameters
+            parameters: {}
+            input_schema: {type: object, properties: {q: {type: string}}}
+        - "not a dict"
+        - type: function
+          function:
+            name: scalar_schema
+            parameters: "not a schema"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,23 @@
+kind: helper
+name: exa_default_contents
+call:
+  b8020:
+    environment:
+      EXA_API_KEY: sk-exa
+    calls:
+      - provider: exa_ai
+        call: {kind: request, query: "search text", optional_params: {}}
+      - provider: exa_ai
+        call:
+          kind: request
+          query: ["search", "text"]
+          optional_params: {contents: {}}
+      - provider: exa_ai
+        call: {kind: request, query: "search text", optional_params: {contents: null}}
+      - provider: exa_ai
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {contents: {text: false}}
+env: {}
+compare: {ignore: []}

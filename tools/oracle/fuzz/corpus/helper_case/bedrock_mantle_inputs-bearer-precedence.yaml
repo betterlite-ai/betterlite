@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-mantle-inputs-bearer-precedence-seed
+call:
+  bedrock_mantle_inputs:
+    mantle_bearer_precedence:
+      cases:
+        - api_key: explicit-key
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-key}
+        - environment: {BEDROCK_MANTLE_API_KEY: ''}
+        - {}
+env: {}
+compare: {ignore: []}

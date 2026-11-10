@@ -294,7 +294,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_transcription)"
       && grep -q 'decode_transcription_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_transcription.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_transcription_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_transcription_corpus(::|$)/)'
   - id: case-whisper-endpoint-auth
     why: Trim base slashes, append /audio/transcriptions if base ends /v1 and /v1/audio/transcriptions otherwise,
       including an absent base becoming the relative /v1/audio/transcriptions path. Authorization uses explicit
