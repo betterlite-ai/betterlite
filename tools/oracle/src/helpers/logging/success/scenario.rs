@@ -17,8 +17,10 @@ use serde_json::Value;
 
 use crate::compare::helper::HelperError;
 
+use betterlite_logging::fields::payload::StandardLoggingPayload;
+
 use super::input::{LoggerSpec, ResultKind, ResultSpec, StampSpec};
-use super::state::{payload, to_json};
+use super::state::decode;
 use super::support::{FixedAssembler, FixedBuilder, FixedClock, RecordingCounter, RecordingLogger};
 
 pub(crate) struct ScenarioSpec<'probe> {
@@ -50,10 +52,13 @@ impl Scenario {
         Ok(Self {
             registry,
             builder: FixedBuilder {
-                payload: spec.built_payload.map(payload).transpose()?,
+                payload: spec
+                    .built_payload
+                    .map(decode::<StandardLoggingPayload>)
+                    .transpose()?,
             },
             assembler: FixedAssembler {
-                complete: spec.complete.map(to_json).transpose()?,
+                complete: spec.complete.map(decode::<Json>).transpose()?,
             },
             clock: FixedClock { now: spec.now },
             counters,
@@ -135,16 +140,21 @@ fn default_stamp() -> ResponseStamp {
 }
 
 pub(crate) fn result(spec: &ResultSpec) -> Result<SuccessResult, Box<HelperError>> {
-    let value = match &spec.value {
-        Some(value) => to_json(value)?,
-        None => default_value(spec.kind)?,
-    };
-    Ok(match spec.kind {
-        ResultKind::Chat => SuccessResult::Chat(value),
-        ResultKind::Embeddings => SuccessResult::Embeddings(value),
-        ResultKind::Chunk => SuccessResult::Chunk(value),
-        ResultKind::Other => SuccessResult::Other(value),
-    })
+    match &spec.value {
+        Some(raw) => Ok(spec.kind.wrap(decode::<Json>(raw)?)),
+        None => Ok(spec.kind.wrap(default_value(spec.kind)?)),
+    }
+}
+
+impl ResultKind {
+    const fn wrap(self, value: Json) -> SuccessResult {
+        match self {
+            Self::Chat => SuccessResult::Chat(value),
+            Self::Embeddings => SuccessResult::Embeddings(value),
+            Self::Chunk => SuccessResult::Chunk(value),
+            Self::Other => SuccessResult::Other(value),
+        }
+    }
 }
 
 fn default_value(kind: ResultKind) -> Result<Json, Box<HelperError>> {
@@ -156,7 +166,7 @@ fn default_value(kind: ResultKind) -> Result<Json, Box<HelperError>> {
     };
     let value: Value =
         serde_json::from_str(text).map_err(|failure| super::value_error(&failure))?;
-    to_json(&value)
+    decode::<Json>(&value)
 }
 
 pub(crate) fn default_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {

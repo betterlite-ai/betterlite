@@ -355,8 +355,7 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        let first = Arc::new(RecordingCounter::default());
-        let second = Arc::new(RecordingCounter::default());
+        let (counters, counter_calls) = recording_counters();
         Self {
             registry: CallbackRegistry::new(10),
             builder: FakeBuilder::returning(Some(payload())),
@@ -364,11 +363,8 @@ impl Fixture {
             clock: FixedClock {
                 now: time("2024-01-01T00:00:02+00:00"),
             },
-            counters: vec![
-                counter_handle(Arc::clone(&first)),
-                counter_handle(Arc::clone(&second)),
-            ],
-            counter_calls: vec![first, second],
+            counters,
+            counter_calls,
             excluded_fields: Vec::new(),
             known: Box::new(|_name: &str| false),
             stamp: stamp(),
@@ -403,6 +399,21 @@ impl Default for Fixture {
     }
 }
 
+fn recording_counters() -> (
+    Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
+    Vec<Arc<RecordingCounter>>,
+) {
+    let first = Arc::new(RecordingCounter::default());
+    let second = Arc::new(RecordingCounter::default());
+    (
+        vec![
+            counter_handle(Arc::clone(&first)),
+            counter_handle(Arc::clone(&second)),
+        ],
+        vec![first, second],
+    )
+}
+
 pub(super) fn json_object(fields: &[(&str, Json)]) -> Json {
     let mut object = IndexMap::new();
     for (name, value) in fields {
@@ -426,27 +437,38 @@ pub(super) fn chunk_result() -> SuccessResult {
 }
 
 pub(super) fn request(result: SuccessResult) -> SuccessRequest {
+    build_request(
+        result,
+        time("2024-01-01T00:00:00+00:00"),
+        time("2024-01-01T00:00:01+00:00"),
+        Some(payload()),
+    )
+}
+
+fn build_request(
+    result: SuccessResult,
+    start_time: DateTime<FixedOffset>,
+    end_time: DateTime<FixedOffset>,
+    standard_logging_object: Option<StandardLoggingPayload>,
+) -> SuccessRequest {
     SuccessRequest {
         result,
-        start_time: Some(time("2024-01-01T00:00:00+00:00")),
-        end_time: Some(time("2024-01-01T00:00:01+00:00")),
+        start_time: Some(start_time),
+        end_time: Some(end_time),
         cache_hit: Some(false),
         prefer_async_handlers: false,
-        standard_logging_object: Some(payload()),
+        standard_logging_object,
         guardrail_snapshot: None,
     }
 }
 
 pub(super) fn bare_request(result: SuccessResult) -> SuccessRequest {
-    SuccessRequest {
-        result,
-        start_time: None,
-        end_time: None,
-        cache_hit: None,
-        prefer_async_handlers: false,
-        standard_logging_object: None,
-        guardrail_snapshot: None,
-    }
+    let mut request = request(result);
+    request.start_time = None;
+    request.end_time = None;
+    request.cache_hit = None;
+    request.standard_logging_object = None;
+    request
 }
 
 pub(super) fn correlation() -> CorrelationContext {

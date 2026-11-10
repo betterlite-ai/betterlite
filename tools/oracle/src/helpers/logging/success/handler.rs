@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::CorrelationContext;
 use betterlite_logging::logging_success::dispatch::{
@@ -65,18 +66,19 @@ fn handler_state(
     probe: &HandlerProbe,
     start: DateTime<FixedOffset>,
 ) -> Result<(LoggingState, CorrelationContext), Box<HelperError>> {
-    let empty_dynamic = Vec::new();
-    state::build(&StateSpec {
+    let dynamic_success = Vec::new();
+    let spec = StateSpec {
         stream: probe.stream,
         call_type: &probe.call_type,
         litellm_params: &probe.litellm_params,
         start_time: start,
         trace_id: probe.trace_id.as_deref(),
         session_id: probe.session_id.as_deref(),
-        dynamic_success: &empty_dynamic,
+        dynamic_success: &dynamic_success,
         context: &probe.context,
         request_correlation: probe.request_correlation,
-    })
+    };
+    state::build(&spec)
 }
 
 fn handler_request(
@@ -90,7 +92,11 @@ fn handler_request(
         end_time: Some(end),
         cache_hit: probe.cache_hit,
         prefer_async_handlers: false,
-        standard_logging_object: probe.payload.as_ref().map(state::payload).transpose()?,
+        standard_logging_object: probe
+            .payload
+            .as_ref()
+            .map(state::decode::<StandardLoggingPayload>)
+            .transpose()?,
         guardrail_snapshot: None,
     })
 }
@@ -129,8 +135,11 @@ fn sync_probe(probe: &SyncProbe) -> Result<Value, Box<HelperError>> {
         &mut context,
         &request,
     );
-    let outcome = output::SyncOutcome { should_run, ran };
-    output::sync_value(&scenario, &outcome)
+    Ok(json!({
+        "should_run": should_run,
+        "ran": ran,
+        "events": output::events(&scenario.loggers)?,
+    }))
 }
 
 fn sync_state(probe: &SyncProbe) -> Result<(LoggingState, CorrelationContext), Box<HelperError>> {

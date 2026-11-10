@@ -38,10 +38,9 @@ pub(super) fn deliver_sync(
     stream_event: bool,
 ) -> Result<(), LoggerError> {
     if stream_event {
-        logger.log_stream_event(event)
-    } else {
-        logger.log_success_event(event)
+        return logger.log_stream_event(event);
     }
+    logger.log_success_event(event)
 }
 
 pub(super) async fn deliver_async(
@@ -49,11 +48,10 @@ pub(super) async fn deliver_async(
     event: Arc<LoggerEvent>,
     stream_event: bool,
 ) -> Result<(), LoggerError> {
-    if stream_event {
-        logger.async_log_stream_event(event).await
-    } else {
-        logger.async_log_success_event(event).await
+    if !stream_event {
+        return logger.async_log_success_event(event).await;
     }
+    logger.async_log_stream_event(event).await
 }
 
 pub(super) fn logger_event(

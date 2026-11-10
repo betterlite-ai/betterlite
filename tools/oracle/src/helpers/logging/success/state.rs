@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup, SecretRedaction,
 };
@@ -98,23 +97,15 @@ pub(crate) fn params(
 ) -> Result<IndexMap<String, Json>, Box<crate::compare::helper::HelperError>> {
     let mut converted = IndexMap::new();
     for (name, value) in values {
-        converted.insert(name.clone(), to_json(value)?);
+        converted.insert(name.clone(), decode::<Json>(value)?);
     }
     Ok(converted)
 }
 
-pub(crate) fn to_json(value: &Value) -> Result<Json, Box<crate::compare::helper::HelperError>> {
-    serde_json::from_str(
-        serde_json::to_string(value)
-            .map_err(|failure| super::value_error(&failure))?
-            .as_str(),
-    )
-    .map_err(|failure| super::value_error(&failure))
-}
-
-pub(crate) fn payload(
-    value: &Value,
-) -> Result<StandardLoggingPayload, Box<crate::compare::helper::HelperError>> {
+pub(crate) fn decode<T>(value: &Value) -> Result<T, Box<crate::compare::helper::HelperError>>
+where
+    T: serde::de::DeserializeOwned,
+{
     serde_json::from_str(
         serde_json::to_string(value)
             .map_err(|failure| super::value_error(&failure))?

@@ -84,32 +84,17 @@ pub(crate) fn handler_value(
     state: &LoggingState,
     context: &CorrelationContext,
 ) -> Result<Value, Box<HelperError>> {
+    let recorded = events(&scenario.loggers)?;
     let counters: Vec<Vec<String>> = scenario
         .counter_calls
         .iter()
         .map(|counter| counter.calls())
         .collect();
     Ok(json!({
-        "events": events(&scenario.loggers)?,
+        "events": recorded,
         "counters": counters,
         "context": {"trace_id": context.trace_id, "session_id": context.session_id},
         "details": details(state),
-    }))
-}
-
-pub(crate) struct SyncOutcome {
-    pub(crate) should_run: bool,
-    pub(crate) ran: bool,
-}
-
-pub(crate) fn sync_value(
-    scenario: &Scenario,
-    outcome: &SyncOutcome,
-) -> Result<Value, Box<HelperError>> {
-    Ok(json!({
-        "should_run": outcome.should_run,
-        "ran": outcome.ran,
-        "events": events(&scenario.loggers)?,
     }))
 }
 

@@ -13,6 +13,8 @@ use super::prepare::{Prepared, prepare};
 use super::redaction::redacted_payload;
 use super::types::{PASS_THROUGH_CALL_TYPE, SuccessMode, SuccessRequest};
 use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::event::LoggerEvent;
+use crate::dynamic_callbacks::DynamicCallback;
 use crate::dynamic_callbacks::DynamicCallbackLists;
 use crate::dynamic_callbacks::filters::get_combined_callback_list;
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
@@ -37,144 +39,154 @@ pub struct SuccessHandler<'handler> {
     pub stamp: &'handler ResponseStamp,
 }
 
+struct DeliveryPlan {
+    prepared: Prepared,
+    callbacks: Vec<DynamicCallback>,
+    stream_event: bool,
+}
+
 pub fn success_handler(
     handler: &SuccessHandler<'_>,
     state: &mut LoggingState,
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
-    success_handler_body(handler, state, request);
+    let pending = begin(handler, state, request, SuccessMode::Sync);
+    if let Some(plan) = pending {
+        run_sync_callbacks(handler, state, &plan);
+    }
+    // LiteLLM restores the caller's trace and session ids once this call's own logging is done
     restore_correlation_context(state, correlation);
 }
 
 pub async fn async_success_handler(
     handler: &SuccessHandler<'_>,
-    state: &mut LoggingState,
-    correlation: &mut CorrelationContext,
-    request: &SuccessRequest,
+    logging: &mut LoggingState,
+    context: &mut CorrelationContext,
+    call: &SuccessRequest,
 ) {
-    async_success_handler_body(handler, state, request).await;
-    restore_correlation_context(state, correlation);
+    tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
+    if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
+        run_async_callbacks(handler, logging, &plan).await;
+    }
+    restore_correlation_context(logging, context);
 }
 
-fn success_handler_body(
+const fn stream_key(mode: SuccessMode) -> &'static str {
+    match mode {
+        SuccessMode::Sync => COMPLETE_STREAMING_RESPONSE,
+        SuccessMode::Async => ASYNC_STREAM_RESPONSE_KEY,
+    }
+}
+
+const fn logging_event(mode: SuccessMode) -> LoggingEvent {
+    match mode {
+        SuccessMode::Sync => LoggingEvent::SyncSuccess,
+        SuccessMode::Async => LoggingEvent::AsyncSuccess,
+    }
+}
+
+// the gate, _success_handler_helper_fn and the assembled-stream guard, then the callbacks to notify
+fn begin(
     handler: &SuccessHandler<'_>,
     state: &mut LoggingState,
     request: &SuccessRequest,
-) {
-    if !should_run_logging(state, LoggingEvent::SyncSuccess) {
-        return;
+    mode: SuccessMode,
+) -> Option<DeliveryPlan> {
+    let assembled =
+        mode == SuccessMode::Async && is_assembled_stream_success(state, &request.result);
+    if !assembled && !should_run_logging(state, logging_event(mode)) {
+        return None;
     }
     let prepared = prepare(handler, state, request);
-    let is_sync_request = is_sync_litellm_request(&state.litellm_params);
-    if state
-        .model_call_details
-        .contains_key(COMPLETE_STREAMING_RESPONSE)
-    {
-        return;
+    if state.model_call_details.contains_key(stream_key(mode)) {
+        return None;
     }
-    let complete = complete_stream(handler, state, &prepared, SuccessMode::Sync);
+    let complete = complete_stream(handler, state, &prepared, mode);
     let lists = DynamicCallbackLists::from(&state.dynamic_callbacks);
+    let dynamic = match mode {
+        SuccessMode::Sync => lists.success,
+        SuccessMode::Async => lists.async_success,
+    };
     let callbacks =
-        get_combined_callback_list(lists.success.as_deref(), &global_loggers(handler.registry));
-    has_run_logging(state, LoggingEvent::SyncSuccess);
-    for callback in &callbacks {
-        let Some(logger) = callback_logger(callback) else {
-            continue;
-        };
+        get_combined_callback_list(dynamic.as_deref(), &global_loggers(handler.registry));
+    has_run_logging(state, logging_event(mode));
+    Some(DeliveryPlan {
+        stream_event: state.stream == Some(true) && complete.is_none(),
+        prepared,
+        callbacks,
+    })
+}
+
+fn run_sync_callbacks(handler: &SuccessHandler<'_>, state: &LoggingState, plan: &DeliveryPlan) {
+    let is_sync_request = is_sync_litellm_request(&state.litellm_params);
+    for logger in plan.callbacks.iter().filter_map(callback_logger) {
         if !should_run_callback(state, CallbackKind::External, &state.litellm_params)
             || !is_sync_request
             || state.call_type == PASS_THROUGH_CALL_TYPE
         {
             continue;
         }
-        deliver_sync_callback(handler, state, &prepared, complete.as_ref(), logger);
+        if let Some(event) = callback_event(handler, state, plan, logger, SuccessMode::Sync)
+            && let Err(error) = deliver_sync(logger.as_ref(), &event, plan.stream_event)
+        {
+            handle_callback_failure(handler, logger.callback_name(), &error);
+        }
     }
 }
 
-async fn async_success_handler_body(
+async fn run_async_callbacks(
     handler: &SuccessHandler<'_>,
-    state: &mut LoggingState,
-    request: &SuccessRequest,
+    logging: &LoggingState,
+    plan: &DeliveryPlan,
 ) {
-    if !is_assembled_stream_success(state, &request.result)
-        && !should_run_logging(state, LoggingEvent::AsyncSuccess)
-    {
-        return;
-    }
-    let prepared = prepare(handler, state, request);
-    if state
-        .model_call_details
-        .contains_key(ASYNC_STREAM_RESPONSE_KEY)
-    {
-        return;
-    }
-    let complete = complete_stream(handler, state, &prepared, SuccessMode::Async);
-    let lists = DynamicCallbackLists::from(&state.dynamic_callbacks);
-    let callbacks = get_combined_callback_list(
-        lists.async_success.as_deref(),
-        &global_loggers(handler.registry),
-    );
-    has_run_logging(state, LoggingEvent::AsyncSuccess);
-    for callback in &callbacks {
-        let Some(logger) = callback_logger(callback) else {
+    for logger in plan.callbacks.iter().filter_map(callback_logger) {
+        if !should_run_callback(logging, CallbackKind::External, &logging.litellm_params) {
+            continue;
+        }
+        let Some(event) = callback_event(handler, logging, plan, logger, SuccessMode::Async) else {
             continue;
         };
-        if !should_run_callback(state, CallbackKind::External, &state.litellm_params) {
-            continue;
+        let delivered = deliver_async(logger.as_ref(), event, plan.stream_event).await;
+        if let Err(failure) = delivered {
+            handle_callback_failure(handler, logger.callback_name(), &failure);
         }
-        deliver_async_callback(handler, state, &prepared, complete.as_ref(), logger).await;
     }
 }
 
-fn deliver_sync_callback(
+// the async path hands each logger a payload redacted with that logger's own message flags
+fn callback_event(
     handler: &SuccessHandler<'_>,
     state: &LoggingState,
-    prepared: &Prepared,
-    complete: Option<&Json>,
+    plan: &DeliveryPlan,
     logger: &Arc<dyn CallbackLogger>,
-) {
-    let Some(payload) = event_payload(handler, state, prepared) else {
-        return;
+    mode: SuccessMode,
+) -> Option<Arc<LoggerEvent>> {
+    let stored = event_payload(handler, state, &plan.prepared)?;
+    let payload = match mode {
+        SuccessMode::Sync => stored,
+        SuccessMode::Async => match redacted_payload(
+            &stored,
+            logger.as_ref(),
+            handler.excluded_fields,
+            handler.stamp,
+        ) {
+            Ok(redacted) => redacted,
+            Err(error) => {
+                tracing::warn!(
+                    callback = logger.callback_name(),
+                    %error,
+                    "the standard logging payload could not be redacted"
+                );
+                return None;
+            }
+        },
     };
-    let event = logger_event(state, payload, prepared.guardrail_snapshot.as_ref());
-    let stream_event = state.stream == Some(true) && complete.is_none();
-    if let Err(error) = deliver_sync(logger.as_ref(), &event, stream_event) {
-        handle_callback_failure(handler, logger.callback_name(), &error);
-    }
-}
-
-async fn deliver_async_callback(
-    handler: &SuccessHandler<'_>,
-    state: &LoggingState,
-    prepared: &Prepared,
-    complete: Option<&Json>,
-    logger: &Arc<dyn CallbackLogger>,
-) {
-    let Some(payload) = event_payload(handler, state, prepared) else {
-        return;
-    };
-    let redacted = match redacted_payload(
-        &payload,
-        logger.as_ref(),
-        handler.excluded_fields,
-        handler.stamp,
-    ) {
-        Ok(redacted) => redacted,
-        Err(error) => {
-            tracing::warn!(
-                callback = logger.callback_name(),
-                %error,
-                "the standard logging payload could not be redacted"
-            );
-            return;
-        }
-    };
-    let event = logger_event(state, redacted, prepared.guardrail_snapshot.as_ref());
-    let stream_event = state.stream == Some(true) && complete.is_none();
-    if let Err(error) = deliver_async(logger.as_ref(), event, stream_event).await {
-        handle_callback_failure(handler, logger.callback_name(), &error);
-    }
+    Some(logger_event(
+        state,
+        payload,
+        plan.prepared.guardrail_snapshot.as_ref(),
+    ))
 }
 
 fn complete_stream(
@@ -186,13 +198,9 @@ fn complete_stream(
     let complete = handler
         .stream_assembler
         .assemble(state, &prepared.result, mode)?;
-    let key = match mode {
-        SuccessMode::Sync => COMPLETE_STREAMING_RESPONSE,
-        SuccessMode::Async => ASYNC_STREAM_RESPONSE_KEY,
-    };
     state
         .model_call_details
-        .insert(key.to_owned(), complete.clone());
+        .insert(stream_key(mode).to_owned(), complete.clone());
     let payload =
         handler
             .payload_builder
