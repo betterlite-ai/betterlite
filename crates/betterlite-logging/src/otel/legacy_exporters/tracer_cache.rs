@@ -222,8 +222,8 @@ impl DynamicTracerCache {
     #[must_use]
     pub fn cached_keys(&self) -> Vec<CacheKey> {
         let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut keys = Vec::with_capacity(entries.len());
-        keys.extend(entries.keys().cloned());
+        let keys: Vec<CacheKey> = entries.keys().cloned().collect();
+        drop(entries);
         keys
     }
 

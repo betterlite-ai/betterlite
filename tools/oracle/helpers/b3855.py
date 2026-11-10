@@ -20,7 +20,6 @@ SERVICE_NAME = "service.name"
 RESOURCE_ATTRIBUTES_ENV = "OTEL_RESOURCE_ATTRIBUTES"
 SERVICE_NAME_ENV = "OTEL_SERVICE_NAME"
 DEFAULT_MAX_DYNAMIC_TRACER_PROVIDERS = 256
-KEY_PARTS = ("exporter", "endpoint", "headers")
 
 _RECORDED_SHUTDOWNS: list[int] = []
 _normalize_endpoint = OpenTelemetry._normalize_otel_endpoint  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
@@ -48,9 +47,6 @@ class _Exporter:
     ) -> None:
         self.endpoint = endpoint
         self.headers: dict[str, str] = dict(headers or {})
-
-
-class ConsoleExporter(_Exporter): ...
 
 
 class InMemorySpanExporter(_Exporter):
@@ -111,8 +107,7 @@ class OTELResourceDetector:
 def _install(name: str, attributes: Mapping[str, object]) -> None:
     module = sys.modules.get(name) or ModuleType(name)
     module.__path__ = []
-    for attribute_name, value in attributes.items():
-        setattr(module, attribute_name, value)
+    vars(module).update(attributes)
     sys.modules[name] = module
 
 
@@ -124,12 +119,12 @@ SDK_PACKAGES = (
 )
 SDK_MODULES = (
     (f"{SDK}.trace.export", "BatchSpanProcessor", BatchSpanProcessor),
-    (f"{SDK}.trace.export", "ConsoleSpanExporter", ConsoleExporter),
+    (f"{SDK}.trace.export", "ConsoleSpanExporter", _Exporter),
     (f"{SDK}.trace.export", "SimpleSpanProcessor", SimpleSpanProcessor),
-    (f"{SDK}.trace.export", "SpanExporter", ConsoleExporter),
+    (f"{SDK}.trace.export", "SpanExporter", _Exporter),
     (f"{SDK}.trace.export.in_memory_span_exporter", "InMemorySpanExporter", InMemorySpanExporter),
-    (f"{SDK}._logs.export", "ConsoleLogExporter", ConsoleExporter),
-    (f"{SDK}.metrics.export", "ConsoleMetricExporter", ConsoleExporter),
+    (f"{SDK}._logs.export", "ConsoleLogExporter", _Exporter),
+    (f"{SDK}.metrics.export", "ConsoleMetricExporter", _Exporter),
     (f"{SDK}.metrics.export", "PeriodicExportingMetricReader", PeriodicExportingMetricReader),
     (f"{SDK}.resources", "OTELResourceDetector", OTELResourceDetector),
     (f"{SDK}.resources", "Resource", Resource),
@@ -230,7 +225,6 @@ def headers_value(input_value: dict[str, Json]) -> Json:
 
 
 def parsed_headers(value: str | Mapping[str, str] | None) -> dict[str, str]:
-    # _get_span_processor keeps headers private for a console exporter, so parse them here.
     return _headers_dictionary(value)
 
 
@@ -272,7 +266,7 @@ def metric_plan_value(input_value: dict[str, Json]) -> Json:
 def cache_key_text(key: dict[str, Json]) -> str:
     if "config" in key:
         config = object_value(key["config"], "key.config")
-        exporter, endpoint, headers = (config.get(name) for name in KEY_PARTS)
+        exporter, endpoint, headers = map(config.get, ("exporter", "endpoint", "headers"))
         return f"dynamic_config:{exporter}:{endpoint}:{headers}"
     headers = cast("dict[str, str]", object_value(key["headers"], "key.headers"))
     return str(sorted(headers.items()))
