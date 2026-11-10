@@ -6,7 +6,7 @@ use toml_edit::{DocumentMut, TableLike};
 use super::document::read_settings;
 use super::error::CodexSettingsError;
 use super::paths::{codex_configure_state_path, resolve_settings_path};
-use super::receipt::{CodexReceipt, ReceiptSource, invalid_receipt, is_ours, read_receipt};
+use super::receipt::{CodexReceipt, ReceiptSource, is_ours, read_receipt};
 use super::snapshot::{Snapshot, snapshot, with_value};
 use super::storage::{remove_path, stage_settings};
 use super::{MODEL_PROVIDERS_KEY, OWNED_PATHS};
@@ -101,7 +101,10 @@ fn previous_snapshot(
     };
     Snapshot::parse(text)
         .map(Some)
-        .map_err(|source| invalid_receipt(state_path, ReceiptSource::Snapshot(source)))
+        .map_err(|source| CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Snapshot(source),
+        })
 }
 
 fn without_empty_providers(restored: DocumentMut, receipt: &CodexReceipt) -> DocumentMut {
@@ -136,3 +139,5 @@ async fn commit_undo(
         .await
         .map_err(|source| CodexSettingsError::Undo { source })
 }
+
+mod tests;

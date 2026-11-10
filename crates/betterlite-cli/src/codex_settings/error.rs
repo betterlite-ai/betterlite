@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::string::FromUtf8Error;
 
 use betterlite_logging::private_json::error::PrivateJsonError;
 use thiserror::Error;
@@ -16,7 +17,11 @@ pub enum CodexSettingsError {
         source: io::Error,
     },
     #[error("the Codex settings at {path} are not valid UTF-8")]
-    NotUtf8 { path: PathBuf },
+    NotUtf8 {
+        path: PathBuf,
+        #[source]
+        source: FromUtf8Error,
+    },
     #[error("the Codex settings at {path} are not valid TOML; no settings were changed")]
     Parse {
         path: PathBuf,

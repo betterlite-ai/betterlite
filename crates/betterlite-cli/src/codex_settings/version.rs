@@ -54,3 +54,5 @@ fn parse_codex_version(output: &str) -> Option<(u64, u64, u64)> {
         captures.get(3)?.as_str().parse().ok()?,
     ))
 }
+
+mod tests;

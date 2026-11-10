@@ -10,7 +10,7 @@ const VALUE_KEY: &str = "value";
 #[derive(Debug)]
 pub struct Snapshot {
     text: String,
-    document: DocumentMut,
+    item: Item,
 }
 
 impl AsRef<str> for Snapshot {
@@ -35,36 +35,31 @@ impl Snapshot {
     pub fn from_item(item: &Item) -> Self {
         let mut document = DocumentMut::new();
         document.as_table_mut().insert(VALUE_KEY, item.clone());
-        let text = document.to_string();
-        Self { text, document }
+        Self {
+            text: document.to_string(),
+            item: item.clone(),
+        }
     }
 
     pub fn parse(text: &str) -> Result<Self, SnapshotError> {
-        let document = text
+        let mut document = text
             .parse::<DocumentMut>()
             .map_err(|source| SnapshotError::Toml { source })?;
-        let table = document.as_table();
+        let table = document.as_table_mut();
         if table.len() != 1 || !table.contains_key(VALUE_KEY) {
             return Err(SnapshotError::Shape);
         }
+        let item = table.remove(VALUE_KEY).ok_or(SnapshotError::Shape)?;
         Ok(Self {
             text: text.to_owned(),
-            document,
+            item,
         })
-    }
-
-    #[must_use]
-    pub fn canonical(&self) -> String {
-        self.document.as_table().get(VALUE_KEY).map_or_else(
-            || "null".to_owned(),
-            |item| dumps(&canonical::to_json(item)),
-        )
     }
 }
 
 impl PartialEq for Snapshot {
     fn eq(&self, other: &Self) -> bool {
-        self.canonical() == other.canonical()
+        dumps(&canonical::to_json(&self.item)) == dumps(&canonical::to_json(&other.item))
     }
 }
 
@@ -74,7 +69,7 @@ impl Eq for Snapshot {}
 pub fn fingerprint(snapshot: Option<&Snapshot>) -> String {
     let canonical = snapshot.map_or_else(
         || "missing".to_owned(),
-        |found| format!("{{\"value\": {}}}", found.canonical()),
+        |found| format!("{{\"value\": {}}}", dumps(&canonical::to_json(&found.item))),
     );
     hex::encode(Sha256::digest(canonical.as_bytes()))
 }
@@ -124,19 +119,13 @@ fn section_table<'document>(
 }
 
 fn insert_section(document: &mut DocumentMut, section: &str, key: &str, snapshot: &Snapshot) {
-    let Some(item) = snapshot.document.as_table().get(VALUE_KEY) else {
-        return;
-    };
     let mut table = Table::new();
-    table.insert(key, item.clone());
+    table.insert(key, snapshot.item.clone());
     drop(document.as_table_mut().insert(section, Item::Table(table)));
 }
 
 fn replace_value(parent: &mut dyn TableLike, key: &str, snapshot: &Snapshot) {
-    let Some(stored) = snapshot.document.as_table().get(VALUE_KEY) else {
-        return;
-    };
-    let mut replacement = stored.clone();
+    let mut replacement = snapshot.item.clone();
     if let Some(decor) = parent.get(key).and_then(decor_of).cloned() {
         set_decor(&mut replacement, decor);
     }
@@ -166,3 +155,5 @@ fn set_decor(item: &mut Item, decor: Decor) {
         Item::ArrayOfTables(_) | Item::None => {}
     }
 }
+
+mod tests;

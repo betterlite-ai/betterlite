@@ -18,8 +18,9 @@ pub async fn read_settings(settings_path: &Path) -> Result<DocumentMut, CodexSet
             });
         }
     };
-    let text = String::from_utf8(bytes).map_err(|_error| CodexSettingsError::NotUtf8 {
+    let text = String::from_utf8(bytes).map_err(|source| CodexSettingsError::NotUtf8 {
         path: settings_path.to_owned(),
+        source,
     })?;
     let document = text
         .parse::<DocumentMut>()
@@ -45,3 +46,5 @@ fn validate(document: &DocumentMut) -> Result<(), CodexSettingsError> {
         Some(_) | None => Ok(()),
     }
 }
+
+mod tests;

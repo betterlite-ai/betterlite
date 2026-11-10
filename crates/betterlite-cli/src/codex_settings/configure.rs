@@ -214,3 +214,5 @@ async fn commit_receipt_document(
     let staged = files.stage_private(state_path, document).await?;
     files.commit_staged_json(&staged, state_path).await
 }
+
+mod tests;

@@ -48,14 +48,6 @@ const fn default_version() -> u8 {
     1
 }
 
-#[must_use]
-pub fn invalid_receipt(path: &Path, source: ReceiptSource) -> CodexSettingsError {
-    CodexSettingsError::Receipt {
-        path: path.to_owned(),
-        source,
-    }
-}
-
 pub async fn read_receipt(
     settings_path: &Path,
 ) -> Result<Option<CodexReceipt>, CodexSettingsError> {
@@ -63,10 +55,19 @@ pub async fn read_receipt(
     let bytes = match fs::read(&state_path).await {
         Ok(bytes) => bytes,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => return Err(invalid_receipt(&state_path, ReceiptSource::Read(source))),
+        Err(source) => {
+            return Err(CodexSettingsError::Receipt {
+                path: state_path,
+                source: ReceiptSource::Read(source),
+            });
+        }
     };
-    let receipt = serde_json::from_slice::<CodexReceipt>(&bytes)
-        .map_err(|source| invalid_receipt(&state_path, ReceiptSource::Json(source)))?;
+    let receipt = serde_json::from_slice::<CodexReceipt>(&bytes).map_err(|source| {
+        CodexSettingsError::Receipt {
+            path: state_path.clone(),
+            source: ReceiptSource::Json(source),
+        }
+    })?;
     validate(&receipt, settings_path, &state_path)?;
     Ok(Some(receipt))
 }
@@ -76,29 +77,53 @@ fn validate(
     settings_path: &Path,
     state_path: &Path,
 ) -> Result<(), CodexSettingsError> {
+    validate_scope(receipt, settings_path, state_path)?;
+    validate_fields(receipt, state_path)
+}
+
+fn validate_scope(
+    receipt: &CodexReceipt,
+    settings_path: &Path,
+    state_path: &Path,
+) -> Result<(), CodexSettingsError> {
     if receipt.version != RECEIPT_VERSION {
-        return Err(invalid_receipt(
-            state_path,
-            ReceiptSource::Version(receipt.version),
-        ));
+        return Err(CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Version(receipt.version),
+        });
     }
     let resolved = resolve_settings_path(settings_path)?;
     if receipt.settings_path != settings_path_text(&resolved)? {
-        return Err(invalid_receipt(state_path, ReceiptSource::Scope));
+        return Err(CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Scope,
+        });
     }
+    Ok(())
+}
+
+fn validate_fields(receipt: &CodexReceipt, state_path: &Path) -> Result<(), CodexSettingsError> {
     if !receipt.previous.keys().eq(receipt.written.keys()) {
-        return Err(invalid_receipt(state_path, ReceiptSource::Keys));
+        return Err(CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Keys,
+        });
     }
     if !receipt
         .written
         .keys()
         .all(|path| OWNED_PATHS.contains(&path.as_str()))
     {
-        return Err(invalid_receipt(state_path, ReceiptSource::Ownership));
+        return Err(CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Ownership,
+        });
     }
     for saved in receipt.previous.values().flatten() {
-        Snapshot::parse(saved)
-            .map_err(|source| invalid_receipt(state_path, ReceiptSource::Snapshot(source)))?;
+        Snapshot::parse(saved).map_err(|source| CodexSettingsError::Receipt {
+            path: state_path.to_owned(),
+            source: ReceiptSource::Snapshot(source),
+        })?;
     }
     Ok(())
 }
@@ -110,3 +135,5 @@ pub fn is_ours(document: &DocumentMut, path: &str, receipt: &CodexReceipt) -> bo
             snapshot::snapshot(document, path).as_ref(),
         ))
 }
+
+mod tests;

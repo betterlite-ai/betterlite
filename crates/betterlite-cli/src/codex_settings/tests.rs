@@ -1,211 +1,31 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use betterlite_logging::private_json::files::{FileAccess, LocalFiles, PrivateFiles, StagedTemp};
+use betterlite_logging::private_json::files::PrivateFiles;
 use rstest::rstest;
-use secrecy::SecretString;
 use sha2::{Digest as _, Sha256};
 use tempfile::TempDir;
-use toml_edit::{DocumentMut, Item, TableLike, Value};
+use toml_edit::{DocumentMut, Item, Value};
 
-use super::configure::{ConfigureCodexSettings, configure_codex_settings};
-use super::document::read_settings;
-use super::error::CodexSettingsError;
-use super::paths::{codex_configure_state_path, resolve_settings_path, settings_path_text};
-use super::preflight::preflight_codex_settings;
-use super::receipt::{CodexReceipt, ReceiptSource, read_receipt};
-use super::snapshot::{Snapshot, fingerprint, snapshot, with_value};
-use super::unconfigure::{CodexUnconfigureOutcome, unconfigure_codex_settings};
-use super::version::{CodexVersion, installed_codex_version, require_safe_codex};
-use super::{CODEX_PROXY_PROVIDER, OWNED_PATHS};
+use crate::codex_settings::CODEX_PROXY_PROVIDER;
+use crate::codex_settings::error::CodexSettingsError;
+use crate::codex_settings::paths::{
+    codex_configure_state_path, resolve_settings_path, settings_path_text,
+};
+use crate::codex_settings::preflight::preflight_codex_settings;
+use crate::codex_settings::receipt::read_receipt;
+use crate::codex_settings::snapshot::{Snapshot, fingerprint, snapshot, with_value};
+use crate::codex_settings::version::{CodexVersion, installed_codex_version, require_safe_codex};
 
-const GATEWAY: &str = "https://gateway.example.com/team";
-const KEY: &str = "sk-test";
-const MODEL: &str = "gateway-model";
-const SAFE_CODEX: &str = "codex-cli 0.129.0";
+pub(crate) mod support;
 
-fn secret(value: &str) -> SecretString {
-    SecretString::from(value.to_owned())
-}
-
-fn document_at(path: &Path) -> DocumentMut {
-    fs::read_to_string(path)
-        .unwrap()
-        .parse::<DocumentMut>()
-        .unwrap()
-}
-
-fn item_at<'document>(document: &'document DocumentMut, path: &str) -> Option<&'document Item> {
-    let mut current: &'document dyn TableLike = document.as_table();
-    let mut parts = path.split('.').peekable();
-    while let Some(part) = parts.next() {
-        let item = current.get(part)?;
-        if parts.peek().is_none() {
-            return Some(item);
-        }
-        current = item.as_table_like()?;
-    }
-    None
-}
-
-fn string_at(document: &DocumentMut, path: &str) -> Option<String> {
-    item_at(document, path)
-        .and_then(Item::as_str)
-        .map(str::to_owned)
-}
-
-// a test shares its journal between threads, and a panic in one must not hide what the others recorded
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-fn staging_files(directories: &[&Path]) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for directory in directories {
-        for entry in fs::read_dir(directory).unwrap().flatten() {
-            let name = entry.file_name();
-            if name.to_str().unwrap().starts_with(".tmp-") {
-                found.push(entry.path());
-            }
-        }
-    }
-    found
-}
-
-async fn configure_with(
-    settings_path: &Path,
-    files: &PrivateFiles,
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-) -> Result<(), CodexSettingsError> {
-    let key = secret(api_key);
-    let request = ConfigureCodexSettings {
-        base_url,
-        api_key: &key,
-        model,
-        settings_path,
-        version: CodexVersion::Reported(Some(SAFE_CODEX)),
-    };
-    configure_codex_settings(&request, files).await
-}
-
-async fn unconfigure_at(
-    settings_path: &Path,
-    files: &PrivateFiles,
-) -> Result<CodexUnconfigureOutcome, CodexSettingsError> {
-    unconfigure_codex_settings(settings_path, files).await
-}
-
-struct FailureRule {
-    target: PathBuf,
-    occurrence: usize,
-}
-
-struct JournalAccess {
-    inner: LocalFiles,
-    staged: Mutex<Vec<PathBuf>>,
-    replaced: Mutex<Vec<PathBuf>>,
-    rules: Mutex<Vec<FailureRule>>,
-    counts: Mutex<BTreeMap<PathBuf, usize>>,
-}
-
-impl Default for JournalAccess {
-    fn default() -> Self {
-        Self {
-            inner: LocalFiles,
-            staged: Mutex::new(Vec::new()),
-            replaced: Mutex::new(Vec::new()),
-            rules: Mutex::new(Vec::new()),
-            counts: Mutex::new(BTreeMap::new()),
-        }
-    }
-}
-
-impl JournalAccess {
-    fn fail_replace(&self, target: &Path, occurrence: usize) {
-        locked(&self.rules).push(FailureRule {
-            target: target.to_owned(),
-            occurrence,
-        });
-    }
-
-    fn staged_directories(&self) -> Vec<PathBuf> {
-        locked(&self.staged).clone()
-    }
-
-    fn committed_paths(&self) -> Vec<PathBuf> {
-        locked(&self.replaced).clone()
-    }
-
-    fn should_fail(&self, target: &Path) -> bool {
-        let mut counts = locked(&self.counts);
-        let seen = counts.entry(target.to_owned()).or_insert(0);
-        *seen = seen.saturating_add(1);
-        let occurrence = *seen;
-        drop(counts);
-        locked(&self.rules)
-            .iter()
-            .any(|rule| rule.target == target && rule.occurrence == occurrence)
-    }
-}
-
-impl FileAccess for JournalAccess {
-    fn create_parents(&self, directory: &Path) -> io::Result<()> {
-        self.inner.create_parents(directory)
-    }
-
-    fn ensure_private_directory(&self, directory: &Path) -> io::Result<()> {
-        self.inner.ensure_private_directory(directory)
-    }
-
-    fn directory_mode(&self, directory: &Path) -> io::Result<u32> {
-        self.inner.directory_mode(directory)
-    }
-
-    fn set_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
-        self.inner.set_mode(path, mode)
-    }
-
-    fn create_staged(&self, directory: &Path, suffix: Option<&str>) -> io::Result<StagedTemp> {
-        locked(&self.staged).push(directory.to_owned());
-        self.inner.create_staged(directory, suffix)
-    }
-
-    fn write_staged(&self, staged: &mut StagedTemp, bytes: &[u8]) -> io::Result<()> {
-        self.inner.write_staged(staged, bytes)
-    }
-
-    fn replace(&self, staged: &Path, target: &Path) -> io::Result<()> {
-        locked(&self.replaced).push(target.to_owned());
-        if self.should_fail(target) {
-            return Err(io::Error::other("injected commit failure"));
-        }
-        self.inner.replace(staged, target)
-    }
-
-    fn remove(&self, path: &Path) -> io::Result<()> {
-        self.inner.remove(path)
-    }
-
-    fn rewrite_existing(&self, target: &Path, bytes: &[u8]) -> io::Result<()> {
-        self.inner.rewrite_existing(target, bytes)
-    }
-}
-
-fn journal_files() -> (PrivateFiles, Arc<JournalAccess>) {
-    let handle = Arc::new(JournalAccess::default());
-    let shared: Arc<JournalAccess> = Arc::clone(&handle);
-    let access: Arc<dyn FileAccess> = shared;
-    (PrivateFiles::from(access), handle)
-}
+use support::{
+    GATEWAY, KEY, MODEL, SAFE_CODEX, configure_with, document_at, item_at, journal_files,
+    staging_files, string_at, unconfigure_at,
+};
 
 #[test]
 fn receipt_path_deterministic() {
@@ -265,13 +85,17 @@ fn snapshot_extracted_correct() {
         .parse::<DocumentMut>()
         .unwrap();
     let model = snapshot(&document, "model").unwrap();
-    assert_eq!(model.canonical(), "\"old\"");
     assert_eq!(
         fingerprint(Some(&model)),
         fingerprint(Some(&Snapshot::parse("value = \"old\"\n").unwrap()))
     );
     let provider = snapshot(&document, "model_providers.litellm").unwrap();
-    assert_eq!(provider.canonical(), "{\"name\": \"gw\"}");
+    assert_eq!(
+        fingerprint(Some(&provider)),
+        fingerprint(Some(
+            &Snapshot::parse("value = { name = \"gw\" }\n").unwrap()
+        ))
+    );
     let text: &str = provider.as_ref();
     let reparsed = text.parse::<DocumentMut>().unwrap();
     let name = reparsed
@@ -701,5 +525,3 @@ async fn preflight_codex_validates_receipt() {
         .await
         .unwrap();
 }
-
-include!("tests/extras.rs");
