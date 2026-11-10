@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_context::bedrock_model::regions::AmazonBedrockGlobalConfig;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::endpoints::{EndpointRegistry, EndpointSupport};
@@ -14,10 +15,21 @@ use crate::count::wire::TokenRequestWire;
 
 mod tests;
 
-const BEDROCK_NAMES: BedrockNames = BedrockNames {
+pub const BEDROCK_NAMES: BedrockNames = BedrockNames {
     base_model: get_bedrock_base_model,
     strip_routing_prefix: strip_bedrock_routing_prefix,
+    strip_mantle_region,
 };
+
+// split_mantle_region_prefix: a leading Bedrock region segment goes, any other model stays.
+fn strip_mantle_region(model: &str) -> String {
+    match model.split_once('/') {
+        Some((head, tail)) if AmazonBedrockGlobalConfig.get_all_regions().contains(&head) => {
+            tail.to_owned()
+        }
+        _ => model.to_owned(),
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteStatus {

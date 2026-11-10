@@ -13,6 +13,7 @@ use crate::lookup::info::{
     ModelId, ModelInfoError, ModelQuery, PtuBounds, resolved_id, validated_ptu,
 };
 use crate::lookup::limits::{MaxTokensError, ModelLimits, max_output_tokens};
+use crate::lookup::remap::remap;
 use crate::lookup::resolve::{BedrockNames, Resolved, SplitModel, find_info, split_model};
 use crate::metadata::identity::Mode;
 use crate::ptu_pricing::{MAX_COST_PER_PTU_PER_HOUR, MAX_PTU_COUNT};
@@ -55,6 +56,12 @@ enum Check {
     MaxTokensWithoutLimits,
     SplitModelProviders,
     HuggingfaceNeverFetches,
+    AzureNamesAreRenamed,
+    VertexBetaReadsAsVertex,
+    VertexModelGetsCatalogPrefixOrSuffix,
+    MantleRegionIsStripped,
+    FireworksModelUsesCostKey,
+    ProviderOverlayLaysOverEntry,
 }
 
 #[rstest]
@@ -94,6 +101,14 @@ enum Check {
 #[case::max_tokens_of_a_mapped_model_without_limits_is_none(Check::MaxTokensWithoutLimits)]
 #[case::split_model_stands_in_for_get_llm_provider(Check::SplitModelProviders)]
 #[case::huggingface_model_never_fetches_its_config(Check::HuggingfaceNeverFetches)]
+#[case::azure_names_are_renamed_before_the_lookup(Check::AzureNamesAreRenamed)]
+#[case::vertex_ai_beta_reads_as_vertex_ai(Check::VertexBetaReadsAsVertex)]
+#[case::vertex_model_gets_its_meta_prefix_or_latest_suffix(
+    Check::VertexModelGetsCatalogPrefixOrSuffix
+)]
+#[case::bedrock_mantle_region_is_stripped(Check::MantleRegionIsStripped)]
+#[case::fireworks_model_resolves_through_the_cost_key(Check::FireworksModelUsesCostKey)]
+#[case::provider_info_overlays_the_entry_for_a_named_provider(Check::ProviderOverlayLaysOverEntry)]
 fn model_capabilities_model_capability_tests_behavior(#[case] check: Check) {
     match check {
         Check::KnownModel => known_model(),
@@ -132,6 +147,12 @@ fn model_capabilities_model_capability_tests_behavior(#[case] check: Check) {
         Check::MaxTokensWithoutLimits => max_tokens_without_limits(),
         Check::SplitModelProviders => split_model_providers(),
         Check::HuggingfaceNeverFetches => huggingface_never_fetches(),
+        Check::AzureNamesAreRenamed => azure_names_are_renamed(),
+        Check::VertexBetaReadsAsVertex => vertex_beta_reads_as_vertex(),
+        Check::VertexModelGetsCatalogPrefixOrSuffix => vertex_model_gets_catalog_prefix_or_suffix(),
+        Check::MantleRegionIsStripped => mantle_region_is_stripped(),
+        Check::FireworksModelUsesCostKey => fireworks_model_uses_cost_key(),
+        Check::ProviderOverlayLaysOverEntry => provider_overlay_lays_over_entry(),
     }
 }
 
@@ -159,14 +180,26 @@ fn drop_region(model: &str) -> String {
         .to_owned()
 }
 
+fn drop_us_east(model: &str) -> String {
+    model.strip_prefix("us-east-1/").unwrap_or(model).to_owned()
+}
+
 const IDENTITY: BedrockNames = BedrockNames {
     base_model: identity,
     strip_routing_prefix: identity,
+    strip_mantle_region: identity,
 };
 const STRIPPING: BedrockNames = BedrockNames {
     base_model: drop_region,
     strip_routing_prefix: drop_converse,
+    strip_mantle_region: drop_us_east,
 };
+const VERTEX: &[u8] = br#"{
+  "vertex_ai/meta/llama-synth": {"litellm_provider": "vertex_ai-llama_models", "mode": "chat"},
+  "vertex_ai/mistral-synth@latest": {"litellm_provider": "vertex_ai-mistral_models", "mode": "chat"},
+  "vertex_ai/jamba-synth@latest": {"litellm_provider": "vertex_ai-ai21_models", "mode": "chat"},
+  "vertex_ai/decoy-synth@latest": {"litellm_provider": "vertex_ai-language-models", "mode": "chat"}
+}"#;
 const SYNTHETIC: &[u8] = br#"{
   "zed-chat": {"litellm_provider": "acme", "mode": "chat"},
   "zed-responses": {"litellm_provider": "acme", "mode": "responses"},
@@ -558,4 +591,103 @@ fn huggingface_never_fetches() {
     assert_eq!(found.limits, ModelLimits::default());
     assert_eq!(found.capabilities, CapabilityView::default());
     assert_eq!(max_output_tokens(&catalog, model).unwrap(), None);
+}
+
+fn azure_names_are_renamed() {
+    let catalog = catalog();
+    let renamed = [
+        ("azure/gpt-41", "gpt-4.1", "openai"),
+        ("gpt-35-turbo", "azure/gpt-35-turbo", "azure"),
+        ("ada", "azure/ada", "azure"),
+    ];
+    for (model, key, provider) in renamed {
+        let found = resolve(&catalog, &IDENTITY, model, None).unwrap();
+        assert_eq!(found.key, key, "{model}");
+        assert_eq!(found.provider.as_deref(), Some(provider), "{model}");
+    }
+    assert_eq!(remap(&catalog, "gpt-4o", None), ("gpt-4o".to_owned(), None));
+}
+
+fn vertex_beta_reads_as_vertex() {
+    let catalog = catalog();
+    let found = resolve(
+        &catalog,
+        &IDENTITY,
+        "gemini-2.5-pro",
+        Some("vertex_ai_beta"),
+    )
+    .unwrap();
+    assert_eq!(found.key, "gemini-2.5-pro");
+    assert_eq!(found.provider.as_deref(), Some("vertex_ai-language-models"));
+    let (_, provider) = remap(&catalog, "gemini-2.5-pro", Some("vertex_ai_beta"));
+    assert_eq!(provider, Some("vertex_ai"));
+    let (_, other) = remap(&catalog, "gemini-2.5-pro", Some("gemini"));
+    assert_eq!(other, Some("gemini"));
+}
+
+fn vertex_model_gets_catalog_prefix_or_suffix() {
+    let synthetic = ModelCatalog::parse(VERTEX, UnknownFields::Reject).unwrap();
+    let remapped = |model: &str| remap(&synthetic, model, Some("vertex_ai")).0;
+    assert_eq!(remapped("llama-synth"), "meta/llama-synth");
+    assert_eq!(remapped("mistral-synth"), "mistral-synth@latest");
+    assert_eq!(remapped("jamba-synth"), "jamba-synth@latest");
+    assert_eq!(remapped("decoy-synth"), "decoy-synth");
+    assert_eq!(remapped("unknown"), "unknown");
+    assert_eq!(
+        remap(&synthetic, "llama-synth", Some("acme")).0,
+        "llama-synth"
+    );
+    assert_eq!(remap(&synthetic, "llama-synth", None).0, "llama-synth");
+    let beta = Some("vertex_ai_beta");
+    let found = resolve(&synthetic, &IDENTITY, "mistral-synth", beta).unwrap();
+    assert_eq!(found.key, "vertex_ai/mistral-synth@latest");
+    let real = catalog();
+    let model = "llama-3.1-405b-instruct-maas";
+    let llama = resolve(&real, &IDENTITY, model, Some("vertex_ai")).unwrap();
+    assert_eq!(llama.key, "vertex_ai/meta/llama-3.1-405b-instruct-maas");
+}
+
+fn mantle_region_is_stripped() {
+    let catalog = catalog();
+    let model = "us-east-1/openai.gpt-oss-120b";
+    let mantle_key = "bedrock_mantle/openai.gpt-oss-120b";
+    let found = resolve(&catalog, &STRIPPING, model, Some("bedrock_mantle")).unwrap();
+    assert_eq!(found.key, mantle_key);
+    assert_eq!(found.provider.as_deref(), Some("bedrock_mantle"));
+    let kept = resolve(&catalog, &IDENTITY, model, Some("bedrock_mantle"));
+    assert!(kept.is_none_or(|unexpected| unexpected.key != mantle_key));
+    let other = resolve(&catalog, &STRIPPING, model, Some("bedrock"));
+    assert!(other.is_none_or(|unexpected| unexpected.key != mantle_key));
+}
+
+fn fireworks_model_uses_cost_key() {
+    let catalog = catalog();
+    let model = "deepseek-coder-v2-instruct";
+    let found = resolve(&catalog, &IDENTITY, model, Some("fireworks_ai")).unwrap();
+    assert_eq!(
+        found.key,
+        "fireworks_ai/accounts/fireworks/models/deepseek-coder-v2-instruct"
+    );
+}
+
+fn provider_overlay_lays_over_entry() {
+    let catalog = catalog();
+    let xai = resolve(&catalog, &IDENTITY, "grok-build-0.1", Some("xai")).unwrap();
+    assert_eq!(xai.key, "xai/grok-build-0.1");
+    assert_eq!(xai.capabilities.supports_web_search, Some(true));
+    assert_eq!(xai.capabilities.supports_reasoning, Some(true));
+    let unnamed = resolve(&catalog, &IDENTITY, "xai/grok-build-0.1", None).unwrap();
+    assert_eq!(unnamed.capabilities.supports_web_search, None);
+    let fireworks =
+        |model: &str| resolve(&catalog, &IDENTITY, model, Some("fireworks_ai")).unwrap();
+    let coder = fireworks("deepseek-coder-v2-instruct").capabilities;
+    assert_eq!(coder.supports_function_calling, Some(false));
+    assert_eq!(coder.supports_prompt_caching, Some(true));
+    assert_eq!(coder.supports_reasoning, None);
+    let bare = fireworks("deepseek-r1").capabilities;
+    assert_eq!(bare.supports_function_calling, Some(true));
+    assert_eq!(bare.supports_prompt_caching, Some(true));
+    let kimi = fireworks("kimi-k2p6").capabilities;
+    assert_eq!(kimi.supports_reasoning, Some(true));
+    assert_eq!(kimi.supports_vision, Some(true));
 }

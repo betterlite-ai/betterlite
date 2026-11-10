@@ -20,7 +20,7 @@ use betterlite_models::endpoints::{
     EndpointRegistry, EndpointSupport, PACKAGED_ASSET, RUNTIME_ASSET, RegistryAsset, parse,
 };
 use betterlite_models::lookup::capabilities::CapabilityFlag;
-use betterlite_models::lookup::info::{ModelId, ModelQuery, PtuBounds};
+use betterlite_models::lookup::info::{ModelId, ModelInfoError, ModelQuery, PtuBounds};
 use rstest::rstest;
 use tokio::time::Instant;
 
@@ -281,4 +281,20 @@ fn bedrock_routing_prefixes(layer: &ModelCapabilities) {
         assert_eq!(info.provider.as_deref(), Some("bedrock"));
         assert_eq!(info.model, *model);
     }
+    let mantle = ModelQuery {
+        model: "us-east-1/openai.gpt-oss-120b",
+        provider: Some("bedrock_mantle"),
+    };
+    let info = layer
+        .model_info(&mantle, None, &PtuBounds::default())
+        .unwrap();
+    assert_eq!(info.key, "bedrock_mantle/openai.gpt-oss-120b");
+    let unregioned = ModelQuery {
+        model: "not-a-region/openai.gpt-oss-120b",
+        provider: Some("bedrock_mantle"),
+    };
+    let error = layer
+        .model_info(&unregioned, None, &PtuBounds::default())
+        .unwrap_err();
+    assert!(matches!(error, ModelInfoError::Unmapped { .. }));
 }

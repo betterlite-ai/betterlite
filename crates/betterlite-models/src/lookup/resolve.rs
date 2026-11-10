@@ -4,6 +4,7 @@ use serde::Deserialize;
 
 use crate::catalog::{CatalogEntry, ModelCatalog};
 use crate::catalog_generalizations::ModelInfo;
+use crate::fireworks_catalog_metadata::get_model_cost_key;
 use crate::identity::explicit_prefix::{
     PrefixClassification, PrefixClassificationInput, classify_prefix,
 };
@@ -13,12 +14,15 @@ use crate::model_catalog_keys::{EntryProvider, check_provider_match, strip_model
 use super::capabilities::CapabilityView;
 use super::info::{ModelInfoError, ModelQuery};
 use super::limits::ModelLimits;
+use super::provider_info::provider_info;
+use super::remap::remap;
 
 // B2203's bedrock normalizers live in betterlite-context, which depends on this crate, so the caller passes them in.
 #[derive(Clone, Copy, Debug)]
 pub struct BedrockNames {
     pub base_model: fn(&str) -> String,
     pub strip_routing_prefix: fn(&str) -> String,
+    pub strip_mantle_region: fn(&str) -> String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,11 +157,23 @@ fn potential_names(
         || unprovided_names(catalog, bedrock, query.model),
         |provider| provided_names(bedrock, query.model, provider),
     );
-    if matches!(
-        names.provider.as_deref(),
-        Some("bedrock" | "bedrock_converse")
-    ) {
-        names.split_model = (bedrock.strip_routing_prefix)(&names.split_model);
+    match names.provider.as_deref() {
+        Some("bedrock" | "bedrock_converse") => {
+            names.split_model = (bedrock.strip_routing_prefix)(&names.split_model);
+        }
+        Some("bedrock_mantle") => {
+            names.split_model = (bedrock.strip_mantle_region)(&names.split_model);
+            let stripped = strip_model_name(
+                &names.split_model,
+                Some("bedrock_mantle"),
+                bedrock.base_model,
+            );
+            names.combined_stripped = format!("bedrock_mantle/{stripped}");
+        }
+        Some("fireworks_ai") => {
+            names.provider_prefixed = get_model_cost_key(&names.split_model);
+        }
+        _ => {}
     }
     names
 }
@@ -259,19 +275,24 @@ fn huggingface(model: &str) -> Resolved {
     }
 }
 
-pub fn find_info(
+fn lookup_candidates(
     catalog: &ModelCatalog,
     bedrock: &BedrockNames,
     query: &ModelQuery<'_>,
 ) -> Result<Option<Resolved>, ModelInfoError> {
-    let names = potential_names(catalog, bedrock, query);
+    let (model, remapped_provider) = remap(catalog, query.model, query.provider);
+    let remapped = ModelQuery {
+        model: &model,
+        provider: remapped_provider,
+    };
+    let names = potential_names(catalog, bedrock, &remapped);
     let provider = names.provider.as_deref();
     if provider == Some("huggingface") {
-        return Ok(Some(huggingface(query.model)));
+        return Ok(Some(huggingface(&model)));
     }
     let candidates = [
         names.combined.as_str(),
-        query.model,
+        model.as_str(),
         names.split_model.as_str(),
         names.combined_stripped.as_str(),
         names.stripped.as_str(),
@@ -285,4 +306,18 @@ pub fn find_info(
         }
     }
     generalized(catalog, &candidates, provider)
+}
+
+// The caller's provider and model pick the provider overlay; the remapped ones pick the entry.
+pub fn find_info(
+    catalog: &ModelCatalog,
+    bedrock: &BedrockNames,
+    query: &ModelQuery<'_>,
+) -> Result<Option<Resolved>, ModelInfoError> {
+    let Some(mut resolved) = lookup_candidates(catalog, bedrock, query)? else {
+        return Ok(None);
+    };
+    let overlay = provider_info(catalog, query.model, query.provider);
+    resolved.capabilities = overlay.or(resolved.capabilities);
+    Ok(Some(resolved))
 }

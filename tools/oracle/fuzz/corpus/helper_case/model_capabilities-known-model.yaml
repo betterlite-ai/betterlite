@@ -11,5 +11,15 @@ call:
       - {model: 'converse/anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
       - {model: 'apac.anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
       - {model: 'eu-west-1/anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
+      - {model: gemini-2.5-pro, provider: vertex_ai_beta}
+      - {model: azure/gpt-41}
+      - {model: gpt-35-turbo}
+      - {model: ada}
+      - {model: llama-3.1-405b-instruct-maas, provider: vertex_ai}
+      - {model: 'us-east-1/openai.gpt-oss-120b', provider: bedrock_mantle}
+      - {model: grok-build-0.1, provider: xai}
+      - {model: deepseek-coder-v2-instruct, provider: fireworks_ai}
+      - {model: deepseek-r1, provider: fireworks_ai}
+      - {model: kimi-k2p6, provider: fireworks_ai}
 env: {}
 compare: {ignore: []}

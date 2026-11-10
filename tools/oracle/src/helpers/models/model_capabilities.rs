@@ -1,4 +1,3 @@
-use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::endpoints::projection::project;
 use betterlite_models::endpoints::{
@@ -6,16 +5,12 @@ use betterlite_models::endpoints::{
 };
 use betterlite_models::lookup::info::{ModelInfoError, ModelQuery};
 use betterlite_models::lookup::limits::max_output_tokens;
-use betterlite_models::lookup::resolve::{BedrockNames, find_info};
+use betterlite_models::lookup::resolve::find_info;
+use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
-
-const BEDROCK_NAMES: BedrockNames = BedrockNames {
-    base_model: get_bedrock_base_model,
-    strip_routing_prefix: strip_bedrock_routing_prefix,
-};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
