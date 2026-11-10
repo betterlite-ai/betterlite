@@ -241,8 +241,8 @@ fn assembly_reads_safety_ratings_and_safety_results_independently() {
     let extension = assemble_stream_metadata(&[json(
         r#"{"vertex_ai_safety_ratings": [["rating"]], "vertex_ai_safety_results": [["other"]]}"#,
     )]);
-    assert_eq!(extension.safety_ratings, vec![json(r#"[["rating"]]"#)]);
-    assert_eq!(extension.safety_results, vec![json(r#"[["other"]]"#)]);
+    assert_eq!(extension.safety_ratings, vec![json(r#"["rating"]"#)]);
+    assert_eq!(extension.safety_results, vec![json(r#"["other"]"#)]);
 }
 
 #[test]
@@ -262,7 +262,7 @@ fn every_metadata_field_assembles_from_its_own_wire_name() {
         extension.citation_metadata,
         vec![json(r#"{"citations": []}"#)]
     );
-    assert_eq!(extension.safety_results, vec![json(r#"[["result"]]"#)]);
+    assert_eq!(extension.safety_results, vec![json(r#"["result"]"#)]);
     assert!(extension.grounding_metadata.is_empty());
     assert!(extension.safety_ratings.is_empty());
 }
