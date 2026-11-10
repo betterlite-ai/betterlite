@@ -723,6 +723,15 @@ fn complete_urls() {
         files_url(Some(""), &settings, FilesUrl::Files).unwrap(),
         "https://api.anthropic.com/v1/files"
     );
+    let env_settings = configured(None, None, Some("https://env-base.example/"));
+    assert_eq!(
+        files_url(None, &env_settings, FilesUrl::Files).unwrap(),
+        "https://env-base.example/v1/files"
+    );
+    assert_eq!(
+        files_url(None, &env_settings, FilesUrl::File("file-1")).unwrap(),
+        "https://env-base.example/v1/files/file-1"
+    );
 }
 
 fn caller_headers_are_overwritten() {

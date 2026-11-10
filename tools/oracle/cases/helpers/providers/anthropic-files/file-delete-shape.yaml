@@ -3,7 +3,7 @@ name: anthropic-files-file-delete-shape
 call:
   anthropic_files:
     file_delete_shape:
-      params_api_base: "https://files.test/v1///"
+      environment: {ANTHROPIC_BASE_URL: "https://delete-base.example/"}
       file_ids: ["file-1", "a/b c?d#e%f", "", ".", ".."]
       bodies:
         - {id: file-1, type: file, deleted: false, object: banana}

@@ -236,7 +236,7 @@ def created_at_timezone(argument: Json) -> Object:
     supplied = cast(Object, argument)
     now = cast(int, supplied["now"])
     stamps = [
-        field(created(value, now), ("created_at",))["created_at"]
+        field(created({"created_at": value}, now), ("created_at",))["created_at"]
         for value in cast("list[Json]", supplied["values"])
     ]
     return {"created_at": stamps}

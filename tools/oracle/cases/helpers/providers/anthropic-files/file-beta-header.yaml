@@ -21,5 +21,11 @@ call:
           url_bases: [null]
           caller_headers: [[anthropic-beta, ""]]
           error: {status: 403, message: forbidden, headers: []}
+        - environment: {ANTHROPIC_API_KEY: sk-env-api-base, ANTHROPIC_API_BASE: "https://env-base.example/"}
+          url_bases: [null, ""]
+          error: {status: 400, message: bad, headers: []}
+        - environment: {ANTHROPIC_API_KEY: sk-env-base-url, ANTHROPIC_BASE_URL: "https://url-base.example/"}
+          url_bases: [null]
+          error: {status: 400, message: bad, headers: []}
 env: {}
 compare: {ignore: []}
