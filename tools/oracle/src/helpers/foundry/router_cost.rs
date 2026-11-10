@@ -90,7 +90,7 @@ fn classify(calls: &[ClassifyCall]) -> Value {
             let name = classify_router_name(&call.model);
             json!({
                 "is_router": name.is_router_shaped(),
-                "is_fee_entry": name.fee_entry_spelling().is_some(),
+                "is_fee_entry": name.is_fee_entry(),
                 "fee_entry_name": name.fee_lookup_name(),
                 "fee_name": router_fee_name(&call.model, call.request_model.as_deref()),
             })

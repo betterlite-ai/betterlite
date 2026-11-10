@@ -19,11 +19,10 @@ impl RouterName {
     }
 
     #[must_use]
-    pub const fn fee_entry_spelling(self) -> Option<&'static str> {
+    pub const fn is_fee_entry(self) -> bool {
         match self {
-            Self::HyphenatedEntry => Some("model-router"),
-            Self::UnderscoredEntry => Some("model_router"),
-            Self::Plain | Self::RouterShaped => None,
+            Self::HyphenatedEntry | Self::UnderscoredEntry => true,
+            Self::Plain | Self::RouterShaped => false,
         }
     }
 
@@ -60,7 +59,7 @@ pub fn router_fee_name<'request>(
     request_model: Option<&'request str>,
 ) -> Option<&'request str> {
     let name = classify_router_name(model);
-    if name.fee_entry_spelling().is_some() {
+    if name.is_fee_entry() {
         return None;
     }
     if name.is_router_shaped() {

@@ -161,10 +161,7 @@ fn fee_entries_require_the_exact_name_after_one_prefix_strip(
     #[case] model: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(
-        classify_router_name(model).fee_entry_spelling().is_some(),
-        expected
-    );
+    assert_eq!(classify_router_name(model).is_fee_entry(), expected);
 }
 
 #[rstest]
