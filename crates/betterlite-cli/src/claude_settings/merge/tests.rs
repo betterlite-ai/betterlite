@@ -72,7 +72,9 @@ fn command_of(document: &SettingsDocument) -> Option<&str> {
 
 #[test]
 fn merge_injects_the_base_url_and_the_token() {
-    let document = merged("{}");
+    let document = merged(
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://old.example.com","ANTHROPIC_AUTH_TOKEN":"sk-old-token"}}"#,
+    );
     assert_eq!(env_text(&document, ANTHROPIC_BASE_URL_KEY), Some(BASE_URL));
     assert_eq!(env_text(&document, ANTHROPIC_AUTH_TOKEN_KEY), Some(TOKEN));
     assert_eq!(document.get(API_KEY_HELPER_KEY), None);
@@ -152,7 +154,7 @@ fn merge_pins_the_start_pin_model() {
     let credential = static_token();
     let model = ModelChoice::StartOn("claude-sonnet-4".to_owned());
     let document = merge_claude_settings(
-        &settings(r#"{"env":{"ANTHROPIC_MODEL":"user-model"}}"#),
+        &settings(r#"{"model":"user-model","env":{"ANTHROPIC_MODEL":"user-model"}}"#),
         &options(BASE_URL, &credential, &model),
     );
     assert_eq!(
@@ -189,7 +191,7 @@ fn merge_points_every_tier_key_at_the_tier_model() {
     let credential = static_token();
     let model = ModelChoice::KeepModel;
     let document = merge_claude_settings(
-        &settings("{}"),
+        &settings(r#"{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"user-opus"}}"#),
         &MergeOptions {
             base_url: BASE_URL,
             credential: &credential,
