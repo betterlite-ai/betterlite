@@ -14,7 +14,7 @@ use crate::openai_base_config::{
 };
 
 use super::{
-    GdcPolicyError, TransformRequest, audience, caching_enabled, complete_url, effective_project,
+    GdcPolicyError, audience, caching_enabled, complete_url, effective_project,
     get_supported_openai_params, read_env_bool, resolve_location, resolve_project,
     transform_request, validate_path_id,
 };
@@ -543,14 +543,15 @@ fn transform(model: &str, messages_json: Value, optional_json: Value) -> Value {
     let typed_messages: Vec<ChatMessage> = serde_json::from_value(messages_json).unwrap();
     let params = optional(optional_json);
     let environment = BTreeMap::<String, String>::new();
-    let request = TransformRequest {
+    let body = transform_request(
         model,
-        messages: &typed_messages,
-        optional_params: &params,
-        environment: &environment,
-        downloads: &RefuseDownloads,
-    };
-    serde_json::to_value(transform_request(&request).unwrap()).unwrap()
+        &typed_messages,
+        &params,
+        &environment,
+        &RefuseDownloads,
+    )
+    .unwrap();
+    serde_json::to_value(body).unwrap()
 }
 
 #[test]
@@ -624,8 +625,8 @@ fn the_parent_transform_strips_cache_control_from_content_parts() {
 
 #[test]
 fn authentication_failures_carry_the_401_class() {
-    let error = GdcPolicyError::Authentication {
-        message: "the GDC Gemini project is not set".to_owned(),
+    let error = GdcPolicyError::Missing {
+        what: "project",
         model: "gdc/gemini-2.5-pro".to_owned(),
     };
     let metadata = error.class().metadata();
@@ -638,7 +639,7 @@ fn authentication_failures_carry_the_401_class() {
 #[test]
 fn a_request_parameter_of_the_wrong_type_is_a_400() {
     let error = GdcPolicyError::Parameter {
-        param: "vertex_project".to_owned(),
+        param: "vertex_project",
     };
     assert_eq!(error.class().metadata().status_code, 400);
     assert!(error.to_string().contains("vertex_project"));
