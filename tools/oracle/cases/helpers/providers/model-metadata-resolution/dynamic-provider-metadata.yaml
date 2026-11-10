@@ -16,6 +16,7 @@ call:
       - model: lemonade/gemma
         custom_llm_provider: lemonade
         dynamic: {kind: value, body: {key: "lemonade/gemma", max_tokens: 8}}
+      - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: value, body: {}}}
       - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: error}}
       - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: none}}
       - {model: gpt-4o, custom_llm_provider: openai, dynamic: {kind: value, body: {key: ignored}}}

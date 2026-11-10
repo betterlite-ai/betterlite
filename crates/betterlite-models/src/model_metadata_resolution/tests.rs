@@ -32,6 +32,8 @@ use crate::resolution::ResolutionContext;
 
 type Fields = BTreeMap<String, Box<RawValue>>;
 
+mod dynamic;
+
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: test_bedrock_base_model,
     bedrock_routing_prefix: test_bedrock_routing_prefix,
@@ -385,7 +387,7 @@ async fn model_metadata_resolution_cases(#[case] scenario: Scenario) {
             explicit_potential_names_case();
         }
         Scenario::ProviderAliases => provider_aliases_case().await,
-        Scenario::DynamicProviderMetadata => dynamic_provider_metadata_case().await,
+        Scenario::DynamicProviderMetadata => dynamic::dynamic_provider_metadata_case().await,
         Scenario::OrderedExactLookup => ordered_exact_lookup_case().await,
         Scenario::FillMissingExactEntry => fill_missing_exact_entry_case().await,
         Scenario::GeneralizationOnlyUnknown => generalization_only_unknown_case().await,
@@ -532,68 +534,6 @@ async fn declared_provider_case() {
         .await
         .unwrap();
     assert_eq!(string_field(&declared, "key"), "github_copilot/gpt-4");
-}
-
-async fn dynamic_provider_metadata_case() {
-    let fixture = dynamic_fixture();
-    authoritative_dynamic_case(&fixture).await;
-    dynamic_fallback_case(&fixture).await;
-}
-
-fn dynamic_fixture() -> Fixture {
-    Fixture::new(
-        r#"{
-            "ollama/llama3.2": {"litellm_provider": "ollama", "mode": "chat", "input_cost_per_token": 9},
-            "openai/gpt-4o": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 7}
-        }"#,
-    )
-}
-
-async fn authoritative_dynamic_case(fixture: &Fixture) {
-    let dynamic = ScriptedDynamic::new(vec![Reply::Value(raw(
-        r#"{"key": "runtime", "max_tokens": 32}"#,
-    ))]);
-    let value = resolve(fixture, "llama3.2", Some("ollama"), &dynamic)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&value, "key"), "runtime");
-    assert_eq!(
-        dynamic.calls(),
-        vec![DynamicCall {
-            adapter: DynamicModelInfo::Ollama,
-            model: "llama3.2".to_owned(),
-            api_base: None,
-            api_key: None,
-        }]
-    );
-
-    let alias = ScriptedDynamic::new(vec![Reply::Value(raw(r#"{"key": "rewritten"}"#))]);
-    let rewritten = resolve(fixture, "ada", Some("ollama"), &alias)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&rewritten, "key"), "rewritten");
-    assert_eq!(alias.calls()[0].model, "azure/ada");
-}
-
-async fn dynamic_fallback_case(fixture: &Fixture) {
-    let falling_back = ScriptedDynamic::new(vec![Reply::Error]);
-    let fallback = resolve(fixture, "llama3.2", Some("ollama"), &falling_back)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&fallback, "key"), "ollama/llama3.2");
-
-    let none = ScriptedDynamic::new(vec![Reply::None]);
-    let static_entry = resolve(fixture, "llama3.2", Some("ollama"), &none)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&static_entry, "key"), "ollama/llama3.2");
-
-    let unused = ScriptedDynamic::new(vec![Reply::Value(raw(r#"{"key": "ignored"}"#))]);
-    let selected = resolve(fixture, "openai/gpt-4o", Some("openai"), &unused)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&selected, "key"), "openai/gpt-4o");
-    assert!(unused.calls().is_empty());
 }
 
 async fn ordered_exact_lookup_case() {
