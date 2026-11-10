@@ -1,0 +1,124 @@
+use opentelemetry::trace::Span;
+
+use crate::otel::legacy_policy::semconv_attrs::{
+    gen_ai_operation_name, semconv_latest_experimental,
+};
+use crate::otel::model::metadata::wire::MetadataMap;
+use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::span_attributes::SafeSetAttribute as _;
+use crate::otel::transforms::tools::set_tools_attributes;
+use crate::otel::transforms::transform_messages;
+use crate::otel::vocabulary::constants::attribute_keys::gen_ai;
+use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
+
+use super::context::{AttributeContext, InferenceCall, truthiness};
+use super::request::keys;
+
+mod tests;
+
+const SYSTEM_PROMPT_KWARGS: [&str; 3] = ["system_instructions", "instructions", "system"];
+
+pub fn set_content_attributes<S>(
+    span: &mut S,
+    context: &AttributeContext<'_>,
+    call: &InferenceCall<'_>,
+) where
+    S: Span,
+{
+    write_tools(span, call.optional_params);
+    write_input_messages(span, call.kwargs);
+    write_system_instructions(span, call.kwargs);
+    write_operation_name(span, context, call);
+    write_request_id(span, call.payload);
+}
+
+fn write_tools<S>(span: &mut S, optional_params: &MetadataMap)
+where
+    S: Span,
+{
+    if let Some(tools) = optional_params
+        .get("tools")
+        .filter(|value| truthiness(value))
+        .and_then(OtelModelValue::as_array)
+    {
+        set_tools_attributes(span, tools);
+    }
+}
+
+fn write_input_messages<S>(span: &mut S, kwargs: &MetadataMap)
+where
+    S: Span,
+{
+    let Some(messages) = kwargs.get("messages").filter(|value| truthiness(value)) else {
+        return;
+    };
+    if let Ok(text) = safe_dumps(
+        &transform_messages(messages),
+        DEFAULT_MAX_RECURSE_DEPTH,
+        None,
+    ) {
+        span.safe_set_attribute(gen_ai::INPUT_MESSAGES, &OtelModelValue::String(text));
+    }
+}
+
+fn write_system_instructions<S>(span: &mut S, kwargs: &MetadataMap)
+where
+    S: Span,
+{
+    let chosen = SYSTEM_PROMPT_KWARGS.iter().find_map(|key| {
+        kwargs
+            .get(*key)
+            .filter(|value| !matches!(value, OtelModelValue::Null(())))
+    });
+    let Some(instructions) = chosen.filter(|value| truthiness(value)) else {
+        return;
+    };
+    let written = if let OtelModelValue::String(text) = instructions {
+        OtelModelValue::String(text.clone())
+    } else {
+        let Ok(text) = safe_dumps(
+            &transform_messages(instructions),
+            DEFAULT_MAX_RECURSE_DEPTH,
+            None,
+        ) else {
+            return;
+        };
+        OtelModelValue::String(text)
+    };
+    span.safe_set_attribute(gen_ai::SYSTEM_INSTRUCTIONS, &written);
+}
+
+fn write_operation_name<S>(span: &mut S, context: &AttributeContext<'_>, call: &InferenceCall<'_>)
+where
+    S: Span,
+{
+    let operation = if semconv_latest_experimental(context.config) {
+        gen_ai_operation_name(
+            call.kwargs
+                .get("call_type")
+                .and_then(OtelModelValue::as_str),
+        )
+    } else {
+        match call
+            .payload
+            .get("call_type")
+            .and_then(OtelModelValue::as_str)
+        {
+            Some("completion" | "") | None => "chat",
+            Some(call_type) => call_type,
+        }
+    };
+    span.safe_set_attribute(
+        gen_ai::OPERATION_NAME,
+        &OtelModelValue::String(operation.to_owned()),
+    );
+}
+
+fn write_request_id<S>(span: &mut S, payload: &MetadataMap)
+where
+    S: Span,
+{
+    if let Some(request_id) = payload.get("request_id").filter(|value| truthiness(value)) {
+        span.safe_set_attribute(keys::REQUEST_ID, request_id);
+    }
+}

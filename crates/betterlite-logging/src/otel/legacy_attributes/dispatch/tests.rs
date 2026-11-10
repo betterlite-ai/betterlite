@@ -1,0 +1,215 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+
+use opentelemetry::Value;
+use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use rstest::rstest;
+
+use super::set_attributes;
+use crate::otel::legacy_attributes::context::AttributeContext;
+use crate::otel::legacy_attributes::error::LegacyAttributesError;
+use crate::otel::legacy_policy::capture::CaptureMode;
+use crate::otel::legacy_policy::config::OpenTelemetryConfig;
+use crate::otel::model::metadata::wire::MetadataMap;
+use crate::otel::model::utils::coercion::OtelModelValue;
+
+const GENERIC_ONLY_KEYS: [&str; 4] = [
+    "hidden_params",
+    "litellm.call_id",
+    "metadata.trace_name",
+    "gen_ai.request.id",
+];
+
+fn map(text: &str) -> MetadataMap {
+    serde_json::from_str(text).expect("map")
+}
+
+fn value(text: &str) -> OtelModelValue {
+    serde_json::from_str(text).expect("value")
+}
+
+fn context<'request>(
+    config: &'request OpenTelemetryConfig,
+    callback_name: Option<&'request str>,
+) -> AttributeContext<'request> {
+    AttributeContext {
+        callback_name,
+        config,
+        capture_mode: CaptureMode::SpanAndEvent,
+    }
+}
+
+fn run(
+    context: &AttributeContext<'_>,
+    kwargs: &MetadataMap,
+    response: Option<&OtelModelValue>,
+) -> (BTreeMap<String, Value>, Result<(), LegacyAttributesError>) {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let mut span = provider.tracer("b3856-dispatch").start("case");
+    let result = set_attributes(&mut span, context, kwargs, response);
+    span.end();
+    let spans = exporter.get_finished_spans().expect("spans");
+    let attributes = spans
+        .first()
+        .expect("one span")
+        .attributes
+        .iter()
+        .map(|pair| (pair.key.to_string(), pair.value.clone()))
+        .collect();
+    (attributes, result)
+}
+
+fn chat_kwargs() -> MetadataMap {
+    map(r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hello"}],
+            "optional_params": {"stream": true, "max_tokens": 50},
+            "litellm_params": {"custom_llm_provider": "openai"},
+            "standard_logging_object": {
+                "id": "chatcmpl-1",
+                "call_type": "acompletion",
+                "litellm_call_id": "call-1",
+                "request_id": "request-1",
+                "metadata": {"trace_name": "demo"},
+                "hidden_params": {"litellm_model_name": "gpt-4o"}
+            }
+        }"#)
+}
+
+fn chat_response() -> OtelModelValue {
+    value(
+        r#"{"id": "chatcmpl-1", "model": "gpt-4o",
+            "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+            "usage": {"total_tokens": 3, "completion_tokens": 1, "prompt_tokens": 2}}"#,
+    )
+}
+
+fn assert_no_generic_keys(attributes: &BTreeMap<String, Value>) {
+    for key in GENERIC_ONLY_KEYS {
+        assert!(
+            !attributes.contains_key(key),
+            "{key} came from the generic flow"
+        );
+    }
+}
+
+#[test]
+fn langtrace_hands_the_span_to_the_langtrace_writer() {
+    let config = OpenTelemetryConfig::default();
+    let response = chat_response();
+    let (attributes, result) = run(
+        &context(&config, Some("langtrace")),
+        &chat_kwargs(),
+        Some(&response),
+    );
+    result.expect("attributes");
+    assert_eq!(
+        attributes.get("langtrace.service.name"),
+        Some(&Value::from("openai"))
+    );
+    assert_eq!(
+        attributes.get("gen_ai.operation.name"),
+        Some(&Value::from("chat"))
+    );
+    assert_no_generic_keys(&attributes);
+}
+
+#[test]
+fn langfuse_otel_hands_the_span_to_the_langfuse_writer() {
+    let config = OpenTelemetryConfig::default();
+    let response = chat_response();
+    let (attributes, result) = run(
+        &context(&config, Some("langfuse_otel")),
+        &chat_kwargs(),
+        Some(&response),
+    );
+    result.expect("attributes");
+    assert_eq!(
+        attributes.get("langfuse.observation.type"),
+        Some(&Value::from("generation"))
+    );
+    assert_no_generic_keys(&attributes);
+}
+
+#[test]
+fn weave_otel_hands_the_span_to_the_weave_writer() {
+    let config = OpenTelemetryConfig::default();
+    let response = chat_response();
+    let (attributes, result) = run(
+        &context(&config, Some("weave_otel")),
+        &chat_kwargs(),
+        Some(&response),
+    );
+    result.expect("attributes");
+    assert_eq!(
+        attributes.get("openinference.span.kind"),
+        Some(&Value::from("LLM"))
+    );
+    assert_no_generic_keys(&attributes);
+}
+
+#[rstest]
+#[case::base_otel_name(Some("otel"))]
+#[case::no_name(None)]
+fn other_callback_names_run_the_generic_flow(#[case] callback_name: Option<&str>) {
+    let config = OpenTelemetryConfig::default();
+    let response = chat_response();
+    let (attributes, result) = run(
+        &context(&config, callback_name),
+        &chat_kwargs(),
+        Some(&response),
+    );
+    result.expect("attributes");
+    assert_eq!(
+        attributes.get("metadata.trace_name"),
+        Some(&Value::from("demo"))
+    );
+    assert_eq!(
+        attributes.get("litellm.call_id"),
+        Some(&Value::from("call-1"))
+    );
+}
+
+#[test]
+fn missing_standard_logging_object_returns_the_error_without_attributes() {
+    let config = OpenTelemetryConfig::default();
+    let kwargs = map(r#"{"model": "gpt-4o", "optional_params": {"stream": true}}"#);
+    let response = chat_response();
+    let (attributes, result) = run(&context(&config, None), &kwargs, Some(&response));
+    assert!(matches!(
+        result,
+        Err(LegacyAttributesError::MissingStandardLoggingObject)
+    ));
+    assert!(attributes.is_empty());
+}
+
+#[test]
+fn the_weave_writer_receives_the_redaction_answer_from_the_request() {
+    let config = OpenTelemetryConfig::default();
+    let passthrough = map(r#"{
+            "litellm_params": {"custom_llm_provider": "anthropic"},
+            "additional_args": {"complete_input_dict": {"messages": [{"role": "user", "content": "secret"}]}},
+            "standard_logging_object": {"call_type": "anthropic_passthrough"}
+        }"#);
+    let plain = run(&context(&config, Some("weave_otel")), &passthrough, None).0;
+    assert_eq!(plain.get("input.value"), Some(&Value::from("secret")));
+    assert_eq!(
+        plain.get("llm.input_messages.0.message.role"),
+        Some(&Value::from("user"))
+    );
+
+    let redacted = map(r#"{
+            "litellm_params": {"custom_llm_provider": "anthropic"},
+            "additional_args": {"complete_input_dict": {"messages": [{"role": "user", "content": "secret"}]}},
+            "standard_callback_dynamic_params": {"turn_off_message_logging": true},
+            "standard_logging_object": {"call_type": "anthropic_passthrough"}
+        }"#);
+    let hidden = run(&context(&config, Some("weave_otel")), &redacted, None).0;
+    assert_ne!(hidden.get("input.value"), Some(&Value::from("secret")));
+    assert!(!hidden.contains_key("llm.input_messages.0.message.role"));
+}

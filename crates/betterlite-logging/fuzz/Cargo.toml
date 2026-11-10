@@ -107,3 +107,10 @@ path = "fuzz_targets/classifier_snapshot.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "legacy_raw_response"
+path = "fuzz_targets/legacy_raw_response.rs"
+test = false
+doc = false
+bench = false
