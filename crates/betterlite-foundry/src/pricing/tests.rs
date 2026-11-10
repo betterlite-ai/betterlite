@@ -28,13 +28,14 @@ struct CatalogLookup {
 
 impl CatalogLookup {
     fn new(entries: &[(&str, PriceRecord)]) -> Self {
-        Self {
-            entries: entries
-                .iter()
-                .map(|(model, record)| ((*model).to_owned(), record.clone()))
-                .collect(),
+        let mut catalog = Self {
+            entries: BTreeMap::new(),
             calls: Cell::new(0),
+        };
+        for (model, record) in entries {
+            catalog.entries.insert((*model).to_owned(), record.clone());
         }
+        catalog
     }
 
     fn resolve(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
@@ -70,8 +71,7 @@ impl PriceLookup for CatalogLookup {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.calls.set(self.calls.get().saturating_add(1));
-        self.resolve(model, custom_llm_provider)
+        self.effective_model_info(model, custom_llm_provider)
             .map(|record| PricedModel {
                 record,
                 tiered_pricing: Vec::new(),

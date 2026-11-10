@@ -26,12 +26,9 @@ struct CatalogLookup {
 
 impl CatalogLookup {
     fn resolve(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
-        if let Some(prefixed) = custom_llm_provider.map(|provider| format!("{provider}/{model}"))
-            && let Some(record) = self.entries.get(&prefixed)
-        {
-            return Some(record.clone());
-        }
-        self.entries.get(model).cloned()
+        let prefixed = custom_llm_provider.map(|provider| format!("{provider}/{model}"));
+        let record = prefixed.as_ref().and_then(|key| self.entries.get(key));
+        record.or_else(|| self.entries.get(model)).cloned()
     }
 }
 
