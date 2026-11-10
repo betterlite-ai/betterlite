@@ -30,27 +30,22 @@ pub fn set_request_attributes<S>(
 ) where
     S: Span,
 {
-    write_metadata(span, call.payload);
-    write_hidden_params(span, call.payload);
-    write_identity_attributes(
-        span,
-        call.payload,
-        call.litellm_params,
-        &context.config.baggage_team_metadata_keys,
-        &context.config.baggage_metadata_keys,
-    );
-    write_cost_breakdown(span, call.payload);
+    write_payload_attributes(span, context, call);
     write_request_identity(span, context.config, call);
     write_response_identity(span, call.payload, call.response);
     set_service_tier_attributes(span, call.payload);
     write_usage(span, call.kwargs, call.litellm_params, call.response);
 }
 
-fn write_metadata<S>(span: &mut S, payload: &MetadataMap)
-where
+fn write_payload_attributes<S>(
+    span: &mut S,
+    context: &AttributeContext<'_>,
+    call: &InferenceCall<'_>,
+) where
     S: Span,
 {
-    let metadata = payload
+    let metadata = call
+        .payload
         .get("metadata")
         .and_then(OtelModelValue::as_object)
         .into_iter()
@@ -58,13 +53,8 @@ where
     for (key, value) in metadata {
         span.safe_set_attribute(&format!("{}{key}", keys::METADATA_PREFIX), value);
     }
-}
-
-fn write_hidden_params<S>(span: &mut S, payload: &MetadataMap)
-where
-    S: Span,
-{
-    let hidden = payload
+    let hidden = call
+        .payload
         .get("hidden_params")
         .filter(|value| truthiness(value));
     if let Some(found) = hidden
@@ -72,23 +62,24 @@ where
     {
         span.safe_set_attribute(keys::HIDDEN_PARAMS, &OtelModelValue::String(text));
     }
-}
-
-fn write_cost_breakdown<S>(span: &mut S, payload: &MetadataMap)
-where
-    S: Span,
-{
-    let Some(entries) = payload
+    write_identity_attributes(
+        span,
+        call.payload,
+        call.litellm_params,
+        &context.config.baggage_team_metadata_keys,
+        &context.config.baggage_metadata_keys,
+    );
+    let breakdown = call
+        .payload
         .get("cost_breakdown")
         .filter(|value| truthiness(value))
-        .and_then(OtelModelValue::as_object)
-    else {
-        return;
-    };
+        .and_then(OtelModelValue::as_object);
+    let entries = breakdown
+        .into_iter()
+        .flatten()
+        .filter(|(_, value)| !matches!(value, OtelModelValue::Null(())));
     for (key, value) in entries {
-        if !matches!(value, OtelModelValue::Null(())) {
-            span.safe_set_attribute(&format!("{}{key}", keys::COST_PREFIX), value);
-        }
+        span.safe_set_attribute(&format!("{}{key}", keys::COST_PREFIX), value);
     }
 }
 
