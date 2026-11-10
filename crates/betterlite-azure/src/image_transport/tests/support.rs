@@ -86,16 +86,8 @@ pub(super) struct Step {
 impl Step {
     pub(super) fn preview(replies: Vec<Reply>) -> Self {
         Self {
-            api_base: PREVIEW_BASE,
             api_version: PREVIEW_VERSION,
-            deployment_name: Some("dall-e-2"),
-            data: r#"{"model":"dall-e-2","prompt":"a cat","n":1}"#,
-            headers: headers(),
-            environment: BTreeMap::new(),
-            style: CallStyle::Async,
-            supplied_client: false,
-            timeout_argument: None,
-            replies,
+            ..Self::direct(PREVIEW_BASE, Some("dall-e-2"), replies)
         }
     }
 
@@ -153,20 +145,7 @@ pub(super) struct Outcome {
 }
 
 pub(super) fn run(step: Step) -> Outcome {
-    let clock = Arc::new(FixtureClock {
-        elapsed: AtomicU64::new(0),
-        sleeps: Mutex::default(),
-    });
-    let harness = Harness {
-        state: Arc::new(FixtureState {
-            replies: Mutex::new(VecDeque::from(step.replies)),
-            calls: Mutex::default(),
-            debug: Mutex::default(),
-            clock: Arc::clone(&clock),
-        }),
-        constructed: Arc::default(),
-        clock,
-    };
+    let harness = Harness::new(step.replies);
     let mut data: JsonMap = serde_json::from_str(step.data).unwrap();
     let connection = Connection {
         client: step.supplied_client.then(|| harness.transport()),
@@ -187,7 +166,7 @@ pub(super) fn run(step: Step) -> Outcome {
     let result = runtime().block_on(execute(
         &constructor,
         connection,
-        harness.clock_ref(),
+        &*harness.clock,
         settings,
         call,
     ));
@@ -209,6 +188,23 @@ pub(super) struct Harness {
 }
 
 impl Harness {
+    fn new(replies: Vec<Reply>) -> Self {
+        let clock = Arc::new(FixtureClock {
+            elapsed: AtomicU64::new(0),
+            sleeps: Mutex::default(),
+        });
+        Self {
+            state: Arc::new(FixtureState {
+                replies: Mutex::new(VecDeque::from(replies)),
+                calls: Mutex::default(),
+                debug: Mutex::default(),
+                clock: Arc::clone(&clock),
+            }),
+            constructed: Arc::default(),
+            clock,
+        }
+    }
+
     pub(super) fn transport(&self) -> FixtureTransport {
         FixtureTransport {
             state: Arc::clone(&self.state),
@@ -220,10 +216,6 @@ impl Harness {
             transport: self.transport(),
             constructed: Arc::clone(&self.constructed),
         }
-    }
-
-    pub(super) fn clock_ref(&self) -> &FixtureClock {
-        &self.clock
     }
 
     pub(super) fn calls(&self) -> Vec<RecordedCall> {
@@ -292,7 +284,12 @@ impl ImageTransport for FixtureTransport {
             headers: request
                 .headers
                 .iter()
-                .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_owned(),
+                        value.to_str().unwrap_or_default().to_owned(),
+                    )
+                })
                 .collect(),
             body: (!request.body.is_empty())
                 .then(|| serde_json::from_slice(&request.body).unwrap()),
@@ -309,10 +306,6 @@ impl ImageTransport for FixtureTransport {
             body: reply.body.as_bytes().to_vec(),
         }))
     }
-}
-
-fn header_text(value: &HeaderValue) -> String {
-    value.to_str().unwrap_or_default().to_owned()
 }
 
 pub(super) struct FixtureClock {

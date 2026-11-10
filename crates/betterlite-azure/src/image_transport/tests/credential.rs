@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use crate::image_transport::request::CallStyle;
-
 use super::support::{API_KEY, PROVIDER_BASE, Step, failure_of, reply, run};
 
 const DIRECT_RESULT: &str = r#"{"created":1,"data":[]}"#;
@@ -13,9 +11,7 @@ fn identity_step(key: &'static str) -> Step {
 }
 
 fn failing_step() -> Step {
-    let mut step = Step::preview(vec![reply(500, vec![], "the submit request failed")]);
-    step.style = CallStyle::Async;
-    step
+    Step::preview(vec![reply(500, vec![], "the submit request failed")])
 }
 
 #[test]
