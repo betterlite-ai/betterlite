@@ -24,7 +24,13 @@ pub(crate) async fn run(name: &str) {
     if pipeline_cases(name).await {
         return;
     }
-    panic!("unknown case {name}");
+    match name {
+        "increment_succeeds_under_contention" => increment_succeeds_under_contention().await,
+        "increment_conflicts_after_the_update_window" => {
+            increment_conflicts_after_the_update_window().await;
+        }
+        _ => panic!("unknown case {name}"),
+    }
 }
 
 #[rustfmt::skip]
@@ -94,8 +100,6 @@ async fn expiry_cases(name: &str) -> bool {
 async fn pipeline_cases(name: &str) -> bool {
     if name == "float_pipeline_invalid_ttl_is_an_error" { float_pipeline_invalid_ttl_is_an_error().await; return true; }
     if name == "float_pipeline_zero_ttl_is_sent" { float_pipeline_zero_ttl_is_sent().await; return true; }
-    if name == "increment_succeeds_under_contention" { increment_succeeds_under_contention().await; return true; }
-    if name == "increment_conflicts_after_the_update_window" { increment_conflicts_after_the_update_window().await; return true; }
     if name == "cancelled_compare_and_set_leaves_the_connection_usable" { cancelled_compare_and_set_leaves_the_connection_usable().await; return true; }
     false
 }
