@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_anthropic::credentials::AnthropicSettings;
@@ -9,14 +10,33 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::Redactor;
 use http::header::HeaderMap;
 
-use super::call::{LITELLM_PROXY_PROVIDER, SkillCall, SkillsCallParams, resolved_timeout};
+use super::call::{
+    LITELLM_PROXY_PROVIDER, SkillCall, SkillRequest, SkillsCallParams, resolved_timeout,
+};
 use super::error::{SkillAction, SkillsCallError, SkillsFailureError, failure};
-use super::handler::{SkillHttpRequest, SkillsHttpHandler};
+use super::handler::{SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler};
 use super::hosted::{
     HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers, hosted_handler,
 };
 use super::logging::log_pre_call;
 use super::principal::user_api_key_auth_from_kwargs;
+
+// the answer one skill action produces, so both actions share one request pipeline
+pub(super) trait SkillAnswer: Sized {
+    fn http_answer<Http>(
+        http: &Http,
+        request: SkillHttpRequest<'_>,
+    ) -> impl Future<Output = Result<Self, SkillsHandlerError>> + Send
+    where
+        Http: SkillsHttpHandler + ?Sized;
+
+    fn hosted_answer<Hosted>(
+        hosted: &Hosted,
+        request: HostedSkillRequest<'_>,
+    ) -> impl Future<Output = Result<Self, SkillsHandlerError>> + Send
+    where
+        Hosted: HostedSkillsHandler + ?Sized;
+}
 
 pub struct SkillsService<'deps, Http, Hosted> {
     pub http: &'deps Http,
@@ -34,89 +54,70 @@ struct PreparedSkill {
     timeout: Duration,
 }
 
+impl PreparedSkill {
+    fn request(&self) -> SkillHttpRequest<'_> {
+        SkillHttpRequest {
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            timeout: self.timeout,
+            config: &self.config,
+            custom_llm_provider: &self.provider,
+        }
+    }
+}
+
 impl<Http, Hosted> SkillsService<'_, Http, Hosted>
 where
     Http: SkillsHttpHandler,
     Hosted: HostedSkillsHandler,
 {
-    pub async fn get_skill(
-        &self,
-        call: &SkillCall<'_>,
-        logging: &mut LoggingState,
-    ) -> Result<Skill, SkillsFailureError> {
-        match self.run_get(call, logging).await {
+    pub async fn get_skill(&self, request: SkillRequest<'_>) -> Result<Skill, SkillsFailureError> {
+        match self
+            .route(SkillAction::Get, request.call, request.logging)
+            .await
+        {
             Ok(skill) => Ok(skill),
-            Err(error) => Err(failure(error, call.params.provider(), self.redactor)),
+            Err(error) => Err(failure(
+                error,
+                request.call.params.provider(),
+                self.redactor,
+            )),
         }
     }
 
     pub async fn delete_skill(
         &self,
-        call: &SkillCall<'_>,
-        logging: &mut LoggingState,
+        request: SkillRequest<'_>,
     ) -> Result<DeleteSkillResponse, SkillsFailureError> {
-        match self.run_delete(call, logging).await {
+        match self
+            .route(SkillAction::Delete, request.call, request.logging)
+            .await
+        {
             Ok(deleted) => Ok(deleted),
-            Err(error) => Err(failure(error, call.params.provider(), self.redactor)),
+            Err(error) => Err(failure(
+                error,
+                request.call.params.provider(),
+                self.redactor,
+            )),
         }
     }
 
-    async fn run_get(
+    async fn route<Answer>(
         &self,
+        action: SkillAction,
         call: &SkillCall<'_>,
         logging: &mut LoggingState,
-    ) -> Result<Skill, SkillsCallError> {
+    ) -> Result<Answer, SkillsCallError>
+    where
+        Answer: SkillAnswer,
+    {
         if call.params.provider() == LITELLM_PROXY_PROVIDER {
-            return self.hosted_get(call, logging).await;
+            log_pre_call(logging, call, LITELLM_PROXY_PROVIDER)?;
+            let handler = hosted_handler(self.hosted);
+            return Ok(Answer::hosted_answer(&*handler, hosted_request(call)).await?);
         }
-        let prepared = self.prepare(SkillAction::Get, call, logging)?;
-        let request = SkillHttpRequest {
-            url: prepared.url,
-            headers: prepared.headers,
-            timeout: prepared.timeout,
-            config: &prepared.config,
-            custom_llm_provider: &prepared.provider,
-        };
-        Ok(self.http.get_skill(request).await?)
-    }
-
-    async fn run_delete(
-        &self,
-        call: &SkillCall<'_>,
-        logging: &mut LoggingState,
-    ) -> Result<DeleteSkillResponse, SkillsCallError> {
-        if call.params.provider() == LITELLM_PROXY_PROVIDER {
-            return self.hosted_delete(call, logging).await;
-        }
-        let prepared = self.prepare(SkillAction::Delete, call, logging)?;
-        let request = SkillHttpRequest {
-            url: prepared.url,
-            headers: prepared.headers,
-            timeout: prepared.timeout,
-            config: &prepared.config,
-            custom_llm_provider: &prepared.provider,
-        };
-        Ok(self.http.delete_skill(request).await?)
-    }
-
-    async fn hosted_get(
-        &self,
-        call: &SkillCall<'_>,
-        logging: &mut LoggingState,
-    ) -> Result<Skill, SkillsCallError> {
-        log_pre_call(logging, call, LITELLM_PROXY_PROVIDER)?;
-        let handler = hosted_handler(self.hosted);
-        Ok(handler.get_skill(hosted_request(call)).await?)
-    }
-
-    async fn hosted_delete(
-        &self,
-        call: &SkillCall<'_>,
-        logging: &mut LoggingState,
-    ) -> Result<DeleteSkillResponse, SkillsCallError> {
-        log_pre_call(logging, call, LITELLM_PROXY_PROVIDER)?;
-        let handler = hosted_handler(self.hosted);
-        Ok(handler.delete_skill(hosted_request(call)).await?)
+        let prepared = self.prepare(action, call, logging)?;
+        Ok(Answer::http_answer(self.http, prepared.request()).await?)
     }
 
     fn prepare(
@@ -148,7 +149,7 @@ where
     }
 }
 
-fn hosted_request<'call>(call: &'call SkillCall<'_>) -> HostedSkillRequest<'call> {
+pub(super) fn hosted_request<'call>(call: &'call SkillCall<'_>) -> HostedSkillRequest<'call> {
     HostedSkillRequest {
         skill_id: call.skill_id,
         user_api_key_auth: user_api_key_auth_from_kwargs(call.kwargs),

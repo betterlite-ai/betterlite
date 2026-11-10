@@ -13,7 +13,8 @@ use secrecy::SecretString;
 
 use self::fixtures::{
     API_BASE, CALL_ID, Fixture, SKILL_ID, call, call_with, extra_headers, header_values,
-    hosted_params, kwargs, logging, metadata_with, object, sample_deleted, sample_skill, text,
+    hosted_params, kwargs, logging, metadata_with, object, sample_deleted, sample_skill,
+    skill_request, text,
 };
 use super::call::SkillsCallParams;
 use super::error::{SkillAction, SkillsCallError};
@@ -110,15 +111,15 @@ async fn lazy_handler_builds_once_for_many_hosted_calls() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     let service = fixture.service();
     service
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get succeeds");
     service
-        .delete_skill(&hosted, &mut logging())
+        .delete_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted delete succeeds");
     service
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the second hosted get succeeds");
     assert_eq!(fixture.builds(), 1);
@@ -133,11 +134,11 @@ async fn handler_init_reuses_the_cached_instance() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     let service = fixture.service();
     service
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get succeeds");
     service
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the second hosted get succeeds");
     assert_eq!(fixture.builds(), 1);
@@ -149,7 +150,7 @@ async fn lazy_handler_is_not_built_for_external_calls() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     assert_eq!(fixture.builds(), 0);
@@ -163,7 +164,7 @@ async fn get_skill_routing_defaults_to_anthropic() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -180,7 +181,7 @@ async fn get_skill_hosted_routes_to_the_hosted_handler() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get succeeds");
     assert!(
@@ -210,7 +211,7 @@ async fn get_skill_external_dispatches_through_the_http_handler() {
     let request = call_with(params, SKILL_ID, &values);
     let skill = fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     assert_eq!(skill, sample_skill());
@@ -225,7 +226,7 @@ async fn delete_skill_routing_defaults_to_anthropic() {
     let values = kwargs();
     fixture
         .service()
-        .delete_skill(&call(SKILL_ID, &values), &mut logging())
+        .delete_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external delete succeeds");
     let requests = fixture.http.delete_requests.lock().expect("the fake");
@@ -240,7 +241,7 @@ async fn delete_skill_hosted_routes_to_the_hosted_handler() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     fixture
         .service()
-        .delete_skill(&hosted, &mut logging())
+        .delete_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted delete succeeds");
     assert!(
@@ -260,7 +261,7 @@ async fn delete_skill_external_returns_the_deleted_skill() {
     let values = kwargs();
     let deleted = fixture
         .service()
-        .delete_skill(&call(SKILL_ID, &values), &mut logging())
+        .delete_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external delete succeeds");
     assert_eq!(deleted, sample_deleted());
@@ -274,7 +275,7 @@ async fn get_skill_request_carries_the_validated_headers() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -318,7 +319,7 @@ async fn get_skill_request_keeps_caller_extra_headers() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -341,7 +342,7 @@ async fn get_skill_request_reports_a_missing_credential() {
     let values = kwargs();
     let failure = fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect_err("a missing credential fails");
     assert_eq!(
@@ -364,7 +365,7 @@ async fn delete_skill_request_carries_the_validated_headers() {
     let values = kwargs();
     fixture
         .service()
-        .delete_skill(&call(SKILL_ID, &values), &mut logging())
+        .delete_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external delete succeeds");
     let requests = fixture.http.delete_requests.lock().expect("the fake");
@@ -393,7 +394,7 @@ async fn transformation_prefers_the_call_api_key() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -411,7 +412,7 @@ async fn get_skill_url_targets_the_skill_endpoint() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -427,7 +428,7 @@ async fn delete_skill_url_targets_the_skill_endpoint() {
     let values = kwargs();
     fixture
         .service()
-        .delete_skill(&call(SKILL_ID, &values), &mut logging())
+        .delete_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external delete succeeds");
     let requests = fixture.http.delete_requests.lock().expect("the fake");
@@ -443,7 +444,7 @@ async fn url_construction_encodes_the_skill_id() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call("skill/1 ?x", &values), &mut logging())
+        .get_skill(skill_request(&call("skill/1 ?x", &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -459,7 +460,7 @@ async fn fallback_base_has_a_single_v1_segment() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -485,7 +486,7 @@ async fn get_skill_url_prefers_the_call_api_base() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -507,7 +508,7 @@ async fn url_construction_ignores_an_empty_call_api_base() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -526,7 +527,7 @@ async fn pre_call_logging_records_skill_id_and_provider() {
     let mut state = logging();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut state)
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut state))
         .await
         .expect("the external get succeeds");
     assert_eq!(state.optional_params.get("skill_id"), Some(&text(SKILL_ID)));
@@ -544,7 +545,7 @@ async fn logging_records_the_call_id_from_the_call() {
     let mut state = logging();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut state)
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut state))
         .await
         .expect("the external get succeeds");
     assert_eq!(
@@ -561,7 +562,7 @@ async fn pre_call_logging_uses_litellm_proxy_for_hosted() {
     let mut state = logging();
     fixture
         .service()
-        .get_skill(&hosted, &mut state)
+        .get_skill(skill_request(&hosted, &mut state))
         .await
         .expect("the hosted get succeeds");
     assert_eq!(state.custom_llm_provider.as_deref(), Some("litellm_proxy"));
@@ -576,7 +577,7 @@ async fn timeout_default_uses_the_request_timeout_setting() {
     let values = kwargs();
     fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -598,7 +599,7 @@ async fn timeout_explicit_value_is_preserved() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -621,7 +622,7 @@ async fn timeout_default_zero_falls_back() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -636,7 +637,7 @@ async fn timeout_is_not_consulted_for_hosted_calls() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get never resolves a timeout");
 }
@@ -649,7 +650,7 @@ async fn exception_mapping_maps_a_provider_status() {
     let values = kwargs();
     let failure = fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect_err("the provider error fails the call");
     assert!(matches!(failure.class, ErrorClass::NotFound(_)));
@@ -665,7 +666,7 @@ async fn exception_mapping_maps_the_delete_path() {
     let values = kwargs();
     let failure = fixture
         .service()
-        .delete_skill(&call(SKILL_ID, &values), &mut logging())
+        .delete_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect_err("the provider error fails the delete");
     assert!(matches!(failure.class, ErrorClass::Authentication(_)));
@@ -677,7 +678,7 @@ async fn exception_type_uses_anthropic_mapping() {
     let values = kwargs();
     let failure = fixture
         .service()
-        .get_skill(&call(SKILL_ID, &values), &mut logging())
+        .get_skill(skill_request(&call(SKILL_ID, &values), &mut logging()))
         .await
         .expect_err("the provider error fails the call");
     assert!(matches!(failure.class, ErrorClass::PermissionDenied(_)));
@@ -698,7 +699,7 @@ async fn exception_type_uses_the_openai_family_mapping() {
     let request = call_with(params, SKILL_ID, &values);
     let failure = fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect_err("the unsupported provider fails the call");
     assert!(matches!(failure.class, ErrorClass::Api(_)));
@@ -742,7 +743,7 @@ async fn unsupported_provider_reports_the_litellm_message() {
     let request = call_with(params, SKILL_ID, &values);
     let failure = fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect_err("the unsupported provider fails the call");
     assert_eq!(
@@ -767,7 +768,7 @@ async fn unsupported_provider_delete_reports_the_litellm_message() {
     let request = call_with(params, SKILL_ID, &values);
     let failure = fixture
         .service()
-        .delete_skill(&request, &mut logging())
+        .delete_skill(skill_request(&request, &mut logging()))
         .await
         .expect_err("the unsupported provider fails the delete");
     assert_eq!(
@@ -795,7 +796,7 @@ async fn extra_query_is_accepted_and_not_forwarded() {
     let request = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&request, &mut logging())
+        .get_skill(skill_request(&request, &mut logging()))
         .await
         .expect("the external get succeeds");
     let requests = fixture.http.get_requests.lock().expect("the fake");
@@ -822,7 +823,7 @@ async fn extra_query_is_not_forwarded_to_the_hosted_handler() {
     let hosted = call_with(params, SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get succeeds");
     let calls = fixture.hosted.calls.lock().expect("the fake");
@@ -845,8 +846,8 @@ async fn async_context_concurrent_calls_keep_their_own_metadata() {
     let mut first_state = logging();
     let mut second_state = logging();
     let (first, second) = join(
-        service.get_skill(&first_call, &mut first_state),
-        service.get_skill(&second_call, &mut second_state),
+        service.get_skill(skill_request(&first_call, &mut first_state)),
+        service.get_skill(skill_request(&second_call, &mut second_state)),
     )
     .await;
     first.expect("the first call succeeds");
@@ -870,7 +871,7 @@ async fn async_context_hosted_get_receives_the_principal() {
     let hosted = call_with(hosted_params(), SKILL_ID, &values);
     fixture
         .service()
-        .get_skill(&hosted, &mut logging())
+        .get_skill(skill_request(&hosted, &mut logging()))
         .await
         .expect("the hosted get succeeds");
     let calls = fixture.hosted.calls.lock().expect("the fake");

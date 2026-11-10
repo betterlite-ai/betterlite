@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_context::core_settings::CoreSettings;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
@@ -37,6 +38,13 @@ pub struct SkillCall<'call> {
     pub params: SkillsCallParams,
     pub kwargs: &'call IndexMap<String, Json>,
     pub litellm_call_id: Option<&'call str>,
+}
+
+// one skill call together with the logging state its pre-call update writes into
+#[derive(Debug)]
+pub struct SkillRequest<'call> {
+    pub call: &'call SkillCall<'call>,
+    pub logging: &'call mut LoggingState,
 }
 
 // LiteLLM writes `timeout or request_timeout`, so an absent or zero timeout takes REQUEST_TIMEOUT

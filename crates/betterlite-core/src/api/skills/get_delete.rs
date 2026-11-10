@@ -1,5 +1,7 @@
 pub mod call;
+pub mod delete;
 pub mod error;
+pub mod get;
 pub mod handler;
 pub mod hosted;
 pub mod logging;

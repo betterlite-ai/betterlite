@@ -20,7 +20,7 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use super::super::call::{SkillCall, SkillsCallParams};
+use super::super::call::{SkillCall, SkillRequest, SkillsCallParams};
 use super::super::handler::{SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler};
 use super::super::hosted::{HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers};
 use super::super::service::SkillsService;
@@ -149,12 +149,14 @@ pub(super) fn call<'call>(
     skill_id: &'call str,
     kwargs: &'call IndexMap<String, Json>,
 ) -> SkillCall<'call> {
-    SkillCall {
-        skill_id,
-        params: params(),
-        kwargs,
-        litellm_call_id: Some(CALL_ID),
-    }
+    call_with(params(), skill_id, kwargs)
+}
+
+pub(super) fn skill_request<'call>(
+    call: &'call SkillCall<'call>,
+    logging: &'call mut LoggingState,
+) -> SkillRequest<'call> {
+    SkillRequest { call, logging }
 }
 
 pub(super) fn call_with<'call>(
@@ -204,19 +206,35 @@ pub(super) struct FakeHttp {
 
 impl FakeHttp {
     fn new() -> Self {
-        Self {
-            get_requests: Mutex::new(Vec::new()),
-            delete_requests: Mutex::new(Vec::new()),
-            status: None,
-        }
+        Self::with_status(None)
     }
 
     fn failing(status: u16) -> Self {
+        Self::with_status(Some(status))
+    }
+
+    fn with_status(status: Option<u16>) -> Self {
         Self {
             get_requests: Mutex::new(Vec::new()),
             delete_requests: Mutex::new(Vec::new()),
-            status: Some(status),
+            status,
         }
+    }
+
+    fn answer<T>(
+        &self,
+        request: &SkillHttpRequest<'_>,
+        requests: &Mutex<Vec<Recorded>>,
+        success: fn() -> T,
+    ) -> Result<T, SkillsHandlerError> {
+        let mut calls = match requests.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        calls.push(recorded(request));
+        drop(calls);
+        self.status
+            .map_or_else(|| Ok(success()), |status| Err(handler_error(status)))
     }
 }
 
@@ -225,28 +243,14 @@ impl SkillsHttpHandler for FakeHttp {
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        self.get_requests
-            .lock()
-            .expect("the fake records its calls")
-            .push(recorded(&request));
-        let answer = self
-            .status
-            .map_or_else(|| Ok(sample_skill()), |status| Err(handler_error(status)));
-        ready(answer)
+        ready(self.answer(&request, &self.get_requests, sample_skill))
     }
 
     fn delete_skill(
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<DeleteSkillResponse, SkillsHandlerError>> + Send {
-        self.delete_requests
-            .lock()
-            .expect("the fake records its calls")
-            .push(recorded(&request));
-        let answer = self
-            .status
-            .map_or_else(|| Ok(sample_deleted()), |status| Err(handler_error(status)));
-        ready(answer)
+        ready(self.answer(&request, &self.delete_requests, sample_deleted))
     }
 }
 
@@ -270,27 +274,31 @@ pub(super) struct FakeHosted {
     deletes: Arc<Mutex<Vec<HostedCall>>>,
 }
 
+fn hosted_record<T>(
+    calls: &Mutex<Vec<HostedCall>>,
+    request: &HostedSkillRequest<'_>,
+    success: fn() -> T,
+) -> T {
+    calls
+        .lock()
+        .expect("the fake records its calls")
+        .push(hosted_call(request));
+    success()
+}
+
 impl HostedSkillsHandler for FakeHosted {
     fn get_skill(
         &self,
         request: HostedSkillRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        self.calls
-            .lock()
-            .expect("the fake records its calls")
-            .push(hosted_call(&request));
-        ready(Ok(sample_skill()))
+        ready(Ok(hosted_record(&self.calls, &request, sample_skill)))
     }
 
     fn delete_skill(
         &self,
         request: HostedSkillRequest<'_>,
     ) -> impl Future<Output = Result<DeleteSkillResponse, SkillsHandlerError>> + Send {
-        self.deletes
-            .lock()
-            .expect("the fake records its calls")
-            .push(hosted_call(&request));
-        ready(Ok(sample_deleted()))
+        ready(Ok(hosted_record(&self.deletes, &request, sample_deleted)))
     }
 }
 
@@ -337,18 +345,16 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        Self {
-            http: FakeHttp::new(),
-            hosted: hosted_fixture(),
-            anthropic: anthropic_settings(),
-            core: core_settings(),
-            redactor: redactor(),
-        }
+        Self::with_http(FakeHttp::new())
     }
 
     pub(super) fn failing(status: u16) -> Self {
+        Self::with_http(FakeHttp::failing(status))
+    }
+
+    fn with_http(http: FakeHttp) -> Self {
         Self {
-            http: FakeHttp::failing(status),
+            http,
             hosted: hosted_fixture(),
             anthropic: anthropic_settings(),
             core: core_settings(),
