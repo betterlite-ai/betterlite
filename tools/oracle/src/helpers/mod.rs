@@ -245,8 +245,30 @@ pub fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, Oracle
         return Ok(HelperRun::Match);
     };
     let pointer = difference.pointer;
-    writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name).map_err(OracleError::Output)?;
+    let (left_name, right_name) = match left_side(self_check) {
+        HelperLeft::Native => ("betterlite", "litellm"),
+        HelperLeft::Python => ("first litellm run", "second litellm run"),
+    };
+    let left_value = value_at(&left, &pointer);
+    let right_value = value_at(&right, &pointer);
+    writeln!(
+        io::stderr().lock(),
+        "FAIL {}: {pointer} ({})\n     {left_name}: {left_value}\n     {right_name}: {right_value}",
+        case.name,
+        difference.message
+    )
+    .map_err(OracleError::Output)?;
     Ok(HelperRun::Difference)
+}
+
+fn value_at(output: &HelperOutput, pointer: &str) -> String {
+    serde_json::to_value(output)
+        .ok()
+        .and_then(|value| value.pointer(pointer).map(ToString::to_string))
+        .map_or_else(
+            || "absent".to_owned(),
+            |text| text.chars().take(400).collect(),
+        )
 }
 
 pub(crate) fn run_pair(
