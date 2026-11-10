@@ -31,14 +31,8 @@ impl Transport for HttpTransport {
             },
             deadline: request.timeout,
         };
-        let response = self
-            .client
-            .send_following(outbound)
-            .await?
-            .buffered(self.client.limits.body_bytes)
-            .await?;
-        Ok(HttpResponse {
-            status: response.status,
-        })
+        let sent = self.client.send_following(outbound).await?;
+        let status = sent.buffered(self.client.limits.body_bytes).await?.status;
+        Ok(HttpResponse { status })
     }
 }

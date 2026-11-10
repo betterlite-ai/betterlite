@@ -162,17 +162,10 @@ where
                 );
                 DeliveryOutcome::Rejected
             }
-            [_only] => {
-                tracing::warn!(
-                    bytes = payload.len(),
-                    "langfuse rejected a single span as too large; resending it with its largest field truncated"
-                );
-                DeliveryOutcome::TooLarge
-            }
             _ => {
                 tracing::warn!(
                     spans = batch.len(),
-                    "langfuse rejected the batch as too large; resending it in halves"
+                    "langfuse rejected the batch as too large; resending it smaller"
                 );
                 DeliveryOutcome::TooLarge
             }
@@ -245,35 +238,33 @@ where
 
 // None means the request is worth sending again; 413 asks for a smaller body and every other non-2xx is final, as httpx raise_for_status makes it
 fn status_outcome(status: u16) -> Option<DeliveryOutcome> {
-    if matches!(status, 408 | 429) || (500..=599).contains(&status) {
-        tracing::warn!(
-            status,
-            "langfuse export was answered with a status worth retrying"
-        );
-        return None;
+    match status {
+        408 | 429 | 500..=599 => {
+            tracing::warn!(
+                status,
+                "langfuse export was answered with a status worth retrying"
+            );
+            None
+        }
+        413 => Some(DeliveryOutcome::TooLarge),
+        200..=299 => Some(DeliveryOutcome::Delivered),
+        _ => {
+            // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
+            let hint = if status == 404 { SERVER_FLOOR_HINT } else { "" };
+            tracing::error!(status, "langfuse rejected the export{hint}");
+            Some(DeliveryOutcome::Rejected)
+        }
     }
-    if status == 413 {
-        return Some(DeliveryOutcome::TooLarge);
-    }
-    if (200..300).contains(&status) {
-        return Some(DeliveryOutcome::Delivered);
-    }
-    // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
-    let hint = if status == 404 { SERVER_FLOOR_HINT } else { "" };
-    tracing::error!(status, "langfuse rejected the export{hint}");
-    Some(DeliveryOutcome::Rejected)
 }
 
 fn smaller(batch: &[SpanData]) -> Vec<Vec<SpanData>> {
-    if batch.len() > 1 {
-        let middle = batch.len().div_euclid(2);
-        let Some((first, second)) = batch.split_at_checked(middle) else {
-            return Vec::new();
-        };
-        return vec![first.to_vec(), second.to_vec()];
-    }
-    match batch.split_first() {
-        Some((only, _rest)) => truncated(only).map_or_else(Vec::new, |span| vec![vec![span]]),
-        None => Vec::new(),
+    match batch {
+        [] => Vec::new(),
+        [only] => truncated(only).map_or_else(Vec::new, |span| vec![vec![span]]),
+        _ => batch
+            .split_at_checked(batch.len().div_euclid(2))
+            .map_or_else(Vec::new, |(first, second)| {
+                vec![first.to_vec(), second.to_vec()]
+            }),
     }
 }

@@ -35,25 +35,20 @@ pub fn request_headers(
     authorization_value.set_sensitive(true);
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, authorization_value);
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static(PROTOBUF_CONTENT_TYPE),
-    );
-    headers.insert(
-        HeaderName::from_static(SDK_NAME_HEADER),
-        HeaderValue::from_static(LANGFUSE_SDK_NAME),
-    );
-    headers.insert(
-        HeaderName::from_static(SDK_VERSION_HEADER),
-        HeaderValue::from_static(LANGFUSE_SDK_VERSION),
-    );
+    for (name, value) in [
+        (CONTENT_TYPE.as_str(), PROTOBUF_CONTENT_TYPE),
+        (SDK_NAME_HEADER, LANGFUSE_SDK_NAME),
+        (SDK_VERSION_HEADER, LANGFUSE_SDK_VERSION),
+        (INGESTION_VERSION_HEADER, LANGFUSE_INGESTION_VERSION),
+    ] {
+        headers.insert(
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        );
+    }
     headers.insert(
         HeaderName::from_static(PUBLIC_KEY_HEADER),
         HeaderValue::try_from(public).map_err(LangfuseExporterError::PublicKey)?,
-    );
-    headers.insert(
-        HeaderName::from_static(INGESTION_VERSION_HEADER),
-        HeaderValue::from_static(LANGFUSE_INGESTION_VERSION),
     );
     Ok(headers)
 }
