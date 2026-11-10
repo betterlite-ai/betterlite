@@ -1,13 +1,14 @@
 use betterlite_http::user_url::validate::Resolve;
 
-use crate::arguments::json::{Json, Object};
+use crate::arguments::json::Json;
 use crate::bedrock_content::dedup::{TOOL_RESULT_BLOCK, TOOL_USE_ID, deduplicate_content_blocks};
+use crate::bedrock_images::remote::RemoteImage;
 use crate::bedrock_tool_results::invoke::CachePoints;
 use crate::bedrock_tool_results::result::to_bedrock_tool_result;
 use crate::message_content::Message;
 
 use super::blocks::{
-    CACHE_CONTROL, CACHE_POINT, CONTENT, Role, TOOL, as_json, message_object, role_at,
+    CACHE_CONTROL, CONTENT, Role, TOOL, as_json, object_of, push_cache_point, role_at,
 };
 use super::conversation::Conversion;
 use super::error::ProcessorError;
@@ -21,7 +22,7 @@ fn cache_control_of_part(part: &Json) -> Option<&Json> {
 }
 
 fn tool_cache_control(message: &Json, index: usize) -> Result<Option<&Json>, ProcessorError> {
-    let fields = message_object(message, index)?;
+    let fields = object_of(message).ok_or(ProcessorError::MessageNotObject { message: index })?;
     match fields.get(CACHE_CONTROL) {
         Some(Json::Null) | None => match fields.get(CONTENT) {
             Some(Json::List(parts)) => Ok(parts.iter().find_map(cache_control_of_part)),
@@ -32,6 +33,32 @@ fn tool_cache_control(message: &Json, index: usize) -> Result<Option<&Json>, Pro
         },
         Some(control) => Ok(Some(control)),
     }
+}
+
+async fn tool_result_block<R, Ids>(
+    message: &Json,
+    index: usize,
+    remote: &RemoteImage<R>,
+    new_id: &Ids,
+) -> Result<Json, ProcessorError>
+where
+    R: Resolve,
+    Ids: Fn() -> String + Sync,
+{
+    let value =
+        serde_json::to_value(message).map_err(|source| ProcessorError::ToolMessageShape {
+            message: index,
+            source,
+        })?;
+    let typed: Message =
+        serde_json::from_value(value).map_err(|source| ProcessorError::ToolMessageShape {
+            message: index,
+            source,
+        })?;
+    let result = to_bedrock_tool_result(&typed, remote, new_id)
+        .await
+        .map_err(|source| ProcessorError::ToolResult { source })?;
+    as_json(&result)
 }
 
 async fn tool_message_blocks<R, C, Ids>(
@@ -45,29 +72,14 @@ where
     C: CachePoints + Sync,
     Ids: Fn() -> String + Sync,
 {
-    let value =
-        serde_json::to_value(message).map_err(|source| ProcessorError::ToolMessageShape {
-            message: index,
-            source,
-        })?;
-    let typed: Message =
-        serde_json::from_value(value).map_err(|source| ProcessorError::ToolMessageShape {
-            message: index,
-            source,
-        })?;
-    let result = to_bedrock_tool_result(&typed, conversion.remote, new_id)
-        .await
-        .map_err(|source| ProcessorError::ToolResult { source })?;
-    let mut blocks = vec![as_json(&result)?];
-    if let Some(control) = tool_cache_control(message, index)?
-        && let Some(point) = conversion
-            .cache_points
-            .cache_point_block(control, conversion.model)
-    {
-        blocks.push(Json::Object(Object::from_iter([(
-            CACHE_POINT.to_owned(),
-            Json::Object(point),
-        )])));
+    let mut blocks = vec![tool_result_block(message, index, conversion.remote, new_id).await?];
+    if let Some(control) = tool_cache_control(message, index)? {
+        push_cache_point(
+            &mut blocks,
+            control,
+            conversion.cache_points,
+            conversion.model,
+        );
     }
     Ok(blocks)
 }

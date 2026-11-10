@@ -1,6 +1,6 @@
 use crate::arguments::json::{Json, Object};
 
-use super::blocks::is_blank;
+use super::blocks::{is_blank, text_block};
 use super::error::ProcessorError;
 
 const REASONING_CONTENT: &str = "reasoningContent";
@@ -98,10 +98,7 @@ pub fn append_thinking_blocks(
             Reasoning::Keep => filtered.push(block.clone()),
             Reasoning::Text { text } => {
                 if !is_blank(text) {
-                    assistant_parts.push(Json::Object(Object::from_iter([(
-                        TEXT.to_owned(),
-                        Json::Text(text.to_owned()),
-                    )])));
+                    assistant_parts.push(text_block(text));
                 }
             }
         }

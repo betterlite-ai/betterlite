@@ -10,3 +10,4 @@ mod tests;
 pub mod thinking;
 mod tool;
 mod user;
+mod user_blocks;

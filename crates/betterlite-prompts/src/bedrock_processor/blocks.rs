@@ -25,34 +25,20 @@ pub(crate) enum Role<'message> {
     Null,
 }
 
-pub(crate) const fn message_object(
-    message: &Json,
-    index: usize,
-) -> Result<&Object, ProcessorError> {
-    match message {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(ProcessorError::MessageNotObject { message: index })
-        }
+pub(crate) const fn object_of(value: &Json) -> Option<&Object> {
+    match value {
+        Json::Object(fields) => Some(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
 pub(crate) fn role_at(message: &Json, index: usize) -> Result<Role<'_>, ProcessorError> {
-    let fields = message_object(message, index)?;
+    let fields = object_of(message).ok_or(ProcessorError::MessageNotObject { message: index })?;
     match fields.get(ROLE) {
         None => Err(ProcessorError::MessageWithoutRole { message: index }),
         Some(Json::Text(role)) => Ok(Role::Text(role.as_str())),
         Some(Json::Null) => Ok(Role::Null),
         Some(_) => Err(ProcessorError::RoleNotText { message: index }),
-    }
-}
-
-pub(crate) const fn block_object(block: &Json, index: usize) -> Result<&Object, ProcessorError> {
-    match block {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(ProcessorError::BlockNotObject { block: index })
-        }
     }
 }
 
@@ -80,6 +66,23 @@ pub(crate) fn is_blank(text: &str) -> bool {
     .is_empty()
 }
 
+pub(crate) fn push_cache_point<C>(
+    blocks: &mut Vec<Json>,
+    control: &Json,
+    cache_points: &C,
+    model: Option<&str>,
+) where
+    C: CachePoints,
+{
+    let Some(point) = cache_points.cache_point_block(control, model) else {
+        return;
+    };
+    blocks.push(Json::Object(Object::from_iter([(
+        CACHE_POINT.to_owned(),
+        Json::Object(point),
+    )])));
+}
+
 pub(crate) fn append_cache_point<C, R>(
     blocks: &mut Vec<Json>,
     fields: &Object,
@@ -93,16 +96,7 @@ pub(crate) fn append_cache_point<C, R>(
     if matches!(control, Json::Null) {
         return;
     }
-    let Some(point) = conversion
-        .cache_points
-        .cache_point_block(control, conversion.model)
-    else {
-        return;
-    };
-    blocks.push(Json::Object(Object::from_iter([(
-        CACHE_POINT.to_owned(),
-        Json::Object(point),
-    )])));
+    push_cache_point(blocks, control, conversion.cache_points, conversion.model);
 }
 
 pub(crate) fn as_json<Payload>(payload: &Payload) -> Result<Json, ProcessorError>
@@ -112,6 +106,13 @@ where
     let value =
         serde_json::to_value(payload).map_err(|source| ProcessorError::Serialization { source })?;
     serde_json::from_value(value).map_err(|source| ProcessorError::Serialization { source })
+}
+
+#[must_use]
+pub(crate) fn text_block(text: &str) -> Json {
+    let mut block = Object::new();
+    block.insert(TEXT.to_owned(), Json::Text(text.to_owned()));
+    Json::Object(block)
 }
 
 #[must_use]
