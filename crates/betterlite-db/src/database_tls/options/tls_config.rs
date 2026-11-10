@@ -88,7 +88,7 @@ fn add_roots(store: &mut RootCertStore, path: &str) -> Result<(), ConnectionOpti
     insert_certificates(store, certificates, path)
 }
 
-fn add_native_roots(store: &mut RootCertStore) -> Result<(), ConnectionOptionsError> {
+pub(crate) fn add_native_roots(store: &mut RootCertStore) -> Result<(), ConnectionOptionsError> {
     let native = rustls_native_certs::load_native_certs();
     if let Some(source) = native.errors.into_iter().next() {
         return Err(ConnectionOptionsError::NativeRoots { source });

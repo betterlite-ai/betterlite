@@ -34,6 +34,7 @@ impl Default for PgBouncerSettings {
     }
 }
 
+#[derive(Debug)]
 pub struct PoolEnvironment {
     pub settings: PgBouncerSettings,
     // settings read but not honored: the native gateway never launches an embedded PgBouncer

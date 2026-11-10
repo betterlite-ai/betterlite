@@ -10,7 +10,7 @@ use crate::database_url_policy::url_codec::{
     UrlSplitError, parse_qsl, urlencode_pairs_quote, urlsplit, urlunsplit,
 };
 
-mod tls_config;
+pub(super) mod tls_config;
 
 const TLS_QUERY_KEYS: [&str; 7] = [
     "sslaccept",

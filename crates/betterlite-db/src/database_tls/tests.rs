@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::Write as _;
@@ -11,7 +11,13 @@ use tokio::task::JoinSet;
 use tokio_postgres::config::SslMode;
 use url::Url;
 
-use super::options::native_connection_options;
+use super::options::tls_config::add_native_roots;
+use super::options::{ConnectionOptionsError, native_connection_options};
+use super::pool_policy::{
+    BINARY_ENV, DEFAULT_BINARY, DEFAULT_MAX_CLIENT_CONN, DEFAULT_MAX_DB_CONNECTIONS, DEFAULT_PORT,
+    ENABLED_ENV, MAX_CLIENT_CONN_ENV, MAX_DB_CONNECTIONS_ENV, PORT_ENV, PgBouncerSettings,
+    PoolEnvironment, PoolSettingsError, SessionRole, from_env, pool_limit,
+};
 use super::translation::{
     TranslateError, libpq_tls_params, strip_prisma_query_params, translate_libpq_ssl_params,
 };
@@ -450,6 +456,172 @@ fn native_last_duplicate_ssl_setting_wins() {
     let required = native_connection_options("postgresql://u@h/db?sslmode=disable&sslmode=require")
         .expect("connection options");
     assert_eq!(required.config.get_ssl_mode(), SslMode::Require);
+}
+
+fn pool_environment(pairs: &[(&str, &str)]) -> PoolEnvironment {
+    let environment: BTreeMap<String, String> = pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    from_env(&environment).expect("pool settings load")
+}
+
+fn pool_settings(pairs: &[(&str, &str)]) -> PgBouncerSettings {
+    pool_environment(pairs).settings
+}
+
+fn pool_error(pairs: &[(&str, &str)]) -> PoolSettingsError {
+    let environment: BTreeMap<String, String> = pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    from_env(&environment).expect_err("pool settings fail")
+}
+
+#[test]
+fn pool_env_defaults_load() {
+    let outcome = pool_environment(&[]);
+    assert_eq!(outcome.settings, PgBouncerSettings::default());
+    assert_eq!(outcome.settings.port, DEFAULT_PORT);
+    assert_eq!(
+        outcome.settings.max_db_connections,
+        DEFAULT_MAX_DB_CONNECTIONS
+    );
+    assert_eq!(outcome.settings.max_client_conn, DEFAULT_MAX_CLIENT_CONN);
+    assert_eq!(outcome.settings.binary, DEFAULT_BINARY);
+    assert!(outcome.ignored.is_empty());
+}
+
+#[test]
+fn pool_env_reads_every_setting() {
+    let settings = pool_settings(&[
+        (ENABLED_ENV, "true"),
+        (PORT_ENV, "7000"),
+        (MAX_DB_CONNECTIONS_ENV, "30"),
+        (MAX_CLIENT_CONN_ENV, "40"),
+        (BINARY_ENV, "/usr/local/bin/pgbouncer"),
+    ]);
+    assert!(settings.enabled);
+    assert_eq!(settings.port, 7000);
+    assert_eq!(settings.max_db_connections, 30);
+    assert_eq!(settings.max_client_conn, 40);
+    assert_eq!(settings.binary, "/usr/local/bin/pgbouncer");
+}
+
+#[test]
+fn pool_env_accepts_minimum_bounds() {
+    let settings = pool_settings(&[
+        (PORT_ENV, "1"),
+        (MAX_DB_CONNECTIONS_ENV, "1"),
+        (MAX_CLIENT_CONN_ENV, "1"),
+    ]);
+    assert_eq!(settings.port, 1);
+    assert_eq!(settings.max_db_connections, 1);
+    assert_eq!(settings.max_client_conn, 1);
+}
+
+#[rstest]
+#[case::port_zero(PORT_ENV)]
+#[case::db_zero(MAX_DB_CONNECTIONS_ENV)]
+#[case::client_zero(MAX_CLIENT_CONN_ENV)]
+fn pool_env_rejects_below_minimum(#[case] name: &str) {
+    let error = pool_error(&[(name, "0")]);
+    assert!(
+        matches!(error, PoolSettingsError::TooSmall { .. }),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn pool_env_rejects_port_above_maximum() {
+    let error = pool_error(&[(PORT_ENV, "65536")]);
+    assert!(
+        matches!(error, PoolSettingsError::TooLarge { .. }),
+        "{error:?}"
+    );
+}
+
+#[rstest]
+#[case::enabled_word(ENABLED_ENV, "maybe")]
+#[case::port_word(PORT_ENV, "abc")]
+#[case::max_db_word(MAX_DB_CONNECTIONS_ENV, "ten")]
+fn pool_env_rejects_invalid_scalars(#[case] name: &str, #[case] value: &str) {
+    let error = pool_error(&[(name, value)]);
+    assert!(
+        matches!(error, PoolSettingsError::Environment(_)),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn pool_ignored_options_are_listed() {
+    let outcome = pool_environment(&[
+        (PORT_ENV, "7000"),
+        (MAX_CLIENT_CONN_ENV, "50"),
+        (BINARY_ENV, "/usr/local/bin/pgbouncer"),
+    ]);
+    assert_eq!(
+        outcome.ignored,
+        vec![PORT_ENV, MAX_CLIENT_CONN_ENV, BINARY_ENV]
+    );
+    let quiet = pool_environment(&[(ENABLED_ENV, "true")]);
+    assert!(quiet.ignored.is_empty());
+}
+
+#[test]
+fn pool_env_blank_binary_uses_default() {
+    let settings = pool_settings(&[(BINARY_ENV, "")]);
+    assert_eq!(settings.binary, DEFAULT_BINARY);
+}
+
+#[test]
+fn pool_limit_caps_only_enabled_writer() {
+    let enabled = PgBouncerSettings {
+        enabled: true,
+        port: DEFAULT_PORT,
+        max_db_connections: 20,
+        max_client_conn: DEFAULT_MAX_CLIENT_CONN,
+        binary: DEFAULT_BINARY.to_owned(),
+    };
+    assert_eq!(pool_limit(SessionRole::Writer, 50, &enabled), 20);
+    assert_eq!(pool_limit(SessionRole::Writer, 5, &enabled), 5);
+    assert_eq!(pool_limit(SessionRole::Reader, 50, &enabled), 50);
+    assert_eq!(pool_limit(SessionRole::Migration, 50, &enabled), 50);
+    let mut disabled = enabled;
+    disabled.enabled = false;
+    assert_eq!(pool_limit(SessionRole::Writer, 50, &disabled), 50);
+}
+
+#[test]
+fn native_roots_load_the_system_store() {
+    let native = rustls_native_certs::load_native_certs();
+    let mut roots = rustls::RootCertStore::empty();
+    match add_native_roots(&mut roots) {
+        Ok(()) => {
+            assert!(native.errors.is_empty());
+            assert_eq!(roots.is_empty(), native.certs.is_empty());
+            assert!(!roots.is_empty());
+        }
+        Err(ConnectionOptionsError::NoNativeRoots) => {
+            assert!(native.errors.is_empty() && native.certs.is_empty());
+        }
+        Err(ConnectionOptionsError::NativeRoots { .. }) => assert!(!native.errors.is_empty()),
+        Err(other) => panic!("unexpected native trust store error: {other}"),
+    }
+}
+
+#[rstest]
+#[case::disable(
+    "postgresql://h/db?sslmode=disable&sslrootcert=ca.pem",
+    "postgresql://h/db?sslmode=disable&sslcert=ca.pem&sslaccept=strict"
+)]
+#[case::prefer(
+    "postgresql://h/db?sslmode=prefer&sslrootcert=ca.pem",
+    "postgresql://h/db?sslmode=prefer&sslcert=ca.pem&sslaccept=strict"
+)]
+fn non_verifying_sslmode_pairs_survive_the_projection(#[case] url: &str, #[case] expected: &str) {
+    let (translated, _) = translate(url);
+    assert_eq!(translated, expected);
 }
 
 #[tokio::test]
