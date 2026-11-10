@@ -11,7 +11,7 @@ use super::prelude::json;
 #[case::a_lookalike_key(r#"{"systemToolish":{}}"#, false)]
 #[case::an_empty_object("{}", false)]
 #[case::a_snake_case_cache_point(r#"{"cache_point":{"type":"default"}}"#, false)]
-#[case::a_string("junk", false)]
+#[case::a_string(r#""junk""#, false)]
 #[case::a_list("[]", false)]
 #[case::null("null", false)]
 fn bedrock_tools_behavior_tests_behavior(#[case] tool: &str, #[case] expected: bool) {
