@@ -1,7 +1,7 @@
 id: B3090
 milestone: M4 keys, spend and management
 title: Define daily analytics metrics and canonical date errors
-status: todo
+status: in-progress
 depends_on: [B727, B1664]
 file: tasks/B3090-daily-analytics-metrics.yaml
 covers:
