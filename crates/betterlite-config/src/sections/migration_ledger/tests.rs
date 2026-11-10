@@ -216,6 +216,12 @@ fn first_schema_value() {
         Some("first")
     );
     assert_eq!(
+        prisma_schema_param("postgresql://writer/db?schema=&schema=second")
+            .expect("the URL parses")
+            .as_deref(),
+        Some("second")
+    );
+    assert_eq!(
         prisma_schema_param("postgresql://writer/db?other=1").expect("the URL parses"),
         None
     );

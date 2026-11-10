@@ -39,7 +39,7 @@ impl SystemJitter {
 }
 
 impl JitterSource for SystemJitter {
-    // clippy forbids from_secs_f64's panic, so the drawn range stays in integer nanoseconds
+    // The drawn range stays in integer nanoseconds, so no float-to-Duration conversion can panic
     fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64 {
         if upper_exclusive_nanos == 0 {
             return 0;

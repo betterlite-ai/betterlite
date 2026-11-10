@@ -21,7 +21,7 @@ use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES;
 use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 
 // The three package copies of schema.prisma are byte-identical, so one sum identifies the build's datamodel
-pub const PACKAGED_SCHEMA_SHA256: &str =
+const PACKAGED_SCHEMA_SHA256: &str =
     "a17e69687d14d78dc7cee49770f1c1e8b2726cd8823d37c6dff48ae151533342";
 
 const PACKAGED_CATALOGS: [MigrationCatalog; 8] = [
@@ -68,7 +68,7 @@ pub struct BaselineInputs<'input> {
 }
 
 #[must_use]
-pub fn packaged_catalog() -> Vec<(&'static str, &'static str)> {
+fn packaged_catalog() -> Vec<(&'static str, &'static str)> {
     let mut packaged = Vec::new();
     for catalog in PACKAGED_CATALOGS {
         for file in catalog.files {
