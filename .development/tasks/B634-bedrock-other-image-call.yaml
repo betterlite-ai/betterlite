@@ -269,7 +269,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_image_reply)"
       && grep -q 'decode_bedrock_image_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_image_reply.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_image_reply_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_image_reply_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_credential_identity_isolation$/)'

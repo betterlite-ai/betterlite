@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic-prompt-thinking-signature
+call:
+  anthropic_prompt:
+    messages:
+      - role: user
+        content: think
+      - role: assistant
+        content: answer
+        thinking_blocks:
+          - {type: thinking, thinking: hmm, signature: sig-1}
+          - {type: thinking, thinking: unsigned, signature: ""}
+          - {type: thinking, thinking: "", signature: sig-2}
+          - {type: redacted_thinking, data: abc}
+          - {type: thinking, thinking: foreign, signature: "litellm_encrypted_reasoning:xyz"}
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+env: {}
+compare:
+  ignore: []

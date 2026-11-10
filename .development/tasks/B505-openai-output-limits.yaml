@@ -263,7 +263,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_output_limits)"
       && grep -q 'decode_rejected_fields' crates/betterlite-openai/fuzz/fuzz_targets/openai_output_limits.rs &&
-      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_output_limits_corpus$/)'
+      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_output_limits_corpus(::|$)/)'
   - id: case-malformed-nested-error-failure
     why: A truthy non-object decoded message raises its attribute-access failure; after a dictionary first detail
       item a later nondictionary item also fails rather than being silently skipped. Invalid HTTP response JSON

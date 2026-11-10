@@ -1,0 +1,30 @@
+kind: helper
+name: mantle-region-resolution
+call:
+  bedrock_mantle_inputs:
+    mantle_region_resolution:
+      cases:
+        - {}
+        - aws_region_name: eu-central-1
+        - aws_region_name: US-EAST-1
+        - aws_region_name: ''
+        - api_base: https://bedrock-mantle.eu-west-2.api.aws/v1
+        - api_base: https://BEDROCK-MANTLE.US-EAST-1.API.AWS
+        - api_base: https://bedrock-mantle.US_East.api.aws
+        - api_base: https://bedrock-mantle.eu-west-2.api.aws:443
+        - api_base: 'https://bedrock-mantle.eu-west-2.api.aws?a=1'
+        - api_base: https://x.bedrock-mantle.eu-west-2.api.aws
+        - api_base: https://bedrock-mantle.eu-west-2.api.aws/
+        - api_base: "https://bedrock-mantle.eu-west-2.api.aws\n"
+        - environment: {BEDROCK_MANTLE_API_BASE: https://bedrock-mantle.sa-east-1.api.aws}
+        - api_base: ''
+          environment: {BEDROCK_MANTLE_API_BASE: https://bedrock-mantle.sa-east-1.api.aws}
+        - environment: {BEDROCK_MANTLE_REGION: ap-south-1, AWS_REGION_NAME: eu-west-1, AWS_REGION: sa-east-1}
+        - environment: {BEDROCK_MANTLE_REGION: '', AWS_REGION_NAME: eu-west-1}
+        - environment: {AWS_REGION_NAME: '', AWS_REGION: sa-east-1}
+        - aws_region_name: ca-central-1
+          api_base: https://bedrock-mantle.eu-west-2.api.aws
+        - aws_region_name: BAD_REGION
+          api_base: https://bedrock-mantle.eu-west-2.api.aws
+env: {}
+compare: {ignore: []}
