@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-usage-inclusive-thinking
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 10
+      candidatesTokenCount: 5
+      toolUsePromptTokenCount: 3
+      totalTokenCount: 18
+      thoughtsTokenCount: 4
+env: {}
+compare: {ignore: []}
