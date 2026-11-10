@@ -1,4 +1,3 @@
-mod answers;
 mod cross;
 mod fixture;
 mod input;

@@ -18,17 +18,15 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-struct FixedSecret(Option<SecretString>);
+struct Ports(Option<SecretString>);
 
-impl SyncSecretReader for FixedSecret {
+impl SyncSecretReader for Ports {
     fn sync_read_secret(&self, _: &str) -> Option<SecretString> {
         self.0.clone()
     }
 }
 
-struct UnusedPorts;
-
-impl OidcHttp for UnusedPorts {
+impl OidcHttp for Ports {
     fn get(&self, _: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
         Err(OidcHttpError::Request {
             message: "the oracle fixture has no OIDC transport".to_owned(),
@@ -36,13 +34,13 @@ impl OidcHttp for UnusedPorts {
     }
 }
 
-impl AzureOidcTokens for UnusedPorts {
+impl AzureOidcTokens for Ports {
     fn token(&self, _: &str) -> Result<Option<SecretString>, AzureOidcError> {
         Ok(None)
     }
 }
 
-impl OidcClock for UnusedPorts {
+impl OidcClock for Ports {
     fn now(&self) -> Instant {
         Instant::now()
     }
@@ -53,19 +51,18 @@ impl OidcClock for UnusedPorts {
 }
 
 pub(super) fn secrets(token: Option<&str>) -> SecretLookup {
+    let client = SecretManagerClient::Vault(Arc::new(Ports(token.map(SecretString::from))));
     SecretLookup {
         manager: Some(ManagerState {
-            client: SecretManagerClient::Vault(Arc::new(FixedSecret(
-                token.map(SecretString::from),
-            ))),
+            client,
             settings: Some(SecretManagerSettings::default()),
             system: Some(KeyManagementSystem::HashicorpVault),
             access_mode: SecretAccessMode::ReadOnly,
             hosted_keys: None,
         }),
-        oidc_http: Arc::new(UnusedPorts),
-        azure_tokens: Arc::new(UnusedPorts),
-        clock: Arc::new(UnusedPorts),
+        oidc_http: Arc::new(Ports(None)),
+        azure_tokens: Arc::new(Ports(None)),
+        clock: Arc::new(Ports(None)),
         oidc_cache: OidcTokenCache::default(),
     }
 }

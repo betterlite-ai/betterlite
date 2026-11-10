@@ -21,6 +21,8 @@ use betterlite_config::tls::Verification;
 use serde_json::{Value, json};
 use url::form_urlencoded;
 
+use super::input::{ReplyCredentials, WebIdentityReply};
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct Record(Arc<Mutex<Vec<Value>>>);
 
@@ -134,4 +136,76 @@ pub(super) fn kwargs(
         Verification::Disabled
     };
     sts_client_kwargs(&settings, verification).map_err(|error| error.to_string())
+}
+
+fn credentials_xml(credentials: &ReplyCredentials) -> String {
+    format!(
+        "<Credentials><AccessKeyId>{}</AccessKeyId><SecretAccessKey>{}</SecretAccessKey><SessionToken>{}</SessionToken><Expiration>{}</Expiration></Credentials>",
+        credentials.access_key_id,
+        credentials.secret_access_key,
+        credentials.session_token,
+        credentials.expiration
+    )
+}
+
+fn packed_xml(size: Option<i32>) -> String {
+    size.map(|value| format!("<PackedPolicySize>{value}</PackedPolicySize>"))
+        .unwrap_or_default()
+}
+
+fn error_xml(code: &str, message: &str) -> String {
+    format!(
+        "<ErrorResponse><Error><Type>Sender</Type><Code>{code}</Code><Message>{message}</Message></Error><RequestId>oracle</RequestId></ErrorResponse>"
+    )
+}
+
+fn response_xml(action: &str, inner: &str) -> String {
+    let open = format!("<{action}Response><{action}Result>");
+    let close = format!("</{action}Result></{action}Response>");
+    format!("{open}{inner}{close}")
+}
+
+pub(super) fn denied_identity() -> Answer {
+    Answer {
+        status: 403,
+        body: error_xml("AccessDenied", "the fixture identity call is denied"),
+    }
+}
+
+pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
+    match reply {
+        WebIdentityReply::Credentials(credentials) => Answer {
+            status: 200,
+            body: response_xml(
+                "AssumeRoleWithWebIdentity",
+                &format!(
+                    "{}{}",
+                    credentials_xml(credentials),
+                    packed_xml(credentials.packed_policy_size)
+                ),
+            ),
+        },
+        WebIdentityReply::MissingPackedPolicySize(credentials) => Answer {
+            status: 200,
+            body: response_xml("AssumeRoleWithWebIdentity", &credentials_xml(credentials)),
+        },
+        WebIdentityReply::InvalidIdentityToken { message } => Answer {
+            status: 400,
+            body: error_xml("InvalidIdentityToken", message),
+        },
+    }
+}
+
+pub(super) fn assume_role_answer(credentials: &ReplyCredentials) -> Answer {
+    Answer {
+        status: 200,
+        body: response_xml(
+            "AssumeRole",
+            &format!(
+                "{}{}",
+                credentials_xml(credentials),
+                packed_xml(credentials.packed_policy_size)
+            ),
+        ),
+    }
 }
