@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::wire::TokenRequestWire;
+use betterlite_tokenizer::reservation::RequestBody;
 
 use super::support::{self, Behavior, RecordingCounter};
 use crate::io_token_reservations::counter::IoCounter;
@@ -16,16 +17,7 @@ pub(super) async fn run(name: &str) {
     if reservation_cases(name).await {
         return;
     }
-    if rollback_cases(name).await {
-        return;
-    }
-    if usage_cases(name) {
-        return;
-    }
-    if tokenizer_cases(name).await {
-        return;
-    }
-    if counter_cases(name).await {
+    if remaining_cases(name).await {
         return;
     }
     panic!("unknown case {name}");
@@ -33,21 +25,17 @@ pub(super) async fn run(name: &str) {
 
 async fn reservation_cases(name: &str) -> bool {
     match name {
-        "full_reservation_stashes_both_channels" => {
-            full_reservation_stashes_both_channels().await;
-        }
-        "estimate_unavailable_reserves_one_token" => {
-            estimate_unavailable_reserves_one_token().await;
-        }
-        "zero_estimate_reserves_one_token" => zero_estimate_reserves_one_token().await,
+        "full_reservation_stashes_both_channels" => full_reservation_stashes_both_channels().await,
+        "estimate_unavailable_reserves_one_token" => reserve_one_token(None).await,
+        "zero_estimate_reserves_one_token" => reserve_one_token(Some(0)).await,
         "explicit_zero_output_cap_reserves_nothing" => {
             explicit_zero_output_cap_reserves_nothing().await;
         }
         "max_completion_tokens_used_when_max_tokens_absent" => {
-            max_completion_tokens_used_when_max_tokens_absent().await;
+            reserve_output("max_completion_tokens", 7).await;
         }
         "max_output_tokens_used_when_other_caps_absent" => {
-            max_output_tokens_used_when_other_caps_absent().await;
+            reserve_output("max_output_tokens", 9).await;
         }
         "max_tokens_wins_over_later_fields" => max_tokens_wins_over_later_fields().await,
         "model_cap_used_without_explicit_cap" => model_cap_used_without_explicit_cap().await,
@@ -61,44 +49,30 @@ async fn reservation_cases(name: &str) -> bool {
     true
 }
 
-async fn rollback_cases(name: &str) -> bool {
+async fn remaining_cases(name: &str) -> bool {
     match name {
-        "output_over_limit_rolls_back_input" => output_over_limit_rolls_back_input().await,
-        "input_over_limit_rolls_back_input" => input_over_limit_rolls_back_input().await,
+        "output_over_limit_rolls_back_input" => rollback_releases(Rollback::Output).await,
+        "input_over_limit_rolls_back_input" => rollback_releases(Rollback::Input).await,
         "failing_release_still_reports_rate_limit" => {
             failing_release_still_reports_rate_limit().await;
         }
-        _ => return false,
-    }
-    true
-}
-
-fn usage_cases(name: &str) -> bool {
-    match name {
         "usage_excludes_cached_tokens" => usage_excludes_cached_tokens(),
         "usage_falls_back_to_standard_logging" => usage_falls_back_to_standard_logging(),
         "usage_missing_keeps_reservation" => usage_missing_keeps_reservation(),
-        _ => return false,
-    }
-    true
-}
-
-async fn tokenizer_cases(name: &str) -> bool {
-    match name {
-        "tokenizer_counts_messages" => tokenizer_counts_messages().await,
-        "tokenizer_counts_text" => tokenizer_counts_text().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn counter_cases(name: &str) -> bool {
-    match name {
+        "tokenizer_counts_messages" => tokenizer_count_matches(true).await,
+        "tokenizer_counts_text" => tokenizer_count_matches(false).await,
         "store_counter_increments_and_reports" => store_counter_increments_and_reports().await,
         "store_counter_unavailable_is_none" => store_counter_unavailable_is_none().await,
         _ => return false,
     }
     true
+}
+
+fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
+    match error {
+        IoPreCallError::RateLimit(limit) => (limit.channel, limit.limit, limit.current),
+        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
+    }
 }
 
 async fn full_reservation_stashes_both_channels() {
@@ -122,9 +96,9 @@ async fn full_reservation_stashes_both_channels() {
     assert_eq!(read_reservation(&request), Some(reserved));
 }
 
-async fn estimate_unavailable_reserves_one_token() {
+async fn reserve_one_token(estimate: Option<i64>) {
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(Arc::clone(&counter), None);
+    let reservations = support::service(Arc::clone(&counter), estimate);
     let deployment = support::deployment(Some(100), None);
     let mut request = support::body();
     let reserved = reservations
@@ -134,19 +108,6 @@ async fn estimate_unavailable_reserves_one_token() {
         .unwrap();
     assert_eq!(reserved.itpm_reserved, 1);
     assert_eq!(counter.value(&support::keys(&deployment).itpm), 1);
-}
-
-async fn zero_estimate_reserves_one_token() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(Arc::clone(&counter), Some(0));
-    let deployment = support::deployment(Some(100), None);
-    let mut request = support::body();
-    let reserved = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(reserved.itpm_reserved, 1);
 }
 
 async fn explicit_zero_output_cap_reserves_nothing() {
@@ -171,14 +132,18 @@ async fn explicit_zero_output_cap_reserves_nothing() {
     assert_eq!(calls[0].ttl_seconds, 60);
 }
 
-async fn max_completion_tokens_used_when_max_tokens_absent() {
-    let reserved = reserve_output("max_completion_tokens", 7).await;
-    assert_eq!(reserved, 7);
-}
-
-async fn max_output_tokens_used_when_other_caps_absent() {
-    let reserved = reserve_output("max_output_tokens", 9).await;
-    assert_eq!(reserved, 9);
+async fn reserve_output(name: &str, cap: i64) -> i64 {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = support::deployment(None, Some(100));
+    let mut request = support::body();
+    request.insert(name.to_owned(), support::number(cap));
+    reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap()
+        .otpm_reserved
 }
 
 async fn max_tokens_wins_over_later_fields() {
@@ -194,20 +159,6 @@ async fn max_tokens_wins_over_later_fields() {
         .unwrap()
         .unwrap();
     assert_eq!(reserved.otpm_reserved, 20);
-}
-
-async fn reserve_output(name: &str, cap: i64) -> i64 {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = support::deployment(None, Some(100));
-    let mut request = support::body();
-    request.insert(name.to_owned(), support::number(cap));
-    reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap()
-        .otpm_reserved
 }
 
 async fn model_cap_used_without_explicit_cap() {
@@ -263,57 +214,47 @@ async fn counter_unavailable_still_stashes_reservation() {
     assert_eq!(read_reservation(&request), Some(reserved));
 }
 
-async fn output_over_limit_rolls_back_input() {
+#[derive(Clone, Copy)]
+enum Rollback {
+    Output,
+    Input,
+}
+
+async fn rollback_releases(scenario: Rollback) {
+    let (itpm_limit, otpm_limit, estimate, max_tokens) = match scenario {
+        Rollback::Output => (100_i64, 15_i64, 10_i64, 20_i64),
+        Rollback::Input => (5_i64, 50_i64, 10_i64, 20_i64),
+    };
+    let (channel, limit, current, itpm_after) = match scenario {
+        Rollback::Output => (IoChannel::Otpm, 15_i64, 27_i64, 5_i64),
+        Rollback::Input => (IoChannel::Itpm, 5_i64, 10_i64, 0_i64),
+    };
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let deployment = support::deployment(Some(100), Some(15));
+    let deployment = support::deployment(Some(itpm_limit), Some(otpm_limit));
     let keys = support::keys(&deployment);
     counter.seed(&keys.itpm, 5);
     counter.seed(&keys.otpm, 7);
-    let reservations = support::service(Arc::clone(&counter), Some(10));
+    let reservations = support::service(Arc::clone(&counter), Some(estimate));
     let mut request = support::body();
-    request.insert("max_tokens".to_owned(), support::number(20));
+    request.insert("max_tokens".to_owned(), support::number(max_tokens));
     let error = reservations
         .pre_call_check(&deployment, &mut request)
         .await
         .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => {
-            assert_eq!(limit.channel, IoChannel::Otpm);
-            assert_eq!(limit.limit, 15);
-            assert_eq!(limit.current, 27);
-        }
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
-    assert_eq!(counter.value(&keys.itpm), 5);
-    assert_eq!(counter.value(&keys.otpm), 7);
+    assert_eq!(rate_limit(error), (channel, limit, current));
+    assert_eq!(counter.value(&keys.itpm), itpm_after);
     assert!(read_reservation(&request).is_none());
     let values: Vec<i64> = counter.calls().iter().map(|call| call.value).collect();
-    assert_eq!(values, vec![10, 20, -20, -10]);
-}
-
-async fn input_over_limit_rolls_back_input() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let deployment = support::deployment(Some(5), Some(50));
-    let keys = support::keys(&deployment);
-    let reservations = support::service(Arc::clone(&counter), Some(10));
-    let mut request = support::body();
-    request.insert("max_tokens".to_owned(), support::number(20));
-    let error = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => {
-            assert_eq!(limit.channel, IoChannel::Itpm);
-            assert_eq!(limit.limit, 5);
-            assert_eq!(limit.current, 10);
+    match scenario {
+        Rollback::Output => {
+            assert_eq!(counter.value(&keys.otpm), 7);
+            assert_eq!(values, vec![10, 20, -20, -10]);
         }
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
+        Rollback::Input => {
+            assert_eq!(counter.value(&keys.otpm), 0);
+            assert_eq!(values, vec![10, -10]);
+        }
     }
-    assert_eq!(counter.value(&keys.itpm), 0);
-    assert_eq!(counter.value(&keys.otpm), 0);
-    let values: Vec<i64> = counter.calls().iter().map(|call| call.value).collect();
-    assert_eq!(values, vec![10, -10]);
 }
 
 async fn failing_release_still_reports_rate_limit() {
@@ -330,10 +271,7 @@ async fn failing_release_still_reports_rate_limit() {
         .pre_call_check(&deployment, &mut request)
         .await
         .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => assert_eq!(limit.channel, IoChannel::Otpm),
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
+    assert_eq!(rate_limit(error).0, IoChannel::Otpm);
     assert_eq!(counter.value(&keys.itpm), 15);
     assert_eq!(counter.value(&keys.otpm), 27);
 }
@@ -396,26 +334,23 @@ async fn messages_and_prompt_estimate_zero() {
     assert_eq!(reserved.itpm_reserved, 1);
 }
 
-async fn tokenizer_counts_messages() {
+async fn tokenizer_count_matches(messages: bool) {
     let counter = Arc::new(support::token_counter());
     let estimator = support::tokenizer_estimator(Arc::clone(&counter));
-    let measured = estimate_input_tokens(&estimator, "gpt-4", &support::body()).await;
-    let wire = TokenRequestWire::try_from(
-        br#"{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}"#.as_slice(),
-    )
-    .unwrap();
-    let expected = counter.count(&wire.request(None)).await.unwrap();
-    assert_eq!(measured, i64::try_from(expected).unwrap());
-}
-
-async fn tokenizer_counts_text() {
-    let counter = Arc::new(support::token_counter());
-    let estimator = support::tokenizer_estimator(Arc::clone(&counter));
-    let request = support::body_with("prompt", Json::Text("hello world".to_owned()));
+    let (request, wire): (RequestBody, &[u8]) = if messages {
+        (
+            support::body(),
+            br#"{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}"#.as_slice(),
+        )
+    } else {
+        (
+            support::body_with("prompt", Json::Text("hello world".to_owned())),
+            br#"{"model":"gpt-4","text":"hello world"}"#.as_slice(),
+        )
+    };
     let measured = estimate_input_tokens(&estimator, "gpt-4", &request).await;
-    let wire = TokenRequestWire::try_from(br#"{"model":"gpt-4","text":"hello world"}"#.as_slice())
-        .unwrap();
-    let expected = counter.count(&wire.request(None)).await.unwrap();
+    let parsed = TokenRequestWire::try_from(wire).unwrap();
+    let expected = counter.count(&parsed.request(None)).await.unwrap();
     assert_eq!(measured, i64::try_from(expected).unwrap());
 }
 

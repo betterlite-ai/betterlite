@@ -8,8 +8,8 @@ use tokio::time::timeout;
 
 use super::support::{self, Behavior, RecordingCounter};
 use crate::io_token_reservations::clock::{minute_label, seconds_until_minute_reset};
-use crate::io_token_reservations::error::IoPreCallError;
-use crate::io_token_reservations::limits::IoDeployment;
+use crate::io_token_reservations::error::{IoChannel, IoPreCallError};
+use crate::io_token_reservations::limits::{IoDeployment, IoLimits};
 use crate::io_token_reservations::reservation::{
     ITPM_CACHE_KEY, ITPM_RESERVED_KEY, IoReservation, OTPM_CACHE_KEY, OTPM_RESERVED_KEY,
     clear_reservation, read_reservation, stash_reservation,
@@ -20,19 +20,7 @@ pub(super) async fn run(name: &str) {
     if limit_cases(name).await {
         return;
     }
-    if cap_cases(name).await {
-        return;
-    }
-    if key_cases(name).await {
-        return;
-    }
-    if metadata_cases(name) {
-        return;
-    }
-    if usage_cases(name) {
-        return;
-    }
-    if cancellation_cases(name).await {
+    if metadata_cases(name).await {
         return;
     }
     panic!("unknown case {name}");
@@ -42,66 +30,51 @@ async fn limit_cases(name: &str) -> bool {
     match name {
         "current_equal_to_limit_passes" => current_equal_to_limit_passes().await,
         "current_over_limit_by_one_fails" => current_over_limit_by_one_fails().await,
-        "zero_limit_one_token_fails" => zero_limit_one_token_fails().await,
-        "negative_limit_always_fails" => negative_limit_always_fails().await,
+        "zero_limit_one_token_fails" => input_limit_overrun(0, None, 1).await,
+        "negative_limit_always_fails" => input_limit_overrun(-5, Some(10), 10).await,
         "negative_max_tokens_reserves_nothing" => negative_max_tokens_reserves_nothing().await,
         "model_cap_equal_to_limit_passes" => model_cap_equal_to_limit_passes().await,
         "model_cap_over_limit_by_one_fails" => model_cap_over_limit_by_one_fails().await,
+        "missing_model_id_skips_limits" => {
+            skips_without(None, Some("gpt-4o"), Some(100), Some(100)).await;
+        }
+        "missing_model_skips_limits" => {
+            skips_without(Some("dep-a"), None, Some(100), Some(100)).await;
+        }
+        "no_limits_skips_everything" => {
+            skips_without(Some("dep-a"), Some("gpt-4o"), None, None).await;
+        }
+        "empty_model_id_still_builds_keys" => empty_model_id_still_builds_keys().await,
         _ => return false,
     }
     true
 }
 
-async fn cap_cases(name: &str) -> bool {
+async fn metadata_cases(name: &str) -> bool {
     match name {
+        "minute_labels" => minute_labels(),
         "float_max_tokens_is_an_error" => float_max_tokens_is_an_error().await,
         "text_max_tokens_is_an_error" => text_max_tokens_is_an_error().await,
         "bool_max_tokens_is_an_error" => bool_max_tokens_is_an_error().await,
         "null_max_tokens_uses_next_field" => null_max_tokens_uses_next_field().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn key_cases(name: &str) -> bool {
-    match name {
-        "missing_model_id_skips_limits" => missing_model_id_skips_limits().await,
-        "missing_model_skips_limits" => missing_model_skips_limits().await,
-        "no_limits_skips_everything" => no_limits_skips_everything().await,
-        "empty_model_id_still_builds_keys" => empty_model_id_still_builds_keys().await,
-        "minute_labels" => minute_labels(),
-        _ => return false,
-    }
-    true
-}
-
-fn metadata_cases(name: &str) -> bool {
-    match name {
         "reservation_channel_priority" => reservation_channel_priority(),
         "channel_without_itpm_sentinel_is_skipped" => channel_without_itpm_sentinel_is_skipped(),
         "clear_removes_forged_sentinels" => clear_removes_forged_sentinels(),
         "stash_merges_existing_metadata" => stash_merges_existing_metadata(),
         "stash_replaces_non_object_metadata" => stash_replaces_non_object_metadata(),
-        _ => return false,
-    }
-    true
-}
-
-fn usage_cases(name: &str) -> bool {
-    match name {
         "billable_input_never_negative" => billable_input_never_negative(),
         "standard_logging_zero_tokens_unresolved" => standard_logging_zero_tokens_unresolved(),
-        _ => return false,
-    }
-    true
-}
-
-async fn cancellation_cases(name: &str) -> bool {
-    match name {
         "cancelled_output_increment_keeps_input" => cancelled_output_increment_keeps_input().await,
         _ => return false,
     }
     true
+}
+
+fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
+    match error {
+        IoPreCallError::RateLimit(limit) => (limit.channel, limit.limit, limit.current),
+        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
+    }
 }
 
 async fn current_equal_to_limit_passes() {
@@ -131,48 +104,21 @@ async fn current_over_limit_by_one_fails() {
         .pre_call_check(&deployment, &mut request)
         .await
         .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => assert_eq!(limit.current, 101),
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
+    assert_eq!(rate_limit(error), (IoChannel::Itpm, 100, 101));
     assert_eq!(counter.value(&keys.itpm), 91);
 }
 
-async fn zero_limit_one_token_fails() {
+async fn input_limit_overrun(limit: i64, estimate: Option<i64>, current: i64) {
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let deployment = support::deployment(Some(0), None);
-    let reservations = support::service(Arc::clone(&counter), None);
+    let deployment = support::deployment(Some(limit), None);
+    let reservations = support::service(Arc::clone(&counter), estimate);
     let mut request = support::body();
     let error = reservations
         .pre_call_check(&deployment, &mut request)
         .await
         .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => {
-            assert_eq!(limit.limit, 0);
-            assert_eq!(limit.current, 1);
-        }
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
+    assert_eq!(rate_limit(error), (IoChannel::Itpm, limit, current));
     assert_eq!(counter.value(&support::keys(&deployment).itpm), 0);
-}
-
-async fn negative_limit_always_fails() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let deployment = support::deployment(Some(-5), None);
-    let reservations = support::service(counter, Some(10));
-    let mut request = support::body();
-    let error = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => {
-            assert_eq!(limit.limit, -5);
-            assert_eq!(limit.current, 10);
-        }
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
 }
 
 async fn negative_max_tokens_reserves_nothing() {
@@ -188,6 +134,93 @@ async fn negative_max_tokens_reserves_nothing() {
         .unwrap();
     assert_eq!(reserved.otpm_reserved, 0);
     assert_eq!(counter.value(&support::keys(&deployment).otpm), 0);
+}
+
+async fn model_cap_equal_to_limit_passes() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = support::deployment(None, Some(0x4000));
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reserved.otpm_reserved, 0x4000);
+}
+
+async fn model_cap_over_limit_by_one_fails() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = support::deployment(None, Some(0x3FFF));
+    let mut request = support::body();
+    let error = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap_err();
+    assert_eq!(rate_limit(error), (IoChannel::Otpm, 0x3FFF, 0x4000));
+}
+
+async fn skips_without(
+    model_id: Option<&'static str>,
+    model: Option<&'static str>,
+    itpm: Option<i64>,
+    otpm: Option<i64>,
+) {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(Arc::clone(&counter), Some(10));
+    let deployment = IoDeployment {
+        model_id,
+        model,
+        limits: IoLimits { itpm, otpm },
+    };
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap();
+    assert!(reserved.is_none());
+    assert!(counter.calls().is_empty());
+}
+
+async fn empty_model_id_still_builds_keys() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = IoDeployment {
+        model_id: Some(""),
+        model: Some("gpt-4o"),
+        limits: support::deployment(Some(100), None).limits,
+    };
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        reserved.itpm_key,
+        Some(format!("global_router::gpt-4o:itpm:{}", support::minute()))
+    );
+}
+
+fn minute_labels() {
+    let at = |seconds: u64| {
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(seconds))
+            .unwrap()
+    };
+    assert_eq!(minute_label(at(0)), "00-00");
+    assert_eq!(minute_label(at(86_399)), "23-59");
+    assert_eq!(minute_label(at(86_400)), "00-00");
+    assert_eq!(minute_label(at(1_700_000_000)), "22-13");
+    assert_eq!(
+        minute_label(UNIX_EPOCH.checked_sub(Duration::from_secs(1)).unwrap()),
+        "00-00"
+    );
+    assert_eq!(seconds_until_minute_reset(at(0)), 60);
+    assert_eq!(seconds_until_minute_reset(at(30)), 30);
+    assert_eq!(seconds_until_minute_reset(at(59)), 1);
+    assert_eq!(seconds_until_minute_reset(at(86_399)), 1);
 }
 
 async fn float_max_tokens_is_an_error() {
@@ -234,130 +267,6 @@ async fn null_max_tokens_uses_next_field() {
         .unwrap()
         .unwrap();
     assert_eq!(reserved.otpm_reserved, 7);
-}
-
-async fn model_cap_equal_to_limit_passes() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = support::deployment(None, Some(0x4000));
-    let mut request = support::body();
-    let reserved = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(reserved.otpm_reserved, 0x4000);
-}
-
-async fn model_cap_over_limit_by_one_fails() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = support::deployment(None, Some(0x3FFF));
-    let mut request = support::body();
-    let error = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap_err();
-    match error {
-        IoPreCallError::RateLimit(limit) => {
-            assert_eq!(limit.limit, 0x3FFF);
-            assert_eq!(limit.current, 0x4000);
-        }
-        IoPreCallError::OutputCap { field } => panic!("unexpected cap error for {field}"),
-    }
-}
-
-async fn missing_model_id_skips_limits() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(Arc::clone(&counter), Some(10));
-    let deployment = IoDeployment {
-        model_id: None,
-        model: Some("gpt-4o"),
-        limits: support::deployment(Some(100), Some(100)).limits,
-    };
-    let mut request = support::body();
-    assert!(
-        reservations
-            .pre_call_check(&deployment, &mut request)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(counter.calls().is_empty());
-}
-
-async fn missing_model_skips_limits() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(Arc::clone(&counter), Some(10));
-    let deployment = IoDeployment {
-        model_id: Some("dep-a"),
-        model: None,
-        limits: support::deployment(Some(100), Some(100)).limits,
-    };
-    let mut request = support::body();
-    assert!(
-        reservations
-            .pre_call_check(&deployment, &mut request)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(counter.calls().is_empty());
-}
-
-async fn no_limits_skips_everything() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(Arc::clone(&counter), Some(10));
-    let deployment = support::deployment(None, None);
-    let mut request = support::body();
-    assert!(
-        reservations
-            .pre_call_check(&deployment, &mut request)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(counter.calls().is_empty());
-}
-
-async fn empty_model_id_still_builds_keys() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = IoDeployment {
-        model_id: Some(""),
-        model: Some("gpt-4o"),
-        limits: support::deployment(Some(100), None).limits,
-    };
-    let mut request = support::body();
-    let reserved = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        reserved.itpm_key,
-        Some(format!("global_router::gpt-4o:itpm:{}", support::minute()))
-    );
-}
-
-fn minute_labels() {
-    let at = |seconds: u64| {
-        UNIX_EPOCH
-            .checked_add(Duration::from_secs(seconds))
-            .unwrap()
-    };
-    assert_eq!(minute_label(at(0)), "00-00");
-    assert_eq!(minute_label(at(86_399)), "23-59");
-    assert_eq!(minute_label(at(86_400)), "00-00");
-    assert_eq!(minute_label(at(1_700_000_000)), "22-13");
-    assert_eq!(
-        minute_label(UNIX_EPOCH.checked_sub(Duration::from_secs(1)).unwrap()),
-        "00-00"
-    );
-    assert_eq!(seconds_until_minute_reset(at(0)), 60);
-    assert_eq!(seconds_until_minute_reset(at(30)), 30);
-    assert_eq!(seconds_until_minute_reset(at(59)), 1);
-    assert_eq!(seconds_until_minute_reset(at(86_399)), 1);
 }
 
 fn reservation_json(reserved: i64) -> Json {
