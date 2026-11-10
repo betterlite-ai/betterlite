@@ -73,6 +73,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ptu_instant"
+path = "fuzz_targets/ptu_instant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lemonade_model_reply"
+path = "fuzz_targets/lemonade_model_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ollama_model_reply"
 path = "fuzz_targets/ollama_model_reply.rs"
 test = false
