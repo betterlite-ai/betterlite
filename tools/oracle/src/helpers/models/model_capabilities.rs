@@ -125,10 +125,11 @@ fn model_info(catalog: &ModelCatalog, query: &ModelQueryInput) -> Result<Value, 
 
 fn model_infos(input: &Input) -> HelperResult {
     let catalog = BundledCatalog::default().get();
-    let mut results = Vec::with_capacity(input.queries.len());
-    for query in &input.queries {
-        results.push(model_info(&catalog, query)?);
-    }
+    let results = input
+        .queries
+        .iter()
+        .map(|query| model_info(&catalog, query))
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(json!({"results": results}))
 }
 
