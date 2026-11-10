@@ -289,7 +289,7 @@ async fn an_accepted_answer_polls_with_only_the_credential_headers() {
     );
     assert!(analyze.contains("authorization: bearer supplied"));
     assert!(analyze.contains("x-caller: yes"));
-    assert!(analyze.contains(r#""urlSource":"https://example.test/a.pdf""#));
+    assert!(analyze.contains(r#""urlsource":"https://example.test/a.pdf""#));
     let first_poll = requests[1].to_ascii_lowercase();
     assert!(
         first_poll.starts_with("get /operations/abc?api-version=2024-11-30 http/1.1"),
