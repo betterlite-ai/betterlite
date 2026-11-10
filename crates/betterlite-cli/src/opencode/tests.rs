@@ -213,6 +213,8 @@ fn fetch_requests_models_with_bearer_auth_and_ten_second_timeout() {
 #[case::plain("http://proxy:4000", "http://proxy:4000/v1/models")]
 #[case::one_slash("http://proxy:4000/", "http://proxy:4000/v1/models")]
 #[case::two_slashes("http://proxy:4000//", "http://proxy:4000/v1/models")]
+#[case::only_slash("/", "/v1/models")]
+#[case::empty("", "/v1/models")]
 fn fetch_uses_the_base_url_without_trailing_slashes(
     #[case] base_url: &str,
     #[case] expected: &str,
@@ -329,6 +331,15 @@ fn model_entry_omits_limit_when_incomplete(
 }
 
 #[test]
+fn model_entry_maps_zero_limits() {
+    let entry = opencode_model_entry(&listed("m", Some("chat"), Some((0, 0))));
+    assert_eq!(
+        entry.limit.map(|limit| (limit.context, limit.output)),
+        Some((0, 0))
+    );
+}
+
+#[test]
 fn model_entry_names_the_model_by_its_id() {
     let entry = opencode_model_entry(&listed("proxy-alias", Some("responses"), None));
     assert_eq!(entry.name, "proxy-alias");
@@ -346,6 +357,7 @@ fn provider_config_declares_the_litellm_provider() {
 #[rstest]
 #[case::plain("http://proxy:4000", "http://proxy:4000/v1")]
 #[case::trailing_slash("http://proxy:4000/", "http://proxy:4000/v1")]
+#[case::empty("", "/v1")]
 fn provider_config_points_at_the_proxy_v1(#[case] base_url: &str, #[case] expected: &str) {
     let config = config_for(base_url, &[]);
     assert_eq!(config.provider["litellm"].options.base_url, expected);
@@ -492,12 +504,15 @@ fn model_sync_env_skips_on_a_non_200_listing() {
 #[test]
 fn model_sync_env_passes_the_base_url_and_key_to_the_fetch() {
     let transport = FakeTransport::replying(200, r#"{"data":[]}"#);
+    let mut base = EnvVars::new();
+    base.insert("OPENCODE_CONFIG".to_owned(), "user-config".to_owned());
     let env = env_of(opencode_model_sync_env(
-        &EnvVars::new(),
+        &base,
         "http://proxy:4000/",
         &key(),
         &transport,
     ));
+    assert_eq!(env.len(), 1);
     assert!(env.contains_key(OPENCODE_CONFIG_CONTENT_ENV));
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
