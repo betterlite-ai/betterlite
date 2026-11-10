@@ -103,47 +103,45 @@ pub(crate) struct PromptInput {
     cache_creation_rate: Option<Decimal>,
 }
 
-impl From<&PromptDetailsInput> for PromptDetails {
-    fn from(input: &PromptDetailsInput) -> Self {
-        Self {
-            text_tokens: input.text,
-            audio_tokens: input.audio,
-            image_tokens: input.image,
-            video_tokens: input.video,
-            web_search_requests: None,
+macro_rules! copy_fields {
+    ($from:ty => $to:ty, |$input:ident| { $($field:ident: $value:expr),+ $(,)? }) => {
+        impl From<$from> for $to {
+            fn from($input: $from) -> Self {
+                Self { $($field: $value),+ }
+            }
         }
-    }
+    };
 }
 
-impl From<&UsageInput> for CostUsage {
-    fn from(input: &UsageInput) -> Self {
-        Self {
-            prompt_tokens: input.prompt_tokens,
-            completion_tokens: input.completion_tokens,
-            total_tokens: 0,
-            prompt_details: input.prompt_details.as_ref().map(PromptDetails::from),
-            completion_details: None,
-            cache_read_tokens: input.cache_read_tokens,
-            numeric_extras: BTreeMap::new(),
-        }
-    }
-}
+copy_fields!(&PromptDetailsInput => PromptDetails, |input| {
+    text_tokens: input.text,
+    audio_tokens: input.audio,
+    image_tokens: input.image,
+    video_tokens: input.video,
+    web_search_requests: None,
+});
 
-impl From<&PromptExtrasInput> for PromptExtras {
-    fn from(input: &PromptExtrasInput) -> Self {
-        Self {
-            cache_write_tokens: input.cache_write_tokens,
-            cache_creation_tokens: input.cache_creation_tokens,
-            cache_creation_token_details: input.cache_creation_token_details,
-            cached_tokens_details: input.cached_tokens_details,
-            character_count: input.character_count,
-            image_count: input.image_count,
-            video_length_seconds: input.video_length_seconds,
-            audio_length_seconds: input.audio_length_seconds,
-            query_count: input.query_count,
-        }
-    }
-}
+copy_fields!(&UsageInput => CostUsage, |input| {
+    prompt_tokens: input.prompt_tokens,
+    completion_tokens: input.completion_tokens,
+    total_tokens: 0,
+    prompt_details: input.prompt_details.as_ref().map(PromptDetails::from),
+    completion_details: None,
+    cache_read_tokens: input.cache_read_tokens,
+    numeric_extras: BTreeMap::new(),
+});
+
+copy_fields!(&PromptExtrasInput => PromptExtras, |input| {
+    cache_write_tokens: input.cache_write_tokens,
+    cache_creation_tokens: input.cache_creation_tokens,
+    cache_creation_token_details: input.cache_creation_token_details,
+    cached_tokens_details: input.cached_tokens_details,
+    character_count: input.character_count,
+    image_count: input.image_count,
+    video_length_seconds: input.video_length_seconds,
+    audio_length_seconds: input.audio_length_seconds,
+    query_count: input.query_count,
+});
 
 // Every batch case supplies its own prices, so the public table never answers here.
 struct NoLookup;
