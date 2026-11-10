@@ -1059,6 +1059,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-analytics"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "chrono",
+ "indexmap 2.14.2",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-analytics-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-analytics",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
