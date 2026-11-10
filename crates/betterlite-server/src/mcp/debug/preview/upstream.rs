@@ -62,14 +62,20 @@ pub struct UpstreamResponse {
 
 impl Debug for UpstreamResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let header_names: Vec<&str> = self.headers.keys().map(HeaderName::as_str).collect();
-        f.debug_struct("UpstreamResponse")
-            .field("status", &self.status)
-            .field("headers", &header_names)
-            .field("body", &self.body)
-            .field("request", &self.request)
-            .field("captured", &self.captured)
-            .finish()
+        f.write_str(&self.summary())
+    }
+}
+
+impl UpstreamResponse {
+    fn summary(&self) -> String {
+        let names: Vec<&str> = self.headers.keys().map(HeaderName::as_str).collect();
+        format!(
+            "UpstreamResponse({}, headers={names:?}, body={:?}, request={:?}, captured={:?})",
+            self.status.as_u16(),
+            self.body,
+            self.request,
+            self.captured
+        )
     }
 }
 

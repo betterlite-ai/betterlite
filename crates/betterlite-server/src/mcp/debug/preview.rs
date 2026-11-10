@@ -76,19 +76,26 @@ fn redact_object(body: JsonValue) -> JsonValue {
 
 fn unstructured_preview(raw: &[u8], content_type: &str, secrets: &[String]) -> String {
     let text = UTF_8.decode_without_bom_handling(raw).0;
-    if content_type_base(content_type) != FORM_URLENCODED
-        || !text.contains('=')
-        || text.contains(['<', '>', '\n', '\r'])
-    {
+    if !structured_form(&text, content_type) {
         return UNSTRUCTURED_BODY.to_owned();
     }
-    let fields: Vec<String> = secrets::parse_qsl(&text, true)
+    safe_text(&secrets::mask_known_values(&encoded_fields(&text), secrets))
+}
+
+fn structured_form(text: &str, content_type: &str) -> bool {
+    content_type_base(content_type) == FORM_URLENCODED
+        && text.contains('=')
+        && !text.contains(['<', '>', '\n', '\r'])
+}
+
+fn encoded_fields(text: &str) -> String {
+    secrets::parse_qsl(text, true)
         .into_iter()
-        .map(|(key, field_value)| {
+        .map(|(key, value)| {
             let redacted = if sensitive_field(&key) {
                 REDACTED.to_owned()
             } else {
-                field_value
+                value
             };
             format!(
                 "{}={}",
@@ -96,8 +103,8 @@ fn unstructured_preview(raw: &[u8], content_type: &str, secrets: &[String]) -> S
                 secrets::plus_encode(&redacted)
             )
         })
-        .collect();
-    safe_text(&secrets::mask_known_values(&fields.join("&"), secrets))
+        .collect::<Vec<String>>()
+        .join("&")
 }
 
 #[must_use]
