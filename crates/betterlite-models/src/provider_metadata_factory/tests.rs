@@ -292,14 +292,14 @@ fn fireworks_constructor() {
     .unwrap();
     let constructed = FireworksSettings::default().with_args(args);
     assert_eq!(
-        serde_json::to_string(&constructed).unwrap(),
-        concat!(
+        json(&serde_json::to_string(&constructed).unwrap()),
+        json(concat!(
             r#"{"frequency_penalty":4,"max_tokens":7,"n":6,"stop":["END"],"temperature":1,"#,
             r#""top_p":2,"response_format":{"type":"json_object"},"#,
             r#""tools":[{"type":"function"}],"tool_choice":"auto","top_k":3,"#,
             r#""presence_penalty":5,"user":"user-1","logprobs":8,"reasoning_effort":"high","#,
             r#""prompt_truncate_len":9,"context_length_exceeded_behavior":"truncate"}"#
-        )
+        ))
     );
 }
 
@@ -333,11 +333,11 @@ fn fireworks_keeps_configured_values() {
     assert_eq!(merged.openai.number, Some(0));
     assert_eq!(merged.tool_choice, Some(ToolChoice::Name(String::new())));
     assert_eq!(
-        serde_json::to_string(&merged).unwrap(),
-        concat!(
+        json(&serde_json::to_string(&merged).unwrap()),
+        json(concat!(
             r#"{"max_tokens":0,"n":0,"stop":"","temperature":0,"response_format":{},"#,
             r#""tools":[],"tool_choice":"","top_k":3,"user":""}"#
-        )
+        ))
     );
 }
 
@@ -370,12 +370,12 @@ fn lemonade_constructor() {
         tools: Some(vec![json("true")]),
     });
     assert_eq!(
-        serde_json::to_string(&constructed).unwrap(),
-        concat!(
+        json(&serde_json::to_string(&constructed).unwrap()),
+        json(concat!(
             r#"{"repeat_penalty":0.5,"functions":[{"name":"f"}],"logit_bias":{"50256":-100},"#,
             r#""max_completion_tokens":11,"max_tokens":12,"n":2,"presence_penalty":1,"stop":"END","#,
             r#""temperature":1,"top_p":2,"top_k":3,"response_format":{"type":"text"},"tools":[true]}"#
-        )
+        ))
     );
     let kept = constructed.with_args(LemonadeSettings {
         repeat_penalty: Some(0.0_f64),
@@ -471,8 +471,8 @@ fn fireworks_wire_names_parse_and_print() {
         )])))
     );
     assert_eq!(
-        serde_json::to_string(&settings).unwrap(),
-        r#"{"stop":"END","tool_choice":{"type":"function"}}"#
+        json(&serde_json::to_string(&settings).unwrap()),
+        json(r#"{"stop":"END","tool_choice":{"type":"function"}}"#)
     );
     let listed: FireworksSettings = serde_json::from_str(r#"{"stop":["a","b"],"n":3}"#).unwrap();
     assert_eq!(
@@ -481,8 +481,8 @@ fn fireworks_wire_names_parse_and_print() {
     );
     assert_eq!(listed.openai.number, Some(3));
     assert_eq!(
-        serde_json::to_string(&listed).unwrap(),
-        r#"{"n":3,"stop":["a","b"]}"#
+        json(&serde_json::to_string(&listed).unwrap()),
+        json(r#"{"n":3,"stop":["a","b"]}"#)
     );
 }
 
