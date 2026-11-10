@@ -3,40 +3,14 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_redact::structured::Payload;
 
-use crate::backend::{CacheResult, Ttl};
+use crate::backend::{CacheBackend, CacheResult, Ttl};
 use crate::cache_key::derive::should_use_cache;
 use crate::cache_key::value::KeyValue;
-use crate::envelope::backend::EnvelopeBackend;
 use crate::envelope::facade::ResponseCache;
 use crate::envelope::request::EnvelopeRequest;
 
 use super::super::response::EmbeddingResponse;
 use super::{EmbeddingCacheEntry, EmbeddingCacheError, add_embedding_entry_to_cache, request_ttl};
-
-// LiteLLM's BaseCache.async_set_cache_pipeline: a dynamic cache object and the configured backend both take the whole list at once.
-#[async_trait]
-pub trait EmbeddingCacheStore: Send + Sync {
-    async fn async_set_cache_pipeline(
-        &self,
-        cache_list: Vec<(String, CacheValue)>,
-        ttl: Ttl,
-    ) -> CacheResult<()>;
-}
-
-// The response facade's backend is an EnvelopeBackend, so its pipeline is the per-entry set that LiteLLM's memory and disk caches do.
-#[async_trait]
-impl EmbeddingCacheStore for dyn EnvelopeBackend + '_ {
-    async fn async_set_cache_pipeline(
-        &self,
-        cache_list: Vec<(String, CacheValue)>,
-        ttl: Ttl,
-    ) -> CacheResult<()> {
-        for (key, value) in cache_list {
-            self.async_set_cache(&key, value, ttl).await?;
-        }
-        Ok(())
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeCacheRequest {
@@ -57,7 +31,7 @@ pub trait NativeEmbeddingStore: Send + Sync {
 
 pub async fn async_add_cache_pipeline<L, C>(
     cache: &ResponseCache<L, C>,
-    dynamic: Option<&dyn EmbeddingCacheStore>,
+    dynamic: Option<&dyn CacheBackend>,
     native: Option<&dyn NativeEmbeddingStore>,
     request: &mut EnvelopeRequest,
     result: &EmbeddingResponse,
@@ -80,7 +54,7 @@ pub async fn async_add_cache_pipeline<L, C>(
 
 async fn write_embedding_pipeline<L, C>(
     cache: &ResponseCache<L, C>,
-    dynamic: Option<&dyn EmbeddingCacheStore>,
+    dynamic: Option<&dyn CacheBackend>,
     native: Option<&dyn NativeEmbeddingStore>,
     request: &mut EnvelopeRequest,
     result: &EmbeddingResponse,
@@ -161,7 +135,7 @@ where
 
 async fn store_entries<L, C>(
     cache: &ResponseCache<L, C>,
-    dynamic: Option<&dyn EmbeddingCacheStore>,
+    dynamic: Option<&dyn CacheBackend>,
     entries: Vec<EmbeddingCacheEntry>,
     ttl: Ttl,
 ) -> Result<(), EmbeddingCacheError>
@@ -176,10 +150,9 @@ where
     match dynamic {
         Some(store) => store.async_set_cache_pipeline(cache_list, ttl).await?,
         None => {
-            cache
-                .backend
-                .async_set_cache_pipeline(cache_list, ttl)
-                .await?;
+            for (key, value) in cache_list {
+                cache.backend.async_set_cache(&key, value, ttl).await?;
+            }
         }
     }
     Ok(())

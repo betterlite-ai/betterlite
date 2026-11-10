@@ -5,7 +5,7 @@ use betterlite_cache::backend::{BackendError, CacheBackend, CacheResult, Ttl};
 use betterlite_cache::cache_key::request::CacheKeyRequest;
 use betterlite_cache::cache_key::settings::CacheKeySettings;
 use betterlite_cache::embedding::embedding_cache::pipeline::{
-    EmbeddingCacheStore, NativeCacheRequest, NativeEmbeddingStore,
+    NativeCacheRequest, NativeEmbeddingStore,
 };
 use betterlite_cache::envelope::backend::StoredBackend;
 use betterlite_cache::envelope::facade::{EnvelopeSettings, ResponseCache};
@@ -71,7 +71,11 @@ impl RecordingStore {
 }
 
 #[async_trait]
-impl EmbeddingCacheStore for RecordingStore {
+impl CacheBackend for RecordingStore {
+    fn default_ttl(&self) -> i64 {
+        120
+    }
+
     async fn async_set_cache_pipeline(
         &self,
         cache_list: Vec<(String, CacheValue)>,
@@ -154,11 +158,11 @@ pub(crate) struct RecordingLogger {
 }
 
 pub(crate) trait AsCacheStore {
-    fn as_cache_store(&self) -> &dyn EmbeddingCacheStore;
+    fn as_cache_store(&self) -> &dyn CacheBackend;
 }
 
 impl AsCacheStore for RecordingStore {
-    fn as_cache_store(&self) -> &dyn EmbeddingCacheStore {
+    fn as_cache_store(&self) -> &dyn CacheBackend {
         self
     }
 }

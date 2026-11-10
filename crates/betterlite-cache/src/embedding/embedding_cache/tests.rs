@@ -18,7 +18,7 @@ use crate::cache_key::settings::CacheKeySettings;
 use crate::cache_key::value::KeyValue;
 use crate::codec::CacheCodec;
 use crate::embedding::embedding_cache::pipeline::{
-    EmbeddingCacheStore, NativeCacheRequest, NativeEmbeddingStore, async_add_cache_pipeline,
+    NativeCacheRequest, NativeEmbeddingStore, async_add_cache_pipeline,
 };
 use crate::embedding::embedding_cache::{
     EmbeddingCacheEntry, EmbeddingCacheError, add_embedding_entry_to_cache,
@@ -160,7 +160,11 @@ impl RecordingStore {
 }
 
 #[async_trait]
-impl EmbeddingCacheStore for RecordingStore {
+impl CacheBackend for RecordingStore {
+    fn default_ttl(&self) -> i64 {
+        120
+    }
+
     async fn async_set_cache_pipeline(
         &self,
         cache_list: Vec<(String, CacheValue)>,
@@ -845,7 +849,8 @@ async fn pipeline_uses_the_dynamic_store_when_injected() {
     );
     let mut cache_request = request(vec![param("input", inputs(&["hello", "world"]))]);
     let result = response(2, Some(10), None);
-    async_add_cache_pipeline(&cache, Some(&dynamic), None, &mut cache_request, &result).await;
+    let dynamic_ref: Option<&dyn CacheBackend> = Some(&dynamic);
+    async_add_cache_pipeline(&cache, dynamic_ref, None, &mut cache_request, &result).await;
     let writes = dynamic.writes();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes.first().map(|write| write.0.len()), Some(2));
@@ -950,7 +955,8 @@ async fn pipeline_dynamic_failure_is_logged() {
     let cache = cache(Arc::clone(&recording), CacheMode::DefaultOn, settings(None));
     let mut cache_request = request(vec![param("input", text("hello"))]);
     let result = response(1, Some(10), None);
-    async_add_cache_pipeline(&cache, Some(&dynamic), None, &mut cache_request, &result).await;
+    let dynamic_ref: Option<&dyn CacheBackend> = Some(&dynamic);
+    async_add_cache_pipeline(&cache, dynamic_ref, None, &mut cache_request, &result).await;
     assert_eq!(
         cache
             .hooks
