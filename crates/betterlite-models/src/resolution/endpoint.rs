@@ -30,7 +30,10 @@ pub(super) fn resolve(
     };
     let environment = context.environment;
     if let Some((named, api_key)) = known_branch(endpoint, api_base, request, environment) {
-        let provider = identity(named);
+        let provider = match named {
+            EndpointProvider::Anyscale => ProviderIdentity::Anyscale,
+            EndpointProvider::Known(known) => ProviderIdentity::Known(known),
+        };
         return Ok(Some(EndpointMatch { provider, api_key }));
     }
     if let Some(descriptor) = context.registry.get_by_base_url(endpoint) {
@@ -77,11 +80,4 @@ fn known_branch(
         .cloned()
         .or_else(|| first_set(environment, names).map(SecretString::from));
     Some((*provider, api_key))
-}
-
-const fn identity(provider: EndpointProvider) -> ProviderIdentity {
-    match provider {
-        EndpointProvider::Anyscale => ProviderIdentity::Anyscale,
-        EndpointProvider::Known(known) => ProviderIdentity::Known(known),
-    }
 }
