@@ -58,17 +58,7 @@ impl RouterFake {
     }
 
     fn calls(&self) -> Vec<JudgeCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn record(&self, call: JudgeCall) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
+        call_log(&self.calls)
     }
 }
 
@@ -85,13 +75,7 @@ impl JudgeRouter for RouterFake {
     }
 
     async fn acompletion(&self, call: JudgeCall) -> Result<Json, JudgeDispatchError> {
-        if let Some(message) = self.failure {
-            return Err(JudgeDispatchError {
-                message: message.to_owned(),
-            });
-        }
-        self.record(call);
-        Ok(Json::Null)
+        record_call(&self.calls, self.failure, call)
     }
 }
 
@@ -103,27 +87,36 @@ struct SdkFake {
 
 impl SdkFake {
     fn calls(&self) -> Vec<JudgeCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        call_log(&self.calls)
     }
 }
 
 #[async_trait]
 impl JudgeSdk for SdkFake {
     async fn acompletion(&self, call: JudgeCall) -> Result<Json, JudgeDispatchError> {
-        if let Some(message) = self.failure {
-            return Err(JudgeDispatchError {
-                message: message.to_owned(),
-            });
-        }
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-        Ok(Json::Null)
+        record_call(&self.calls, self.failure, call)
     }
+}
+
+fn record_call(
+    calls: &Mutex<Vec<JudgeCall>>,
+    failure: Option<&'static str>,
+    call: JudgeCall,
+) -> Result<Json, JudgeDispatchError> {
+    if let Some(message) = failure {
+        return Err(JudgeDispatchError {
+            message: message.to_owned(),
+        });
+    }
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
+    Ok(Json::Null)
+}
+
+fn call_log(calls: &Mutex<Vec<JudgeCall>>) -> Vec<JudgeCall> {
+    calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
 fn context<'context>(

@@ -118,27 +118,20 @@ fn dispatch_value(
         dispatch.params.clone(),
     ));
     match outcome {
-        Ok(_) => dispatched(router_calls, sdk_calls),
+        Ok(_) => recorded(router_calls).map_or_else(
+            || {
+                recorded(sdk_calls).map_or_else(
+                    || Ok(serde_json::json!({"declined": true})),
+                    |sdk_call| call_value("sdk", &sdk_call),
+                )
+            },
+            |router_call| call_value("router", &router_call),
+        ),
         Err(JudgeCallError::Nothing { model }) => Ok(serde_json::json!({"declined": model})),
         Err(JudgeCallError::Dispatch { model, source }) => {
             Ok(serde_json::json!({"failed": model, "message": source.message}))
         }
     }
-}
-
-fn dispatched(
-    router_calls: &Arc<Mutex<Vec<JudgeCall>>>,
-    sdk_calls: &Arc<Mutex<Vec<JudgeCall>>>,
-) -> crate::helpers::HelperResult {
-    recorded(router_calls).map_or_else(
-        || {
-            recorded(sdk_calls).map_or_else(
-                || Ok(serde_json::json!({"declined": true})),
-                |sdk_call| call_value("sdk", &sdk_call),
-            )
-        },
-        |router_call| call_value("router", &router_call),
-    )
 }
 
 fn recorded(calls: &Arc<Mutex<Vec<JudgeCall>>>) -> Option<JudgeCall> {

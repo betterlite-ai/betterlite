@@ -66,6 +66,16 @@ fn returns_none_for_a_name_no_provider_claims() {
 }
 
 #[test]
+fn returns_none_when_the_resolved_model_name_is_empty() {
+    let catalog = ModelCatalog::default();
+    let (known, environment, custom) = (BTreeSet::new(), BTreeMap::new(), BTreeSet::new());
+    let context = context(&catalog, &known, &environment, &custom);
+    let cache = ProviderCache::default();
+
+    assert_eq!(cache.qualified("openai/", &context), None);
+}
+
+#[test]
 fn caches_one_entry_per_model() {
     let catalog = ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap();
     let (known, environment, custom) = (BTreeSet::new(), BTreeMap::new(), BTreeSet::new());
