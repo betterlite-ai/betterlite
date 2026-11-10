@@ -22,5 +22,12 @@ call:
       - {provider: azure, model: o_series}
       - {provider: azure, model: gpt-4o}
       - {provider: azure, model: my-deployment}
+      - {provider: azure, model: gpt-5-o3-eval}
+      - {provider: azure, model: my-deployment, base_model: gpt-5-o1}
+      - {provider: azure_ai, model: gpt-4o, base_model: claude-x}
+      - {provider: vertex_ai, model: llama-3-70b, base_model: gemini-pro}
+      - {provider: cohere, model: command-r, base_model: v1/command}
+      - {provider: cohere_chat, model: v1/command, base_model: command-r}
+      - {provider: bedrock, model: anthropic.claude-v2, base_model: converse/other}
 env: {}
 compare: {ignore: []}

@@ -46,6 +46,26 @@ const VERTEX_CASES: &[(&str, ChatConfigTag, &str)] = &[
         "CodestralTextCompletionConfig",
     ),
     (
+        "gemini-claude",
+        ChatConfigTag::VertexGemini,
+        "VertexGeminiConfig",
+    ),
+    (
+        "claude-gpt-oss",
+        ChatConfigTag::VertexAiAnthropic,
+        "VertexAIAnthropicConfig",
+    ),
+    (
+        "codestral-latest",
+        ChatConfigTag::VertexAiLlama3,
+        "VertexAILlama3Config",
+    ),
+    (
+        "dual-listed",
+        ChatConfigTag::VertexAiMistral,
+        "VertexAIMistralConfig",
+    ),
+    (
         "jamba-1.5",
         ChatConfigTag::VertexAiAi21,
         "VertexAIAi21Config",
@@ -64,8 +84,9 @@ fn vertex_lists() -> (Vec<String>, Vec<String>) {
             "codestral-2501".to_owned(),
             "mistralai/codestral-2".to_owned(),
             "gemini-listed".to_owned(),
+            "dual-listed".to_owned(),
         ],
-        vec!["jamba-1.5".to_owned()],
+        vec!["jamba-1.5".to_owned(), "dual-listed".to_owned()],
     )
 }
 

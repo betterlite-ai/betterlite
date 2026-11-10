@@ -4,8 +4,8 @@ call:
   chat_config_selection:
     function: vertex_selection
     vertex:
-      mistral_models: [mistral-large, codestral-2501, mistralai/codestral-2, gemini-listed]
-      ai21_models: [jamba-1.5]
+      mistral_models: [mistral-large, codestral-2501, mistralai/codestral-2, gemini-listed, dual-listed]
+      ai21_models: [jamba-1.5, dual-listed]
     calls:
       - {provider: vertex_ai, model: gemini-2.5-pro}
       - {provider: vertex_ai, model: gemini-listed}
@@ -15,6 +15,10 @@ call:
       - {provider: vertex_ai, model: mistral-large}
       - {provider: vertex_ai, model: codestral-2501}
       - {provider: vertex_ai, model: mistralai/codestral-2}
+      - {provider: vertex_ai, model: gemini-claude}
+      - {provider: vertex_ai, model: claude-gpt-oss}
+      - {provider: vertex_ai, model: codestral-latest}
+      - {provider: vertex_ai, model: dual-listed}
       - {provider: vertex_ai, model: jamba-1.5}
       - {provider: vertex_ai, model: llama-3-70b}
 env: {}

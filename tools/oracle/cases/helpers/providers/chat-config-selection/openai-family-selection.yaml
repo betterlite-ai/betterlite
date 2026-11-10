@@ -22,5 +22,7 @@ call:
       - {provider: openai, model: gpt-5-chat-latest}
       - {provider: openai, model: responses/gpt-4o}
       - {provider: openai, model: gpt-3.5-turbo-instruct}
+      - {provider: openai, model: gpt-4o, base_model: o1}
+      - {provider: openai, model: gpt-4o, base_model: gpt-5}
 env: {}
 compare: {ignore: []}
