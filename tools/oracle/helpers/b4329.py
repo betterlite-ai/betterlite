@@ -113,8 +113,9 @@ class Pop:
 
 
 class FakePipeline:
-    def __init__(self, lists: dict[str, list[bytes]]) -> None:
+    def __init__(self, lists: dict[str, list[bytes]], lpop_args: list[int]) -> None:
         self.lists = lists
+        self.lpop_args = lpop_args
         self.queued: list[Push | Trim | Pop] = []
 
     async def __aenter__(self) -> Self:
@@ -130,6 +131,7 @@ class FakePipeline:
         self.queued.append(Trim(name, start, stop))
 
     def lpop(self, name: str, count: int | None = None) -> None:
+        self.lpop_args.append(3 if count is not None else 2)
         self.queued.append(Pop(name, count))
 
     async def execute(self) -> list[object]:
@@ -147,18 +149,20 @@ class FakePipeline:
 
 
 class FakeRedis:
-    def __init__(self, lists: dict[str, list[bytes]]) -> None:
+    def __init__(self, lists: dict[str, list[bytes]], lpop_args: list[int]) -> None:
         self.lists = lists
+        self.lpop_args = lpop_args
 
     async def rpush(self, name: str, *values: Value) -> int:
         return push_rows(self.lists, name, list(values))
 
     async def lpop(self, name: str, count: int | None = None) -> bytes | list[bytes] | None:
+        self.lpop_args.append(3 if count is not None else 2)
         return pop_rows(self.lists, name, count)
 
     def pipeline(self, *, transaction: bool = True) -> FakePipeline:
         _ = transaction
-        return FakePipeline(self.lists)
+        return FakePipeline(self.lists, self.lpop_args)
 
 
 class RecordingLogger:
@@ -249,6 +253,7 @@ def run(input_value: dict[str, Json]) -> Json:
             for key, rows in object_value(raw, "lists").items()
         }
     )
+    lpop_args: list[int] = []
     logger = RecordingLogger()
     cache = object.__new__(RedisCache)
     fields: dict[str, object] = {
@@ -256,7 +261,7 @@ def run(input_value: dict[str, Json]) -> Json:
         "redis_version": string_value(input_value.get("redis_version"), "redis_version"),
         "_circuit_breaker": RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60),
         "service_logger_obj": logger,
-        "init_async_client": lambda: FakeRedis(lists),
+        "init_async_client": lambda: FakeRedis(lists, lpop_args),
     }
     for name, value in fields.items():
         object.__setattr__(cache, name, value)
@@ -265,4 +270,5 @@ def run(input_value: dict[str, Json]) -> Json:
         "result": result,
         "lists": project_lists(lists),
         "events": cast(Json, logger.events),
+        "lpop_args": cast(Json, lpop_args),
     }

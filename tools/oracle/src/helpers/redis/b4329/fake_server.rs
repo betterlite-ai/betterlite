@@ -10,6 +10,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 type Lists = BTreeMap<String, Vec<Vec<u8>>>;
+pub(crate) type LpopLog = Arc<Mutex<Vec<usize>>>;
 
 pub(crate) struct FakeServer {
     pub(crate) addr: SocketAddr,
@@ -24,13 +25,14 @@ impl Drop for FakeServer {
 }
 
 impl FakeServer {
-    pub(crate) async fn start(initial: Lists) -> io::Result<Self> {
+    pub(crate) async fn start(initial: Lists, log: LpopLog) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         let lists = Arc::new(Mutex::new(initial));
         let shared = Arc::clone(&lists);
+        let shared_log = Arc::clone(&log);
         let mut tasks = JoinSet::new();
-        tasks.spawn(async move { accept_loop(listener, shared).await });
+        tasks.spawn(async move { accept_loop(listener, shared, shared_log).await });
         Ok(Self { addr, lists, tasks })
     }
 
@@ -43,8 +45,8 @@ impl FakeServer {
     }
 }
 
-fn locked(lists: &Mutex<Lists>) -> MutexGuard<'_, Lists> {
-    match lists.lock() {
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
@@ -70,19 +72,22 @@ struct Session {
     queued: Vec<Command>,
 }
 
-async fn accept_loop(listener: TcpListener, lists: Arc<Mutex<Lists>>) {
+async fn accept_loop(listener: TcpListener, lists: Arc<Mutex<Lists>>, log: LpopLog) {
     let mut connections = JoinSet::new();
     while let Ok((stream, _peer)) = listener.accept().await {
-        connections.spawn(serve(stream, Arc::clone(&lists)));
+        connections.spawn(serve(stream, Arc::clone(&lists), Arc::clone(&log)));
         while connections.try_join_next().is_some() {}
     }
 }
 
-async fn serve(stream: TcpStream, lists: Arc<Mutex<Lists>>) {
+async fn serve(stream: TcpStream, lists: Arc<Mutex<Lists>>, log: LpopLog) {
     let (read_half, mut write_half) = tokio::io::split(stream);
     let mut reader = tokio::io::BufReader::new(read_half);
     let mut session = Session::default();
     while let Ok(Some(command)) = read_command(&mut reader).await {
+        if command.name == "LPOP" {
+            locked(&log).push(command.args.len());
+        }
         let replies = {
             let mut guard = locked(&lists);
             reply_for(&mut guard, &mut session, &command)

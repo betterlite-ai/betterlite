@@ -4,7 +4,7 @@ mod operations;
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use tokio::runtime::Builder;
@@ -34,16 +34,22 @@ async fn run_case(call: &Call) -> HelperResult {
         .iter()
         .map(|(key, values)| (key.clone(), values.iter().map(ListValue::stored).collect()))
         .collect();
-    let server = FakeServer::start(initial)
+    let lpop_args = Arc::new(Mutex::new(Vec::new()));
+    let server = FakeServer::start(initial, Arc::clone(&lpop_args))
         .await
         .map_err(|error| helper_error("RedisError", error))?;
     let hooks = Arc::new(RecordingHooks::default());
     let operations = build(&server, call, Arc::clone(&hooks))?;
     let result = run(call, &operations).await?;
+    let recorded = match lpop_args.lock() {
+        Ok(log) => log.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
     Ok(json!({
         "result": result,
         "lists": lists(&server.lists()),
         "events": events(&hooks.events()),
+        "lpop_args": recorded,
     }))
 }
 
