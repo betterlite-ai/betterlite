@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-tool-results-error-invoke-without-id
+call:
+  bedrock_tool_results:
+    function: tool_call_invoke
+    tool_calls:
+      - {function: {name: no_id, arguments: '{}'}}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_tool_results-tool-invoke-seed
+call:
+  bedrock_tool_results:
+    function: tool_call_invoke
+    tool_calls:
+      - {id: call_1, type: function, function: {name: get_weather, arguments: '{"city":"Boston"}'}}
+      - {id: call_1, type: function, function: {name: get_weather, arguments: '{"a":1}{"b":2}'}, cache_control: {type: ephemeral}}
+env: {}
+compare: {ignore: []}

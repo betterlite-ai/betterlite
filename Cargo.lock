@@ -1136,6 +1136,7 @@ dependencies = [
  "speedate",
  "strum",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -2856,6 +2857,7 @@ dependencies = [
  "tokenizers",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
