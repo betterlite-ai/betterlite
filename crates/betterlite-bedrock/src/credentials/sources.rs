@@ -43,7 +43,11 @@ pub(super) async fn resolve(
     }
     let [_web_identity, _role, profile, session_token, _static] =
         auth_selector_presence(&effective);
-    if profile || session_token {
+    if profile {
+        let local = resolve_local_credentials(&effective, resolver.native).await?;
+        return Ok(local.credentials);
+    }
+    if session_token {
         let local = resolve_local_credentials(&effective, resolver.native).await?;
         return Ok(local.credentials);
     }

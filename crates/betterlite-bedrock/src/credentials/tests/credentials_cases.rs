@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::tls::VerifySetting;
 use rstest::rstest;
@@ -10,7 +12,9 @@ use crate::aws_settings::AwsSessionTag;
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
 use crate::credentials::role::aws_role::auth_with_aws_role;
-use crate::credentials::role::{CredentialTtl, RoleAuth, RoleCredentials};
+use crate::credentials::role::{
+    CredentialTtl, RoleAuth, RoleCredentials, resolve_role_credentials,
+};
 
 use super::support::{Fixture, Reply, Transport, load, logged, settings};
 
@@ -111,6 +115,7 @@ fn credentials_cases(#[case] scenario: Scenario) {
         Scenario::RoleBeforeProfile => {
             role_wins_over_profile_and_static();
             already_running_as_role_uses_ambient();
+            role_credentials_expose_the_cache_ttls();
         }
         Scenario::ProfileBeforeStatic => {
             profile_wins_over_static();
@@ -134,6 +139,7 @@ fn credentials_cases(#[case] scenario: Scenario) {
             same_account_irsa_returns_whole_ttl();
             cross_account_irsa_uses_token_file();
             irsa_denial_logs_trust_policy();
+            irsa_failure_without_trust_policy_text_stays_quiet();
             explicit_key_skips_irsa();
         }
         Scenario::NonIrsaAssumeRole => {
@@ -241,6 +247,33 @@ fn already_running_as_role_uses_ambient() {
     assert_eq!(resolved.access_key_id.expose_secret(), "ambient");
     assert!(resolved.session_token.is_none());
     assert_eq!(transport.record.actions(), ["GetCallerIdentity"]);
+}
+
+fn role_credentials_expose_the_cache_ttls() {
+    let transport = transport(
+        vec![reply("ASIAROLE")],
+        Vec::new(),
+        vec![DENIED_IDENTITY, TARGET_IDENTITY],
+    );
+    let fixture = Fixture::new(AMBIENT, &[], &transport, None);
+    let role_settings = settings(
+        &format!("aws_role_name: '{TARGET}', aws_session_name: bedrock"),
+        AMBIENT,
+    );
+    let resolved = fixture.runtime.block_on(resolve_role_credentials(
+        &fixture.resolver(),
+        &role_settings,
+        TARGET,
+        None,
+    ));
+    assert_eq!(resolved.unwrap().cache_ttl, Some(Duration::from_mins(59)));
+    let already = fixture.runtime.block_on(resolve_role_credentials(
+        &fixture.resolver(),
+        &role_settings,
+        TARGET,
+        None,
+    ));
+    assert_eq!(already.unwrap().cache_ttl, None);
 }
 
 fn profile_wins_over_static() {
@@ -545,6 +578,28 @@ fn irsa_denial_logs_trust_policy() {
         && message.contains("Access denied when trying to assume role")
         && message.contains(IRSA)
         && message.contains("trust policy")));
+}
+
+fn irsa_failure_without_trust_policy_text_stays_quiet() {
+    let transport = Transport::with(&[
+        ("GetCallerIdentity", vec![DENIED_IDENTITY]),
+        (
+            "AssumeRole",
+            vec![denied("AccessDenied", "the caller may not assume the role")],
+        ),
+    ]);
+    let environment = [
+        ("AWS_ROLE_ARN", IRSA),
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+        ("AWS_ACCESS_KEY_ID", "ambient"),
+        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
+    let (failed, entries) = logged(|| run_role(&fixture, &auth(IRSA, "bedrock", None, true)));
+    assert!(matches!(failed, Err(CredentialError::WebIdentity(_))));
+    assert!(entries.is_empty());
 }
 
 fn explicit_key_skips_irsa() {
