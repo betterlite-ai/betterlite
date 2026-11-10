@@ -42,15 +42,14 @@ class _SpanLimits(_Stub):
 
 class _ReadableSpan:
     # Only the name and attributes are read; the other OTel fields pass through untouched
-    def __init__(
-        self,
-        *,
-        name: str,
-        attributes: Mapping[str, object],
-        **_fields: object,
-    ) -> None:
+    _PASSED = ("context", "parent", "resource", "events", "links", "kind", "status",
+               "start_time", "end_time", "instrumentation_scope")
+
+    def __init__(self, *, name: str, attributes: Mapping[str, object], **fields: object) -> None:
         self.name = name
         self.attributes = MappingProxyType(dict(attributes))
+        for field in self._PASSED:
+            setattr(self, field, fields.get(field))
 
 
 class _Encoded:
