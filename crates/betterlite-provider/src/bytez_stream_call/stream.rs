@@ -9,7 +9,7 @@ use betterlite_streaming::stream_chunk_shaping::records::{
     ChunkResponseObject, JsonObject, StreamChunk, StreamDelta,
 };
 use futures_util::StreamExt as _;
-use futures_util::stream::{self, BoxStream};
+use futures_util::stream::{self, BoxStream, Fuse};
 use tokio::time::timeout;
 
 use super::STREAMING_TIMEOUT;
@@ -72,7 +72,7 @@ fn chunk_failure(stream: &BytezCustomStream<'_>, source: &ProviderChunkError) ->
 pub fn text_fragments(chunks: BytezChunks) -> BytezFragments {
     stream::unfold(
         Decoder {
-            chunks,
+            chunks: chunks.fuse(),
             pending: Vec::new(),
         },
         next_fragment,
@@ -81,7 +81,7 @@ pub fn text_fragments(chunks: BytezChunks) -> BytezFragments {
 }
 
 struct Decoder {
-    chunks: BytezChunks,
+    chunks: Fuse<BytezChunks>,
     pending: Vec<u8>,
 }
 
