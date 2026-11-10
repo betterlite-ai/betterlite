@@ -46,9 +46,8 @@ fn tool_config_point_serializes_without_message_fields() {
 
 #[test]
 fn a_stamped_point_serializes_the_stamp_keys() {
-    let with_count =
-        CacheControlInjectionPoint::Message(message_point()).with_external_breakpoints(2);
-    let stamped = with_count.with_dialect(true);
+    let with_count = CacheControlInjectionPoint::Message(message_point()).restamped(None, Some(2));
+    let stamped = with_count.restamped(Some(true), None);
     assert_eq!(
         serde_json::to_string(&stamped).unwrap(),
         r#"{"location":"message","role":null,"index":null,"control":null,"_litellm_openai_dialect":true,"_litellm_external_breakpoints":2}"#
@@ -106,10 +105,26 @@ fn tool_config_points_deserialize_from_their_location() {
 #[test]
 fn stamping_returns_a_copy_and_leaves_the_input_alone() {
     let original = CacheControlInjectionPoint::Message(message_point());
-    let stamped = original.with_dialect(true);
+    let stamped = original.restamped(Some(true), Some(2));
     assert_ne!(stamped, original);
     assert_eq!(
         original,
         CacheControlInjectionPoint::Message(message_point())
+    );
+}
+
+#[test]
+fn restamping_keeps_a_stamp_the_new_one_does_not_name() {
+    let stamped =
+        CacheControlInjectionPoint::Message(message_point()).restamped(Some(false), Some(2));
+    assert_eq!(
+        stamped,
+        CacheControlInjectionPoint::Message(MessageInjectionPoint {
+            role: None,
+            index: None,
+            control: None,
+            openai_dialect: Some(false),
+            external_breakpoints: Some(2),
+        })
     );
 }

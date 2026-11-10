@@ -37,22 +37,16 @@ fn openai_inputs<'input>(
     inputs
 }
 
-fn dialects(stamped: &[CacheControlInjectionPoint]) -> Vec<Option<bool>> {
+fn stamps(stamped: &[CacheControlInjectionPoint]) -> Vec<(Option<bool>, Option<usize>)> {
     stamped
         .iter()
         .map(|injection_point| match injection_point {
-            CacheControlInjectionPoint::Message(fields) => fields.openai_dialect,
-            CacheControlInjectionPoint::ToolConfig(fields) => fields.openai_dialect,
-        })
-        .collect()
-}
-
-fn externals(stamped: &[CacheControlInjectionPoint]) -> Vec<Option<usize>> {
-    stamped
-        .iter()
-        .map(|injection_point| match injection_point {
-            CacheControlInjectionPoint::Message(fields) => fields.external_breakpoints,
-            CacheControlInjectionPoint::ToolConfig(fields) => fields.external_breakpoints,
+            CacheControlInjectionPoint::Message(fields) => {
+                (fields.openai_dialect, fields.external_breakpoints)
+            }
+            CacheControlInjectionPoint::ToolConfig(fields) => {
+                (fields.openai_dialect, fields.external_breakpoints)
+            }
         })
         .collect()
 }
@@ -76,7 +70,10 @@ fn stamped_with_dialect_records_the_decision_on_every_point(
     let inputs = openai_inputs("gpt-5.6", provider, &environment);
     let facts = Facts::new(&[], None);
     let stamped = stamped_with_dialect(&points(), &inputs, &facts);
-    assert_eq!(dialects(&stamped), vec![Some(expected), Some(expected)]);
+    assert_eq!(
+        stamps(&stamped),
+        vec![(Some(expected), None), (Some(expected), None)]
+    );
 }
 
 #[test]
@@ -85,8 +82,10 @@ fn stamped_for_prompt_hook_adds_the_external_breakpoint_count() {
     let inputs = openai_inputs("gpt-5.6", Some("openai"), &environment);
     let facts = Facts::new(&[], None);
     let stamped = stamped_for_prompt_hook(&points(), 2, &inputs, &facts);
-    assert_eq!(externals(&stamped), vec![Some(2), Some(2)]);
-    assert_eq!(dialects(&stamped), vec![Some(true), Some(true)]);
+    assert_eq!(
+        stamps(&stamped),
+        vec![(Some(true), Some(2)), (Some(true), Some(2))]
+    );
 }
 
 #[test]
@@ -95,7 +94,10 @@ fn stamped_for_prompt_hook_leaves_a_zero_count_unstamped() {
     let inputs = openai_inputs("gpt-5.6", Some("openai"), &environment);
     let facts = Facts::new(&[], None);
     let stamped = stamped_for_prompt_hook(&points(), 0, &inputs, &facts);
-    assert_eq!(externals(&stamped), vec![None, None]);
+    assert_eq!(
+        stamps(&stamped),
+        vec![(Some(true), None), (Some(true), None)]
+    );
 }
 
 #[test]

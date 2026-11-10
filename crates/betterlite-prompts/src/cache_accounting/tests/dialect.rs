@@ -47,34 +47,24 @@ fn supports_openai_breakpoint_compares_versions(#[case] model: &str, #[case] exp
 }
 
 #[rstest]
-#[case::full_name(&[("my-model", true)], "my-model", Some(true))]
-#[case::suffix_after_slash(&[("my-model", true)], "openai/my-model", Some(true))]
-#[case::full_name_before_suffix(&[("openai/my-model", false), ("my-model", true)], "openai/my-model", Some(false))]
-#[case::full_name_true_wins(&[("openai/my-model", true), ("my-model", false)], "openai/my-model", Some(true))]
-#[case::missing_entry(&[], "my-model", None)]
-#[case::map_overrides_a_supported_version(&[("gpt-5.6", false)], "gpt-5.6", Some(false))]
-#[case::map_enables_an_old_model(&[("gpt-4", true)], "gpt-4", Some(true))]
+#[case::full_name(&[("my-model", true)], "my-model", Some(true), true)]
+#[case::suffix_after_slash(&[("my-model", true)], "openai/my-model", Some(true), true)]
+#[case::full_name_before_suffix(&[("openai/my-model", false), ("my-model", true)], "openai/my-model", Some(false), false)]
+#[case::full_name_true_wins(&[("openai/my-model", true), ("my-model", false)], "openai/my-model", Some(true), true)]
+#[case::missing_entry(&[], "my-model", None, false)]
+#[case::map_overrides_a_supported_version(&[("gpt-5.6", false)], "gpt-5.6", Some(false), false)]
+#[case::map_enables_an_old_model(&[("gpt-4", true)], "gpt-4", Some(true), true)]
+#[case::missing_entry_falls_back_to_the_version(&[], "gpt-5.6", None, true)]
+#[case::missing_entry_and_old_version(&[], "gpt-4", None, false)]
 fn model_map_breakpoint_flag_looks_up_the_full_name_first(
     #[case] flags: &[(&str, bool)],
     #[case] model: &str,
-    #[case] expected: Option<bool>,
+    #[case] expected_flag: Option<bool>,
+    #[case] expected_support: bool,
 ) {
     let facts = Facts::new(flags, None);
-    assert_eq!(model_map_breakpoint_flag(model, &facts), expected);
-}
-
-#[rstest]
-#[case::map_flag_false_beats_the_version(&[("gpt-5.6", false)], "gpt-5.6", false)]
-#[case::map_flag_true_beats_the_version(&[("gpt-4", true)], "gpt-4", true)]
-#[case::missing_entry_falls_back_to_the_version(&[], "gpt-5.6", true)]
-#[case::missing_entry_and_old_version(&[], "gpt-4", false)]
-fn supports_openai_breakpoint_reads_the_model_map_first(
-    #[case] flags: &[(&str, bool)],
-    #[case] model: &str,
-    #[case] expected: bool,
-) {
-    let facts = Facts::new(flags, None);
-    assert_eq!(supports_openai_breakpoint(model, &facts), expected);
+    assert_eq!(model_map_breakpoint_flag(model, &facts), expected_flag);
+    assert_eq!(supports_openai_breakpoint(model, &facts), expected_support);
 }
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {

@@ -16,7 +16,7 @@ pub fn stamped_with_dialect(
     let dialect = targets_openai_breakpoint(inputs, facts);
     points
         .iter()
-        .map(|point| point.with_dialect(dialect))
+        .map(|point| point.restamped(Some(dialect), None))
         .collect()
 }
 
@@ -34,6 +34,6 @@ pub fn stamped_for_prompt_hook(
     }
     stamped
         .iter()
-        .map(|point| point.with_external_breakpoints(external_breakpoints))
+        .map(|point| point.restamped(None, Some(external_breakpoints)))
         .collect()
 }

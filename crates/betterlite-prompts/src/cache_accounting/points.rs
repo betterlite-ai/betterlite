@@ -58,29 +58,18 @@ pub enum CacheControlInjectionPoint {
 
 // The prompt hook never receives the tools or the request, so these stamps ride on the points; copying keeps config-owned points untouched across requests.
 impl CacheControlInjectionPoint {
+    // A stamp replaces only the field it names; the other keeps whatever the point already carries.
     #[must_use]
-    pub fn with_dialect(&self, dialect: bool) -> Self {
+    pub fn restamped(&self, dialect: Option<bool>, external_breakpoints: Option<usize>) -> Self {
         match self {
             Self::Message(point) => Self::Message(MessageInjectionPoint {
-                openai_dialect: Some(dialect),
+                openai_dialect: dialect.or(point.openai_dialect),
+                external_breakpoints: external_breakpoints.or(point.external_breakpoints),
                 ..point.clone()
             }),
             Self::ToolConfig(point) => Self::ToolConfig(ToolConfigInjectionPoint {
-                openai_dialect: Some(dialect),
-                ..point.clone()
-            }),
-        }
-    }
-
-    #[must_use]
-    pub fn with_external_breakpoints(&self, count: usize) -> Self {
-        match self {
-            Self::Message(point) => Self::Message(MessageInjectionPoint {
-                external_breakpoints: Some(count),
-                ..point.clone()
-            }),
-            Self::ToolConfig(point) => Self::ToolConfig(ToolConfigInjectionPoint {
-                external_breakpoints: Some(count),
+                openai_dialect: dialect.or(point.openai_dialect),
+                external_breakpoints: external_breakpoints.or(point.external_breakpoints),
                 ..point.clone()
             }),
         }
