@@ -1,0 +1,13 @@
+kind: helper
+name: caching-list-operations-rpush-list-append
+call:
+  b4329:
+    operation: rpush
+    namespace: ns
+    redis_version: "7.0.0"
+    lists:
+      "ns:buf": ["a", "b"]
+    key: buf
+    values: ["c", "d"]
+env: {}
+compare: {ignore: []}

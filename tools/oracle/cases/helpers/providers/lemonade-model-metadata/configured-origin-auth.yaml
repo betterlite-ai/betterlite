@@ -1,0 +1,47 @@
+kind: helper
+name: lemonade-model-metadata-configured-origin-auth
+call:
+  lemonade_model_metadata:
+    operation: origin
+    queries:
+      - {}
+      - api_base: "http://explicit:9000/api/v1/"
+        api_key: explicit-key
+      - api_base: "http://explicit:9000/api/v1"
+        environment:
+          LEMONADE_API_KEY: env-key
+        global_keys:
+          lemonade_key: global-key
+      - environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+      - environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+        global_keys:
+          lemonade_key: global-key
+      - api_base: ""
+        environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+        global_keys:
+          lemonade_key: global-key
+      - api_key: explicit-key
+        environment:
+          LEMONADE_API_KEY: env-key
+      - api_key: ""
+      - environment:
+          LEMONADE_API_BASE: ""
+          LEMONADE_API_KEY: ""
+      - api_base: null
+        api_key: null
+      - environment:
+          LEMONADE_API_KEY: lemonade
+      - environment:
+          LEMONADE_API_KEY: other-key
+      - api_base: ""
+        api_key: ""
+        environment:
+          LEMONADE_API_KEY: env-key
+env: {}
+compare: {ignore: []}

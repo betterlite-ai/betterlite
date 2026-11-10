@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-span-kind-unknown",
+  "call": {
+    "b3846": {
+      "function": "infer_span_kind",
+      "call_type": null
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
