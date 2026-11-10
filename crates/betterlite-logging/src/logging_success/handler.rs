@@ -58,7 +58,8 @@ pub fn success_handler(
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
-    if let Some(plan) = begin(handler, state, request, SuccessMode::Sync) {
+    let pending = begin(handler, state, request, SuccessMode::Sync);
+    if let Some(plan) = pending {
         run_sync_callbacks(handler, state, &plan);
     }
     // LiteLLM restores the caller's trace and session ids once this call's own logging is done
@@ -206,10 +207,10 @@ fn complete_stream(
     prepared: &Prepared,
     mode: SuccessMode,
 ) -> Option<Json> {
-    let Some(complete) = handler
+    let assembled = handler
         .stream_assembler
-        .assemble(state, &prepared.result, mode)
-    else {
+        .assemble(state, &prepared.result, mode);
+    let Some(complete) = assembled else {
         return pass_through_response(handler, state, prepared, mode);
     };
     state

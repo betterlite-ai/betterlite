@@ -69,6 +69,7 @@ fn handler_state(
     probe: &HandlerProbe,
     start: DateTime<FixedOffset>,
 ) -> Result<(LoggingState, CorrelationContext), Box<HelperError>> {
+    let dynamic_success = Vec::new();
     let spec = StateSpec {
         stream: probe.stream,
         call_type: &probe.call_type,
@@ -76,7 +77,7 @@ fn handler_state(
         start_time: start,
         trace_id: probe.trace_id.as_deref(),
         session_id: probe.session_id.as_deref(),
-        dynamic_success: &[],
+        dynamic_success: &dynamic_success,
         context: &probe.context,
         request_correlation: probe.request_correlation,
     };

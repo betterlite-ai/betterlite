@@ -76,11 +76,13 @@ fn assembled_probe(probe: &AssembledProbe) -> Result<bool, Box<HelperError>> {
 }
 
 fn recognized(probes: &[RecognizedProbe]) -> Result<Value, Box<HelperError>> {
-    let mut decisions = Vec::with_capacity(probes.len());
-    for probe in probes {
-        let result = scenario::result(&probe.result)?;
-        decisions.push(is_recognized_call_type(&result, &probe.call_type));
-    }
+    let decisions = probes
+        .iter()
+        .map(|probe| {
+            let result = scenario::result(&probe.result)?;
+            Ok(is_recognized_call_type(&result, &probe.call_type))
+        })
+        .collect::<Result<Vec<bool>, Box<HelperError>>>()?;
     Ok(json!({"operation": "recognized", "results": decisions}))
 }
 
