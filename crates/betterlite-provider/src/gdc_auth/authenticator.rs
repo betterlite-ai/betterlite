@@ -27,30 +27,25 @@ pub struct GdcAuthParts {
     pub credentials: Arc<dyn GdchCredentialFactory>, pub transport: Arc<dyn TokenTransport>, pub ca: Arc<dyn CaCertificates>,
     pub clock: Arc<dyn GdcClock>, pub sleeper: Arc<dyn GdcSleeper>, pub jitter: Arc<dyn GdcJitter>,
 }
-
 #[rustfmt::skip]
 pub struct GdcAuth { pub parts: GdcAuthParts, pub cache: TokenCache }
-
 #[rustfmt::skip]
 pub struct GdcValidation<'value> {
     pub model: &'value str, pub api_base: Option<&'value str>, pub api_key: Option<&'value SecretString>, pub headers: Headers,
     pub optional_params: &'value Object, pub call: &'value CallSettings, pub global: &'value GlobalSettings,
     pub ssl_verify: BoolOrString, pub caching: bool, pub deadline: Duration, pub source_identity: &'value str,
 }
-
 #[rustfmt::skip]
 struct TokenRequest<'value> {
     api_key: Option<&'value SecretString>, source_identity: &'value str, ssl_verify: &'value BoolOrString,
     caching: bool, deadline: Duration, model: &'value str,
 }
-
 #[rustfmt::skip]
 #[derive(Serialize)]
 struct ExchangeBody<'value> {
     grant_type: &'static str, audience: &'value str, requested_token_type: &'static str,
     subject_token: &'value str, subject_token_type: &'static str,
 }
-
 #[rustfmt::skip]
 struct Validated<'value> { api_key: &'value SecretString, project: String, audience: String, key: GdcKey }
 
@@ -88,8 +83,7 @@ impl GdcAuth {
         if request.caching {
             return self.cached_token(credential, audience, request).await;
         }
-        let reply = self.refresh(credential, audience, request).await?;
-        Ok(reply.token)
+        Ok(self.refresh(credential, audience, request).await?.token)
     }
     async fn cached_token(&self, credential: &Arc<GdchServiceAccount>, audience: &str, request: &TokenRequest<'_>) -> Result<SecretString, GdcAuthError> {
         let bound = audience.trim_end_matches('/');
@@ -97,7 +91,8 @@ impl GdcAuth {
         let _lease = self.cache.acquire().await.map_err(|source| GdcAuthError::Cache { model: request.model.to_owned(), source })?;
         let state = self.cache.state(&key);
         let mut cached = state.token;
-        if is_valid(cached.as_ref(), state.expires_at, self.parts.clock.unix_seconds()) && let Some(token) = cached.take() {
+        let fresh = is_valid(cached.as_ref(), state.expires_at, self.parts.clock.unix_seconds());
+        if fresh && let Some(token) = cached.take() {
             return Ok(token);
         }
         let reply = self.refresh(credential, bound, request).await?;
@@ -116,14 +111,13 @@ impl GdcAuth {
     fn exchange_body(&self, credential: &GdchServiceAccount, audience: &str, request: &TokenRequest<'_>) -> Result<String, GdcAuthError> {
         let subject = credential.sign(self.parts.clock.unix_seconds()).map_err(|source| GdcAuthError::Credential { model: request.model.to_owned(), source })?;
         let body = ExchangeBody { grant_type: TOKEN_EXCHANGE_GRANT, audience, requested_token_type: ACCESS_TOKEN_TYPE, subject_token: &subject, subject_token_type: SERVICE_ACCOUNT_TOKEN_TYPE };
-        serde_json::to_string(&body)
-            .map_err(|_error| GdcAuthError::Exchange { model: request.model.to_owned(), source: ExchangeError::Body })
+        let encoded = serde_json::to_string(&body);
+        encoded.map_err(|_error| GdcAuthError::Exchange { model: request.model.to_owned(), source: ExchangeError::Body })
     }
     async fn exchange_reply(&self, credential: &GdchServiceAccount, body: String, trust: TokenTrust, request: &TokenRequest<'_>) -> Result<TokenReply, GdcAuthError> {
         let exchange = Exchange { transport: &*self.parts.transport, sleeper: &*self.parts.sleeper, jitter: &*self.parts.jitter, clock: &*self.parts.clock };
         let deadline = u64::try_from(request.deadline.as_millis()).unwrap_or(u64::MAX);
-        let exchange_request = ExchangeRequest { url: credential.descriptor.token_uri.clone(), body, trust };
-        let response = exchange.run(exchange_request, deadline).await.map_err(|source| GdcAuthError::Exchange { model: request.model.to_owned(), source })?;
+        let response = exchange.run(ExchangeRequest { url: credential.descriptor.token_uri.clone(), body, trust }, deadline).await.map_err(|source| GdcAuthError::Exchange { model: request.model.to_owned(), source })?;
         decode_gdc_token_reply(&response.body).map_err(|source| GdcAuthError::Exchange { model: request.model.to_owned(), source: ExchangeError::Reply { source } })
     }
     async fn trust(&self, credential: &GdchServiceAccount, ssl_verify: &BoolOrString, model: &str) -> Result<TokenTrust, GdcAuthError> {
@@ -137,9 +131,9 @@ impl GdcAuth {
         }
     }
     async fn load_ca(&self, path: &str, model: &str) -> Result<TokenTrust, GdcAuthError> {
-        Ok(TokenTrust::Certificate(Arc::from(
-            self.parts.ca.load(path).await.map_err(|source| GdcAuthError::Exchange { model: model.to_owned(), source: ExchangeError::Ca { source } })?,
-        )))
+        let loaded = self.parts.ca.load(path).await.map_err(|source| GdcAuthError::Exchange { model: model.to_owned(), source: ExchangeError::Ca { source } })?;
+        let certificate = Arc::from(loaded);
+        Ok(TokenTrust::Certificate(certificate))
     }
 }
 

@@ -32,56 +32,44 @@ pub(crate) struct Op;
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 pub(crate) struct Input { scenarios: Vec<Scenario> }
-
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 struct Scenario {
-    config: Value,
-    #[serde(default)] environment: BTreeMap<String, String>,
-    #[serde(default)] keys: Vec<KeyCall>,
-    #[serde(default)] validations: Vec<ValidationCall>,
+    config: Value, #[serde(default)] environment: BTreeMap<String, String>,
+    #[serde(default)] keys: Vec<KeyCall>, #[serde(default)] validations: Vec<ValidationCall>,
 }
-
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 struct KeyCall { api_key: String }
-
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 struct HeaderPair { name: String, value: String }
-
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 struct ValidationCall {
-    api_key: String,
-    #[serde(default)] base: Option<String>,
-    deployment: usize,
-    #[serde(default)] headers: Vec<HeaderPair>,
-    #[serde(default)] optional_params: Object,
+    api_key: String, #[serde(default)] base: Option<String>, deployment: usize,
+    #[serde(default)] headers: Vec<HeaderPair>, #[serde(default)] optional_params: Object,
 }
 
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         let scenarios = input
             .scenarios
             .iter()
             .map(scenario)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({ "scenarios": scenarios }))
+        let output = json!({ "scenarios": scenarios });
+        Ok(output)
     }
 }
 
+#[rustfmt::skip]
 fn failure(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
+    let error = HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message };
+    Box::new(
+        error,
+    )
 }
 
 #[rustfmt::skip]
@@ -131,11 +119,11 @@ fn fixture_auth() -> GdcAuth {
             credentials: Arc::new(FixtureCredentials {
                 token: SecretString::from(FIXTURE_TOKEN.to_owned()),
             }),
-            transport: Arc::new(UnusedTransport),
-            ca: Arc::new(UnusedCa),
+            transport: Arc::new(Unused),
+            ca: Arc::new(Unused),
             clock: Arc::new(FixedClock),
-            sleeper: Arc::new(UnusedSleeper),
-            jitter: Arc::new(UnusedJitter),
+            sleeper: Arc::new(Unused),
+            jitter: Arc::new(Unused),
         },
         cache: TokenCache::default(),
     }
@@ -147,48 +135,33 @@ impl GdcClock for FixedClock {
     fn unix_seconds(&self) -> i64 {
         1_700_000_000
     }
-
     fn monotonic_millis(&self) -> u64 {
         0
     }
 }
 
-struct UnusedTransport;
+struct Unused;
 
+#[rustfmt::skip]
 #[async_trait]
-impl TokenTransport for UnusedTransport {
-    async fn exchange(
-        &self,
-        _request: TokenExchangeRequest,
-    ) -> Result<TokenExchangeResponse, TransportFailure> {
-        Err(TransportFailure::Request {
-            source: Box::new(TransportError::Closed),
-        })
+impl TokenTransport for Unused {
+    async fn exchange(&self, _request: TokenExchangeRequest) -> Result<TokenExchangeResponse, TransportFailure> {
+        Err(TransportFailure::Request { source: Box::new(TransportError::Closed) })
     }
 }
-
-struct UnusedCa;
-
+#[rustfmt::skip]
 #[async_trait]
-impl CaCertificates for UnusedCa {
+impl CaCertificates for Unused {
     async fn load(&self, path: &str) -> Result<Vec<u8>, CaError> {
-        Err(CaError::Read {
-            path: path.to_owned(),
-            source: IoError::from(ErrorKind::NotFound),
-        })
+        Err(CaError::Read { path: path.to_owned(), source: IoError::from(ErrorKind::NotFound) })
     }
 }
-
-struct UnusedSleeper;
-
+#[rustfmt::skip]
 #[async_trait]
-impl GdcSleeper for UnusedSleeper {
+impl GdcSleeper for Unused {
     async fn sleep(&self, _delay: Duration) {}
 }
-
-struct UnusedJitter;
-
-impl GdcJitter for UnusedJitter {
+impl GdcJitter for Unused {
     fn uniform_millis(&self, low_inclusive: u64, _high_inclusive: u64) -> u64 {
         low_inclusive
     }

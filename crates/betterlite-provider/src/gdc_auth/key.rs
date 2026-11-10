@@ -15,11 +15,9 @@ const NONSTANDARD_JSON_LITERALS: [&str; 3] = ["NaN", "Infinity", "-Infinity"];
 #[rustfmt::skip]
 #[derive(Debug)]
 pub enum GdcKey { Bearer(SecretString), ServiceAccount(GdchDescriptor) }
-
 #[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct GdchDescriptor { pub private_key_id: String, pub private_key: SecretString, pub name: String, pub project: String, pub token_uri: String, pub ca_cert_path: Option<String> }
-
 #[rustfmt::skip]
 #[derive(Debug, Error)]
 pub enum KeyError {
@@ -28,7 +26,6 @@ pub enum KeyError {
     #[error("the credential JSON is not a GDCH service account object")] Shape,
     #[error("the credential does not use the supported format version")] Version,
 }
-
 #[rustfmt::skip]
 #[derive(Deserialize)]
 struct RawCredential {

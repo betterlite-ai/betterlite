@@ -17,7 +17,6 @@ const RETRYABLE_ERRORS: [&str; 3] = ["internal_failure", "server_error", "tempor
 
 #[rustfmt::skip]
 pub struct ExchangeRequest { pub url: String, pub body: String, pub trust: TokenTrust }
-
 #[rustfmt::skip]
 #[derive(Debug, Error)]
 pub enum ExchangeError {
@@ -28,24 +27,16 @@ pub enum ExchangeError {
     #[error("the GDC Gemini token reply is not usable")] Reply { #[source] source: TokenReplyError },
     #[error("the GDC Gemini CA certificate could not be loaded")] Ca { #[source] source: CaError },
 }
-
 #[rustfmt::skip]
 pub struct Exchange<'caller> { pub transport: &'caller dyn TokenTransport, pub sleeper: &'caller dyn GdcSleeper, pub jitter: &'caller dyn GdcJitter, pub clock: &'caller dyn GdcClock }
-
 #[rustfmt::skip]
 #[derive(Deserialize)]
 struct ErrorReply { #[serde(default)] error: Option<String>, #[serde(default)] error_description: Option<String> }
 
+#[rustfmt::skip]
 impl Exchange<'_> {
-    pub async fn run(
-        self,
-        request: ExchangeRequest,
-        deadline_millis: u64,
-    ) -> Result<TokenExchangeResponse, ExchangeError> {
-        let deadline = self
-            .clock
-            .monotonic_millis()
-            .saturating_add(deadline_millis);
+    pub async fn run(self, request: ExchangeRequest, deadline_millis: u64) -> Result<TokenExchangeResponse, ExchangeError> {
+        let deadline = self.clock.monotonic_millis().saturating_add(deadline_millis);
         let mut wait_millis = FIRST_WAIT_MILLIS;
         let mut attempt = 0_u8;
         loop {
@@ -54,31 +45,23 @@ impl Exchange<'_> {
             if remaining == 0 {
                 return Err(ExchangeError::Deadline);
             }
-            let response = self
-                .transport
-                .exchange(attempt_request(&request, remaining))
-                .await
-                .map_err(|source| ExchangeError::Transport { source })?;
+            let response = self.transport.exchange(attempt_request(&request, remaining)).await.map_err(|source| ExchangeError::Transport { source })?;
             if response.status == 200 {
                 return Ok(response);
             }
             if attempt >= MAX_ATTEMPTS || !retryable(response.status, &response.body) {
-                return Err(ExchangeError::Rejected {
-                    status: response.status,
-                });
+                return Err(ExchangeError::Rejected { status: response.status });
             }
             let wait = self.backoff_millis(wait_millis);
             let left = deadline.saturating_sub(self.clock.monotonic_millis());
-            self.sleeper
-                .sleep(Duration::from_millis(wait.min(left)))
-                .await;
+            self.sleeper.sleep(Duration::from_millis(wait.min(left))).await;
             wait_millis = wait_millis.saturating_mul(2);
         }
     }
     fn backoff_millis(&self, wait_millis: u64) -> u64 {
         let low = wait_millis.saturating_mul(90).saturating_div(100);
-        self.jitter
-            .uniform_millis(low, wait_millis.saturating_mul(110).saturating_div(100))
+        let high = wait_millis.saturating_mul(110).saturating_div(100);
+        self.jitter.uniform_millis(low, high)
     }
 }
 

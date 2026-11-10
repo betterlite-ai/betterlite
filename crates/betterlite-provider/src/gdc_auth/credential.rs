@@ -32,7 +32,6 @@ const P384_CURVE_OID_CONTENT: [u8; 5] = [0x2B, 0x81, 0x04, 0x00, 0x22];
 #[rustfmt::skip]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve { P256, P384 }
-
 #[rustfmt::skip]
 impl Curve {
     #[must_use]
@@ -46,11 +45,9 @@ impl Curve {
 #[rustfmt::skip]
 #[derive(Debug)]
 pub struct GdchServiceAccount { pub descriptor: GdchDescriptor, pub signer: GdchSigner }
-
 #[rustfmt::skip]
 #[derive(Debug)]
 pub enum GdchSigner { Ec { key: EncodingKey, curve: Curve }, Fixture(SecretString) }
-
 #[rustfmt::skip]
 #[derive(Debug, Error)]
 pub enum CredentialError {
@@ -71,14 +68,13 @@ pub struct PemCredentials;
 
 #[rustfmt::skip]
 impl GdchCredentialFactory for PemCredentials {
-    fn build(&self, descriptor: GdchDescriptor) -> Result<Arc<GdchServiceAccount>, CredentialError> { Ok(Arc::new(GdchServiceAccount::load(descriptor)?)) }
+    fn build(&self, descriptor: GdchDescriptor) -> Result<Arc<GdchServiceAccount>, CredentialError> { GdchServiceAccount::load(descriptor).map(Arc::new) }
 }
 
 // The oracle projection uses fixture credentials so it never loads a private key, refreshes or opens a path
 #[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct FixtureCredentials { pub token: SecretString }
-
 #[rustfmt::skip]
 impl GdchCredentialFactory for FixtureCredentials {
     fn build(&self, descriptor: GdchDescriptor) -> Result<Arc<GdchServiceAccount>, CredentialError> {
@@ -91,13 +87,14 @@ impl GdchCredentialFactory for FixtureCredentials {
 struct GdchClaims<'value> { iss: &'value str, sub: &'value str, aud: &'value str, iat: i64, exp: i64 }
 
 impl GdchServiceAccount {
+    #[rustfmt::skip]
     pub fn load(descriptor: GdchDescriptor) -> Result<Self, CredentialError> {
+        let signer = parse_private_key(descriptor.private_key.expose_secret())?;
         Ok(Self {
-            signer: parse_private_key(descriptor.private_key.expose_secret())?,
             descriptor,
+            signer,
         })
     }
-
     #[rustfmt::skip]
     pub fn sign(&self, now: i64) -> Result<String, CredentialError> {
         let GdchSigner::Ec { key, curve } = &self.signer else {
@@ -167,5 +164,6 @@ fn curve_for(curve: &[u8]) -> Result<Curve, CredentialError> {
 #[rustfmt::skip]
 fn build_signer(pkcs8_der: &[u8], curve: Curve) -> Result<GdchSigner, CredentialError> {
     EcdsaKeyPair::from_pkcs8(curve.signing(), pkcs8_der).map_err(|_error| CredentialError::Key)?;
-    Ok(GdchSigner::Ec { key: EncodingKey::from_ec_der(pkcs8_der), curve })
+    let key = EncodingKey::from_ec_der(pkcs8_der);
+    Ok(GdchSigner::Ec { key, curve })
 }
