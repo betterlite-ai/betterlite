@@ -151,13 +151,6 @@ fn card_name(agent_card: &AgentCard) -> Option<&str> {
     }
 }
 
-pub(crate) fn json_rpc_id_json(id: &JsonRpcId) -> Result<Json, LoggingContextError> {
-    match serde_json::to_value(id) {
-        Ok(value) => serde_json::from_value(value).map_err(LoggingContextError::Json),
-        Err(error) => Err(LoggingContextError::Json(error)),
-    }
-}
-
 pub(crate) fn json_rpc_id_text(id: &JsonRpcId) -> Result<String, LoggingContextError> {
     match id {
         JsonRpcId::String(text) => Ok(text.clone()),

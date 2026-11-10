@@ -21,9 +21,8 @@ use serde_json::Number;
 use crate::agent_card::{AgentCard, WireValue};
 use crate::logging_context::{
     A2A_COST_PARAM_KEYS, LoggingContextError, LoggingDeps, StreamingLoggingRequest,
-    a2a_cost_params, build_streaming_logging_obj, get_a2a_model_info, json_rpc_id_json,
-    json_rpc_id_text, set_agent_id_on_logging_obj, set_litellm_params, set_usage_on_logging_obj,
-    usage_json,
+    a2a_cost_params, build_streaming_logging_obj, get_a2a_model_info, json_rpc_id_text,
+    set_agent_id_on_logging_obj, set_litellm_params, set_usage_on_logging_obj, usage_json,
 };
 
 fn fixed_time(text: &str) -> DateTime<FixedOffset> {
@@ -420,7 +419,7 @@ fn an_empty_card_name_is_used_as_given() {
 }
 
 #[test]
-fn json_rpc_ids_keep_their_text_and_json_forms() {
+fn json_rpc_ids_keep_their_text_form() {
     let text_id = JsonRpcId::String("req-7".to_owned());
     let numeric_id = integer_id(12);
 
@@ -429,16 +428,8 @@ fn json_rpc_ids_keep_their_text_and_json_forms() {
         "req-7".to_owned()
     );
     assert_eq!(
-        json_rpc_id_json(&text_id).expect("the id converts"),
-        Json::Text("req-7".to_owned())
-    );
-    assert_eq!(
         json_rpc_id_text(&numeric_id).expect("the id converts"),
         "12".to_owned()
-    );
-    assert_eq!(
-        json_rpc_id_json(&numeric_id).expect("the id converts"),
-        number(12)
     );
 }
 

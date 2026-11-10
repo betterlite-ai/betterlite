@@ -23,10 +23,12 @@ use futures_core::Stream;
 use indexmap::IndexMap;
 use serde_json::Number;
 
+use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
+
 use crate::client::records::compat::SendMessageRequest;
 use crate::streaming_iterator::{
     A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
-    TokenCounter,
+    TokenCounter, json_rpc_id_json,
 };
 
 const HELLO: &str = r#"{"id":"req-1","jsonrpc":"2.0","result":{"kind":"message","messageId":"m2","role":"agent","parts":[{"kind":"text","text":"Hello"}]}}"#;
@@ -707,5 +709,17 @@ async fn the_result_keeps_an_integer_request_id() {
     assert_eq!(
         result_object(&recorded[0].call.result, "id"),
         Some(number(7))
+    );
+}
+
+#[test]
+fn integer_request_ids_keep_their_json_form() {
+    let numeric_id = JsonRpcId::Integer(
+        IntegerId::try_from(Number::from(12_u64)).expect("the id is an integer"),
+    );
+
+    assert_eq!(
+        json_rpc_id_json(&numeric_id).expect("the id converts"),
+        number(12)
     );
 }

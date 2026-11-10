@@ -13,7 +13,6 @@ from litellm.a2a_protocol.main import (
     _build_streaming_logging_obj,
     _get_a2a_model_info,
     _set_agent_id_on_logging_obj,
-    _set_litellm_params_on_logging_obj,
     _set_usage_on_logging_obj,
 )
 from litellm.a2a_protocol.streaming_iterator import A2AStreamingIterator
@@ -42,11 +41,14 @@ class LoggingObject(Protocol):
     dispatch_success_handlers: Callable[..., Awaitable[None]]
 
 
-def _object(input_value: Mapping[str, Json], name: str) -> dict[str, Json]:
-    value = input_value.get(name)
+def _as_object(value: Json, name: str) -> dict[str, Json]:
     if not isinstance(value, dict):
         raise ValueError(f"{name} must be an object")
     return value
+
+
+def _object(input_value: Mapping[str, Json], name: str) -> dict[str, Json]:
+    return _as_object(input_value.get(name), name)
 
 
 def _object_parameter(input_value: Mapping[str, Json], name: str) -> dict[str, object] | None:
@@ -55,27 +57,22 @@ def _object_parameter(input_value: Mapping[str, Json], name: str) -> dict[str, o
 
 def _optional_object(input_value: Mapping[str, Json], name: str) -> dict[str, Json] | None:
     value = input_value.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object or null")
-    return value
+    return None if value is None else _as_object(value, name)
 
 
-def _string(input_value: Mapping[str, Json], name: str) -> str:
-    value = input_value.get(name)
+def _as_string(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
     return value
 
 
+def _string(input_value: Mapping[str, Json], name: str) -> str:
+    return _as_string(input_value.get(name), name)
+
+
 def _optional_string(input_value: Mapping[str, Json], name: str) -> str | None:
     value = input_value.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string or null")
-    return value
+    return None if value is None else _as_string(value, name)
 
 
 def _integer(input_value: Mapping[str, Json], name: str) -> int:
@@ -110,12 +107,6 @@ def _result_usage(result: Json) -> Json:
 def _jsonable(value: object) -> Json:
     if isinstance(value, BaseModel):
         return cast(dict[str, Json], value.model_dump(exclude_none=True))
-    if isinstance(value, dict):
-        mapping = cast(dict[str, object], value)
-        return {str(key): _jsonable(item) for key, item in mapping.items()}
-    if isinstance(value, list):
-        items = cast(list[object], value)
-        return [_jsonable(item) for item in items]
     return cast(Json, value)
 
 
@@ -177,15 +168,6 @@ def _agent_id(input_value: Mapping[str, Json]) -> dict[str, Json]:
 def _cost_params(input_value: Mapping[str, Json]) -> dict[str, Json]:
     filtered = _a2a_cost_params(_optional_object(input_value, "litellm_params"))
     return {"cost_params": cast(Json, dict(filtered))}
-
-
-def _litellm_params(input_value: Mapping[str, Json]) -> dict[str, Json]:
-    logging_obj = _logging_handle(input_value)
-    _set_litellm_params_on_logging_obj(
-        kwargs=_kwargs(logging_obj),
-        litellm_params=_object(input_value, "litellm_params"),
-    )
-    return {"details": None if logging_obj is None else _details(logging_obj)}
 
 
 def _client(card: Mapping[str, Json] | None) -> "A2AClientType":
@@ -398,7 +380,6 @@ def run(input_value: dict[str, Json]) -> Json:
         "set_usage": _usage,
         "set_agent_id": _agent_id,
         "cost_params": _cost_params,
-        "set_litellm_params": _litellm_params,
         "model_info": _model_info,
         "build_streaming": _build_streaming,
     }

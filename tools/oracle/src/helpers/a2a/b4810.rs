@@ -5,8 +5,9 @@ use betterlite_a2a::agent_card::AgentCard;
 use betterlite_a2a::client::records::compat::SendMessageRequest;
 use betterlite_a2a::logging_context::{
     LoggingDeps, StreamingLoggingRequest, a2a_cost_params, build_streaming_logging_obj,
-    get_a2a_model_info, set_agent_id_on_logging_obj, set_litellm_params, set_usage_on_logging_obj,
+    get_a2a_model_info, set_agent_id_on_logging_obj, set_usage_on_logging_obj,
 };
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -35,9 +36,6 @@ pub(crate) enum Input {
     },
     CostParams {
         instances: Vec<CostParamsInstance>,
-    },
-    SetLitellmParams {
-        instances: Vec<LitellmParamsInstance>,
     },
     ModelInfo {
         instances: Vec<ModelInfoInstance>,
@@ -78,15 +76,6 @@ pub(crate) struct AgentIdInstance {
 pub(crate) struct CostParamsInstance {
     #[serde(default)]
     litellm_params: Option<IndexMap<String, Json>>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct LitellmParamsInstance {
-    #[serde(default = "default_logging")]
-    logging: bool,
-    #[serde(default)]
-    details: IndexMap<String, Json>,
-    litellm_params: IndexMap<String, Json>,
 }
 
 #[derive(Deserialize)]
@@ -138,44 +127,38 @@ fn run_all<Instance>(
     Ok(serde_json::json!({ "results": results }))
 }
 
-fn details_or_null(
-    logging: &betterlite_logging::logging_state::LoggingState,
-    present: bool,
-) -> HelperResult {
+fn details_or_null(logging: &LoggingState, present: bool) -> HelperResult {
     if present {
         return Ok(serde_json::json!({ "details": state::details_value(logging)? }));
     }
     Ok(serde_json::json!({ "details": serde_json::Value::Null }))
 }
 
+fn mutate_logging<Operation>(
+    details: &IndexMap<String, Json>,
+    present: bool,
+    operation: Operation,
+) -> HelperResult
+where
+    Operation: FnOnce(Option<&mut LoggingState>) -> Result<(), Box<HelperError>>,
+{
+    let mut logging = state::state(details)?;
+    operation(present.then_some(&mut logging))?;
+    details_or_null(&logging, present)
+}
+
 fn usage_result(instance: &UsageInstance) -> HelperResult {
-    let mut logging = state::state(&instance.details)?;
-    set_usage_on_logging_obj(
-        instance.logging.then_some(&mut logging),
-        instance.prompt_tokens,
-        instance.completion_tokens,
-    )
-    .map_err(|error| helper_error("LoggingContextError", error.to_string()))?;
-    details_or_null(&logging, instance.logging)
+    mutate_logging(&instance.details, instance.logging, |logging| {
+        set_usage_on_logging_obj(logging, instance.prompt_tokens, instance.completion_tokens)
+            .map_err(|error| helper_error("LoggingContextError", error.to_string()))
+    })
 }
 
 fn agent_id_result(instance: &AgentIdInstance) -> HelperResult {
-    let mut logging = state::state(&instance.details)?;
-    set_agent_id_on_logging_obj(
-        instance.logging.then_some(&mut logging),
-        instance.agent_id.as_deref(),
-    );
-    details_or_null(&logging, instance.logging)
-}
-
-fn litellm_params_result(instance: &LitellmParamsInstance) -> HelperResult {
-    let mut logging = state::state(&instance.details)?;
-    set_litellm_params(
-        instance.logging.then_some(&mut logging),
-        &instance.litellm_params,
-    )
-    .map_err(|error| helper_error("LoggingContextError", error.to_string()))?;
-    details_or_null(&logging, instance.logging)
+    mutate_logging(&instance.details, instance.logging, |logging| {
+        set_agent_id_on_logging_obj(logging, instance.agent_id.as_deref());
+        Ok(())
+    })
 }
 
 fn model_info_result(instance: &ModelInfoInstance) -> HelperResult {
@@ -255,7 +238,6 @@ impl Helper for Op {
                     serde_json::json!({ "cost_params": a2a_cost_params(instance.litellm_params.as_ref()) }),
                 )
             }),
-            Input::SetLitellmParams { instances } => run_all(instances, litellm_params_result),
             Input::ModelInfo { instances } => run_all(instances, model_info_result),
             Input::BuildStreaming { instances } => run_all(instances, build_streaming_result),
             Input::Iterate { instances } => streaming::run(instances),

@@ -3,6 +3,7 @@ use std::str::FromStr as _;
 
 use async_trait::async_trait;
 use betterlite_core::agents::json::AgentJson;
+use betterlite_core::agents::provider::a2a::JsonRpcId;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::Counter;
@@ -20,7 +21,7 @@ use crate::a2a_text::{A2aResponse, A2aTextError};
 use crate::client::records::compat::{Message, Part, SendMessageRequest};
 use crate::client::records::response::SendMessageResponse;
 use crate::cost_calculator::{CostCalculatorError, a2a_call_cost};
-use crate::logging_context::{LoggingContextError, json_rpc_id_json, usage_json};
+use crate::logging_context::{LoggingContextError, usage_json};
 
 mod tests;
 
@@ -235,6 +236,13 @@ fn input_text(message: &Message) -> String {
         Part::Data(_) | Part::File(_) => None,
     });
     parts.collect::<Vec<_>>().join(" ")
+}
+
+pub(crate) fn json_rpc_id_json(id: &JsonRpcId) -> Result<Json, LoggingContextError> {
+    match serde_json::to_value(id) {
+        Ok(value) => serde_json::from_value(value).map_err(LoggingContextError::Json),
+        Err(error) => Err(LoggingContextError::Json(error)),
+    }
 }
 
 fn chunk_text(wire: &AgentJson) -> Result<String, StreamCompletionError> {
