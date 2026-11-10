@@ -32,28 +32,12 @@ pub(crate) async fn async_rpush_pipeline(
 fn lengths(results: &[Value]) -> ListResult<Vec<i64>> {
     let mut lengths = Vec::with_capacity(results.len());
     for value in results {
-        match value {
-            Value::Int(length) => lengths.push(*length),
-            Value::Nil
-            | Value::BulkString(_)
-            | Value::Array(_)
-            | Value::SimpleString(_)
-            | Value::Okay
-            | Value::Map(_)
-            | Value::Attribute { .. }
-            | Value::Set(_)
-            | Value::Double(_)
-            | Value::Boolean(_)
-            | Value::VerbatimString { .. }
-            | Value::BigNumber(_)
-            | Value::Push { .. }
-            | Value::ServerError(_)
-            | _ => {
-                return Err(RedisListOperationsError::UnexpectedReply {
-                    operation: "async_rpush_pipeline",
-                });
-            }
-        }
+        let &Value::Int(length) = value else {
+            return Err(RedisListOperationsError::UnexpectedReply {
+                operation: "async_rpush_pipeline",
+            });
+        };
+        lengths.push(length);
     }
     Ok(lengths)
 }

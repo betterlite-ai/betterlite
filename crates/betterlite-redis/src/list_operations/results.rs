@@ -63,24 +63,16 @@ pub(crate) fn reply_bytes<'reply>(
     value: &'reply Value,
     operation: &'static str,
 ) -> Result<Option<&'reply [u8]>, RedisListOperationsError> {
-    match value {
-        Value::Nil => Ok(None),
-        Value::BulkString(bytes) => Ok(Some(bytes)),
-        Value::SimpleString(text) => Ok(Some(text.as_bytes())),
-        Value::Int(_)
-        | Value::Array(_)
-        | Value::Okay
-        | Value::Map(_)
-        | Value::Attribute { .. }
-        | Value::Set(_)
-        | Value::Double(_)
-        | Value::Boolean(_)
-        | Value::VerbatimString { .. }
-        | Value::BigNumber(_)
-        | Value::Push { .. }
-        | Value::ServerError(_)
-        | _ => Err(RedisListOperationsError::UnexpectedReply { operation }),
+    if matches!(value, Value::Nil) {
+        return Ok(None);
     }
+    if let Value::BulkString(bytes) = value {
+        return Ok(Some(bytes));
+    }
+    if let Value::SimpleString(text) = value {
+        return Ok(Some(text.as_bytes()));
+    }
+    Err(RedisListOperationsError::UnexpectedReply { operation })
 }
 
 fn single(bytes: &[u8]) -> LpopResult {
