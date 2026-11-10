@@ -54,20 +54,15 @@ pub(crate) fn push_user_blocks(
         contents.push(message(USER, blocks));
         return Ok(());
     }
-    match contents.get_mut(last_index) {
-        Some(Json::Object(fields)) => match fields.get_mut(CONTENT) {
-            Some(Json::List(existing)) => {
-                existing.extend(blocks);
-                Ok(())
-            }
-            Some(_) | None => Err(ProcessorError::MergedContentNotList {
-                message: last_index,
-            }),
-        },
-        Some(_) | None => Err(ProcessorError::MessageNotObject {
-            message: last_index,
-        }),
+    if let Some(Json::Object(fields)) = contents.last_mut()
+        && let Some(Json::List(existing)) = fields.get_mut(CONTENT)
+    {
+        existing.extend(blocks);
+        return Ok(());
     }
+    Err(ProcessorError::MergedContentNotList {
+        message: last_index,
+    })
 }
 
 async fn convert_round<R, C, Ids>(
