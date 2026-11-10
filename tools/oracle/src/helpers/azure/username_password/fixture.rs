@@ -99,16 +99,10 @@ impl Clock for FixtureClock {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum FieldValue {
-    Text(String),
-    Bool(bool),
-}
-
-#[derive(Debug, Clone)]
 pub(super) struct CapturedEvent {
     pub(super) level: Level,
     pub(super) message: String,
-    pub(super) fields: BTreeMap<String, FieldValue>,
+    pub(super) fields: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Default)]
@@ -126,7 +120,7 @@ impl Capture {
 #[derive(Default)]
 struct Visitor {
     message: String,
-    fields: BTreeMap<String, FieldValue>,
+    fields: BTreeMap<String, String>,
 }
 
 impl Visitor {
@@ -134,7 +128,7 @@ impl Visitor {
         if name == "message" {
             self.message = text;
         } else {
-            self.fields.insert(name.to_owned(), FieldValue::Text(text));
+            self.fields.insert(name.to_owned(), text);
         }
     }
 }
@@ -150,7 +144,7 @@ impl Visit for Visitor {
 
     fn record_bool(&mut self, field: &Field, value: bool) {
         self.fields
-            .insert(field.name().to_owned(), FieldValue::Bool(value));
+            .insert(field.name().to_owned(), value.to_string());
     }
 }
 

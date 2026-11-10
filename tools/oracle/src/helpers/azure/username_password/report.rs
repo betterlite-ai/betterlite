@@ -15,7 +15,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use super::fixture::{Capture, CapturedEvent, FieldValue, FixtureClock, FixtureTransport, NOW};
+use super::fixture::{Capture, CapturedEvent, FixtureClock, FixtureTransport, NOW};
 use super::steps::{Observe, Step};
 
 const CREDENTIAL_ARGUMENTS: [&str; 3] = ["client_id", "password", "username"];
@@ -100,31 +100,10 @@ fn token_reason(error: &UsernamePasswordError, token_requests: usize) -> (&'stat
     }
 }
 
-fn resolved_scope(step: &Step) -> String {
-    step.scope
-        .clone()
-        .unwrap_or_else(|| DEFAULT_SCOPE.to_owned())
-}
-
-fn first_post_form(requests: &[HttpRequest]) -> Option<BTreeMap<String, String>> {
+fn first_post(requests: &[HttpRequest]) -> Option<&HttpRequest> {
     requests
         .iter()
         .find(|request| request.method == HttpMethod::Post)
-        .map(|request| request.form.iter().cloned().collect())
-}
-
-fn first_post_url(requests: &[HttpRequest]) -> Option<String> {
-    requests
-        .iter()
-        .find(|request| request.method == HttpMethod::Post)
-        .map(|request| request.url.clone())
-}
-
-fn discovery_url(requests: &[HttpRequest]) -> Option<String> {
-    requests
-        .iter()
-        .find(|request| request.url.contains("well-known/openid-configuration"))
-        .map(|request| request.url.clone())
 }
 
 fn record_json(record: &AuthenticationRecord) -> Value {
@@ -139,39 +118,54 @@ fn record_json(record: &AuthenticationRecord) -> Value {
 
 fn grant_json(token: &AccessToken, step: &Step, attempt: &Attempt) -> Value {
     let requests = attempt.transport.requests();
-    let Some(form) = first_post_form(&requests) else {
+    let Some(post) = first_post(&requests) else {
         return error_json("no_token_request", "", attempt.transport.posts().len());
     };
-    let scope = form.get("scope").cloned().unwrap_or_default();
-    let mut scopes: Vec<&str> = scope.split_whitespace().collect();
-    scopes.sort_unstable();
-    let fields: BTreeMap<&str, &str> = form
+    let mut scopes: Vec<&str> = post
+        .form
         .iter()
-        .filter(|(name, _value)| name.as_str() != "scope")
+        .filter(|(name, _value)| name == "scope")
+        .flat_map(|(_name, value)| value.split_whitespace())
+        .collect();
+    scopes.sort_unstable();
+    let fields: BTreeMap<&str, &str> = post
+        .form
+        .iter()
+        .filter(|(name, _value)| name != "scope")
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
+    let discovery = requests
+        .iter()
+        .find(|request| request.url.contains("well-known/openid-configuration"))
+        .map(|request| &request.url);
     json!({
         "kind": "token",
         "credential_arguments": CREDENTIAL_ARGUMENTS,
-        "scope_arguments": [resolved_scope(step)],
-        "discovery": discovery_url(&requests),
-        "token_url": first_post_url(&requests),
+        "scope_arguments": [step.scope.as_deref().unwrap_or(DEFAULT_SCOPE)],
+        "discovery": discovery,
+        "token_url": &post.url,
         "form": fields,
         "scope": scopes,
         "token": token.token.expose_secret(),
     })
 }
 
-pub(super) fn grant_step(step: &Step) -> Value {
+fn with_provider<Action>(step: &Step, action: Action) -> Value
+where
+    Action: FnOnce(&UsernamePasswordProvider, &Attempt) -> Value,
+{
     let attempt = Attempt::new(step);
-    let provider = match attempt.provider(step) {
-        Ok(provider) => provider,
-        Err(error) => return error_json("constructor", &error.to_string(), 0),
-    };
-    match provider.token() {
-        Ok(token) => grant_json(&token, step, &attempt),
-        Err(error) => token_failure(&error, &attempt),
+    match attempt.provider(step) {
+        Ok(provider) => action(&provider, &attempt),
+        Err(error) => error_json("constructor", &error.to_string(), 0),
     }
+}
+
+pub(super) fn grant_step(step: &Step) -> Value {
+    with_provider(step, |provider, attempt| match provider.token() {
+        Ok(token) => grant_json(&token, step, attempt),
+        Err(error) => token_failure(&error, attempt),
+    })
 }
 
 fn call_provider(
@@ -192,38 +186,21 @@ fn call_provider(
 }
 
 pub(super) fn attempt_step(step: &Step) -> Value {
-    let attempt = Attempt::new(step);
-    let provider = match attempt.provider(step) {
-        Ok(provider) => provider,
-        Err(error) => return error_json("constructor", &error.to_string(), 0),
-    };
-    match call_provider(&provider, step, &attempt.clock) {
-        Ok(acquired) => {
-            let record = acquired
-                .last()
-                .map_or(Value::Null, |token| record_json(&token.record));
-            let tokens: Vec<&str> = acquired
-                .iter()
-                .map(|token| token.token.expose_secret())
-                .collect();
-            json!({
+    with_provider(step, |provider, attempt| {
+        match call_provider(provider, step, &attempt.clock) {
+            Ok(acquired) => json!({
                 "kind": "token",
-                "tokens": tokens,
+                "tokens": acquired.iter().map(|token| token.token.expose_secret()).collect::<Vec<_>>(),
                 "token_requests": attempt.transport.posts().len(),
-                "record": record,
-            })
+                "record": acquired.last().map(|token| record_json(&token.record)),
+            }),
+            Err(error) => token_failure(&error, attempt),
         }
-        Err(error) => token_failure(&error, &attempt),
-    }
+    })
 }
 
-pub(super) fn info_step(step: &Step) -> Value {
-    let attempt = Attempt::new(step);
-    let provider = match attempt.provider(step) {
-        Ok(provider) => provider,
-        Err(error) => return error_json("constructor", &error.to_string(), 0),
-    };
-    match provider.token() {
+fn info_step(step: &Step) -> Value {
+    with_provider(step, |provider, attempt| match provider.token() {
         Ok(token) => json!({
             "kind": "info",
             "token": token.token.expose_secret(),
@@ -233,43 +210,19 @@ pub(super) fn info_step(step: &Step) -> Value {
             "token_requests": attempt.transport.posts().len(),
             "record": record_json(&token.record),
         }),
-        Err(error) => token_failure(&error, &attempt),
-    }
-}
-
-pub(super) fn lazy_step(step: &Step) -> Value {
-    let attempt = Attempt::new(step);
-    match attempt.provider(step) {
-        Ok(_provider) => json!({
-            "kind": "callable",
-            "callable": true,
-            "token_requests": 0,
-        }),
-        Err(error) => error_json("constructor", &error.to_string(), 0),
-    }
+        Err(error) => token_failure(&error, attempt),
+    })
 }
 
 pub(super) fn token_response_step(step: &Step) -> Value {
     match step.observe {
-        Observe::Lazy => lazy_step(step),
+        Observe::Lazy => with_provider(
+            step,
+            |_provider, _attempt| json!({"kind": "callable", "callable": true, "token_requests": 0}),
+        ),
         Observe::Info => info_step(step),
         Observe::Token => attempt_step(step),
     }
-}
-
-fn warnings_json(events: &[CapturedEvent]) -> Value {
-    let warnings: Vec<Value> = events
-        .iter()
-        .filter(|event| event.level == tracing::Level::WARN)
-        .map(|event| {
-            let category = match event.fields.get("category") {
-                Some(FieldValue::Text(text)) => text.clone(),
-                Some(FieldValue::Bool(_)) | None => String::new(),
-            };
-            json!({"category": category, "message": &event.message})
-        })
-        .collect();
-    Value::Array(warnings)
 }
 
 fn exposes_identity(message: &str, step: &Step) -> bool {
@@ -277,82 +230,57 @@ fn exposes_identity(message: &str, step: &Step) -> bool {
         || (!step.password.is_empty() && message.contains(&step.password))
 }
 
-fn debug_json(events: &[CapturedEvent], step: &Step) -> Value {
+fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
     let mut lines = Vec::new();
     for event in events
         .iter()
         .filter(|event| event.level == tracing::Level::DEBUG)
     {
-        if !event.message.starts_with("client_id=") && !event.message.starts_with("token_provider ")
-        {
-            continue;
-        }
+        let exposes = exposes_identity(&event.message, step);
         if event.message.starts_with("client_id=") {
-            let client_id = match event.fields.get("client_id") {
-                Some(FieldValue::Text(text)) => text.clone(),
-                Some(FieldValue::Bool(_)) | None => String::new(),
-            };
-            let username_set = matches!(
-                event.fields.get("username_set"),
-                Some(FieldValue::Bool(true))
-            );
-            let password_set = matches!(
-                event.fields.get("password_set"),
-                Some(FieldValue::Bool(true))
-            );
             lines.push(json!({
                 "kind": "credentials",
-                "client_id": client_id,
-                "username_set": username_set,
-                "password_set": password_set,
-                "exposes_identity": exposes_identity(&event.message, step),
+                "client_id": event.fields.get("client_id"),
+                "username_set": event.fields.get("username_set").is_some_and(|flag| flag == "true"),
+                "password_set": event.fields.get("password_set").is_some_and(|flag| flag == "true"),
+                "exposes_identity": exposes,
             }));
-        } else {
+        } else if event.message.starts_with("token_provider ") {
             lines.push(json!({
                 "kind": "provider",
                 "identity": "present",
-                "exposes_identity": exposes_identity(&event.message, step),
+                "exposes_identity": exposes,
             }));
         }
     }
-    Value::Array(lines)
+    lines
 }
 
 pub(super) fn construction_step(step: &Step) -> Value {
-    let attempt = Attempt::new(step);
     let capture = Capture::default();
     let subscriber = tracing_subscriber::registry().with(capture.clone());
-    let outcome = tracing::subscriber::with_default(subscriber, || {
-        let provider = match attempt.provider(step) {
-            Ok(provider) => provider,
-            Err(error) => return Err((false, error)),
-        };
-        if step.calls > 0 {
-            provider.token().map_err(|error| (true, error))?;
-        }
-        Ok(())
+    let mut value = tracing::subscriber::with_default(subscriber, || {
+        with_provider(step, |provider, attempt| {
+            if step.calls > 0
+                && let Err(error) = provider.token()
+            {
+                return token_failure(&error, attempt);
+            }
+            json!({
+                "kind": "constructed",
+                "token_requests": attempt.transport.posts().len(),
+            })
+        })
     });
     let events = capture.events();
-    let warnings = warnings_json(&events);
-    let debug = debug_json(&events, step);
-    match outcome {
-        Ok(()) => json!({
-            "kind": "constructed",
-            "warnings": warnings,
-            "debug": debug,
-            "token_requests": attempt.transport.posts().len(),
-        }),
-        Err((invoked, error)) => {
-            let mut value = if invoked {
-                token_failure(&error, &attempt)
-            } else {
-                error_json("constructor", &error.to_string(), 0)
-            };
-            if let Value::Object(fields) = &mut value {
-                fields.insert("warnings".to_owned(), warnings);
-                fields.insert("debug".to_owned(), debug);
-            }
-            value
-        }
+    let warnings: Vec<Value> = events
+        .iter()
+        .filter(|event| event.level == tracing::Level::WARN)
+        .map(|event| json!({"category": event.fields.get("category"), "message": &event.message}))
+        .collect();
+    if let Value::Object(fields) = &mut value {
+        fields.insert("warnings".to_owned(), Value::Array(warnings));
+        fields.insert("debug".to_owned(), Value::Array(debug_json(&events, step)));
     }
+    value
 }
