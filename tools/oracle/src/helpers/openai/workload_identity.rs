@@ -235,12 +235,11 @@ async fn concurrent(
             return json!({ "outcomes": vec![failed; callers] });
         }
     };
-    let running: Vec<_> = (0..callers)
-        .map(|_| {
-            let shared = Arc::clone(&auth);
-            task::spawn(async move { shared.get_token().await })
-        })
-        .collect();
+    let mut running = Vec::new();
+    for _ in 0..callers {
+        let shared = Arc::clone(&auth);
+        running.push(task::spawn(async move { shared.get_token().await }));
+    }
     let mut outcomes = Vec::new();
     for handle in running {
         outcomes.push(match handle.await {
