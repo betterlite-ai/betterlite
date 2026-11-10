@@ -46,7 +46,7 @@ pub enum PtuInstantSource<'value> {
 impl PtuInstantSource<'_> {
     fn as_utc(self) -> Option<DateTime<Utc>> {
         match self {
-            Self::Scalar(Scalar::Text(text)) => parse_ptu_instant(text),
+            Self::Scalar(Scalar::Text(text)) => decode_billed_at(text),
             Self::Scalar(_) => None,
             Self::Date(date) => Some(date.and_time(NaiveTime::MIN).and_utc()),
             Self::NaiveDateTime(naive) => Some(naive.and_utc()),
@@ -78,12 +78,6 @@ impl<'value> From<&'value BTreeMap<String, Scalar>> for PtuModelInfo<'value> {
                 .map(PtuInstantSource::Scalar),
         }
     }
-}
-
-#[must_use]
-// ast-grep-ignore: no-one-line-functions
-pub fn parse_ptu_instant(text: &str) -> Option<DateTime<Utc>> {
-    decode_billed_at(text)
 }
 
 #[must_use]
