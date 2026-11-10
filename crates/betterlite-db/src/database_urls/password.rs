@@ -48,13 +48,11 @@ pub fn build_writer_url(
     Ok(Some(with_tls_params(settings, &assembled)?))
 }
 
+// A reader endpoint is a writer endpoint whose discrete fields resolve to the replica; a pinned writer URL never supplies them
 pub fn build_reader_url(
     settings: &DatabaseUrlSettings,
     auth: AuthMode,
 ) -> Result<Option<String>, DatabaseUrlError> {
-    if auth == AuthMode::Token {
-        return Ok(None);
-    }
     let Some(fields) = reader_fields(settings) else {
         return Ok(None);
     };
@@ -65,21 +63,19 @@ pub fn build_reader_url(
     {
         return Ok(None);
     }
-    let (Some(user), Some(name)) = (
-        fields.user.as_deref().filter(|value| !value.is_empty()),
-        fields.name.as_deref().filter(|value| !value.is_empty()),
-    ) else {
-        return Ok(None);
-    };
-    let assembled = password_url(&Endpoint {
-        user,
-        password: fields.password.as_ref(),
-        host: &fields.host,
-        port: &fields.port,
-        name,
-        schema: fields.schema.as_deref(),
-    });
-    Ok(Some(with_tls_params(settings, &assembled)?))
+    build_writer_url(&reader_settings(settings, fields), auth)
+}
+
+fn reader_settings(settings: &DatabaseUrlSettings, fields: ReaderFields) -> DatabaseUrlSettings {
+    let mut reader = settings.clone();
+    reader.database_url = None;
+    reader.database_host = Some(fields.host);
+    reader.database_port = fields.port;
+    reader.database_user = fields.user;
+    reader.database_name = fields.name;
+    reader.database_schema = fields.schema;
+    reader.database_password = fields.password;
+    reader
 }
 
 #[must_use]

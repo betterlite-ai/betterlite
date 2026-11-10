@@ -21,28 +21,33 @@ pub enum QueryTarget {
 impl Settings {
     #[must_use]
     pub fn writer_connection_params(&self) -> Vec<(String, AppendQueryParam)> {
-        let pool_timeout = self
-            .connection_timeout
-            .clone()
-            .or_else(|| self.pool_timeout.clone())
-            .unwrap_or(QueryValue::Integer(POOL_TIMEOUT_DEFAULT));
+        let timeouts = PoolTimeouts {
+            pool_timeout: Some(self.effective_pool_timeout()),
+            connect_timeout: self.connect_timeout.clone(),
+            socket_timeout: self.socket_timeout.clone(),
+        };
         build_db_connection_url_params(
             self.pool_limit,
-            PoolTimeouts {
-                pool_timeout: Some(pool_timeout),
-                connect_timeout: self.connect_timeout.clone(),
-                socket_timeout: self.socket_timeout.clone(),
-            },
+            timeouts,
             self.disable_prepared_statements,
             &self.extra_params,
         )
     }
 
+    fn effective_pool_timeout(&self) -> QueryValue {
+        if let Some(timeout) = self.connection_timeout.clone() {
+            return timeout;
+        }
+        self.pool_timeout
+            .clone()
+            .unwrap_or(QueryValue::Integer(POOL_TIMEOUT_DEFAULT))
+    }
+
     // B2307's allowlist decides which writer params the replica shares; a bool or list extra param keeps its value
     #[must_use]
     pub fn reader_connection_params(&self) -> Vec<(String, AppendQueryParam)> {
-        let writer = self.writer_connection_params();
-        let placeholders: Vec<(String, QueryValue)> = writer
+        let writer_params = self.writer_connection_params();
+        let placeholders: Vec<(String, QueryValue)> = writer_params
             .iter()
             .map(|(key, _)| (key.clone(), QueryValue::Text(String::new())))
             .collect();
@@ -50,9 +55,9 @@ impl Settings {
             .into_iter()
             .map(|(key, _)| key)
             .collect();
-        writer
+        writer_params
             .into_iter()
-            .filter(|(key, _)| allowed.contains(key))
+            .filter(|(key, _)| allowed.iter().any(|name| name == key))
             .collect()
     }
 

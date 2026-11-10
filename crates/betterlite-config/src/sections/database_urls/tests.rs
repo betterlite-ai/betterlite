@@ -44,41 +44,47 @@ fn scalar(key: &str, value: QueryValue) -> (String, AppendQueryParam) {
 }
 
 fn assert_endpoint_defaults(settings: &Settings) {
-    assert_eq!(settings.endpoints.database_url, None);
-    assert_eq!(settings.endpoints.direct_url, None);
-    assert_eq!(settings.endpoints.database_host, None);
-    assert_eq!(settings.endpoints.database_port, "5432");
-    assert_eq!(settings.endpoints.database_user, None);
-    assert_eq!(settings.endpoints.database_name, None);
-    assert_eq!(settings.endpoints.database_schema, None);
-    assert!(settings.endpoints.database_password.is_none());
-    assert_eq!(settings.endpoints.database_sslmode, None);
-    assert_eq!(settings.endpoints.database_sslrootcert, None);
-}
-
-fn assert_replica_defaults(settings: &Settings) {
-    assert_eq!(settings.endpoints.database_url_read_replica, None);
-    assert_eq!(settings.endpoints.database_host_read_replica, None);
-    assert_eq!(settings.endpoints.database_port_read_replica, None);
-    assert_eq!(settings.endpoints.database_user_read_replica, None);
-    assert_eq!(settings.endpoints.database_name_read_replica, None);
-    assert_eq!(settings.endpoints.database_schema_read_replica, None);
-    assert_eq!(settings.endpoints.max_idle_connection_lifetime, None);
-    assert!(!settings.endpoints.disable_prepared_statements);
-    assert!(!settings.endpoints.iam_token_db_auth);
-    assert!(!settings.endpoints.azure_postgresql_auth);
+    let endpoints = &settings.endpoints;
+    assert_eq!(endpoints.database_url, None);
+    assert_eq!(endpoints.direct_url, None);
+    assert_eq!(endpoints.database_host, None);
+    assert_eq!(endpoints.database_port, "5432");
+    assert_eq!(endpoints.database_user, None);
+    assert_eq!(endpoints.database_name, None);
+    assert_eq!(endpoints.database_schema, None);
+    assert!(endpoints.database_password.is_none());
+    assert_eq!(endpoints.database_sslmode, None);
+    assert_eq!(endpoints.database_sslrootcert, None);
+    let replicas = [
+        &endpoints.database_url_read_replica,
+        &endpoints.database_host_read_replica,
+        &endpoints.database_port_read_replica,
+        &endpoints.database_user_read_replica,
+        &endpoints.database_name_read_replica,
+        &endpoints.database_schema_read_replica,
+    ];
+    assert!(replicas.iter().all(|value| value.is_none()));
 }
 
 fn assert_connection_defaults(settings: &Settings) {
     assert_eq!(settings.pool_limit, 10);
-    assert_eq!(settings.connection_timeout, None);
-    assert_eq!(settings.pool_timeout, None);
-    assert_eq!(settings.connect_timeout, None);
-    assert_eq!(settings.socket_timeout, None);
-    assert_eq!(settings.max_idle_lifetime, None);
-    assert_eq!(settings.statement_timeout, None);
-    assert_eq!(settings.lock_timeout, None);
     assert!(settings.extra_params.is_empty());
+    assert_eq!(settings.endpoints.max_idle_connection_lifetime, None);
+    assert!(!settings.endpoints.disable_prepared_statements);
+    assert!(!settings.endpoints.iam_token_db_auth);
+    assert!(!settings.endpoints.azure_postgresql_auth);
+    assert!(matches!(
+        (
+            &settings.connection_timeout,
+            &settings.pool_timeout,
+            &settings.connect_timeout,
+            &settings.socket_timeout,
+            &settings.max_idle_lifetime,
+            &settings.statement_timeout,
+            &settings.lock_timeout,
+        ),
+        (None, None, None, None, None, None, None)
+    ));
 }
 
 fn assert_alias_precedence() {
@@ -128,7 +134,6 @@ fn assert_alias_precedence() {
 fn env_defaults_and_alias_precedence() {
     let defaults = load("model_list: []\n", &[]);
     assert_endpoint_defaults(&defaults);
-    assert_replica_defaults(&defaults);
     assert_connection_defaults(&defaults);
     assert_alias_precedence();
 }
