@@ -48,6 +48,22 @@ async fn request_batch_post_call_writes_flush_separately() {
     .await;
 }
 
+#[tokio::test]
+async fn request_batch_flush_all_flushes_pending_request_batches() {
+    let server = FakeServer::start().await;
+    server.script("MGET", Reply::Array(vec![Reply::Nil]));
+    let cached = cache(&server, Some("ns")).await;
+
+    let (request, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    let batch = request.batch(&cached);
+    batch.mget(&["a".to_owned()]);
+    assert_eq!(batch.pending(), 1);
+
+    request.flush_all().await;
+    assert_eq!(batch.pending(), 0);
+    assert_eq!(batch.flushes(), 1);
+}
+
 #[tokio::test(start_paused = true)]
 async fn request_batch_post_call_deadline_flushes_the_post_call_writes() {
     let server = FakeServer::start().await;

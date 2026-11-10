@@ -30,6 +30,31 @@ async fn request_batch_drain_flushes_every_open_post_call_request() {
 }
 
 #[tokio::test]
+async fn request_batch_flushing_one_request_keeps_the_others_registered() {
+    let server = FakeServer::start().await;
+    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
+    let cached = cache(&server, Some("ns")).await;
+
+    let (flushed, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    let (waiting, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    let flushed_writes = flushed.post_call(&cached);
+    let waiting_writes = waiting.post_call(&cached);
+    flushed_writes.increment("flushed", 1.5, None);
+    waiting_writes.increment("waiting", 2.5, None);
+
+    flushed.flush_post_call().await;
+    assert_eq!(flushed_writes.pending(), 0);
+    assert_eq!(waiting_writes.pending(), 1);
+
+    drain_post_call_redis_batches().await;
+    assert_eq!(
+        waiting_writes.pending(),
+        0,
+        "drain still sees the unflushed request"
+    );
+}
+
+#[tokio::test]
 async fn request_batch_weak_registry_forgets_a_dropped_request() {
     let server = FakeServer::start().await;
     server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
