@@ -78,12 +78,13 @@ fn exclusive_thinking_adds_reasoning_to_the_completion_count() {
 }
 
 #[test]
-fn zero_thoughts_never_change_the_completion_count() {
-    let usage = calculated(
-        r#"{"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 19,
-            "thoughtsTokenCount": 0}"#,
-    );
-    assert_eq!(usage.completion_tokens, 5);
+fn zero_thoughts_leave_the_text_detail_absent() {
+    let usage =
+        calculated(r#"{"promptTokenCount": 1, "totalTokenCount": 5, "thoughtsTokenCount": 0}"#);
+    assert_eq!(usage.completion_tokens, 0);
+    let completion = usage.completion_tokens_details.unwrap();
+    assert_eq!(completion.text_tokens, None);
+    assert_eq!(completion.reasoning_tokens, Some(0));
 }
 
 #[test]
@@ -318,13 +319,40 @@ fn an_empty_response_details_list_still_creates_the_completion_details() {
 }
 
 #[test]
-fn a_thinking_only_reply_clamps_the_constructor_text_at_zero() {
+fn an_inclusive_thinking_reply_clamps_the_constructor_text_at_zero() {
     let usage =
-        calculated(r#"{"promptTokenCount": 1, "totalTokenCount": 10, "thoughtsTokenCount": 5}"#);
-    assert_eq!(usage.completion_tokens, 5);
+        calculated(r#"{"promptTokenCount": 1, "totalTokenCount": 1, "thoughtsTokenCount": 5}"#);
+    assert_eq!(usage.completion_tokens, 0);
     let completion = usage.completion_tokens_details.unwrap();
     assert_eq!(completion.reasoning_tokens, Some(5));
     assert_eq!(completion.text_tokens, Some(0));
+}
+
+#[test]
+fn the_constructor_clamp_subtracts_image_tokens() {
+    let usage = calculated(
+        r#"{"promptTokenCount": 1, "totalTokenCount": 1, "thoughtsTokenCount": 5,
+            "responseTokenCount": 7,
+            "candidatesTokensDetails": [{"modality": "IMAGE", "tokenCount": 2}]}"#,
+    );
+    assert_eq!(usage.completion_tokens, 7);
+    let completion = usage.completion_tokens_details.unwrap();
+    assert_eq!(completion.text_tokens, Some(0));
+    assert_eq!(completion.image_tokens, Some(2));
+    assert_eq!(completion.reasoning_tokens, Some(5));
+}
+
+#[test]
+fn a_candidate_detail_list_creates_the_completion_details_without_a_candidate_count() {
+    let usage = calculated(
+        r#"{"promptTokenCount": 1, "totalTokenCount": 1,
+            "candidatesTokensDetails": [{"modality": "IMAGE", "tokenCount": 0}]}"#,
+    );
+    assert_eq!(usage.completion_tokens, 0);
+    let completion = usage.completion_tokens_details.unwrap();
+    assert_eq!(completion.text_tokens, None);
+    assert_eq!(completion.image_tokens, Some(0));
+    assert_eq!(completion.reasoning_tokens, None);
 }
 
 #[test]
@@ -402,13 +430,13 @@ fn a_non_object_candidate_carries_no_grounding() {
 }
 
 #[test]
-fn an_explicit_zero_tool_use_count_stays_in_the_details() {
+fn an_explicit_zero_tool_use_count_leaves_the_detail_unset() {
     let usage = calculated(
         r#"{"promptTokenCount": 10, "candidatesTokenCount": 2, "totalTokenCount": 12,
             "toolUsePromptTokenCount": 0}"#,
     );
     assert_eq!(usage.prompt_tokens, 10);
-    assert_eq!(prompt_details(&usage).tool_use_tokens, Some(0));
+    assert_eq!(prompt_details(&usage).tool_use_tokens, None);
 }
 
 #[test]

@@ -27,7 +27,7 @@ pub fn calculate_usage(
     Ok(Usage {
         prompt_tokens: prompt_tokens(metadata, candidates)?,
         completion_tokens,
-        total_tokens: metadata.total_token_count.unwrap_or(0),
+        total_tokens: metadata.total_token_count,
         prompt_tokens_details: Some(prompt_details(metadata)?),
         completion_tokens_details: completion_details(metadata, completion_tokens)?,
         numeric_extras: BTreeMap::new(),
@@ -58,7 +58,6 @@ fn prompt_tokens(metadata: &UsageMetadata, candidates: &[Json]) -> Result<i64, U
         .unwrap_or(0);
     metadata
         .prompt_token_count
-        .unwrap_or(0)
         .checked_add(billable_tool_tokens)
         .ok_or(UsageError::Overflow {
             field: "prompt_tokens",
@@ -89,7 +88,10 @@ fn prompt_details(metadata: &UsageMetadata) -> Result<PromptTokensDetails, Usage
         video_tokens: counts.video,
         web_search_requests: None,
         google_maps_grounding_requests: None,
-        tool_use_tokens: metadata.tool_use_prompt_token_count,
+        // LiteLLM reads the count with `or None`, so a reported zero leaves the detail unset
+        tool_use_tokens: metadata
+            .tool_use_prompt_token_count
+            .filter(|count| *count != 0),
         character_count: None,
         image_count: None,
         video_length_seconds: None,
@@ -106,8 +108,7 @@ fn completion_tokens(metadata: &UsageMetadata) -> Result<i64, UsageError> {
     let reported = metadata
         .response_token_count
         .filter(|count| *count != 0)
-        .or(metadata.candidates_token_count)
-        .unwrap_or(0);
+        .unwrap_or(metadata.candidates_token_count);
     let Some(reasoning) = metadata.thoughts_token_count.filter(|count| *count != 0) else {
         return Ok(reported);
     };
@@ -133,7 +134,7 @@ fn completion_details(
     if let Some(entries) = metadata.candidates_tokens_details.as_deref() {
         fold_modalities(entries, &mut counts, true)?;
     }
-    let candidates_token_count = metadata.candidates_token_count.unwrap_or(0);
+    let candidates_token_count = metadata.candidates_token_count;
     if candidates_token_count > 0 {
         present = true;
         if counts.text.is_none() {
@@ -166,15 +167,11 @@ fn completion_details(
 }
 
 fn candidate_count_is_inclusive(metadata: &UsageMetadata) -> bool {
-    let sum = [
-        metadata.prompt_token_count,
-        metadata.candidates_token_count,
-        metadata.tool_use_prompt_token_count,
-    ]
-    .into_iter()
-    .flatten()
-    .try_fold(0_i128, |total, count| total.checked_add(i128::from(count)));
-    sum == Some(i128::from(metadata.total_token_count.unwrap_or(0)))
+    let sum = [metadata.prompt_token_count, metadata.candidates_token_count]
+        .into_iter()
+        .chain(metadata.tool_use_prompt_token_count)
+        .try_fold(0_i128, |total, count| total.checked_add(i128::from(count)));
+    sum == Some(i128::from(metadata.total_token_count))
 }
 
 fn fold_modalities(

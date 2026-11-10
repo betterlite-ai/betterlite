@@ -50,9 +50,9 @@ impl TokenCountDetail {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UsageMetadata {
-    pub prompt_token_count: Option<i64>,
-    pub candidates_token_count: Option<i64>,
-    pub total_token_count: Option<i64>,
+    pub prompt_token_count: i64,
+    pub candidates_token_count: i64,
+    pub total_token_count: i64,
     pub response_token_count: Option<i64>,
     pub cached_content_token_count: Option<i64>,
     pub tool_use_prompt_token_count: Option<i64>,
