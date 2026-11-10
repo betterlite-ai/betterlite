@@ -122,7 +122,12 @@ where
 
 fn selection_entry(provider: &str, selected: &ProviderModelMetadata) -> Value {
     if provider == "azure_ai" {
-        json!({"class": selected.class_name(), "model": selected.stored_model()})
+        let model = if let ProviderModelMetadata::AzureAi(config) = selected {
+            config.model.as_deref()
+        } else {
+            None
+        };
+        json!({"class": selected.class_name(), "model": model})
     } else {
         json!({"class": selected.class_name()})
     }

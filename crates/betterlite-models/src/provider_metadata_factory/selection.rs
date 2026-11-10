@@ -3,26 +3,17 @@ use crate::identity::provider_id::ProviderId;
 
 use super::adapters::{
     AzureFoundryModelInfo, DynamicModelInfo, FireworksAIConfig, LemonadeChatConfig,
-    ProviderSpecificModelInfo,
+    ProviderSpecificModelInfo, StatelessAdapter,
 };
 
 #[derive(Debug)]
 pub enum ProviderModelMetadata {
     FireworksAi(FireworksAIConfig),
-    OpenAi,
-    Gemini,
-    VertexAi,
-    LitellmProxy,
-    Topaz,
-    Anthropic,
     Xai,
     Ollama,
-    Vllm,
     Lemonade(LemonadeChatConfig),
-    Clarifai,
-    EdenAi,
-    Bedrock,
     AzureAi(AzureFoundryModelInfo),
+    Stateless(StatelessAdapter),
 }
 
 type AdapterFactory = fn(Option<&str>) -> ProviderModelMetadata;
@@ -32,25 +23,45 @@ const ADAPTER_ROWS: &[(ProviderId, AdapterFactory)] = &[
     (ProviderId::FireworksAi, |_| {
         ProviderModelMetadata::FireworksAi(FireworksAIConfig::default())
     }),
-    (ProviderId::Openai, |_| ProviderModelMetadata::OpenAi),
-    (ProviderId::Gemini, |_| ProviderModelMetadata::Gemini),
-    (ProviderId::VertexAi, |_| ProviderModelMetadata::VertexAi),
-    (ProviderId::LitellmProxy, |_| {
-        ProviderModelMetadata::LitellmProxy
+    (ProviderId::Openai, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::OpenAi)
     }),
-    (ProviderId::Topaz, |_| ProviderModelMetadata::Topaz),
-    (ProviderId::Anthropic, |_| ProviderModelMetadata::Anthropic),
+    (ProviderId::Gemini, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Gemini)
+    }),
+    (ProviderId::VertexAi, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::VertexAi)
+    }),
+    (ProviderId::LitellmProxy, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::LitellmProxy)
+    }),
+    (ProviderId::Topaz, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Topaz)
+    }),
+    (ProviderId::Anthropic, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Anthropic)
+    }),
     (ProviderId::Xai, |_| ProviderModelMetadata::Xai),
     (ProviderId::Ollama, |_| ProviderModelMetadata::Ollama),
     (ProviderId::OllamaChat, |_| ProviderModelMetadata::Ollama),
-    (ProviderId::Vllm, |_| ProviderModelMetadata::Vllm),
-    (ProviderId::HostedVllm, |_| ProviderModelMetadata::Vllm),
+    (ProviderId::Vllm, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Vllm)
+    }),
+    (ProviderId::HostedVllm, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Vllm)
+    }),
     (ProviderId::Lemonade, |_| {
         ProviderModelMetadata::Lemonade(LemonadeChatConfig::default())
     }),
-    (ProviderId::Clarifai, |_| ProviderModelMetadata::Clarifai),
-    (ProviderId::Edenai, |_| ProviderModelMetadata::EdenAi),
-    (ProviderId::Bedrock, |_| ProviderModelMetadata::Bedrock),
+    (ProviderId::Clarifai, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Clarifai)
+    }),
+    (ProviderId::Edenai, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::EdenAi)
+    }),
+    (ProviderId::Bedrock, |_| {
+        ProviderModelMetadata::Stateless(StatelessAdapter::Bedrock)
+    }),
     (ProviderId::AzureAi, |model| {
         ProviderModelMetadata::AzureAi(AzureFoundryModelInfo {
             model: model.map(ToOwned::to_owned),
@@ -63,20 +74,11 @@ impl ProviderModelMetadata {
     pub const fn class_name(&self) -> &'static str {
         match self {
             Self::FireworksAi(_) => "FireworksAIConfig",
-            Self::OpenAi => "OpenAIGPTConfig",
-            Self::Gemini => "GeminiModelInfo",
-            Self::VertexAi => "VertexAIModelInfo",
-            Self::LitellmProxy => "LiteLLMProxyChatConfig",
-            Self::Topaz => "TopazModelInfo",
-            Self::Anthropic => "AnthropicModelInfo",
             Self::Xai => "XAIModelInfo",
             Self::Ollama => "OllamaModelInfo",
-            Self::Vllm => "VLLMModelInfo",
             Self::Lemonade(_) => "LemonadeChatConfig",
-            Self::Clarifai => "ClarifaiConfig",
-            Self::EdenAi => "EdenAIChatConfig",
-            Self::Bedrock => "BedrockModelInfo",
             Self::AzureAi(_) => "AzureFoundryModelInfo",
+            Self::Stateless(adapter) => adapter.class_name(),
         }
     }
 
@@ -85,19 +87,7 @@ impl ProviderModelMetadata {
         match self {
             Self::Ollama => Some(DynamicModelInfo::Ollama),
             Self::Lemonade(_) => Some(DynamicModelInfo::Lemonade),
-            Self::FireworksAi(_)
-            | Self::OpenAi
-            | Self::Gemini
-            | Self::VertexAi
-            | Self::LitellmProxy
-            | Self::Topaz
-            | Self::Anthropic
-            | Self::Xai
-            | Self::Vllm
-            | Self::Clarifai
-            | Self::EdenAi
-            | Self::Bedrock
-            | Self::AzureAi(_) => None,
+            Self::FireworksAi(_) | Self::Xai | Self::AzureAi(_) | Self::Stateless(_) => None,
         }
     }
 
@@ -117,40 +107,7 @@ impl ProviderModelMetadata {
                 supports_pdf_input: None,
                 supports_web_search: Some(true),
             }),
-            Self::OpenAi
-            | Self::Gemini
-            | Self::VertexAi
-            | Self::LitellmProxy
-            | Self::Topaz
-            | Self::Anthropic
-            | Self::Ollama
-            | Self::Vllm
-            | Self::Lemonade(_)
-            | Self::Clarifai
-            | Self::EdenAi
-            | Self::Bedrock
-            | Self::AzureAi(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn stored_model(&self) -> Option<&str> {
-        match self {
-            Self::AzureAi(config) => config.model.as_deref(),
-            Self::FireworksAi(_)
-            | Self::OpenAi
-            | Self::Gemini
-            | Self::VertexAi
-            | Self::LitellmProxy
-            | Self::Topaz
-            | Self::Anthropic
-            | Self::Xai
-            | Self::Ollama
-            | Self::Vllm
-            | Self::Lemonade(_)
-            | Self::Clarifai
-            | Self::EdenAi
-            | Self::Bedrock => None,
+            Self::Ollama | Self::Lemonade(_) | Self::AzureAi(_) | Self::Stateless(_) => None,
         }
     }
 
@@ -158,20 +115,11 @@ impl ProviderModelMetadata {
     pub fn get_model_cost_key(&self, model: &str) -> Option<String> {
         match self {
             Self::FireworksAi(_) => Some(fireworks_catalog_metadata::get_model_cost_key(model)),
-            Self::OpenAi
-            | Self::Gemini
-            | Self::VertexAi
-            | Self::LitellmProxy
-            | Self::Topaz
-            | Self::Anthropic
-            | Self::Xai
+            Self::Xai
             | Self::Ollama
-            | Self::Vllm
             | Self::Lemonade(_)
-            | Self::Clarifai
-            | Self::EdenAi
-            | Self::Bedrock
-            | Self::AzureAi(_) => None,
+            | Self::AzureAi(_)
+            | Self::Stateless(_) => None,
         }
     }
 }

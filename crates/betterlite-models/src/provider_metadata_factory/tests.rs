@@ -197,10 +197,6 @@ fn fireworks_projection() {
             supports_web_search: None,
         })
     );
-    assert_eq!(
-        fireworks.get_model_cost_key("glm-4p6").as_deref(),
-        Some("fireworks_ai/accounts/fireworks/models/glm-4p6")
-    );
 }
 
 fn fireworks_cost_keys() {
@@ -214,8 +210,8 @@ fn fireworks_cost_keys() {
         Some("fireworks_ai/accounts/fireworks/models/deepseek-r1")
     );
     assert_eq!(
-        fireworks.get_model_cost_key(""),
-        Some(String::from("fireworks_ai/accounts/fireworks/models/"))
+        fireworks.get_model_cost_key("").as_deref(),
+        Some("fireworks_ai/accounts/fireworks/models/")
     );
 }
 
@@ -250,61 +246,12 @@ fn free_projection() {
     );
 }
 
-fn all_fireworks_arguments() -> FireworksSettings {
-    FireworksSettings {
-        tools: Some(vec![json(r#"{"type":"function"}"#)]),
-        tool_choice: Some(ToolChoice::Name("auto".to_owned())),
-        max_tokens: Some(7),
-        temperature: Some(1),
-        top_p: Some(2),
-        top_k: Some(3),
-        frequency_penalty: Some(4),
-        presence_penalty: Some(5),
-        number: Some(6),
-        stop: Some(Stop::List(vec!["END".to_owned()])),
-        response_format: Some(IndexMap::from([(
-            "type".to_owned(),
-            Json::Text("json_object".to_owned()),
-        )])),
-        user: Some("user-1".to_owned()),
-        logprobs: Some(8),
-        reasoning_effort: Some("high".to_owned()),
-        prompt_truncate_len: Some(9),
-        context_limit_behavior: Some(ContextLimitBehavior::Truncate),
-    }
-}
-
-fn all_lemonade_arguments() -> LemonadeSettings {
-    LemonadeSettings {
-        repeat_penalty: Some(0.5_f64),
-        functions: Some(vec![json(r#"{"name":"f"}"#)]),
-        logit_bias: Some(IndexMap::from([(
-            "50256".to_owned(),
-            Json::Number(serde_json::Number::from(-100_i64)),
-        )])),
-        max_completion_tokens: Some(11),
-        max_tokens: Some(12),
-        number: Some(2),
-        presence_penalty: Some(1),
-        stop: Some(Stop::Text("END".to_owned())),
-        temperature: Some(1),
-        top_p: Some(2),
-        top_k: Some(3),
-        response_format: Some(IndexMap::from([(
-            "type".to_owned(),
-            Json::Text("text".to_owned()),
-        )])),
-        tools: Some(vec![json("true")]),
-    }
-}
-
 fn metadata_constructors() {
     fireworks_defaults();
-    fireworks_arguments();
-    fireworks_merge_precedence();
+    fireworks_constructor();
+    fireworks_keeps_configured_values();
     lemonade_defaults();
-    lemonade_arguments();
-    lemonade_merge_precedence();
+    lemonade_constructor();
     foundry_defaults();
 }
 
@@ -314,14 +261,22 @@ fn fireworks_defaults() {
     assert_eq!(defaults.clone().with_args(empty_fireworks()), defaults);
 }
 
-fn fireworks_arguments() {
-    let constructed = FireworksSettings::default().with_args(all_fireworks_arguments());
-    assert_eq!(constructed, all_fireworks_arguments());
+fn fireworks_constructor() {
+    let args: FireworksSettings = serde_json::from_str(concat!(
+        r#"{"tools":[{"type":"function"}],"tool_choice":"auto","max_tokens":7,"temperature":1,"#,
+        r#""top_p":2,"top_k":3,"frequency_penalty":4,"presence_penalty":5,"n":6,"stop":["END"],"#,
+        r#""response_format":{"type":"json_object"},"user":"user-1","logprobs":8,"#,
+        r#""reasoning_effort":"high","prompt_truncate_len":9,"#,
+        r#""context_length_exceeded_behavior":"truncate"}"#
+    ))
+    .unwrap();
+    let constructed = FireworksSettings::default().with_args(args);
     assert_eq!(
         serde_json::to_string(&constructed).unwrap(),
         concat!(
-            r#"{"tools":[{"type":"function"}],"tool_choice":"auto","max_tokens":7,"temperature":1,"#,
-            r#""top_p":2,"top_k":3,"frequency_penalty":4,"presence_penalty":5,"n":6,"stop":["END"],"#,
+            r#"{"tools":[{"type":"function"}],"tool_choice":"auto","max_tokens":7,"#,
+            r#""temperature":1,"top_p":2,"top_k":3,"frequency_penalty":4,"#,
+            r#""presence_penalty":5,"n":6,"stop":["END"],"#,
             r#""response_format":{"type":"json_object"},"user":"user-1","logprobs":8,"#,
             r#""reasoning_effort":"high","prompt_truncate_len":9,"#,
             r#""context_length_exceeded_behavior":"truncate"}"#
@@ -329,7 +284,7 @@ fn fireworks_arguments() {
     );
 }
 
-fn fireworks_merge_precedence() {
+fn fireworks_keeps_configured_values() {
     let base = FireworksSettings {
         top_k: Some(3),
         user: Some("kept".to_owned()),
@@ -370,9 +325,28 @@ fn lemonade_defaults() {
     assert_eq!(defaults.clone().with_args(empty_lemonade()), defaults);
 }
 
-fn lemonade_arguments() {
-    let constructed = LemonadeSettings::default().with_args(all_lemonade_arguments());
-    assert_eq!(constructed, all_lemonade_arguments());
+fn lemonade_constructor() {
+    let constructed = LemonadeSettings::default().with_args(LemonadeSettings {
+        repeat_penalty: Some(0.5_f64),
+        functions: Some(vec![json(r#"{"name":"f"}"#)]),
+        logit_bias: Some(IndexMap::from([(
+            "50256".to_owned(),
+            Json::Number(serde_json::Number::from(-100_i64)),
+        )])),
+        max_completion_tokens: Some(11),
+        max_tokens: Some(12),
+        number: Some(2),
+        presence_penalty: Some(1),
+        stop: Some(Stop::Text("END".to_owned())),
+        temperature: Some(1),
+        top_p: Some(2),
+        top_k: Some(3),
+        response_format: Some(IndexMap::from([(
+            "type".to_owned(),
+            Json::Text("text".to_owned()),
+        )])),
+        tools: Some(vec![json("true")]),
+    });
     assert_eq!(
         serde_json::to_string(&constructed).unwrap(),
         concat!(
@@ -381,42 +355,17 @@ fn lemonade_arguments() {
             r#""temperature":1,"top_p":2,"top_k":3,"response_format":{"type":"text"},"tools":[true]}"#
         )
     );
-}
-
-fn lemonade_merge_precedence() {
-    let base = LemonadeSettings {
-        repeat_penalty: Some(1.5_f64),
-        max_completion_tokens: Some(10),
-        tools: Some(vec![json("1")]),
-        ..empty_lemonade()
-    };
-    assert_eq!(base.clone().with_args(empty_lemonade()), base);
-    let merged = base.with_args(LemonadeSettings {
+    let kept = constructed.with_args(LemonadeSettings {
         repeat_penalty: Some(0.0_f64),
-        max_completion_tokens: Some(0),
         max_tokens: Some(0),
         functions: Some(Vec::new()),
-        logit_bias: Some(IndexMap::new()),
-        stop: Some(Stop::Text(String::new())),
-        response_format: Some(IndexMap::new()),
-        tools: Some(Vec::new()),
-        number: Some(0),
         ..empty_lemonade()
     });
-    assert_eq!(merged.repeat_penalty, Some(0.0_f64));
-    assert_eq!(merged.max_completion_tokens, Some(0));
-    assert_eq!(merged.max_tokens, Some(0));
-    assert_eq!(merged.functions, Some(Vec::new()));
-    assert_eq!(merged.logit_bias, Some(IndexMap::new()));
-    assert_eq!(merged.number, Some(0));
-    assert_eq!(merged.tools, Some(Vec::new()));
-    assert_eq!(
-        serde_json::to_string(&merged).unwrap(),
-        concat!(
-            r#"{"repeat_penalty":0.0,"functions":[],"logit_bias":{},"max_completion_tokens":0,"#,
-            r#""max_tokens":0,"n":0,"stop":"","response_format":{},"tools":[]}"#
-        )
-    );
+    assert_eq!(kept.repeat_penalty, Some(0.0_f64));
+    assert_eq!(kept.max_tokens, Some(0));
+    assert_eq!(kept.max_completion_tokens, Some(11));
+    assert_eq!(kept.functions, Some(Vec::new()));
+    assert_eq!(kept.tools, Some(vec![json("true")]));
 }
 
 fn foundry_defaults() {

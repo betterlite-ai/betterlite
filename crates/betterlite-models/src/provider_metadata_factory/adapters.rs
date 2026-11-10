@@ -35,6 +35,39 @@ pub enum DynamicModelInfo {
     Lemonade,
 }
 
+// Adapters that only inherit the base provider and model-info methods carry no data of their own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatelessAdapter {
+    OpenAi,
+    Gemini,
+    VertexAi,
+    LitellmProxy,
+    Topaz,
+    Anthropic,
+    Clarifai,
+    EdenAi,
+    Bedrock,
+    Vllm,
+}
+
+impl StatelessAdapter {
+    #[must_use]
+    pub const fn class_name(self) -> &'static str {
+        match self {
+            Self::OpenAi => "OpenAIGPTConfig",
+            Self::Gemini => "GeminiModelInfo",
+            Self::VertexAi => "VertexAIModelInfo",
+            Self::LitellmProxy => "LiteLLMProxyChatConfig",
+            Self::Topaz => "TopazModelInfo",
+            Self::Anthropic => "AnthropicModelInfo",
+            Self::Clarifai => "ClarifaiConfig",
+            Self::EdenAi => "EdenAIChatConfig",
+            Self::Bedrock => "BedrockModelInfo",
+            Self::Vllm => "VLLMModelInfo",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ProviderSpecificModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,28 +124,37 @@ pub struct FireworksSettings {
     pub context_limit_behavior: Option<ContextLimitBehavior>,
 }
 
+// A constructor stores only the arguments it was given, so None keeps the value already configured.
+macro_rules! merge_arguments {
+    ($args:expr, $base:expr; $($field:ident),+ $(,)?) => {
+        Self {
+            $($field: $args.$field.or($base.$field),)+
+        }
+    };
+}
+
 impl FireworksSettings {
     // The seven OpenAI arguments are stored first, then the Fireworks-only ones, as the two constructors run.
     #[must_use]
     pub fn with_args(self, args: Self) -> Self {
-        Self {
-            tools: args.tools.or(self.tools),
-            tool_choice: args.tool_choice.or(self.tool_choice),
-            max_tokens: args.max_tokens.or(self.max_tokens),
-            temperature: args.temperature.or(self.temperature),
-            top_p: args.top_p.or(self.top_p),
-            top_k: args.top_k.or(self.top_k),
-            frequency_penalty: args.frequency_penalty.or(self.frequency_penalty),
-            presence_penalty: args.presence_penalty.or(self.presence_penalty),
-            number: args.number.or(self.number),
-            stop: args.stop.or(self.stop),
-            response_format: args.response_format.or(self.response_format),
-            user: args.user.or(self.user),
-            logprobs: args.logprobs.or(self.logprobs),
-            reasoning_effort: args.reasoning_effort.or(self.reasoning_effort),
-            prompt_truncate_len: args.prompt_truncate_len.or(self.prompt_truncate_len),
-            context_limit_behavior: args.context_limit_behavior.or(self.context_limit_behavior),
-        }
+        merge_arguments!(args, self;
+            tools,
+            tool_choice,
+            max_tokens,
+            temperature,
+            top_p,
+            top_k,
+            frequency_penalty,
+            presence_penalty,
+            number,
+            stop,
+            response_format,
+            user,
+            logprobs,
+            reasoning_effort,
+            prompt_truncate_len,
+            context_limit_behavior,
+        )
     }
 }
 
@@ -150,21 +192,21 @@ pub struct LemonadeSettings {
 impl LemonadeSettings {
     #[must_use]
     pub fn with_args(self, args: Self) -> Self {
-        Self {
-            repeat_penalty: args.repeat_penalty.or(self.repeat_penalty),
-            functions: args.functions.or(self.functions),
-            logit_bias: args.logit_bias.or(self.logit_bias),
-            max_completion_tokens: args.max_completion_tokens.or(self.max_completion_tokens),
-            max_tokens: args.max_tokens.or(self.max_tokens),
-            number: args.number.or(self.number),
-            presence_penalty: args.presence_penalty.or(self.presence_penalty),
-            stop: args.stop.or(self.stop),
-            temperature: args.temperature.or(self.temperature),
-            top_p: args.top_p.or(self.top_p),
-            top_k: args.top_k.or(self.top_k),
-            response_format: args.response_format.or(self.response_format),
-            tools: args.tools.or(self.tools),
-        }
+        merge_arguments!(args, self;
+            repeat_penalty,
+            functions,
+            logit_bias,
+            max_completion_tokens,
+            max_tokens,
+            number,
+            presence_penalty,
+            stop,
+            temperature,
+            top_p,
+            top_k,
+            response_format,
+            tools,
+        )
     }
 }
 
