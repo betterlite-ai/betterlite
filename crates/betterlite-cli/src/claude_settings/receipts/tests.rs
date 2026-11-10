@@ -344,10 +344,8 @@ async fn configure_written_fingerprints_and_endpoints() {
         receipt.written.get("env.ANTHROPIC_AUTH_TOKEN"),
         Some(&fingerprint(&owned(TOKEN)))
     );
-    assert_eq!(
-        receipt.written.get("env.ENABLE_TOOL_SEARCH"),
-        Some(&fingerprint(&owned("true")))
-    );
+    // the merge keeps a user's explicit value, so that path is recorded but never owned
+    assert_eq!(receipt.written.get("env.ENABLE_TOOL_SEARCH"), None);
     assert_eq!(receipt.written.get(MODEL_KEY), None);
     assert_eq!(
         (
@@ -673,7 +671,6 @@ async fn unconfigure_restores_owned_paths_to_their_previous_values() {
     assert_eq!(
         outcome.restored,
         [
-            "env.ENABLE_TOOL_SEARCH",
             "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
             "env.ANTHROPIC_BASE_URL",
             "env.ANTHROPIC_AUTH_TOKEN",
