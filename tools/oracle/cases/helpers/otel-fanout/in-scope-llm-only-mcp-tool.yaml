@@ -1,0 +1,11 @@
+kind: helper
+name: in-scope-llm-only-mcp-tool
+call:
+  b3849:
+    function: in_scope
+    span:
+      name: execute_tool search
+      attributes: {gen_ai.operation.name: execute_tool, mcp.method.name: tools/call}
+    span_scope: llm_only
+env: {}
+compare: {ignore: []}

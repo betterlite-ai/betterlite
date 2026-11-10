@@ -1,0 +1,26 @@
+kind: helper
+name: for-destination-database-span
+call:
+  b3849:
+    function: for_destination
+    span:
+      name: postgres query
+      attributes:
+        db.system.name: postgresql
+        server.address: db.internal
+        server.port: 5432
+        db.namespace: litellm
+        db.operation.name: SELECT
+        error.message: password authentication failed
+      events:
+        - name: exception
+          attributes: {exception.message: boom}
+      status: {code: error, description: the datastore is down}
+      resource: {service.name: betterlite}
+    destination:
+      endpoint: http://collector:4318
+      headers: {}
+      resource_attributes: {}
+      span_scope: full
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: is-llm-call-mcp-method
+call:
+  b3849:
+    function: is_llm_call_span
+    span:
+      name: execute_tool search
+      attributes: {gen_ai.operation.name: execute_tool, mcp.method.name: tools/call}
+env: {}
+compare: {ignore: []}

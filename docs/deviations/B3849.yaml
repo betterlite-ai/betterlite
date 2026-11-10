@@ -1,0 +1,41 @@
+task: B3849
+deviations:
+  - what: >-
+      The request's destinations and additive mode reach the fan-out through an injected
+      RequestScopeSource, not LiteLLM's request_destinations ContextVar.
+    why: >-
+      betterlite forbids module-level state, and a Rust async task has no contextvar its children
+      inherit. The same request-scoped values drive suppression, operator-sink deduplication and
+      scope widening; the proxy supplies their storage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L395-L446
+  - what: >-
+      attach_tenant_fan_out takes the registry of processors already attached to the provider, and
+      deliverable_destinations reads that registry, instead of inspecting a TracerProvider's
+      _active_span_processor.
+    why: >-
+      The Rust SDK builds a provider from its builder and exposes no processor list afterwards, so
+      the attach point is the registry the assembly keeps. The first call attaches and answers true,
+      a repeat answers false and leaves the first fan-out in place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1165-L1212
+  - what: >-
+      The exporter factory registry that operator_sink_scopes consults is the injected
+      ExporterFactories; LiteLLM reads the module-global _EXPORTER_FACTORIES.
+    why: >-
+      betterlite forbids globals. A kind a registered factory builds is routable exactly as LiteLLM
+      treats it, and an unknown kind stays headerless and is skipped either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1241-L1243
+  - what: >-
+      A destination's resource_attributes are merged into its export pipeline's resource once, when
+      the processor is built, instead of into a per-span ReadableSpan view.
+    why: >-
+      The Rust SpanData carries no resource; the exporter takes it from the processor. Every span a
+      destination receives therefore carries the same merged resource LiteLLM gives each view, and
+      the merge order (tenant attributes win) is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L533-L535
+  - what: >-
+      shutdown_with_timeout drains for the smaller of the SDK's timeout and the configured
+      shutdown bound (5 seconds by default).
+    why: >-
+      Python's SpanProcessor.shutdown has no timeout, so LiteLLM always waits its own 5 seconds.
+      The Rust trait passes a bound the caller expects honored; with the default both are 5 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L614-L642

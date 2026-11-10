@@ -1,0 +1,13 @@
+kind: helper
+name: scoped-llm-only-keeps-an-existing-name
+call:
+  b3849:
+    function: scoped
+    span:
+      name: chat gpt-4
+      attributes: {gen_ai.operation.name: chat, langfuse.trace.name: checkout}
+      events: []
+      status: {code: unset}
+    span_scope: llm_only
+env: {}
+compare: {ignore: []}

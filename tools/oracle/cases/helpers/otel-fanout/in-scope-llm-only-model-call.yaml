@@ -1,0 +1,11 @@
+kind: helper
+name: in-scope-llm-only-model-call
+call:
+  b3849:
+    function: in_scope
+    span:
+      name: chat gpt-4
+      attributes: {gen_ai.operation.name: chat}
+    span_scope: llm_only
+env: {}
+compare: {ignore: []}
