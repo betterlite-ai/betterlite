@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use rustls::client::WantsClientCert;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::client::{WantsClientCert, WebPkiServerVerifier};
-use rustls::crypto::aws_lc_rs;
+use rustls::crypto::{
+    WebPkiSupportedAlgorithms, aws_lc_rs, verify_tls12_signature as check_tls12,
+    verify_tls13_signature as check_tls13,
+};
 use rustls::pki_types::pem::Error as PemError;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime, pem::PemObject as _};
 use rustls::{ClientConfig, ConfigBuilder, DigitallySignedStruct, RootCertStore, SignatureScheme};
@@ -23,11 +26,9 @@ impl TlsRequest {
             let roots = self.roots()?;
             return finish_config(builder.with_root_certificates(roots), identity);
         }
-        let signatures =
-            WebPkiServerVerifier::builder_with_provider(Arc::new(RootCertStore::empty()), provider)
-                .build()
-                .map_err(|source| ConnectionOptionsError::SignatureVerifiers { source })?;
-        let verifier = Arc::new(AcceptAnyServerCert { signatures });
+        // ast-grep-ignore: no-long-names
+        let algorithms = provider.signature_verification_algorithms;
+        let verifier = Arc::new(AcceptAnyServerCert { algorithms });
         let dangerous = builder
             .dangerous()
             .with_custom_certificate_verifier(verifier);
@@ -132,21 +133,21 @@ fn client_identity(
     Ok((chain, key))
 }
 
-// sslmode=require and Prisma's default accept_invalid_certs encrypt without authenticating the server.
+// sslmode=require without strict encrypts without authenticating the server but keeps real signature checks.
 #[derive(Debug)]
 struct AcceptAnyServerCert {
-    signatures: Arc<WebPkiServerVerifier>,
+    algorithms: WebPkiSupportedAlgorithms,
 }
 
 macro_rules! verify_signature {
-    ($method:ident) => {
+    ($method:ident, $check:ident) => {
         fn $method(
             &self,
             message: &[u8],
             cert: &CertificateDer<'_>,
             dss: &DigitallySignedStruct,
         ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            self.signatures.$method(message, cert, dss)
+            $check(message, cert, dss, &self.algorithms)
         }
     };
 }
@@ -163,10 +164,10 @@ impl ServerCertVerifier for AcceptAnyServerCert {
         Ok(ServerCertVerified::assertion())
     }
 
-    verify_signature!(verify_tls12_signature);
-    verify_signature!(verify_tls13_signature);
+    verify_signature!(verify_tls12_signature, check_tls12);
+    verify_signature!(verify_tls13_signature, check_tls13);
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.signatures.supported_verify_schemes()
+        self.algorithms.supported_schemes()
     }
 }

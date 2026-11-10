@@ -5,8 +5,7 @@ const QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
     .remove(b'-')
-    .remove(b'~')
-    .remove(b' ');
+    .remove(b'~');
 
 pub(super) struct SplitUrl {
     pub(super) scheme: String,
@@ -128,7 +127,7 @@ pub(super) fn encode_pairs(pairs: &[(String, String)], space_as_plus: bool) -> S
 fn encode(text: &str, space_as_plus: bool) -> String {
     let quoted = utf8_percent_encode(text, QUOTE_SET).to_string();
     if space_as_plus {
-        quoted.replace(' ', "+")
+        quoted.replace("%20", "+")
     } else {
         quoted
     }

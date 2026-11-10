@@ -186,17 +186,24 @@ fn resolver_host_port_arguments() {
     assert!(empty_port.contains(":/"));
 }
 
-#[test]
-fn malformed_port_error() {
-    let malformed = translate_libpq_ssl_params(
-        "postgresql://host:notaport/db?sslrootcert=ca.pem",
-        |path, _, _| path.to_owned(),
-    )
-    .expect_err("a malformed port must fail");
+#[rstest]
+#[case::not_a_number("notaport")]
+#[case::surrounding_space(" 5432")]
+#[case::plus_sign("+5432")]
+#[case::digit_underscore("5_432")]
+#[case::negative_zero("-0")]
+fn malformed_port_error(#[case] port: &str) {
+    let url = format!("postgresql://host:{port}/db?sslrootcert=ca.pem");
+    let error = translate_libpq_ssl_params(&url, |path, _, _| path.to_owned())
+        .expect_err("a malformed port must fail");
     assert!(
-        matches!(malformed, TranslateError::MalformedPort { .. }),
-        "{malformed:?}"
+        matches!(error, TranslateError::MalformedPort { .. }),
+        "{error:?}"
     );
+}
+
+#[test]
+fn port_errors_only_when_a_root_resolves() {
     let out_of_range = translate_libpq_ssl_params(
         "postgresql://host:99999/db?sslrootcert=ca.pem",
         |path, _, _| path.to_owned(),
@@ -434,11 +441,25 @@ fn native_rejects_prisma_pkcs12_client_identity() {
     assert!(key_only.to_string().contains("sslkey"), "{key_only}");
 }
 
+#[rstest]
+#[case::allow("allow")]
+#[case::blank("")]
+#[case::unknown("bogus")]
+fn native_unknown_sslmode_becomes_prefer(#[case] sslmode: &str) {
+    let url = format!("postgresql://u@h/db?sslmode={sslmode}");
+    let options =
+        native_connection_options(&url).expect("Prisma reads an unknown sslmode as prefer");
+    assert_eq!(options.config.get_ssl_mode(), SslMode::Prefer);
+}
+
 #[test]
-fn native_rejects_unknown_sslmode() {
-    let unsupported = native_connection_options("postgresql://u@h/db?sslmode=allow")
-        .expect_err("allow is not supported");
-    assert!(unsupported.to_string().contains("allow"), "{unsupported}");
+fn native_last_duplicate_ssl_setting_wins() {
+    let disabled = native_connection_options("postgresql://u@h/db?sslmode=require&sslmode=disable")
+        .expect("connection options");
+    assert_eq!(disabled.config.get_ssl_mode(), SslMode::Disable);
+    let required = native_connection_options("postgresql://u@h/db?sslmode=disable&sslmode=require")
+        .expect("connection options");
+    assert_eq!(required.config.get_ssl_mode(), SslMode::Require);
 }
 
 #[tokio::test]
@@ -462,6 +483,7 @@ async fn tls_valid_chain() {
     );
     connect_and_query(&url).await;
     assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 #[tokio::test]
@@ -485,6 +507,7 @@ async fn tls_hostname_mismatch() {
     );
     rejected(&url).await;
     assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 #[tokio::test]
@@ -511,6 +534,7 @@ async fn tls_unknown_root() {
     );
     rejected(&url).await;
     assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 fn query_url(params: &[(&str, &str)]) -> String {
@@ -569,6 +593,7 @@ async fn tls_verify_ca_checks_hostname() {
     assert!(translated.contains("sslaccept=strict"), "{translated}");
     rejected(&translated).await;
     assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 #[tokio::test]
@@ -586,6 +611,7 @@ async fn tls_require_without_strict() {
     let url = client_url(&server, "localhost", front.port, &[("sslmode", "require")]);
     connect_and_query(&url).await;
     assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 #[tokio::test]
@@ -595,6 +621,7 @@ async fn tls_prefer_plaintext_fallback() {
     let url = client_url(&server, "127.0.0.1", front.port, &[("sslmode", "prefer")]);
     connect_and_query(&url).await;
     assert_eq!(front.handshakes(), 0);
+    server.close().await;
 }
 
 #[tokio::test]
@@ -603,6 +630,126 @@ async fn tls_require_refuses_plaintext_server() {
     let front = Front::start(&server.url, Mode::Plaintext).await;
     let url = client_url(&server, "127.0.0.1", front.port, &[("sslmode", "require")]);
     rejected(&url).await;
+    server.close().await;
+}
+
+#[tokio::test]
+async fn tls_blank_and_unknown_sslaccept_verify() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let blank = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[
+            ("sslmode", "require"),
+            ("sslrootcert", path_of(&ca)),
+            ("sslaccept", ""),
+        ],
+    );
+    rejected(&blank).await;
+    let unknown = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[
+            ("sslmode", "require"),
+            ("sslrootcert", path_of(&ca)),
+            ("sslaccept", "unknown"),
+        ],
+    );
+    rejected(&unknown).await;
+    assert!(front.handshakes() > 0);
+    server.close().await;
+}
+
+#[tokio::test]
+async fn tls_root_without_mode_verifies() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[("sslrootcert", path_of(&ca))],
+    );
+    rejected(&url).await;
+    assert!(front.handshakes() > 0);
+    server.close().await;
+}
+
+#[tokio::test]
+async fn tls_explicit_accept_invalid_certs_stays_unverified() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[
+            ("sslmode", "verify-full"),
+            ("sslrootcert", path_of(&ca)),
+            ("sslaccept", "accept_invalid_certs"),
+        ],
+    );
+    connect_and_query(&url).await;
+    server.close().await;
+}
+
+#[tokio::test]
+async fn native_last_duplicate_sslaccept_wins() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[
+            ("sslmode", "require"),
+            ("sslrootcert", path_of(&ca)),
+            ("sslaccept", "accept_invalid_certs"),
+            ("sslaccept", "strict"),
+        ],
+    );
+    rejected(&url).await;
+    assert!(front.handshakes() > 0);
+    server.close().await;
 }
 
 fn litellm_probe_files() -> BTreeSet<String> {
@@ -644,4 +791,5 @@ async fn native_full_ca_bundle_no_probe_file() {
     );
     connect_and_query(&url).await;
     assert_eq!(litellm_probe_files(), before);
+    server.close().await;
 }

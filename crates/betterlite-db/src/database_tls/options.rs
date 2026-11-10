@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr as _;
 
-use rustls::client::VerifierBuilderError;
 use rustls::pki_types::pem::Error as PemError;
 use tokio_postgres::Config;
 use tokio_postgres::config::SslMode;
@@ -51,8 +50,6 @@ impl fmt::Debug for NativeConnectionOptions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectionOptionsError {
-    #[error("sslmode {value:?} is not a supported PostgreSQL TLS mode")]
-    SslMode { value: String },
     #[error("pgbouncer must be true or false, got {value:?}")]
     PgbouncerFlag { value: String },
     #[error("sslfile {path} is not valid PEM: {source}")]
@@ -99,11 +96,6 @@ pub enum ConnectionOptionsError {
         #[source]
         source: rustls::Error,
     },
-    #[error("the signature verifiers could not be configured: {source}")]
-    SignatureVerifiers {
-        #[source]
-        source: VerifierBuilderError,
-    },
 }
 
 // Maps a Prisma- or libpq-dialect URL to the tokio-postgres Config plus the rustls connector.
@@ -136,9 +128,11 @@ struct TlsRequest {
 }
 
 fn tls_request(pairs: &[(String, String)]) -> Result<TlsRequest, ConnectionOptionsError> {
+    // Prisma's query parser lets the last duplicate key win, so the native mapping does too
     let value = |key: &str| {
         pairs
             .iter()
+            .rev()
             .find(|(existing, _)| existing == key)
             .map(|(_, found)| found.clone())
     };
@@ -146,18 +140,17 @@ fn tls_request(pairs: &[(String, String)]) -> Result<TlsRequest, ConnectionOptio
     let sslaccept = value("sslaccept");
     let sslcert = value("sslcert");
     let sslkey = value("sslkey");
-    if pairs.iter().any(|(key, _)| key == "sslidentity") {
-        return Err(ConnectionOptionsError::UnsupportedIdentity);
-    }
-    if pairs.iter().any(|(key, _)| key == "sslpassword") {
-        return Err(ConnectionOptionsError::EncryptedKey);
-    }
-    let mode = tls_mode(sslmode.as_deref())?;
+    reject_unsupported_identity(pairs)?;
+    let has_root = pairs.iter().any(|(key, _)| key == "sslrootcert")
+        || (sslcert.is_some() && sslkey.is_none());
+    let mode = tls_mode(sslmode.as_deref());
     let verifies_mode = matches!(sslmode.as_deref(), Some("verify-ca" | "verify-full"));
     let verify = mode != SslMode::Disable
         && sslaccept
             .as_deref()
-            .map_or(verifies_mode, |accept| accept == "strict");
+            .map_or(verifies_mode || has_root, |accept| {
+                accept != "accept_invalid_certs"
+            });
     let (identity, ca_path) = identity_paths(sslcert, sslkey)?;
     let root_paths = pairs
         .iter()
@@ -173,6 +166,16 @@ fn tls_request(pairs: &[(String, String)]) -> Result<TlsRequest, ConnectionOptio
         connection_pairs: connection_pairs(pairs),
         disable_prepared_statements: pgbouncer_flag(pairs)?,
     })
+}
+
+fn reject_unsupported_identity(pairs: &[(String, String)]) -> Result<(), ConnectionOptionsError> {
+    if pairs.iter().any(|(key, _)| key == "sslidentity") {
+        return Err(ConnectionOptionsError::UnsupportedIdentity);
+    }
+    if pairs.iter().any(|(key, _)| key == "sslpassword") {
+        return Err(ConnectionOptionsError::EncryptedKey);
+    }
+    Ok(())
 }
 
 type ClientIdentityPaths = (Option<(String, String)>, Option<String>);
@@ -200,14 +203,12 @@ fn connection_pairs(pairs: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
-fn tls_mode(value: Option<&str>) -> Result<SslMode, ConnectionOptionsError> {
+// Prisma reads an unknown or blank sslmode as prefer, so it never turns into a startup error here.
+fn tls_mode(value: Option<&str>) -> SslMode {
     match value {
-        None | Some("prefer") => Ok(SslMode::Prefer),
-        Some("disable") => Ok(SslMode::Disable),
-        Some("require" | "verify-ca" | "verify-full") => Ok(SslMode::Require),
-        Some(other) => Err(ConnectionOptionsError::SslMode {
-            value: other.to_owned(),
-        }),
+        Some("disable") => SslMode::Disable,
+        Some("require" | "verify-ca" | "verify-full") => SslMode::Require,
+        _ => SslMode::Prefer,
     }
 }
 
@@ -215,6 +216,7 @@ fn tls_mode(value: Option<&str>) -> Result<SslMode, ConnectionOptionsError> {
 fn pgbouncer_flag(pairs: &[(String, String)]) -> Result<bool, ConnectionOptionsError> {
     let Some(flag) = pairs
         .iter()
+        .rev()
         .find(|(key, _)| key == "pgbouncer")
         .map(|(_, value)| value.as_str())
     else {

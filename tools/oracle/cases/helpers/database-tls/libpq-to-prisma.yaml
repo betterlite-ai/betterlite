@@ -25,6 +25,14 @@ call:
       - function: translate_libpq_ssl_params
         url: "postgresql://host:99999/db?sslrootcert=ca.pem"
       - function: translate_libpq_ssl_params
+        url: "postgresql://host: 5432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:+5432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:5_432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:-0/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
         url: "postgresql://host:notaport/db?sslmode=verify-full"
 env: {}
 compare: {ignore: []}

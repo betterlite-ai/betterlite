@@ -52,7 +52,6 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rstest = "=0.27.0"
 serde_json = { version = "1.0.145", features = ["raw_value"] }
 tempfile = "3.27.0"
-testcontainers.workspace = true
 tokio.workspace = true
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true

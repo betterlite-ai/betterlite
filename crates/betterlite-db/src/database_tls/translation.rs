@@ -93,47 +93,23 @@ fn host_and_port(parts: &SplitUrl) -> Result<(String, u16), TranslateError> {
     Ok((hostname.to_lowercase(), resolved))
 }
 
-// Mirrors Python's int(port, 10): surrounding space, a sign and digit-group underscores are accepted.
+// CPython 3.13's urlsplit only casts a port made of ASCII digits; a sign, space or underscore is a ValueError.
 fn port_value(text: &str) -> Result<Option<u16>, TranslateError> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
+    if text.is_empty() {
         return Ok(None);
     }
-    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
-        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-        |rest| (true, rest),
-    );
-    if !integer_literal(digits) {
+    if !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(TranslateError::MalformedPort {
             value: text.to_owned(),
         });
     }
-    let cleaned: String = digits
-        .chars()
-        .filter(|character| *character != '_')
-        .collect();
-    let signed = if negative {
-        format!("-{cleaned}")
-    } else {
-        cleaned
-    };
     let out_of_range = || TranslateError::PortOutOfRange {
         value: text.to_owned(),
     };
-    let value: i64 = signed.parse().map_err(|_source| out_of_range())?;
+    let value: u64 = text.parse().map_err(|_source| out_of_range())?;
     u16::try_from(value)
         .map(Some)
         .map_err(|_source| out_of_range())
-}
-
-fn integer_literal(digits: &str) -> bool {
-    !digits.is_empty()
-        && !digits.starts_with('_')
-        && !digits.ends_with('_')
-        && !digits.contains("__")
-        && digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
 }
 
 // Mirrors utils.py::_strip_prisma_query_params; an unqueried URL keeps every byte the operator wrote.
