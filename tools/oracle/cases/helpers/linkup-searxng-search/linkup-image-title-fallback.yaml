@@ -1,0 +1,14 @@
+kind: helper
+name: linkup-image-title-fallback
+call:
+  b8023:
+    operation: linkup_reply
+    params:
+      body: |-
+        {"results":[
+          {"type":"image","url":"https://img.test/a.png","content":"logo"},
+          {"name":"Rust","url":"https://rust.test","content":"lang"},
+          {"type":"image","name":"Named","url":"https://img.test/b.png","content":"b"}
+        ]}
+env: {}
+compare: {ignore: []}

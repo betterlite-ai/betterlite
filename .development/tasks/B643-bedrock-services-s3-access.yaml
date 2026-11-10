@@ -392,7 +392,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_access)"
       && grep -q 'decode_managed_file_id' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_access.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_access_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_access_corpus(::|$)/)'
   - id: config-aws-s3-bucket-name
     why: The AWS_S3_BUCKET_NAME setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_s3_access_config_cases::case_[0-9]+_loads_aws_s3_bucket_name$/)'

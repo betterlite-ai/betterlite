@@ -1,0 +1,42 @@
+kind: helper
+name: replicate-poll-nonstream-delays
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: poll
+    requests:
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: user, content: hi}
+        retries: 3
+        retry_delay: 1
+        now: 1700000000
+        create: {body: '{"urls":{"get":"https://poll/1"}}'}
+        polls:
+          - {body: '{"status":"processing"}'}
+          - {body: '{"status":"starting"}'}
+          - {body: '{"status":"succeeded","output":["ok"]}'}
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: user, content: hi}
+        retries: 2
+        retry_delay: 2
+        now: 1700000001
+        create: {body: '{"urls":{"get":"https://poll/2"}}'}
+        polls:
+          - {body: '{"status":"processing"}'}
+          - {body: '{"status":"processing"}'}
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: user, content: hi}
+        retries: 3
+        create: {body: "{}"}
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: user, content: hi}
+        retries: 3
+        retry_delay: 1
+        create: {body: '{"urls":{"get":"https://poll/3"}}'}
+        polls:
+          - {status: 500, body: '{"status":"processing"}'}

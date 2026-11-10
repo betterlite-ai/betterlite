@@ -1,0 +1,21 @@
+kind: helper
+name: aws-secrets-update-and-tag-after-restore
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [], kms_key_id: null}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 409, body: '{"Message":"ResourceExistsException: scheduled for deletion"}'}
+          - {status: 200, body: '{"ARN":"arn:one","DeletedDate":1700000000}'}
+          - {status: 200, body: '{"ARN":"arn:restored"}'}
+          - {status: 200, body: '{"ARN":"arn:updated","VersionId":"v2"}'}
+          - {status: 200, body: '{}'}
+    steps:
+      - {op: async_write_secret, name: prod/db, value: s3cr3t, description: gateway key, tags: [{Key: Environment, Value: Prod}]}

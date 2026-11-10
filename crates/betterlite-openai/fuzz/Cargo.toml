@@ -17,6 +17,20 @@ libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
+name = "aleph_lines"
+path = "fuzz_targets/aleph_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aleph_reply"
+path = "fuzz_targets/aleph_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "auth_record"
 path = "fuzz_targets/auth_record.rs"
 test = false
@@ -94,6 +108,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "infinity_embedding"
+path = "fuzz_targets/infinity_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "voyage_embedding_reply"
 path = "fuzz_targets/voyage_embedding_reply.rs"
 test = false
@@ -124,6 +145,13 @@ bench = false
 [[bin]]
 name = "cohere_chat_v2"
 path = "fuzz_targets/cohere_chat_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_chat_v1"
+path = "fuzz_targets/cohere_chat_v1.rs"
 test = false
 doc = false
 bench = false
@@ -257,6 +285,41 @@ bench = false
 [[bin]]
 name = "ragflow_vector_store"
 path = "fuzz_targets/ragflow_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nlp_cloud_reply"
+path = "fuzz_targets/nlp_cloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nlp_cloud_stream_lines"
+path = "fuzz_targets/nlp_cloud_stream_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mongodb_vector_store"
+path = "fuzz_targets/mongodb_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_workload_identity"
+path = "fuzz_targets/openai_workload_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huggingface_embedding_response"
+path = "fuzz_targets/huggingface_embedding_response.rs"
 test = false
 doc = false
 bench = false

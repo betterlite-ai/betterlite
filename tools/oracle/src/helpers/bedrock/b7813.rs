@@ -6,7 +6,7 @@ use betterlite_rag::valkey_vector_store::params::ValkeyParams;
 use betterlite_rag::valkey_vector_store::ports::{ValkeyDocument, ValkeyTimeout, socket_timeouts};
 use betterlite_rag::valkey_vector_store::query::knn_query;
 use betterlite_rag::valkey_vector_store::reply::search_response;
-use betterlite_rag::valkey_vector_store::{build_valkey_url, pack_vector};
+use betterlite_redis::valkey::{build_valkey_url, pack_vector};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};

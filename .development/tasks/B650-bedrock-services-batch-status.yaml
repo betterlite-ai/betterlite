@@ -257,7 +257,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_status)"
       && grep -q 'decode_batch_status' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_status.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_status_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_status_corpus(::|$)/)'
   - id: case-retrieve-signed-request
     why: 'Require B198 is_bedrock_arn prefix or ValueError Invalid batch_id format. Expected ARN, got: {batch_id};
       split colon fewer than6 -> Invalid ARN format: {batch_id}; region not matching ^[a-z][a-z0-9-]*$ -> Invalid

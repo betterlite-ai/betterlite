@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-media-files-uri-without-mime
+call:
+  gemini_media:
+    call: files_uri_without_mime
+    cases:
+      - url: "https://generativelanguage.googleapis.com/v1beta/files/abc"
+      - url: "https://generativelanguage.googleapis.com/v1beta/files/def"
+        hints:
+          format: "image/png"
+      - url: "https://generativelanguage.googleapis.com/v1beta/files/ghi"
+        hints:
+          format: "IMAGE/JPG"
+env: {}
+compare:
+  ignore: []

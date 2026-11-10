@@ -1,0 +1,12 @@
+kind: helper
+name: caching-list-operations-lpop-single-item
+call:
+  b4329:
+    operation: lpop
+    namespace: ns
+    redis_version: "7.2.0"
+    lists:
+      "ns:queue": ["first", "second"]
+    key: queue
+env: {}
+compare: {ignore: []}
