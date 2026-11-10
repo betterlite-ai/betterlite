@@ -292,7 +292,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_search)"
       && grep -q 'decode_grounding_reply' crates/betterlite-azure/fuzz/fuzz_targets/azure_search.rs && cargo nextest
-      run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_search_corpus$/)'
+      run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_search_corpus(::|$)/)'
   - id: case-search-settings
     why: Require truthy BING_GROUNDING_PROJECT_ENDPOINT unless explicit api_base resolves; trim trailing slashes
       and append /openai/v1/responses only when that suffix is absent. Missing endpoint raises ValueError with its

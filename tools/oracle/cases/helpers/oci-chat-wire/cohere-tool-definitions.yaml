@@ -1,0 +1,24 @@
+kind: helper
+name: oci-chat-wire-cohere-tool-definitions
+call:
+  b5942:
+    function: cohere_tools
+    tools:
+      - type: function
+        function:
+          name: lookup
+          description: "Look up"
+          parameters:
+            type: object
+            properties:
+              q:
+                type: string
+                description: "query"
+                enum: [a, b]
+              n:
+                type: integer
+                minimum: 1
+                maximum: 5
+            required: [q]
+env: {}
+compare: {ignore: []}

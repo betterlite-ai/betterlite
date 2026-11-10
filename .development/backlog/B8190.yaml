@@ -1,7 +1,7 @@
 id: B8190
 milestone: M9 agents and mcp
 title: MCP wire compatibility, result conversion and errors
-status: todo
+status: done
 depends_on: []
 file: tasks/B8190-mcp-wire-results.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/proxy/_experimental/mcp_server/exceptions.py"
 parent: B136
 split_from: B136
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1038

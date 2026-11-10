@@ -1,0 +1,46 @@
+kind: helper
+name: zero-cost-diagnostic-calculation-error-before-missing-pricing-key
+call:
+  zero_cost_diagnostic:
+    probes:
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 5
+        calculation_failed: true
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 5
+          output_cost_per_token: 6
+        calculation_failed: true
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 5
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 5
+        calculation_failed: true
+        model: model
+        model_group: group
+        custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

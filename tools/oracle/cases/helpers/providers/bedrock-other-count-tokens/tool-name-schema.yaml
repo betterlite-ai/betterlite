@@ -1,0 +1,25 @@
+kind: helper
+name: tool-name-schema
+call:
+  bedrock_other_count_tokens:
+    tool_name_schema:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - role: user
+            content: hi
+        tools:
+          - name: my-tool
+            description: keeps
+            input_schema: {type: object}
+          - name: 9lives
+          - {}
+          - name: 123
+          - name: a b.c/d
+            description: d
+          - name: 1 tool-name/with spaces_and_more_characters_that_go_past_the_limit_1234567890
+          - name: é
+          - junk
+          - 5
+env: {}
+compare: {ignore: []}
