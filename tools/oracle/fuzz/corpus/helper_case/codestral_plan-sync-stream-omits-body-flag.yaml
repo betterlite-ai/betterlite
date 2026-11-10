@@ -1,0 +1,13 @@
+kind: helper
+name: sync-stream-omits-body-flag
+call:
+  codestral_plan:
+    calls:
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        timeout: 12.5
+        optional_params: {stream: true, temperature: 0.2}
+env: {}
+compare: {ignore: []}

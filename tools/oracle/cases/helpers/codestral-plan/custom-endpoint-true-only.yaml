@@ -1,0 +1,33 @@
+kind: helper
+name: custom-endpoint-true-only
+call:
+  codestral_plan:
+    calls:
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        api_base: "https://custom.example/v1/fim"
+        timeout: 12.5
+        optional_params: {custom_endpoint: true, temperature: 0.1}
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        timeout: 12.5
+        optional_params: {custom_endpoint: false}
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        api_base: ""
+        timeout: 12.5
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        api_base: "https://ignored.example/fim"
+        timeout: 12.5
+        optional_params: {custom_endpoint: null}
+env: {}
+compare: {ignore: []}
