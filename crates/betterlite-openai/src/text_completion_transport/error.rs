@@ -26,6 +26,8 @@ pub enum ErrorSource {
     Chunk(#[from] ProviderChunkError),
     #[error("Missing model or messages")]
     Raised,
+    #[error(transparent)]
+    Serialize(serde_json::Error),
     #[error("{message}")]
     Invalid { message: String },
 }
@@ -49,12 +51,15 @@ impl TextCompletionError {
                     status.status.map_or(ErrorStatus::Null, ErrorStatus::Code),
                     Some(SecretHeaders::from_response(&status.headers)),
                 ),
-                SdkError::Other { .. } => (ErrorStatus::Missing, None),
+                SdkError::Decode(_) | SdkError::Sse(_) | SdkError::Other { .. } => {
+                    (ErrorStatus::Missing, None)
+                }
             },
             ErrorSource::Raised => (ErrorStatus::Code(422), None),
             ErrorSource::Transform(_)
             | ErrorSource::Logging(_)
             | ErrorSource::Chunk(_)
+            | ErrorSource::Serialize(_)
             | ErrorSource::Invalid { .. } => (ErrorStatus::Missing, None),
         };
         Self {
@@ -75,10 +80,23 @@ pub enum TextCompletionFailure {
     Raw(#[from] SdkError),
 }
 
+// Whether the handler wraps an SDK error in OpenAIError or lets it through unchanged
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorMode {
+    Mapped,
+    Raw,
+}
+
 impl TextCompletionFailure {
     pub(super) fn invalid(message: String) -> Self {
         Self::Wrapped(TextCompletionError::wrapped(ErrorSource::Invalid {
             message,
         }))
+    }
+}
+
+impl From<serde_json::Error> for TextCompletionFailure {
+    fn from(source: serde_json::Error) -> Self {
+        Self::Wrapped(TextCompletionError::wrapped(ErrorSource::Serialize(source)))
     }
 }

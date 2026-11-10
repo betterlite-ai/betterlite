@@ -5,8 +5,9 @@ mod support;
 use std::collections::BTreeMap;
 use std::future::Future;
 
+use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
 use futures_util::StreamExt as _;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -17,9 +18,8 @@ use super::call::{
     TextCompletionCall, TextCompletionOutcome, TextCompletionRequest, validate_environment,
 };
 use super::error::{ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure};
-use super::logging::{PreCallRecord, ResponseKind, SecretHeaders};
+use super::logging::{PreCallRecord, ResponseKind, SecretHeaders, base_hidden_params};
 use super::sdk::{ClientKind, HttpClientSource, SdkArguments, SdkError, StatusError};
-use super::stream::StreamItemError;
 use support::{Answer, RecordingLogger};
 
 type Transport = super::TextCompletionTransport<support::Constructor>;
@@ -108,7 +108,7 @@ fn stream_chunks(transport: &Transport, request: TextCompletionRequest) -> Vec<V
     let TextCompletionOutcome::Stream(stream) = outcome else {
         panic!("the streaming path answered buffered");
     };
-    let items: Vec<Result<StreamChunk, StreamItemError>> = run(stream.collect());
+    let items: Vec<Result<StreamChunk, TextCompletionError>> = run(stream.collect());
     items
         .into_iter()
         .map(|item| match item {
@@ -455,6 +455,7 @@ fn stream_boundaries() {
     sync_send_error_is_wrapped();
     async_send_error_stays_raw();
     iteration_boundaries();
+    hidden_model_id();
     stream_options_reach_the_wrapper();
 }
 
@@ -515,45 +516,64 @@ fn async_send_error_stays_raw() {
     assert_eq!(status.code.as_deref(), Some("invalid"));
 }
 
+// handler.py wraps every iteration failure in OpenAIError, on the sync and the async stream alike
 fn iteration_boundaries() {
-    let events = vec![support::chunk("hi", None)];
-    let (transport_mapped, _constructor_mapped) = support::transport(Answer::stream_failure(
-        events.clone(),
-        support::Failure::status(400),
-    ));
-    let exchange_mapped = begin_send(
-        &transport_mapped,
-        text_request(vec![("stream", Value::Bool(true))]),
+    for acompletion in [false, true] {
+        let (transport, _constructor) = support::transport(Answer::stream_failure(
+            vec![support::chunk("hi", None)],
+            support::Failure::status(400),
+        ));
+        let mut stream_request = text_request(vec![("stream", Value::Bool(true))]);
+        stream_request.acompletion = acompletion;
+        let exchange = begin_send(&transport, stream_request);
+        let (outcome, _logger) = finish(&transport, exchange);
+        let TextCompletionOutcome::Stream(stream) = outcome else {
+            panic!("not a stream");
+        };
+        let items: Vec<Result<StreamChunk, TextCompletionError>> = run(stream.collect());
+        match items.last().expect("iteration failure") {
+            Err(TextCompletionError { status, .. }) => {
+                assert_eq!(*status, ErrorStatus::Code(400));
+            }
+            other => panic!("the iteration error was not wrapped (async {acompletion}): {other:?}"),
+        }
+    }
+}
+
+// CustomStreamWrapper reads litellm_params["model_info"]["id"] into the hidden params
+fn hidden_model_id() {
+    let hidden_id = |params: Vec<(&str, Json)>| {
+        let litellm_params = params
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect();
+        base_hidden_params(&litellm_params).remove("model_id")
+    };
+    let info = |fields: Vec<(&str, Json)>| {
+        Json::Object(
+            fields
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value))
+                .collect(),
+        )
+    };
+    let deployment = Some(JsonValue::String("deploy-1".to_owned()));
+    assert_eq!(
+        hidden_id(vec![(
+            "model_info",
+            info(vec![("id", Json::Text("deploy-1".to_owned()))])
+        )]),
+        deployment
     );
-    let (outcome_mapped, _logger_mapped) = finish(&transport_mapped, exchange_mapped);
-    let TextCompletionOutcome::Stream(stream_mapped) = outcome_mapped else {
-        panic!("not a stream");
-    };
-    let items_mapped: Vec<Result<StreamChunk, StreamItemError>> = run(stream_mapped.collect());
-    match items_mapped.last().expect("iteration failure") {
-        Err(StreamItemError::Mapped(TextCompletionError { status, .. })) => {
-            assert_eq!(*status, ErrorStatus::Code(400));
-        }
-        other => panic!("the sync iteration error was not wrapped: {other:?}"),
-    }
-    let (transport_raw, _constructor_raw) = support::transport(Answer::stream_failure(
-        events,
-        support::Failure::status(400),
-    ));
-    let mut raw_request = text_request(vec![("stream", Value::Bool(true))]);
-    raw_request.acompletion = true;
-    let exchange_raw = begin_send(&transport_raw, raw_request);
-    let (outcome_raw, _logger_raw) = finish(&transport_raw, exchange_raw);
-    let TextCompletionOutcome::Stream(stream_raw) = outcome_raw else {
-        panic!("not a stream");
-    };
-    let items_raw: Vec<Result<StreamChunk, StreamItemError>> = run(stream_raw.collect());
-    match items_raw.last().expect("iteration failure") {
-        Err(StreamItemError::Sdk(SdkError::Status(status))) => {
-            assert_eq!(status.status, Some(400));
-        }
-        other => panic!("the async iteration error was not raw: {other:?}"),
-    }
+    assert_eq!(hidden_id(Vec::new()), Some(JsonValue::Null));
+    assert_eq!(
+        hidden_id(vec![("model_info", info(Vec::new()))]),
+        Some(JsonValue::Null)
+    );
+    assert_eq!(
+        hidden_id(vec![("model_info", Json::Text("deploy-1".to_owned()))]),
+        Some(JsonValue::Null)
+    );
 }
 
 fn stream_options_reach_the_wrapper() {
@@ -613,6 +633,23 @@ fn text_completion_transport_credential_identity_isolation() {
     assert!(!format!("{failure:?}").contains("sk-gamma"));
 }
 
+// Caller headers travel in the request body as extra_headers, so the call and its pre-call record print keys only
+fn caller_headers_stay_hidden(secret: &str) {
+    let (transport, _constructor) =
+        support::transport(Answer::buffered(&support::completion_body()));
+    let mut headed_request = text_request(Vec::new());
+    headed_request.headers = Some(SecretHeaders(BTreeMap::from([(
+        "x-caller-key".to_owned(),
+        secret.to_owned(),
+    )])));
+    let (call, logger) = begin_only(&transport, headed_request);
+    let record = first_pre(&logger);
+    assert!(record.complete_input_dict.contains_key("extra_headers"));
+    assert!(!format!("{call:?}").contains(secret));
+    assert!(!format!("{record:?}").contains(secret));
+    assert!(format!("{record:?}").contains("extra_headers"));
+}
+
 #[test]
 fn text_completion_transport_secret_safe_failure() {
     let secret = "sk-fixture-secret-value";
@@ -639,6 +676,7 @@ fn text_completion_transport_secret_safe_failure() {
     let shown = format!("{record:?}");
     assert!(!shown.contains(secret));
     assert!(shown.contains("Authorization"));
+    caller_headers_stay_hidden(secret);
     let rejected = SdkError::Status(Box::new(StatusError {
         status: Some(401),
         message: "provider rejected the key".to_owned(),

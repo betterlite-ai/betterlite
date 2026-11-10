@@ -11,7 +11,6 @@ use betterlite_openai::text_completion_transport::error::{
 };
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::sdk::{ClientKind, SdkError};
-use betterlite_openai::text_completion_transport::stream::StreamItemError;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::StreamExt as _;
 use secrecy::SecretString;
@@ -91,19 +90,9 @@ fn sdk_raised(error: &SdkError) -> Raised {
             failure.status,
             SecretHeaders::from_response(&failure.headers).0,
         ),
-        SdkError::Other { .. } => (None, BTreeMap::new()),
+        SdkError::Decode(_) | SdkError::Sse(_) | SdkError::Other { .. } => (None, BTreeMap::new()),
     };
     Raised::new(false, status, error.to_string(), headers)
-}
-
-fn item_raised(error: StreamItemError) -> Raised {
-    match error {
-        StreamItemError::Mapped(wrapped) => wrapped_raised(&wrapped),
-        StreamItemError::Sdk(source) => sdk_raised(&source),
-        StreamItemError::Chunk(source) => {
-            Raised::new(false, None, source.to_string(), BTreeMap::new())
-        }
-    }
 }
 
 fn wrapped_raised(error: &TextCompletionError) -> Raised {
@@ -162,7 +151,7 @@ async fn flow(
                 match item {
                     Ok(chunk) => seen.push(project(&chunk)),
                     Err(error) => {
-                        output.raised = Some(item_raised(error));
+                        output.raised = Some(wrapped_raised(&error));
                         break;
                     }
                 }

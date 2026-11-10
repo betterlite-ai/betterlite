@@ -154,6 +154,9 @@ class Recorder:
     def ignore(self, *_args: object, **_kwargs: object) -> None:
         return None
 
+    async def dispatch_failure_handlers(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
     def pre_call(self, input: Json, api_key: str | None, additional_args: Object) -> None:  # noqa: A002
         record: Object = {"input": input, "api_key": api_key, **additional_args}
         self.fixture.pre_call_records.append(record)
@@ -202,7 +205,8 @@ def project(chunk: object) -> Json:
 
 
 async def collect_async(stream: AsyncIterator[object], chunks: list[Json]) -> None:
-    chunks.extend([project(chunk) async for chunk in stream])
+    async for chunk in stream:
+        chunks.append(project(chunk))  # noqa: PERF401
 
 
 def collect(outcome: object, output: Object) -> None:

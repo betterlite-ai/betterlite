@@ -54,7 +54,6 @@ pub struct TextCompletionCall {
     pub(super) context: CallContext,
 }
 
-#[derive(Debug)]
 pub(super) struct CallContext {
     pub model: String,
     pub api_key: Option<SecretString>,
@@ -66,6 +65,24 @@ pub(super) struct CallContext {
     pub max_retries: Option<i64>,
     pub acompletion: bool,
     pub streaming: bool,
+}
+
+// data carries the caller's headers under extra_headers, so Debug names its keys and no values
+impl fmt::Debug for CallContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CallContext")
+            .field("model", &self.model)
+            .field("api_key", &self.api_key)
+            .field("api_base", &self.api_base)
+            .field("timeout", &self.timeout)
+            .field("organization", &self.organization)
+            .field("data", &self.data.keys().collect::<Vec<_>>())
+            .field("headers", &self.headers)
+            .field("max_retries", &self.max_retries)
+            .field("acompletion", &self.acompletion)
+            .field("streaming", &self.streaming)
+            .finish()
+    }
 }
 
 #[must_use]

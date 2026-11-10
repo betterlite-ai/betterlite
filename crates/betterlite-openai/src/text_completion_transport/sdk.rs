@@ -8,6 +8,8 @@ use secrecy::SecretString;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+use crate::stream::SseError;
+
 // The OpenAI SDK's two client classes; only construction differs for these endpoint calls
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,11 +56,15 @@ impl fmt::Debug for StatusError {
     }
 }
 
-// What the OpenAI SDK raises: an API status error carries the response facts, any other exception only its text.
+// What the OpenAI SDK raises: an API status error carries the response facts, Other is text an SDK implementation hands over.
 #[derive(Debug, Error)]
 pub enum SdkError {
     #[error("{}", .0.message)]
     Status(Box<StatusError>),
+    #[error("the answer is not a completion: {0}")]
+    Decode(#[source] serde_json::Error),
+    #[error(transparent)]
+    Sse(#[from] SseError),
     #[error("{message}")]
     Other { message: String },
 }
@@ -126,9 +132,7 @@ impl RawCompletion {
                 if status >= 400 {
                     return Err(status_error(status, headers, &body));
                 }
-                let reply = serde_json::from_slice(&body).map_err(|source| SdkError::Other {
-                    message: format!("the answer is not a completion: {source}"),
-                })?;
+                let reply = serde_json::from_slice(&body).map_err(SdkError::Decode)?;
                 Ok(ParsedCompletion::Buffered(Box::new(reply)))
             }
             Self::Stream {

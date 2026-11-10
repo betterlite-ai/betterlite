@@ -13,7 +13,6 @@ use betterlite_streaming::stream_chunk_shaping::records::{
 };
 use betterlite_streaming::stream_chunk_shaping::tokens::check_send_stream_usage;
 use futures_util::{Stream, StreamExt as _, stream};
-use thiserror::Error;
 use uuid::Uuid;
 
 use super::error::{ErrorSource, TextCompletionError};
@@ -22,25 +21,7 @@ use crate::stream::SseParser;
 
 // The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
 pub type CompletionStream =
-    Pin<Box<dyn Stream<Item = Result<StreamChunk, StreamItemError>> + Send>>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorMode {
-    // The sync wrapper maps every iteration failure to litellm's OpenAIError, as streaming() does
-    Mapped,
-    // async_streaming only catches during iteration and keeps the original SDK error
-    Raw,
-}
-
-#[derive(Debug, Error)]
-pub enum StreamItemError {
-    #[error(transparent)]
-    Mapped(#[from] TextCompletionError),
-    #[error(transparent)]
-    Sdk(#[from] SdkError),
-    #[error(transparent)]
-    Chunk(#[from] ProviderChunkError),
-}
+    Pin<Box<dyn Stream<Item = Result<StreamChunk, TextCompletionError>> + Send>>;
 
 pub struct StreamSetup {
     pub model: String,
@@ -51,12 +32,6 @@ pub struct StreamSetup {
     pub repeated_chunk_limit: usize,
     pub now: fn() -> StreamInstant,
     pub next_id: fn() -> Uuid,
-    pub mode: ErrorMode,
-}
-
-enum StreamSource {
-    Sdk(SdkError),
-    Chunk(ProviderChunkError),
 }
 
 struct StreamState {
@@ -65,24 +40,8 @@ struct StreamState {
     pending: VecDeque<Vec<u8>>,
     shaper: ChunkShaper,
     decode: DecodeState,
-    mode: ErrorMode,
     done: bool,
     exhausted: bool,
-}
-
-impl StreamState {
-    fn failure(&self, source: StreamSource) -> StreamItemError {
-        match (self.mode, source) {
-            (ErrorMode::Raw, StreamSource::Sdk(error)) => StreamItemError::Sdk(error),
-            (ErrorMode::Raw, StreamSource::Chunk(error)) => StreamItemError::Chunk(error),
-            (ErrorMode::Mapped, StreamSource::Sdk(error)) => StreamItemError::Mapped(
-                TextCompletionError::wrapped(ErrorSource::Sdk(Box::new(error))),
-            ),
-            (ErrorMode::Mapped, StreamSource::Chunk(error)) => {
-                StreamItemError::Mapped(TextCompletionError::wrapped(ErrorSource::Chunk(error)))
-            }
-        }
-    }
 }
 
 fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
@@ -95,20 +54,20 @@ fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
 fn process_payload(
     state: &mut StreamState,
     payload: &[u8],
-) -> Option<Result<StreamChunk, StreamItemError>> {
+) -> Option<Result<StreamChunk, TextCompletionError>> {
     let chunk = match provider_chunk(payload) {
         Ok(chunk) => chunk,
-        Err(error) => return Some(Err(state.failure(StreamSource::Chunk(error)))),
+        Err(error) => return Some(Err(TextCompletionError::wrapped(ErrorSource::Chunk(error)))),
     };
     match chunk_creator(&mut state.shaper, &mut state.decode, &chunk) {
         Ok(transformed) => transformed.map(Ok),
-        Err(error) => Some(Err(state.failure(StreamSource::Chunk(error)))),
+        Err(error) => Some(Err(TextCompletionError::wrapped(ErrorSource::Chunk(error)))),
     }
 }
 
 async fn step(
     mut state: StreamState,
-) -> Option<(Result<StreamChunk, StreamItemError>, StreamState)> {
+) -> Option<(Result<StreamChunk, TextCompletionError>, StreamState)> {
     loop {
         if state.done {
             return None;
@@ -130,15 +89,13 @@ async fn step(
             Some(Ok(bytes)) => match state.parser.push(&bytes) {
                 Ok(events) => state.pending.extend(events),
                 Err(error) => {
-                    let failure = state.failure(StreamSource::Sdk(SdkError::Other {
-                        message: error.to_string(),
-                    }));
-                    return Some((Err(failure), state));
+                    let source = ErrorSource::Sdk(Box::new(SdkError::Sse(error)));
+                    return Some((Err(TextCompletionError::wrapped(source)), state));
                 }
             },
             Some(Err(error)) => {
-                let failure = state.failure(StreamSource::Sdk(error));
-                return Some((Err(failure), state));
+                let source = ErrorSource::Sdk(Box::new(error));
+                return Some((Err(TextCompletionError::wrapped(source)), state));
             }
             None => {
                 state.pending.extend(state.parser.finish());
@@ -179,7 +136,6 @@ pub fn completion_stream(bytes: ByteStream, setup: StreamSetup) -> CompletionStr
         pending: VecDeque::new(),
         shaper,
         decode,
-        mode: setup.mode,
         done: false,
         exhausted: false,
     };

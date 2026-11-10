@@ -18,14 +18,14 @@ use self::call::{
     CallContext, SentCompletion, TextCompletionCall, TextCompletionOutcome, TextCompletionReply,
     TextCompletionRequest, prepare,
 };
-use self::error::{ErrorSource, TextCompletionError, TextCompletionFailure};
+use self::error::{ErrorMode, ErrorSource, TextCompletionError, TextCompletionFailure};
 use self::logging::{CompletionLogger, PostCallRecord, ResponseKind};
 use self::reply::text_response;
 use self::sdk::{
     ClientConstructor, ClientKind, HttpClientSource, ParsedCompletion, SdkArguments, SdkError,
     TextCompletionSdk as _, missing_api_key,
 };
-use self::stream::{ErrorMode, StreamSetup, completion_stream};
+use self::stream::{StreamSetup, completion_stream};
 
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
 const REPEATED_CHUNK_LIMIT: usize = 100;
@@ -150,13 +150,9 @@ where
             .await
             .map_err(|source| failure(route.send, source))?;
         match raw.parse().map_err(|source| failure(route.send, source))? {
-            ParsedCompletion::Buffered(reply) => serde_json::to_value(reply.as_ref())
-                .map(SentCompletion::Buffered)
-                .map_err(|source| {
-                    TextCompletionFailure::invalid(format!(
-                        "the completion cannot be written as JSON: {source}"
-                    ))
-                }),
+            ParsedCompletion::Buffered(reply) => Ok(SentCompletion::Buffered(
+                serde_json::to_value(reply.as_ref())?,
+            )),
             ParsedCompletion::Stream(bytes) => Ok(SentCompletion::Stream(bytes)),
         }
     }
@@ -173,12 +169,7 @@ where
                 record_buffered_reply(context, logger, dumped).map(TextCompletionOutcome::Buffered)
             }
             SentCompletion::Stream(bytes) => {
-                let mode = if context.acompletion {
-                    ErrorMode::Raw
-                } else {
-                    ErrorMode::Mapped
-                };
-                let setup = stream_setup(context, logger, mode, self.now, self.next_id);
+                let setup = stream_setup(context, logger, self.now, self.next_id);
                 Ok(TextCompletionOutcome::Stream(completion_stream(
                     bytes, setup,
                 )))
@@ -205,10 +196,7 @@ fn record_buffered_reply(
         api_base: context.api_base.clone(),
     });
     let hidden = if context.acompletion {
-        let json = serde_json::to_string(&dumped).map_err(|source| {
-            TextCompletionFailure::invalid(format!("the response cannot be serialized: {source}"))
-        })?;
-        Some(json)
+        Some(serde_json::to_string(&dumped)?)
     } else {
         None
     };
@@ -221,7 +209,6 @@ fn record_buffered_reply(
 fn stream_setup(
     context: &CallContext,
     logger: &dyn CompletionLogger,
-    mode: ErrorMode,
     now: fn() -> StreamInstant,
     next_id: fn() -> Uuid,
 ) -> StreamSetup {
@@ -241,7 +228,6 @@ fn stream_setup(
         repeated_chunk_limit: REPEATED_CHUNK_LIMIT,
         now,
         next_id,
-        mode,
     }
 }
 

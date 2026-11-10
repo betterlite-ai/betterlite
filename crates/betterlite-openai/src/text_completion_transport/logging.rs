@@ -59,13 +59,28 @@ pub enum ResponseKind {
     SdkObject,
 }
 
-#[derive(Debug)]
 pub struct PreCallRecord {
     pub input: Vec<Value>,
     pub api_key: Option<SecretString>,
     pub headers: SecretHeaders,
     pub api_base: Option<String>,
     pub complete_input_dict: serde_json::Map<String, Value>,
+}
+
+// complete_input_dict holds the caller's headers under extra_headers, so Debug names its keys and no values
+impl fmt::Debug for PreCallRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreCallRecord")
+            .field("input", &self.input)
+            .field("api_key", &self.api_key)
+            .field("headers", &self.headers)
+            .field("api_base", &self.api_base)
+            .field(
+                "complete_input_dict",
+                &self.complete_input_dict.keys().collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -93,8 +108,8 @@ pub trait CompletionLogger {
     fn stream_defaults(&self) -> StreamDefaults;
 }
 
-// B249's pre-call and post-call dispatch over the transport's records
-pub struct B249Logger<'call, 'env> {
+// The logging crate's pre-call and post-call dispatch over the transport's records
+pub struct PrePostLogger<'call, 'env> {
     pub state: &'call mut LoggingState,
     pub env: &'call PrePostEnv<'env>,
 }
@@ -103,7 +118,7 @@ pub struct B249Logger<'call, 'env> {
 fn additional_args(
     api_base: Option<String>,
     headers: SecretHeaders,
-    body: serde_json::Map<String, Value>,
+    body: Option<serde_json::Map<String, Value>>,
 ) -> AdditionalArgs {
     AdditionalArgs {
         api_base,
@@ -114,9 +129,9 @@ fn additional_args(
                 .map(|(name, value)| (name, Json::Text(value)))
                 .collect(),
         ),
-        complete_input_dict: Some(RawBody::Object(
-            serde_json::from_value(Value::Object(body)).unwrap_or_default(),
-        )),
+        complete_input_dict: body.map(|fields| {
+            RawBody::Object(serde_json::from_value(Value::Object(fields)).unwrap_or_default())
+        }),
         request_str: None,
         openai_sdk: None,
         passthrough: IndexMap::new(),
@@ -138,9 +153,13 @@ fn stream_options(value: &Json) -> StreamOptions {
     StreamOptions { include_usage }
 }
 
-fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> JsonObject {
+pub(super) fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> JsonObject {
     let mut hidden = JsonObject::new();
-    hidden.insert("model_id".to_owned(), JsonValue::Null);
+    let model_id = match litellm_params.get("model_info") {
+        Some(Json::Object(info)) => info.get("id").and_then(shaping_json),
+        _ => None,
+    };
+    hidden.insert("model_id".to_owned(), model_id.unwrap_or(JsonValue::Null));
     hidden.insert(
         "api_base".to_owned(),
         litellm_params
@@ -156,7 +175,7 @@ fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> JsonObject {
     hidden
 }
 
-impl CompletionLogger for B249Logger<'_, '_> {
+impl CompletionLogger for PrePostLogger<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let call = PreCall {
             input: serde_json::from_value(Value::Array(record.input)).unwrap_or(Json::Null),
@@ -164,7 +183,7 @@ impl CompletionLogger for B249Logger<'_, '_> {
             additional_args: additional_args(
                 record.api_base,
                 record.headers,
-                record.complete_input_dict,
+                Some(record.complete_input_dict),
             ),
         };
         pre_call(self.state, &call, self.env)?;
@@ -176,11 +195,7 @@ impl CompletionLogger for B249Logger<'_, '_> {
             original_response: serde_json::from_value(record.original_response)
                 .unwrap_or(Json::Null),
             input: Json::Null,
-            additional_args: additional_args(
-                record.api_base,
-                record.headers,
-                serde_json::Map::new(),
-            ),
+            additional_args: additional_args(record.api_base, record.headers, None),
         };
         post_call(self.state, &call, self.env);
     }
