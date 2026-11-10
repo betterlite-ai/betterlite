@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -434,13 +435,14 @@ async fn a_foreign_operation_location_is_poll_origin() {
     assert!(matches!(error, OcrError::PollOrigin));
 }
 
+#[rstest]
+#[case::user_and_password("http://user:pass@$host/operations/abc")]
+#[case::user_only("http://user@$host/operations/abc")]
+#[case::password_only("http://:pass@$host/operations/abc")]
 #[tokio::test]
-async fn an_operation_location_with_credentials_is_poll_origin() {
+async fn an_operation_location_with_credentials_is_poll_origin(#[case] location: &str) {
     let mut response = accepted("1");
-    response.headers[0] = (
-        "operation-location".to_owned(),
-        "http://user:pass@$host/operations/abc".to_owned(),
-    );
+    response.headers[0] = ("operation-location".to_owned(), location.to_owned());
     let server = ScriptedServer::start(vec![response]).await;
     let error = call(
         &server.base,
