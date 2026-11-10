@@ -9,3 +9,6 @@ deviations:
   - what: "An endpoint that is a full URL or holds a query or fragment marker is accepted with the leading slash normalization, where the SDK's constructor raises ValueError."
     why: The task fixes new(endpoint &str) as an infallible constructor and LiteLLM passes the constant "/sse/messages", so no caller reaches the validation.
     link: ""
+  - what: "The ping comment's timestamp always carries six fractional digits, where Python's datetime leaves the fraction out when the microsecond is zero."
+    why: The text is the server's clock inside a comment clients ignore, so the difference can only show to a client that parses an ignored keep-alive line.
+    link: ""
