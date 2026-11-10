@@ -47,9 +47,10 @@ fn app_with(root_path: &'static str, endpoint: &'static str) -> (Arc<SseTranspor
             let manager = Arc::clone(&shared);
             async move {
                 let owner = owner_of(&request);
-                let query = request.uri().query().map(str::to_owned);
+                let (parts, body) = request.into_parts();
+                let query = parts.uri.query().map(str::to_owned);
                 manager
-                    .post(query.as_deref(), &owner, request.into_body())
+                    .post(query.as_deref(), &parts.headers, &owner, body)
                     .await
             }
         }
@@ -271,6 +272,53 @@ async fn sends_a_ping_comment_on_the_sse_starlette_interval() {
     let ping = next_event(&mut stream).await;
     assert!(ping.starts_with(": ping - "), "{ping}");
     assert!(ping.ends_with("\r\n\r\n"), "{ping}");
+}
+
+#[rstest]
+#[case::absent(None)]
+#[case::text(Some("text/plain"))]
+#[case::html(Some("text/html; charset=utf-8"))]
+#[tokio::test]
+async fn rejects_a_message_without_a_json_content_type(#[case] content_type: Option<&str>) {
+    let (_, router) = app();
+    let mut builder = Request::builder()
+        .method(Method::POST)
+        .uri("/mcp/sse/messages?session_id=bad");
+    if let Some(value) = content_type {
+        builder = builder.header(header::CONTENT_TYPE, value);
+    }
+    let request = builder.body(Body::from(PING)).expect("a request");
+    let refused = send(&router, request).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_text(refused).await, "Invalid Content-Type header");
+}
+
+#[tokio::test]
+async fn checks_the_content_type_before_the_session() {
+    let (_, router) = app();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/mcp/sse/messages")
+        .body(Body::from(PING))
+        .expect("a request");
+    let refused = send(&router, request).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_text(refused).await, "Invalid Content-Type header");
+}
+
+#[tokio::test]
+async fn accepts_a_json_content_type_with_parameters() {
+    let (_, router) = app();
+    let (_stream, uri) = open_stream(&router).await;
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(uri.as_str())
+        .header(header::CONTENT_TYPE, "Application/JSON; charset=utf-8")
+        .header("x-test-owner", DEFAULT_OWNER)
+        .body(Body::from(INITIALIZE))
+        .expect("a request");
+    let accepted = send(&router, request).await;
+    assert_eq!(accepted.status(), StatusCode::ACCEPTED);
 }
 
 #[rstest]

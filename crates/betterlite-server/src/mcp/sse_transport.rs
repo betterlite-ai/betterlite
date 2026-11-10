@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use axum::body::{Body, Bytes, to_bytes};
-use axum::http::{HeaderName, HeaderValue, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header};
 use chrono::Utc;
 use futures_channel::mpsc;
 use futures_util::SinkExt as _;
@@ -112,7 +112,23 @@ impl SseTransport {
         }))
     }
 
-    pub async fn post(&self, query: Option<&str>, owner: &str, body: Body) -> Response<Body> {
+    pub async fn post(
+        &self,
+        query: Option<&str>,
+        headers: &HeaderMap,
+        owner: &str,
+        body: Body,
+    ) -> Response<Body> {
+        let content_type = headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !content_type
+            .to_ascii_lowercase()
+            .starts_with("application/json")
+        {
+            return plain_response(StatusCode::BAD_REQUEST, "Invalid Content-Type header");
+        }
         let Some(raw_session_id) = session_id_param(query) else {
             return plain_response(StatusCode::BAD_REQUEST, "session_id is required");
         };
