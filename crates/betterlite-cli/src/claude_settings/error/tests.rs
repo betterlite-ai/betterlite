@@ -10,7 +10,9 @@ use tempfile::TempDir;
 
 use crate::claude_settings::SettingsDocument;
 use crate::claude_settings::error::ClaudeSettingsError;
-use crate::claude_settings::io::{env_object, load_json_or_empty, write_claude_settings};
+use crate::claude_settings::io::{
+    env_object, load_json_or_empty, write_claude_settings, write_target,
+};
 use crate::claude_settings::paths::{
     claude_settings_paths, refuse_while_owned, settings_file_owners,
 };
@@ -50,7 +52,8 @@ async fn a_failed_settings_write_keeps_its_cause() {
     let blocker = home.path().join("blocker");
     fs::write(&blocker, "not a directory").unwrap();
     let path = blocker.join("settings.json");
-    let error = write_claude_settings(&PrivateFiles::default(), &path, &SettingsDocument::new())
+    let target = write_target(&path).unwrap();
+    let error = write_claude_settings(&PrivateFiles::default(), &target, &SettingsDocument::new())
         .await
         .unwrap_err();
     assert!(matches!(error, ClaudeSettingsError::Write { .. }));

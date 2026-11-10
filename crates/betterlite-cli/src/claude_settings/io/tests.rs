@@ -84,7 +84,8 @@ async fn write_claude_settings_writes_the_document_as_json() {
     let home = TempDir::new().unwrap();
     let path = home.path().join("nested").join("settings.json");
     let document = settings_from(r#"{"env":{"ANTHROPIC_BASE_URL":"https://proxy.example.com"}}"#);
-    write_claude_settings(&PrivateFiles::default(), &path, &document)
+    let target = write_target(&path).unwrap();
+    write_claude_settings(&PrivateFiles::default(), &target, &document)
         .await
         .unwrap();
     assert_eq!(load_json_or_empty(&path).unwrap(), document);
@@ -97,7 +98,8 @@ async fn write_claude_settings_writes_an_owner_only_file() {
 
     let home = TempDir::new().unwrap();
     let path = home.path().join("settings.json");
-    write_claude_settings(&PrivateFiles::default(), &path, &SettingsDocument::new())
+    let target = write_target(&path).unwrap();
+    write_claude_settings(&PrivateFiles::default(), &target, &SettingsDocument::new())
         .await
         .unwrap();
     let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
@@ -116,7 +118,8 @@ async fn write_claude_settings_writes_through_a_symlink() {
     let link = home.path().join("settings.json");
     symlink(&target, &link).unwrap();
     let document = settings_from(r#"{"model":"claude-opus"}"#);
-    write_claude_settings(&PrivateFiles::default(), &link, &document)
+    let resolved = write_target(&link).unwrap();
+    write_claude_settings(&PrivateFiles::default(), &resolved, &document)
         .await
         .unwrap();
     assert!(link.is_symlink());
@@ -134,7 +137,8 @@ async fn write_claude_settings_creates_the_target_of_a_dangling_symlink() {
     let link = home.path().join("settings.json");
     symlink(&target, &link).unwrap();
     let document = settings_from(r#"{"model":"claude-opus"}"#);
-    write_claude_settings(&PrivateFiles::default(), &link, &document)
+    let resolved = write_target(&link).unwrap();
+    write_claude_settings(&PrivateFiles::default(), &resolved, &document)
         .await
         .unwrap();
     assert!(link.is_symlink());
@@ -147,7 +151,8 @@ async fn write_claude_settings_reports_a_failed_write() {
     let blocker = home.path().join("blocker");
     fs::write(&blocker, "not a directory").unwrap();
     let path = blocker.join("settings.json");
-    let error = write_claude_settings(&PrivateFiles::default(), &path, &SettingsDocument::new())
+    let target = write_target(&path).unwrap();
+    let error = write_claude_settings(&PrivateFiles::default(), &target, &SettingsDocument::new())
         .await
         .unwrap_err();
     assert!(matches!(error, ClaudeSettingsError::Write { .. }));

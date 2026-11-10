@@ -59,27 +59,26 @@ pub fn write_target(settings_path: &Path) -> Result<PathBuf, ClaudeSettingsError
 
 pub async fn write_claude_settings(
     files: &PrivateFiles,
-    settings_path: &Path,
+    target: &Path,
     settings: &SettingsDocument,
 ) -> Result<(), ClaudeSettingsError> {
-    let target = write_target(settings_path)?;
     let document =
         PrivateDocument::json(settings).map_err(|source| ClaudeSettingsError::Write {
-            path: settings_path.to_owned(),
+            path: target.to_owned(),
             source,
         })?;
     let staged = files
-        .stage_private(&target, document)
+        .stage_private(target, document)
         .await
         .map_err(|source| ClaudeSettingsError::Write {
-            path: settings_path.to_owned(),
+            path: target.to_owned(),
             source,
         })?;
     files
-        .commit_staged_json(&staged, &target)
+        .commit_staged_json(&staged, target)
         .await
         .map_err(|source| ClaudeSettingsError::Write {
-            path: settings_path.to_owned(),
+            path: target.to_owned(),
             source,
         })
 }
