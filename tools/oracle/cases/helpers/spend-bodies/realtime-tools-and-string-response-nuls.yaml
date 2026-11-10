@@ -1,0 +1,27 @@
+kind: helper
+name: realtime-tools-and-string-response-nuls
+call:
+  spend_bodies:
+    function: body_storage
+    store_bodies: true
+    max_string_length: 2048
+    turn_off_message_logging: false
+    litellm_params:
+      proxy_server_request:
+        body:
+          model: gpt-4o
+          messages:
+            - {role: user, content: hi}
+        headers:
+          authorization: "Bearer secret"
+    response: "before\0after"
+    realtime_tools:
+      - {type: function, function: {name: f}}
+    realtime_tool_calls:
+      - {id: call-1}
+    messages_payload:
+      call_type: _arealtime
+      messages:
+        - {role: user, content: hello}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+task: B673
+deviations:
+  - what: The client-secret token request sends Accept application/json and nothing else, while MSAL also sends x-client-sku, x-client-ver, x-client-os and x-ms-lib-capability telemetry headers.
+    why: Those headers identify the Python MSAL client and its version; a Rust gateway has no MSAL.Python build and Azure does not require them, so no working setup can depend on them.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/application.py#L848-L855
+  - what: A cached access token is reused until its refresh_on (or expires_on when the reply carries none), where azure-identity refreshes once the token has 300 seconds or less left and backs off 30 seconds after a failed refresh.
+    why: The provider owns the token lifetime natively instead of porting the SDK's expiry heuristics, so it refreshes later than the SDK would; the token stays valid either way and Azure accepts it.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/get_token_mixin.py#L48-L56
+  - what: An access token reply with a non-integer expires_in or a non-string token_type is an error, where Python's int() and dict lookup accept floats, booleans and numeric strings for the integer field and keep a non-string token_type.
+    why: LiteLLM declares expires_in as int and token_type as text, and a value of the wrong type is an error that names the field rather than a silently coerced token lifetime.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/client_credential_base.py#L43-L57
+  - what: When a refresh fails after the cached token passed its refresh_on, the provider asks the token endpoint once and serves the cached token if that answer carries no access_token. The SDK asks twice (msal's silent refresh, then azure-identity's retry), and msal keeps the cached token only for an answer with an error member.
+    why: A second identical request adds nothing for a gateway that already holds a valid token, and an IdP answer with neither an error nor an access_token is malformed, so no working setup depends on how it is handled.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/application.py#L1823-L1831
