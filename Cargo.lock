@@ -1154,6 +1154,7 @@ name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
  "hex",
