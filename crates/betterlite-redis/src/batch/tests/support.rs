@@ -138,19 +138,6 @@ fn direct_overrides(host: &str, port: u16) -> RedisOverrides {
     }
 }
 
-fn cluster_overrides(server: &FakeServer) -> RedisOverrides {
-    let node = ClusterNodeInput {
-        host: server.host(),
-        port: IntOrText::Value(i64::from(server.port())),
-    };
-    RedisOverrides {
-        socket_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
-        socket_connect_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
-        startup_nodes: Some(Scalar::Value(vec![node])),
-        ..blank_overrides()
-    }
-}
-
 fn topology(server: &FakeServer) -> ClusterSlots {
     vec![(0, 16383, vec![(server.host(), server.port())])]
 }
@@ -166,12 +153,17 @@ pub(crate) async fn harness(server: &FakeServer, namespace: Option<&str>) -> Har
 
 pub(crate) async fn cluster_harness(server: &FakeServer, namespace: Option<&str>) -> Harness {
     server.set_cluster_slots(topology(server));
-    connect_harness(
-        cluster_overrides(server),
-        RedisCacheFamily::Cluster,
-        namespace,
-    )
-    .await
+    let node = ClusterNodeInput {
+        host: server.host(),
+        port: IntOrText::Value(i64::from(server.port())),
+    };
+    let overrides = RedisOverrides {
+        socket_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        socket_connect_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        startup_nodes: Some(Scalar::Value(vec![node])),
+        ..blank_overrides()
+    };
+    connect_harness(overrides, RedisCacheFamily::Cluster, namespace).await
 }
 
 pub(crate) async fn unreachable_harness() -> Harness {
