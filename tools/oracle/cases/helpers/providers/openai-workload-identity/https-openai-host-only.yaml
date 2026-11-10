@@ -1,0 +1,24 @@
+kind: helper
+name: openai-workload-identity-https-openai-host-only
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    resolve:
+      probes:
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: https://api.openai.com/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: https://eu.api.openai.com/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: HTTPS://API.OPENAI.COM/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: http://api.openai.com/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: https://example.com/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: https://api.openai.com.evil.example/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: api.openai.com, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {litellm_api_base: http://proxy.local/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {litellm_api_base: https://api.openai.com/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: https://api.openai.com/v1, litellm_api_base: http://proxy.local/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_base: "", litellm_api_base: http://proxy.local/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_BASE_URL: http://proxy.local/v1}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_BASE: http://proxy.local/v1}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_BASE_URL: https://api.openai.com/v1, OPENAI_API_BASE: http://proxy.local/v1}}
+        - {litellm_api_base: http://proxy.local/v1, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_BASE_URL: https://api.openai.com/v1}}

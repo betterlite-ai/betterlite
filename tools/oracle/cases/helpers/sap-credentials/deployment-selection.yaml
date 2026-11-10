@@ -1,0 +1,33 @@
+kind: helper
+name: sap-credentials-deployment-selection
+call:
+  b5950:
+    function: deployment
+    mode: chat
+    listing:
+      resources:
+        - scenarioId: orchestration
+          configurationId: old
+          deploymentUrl: https://old
+          createdAt: '2023-01-01T00:00:00Z'
+        - scenarioId: other
+          configurationId: skipped
+          deploymentUrl: https://skipped
+          createdAt: '2026-01-01T00:00:00Z'
+        - scenarioId: orchestration
+          configurationId: wrong
+          deploymentUrl: https://wrong
+          createdAt: '2025-01-01T00:00:00Z'
+        - scenarioId: orchestration
+          configurationId: new
+          deploymentUrl: https://new
+          createdAt: '2024-01-01T00:00:00Z'
+    configurations:
+      old:
+        executableId: orchestration
+      wrong:
+        executableId: other
+      new:
+        executableId: orchestration
+env: {}
+compare: {ignore: []}

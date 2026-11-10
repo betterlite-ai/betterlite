@@ -231,7 +231,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_files)"
       && grep -q 'decode_anthropic_file' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_files.rs && cargo
-      nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_files_corpus$/)'
+      nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_files_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::files_credential_identity_isolation$/)'

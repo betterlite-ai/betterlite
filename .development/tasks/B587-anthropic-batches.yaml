@@ -261,7 +261,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_batches)"
       && grep -q 'decode_anthropic_batch_result' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_batches.rs
-      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_batches_corpus$/)'
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_batches_corpus(::|$)/)'
   - id: case-batch-timestamps
     why: Parse truthy ISO timestamps after replace Z with +00:00, int truncate seconds; any exception ->None, naive
       values follow fixture timezone. created_at falsey/epoch0 falls back injected now, but in_progress_at preserves

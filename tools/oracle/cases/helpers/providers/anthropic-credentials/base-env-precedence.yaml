@@ -1,0 +1,5 @@
+kind: helper
+name: base-env-precedence
+call: {anthropic_credentials: {function: api_base, environment: {ANTHROPIC_API_BASE: "https://api-base.example", ANTHROPIC_BASE_URL: "https://base-url.example"}}}
+env: {}
+compare: {ignore: []}

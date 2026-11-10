@@ -123,3 +123,31 @@ path = "fuzz_targets/you_com_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "google_pse_reply"
+path = "fuzz_targets/google_pse_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "searchapi_reply"
+path = "fuzz_targets/searchapi_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "exa_ai_reply"
+path = "fuzz_targets/exa_ai_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serper_reply"
+path = "fuzz_targets/serper_reply.rs"
+test = false
+doc = false
+bench = false

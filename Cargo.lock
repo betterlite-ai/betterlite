@@ -1062,19 +1062,25 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1232,16 +1238,22 @@ dependencies = [
  "azure_storage_blob",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "futures-util",
+ "hex",
+ "indexmap 2.14.2",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -1379,6 +1391,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
@@ -1390,6 +1403,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
+ "betterlite-redact",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1845,6 +1859,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
  "chrono",
@@ -1854,11 +1869,13 @@ dependencies = [
  "pem",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "scrypt",
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "subtle",
@@ -1890,6 +1907,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1951,9 +1969,15 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-secret-managers",
+ "betterlite-tokenizer",
+ "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -2104,6 +2128,7 @@ dependencies = [
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-logging",
  "betterlite-oracle",
  "chrono",
  "libfuzzer-sys",
@@ -2258,11 +2283,14 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
+ "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
  "mutants",
@@ -2792,14 +2820,30 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
+ "jiff",
  "regex",
  "rstest",
  "rust_decimal",
+ "secrecy",
+ "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-vertex",
+ "jiff",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -8291,7 +8335,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
