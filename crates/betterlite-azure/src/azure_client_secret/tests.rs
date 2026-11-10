@@ -209,6 +209,12 @@ const INSTANCE_DISCOVERY: &str = "https://login.microsoftonline.com/common/disco
     2,
     INSTANCE_DISCOVERY
 )]
+#[case::adfs_without_version(
+    "https://adfs.contoso.test",
+    "ADFS",
+    1,
+    "https://adfs.contoso.test/ADFS/.well-known/openid-configuration"
+)]
 #[case::b2c_host(
     "https://contoso.b2clogin.com",
     TENANT,
