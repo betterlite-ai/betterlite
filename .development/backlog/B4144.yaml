@@ -1,14 +1,14 @@
 id: B4144
 milestone: M8 platform
 title: Publish config changes and coordinate subscriber reloads
-status: todo
+status: done
 depends_on: [B360, B4325]
 file: tasks/B4144-config-sync.yaml
 covers:
   - "litellm/proxy/common_utils/config_sync_pubsub.py"
 parent: B120
 split_from: B120
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1147

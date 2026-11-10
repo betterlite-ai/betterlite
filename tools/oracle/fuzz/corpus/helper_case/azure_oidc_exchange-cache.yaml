@@ -1,0 +1,14 @@
+kind: helper
+name: azure-oidc-exchange-cache-seed
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {AZURE_CLIENT_ID: seeded-client, AZURE_TENANT_ID: seeded-tenant, OIDC_ASSERTION: seeded-assertion}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION}
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, advance: 3601}
+        replies:
+          - {status: 200, body: '{"access_token":"seeded-token","expires_in":3600}'}
+          - {status: 200, body: '{"access_token":"refreshed-token","expires_in":3600}'}
+env: {}
+compare: {ignore: []}
