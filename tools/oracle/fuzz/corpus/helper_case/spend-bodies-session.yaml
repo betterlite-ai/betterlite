@@ -1,0 +1,19 @@
+kind: helper
+name: spend-bodies-session-seed
+call:
+  spend_bodies:
+    function: session
+    sessions:
+      - metadata: {session_id: seed}
+        configured_omit: false
+        call_type: completion
+        request_id: seed-request
+        trace_id: seed-trace
+        litellm_trace_id: null
+        injected_uuid: "77777777-7777-7777-7777-777777777777"
+    durations:
+      - {start: "2024-01-02T03:04:05+00:00", end: "2024-01-02T03:04:06+00:00"}
+    timestamps:
+      - "2024-01-02T03:04:05+00:00"
+env: {}
+compare: {ignore: []}

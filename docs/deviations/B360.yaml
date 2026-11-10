@@ -1,0 +1,32 @@
+task: B360
+deviations:
+  - what: Routing state values are stored as B390's typed JSON ({"counter":5}, {"spend":"1.25"}) instead of the bare number text INCRBYFLOAT writes, so a betterlite routing store cannot share keys with a LiteLLM RedisCache.
+    why: B390 owns the typed routing values and the task forbids INCRBYFLOAT and Lua numeric money, so the stored form is the typed one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: Spend increments and offsets are added with checked Decimal arithmetic, where LiteLLM's INCRBYFLOAT result is converted to a Python float and loses precision past an f64.
+    why: The task requires exact integer and Decimal updates for routing state; a spend counter must not drift.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1413-L1416
+  - what: A typed increment or compare-and-set given a TTL of zero, a negative TTL or a non-finite TTL fails with an error that names the value; LiteLLM truncates the number and passes it on, where SET EX 0 errors and a non-positive EXPIRE deletes the key.
+    why: A zero-length expiry is never what a routing-state caller means, and deleting the key under an increment silently loses the counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: The routing store's default TTL is a fixed 60 seconds; LiteLLM lets the process-wide litellm.default_redis_ttl change it.
+    why: litellm.default_redis_ttl is not one of this task's configuration boundary keys, so only LiteLLM's own default is reproduced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L671-L674
+  - what: A cluster target is refused for the routing store (the atomic compare-and-set needs a standalone connection), where LiteLLM builds a RedisClusterCache when startup_nodes or REDIS_CLUSTER_NODES is set.
+    why: startup_nodes is not a boundary key and no task has loaded the cluster configuration, so the cluster branch is not reachable here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1282-L1297
+  - what: router_settings.redis_kwargs.namespace and redis_kwargs.socket_timeout are honored when cache_kwargs does not set them; LiteLLM reads only cache_kwargs, so redis_kwargs has no effect there.
+    why: The task text names redis_kwargs as the place for the namespace and socket timeout, and cache_kwargs, the key LiteLLM reads, still wins when both are present.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L969
+  - what: A typed increment that loses the WATCH race returns a conflict error once the socket timeout has passed with every attempt lost; LiteLLM's INCRBYFLOAT cannot lose a race and never fails this way.
+    why: The typed update is a compare-and-set loop, so it retries until it lands and gives up only after the operation window, which is the socket timeout, instead of looping forever under constant contention.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: get_ttl goes through the B393 breaker, so an open breaker returns the circuit-open error, where LiteLLM's async_get_ttl is not breaker-guarded and returns None for every failure.
+    why: Every routing-state operation shares one failure policy, and the breaker-open path is not a transport failure the read may swallow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2020-L2042
+  - what: A routing store whose REDIS_* environment asks for GCP, Azure or AWS IAM authentication (REDIS_GCP_SERVICE_ACCOUNT, REDIS_AZURE_REDIS_AD_TOKEN, REDIS_AWS_IAM_AUTH) fails to open with a missing credential source error; LiteLLM fetches a token and authenticates.
+    why: No cloud token fetcher exists in this workspace to inject into the live redis client, so the store refuses to connect instead of connecting without a credential and failing with NOAUTH.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L509-L539
+  - what: router_settings.cache_kwargs and redis_kwargs accept namespace, socket_timeout, db, username, ssl, socket_connect_timeout, socket_keepalive, max_connections and health_check_interval; any other key is a config error that names it, where LiteLLM forwards every extra key to the redis client.
+    why: The config loader reports unknown keys instead of ignoring them, and the remaining redis client options (cluster and sentinel nodes, TLS files, IAM fields) have no routing state consumer yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L969

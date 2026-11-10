@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-text-embeddings-numeric-before-bge
+call:
+  vertex_text_embeddings:
+    requests:
+      - model: "1234567890"
+        input: hello
+        optional: {task_type: RETRIEVAL_QUERY}
+compare: {ignore: []}
+env: {}

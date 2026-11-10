@@ -1,0 +1,32 @@
+kind: helper
+name: attributes-chat-request-basic
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      model: gpt-4o
+      messages:
+        - {role: system, content: Be brief.}
+        - {role: user, content: Hello}
+      optional_params:
+        max_tokens: 100
+        temperature: 0.5
+        top_p: 0.9
+        stream: true
+        user: request-user
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        call_type: acompletion
+        metadata:
+          trace_name: demo
+        model_parameters:
+          temperature: 0.5
+          user: model-user
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      choices:
+        - message: {role: assistant, content: Hello there}
+env: {}
+compare: {ignore: []}
