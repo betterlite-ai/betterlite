@@ -12,13 +12,6 @@ description: >-
 
 scope:
   paths:
-    - "tools/oracle/helpers/semantic_embeddings"
-    - "tools/oracle/helpers/b4381/pyrightconfig.json"
-    - "tools/oracle/helpers/b4381/__init__.py"
-    - "tools/oracle/helpers/b4381/pyrightconfig.json"
-    - "tools/oracle/helpers/b4381/__pycache__"
-    - "tools/oracle/helpers/b4381/__init__.py"
-    - "tools/oracle/helpers/b4381"
     - crates/betterlite-router/src/semantic_embeddings.rs
     - crates/betterlite-router/src/semantic_embeddings/**
     - tools/oracle/cases/helpers/semantic-embeddings/**
@@ -62,8 +55,8 @@ checks:
     - id: helper-python
       why: strict adapters fail
       run: >-
-        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/semantic_embeddings)" && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers/semantic_embeddings && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4381/pyrightconfig.json
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4381)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers/b4381 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4381/pyrightconfig.json
     - id: helper-case-corpus
       why: new helper seeds are missing or fail replay
       run: >-
