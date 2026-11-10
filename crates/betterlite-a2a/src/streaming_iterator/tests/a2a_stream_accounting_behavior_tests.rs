@@ -803,6 +803,13 @@ fn completed_status() -> SendMessageResponse {
 async fn production_response_chunks_are_read_through_their_wire_form() {
     let (dispatch, calls) = recorder();
     let counter = CharCounter;
+    assert!(
+        response_message("Hello")
+            .wire()
+            .expect("the chunk serializes")
+            .get("result")
+            .is_some()
+    );
     let stream = ScriptedStream {
         items: VecDeque::from([Ok(response_message("Hello")), Ok(completed_status())]),
     };
