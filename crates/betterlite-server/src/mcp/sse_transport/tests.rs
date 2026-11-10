@@ -424,6 +424,9 @@ async fn matches_the_session_id_in_any_standard_uuid_spelling() {
     )
     .await;
     assert_eq!(accepted_braced.status(), StatusCode::ACCEPTED);
+    let urn_target = format!("/mcp/sse/messages?session_id=urn:uuid:{id}");
+    let accepted_urn = send(&router, message_request(&urn_target, DEFAULT_OWNER, PING)).await;
+    assert_eq!(accepted_urn.status(), StatusCode::ACCEPTED);
     let initialize: InitializeReply =
         serde_json::from_str(&message_data(&next_event(&mut stream).await))
             .expect("the initialize reply");
