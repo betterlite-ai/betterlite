@@ -18,7 +18,6 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 11] = [
     "response_format",
 ];
 
-// LiteLLM marks an emulated structured-output request with this option, and never sends it to GigaChat
 pub const STRUCTURED_OUTPUT: &str = "_structured_output";
 
 const DEFAULT_SCHEMA_NAME: &str = "structured_output";

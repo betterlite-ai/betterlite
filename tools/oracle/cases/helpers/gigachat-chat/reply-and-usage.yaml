@@ -53,5 +53,15 @@ call:
         model: gigachat/GigaChat
         created: 1700000000
         body: '{"id": "no-usage"}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"content": "x"}, "finish_reason": "blacklist"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"content": "x"}, "finish_reason": "error"}]}'
 env: {}
 compare: {ignore: []}

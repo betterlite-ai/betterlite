@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::error::Category;
 
+use crate::chat::choice_finish_reason;
 use crate::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
@@ -90,6 +91,7 @@ fn response_choice(choice: RawChoice, structured_output: bool, ids: &dyn IdSourc
     let mut raw = message.unwrap_or_default();
     let (tool_calls, content, reason) =
         convert_function_call(&mut raw, finish_reason, structured_output, ids);
+    let (mapped_reason, provider_specific_fields) = choice_finish_reason(reason.as_deref());
     ChatChoice {
         index: index.unwrap_or_default(),
         message: AssistantMessage {
@@ -101,13 +103,12 @@ fn response_choice(choice: RawChoice, structured_output: bool, ids: &dyn IdSourc
             refusal: None,
             provider_specific_fields: MessageProviderFields::default(),
         },
-        finish_reason: Some(reason.unwrap_or_else(|| String::from("stop"))),
+        finish_reason: Some(mapped_reason),
         logprobs: None,
-        provider_specific_fields: BTreeMap::new(),
+        provider_specific_fields,
     }
 }
 
-// a reply that finishes on a function call becomes tool calls, or the message text when the request was structured
 fn convert_function_call(
     raw: &mut RawMessage,
     finish_reason: Option<String>,

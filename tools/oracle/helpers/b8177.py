@@ -96,7 +96,7 @@ def reply_value(result: ModelResponse) -> Json:
         calls = message.get("tool_calls")
         choices.append(
             {
-                **pick(choice, "index", "finish_reason"),
+                **pick(choice, "index", "finish_reason", "provider_specific_fields"),
                 **pick(message, "role", "content"),
                 "tool_calls": None
                 if calls is None

@@ -84,6 +84,39 @@ fn a_missing_finish_reason_becomes_stop() {
 }
 
 #[test]
+fn a_finish_reason_outside_the_openai_set_is_mapped_and_kept_as_native() {
+    let fixture = Fixture::issuing("token", &[]);
+    let response = reply(
+        &fixture,
+        r#"{"choices": [{"message": {"content": "hi"}, "finish_reason": "blacklist"}]}"#,
+        false,
+    )
+    .unwrap();
+    let choice = &response.choices[0];
+    assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(
+        choice.provider_specific_fields,
+        BTreeMap::from([(
+            String::from("native_finish_reason"),
+            Value::from("blacklist")
+        )])
+    );
+}
+
+#[test]
+fn an_openai_finish_reason_leaves_the_provider_fields_empty() {
+    let fixture = Fixture::issuing("token", &[]);
+    let response = reply(
+        &fixture,
+        r#"{"choices": [{"message": {"content": "hi"}, "finish_reason": "length"}]}"#,
+        false,
+    )
+    .unwrap();
+    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("length"));
+    assert!(response.choices[0].provider_specific_fields.is_empty());
+}
+
+#[test]
 fn a_missing_role_becomes_assistant() {
     let fixture = Fixture::issuing("token", &[]);
     let response = reply(

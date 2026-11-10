@@ -15,7 +15,6 @@ pub struct HeaderInput<'request> {
     pub caller_headers: &'request Headers,
 }
 
-// LiteLLM sets its three headers on the caller's map, so a caller header with the same name loses it
 pub async fn validate_environment(
     input: &HeaderInput<'_>,
     bearer: &dyn GigachatBearer,

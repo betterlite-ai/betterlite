@@ -80,6 +80,8 @@ pub(crate) fn chat_reply_value(response: &ChatResponse) -> Value {
                     .as_ref()
                     .map(|calls| calls.iter().map(tool_call_value).collect::<Vec<Value>>()),
                 "finish_reason": choice.finish_reason,
+                "provider_specific_fields": Some(&choice.provider_specific_fields)
+                    .filter(|fields| !fields.is_empty()),
             })
         })
         .collect();
@@ -99,7 +101,6 @@ fn tool_call_value(call: &ToolCall) -> Value {
         "type": call.kind,
         "function": {
             "name": call.function.name,
-            // LiteLLM carries the arguments as a JSON string; the compared value is the JSON it holds
             "arguments": serde_json::from_str::<Value>(&call.function.arguments)
                 .unwrap_or_else(|_| Value::String(call.function.arguments.clone())),
         },
