@@ -184,6 +184,17 @@ fn stock_schema_requires_the_declared_fields(#[case] missing: &str) {
 }
 
 #[test]
+fn stock_schema_accepts_a_negative_priority() {
+    let installed = stock_model(json_value(
+        r#"{"slug": "m", "priority": -1, "visibility": "list", "display_name": "Stock"}"#,
+    ));
+    assert_eq!(installed.priority, -1);
+    let catalog = catalog_json(&[listed("m", None, None)], &[installed]);
+    assert_eq!(catalog["models"][0]["display_name"], "Stock");
+    assert_eq!(catalog["models"][0]["priority"].as_u64(), Some(0));
+}
+
+#[test]
 fn stock_schema_catalog_container_reads_models() {
     let catalog: StockCodexCatalog = serde_json::from_value(json_value(
         r#"{

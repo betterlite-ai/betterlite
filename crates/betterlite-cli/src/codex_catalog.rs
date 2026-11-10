@@ -12,12 +12,21 @@ const LIST_VISIBILITY: &str = "list";
 // clippy's max-struct-bools counts plain bools, so the wire flags share the alias the other crates use
 pub type CodexFlag = bool;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct CodexTruncationPolicy {
     #[serde(default)]
     pub mode: CodexTruncationMode,
     #[serde(default = "default_limit")]
     pub limit: u32,
+}
+
+impl Default for CodexTruncationPolicy {
+    fn default() -> Self {
+        Self {
+            mode: CodexTruncationMode::Bytes,
+            limit: default_limit(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -48,14 +57,14 @@ pub struct CodexModel {
     #[serde(default)]
     pub description: (),
     #[serde(default)]
-    pub supported_reasoning_levels: Vec<JsonValue>,
+    pub supported_reasoning_levels: [JsonValue; 0],
     #[serde(default)]
     pub shell_type: CodexShellType,
     #[serde(default)]
     pub visibility: CodexVisibility,
     #[serde(default = "default_supported_in_api")]
     pub supported_in_api: CodexFlag,
-    pub priority: usize,
+    pub priority: i64,
     #[serde(default)]
     pub availability_nux: (),
     #[serde(default)]
@@ -73,7 +82,7 @@ pub struct CodexModel {
     #[serde(default)]
     pub truncation_policy: CodexTruncationPolicy,
     #[serde(default)]
-    pub experimental_supported_tools: Vec<JsonValue>,
+    pub experimental_supported_tools: [JsonValue; 0],
     pub context_window: Option<i64>,
     pub base_instructions: String,
 }
@@ -88,7 +97,7 @@ pub struct StockCodexUpgrade {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StockCodexModel {
     pub slug: String,
-    pub priority: usize,
+    pub priority: i64,
     pub visibility: String,
     #[serde(default = "default_supported_in_api")]
     pub supported_in_api: CodexFlag,
@@ -117,7 +126,7 @@ struct CodexCatalog {
 
 #[must_use]
 pub fn codex_catalog_entry(
-    priority: usize,
+    priority: i64,
     listed: &ListedModel,
     stock: Option<&StockCodexModel>,
     served: &BTreeSet<String>,
@@ -128,7 +137,7 @@ pub fn codex_catalog_entry(
             slug: listed.id.clone(),
             display_name: listed.id.clone(),
             description: (),
-            supported_reasoning_levels: Vec::new(),
+            supported_reasoning_levels: [],
             shell_type: CodexShellType::UnifiedExec,
             visibility: CodexVisibility::List,
             supported_in_api: true,
@@ -141,7 +150,7 @@ pub fn codex_catalog_entry(
             default_verbosity: (),
             apply_patch_tool_type: (),
             truncation_policy: CodexTruncationPolicy::default(),
-            experimental_supported_tools: Vec::new(),
+            experimental_supported_tools: [],
             context_window: listed.max_input_tokens,
             base_instructions: instructions.to_owned(),
         });
@@ -175,9 +184,8 @@ pub fn codex_model_catalog(
         .map(|model| (model.slug.as_str(), model))
         .collect();
     let catalog = CodexCatalog {
-        models: chat
-            .iter()
-            .enumerate()
+        models: (0_i64..)
+            .zip(chat.iter())
             .map(|(priority, model)| {
                 codex_catalog_entry(
                     priority,
