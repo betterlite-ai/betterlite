@@ -45,7 +45,8 @@ impl<T> Lenient<T> {
 #[derive(Deserialize)]
 struct RawExchange {
     access_token: Option<Lenient<String>>,
-    expires_in: Option<Lenient<f64>>,
+    // not Lenient: arbitrary_precision sends every float through an untagged enum as a map, so f64 never matches
+    expires_in: Option<serde_json::Value>,
 }
 
 #[derive(Default, Deserialize)]
@@ -101,11 +102,13 @@ pub fn decode_token_exchange(bytes: &[u8]) -> Result<TokenExchange, WorkloadIden
         .ok_or(WorkloadIdentityError::InvalidField {
             field: "access_token",
         })?;
-    let expires_in = raw.expires_in.and_then(Lenient::into_value).ok_or(
-        WorkloadIdentityError::InvalidField {
+    let expires_in = raw
+        .expires_in
+        .as_ref()
+        .and_then(serde_json::Value::as_f64)
+        .ok_or(WorkloadIdentityError::InvalidField {
             field: "expires_in",
-        },
-    )?;
+        })?;
     Ok(TokenExchange {
         access_token: SecretString::from(access_token),
         expires_in,
