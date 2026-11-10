@@ -1,0 +1,13 @@
+kind: helper
+name: response-router-name-before-request-name
+call:
+  foundry_router_cost:
+    operation: classify
+    calls:
+      - {model: model_router/azure-gpt-4o, request_model: request-model-router}
+      - {model: my-model-router, request_model: request-model_router}
+      - {model: plain-model, request_model: request-model_router}
+      - {model: plain-model, request_model: plain-request}
+      - {model: plain-model}
+env: {}
+compare: {ignore: []}

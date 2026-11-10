@@ -163,7 +163,7 @@ checks:
       why: the helper cases for the over-limit errors and the stash are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/dynamic-admission)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/dynamic-admission
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/dynamic-admission
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-
