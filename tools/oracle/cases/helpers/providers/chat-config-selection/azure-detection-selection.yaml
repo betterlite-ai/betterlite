@@ -1,0 +1,33 @@
+kind: helper
+name: chat-config-selection-azure-detection
+call:
+  chat_config_selection:
+    function: azure_detection_selection
+    calls:
+      - {provider: azure, model: o1}
+      - {provider: azure, model: o3-mini}
+      - {provider: azure, model: o4}
+      - {provider: azure, model: o_series/deployment}
+      - {provider: azure, model: deployment-o1-name}
+      - {provider: azure, model: my-deployment, base_model: o3-mini}
+      - {provider: azure, model: o1, base_model: gpt-5}
+      - {provider: azure, model: gpt-5, base_model: plain-deployment}
+      - {provider: azure, model: o1, base_model: ""}
+      - {provider: azure, model: gpt-5, base_model: ""}
+      - {provider: azure, model: gpt-5}
+      - {provider: azure, model: gpt-6}
+      - {provider: azure, model: gpt-5-chat}
+      - {provider: azure, model: gpt5_series-deployment}
+      - {provider: azure, model: O1}
+      - {provider: azure, model: o_series}
+      - {provider: azure, model: gpt-4o}
+      - {provider: azure, model: my-deployment}
+      - {provider: azure, model: gpt-5-o3-eval}
+      - {provider: azure, model: my-deployment, base_model: gpt-5-o1}
+      - {provider: azure_ai, model: gpt-4o, base_model: claude-x}
+      - {provider: vertex_ai, model: llama-3-70b, base_model: gemini-pro}
+      - {provider: cohere, model: command-r, base_model: v1/command}
+      - {provider: cohere_chat, model: v1/command, base_model: command-r}
+      - {provider: bedrock, model: anthropic.claude-v2, base_model: converse/other}
+env: {}
+compare: {ignore: []}
