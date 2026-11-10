@@ -154,6 +154,41 @@ fn usage_parse_decodes_latin1_when_the_header_map_is_not_utf8() {
     );
 }
 
+#[test]
+fn usage_parse_decodes_the_whole_map_with_http_latin1() {
+    let mut map = HeaderMap::new();
+    map.append(
+        HeaderName::from_static(UPSTREAM_RESPONSE_COST_HEADER),
+        HeaderValue::from_bytes("\u{e9}".as_bytes()).expect("opaque header bytes"),
+    );
+    map.append(
+        HeaderName::from_static(UPSTREAM_TOTAL_TOKENS_HEADER),
+        HeaderValue::from_bytes(&[0xE9]).expect("opaque header bytes"),
+    );
+    let logs = capture_warning(&|| {
+        assert!(parse_upstream_reported_usage(&map).is_some());
+    });
+    // httpx picks one encoding for the whole map, so the invalid byte elsewhere forces latin-1
+    assert!(
+        logs.contains(concat!(
+            "un",
+            "parseable x-litellm-response-cost='\u{c3}\u{a9}'"
+        )),
+        "{logs}"
+    );
+}
+
+#[test]
+fn cost_parse_quotes_control_characters_in_the_warning() {
+    let (logs, _guard) = capture_logs();
+    assert!(parse_response_cost(Some("\u{1}0")).is_none());
+    let text = logs.text();
+    assert!(
+        text.contains(concat!("un", "parseable x-litellm-response-cost='\\x010'")),
+        "{text}"
+    );
+}
+
 #[rstest]
 #[case::zero("0", 0.0_f64)]
 #[case::negative_zero("-0", -0.0_f64)]
@@ -434,6 +469,32 @@ async fn dispatch_default_passes_the_response_and_the_same_times() {
     assert_eq!(
         logged_state.model_call_details.get("completion_start_time"),
         Some(&end_time)
+    );
+}
+
+#[tokio::test]
+async fn dispatch_default_is_used_when_nothing_is_injected() {
+    let fixture = Fixture::new(Some(payload()));
+    let handler = fixture.handler();
+    let logger = PassThroughEndpointLogging {
+        injected_log_dispatch: None,
+    };
+    let mut correlation = CorrelationContext::default();
+    let mut logged_state = logging_state("pass_through_endpoint", &mut correlation);
+    let mut dispatch_call = call(&handler, &mut logged_state, &mut correlation);
+    dispatch_call.response = Some(chat_response());
+    logger
+        .log_dispatch()
+        .dispatch(dispatch_call)
+        .await
+        .expect("dispatch");
+    assert_eq!(
+        logged_state.model_call_details.get("cache_hit"),
+        Some(&Json::Bool(false))
+    );
+    assert_eq!(
+        fixture.calls.names(),
+        vec!["async_log_success_event".to_owned()]
     );
 }
 
