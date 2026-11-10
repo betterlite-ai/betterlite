@@ -48,10 +48,11 @@ fn headers_dictionary_reply(input: &Input) -> HelperResult {
 
 fn span_processor_reply(input: &Input) -> HelperResult {
     let base = input.config.to_config(&input.environment);
+    let env = &input.environment;
     let config_override = input
         .config_override
         .as_ref()
-        .map(|config| config.to_config(&input.environment));
+        .map(|config| config.to_config(env));
     let plan = span_processor_plan(
         &base,
         input.dynamic_headers.as_ref(),
@@ -59,21 +60,36 @@ fn span_processor_reply(input: &Input) -> HelperResult {
         input.callback_name.as_deref(),
     )
     .map_err(|error| invalid(&error.to_string()))?;
-    Ok(plan_json(&plan, Some(plan.processor)))
+    Ok(plan_json(
+        plan.kind,
+        plan.endpoint.as_deref(),
+        &plan.headers,
+        Some(plan.processor),
+    ))
 }
 
 fn log_exporter_reply(input: &Input) -> HelperResult {
     let config = input.config.to_config(&input.environment);
-    let plan = log_exporter_plan(&config, input.callback_name.as_deref(), &input.environment);
-    let plan = plan.map_err(|error| invalid(&error.to_string()))?;
-    Ok(plan_json(&plan, None))
+    let plan = log_exporter_plan(&config, input.callback_name.as_deref(), &input.environment)
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(plan_json(
+        plan.kind,
+        plan.endpoint.as_deref(),
+        &plan.headers,
+        None,
+    ))
 }
 
 fn metric_reader_reply(input: &Input) -> HelperResult {
     let config = input.config.to_config(&input.environment);
-    let plan = metric_reader_plan(&config, input.callback_name.as_deref());
-    let plan = plan.map_err(|error| invalid(&error.to_string()))?;
-    Ok(plan_json(&plan, None))
+    let plan = metric_reader_plan(&config, input.callback_name.as_deref())
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(plan_json(
+        plan.kind,
+        plan.endpoint.as_deref(),
+        &plan.headers,
+        None,
+    ))
 }
 
 impl crate::helpers::Helper for Op {

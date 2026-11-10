@@ -6,9 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use betterlite_logging::otel::legacy_exporters::build::LegacyExporterBuilder;
-use betterlite_logging::otel::legacy_exporters::selection::{
-    ExporterKind, ExporterPlan, ProcessorKind, SpanProcessorPlan,
-};
+use betterlite_logging::otel::legacy_exporters::selection::{ExporterKind, ProcessorKind};
 use betterlite_logging::otel::legacy_exporters::tracer_cache::{
     CacheKey, CacheSettings, DynamicTracerCache, MAX_DYNAMIC_TRACER_PROVIDERS,
 };
@@ -54,11 +52,18 @@ const fn processor_text(kind: ProcessorKind) -> &'static str {
     }
 }
 
-pub(super) fn plan_json(plan: &ExporterPlan, processor: Option<ProcessorKind>) -> Value {
-    let mut value =
-        json!({ "kind": kind_text(plan.kind), "endpoint": plan.endpoint, "headers": plan.headers });
-    if let (Some(processor), Value::Object(fields)) = (processor, &mut value) {
-        fields.insert("processor".to_owned(), json!(processor_text(processor)));
+pub(super) fn plan_json(
+    kind: ExporterKind,
+    endpoint: Option<&str>,
+    headers: &BTreeMap<String, String>,
+    processor: Option<ProcessorKind>,
+) -> Value {
+    let mut value = json!({ "kind": kind_text(kind), "endpoint": endpoint, "headers": headers });
+    if let (Some(processor_kind), Value::Object(fields)) = (processor, &mut value) {
+        fields.insert(
+            "processor".to_owned(),
+            json!(processor_text(processor_kind)),
+        );
     }
     value
 }
@@ -140,11 +145,11 @@ fn fill_cache(
         cache
             .cached_dynamic_tracer(key.clone(), request.owns_exporter, || {
                 ran.set(true);
-                let sender = sender.clone();
+                let recorder = sender.clone();
                 let processor = ShutdownRecorder {
                     index,
                     caller_thread: caller_thread.map(str::to_owned),
-                    sender,
+                    sender: recorder,
                 };
                 Ok(SdkTracerProvider::builder()
                     .with_span_processor(processor)
