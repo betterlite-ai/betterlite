@@ -145,6 +145,49 @@ async fn write_claude_settings_creates_the_target_of_a_dangling_symlink() {
     assert_eq!(load_json_or_empty(&target).unwrap(), document);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn write_claude_settings_follows_a_dangling_symlink_chain() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let dotfiles = home.path().join("dotfiles");
+    fs::create_dir_all(&dotfiles).unwrap();
+    let settings = home.path().join("settings.json");
+    let intermediate = home.path().join("c.json");
+    symlink(Path::new("c.json"), &settings).unwrap();
+    symlink(Path::new("dotfiles").join("settings.json"), &intermediate).unwrap();
+    let target = dotfiles.join("settings.json");
+    let document = settings_from(r#"{"model":"claude-opus"}"#);
+    let resolved = write_target(&settings).unwrap();
+    assert_eq!(
+        resolved,
+        fs::canonicalize(&dotfiles).unwrap().join("settings.json")
+    );
+    write_claude_settings(&PrivateFiles::default(), &resolved, &document)
+        .await
+        .unwrap();
+    assert!(settings.is_symlink());
+    assert_eq!(load_json_or_empty(&target).unwrap(), document);
+}
+
+#[cfg(unix)]
+#[test]
+fn write_target_follows_a_link_into_a_missing_folder() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("settings.json");
+    symlink(Path::new("nodir").join("settings.json"), &settings).unwrap();
+    assert_eq!(
+        write_target(&settings).unwrap(),
+        fs::canonicalize(home.path())
+            .unwrap()
+            .join("nodir")
+            .join("settings.json")
+    );
+}
+
 #[tokio::test]
 async fn write_claude_settings_reports_a_failed_write() {
     let home = TempDir::new().unwrap();
