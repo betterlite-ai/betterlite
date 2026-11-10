@@ -17,5 +17,6 @@ call:
           - {base: "https://u[]@v1.x", deployment: 0}
           - {base: "https://u[@v1.a]b", deployment: 0}
           - {base: "https://gdc.example℀", deployment: 0}
+          - {base: "https://u[]@v1.", deployment: 0}
 env: {}
 compare: {ignore: []}

@@ -558,6 +558,9 @@ fn audience_is_the_scheme_and_netloc_of_the_original_base(
 #[case::empty_scope_id("https://[fe80::1%]/x")]
 #[case::scope_with_a_percent("https://[fe80::1%eth0%x]/x")]
 #[case::brackets_in_userinfo_for_a_non_ip_host("https://u[]@example.com")]
+#[case::empty_ipvfuture_hex_in_userinfo("https://u[]@v.a]b")]
+#[case::empty_ipvfuture_suffix_in_userinfo("https://u[]@v1.")]
+#[case::non_hex_ipvfuture_in_userinfo("https://u[]@vzz.x")]
 #[case::nfkc_reintroduces_a_slash("https://gdc.example\u{2100}")]
 #[case::nfkc_reintroduces_a_fullwidth_slash("https://gdc\u{ff0f}example")]
 fn audience_rejects_what_urlsplit_rejects(#[case] base: &str) {

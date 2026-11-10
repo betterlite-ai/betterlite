@@ -1,5 +1,3 @@
-use std::net::Ipv6Addr;
-
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::gdc_settings::{BoolOrString, CallSettings, GlobalSettings};
 use betterlite_env::flag;
@@ -152,17 +150,13 @@ pub fn audience(api_base: &str) -> Result<String, GdcPolicyError> {
     Ok(format!("{}://{}", parts.scheme, parts.netloc))
 }
 
-// urllib.parse's ipaddress check accepts an IPvFuture literal and an IPv6 address with a scope id
+// urlsplit's userinfo-only branch cuts the host at ':', so only an IPvFuture literal can pass here
 #[rustfmt::skip]
 fn bracketed_host_is_valid(host: &str) -> bool {
-    if let Some(future) = host.strip_prefix('v') {
-        let Some((hex, suffix)) = future.split_once('.') else { return false };
-        return !hex.is_empty() && hex.chars().all(|character| character.is_ascii_hexdigit()) && !suffix.is_empty();
-    }
-    match host.split_once('%') {
-        Some((address, zone)) => !zone.is_empty() && !zone.contains('%') && address.parse::<Ipv6Addr>().is_ok(),
-        None => host.parse::<Ipv6Addr>().is_ok(),
-    }
+    let Some((hex, suffix)) = host.strip_prefix('v').and_then(|future| future.split_once('.')) else {
+        return false;
+    };
+    !hex.is_empty() && hex.chars().all(|character| character.is_ascii_hexdigit()) && !suffix.is_empty()
 }
 
 #[must_use]

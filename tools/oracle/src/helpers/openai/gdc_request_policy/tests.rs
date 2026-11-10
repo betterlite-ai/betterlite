@@ -114,6 +114,7 @@ fn an_audience_keeps_only_the_scheme_and_netloc() {
             {"ok": true, "value": "https://[fe80::1%25eth0]:443"},
             {"ok": true, "value": "https://u[]@v1.x"},
             {"ok": true, "value": "https://u[@v1.a]b"},
+            {"ok": false, "status": 500_i32},
             {"ok": false, "status": 500_i32}
         ])
     );
