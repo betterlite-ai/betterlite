@@ -218,6 +218,11 @@ fn fetch_requests_models_with_bearer_auth_and_ten_second_timeout() {
 }
 
 #[test]
+fn fetch_body_limit_is_eight_mebibytes() {
+    assert_eq!(MAX_LISTING_BODY_BYTES, 0x0080_0000);
+}
+
+#[test]
 fn fetch_skips_a_body_over_the_size_limit() {
     let transport = FakeTransport::replying_bytes(200, vec![b' '; MAX_LISTING_BODY_BYTES + 1]);
     let skipped = fetch_model_listing("http://proxy", &key(), &transport)
