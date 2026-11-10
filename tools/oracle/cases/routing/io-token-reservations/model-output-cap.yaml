@@ -1,0 +1,13 @@
+kind: probe
+name: io-token-reservations-model-output-cap
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      io_token_reservations:
+        now_millis: 1700000000000
+        deployment: {id: dep-cap, model: gpt-4o, itpm: 1000, otpm: 20000}
+        request: {messages: [{role: user, content: hello}]}
+        estimate: 10
+        counters: {itpm: 0, otpm: 0}
+        litellm_metadata: {trace: keep}
