@@ -97,11 +97,24 @@ fn resolves_prompts_storage_from_config_or_environment(
 #[case::generate("missing_session_id: generate", Some(MissingSessionId::Generate))]
 #[case::reject("missing_session_id: reject", Some(MissingSessionId::Reject))]
 #[case::omit("missing_session_id: omit", Some(MissingSessionId::Omit))]
-#[case::unknown("missing_session_id: ignore", None)]
 fn parses_missing_session_policy(#[case] line: &str, #[case] expected: Option<MissingSessionId>) {
     let source = format!("general_settings:\n  {line}\n");
     let settings = load(&source, &[]);
     assert_eq!(settings.missing_session_id, expected);
+}
+
+#[rstest]
+#[case::unknown("ignore")]
+#[case::wrong_case("Omit")]
+#[case::number("5")]
+fn an_unknown_missing_session_policy_fails_loading(#[case] value: &str) {
+    let source = format!("general_settings:\n  missing_session_id: {value}\n");
+    let error = load_spend_storage_policy(&source, &environment(&[])).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("general_settings.missing_session_id")
+    );
 }
 
 #[rstest]

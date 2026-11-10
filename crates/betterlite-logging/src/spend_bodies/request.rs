@@ -47,11 +47,17 @@ pub fn storage_request_body(
     text
 }
 fn body_fields(params: &Fields, kwargs: Option<&RequestKwargs<'_>>) -> Option<Fields> {
-    let proxy = params.get("proxy_server_request").and_then(as_object)?;
-    let mut body = match proxy.get("body").and_then(as_object) {
-        Some(body) if !body.is_empty() => body.clone(),
-        _ => Fields::new(),
-    };
+    let proxy = params.get("proxy_server_request");
+    if proxy.is_some_and(|value| !matches!(value, Json::Object(_))) {
+        return None;
+    }
+    let mut body = proxy
+        .and_then(as_object)
+        .and_then(|fields| fields.get("body"))
+        .and_then(as_object)
+        .filter(|body| !body.is_empty())
+        .cloned()
+        .unwrap_or_default();
     if let Some(request_kwargs) = kwargs {
         if let Some(standard) = request_kwargs.standard_logging_object.and_then(as_object) {
             body.extend(classifier_audit_fields(standard));

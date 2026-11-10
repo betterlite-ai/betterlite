@@ -45,6 +45,25 @@ fn a_null_or_missing_proxy_server_request_returns_an_empty_object() {
 }
 
 #[test]
+fn overlays_and_redacts_without_a_proxy_server_request() {
+    let params = value(r#"{"model": "gpt-4o"}"#);
+    let tools = value(r#"[{"type": "function"}]"#);
+    let kwargs = RequestKwargs {
+        standard_logging_object: None,
+        realtime_tools: Some(&tools),
+        dynamic_params: None,
+    };
+    assert_eq!(
+        stored(&params, Some(&kwargs), false),
+        r#"{"tools": [{"type": "function"}]}"#
+    );
+    assert_eq!(
+        stored(&params, Some(&kwargs), true),
+        r#"{"tools": [{"type": "function"}], "messages": [{"role": "user", "content": "redacted-by-litellm"}], "prompt": "", "input": ""}"#
+    );
+}
+
+#[test]
 fn overlays_classifier_audit_fields_after_the_body() {
     let params = value(r#"{"proxy_server_request": {"body": {"model": "gpt-4o"}}}"#);
     let payload = value(

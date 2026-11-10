@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 pub const ENV_STORE_PROMPTS: &str = "STORE_PROMPTS_IN_SPEND_LOGS";
 pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
+const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
@@ -54,7 +55,7 @@ impl Section for Raw {
             max_string_length_prompt_in_db: initial_max_prompt_length(
                 lookup.lookup(ENV_MAX_PROMPT_LENGTH).as_deref(),
             )?,
-            missing_session_id: missing_session_id(&general.missing_session_id),
+            missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
         })
     }
@@ -107,12 +108,24 @@ pub fn runtime_max_prompt_length(initial: i64, snapshot: Option<&str>) -> i64 {
             .unwrap_or(initial)
     })
 }
-fn missing_session_id(value: &JsonValue) -> Option<MissingSessionId> {
-    match value.as_str()? {
-        "generate" => Some(MissingSessionId::Generate),
-        "reject" => Some(MissingSessionId::Reject),
-        "omit" => Some(MissingSessionId::Omit),
-        _ => None,
+fn missing_session_id(value: &JsonValue) -> Result<Option<MissingSessionId>, ConfigError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::String(text) => match text.as_str() {
+            "generate" => Ok(Some(MissingSessionId::Generate)),
+            "reject" => Ok(Some(MissingSessionId::Reject)),
+            "omit" => Ok(Some(MissingSessionId::Omit)),
+            _ => Err(invalid_missing_session_id()),
+        },
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(invalid_missing_session_id())
+        }
+    }
+}
+fn invalid_missing_session_id() -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: MISSING_SESSION_ID_PATH.to_owned(),
+        value: false,
     }
 }
 const fn spend_updates(value: &JsonValue) -> SpendUpdates {
