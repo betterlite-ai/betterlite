@@ -55,7 +55,7 @@ impl GdcPolicyError {
 #[must_use]
 #[rustfmt::skip]
 pub fn get_supported_openai_params(model: &str, config: &OpenAiConfig, catalog: &CatalogCapabilities) -> Vec<&'static str> {
-    let mut params = VERTEX_PARAMS.to_vec();
+    let mut params = if SUPPORTS_VERTEX_PARAMS { VERTEX_PARAMS.to_vec() } else { Vec::new() };
     params.extend(config.supported_params(model, catalog));
     params
 }
