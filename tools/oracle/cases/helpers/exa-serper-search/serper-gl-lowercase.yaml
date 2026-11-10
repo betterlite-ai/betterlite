@@ -1,0 +1,21 @@
+kind: helper
+name: serper_gl_lowercase
+call:
+  b8020:
+    environment:
+      SERPER_API_KEY: sk-serper
+    calls:
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {country: "US"}}
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {country: ""}}
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {gl: "de"}}
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {country: "GB", gl: "de"}}
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {country: 5}}
+      - provider: serper
+        call: {kind: request, query: "q", optional_params: {max_results: 4, country: "GB"}}
+env: {}
+compare: {ignore: []}

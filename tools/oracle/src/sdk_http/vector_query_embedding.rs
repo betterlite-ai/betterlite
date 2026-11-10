@@ -16,6 +16,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_query_embedding::error::QueryEmbeddingError;
 use betterlite_provider::api::vector_store_contracts::config::{EmbeddingEntry, Params};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
@@ -40,7 +41,7 @@ pub(crate) async fn send(
         &call.query_text,
         &litellm_params,
         None,
-        direct_executor(&client, &defaults),
+        direct_executor(&client, &defaults)?,
     )
     .await
     {
@@ -52,7 +53,7 @@ pub(crate) async fn send(
         &call.query_text,
         &litellm_params,
         None,
-        direct_executor(&client, &defaults),
+        direct_executor(&client, &defaults)?,
     )
     .await
     {
@@ -96,8 +97,11 @@ fn environment_defaults(env: &BTreeMap<String, String>) -> Result<OpenAiDefaults
     Ok(openai_defaults(&config))
 }
 
-fn direct_executor(client: &ProxiedClient, defaults: &OpenAiDefaults) -> DirectEmbeddingExecutor {
-    DirectEmbeddingExecutor {
+fn direct_executor(
+    client: &ProxiedClient,
+    defaults: &OpenAiDefaults,
+) -> Result<DirectEmbeddingExecutor, SdkHttpError> {
+    Ok(DirectEmbeddingExecutor {
         executor: ChatExecutor {
             client: client.clone(),
             deployments: Vec::new(),
@@ -111,11 +115,13 @@ fn direct_executor(client: &ProxiedClient, defaults: &OpenAiDefaults) -> DirectE
             mock: MockSettings::default(),
             mock_chat,
             mock_embedding,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
         },
         deployments: Vec::new(),
         defaults: defaults.clone(),
         catalog: BundledCatalog::default().get(),
-    }
+    })
 }
 
 // the class each LiteLLM error projects to; a plain exception carries no status, type, param or code

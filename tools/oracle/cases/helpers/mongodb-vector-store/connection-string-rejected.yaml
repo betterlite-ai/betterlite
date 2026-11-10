@@ -1,0 +1,28 @@
+kind: helper
+name: connection-string-rejected
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_connection_string: "mongodb://localhost:27017"}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_connection_string: null}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_connection_string: "mongodb://localhost:27017", mongodb_zzz: 1}
+          optional_params: {filters: {}}
+          extra_body: {override: true}
+          query: q
+      - call: mongodb_validate_environment
+        input:
+          headers: {}
+          litellm_params: {api_key: k, mongodb_connection_string: "mongodb://localhost:27017"}
+          env: {}
+env: {}
+compare: {ignore: []}

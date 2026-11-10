@@ -1,0 +1,11 @@
+task: B4302
+deviations:
+  - what: The converters, stream wrapper, Responses iterator and Anthropic Messages iterator are called through the ReplayConversions trait, so this module hands the seam the cached dict, the response kind, the sync-or-async converter choice, the model, the cached_response provider, the transcription hidden params and the call type instead of importing those functions.
+    why: The response types and wrappers are owned by B004, B005, B927 and B980, and the cache crate cannot name them; the seam keeps every decision this task owns in this module and the conversion itself in its owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L883-L886
+  - what: update_response_metadata receives the elapsed duration the caller measured instead of LiteLLM's start_time and end_time datetimes; the response time written is the same difference.
+    why: The replay module has no clock, and the caching handler already holds the request start time and takes the end time when it converts the hit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L993-L1000
+  - what: An already converted result is handed back as CacheHit::Replayed and returned unchanged, where LiteLLM's isinstance(cached_result, dict) check on Any skips every branch for a CustomStreamWrapper.
+    why: The Rust type makes a wrapped stream inexpressible as a cached dict, so a second conversion cannot rewrap it; the guard is the cache-hit variant rather than a runtime type check and the observable result is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L872-L874
