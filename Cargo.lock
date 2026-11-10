@@ -1059,6 +1059,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-analytics"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "chrono",
+ "indexmap 2.14.2",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-analytics-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-analytics",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
@@ -1069,6 +1091,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "chrono",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -1131,14 +1154,21 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-openai",
+ "hex",
  "indexmap 2.14.2",
+ "lru",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "sha2 0.11.1",
  "thiserror",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1174,6 +1204,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-tokenizer",
  "bytes",
  "chrono",
@@ -1196,6 +1227,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "url",
  "uuid",
 ]
@@ -1497,6 +1529,20 @@ dependencies = [
  "tracing-subscriber",
  "unicode-normalization",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-db-admin"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-db",
+ "clap",
+ "rstest",
+ "secrecy",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -2006,6 +2052,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2042,6 +2089,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-openai",
  "betterlite-tokenizer",
+ "http 1.5.0",
  "libfuzzer-sys",
  "serde_json",
  "uuid",
@@ -2126,6 +2174,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
  "quick-xml",
@@ -2314,11 +2363,14 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -2518,9 +2570,11 @@ dependencies = [
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
+ "redis",
  "regex",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",

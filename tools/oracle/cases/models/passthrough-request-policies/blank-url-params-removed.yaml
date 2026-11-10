@@ -1,0 +1,11 @@
+kind: helper
+name: blank-url-params-removed
+call:
+  b3571:
+    operation: query_merge
+    existing_url: https://upstream.example/v1/chat?blank=&empty&kept=value&=named
+    default_query_params:
+      blank: default
+      empty: default
+compare: {ignore: []}
+env: {}
