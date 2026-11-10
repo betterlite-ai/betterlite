@@ -54,7 +54,12 @@ async fn rpush_appends_values_and_returns_the_new_length() {
     assert_eq!(length, 4);
     assert_eq!(
         server.commands_named("RPUSH")[0].args,
-        vec!["ns:buf".to_owned(), "c".to_owned(), "d".to_owned()]
+        vec![
+            "RPUSH".to_owned(),
+            "ns:buf".to_owned(),
+            "c".to_owned(),
+            "d".to_owned()
+        ]
     );
     assert_eq!(
         harness.hooks.entries(),
@@ -85,7 +90,7 @@ async fn rpush_sends_each_redis_scalar_as_its_wire_value(
         .expect("a push");
     assert_eq!(
         server.commands_named("RPUSH")[0].args,
-        vec!["buf".to_owned(), expected.to_owned()]
+        vec!["RPUSH".to_owned(), "buf".to_owned(), expected.to_owned()]
     );
 }
 
@@ -107,7 +112,7 @@ async fn rpush_namespaces_the_key_once(
         .async_rpush(key, &[text("value")])
         .await
         .expect("a push");
-    assert_eq!(server.commands_named("RPUSH")[0].args[0], expected);
+    assert_eq!(server.commands_named("RPUSH")[0].args[1], expected);
 }
 
 #[tokio::test]
@@ -156,7 +161,12 @@ async fn rpush_and_trim_pushes_and_trims_in_one_transaction() {
     );
     assert_eq!(
         server.commands_named("LTRIM")[0].args,
-        vec!["ns:buf".to_owned(), "-3".to_owned(), "-1".to_owned()]
+        vec![
+            "LTRIM".to_owned(),
+            "ns:buf".to_owned(),
+            "-3".to_owned(),
+            "-1".to_owned()
+        ]
     );
     assert_eq!(
         harness.hooks.entries(),
@@ -180,7 +190,12 @@ async fn rpush_and_trim_negates_the_kept_length(#[case] max_len: i64, #[case] st
         .expect("a push");
     assert_eq!(
         server.commands_named("LTRIM")[0].args,
-        vec!["buf".to_owned(), start.to_owned(), "-1".to_owned()]
+        vec![
+            "LTRIM".to_owned(),
+            "buf".to_owned(),
+            start.to_owned(),
+            "-1".to_owned()
+        ]
     );
 }
 
@@ -230,8 +245,14 @@ async fn rpush_pipeline_returns_one_length_per_operation() {
         .expect("a pipeline");
     assert_eq!(lengths, vec![3, 5]);
     let pushes = server.commands_named("RPUSH");
-    assert_eq!(pushes[0].args, vec!["ns:a".to_owned(), "x".to_owned()]);
-    assert_eq!(pushes[1].args, vec!["ns:b".to_owned(), "y".to_owned()]);
+    assert_eq!(
+        pushes[0].args,
+        vec!["RPUSH".to_owned(), "ns:a".to_owned(), "x".to_owned()]
+    );
+    assert_eq!(
+        pushes[1].args,
+        vec!["RPUSH".to_owned(), "ns:b".to_owned(), "y".to_owned()]
+    );
     assert!(!data_commands(&server).contains(&"MULTI".to_owned()));
     assert_eq!(
         harness.hooks.entries(),
@@ -293,7 +314,7 @@ async fn lpop_returns_one_decoded_value_for_a_single_pop() {
     assert_eq!(result, LpopResult::Item("first".to_owned()));
     assert_eq!(
         server.commands_named("LPOP")[0].args,
-        vec!["ns:queue".to_owned()]
+        vec!["LPOP".to_owned(), "ns:queue".to_owned()]
     );
     assert_eq!(
         harness.hooks.entries(),
@@ -340,7 +361,7 @@ async fn lpop_uses_one_bulk_pop_from_redis_seven(#[case] version: &str) {
     );
     assert_eq!(
         server.commands_named("LPOP")[0].args,
-        vec!["ns:queue".to_owned(), "2".to_owned()]
+        vec!["LPOP".to_owned(), "ns:queue".to_owned(), "2".to_owned()]
     );
 }
 
@@ -365,8 +386,8 @@ async fn lpop_loops_single_pops_below_redis_seven(#[case] version: &str) {
     );
     let pops = server.commands_named("LPOP");
     assert_eq!(pops.len(), 2);
-    assert_eq!(pops[0].args, vec!["ns:queue".to_owned()]);
-    assert_eq!(pops[1].args, vec!["ns:queue".to_owned()]);
+    assert_eq!(pops[0].args, vec!["LPOP".to_owned(), "ns:queue".to_owned()]);
+    assert_eq!(pops[1].args, vec!["LPOP".to_owned(), "ns:queue".to_owned()]);
 }
 
 #[tokio::test]
@@ -421,7 +442,7 @@ async fn lpop_falls_back_to_the_default_major_version_for_an_unknown_version() {
         result,
         LpopResult::Items(vec!["a".to_owned(), "b".to_owned()])
     );
-    assert_eq!(server.commands_named("LPOP")[0].args.len(), 2);
+    assert_eq!(server.commands_named("LPOP")[0].args.len(), 3);
 }
 
 #[tokio::test]
@@ -445,7 +466,7 @@ async fn lpop_uses_a_six_default_for_an_unknown_version() {
     );
     let pops = server.commands_named("LPOP");
     assert_eq!(pops.len(), 2);
-    assert_eq!(pops[0].args, vec!["queue".to_owned()]);
+    assert_eq!(pops[0].args, vec!["LPOP".to_owned(), "queue".to_owned()]);
 }
 
 #[test]
@@ -508,9 +529,18 @@ async fn lpop_pipeline_keeps_each_operation_isolated() {
         ]
     );
     let pops = server.commands_named("LPOP");
-    assert_eq!(pops[0].args, vec!["ns:a".to_owned(), "2".to_owned()]);
-    assert_eq!(pops[1].args, vec!["ns:b".to_owned(), "2".to_owned()]);
-    assert_eq!(pops[2].args, vec!["ns:c".to_owned(), "1".to_owned()]);
+    assert_eq!(
+        pops[0].args,
+        vec!["LPOP".to_owned(), "ns:a".to_owned(), "2".to_owned()]
+    );
+    assert_eq!(
+        pops[1].args,
+        vec!["LPOP".to_owned(), "ns:b".to_owned(), "2".to_owned()]
+    );
+    assert_eq!(
+        pops[2].args,
+        vec!["LPOP".to_owned(), "ns:c".to_owned(), "1".to_owned()]
+    );
     assert!(!data_commands(&server).contains(&"MULTI".to_owned()));
 }
 
@@ -538,11 +568,11 @@ async fn lpop_pipeline_regroups_flat_pops_below_redis_seven() {
     );
     let pops = server.commands_named("LPOP");
     assert_eq!(pops.len(), 5);
-    assert_eq!(pops[0].args, vec!["ns:a".to_owned()]);
-    assert_eq!(pops[1].args, vec!["ns:a".to_owned()]);
-    assert_eq!(pops[2].args, vec!["ns:b".to_owned()]);
-    assert_eq!(pops[3].args, vec!["ns:b".to_owned()]);
-    assert_eq!(pops[4].args, vec!["ns:c".to_owned()]);
+    assert_eq!(pops[0].args, vec!["LPOP".to_owned(), "ns:a".to_owned()]);
+    assert_eq!(pops[1].args, vec!["LPOP".to_owned(), "ns:a".to_owned()]);
+    assert_eq!(pops[2].args, vec!["LPOP".to_owned(), "ns:b".to_owned()]);
+    assert_eq!(pops[3].args, vec!["LPOP".to_owned(), "ns:b".to_owned()]);
+    assert_eq!(pops[4].args, vec!["LPOP".to_owned(), "ns:c".to_owned()]);
 }
 
 #[tokio::test]
@@ -566,8 +596,8 @@ async fn lpop_pipeline_below_redis_seven_uses_one_pop_for_a_missing_count() {
     );
     let pops = server.commands_named("LPOP");
     assert_eq!(pops.len(), 2);
-    assert_eq!(pops[0].args, vec!["a".to_owned()]);
-    assert_eq!(pops[1].args, vec!["c".to_owned()]);
+    assert_eq!(pops[0].args, vec!["LPOP".to_owned(), "a".to_owned()]);
+    assert_eq!(pops[1].args, vec!["LPOP".to_owned(), "c".to_owned()]);
 }
 
 #[tokio::test]
@@ -589,7 +619,7 @@ async fn lpop_pipeline_below_redis_seven_pops_nothing_for_a_negative_count() {
     );
     let pops = server.commands_named("LPOP");
     assert_eq!(pops.len(), 1);
-    assert_eq!(pops[0].args, vec!["b".to_owned()]);
+    assert_eq!(pops[0].args, vec!["LPOP".to_owned(), "b".to_owned()]);
 }
 
 #[tokio::test]
@@ -806,7 +836,7 @@ async fn hooks_carry_the_operation_name_and_a_measured_duration() {
     assert!(durations[0] > Duration::ZERO);
     assert_eq!(
         harness.hooks.entries(),
-        vec!["success:async_rpush:None".to_owned()]
+        vec!["success:async_rpush:Some(\"buf\")".to_owned()]
     );
 }
 
@@ -823,7 +853,7 @@ async fn a_failed_hook_carries_a_measured_duration_too() {
     let durations = harness.durations();
     assert_eq!(durations.len(), 1);
     assert!(durations[0] > Duration::ZERO);
-    assert!(harness.hooks.entries()[0].starts_with("failure:async_lpop:None:"));
+    assert!(harness.hooks.entries()[0].starts_with("failure:async_lpop:Some(\"queue\"):"));
 }
 
 #[tokio::test]
