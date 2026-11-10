@@ -1,0 +1,25 @@
+kind: helper
+name: reservation-tokens-query-plus-documents-and-empty-request
+call:
+  reservation_tokens:
+    calls:
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          query: hello world
+          documents:
+            - hello world
+            - nested: [true, null]
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request: {}
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          query: null
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          prompt: null
+env: {}
+compare: {ignore: []}
