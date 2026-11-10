@@ -33,14 +33,12 @@ const CENTRAL_ALIASES: [&str; 4] = [
     "login.windows.net",
     "sts.windows.net",
 ];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Authority {
     pub instance: String,
     pub tenant: String,
     pub token_endpoint: String,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Flavour {
     Entra,
@@ -48,7 +46,6 @@ enum Flavour {
     Adfs,
     B2c,
 }
-
 struct Canonical {
     url: Url,
     instance: String,

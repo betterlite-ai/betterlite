@@ -136,21 +136,18 @@ fn selection_value(selection: &region::RegionSelection, extra: &[(&str, Value)])
 pub(super) fn inputs_report(step: &Step) -> Result<Value, Box<HelperError>> {
     let (settings, selection, _imds_requests, _metadata) = selection_report(step)?;
     let host = regional_host(&flow_requests(step)?, &step.environment);
-    let configured = configured_input(&settings);
-    Ok(selection_value(
-        &selection,
-        &[("configured", configured), ("regional_host", host)],
-    ))
+    let extra = [
+        ("configured", configured_input(&settings)),
+        ("regional_host", host),
+    ];
+    Ok(selection_value(&selection, &extra))
 }
 
 pub(super) fn discovery_report(step: &Step) -> Result<Value, Box<HelperError>> {
     let (_settings, selection, imds_requests, metadata) = selection_report(step)?;
     let host = regional_host(&flow_requests(step)?, &step.environment);
-    let extra = [
-        ("imds_requests", json!(imds_requests)),
-        ("metadata", metadata),
-        ("regional_host", host),
-    ];
+    let mut extra = vec![("imds_requests", json!(imds_requests))];
+    extra.extend([("metadata", metadata), ("regional_host", host)]);
     Ok(selection_value(&selection, &extra))
 }
 
