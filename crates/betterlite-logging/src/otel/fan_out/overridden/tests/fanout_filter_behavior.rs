@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use opentelemetry::trace::SpanId;
-use opentelemetry_sdk::trace::{SpanData, SpanProcessor};
+use opentelemetry::Context;
+use opentelemetry::trace::{SpanId, Tracer as _, TracerProvider as _};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanProcessor};
 
 use crate::otel::config::destination::{DestinationFields, OtelDestination, SpanScope};
 use crate::otel::fan_out::attach::{SinkKey, sink_key};
@@ -205,6 +207,49 @@ fn a_different_account_is_not_widened_by_a_full_sibling() {
     );
     SpanProcessor::on_end(&filter, request_root());
     assert!(recorder.delivered().is_empty());
+}
+
+#[test]
+fn the_filter_debug_names_its_owner_and_scope_without_the_sink() {
+    let recorder = Recorder::new();
+    let filter = filter(
+        Some("arize"),
+        SpanScope::Full,
+        Some(account("http://collector:4318")),
+        FixedScope::new(vec![], false),
+        &recorder,
+    );
+    let text = format!("{filter:?}");
+    assert!(text.contains("OverriddenBackendFilter"));
+    assert!(text.contains("arize"));
+    assert!(text.contains("Full"));
+    assert!(!text.contains("collector"));
+}
+
+#[test]
+fn on_start_and_set_resource_reach_the_wrapped_processor() {
+    let recorder = Recorder::new();
+    let mut filter = filter(
+        None,
+        SpanScope::Full,
+        None,
+        FixedScope::new(vec![], false),
+        &recorder,
+    );
+    let provider = SdkTracerProvider::builder().build();
+    let mut span = provider.tracer("fan-out-tests").start("call model");
+    SpanProcessor::on_start(&filter, &mut span, &Context::new());
+    let resource = Resource::builder_empty()
+        .with_attribute(opentelemetry::KeyValue::new("service.name", "betterlite"))
+        .build();
+    SpanProcessor::set_resource(&mut filter, &resource);
+    assert_eq!(recorder.start_count(), 1);
+    let resources = recorder.resources();
+    assert_eq!(resources.len(), 1);
+    assert_eq!(
+        resources[0].get(&opentelemetry::Key::new("service.name")),
+        Some(opentelemetry::Value::from("betterlite".to_owned()))
+    );
 }
 
 #[test]

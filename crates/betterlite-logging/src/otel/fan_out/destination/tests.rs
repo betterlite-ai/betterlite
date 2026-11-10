@@ -33,6 +33,14 @@ fn tenant_resource() -> Resource {
 }
 
 #[test]
+fn the_factory_debug_names_itself() {
+    let factory = ExporterDestinationFactory {
+        factories: factories(),
+    };
+    assert!(format!("{factory:?}").contains("ExporterDestinationFactory"));
+}
+
+#[test]
 fn an_otlp_http_destination_builds_a_batch_processor() {
     let factory = ExporterDestinationFactory {
         factories: factories(),

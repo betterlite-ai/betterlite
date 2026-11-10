@@ -122,8 +122,10 @@ pub(crate) fn destination_with_protocol(
 #[derive(Debug, Default)]
 pub(crate) struct Recorder {
     pub(crate) spans: Mutex<Vec<SpanData>>,
+    pub(crate) starts: Mutex<usize>,
     pub(crate) flushes: Mutex<usize>,
     pub(crate) shutdowns: Mutex<usize>,
+    pub(crate) resources: Mutex<Vec<Resource>>,
     pub(crate) flush_fails: bool,
 }
 
@@ -143,13 +145,28 @@ impl Recorder {
     pub(crate) fn flush_count(&self) -> usize {
         *lock(&self.flushes)
     }
+
+    pub(crate) fn start_count(&self) -> usize {
+        *lock(&self.starts)
+    }
+
+    pub(crate) fn resources(&self) -> Vec<Resource> {
+        lock(&self.resources).clone()
+    }
 }
 
 impl SpanProcessor for Recorder {
-    fn on_start(&self, _span: &mut Span, _cx: &Context) {}
+    fn on_start(&self, _span: &mut Span, _cx: &Context) {
+        let mut starts = lock(&self.starts);
+        *starts = starts.saturating_add(1);
+    }
 
     fn on_end(&self, span: SpanData) {
         lock(&self.spans).push(span);
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        lock(&self.resources).push(resource.clone());
     }
 
     fn force_flush(&self) -> OTelSdkResult {
@@ -189,6 +206,10 @@ impl SpanProcessor for SharedRecorder {
 
     fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
         self.0.shutdown_with_timeout(timeout)
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        lock(&self.0.resources).push(resource.clone());
     }
 }
 
@@ -241,8 +262,10 @@ impl DestinationProcessorFactory for RecordingFactory {
         }
         let recorder = Arc::new(Recorder {
             spans: Mutex::new(Vec::new()),
+            starts: Mutex::new(0),
             flushes: Mutex::new(0),
             shutdowns: Mutex::new(0),
+            resources: Mutex::new(Vec::new()),
             flush_fails: self.flush_fails,
         });
         lock(&self.built).push((endpoint, resource.clone()));

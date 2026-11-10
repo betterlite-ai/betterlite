@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use opentelemetry_sdk::trace::SpanProcessor;
@@ -61,6 +62,48 @@ fn a_processor_submitted_past_close_is_closed_off_the_submitting_thread() {
     let (closer, received) = signal_closer(false);
     pool.submit(closer);
     received.recv_timeout(WAIT).expect("a straggler closes it");
+}
+
+#[test]
+fn close_waits_for_live_workers_until_the_deadline() {
+    let pool = DrainPool::new(1, 64);
+    let (closer, entered, release) = blocking_closer();
+    pool.submit(closer);
+    entered.recv_timeout(WAIT).expect("the close starts");
+    let started = Instant::now();
+    pool.close(Duration::from_millis(200));
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(150),
+        "close returned in {waited:?}"
+    );
+    release.send(()).expect("the flush finishes");
+}
+
+#[test]
+fn close_returns_once_every_worker_has_retired() {
+    let pool = DrainPool::new(1, 64);
+    let (closer, received) = signal_closer(false);
+    pool.submit(closer);
+    received
+        .recv_timeout(WAIT)
+        .expect("the worker closes the processor");
+    let started = Instant::now();
+    pool.close(WAIT);
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn dropping_the_pool_stops_its_worker() {
+    let pool = DrainPool::new(1, 8);
+    let shared = Arc::clone(&pool.shared);
+    assert_eq!(Arc::strong_count(&shared), 3);
+    drop(pool);
+    let deadline = Instant::now() + WAIT;
+    while Arc::strong_count(&shared) > 1 && Instant::now() < deadline {
+        thread::yield_now();
+    }
+    assert_eq!(Arc::strong_count(&shared), 1);
 }
 
 #[test]

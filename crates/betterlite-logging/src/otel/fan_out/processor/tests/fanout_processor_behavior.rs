@@ -284,6 +284,33 @@ fn shutdown_closes_every_destination_and_refuses_new_spans() {
 }
 
 #[test]
+fn the_settings_debug_names_itself() {
+    let text = format!("{:?}", settings(BTreeMap::new()));
+    assert!(text.contains("FanOutSettings"));
+    assert!(text.contains("pending_drains"));
+}
+
+#[test]
+fn the_fan_out_debug_keeps_credentials_out() {
+    let mut headers = BTreeMap::new();
+    headers.insert("authorization".to_owned(), "Bearer sk-secret".to_owned());
+    let fanout = fanout(
+        vec![],
+        false,
+        RecordingFactory::new(),
+        settings(operator_sink(
+            "http://collector:4318",
+            &headers,
+            SpanScope::Full,
+        )),
+    );
+    let text = format!("{fanout:?}");
+    assert!(text.contains("FanOutInner"));
+    assert!(text.contains("shutdown_drain"));
+    assert!(!text.contains("sk-secret"));
+}
+
+#[test]
 fn the_provider_resource_reaches_every_destination_processor() {
     let factory = RecordingFactory::new();
     let mut fanout = fanout(

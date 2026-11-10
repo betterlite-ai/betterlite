@@ -213,6 +213,44 @@ fn an_untouched_span_keeps_its_dropped_counts() {
 }
 
 #[test]
+fn an_untouched_span_with_an_ordinary_event_keeps_its_dropped_counts() {
+    let mut span = owned(
+        root_span(vec![string_attribute("http.route", "/v1/chat")]),
+        "gen_ai.operation.name",
+    );
+    span.events.events.push(Event::new(
+        "log",
+        SystemTime::UNIX_EPOCH,
+        vec![string_attribute("exception.message", "boom")],
+        0,
+    ));
+    span.dropped_attributes_count = 9;
+    assert_eq!(tenant_view(&span), span);
+}
+
+#[test]
+fn an_owned_span_still_loses_the_query_string() {
+    let view = tenant_view(&owned(
+        root_span(vec![string_attribute(
+            "http.url",
+            "https://provider.example/v1/chat?api-version=2024",
+        )]),
+        "gen_ai.operation.name",
+    ));
+    let kept = view
+        .attributes
+        .iter()
+        .find(|pair| pair.key.as_str() == "http.url")
+        .expect("the attribute stays");
+    assert_eq!(
+        kept.value,
+        Value::String(StringValue::from(
+            "https://provider.example/v1/chat".to_owned()
+        ))
+    );
+}
+
+#[test]
 fn full_scope_returns_the_span_unchanged() {
     let span = span(
         vec![string_attribute("http.route", "/v1/chat")],

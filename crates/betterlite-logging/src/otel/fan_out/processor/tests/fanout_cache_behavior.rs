@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use opentelemetry_sdk::trace::{SpanData, SpanProcessor};
 
@@ -135,6 +135,34 @@ fn moving_past_the_capacity_evicts_the_least_recently_used() {
 }
 
 #[test]
+fn a_full_cache_keeps_its_oldest_entry() {
+    let factory = RecordingFactory::new();
+    let scope = FixedScope::new(vec![], false);
+    let fanout = build(&scope, Arc::clone(&factory), settings(None));
+    send_range(&fanout, &scope, 32);
+    send(&fanout, &scope, destination(&endpoint(0), SpanScope::Full));
+    assert_eq!(factory.build_count(&endpoint(0)), 1);
+}
+
+#[test]
+fn an_evicted_processor_is_closed_without_a_shutdown() {
+    let (blocking, entered, release) = blocking_closer();
+    let factory = Arc::new(OneBlockingFactory {
+        blocking_endpoint: endpoint(0),
+        blocking: Arc::clone(&blocking),
+        others: RecordingFactory::new(),
+    });
+    let scope = FixedScope::new(vec![], false);
+    let fanout = build(&scope, factory, settings(None));
+    send_range(&fanout, &scope, 33);
+    entered
+        .recv_timeout(WAIT)
+        .expect("the drain closes the evicted processor");
+    assert_eq!(blocking.shutdown_count(), 1);
+    release.send(()).expect("the close finishes");
+}
+
+#[test]
 fn eviction_waits_for_the_drain_to_have_room() {
     let pool = Arc::new(DrainPool::new(1, 1));
     let (blocking, entered, release) = blocking_closer();
@@ -189,4 +217,77 @@ fn a_processor_exporting_a_span_is_not_closed_under_it() {
     exporting.join().expect("the export thread joins");
     SpanProcessor::shutdown_with_timeout(&fanout, Duration::from_secs(5)).expect("closed");
     assert_eq!(blocking.shutdown_count(), 1);
+}
+
+#[test]
+fn two_exports_of_one_account_keep_the_processor_open() {
+    let (blocking, entered, release) = blocking_recorder();
+    let factory = Arc::new(OneBlockingFactory {
+        blocking_endpoint: "http://slow:4318".to_owned(),
+        blocking: Arc::clone(&blocking),
+        others: RecordingFactory::new(),
+    });
+    let scope = FixedScope::new(
+        vec![destination("http://slow:4318", SpanScope::Full)],
+        false,
+    );
+    let fanout = build(&scope, factory, settings(None));
+    let first = {
+        let shared = fanout.clone();
+        thread::Builder::new()
+            .name("fanout-export-a".to_owned())
+            .spawn(move || SpanProcessor::on_end(&shared, model_call()))
+            .expect("the first export starts")
+    };
+    entered
+        .recv_timeout(WAIT)
+        .expect("the first export is in flight");
+    let second = {
+        let shared = fanout.clone();
+        thread::Builder::new()
+            .name("fanout-export-b".to_owned())
+            .spawn(move || SpanProcessor::on_end(&shared, model_call()))
+            .expect("the second export starts")
+    };
+    entered
+        .recv_timeout(WAIT)
+        .expect("the second export is in flight");
+    release.send(()).expect("the first export finishes");
+    first.join().expect("the first export joins");
+    SpanProcessor::shutdown_with_timeout(&fanout, Duration::from_secs(5)).expect("closed");
+    assert_eq!(blocking.shutdown_count(), 0);
+    release.send(()).expect("the second export finishes");
+    second.join().expect("the second export joins");
+}
+
+#[test]
+fn shutdown_waits_for_in_flight_exports_until_the_drain_bound() {
+    let (blocking, entered, release) = blocking_recorder();
+    let factory = Arc::new(OneBlockingFactory {
+        blocking_endpoint: "http://slow:4318".to_owned(),
+        blocking: Arc::clone(&blocking),
+        others: RecordingFactory::new(),
+    });
+    let scope = FixedScope::new(
+        vec![destination("http://slow:4318", SpanScope::Full)],
+        false,
+    );
+    let fanout = build(&scope, factory, settings(None));
+    let exporting = {
+        let shared = fanout.clone();
+        thread::Builder::new()
+            .name("fanout-export".to_owned())
+            .spawn(move || SpanProcessor::on_end(&shared, model_call()))
+            .expect("the export starts")
+    };
+    entered.recv_timeout(WAIT).expect("the export is in flight");
+    let started = Instant::now();
+    SpanProcessor::shutdown_with_timeout(&fanout, Duration::from_secs(5)).expect("closed");
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(150),
+        "shutdown returned in {waited:?}"
+    );
+    release.send(()).expect("the export finishes");
+    exporting.join().expect("the export joins");
 }
