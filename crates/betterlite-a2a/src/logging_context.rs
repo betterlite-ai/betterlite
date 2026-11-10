@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
+use betterlite_core::agents::provider::a2a::JsonRpcId;
 use betterlite_logging::logging_state::correlation::CorrelationSetup;
 use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, Messages, RequestLoggingFlags,
@@ -151,23 +151,15 @@ fn card_name(agent_card: &AgentCard) -> Option<&str> {
 pub(crate) fn json_rpc_id_text(id: &JsonRpcId) -> String {
     match id {
         JsonRpcId::String(text) => text.clone(),
-        JsonRpcId::Integer(number_id) => integer_id_number(number_id).to_string(),
+        JsonRpcId::Integer(number_id) => Number::from(number_id).to_string(),
     }
 }
 
 pub(crate) fn json_rpc_id_json(id: &JsonRpcId) -> Json {
     match id {
         JsonRpcId::String(text) => Json::Text(text.clone()),
-        JsonRpcId::Integer(number_id) => Json::Number(integer_id_number(number_id)),
+        JsonRpcId::Integer(number_id) => Json::Number(Number::from(number_id)),
     }
-}
-
-// IntegerId exposes no reader for its Number, so the declared integer form is read through its derived Serialize impl
-fn integer_id_number(id: &IntegerId) -> Number {
-    serde_json::to_value(id)
-        .ok()
-        .and_then(|value| value.as_number().cloned())
-        .unwrap_or_else(|| Number::from(0_u64))
 }
 
 pub struct StreamingLoggingRequest<'request> {
