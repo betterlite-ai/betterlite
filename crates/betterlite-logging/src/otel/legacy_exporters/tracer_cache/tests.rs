@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use http::HeaderMap;
-use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Tracer as _};
+use opentelemetry::{Context, KeyValue};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
@@ -99,6 +99,7 @@ fn cache(settings_config: OpenTelemetryConfig, max_providers: usize) -> DynamicT
 struct Posted {
     uri: String,
     headers: HeaderMap,
+    body: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -117,6 +118,7 @@ impl HttpClient for Recorder {
         let posted = Posted {
             uri: request.uri().to_string(),
             headers: request.headers().clone(),
+            body: request.body().to_vec(),
         };
         self.0.lock().expect("request lock").push(posted);
         Ok(Response::new(Bytes::new()))
@@ -150,6 +152,14 @@ fn config_key(text: &str) -> CacheKey {
         endpoint: None,
         headers: None,
     }
+}
+
+fn otlp(endpoint: &str) -> OpenTelemetryConfig {
+    config(
+        Exporter::Named("otlp_http".to_owned()),
+        Some(endpoint),
+        None,
+    )
 }
 
 #[derive(Debug)]
@@ -616,6 +626,66 @@ fn an_evicted_headers_provider_never_shuts_the_shared_exporter_down() {
     let spans = shared.get_finished_spans().expect("spans");
     assert_eq!(spans.len(), 1);
     assert!(!shared.is_shutdown_called());
+}
+
+#[test]
+fn a_cached_tracer_keeps_the_configured_instrumentation_scope() {
+    let shared = InMemorySpanExporter::default();
+    let cache = DynamicTracerCache::new(
+        CacheSettings {
+            config: config(Exporter::InMemory, None, None),
+            callback_name: None,
+            resource: Resource::builder_empty().build(),
+            tracer_name: "proxy-tracer".to_owned(),
+            max_providers: 4,
+        },
+        LegacyExporterBuilder::new(clients(), shared.clone()),
+    );
+    let tracer = cache
+        .tracer_for_config(&config(Exporter::InMemory, None, None))
+        .expect("a tracer over the shared exporter");
+    tracer.start("operation").end();
+    let spans = shared.get_finished_spans().expect("spans");
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].instrumentation_scope.name(), "proxy-tracer");
+}
+
+#[test]
+fn a_cached_tracer_carries_the_cache_resource() {
+    let recorder = Arc::new(Recorder::default());
+    let resource = Resource::builder_empty()
+        .with_attribute(KeyValue::new("service.name", "checkout"))
+        .build();
+    let cache = DynamicTracerCache::new(
+        CacheSettings {
+            config: otlp("http://collector:4318"),
+            callback_name: None,
+            resource,
+            tracer_name: "litellm".to_owned(),
+            max_providers: 1,
+        },
+        LegacyExporterBuilder::new(
+            recording_clients(&recorder),
+            InMemorySpanExporter::default(),
+        ),
+    );
+    let tracer = cache
+        .tracer_for_config(&otlp("http://collector:4318"))
+        .expect("the exporting tracer");
+    tracer.start("operation").end();
+    drop(tracer);
+    cache
+        .tracer_for_config(&otlp("http://other:4318"))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 1);
+    let posted = recorder.take();
+    assert!(
+        posted[0]
+            .body
+            .windows(8)
+            .any(|window| window == b"checkout"),
+        "the exported span must carry the cache resource"
+    );
 }
 
 #[test]

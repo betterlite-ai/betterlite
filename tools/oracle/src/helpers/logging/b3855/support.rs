@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, sync_channel};
+use std::thread;
 use std::time::Duration;
 
 use betterlite_logging::otel::legacy_exporters::build::LegacyExporterBuilder;
@@ -9,7 +10,7 @@ use betterlite_logging::otel::legacy_exporters::selection::{
     ExporterKind, ExporterPlan, ProcessorKind, SpanProcessorPlan,
 };
 use betterlite_logging::otel::legacy_exporters::tracer_cache::{
-    CacheKey, CacheSettings, DynamicTracerCache, MAX_DYNAMIC_TRACER_PROVIDERS,
+    CacheKey, CacheSettings, DynamicTracerCache, MAX_DYNAMIC_TRACER_PROVIDERS, SHUTDOWN_THREAD_NAME,
 };
 use betterlite_logging::otel::plumbing::exporters::HttpClients;
 use opentelemetry::Context;
@@ -97,7 +98,7 @@ fn no_server_clients() -> HttpClients {
 
 #[derive(Debug)]
 struct ShutdownRecorder {
-    index: Option<usize>,
+    index: usize,
     sender: SyncSender<usize>,
 }
 
@@ -110,10 +111,10 @@ impl SpanProcessor for ShutdownRecorder {
         Ok(())
     }
 
-    // A provider that does not own its exporter is dropped on the caller's thread and never recorded.
+    // The cache shuts a provider down only on its own worker; the SDK's drop-time shutdown runs elsewhere.
     fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
-        if let Some(index) = self.index {
-            _ = self.sender.try_send(index);
+        if thread::current().name() == Some(SHUTDOWN_THREAD_NAME) {
+            _ = self.sender.try_send(self.index);
         }
         Ok(())
     }
@@ -143,7 +144,7 @@ fn fill_cache(
             .cached_dynamic_tracer(key.clone(), request.owns_exporter, || {
                 ran.set(true);
                 let processor = ShutdownRecorder {
-                    index: request.owns_exporter.then_some(index),
+                    index,
                     sender: sender.clone(),
                 };
                 Ok(SdkTracerProvider::builder()

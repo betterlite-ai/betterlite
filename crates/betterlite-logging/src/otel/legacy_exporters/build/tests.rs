@@ -4,14 +4,18 @@ use std::sync::{Arc, Mutex};
 
 use http::HeaderMap;
 use http::header::CONTENT_TYPE;
+use opentelemetry::InstrumentationScope;
+use opentelemetry::logs::{Logger as _, LoggerProvider as _};
 use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
+use opentelemetry_sdk::logs::{SdkLoggerProvider, SimpleLogProcessor};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
 
 use super::LegacyExporterBuilder;
+use crate::otel::legacy_exporters::error::LegacyExporterError;
 use crate::otel::legacy_exporters::selection::{
     log_exporter_plan, metric_reader_plan, span_processor_plan,
 };
@@ -37,6 +41,10 @@ impl LastRequest {
             .expect("request lock")
             .take()
             .expect("a recorded request")
+    }
+
+    fn recorded(&self) -> bool {
+        self.0.lock().expect("request lock").is_some()
     }
 }
 
@@ -203,18 +211,21 @@ fn otlp_http_plan_posts_protobuf_for_the_json_http_name() {
     assert_ne!(posted.body.first(), Some(&b'{'));
 }
 
-#[test]
-fn otlp_grpc_plan_builds_a_batch_processor() {
+#[rstest]
+#[case::grpc(named("grpc"))]
+#[case::otlp_grpc(named("otlp_grpc"))]
+fn an_otlp_grpc_plan_builds_the_grpc_exporter(#[case] exporter: Exporter) {
     let recorder = Arc::new(LastRequest::default());
+    // Tonic validates the endpoint at build, so only a plan that reached the gRPC builder fails here.
     let plan = span_processor_plan(
-        &config(named("grpc"), Some("http://127.0.0.1:14317"), None),
+        &config(exporter, Some("http://[invalid"), None),
         None,
         None,
         None,
     )
     .expect("plan");
-    let processor = builder(&recorder).span_processor(&plan).expect("processor");
-    assert!(matches!(processor, ExportProcessor::Batch(_)));
+    let error = builder(&recorder).span_processor(&plan).unwrap_err();
+    assert!(matches!(error, LegacyExporterError::Exporter(_)));
 }
 
 #[rstest]
@@ -235,20 +246,27 @@ fn log_exporter_follows_the_plan(#[case] exporter: Exporter, #[case] expected: &
 }
 
 #[test]
-fn log_exporter_builds_an_otlp_sink_for_an_http_plan() {
+fn log_exporter_posts_to_the_normalized_endpoint_with_the_plan_headers() {
     let recorder = Arc::new(LastRequest::default());
     let plan = log_exporter_plan(
         &config(
             named("otlp_http"),
             Some("http://collector:4318/v1/traces"),
-            None,
+            Some("x-api-key=abc"),
         ),
         None,
         &BTreeMap::new(),
     )
     .expect("plan");
     let sink = builder(&recorder).log_exporter(plan).expect("sink");
-    assert!(matches!(sink, LogSink::Otlp(_)));
+    let provider = SdkLoggerProvider::builder()
+        .with_log_processor(SimpleLogProcessor::new(sink))
+        .build();
+    let logger = provider.logger_with_scope(InstrumentationScope::builder("build-test").build());
+    logger.emit(logger.create_log_record());
+    let posted = recorder.take();
+    assert_eq!(posted.uri, "http://collector:4318/v1/logs");
+    assert_eq!(header(&posted, "x-api-key"), Some("abc"));
 }
 
 #[rstest]
@@ -258,7 +276,18 @@ fn metric_reader_builds_for_console_plans(#[case] exporter: Exporter) {
     let recorder = Arc::new(LastRequest::default());
     let plan = metric_reader_plan(&config(exporter, Some("http://collector:4318"), None), None)
         .expect("plan");
-    drop(builder(&recorder).metric_reader(plan).expect("reader"));
+    let reader = builder(&recorder).metric_reader(plan).expect("reader");
+    let provider = SdkMeterProvider::builder().with_reader(reader).build();
+    provider
+        .meter("build-test")
+        .u64_counter("probe")
+        .build()
+        .add(1, &[]);
+    provider.force_flush().expect("flush");
+    assert!(
+        !recorder.recorded(),
+        "a console metric reader must not post to the configured endpoint"
+    );
 }
 
 #[test]

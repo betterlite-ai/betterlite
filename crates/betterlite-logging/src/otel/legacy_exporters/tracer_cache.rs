@@ -20,7 +20,7 @@ pub const MAX_DYNAMIC_TRACER_PROVIDERS: usize = 256;
 
 const DEFAULT_TRACER_NAME: &str = "litellm";
 const TRACER_NAME_ENV: &str = "OTEL_TRACER_NAME";
-const SHUTDOWN_THREAD_NAME: &str = "otel-dynamic-provider-shutdown";
+pub const SHUTDOWN_THREAD_NAME: &str = "otel-dynamic-provider-shutdown";
 // LiteLLM shuts dropped providers down on a four-worker pool; one worker behind this queue has the same cap.
 const SHUTDOWN_QUEUE: usize = 4;
 
