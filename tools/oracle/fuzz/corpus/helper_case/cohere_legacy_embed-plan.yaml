@@ -1,0 +1,13 @@
+kind: helper
+name: cohere-legacy-embed-plan-seed
+call:
+  cohere_legacy_embed:
+    mode: async
+    model: embed-english-v3.0
+    input: [hello, "data:image/png;base64,YWJj"]
+    runs:
+      - headers: {Content-Type: application/json, X-Amz-Date: 20260101T000000Z}
+        complete_api_base: https://bedrock-runtime.example/model/m/invoke
+        reply: {status: 200, body: '{"embeddings":[[0.5]]}'}
+compare: {ignore: []}
+env: {}

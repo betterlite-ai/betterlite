@@ -1,0 +1,19 @@
+kind: helper
+name: cohere-legacy-embed-empty-versus-supplied-data
+call:
+  cohere_legacy_embed:
+    mode: sync
+    model: embed-english-v3.0
+    input: [hello]
+    optional_params: {input_type: search_query}
+    runs:
+      - data: {}
+        reply:
+          status: 200
+          body: '{"embeddings":[[0.5]],"meta":{"billed_units":{"input_tokens":1}}}'
+      - data: {texts: [only], model: other, input_type: image}
+        reply:
+          status: 200
+          body: '{"embeddings":[[0.25]],"meta":{"billed_units":{"input_tokens":1}}}'
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,16 @@
+kind: helper
+name: cohere-legacy-embed-http-failure-logging
+call:
+  cohere_legacy_embed:
+    mode: async
+    model: embed-english-v3.0
+    input: [hello]
+    runs:
+      - reply:
+          status: 500
+          body: '{"message":"upstream refused"}'
+      - reply:
+          status: 429
+          body: 'rate limited'
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,19 @@
+kind: helper
+name: cohere-legacy-embed-parse-before-post-call
+call:
+  cohere_legacy_embed:
+    mode: async
+    model: embed-english-v3.0
+    input: [hello]
+    runs:
+      - reply:
+          status: 200
+          body: '{"embeddings":['
+      - reply:
+          status: 200
+          body: '{"meta":{}}'
+      - reply:
+          status: 200
+          body: '{"embeddings":[[0.5]]}'
+compare: {ignore: []}
+env: {}
