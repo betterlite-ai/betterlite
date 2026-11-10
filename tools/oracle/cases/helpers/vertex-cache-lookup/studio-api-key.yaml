@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-cache-lookup-studio-api-key
+call:
+  vertex_cache_lookup:
+    targets:
+      - {provider: gemini, api_base: null, project: null, location: null, auth: null, gemini_api_key: studio-key, model: gemini-2.5-flash}
+      - {provider: gemini, api_base: https://studio-proxy.example.com, project: null, location: null, auth: ignored-token, gemini_api_key: studio-key, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: session-user-from-key-metadata
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+        metadata:
+          user_api_key_user_id: key-user-1
+    response: null
+env: {}
+compare: {ignore: []}

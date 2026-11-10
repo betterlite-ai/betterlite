@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-batch-seed
+call:
+  bedrock_converse_usage:
+    batch: {usage: {cacheReadInputTokenCount: 7, cacheWriteInputTokenCount: 2, totalTokens: 9}}
+env: {}
+compare: {ignore: []}

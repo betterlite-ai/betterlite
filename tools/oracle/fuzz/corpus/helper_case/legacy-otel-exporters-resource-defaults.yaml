@@ -1,0 +1,11 @@
+kind: helper
+name: resource-defaults
+call:
+  b3855:
+    function: litellm_resource
+    config: {}
+    environment:
+      OTEL_SERVICE_NAME: from-env
+env:
+  OTEL_SERVICE_NAME: from-env
+compare: {ignore: []}

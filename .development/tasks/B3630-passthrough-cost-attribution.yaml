@@ -122,7 +122,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/passthrough-attribution)" &&
         grep -rlE '^[[:space:]]+b3630:' tools/oracle/cases/helpers/passthrough-attribution &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/passthrough-attribution
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/passthrough-attribution
 oracle_cases:
   - tools/oracle/cases/helpers/passthrough-attribution/collection-route-query-and-slashes.yaml
   - tools/oracle/cases/helpers/passthrough-attribution/tags-request-wins.yaml
