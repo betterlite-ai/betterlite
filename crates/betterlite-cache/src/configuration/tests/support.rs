@@ -13,6 +13,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
@@ -25,7 +27,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 use crate::backend::{CacheBackend, CacheResult};
-use crate::configuration::backend_construction::{ClosedBreakerGate, SilentServiceHooks};
 use crate::configuration::cache_module_functions::{CacheSetup, CacheSwitches};
 use crate::configuration::callback_registration::CacheCallbacks;
 use crate::configuration::settings::{
@@ -183,6 +184,28 @@ fn dependencies_with_gate(redis_gate: Arc<dyn BreakerGate>) -> CacheDependencies
         redis_hooks: Arc::new(SilentServiceHooks),
         redis_gate,
     }
+}
+
+pub(crate) struct SilentServiceHooks;
+
+impl ServiceHooks for SilentServiceHooks {
+    fn success(&self, _event: &ServiceEvent) {}
+
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
+}
+
+pub(crate) struct ClosedBreakerGate;
+
+impl BreakerGate for ClosedBreakerGate {
+    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Ok(BreakerAdmission::from(0))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
 pub(crate) struct RejectingGate;

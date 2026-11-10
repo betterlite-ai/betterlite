@@ -1,6 +1,5 @@
 pub const CACHE_CALLBACK: &str = "cache";
 
-// The callback lists LiteLLM's module state holds; a Cache adds itself to each exactly once
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheCallbacks {
     pub input_callback: Vec<String>,

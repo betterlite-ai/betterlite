@@ -9,6 +9,7 @@ use betterlite_redis::redis_connection_settings::model::nodes::{
 };
 use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
 use rstest::rstest;
+use secrecy::ExposeSecret;
 
 use super::support::{
     FakeRedis, dependencies, environment, redis_settings, settings, test_backend,
@@ -228,15 +229,65 @@ async fn an_empty_startup_node_list_still_reads_the_environment() {
 }
 
 #[tokio::test]
-async fn an_empty_startup_node_list_without_the_environment_builds_single_node() {
+async fn an_empty_startup_node_list_falls_through_to_the_url_from_the_environment() {
     let server = FakeRedis::start().await;
-    let mut empty_list = redis_settings(&server);
+    let redis_url = format!("redis://{}:{}", server.host(), server.port());
+    let redis_environment = BTreeMap::from([("REDIS_URL".to_owned(), redis_url.clone())]);
+    let mut empty_list = settings(LiteLlmCacheType::Redis);
     empty_list.redis.startup_nodes = Some(StartupNodesInput::Value(Vec::new()));
     let mut callbacks = CacheCallbacks::default();
-    let cache = Cache::open(empty_list, &mut callbacks, &environment(), &dependencies())
+    let cache = Cache::open(
+        empty_list,
+        &mut callbacks,
+        &redis_environment,
+        &dependencies(),
+    )
+    .await
+    .expect("a single node cache");
+    let Backend::Redis(redis) = &cache.backend else {
+        panic!("expected a redis backend");
+    };
+    assert_eq!(
+        redis
+            .transport
+            .settings
+            .url
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some(redis_url.as_str())
+    );
+    assert_eq!(cache.ping().await.expect("a pong"), Some(true));
+}
+
+#[tokio::test]
+async fn the_redis_backend_uses_the_configured_flush_size() {
+    let server = FakeRedis::start().await;
+    let mut redis_config = redis_settings(&server);
+    redis_config.redis_flush_size = Some(2);
+    let mut callbacks = CacheCallbacks::default();
+    let cache = Cache::open(
+        redis_config,
+        &mut callbacks,
+        &environment(),
+        &dependencies(),
+    )
+    .await
+    .expect("a redis cache");
+    let Backend::Redis(redis_cache) = &cache.backend else {
+        panic!("expected a redis backend");
+    };
+    redis_cache
+        .values
+        .batch_cache_write("alpha", "first")
         .await
-        .expect("a single node cache");
-    assert!(matches!(cache.backend, Backend::Redis(_)));
+        .expect("the first buffered write");
+    assert!(server.commands_named("SET").is_empty());
+    redis_cache
+        .values
+        .batch_cache_write("beta", "second")
+        .await
+        .expect("the flushing write");
+    assert_eq!(server.commands_named("SET").len(), 2);
 }
 
 #[tokio::test]
@@ -319,10 +370,13 @@ async fn default_in_redis_ttl_applies_only_to_a_redis_cache() {
     assert_eq!(redis_with_memory_ttl_cache.ttl, Some(1.0_f64));
 }
 
+#[rstest]
+#[case::redis_semantic(LiteLlmCacheType::RedisSemantic)]
+#[case::valkey_semantic(LiteLlmCacheType::ValkeySemantic)]
 #[tokio::test]
-async fn an_injected_semantic_cache_keeps_the_redis_ttl_rule() {
+async fn an_injected_semantic_cache_keeps_the_redis_ttl_rule(#[case] cache_type: LiteLlmCacheType) {
     let (injected, _disconnects) = test_backend();
-    let mut semantic = settings(LiteLlmCacheType::RedisSemantic);
+    let mut semantic = settings(cache_type);
     semantic.ttl = Some(1.0_f64);
     semantic.default_in_redis_ttl = Some(9.0_f64);
     semantic.backend = Some(injected);

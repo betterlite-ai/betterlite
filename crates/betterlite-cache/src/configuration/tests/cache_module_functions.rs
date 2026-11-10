@@ -110,10 +110,12 @@ async fn update_cache_replaces_the_cache_and_registers_callbacks() {
     let directory = tempfile::tempdir().expect("a temp dir");
     let mut disk = settings(LiteLlmCacheType::Disk);
     disk.disk_cache_dir = Some(directory.path().to_owned());
-    module
+    let previous = module
         .update_cache(setup(disk, &environment(), &dependencies()))
         .await
-        .expect("the cache is updated");
+        .expect("the cache is updated")
+        .expect("the replaced cache");
+    assert_eq!(previous.cache_type, LiteLlmCacheType::Local);
     let cache = module.cache.as_ref().expect("an updated cache");
     assert_eq!(cache.cache_type, LiteLlmCacheType::Disk);
     assert!(matches!(cache.backend, Backend::Disk(_)));

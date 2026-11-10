@@ -91,3 +91,10 @@ deviations:
       The rust_bridge response-cache runtime is outside the repository inventory. The Python backends
       cover the same cache types, and native dispatch has no runtime path to exercise.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L78
+  - what: >-
+      update_cache returns the Cache it replaced, where LiteLLM's module-level update_cache returns
+      None.
+    why: >-
+      The replaced cache still owns a Redis client and a breaker, so a Rust caller needs the old value to
+      disconnect it. The module state before and after the call is the same as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1086-L1096

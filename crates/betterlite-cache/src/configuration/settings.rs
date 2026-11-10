@@ -20,7 +20,6 @@ pub const DEFAULT_REDIS_TTL_SECONDS: i64 = 60;
 // InMemoryCache's max_size_per_item, counted in KiB
 pub(crate) const MEMORY_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 
-// The Cache.__init__ arguments that decide which backend is built and what the cache stores
 pub struct CacheSettings {
     pub cache_type: LiteLlmCacheType,
     pub mode: CacheMode,
@@ -59,7 +58,6 @@ impl Default for CacheSettings {
     }
 }
 
-// The outside dependencies a cache backend is built with, so no code here reads the clock or opens a client itself
 pub struct CacheDependencies {
     pub clock: Clock,
     pub redis_factory: Arc<LiveClientFactory>,

@@ -1,17 +1,14 @@
-use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_cache::error::RedisCacheError;
-use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
-use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
-use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup as RedisEnvironmentLookup;
 use betterlite_redis::redis_connection_settings::model::scalars::Scalar;
 use thiserror::Error;
+use tokio::task::JoinSet;
 
 use super::cache::Backend;
 use super::settings::{CacheDependencies, CacheSettings, MEMORY_MAX_SIZE_PER_ITEM_KIB};
@@ -19,7 +16,7 @@ use super::type_not_supported::CacheTypeNotSupportedError;
 use crate::backend::BackendError;
 use crate::backend::memory::MemoryCache;
 use crate::backend::memory::local::LocalMemoryOps;
-use crate::disk::{DiskCache, DiskError};
+use crate::disk::{Clock, DiskCache, DiskError};
 use crate::types::cache_type::LiteLlmCacheType;
 
 const REDIS_CLUSTER_OWNER: &str = "B5640";
@@ -52,21 +49,9 @@ pub(crate) async fn build_backend(
     dependencies: &CacheDependencies,
 ) -> Result<Backend, BackendConstructionError> {
     match settings.cache_type {
-        LiteLlmCacheType::Local => {
-            let operations = LocalMemoryOps::new(
-                MEMORY_MAX_SIZE_PER_ITEM_KIB,
-                Arc::clone(&dependencies.clock),
-            )
-            .map_err(|source| BackendConstructionError::Memory { source })?;
-            Ok(Backend::Memory(Box::new(MemoryCache { operations })))
-        }
+        LiteLlmCacheType::Local => local_backend(dependencies),
         LiteLlmCacheType::Redis => redis_backend(settings, environment, dependencies).await,
-        LiteLlmCacheType::Disk => DiskCache::open(
-            settings.disk_cache_dir.as_deref(),
-            Arc::clone(&dependencies.clock),
-        )
-        .map(|cache| Backend::Disk(Box::new(cache)))
-        .map_err(|source| BackendConstructionError::Disk { source }),
+        LiteLlmCacheType::Disk => disk_backend(settings, dependencies).await,
         LiteLlmCacheType::RedisSemantic => Err(unsupported_owner(settings.cache_type, "B4382")),
         LiteLlmCacheType::ValkeySemantic => Err(unsupported_owner(settings.cache_type, "B8296")),
         LiteLlmCacheType::QdrantSemantic => Err(unsupported_owner(settings.cache_type, "B4383")),
@@ -78,6 +63,37 @@ pub(crate) async fn build_backend(
             },
         )),
     }
+}
+
+fn local_backend(dependencies: &CacheDependencies) -> Result<Backend, BackendConstructionError> {
+    let operations = LocalMemoryOps::new(
+        MEMORY_MAX_SIZE_PER_ITEM_KIB,
+        Arc::clone(&dependencies.clock),
+    )
+    .map_err(|source| BackendConstructionError::Memory { source })?;
+    Ok(Backend::Memory(Box::new(MemoryCache { operations })))
+}
+
+// opening the sqlite file blocks, so it runs on the blocking pool like disk.rs's async twins
+async fn disk_backend(
+    settings: &CacheSettings,
+    dependencies: &CacheDependencies,
+) -> Result<Backend, BackendConstructionError> {
+    let directory: Option<PathBuf> = settings.disk_cache_dir.clone();
+    let clock: Clock = Arc::clone(&dependencies.clock);
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || DiskCache::open(directory.as_deref(), clock));
+    let joined = tasks
+        .join_next()
+        .await
+        .ok_or(DiskError::BlockingMissing)
+        .map_err(|source| BackendConstructionError::Disk { source })?;
+    let opened = joined.map_err(|source| BackendConstructionError::Disk {
+        source: DiskError::Blocking { source },
+    })?;
+    opened
+        .map(|cache| Backend::Disk(Box::new(cache)))
+        .map_err(|source| BackendConstructionError::Disk { source })
 }
 
 const fn unsupported_owner(
@@ -141,28 +157,4 @@ impl RedisEnvironmentLookup for RedisEnvironment<'_> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.config.lookup(name)
     }
-}
-
-// A cache built without server wiring reports no service events until B5630 injects the real hooks
-pub struct SilentServiceHooks;
-
-impl ServiceHooks for SilentServiceHooks {
-    fn success(&self, _event: &ServiceEvent) {}
-
-    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
-}
-
-// A cache built without server wiring never opens a circuit; B5630 injects the policy gate
-pub struct ClosedBreakerGate;
-
-impl BreakerGate for ClosedBreakerGate {
-    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
-        Ok(BreakerAdmission::from(0))
-    }
-
-    fn exit(&self, _admission: BreakerAdmission) {}
-
-    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
-
-    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
