@@ -1,0 +1,5 @@
+kind: helper
+name: foundry-router-cost-classify-seed
+call: {foundry_router_cost: {operation: classify, calls: [{model: model_router/azure-gpt-4o, request_model: azure_ai/model-router}]}}
+env: {}
+compare: {ignore: []}

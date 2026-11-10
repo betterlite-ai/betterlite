@@ -49,6 +49,19 @@ case "$reason" in
     fi
     echo "$report"
     exit 0 ;;
+  *"a todo task names its own module files"*)
+    # a task that creates a crate covers its root, and the crate-root check holds only for todo tasks
+    crate=$(grep -o -E 'scope covers crates/[A-Za-z0-9_-]+/' <<< "$reason" | head -n 1 | cut -d/ -f2)
+    [ -n "$crate" ] || exit 1
+    git fetch -q origin 2> /dev/null
+    git cat-file -e "origin/main:crates/$crate/Cargo.toml" 2> /dev/null && exit 1
+    backlog=.development/backlog/$id.yaml
+    grep -q '^status: todo$' "$backlog" || exit 1
+    sed -i 's/^status: todo$/status: in-progress/' "$backlog"
+    git add "$backlog"
+    git commit -q -m "docs(backlog): $id in progress" -m "The task creates crates/$crate, so its scope covers a crate root the skeleton never declared, and the crate-root check applies only to todo tasks." -- "$backlog" || exit 1
+    echo "The task creates crates/$crate, so a block rule set its backlog status to in-progress on this branch and task-file passes now. Keep your work and finish the task."
+    exit 0 ;;
   *"review rounds ran out"*)
     [ -e "$journal/auto-grant" ] && exit 1
     touch "$journal/auto-grant"

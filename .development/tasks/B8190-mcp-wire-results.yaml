@@ -69,7 +69,7 @@ checks:
     - id: wire-oracle
       why: Discovery answers or converted results differ from LiteLLM on the same input.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-wire-results
 
 oracle_cases: []
