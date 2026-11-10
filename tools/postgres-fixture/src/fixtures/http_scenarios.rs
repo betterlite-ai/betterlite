@@ -173,9 +173,9 @@ seed_row!(Membership, SetupList::Memberships, "INSERT INTO \"LiteLLM_TeamMembers
 #[rustfmt::skip]
 seed_row!(BudgetRow, SetupList::Budgets, "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2::numeric::float8,$3,$4)", budget_id, max_budget, user_id, user_id);
 #[rustfmt::skip]
-seed_row!(ManagedFileRow, SetupList::ManagedFiles, "INSERT INTO \"LiteLLM_ManagedFileTable\" (\"id\",\"unified_file_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3),'{}'::jsonb)", unified_file_id, unified_file_id, content);
+seed_row!(ManagedFileRow, SetupList::ManagedFiles, "INSERT INTO \"LiteLLM_ManagedFileTable\" (\"id\",\"unified_file_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3::text),'{}'::jsonb)", unified_file_id, unified_file_id, content);
 #[rustfmt::skip]
-seed_row!(ManagedObjectRow, SetupList::ManagedObjects, "INSERT INTO \"LiteLLM_ManagedObjectTable\" (\"id\",\"unified_object_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3),'{}'::jsonb)", unified_object_id, unified_object_id, content);
+seed_row!(ManagedObjectRow, SetupList::ManagedObjects, "INSERT INTO \"LiteLLM_ManagedObjectTable\" (\"id\",\"unified_object_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3::text),'{}'::jsonb)", unified_object_id, unified_object_id, content);
 #[rustfmt::skip]
 seed_row!(VectorStoreRow, SetupList::VectorStores, "INSERT INTO \"LiteLLM_ManagedVectorStoreTable\" (\"id\",\"unified_resource_id\",\"model_mappings\") VALUES ($1,$2,'{}'::jsonb)", unified_resource_id, unified_resource_id);
 async fn insert_all<T>(
