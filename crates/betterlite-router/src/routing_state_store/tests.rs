@@ -81,8 +81,7 @@ fn routing_state_store_connection(#[case] name: &str) {
 #[case::cancelled_compare_and_set_leaves_the_connection_usable(
     "cancelled_compare_and_set_leaves_the_connection_usable"
 )]
-#[case::fake_server_stores_values_and_expiry("fake_server_stores_values_and_expiry")]
-#[case::fake_server_deletes_and_increments("fake_server_deletes_and_increments")]
+#[case::fake_server_serves_commands("fake_server_serves_commands")]
 #[case::fake_server_reports_error_replies("fake_server_reports_error_replies")]
 #[case::mismatched_compare_releases_its_watch("mismatched_compare_releases_its_watch")]
 #[case::rival_created_key_gets_the_default_expiry("rival_created_key_gets_the_default_expiry")]

@@ -7,8 +7,7 @@ use crate::routing_value_store::{PinValue, RouteIncrement, RouteValue, StoreRead
 
 pub(crate) async fn run(name: &str) {
     match name {
-        "fake_server_stores_values_and_expiry" => stores_values_and_expiry().await,
-        "fake_server_deletes_and_increments" => deletes_and_increments().await,
+        "fake_server_serves_commands" => serves_commands().await,
         "fake_server_reports_error_replies" => reports_error_replies().await,
         "mismatched_compare_releases_its_watch" => mismatched_compare_releases_its_watch().await,
         "rival_created_key_gets_the_default_expiry" => {
@@ -53,9 +52,9 @@ async fn run_script(server: &FakeRedis, script: &[(&[&str], &str)]) {
     }
 }
 
-async fn stores_values_and_expiry() {
+async fn serves_commands() {
     let server = FakeRedis::start().await;
-    let script: [(&[&str], &str); 17] = [
+    let script: [(&[&str], &str); 25] = [
         (&["PING"], "PONG"),
         (&["SET", "k", "v", "EX", "100"], "OK"),
         (&["TTL", "k"], "100"),
@@ -73,13 +72,6 @@ async fn stores_values_and_expiry() {
         (&["EXPIRE", "k", "7"], "1"),
         (&["EXPIRE", "absent", "7"], "0"),
         (&["TTL", "k"], "7"),
-    ];
-    run_script(&server, &script).await;
-}
-
-async fn deletes_and_increments() {
-    let server = FakeRedis::start().await;
-    let script: [(&[&str], &str); 8] = [
         (&["SET", "a", "1"], "OK"),
         (&["SET", "b", "2"], "OK"),
         (&["DEL", "a", "b", "absent"], "2"),
