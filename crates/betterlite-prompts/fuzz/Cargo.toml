@@ -137,3 +137,10 @@ path = "fuzz_targets/prompt_anthropic.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_native_tool"
+path = "fuzz_targets/bedrock_native_tool.rs"
+test = false
+doc = false
+bench = false
