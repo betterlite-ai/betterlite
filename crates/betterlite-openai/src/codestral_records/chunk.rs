@@ -23,10 +23,8 @@ pub fn decode_codestral_chunk(
     body: &[u8],
     source: &RecordSource,
 ) -> Result<CodestralChunk, TextCompletionCodestralError> {
-    let text = record_text(body)?;
-    let payload = strip_sse_data_from_chunk(Some(&text))
-        .unwrap_or(&text)
-        .trim();
+    let raw = record_text(body)?;
+    let payload = strip_sse_data_from_chunk(Some(&raw)).unwrap_or(&raw).trim();
     let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
         return Ok(CodestralChunk::default());
     };
