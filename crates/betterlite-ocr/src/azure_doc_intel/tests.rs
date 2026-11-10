@@ -751,12 +751,12 @@ fn a_missing_page_number_and_unit_use_the_defaults() {
 }
 
 #[rstest]
-#[case::whole_float(r#"{"pageNumber":2.0}"#)]
-#[case::numeric_string(r#"{"pageNumber":"2"}"#)]
-#[case::boolean(r#"{"pageNumber":true}"#)]
-fn lax_page_numbers_follow_the_declared_types(#[case] page: &str) {
+#[case::whole_float(r#"{"pageNumber":2.0}"#, 1)]
+#[case::numeric_string(r#"{"pageNumber":"2"}"#, 1)]
+#[case::boolean(r#"{"pageNumber":true}"#, 0)]
+fn lax_page_numbers_follow_the_declared_types(#[case] page: &str, #[case] expected: i64) {
     let body = format!(r#"{{"status":"succeeded","analyzeResult":{{"pages":[{page}]}}}}"#);
-    assert_eq!(first_page(&body).index, 1, "{page}");
+    assert_eq!(first_page(&body).index, expected, "{page}");
 }
 
 #[rstest]

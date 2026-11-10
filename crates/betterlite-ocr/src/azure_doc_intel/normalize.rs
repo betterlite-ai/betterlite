@@ -46,10 +46,12 @@ pub(super) fn normalize(
 }
 
 fn normalize_page(page: &AnalyzePage, dpi: i64) -> Result<OCRPage, OcrError> {
+    // Azure page numbers are 1-based, so a lower one is rejected instead of keeping a negative index
     let index = page
         .page_number
         .map_or(1, |number| number.0)
         .checked_sub(1)
+        .filter(|index| *index >= 0)
         .ok_or(OcrError::NumericRange("page.pageNumber"))?;
     let dimensions = convert_dimensions(
         page.width.map_or(AZURE_DI_DEFAULT_WIDTH, |number| number.0),
