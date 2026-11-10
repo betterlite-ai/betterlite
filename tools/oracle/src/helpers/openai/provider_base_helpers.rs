@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HiddenCarrier, HistoryMessage, ImageEditBase, ResponseKind, ResponsesBase,
     add_thinking_max_tokens, append_tools, assistant_has_thinking, has_tool_calls, hidden_params,
@@ -9,7 +9,7 @@ use betterlite_openai::base_helpers::{
 use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
 use serde_json::{Map, Value};
 
-use crate::helpers::HelperError;
+use crate::helpers::{HelperError, config_helper_error};
 
 mod tests;
 
@@ -103,25 +103,32 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
     let encode = |source| OpenAiError::Encode { source };
     let value = match call.clone() {
         BaseCall::BaseError(parts) => serde_json::to_value(ProviderError::from(parts)),
-        BaseCall::ClassConfig(members) => Ok(Value::Object(provider_config(&members.values)?)),
+        BaseCall::ClassConfig(members) => Ok(Value::Object(
+            provider_config(&members.values).map_err(openai_helper_error)?,
+        )),
         BaseCall::Thinking(params) => serde_json::to_value(thinking_request(&params)),
         BaseCall::ThinkingMaxTokens(mut input) => {
             let default_max_tokens = ConfigLoader {
                 lookup: input.environment,
             }
-            .load("")?
+            .load("")
+            .map_err(config_helper_error)?
             .litellm_settings
             .default_max_tokens;
-            add_thinking_max_tokens(&input.requested, &mut input.options, default_max_tokens)?;
+            add_thinking_max_tokens(&input.requested, &mut input.options, default_max_tokens)
+                .map_err(openai_helper_error)?;
             Ok(Value::Object(input.options))
         }
         BaseCall::AppendTools(mut input) => {
-            append_tools(&mut input.options, input.tools)?;
+            append_tools(&mut input.options, input.tools).map_err(openai_helper_error)?;
             Ok(Value::Object(input.options))
         }
         BaseCall::ResponseFormat(input) => {
             let template = input.ref_template.as_deref();
-            serde_json::to_value(response_format_refs(input.format.as_ref(), template)?)
+            serde_json::to_value(
+                response_format_refs(input.format.as_ref(), template)
+                    .map_err(openai_helper_error)?,
+            )
         }
         BaseCall::HiddenParams(input) => input.run(),
         BaseCall::History(messages) => serde_json::to_value([
@@ -131,14 +138,20 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
         ]),
         BaseCall::DummyTool(()) => serde_json::to_value(DUMMY_TOOLS),
         BaseCall::ModifyParams(input) => return input.run(),
-        BaseCall::ResponsesInit(()) => {
-            serde_json::to_value(provider_config(&ResponsesBase)?.keys().collect::<Vec<_>>())
-        }
-        BaseCall::ImageEditInit(()) => {
-            serde_json::to_value(provider_config(&ImageEditBase)?.keys().collect::<Vec<_>>())
-        }
+        BaseCall::ResponsesInit(()) => serde_json::to_value(
+            provider_config(&ResponsesBase)
+                .map_err(openai_helper_error)?
+                .keys()
+                .collect::<Vec<_>>(),
+        ),
+        BaseCall::ImageEditInit(()) => serde_json::to_value(
+            provider_config(&ImageEditBase)
+                .map_err(openai_helper_error)?
+                .keys()
+                .collect::<Vec<_>>(),
+        ),
     };
-    Ok(value.map_err(encode)?)
+    Ok(value.map_err(encode).map_err(openai_helper_error)?)
 }
 
 impl HiddenCall {
@@ -166,49 +179,35 @@ impl ModifyCall {
         let settings = ConfigLoader {
             lookup: self.environment,
         }
-        .load(source)?
+        .load(source)
+        .map_err(config_helper_error)?
         .litellm_settings;
         Ok(Value::Bool(settings.modify_params))
     }
 }
 
-impl From<OpenAiError> for Box<HelperError> {
-    fn from(error: OpenAiError) -> Self {
-        let class = match &error {
-            OpenAiError::MissingKey { .. } | OpenAiError::TemplateField { .. } => "KeyError",
-            OpenAiError::NotSubscriptable { .. }
-            | OpenAiError::ToolsNotList
-            | OpenAiError::BudgetNotInteger => "TypeError",
-            OpenAiError::RefNotText => "AttributeError",
-            OpenAiError::TemplatePosition => "IndexError",
-            OpenAiError::TemplateBrace => "ValueError",
-            OpenAiError::Provider(_)
-            | OpenAiError::BudgetOverflow
-            | OpenAiError::ConfigNotObject
-            | OpenAiError::Encode { .. } => "OpenAiError",
-        };
-        Self::new(HelperError {
-            class: class.to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    }
-}
-
-impl From<ConfigError> for Box<HelperError> {
-    fn from(error: ConfigError) -> Self {
-        Self::new(HelperError {
-            class: "ConfigError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    }
+fn openai_helper_error(error: OpenAiError) -> Box<HelperError> {
+    let class = match &error {
+        OpenAiError::MissingKey { .. } | OpenAiError::TemplateField { .. } => "KeyError",
+        OpenAiError::NotSubscriptable { .. }
+        | OpenAiError::ToolsNotList
+        | OpenAiError::BudgetNotInteger => "TypeError",
+        OpenAiError::RefNotText => "AttributeError",
+        OpenAiError::TemplatePosition => "IndexError",
+        OpenAiError::TemplateBrace => "ValueError",
+        OpenAiError::Provider(_)
+        | OpenAiError::BudgetOverflow
+        | OpenAiError::ConfigNotObject
+        | OpenAiError::Encode { .. } => "OpenAiError",
+    };
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 pub(crate) struct Op;

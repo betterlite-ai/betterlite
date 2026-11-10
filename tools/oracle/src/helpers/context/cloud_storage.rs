@@ -69,12 +69,12 @@ impl crate::helpers::Helper for Op {
             Input::ConfiguredBucketSplit { value } => {
                 cloud_storage::split_bucket_name(text(Some(value)).unwrap_or(""))
                     .map(|(bucket, prefix)| json!({"bucket": bucket, "prefix": prefix}))
-                    .map_err(Box::from)
+                    .map_err(storage_helper_error)
             }
             Input::ObjectPathValidation { value } => {
                 cloud_storage::validate_cloud_object_path(value)
                     .map(|()| json!({"ok": true}))
-                    .map_err(Box::from)
+                    .map_err(storage_helper_error)
             }
             Input::CloudObjectEncoding { value } => Ok(
                 json!({"gcs": cloud_storage::encode_object_name(value, Encoding::Gcs), "s3": cloud_storage::encode_object_name(value, Encoding::S3)}),
@@ -92,7 +92,7 @@ impl crate::helpers::Helper for Op {
                     file_id, scheme, bucket, &allowed, *legacy,
                 )
                 .map(|(found, object)| json!({"bucket": found, "object": object}))
-                .map_err(Box::from)
+                .map_err(storage_helper_error)
             }
         }
     }
@@ -117,16 +117,16 @@ fn text(value: Option<&Scalar>) -> Option<&str> {
         Some(Scalar::Boolean(_) | Scalar::Other(_)) | None => None,
     }
 }
-impl From<cloud_storage::CloudStorageError> for Box<crate::helpers::HelperError> {
-    fn from(value: cloud_storage::CloudStorageError) -> Self {
-        Self::new(crate::helpers::HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: value.to_string(),
-        })
-    }
+fn storage_helper_error(
+    error: cloud_storage::CloudStorageError,
+) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: error.to_string(),
+    })
 }
 mod tests;

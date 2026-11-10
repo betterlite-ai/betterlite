@@ -1,3 +1,5 @@
+use std::io;
+
 type OptionalString = Option<Option<String>>;
 type OptionalCode = Option<Option<ErrorCode>>;
 
@@ -32,4 +34,30 @@ pub struct HelperError {
 pub enum ErrorCode {
     Text(String),
     Number(serde_json::Number),
+}
+
+impl From<serde_json::Error> for Box<HelperError> {
+    fn from(error: serde_json::Error) -> Self {
+        Self::new(HelperError {
+            class: "ValidationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
+}
+
+impl From<io::Error> for Box<HelperError> {
+    fn from(error: io::Error) -> Self {
+        Self::new(HelperError {
+            class: "OSError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
 }

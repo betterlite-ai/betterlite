@@ -85,6 +85,19 @@ use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
 
+use betterlite_config::loader::ConfigError;
+
+pub(crate) fn config_helper_error(error: ConfigError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "ConfigError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
+}
+
 const GROUPS: [Group; 46] = [
     a2a::GROUP,
     anthropic::GROUP,

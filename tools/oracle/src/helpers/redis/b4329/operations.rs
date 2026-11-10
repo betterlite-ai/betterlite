@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::cache_primitives::version::RedisVersionValue;
-use betterlite_redis::list_operations::error::RedisListOperationsError;
 use betterlite_redis::list_operations::{
     RedisListOperations, RedisListOperationsSettings, RedisPipelineLpopOperation,
     RedisPipelineRpushOperation,
@@ -119,7 +118,10 @@ pub(crate) async fn run(
         Operation::Rpush => {
             let key = required_key(call)?;
             let values: Vec<RedisScalar> = call.values.iter().map(ListValue::scalar).collect();
-            let length = lists.async_rpush(key, &values).await?;
+            let length = lists
+                .async_rpush(key, &values)
+                .await
+                .map_err(|error| helper_error("RedisError", error))?;
             Ok(json!(length))
         }
         Operation::RpushAndTrim => {
@@ -128,32 +130,38 @@ pub(crate) async fn run(
                 .max_len
                 .ok_or_else(|| helper_error("InvalidInput", "rpush_and_trim needs max_len"))?;
             let values: Vec<RedisScalar> = call.values.iter().map(ListValue::scalar).collect();
-            let length = lists.async_rpush_and_trim(key, &values, max_len).await?;
+            let length = lists
+                .async_rpush_and_trim(key, &values, max_len)
+                .await
+                .map_err(|error| helper_error("RedisError", error))?;
             Ok(json!(length))
         }
         Operation::RpushPipeline => {
             let operations: Vec<RedisPipelineRpushOperation> =
                 call.operations.iter().map(rpush_operation).collect();
-            let lengths = lists.async_rpush_pipeline(&operations).await?;
+            let lengths = lists
+                .async_rpush_pipeline(&operations)
+                .await
+                .map_err(|error| helper_error("RedisError", error))?;
             Ok(json!(lengths))
         }
         Operation::Lpop => {
             let key = required_key(call)?;
-            let result = lists.async_lpop(key, call.count).await?;
+            let result = lists
+                .async_lpop(key, call.count)
+                .await
+                .map_err(|error| helper_error("RedisError", error))?;
             Ok(lpop_result(&result))
         }
         Operation::LpopPipeline => {
             let operations: Vec<RedisPipelineLpopOperation> =
                 call.operations.iter().map(lpop_operation).collect();
-            let entries = lists.async_lpop_pipeline(&operations).await?;
+            let entries = lists
+                .async_lpop_pipeline(&operations)
+                .await
+                .map_err(|error| helper_error("RedisError", error))?;
             Ok(Value::Array(entries.iter().map(lpop_entry).collect()))
         }
-    }
-}
-
-impl From<RedisListOperationsError> for Box<HelperError> {
-    fn from(error: RedisListOperationsError) -> Self {
-        helper_error("RedisError", error)
     }
 }
 

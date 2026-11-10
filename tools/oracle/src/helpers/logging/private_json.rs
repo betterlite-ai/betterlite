@@ -2,7 +2,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
-use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
 use betterlite_logging::private_json::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads,
@@ -85,21 +84,32 @@ struct Fixture {
 impl Fixture {
     async fn stage(&self, name: &str, data: &Value, commit: bool) -> HelperResult {
         let target = self.root.path().join(name);
+        let document = PrivateDocument::json(data).map_err(failure)?;
         let staged = self
             .files
-            .stage_private(&target, PrivateDocument::json(data)?)
-            .await?;
+            .stage_private(&target, document)
+            .await
+            .map_err(failure)?;
         if commit {
-            self.files.commit_staged_json(&staged, &target).await?;
+            self.files
+                .commit_staged_json(&staged, &target)
+                .await
+                .map_err(failure)?;
         } else {
-            self.files.discard_staged_json(&staged).await?;
+            self.files
+                .discard_staged_json(&staged)
+                .await
+                .map_err(failure)?;
         }
         Ok(file_view(&target))
     }
 
     async fn overwrite(&self, name: &str, data: &Value) -> HelperResult {
         let target = self.seed_readable(name)?;
-        self.files.overwrite_private_json(&target, data).await?;
+        self.files
+            .overwrite_private_json(&target, data)
+            .await
+            .map_err(failure)?;
         Ok(file_view(&target))
     }
 
@@ -113,11 +123,16 @@ impl Fixture {
 
     async fn owner_permissions(&self, name: &str, data: &Value) -> HelperResult {
         let directory = self.root.path().join("conf");
-        self.files.ensure_private_dir(&directory).await?;
-        let target = directory.join(name);
         self.files
-            .write_private(&target, PrivateDocument::json(data)?)
-            .await?;
+            .ensure_private_dir(&directory)
+            .await
+            .map_err(failure)?;
+        let target = directory.join(name);
+        let document = PrivateDocument::json(data).map_err(failure)?;
+        self.files
+            .write_private(&target, document)
+            .await
+            .map_err(failure)?;
         let directory_mode = fs::metadata(&directory)
             .map_err(failure)?
             .permissions()
@@ -131,8 +146,11 @@ impl Fixture {
         fs::create_dir_all(&real).map_err(failure)?;
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
-        let document = PrivateDocument::json(data)?;
-        self.files.write_private(&link.join(name), document).await?;
+        let document = PrivateDocument::json(data).map_err(failure)?;
+        self.files
+            .write_private(&link.join(name), document)
+            .await
+            .map_err(failure)?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
             .file_type()
@@ -145,11 +163,17 @@ impl Fixture {
 
     async fn ensure_private_dir(&self, name: &str) -> HelperResult {
         let created = self.root.path().join(name);
-        self.files.ensure_private_dir(&created).await?;
+        self.files
+            .ensure_private_dir(&created)
+            .await
+            .map_err(failure)?;
         let tightened = self.root.path().join(format!("{name}-tightened"));
         fs::create_dir_all(&tightened).map_err(failure)?;
         fs::set_permissions(&tightened, fs::Permissions::from_mode(0o777)).map_err(failure)?;
-        self.files.ensure_private_dir(&tightened).await?;
+        self.files
+            .ensure_private_dir(&tightened)
+            .await
+            .map_err(failure)?;
         let created_mode = fs::metadata(&created)
             .map_err(failure)?
             .permissions()
@@ -185,12 +209,6 @@ fn file_view(target: &Path) -> Value {
         "content": content,
         "leftovers": leftovers,
     })
-}
-
-impl From<PrivateJsonError> for Box<crate::helpers::HelperError> {
-    fn from(error: PrivateJsonError) -> Self {
-        failure(error)
-    }
 }
 
 fn failure<M>(message: M) -> Box<crate::helpers::HelperError>

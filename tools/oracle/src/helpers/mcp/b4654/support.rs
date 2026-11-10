@@ -12,19 +12,28 @@ use crate::helpers::HelperError;
 type FieldResult<T> = Result<T, Box<HelperError>>;
 
 macro_rules! helper_error {
-    ($error:ty, $class:literal, $status:expr) => {
-        impl From<$error> for Box<HelperError> {
-            fn from(error: $error) -> Self {
-                invalid($class, $status, error.to_string())
-            }
+    ($name:ident, $error:ty, $class:literal, $status:expr) => {
+        pub(super) fn $name(error: $error) -> Box<HelperError> {
+            invalid($class, $status, error.to_string())
         }
     };
 }
 
-helper_error!(UrlParseError, "ValueError", None);
-helper_error!(UrlIdentityError, "ValueError", None);
-helper_error!(DuplicateAuthorization, "HTTPException", Some(400));
+helper_error!(url_parse_helper_error, UrlParseError, "ValueError", None);
 helper_error!(
+    url_identity_helper_error,
+    UrlIdentityError,
+    "ValueError",
+    None
+);
+helper_error!(
+    duplicate_authorization_error,
+    DuplicateAuthorization,
+    "HTTPException",
+    Some(400)
+);
+helper_error!(
+    token_endpoint_auth_error,
     TokenEndpointAuthConfigError,
     "TokenEndpointAuthConfigError",
     None
@@ -94,7 +103,7 @@ pub(super) fn parse_headers(input: &Value) -> Result<RawHeaders, Box<HelperError
     for (name, value) in &entries {
         pairs.push((name.as_bytes(), value.as_bytes()));
     }
-    Ok(RawHeaders::from_pairs(&pairs)?)
+    Ok(RawHeaders::from_pairs(&pairs).map_err(duplicate_authorization_error)?)
 }
 
 pub(super) fn expose(map: BTreeMap<String, SecretString>) -> BTreeMap<String, String> {

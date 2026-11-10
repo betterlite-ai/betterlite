@@ -52,4 +52,11 @@ impl PartialEq for ManagementEffectFields {
     }
 }
 
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "Only the crate's test module names ErrorCode, so the non-test build has no use for the re-export."
+    )
+)]
 pub(crate) use betterlite_oracle_helper_api::error::{ErrorCode, HelperError};
