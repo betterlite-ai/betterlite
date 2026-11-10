@@ -60,11 +60,9 @@ async fn backend<'input>(
         outcome: input.outcome,
     };
     let log = calls.log.clone();
-    let router = if input.router_present {
-        rows.map(|list| HelperRouter { rows: list })
-    } else {
-        None
-    };
+    let router = rows
+        .filter(|_| input.router_present)
+        .map(|list| HelperRouter { rows: list });
     let service = SemanticEmbeddingService::new(
         settings(input),
         router,
