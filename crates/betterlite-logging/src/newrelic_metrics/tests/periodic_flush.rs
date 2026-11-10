@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use tokio::task::yield_now;
-use tokio::time::{advance, pause};
+use tokio::time::{advance, pause, timeout};
 
 use super::support::{Fixture, Reply, record_at};
 use crate::newrelic_metrics::queue::{push_record, queue_length};
@@ -67,7 +67,9 @@ async fn periodic_flush_ends_and_drains_when_the_tracker_closes() {
     push_record(&logger, record_at(0));
     fixture.tasks.close();
     advance(Duration::from_secs(5)).await;
-    fixture.tasks.wait().await;
+    timeout(Duration::from_secs(20), fixture.tasks.wait())
+        .await
+        .expect("the periodic flush ends once the tracker closes");
     assert_eq!(fixture.transport.requests().len(), 1);
     assert_eq!(queue_length(&logger), 0);
 }

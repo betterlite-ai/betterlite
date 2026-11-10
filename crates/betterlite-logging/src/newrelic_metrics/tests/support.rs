@@ -421,7 +421,9 @@ impl Fixture {
 
     pub(super) async fn wait_for_tasks(&self) {
         self.tasks.close();
-        self.tasks.wait().await;
+        timeout(Duration::from_secs(20), self.tasks.wait())
+            .await
+            .expect("every tracked task ends once the tracker closes");
     }
 
     pub(super) fn build(&self) -> Arc<NewRelicMetricsLogger> {
