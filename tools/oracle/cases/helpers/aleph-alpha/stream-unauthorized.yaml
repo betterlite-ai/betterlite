@@ -1,0 +1,20 @@
+kind: helper
+name: aleph-alpha-stream-unauthorized
+call:
+  aleph_alpha:
+    model: luminous-base
+    messages:
+      - role: user
+        content: Hi
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: sk-aleph
+    optional_params:
+      stream: true
+    defaults: {}
+    max_tokens: 4096
+    created: 1700000006
+    reply:
+      status: 401
+      body: '{"error": "Not a valid token"}'
+env: {}
+compare: {ignore: []}

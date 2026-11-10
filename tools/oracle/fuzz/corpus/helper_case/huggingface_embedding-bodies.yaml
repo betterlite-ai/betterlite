@@ -1,0 +1,11 @@
+kind: helper
+name: bodies
+call:
+  b5991:
+    steps:
+      - {kind: pipeline_tag, input: ["first", "second"], pipeline_tag: "rerank"}
+      - {kind: pipeline_tag, input: ["only"], pipeline_tag: "sentence-similarity"}
+      - {kind: transform_input, model: "sentence-transformers/all-MiniLM-L6-v2", input: ["first", "second"], optional_params: {input_type: "query"}}
+      - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {use_cache: true, top_k: 3, dimensions: 8}}
+env: {}
+compare: {ignore: []}
