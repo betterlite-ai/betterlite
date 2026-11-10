@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-openai = { path = ".." }
+betterlite-prompts = { path = "../../betterlite-prompts" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 http = "1.5.0"
 libfuzzer-sys = "0.4.9"
@@ -176,6 +177,13 @@ bench = false
 [[bin]]
 name = "cohere_chat_v1"
 path = "fuzz_targets/cohere_chat_v1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_legacy_embedding"
+path = "fuzz_targets/cohere_legacy_embedding.rs"
 test = false
 doc = false
 bench = false
