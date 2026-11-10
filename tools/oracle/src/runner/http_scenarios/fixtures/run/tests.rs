@@ -11,7 +11,10 @@ use crate::http_scenarios::run::PollingTransport as _;
 
 const KEY: &str = "litellm:polling:response:litellm_poll_scenario";
 const VALUE: &str = r#"{"id":"litellm_poll_scenario","object":"response","status":"queued","created_at":1700000000,"output":[],"usage":null,"metadata":{}}"#;
-const RESP_TIMEOUT: Duration = Duration::from_secs(5);
+const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+// under the fixture's 5 s idle read timeout, so a close caused only by that timeout fails the bound tests
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const OVERSIZED_HEADER_BYTES: usize = 0x0001_0001;
 
 #[test]
@@ -94,16 +97,16 @@ fn oversized_header_line_closes_the_connection() {
 fn raw_stream(addr: SocketAddr) -> TcpStream {
     let stream = TcpStream::connect(addr).expect("the fake redis accepts a connection");
     stream
-        .set_read_timeout(Some(RESP_TIMEOUT))
-        .expect("the read timeout is set");
-    stream
-        .set_write_timeout(Some(RESP_TIMEOUT))
+        .set_write_timeout(Some(WRITE_TIMEOUT))
         .expect("the write timeout is set");
     stream
 }
 
 fn raw_reply(addr: SocketAddr, request: &[u8]) -> String {
     let mut stream = raw_stream(addr);
+    stream
+        .set_read_timeout(Some(REPLY_TIMEOUT))
+        .expect("the read timeout is set");
     stream.write_all(request).expect("the command is sent");
     let mut buffer = [0_u8; 64];
     let read = stream.read(&mut buffer).expect("the server answers");
@@ -115,6 +118,9 @@ fn raw_reply(addr: SocketAddr, request: &[u8]) -> String {
 
 fn raw_after_close(addr: SocketAddr, request: &[u8]) -> Vec<u8> {
     let mut stream = raw_stream(addr);
+    stream
+        .set_read_timeout(Some(CLOSE_TIMEOUT))
+        .expect("the close timeout is set");
     let _written = stream.write_all(request);
     let mut reply = Vec::new();
     let outcome = stream.read_to_end(&mut reply);
