@@ -78,3 +78,10 @@ path = "fuzz_targets/ptu_instant.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "query_parsing"
+path = "fuzz_targets/query_parsing.rs"
+test = false
+doc = false
+bench = false
