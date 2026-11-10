@@ -26,6 +26,7 @@ const TEXT_PROMPT: &str = r#"{
 }"#;
 
 const INCOMPLETE_CHAT_PROMPT: &str = r#"{"type": "chat", "name": "greeting"}"#;
+const UNRECOGNIZED_PROMPT: &str = r#"{"prompt_name": "greeting"}"#;
 
 #[tokio::test]
 async fn prompt_type_chat_builds_a_chat_prompt_client() {
@@ -60,6 +61,15 @@ async fn prompt_type_text_builds_a_text_prompt_client() {
 async fn prompt_type_incomplete_dict_logs_no_prompt() {
     let client = idle_client();
     let mut clean = metadata(prompt_value(INCOMPLETE_CHAT_PROMPT));
+    let attachment = attach_generation_prompt(&mut clean, None, &client).await;
+    assert!(attachment.is_none());
+    assert!(!clean.contains_key("prompt"));
+}
+
+#[tokio::test]
+async fn prompt_type_unrecognized_dict_logs_no_prompt() {
+    let client = idle_client();
+    let mut clean = metadata(prompt_value(UNRECOGNIZED_PROMPT));
     let attachment = attach_generation_prompt(&mut clean, None, &client).await;
     assert!(attachment.is_none());
     assert!(!clean.contains_key("prompt"));
