@@ -7,6 +7,8 @@ use crate::datadog_logging::sync;
 use crate::datadog_logging::tests::support;
 use crate::fields::payload::StandardLoggingPayload;
 
+mod datadog_delivery_sync_async_behavior;
+
 fn moment() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").expect("a valid timestamp")
 }
@@ -33,6 +35,14 @@ fn field(body: &Json, name: &str) -> Json {
         panic!("a payload body is an object");
     };
     fields.get(name).cloned().expect("the field is present")
+}
+
+fn message_field(body: &Json, name: &str) -> Json {
+    let Json::Text(message) = field(body, "message") else {
+        panic!("the envelope message is a JSON string");
+    };
+    let inner: Json = serde_json::from_str(&message).expect("the message is JSON");
+    field(&inner, name)
 }
 
 fn status_of(body: &Json) -> String {
@@ -128,80 +138,6 @@ async fn datadog_delivery_sync_without_a_standard_payload_sends_nothing() {
     };
     let call = SyncCall {
         kwargs: &empty,
-        response_obj: &Json::Null,
-        start_time: moment(),
-        end_time: moment(),
-    };
-    sync::log_success_event(&logger, &call).await;
-    assert_eq!(transport.call_count(), 0);
-}
-
-#[tokio::test]
-async fn datadog_delivery_sync_v1_behavior() {
-    let mut init = support::direct_init("key-1", "us5.datadoghq.com");
-    init.use_v1 = true;
-    let (logger, transport) = support::build(
-        &init,
-        &support::Environment::new(),
-        vec![support::Reply::accepted()],
-    );
-    let payload = legacy_kwargs();
-    let without_id: Json = serde_json::from_str(r#"{"usage": {}}"#).expect("a response");
-    let call = SyncCall {
-        kwargs: &payload,
-        response_obj: &without_id,
-        start_time: moment(),
-        end_time: moment(),
-    };
-    sync::log_success_event(&logger, &call).await;
-    assert_eq!(transport.call_count(), 1);
-    let record = transport.calls()[0].body.clone();
-    assert_eq!(field(&record, "id"), Json::Text("generated-id".to_owned()));
-    assert_eq!(
-        field(&record, "call_type"),
-        Json::Text("litellm.completion".to_owned())
-    );
-    assert_eq!(field(&record, "model"), Json::Text("gpt-4o".to_owned()));
-}
-
-#[tokio::test]
-async fn datadog_delivery_sync_v1_takes_the_response_id() {
-    let mut init = support::direct_init("key-1", "us5.datadoghq.com");
-    init.use_v1 = true;
-    let (logger, transport) = support::build(
-        &init,
-        &support::Environment::new(),
-        vec![support::Reply::accepted()],
-    );
-    let payload = legacy_kwargs();
-    let response: Json =
-        serde_json::from_str(r#"{"id": "resp-1", "usage": {}}"#).expect("a response");
-    let call = SyncCall {
-        kwargs: &payload,
-        response_obj: &response,
-        start_time: moment(),
-        end_time: moment(),
-    };
-    sync::log_success_event(&logger, &call).await;
-    assert_eq!(transport.call_count(), 1);
-    assert_eq!(
-        field(&transport.calls()[0].body, "id"),
-        Json::Text("resp-1".to_owned())
-    );
-}
-
-#[tokio::test]
-async fn datadog_delivery_sync_v1_without_legacy_kwargs_sends_nothing() {
-    let mut init = support::direct_init("key-1", "us5.datadoghq.com");
-    init.use_v1 = true;
-    let (logger, transport) = support::build(
-        &init,
-        &support::Environment::new(),
-        vec![support::Reply::accepted()],
-    );
-    let payload = kwargs(support::standard_payload("sync-1", false));
-    let call = SyncCall {
-        kwargs: &payload,
         response_obj: &Json::Null,
         start_time: moment(),
         end_time: moment(),
