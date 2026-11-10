@@ -1,9 +1,9 @@
-use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
 use betterlite_logging::private_json::files::{PrivateFiles, StagedFile};
+use tokio::fs;
 
 use crate::token_records::commit::commit_token_file;
 use crate::token_records::error::TokenRecordError;
@@ -67,7 +67,7 @@ impl CredentialFiles for ManagedTokenFile {
     }
 
     async fn remove(&self) -> Result<(), io::Error> {
-        match fs::remove_file(&self.path) {
+        match fs::remove_file(&self.path).await {
             Ok(()) => Ok(()),
             Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(source) => Err(source),
