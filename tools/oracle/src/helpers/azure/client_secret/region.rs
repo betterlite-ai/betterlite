@@ -96,16 +96,6 @@ fn prepare(
     Ok((transport, cache, resolver))
 }
 
-// the region cases carry no credentials, the LiteLLM side signs in as tenant, client and secret
-fn region_input() -> ClientSecretInput {
-    ClientSecretInput {
-        tenant_id: "tenant".to_owned(),
-        client_id: "client".to_owned(),
-        client_secret: SecretString::from("secret"),
-        scope: None,
-    }
-}
-
 fn connect(
     step: &Step,
     cache: &mut ProviderCache,
@@ -115,7 +105,14 @@ fn connect(
         .environment
         .get("AZURE_AUTHORITY_HOST")
         .map(String::as_str);
-    provider_for(cache, &region_input(), resolver, authority_host)
+    // the region cases carry no credentials, the LiteLLM side signs in as tenant, client and secret
+    let input = ClientSecretInput {
+        tenant_id: "tenant".to_owned(),
+        client_id: "client".to_owned(),
+        client_secret: SecretString::from("secret"),
+        scope: None,
+    };
+    provider_for(cache, &input, resolver, authority_host)
 }
 
 fn flow_requests(step: &Step) -> Result<Vec<HttpRequest>, Box<HelperError>> {
