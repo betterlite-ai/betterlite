@@ -37,17 +37,16 @@ pub fn calculate_grounding_requests(grounding_metadata: &[Json]) -> GroundingReq
 }
 
 fn chunk_kinds(item: &Json) -> BTreeSet<&str> {
+    let mut kinds = BTreeSet::new();
     let Some(Json::List(chunks)) = field(item, "groundingChunks") else {
-        return BTreeSet::new();
+        return kinds;
     };
-    chunks
-        .iter()
-        .filter_map(|chunk| match chunk {
-            Json::Object(fields) => Some(fields.keys().map(String::as_str)),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-        })
-        .flatten()
-        .collect()
+    for chunk in chunks {
+        if let Json::Object(fields) = chunk {
+            kinds.extend(fields.keys().map(String::as_str));
+        }
+    }
+    kinds
 }
 
 fn queries(item: &Json) -> Vec<&str> {
