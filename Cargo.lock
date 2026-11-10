@@ -2722,8 +2722,10 @@ dependencies = [
 name = "betterlite-tokenizer-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "betterlite-tokenizer",
  "libfuzzer-sys",
+ "tokio",
 ]
 
 [[package]]
