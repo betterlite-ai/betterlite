@@ -5,7 +5,9 @@ use std::str::FromStr as _;
 use std::sync::Mutex;
 
 use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::cost_usage::modality_projection::CachedTokenCounters;
+use betterlite_models::cost_usage::modality_projection::{
+    CacheCreationTokenDetails, CachedTokenCounters,
+};
 use betterlite_models::cost_usage::{CostUsage, PromptDetails};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
@@ -37,6 +39,7 @@ struct Fixture {
     video_tokens: i64,
     cache_read_tokens: Option<i64>,
     cache_creation_tokens: Option<i64>,
+    cache_creation_token_details: Option<CacheCreationTokenDetails>,
     cached_tokens_details: Option<CachedTokenCounters>,
 }
 
@@ -49,6 +52,7 @@ fn new_fixture() -> Fixture {
         video_tokens: 0,
         cache_read_tokens: None,
         cache_creation_tokens: None,
+        cache_creation_token_details: None,
         cached_tokens_details: None,
     }
 }
@@ -73,7 +77,7 @@ impl Fixture {
         let extras = PromptExtras {
             cache_write_tokens: None,
             cache_creation_tokens: self.cache_creation_tokens,
-            cache_creation_token_details: None,
+            cache_creation_token_details: self.cache_creation_token_details,
             cached_tokens_details: self.cached_tokens_details,
             character_count: None,
             image_count: None,
@@ -340,6 +344,27 @@ fn explicit_cache_rates_remove_and_price_their_tokens() {
         .unwrap();
     assert_eq!(result.prompt_cost, dec("775"));
     assert_eq!(result.completion_cost, dec("150"));
+}
+
+#[test]
+fn ttl_write_splits_do_not_change_the_batch_prompt_path() {
+    let mut fixture = new_fixture();
+    fixture.prompt_tokens = 1000;
+    fixture.cache_creation_tokens = Some(100);
+    fixture.cache_creation_token_details = Some(CacheCreationTokenDetails {
+        ephemeral_5m_input_tokens: Some(40),
+        ephemeral_1h_input_tokens: Some(60),
+    });
+    let supplied = model_info(
+        r#"{"input_cost_per_token_batches": 0.5, "cache_creation_input_token_cost_batches": 0.25}"#,
+    );
+    let result = case("gpt-4o", Some("openai"), &fixture, Some(supplied))
+        .run(
+            &RecordingLookup::never_called(),
+            &ResolutionFixture::new().context(),
+        )
+        .unwrap();
+    assert_eq!(result.prompt_cost, dec("475"));
 }
 
 #[test]

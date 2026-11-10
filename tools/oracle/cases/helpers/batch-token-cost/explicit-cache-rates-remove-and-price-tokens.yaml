@@ -10,7 +10,9 @@ call:
       completion_tokens: 100
       prompt_details: {audio_tokens: 100, image_tokens: 50, video_tokens: 25}
       cache_read_tokens: 200
-    prompt_extras: {cache_creation_tokens: 100}
+    prompt_extras:
+      cache_creation_tokens: 100
+      cache_creation_token_details: {ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 60}
     model_info:
       input_cost_per_token_batches: 0.5
       output_cost_per_token_batches: 1.5
