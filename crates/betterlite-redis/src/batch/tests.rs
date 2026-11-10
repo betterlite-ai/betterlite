@@ -11,6 +11,7 @@ use redis::Value;
 use rstest::rstest;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
+use tokio_util::task::TaskTracker;
 
 use self::support::{Harness, cluster_harness, harness, unreachable_harness};
 use super::error::{BatchError, PipelineFailure};
@@ -93,7 +94,11 @@ struct Declared {
 }
 
 fn batch(harness: &Harness) -> Arc<RedisBatch> {
-    Arc::new(RedisBatch::new(Arc::clone(&harness.cache), "redis_batch"))
+    Arc::new(RedisBatch::new(
+        Arc::clone(&harness.cache),
+        "redis_batch",
+        TaskTracker::new(),
+    ))
 }
 
 fn registered(harness: &Harness, source: &str) -> Arc<RegisteredScript> {
@@ -546,16 +551,7 @@ async fn settled_hook_order() {
     );
 }
 
-async fn dropped_flush() {
-    let server = FakeServer::start().await;
-    server.silence("MGET");
-    let harness = harness(&server, Some("ns")).await;
-    let batch = batch(&harness);
-    let log = Arc::new(Mutex::new(Vec::new()));
-
-    let mget = batch.mget(&["a".to_owned()]);
-    mget.on_settled(recording_hook("mget", Arc::clone(&log), value_text));
-    let sibling = batch.increment("b", 1.5, None);
+async fn abort_flush(server: &FakeServer, mget: MgetHandle) {
     let mut tasks = JoinSet::new();
     let flushing = tasks.spawn(async move { mget.await });
     while server.commands_named("MGET").is_empty() {
@@ -568,16 +564,40 @@ async fn dropped_flush() {
         .expect("the spawned flush")
         .expect_err("the aborted flush");
     assert!(joined.is_cancelled());
+}
 
+async fn dropped_flush() {
+    let server = FakeServer::start().await;
+    server.silence("MGET");
+    let harness = harness(&server, Some("ns")).await;
+    let owner = TaskTracker::new();
+    let batch = Arc::new(RedisBatch::new(
+        Arc::clone(&harness.cache),
+        "redis_batch",
+        owner.clone(),
+    ));
+    let log = Arc::new(Mutex::new(Vec::new()));
+
+    let mget = batch.mget(&["a".to_owned()]);
+    let hook_log = Arc::clone(&log);
+    mget.on_settled(Arc::new(move |settled: &Settled<MgetValues>| {
+        push_entry(&hook_log, format!("mget:{}", value_text(settled)));
+        let later = Arc::clone(&hook_log);
+        Some(Box::pin(async move {
+            sleep(Duration::from_millis(50)).await;
+            push_entry(&later, "mget:follow-up".to_owned());
+        }))
+    }));
+    let sibling = batch.increment("b", 1.5, None);
+    abort_flush(&server, mget).await;
     let cancelled = sibling.await.expect_err("the cancelled sibling");
     assert!(matches!(cancelled.as_ref(), BatchError::Cancelled));
-    timeout(Duration::from_secs(5), async {
-        while log_entries(&log).len() < 2 {
-            sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .expect("the follow-up of the dropped flush ran");
+    drop(batch);
+
+    owner.close();
+    timeout(Duration::from_secs(5), owner.wait())
+        .await
+        .expect("the follow-up outlives the dropped batch");
     assert_eq!(log_entries(&log), ["mget:err:cancelled", "mget:follow-up"]);
 }
 

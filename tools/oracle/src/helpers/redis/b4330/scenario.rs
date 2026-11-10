@@ -9,6 +9,7 @@ use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_cache::RedisCache;
 use redis::Value;
 use serde_json::{Value as Json, json};
+use tokio_util::task::TaskTracker;
 
 use super::failure;
 use super::input::{Arg, Call, Operation, Reply, Step};
@@ -91,7 +92,11 @@ pub(crate) async fn run(call: &Call) -> HelperResult {
     )
     .await
     .map_err(failure)?;
-    let batch = Arc::new(RedisBatch::new(Arc::clone(&cache), "redis_batch"));
+    let batch = Arc::new(RedisBatch::new(
+        Arc::clone(&cache),
+        "redis_batch",
+        TaskTracker::new(),
+    ));
     let log: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
     let mut walk = Walk {
         batch: &batch,

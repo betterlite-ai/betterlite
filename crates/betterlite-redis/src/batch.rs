@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use redis::Value;
 use serde::Serialize;
 use tokio::sync::{Mutex as AsyncMutex, oneshot};
-use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 
 use self::delete::DeleteOperation;
 use self::increment::IncrementOperation;
@@ -42,13 +42,13 @@ pub struct RedisBatch {
     pending: Mutex<Vec<Operation>>,
     flush_hooks: Mutex<Vec<Arc<dyn Fn() + Send + Sync>>>,
     misses: Arc<Mutex<BTreeSet<String>>>,
-    follow_ups: Mutex<JoinSet<()>>,
+    follow_ups: TaskTracker,
     lock: AsyncMutex<()>,
 }
 
 impl RedisBatch {
     #[must_use]
-    pub fn new(redis_cache: Arc<RedisCache>, name: &'static str) -> Self {
+    pub fn new(redis_cache: Arc<RedisCache>, name: &'static str, follow_ups: TaskTracker) -> Self {
         Self {
             redis_cache,
             name,
@@ -56,7 +56,7 @@ impl RedisBatch {
             pending: Mutex::new(Vec::new()),
             flush_hooks: Mutex::new(Vec::new()),
             misses: Arc::new(Mutex::new(BTreeSet::new())),
-            follow_ups: Mutex::new(JoinSet::new()),
+            follow_ups,
             lock: AsyncMutex::new(()),
         }
     }

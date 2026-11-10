@@ -175,13 +175,8 @@ impl Drop for Draining<'_> {
         let Ok(runtime) = Handle::try_current() else {
             return;
         };
-        let mut tasks = match self.batch.follow_ups.lock() {
-            Ok(tasks) => tasks,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        while tasks.try_join_next().is_some() {}
         for follow_up in follow_ups {
-            tasks.spawn_on(follow_up, &runtime);
+            self.batch.follow_ups.spawn_on(follow_up, &runtime);
         }
     }
 }
