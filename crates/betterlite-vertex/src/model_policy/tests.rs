@@ -13,9 +13,12 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::model_policy::UNSUPPORTED_DEPLOYED_PARAMS;
+use crate::model_policy::capabilities::response_schema::{
+    get_supports_response_schema, supports_response_json_schema,
+};
 use crate::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-    get_supports_response_schema, get_supports_system_message, supports_response_json_schema,
+    get_supports_system_message,
 };
 use crate::model_policy::error::{VertexAiError, classify_vertex_error};
 use crate::model_policy::lyria::{

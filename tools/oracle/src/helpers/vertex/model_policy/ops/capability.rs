@@ -1,9 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use betterlite_vertex::model_policy::capabilities::response_schema::{
+    get_supports_response_schema, supports_response_json_schema,
+};
 use betterlite_vertex::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-    get_supports_response_schema, get_supports_system_message, supports_response_json_schema,
+    get_supports_system_message,
 };
 use serde_json::{Value, json};
 use tracing::Subscriber;

@@ -1,8 +1,6 @@
-use regex::Regex;
-use thiserror::Error;
+pub mod response_schema;
 
-// Gemini 2.0 and later accept responseJsonSchema; this is the source's own version check, not the URL one
-const GEMINI_2_PLUS_PATTERN: &str = r"gemini-(?:[2-9]|[1-9]\d+)(?:\.|\-)";
+use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VertexCapabilityProvider {
@@ -61,24 +59,4 @@ pub fn get_supports_system_message(
             },
             |supported| supported || model.contains("gemini/"),
         )
-}
-
-pub fn get_supports_response_schema(
-    model: &str,
-    provider: VertexCapabilityProvider,
-    lookup: &dyn ModelCapabilityLookup,
-) -> Result<bool, CapabilityLookupError> {
-    lookup.supports(
-        CapabilityKind::ResponseSchema,
-        model,
-        provider.lookup_name(),
-    )
-}
-
-#[must_use]
-pub fn supports_response_json_schema(model: &str) -> bool {
-    let Ok(pattern) = Regex::new(GEMINI_2_PLUS_PATTERN) else {
-        return false;
-    };
-    pattern.is_match(&model.to_lowercase())
 }
