@@ -1276,6 +1276,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-redis",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
