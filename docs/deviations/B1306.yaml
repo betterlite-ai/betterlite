@@ -1,0 +1,31 @@
+task: B1306
+deviations:
+- what: >-
+    Numeric PSC endpoint detection accepts only ASCII digits; Python's str.isdigit also accepts
+    non-ASCII digit characters, so a model name such as a fullwidth or Arabic-Indic numeral with an
+    api_base routes to the Gemini HTTP path in LiteLLM and to the legacy model path here.
+  why: >-
+    docs/compatibility.md leaves Python's string classification habits out of parity, and a
+    non-ASCII digit is not a working Vertex endpoint identifier.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L255
+- what: >-
+    Timestamp conversion truncates the exact instant toward zero. Python converts the datetime to
+    a float first, so a timestamp within a float ulp of the next integer rounds up before int()
+    truncates it; for 9999-12-31T23:59:59.999999Z LiteLLM returns 253402300800 and betterlite
+    returns 253402300799.
+  why: >-
+    The task text states int(timestamp) truncates toward zero, and docs/compatibility.md does not
+    port Python's float rounding accidents; every date a Vertex reply carries produces the same
+    integer on both sides.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L984
+- what: >-
+    A Lyria runtime model-cost entry whose output_cost_per_image is the string "nan" or "inf" is
+    rejected as invalid and falls back to the bundled entry. Pydantic's float parser accepts those
+    strings and LiteLLM returns the non-finite float as the generation cost.
+  why: >-
+    A non-finite price cannot be represented in standard JSON or in rust_decimal, and no working
+    setup prices a model at infinity.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L50-L62
