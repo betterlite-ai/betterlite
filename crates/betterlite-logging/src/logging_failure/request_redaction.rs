@@ -6,8 +6,6 @@ use crate::logging_privacy::PrivacyContext;
 use crate::logging_privacy::request::decide_request;
 use crate::logging_state::LoggingState;
 
-const REQUEST_METADATA_SLOTS: [&str; 2] = ["litellm_metadata", "metadata"];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestRedaction {
     LoggerDecides,
@@ -22,7 +20,7 @@ pub fn request_redacts_messages(state: &LoggingState, settings: Settings) -> Req
     {
         request.insert("turn_off_message_logging".to_owned(), flag.clone());
     }
-    for slot in REQUEST_METADATA_SLOTS {
+    for slot in ["litellm_metadata", "metadata"] {
         if let Some(Json::Object(metadata)) = state.litellm_params.get(slot)
             && let Some(headers) = metadata.get("headers")
         {
