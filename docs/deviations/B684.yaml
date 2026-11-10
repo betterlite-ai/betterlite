@@ -25,6 +25,15 @@ deviations:
       rather than copied.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L212
   - what: >-
+      A response_format json_schema that is not an object (a string, null, number, boolean or
+      list) is a 400 BadRequest error that names the field, where _add_response_format_to_tools
+      subscripts it and LiteLLM turns the TypeError into a 500.
+    why: >-
+      The value comes from the client request, so a 4xx belongs where LiteLLM produces an
+      unhandled TypeError; no working setup can rely on the 500, and the deviation is recorded
+      rather than copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L212
+  - what: >-
       A tools value that is not a list, while a list-valued tools is being extended, is a
       400 BadRequest error that names the field, where optional_params["tools"].extend raises
       AttributeError and LiteLLM turns it into a 500.

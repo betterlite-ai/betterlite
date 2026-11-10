@@ -34,6 +34,11 @@ fn azure_chat_base_policy_response_format_is_bad_request() {
 }
 
 #[test]
+fn azure_chat_base_policy_non_object_schema_is_bad_request() {
+    mapping::non_object_schema_error_class();
+}
+
+#[test]
 fn azure_chat_base_policy_tools_not_list_is_bad_request() {
     mapping::tools_not_list_error_class();
 }

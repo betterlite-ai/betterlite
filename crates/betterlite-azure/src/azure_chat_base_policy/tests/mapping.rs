@@ -509,10 +509,18 @@ fn assert_bad_request(error: &PolicyError) {
 }
 
 const MISSING_SCHEMA: &str = r#"{"response_format":{"json_schema":{"name":"n"}}}"#;
+const NON_OBJECT_SCHEMA: &str = r#"{"response_format":{"json_schema":"x"}}"#;
 
 pub(super) fn response_format_error_class() {
     let mapping = policy("gpt-4o", "", DropMode::Off);
     let error = blocked(&object(MISSING_SCHEMA), EMPTY, &mapping);
+    assert!(matches!(error, PolicyError::ResponseFormat { .. }));
+    assert_bad_request(&error);
+}
+
+pub(super) fn non_object_schema_error_class() {
+    let mapping = policy("gpt-4o", "", DropMode::Off);
+    let error = blocked(&object(NON_OBJECT_SCHEMA), EMPTY, &mapping);
     assert!(matches!(error, PolicyError::ResponseFormat { .. }));
     assert_bad_request(&error);
 }
