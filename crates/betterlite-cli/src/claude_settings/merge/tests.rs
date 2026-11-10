@@ -314,6 +314,7 @@ fn with_status_line_replaces_an_entry_that_runs_our_subcommand(#[case] existing:
 
 #[rstest]
 #[case::other_command(r#"{"statusLine":{"type":"command","command":"/usr/bin/mine"}}"#)]
+#[case::entry_without_command(r#"{"statusLine":{"type":"command"}}"#)]
 #[case::text_entry(r#"{"statusLine":"/usr/bin/mine"}"#)]
 #[case::number_entry(r#"{"statusLine":7}"#)]
 fn with_status_line_leaves_another_entry_alone(#[case] original: &str) {

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, is_separator};
 
 use betterlite_config::loader::EnvironmentLookup;
 use sha2::{Digest as _, Sha256};
@@ -110,12 +110,11 @@ fn expand_home(value: &str, environment: &dyn EnvironmentLookup) -> Option<PathB
     let Some(rest) = value.strip_prefix('~') else {
         return Some(PathBuf::from(value));
     };
-    if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\')) {
+    if !(rest.is_empty() || rest.starts_with(is_separator)) {
         return Some(PathBuf::from(value));
     }
     let home = environment.system_home()?;
-    let relative = rest.trim_start_matches(['/', '\\']);
-    Some(home.join(relative))
+    Some(home.join(rest.trim_start_matches(is_separator)))
 }
 
 mod tests;

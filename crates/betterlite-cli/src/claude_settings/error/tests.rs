@@ -2,6 +2,7 @@
 
 use std::error::Error as _;
 use std::fs;
+use std::io;
 use std::path::Path;
 
 use betterlite_logging::private_json::files::PrivateFiles;
@@ -54,6 +55,15 @@ async fn a_failed_settings_write_keeps_its_cause() {
         .unwrap_err();
     assert!(matches!(error, ClaudeSettingsError::Write { .. }));
     assert!(source_is_kept(&error));
+}
+
+#[test]
+fn a_missing_executable_keeps_its_cause() {
+    let error = ClaudeSettingsError::CurrentExe {
+        source: io::Error::from(io::ErrorKind::NotFound),
+    };
+    assert!(source_is_kept(&error));
+    assert!(error.to_string().contains("executable"));
 }
 
 #[test]
