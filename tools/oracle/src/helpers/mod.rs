@@ -56,7 +56,6 @@ mod provider;
 mod proxy;
 mod pyhost;
 mod rate_limit;
-mod redact;
 mod redis;
 mod reporting;
 mod roi;
@@ -74,6 +73,9 @@ use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::Path;
 
+use betterlite_oracle_helper_api::group::Group;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
@@ -82,50 +84,6 @@ use answers::Answers;
 use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
-
-type HelperResult = Result<serde_json::Value, Box<HelperError>>;
-
-trait Helper {
-    type Input: serde::de::DeserializeOwned;
-
-    fn run(input: &Self::Input) -> HelperResult;
-
-    fn decode_and_run(input: &serde_json::Value) -> HelperResult {
-        let decoded = serde_json::from_value(input.clone()).map_err(|error| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
-        Self::run(&decoded)
-    }
-
-    fn check(input: &serde_json::Value) -> Result<(), String> {
-        serde_json::from_value::<Self::Input>(input.clone())
-            .map(drop)
-            .map_err(|error| error.to_string())
-    }
-
-    fn not_built(operation: &str) -> HelperResult {
-        Err(Box::new(HelperError {
-            class: "NotBuilt".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: format!("the {operation} helper is not built yet"),
-        }))
-    }
-}
-
-struct Group {
-    invoke: fn(&str, &serde_json::Value) -> Option<HelperResult>,
-    check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
-}
 
 const GROUPS: [Group; 46] = [
     a2a::GROUP,
@@ -161,7 +119,7 @@ const GROUPS: [Group; 46] = [
     proxy::GROUP,
     pyhost::GROUP,
     rate_limit::GROUP,
-    redact::GROUP,
+    betterlite_oracle_redact::GROUP,
     redis::GROUP,
     reporting::GROUP,
     roi::GROUP,
@@ -214,7 +172,7 @@ impl From<HelperCall> for BTreeMap<String, serde_json::Value> {
     }
 }
 
-pub(crate) enum HelperRun {
+pub enum HelperRun {
     Match,
     Difference,
 }
@@ -233,7 +191,7 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
     }
 }
 
-pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
+pub fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
     let (left, right) = run_pair(&case.call, &case.env, self_check)?;
     let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) else {
         writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;

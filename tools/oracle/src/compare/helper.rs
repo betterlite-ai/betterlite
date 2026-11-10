@@ -52,38 +52,4 @@ impl PartialEq for ManagementEffectFields {
     }
 }
 
-type OptionalString = Option<Option<String>>;
-type OptionalCode = Option<Option<ErrorCode>>;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(
-        rename = "type",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) error_type: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) param: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) code: OptionalCode,
-    pub(crate) message: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-#[serde(untagged)]
-pub(crate) enum ErrorCode {
-    Text(String),
-    Number(serde_json::Number),
-}
+pub(crate) use betterlite_oracle_helper_api::error::{ErrorCode, HelperError};
