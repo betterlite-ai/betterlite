@@ -1,6 +1,8 @@
 use betterlite_context::local_ttl_cache::CacheError;
 use thiserror::Error;
 
+pub type WindowResult<T> = Result<T, IncrementError>;
+
 #[derive(Debug, Error)]
 pub enum IncrementError {
     #[error("the local budget window cache failed")]

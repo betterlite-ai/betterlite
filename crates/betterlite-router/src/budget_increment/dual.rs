@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use rust_decimal::Decimal;
 
-use super::error::IncrementError;
+use super::error::{IncrementError, WindowResult};
 use super::queue::QueuedIncrement;
 use super::window::{WindowCache, WindowRedis};
 
@@ -18,9 +18,15 @@ pub struct DualWindowCache<R: WindowRedis> {
     pub redis: Option<R>,
 }
 
+#[derive(Clone, Copy)]
+enum WindowValue {
+    StartTime(f64),
+    Spend(Decimal),
+}
+
 #[async_trait]
 impl<R: WindowRedis> WindowCache for DualWindowCache<R> {
-    async fn read_start_time(&self, key: &str) -> Result<Option<f64>, IncrementError> {
+    async fn read_start_time(&self, key: &str) -> WindowResult<Option<f64>> {
         let cached = self
             .memory
             .lock()
@@ -50,29 +56,13 @@ impl<R: WindowRedis> WindowCache for DualWindowCache<R> {
         key: &str,
         start_time: f64,
         ttl: Duration,
-    ) -> Result<(), IncrementError> {
-        self.set_memory(key, CacheValue::Float(start_time), Some(ttl))?;
-        if let Some(redis) = &self.redis {
-            redis.write_start_time(key, start_time, ttl).await;
-        }
-        Ok(())
+    ) -> WindowResult<()> {
+        self.write_through(key, WindowValue::StartTime(start_time), ttl)
+            .await
     }
 
-    async fn reset_spend(
-        &self,
-        key: &str,
-        cost: Decimal,
-        ttl: Duration,
-    ) -> Result<(), IncrementError> {
-        let encoded = CacheValue::Object(BTreeMap::from([(
-            SPEND_FIELD.to_owned(),
-            CacheValue::Text(cost.to_string()),
-        )]));
-        self.set_memory(key, encoded, Some(ttl))?;
-        if let Some(redis) = &self.redis {
-            redis.write_spend(key, cost, ttl).await;
-        }
-        Ok(())
+    async fn reset_spend(&self, key: &str, cost: Decimal, ttl: Duration) -> WindowResult<()> {
+        self.write_through(key, WindowValue::Spend(cost), ttl).await
     }
 
     async fn increment_spend(
@@ -80,7 +70,7 @@ impl<R: WindowRedis> WindowCache for DualWindowCache<R> {
         key: &str,
         cost: Decimal,
         ttl: Duration,
-    ) -> Result<Decimal, IncrementError> {
+    ) -> WindowResult<Decimal> {
         let mut memory = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
         let current = match memory.get(key)? {
             Some(value) => {
@@ -114,12 +104,35 @@ impl<R: WindowRedis> WindowCache for DualWindowCache<R> {
 }
 
 impl<R: WindowRedis> DualWindowCache<R> {
-    fn set_memory(
+    async fn write_through(
         &self,
         key: &str,
-        value: CacheValue,
-        ttl: Option<Duration>,
-    ) -> Result<(), IncrementError> {
+        value: WindowValue,
+        ttl: Duration,
+    ) -> WindowResult<()> {
+        match value {
+            WindowValue::StartTime(seconds) => {
+                self.set_memory(key, CacheValue::Float(seconds), Some(ttl))?;
+            }
+            WindowValue::Spend(cost) => {
+                let encoded = CacheValue::Object(BTreeMap::from([(
+                    SPEND_FIELD.to_owned(),
+                    CacheValue::Text(cost.to_string()),
+                )]));
+                self.set_memory(key, encoded, Some(ttl))?;
+            }
+        }
+        let Some(redis) = &self.redis else {
+            return Ok(());
+        };
+        match value {
+            WindowValue::StartTime(seconds) => redis.write_start_time(key, seconds, ttl).await,
+            WindowValue::Spend(cost) => redis.write_spend(key, cost, ttl).await,
+        }
+        Ok(())
+    }
+
+    fn set_memory(&self, key: &str, value: CacheValue, ttl: Option<Duration>) -> WindowResult<()> {
         let mut memory = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
         memory.delete(key);
         memory.set(key, value, ttl.map(|duration| duration.as_secs_f64()))?;
