@@ -16,8 +16,8 @@ use betterlite_router::fallback_categories::gates::{
 use betterlite_router::weighted_failover::FailoverInputs;
 
 use self::types::{
-    Chain, ChainState, External, Failure, FallbackAvailability, MetadataKey, Ordinary, Payload,
-    RaiseDecision, Refusal, RefusalAvailability, Successor, Target,
+    Chain, ChainState, External, Failure, FallbackAvailability, MetadataKey, MetadataOutput,
+    Ordinary, Payload, RaiseDecision, Refusal, RefusalAvailability, Successor, Target,
 };
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -156,8 +156,10 @@ fn decide_output(
         has_choices: payload.response.has_choices,
         first_finish_reason: payload.response.first_finish_reason.as_deref(),
     };
+    let decision = decide(request);
     Output {
-        successor: successor_output(&decide(request)),
+        successor: successor_output(&decision),
+        metadata: metadata_output(payload, &decision),
         fallback: FallbackAvailability {
             default_fallbacks: has_default_fallbacks(&router_fallbacks),
             content_policy: has_content_policy_fallback(&request.content_policy, &router_fallbacks),
@@ -177,6 +179,22 @@ fn decide_output(
                 &refusal,
             ),
         },
+    }
+}
+
+fn metadata_output(payload: &Payload, decision: &FallbackSuccessor) -> MetadataOutput {
+    let mut excluded_deployment_ids = payload.weighted_failover.prior_excluded_ids.clone();
+    if let FallbackSuccessor::RunWeightedFailover {
+        excluded_deployment_ids: written,
+        ..
+    } = decision
+    {
+        excluded_deployment_ids.clone_from(written);
+    }
+    excluded_deployment_ids.sort_unstable();
+    MetadataOutput {
+        bucket: payload.weighted_failover.metadata_key,
+        excluded_deployment_ids,
     }
 }
 
@@ -227,7 +245,8 @@ fn successor_output(successor: &FallbackSuccessor) -> Successor {
             targets: targets.iter().map(target_output).collect(),
             client_fallbacks_after: *client_fallbacks_after,
         },
-        FallbackSuccessor::RunTargets { targets, .. } => Successor::Run {
+        FallbackSuccessor::RunTargets { targets, .. }
+        | FallbackSuccessor::RunWeightedFailover { targets, .. } => Successor::Run {
             targets: targets.iter().map(target_output).collect(),
             client_fallbacks_after: false,
         },
@@ -235,9 +254,12 @@ fn successor_output(successor: &FallbackSuccessor) -> Successor {
 }
 
 fn target_output(target: &FallbackTarget) -> Target {
+    // the exclusion list is a set in LiteLLM, so the probe compares its members in one order
+    let mut excluded_deployment_ids = target.excluded_deployment_ids.clone();
+    excluded_deployment_ids.sort_unstable();
     Target {
         model: target.model.clone(),
         target_order: target.target_order,
-        excluded_deployment_ids: target.excluded_deployment_ids.clone(),
+        excluded_deployment_ids,
     }
 }

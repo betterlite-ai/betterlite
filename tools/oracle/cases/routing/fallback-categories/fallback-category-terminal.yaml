@@ -141,6 +141,34 @@ probes:
         original_model_group: requested
         model_group: requested
         ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [null, null, null]
+          external: absent
+        weighted_failover:
+          enabled: true
+          strategy: simple-shuffle
+          failed_deployment_id: d2
+          model_group: requested
+          deployment_ids: [d0, d1, d2]
+          metadata_key: metadata
+          prior_excluded_ids: [d0]
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
           kind: standard
           chain:
             state: resolved

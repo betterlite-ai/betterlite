@@ -151,6 +151,15 @@ pub struct Output {
     pub fallback: FallbackAvailability,
     pub refusal: RefusalAvailability,
     pub raise_decision: RaiseDecision,
+    pub metadata: MetadataOutput,
+}
+
+// the ids are a set in LiteLLM, so both sides report them sorted
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetadataOutput {
+    pub bucket: MetadataKey,
+    pub excluded_deployment_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

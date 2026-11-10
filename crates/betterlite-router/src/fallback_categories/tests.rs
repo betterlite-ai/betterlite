@@ -273,15 +273,16 @@ fn weighted_failover_plans_the_same_group_retry() {
     let prior = [String::from("c")];
     let mut request = request_with(FallbackFailure::Ordinary, OrdinaryFallbacks::Absent);
     request.weighted_failover = failover(&deployments, &prior);
+    let written = vec![String::from("c"), String::from("a")];
     assert_eq!(
         decide(&request),
-        FallbackSuccessor::RunTargets {
-            source: TargetSource::WeightedFailover,
+        FallbackSuccessor::RunWeightedFailover {
             targets: vec![FallbackTarget {
                 model: "requested".to_owned(),
                 target_order: None,
-                excluded_deployment_ids: vec![String::from("c"), String::from("a")],
+                excluded_deployment_ids: written.clone(),
             }],
+            excluded_deployment_ids: written,
         }
     );
 }

@@ -118,7 +118,6 @@ pub enum TargetSource {
     ContextWindow,
     ContentPolicy,
     Ordinary,
-    WeightedFailover,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +131,11 @@ pub enum FallbackSuccessor {
     RunTargets {
         source: TargetSource,
         targets: Vec<FallbackTarget>,
+    },
+    // the same-group retry also tells the caller which ids to stamp into the metadata bucket
+    RunWeightedFailover {
+        targets: Vec<FallbackTarget>,
+        excluded_deployment_ids: Vec<String>,
     },
 }
 

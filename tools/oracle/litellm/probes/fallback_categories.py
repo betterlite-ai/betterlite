@@ -129,11 +129,17 @@ class RaiseDecision(Strict):
     anthropic_refusal: bool
 
 
+class MetadataOutput(Strict):
+    bucket: str
+    excluded_deployment_ids: list[str]
+
+
 class Output(Strict):
     successor: Successor
     fallback: FallbackAvailability
     refusal: RefusalAvailability
     raise_decision: RaiseDecision
+    metadata: MetadataOutput
 
 
 def anthropic_messages() -> None:
@@ -163,8 +169,10 @@ class FallbackCategories(Operation):
     @override
     def run(self) -> Output:
         router, kwargs = self.scenario()
+        successor = self.successor(router, kwargs)
         return Output(
-            successor=self.successor(router, kwargs),
+            successor=successor,
+            metadata=self.metadata_output(kwargs),
             fallback=FallbackAvailability(
                 default_fallbacks=router._has_default_fallbacks(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 content_policy=router._has_content_policy_fallback(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
@@ -307,22 +315,18 @@ class FallbackCategories(Operation):
         return exception
 
     def successor(self, router: Router, kwargs: dict[str, object]) -> Successor:
-        recorded: list[list[JsonValue]] = []
+        exception = self.build_exception()
+        recorded: list[object] = []
 
         async def fake_run(*_args: object, **call: object) -> object:
-            chain = call.get("fallback_model_group")
-            if not isinstance(chain, list):
-                raise ProbeError(
-                    "invalid_request", "the fallback dispatcher ran no chain"
-                )
-            recorded.append(cast("list[JsonValue]", chain))
+            recorded.append(call.get("fallback_model_group"))
             return {"probe": "response"}
 
         async def dispatch() -> None:
             with patch.object(litellm.router, "run_async_fallback", fake_run):
                 try:
                     await router.async_function_with_fallbacks_common_utils(  # pyright: ignore[reportUnknownMemberType]
-                        self.build_exception(),
+                        exception,
                         self.disable_fallbacks,
                         self.ordinary_param(),
                         self.chain_param(self.context_window),
@@ -331,15 +335,44 @@ class FallbackCategories(Operation):
                         (),
                         kwargs,
                     )
-                except Exception:  # noqa: BLE001 - the original error is the stop signal
+                except Exception as raised:
+                    if raised is not exception:
+                        raise ProbeError(
+                            "invalid_request",
+                            f"the fallback dispatcher raised {type(raised).__name__}: {raised}",
+                        ) from raised
                     return
+                if not recorded:
+                    raise ProbeError(
+                        "invalid_request",
+                        "the fallback dispatcher returned without running a fallback",
+                    )
 
         asyncio.run(dispatch())
         if not recorded:
             return SuccessorStop()
         return self.recorded_successor(recorded[0])
 
-    def recorded_successor(self, chain: list[JsonValue]) -> Successor:
+    def metadata_output(self, kwargs: dict[str, object]) -> MetadataOutput:
+        bucket = kwargs.get(self.bucket_name())
+        excluded: list[str] = []
+        if isinstance(bucket, dict):
+            stored = cast("dict[str, object]", bucket).get("_failover_excluded_ids")
+            if isinstance(stored, list):
+                excluded = [
+                    item
+                    for item in cast("list[object]", stored)
+                    if isinstance(item, str)
+                ]
+        return MetadataOutput(
+            bucket=self.bucket_name(),
+            excluded_deployment_ids=sorted(excluded),
+        )
+
+    def recorded_successor(self, entries: object) -> Successor:
+        if not isinstance(entries, list):
+            raise ProbeError("invalid_request", "the fallback dispatcher ran a non-list chain")
+        chain = cast("list[JsonValue]", entries)
         client = self.client_chain()
         if client is not None and chain is client:
             return SuccessorRun(
@@ -379,14 +412,16 @@ class FallbackCategories(Operation):
                 raise ProbeError(
                     "invalid_request", "the probe cannot compare parameterized entries"
                 )
+            # LiteLLM builds this list from a set, so membership is the contract, not order
+            excluded_ids = (
+                [item for item in excluded if isinstance(item, str)]
+                if isinstance(excluded, list)
+                else []
+            )
             return Target(
                 model=model,
                 target_order=order if isinstance(order, int) else None,
-                excluded_deployment_ids=(
-                    [item for item in excluded if isinstance(item, str)]
-                    if isinstance(excluded, list)
-                    else []
-                ),
+                excluded_deployment_ids=sorted(excluded_ids),
             )
         raise ProbeError("invalid_request", "a fallback entry has an unknown shape")
 

@@ -29,10 +29,11 @@ pub fn decide(request: &SuccessorRequest<'_>) -> FallbackSuccessor {
         if let Some(successor) = order_successor(request) {
             return successor;
         }
-        if let Some(targets) = weighted_failover_targets(request) {
-            return FallbackSuccessor::RunTargets {
-                source: TargetSource::WeightedFailover,
-                targets,
+        if let Some(entry) = weighted_failover_entry(request) {
+            let excluded_deployment_ids = entry.excluded_deployment_ids.clone();
+            return FallbackSuccessor::RunWeightedFailover {
+                targets: vec![FallbackTarget::from(entry)],
+                excluded_deployment_ids,
             };
         }
     }
@@ -94,12 +95,11 @@ fn order_successor(request: &SuccessorRequest<'_>) -> Option<FallbackSuccessor> 
     })
 }
 
-fn weighted_failover_targets(request: &SuccessorRequest<'_>) -> Option<Vec<FallbackTarget>> {
+fn weighted_failover_entry(request: &SuccessorRequest<'_>) -> Option<FailoverEntry> {
     if !request.weighted_failover.enabled {
         return None;
     }
-    let entry = plan_failover(&request.weighted_failover)?;
-    Some(vec![FallbackTarget::from(entry)])
+    plan_failover(&request.weighted_failover)
 }
 
 fn plan_failover(request: &WeightedFailover<'_>) -> Option<FailoverEntry> {
