@@ -216,7 +216,7 @@ fn a_final_tool_result_becomes_a_singleton_tool_results_list() {
         options,
         object(
             r#"{"tool_results": [{"call": {"name": "get_weather", "parameters": {"city": "Paris"}},
-                "outputs": [{"temp": 21}]}]}"#
+                "outputs": [{"temp": 21}]}], "force_single_step": true}"#
         )
     );
 }
