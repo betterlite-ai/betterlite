@@ -154,7 +154,7 @@ fn azure_certificate_refuses_without_serving_the_aging_token(
 
 #[rstest]
 #[case::pkcs12(b"\x00\x01\x02not a keystore".as_slice(), None)]
-#[case::pem_framing(&RSA_PKCS8[..400], None)]
+#[case::pem_framing(b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END CERTIFICATE-----\n".as_slice(), None)]
 #[case::key_data(b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n".as_slice(), None)]
 #[case::bad_password(RSA_ENCRYPTED, Some("wrong"))]
 fn azure_certificate_keeps_the_library_cause(#[case] data: &[u8], #[case] password: Option<&str>) {
