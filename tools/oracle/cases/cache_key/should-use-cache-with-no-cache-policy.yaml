@@ -1,0 +1,11 @@
+kind: helper
+name: should-use-cache-with-no-cache-policy
+call:
+  b4296:
+    should_use_cache:
+      mode: default_off
+      cache_control:
+        no-cache: true
+env: {}
+compare:
+  ignore: []

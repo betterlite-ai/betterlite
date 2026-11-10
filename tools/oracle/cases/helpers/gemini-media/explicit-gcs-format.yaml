@@ -1,0 +1,35 @@
+kind: helper
+name: gemini-media-explicit-gcs-format
+call:
+  gemini_media:
+    call: explicit_gcs_format
+    cases:
+      - url: "gs://bucket/photo.bin"
+        hints:
+          format: "IMAGE/JPG; charset=utf-8"
+      - url: "gs://bucket/photo.bin"
+        hints:
+          format: "application/x-custom"
+      - url: "gs://bucket/a.bin"
+        hints:
+          format: "image/png"
+          mime_type: "image/jpeg"
+          content_type: "image/webp"
+      - url: "gs://bucket/a.bin"
+        hints:
+          mime_type: "image/jpeg"
+          content_type: "image/webp"
+      - url: "gs://bucket/a.bin"
+        hints:
+          content_type: "image/webp"
+      - url: "gs://bucket/photo.png"
+      - url: "gs://bucket/photo.PNG"
+      - url: "gs://bucket/clip.mp4"
+      - url: "gs://bucket/doc.pdf"
+      - url: "gs://bucket/anim.gif"
+      - url: "gs://bucket/photo.png"
+        hints:
+          format: ""
+env: {}
+compare:
+  ignore: []

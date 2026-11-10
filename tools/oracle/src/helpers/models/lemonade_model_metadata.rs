@@ -1,9 +1,15 @@
+mod input;
+mod scenario;
+mod tests;
+
+use crate::helpers::HelperResult;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("lemonade_model_metadata")
+    fn run(input: &Self::Input) -> HelperResult {
+        scenario::run(input)
     }
 }
