@@ -136,19 +136,13 @@ impl MigrationCoordinator {
 
     // Mirrors MigrationCoordinator.acquire_prisma_lock: Prisma's own transaction lock on the held transaction
     pub async fn acquire_prisma_lock(&self, jitter: &dyn JitterSource) -> Result<(), LockError> {
-        let deadline = Instant::now().checked_add(self.lock_timeout);
-        loop {
-            if deadline.is_some_and(|end| Instant::now() >= end) {
-                return Err(LockError::PrismaLockTimeout);
-            }
-            if try_lock(&*self.client, XACT_LOCK, PRISMA_LOCK_KEY)
-                .await
-                .map_err(|source| LockError::Connection { source })?
-            {
-                return Ok(());
-            }
-            sleep(pause(jitter, deadline)).await;
+        let acquired = wait_for_lock(&*self.client, PRISMA_LOCK_KEY, self.lock_timeout, jitter)
+            .await
+            .map_err(|source| LockError::Connection { source })?;
+        if acquired {
+            return Ok(());
         }
+        Err(LockError::PrismaLockTimeout)
     }
 
     pub async fn check_connection(&self) -> Result<(), PostgresError> {
@@ -216,6 +210,28 @@ where
         .query_opt(statement, &[&key])
         .await?
         .map_or(Ok(false), |found| found.try_get(0))
+}
+
+// Both coordinator locks retry a non-blocking probe with the same jittered pause until their deadline
+async fn wait_for_lock<C>(
+    client: &C,
+    key: i64,
+    timeout: Duration,
+    jitter: &dyn JitterSource,
+) -> Result<bool, PostgresError>
+where
+    C: GenericClient + Sync,
+{
+    let deadline = Instant::now().checked_add(timeout);
+    loop {
+        if deadline.is_some_and(|end| Instant::now() >= end) {
+            return Ok(false);
+        }
+        if try_lock(client, XACT_LOCK, key).await? {
+            return Ok(true);
+        }
+        sleep(pause(jitter, deadline)).await;
+    }
 }
 
 fn pause(jitter: &dyn JitterSource, deadline: Option<Instant>) -> Duration {

@@ -1,24 +1,27 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use deadpool_postgres::{Client, ClientWrapper, Pool};
 use rstest::rstest;
 use secrecy::SecretString;
 use sha2::{Digest as _, Sha256};
+use tracing::Subscriber;
 use tracing::subscriber::set_default;
+use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
 use super::baseline::{BaselineError, BaselineInputs, baseline_current_schema};
 use super::environment::{migration_environment, prisma_schema_param};
 use super::fixtures::{
-    BodyError, DrawingJitter, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase,
-    acquired_coordinator, apply_compiled_history, apply_pinned_history, capture_logs, database,
-    database_pair, exists, insert_row, ledger_rows, migration, pinned_manifest, read_contract,
-    runtime_catalog, schema_prisma_bytes,
+    DrawingJitter, HistorySource, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase,
+    acquired_coordinator, apply_history, database, database_pair, exists, insert_row, ledger_rows,
+    migration, pinned_manifest, read_contract, runtime_catalog, schema_prisma_bytes,
 };
 use super::inert::{InertError, is_inert_migration, rollback_inert_migration};
-use super::ledger_reads::{failed_migration_logs, failed_migration_recovered};
+use super::ledger_reads::{FailedLookup, FailedMigration, look_up_failed_migration};
 use super::lock::{
     HeldLockError, LockError, MIGRATION_LOCK_KEY, MigrationCoordinator, PRISMA_LOCK_KEY,
     held_migration_lock,
@@ -81,72 +84,51 @@ fn configured_url(database: &TestDatabase) -> &SecretString {
     &database.url
 }
 
+fn row<'row>(id: &'row str, name: &'row str, checksum: &'row str) -> LedgerRow<'row> {
+    LedgerRow {
+        id,
+        name,
+        checksum,
+        steps: 1,
+        logs: Some("boom"),
+        finished: false,
+        rolled_back: false,
+        started_at: FIXED_STARTED_AT,
+    }
+}
+
 async fn insert_failed(pool: &Pool, id: &str, migration: &Migration, started_at: &str) {
-    insert_row(
-        pool,
-        &LedgerRow {
-            id,
-            name: &migration.name,
-            checksum: &migration.checksum,
-            steps: 1,
-            logs: Some("boom"),
-            finished: false,
-            rolled_back: false,
-            started_at,
-        },
-    )
-    .await;
+    let spec = row(id, &migration.name, &migration.checksum);
+    insert_row(pool, &LedgerRow { started_at, ..spec }).await;
 }
 
-async fn insert_finished(pool: &Pool, id: &str, migration: &Migration, started_at: &str) {
+async fn insert_confirmed(pool: &Pool, id: &str, migration: &Migration, finished: bool) {
+    let spec = row(id, &migration.name, &migration.checksum);
     insert_row(
         pool,
         &LedgerRow {
-            id,
-            name: &migration.name,
-            checksum: &migration.checksum,
-            steps: 1,
             logs: Some(""),
-            finished: true,
-            rolled_back: false,
-            started_at,
-        },
-    )
-    .await;
-}
-
-async fn insert_confirming(pool: &Pool, id: &str, migration: &Migration, started_at: &str) {
-    insert_row(
-        pool,
-        &LedgerRow {
-            id,
-            name: &migration.name,
-            checksum: &migration.checksum,
-            steps: 1,
-            logs: Some(""),
-            finished: false,
-            rolled_back: false,
-            started_at,
-        },
-    )
-    .await;
-}
-
-async fn insert_read(pool: &Pool, id: &str, name: &str, logs: Option<&str>, finished: bool) {
-    insert_row(
-        pool,
-        &LedgerRow {
-            id,
-            name,
-            checksum: &checksum_of(name),
-            steps: 1,
-            logs,
             finished,
-            rolled_back: false,
-            started_at: FIXED_STARTED_AT,
+            ..spec
         },
     )
     .await;
+}
+
+async fn insert_read(pool: &Pool, id: &str, name: &str, logs: Option<&str>, resolved: bool) {
+    let checksum = checksum_of(name);
+    let spec = row(id, name, &checksum);
+    let ledger = LedgerRow {
+        logs,
+        finished: resolved,
+        started_at: if resolved {
+            LATER_STARTED_AT
+        } else {
+            FIXED_STARTED_AT
+        },
+        ..spec
+    };
+    insert_row(pool, &ledger).await;
 }
 
 async fn insert_reading_rows(pool: &Pool) {
@@ -158,23 +140,6 @@ async fn insert_reading_rows(pool: &Pool) {
         "20250109000000_failed",
         Some("boom"),
         false,
-    )
-    .await;
-}
-
-async fn insert_read_later(pool: &Pool, id: &str, name: &str, logs: Option<&str>) {
-    insert_row(
-        pool,
-        &LedgerRow {
-            id,
-            name,
-            checksum: &checksum_of(name),
-            steps: 1,
-            logs,
-            finished: true,
-            rolled_back: false,
-            started_at: LATER_STARTED_AT,
-        },
     )
     .await;
 }
@@ -200,4 +165,55 @@ async fn session_unlock(client: &ClientWrapper, key: i64) {
         .execute("SELECT pg_advisory_unlock($1)", &[&key])
         .await
         .unwrap();
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl LogCapture {
+    pub(super) fn contents(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("the log writer records UTF-8")
+    }
+}
+
+impl Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for LogCapture {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_logs() -> (LogCapture, impl Subscriber + Send + Sync) {
+    let logs = LogCapture::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(logs.clone())
+        .finish();
+    (logs, subscriber)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(super) enum BodyError {
+    #[error("the migration lock body refused")]
+    Refused,
 }

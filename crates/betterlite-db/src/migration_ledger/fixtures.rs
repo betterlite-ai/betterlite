@@ -2,10 +2,8 @@
 
 use std::fs;
 use std::future::Future;
-use std::io::{Result as IoResult, Write};
 use std::path::Path;
 use std::str;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
@@ -17,8 +15,6 @@ use sha2::{Digest as _, Sha256};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_postgres::{NoTls, Row};
-use tracing::Subscriber;
-use tracing_subscriber::fmt::MakeWriter;
 
 use crate::migration_deploy::catalog::{Migration, migration_files};
 use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator};
@@ -78,14 +74,11 @@ where
     F: FnOnce(TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture, database) = provision().await;
-    let cleanup = database.pool.clone();
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move { timeout(TEST_TIMEOUT, test(database)).await.unwrap() });
-    let result = tasks.join_next().await.unwrap();
-    cleanup.close();
-    fixture.close_async().await.unwrap();
-    result.unwrap();
+    harness(1, move |mut databases| {
+        let only = databases.remove(0);
+        test(only)
+    })
+    .await;
 }
 
 // The live database and the independently initialized reference database a baseline verifies against
@@ -94,16 +87,38 @@ where
     F: FnOnce(TestDatabase, TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (live_fixture, live) = provision().await;
-    let (reference_fixture, reference) = provision().await;
-    let cleanup = (live.pool.clone(), reference.pool.clone());
+    harness(2, move |mut databases| {
+        let reference = databases.remove(1);
+        test(databases.remove(0), reference)
+    })
+    .await;
+}
+
+async fn harness<F, Fut>(count: usize, test: F)
+where
+    F: FnOnce(Vec<TestDatabase>) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let mut fixtures = Vec::new();
+    let mut databases = Vec::new();
+    for _ in 0..count {
+        let (fixture, database) = provision().await;
+        fixtures.push(fixture);
+        databases.push(database);
+    }
+    let pools: Vec<Pool> = databases
+        .iter()
+        .map(|database| database.pool.clone())
+        .collect();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move { timeout(TEST_TIMEOUT, test(live, reference)).await.unwrap() });
+    tasks.spawn(async move { timeout(TEST_TIMEOUT, test(databases)).await.unwrap() });
     let result = tasks.join_next().await.unwrap();
-    cleanup.0.close();
-    cleanup.1.close();
-    live_fixture.close_async().await.unwrap();
-    reference_fixture.close_async().await.unwrap();
+    for pool in pools {
+        pool.close();
+    }
+    for fixture in fixtures {
+        fixture.close_async().await.unwrap();
+    }
     result.unwrap();
 }
 
@@ -241,80 +256,45 @@ pub(super) fn pinned_manifest() -> Vec<(String, String)> {
         .collect()
 }
 
-// The reference database is initialized from the pinned SQL files, a source independent of the compiled catalog
-pub(super) async fn apply_pinned_history(pool: &Pool) {
+#[derive(Clone, Copy)]
+pub(super) enum HistorySource {
+    // the pinned SQL files, a source independent of the compiled catalog
+    Pinned,
+    Compiled,
+}
+
+pub(super) async fn apply_history(pool: &Pool, source: HistorySource) {
+    let statements = match source {
+        HistorySource::Pinned => pinned_statements(),
+        HistorySource::Compiled => compiled_statements(),
+    };
     let client = pool.get().await.unwrap();
-    for (name, _sum) in pinned_manifest() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src/schema_contract/fixtures/sql")
-            .join(format!("{name}.sql"));
-        let sql = fs::read(&path).unwrap();
+    for statement in statements {
         client
-            .batch_execute(str::from_utf8(&sql).unwrap())
+            .batch_execute(str::from_utf8(&statement).unwrap())
             .await
             .unwrap();
     }
 }
 
-pub(super) async fn apply_compiled_history(pool: &Pool) {
-    let client = pool.get().await.unwrap();
-    for catalog in PINNED_CATALOGS {
-        for file in catalog.files {
-            client
-                .batch_execute(str::from_utf8(file.bytes).unwrap())
-                .await
-                .unwrap();
-        }
-    }
+fn pinned_statements() -> Vec<Vec<u8>> {
+    pinned_manifest()
+        .into_iter()
+        .map(|(name, _sum)| {
+            fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("src/schema_contract/fixtures/sql")
+                    .join(format!("{name}.sql")),
+            )
+            .unwrap()
+        })
+        .collect()
 }
 
-#[derive(Clone, Default)]
-pub(super) struct LogCapture(Arc<Mutex<Vec<u8>>>);
-
-impl LogCapture {
-    pub(super) fn contents(&self) -> String {
-        let bytes = self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        String::from_utf8(bytes).expect("the log writer records UTF-8")
-    }
-}
-
-impl Write for LogCapture {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
-impl<'writer> MakeWriter<'writer> for LogCapture {
-    type Writer = Self;
-
-    fn make_writer(&'writer self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-pub(super) fn capture_logs() -> (LogCapture, impl Subscriber + Send + Sync) {
-    let logs = LogCapture::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(logs.clone())
-        .finish();
-    (logs, subscriber)
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(super) enum BodyError {
-    #[error("the migration lock body refused")]
-    Refused,
+fn compiled_statements() -> Vec<Vec<u8>> {
+    PINNED_CATALOGS
+        .iter()
+        .flat_map(|catalog| catalog.files.iter())
+        .map(|file| file.bytes.to_vec())
+        .collect()
 }

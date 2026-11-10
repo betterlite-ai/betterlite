@@ -33,13 +33,7 @@ async fn completed_checksum_match() {
             "20250101000000_installed",
             "CREATE TABLE installed (id int);",
         );
-        insert_finished(
-            &database.pool,
-            "row-installed",
-            &installed,
-            FIXED_STARTED_AT,
-        )
-        .await;
+        insert_confirmed(&database.pool, "row-installed", &installed, true).await;
         let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(10)).await;
         let jitter = DrawingJitter(0);
         assert!(
@@ -88,7 +82,7 @@ async fn completion_guard_rowcount() {
     database(|database| async move {
         create_ledger(&database.pool).await;
         let pending = migration("20250103000000_guarded", "CREATE TABLE guarded (id int);");
-        insert_confirming(&database.pool, "row-guarded", &pending, FIXED_STARTED_AT).await;
+        insert_confirmed(&database.pool, "row-guarded", &pending, false).await;
         let client = database.pool.get().await.unwrap();
         client
             .batch_execute(

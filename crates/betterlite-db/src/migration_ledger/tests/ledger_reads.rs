@@ -1,27 +1,34 @@
+fn found(lookup: FailedLookup) -> FailedMigration {
+    match lookup {
+        FailedLookup::Found(state) => state,
+        FailedLookup::Unavailable | FailedLookup::Absent => {
+            panic!("expected a ledger row, got {lookup:?}")
+        }
+    }
+}
+
 #[tokio::test]
 async fn ledger_unavailable_none() {
     let absent = "20250101000000_absent";
-    assert_eq!(
-        failed_migration_logs(None, absent, FIXED_STARTED_AT).await,
-        None
-    );
-    assert!(!failed_migration_recovered(None, absent, FIXED_STARTED_AT).await);
+    assert!(matches!(
+        look_up_failed_migration(None, absent, FIXED_STARTED_AT).await,
+        FailedLookup::Unavailable
+    ));
     let empty = SecretString::from("");
-    assert_eq!(
-        failed_migration_logs(Some(&empty), absent, FIXED_STARTED_AT).await,
-        None
-    );
+    assert!(matches!(
+        look_up_failed_migration(Some(&empty), absent, FIXED_STARTED_AT).await,
+        FailedLookup::Unavailable
+    ));
     let unreachable = SecretString::from("postgresql://postgres:postgres@127.0.0.1:1/postgres");
-    assert_eq!(
-        failed_migration_logs(Some(&unreachable), absent, FIXED_STARTED_AT).await,
-        None
-    );
-    assert!(!failed_migration_recovered(Some(&unreachable), absent, FIXED_STARTED_AT).await);
+    assert!(matches!(
+        look_up_failed_migration(Some(&unreachable), absent, FIXED_STARTED_AT).await,
+        FailedLookup::Unavailable
+    ));
     let malformed = SecretString::from("postgresql://[::1/postgres");
-    assert_eq!(
-        failed_migration_logs(Some(&malformed), absent, FIXED_STARTED_AT).await,
-        None
-    );
+    assert!(matches!(
+        look_up_failed_migration(Some(&malformed), absent, FIXED_STARTED_AT).await,
+        FailedLookup::Unavailable
+    ));
 }
 
 #[tokio::test]
@@ -29,13 +36,10 @@ async fn ledger_absent_tuple() {
     database(|database| async move {
         create_ledger(&database.pool).await;
         let url = configured_url(&database);
-        assert_eq!(
-            failed_migration_logs(Some(url), "20250101000000_absent", FIXED_STARTED_AT).await,
-            Some(String::new())
-        );
-        assert!(
-            !failed_migration_recovered(Some(url), "20250101000000_absent", FIXED_STARTED_AT).await
-        );
+        assert!(matches!(
+            look_up_failed_migration(Some(url), "20250101000000_absent", FIXED_STARTED_AT).await,
+            FailedLookup::Absent
+        ));
     })
     .await;
 }
@@ -46,18 +50,20 @@ async fn failed_logs_null_empty() {
         create_ledger(&database.pool).await;
         insert_reading_rows(&database.pool).await;
         let url = configured_url(&database);
-        assert_eq!(
-            failed_migration_logs(Some(url), "20250107000000_null", FIXED_STARTED_AT).await,
-            Some(String::new())
+        let null_logs = found(
+            look_up_failed_migration(Some(url), "20250107000000_null", FIXED_STARTED_AT).await,
         );
-        assert_eq!(
-            failed_migration_logs(Some(url), "20250108000000_blank", FIXED_STARTED_AT).await,
-            Some(String::new())
+        assert!(null_logs.logs.is_empty());
+        assert!(!null_logs.recovered);
+        let blank_logs = found(
+            look_up_failed_migration(Some(url), "20250108000000_blank", FIXED_STARTED_AT).await,
         );
-        assert_eq!(
-            failed_migration_logs(Some(url), "20250109000000_failed", FIXED_STARTED_AT).await,
-            Some("boom".to_owned())
+        assert!(blank_logs.logs.is_empty());
+        let kept = found(
+            look_up_failed_migration(Some(url), "20250109000000_failed", FIXED_STARTED_AT).await,
         );
+        assert_eq!(kept.logs, "boom");
+        assert!(!kept.recovered);
     })
     .await;
 }
@@ -68,18 +74,14 @@ async fn recovered_identity_match() {
         create_ledger(&database.pool).await;
         let name = "20250110000000_identity";
         insert_read(&database.pool, "row-unfinished", name, Some("boom"), false).await;
-        insert_read_later(&database.pool, "row-finished", name, Some("")).await;
+        insert_read(&database.pool, "row-finished", name, Some(""), true).await;
         let url = configured_url(&database);
-        assert_eq!(
-            failed_migration_logs(Some(url), name, FIXED_STARTED_AT).await,
-            Some("boom".to_owned())
-        );
-        assert!(!failed_migration_recovered(Some(url), name, FIXED_STARTED_AT).await);
-        assert!(failed_migration_recovered(Some(url), name, LATER_STARTED_AT).await);
-        assert_eq!(
-            failed_migration_logs(Some(url), name, LATER_STARTED_AT).await,
-            Some(String::new())
-        );
+        let failed = found(look_up_failed_migration(Some(url), name, FIXED_STARTED_AT).await);
+        assert_eq!(failed.logs, "boom");
+        assert!(!failed.recovered);
+        let resolved = found(look_up_failed_migration(Some(url), name, LATER_STARTED_AT).await);
+        assert!(resolved.logs.is_empty());
+        assert!(resolved.recovered);
     })
     .await;
 }

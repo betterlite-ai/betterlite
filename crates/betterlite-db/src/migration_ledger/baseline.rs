@@ -166,15 +166,7 @@ async fn create_ledger(
          applied_steps_count integer NOT NULL DEFAULT 0)"
     );
     coordinator.client.execute(&create, &[]).await?;
-    insert_rows(coordinator, table, inputs).await
-}
-
-async fn insert_rows(
-    coordinator: &MigrationCoordinator,
-    table: &str,
-    inputs: &BaselineInputs<'_>,
-) -> Result<(), PostgresError> {
-    let statement = format!(
+    let insert = format!(
         "INSERT INTO {table} (id, checksum, migration_name, logs, started_at, finished_at) \
          VALUES ($1, $2, $3, '', current_timestamp, current_timestamp)"
     );
@@ -182,7 +174,7 @@ async fn insert_rows(
         let id = (inputs.next_id)().to_string();
         coordinator
             .client
-            .execute(&statement, &[&id, &migration.checksum, &migration.name])
+            .execute(&insert, &[&id, &migration.checksum, &migration.name])
             .await?;
     }
     Ok(())

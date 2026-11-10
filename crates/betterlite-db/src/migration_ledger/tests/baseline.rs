@@ -9,7 +9,7 @@ async fn refuse_baseline(database: &TestDatabase, catalog: &[Migration], schema_
 }
 
 async fn accepted_baseline(live: &TestDatabase, expected: &SchemaContract) -> Vec<Migration> {
-    apply_compiled_history(&live.pool).await;
+    apply_history(&live.pool, HistorySource::Compiled).await;
     let catalog = runtime_catalog().await;
     let schema_prisma = schema_prisma_bytes();
     let inputs = baseline_input(&catalog, &schema_prisma, Some(expected));
@@ -59,9 +59,9 @@ async fn assert_ledger_catalog(pool: &Pool) {
 #[tokio::test]
 async fn native_baseline_current_only() {
     database_pair(|live, reference| async move {
-        apply_pinned_history(&reference.pool).await;
+        apply_history(&reference.pool, HistorySource::Pinned).await;
         let expected = read_contract(&reference.pool).await;
-        apply_compiled_history(&live.pool).await;
+        apply_history(&live.pool, HistorySource::Compiled).await;
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();
         let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
@@ -103,7 +103,7 @@ async fn native_baseline_current_only() {
 #[tokio::test]
 async fn baseline_rows_zero_steps() {
     database(|database| async move {
-        apply_compiled_history(&database.pool).await;
+        apply_history(&database.pool, HistorySource::Compiled).await;
         let expected = read_contract(&database.pool).await;
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();
@@ -160,11 +160,11 @@ async fn baseline_custom_history_refused() {
 async fn baseline_existing_ledger_noop() {
     database(|database| async move {
         create_ledger(&database.pool).await;
-        insert_finished(
+        insert_confirmed(
             &database.pool,
             "row-existing",
             &migration("20240101000000_old", "SELECT 0;"),
-            FIXED_STARTED_AT,
+            true,
         )
         .await;
         let catalog = runtime_catalog().await;
@@ -190,7 +190,7 @@ async fn baseline_existing_ledger_noop() {
 #[tokio::test]
 async fn baseline_warns_backfills() {
     database(|database| async move {
-        apply_compiled_history(&database.pool).await;
+        apply_history(&database.pool, HistorySource::Compiled).await;
         let expected = read_contract(&database.pool).await;
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();
@@ -224,7 +224,7 @@ async fn baseline_warns_backfills() {
 #[tokio::test]
 async fn postgres_pinned_rows() {
     database_pair(|live, reference| async move {
-        apply_pinned_history(&reference.pool).await;
+        apply_history(&reference.pool, HistorySource::Pinned).await;
         let expected = read_contract(&reference.pool).await;
         let catalog = accepted_baseline(&live, &expected).await;
         let rows = ledger_rows(&live.pool).await;
