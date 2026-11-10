@@ -1,0 +1,15 @@
+kind: helper
+name: save-vault-stored-file-not-recorded
+call:
+  b4592:
+    operation: save
+    record:
+      base_url: https://gateway.example
+      key: sk-new
+      user_id: u-1
+      timestamp: 1000.0
+    vault: {}
+    failures:
+      refuse: [commit]
+env: {}
+compare: {ignore: []}

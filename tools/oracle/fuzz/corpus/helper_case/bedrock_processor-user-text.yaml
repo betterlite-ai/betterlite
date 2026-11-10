@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-processor-user-text-seed
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - role: user
+        content:
+          - {type: text, text: hello}
+          - {type: text, text: after, cache_control: {type: ephemeral}}
+    modify_params: false
+env: {}
+compare: {ignore: []}

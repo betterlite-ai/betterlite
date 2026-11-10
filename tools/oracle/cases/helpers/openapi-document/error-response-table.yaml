@@ -1,0 +1,8 @@
+kind: helper
+name: error-response-table
+call:
+  b123:
+    op: error_response_table
+env: {}
+compare:
+  ignore: []

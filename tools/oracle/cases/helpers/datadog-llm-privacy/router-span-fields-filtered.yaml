@@ -1,0 +1,17 @@
+kind: helper
+name: datadog-llm-privacy-router-span-fields-filtered
+call:
+  b3936:
+    function: router_span_fields
+    redact_prompt_text: true
+    routing_decision:
+      tier: "low"
+      cause: "heuristic"
+      score: 0.5
+      signals: ["a long prompt"]
+      matched_keyword: "password"
+      escalated: false
+      context_escalated: true
+      routed_model: "gpt-4o-mini"
+env: {}
+compare: {ignore: []}
