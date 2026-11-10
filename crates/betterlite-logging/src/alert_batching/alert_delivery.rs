@@ -35,6 +35,8 @@ where
     Encode(#[source] serde_json::Error),
     #[error("the webhook alert could not be delivered")]
     Transport(#[source] E),
+    #[error("the webhook answered with status {status}")]
+    Status { status: u16 },
 }
 
 #[derive(Default)]
@@ -124,6 +126,12 @@ where
             .map_err(WebhookAlertError::Transport)?;
         if response.status == 200 {
             return Ok(true);
+        }
+        if response.status >= 400 {
+            // AsyncHTTPHandler.post raises raise_for_status, so the source aborts the alert instead of returning False
+            return Err(WebhookAlertError::Status {
+                status: response.status,
+            });
         }
         tracing::error!(
             status = response.status,

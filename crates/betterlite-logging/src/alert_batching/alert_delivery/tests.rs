@@ -339,6 +339,7 @@ async fn send_webhook_alert_fails_when_webhook_url_is_missing(
 #[case::ok(200, true)]
 #[case::accepted(202, false)]
 #[case::no_content(204, false)]
+#[case::redirect(302, false)]
 #[tokio::test]
 async fn send_webhook_alert_returns_true_only_on_status_200(
     #[case] status: u16,
@@ -355,17 +356,40 @@ async fn send_webhook_alert_returns_true_only_on_status_200(
 }
 
 #[tokio::test]
-async fn a_rejected_webhook_alert_is_logged_at_error() {
+async fn a_non_200_success_or_redirect_is_logged_at_error_and_returns_false() {
     let (logs, _guard) = capture_logs();
     let fixture = fixture(
         &[(WEBHOOK_URL_ENV, "https://hooks.example/webhook")],
-        [Reply::Status(429)],
+        [Reply::Status(302)],
     );
     assert!(!fixture.delivery.send_webhook_alert(&event()).await.unwrap());
     let contents = logs.contents();
     assert!(contents.contains("ERROR"));
     assert!(contents.contains("the webhook alert was rejected"));
     assert!(contents.contains("rejected"));
+}
+
+#[rstest]
+#[case::rate_limited(429)]
+#[case::server_error(500)]
+#[tokio::test]
+async fn a_client_or_server_error_status_is_returned_as_an_error(#[case] status: u16) {
+    let fixture = fixture(
+        &[(WEBHOOK_URL_ENV, "https://hooks.example/webhook")],
+        [Reply::Status(status)],
+    );
+    let error = fixture
+        .delivery
+        .send_webhook_alert(&event())
+        .await
+        .expect_err("a 4xx or 5xx answer is an error, not a silent false");
+    match error {
+        WebhookAlertError::Status { status: rejected } => assert_eq!(rejected, status),
+        other @ (WebhookAlertError::MissingUrl
+        | WebhookAlertError::Url(_)
+        | WebhookAlertError::Encode(_)
+        | WebhookAlertError::Transport(_)) => panic!("expected a status error, got {other:?}"),
+    }
 }
 
 #[tokio::test]

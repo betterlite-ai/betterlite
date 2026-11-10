@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
+use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::alert_settings::types::{AlertType, AlertTypeConfig};
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use strum::IntoEnumIterator as _;
 
 use crate::alert_batching::alert_headers;
@@ -157,28 +157,19 @@ pub fn digest_queue_items(
     let mut items = Vec::new();
     for digest in expired {
         let text = render_summary(digest, proxy_base_url);
-        match &digest.entry.webhook_url {
-            WebhookUrl::Single(url) => {
-                items.push(digest_queue_item(url, &text, digest.alert_type));
-            }
-            WebhookUrl::Multiple(urls) => {
-                for url in urls {
-                    items.push(digest_queue_item(url, &text, digest.alert_type));
-                }
-            }
+        let urls = match &digest.entry.webhook_url {
+            WebhookUrl::Single(url) => slice::from_ref(url),
+            WebhookUrl::Multiple(urls) => urls.as_slice(),
+        };
+        for url in urls {
+            items.push(AlertQueueItem {
+                url: url.clone(),
+                headers: alert_headers(),
+                payload: AlertText { text: text.clone() },
+                alert_type: digest.alert_type,
+                format: None,
+            });
         }
     }
     items
-}
-
-fn digest_queue_item(url: &SecretString, text: &str, alert_type: AlertType) -> AlertQueueItem {
-    AlertQueueItem {
-        url: url.clone(),
-        headers: alert_headers(),
-        payload: AlertText {
-            text: text.to_owned(),
-        },
-        alert_type,
-        format: None,
-    }
 }
