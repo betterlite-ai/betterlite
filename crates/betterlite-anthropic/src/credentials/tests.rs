@@ -1,20 +1,25 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::future::ready;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 use serde::de::IgnoredAny;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 
 use super::models::{
     MODEL_LIST_LIMIT, ModelsTransport, decode_anthropic_models, get_models, models_request,
@@ -563,6 +568,7 @@ fn padded_model_list(total: usize) -> Vec<u8> {
 }
 
 async fn models_response_limit_case() {
+    assert_eq!(MODEL_LIST_LIMIT, 0x0040_0000);
     let at_limit = padded_model_list(MODEL_LIST_LIMIT);
     assert!(decode_anthropic_models(200, &at_limit).unwrap().is_empty());
     let over_limit = padded_model_list(MODEL_LIST_LIMIT + 1);
@@ -784,4 +790,36 @@ fn replays_the_anthropic_credentials_corpus() {
         models.first().map(String::as_str),
         Some("anthropic/claude-3-5-sonnet-20241022")
     );
+}
+
+#[tokio::test]
+async fn models_go_over_the_shared_client_on_the_wire() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let body = br#"{"data":[{"id":"claude-wire"}]}"#;
+    let server = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !head.ends_with(b"\r\n\r\n") {
+            stream.read_exact(&mut byte).await.unwrap();
+            head.push(byte[0]);
+        }
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(reply.as_bytes()).await.unwrap();
+        stream.write_all(body).await.unwrap();
+        stream.shutdown().await.unwrap();
+        String::from_utf8(head).unwrap()
+    };
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let settings = configured(Some("wire-key"), None, Some(&base));
+    let (head, models) = tokio::join!(server, get_models(&client, None, None, &settings, DEADLINE));
+    assert_eq!(models.unwrap(), vec!["anthropic/claude-wire".to_owned()]);
+    assert!(head.starts_with("GET /v1/models HTTP/1.1\r\n"));
+    assert!(head.contains("x-api-key: wire-key\r\n"));
+    assert!(head.contains("anthropic-version: 2023-06-01\r\n"));
 }
