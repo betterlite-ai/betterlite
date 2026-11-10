@@ -1,0 +1,20 @@
+kind: helper
+name: database-tls-projections-seed
+call:
+  database_tls:
+    function: batch
+    calls:
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u@h:6543/db?sslmode=verify-full&sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u@h/db?sslrootcert=&sslcert=&sslaccept="
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca.pem&sslaccept=strict&schema=tenant&application_name=my%20app"
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca.pem"], ["sslmode", "prefer"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "client.pem"], ["sslkey", "client.key"]]
+        sslaccept: accept_invalid_certs
+env: {}
+compare: {ignore: []}
