@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::future::Future;
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -46,10 +47,11 @@ pub struct ResolvedOrigin {
     pub api_key: SecretString,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ModelInfoRequest {
     pub url: String,
-    pub headers: Vec<(String, String)>,
+    pub headers: Vec<(&'static str, SecretString)>,
+    pub timeout: Duration,
 }
 
 pub trait ModelInfoClient: Send + Sync {
@@ -130,12 +132,13 @@ pub fn resolve_origin(
 }
 
 #[must_use]
-pub fn auth_header(api_key: Option<&SecretString>) -> Option<(String, String)> {
-    let key = api_key?.expose_secret();
+pub fn auth_header(api_key: &SecretString) -> Option<(&'static str, SecretString)> {
+    let key = api_key.expose_secret();
     if key == DEFAULT_API_KEY {
         return None;
     }
-    Some(("Authorization".to_owned(), format!("Bearer {key}")))
+    let bearer = format!("Bearer {key}");
+    Some(("Authorization", SecretString::from(bearer)))
 }
 
 #[must_use]
@@ -217,11 +220,12 @@ pub fn decode_lemonade_model_reply(
     }
 }
 
-fn model_info_request(origin: &ResolvedOrigin, model: &str) -> ModelInfoRequest {
+fn model_info_request(origin: &ResolvedOrigin, model: &str, timeout: Duration) -> ModelInfoRequest {
     let encoded = utf8_percent_encode(model, QUOTE_SAFE);
     ModelInfoRequest {
         url: format!("{}/models/{encoded}", origin.api_base),
-        headers: auth_header(Some(&origin.api_key)).into_iter().collect(),
+        headers: auth_header(&origin.api_key).into_iter().collect(),
+        timeout,
     }
 }
 
@@ -246,13 +250,14 @@ pub async fn get_model_info<Client>(
     settings: &LemonadeCredentials,
     model: &str,
     deployment: DeploymentCredentials<'_>,
+    timeout: Duration,
 ) -> Result<LemonadeModelInfo, ModelInfoReplyError>
 where
     Client: ModelInfoClient,
 {
     let stripped = model.strip_prefix("lemonade/").unwrap_or(model);
     let origin = resolve_origin(settings, deployment);
-    let request = model_info_request(&origin, stripped);
+    let request = model_info_request(&origin, stripped, timeout);
     let info = LemonadeModelInfo {
         key: format!("lemonade/{stripped}"),
         litellm_provider: LITELLM_PROVIDER.to_owned(),

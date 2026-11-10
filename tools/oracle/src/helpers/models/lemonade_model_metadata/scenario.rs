@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::lemonade_model_metadata::{
@@ -49,8 +50,12 @@ fn origin_answer(query: &OriginQuery) -> Value {
             api_key: explicit_key.as_ref(),
         },
     );
-    let headers: BTreeMap<String, String> =
-        auth_header(Some(&origin.api_key)).into_iter().collect();
+    let headers = match auth_header(&origin.api_key) {
+        Some((name, value)) => {
+            BTreeMap::from([(name.to_owned(), value.expose_secret().to_owned())])
+        }
+        None => BTreeMap::new(),
+    };
     json!({
         "api_base": origin.api_base,
         "api_key": origin.api_key.expose_secret(),
@@ -73,8 +78,15 @@ fn model_info_answer(query: &ModelInfoQuery) -> Result<Value, Box<HelperError>> 
         .enable_all()
         .build()
         .map_err(|error| Box::new(failure(error.to_string())))?;
+    let timeout = Duration::from_secs(query.timeout_seconds);
     let info = runtime
-        .block_on(get_model_info(&client, &settings, &query.model, deployment))
+        .block_on(get_model_info(
+            &client,
+            &settings,
+            &query.model,
+            deployment,
+            timeout,
+        ))
         .map_err(|error| Box::new(failure(error.to_string())))?;
     let requests = client.requests();
     let request = requests
@@ -104,10 +116,12 @@ fn credentials(
     }
 }
 
-fn authorization(headers: &[(String, String)]) -> Option<&str> {
+fn authorization<'headers>(
+    headers: &'headers [(&'static str, SecretString)],
+) -> Option<&'headers str> {
     headers
         .iter()
-        .find_map(|(name, value)| (name == "Authorization").then_some(value.as_str()))
+        .find_map(|(name, value)| (*name == "Authorization").then_some(value.expose_secret()))
 }
 
 struct FixtureClient<'reply> {

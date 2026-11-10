@@ -36,6 +36,13 @@ pub(crate) struct OriginQuery {
     pub(crate) global_keys: BTreeMap<String, String>,
 }
 
+const fn default_timeout_seconds() -> u64 {
+    DEFAULT_TIMEOUT_SECONDS
+}
+
+// LiteLLM builds its module-level client with litellm.request_timeout, whose package default is this
+const DEFAULT_TIMEOUT_SECONDS: u64 = 6000;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ModelInfoQuery {
@@ -50,6 +57,8 @@ pub(crate) struct ModelInfoQuery {
     pub(crate) global_keys: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) reply: Option<Reply>,
+    #[serde(default = "default_timeout_seconds")]
+    pub(crate) timeout_seconds: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

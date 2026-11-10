@@ -5,6 +5,7 @@ use std::fs;
 use std::future::{Future, ready};
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -85,6 +86,9 @@ impl ModelInfoClient for Fixture {
     }
 }
 
+// LiteLLM's request_timeout default is 6000 seconds
+const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
+
 fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
 }
@@ -107,7 +111,13 @@ fn lookup(
     model: &str,
     deployment: DeploymentCredentials<'_>,
 ) -> Result<LemonadeModelInfo, ModelInfoReplyError> {
-    runtime().block_on(get_model_info(client, settings, model, deployment))
+    runtime().block_on(get_model_info(
+        client,
+        settings,
+        model,
+        deployment,
+        REQUEST_TIMEOUT,
+    ))
 }
 
 fn json(source: &str) -> Json {
@@ -140,7 +150,7 @@ fn default_origin() {
     );
     assert_eq!(origin.api_base, DEFAULT_API_BASE);
     assert_eq!(origin.api_key.expose_secret(), DEFAULT_API_KEY);
-    assert_eq!(auth_header(Some(&origin.api_key)), None);
+    assert!(auth_header(&origin.api_key).is_none());
 }
 
 fn explicit_origin() {
@@ -156,7 +166,7 @@ fn explicit_origin() {
     let origin = resolve_origin(&settings, deployment);
     assert_eq!(origin.api_base, "http://explicit:9000/api/v1/");
     assert_eq!(origin.api_key.expose_secret(), DEFAULT_API_KEY);
-    assert_eq!(auth_header(Some(&origin.api_key)), None);
+    assert!(auth_header(&origin.api_key).is_none());
     let explicit_key = SecretString::from("explicit-key");
     let keyed = resolve_origin(
         &settings,
@@ -183,7 +193,7 @@ fn empty_base_suppresses_ambient_auth() {
     );
     assert_eq!(origin.api_base, "http://env:8000/api/v1");
     assert_eq!(origin.api_key.expose_secret(), DEFAULT_API_KEY);
-    assert_eq!(auth_header(Some(&origin.api_key)), None);
+    assert!(auth_header(&origin.api_key).is_none());
     let empty_key = SecretString::from("");
     let suppressed = resolve_origin(
         &settings,
@@ -239,15 +249,10 @@ fn ambient_key_precedence() {
 }
 
 fn auth_headers_by_key() {
-    assert_eq!(auth_header(None), None);
-    assert_eq!(
-        auth_header(Some(&SecretString::from(DEFAULT_API_KEY))),
-        None
-    );
-    assert_eq!(
-        auth_header(Some(&SecretString::from("other"))),
-        Some(("Authorization".to_owned(), "Bearer other".to_owned()))
-    );
+    assert!(auth_header(&SecretString::from(DEFAULT_API_KEY)).is_none());
+    let header = auth_header(&SecretString::from("other")).unwrap();
+    assert_eq!(header.0, "Authorization");
+    assert_eq!(header.1.expose_secret(), "Bearer other");
 }
 
 fn positive_token_limits() {
@@ -377,6 +382,23 @@ fn model_query_and_defaults() {
     structural_malformed_reply_is_an_error();
     model_prefix_and_encoding();
     empty_base_keeps_env_base_without_auth();
+    request_carries_the_configured_deadline();
+}
+
+fn request_carries_the_configured_deadline() {
+    let client = Fixture::answering(200, "{}");
+    let timeout = Duration::from_secs(37);
+    let info = runtime()
+        .block_on(get_model_info(
+            &client,
+            &credentials(None, None, None),
+            "model",
+            DeploymentCredentials::default(),
+            timeout,
+        ))
+        .unwrap();
+    assert_eq!(info.key, "lemonade/model");
+    assert_eq!(client.requests()[0].timeout, timeout);
 }
 
 fn transport_failure_returns_defaults() {
@@ -397,10 +419,10 @@ fn transport_failure_returns_defaults() {
     );
     let requests = client.requests();
     assert_eq!(requests[0].url, "http://env:8000/api/v1/models/org%2Fmodel");
-    assert_eq!(
-        requests[0].headers,
-        vec![("Authorization".to_owned(), "Bearer env-key".to_owned())]
-    );
+    assert_eq!(requests[0].headers.len(), 1);
+    assert_eq!(requests[0].headers[0].0, "Authorization");
+    assert_eq!(requests[0].headers[0].1.expose_secret(), "Bearer env-key");
+    assert_eq!(requests[0].timeout, REQUEST_TIMEOUT);
 }
 
 fn status_failures_return_defaults() {
@@ -606,9 +628,12 @@ fn lemonade_model_metadata_credential_identity_isolation() {
         first_origin.api_key.expose_secret(),
         second_origin.api_key.expose_secret()
     );
+    let first_header = auth_header(&first_origin.api_key).unwrap();
+    let second_header = auth_header(&second_origin.api_key).unwrap();
+    assert_eq!(first_header.0, "Authorization");
     assert_ne!(
-        auth_header(Some(&first_origin.api_key)),
-        auth_header(Some(&second_origin.api_key))
+        first_header.1.expose_secret(),
+        second_header.1.expose_secret()
     );
     let repeated = resolve_origin(&first, DeploymentCredentials::default());
     assert_eq!(repeated.api_base, first_origin.api_base);
@@ -640,6 +665,10 @@ fn lemonade_model_metadata_secret_safe_failure() {
     assert!(!format!("{settings:?}").contains("fixture-global-key"));
     let origin = resolve_origin(&settings, DeploymentCredentials::default());
     assert!(!format!("{origin:?}").contains("fixture-global-key"));
+    let requests = client.requests();
+    let request = requests.first().unwrap();
+    assert!(!format!("{request:?}").contains("fixture-secret-key"));
+    assert!(!format!("{request:?}").contains("fixture-global-key"));
 }
 
 #[rstest]
