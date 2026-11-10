@@ -234,25 +234,47 @@ fn refresh_in_errors() {
 
 fn stale_token_fallback() {
     let first = r#"{"access_token":"tok-1","expires_in":3600,"refresh_in":100}"#;
+    let rejected = Reply::status(400, "/oauth2/v2.0/token", r#"{"error":"invalid_client"}"#);
     let fixture = Fixture::new(vec![
         openid(HOST, TENANT),
         token(first),
-        Reply::failure("/oauth2/v2.0/token"),
-        Reply::failure("/oauth2/v2.0/token"),
+        rejected.clone(),
+        rejected.clone(),
+        rejected,
     ]);
     let provider = fixture.provider();
     provider.token().unwrap();
     fixture.clock.set(NOW + 100);
     let served = provider.token().unwrap();
     assert_eq!(served.token.expose_secret(), "tok-1");
+    assert_eq!(served.expires_on, NOW + 3600);
     assert_eq!(fixture.transport.posts().len(), 2);
     fixture.clock.set(NOW + 3599);
     assert_eq!(provider.token().unwrap().token.expose_secret(), "tok-1");
     assert_eq!(fixture.transport.posts().len(), 3);
     fixture.clock.set(NOW + 3600);
     let error = provider.token().unwrap_err();
-    assert!(matches!(error, ClientSecretError::TokenTransport { .. }));
+    assert!(matches!(error, ClientSecretError::TokenAccessTokenMissing));
     assert_eq!(fixture.transport.posts().len(), 4);
+    unserved_failures(first);
+}
+
+// a transport or server failure while the token is still valid raises, as msal does
+fn unserved_failures(first: &str) {
+    for failure in [
+        Reply::failure("/oauth2/v2.0/token"),
+        Reply::status(503, "/oauth2/v2.0/token", "unavailable"),
+    ] {
+        let fixture = Fixture::new(vec![openid(HOST, TENANT), token(first), failure]);
+        let provider = fixture.provider();
+        provider.token().unwrap();
+        fixture.clock.set(NOW + 100);
+        let error = provider.token().unwrap_err();
+        assert!(matches!(
+            error,
+            ClientSecretError::TokenTransport { .. } | ClientSecretError::Authentication { .. }
+        ));
+    }
 }
 
 fn endpoint_resolved_once() {

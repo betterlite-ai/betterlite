@@ -240,7 +240,7 @@ fn error_step(step: &Step) -> Result<Value, Box<HelperError>> {
             "status_code": error.response.status_code,
             "request": {"method": error.response.request.method, "url": error.response.request.url},
         },
-        "headers": pairs(&error.headers.unwrap_or_default()),
+        "headers": error.headers.as_deref().map(pairs),
         "body": error.body,
         "status_code_is_synthesized": error.status_code_is_synthesized,
     }))

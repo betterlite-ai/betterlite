@@ -61,9 +61,11 @@ call:
             status: 200
             body: '{"access_token":"tok-1","expires_in":3600,"refresh_in":100}'
           - url_contains: /oauth2/v2.0/token
-            status: 500
-            error: connection reset
-            body: ''
+            status: 400
+            body: '{"error":"invalid_client"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_client"}'
       - environment: {}
         tenant_id: tenant
         client_id: client

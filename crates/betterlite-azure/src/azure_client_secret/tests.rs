@@ -8,25 +8,28 @@ use std::sync::Arc;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_client_secret::authority;
 use crate::azure_client_secret::provider::ClientSecretProvider;
 use crate::azure_client_secret::token::decode_client_secret_token;
 use crate::azure_client_secret::transport::{HttpReply, HttpRequest};
-use fixture::{CLIENT, Fixture, HOST, Reply, TENANT, form_map, input_for, openid, token};
+use fixture::{
+    CLIENT, Fixture, HOST, Reply, TENANT, form_map, input_for, instance_metadata, openid, token,
+};
 
 mod fixture;
 mod scenarios;
 
 #[rstest]
-#[case::case_1_client_secret_form(scenarios::client_secret_form)]
-#[case::case_2_tenant_scope(scenarios::tenant_scope)]
-#[case::case_3_oauth_failure(scenarios::oauth_failure)]
-#[case::case_4_token_expiry(scenarios::token_expiry)]
-#[case::case_5_client_secret_reference_resolution(scenarios::client_secret_reference_resolution)]
-#[case::case_6_client_secret_provider_cache(scenarios::client_secret_provider_cache)]
-#[case::case_7_azure_error_fields(scenarios::azure_error_fields)]
-#[case::case_8_regional_authority_inputs(scenarios::regional_authority_inputs)]
-#[case::case_9_regional_authority_discovery(scenarios::regional_authority_discovery)]
-#[case::case_10_regional_authority_host(scenarios::regional_authority_host)]
+#[case::client_secret_form(scenarios::client_secret_form)]
+#[case::tenant_scope(scenarios::tenant_scope)]
+#[case::oauth_failure(scenarios::oauth_failure)]
+#[case::token_expiry(scenarios::token_expiry)]
+#[case::client_secret_reference_resolution(scenarios::client_secret_reference_resolution)]
+#[case::client_secret_provider_cache(scenarios::client_secret_provider_cache)]
+#[case::azure_error_fields(scenarios::azure_error_fields)]
+#[case::regional_authority_inputs(scenarios::regional_authority_inputs)]
+#[case::regional_authority_discovery(scenarios::regional_authority_discovery)]
+#[case::regional_authority_host(scenarios::regional_authority_host)]
 fn azure_client_secret_cases(#[case] scenario: fn()) {
     scenario();
 }
@@ -130,6 +133,12 @@ fn azure_client_secret_secret_safe_failure() {
         Reply::status(400, "/oauth2/v2.0/token", r#"{"error":"invalid_client"}"#),
     ]);
     let provider = fixture.provider_for(&input_for(TENANT, CLIENT, secret, None), None);
+    let provider_debug = format!("{provider:?}");
+    assert!(provider_debug.starts_with("ClientSecretProvider"));
+    assert!(provider_debug.contains(TENANT));
+    assert!(provider_debug.contains(CLIENT));
+    assert!(provider_debug.contains(HOST));
+    assert!(!provider_debug.contains(secret));
     let error = provider.token().unwrap_err();
     let shown = format!("{error} {error:?}");
     assert!(!shown.contains(secret));
@@ -177,4 +186,61 @@ fn replays_the_azure_client_secret_corpus() {
         })
         .unwrap();
     assert!(replayed > 0_usize);
+}
+
+const INSTANCE_DISCOVERY: &str = "https://login.microsoftonline.com/common/discovery/instance";
+
+#[rstest]
+#[case::b2c_policy_segment(
+    "https://login.contoso.test/tenant",
+    "B2C_1_signin",
+    1,
+    "https://login.contoso.test/tenant/B2C_1_signin/v2.0/.well-known/openid-configuration"
+)]
+#[case::three_segments_without_policy(
+    "https://login.contoso.test/tenant",
+    "other",
+    2,
+    INSTANCE_DISCOVERY
+)]
+#[case::policy_before_last_segment(
+    "https://login.contoso.test/tenant/b2c_policy",
+    "extra",
+    2,
+    INSTANCE_DISCOVERY
+)]
+#[case::b2c_host(
+    "https://contoso.b2clogin.com",
+    TENANT,
+    1,
+    "https://contoso.b2clogin.com/tenant/v2.0/.well-known/openid-configuration"
+)]
+#[case::ciam_without_tenant(
+    "https://contoso.ciamlogin.com",
+    "",
+    1,
+    "https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration"
+)]
+#[case::ciam_with_path(
+    "https://contoso.ciamlogin.com/extra",
+    "tenant",
+    1,
+    "https://contoso.ciamlogin.com/extra/tenant/v2.0/.well-known/openid-configuration"
+)]
+fn azure_client_secret_authority_flavours(
+    #[case] authority_host: &str,
+    #[case] tenant_id: &str,
+    #[case] request_count: usize,
+    #[case] first_url: &str,
+) {
+    let fixture = Fixture::new(vec![
+        instance_metadata(
+            r#"{"tenant_discovery_endpoint":"https://login.contoso.test/tenant/v2.0/.well-known/openid-configuration"}"#,
+        ),
+        openid("login.contoso.test", TENANT),
+    ]);
+    authority::discover_authority(&*fixture.transport, authority_host, tenant_id, true).unwrap();
+    let requests = fixture.transport.requests();
+    assert_eq!(requests.len(), request_count);
+    assert_eq!(requests[0].url, first_url);
 }

@@ -2,15 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
 
+use betterlite_azure::azure_client_secret::ClientSecretInput;
 use betterlite_azure::azure_client_secret::provider::{ClientSecretProvider, ProviderCache};
 use betterlite_azure::azure_client_secret::region::{self, ConfiguredRegion};
 use betterlite_azure::azure_client_secret::transport::HttpRequest;
 use betterlite_config::sections::azure_client_secret::Settings;
+use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::fixture::{
-    FixtureClock, FixtureResolver, FixtureTransport, NOW, failure, input_of, request_json,
-};
+use super::fixture::{FixtureClock, FixtureResolver, FixtureTransport, NOW, failure, request_json};
 use super::steps::Step;
 use super::{load_settings, provider_for};
 use crate::helpers::HelperError;
@@ -96,6 +96,16 @@ fn prepare(
     Ok((transport, cache, resolver))
 }
 
+// the region cases carry no credentials, the LiteLLM side signs in as tenant, client and secret
+fn region_input() -> ClientSecretInput {
+    ClientSecretInput {
+        tenant_id: "tenant".to_owned(),
+        client_id: "client".to_owned(),
+        client_secret: SecretString::from("secret"),
+        scope: None,
+    }
+}
+
 fn connect(
     step: &Step,
     cache: &mut ProviderCache,
@@ -105,7 +115,7 @@ fn connect(
         .environment
         .get("AZURE_AUTHORITY_HOST")
         .map(String::as_str);
-    provider_for(cache, &input_of(step), resolver, authority_host)
+    provider_for(cache, &region_input(), resolver, authority_host)
 }
 
 fn flow_requests(step: &Step) -> Result<Vec<HttpRequest>, Box<HelperError>> {

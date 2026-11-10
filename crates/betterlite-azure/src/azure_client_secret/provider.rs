@@ -77,11 +77,12 @@ impl ClientSecretProvider {
                 self.state()?.token = Some(token.clone());
                 Ok(token)
             }
-            // azure-identity swallows a failed refresh while the cached token is still valid
-            Err(error) => match cached {
+            // msal serves the aging token when the IdP rejects the refresh, other failures raise
+            Err(ClientSecretError::TokenAccessTokenMissing) => match cached {
                 Some(token) if now < token.expires_on => Ok(token),
-                _ => Err(error),
+                _ => Err(ClientSecretError::TokenAccessTokenMissing),
             },
+            Err(error) => Err(error),
         }
     }
 
