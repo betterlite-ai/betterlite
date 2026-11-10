@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-cerebras
+call:
+  provider_defaults_a:
+    provider: cerebras
+    model: llama3.1-8b
+env: {}
+compare: {ignore: []}
