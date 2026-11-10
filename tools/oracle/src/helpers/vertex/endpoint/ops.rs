@@ -28,17 +28,11 @@ pub(crate) fn run(input: &Input) -> Value {
             "api_bases": rows(&operation.api_bases, api_base_row),
         }),
         Input::LlamaOpenapi(operation) => json!({
-            "urls": rows(&operation.complete, |case| {
-                url_json(get_complete_vertex_url(&catalog, &request_for(case)))
-            }),
+            "urls": rows(&operation.complete, |case| complete_row(&catalog, case)),
         }),
         Input::Ai21Stream(operation) => json!({
-            "complete": rows(&operation.complete, |case| {
-                url_json(get_complete_vertex_url(&catalog, &request_for(case)))
-            }),
-            "create": rows(&operation.create, |case| {
-                url_json(create_vertex_url(&url_input_for(case)))
-            }),
+            "complete": rows(&operation.complete, |case| complete_row(&catalog, case)),
+            "create": rows(&operation.create, create_row),
         }),
         Input::HostAndVersionGrafts(operation) => json!({
             "proxies": rows(&operation.proxies, proxy_row),
@@ -86,8 +80,8 @@ fn api_base_row(case: &ApiBaseCase) -> Value {
     }
 }
 
-fn request_for(case: &CompletePartnerCase) -> PartnerRequest<'_> {
-    PartnerRequest {
+fn complete_row(catalog: &ModelCatalog, case: &CompletePartnerCase) -> Value {
+    let request = PartnerRequest {
         custom_api_base: case.api_base.as_deref(),
         location: case.location.as_deref(),
         vertex_project: case.project.as_deref(),
@@ -95,18 +89,23 @@ fn request_for(case: &CompletePartnerCase) -> PartnerRequest<'_> {
         partner: case.partner.partner(),
         stream: case.stream.unwrap_or(false),
         model: &case.model,
+    };
+    match get_complete_vertex_url(catalog, &request) {
+        Ok(url) => json!({"url": url}),
+        Err(_error) => json!({"error": true}),
     }
 }
 
-fn url_input_for(case: &CreatePartnerCase) -> PartnerUrlInput<'_> {
-    PartnerUrlInput {
+fn create_row(case: &CreatePartnerCase) -> Value {
+    let input = PartnerUrlInput {
         location: &case.location,
         project: &case.project,
         partner: case.partner.partner(),
         stream: case.stream.unwrap_or(false),
         model: &case.model,
         api_base: case.api_base.as_deref(),
-    }
+    };
+    url_json(create_vertex_url(&input))
 }
 
 fn token_row(catalog: &ModelCatalog, case: &TokenCase) -> Value {
