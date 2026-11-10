@@ -100,11 +100,10 @@ fn merge_exception_headers(
     let Json::Object(params) = raw_params else {
         return Err(FailureError::LitellmParamsNotObject);
     };
-    let raw_metadata = params
-        .entry("metadata".to_owned())
-        .or_insert_with(|| Json::Object(IndexMap::new()));
-    let Json::Object(metadata) = raw_metadata else {
-        return Err(FailureError::MetadataNotObject);
+    let metadata = match params.get_mut("metadata") {
+        None | Some(Json::Null) => return Ok(()),
+        Some(Json::Object(metadata)) => metadata,
+        Some(_) => return Err(FailureError::MetadataNotObject),
     };
     for (name, value) in headers {
         metadata.insert(name.clone(), Json::Text(value.clone()));

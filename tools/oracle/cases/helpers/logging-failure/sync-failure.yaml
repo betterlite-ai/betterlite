@@ -70,5 +70,26 @@ call:
           - {name: first, flags: []}
         operations:
           - op: failure_handler
+      - init:
+          model: gpt-4o
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-3
+          function_id: fn-3
+          stream: false
+          litellm_trace_id: trace-3
+          litellm_params:
+            custom_llm_provider: openai
+        failure:
+          exception:
+            class_name: APIError
+            message: provider exploded
+            headers: {x-request-id: request-3}
+          traceback: "Traceback (most recent call last)"
+          end_time: "2026-01-01T00:00:02+00:00"
+        loggers:
+          - {name: first, flags: []}
+        operations:
+          - op: failure_handler
 env: {}
 compare: {ignore: []}

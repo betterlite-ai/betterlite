@@ -219,7 +219,7 @@ fn exception_headers_are_merged_into_the_metadata() {
 }
 
 #[test]
-fn a_missing_metadata_object_is_created() {
+fn missing_metadata_leaves_the_details_unchanged() {
     let mut fixture = fixture();
     let mut call = super::support::call(
         &mut fixture.state,
@@ -230,8 +230,8 @@ fn a_missing_metadata_object_is_created() {
     failure_handler_helper_fn(&mut call, &failure, &fixture.harness.deps())
         .expect("the details are prepared");
     assert_eq!(
-        metadata_of(&fixture.state).get("x-request-id"),
-        Some(&text("request-1"))
+        fixture.state.model_call_details.get("litellm_params"),
+        Some(&object(&[]))
     );
 }
 
@@ -413,7 +413,9 @@ impl Fixture {
 #[case::exception_headers_are_merged_into_the_metadata(
     exception_headers_are_merged_into_the_metadata
 )]
-#[case::a_missing_metadata_object_is_created(a_missing_metadata_object_is_created)]
+#[case::missing_metadata_leaves_the_details_unchanged(
+    missing_metadata_leaves_the_details_unchanged
+)]
 #[case::a_non_object_litellm_params_is_a_typed_error(a_non_object_litellm_params_is_a_typed_error)]
 #[case::a_non_object_metadata_is_a_typed_error(a_non_object_metadata_is_a_typed_error)]
 #[case::a_missing_payload_stores_null(a_missing_payload_stores_null)]

@@ -12,6 +12,7 @@ use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_failure::callbacks::FailureCallbacks;
 use crate::logging_failure::events::FailureDelivery;
 use crate::logging_failure::helper_fn::failure_handler_helper_fn;
+use crate::logging_failure::request_redaction::{RequestRedaction, request_redacts_messages};
 use crate::logging_failure::special::special_failure_handlers;
 use crate::logging_failure::{
     FAILED_REQUEST_REASON, FailureCall, FailureDeps, FailureReport, PASS_THROUGH_CALL_TYPE,
@@ -87,9 +88,7 @@ pub async fn async_failure_handler(
     deps: &FailureDeps<'_>,
 ) {
     async_failure_handler_body(call, report, callbacks, deps).await;
-    let pre_call = &call.state.correlation.pre_call;
-    call.context.trace_id.clone_from(&pre_call.trace_id);
-    call.context.session_id.clone_from(&pre_call.session_id);
+    restore_correlation_context(call.state, call.context);
 }
 
 pub async fn async_failure_handler_body(
@@ -133,7 +132,9 @@ pub async fn dispatch_failure_handlers(
         return;
     }
     async_failure_handler(call, report, callbacks, deps).await;
-    if !callbacks.should_run_sync_failure_callbacks_for_async_calls() {
+    if !callbacks.should_run_sync_failure_callbacks_for_async_calls()
+        || !should_run_logging(call.state, LoggingEvent::SyncFailure)
+    {
         return;
     }
     let job = SyncFailureJob::prepare(call, callbacks, deps);
@@ -169,6 +170,7 @@ fn deliverable<'call>(
         stream: call.state.stream == Some(true),
         excluded_fields: deps.excluded_fields,
         stamp: deps.stamp.clone(),
+        request_redaction: request_redacts_messages(call.state, deps.privacy),
     })
 }
 
@@ -216,6 +218,7 @@ pub struct SyncFailureJob {
     pub callbacks_allowed: bool,
     pub excluded_fields: Vec<String>,
     pub stamp: ResponseStamp,
+    pub request_redaction: RequestRedaction,
 }
 
 impl SyncFailureJob {
@@ -239,6 +242,7 @@ impl SyncFailureJob {
             ),
             excluded_fields: deps.excluded_fields.to_vec(),
             stamp: deps.stamp.clone(),
+            request_redaction: request_redacts_messages(call.state, deps.privacy),
         }
     }
 }
@@ -262,6 +266,7 @@ pub fn run_sync_failure(job: SyncFailureJob) {
         stream: job.stream,
         excluded_fields: &job.excluded_fields,
         stamp: job.stamp,
+        request_redaction: job.request_redaction,
     };
     for logger in &job.loggers {
         delivery.deliver_sync(logger.as_ref());

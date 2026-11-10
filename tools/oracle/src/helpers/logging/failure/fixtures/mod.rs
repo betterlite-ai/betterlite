@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::callback_logger::event::LoggerEvent;
@@ -154,6 +155,7 @@ impl Fakes {
                 id: "chatcmpl-probe".to_owned(),
                 created: 0,
             },
+            privacy: Settings::default(),
         }
     }
 

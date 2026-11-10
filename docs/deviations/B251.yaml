@@ -12,7 +12,7 @@ deviations:
   - what: When the standard logging payload cannot be built, the failure loggers are skipped with a warning instead of being called with a null payload.
     why: betterlite's LoggerEvent carries a typed StandardLoggingPayload, so a logger cannot receive a payload that does not exist.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6771-L6774
-  - what: The failure dispatch redacts the standard logging payload once per logger with that logger's turn_off_message_logging and redacts_messages_itself flags before handing it the event.
+  - what: The failure dispatch redacts a copy of the standard logging payload for each logger, with that logger's turn_off_message_logging and redacts_messages_itself flags or the request's own redaction decision (dynamic parameter, redaction headers, global setting), and the call's model_call_details keep the unredacted standard_logging_object.
     why: The task requires B3931's redaction for each failure logger; LiteLLM 1.105.1 only calls that hook from the success handlers, which leaks messages to a failure-only logger configured to redact them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3483-L3486
   - what: Legacy non-logger failure callbacks (plain functions and unknown callback names) receive no event from the failure dispatch, and the queued sync handler calls only the registered loggers.
@@ -24,3 +24,6 @@ deviations:
   - what: If the dispatch future is dropped while awaiting the async failure handler, the queued sync failure job is not submitted.
     why: LiteLLM submits it from a finally block so asyncio task cancellation still fans out to legacy callbacks; betterlite's handler owns the borrowed call state, and a registry of logger sinks makes that submission skip every logger anyway.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2225-L2245
+  - what: A request whose redaction headers cannot be read has its messages redacted for every failure logger.
+    why: Failing closed keeps a prompt out of the logs when the decision cannot be made; LiteLLM would raise out of the failure handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L328-L377

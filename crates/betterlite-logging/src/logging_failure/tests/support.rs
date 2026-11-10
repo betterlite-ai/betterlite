@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -407,6 +408,7 @@ pub(crate) struct Harness {
     pub(crate) flush: RecordingFlush,
     pub(crate) counter: CountingFailureCounter,
     pub(crate) listeners: Vec<Arc<dyn RateLimitFailureListener>>,
+    pub(crate) privacy: Settings,
 }
 
 impl Harness {
@@ -428,6 +430,7 @@ impl Harness {
             flush: RecordingFlush::new(),
             counter: CountingFailureCounter::new(),
             listeners: Vec::new(),
+            privacy: Settings::default(),
         }
     }
 
@@ -444,6 +447,7 @@ impl Harness {
             counters: vec![counter],
             excluded_fields: &[],
             stamp: stamp(),
+            privacy: self.privacy,
         }
     }
 

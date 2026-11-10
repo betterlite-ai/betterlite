@@ -3,6 +3,7 @@ pub mod events;
 pub mod handlers;
 pub mod helper_fn;
 pub mod partial_usage;
+pub mod request_redaction;
 pub mod special;
 
 mod tests;
@@ -10,6 +11,7 @@ mod tests;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
@@ -141,6 +143,7 @@ pub struct FailureDeps<'deps> {
     pub counters: Vec<&'deps (dyn CallbackFailureCounter + Send + Sync)>,
     pub excluded_fields: &'deps [String],
     pub stamp: ResponseStamp,
+    pub privacy: Settings,
 }
 
 #[derive(Debug, Error)]

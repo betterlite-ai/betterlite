@@ -10,6 +10,7 @@ use crate::logging_failure::FailureRecord;
 use crate::logging_failure::callbacks::FailureCallbacks;
 use crate::logging_failure::handlers::dispatch_failure_handlers;
 use crate::logging_failure::handlers::{SyncFailureJob, run_sync_failure};
+use crate::logging_failure::request_redaction::RequestRedaction;
 use crate::logging_state::LoggingInit;
 use crate::logging_state::LoggingState;
 use crate::logging_state::correlation::CorrelationContext;
@@ -119,6 +120,78 @@ fn test_a_rejected_job_does_not_take_the_sync_claim() -> Pin<Box<dyn Future<Outp
     })
 }
 
+async fn dispatch_twice(
+    registry: &CallbackRegistry,
+    harness: &Harness,
+    prefer_async_handlers: [bool; 2],
+) -> LoggingState {
+    let mut state = build(init());
+    let mut record = FailureRecord::default();
+    let mut context = CorrelationContext::default();
+    for prefer_async in prefer_async_handlers {
+        let mut failure_call = call(&mut state, &mut record, &mut context);
+        dispatch_failure_handlers(
+            &mut failure_call,
+            &report("provider exploded"),
+            &callbacks(registry),
+            &harness.deps(),
+            prefer_async,
+        )
+        .await;
+    }
+    state
+}
+
+fn test_a_second_dispatch_queues_no_second_sync_job() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let logger = Arc::new(FakeLogger::new("first"));
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
+        let harness = Harness::new();
+        dispatch_twice(&registry, &harness, [true, true]).await;
+        assert_eq!(logger.calls(), ["async", "sync"]);
+        assert_eq!(harness.executor.jobs(), 1);
+    })
+}
+
+fn test_a_dispatch_after_the_sync_handler_queues_nothing()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let logger = Arc::new(FakeLogger::new("first"));
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
+        let harness = Harness::new();
+        dispatch_twice(&registry, &harness, [false, true]).await;
+        assert_eq!(logger.calls(), ["sync", "async"]);
+        assert_eq!(harness.executor.jobs(), 0);
+    })
+}
+
+fn test_a_rejected_job_is_queued_again_by_the_next_dispatch()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let logger = Arc::new(FakeLogger::new("first"));
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
+        let mut harness = Harness::new();
+        harness.executor = RecordingExecutor::rejecting();
+        dispatch_twice(&registry, &harness, [true, true]).await;
+        assert_eq!(harness.executor.jobs(), 2);
+    })
+}
+
+fn test_a_queued_job_keeps_the_request_redaction() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let logger = Arc::new(FakeLogger::new("first"));
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
+        let harness = Harness::new();
+        let mut logging_init = init();
+        logging_init.callback_dynamic_params =
+            params(&[("turn_off_message_logging", Json::Bool(true))]);
+        dispatch_setup(logging_init, &registry, &harness, true).await;
+        let recorded = logger.recorded();
+        assert_eq!(recorded.len(), 2);
+        assert_ne!(recorded[1].1.messages, payload().messages);
+    })
+}
+
 fn test_the_predicate_is_false_for_loggers_only() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
@@ -189,6 +262,7 @@ fn test_a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Out
             callbacks_allowed: true,
             excluded_fields: Vec::new(),
             stamp: stamp(),
+            request_redaction: RequestRedaction::LoggerDecides,
         };
         run_sync_failure(job);
         assert!(logger.calls().is_empty());
@@ -214,6 +288,7 @@ fn test_a_queued_job_with_callbacks_not_allowed_calls_nothing()
             callbacks_allowed: false,
             excluded_fields: Vec::new(),
             stamp: stamp(),
+            request_redaction: RequestRedaction::LoggerDecides,
         };
         run_sync_failure(job);
         assert!(logger.calls().is_empty());
@@ -230,6 +305,16 @@ fn test_a_queued_job_with_callbacks_not_allowed_calls_nothing()
 #[case::a_rejected_job_does_not_take_the_sync_claim(
     test_a_rejected_job_does_not_take_the_sync_claim
 )]
+#[case::a_second_dispatch_queues_no_second_sync_job(
+    test_a_second_dispatch_queues_no_second_sync_job
+)]
+#[case::a_dispatch_after_the_sync_handler_queues_nothing(
+    test_a_dispatch_after_the_sync_handler_queues_nothing
+)]
+#[case::a_rejected_job_is_queued_again_by_the_next_dispatch(
+    test_a_rejected_job_is_queued_again_by_the_next_dispatch
+)]
+#[case::a_queued_job_keeps_the_request_redaction(test_a_queued_job_keeps_the_request_redaction)]
 #[case::the_predicate_is_false_for_loggers_only(test_the_predicate_is_false_for_loggers_only)]
 #[case::the_predicate_is_true_for_channel_sinks(test_the_predicate_is_true_for_channel_sinks)]
 #[case::the_predicate_is_true_for_unresolved_dynamic_names(

@@ -13,6 +13,7 @@ use crate::exporter_options::redaction::{
 };
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_failure::FailureError;
+use crate::logging_failure::request_redaction::RequestRedaction;
 
 pub struct FailureDelivery<'delivery> {
     pub payload: &'delivery Arc<StandardLoggingPayload>,
@@ -20,6 +21,7 @@ pub struct FailureDelivery<'delivery> {
     pub stream: bool,
     pub excluded_fields: &'delivery [String],
     pub stamp: ResponseStamp,
+    pub request_redaction: RequestRedaction,
 }
 
 impl FailureDelivery<'_> {
@@ -52,7 +54,8 @@ impl FailureDelivery<'_> {
         logger: &dyn CallbackLogger,
     ) -> Result<Arc<StandardLoggingPayload>, FailureError> {
         let policy = RedactionPolicy {
-            turn_off_message_logging: logger.turn_off_message_logging(),
+            turn_off_message_logging: self.request_redaction == RequestRedaction::Redact
+                || logger.turn_off_message_logging(),
             excluded_fields: self.excluded_fields.to_vec(),
             callback_redacts_itself: logger.redacts_messages_itself(),
         };
