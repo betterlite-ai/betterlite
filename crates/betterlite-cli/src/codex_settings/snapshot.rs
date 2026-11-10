@@ -1,3 +1,4 @@
+use betterlite_logging::python_json::dumps;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use toml_edit::{Decor, DocumentMut, Item, Table, TableLike, TomlError};
@@ -54,10 +55,10 @@ impl Snapshot {
 
     #[must_use]
     pub fn canonical(&self) -> String {
-        self.document
-            .as_table()
-            .get(VALUE_KEY)
-            .map_or_else(|| "null".to_owned(), canonical::item)
+        self.document.as_table().get(VALUE_KEY).map_or_else(
+            || "null".to_owned(),
+            |item| dumps(&canonical::to_json(item)),
+        )
     }
 }
 
@@ -81,7 +82,11 @@ pub fn fingerprint(snapshot: Option<&Snapshot>) -> String {
 #[must_use]
 pub fn snapshot(document: &DocumentMut, path: &str) -> Option<Snapshot> {
     let (section, key) = path.rsplit_once('.').unwrap_or(("", path));
-    let parent = section_ref(document, section)?;
+    let parent: &dyn TableLike = if section.is_empty() {
+        document.as_table()
+    } else {
+        document.as_table().get(section)?.as_table_like()?
+    };
     parent.get(key).map(Snapshot::from_item)
 }
 
@@ -103,16 +108,6 @@ pub fn with_value(document: &DocumentMut, path: &str, snapshot: Option<&Snapshot
         None => drop(parent.remove(key)),
     }
     updated
-}
-
-fn section_ref<'document>(
-    document: &'document DocumentMut,
-    section: &str,
-) -> Option<&'document dyn TableLike> {
-    if section.is_empty() {
-        return Some(document.as_table());
-    }
-    document.as_table().get(section)?.as_table_like()
 }
 
 fn section_table<'document>(

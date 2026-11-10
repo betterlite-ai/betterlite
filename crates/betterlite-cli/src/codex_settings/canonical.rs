@@ -1,125 +1,61 @@
 use std::collections::BTreeMap;
 
-use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::Number;
+use toml_edit::{InlineTable, Item, Table, Value};
 
-pub(crate) fn item(item: &Item) -> String {
+pub(crate) fn to_json(item: &Item) -> Json {
     match item {
-        Item::None => "null".to_owned(),
-        Item::Value(value) => value_text(value),
-        Item::Table(table) => table_text(table),
-        Item::ArrayOfTables(tables) => array_of_tables_text(tables),
+        Item::None => Json::Null,
+        Item::Value(value) => value_to_json(value),
+        Item::Table(table) => table_to_json(table),
+        Item::ArrayOfTables(tables) => Json::List(tables.iter().map(table_to_json).collect()),
     }
 }
 
-fn value_text(value: &Value) -> String {
+fn value_to_json(value: &Value) -> Json {
     match value {
-        Value::String(text) => json_string(text.value()),
-        Value::Integer(number) => number.value().to_string(),
-        Value::Float(number) => float_text(*number.value()),
-        Value::Boolean(flag) => flag.value().to_string(),
-        Value::Datetime(moment) => json_string(&moment.value().to_string()),
-        Value::Array(array) => array_text(array),
-        Value::InlineTable(table) => inline_table_text(table),
+        Value::String(text) => Json::Text(text.value().clone()),
+        Value::Integer(number) => Json::Number(Number::from(*number.value())),
+        Value::Float(number) => float_to_json(*number.value()),
+        Value::Boolean(flag) => Json::Bool(*flag.value()),
+        Value::Datetime(moment) => Json::Text(moment.value().to_string()),
+        Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
+        Value::InlineTable(table) => inline_table_to_json(table),
     }
 }
 
-// json.dumps writes a TOML float through float.__repr__: NaN and Infinity lower their own spelling
-fn float_text(value: f64) -> String {
-    if value.is_nan() {
-        return "NaN".to_owned();
-    }
-    if value.is_infinite() {
-        return if value.is_sign_positive() {
-            "Infinity".to_owned()
-        } else {
-            "-Infinity".to_owned()
-        };
-    }
-    serde_json::to_string(&value).unwrap_or_else(|_error| value.to_string())
+// standard JSON has no NaN or Infinity, so a non-finite TOML float keeps a marked string of its own
+fn float_to_json(value: f64) -> Json {
+    Number::from_f64(value).map_or_else(
+        || Json::Text(format!("\u{0}toml-float:{value}")),
+        Json::Number,
+    )
 }
 
-fn array_text(array: &Array) -> String {
-    let mut out = String::from("[");
-    for (position, value) in array.iter().enumerate() {
-        if position != 0 {
-            out.push_str(", ");
-        }
-        out.push_str(&value_text(value));
-    }
-    out.push(']');
-    out
-}
-
-fn array_of_tables_text(tables: &ArrayOfTables) -> String {
-    let mut out = String::from("[");
-    for (position, table) in tables.iter().enumerate() {
-        if position != 0 {
-            out.push_str(", ");
-        }
-        out.push_str(&table_text(table));
-    }
-    out.push(']');
-    out
-}
-
-fn table_text(table: &Table) -> String {
-    let pairs: BTreeMap<&str, String> = table
+fn table_to_json(table: &Table) -> Json {
+    let sorted: BTreeMap<&str, Json> = table
         .iter()
-        .map(|(key, value)| (key, item(value)))
+        .map(|(key, item)| (key, to_json(item)))
         .collect();
-    object_text(&pairs)
+    Json::Object(
+        sorted
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect::<IndexMap<String, Json>>(),
+    )
 }
 
-fn inline_table_text(table: &InlineTable) -> String {
-    let pairs: BTreeMap<&str, String> = table
+fn inline_table_to_json(table: &InlineTable) -> Json {
+    let sorted: BTreeMap<&str, Json> = table
         .iter()
-        .map(|(key, value)| (key, value_text(value)))
+        .map(|(key, value)| (key, value_to_json(value)))
         .collect();
-    object_text(&pairs)
-}
-
-// json.dumps sorts object keys by code point and puts ", " and ": " between them
-fn object_text(pairs: &BTreeMap<&str, String>) -> String {
-    let mut out = String::from("{");
-    for (position, (key, value)) in pairs.iter().enumerate() {
-        if position != 0 {
-            out.push_str(", ");
-        }
-        out.push_str(&json_string(key));
-        out.push_str(": ");
-        out.push_str(value);
-    }
-    out.push('}');
-    out
-}
-
-// json.dumps escapes everything outside the 0x20-0x7e range as \uXXXX by default (ensure_ascii=True)
-fn json_string(value: &str) -> String {
-    let mut out = String::from("\"");
-    for character in value.chars() {
-        match character {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            printable_ascii if (' '..='~').contains(&printable_ascii) => out.push(printable_ascii),
-            other => push_unicode_escape(&mut out, other),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn push_unicode_escape(out: &mut String, character: char) {
-    let mut units = [0_u16; 2];
-    for unit in character.encode_utf16(&mut units) {
-        out.push_str("\\u");
-        for byte in unit.to_be_bytes() {
-            out.extend(char::from_digit(u32::from(byte) >> 4_u32, 16));
-            out.extend(char::from_digit(u32::from(byte) & 0x0f_u32, 16));
-        }
-    }
+    Json::Object(
+        sorted
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect::<IndexMap<String, Json>>(),
+    )
 }

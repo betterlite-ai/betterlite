@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::agent_launch::codex_proxy_provider;
+use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
 use secrecy::{ExposeSecret as _, SecretString};
 use toml_edit::{DocumentMut, Item, Table, Value};
@@ -43,7 +44,14 @@ pub async fn configure_codex_settings(
             return Err(error);
         }
     };
-    commit_receipt(files, &state_path, &staged_receipt, &staged_settings).await?;
+    if let Err(source) = files.commit_staged_json(&staged_receipt, &state_path).await {
+        drop(files.discard_staged_json(&staged_receipt).await);
+        drop(files.discard_staged_json(&staged_settings).await);
+        return Err(CodexSettingsError::WriteReceipt {
+            path: state_path,
+            source,
+        });
+    }
     commit_settings(
         files,
         &target,
@@ -168,23 +176,6 @@ async fn stage_receipt(
         })
 }
 
-async fn commit_receipt(
-    files: &PrivateFiles,
-    state_path: &Path,
-    staged_receipt: &StagedFile,
-    staged_settings: &StagedFile,
-) -> Result<(), CodexSettingsError> {
-    if let Err(source) = files.commit_staged_json(staged_receipt, state_path).await {
-        drop(files.discard_staged_json(staged_receipt).await);
-        drop(files.discard_staged_json(staged_settings).await);
-        return Err(CodexSettingsError::WriteReceipt {
-            path: state_path.to_owned(),
-            source,
-        });
-    }
-    Ok(())
-}
-
 async fn commit_settings(
     files: &PrivateFiles,
     target: &Path,
@@ -215,13 +206,17 @@ async fn restore_receipt(
     let Some(saved) = earlier else {
         return remove_path(files, state_path).await.map_err(restore_error);
     };
-    let document = PrivateDocument::json(saved).map_err(restore_error)?;
-    let staged = files
-        .stage_private(state_path, document)
-        .await
-        .map_err(restore_error)?;
-    files
-        .commit_staged_json(&staged, state_path)
+    commit_receipt_document(files, state_path, saved)
         .await
         .map_err(restore_error)
+}
+
+async fn commit_receipt_document(
+    files: &PrivateFiles,
+    state_path: &Path,
+    receipt: &CodexReceipt,
+) -> Result<(), PrivateJsonError> {
+    let document = PrivateDocument::json(receipt)?;
+    let staged = files.stage_private(state_path, document).await?;
+    files.commit_staged_json(&staged, state_path).await
 }
