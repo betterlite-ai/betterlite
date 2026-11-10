@@ -55,24 +55,31 @@ async fn authoritative_case(fixture: &Fixture) {
 }
 
 async fn fallback_case(fixture: &Fixture) {
-    let falling_back = ScriptedDynamic::new(vec![Reply::Error]);
-    let fallback = resolve(fixture, "llama3.2", Some("ollama"), &falling_back)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&fallback, "key"), "ollama/llama3.2");
-
-    let none = ScriptedDynamic::new(vec![Reply::None]);
-    let static_entry = resolve(fixture, "llama3.2", Some("ollama"), &none)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&static_entry, "key"), "ollama/llama3.2");
-
-    let unused = ScriptedDynamic::new(vec![Reply::Value(raw(r#"{"key": "ignored"}"#))]);
-    let selected = resolve(fixture, "openai/gpt-4o", Some("openai"), &unused)
-        .await
-        .unwrap();
-    assert_eq!(string_field(&selected, "key"), "openai/gpt-4o");
-    assert!(unused.calls().is_empty());
+    let scenarios = [
+        (
+            Reply::Error,
+            "llama3.2",
+            "ollama",
+            "ollama/llama3.2",
+            1_usize,
+        ),
+        (Reply::None, "llama3.2", "ollama", "ollama/llama3.2", 1),
+        (
+            Reply::Value(raw(r#"{"key": "ignored"}"#)),
+            "openai/gpt-4o",
+            "openai",
+            "openai/gpt-4o",
+            0,
+        ),
+    ];
+    for (reply, model, provider, key, calls) in scenarios {
+        let dynamic = ScriptedDynamic::new(vec![reply]);
+        let value = resolve(fixture, model, Some(provider), &dynamic)
+            .await
+            .unwrap();
+        assert_eq!(string_field(&value, "key"), key);
+        assert_eq!(dynamic.calls().len(), calls);
+    }
 }
 
 #[derive(Clone)]
