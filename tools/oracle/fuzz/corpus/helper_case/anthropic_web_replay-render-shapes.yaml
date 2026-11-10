@@ -1,0 +1,20 @@
+kind: helper
+name: anthropic-web-replay-render-shapes
+call:
+  anthropic_web_replay:
+    messages:
+      - content:
+          - type: web_search_tool_result
+            tool_use_id: r1
+            content:
+              - {type: web_search_result, title: T}
+              - {type: web_search_result, url: u}
+              - {type: web_search_result, snippet: S}
+          - {type: web_search_tool_result, tool_use_id: r2, content: []}
+          - {type: web_search_tool_result, tool_use_id: r3, content: {type: web_search_tool_result_error}}
+          - {type: web_search_tool_result, tool_use_id: r4, content: [{type: web_search_result}]}
+          - {type: web_search_tool_result, tool_use_id: r5, content: [{type: web_search_result}, {type: web_search_result}]}
+          - {type: server_tool_use, id: r1, input: {query: " padded "}}
+          - {type: server_tool_use, id: r2, input: {query: ""}}
+env: {}
+compare: {ignore: []}

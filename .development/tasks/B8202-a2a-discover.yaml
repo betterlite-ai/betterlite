@@ -63,7 +63,7 @@ checks:
     - id: discover-oracle
       why: Discover answers differ from LiteLLM on the same input.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/a2a-discover
 
 oracle_cases: []
