@@ -13,8 +13,9 @@ the change can affect, so don't use `--workspace`. `cargo gate run <ID> --only <
 runs one of the task's test commands. Use `cargo deny --locked check` for dependency policy.
 
 Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases`.
-It compares LiteLLM and betterlite against the same mock provider; omit `--self-check`
-when testing a built betterlite gateway.
+`--self-check` runs LiteLLM on both sides against the same mock provider, so it checks
+the cases only. Omit it to compare a built betterlite gateway or the native helpers
+with LiteLLM; a task check on helper cases never uses it.
 
 Helper cases cache LiteLLM's answers in two folders. Runs read
 `~/.cache/betterlite-oracle` first, then the worktree's `target/oracle-answers`,

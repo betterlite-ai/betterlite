@@ -17,10 +17,10 @@ from mcp.types import (
     ElicitResult,
     ErrorData,
 )
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from starlette.datastructures import Headers
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Json: TypeAlias = JsonValue
 
 
 class Strict(BaseModel):
