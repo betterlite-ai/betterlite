@@ -8,12 +8,12 @@ use crate::endpoint_target::graft::graft_default_vertex_path;
 #[case::host_only(
     "https://h.example.com",
     "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent",
-    "https://h.example.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"
+    "https://h.example.com/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"
 )]
 #[case::trailing_slash(
     "https://h.example.com/",
     "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent",
-    "https://h.example.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"
+    "https://h.example.com/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"
 )]
 #[case::version_root(
     "https://h.example.com/v1",
