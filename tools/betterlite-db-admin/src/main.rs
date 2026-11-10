@@ -6,6 +6,11 @@ use std::process::ExitCode;
 use betterlite_db_admin::command_shell::{AdminEnvironment, DbAdminBackend, Streams, run};
 use tokio::runtime::Builder;
 
+mod database_repair;
+mod database_startup;
+mod spend_backfills;
+mod spend_partitions;
+
 fn main() -> ExitCode {
     let environment = process_environment();
     let backend = DbAdminBackend::default();
