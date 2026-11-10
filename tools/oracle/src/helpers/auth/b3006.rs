@@ -183,22 +183,25 @@ fn exceeded_outcome(details: &BudgetExceededDetails) -> Value {
     })
 }
 
+fn fallback_query(check: &FallbackCall) -> FallbackQuery<'_> {
+    FallbackQuery {
+        entity_id: &check.entity_id,
+        key_alias: check.key_alias.as_deref(),
+        model_max_budget: check.budget.as_ref(),
+        budget_fallbacks: check.fallbacks.as_ref(),
+        model: &check.model,
+    }
+}
+
 async fn fallback_outcome(
     limiter: &ModelBudgetLimiter<OracleCache>,
     check: &FallbackCall,
 ) -> Value {
-    let chosen = fallback_model_within_budget(
-        limiter,
-        FallbackQuery {
-            entity_id: &check.entity_id,
-            key_alias: check.key_alias.as_deref(),
-            model_max_budget: check.budget.as_ref(),
-            budget_fallbacks: check.fallbacks.as_ref(),
-            model: &check.model,
-        },
-    )
-    .await;
-    json!({"outcome": "fallback", "model": chosen})
+    let chosen = fallback_model_within_budget(limiter, fallback_query(check)).await;
+    json!({
+        "outcome": "fallback",
+        "model": chosen,
+    })
 }
 
 fn success_event(charge: &ChargeCall, response_cost: Decimal) -> SuccessEvent<'_> {
