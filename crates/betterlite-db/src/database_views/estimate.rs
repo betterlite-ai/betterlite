@@ -1,9 +1,7 @@
 use super::contracts::SupportsRawQueries;
-
 pub const SPEND_LOGS_ESTIMATE_SQL: &str = r#"SELECT reltuples::BIGINT
 FROM pg_class
 WHERE oid = '"LiteLLM_SpendLogs"'::regclass;"#;
-
 pub async fn should_create_missing_views<Database>(
     database: &Database,
 ) -> Result<bool, Database::Error>

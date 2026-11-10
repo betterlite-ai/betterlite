@@ -1,11 +1,9 @@
 use super::contracts::{SupportsExecuteRaw, SupportsRawQueries};
 use super::definitions::{RUNTIME_VIEWS, ViewDefinition};
-
 pub const VIEW_NOT_FOUND_MARKERS: [&str; 3] =
     ["does not exist", "no such table", "undefined table"];
 pub const VIEW_ALREADY_EXISTS_MARKERS: [&str; 3] =
     ["already exists", "duplicate object", "duplicate table"];
-
 pub async fn create_missing_views<Database>(database: &Database) -> Result<(), Database::Error>
 where
     Database: SupportsRawQueries + Sync,
@@ -17,7 +15,6 @@ where
     }
     Ok(())
 }
-
 async fn relation_exists<Database>(
     database: &Database,
     view: &ViewDefinition,
@@ -46,7 +43,6 @@ where
         }
     }
 }
-
 pub async fn create_view_tolerating_race<Database>(
     database: &Database,
     view_name: &str,
