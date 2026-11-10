@@ -1,4 +1,3 @@
-use betterlite_bedrock::converse_usage::cache_details::parse_cache_details;
 use betterlite_bedrock::converse_usage::reasoning::{
     thinking_tokens_from_fields, transform_reasoning_content, transform_thinking_blocks,
 };
@@ -14,38 +13,26 @@ use crate::helpers::{HelperCall, HelperError, HelperResult, invoke};
 
 mod tests;
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ReasoningFields {
+    reasoning_content: Option<String>,
+    thinking_ran: bool,
+    provider_reasoning_tokens: Option<i64>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Operation {
     TransformUsage {
         usage: Json,
         #[serde(default)]
-        reasoning_content: Option<String>,
-        #[serde(default)]
-        thinking_ran: bool,
-        #[serde(default)]
-        provider_reasoning_tokens: Option<i64>,
+        additional_fields: Option<Json>,
+        #[serde(flatten)]
+        reasoning: ReasoningFields,
     },
     Batch {
         usage: Json,
-    },
-    Shape {
-        usage: Json,
-    },
-    CacheDetails {
-        usage: Json,
-    },
-    AdditionalThinkingTokens {
-        #[serde(default)]
-        additional_fields: Option<Json>,
-        #[serde(default)]
-        usage: Option<Json>,
-        #[serde(default)]
-        reasoning_content: Option<String>,
-        #[serde(default)]
-        thinking_ran: bool,
-        #[serde(default)]
-        provider_reasoning_tokens: Option<i64>,
     },
     ReasoningBlocks {
         blocks: Vec<Json>,
@@ -134,45 +121,22 @@ impl ReasoningTokenCounter for TokenizerCounter {
 
 fn transform(
     usage: &Json,
-    reasoning_content: Option<&str>,
-    thinking_ran: bool,
-    provider_reasoning_tokens: Option<i64>,
+    reasoning: &ReasoningFields,
+    additional_fields: Option<&Json>,
 ) -> HelperResult {
     let block = decode_usage(usage)?;
     let projected = transform_usage(
         &block,
-        reasoning_content,
-        thinking_ran,
-        provider_reasoning_tokens,
+        reasoning.reasoning_content.as_deref(),
+        reasoning.thinking_ran,
+        reasoning.provider_reasoning_tokens,
         &TokenizerCounter,
     )
     .map_err(|error| failure(error.to_string()))?;
-    payload(projected)
-}
-
-fn additional(
-    additional_fields: Option<&Json>,
-    usage: Option<&Json>,
-    reasoning_content: Option<&str>,
-    thinking_ran: bool,
-    provider_reasoning_tokens: Option<i64>,
-) -> HelperResult {
     let tokens = additional_fields.and_then(thinking_tokens_from_fields);
-    let Some(supplied) = usage else {
-        return payload(json!({ "thinking_tokens": tokens }));
-    };
-    let block = decode_usage(supplied)?;
-    let projected = transform_usage(
-        &block,
-        reasoning_content,
-        thinking_ran,
-        provider_reasoning_tokens,
-        &TokenizerCounter,
-    )
-    .map_err(|error| failure(error.to_string()))?;
     payload(json!({
+        "usage": projected,
         "thinking_tokens": tokens,
-        "usage": serde_json::to_value(&projected).map_err(|error| failure(error.to_string()))?,
     }))
 }
 
@@ -183,12 +147,6 @@ fn batch(usage: &Json) -> HelperResult {
         "usage": projected,
         "shape": is_converse_usage_shape(usage),
     }))
-}
-
-fn cache_details(usage: &Json) -> HelperResult {
-    let block = decode_usage(usage)?;
-    let details = parse_cache_details(&block).map_err(|error| failure(error.to_string()))?;
-    payload(details)
 }
 
 fn reasoning_blocks(blocks: &[Json]) -> HelperResult {
@@ -221,31 +179,10 @@ impl crate::helpers::Helper for Op {
         match input {
             Operation::TransformUsage {
                 usage,
-                reasoning_content,
-                thinking_ran,
-                provider_reasoning_tokens,
-            } => transform(
-                usage,
-                reasoning_content.as_deref(),
-                *thinking_ran,
-                *provider_reasoning_tokens,
-            ),
-            Operation::Batch { usage } => batch(usage),
-            Operation::Shape { usage } => payload(is_converse_usage_shape(usage)),
-            Operation::CacheDetails { usage } => cache_details(usage),
-            Operation::AdditionalThinkingTokens {
                 additional_fields,
-                usage,
-                reasoning_content,
-                thinking_ran,
-                provider_reasoning_tokens,
-            } => additional(
-                additional_fields.as_ref(),
-                usage.as_ref(),
-                reasoning_content.as_deref(),
-                *thinking_ran,
-                *provider_reasoning_tokens,
-            ),
+                reasoning,
+            } => transform(usage, reasoning, additional_fields.as_ref()),
+            Operation::Batch { usage } => batch(usage),
             Operation::ReasoningBlocks { blocks } => reasoning_blocks(blocks),
             Operation::TotalTokens { usage } => totals(usage),
         }

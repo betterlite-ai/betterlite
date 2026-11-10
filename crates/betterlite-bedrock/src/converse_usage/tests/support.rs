@@ -7,23 +7,13 @@ use crate::converse_usage::wire::ConverseTokenUsage;
 #[error("the test counter is unavailable")]
 pub(super) struct CounterFailed;
 
-pub(super) struct FixedCounter(pub(super) usize);
+pub(super) struct FixtureCounter(pub(super) Option<i64>);
 
-impl ReasoningTokenCounter for FixedCounter {
+impl ReasoningTokenCounter for FixtureCounter {
     type Failure = CounterFailed;
 
-    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Self::Failure> {
-        Ok(self.0)
-    }
-}
-
-pub(super) struct FailingCounter;
-
-impl ReasoningTokenCounter for FailingCounter {
-    type Failure = CounterFailed;
-
-    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Self::Failure> {
-        Err(CounterFailed)
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<i64, Self::Failure> {
+        self.0.ok_or(CounterFailed)
     }
 }
 

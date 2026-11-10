@@ -1,5 +1,4 @@
 use std::error::Error as StdError;
-use std::num::TryFromIntError;
 
 use thiserror::Error;
 
@@ -24,11 +23,6 @@ pub enum ConverseUsageError {
     Overflow { field: &'static str },
     #[error("a reasoningText block has no text")]
     ReasoningTextMissing,
-    #[error("the reasoning token estimate is outside the signed 64-bit range")]
-    EstimateOutOfRange {
-        #[source]
-        source: TryFromIntError,
-    },
 }
 
 #[derive(Debug, Error)]

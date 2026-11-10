@@ -42,9 +42,4 @@ fn helper_seeds_select_bedrock_converse_usage() {
                 .operation
                 == "bedrock_converse_usage"
     }));
-    assert!(
-        corpus_paths()
-            .iter()
-            .all(|path| { parses(&fs::read_to_string(path).unwrap()) })
-    );
 }

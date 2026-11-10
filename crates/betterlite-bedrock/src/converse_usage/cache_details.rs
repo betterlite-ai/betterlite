@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::converse_usage::counts::{cache_write_count, integer_number};
+use crate::converse_usage::counts::{cache_write_count, number_value};
 use crate::converse_usage::error::ConverseUsageError;
 use crate::converse_usage::wire::ConverseTokenUsage;
 
@@ -54,9 +54,9 @@ fn bucket_totals(entries: &[Json]) -> Result<(i64, i64), ConverseUsageError> {
                 field: "cacheDetails",
             });
         };
-        let bucket = match ttl_text(fields) {
-            Some("5m") => &mut five_minute_tokens,
-            Some("1h") => &mut one_hour_tokens,
+        let bucket = match fields.get("ttl") {
+            Some(Json::Text(ttl)) if ttl == "5m" => &mut five_minute_tokens,
+            Some(Json::Text(ttl)) if ttl == "1h" => &mut one_hour_tokens,
             Some(_) | None => continue,
         };
         // inputTokens is only read for a recognized ttl, so an unknown entry never has to carry it
@@ -70,19 +70,9 @@ fn bucket_totals(entries: &[Json]) -> Result<(i64, i64), ConverseUsageError> {
     Ok((five_minute_tokens, one_hour_tokens))
 }
 
-fn ttl_text(fields: &IndexMap<String, Json>) -> Option<&str> {
-    match fields.get("ttl") {
-        Some(Json::Text(ttl)) => Some(ttl.as_str()),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            None
-        }
-    }
-}
-
 fn entry_tokens(fields: &IndexMap<String, Json>) -> Result<i64, ConverseUsageError> {
     match fields.get("inputTokens") {
-        Some(Json::Number(number)) => integer_number(number, "cacheDetails.inputTokens"),
+        Some(Json::Number(number)) => number_value(number, "cacheDetails.inputTokens", false),
         Some(Json::Null) | None => Err(ConverseUsageError::Missing {
             field: "cacheDetails.inputTokens",
         }),

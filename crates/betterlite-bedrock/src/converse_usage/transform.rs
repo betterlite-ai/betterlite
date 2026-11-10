@@ -6,7 +6,7 @@ use serde_json::Number;
 
 use crate::converse_usage::cache_details::{CacheCreationTokenDetails, parse_cache_details};
 use crate::converse_usage::counts::{
-    cache_read_count, cache_write_count, count_value, integer_number, live_count,
+    cache_read_count, cache_write_count, count_value, live_count, number_value,
 };
 use crate::converse_usage::error::{ConverseUsageError, UsageError};
 use crate::converse_usage::wire::ConverseTokenUsage;
@@ -15,7 +15,7 @@ use crate::converse_usage::{CompletionTokensDetails, PromptTokensDetails, Usage}
 pub trait ReasoningTokenCounter {
     type Failure: StdError + Send + Sync + 'static;
 
-    fn count_reasoning_tokens(&self, text: &str) -> Result<usize, Self::Failure>;
+    fn count_reasoning_tokens(&self, text: &str) -> Result<i64, Self::Failure>;
 }
 
 pub fn transform_usage<Counter>(
@@ -30,13 +30,9 @@ where
 {
     let projected = project(usage)?;
     let estimate = match reasoning_content.filter(|content| !content.is_empty()) {
-        Some(content) => {
-            let count = counter
-                .count_reasoning_tokens(content)
-                .map_err(|source| UsageError::Counter { source })?;
-            i64::try_from(count)
-                .map_err(|source| ConverseUsageError::EstimateOutOfRange { source })?
-        }
+        Some(content) => counter
+            .count_reasoning_tokens(content)
+            .map_err(|source| UsageError::Counter { source })?,
         None => 0,
     };
     Ok(assemble(
@@ -104,7 +100,7 @@ fn project(usage: &ConverseTokenUsage) -> Result<ProjectedUsage, ConverseUsageEr
                 field: "total_tokens",
             })?,
         Some(Json::Null) => 0,
-        Some(Json::Number(number)) => integer_number(number, "totalTokens")?,
+        Some(Json::Number(number)) => number_value(number, "totalTokens", false)?,
         Some(_) => {
             return Err(ConverseUsageError::FieldType {
                 field: "totalTokens",

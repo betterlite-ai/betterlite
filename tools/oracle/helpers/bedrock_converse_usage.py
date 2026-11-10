@@ -77,7 +77,10 @@ def transform_usage(fields: Object) -> Json:
         thinking_ran=optional_bool(fields, "thinking_ran"),
         provider_reasoning_tokens=optional_int(fields, "provider_reasoning_tokens"),
     )
-    return to_json(result)
+    tokens = AmazonConverseConfig.thinking_tokens_from_additional_fields(  # pyright: ignore[reportUnknownMemberType]
+        fields.get("additional_fields")
+    )
+    return {"usage": to_json(result), "thinking_tokens": tokens}
 
 
 def batch_usage(fields: Object) -> Json:
@@ -88,29 +91,6 @@ def batch_usage(fields: Object) -> Json:
         "usage": to_json(result),
         "shape": config.is_converse_usage_shape(usage),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     }
-
-
-def shape(fields: Object) -> Json:
-    usage = object_field(fields, "usage")
-    return AmazonConverseConfig.is_converse_usage_shape(usage)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-
-
-def cache_details(fields: Object) -> Json:
-    config = AmazonConverseConfig()
-    result = config._parse_cache_details(  # noqa: SLF001  # pyright: ignore[reportUnknownMemberType, reportPrivateUsage]
-        usage_block(fields)
-    )
-    return to_json(result)
-
-
-def additional_thinking_tokens(fields: Object) -> Json:
-    tokens = AmazonConverseConfig.thinking_tokens_from_additional_fields(  # pyright: ignore[reportUnknownMemberType]
-        fields.get("additional_fields")
-    )
-    output: Object = {"thinking_tokens": tokens}
-    if fields.get("usage") is not None:
-        output["usage"] = transform_usage(fields)
-    return output
 
 
 def reasoning_blocks(fields: Object) -> Json:
@@ -135,9 +115,6 @@ def total_tokens(fields: Object) -> Json:
 HANDLERS: dict[str, Callable[[Object], Json]] = {
     "transform_usage": transform_usage,
     "batch": batch_usage,
-    "shape": shape,
-    "cache_details": cache_details,
-    "additional_thinking_tokens": additional_thinking_tokens,
     "reasoning_blocks": reasoning_blocks,
     "total_tokens": total_tokens,
 }
