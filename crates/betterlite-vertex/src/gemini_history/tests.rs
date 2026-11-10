@@ -376,7 +376,7 @@ fn replays_a_signed_thinking_block() {
 )]
 #[case::signature_key_collision(
     "{\"thoughtSignature\": \"x\", \"text\": \"t\"}",
-    r#"[{"thoughtSignature":"sig","text":"{\"thoughtSignature\": \"x\", \"text\": \"t\"}"}]"#
+    r#"[{"thoughtSignature":"sig","text":"{\"thoughtSignature\": \"x\", \"text\": \"t\"}"},{"text":"a"}]"#
 )]
 fn falls_back_to_the_signed_text_for_unusable_thinking_json(
     #[case] thinking: &str,
@@ -396,11 +396,15 @@ fn falls_back_to_the_signed_text_for_unusable_thinking_json(
 }
 
 #[rstest]
-#[case::missing_signature(r#"[{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":"{}"}]}]"#)]
-#[case::null_signature(r#"[{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":"{}","signature":null}]}]"#)]
-#[case::missing_thinking(r#"[{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","signature":"x"}]}]"#)]
-#[case::redacted(r#"[{"role":"assistant","content":"a","thinking_blocks":[{"type":"redacted_thinking","data":"x"}]}]"#)]
-#[case::empty_list(r#"[{"role":"assistant","content":"a","thinking_blocks":[]}]"#)]
+#[case::missing_signature(
+    r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":"{}"}]}"#
+)]
+#[case::null_signature(r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","thinking":"{}","signature":null}]}"#)]
+#[case::missing_thinking(
+    r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"thinking","signature":"x"}]}"#
+)]
+#[case::redacted(r#"{"role":"assistant","content":"a","thinking_blocks":[{"type":"redacted_thinking","data":"x"}]}"#)]
+#[case::empty_list(r#"{"role":"assistant","content":"a","thinking_blocks":[]}"#)]
 fn skips_thinking_blocks_that_carry_no_signed_thinking(#[case] assistant: &str) {
     let source = format!(r#"[{{"role":"user","content":"q"}},{assistant}]"#);
     assert_parts(
@@ -466,19 +470,19 @@ fn skips_a_generated_image_whose_image_url_is_a_string() {
 #[rstest]
 #[case::call_and_response(
     r#"{"tool_type":"google_search","id":"s1","args":{"q":"x"},"thought_signature":"sigs","response":{"r":1},"response_thought_signature":"sigr"}"#,
-    r#"[{"toolCall":{"toolType":"google_search","id":"s1","args":{"q":"x"}},"thoughtSignature":"sigs"},{"toolResponse":{"id":"s1","response":{"r":1},"toolType":"google_search"},"thoughtSignature":"sigr"}]"#
+    r#"{"toolCall":{"toolType":"google_search","id":"s1","args":{"q":"x"}},"thoughtSignature":"sigs"},{"toolResponse":{"id":"s1","response":{"r":1},"toolType":"google_search"},"thoughtSignature":"sigr"}"#
 )]
 #[case::call_only(
     r#"{"id":"s1"}"#,
-    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}}]"#
+    r#"{"toolCall":{"toolType":null,"id":"s1","args":null}}"#
 )]
 #[case::null_response(
     r#"{"id":"s1","response":null}"#,
-    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}},{"toolResponse":{"id":"s1","response":null}}]"#
+    r#"{"toolCall":{"toolType":null,"id":"s1","args":null}},{"toolResponse":{"id":"s1","response":null}}"#
 )]
 #[case::empty_tool_type_kept(
     r#"{"id":"s1","tool_type":"","response":{}}"#,
-    r#"[{"toolCall":{"toolType":"","id":"s1","args":null}},{"toolResponse":{"id":"s1","response":{},"toolType":""}}]"#
+    r#"{"toolCall":{"toolType":"","id":"s1","args":null}},{"toolResponse":{"id":"s1","response":{},"toolType":""}}"#
 )]
 fn replays_server_side_tool_invocations(#[case] invocation: &str, #[case] expected: &str) {
     assert_model_turn(
@@ -504,7 +508,7 @@ fn drops_a_text_signature_that_a_tool_already_carries() {
     assert_parts(
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":["sig-tool"]},"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"},"provider_specific_fields":{"thought_signature":"sig-tool"}}]}]"#,
         Some("gemini-3-pro-preview"),
-        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"function_call":{"name":"f","args":{},"id":"c1"},"thoughtSignature":"sig-tool"}}]}]"#,
+        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"function_call":{"name":"f","args":{},"id":"c1"},"thoughtSignature":"sig-tool"}]}]"#,
     );
 }
 
