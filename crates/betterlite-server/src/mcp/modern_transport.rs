@@ -40,13 +40,14 @@ impl ModernTransport {
         let message = match wire::decode_message(&bytes) {
             Ok(message) => message,
             Err(wire::DecodeError::Parse { .. }) => {
-                return plain_error_response(None, ErrorCode::PARSE_ERROR, "Parse error");
+                return error_response(None, ErrorCode::PARSE_ERROR, "Parse error", None);
             }
             Err(wire::DecodeError::Validation { .. }) => {
-                return plain_error_response(
+                return error_response(
                     None,
                     ErrorCode::INVALID_REQUEST,
                     INVALID_BODY_MESSAGE,
+                    None,
                 );
             }
         };
@@ -56,7 +57,7 @@ impl ModernTransport {
             }
             ClientJsonRpcMessage::Notification(_) => acknowledge_notification(&parts.headers),
             ClientJsonRpcMessage::Response(_) | ClientJsonRpcMessage::Error(_) => {
-                plain_error_response(None, ErrorCode::INVALID_REQUEST, INVALID_BODY_MESSAGE)
+                error_response(None, ErrorCode::INVALID_REQUEST, INVALID_BODY_MESSAGE, None)
             }
         }
     }
@@ -145,38 +146,23 @@ fn body_too_large() -> Response<Body> {
     response
 }
 
-pub(super) fn plain_error_response(
+pub(super) fn error_response(
     id: Option<&RequestId>,
     code: ErrorCode,
     message: &str,
+    data: Option<RejectionData<'_>>,
 ) -> Response<Body> {
-    let body = PlainErrorBody {
+    let body = ErrorBody {
         jsonrpc: "2.0",
         id,
-        error: PlainErrorDetail { code, message },
-    };
-    let payload = serde_json::to_string(&body).unwrap_or_default();
-    json_response(error_status(code), payload)
-}
-
-pub(super) fn unsupported_version_response(
-    id: Option<&RequestId>,
-    requested: &str,
-) -> Response<Body> {
-    let body = VersionErrorBody {
-        jsonrpc: "2.0",
-        id,
-        error: VersionErrorDetail {
-            code: ErrorCode::UNSUPPORTED_PROTOCOL_VERSION,
-            message: "Unsupported protocol version",
-            data: UnsupportedVersionData {
-                supported: &MODERN_PROTOCOL_VERSIONS,
-                requested,
-            },
+        error: ErrorDetail {
+            code,
+            message,
+            data,
         },
     };
     let payload = serde_json::to_string(&body).unwrap_or_default();
-    json_response(StatusCode::BAD_REQUEST, payload)
+    json_response(error_status(code), payload)
 }
 
 pub(super) fn json_response(status: StatusCode, payload: String) -> Response<Body> {
@@ -211,34 +197,28 @@ pub(super) const fn error_status(code: ErrorCode) -> StatusCode {
 }
 
 #[derive(Serialize)]
-struct PlainErrorBody<'text> {
+struct ErrorBody<'text> {
     jsonrpc: &'static str,
     id: Option<&'text RequestId>,
-    error: PlainErrorDetail<'text>,
+    error: ErrorDetail<'text>,
 }
 
 #[derive(Serialize)]
-struct PlainErrorDetail<'text> {
+struct ErrorDetail<'text> {
     code: ErrorCode,
     message: &'text str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<RejectionData<'text>>,
 }
 
 #[derive(Serialize)]
-struct VersionErrorBody<'text> {
-    jsonrpc: &'static str,
-    id: Option<&'text RequestId>,
-    error: VersionErrorDetail<'text>,
+#[serde(untagged)]
+pub(super) enum RejectionData<'text> {
+    UnsupportedVersion(UnsupportedVersionData<'text>),
 }
 
 #[derive(Serialize)]
-struct VersionErrorDetail<'text> {
-    code: ErrorCode,
-    message: &'static str,
-    data: UnsupportedVersionData<'text>,
-}
-
-#[derive(Serialize)]
-struct UnsupportedVersionData<'text> {
+pub(super) struct UnsupportedVersionData<'text> {
     supported: &'text [&'text str],
     requested: &'text str,
 }

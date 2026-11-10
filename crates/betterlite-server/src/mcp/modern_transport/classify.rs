@@ -7,8 +7,8 @@ use rmcp::model::{
 };
 
 use super::{
-    MCP_PROTOCOL_VERSION_HEADER, MODERN_PROTOCOL_VERSIONS, plain_error_response,
-    unsupported_version_response,
+    MCP_PROTOCOL_VERSION_HEADER, MODERN_PROTOCOL_VERSIONS, RejectionData, UnsupportedVersionData,
+    error_response,
 };
 
 const MCP_METHOD_HEADER: &str = "mcp-method";
@@ -34,12 +34,20 @@ impl Rejection {
     pub(super) fn respond(self, id: Option<&RequestId>) -> Response<Body> {
         match self {
             Self::InvalidParams(message) => {
-                plain_error_response(id, ErrorCode::INVALID_PARAMS, &message)
+                error_response(id, ErrorCode::INVALID_PARAMS, &message, None)
             }
             Self::HeaderMismatch(message) => {
-                plain_error_response(id, ErrorCode::HEADER_MISMATCH, &message)
+                error_response(id, ErrorCode::HEADER_MISMATCH, &message, None)
             }
-            Self::UnsupportedVersion(requested) => unsupported_version_response(id, &requested),
+            Self::UnsupportedVersion(requested) => error_response(
+                id,
+                ErrorCode::UNSUPPORTED_PROTOCOL_VERSION,
+                "Unsupported protocol version",
+                Some(RejectionData::UnsupportedVersion(UnsupportedVersionData {
+                    supported: &MODERN_PROTOCOL_VERSIONS,
+                    requested: &requested,
+                })),
+            ),
         }
     }
 }

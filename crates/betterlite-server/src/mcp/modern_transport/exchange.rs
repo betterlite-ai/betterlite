@@ -20,7 +20,7 @@ use tokio::time::{Interval, interval, timeout};
 
 use crate::mcp::stream_transport::wire;
 
-use super::{error_status, json_response, plain_error_response};
+use super::{error_response, error_status, json_response};
 
 const SERVICE_CHANNEL_CAPACITY: usize = 32;
 // the SDK's _SSE_PING_INTERVAL
@@ -46,7 +46,7 @@ where
         .await
         .is_err()
     {
-        return internal_error_response(&request_id);
+        return internal_failure(&request_id);
     }
     let mut outgoing = from_service_rx;
     match first_event(&mut outgoing, &mut to_service).await {
@@ -65,7 +65,7 @@ where
             to_service,
             running,
         ),
-        FirstEvent::Ended => internal_error_response(&request_id),
+        FirstEvent::Ended => internal_failure(&request_id),
         FirstEvent::TimedOut => {
             sse_response(Opening::Ping, outgoing, request_id, to_service, running)
         }
@@ -222,11 +222,12 @@ fn ping_interval() -> Interval {
     ping
 }
 
-fn internal_error_response(request_id: &RequestId) -> Response<Body> {
-    plain_error_response(
+fn internal_failure(request_id: &RequestId) -> Response<Body> {
+    error_response(
         Some(request_id),
         ErrorCode::INTERNAL_ERROR,
         INTERNAL_ERROR_MESSAGE,
+        None,
     )
 }
 
