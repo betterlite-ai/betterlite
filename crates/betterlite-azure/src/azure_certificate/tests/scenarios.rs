@@ -21,6 +21,9 @@ use crate::azure_client_secret::token::AccessToken;
 const DESERIALIZE: &str = "Failed to deserialize certificate in PEM or PKCS12 format";
 const INVALID_TENANT: &str = "Invalid tenant ID provided. You can locate your tenant ID by following the instructions here: https://learn.microsoft.com/partner-center/find-ids-and-domain-names";
 const PEM_FRAMING: &str = "Unable to load PEM file. See https://cryptography.io/en/latest/faq/#why-can-t-i-import-my-pem-file for more details. MalformedFraming";
+const KEY_DATA: &str = "Could not deserialize key data. The data may be in an incorrect format, it may be encrypted with an unsupported algorithm, or it may be an unsupported key type (e.g. EC curves with explicit parameters).";
+const LEGACY_ENCRYPTED: &str =
+    "a PEM private key encrypted with a Proc-Type header is not supported";
 const RSA_ONLY: &str =
     "The certificate must have an RSA private key because RS256 is used for signing";
 const SHORT_TOKEN: &str = r#"{"access_token":"t","expires_in":60}"#;
@@ -158,7 +161,24 @@ pub(super) fn invalid_certificate() {
     );
     assert_eq!(failure(&RSA_PKCS8[..400], None), PEM_FRAMING);
     assert_eq!(failure(b"-----BEGIN junk", None), PEM_FRAMING);
+    unreadable_keys();
     unusable_sources();
+}
+
+fn unreadable_keys() {
+    let pkcs8 = b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
+    let encrypted =
+        b"-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n";
+    let other = b"-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n";
+    let legacy = b"-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00112233445566778899AABBCCDDEEFF\n\nAAAA\n-----END RSA PRIVATE KEY-----\n";
+    assert_eq!(failure(pkcs8, None), KEY_DATA);
+    assert_eq!(failure(encrypted, Some(PASSWORD)), KEY_DATA);
+    assert_eq!(failure(other, None), KEY_DATA);
+    assert_eq!(failure(legacy, Some(PASSWORD)), LEGACY_ENCRYPTED);
+    assert_eq!(
+        failure(legacy, None),
+        "Password was not given but private key is encrypted"
+    );
 }
 
 fn unusable_sources() {
