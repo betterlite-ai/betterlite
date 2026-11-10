@@ -101,22 +101,13 @@ fn credentials(
     }
 }
 
-fn try_lookup(
+fn lookup(
     client: &Fixture,
     settings: &LemonadeCredentials,
     model: &str,
     deployment: DeploymentCredentials<'_>,
 ) -> Result<LemonadeModelInfo, ModelInfoReplyError> {
     runtime().block_on(get_model_info(client, settings, model, deployment))
-}
-
-fn lookup(
-    client: &Fixture,
-    settings: &LemonadeCredentials,
-    model: &str,
-    deployment: DeploymentCredentials<'_>,
-) -> LemonadeModelInfo {
-    try_lookup(client, settings, model, deployment).unwrap()
 }
 
 fn json(source: &str) -> Json {
@@ -368,7 +359,8 @@ fn transport_failure_returns_defaults() {
         &settings,
         "lemonade/org/model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_string(&info).unwrap(),
         text(
@@ -392,7 +384,8 @@ fn status_failures_return_defaults() {
             &settings,
             "model",
             DeploymentCredentials::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(info.max_input_tokens, (status == 201).then_some(8));
         assert_eq!(info.max_output_tokens, None);
     }
@@ -407,7 +400,8 @@ fn invalid_bodies_return_defaults() {
             &settings,
             "model",
             DeploymentCredentials::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(info.max_input_tokens, None);
         assert_eq!(info.key, "lemonade/model");
     }
@@ -415,7 +409,7 @@ fn invalid_bodies_return_defaults() {
 
 fn structural_malformed_reply_is_an_error() {
     let client = Fixture::answering(200, r#"[{"max_input_tokens":8}]"#);
-    let error = try_lookup(
+    let error = lookup(
         &client,
         &credentials(None, None, None),
         "model",
@@ -437,7 +431,8 @@ fn model_prefix_and_encoding() {
             api_base: Some("http://explicit:9000/"),
             api_key: Some(&literal_key),
         },
-    );
+    )
+    .unwrap();
     assert_eq!(info.key, "lemonade/lemonade/deep");
     let requests = client.requests();
     assert_eq!(
@@ -458,7 +453,8 @@ fn empty_base_keeps_env_base_without_auth() {
             api_base: Some(""),
             api_key: None,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(info.key, "lemonade/m\u{f6}del name_b.c-d~e");
     let requests = client.requests();
     assert_eq!(
@@ -487,7 +483,8 @@ fn projects_all_limits() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_string(&info).unwrap(),
         text(
@@ -506,7 +503,8 @@ fn falls_back_to_the_output_limit() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(info.max_tokens, Some(64));
     assert_eq!(info.max_input_tokens, Some(100));
     assert!(info.provider_specific_entry.is_none());
@@ -520,7 +518,8 @@ fn keeps_the_input_limit_out_of_max_tokens() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(info.max_tokens, None);
     assert_eq!(info.max_input_tokens, Some(100));
     assert_eq!(info.max_output_tokens, None);
@@ -534,7 +533,8 @@ fn rejects_nonpositive_limits() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(info.max_tokens, None);
     assert_eq!(info.max_output_tokens, None);
 }
@@ -550,7 +550,8 @@ fn keeps_the_provider_entry() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(info.max_input_tokens, Some(512));
     assert_eq!(
         serde_json::to_string(&info.provider_specific_entry).unwrap(),
@@ -602,7 +603,8 @@ fn lemonade_model_metadata_secret_safe_failure() {
         &settings,
         "model",
         DeploymentCredentials::default(),
-    );
+    )
+    .unwrap();
     let rendered = serde_json::to_string(&info).unwrap();
     assert!(!rendered.contains("fixture-secret-key"));
     assert!(!rendered.contains("fixture-global-key"));
