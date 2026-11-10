@@ -1,0 +1,24 @@
+kind: helper
+name: hyperbolic-and-lambda-identities
+call:
+  agent_host_policy:
+    scenarios:
+      - environment: {}
+        calls:
+          - {op: info, host: hyperbolic}
+          - {op: info, host: lambda_ai}
+          - {op: supported, host: hyperbolic}
+      - environment:
+          HYPERBOLIC_API_BASE: https://hyperbolic.example/v1
+          HYPERBOLIC_API_KEY: hyperbolic-key
+          LAMBDA_API_BASE: https://lambda.example/v1
+          LAMBDA_API_KEY: lambda-key
+        calls:
+          - {op: info, host: hyperbolic}
+          - {op: info, host: lambda_ai}
+      - environment: {}
+        calls:
+          - {op: info, host: hyperbolic, api_base: https://explicit/v1, api_key: explicit}
+          - {op: info, host: lambda_ai, api_base: "", api_key: ""}
+env: {}
+compare: {ignore: []}

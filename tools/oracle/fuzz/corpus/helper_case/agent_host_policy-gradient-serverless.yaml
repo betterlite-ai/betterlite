@@ -1,0 +1,27 @@
+kind: helper
+name: gradient-serverless-with-agent-env
+call:
+  agent_host_policy:
+    scenarios:
+      - environment:
+          GRADIENT_AI_AGENT_ENDPOINT: https://agent.example
+          GRADIENT_AI_API_KEY: env-key
+        calls:
+          - {op: info, host: gradient}
+          - {op: gradient_url}
+          - {op: gradient_url, api_base: https://inference.do-ai.run}
+          - {op: gradient_url, api_base: https://custom.example/}
+          - {op: info, host: gradient, api_base: https://explicit.example}
+      - environment:
+          GRADIENT_AI_API_KEY: env-key
+        calls:
+          - {op: info, host: gradient}
+          - {op: gradient_url}
+          - {op: gradient_url, api_base: https://inference.do-ai.run}
+      - environment:
+          GRADIENT_AI_AGENT_ENDPOINT: https://inference.do-ai.run
+        calls:
+          - {op: gradient_url, api_base: https://inference.do-ai.run}
+          - {op: gradient_url}
+env: {}
+compare: {ignore: []}
