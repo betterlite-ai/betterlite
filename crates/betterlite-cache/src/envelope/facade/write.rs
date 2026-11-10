@@ -5,7 +5,6 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 
 use super::{Dynamic, ResponseCache, WriteError};
 use crate::backend::Ttl;
-use crate::envelope::limits::write_ttl;
 use crate::envelope::request::EnvelopeRequest;
 use crate::envelope::{RESPONSE_FIELD, TIMESTAMP_FIELD};
 
@@ -25,8 +24,12 @@ where
     C: ConsoleSink + Send + Sync,
 {
     let key = cache.resolve_key(request)?;
-    let ttl = write_ttl(cache.settings.ttl, &request.control)
+    // The cache control ttl wins over Cache.ttl, and the integer control value becomes the backend's f64 ttl
+    let control_ttl = request
+        .control
+        .ttl
         .and_then(|seconds| serde_json::Number::from(seconds).as_f64());
+    let ttl = control_ttl.or(cache.settings.ttl);
     let mut fields = BTreeMap::new();
     fields.insert(
         TIMESTAMP_FIELD.to_owned(),

@@ -304,13 +304,6 @@ pub(crate) fn control(
     }
 }
 
-pub(crate) fn default_settings() -> EnvelopeSettings {
-    EnvelopeSettings {
-        ttl: None,
-        redis_flush_size: None,
-    }
-}
-
 pub(crate) fn empty_request() -> EnvelopeRequest {
     EnvelopeRequest {
         cache_key: None,
@@ -329,17 +322,6 @@ pub(crate) fn with_params(params: Vec<KeyParam>) -> EnvelopeRequest {
     let mut request = empty_request();
     request.key.params = params;
     request
-}
-
-pub(crate) fn param(name: &str, value: KeyValue) -> KeyParam {
-    KeyParam {
-        name: name.to_owned(),
-        value,
-    }
-}
-
-pub(crate) fn string(text: &str) -> KeyValue {
-    KeyValue::String(text.to_owned())
 }
 
 pub(crate) fn number(value: f64) -> KeyValue {

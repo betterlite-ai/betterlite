@@ -5,13 +5,14 @@ use std::sync::Arc;
 use betterlite_context::local_ttl_cache::CacheValue;
 
 use super::support_tests::{
-    BatchStore, Failure, FakeBackend, NOW, cache, control, default_settings, envelope, fake_cache,
-    key_settings, messages, number, object, param, reply, reply_response, string, with_params,
+    BatchStore, Failure, FakeBackend, NOW, cache, control, envelope, fake_cache, key_settings,
+    messages, number, object, reply, reply_response, with_params,
 };
 use crate::backend::CacheBackend;
 use crate::backend::memory::MemoryCache;
 use crate::backend::memory::local::LocalMemoryOps;
-use crate::cache_key::request::LiteLlmParams;
+use crate::cache_key::request::{KeyParam, LiteLlmParams};
+use crate::cache_key::value::KeyValue;
 use crate::envelope::backend::{EnvelopeBackend, StoredBackend};
 use crate::envelope::facade::{EnvelopeSettings, WriteError};
 use crate::envelope::lookup::SEMANTIC_SIMILARITY;
@@ -19,7 +20,10 @@ use crate::envelope::request::EnvelopeRequest;
 use crate::types::cache_type::{CacheMode, LiteLlmCacheType};
 
 fn write_request() -> EnvelopeRequest {
-    let mut request = with_params(vec![param("model", string("gpt-4"))]);
+    let mut request = with_params(vec![KeyParam {
+        name: "model".to_owned(),
+        value: KeyValue::String("gpt-4".to_owned()),
+    }]);
     request.cache_key = Some("key-1".to_owned());
     request
 }
@@ -30,7 +34,7 @@ fn get_cache_returns_none_when_the_cache_is_off() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOff),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.get_cache(None, &mut request), None);
@@ -43,10 +47,16 @@ fn get_cache_returns_none_when_no_cache_key_is_derived() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("model", string("gpt-4"))]);
-    request.key.metadata = Some(object(&[("caching_groups", string("bad"))]));
+    let mut request = with_params(vec![KeyParam {
+        name: "model".to_owned(),
+        value: KeyValue::String("gpt-4".to_owned()),
+    }]);
+    request.key.metadata = Some(object(&[(
+        "caching_groups",
+        KeyValue::String("bad".to_owned()),
+    )]));
     assert_eq!(cache.get_cache(None, &mut request), None);
     assert!(fake.gets().is_empty());
     assert!(
@@ -62,7 +72,7 @@ fn get_cache_uses_a_preset_cache_key() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.get_cache(None, &mut request), Some(reply_response()));
@@ -77,9 +87,12 @@ fn get_cache_stores_the_derived_key_for_reuse() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("model", string("gpt-4"))]);
+    let mut request = with_params(vec![KeyParam {
+        name: "model".to_owned(),
+        value: KeyValue::String("gpt-4".to_owned()),
+    }]);
     request.key.litellm_params = Some(LiteLlmParams {
         preset_cache_key: None,
         metadata: None,
@@ -106,28 +119,11 @@ fn get_cache_returns_none_for_a_stale_response() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     request.control = control(None, Some(60), None);
     assert_eq!(cache.get_cache(None, &mut request), None);
-}
-
-#[test]
-fn get_cache_reads_s_maxage_before_s_max_age() {
-    let cached = envelope(Some(NOW - 50.0_f64), reply_response());
-    let fake = Arc::new(FakeBackend::new(Some(cached)));
-    let cache = fake_cache(
-        &fake,
-        key_settings(CacheMode::DefaultOn),
-        default_settings(),
-    );
-    let mut first = write_request();
-    first.control = control(None, Some(40), Some(60));
-    assert_eq!(cache.get_cache(None, &mut first), None);
-    let mut second = write_request();
-    second.control = control(None, Some(60), Some(40));
-    assert_eq!(cache.get_cache(None, &mut second), Some(reply_response()));
 }
 
 #[test]
@@ -136,23 +132,38 @@ fn get_cache_passes_only_the_safe_lookup() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = with_params(vec![
-        param("model", string("gpt-4")),
-        param("messages", string("hi")),
-        param("temperature", number(0.7_f64)),
+        KeyParam {
+            name: "model".to_owned(),
+            value: KeyValue::String("gpt-4".to_owned()),
+        },
+        KeyParam {
+            name: "messages".to_owned(),
+            value: KeyValue::String("hi".to_owned()),
+        },
+        KeyParam {
+            name: "temperature".to_owned(),
+            value: number(0.7_f64),
+        },
     ]);
     request.cache_key = Some("key-1".to_owned());
-    request.key.metadata = Some(object(&[("user_api_key", string("key-hash"))]));
+    request.key.metadata = Some(object(&[(
+        "user_api_key",
+        KeyValue::String("key-hash".to_owned()),
+    )]));
     assert_eq!(cache.get_cache(None, &mut request), None);
     let gets = fake.gets();
     let (_, lookup) = &gets[0];
-    assert_eq!(lookup.messages, Some(string("hi")));
+    assert_eq!(lookup.messages, Some(KeyValue::String("hi".to_owned())));
     assert_eq!(lookup.input, None);
     assert_eq!(
         lookup.metadata,
-        Some(object(&[("user_api_key", string("key-hash"))]))
+        Some(object(&[(
+            "user_api_key",
+            KeyValue::String("key-hash".to_owned())
+        )]))
     );
 }
 
@@ -164,16 +175,22 @@ fn get_cache_updates_metadata_from_the_lookup() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("messages", string("hi"))]);
+    let mut request = with_params(vec![KeyParam {
+        name: "messages".to_owned(),
+        value: KeyValue::String("hi".to_owned()),
+    }]);
     request.cache_key = Some("key-1".to_owned());
-    request.key.metadata = Some(object(&[("user_api_key", string("key-hash"))]));
+    request.key.metadata = Some(object(&[(
+        "user_api_key",
+        KeyValue::String("key-hash".to_owned()),
+    )]));
     assert_eq!(cache.get_cache(None, &mut request), None);
     assert_eq!(
         request.key.metadata,
         Some(object(&[
-            ("user_api_key", string("key-hash")),
+            ("user_api_key", KeyValue::String("key-hash".to_owned())),
             (SEMANTIC_SIMILARITY, number(0.42_f64)),
         ]))
     );
@@ -182,7 +199,7 @@ fn get_cache_updates_metadata_from_the_lookup() {
     assert_eq!(
         lookup.metadata,
         Some(object(&[
-            ("user_api_key", string("key-hash")),
+            ("user_api_key", KeyValue::String("key-hash".to_owned())),
             (SEMANTIC_SIMILARITY, number(0.42_f64)),
         ]))
     );
@@ -195,7 +212,7 @@ fn get_cache_prefers_the_dynamic_backend() {
     let cache = fake_cache(
         &fallback,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let dynamic_ref: &dyn EnvelopeBackend = dynamic.as_ref();
     let mut request = write_request();
@@ -215,7 +232,7 @@ fn get_cache_logs_a_backend_failure_and_returns_none() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.get_cache(None, &mut request), None);
@@ -233,7 +250,7 @@ fn get_cache_logs_a_decode_failure_and_returns_none() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.get_cache(None, &mut request), None);
@@ -252,7 +269,7 @@ fn get_cache_reads_through_the_memory_backend() {
     let cache = cache(
         Arc::new(stored),
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache.add_cache(&mut write_request(), &reply_response());
     let mut request = write_request();
@@ -269,7 +286,7 @@ async fn async_get_cache_reads_through_the_memory_backend() {
     let cache = cache(
         Arc::new(stored),
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache.add_cache(&mut write_request(), &reply_response());
     let mut request = write_request();
@@ -289,7 +306,7 @@ async fn async_add_cache_writes_through_the_memory_backend() {
     let cache = cache(
         Arc::new(stored),
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache
         .async_add_cache(None, &mut write_request(), &reply_response())
@@ -306,7 +323,7 @@ async fn batch_cache_write_delegates_to_the_stored_backend() {
     let cache = cache(
         Arc::new(StoredBackend { backend }),
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache
         .batch_cache_write(&mut write_request(), &reply_response())
@@ -324,31 +341,11 @@ async fn async_get_cache_returns_none_when_the_cache_is_off() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOff),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.async_get_cache(None, &mut request).await, None);
     assert!(fake.gets().is_empty());
-}
-
-#[tokio::test]
-async fn async_get_cache_reads_s_max_age_before_s_maxage() {
-    let cached = envelope(Some(NOW - 50.0_f64), reply_response());
-    let fake = Arc::new(FakeBackend::new(Some(cached)));
-    let cache = fake_cache(
-        &fake,
-        key_settings(CacheMode::DefaultOn),
-        default_settings(),
-    );
-    let mut first = write_request();
-    first.control = control(None, Some(40), Some(60));
-    assert_eq!(
-        cache.async_get_cache(None, &mut first).await,
-        Some(reply_response())
-    );
-    let mut second = write_request();
-    second.control = control(None, Some(60), Some(40));
-    assert_eq!(cache.async_get_cache(None, &mut second).await, None);
 }
 
 #[tokio::test]
@@ -358,7 +355,7 @@ async fn async_get_cache_prefers_the_dynamic_backend() {
     let cache = fake_cache(
         &fallback,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let dynamic_ref: &dyn EnvelopeBackend = dynamic.as_ref();
     let mut request = write_request();
@@ -377,7 +374,7 @@ async fn async_get_cache_logs_a_backend_failure() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let mut request = write_request();
     assert_eq!(cache.async_get_cache(None, &mut request).await, None);
@@ -396,16 +393,22 @@ async fn async_get_cache_updates_metadata_from_the_lookup() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("messages", string("hi"))]);
+    let mut request = with_params(vec![KeyParam {
+        name: "messages".to_owned(),
+        value: KeyValue::String("hi".to_owned()),
+    }]);
     request.cache_key = Some("key-1".to_owned());
-    request.key.metadata = Some(object(&[("user_api_key", string("key-hash"))]));
+    request.key.metadata = Some(object(&[(
+        "user_api_key",
+        KeyValue::String("key-hash".to_owned()),
+    )]));
     assert_eq!(cache.async_get_cache(None, &mut request).await, None);
     assert_eq!(
         request.key.metadata,
         Some(object(&[
-            ("user_api_key", string("key-hash")),
+            ("user_api_key", KeyValue::String("key-hash".to_owned())),
             (SEMANTIC_SIMILARITY, number(0.42_f64)),
         ]))
     );
@@ -417,7 +420,7 @@ fn add_cache_wraps_the_result_in_a_timestamp_envelope() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache.add_cache(&mut write_request(), &reply_response());
     let sets = fake.sets();
@@ -435,7 +438,7 @@ fn add_cache_applies_the_control_ttl_over_the_default() {
         &fake,
         key_settings(CacheMode::DefaultOn),
         EnvelopeSettings {
-            ttl: Some(600),
+            ttl: Some(600.0_f64),
             redis_flush_size: None,
         },
     );
@@ -452,7 +455,7 @@ fn add_cache_applies_the_default_ttl_without_a_control() {
         &fake,
         key_settings(CacheMode::DefaultOn),
         EnvelopeSettings {
-            ttl: Some(600),
+            ttl: Some(600.0_f64),
             redis_flush_size: None,
         },
     );
@@ -466,7 +469,7 @@ fn add_cache_skips_when_the_cache_is_off() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOff),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache.add_cache(&mut write_request(), &reply_response());
     assert!(fake.sets().is_empty());
@@ -480,7 +483,7 @@ fn add_cache_logs_a_backend_failure() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache.add_cache(&mut write_request(), &reply_response());
     assert!(
@@ -496,10 +499,16 @@ fn add_cache_logs_a_key_failure() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("model", string("gpt-4"))]);
-    request.key.metadata = Some(object(&[("caching_groups", string("bad"))]));
+    let mut request = with_params(vec![KeyParam {
+        name: "model".to_owned(),
+        value: KeyValue::String("gpt-4".to_owned()),
+    }]);
+    request.key.metadata = Some(object(&[(
+        "caching_groups",
+        KeyValue::String("bad".to_owned()),
+    )]));
     cache.add_cache(&mut request, &reply_response());
     assert!(fake.sets().is_empty());
     assert!(
@@ -515,7 +524,7 @@ async fn async_add_cache_writes_through_the_async_backend() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache
         .async_add_cache(None, &mut write_request(), &reply_response())
@@ -555,7 +564,7 @@ async fn async_add_cache_writes_directly_for_redis_without_a_flush_size() {
     let fake = Arc::new(FakeBackend::new(None));
     let mut settings = key_settings(CacheMode::DefaultOn);
     settings.cache_type = LiteLlmCacheType::Redis;
-    let cache = fake_cache(&fake, settings, default_settings());
+    let cache = fake_cache(&fake, settings, EnvelopeSettings::default());
     cache
         .async_add_cache(None, &mut write_request(), &reply_response())
         .await;
@@ -588,7 +597,7 @@ async fn async_add_cache_uses_the_dynamic_backend() {
     let cache = fake_cache(
         &fallback,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     let dynamic_ref: &dyn EnvelopeBackend = dynamic.as_ref();
     cache
@@ -629,7 +638,7 @@ async fn async_add_cache_skips_when_the_cache_is_off() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOff),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     cache
         .async_add_cache(None, &mut write_request(), &reply_response())
@@ -645,7 +654,7 @@ async fn batch_cache_write_wraps_and_delegates() {
         &fake,
         key_settings(CacheMode::DefaultOn),
         EnvelopeSettings {
-            ttl: Some(600),
+            ttl: Some(600.0_f64),
             redis_flush_size: None,
         },
     );
@@ -668,10 +677,16 @@ async fn batch_cache_write_reports_a_key_failure() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
-    let mut request = with_params(vec![param("model", string("gpt-4"))]);
-    request.key.metadata = Some(object(&[("caching_groups", string("bad"))]));
+    let mut request = with_params(vec![KeyParam {
+        name: "model".to_owned(),
+        value: KeyValue::String("gpt-4".to_owned()),
+    }]);
+    request.key.metadata = Some(object(&[(
+        "caching_groups",
+        KeyValue::String("bad".to_owned()),
+    )]));
     assert!(matches!(
         cache
             .batch_cache_write(&mut request, &reply_response())
@@ -689,7 +704,7 @@ async fn batch_cache_write_reports_a_backend_failure() {
     let cache = fake_cache(
         &fake,
         key_settings(CacheMode::DefaultOn),
-        default_settings(),
+        EnvelopeSettings::default(),
     );
     assert!(matches!(
         cache

@@ -9,7 +9,6 @@ use thiserror::Error;
 
 use super::backend::EnvelopeBackend;
 use super::decode::decode_cached;
-use super::limits::{async_max_age, sync_max_age};
 use super::lookup::{CacheLookup, update_metadata};
 use super::request::EnvelopeRequest;
 use crate::backend::BackendError;
@@ -29,7 +28,7 @@ pub type CachedResponse = Option<CacheValue>;
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvelopeSettings {
-    pub ttl: Option<i64>,
+    pub ttl: Option<f64>,
     pub redis_flush_size: Option<i64>,
 }
 
@@ -68,7 +67,8 @@ where
 {
     #[must_use]
     pub fn get_cache(&self, dynamic: Dynamic<'_>, request: &mut EnvelopeRequest) -> CachedResponse {
-        let mut read = self.start_read(request, sync_max_age(&request.control))?;
+        let max_age = request.control.s_maxage.or(request.control.s_max_age); // s-maxage first
+        let mut read = self.start_read(request, max_age)?;
         let backend = dynamic.unwrap_or_else(|| self.backend.as_ref());
         let outcome = backend.get_cache(&read.key, &mut read.lookup);
         self.complete_read(request, &read, outcome)
@@ -80,9 +80,12 @@ where
         dynamic: Dynamic<'_>,
         request: &mut EnvelopeRequest,
     ) -> CachedResponse {
-        let max_age = async_max_age(&request.control);
+        let max_age = request.control.s_max_age.or(request.control.s_maxage); // s-max-age first
         let mut read = self.start_read(request, max_age)?;
-        let outcome = self.async_fetch(dynamic, &read.key, &mut read.lookup).await;
+        let outcome = dynamic
+            .unwrap_or_else(|| self.backend.as_ref())
+            .async_get_cache(&read.key, &mut read.lookup)
+            .await;
         self.complete_read(request, &read, outcome)
     }
 
@@ -145,7 +148,8 @@ where
         let key = match self.resolve_key(request) {
             Ok(key) => key,
             Err(error) => {
-                self.log_exception(&error);
+                let message = format!("An exception occurred: {error}");
+                let _printed = self.hooks.main_print_verbose(Payload::String(message));
                 return None;
             }
         };
@@ -165,7 +169,8 @@ where
         let cached = match outcome {
             Ok(cached) => cached,
             Err(error) => {
-                self.log_exception(&error);
+                let message = format!("An exception occurred: {error}");
+                let _printed = self.hooks.main_print_verbose(Payload::String(message));
                 return None;
             }
         };
@@ -173,22 +178,11 @@ where
         match decode_cached(cached.as_ref(), read.max_age, (self.clock)()) {
             Ok(response) => response,
             Err(error) => {
-                self.log_exception(&error);
+                let message = format!("An exception occurred: {error}");
+                let _printed = self.hooks.main_print_verbose(Payload::String(message));
                 None
             }
         }
-    }
-
-    async fn async_fetch(
-        &self,
-        dynamic: Dynamic<'_>,
-        key: &str,
-        lookup: &mut CacheLookup,
-    ) -> Result<Option<CacheValue>, BackendError> {
-        dynamic
-            .unwrap_or_else(|| self.backend.as_ref())
-            .async_get_cache(key, lookup)
-            .await
     }
 
     fn resolve_key(&self, request: &mut EnvelopeRequest) -> Result<String, CacheKeyError> {
@@ -196,14 +190,6 @@ where
             Some(key) => Ok(key),
             None => get_cache_key(&mut request.key, &self.key_settings, &self.hooks),
         }
-    }
-
-    fn log_exception<Failure>(&self, failure: &Failure)
-    where
-        Failure: Display,
-    {
-        let message = format!("An exception occurred: {failure}");
-        let _printed = self.hooks.main_print_verbose(Payload::String(message));
     }
 
     fn log_add_failure<Failure>(&self, failure: &Failure)

@@ -12,7 +12,7 @@ call:
         choices:
           - {message: {role: assistant, content: hi}}
       settings:
-        ttl: 600
+        ttl: 1.5
 env: {}
 compare:
   ignore:

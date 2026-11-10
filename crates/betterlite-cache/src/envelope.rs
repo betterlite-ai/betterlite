@@ -4,7 +4,6 @@ pub const TIMESTAMP_FIELD: &str = "timestamp";
 pub mod backend;
 pub mod decode;
 pub mod facade;
-pub mod limits;
 pub mod lookup;
 pub mod request;
 
