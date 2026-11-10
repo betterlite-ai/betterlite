@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use futures_util::{Stream, StreamExt as _};
 use secrecy::SecretString;
 use serde_json::{Map, Value};
@@ -111,9 +112,13 @@ async fn serve_until_closed(listener: TcpListener) -> bool {
 }
 
 fn new_call() -> CodestralCall {
+    new_call_with(TransportLimits::DEFAULT)
+}
+
+fn new_call_with(limits: TransportLimits) -> CodestralCall {
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     CodestralCall {
-        client: ProxiedClient::outbound(&policy).unwrap(),
+        client: ProxiedClient::build(base_builder(), &policy, limits).unwrap(),
     }
 }
 
@@ -480,4 +485,52 @@ async fn a_sync_stream_uses_the_shared_client_timeout() {
         }
     ));
     assert_eq!(error.status_code(), Some(408));
+}
+
+#[tokio::test]
+async fn a_connect_timeout_reports_408() {
+    let mut limits = TransportLimits::DEFAULT;
+    limits.connect_timeout = Duration::from_millis(100);
+    let call = new_call_with(limits);
+    let plan = plan_for("http://192.0.2.1:9/fim", Mode::Sync, false, None);
+    let mut recorder = Recorder::default();
+    let error = call
+        .complete(&plan, source(), &mut recorder)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CodestralCallError::Transport {
+            source: TransportError::ConnectTimeout(_),
+            ..
+        }
+    ));
+    assert_eq!(error.status_code(), Some(408));
+}
+
+#[tokio::test]
+async fn an_async_reply_timeout_maps_to_status_500() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let call = new_call();
+    let plan = plan_for(
+        &format!("http://{address}/fim"),
+        Mode::Async,
+        false,
+        Some(Duration::from_millis(50)),
+    );
+    let mut recorder = Recorder::default();
+    let (outcome, _captured) = tokio::join!(
+        call.complete(&plan, source(), &mut recorder),
+        serve_delayed(listener, Duration::from_millis(300), b"{}")
+    );
+    let error = outcome.unwrap_err();
+    assert!(matches!(
+        error,
+        CodestralCallError::Transport {
+            source: TransportError::Deadline(_),
+            ..
+        }
+    ));
+    assert_eq!(error.status_code(), Some(500));
 }

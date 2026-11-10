@@ -26,7 +26,6 @@ pub(super) async fn make_call(
     if response.response.status().as_u16() != COMPLETION_OK {
         return Err(status_failure(response, limit).await);
     }
-    // LiteLLM's sync streaming branch never logs post_call; only make_call, reached by the async stream, does
     if plan.mode == Mode::Async {
         let logged = serde_json::to_string(&plan.body)
             .map_err(|source| CodestralCallError::Encode { source })?;
