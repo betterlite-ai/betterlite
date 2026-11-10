@@ -1,0 +1,24 @@
+kind: helper
+name: bedrock-signing-signed-header-allowlist
+call:
+  bedrock_signing:
+    calls:
+      - filter_headers:
+          headers:
+            host: bedrock-runtime.us-west-2.amazonaws.com
+            Content-Type: application/json
+            Date: 'Thu, 01 Jan 2026 00:00:00 GMT'
+            X-Amz-Date: 20260101T000000Z
+            x-amz-security-token: session-token
+            X-Amz-Content-SHA256: abc
+            x-amz-algorithm: AWS4-HMAC-SHA256
+            x-amz-credential: AKIDEXAMPLE/20260101/us-west-2/bedrock/aws4_request
+            x-amz-signedheaders: host
+            x-amz-signature: deadbeef
+            x-amzn-trace-id: Root=1-abc
+            x-custom: keep
+            user-agent: fixture
+            connection: keep-alive
+            x-null: null
+env: {}
+compare: {ignore: []}
