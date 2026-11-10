@@ -30,9 +30,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::TranslateLibpqSslParams { url } => translate_value(url),
-            Input::StripPrismaQueryParams { url } => {
-                Ok(serde_json::Value::String(strip_prisma_query_params(url)))
-            }
+            Input::StripPrismaQueryParams { url } => strip_value(url),
             Input::LibpqTlsParams { pairs, sslaccept } => {
                 Ok(pairs_value(&libpq_tls_params(pairs, sslaccept.as_deref())))
             }
@@ -55,6 +53,12 @@ fn translate_value(url: &str) -> HelperResult {
         .map(|(path, host, port)| serde_json::json!([path, host, port]))
         .collect();
     Ok(serde_json::json!({"url": translated, "resolved": calls}))
+}
+
+fn strip_value(url: &str) -> HelperResult {
+    let stripped =
+        strip_prisma_query_params(url).map_err(|error| invalid_value(&error.to_string()))?;
+    Ok(serde_json::Value::String(stripped))
 }
 
 fn scenario_value(input: &Input) -> serde_json::Value {

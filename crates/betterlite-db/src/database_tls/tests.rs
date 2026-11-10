@@ -15,6 +15,7 @@ use super::options::native_connection_options;
 use super::translation::{
     TranslateError, libpq_tls_params, strip_prisma_query_params, translate_libpq_ssl_params,
 };
+use crate::database_url_policy::url_codec::urlencode_pairs_quote;
 
 mod certificates;
 mod front;
@@ -42,13 +43,17 @@ fn translate(url: &str) -> (String, Vec<(String, String, u16)>) {
     (translated, calls)
 }
 
+fn strip(url: &str) -> String {
+    strip_prisma_query_params(url).expect("the URL strips")
+}
+
 fn client_url(server: &server::Server, host: &str, port: u16, params: &[(&str, &str)]) -> String {
     let parsed = Url::parse(&server.url).expect("the upstream URL");
     let pairs: Vec<(String, String)> = params
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect();
-    let query = super::url_query::encode_pairs(&pairs, false);
+    let query = urlencode_pairs_quote(&pairs);
     format!(
         "postgresql://{}:{}@{host}:{port}{}?{query}",
         parsed.username(),
@@ -225,7 +230,7 @@ fn port_errors_only_when_a_root_resolves() {
 fn strip_exact_libpq_allowlist() {
     let url = "postgresql://u@h/db?connection_limit=10&pool_timeout=60&socket_timeout=5&max_idle_connection_lifetime=60&schema=tenant&pgbouncer=true&sslmode=require&sslmode=prefer&application_name=app&connect_timeout=5&client_encoding=UTF8&options=-c%20x%3D1&service=svc&gssencmode=disable&krbsrvname=postgres&target_session_attrs=any&sslaccept=accept_invalid_certs";
     assert_eq!(
-        strip_prisma_query_params(url),
+        strip(url),
         "postgresql://u@h/db?sslmode=require&sslmode=prefer&application_name=app&connect_timeout=5&client_encoding=UTF8&options=-c%20x%3D1&service=svc&gssencmode=disable&krbsrvname=postgres&target_session_attrs=any"
     );
 }
@@ -233,33 +238,24 @@ fn strip_exact_libpq_allowlist() {
 #[test]
 fn strip_blank_pairs_and_percent_spaces() {
     assert_eq!(
-        strip_prisma_query_params(
+        strip(
             "postgresql://u@h/db?application_name=my%20app&connect_timeout=&schema=tenant&sslaccept="
         ),
         "postgresql://u@h/db?application_name=my%20app"
     );
     assert_eq!(
-        strip_prisma_query_params("postgresql://u@h/db?application_name=my+app"),
+        strip("postgresql://u@h/db?application_name=my+app"),
         "postgresql://u@h/db?application_name=my%20app"
     );
-    assert_eq!(
-        strip_prisma_query_params("postgresql://u@h/db"),
-        "postgresql://u@h/db"
-    );
-    assert_eq!(
-        strip_prisma_query_params("postgresql://u@h/db?"),
-        "postgresql://u@h/db?"
-    );
-    assert_eq!(
-        strip_prisma_query_params("postgresql:///db?schema=tenant"),
-        "postgresql:/db"
-    );
+    assert_eq!(strip("postgresql://u@h/db"), "postgresql://u@h/db");
+    assert_eq!(strip("postgresql://u@h/db?"), "postgresql://u@h/db?");
+    assert_eq!(strip("postgresql:///db?schema=tenant"), "postgresql:/db");
 }
 
 #[test]
 fn sslkey_client_cert_bypass() {
     assert_eq!(
-        strip_prisma_query_params(
+        strip(
             "postgresql://u@h/db?sslcert=client.pem&sslkey=client.key&sslmode=verify-full&sslaccept=strict"
         ),
         "postgresql://u@h/db?sslcert=client.pem&sslkey=client.key&sslmode=verify-full"
@@ -274,7 +270,7 @@ fn sslkey_client_cert_bypass() {
 #[test]
 fn absent_sslaccept_drops_ca() {
     assert_eq!(
-        strip_prisma_query_params("postgresql://u@h/db?sslcert=ca.pem&sslmode=require"),
+        strip("postgresql://u@h/db?sslcert=ca.pem&sslmode=require"),
         "postgresql://u@h/db?sslmode=require"
     );
     let pairs = vec![("sslcert".to_owned(), "ca.pem".to_owned())];
@@ -284,9 +280,7 @@ fn absent_sslaccept_drops_ca() {
 #[test]
 fn accept_invalid_certs_drops_ca() {
     assert_eq!(
-        strip_prisma_query_params(
-            "postgresql://u@h/db?sslcert=ca.pem&sslmode=require&sslaccept=accept_invalid_certs"
-        ),
+        strip("postgresql://u@h/db?sslcert=ca.pem&sslmode=require&sslaccept=accept_invalid_certs"),
         "postgresql://u@h/db?sslmode=require"
     );
 }
@@ -294,9 +288,7 @@ fn accept_invalid_certs_drops_ca() {
 #[test]
 fn disable_drops_prisma_ca() {
     assert_eq!(
-        strip_prisma_query_params(
-            "postgresql://u@h/db?sslcert=ca.pem&sslmode=disable&sslaccept=strict"
-        ),
+        strip("postgresql://u@h/db?sslcert=ca.pem&sslmode=disable&sslaccept=strict"),
         "postgresql://u@h/db?sslmode=disable"
     );
     let pairs = vec![
@@ -312,7 +304,7 @@ fn disable_drops_prisma_ca() {
 #[test]
 fn strict_forces_verify_full() {
     assert_eq!(
-        strip_prisma_query_params(
+        strip(
             "postgresql://u@h/db?sslcert=ca.pem&sslmode=prefer&sslaccept=strict&application_name=app"
         ),
         "postgresql://u@h/db?application_name=app&sslrootcert=ca.pem&sslmode=verify-full"
@@ -322,7 +314,7 @@ fn strict_forces_verify_full() {
 #[test]
 fn existing_root_wins() {
     assert_eq!(
-        strip_prisma_query_params(
+        strip(
             "postgresql://u@h/db?sslcert=prisma-ca.pem&sslrootcert=explicit.pem&sslmode=require&sslaccept=strict"
         ),
         "postgresql://u@h/db?sslrootcert=explicit.pem&sslmode=verify-full"
@@ -332,15 +324,13 @@ fn existing_root_wins() {
 #[test]
 fn first_sslmode_and_sslaccept() {
     assert_eq!(
-        strip_prisma_query_params(
+        strip(
             "postgresql://u@h/db?sslmode=require&sslmode=disable&sslcert=ca.pem&sslaccept=strict&sslaccept=accept_invalid_certs"
         ),
         "postgresql://u@h/db?sslrootcert=ca.pem&sslmode=verify-full"
     );
     assert_eq!(
-        strip_prisma_query_params(
-            "postgresql://u@h/db?sslcert=ca&sslaccept=&sslaccept=accept_invalid_certs"
-        ),
+        strip("postgresql://u@h/db?sslcert=ca&sslaccept=&sslaccept=accept_invalid_certs"),
         "postgresql://u@h/db"
     );
     let pairs = vec![
@@ -542,10 +532,7 @@ fn query_url(params: &[(&str, &str)]) -> String {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect();
-    format!(
-        "postgresql://u@h:5432/db?{}",
-        super::url_query::encode_pairs(&pairs, false)
-    )
+    format!("postgresql://u@h:5432/db?{}", urlencode_pairs_quote(&pairs))
 }
 
 #[test]

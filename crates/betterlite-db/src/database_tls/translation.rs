@@ -1,4 +1,7 @@
-use super::url_query::{SplitUrl, encode_pairs, query_pairs, split_url, unsplit};
+use crate::database_url_policy::url_codec::{
+    SplitUrl, UrlSplitError, parse_qsl, urlencode_pairs, urlencode_pairs_quote, urlsplit,
+    urlunsplit,
+};
 
 pub const DEFAULT_POSTGRES_PORT: u16 = 5432;
 pub const LIBPQ_VERIFY_SSLMODES: [&str; 2] = ["verify-ca", "verify-full"];
@@ -20,6 +23,11 @@ pub const LIBPQ_URL_PARAMS: [&str; 13] = [
 
 #[derive(Debug, thiserror::Error)]
 pub enum TranslateError {
+    #[error("invalid URL: {source}")]
+    Url {
+        #[source]
+        source: UrlSplitError,
+    },
     #[error("port {value:?} could not be cast to an integer value")]
     MalformedPort { value: String },
     #[error("port out of range 0-65535: {value:?}")]
@@ -34,8 +42,8 @@ pub fn translate_libpq_ssl_params<F>(
 where
     F: FnMut(&str, &str, u16) -> String,
 {
-    let parts = split_url(url);
-    let pairs = query_pairs(&parts.query, true);
+    let mut parts = urlsplit(url).map_err(|source| TranslateError::Url { source })?;
+    let pairs = parse_qsl(&parts.query, true);
     let wants_verify = pairs
         .iter()
         .any(|(key, value)| key == "sslmode" && LIBPQ_VERIFY_SSLMODES.contains(&value.as_str()));
@@ -72,7 +80,8 @@ where
     if !pairs.iter().any(|(key, _)| key == "sslaccept") {
         translated.push(("sslaccept".to_owned(), "strict".to_owned()));
     }
-    Ok(unsplit(&parts, &encode_pairs(&translated, true)))
+    parts.query = urlencode_pairs(&translated);
+    Ok(urlunsplit(&parts))
 }
 
 fn host_and_port(parts: &SplitUrl) -> Result<(String, u16), TranslateError> {
@@ -113,13 +122,12 @@ fn port_value(text: &str) -> Result<Option<u16>, TranslateError> {
 }
 
 // Mirrors utils.py::_strip_prisma_query_params; an unqueried URL keeps every byte the operator wrote.
-#[must_use]
-pub fn strip_prisma_query_params(url: &str) -> String {
-    let parts = split_url(url);
+pub fn strip_prisma_query_params(url: &str) -> Result<String, TranslateError> {
+    let mut parts = urlsplit(url).map_err(|source| TranslateError::Url { source })?;
     if parts.query.is_empty() {
-        return url.to_owned();
+        return Ok(url.to_owned());
     }
-    let pairs = query_pairs(&parts.query, false);
+    let pairs = parse_qsl(&parts.query, false);
     let kept: Vec<(String, String)> = pairs
         .iter()
         .filter(|(key, _)| LIBPQ_URL_PARAMS.contains(&key.as_str()))
@@ -130,7 +138,8 @@ pub fn strip_prisma_query_params(url: &str) -> String {
         .find(|(key, _)| key == "sslaccept")
         .map(|(_, value)| value.as_str());
     let libpq = libpq_tls_params(&kept, sslaccept);
-    unsplit(&parts, &encode_pairs(&libpq, false))
+    parts.query = urlencode_pairs_quote(&libpq);
+    Ok(urlunsplit(&parts))
 }
 
 // Mirrors utils.py::_libpq_tls_params: Prisma's sslcert is the CA unless an sslkey makes it a client certificate.

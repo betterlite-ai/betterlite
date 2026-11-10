@@ -6,7 +6,9 @@ use tokio_postgres::Config;
 use tokio_postgres::config::SslMode;
 use tokio_postgres_rustls_improved::MakeRustlsConnect;
 
-use super::url_query::{encode_pairs, query_pairs, split_url, unsplit};
+use crate::database_url_policy::url_codec::{
+    UrlSplitError, parse_qsl, urlencode_pairs_quote, urlsplit, urlunsplit,
+};
 
 mod tls_config;
 
@@ -52,6 +54,11 @@ impl fmt::Debug for NativeConnectionOptions {
 pub enum ConnectionOptionsError {
     #[error("pgbouncer must be true or false, got {value:?}")]
     PgbouncerFlag { value: String },
+    #[error("the database URL is invalid: {source}")]
+    MalformedUrl {
+        #[source]
+        source: UrlSplitError,
+    },
     #[error("sslfile {path} is not valid PEM: {source}")]
     Pem {
         path: String,
@@ -102,12 +109,13 @@ pub enum ConnectionOptionsError {
 pub fn native_connection_options(
     database_url: &str,
 ) -> Result<NativeConnectionOptions, ConnectionOptionsError> {
-    let parts = split_url(database_url);
-    let pairs = query_pairs(&parts.query, true);
+    let mut parts =
+        urlsplit(database_url).map_err(|source| ConnectionOptionsError::MalformedUrl { source })?;
+    let pairs = parse_qsl(&parts.query, true);
     let request = tls_request(&pairs)?;
     let tls = MakeRustlsConnect::new(request.client_config()?);
-    let connection_query = encode_pairs(&request.connection_pairs, false);
-    let mut config = Config::from_str(&unsplit(&parts, &connection_query))
+    parts.query = urlencode_pairs_quote(&request.connection_pairs);
+    let mut config = Config::from_str(&urlunsplit(&parts))
         .map_err(|source| ConnectionOptionsError::Url { source })?;
     config.ssl_mode(request.mode);
     Ok(NativeConnectionOptions {
