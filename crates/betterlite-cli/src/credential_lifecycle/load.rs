@@ -13,10 +13,10 @@ pub async fn load_cli_token(
     vault: &mut (dyn SecretVault + Send + Sync),
 ) -> Option<CliTokenRecord> {
     let stored = files.read();
-    let Some(record) = stored else {
-        return None;
-    };
-    resolve_secret(files, vault, record).await
+    if let Some(record) = stored {
+        return resolve_secret(files, vault, record).await;
+    }
+    None
 }
 
 #[must_use]
