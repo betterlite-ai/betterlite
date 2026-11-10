@@ -2,7 +2,7 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::tls::VerifySetting;
 use secrecy::ExposeSecret as _;
 
-use crate::aws_settings::AwsSessionTag;
+use crate::aws_settings::canonicalize_tags;
 use crate::aws_settings::sources::{
     Credentials, ResolvedCredentials, auth_selector_presence, resolve_local_credentials,
 };
@@ -17,17 +17,11 @@ pub(super) async fn resolve(
     resolver: &AwsCredentialResolver<'_>,
     settings: &AwsSettings,
     region: Option<&str>,
-    tags: Option<Vec<AwsSessionTag>>,
     ssl_verify: Option<&VerifySetting>,
 ) -> Result<Credentials, CredentialError> {
+    let tags = canonicalize_tags(settings.session_tags.clone())?;
     let mut effective = settings.clone();
     effective.region_name = region.map(str::to_owned);
-    tracing::debug!(
-        access_key_id = settings.access_key_id.is_some(),
-        secret_access_key = settings.secret_access_key.is_some(),
-        session_token = settings.session_token.is_some(),
-        "in get credentials"
-    );
     let parameters = parameters(&effective, tags.as_deref(), ssl_verify);
     let [web_identity_selected, role, profile, session_token, _static] =
         auth_selector_presence(&effective);

@@ -257,27 +257,6 @@ pub(super) fn settings(params: &str, environment: &[(&str, &str)]) -> AwsSetting
     load(params, environment).0
 }
 
-pub(super) fn native(
-    environment: &[(&str, &str)],
-    files: &[(&str, &str)],
-    transport: &Transport,
-) -> NativeSources {
-    let connector = transport.clone();
-    NativeSources {
-        environment: environment
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-            .collect(),
-        filesystem: Fs::from_slice(files),
-        client: http_client_fn(move |_, _| SharedHttpConnector::new(connector.clone())),
-        clock: SharedTimeSource::new(StaticTimeSource::new(
-            UNIX_EPOCH.checked_add(Duration::from_secs(NOW)).unwrap(),
-        )),
-        sleep: SharedAsyncSleep::new(TokioSleep::new()),
-        timeout: Duration::from_secs(5),
-    }
-}
-
 pub(super) fn sts_kwargs(environment: &[(&str, &str)]) -> StsClientKwargs {
     let lookup = environment
         .iter()
@@ -377,9 +356,22 @@ impl Fixture {
         transport: &Transport,
         token: Option<&str>,
     ) -> Self {
+        let connector = transport.clone();
         Self {
             cache: cache(),
-            native: native(environment, files, transport),
+            native: NativeSources {
+                environment: environment
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                    .collect(),
+                filesystem: Fs::from_slice(files),
+                client: http_client_fn(move |_, _| SharedHttpConnector::new(connector.clone())),
+                clock: SharedTimeSource::new(StaticTimeSource::new(
+                    UNIX_EPOCH.checked_add(Duration::from_secs(NOW)).unwrap(),
+                )),
+                sleep: SharedAsyncSleep::new(TokioSleep::new()),
+                timeout: Duration::from_secs(5),
+            },
             secrets: secrets(token),
             sts: sts_kwargs(environment),
             runtime: Builder::new_current_thread().enable_all().build().unwrap(),

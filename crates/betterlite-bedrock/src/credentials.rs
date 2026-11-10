@@ -10,7 +10,6 @@ use betterlite_config::tls::VerifySetting;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 
 use crate::aws_endpoints::sts::StsClientKwargs;
-use crate::aws_settings::canonicalize_tags;
 use crate::aws_settings::credential_cache::CredentialCache;
 use crate::aws_settings::s3_static_key_pair;
 use crate::aws_settings::sources::{Credentials, NativeSources};
@@ -31,15 +30,8 @@ impl AwsCredentialResolver<'_> {
         settings: &AwsSettings,
         ssl_verify: Option<&VerifySetting>,
     ) -> Result<Credentials, CredentialError> {
-        let tags = canonicalize_tags(settings.session_tags.clone())?;
-        sources::resolve(
-            self,
-            settings,
-            settings.region_name.as_deref(),
-            tags,
-            ssl_verify,
-        )
-        .await
+        tracing::debug!("in get credentials");
+        sources::resolve(self, settings, settings.region_name.as_deref(), ssl_verify).await
     }
 
     pub async fn resolve_credentials(
@@ -47,9 +39,9 @@ impl AwsCredentialResolver<'_> {
         settings: &AwsSettings,
         region: Option<&str>,
     ) -> Result<Credentials, CredentialError> {
-        let tags = canonicalize_tags(settings.session_tags.clone())?;
         let effective_region = region.or(settings.region_name.as_deref());
-        sources::resolve(self, settings, effective_region, tags, None).await
+        let resolved = sources::resolve(self, settings, effective_region, None).await?;
+        Ok(resolved)
     }
 
     pub async fn resolve_s3_credentials(

@@ -30,7 +30,11 @@ const DENIED_IDENTITY: Reply = Reply::Error {
     message: "the fixture identity call is denied",
 };
 
-fn role_reply(access: &'static str) -> Reply {
+const TARGET_IDENTITY: Reply = Reply::Identity {
+    arn: "arn:aws:sts::123456789012:assumed-role/TargetRole/session",
+};
+
+fn reply(access: &'static str) -> Reply {
     Reply::Credentials {
         access,
         secret: "role-secret",
@@ -39,12 +43,22 @@ fn role_reply(access: &'static str) -> Reply {
     }
 }
 
-fn web_identity_reply(access: &'static str) -> Reply {
-    Reply::Credentials {
-        access,
-        secret: "web-secret",
-        token: "web-token",
-        expiration: "2026-01-01T01:00:00Z",
+fn auth<'text>(
+    role: &'text str,
+    session: &'text str,
+    key: Option<&'text SecretString>,
+    irsa: bool,
+) -> RoleAuth<'text> {
+    RoleAuth {
+        role_name: role,
+        session_name: session,
+        access_key_id: key,
+        secret_access_key: None,
+        session_token: None,
+        external_id: None,
+        irsa_role_arn: irsa.then_some(IRSA),
+        web_identity_token_file: irsa.then_some("/var/run/secrets/token"),
+        tags: None,
     }
 }
 
@@ -62,42 +76,6 @@ fn run_role(fixture: &Fixture, auth: &RoleAuth<'_>) -> Result<RoleCredentials, C
     fixture
         .runtime
         .block_on(auth_with_aws_role(&fixture.resolver(), auth))
-}
-
-fn irsa_auth<'text>(
-    role: &'text str,
-    session: &'text str,
-    key: Option<&'text SecretString>,
-) -> RoleAuth<'text> {
-    RoleAuth {
-        role_name: role,
-        session_name: session,
-        access_key_id: key,
-        secret_access_key: None,
-        session_token: None,
-        external_id: None,
-        irsa_role_arn: Some(IRSA),
-        web_identity_token_file: Some("/var/run/secrets/token"),
-        tags: None,
-    }
-}
-
-fn direct_auth<'text>(
-    role: &'text str,
-    session: &'text str,
-    token: Option<&'text SecretString>,
-) -> RoleAuth<'text> {
-    RoleAuth {
-        role_name: role,
-        session_name: session,
-        access_key_id: None,
-        secret_access_key: None,
-        session_token: token,
-        external_id: None,
-        irsa_role_arn: None,
-        web_identity_token_file: None,
-        tags: None,
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -150,8 +128,7 @@ fn credentials_cases(#[case] scenario: Scenario) {
         }
         Scenario::FixedEnvFallbackOnly => {
             explicit_values_win_over_environment();
-            role_environment_fields_reach_assume_role();
-            web_identity_environment_fields_reach_sts();
+            environment_fields_reach_the_selected_branch();
         }
         Scenario::IrsaBranchAndFailure => {
             same_account_irsa_returns_whole_ttl();
@@ -172,22 +149,20 @@ fn credentials_cases(#[case] scenario: Scenario) {
     }
 }
 
-fn web_identity_transport() -> Transport {
+fn transport(assume: Vec<Reply>, web: Vec<Reply>, identity: Vec<Reply>) -> Transport {
     Transport::with(&[
-        (
-            "AssumeRoleWithWebIdentity",
-            vec![
-                web_identity_reply("ASIAWEB"),
-                web_identity_reply("ASIAEMPTY"),
-            ],
-        ),
-        ("GetCallerIdentity", vec![DENIED_IDENTITY]),
-        ("AssumeRole", vec![role_reply("ASIAROLE")]),
+        ("AssumeRole", assume),
+        ("AssumeRoleWithWebIdentity", web),
+        ("GetCallerIdentity", identity),
     ])
 }
 
 fn web_identity_wins_over_role() {
-    let transport = web_identity_transport();
+    let transport = transport(
+        vec![reply("ASIAROLE")],
+        vec![reply("ASIAWEB"), reply("ASIAEMPTY")],
+        vec![DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, Some("resolved-token"));
     let params = format!(
         "aws_role_name: '{TARGET}', aws_session_name: bedrock, aws_web_identity_token: web-token-ref"
@@ -201,7 +176,11 @@ fn web_identity_wins_over_role() {
 }
 
 fn missing_session_shifts_to_role() {
-    let transport = web_identity_transport();
+    let transport = transport(
+        vec![reply("ASIAROLE")],
+        vec![reply("ASIAWEB"), reply("ASIAEMPTY")],
+        vec![DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, Some("resolved-token"));
     let params = format!("aws_role_name: '{TARGET}', aws_web_identity_token: web-token-ref");
     let resolved = resolve(&fixture, &settings(&params, AMBIENT), None).unwrap();
@@ -213,7 +192,11 @@ fn missing_session_shifts_to_role() {
 }
 
 fn empty_session_still_selects_web_identity() {
-    let transport = web_identity_transport();
+    let transport = transport(
+        vec![reply("ASIAROLE")],
+        vec![reply("ASIAWEB"), reply("ASIAEMPTY")],
+        vec![DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, Some("resolved-token"));
     let params = format!(
         "aws_role_name: '{TARGET}', aws_session_name: '', aws_web_identity_token: web-token-ref"
@@ -225,27 +208,12 @@ fn empty_session_still_selects_web_identity() {
     assert_eq!(calls[0].value("RoleSessionName"), "");
 }
 
-fn role_transport() -> Transport {
-    Transport::with(&[
-        (
-            "GetCallerIdentity",
-            vec![
-                DENIED_IDENTITY,
-                DENIED_IDENTITY,
-                Reply::Identity {
-                    arn: "arn:aws:sts::123456789012:assumed-role/TargetRole/session",
-                },
-            ],
-        ),
-        (
-            "AssumeRole",
-            vec![role_reply("ASIAFIRST"), role_reply("ASIAEXPLICIT")],
-        ),
-    ])
-}
-
 fn role_wins_over_profile_and_static() {
-    let transport = role_transport();
+    let transport = transport(
+        vec![reply("ASIAFIRST"), reply("ASIAEXPLICIT")],
+        Vec::new(),
+        vec![DENIED_IDENTITY, DENIED_IDENTITY, TARGET_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params = format!(
         "aws_role_name: '{TARGET}', aws_profile_name: named, aws_access_key_id: static-key, aws_secret_access_key: static-secret, aws_region_name: us-east-1"
@@ -270,12 +238,7 @@ fn role_wins_over_profile_and_static() {
 }
 
 fn already_running_as_role_uses_ambient() {
-    let transport = Transport::with(&[(
-        "GetCallerIdentity",
-        vec![Reply::Identity {
-            arn: "arn:aws:sts::123456789012:assumed-role/TargetRole/session",
-        }],
-    )]);
+    let transport = Transport::with(&[("GetCallerIdentity", vec![TARGET_IDENTITY])]);
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params = format!("aws_role_name: '{TARGET}', aws_session_name: other");
     let resolved = resolve(&fixture, &settings(&params, AMBIENT), None).unwrap();
@@ -284,30 +247,23 @@ fn already_running_as_role_uses_ambient() {
     assert_eq!(transport.record.actions(), ["GetCallerIdentity"]);
 }
 
-fn profile_environment() -> [(&'static str, &'static str); 5] {
-    [
+fn profile_wins_over_static() {
+    let transport = Transport::with(&[]);
+    let environment = [
         ("AWS_ACCESS_KEY_ID", "ambient"),
         ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
         ("AWS_SHARED_CREDENTIALS_FILE", "/credentials"),
         ("AWS_CONFIG_FILE", "/config"),
         ("AWS_EC2_METADATA_DISABLED", "true"),
-    ]
-}
-
-fn profile_files() -> [(&'static str, &'static str); 2] {
-    [
+    ];
+    let files = [
         (
             "/credentials",
             "[named]\naws_access_key_id = profile\naws_secret_access_key = private\n",
         ),
         ("/config", ""),
-    ]
-}
-
-fn profile_wins_over_static() {
-    let transport = Transport::with(&[]);
-    let environment = profile_environment();
-    let fixture = Fixture::new(&environment, &profile_files(), &transport, None);
+    ];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
     let params = "aws_profile_name: named, aws_access_key_id: ignored, aws_secret_access_key: ignored, aws_session_token: ignored, aws_region_name: us-east-1";
     let resolved = resolve(&fixture, &settings(params, &environment), None).unwrap();
     assert_eq!(resolved.access_key_id.expose_secret(), "profile");
@@ -318,11 +274,10 @@ fn profile_wins_over_static() {
 
 fn session_token_triple_is_direct() {
     let transport = Transport::with(&[]);
-    let environment = profile_environment();
-    let fixture = Fixture::new(&environment, &profile_files(), &transport, None);
+    let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params =
         "aws_access_key_id: session, aws_secret_access_key: secret, aws_session_token: token";
-    let resolved = resolve(&fixture, &settings(params, &environment), None).unwrap();
+    let resolved = resolve(&fixture, &settings(params, AMBIENT), None).unwrap();
     assert_eq!(resolved.access_key_id.expose_secret(), "session");
     assert_eq!(
         resolved
@@ -336,14 +291,13 @@ fn session_token_triple_is_direct() {
 
 fn incomplete_static_falls_through_to_ambient() {
     let transport = Transport::with(&[]);
-    let environment = profile_environment();
-    let fixture = Fixture::new(&environment, &profile_files(), &transport, None);
+    let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let statics =
         "aws_access_key_id: static, aws_secret_access_key: secret, aws_region_name: us-west-2";
-    let resolved = resolve(&fixture, &settings(statics, &environment), None).unwrap();
+    let resolved = resolve(&fixture, &settings(statics, AMBIENT), None).unwrap();
     assert_eq!(resolved.access_key_id.expose_secret(), "static");
     let incomplete = "aws_access_key_id: static-only";
-    let ambient = resolve(&fixture, &settings(incomplete, &environment), None).unwrap();
+    let ambient = resolve(&fixture, &settings(incomplete, AMBIENT), None).unwrap();
     assert_eq!(ambient.access_key_id.expose_secret(), "ambient");
     assert_eq!(transport.record.count(), 0);
 }
@@ -388,25 +342,12 @@ fn incomplete_s3_pair_resolves_normally() {
     assert_eq!(transport.record.count(), 0);
 }
 
-fn isolation_transport() -> Transport {
-    Transport::with(&[
-        (
-            "GetCallerIdentity",
-            vec![DENIED_IDENTITY, DENIED_IDENTITY, DENIED_IDENTITY],
-        ),
-        (
-            "AssumeRole",
-            vec![
-                role_reply("ASIAONE"),
-                role_reply("ASIATWO"),
-                role_reply("ASIATHREE"),
-            ],
-        ),
-    ])
-}
-
 fn identical_identity_hits_cache() {
-    let transport = isolation_transport();
+    let transport = transport(
+        vec![reply("ASIAONE"), reply("ASIATWO"), reply("ASIATHREE")],
+        Vec::new(),
+        vec![DENIED_IDENTITY, DENIED_IDENTITY, DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params = format!("aws_role_name: '{TARGET}', aws_session_name: one");
     let first = resolve(&fixture, &settings(&params, AMBIENT), None).unwrap();
@@ -417,7 +358,11 @@ fn identical_identity_hits_cache() {
 }
 
 fn profile_name_isolates_cache() {
-    let transport = isolation_transport();
+    let transport = transport(
+        vec![reply("ASIAONE"), reply("ASIATWO"), reply("ASIATHREE")],
+        Vec::new(),
+        vec![DENIED_IDENTITY, DENIED_IDENTITY, DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params =
         format!("aws_role_name: '{TARGET}', aws_session_name: one, aws_profile_name: another");
@@ -427,7 +372,11 @@ fn profile_name_isolates_cache() {
 }
 
 fn ssl_verify_isolates_cache() {
-    let transport = isolation_transport();
+    let transport = transport(
+        vec![reply("ASIAONE"), reply("ASIATWO"), reply("ASIATHREE")],
+        Vec::new(),
+        vec![DENIED_IDENTITY, DENIED_IDENTITY, DENIED_IDENTITY],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params = format!("aws_role_name: '{TARGET}', aws_session_name: one");
     let verified = resolve(
@@ -468,8 +417,8 @@ fn explicit_values_win_over_environment() {
     );
 }
 
-fn role_environment_fields_reach_assume_role() {
-    let environment = [
+fn environment_fields_reach_the_selected_branch() {
+    let role_environment = [
         ("AWS_ACCESS_KEY_ID", "env-access"),
         ("AWS_SECRET_ACCESS_KEY", "env-secret"),
         ("AWS_ROLE_NAME", TARGET),
@@ -479,18 +428,16 @@ fn role_environment_fields_reach_assume_role() {
     ];
     let transport = Transport::with(&[
         ("GetCallerIdentity", vec![DENIED_IDENTITY]),
-        ("AssumeRole", vec![role_reply("ASIAROLE")]),
+        ("AssumeRole", vec![reply("ASIAROLE")]),
     ]);
-    let fixture = Fixture::new(&environment, &[], &transport, None);
-    let resolved = resolve(&fixture, &settings("", &environment), None).unwrap();
+    let fixture = Fixture::new(&role_environment, &[], &transport, None);
+    let resolved = resolve(&fixture, &settings("", &role_environment), None).unwrap();
     assert_eq!(resolved.access_key_id.expose_secret(), "ASIAROLE");
     let calls = transport.record.calls();
     assert_eq!(calls[1].value("RoleSessionName"), "env-session");
     assert_eq!(calls[1].value("ExternalId"), "env-external");
-}
 
-fn web_identity_environment_fields_reach_sts() {
-    let environment = [
+    let identity_environment = [
         ("AWS_ACCESS_KEY_ID", "env-access"),
         ("AWS_SECRET_ACCESS_KEY", "env-secret"),
         ("AWS_ROLE_NAME", TARGET),
@@ -498,56 +445,36 @@ fn web_identity_environment_fields_reach_sts() {
         ("AWS_WEB_IDENTITY_TOKEN", "env-web-token"),
         ("AWS_EC2_METADATA_DISABLED", "true"),
     ];
-    let transport = Transport::with(&[(
-        "AssumeRoleWithWebIdentity",
-        vec![web_identity_reply("ASIAENV")],
-    )]);
-    let fixture = Fixture::new(&environment, &[], &transport, Some("resolved-token"));
-    let resolved = resolve(&fixture, &settings("", &environment), None).unwrap();
-    assert_eq!(resolved.access_key_id.expose_secret(), "ASIAENV");
-    let calls = transport.record.calls();
-    assert_eq!(calls[0].value("RoleArn"), TARGET);
-    assert_eq!(calls[0].value("RoleSessionName"), "env-session");
-}
-
-fn irsa_environment() -> [(&'static str, &'static str); 5] {
-    [
-        ("AWS_ROLE_ARN", IRSA),
-        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
-        ("AWS_ACCESS_KEY_ID", "ambient"),
-        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
-        ("AWS_EC2_METADATA_DISABLED", "true"),
-    ]
-}
-
-fn irsa_files() -> [(&'static str, &'static str); 1] {
-    [("/var/run/secrets/token", "irsa-token\n")]
-}
-
-fn irsa_reply(access: &'static str, secret: &'static str) -> Reply {
-    Reply::Credentials {
-        access,
-        secret,
-        token: "session-token",
-        expiration: "2026-01-01T01:00:00Z",
-    }
-}
-
-fn reply_error_denied() -> Reply {
-    Reply::Error {
-        status: 403,
-        code: "AccessDenied",
-        message: "User: arn:aws:iam::123456789012:role/IrsaRole is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::123456789012:role/IrsaRole",
-    }
+    let web_transport = Transport::with(&[("AssumeRoleWithWebIdentity", vec![reply("ASIAENV")])]);
+    let web_fixture = Fixture::new(
+        &identity_environment,
+        &[],
+        &web_transport,
+        Some("resolved-token"),
+    );
+    let web_credentials =
+        resolve(&web_fixture, &settings("", &identity_environment), None).unwrap();
+    assert_eq!(web_credentials.access_key_id.expose_secret(), "ASIAENV");
+    let web_calls = web_transport.record.calls();
+    assert_eq!(web_calls[0].value("RoleArn"), TARGET);
+    assert_eq!(web_calls[0].value("RoleSessionName"), "env-session");
 }
 
 fn same_account_irsa_returns_whole_ttl() {
     let transport = Transport::with(&[
         ("GetCallerIdentity", vec![DENIED_IDENTITY]),
-        ("AssumeRole", vec![irsa_reply("ASIASAME", "same-secret")]),
+        ("AssumeRole", vec![reply("ASIASAME")]),
     ]);
-    let fixture = Fixture::new(&irsa_environment(), &irsa_files(), &transport, None);
-    let role = run_role(&fixture, &irsa_auth(IRSA, "bedrock", None)).unwrap();
+    let environment = [
+        ("AWS_ROLE_ARN", IRSA),
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+        ("AWS_ACCESS_KEY_ID", "ambient"),
+        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
+    let role = run_role(&fixture, &auth(IRSA, "bedrock", None, true)).unwrap();
     assert_eq!(role.credentials.access_key_id.expose_secret(), "ASIASAME");
     assert_eq!(role.ttl, Some(CredentialTtl::Whole(3540)));
     assert_eq!(
@@ -558,15 +485,20 @@ fn same_account_irsa_returns_whole_ttl() {
 
 fn cross_account_irsa_uses_token_file() {
     let transport = Transport::with(&[
-        (
-            "AssumeRoleWithWebIdentity",
-            vec![irsa_reply("ASIAIRSA", "irsa-secret")],
-        ),
+        ("AssumeRoleWithWebIdentity", vec![reply("ASIAIRSA")]),
         ("GetCallerIdentity", vec![DENIED_IDENTITY]),
-        ("AssumeRole", vec![irsa_reply("ASIACROSS", "cross-secret")]),
+        ("AssumeRole", vec![reply("ASIACROSS")]),
     ]);
-    let fixture = Fixture::new(&irsa_environment(), &irsa_files(), &transport, None);
-    let role = run_role(&fixture, &irsa_auth(OTHER, "bedrock", None)).unwrap();
+    let environment = [
+        ("AWS_ROLE_ARN", IRSA),
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+        ("AWS_ACCESS_KEY_ID", "ambient"),
+        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
+    let role = run_role(&fixture, &auth(OTHER, "bedrock", None, true)).unwrap();
     assert_eq!(role.credentials.access_key_id.expose_secret(), "ASIACROSS");
     let calls = transport.record.calls();
     assert_eq!(
@@ -587,10 +519,25 @@ fn cross_account_irsa_uses_token_file() {
 fn irsa_denial_logs_trust_policy() {
     let transport = Transport::with(&[
         ("GetCallerIdentity", vec![DENIED_IDENTITY]),
-        ("AssumeRole", vec![reply_error_denied()]),
+        (
+            "AssumeRole",
+            vec![Reply::Error {
+                status: 403,
+                code: "AccessDenied",
+                message: "User: arn:aws:iam::123456789012:role/IrsaRole is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::123456789012:role/IrsaRole",
+            }],
+        ),
     ]);
-    let fixture = Fixture::new(&irsa_environment(), &irsa_files(), &transport, None);
-    let (failed, entries) = logged(|| run_role(&fixture, &irsa_auth(IRSA, "bedrock", None)));
+    let environment = [
+        ("AWS_ROLE_ARN", IRSA),
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+        ("AWS_ACCESS_KEY_ID", "ambient"),
+        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
+    let (failed, entries) = logged(|| run_role(&fixture, &auth(IRSA, "bedrock", None, true)));
     assert!(matches!(failed, Err(CredentialError::WebIdentity(_))));
     assert!(entries.iter().any(|(level, message)| *level == Level::ERROR
         && message.contains("Access denied when trying to assume role")
@@ -599,13 +546,18 @@ fn irsa_denial_logs_trust_policy() {
 }
 
 fn explicit_key_skips_irsa() {
-    let transport = Transport::with(&[(
-        "AssumeRole",
-        vec![irsa_reply("ASIAEXPLICIT", "explicit-secret")],
-    )]);
-    let fixture = Fixture::new(&irsa_environment(), &irsa_files(), &transport, None);
+    let transport = Transport::with(&[("AssumeRole", vec![reply("ASIAEXPLICIT")])]);
+    let environment = [
+        ("AWS_ROLE_ARN", IRSA),
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+        ("AWS_ACCESS_KEY_ID", "ambient"),
+        ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
+    let fixture = Fixture::new(&environment, &files, &transport, None);
     let key = SecretString::from("explicit".to_owned());
-    let role = run_role(&fixture, &irsa_auth(IRSA, "bedrock", Some(&key))).unwrap();
+    let role = run_role(&fixture, &auth(IRSA, "bedrock", Some(&key), true)).unwrap();
     assert_eq!(
         role.credentials.access_key_id.expose_secret(),
         "ASIAEXPLICIT"
@@ -616,28 +568,16 @@ fn explicit_key_skips_irsa() {
     assert_eq!(calls[0].access_key_id.as_deref(), Some("explicit"));
 }
 
-fn assume_reply(
-    access: &'static str,
-    secret: &'static str,
-    token: &'static str,
-    expiration: &'static str,
-) -> Reply {
-    Reply::Credentials {
-        access,
-        secret,
-        token,
-        expiration,
-    }
-}
-
 fn explicit_keys_build_the_sts_client() {
-    let reply = assume_reply(
-        "ASIAEXPLICIT",
-        "explicit-secret",
-        "explicit-token",
-        "2026-01-01T01:00:00Z",
-    );
-    let transport = Transport::with(&[("AssumeRole", vec![reply])]);
+    let transport = Transport::with(&[(
+        "AssumeRole",
+        vec![Reply::Credentials {
+            access: "ASIAEXPLICIT",
+            secret: "explicit-secret",
+            token: "explicit-token",
+            expiration: "2026-01-01T01:00:00Z",
+        }],
+    )]);
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let key = SecretString::from("explicit-key".to_owned());
     let secret = SecretString::from("explicit-secret".to_owned());
@@ -646,18 +586,12 @@ fn explicit_keys_build_the_sts_client() {
         key: "team".to_owned(),
         value: "genai".to_owned(),
     }];
-    let auth = RoleAuth {
-        role_name: TARGET,
-        session_name: "bedrock",
-        access_key_id: Some(&key),
-        secret_access_key: Some(&secret),
-        session_token: Some(&token),
-        external_id: Some("external-1"),
-        irsa_role_arn: None,
-        web_identity_token_file: None,
-        tags: Some(&tags),
-    };
-    let role = run_role(&fixture, &auth).unwrap();
+    let mut role_auth = auth(TARGET, "bedrock", Some(&key), false);
+    role_auth.secret_access_key = Some(&secret);
+    role_auth.session_token = Some(&token);
+    role_auth.external_id = Some("external-1");
+    role_auth.tags = Some(&tags);
+    let role = run_role(&fixture, &role_auth).unwrap();
     assert_eq!(
         role.credentials.access_key_id.expose_secret(),
         "ASIAEXPLICIT"
@@ -672,15 +606,17 @@ fn explicit_keys_build_the_sts_client() {
 }
 
 fn default_client_and_fractional_ttl() {
-    let reply = assume_reply(
-        "ASIADEFAULT",
-        "default-secret",
-        "default-token",
-        "2026-01-01T01:00:00.5Z",
-    );
-    let transport = Transport::with(&[("AssumeRole", vec![reply])]);
+    let transport = Transport::with(&[(
+        "AssumeRole",
+        vec![Reply::Credentials {
+            access: "ASIADEFAULT",
+            secret: "default-secret",
+            token: "default-token",
+            expiration: "2026-01-01T01:00:00.5Z",
+        }],
+    )]);
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
-    let role = run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
+    let role = run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
     assert_eq!(
         role.credentials.access_key_id.expose_secret(),
         "ASIADEFAULT"
@@ -696,27 +632,27 @@ fn negative_ttl_is_not_clamped() {
     let transport = Transport::with(&[(
         "AssumeRole",
         vec![
-            assume_reply(
-                "ASIADEFAULT",
-                "default-secret",
-                "default-token",
-                "2026-01-01T01:00:00Z",
-            ),
-            assume_reply(
-                "ASIANEGATIVE",
-                "negative-secret",
-                "negative-token",
-                "2025-12-31T23:59:00Z",
-            ),
+            Reply::Credentials {
+                access: "ASIADEFAULT",
+                secret: "default-secret",
+                token: "default-token",
+                expiration: "2026-01-01T01:00:00Z",
+            },
+            Reply::Credentials {
+                access: "ASIANEGATIVE",
+                secret: "negative-secret",
+                token: "negative-token",
+                expiration: "2025-12-31T23:59:00Z",
+            },
         ],
     )]);
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
-    let first = run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
+    let first = run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
     assert_eq!(
         first.credentials.access_key_id.expose_secret(),
         "ASIADEFAULT"
     );
-    let second = run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
+    let second = run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
     assert_eq!(
         second.credentials.access_key_id.expose_secret(),
         "ASIANEGATIVE"
@@ -724,46 +660,35 @@ fn negative_ttl_is_not_clamped() {
     assert_eq!(second.ttl, Some(CredentialTtl::Fractional(-120.0)));
 }
 
-fn denial_transport() -> Transport {
-    Transport::with(&[
-        (
-            "AssumeRole",
-            vec![
-                Reply::Error {
-                    status: 403,
-                    code: "AccessDenied",
-                    message: "the caller may not assume the role",
-                },
-                Reply::Error {
-                    status: 403,
-                    code: "AccessDenied",
-                    message: "the caller may not assume the role",
-                },
-                Reply::Error {
-                    status: 500,
-                    code: "InternalFailure",
-                    message: "the service failed",
-                },
-            ],
-        ),
-        (
-            "GetCallerIdentity",
-            vec![
-                Reply::Identity {
-                    arn: "arn:aws:sts::123456789012:assumed-role/TargetRole/session",
-                },
-                Reply::Identity {
-                    arn: "arn:aws:sts::999999999999:assumed-role/TargetRole/session",
-                },
-            ],
-        ),
-    ])
+fn denied(error_code: &'static str, message: &'static str) -> Reply {
+    Reply::Error {
+        status: 403,
+        code: error_code,
+        message,
+    }
 }
 
 fn same_identity_falls_back_to_ambient() {
-    let transport = denial_transport();
+    let transport = transport(
+        vec![
+            denied("AccessDenied", "the caller may not assume the role"),
+            denied("AccessDenied", "the caller may not assume the role"),
+            Reply::Error {
+                status: 500,
+                code: "InternalFailure",
+                message: "the service failed",
+            },
+        ],
+        Vec::new(),
+        vec![
+            TARGET_IDENTITY,
+            Reply::Identity {
+                arn: "arn:aws:sts::999999999999:assumed-role/TargetRole/session",
+            },
+        ],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
-    let (attempt, entries) = logged(|| run_role(&fixture, &direct_auth(TARGET, "bedrock", None)));
+    let (attempt, entries) = logged(|| run_role(&fixture, &auth(TARGET, "bedrock", None, false)));
     let fallback = attempt.unwrap();
     assert_eq!(
         fallback.credentials.access_key_id.expose_secret(),
@@ -776,10 +701,27 @@ fn same_identity_falls_back_to_ambient() {
 }
 
 fn different_identity_reraises() {
-    let transport = denial_transport();
+    let transport = transport(
+        vec![
+            denied("AccessDenied", "the caller may not assume the role"),
+            denied("AccessDenied", "the caller may not assume the role"),
+            Reply::Error {
+                status: 500,
+                code: "InternalFailure",
+                message: "the service failed",
+            },
+        ],
+        Vec::new(),
+        vec![
+            TARGET_IDENTITY,
+            Reply::Identity {
+                arn: "arn:aws:sts::999999999999:assumed-role/TargetRole/session",
+            },
+        ],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
-    run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
-    let (failed, entries) = logged(|| run_role(&fixture, &direct_auth(TARGET, "bedrock", None)));
+    run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
+    let (failed, entries) = logged(|| run_role(&fixture, &auth(TARGET, "bedrock", None, false)));
     assert!(matches!(failed, Err(CredentialError::AssumeRole { .. })));
     assert!(entries.iter().any(|(level, message)| *level == Level::ERROR
         && message.contains("AssumeRole AccessDenied for arn:aws:iam::123456789012:role/TargetRole")
@@ -787,11 +729,28 @@ fn different_identity_reraises() {
 }
 
 fn other_errors_skip_identity_check() {
-    let transport = denial_transport();
+    let transport = transport(
+        vec![
+            denied("AccessDenied", "the caller may not assume the role"),
+            denied("AccessDenied", "the caller may not assume the role"),
+            Reply::Error {
+                status: 500,
+                code: "InternalFailure",
+                message: "the service failed",
+            },
+        ],
+        Vec::new(),
+        vec![
+            TARGET_IDENTITY,
+            Reply::Identity {
+                arn: "arn:aws:sts::999999999999:assumed-role/TargetRole/session",
+            },
+        ],
+    );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
-    run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
-    run_role(&fixture, &direct_auth(TARGET, "bedrock", None)).unwrap();
-    let (failed, _entries) = logged(|| run_role(&fixture, &direct_auth(TARGET, "bedrock", None)));
+    run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
+    run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
+    let (failed, _entries) = logged(|| run_role(&fixture, &auth(TARGET, "bedrock", None, false)));
     assert!(matches!(failed, Err(CredentialError::AssumeRole { .. })));
     let calls = transport.record.calls();
     assert_eq!(calls.len(), 5);

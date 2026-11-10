@@ -1,0 +1,34 @@
+kind: helper
+name: bedrock-credentials-profile-before-static
+call:
+  bedrock_credentials:
+    get_credentials:
+      environment:
+        AWS_ACCESS_KEY_ID: ambient
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_SHARED_CREDENTIALS_FILE: /credentials
+        AWS_CONFIG_FILE: /config
+        AWS_EC2_METADATA_DISABLED: 'true'
+      files:
+        /credentials: "[named]\naws_access_key_id = profile\naws_secret_access_key = private\n"
+        /config: ''
+      steps:
+        - params:
+            aws_profile_name: named
+            aws_access_key_id: ignored
+            aws_secret_access_key: ignored
+            aws_session_token: ignored
+            aws_region_name: us-east-1
+        - params:
+            aws_access_key_id: session
+            aws_secret_access_key: secret
+            aws_session_token: token
+        - params:
+            aws_access_key_id: static
+            aws_secret_access_key: secret
+            aws_region_name: us-west-2
+        - params:
+            aws_access_key_id: static-only
+      answers: {}
+env: {}
+compare: {ignore: []}

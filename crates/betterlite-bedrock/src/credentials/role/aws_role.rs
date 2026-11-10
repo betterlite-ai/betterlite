@@ -47,6 +47,11 @@ pub async fn auth_with_aws_role(
     assume_role_credentials(resolver, auth, no_explicit_keys).await
 }
 
+enum IrsaRequest<'text> {
+    Same(SameAccountIrsa<'text>),
+    Cross(CrossAccountIrsa<'text>),
+}
+
 async fn irsa_credentials(
     resolver: &AwsCredentialResolver<'_>,
     auth: &RoleAuth<'_>,
@@ -54,20 +59,31 @@ async fn irsa_credentials(
     token_file: &str,
 ) -> Result<RoleCredentials, CredentialError> {
     tracing::debug!("IRSA detected: using web identity token from {token_file}");
-    match irsa_assume(resolver, auth, irsa_role, token_file).await {
-        Ok(response) => {
-            let now = DateTime::<Utc>::from(resolver.native.clock.now());
-            let (credentials, ttl) = extract_credentials_and_ttl(response, now)?;
-            Ok(RoleCredentials {
-                credentials,
-                ttl: Some(CredentialTtl::Whole(ttl)),
-            })
-        }
+    let request = if auth.role_name == irsa_role {
+        IrsaRequest::Same(SameAccountIrsa {
+            role_arn: auth.role_name,
+            session_name: auth.session_name,
+            external_id: auth.external_id,
+            tags: auth.tags,
+        })
+    } else {
+        IrsaRequest::Cross(CrossAccountIrsa {
+            irsa_role_arn: irsa_role,
+            role_arn: auth.role_name,
+            session_name: auth.session_name,
+            token_file,
+            external_id: auth.external_id,
+            tags: auth.tags,
+        })
+    };
+    match irsa_assume(resolver, &request).await {
+        Ok(response) => irsa_result(response, resolver),
         Err(error) => {
             tracing::debug!("Failed to assume role via IRSA: {error}");
             if irsa_trust_policy_denied(&error) {
                 let role_name = auth.role_name;
                 tracing::error!(
+                    role = role_name,
                     "Access denied when trying to assume role {role_name}. Please ensure the trust policy of {role_name} allows the current role to assume it. Current identity: check logs with verbose mode."
                 );
             }
@@ -76,38 +92,29 @@ async fn irsa_credentials(
     }
 }
 
+fn irsa_result(
+    response: StsResponse,
+    resolver: &AwsCredentialResolver<'_>,
+) -> Result<RoleCredentials, CredentialError> {
+    let now = DateTime::<Utc>::from(resolver.native.clock.now());
+    let (credentials, ttl) = extract_credentials_and_ttl(response, now)?;
+    Ok(RoleCredentials {
+        credentials,
+        ttl: Some(CredentialTtl::Whole(ttl)),
+    })
+}
+
 async fn irsa_assume(
     resolver: &AwsCredentialResolver<'_>,
-    auth: &RoleAuth<'_>,
-    irsa_role: &str,
-    token_file: &str,
+    request: &IrsaRequest<'_>,
 ) -> Result<StsResponse, WebIdentityError> {
-    if auth.role_name == irsa_role {
-        handle_irsa_same_account(
-            &SameAccountIrsa {
-                role_arn: auth.role_name,
-                session_name: auth.session_name,
-                external_id: auth.external_id,
-                tags: auth.tags,
-            },
-            resolver.sts,
-            resolver.native,
-        )
-        .await
-    } else {
-        handle_irsa_cross_account(
-            &CrossAccountIrsa {
-                irsa_role_arn: irsa_role,
-                role_arn: auth.role_name,
-                session_name: auth.session_name,
-                token_file,
-                external_id: auth.external_id,
-                tags: auth.tags,
-            },
-            resolver.sts,
-            resolver.native,
-        )
-        .await
+    match request {
+        IrsaRequest::Same(input) => {
+            handle_irsa_same_account(input, resolver.sts, resolver.native).await
+        }
+        IrsaRequest::Cross(input) => {
+            handle_irsa_cross_account(input, resolver.sts, resolver.native).await
+        }
     }
 }
 
@@ -164,6 +171,7 @@ async fn denied_assume_role(
         }
         let role_name = auth.role_name;
         tracing::error!(
+            role = role_name,
             "AssumeRole AccessDenied for {role_name} and caller is NOT the same role. Re-raising. Error: {error_text}"
         );
     }
