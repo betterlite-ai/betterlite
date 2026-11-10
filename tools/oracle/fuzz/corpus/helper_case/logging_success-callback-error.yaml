@@ -1,0 +1,14 @@
+kind: helper
+name: logging-success-callback-error-seed
+call:
+  logging_success:
+    operations:
+      - operation: handler
+        probes:
+          - mode: async
+            result: {kind: chat}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            loggers: [{name: broken, fail: true}, {name: datadog}]
+env: {}
+compare: {ignore: []}
