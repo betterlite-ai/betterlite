@@ -83,6 +83,14 @@ pub fn legacy_tracer_name(env: &BTreeMap<String, String>) -> String {
         .unwrap_or_else(|| DEFAULT_TRACER_NAME.to_owned())
 }
 
+fn exporter_text(exporter: &Exporter) -> String {
+    match exporter {
+        Exporter::Console => "console".to_owned(),
+        Exporter::InMemory => "in_memory".to_owned(),
+        Exporter::Named(text) => text.clone(),
+    }
+}
+
 fn evicted(
     entries: &mut IndexMap<CacheKey, CachedProvider>,
     max_providers: usize,
@@ -143,11 +151,7 @@ impl DynamicTracerCache {
         dynamic_config: &OpenTelemetryConfig,
     ) -> Result<SdkTracer, LegacyExporterError> {
         let key = CacheKey::Config {
-            exporter: match &dynamic_config.exporter {
-                Exporter::Console => "console".to_owned(),
-                Exporter::InMemory => "in_memory".to_owned(),
-                Exporter::Named(text) => text.clone(),
-            },
+            exporter: exporter_text(&dynamic_config.exporter),
             endpoint: dynamic_config.endpoint.clone(),
             headers: dynamic_config.headers.clone(),
         };
