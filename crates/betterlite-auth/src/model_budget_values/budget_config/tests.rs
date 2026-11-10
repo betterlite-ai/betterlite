@@ -91,6 +91,7 @@ fn is_max_budget(error: &BudgetConfigError) -> bool {
 #[rstest]
 #[case::string_entry(r#""1d""#, is_entry)]
 #[case::array_entry("[]", is_entry)]
+#[case::object_array_entry("[{}]", is_entry)]
 #[case::number_entry("5", is_entry)]
 #[case::null_entry("null", is_entry)]
 #[case::no_duration(r#"{"max_budget": 1}"#, is_missing_duration)]
