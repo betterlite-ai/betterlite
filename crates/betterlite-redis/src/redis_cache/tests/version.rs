@@ -4,13 +4,17 @@ use super::support::{DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness_at,
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 #[rstest]
-#[case::three_part_text("redis_version:7.2.4", 7)]
-#[case::integer("redis_version:6", 6)]
-#[case::float("redis_version:7.2", 7)]
-#[case::unreadable_text("redis_version:latest", 7)]
-#[case::unsupported_kind("redis_version:1,2", 7)]
+#[case::three_part_text("redis_version:7.2.4", 7, 5)]
+#[case::integer("redis_version:6", 6, DEFAULT_MAJOR_VERSION)]
+#[case::float("redis_version:6.5", 6, DEFAULT_MAJOR_VERSION)]
+#[case::unreadable_text("redis_version:latest", DEFAULT_MAJOR_VERSION, DEFAULT_MAJOR_VERSION)]
+#[case::unsupported_kind("redis_version:1,2", DEFAULT_MAJOR_VERSION, DEFAULT_MAJOR_VERSION)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_info_reply_sets_the_major_version(#[case] version_line: &str, #[case] expected: u32) {
+async fn the_info_reply_sets_the_major_version(
+    #[case] version_line: &str,
+    #[case] expected_major: u32,
+    #[case] default_major: u32,
+) {
     let server = FakeServer::start().await;
     server.script(
         "INFO",
@@ -20,11 +24,11 @@ async fn the_info_reply_sets_the_major_version(#[case] version_line: &str, #[cas
         overrides(&server.host(), server.port()),
         None,
         60,
-        DEFAULT_MAJOR_VERSION,
+        default_major,
         TestGate::never(),
     )
     .await;
-    assert_eq!(harness.cache.redis_major_version, expected);
+    assert_eq!(harness.cache.redis_major_version, expected_major);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
