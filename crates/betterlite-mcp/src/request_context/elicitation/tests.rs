@@ -26,7 +26,7 @@ enum Call {
     Url {
         message: String,
         url: String,
-        elicitation_id: String,
+        elicitation_id: Option<String>,
     },
     Form {
         message: String,
@@ -130,6 +130,7 @@ async fn a_request_without_a_downstream_session_declines() {
         ElicitResult {
             action: ElicitAction::Decline,
             content: None,
+            meta: None,
         }
     );
 }
@@ -217,10 +218,42 @@ async fn a_url_request_relays_to_elicit_url_with_the_elicitation_id() {
         vec![Call::Url {
             message: "sign in".to_owned(),
             url: "https://idp.test/login".to_owned(),
-            elicitation_id: "elicit-1".to_owned(),
+            elicitation_id: Some("elicit-1".to_owned()),
         }]
     );
     assert_eq!(outcome.action, ElicitAction::Decline);
+}
+
+#[tokio::test]
+async fn a_url_request_without_an_elicitation_id_is_relayed_with_none() {
+    let session = FakeSession::returning(result(r#"{"action":"accept"}"#));
+    let outcome = handle_elicitation_request(
+        &params(r#"{"mode":"url","message":"sign in","url":"https://idp.test/login"}"#),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(
+        session.calls(),
+        vec![Call::Url {
+            message: "sign in".to_owned(),
+            url: "https://idp.test/login".to_owned(),
+            elicitation_id: None,
+        }]
+    );
+    assert_eq!(outcome.action, ElicitAction::Accept);
+}
+
+#[tokio::test]
+async fn the_downstream_meta_is_relayed_with_the_result() {
+    let downstream = result(r#"{"action":"accept","_meta":{"trace":"t-1","n":2}}"#);
+    let session = FakeSession::returning(downstream.clone());
+    let outcome = handle_elicitation_request(&params(FORM_REQUEST), Some(&session), None).await;
+    assert_eq!(outcome, downstream);
+    assert_eq!(
+        serde_json::to_string(&outcome).expect("the result should serialize"),
+        r#"{"action":"accept","_meta":{"trace":"t-1","n":2}}"#
+    );
 }
 
 #[rstest]
@@ -246,6 +279,7 @@ async fn a_relay_failure_declines_after_the_call_is_recorded() {
         ElicitResult {
             action: ElicitAction::Decline,
             content: None,
+            meta: None,
         }
     );
     assert_eq!(

@@ -73,6 +73,27 @@ fn an_empty_client_list_admits_nobody() {
     assert_eq!(allowlist.header, None);
 }
 
+#[rstest]
+#[case::blank_alias(r#"{"alias":"","value":"client-1"}"#)]
+#[case::blank_value(r#"{"alias":"app two","value":""}"#)]
+fn a_blank_alias_or_value_admits_nobody_not_even_the_other_entries(#[case] blank_entry: &str) {
+    let settings: McpClientAllowlistSettings = serde_json::from_str(&format!(
+        r#"{{"mcp_allowed_clients":[{{"alias":"app one","value":"client-2"}},{blank_entry}],"mcp_client_id_header":"X-Client-ID"}}"#
+    ))
+    .expect("settings should parse");
+    let allowlist =
+        load_mcp_client_allowlist(&settings).expect("a malformed list is still enforced");
+    assert!(allowlist.aliases_by_value.is_empty());
+    assert_eq!(allowlist.header.as_deref(), Some("x-client-id"));
+    let rejection = check_mcp_client_allowed(
+        Some(&allowlist),
+        None,
+        &headers(&[("x-client-id", "client-2")]),
+    )
+    .expect_err("every client is rejected");
+    assert!(rejection.details.contains("is not listed"));
+}
+
 #[test]
 fn each_pair_maps_its_value_to_the_alias_the_admin_gave() {
     let settings: McpClientAllowlistSettings = serde_json::from_str(

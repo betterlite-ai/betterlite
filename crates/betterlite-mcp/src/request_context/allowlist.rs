@@ -5,7 +5,7 @@ use betterlite_db::identity_rows::Payload;
 use http::HeaderMap;
 use http::header::HeaderValue;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub const MCP_ALLOWED_CLIENTS_SETTING: &str = "mcp_allowed_clients";
 pub const MCP_CLIENT_ID_HEADER_SETTING: &str = "mcp_client_id_header";
@@ -106,11 +106,23 @@ pub fn load_mcp_client_allowlist(
         .and_then(|jwt_auth| jwt_auth.mcp_client_id_jwt_field.as_deref())
         .filter(|field| !field.is_empty())
         .map(str::to_owned);
+    let malformed = allowed_clients
+        .iter()
+        .any(|client| client.alias.is_empty() || client.value.is_empty());
+    if malformed {
+        warn!(
+            "{MCP_ALLOWED_CLIENTS_SETTING} has an entry with a blank alias or value; rejecting every MCP client until it is fixed"
+        );
+    }
     Some(McpClientAllowlist {
-        aliases_by_value: allowed_clients
-            .iter()
-            .map(|client| (client.value.clone(), client.alias.clone()))
-            .collect(),
+        aliases_by_value: if malformed {
+            BTreeMap::new()
+        } else {
+            allowed_clients
+                .iter()
+                .map(|client| (client.value.clone(), client.alias.clone()))
+                .collect()
+        },
         jwt_field,
         header,
     })

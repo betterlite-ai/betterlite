@@ -80,7 +80,7 @@ class RecordingSession:
             case SessionError():
                 raise RuntimeError(self.behaviour.error)
 
-    async def elicit_url(self, message: str, url: str, elicitation_id: str) -> ElicitResult:
+    async def elicit_url(self, message: str, url: str, elicitation_id: str | None) -> ElicitResult:
         self.calls.append(
             {
                 "method": "elicit_url",
@@ -179,7 +179,10 @@ def _elicit(scenario: ElicitScenario) -> Json:
         return _json(
             {"kind": "error", "code": outcome.code, "message": outcome.message}
         )
-    output = cast(dict[str, Json], outcome.model_dump(mode="json", exclude_none=True))
+    output = cast(
+        dict[str, Json],
+        outcome.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
     output["calls"] = _json([] if session is None else session.calls)
     return _json(output)
 

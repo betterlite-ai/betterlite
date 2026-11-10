@@ -33,6 +33,8 @@ pub struct ElicitResult {
     pub action: ElicitAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<BTreeMap<String, ElicitContentValue>>,
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Object>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -56,7 +58,8 @@ pub struct UrlElicitParams {
     pub mode: UrlMode,
     pub message: String,
     pub url: String,
-    pub elicitation_id: String,
+    #[serde(default)]
+    pub elicitation_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -102,6 +105,7 @@ where
         return ElicitResult {
             action: ElicitAction::Decline,
             content: None,
+            meta: None,
         };
     };
     if downstream_capabilities
@@ -111,6 +115,7 @@ where
         return ElicitResult {
             action: ElicitAction::Decline,
             content: None,
+            meta: None,
         };
     }
     relay_to_downstream(params, session).await
@@ -151,6 +156,7 @@ where
             ElicitResult {
                 action: ElicitAction::Decline,
                 content: None,
+                meta: None,
             }
         }
     }

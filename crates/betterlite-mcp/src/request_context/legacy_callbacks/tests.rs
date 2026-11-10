@@ -224,6 +224,7 @@ impl DownstreamElicitSession for FakeSession {
             Ok(ElicitResult {
                 action,
                 content: None,
+                meta: None,
             })
         }
     }
