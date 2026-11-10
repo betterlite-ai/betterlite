@@ -15,7 +15,7 @@ use rust_decimal::Decimal;
 use crate::model_policy::UNSUPPORTED_DEPLOYED_PARAMS;
 use crate::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-    get_supports_system_message, supports_response_json_schema,
+    get_supports_response_schema, get_supports_system_message, supports_response_json_schema,
 };
 use crate::model_policy::error::{VertexAiError, classify_vertex_error};
 use crate::model_policy::lyria::{
@@ -372,11 +372,7 @@ fn capability_cases(#[case] case: CapabilityCase) {
                 schema: outcome,
                 provider: lookup_provider,
             };
-            let result = lookup.supports(
-                CapabilityKind::ResponseSchema,
-                model,
-                provider.lookup_name(),
-            );
+            let result = get_supports_response_schema(model, provider, &lookup);
             assert_eq!(result.ok(), expected, "model {model}");
         }
     }

@@ -64,6 +64,18 @@ pub fn get_supports_system_message(
     }
 }
 
+pub fn get_supports_response_schema(
+    model: &str,
+    provider: VertexCapabilityProvider,
+    lookup: &dyn ModelCapabilityLookup,
+) -> Result<bool, CapabilityLookupError> {
+    lookup.supports(
+        CapabilityKind::ResponseSchema,
+        model,
+        provider.lookup_name(),
+    )
+}
+
 #[must_use]
 pub fn supports_response_json_schema(model: &str) -> bool {
     let Ok(pattern) = Regex::new(GEMINI_2_PLUS_PATTERN) else {
