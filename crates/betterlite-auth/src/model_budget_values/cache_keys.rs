@@ -25,13 +25,12 @@ pub fn model_budget_spend_cache_key(
     budget_model: &str,
     budget_duration: &str,
 ) -> String {
-    let names = [
-        "virtual_key_spend",
-        "user_model_spend",
-        "end_user_model_spend",
-        "team_model_spend",
-    ];
-    let prefix = scope_prefix(scope, names);
+    let prefix = match scope {
+        BudgetScope::Key => "virtual_key_spend",
+        BudgetScope::User => "user_model_spend",
+        BudgetScope::EndUser => "end_user_model_spend",
+        BudgetScope::Team => "team_model_spend",
+    };
     format!("{prefix}:{entity_id}:{budget_model}:{budget_duration}")
 }
 
