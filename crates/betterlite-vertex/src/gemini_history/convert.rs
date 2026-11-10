@@ -119,23 +119,23 @@ where
         rest.get(..length).unwrap_or_default()
     }
 
+    fn push_turn(&mut self, role: Role, parts: Vec<Object>) {
+        if !parts.is_empty() {
+            self.history.contents.push(Content { role, parts });
+        }
+    }
+
     fn user_turn(&mut self) -> Result<(), HistoryError> {
         let mut parts = Vec::new();
         for current in self.take_run(&[USER, SYSTEM]) {
             append_user_parts(current, self.model, &mut parts)?;
         }
-        if parts.is_empty() {
-            return Ok(());
-        }
-        if !parts.iter().any(|part| part.contains_key("text")) {
+        if !parts.is_empty() && !parts.iter().any(|part| part.contains_key("text")) {
             self.history.warnings.push(HistoryWarning::BlankText);
             tracing::warn!("a user turn has no text part; a space part is added");
             parts.push(object!("text" => Json::Text(SPACE.to_owned())));
         }
-        self.history.contents.push(Content {
-            role: Role::User,
-            parts,
-        });
+        self.push_turn(Role::User, parts);
         Ok(())
     }
 
@@ -144,12 +144,7 @@ where
         for current in self.take_run(&[ASSISTANT]) {
             append_assistant_parts(current, self.options, &mut parts, &mut self.last_tool_calls)?;
         }
-        if !parts.is_empty() {
-            self.history.contents.push(Content {
-                role: Role::Model,
-                parts,
-            });
-        }
+        self.push_turn(Role::Model, parts);
         Ok(())
     }
 

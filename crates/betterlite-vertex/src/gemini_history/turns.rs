@@ -1,32 +1,21 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_results::types::LastToolCallMessage;
-use betterlite_prompts::message_content::{Content, ContentPart, Message};
+use betterlite_prompts::message_content::{Content, Message};
 
-use crate::gemini_history::content::{
-    CONTENT_TYPE, DETAIL, FORMAT, MIME_TYPE, decode_thinking_part, media_request, object,
-    push_media,
-};
+use crate::gemini_history::content::{decode_thinking_part, object};
 use crate::gemini_history::error::HistoryError;
+use crate::gemini_history::media_source::{
+    append_user_part, generated_image, push_source, text_of,
+};
 use crate::gemini_history::tool_turn::{
     append_invocations, append_tool_calls, collect_tool_signatures,
 };
 use crate::gemini_media::error::MediaField;
-use crate::gemini_media::mime::MimeHints;
-use crate::gemini_media::part::VideoMetadata;
-use crate::gemini_media::resolution::convert_detail;
 
 const TEXT: &str = "text";
-const IMAGE_URL: &str = "image_url";
-const INPUT_AUDIO: &str = "input_audio";
-const FILE: &str = "file";
-const URL: &str = "url";
-const DATA: &str = "data";
-const FILE_ID: &str = "file_id";
-const FILE_DATA: &str = "file_data";
-const VIDEO_METADATA: &str = "video_metadata";
 const REASONING_CONTENT: &str = "reasoning_content";
-const THINKING_BLOCKS: &str = "thinking_blocks";
 const IMAGES: &str = "images";
+const THINKING_BLOCKS: &str = "thinking_blocks";
 const PROVIDER_FIELDS: &str = "provider_specific_fields";
 const THOUGHT_SIGNATURES: &str = "thought_signatures";
 
@@ -34,21 +23,6 @@ const THOUGHT_SIGNATURES: &str = "thought_signatures";
 pub struct AssistantOptions<'model> {
     pub model: Option<&'model str>,
     pub forward_function_call_id: bool,
-}
-
-fn hints_of(fields: &Object) -> MimeHints {
-    MimeHints {
-        format: text_of(fields, FORMAT),
-        mime_type: text_of(fields, MIME_TYPE),
-        content_type: text_of(fields, CONTENT_TYPE),
-    }
-}
-
-fn text_of(fields: &Object, name: &str) -> Option<String> {
-    if let Some(Json::Text(value)) = fields.get(name) {
-        return Some(value.clone());
-    }
-    None
 }
 
 pub fn append_user_parts(
@@ -68,114 +42,6 @@ pub fn append_user_parts(
         append_user_part(item, model, parts)?;
     }
     Ok(())
-}
-
-fn append_user_part(
-    item: &ContentPart,
-    model: Option<&str>,
-    parts: &mut Vec<Object>,
-) -> Result<(), HistoryError> {
-    let fields = &item.fields;
-    match item.kind.as_str() {
-        TEXT => {
-            if let Some(text) = text_of(fields, TEXT)
-                && !text.is_empty()
-            {
-                parts.push(object!(TEXT => Json::Text(text)));
-            }
-            Ok(())
-        }
-        IMAGE_URL => append_image(fields, model, parts),
-        INPUT_AUDIO => append_audio(fields, model, parts),
-        FILE => append_file(fields, model, parts),
-        _ => Ok(()),
-    }
-}
-
-fn push_url(
-    parts: &mut Vec<Object>,
-    url: &str,
-    fields: &Object,
-    video: Option<&VideoMetadata>,
-    target: (Option<&str>, MediaField),
-) -> Result<(), HistoryError> {
-    let resolution = text_of(fields, DETAIL).as_deref().and_then(convert_detail);
-    let (model, field) = target;
-    let request = media_request!(url, &hints_of(fields), resolution, video, model, field);
-    push_media(parts, &request)
-}
-
-fn append_image(
-    fields: &Object,
-    model: Option<&str>,
-    parts: &mut Vec<Object>,
-) -> Result<(), HistoryError> {
-    let plain = Object::default();
-    let (url, image) = match fields.get(IMAGE_URL) {
-        Some(Json::Text(url)) => (url.clone(), &plain),
-        Some(Json::Object(image)) => {
-            let url = text_of(image, URL)
-                .ok_or_else(|| HistoryError::Invalid("image_url.url is missing".to_owned()))?;
-            (url, image)
-        }
-        None | Some(Json::Null) => {
-            return Err(HistoryError::Invalid("image_url is missing".to_owned()));
-        }
-        Some(_) => {
-            return Err(HistoryError::Invalid(
-                "image_url must be a string or an object".to_owned(),
-            ));
-        }
-    };
-    push_url(parts, &url, image, None, (model, MediaField::ImageUrl))
-}
-
-fn append_audio(
-    fields: &Object,
-    model: Option<&str>,
-    parts: &mut Vec<Object>,
-) -> Result<(), HistoryError> {
-    let Some(Json::Object(audio)) = fields.get(INPUT_AUDIO) else {
-        return Err(HistoryError::Invalid("input_audio is missing".to_owned()));
-    };
-    let (Some(data), Some(format)) = (text_of(audio, DATA), text_of(audio, FORMAT)) else {
-        return Ok(());
-    };
-    let media_type = if format.starts_with("audio/") {
-        format
-    } else {
-        format!("audio/{format}")
-    };
-    let url = format!("data:{media_type};base64,{data}");
-    let hints = object!(FORMAT => Json::Text(media_type));
-    push_url(parts, &url, &hints, None, (model, MediaField::ImageUrl))
-}
-
-fn append_file(
-    fields: &Object,
-    model: Option<&str>,
-    parts: &mut Vec<Object>,
-) -> Result<(), HistoryError> {
-    let Some(Json::Object(file)) = fields.get(FILE) else {
-        return Err(HistoryError::Invalid("file is missing".to_owned()));
-    };
-    let url = text_of(file, FILE_ID)
-        .or_else(|| text_of(file, FILE_DATA))
-        .ok_or_else(|| HistoryError::Invalid("file needs a file_id or file_data".to_owned()))?;
-    let video = decode_video_metadata(file)?;
-    push_url(parts, &url, file, video.as_ref(), (model, MediaField::File))
-}
-
-fn decode_video_metadata(fields: &Object) -> Result<Option<VideoMetadata>, HistoryError> {
-    let Some(value) = fields
-        .get(VIDEO_METADATA)
-        .filter(|value| !matches!(value, Json::Null))
-    else {
-        return Ok(None);
-    };
-    let encoded = serde_json::to_value(value).map_err(HistoryError::Encode)?;
-    let decoded = serde_json::from_value(encoded).map_err(HistoryError::Decode)?;
-    Ok(Some(decoded))
 }
 
 pub fn append_assistant_parts(
@@ -251,7 +117,7 @@ fn text_signature(fields: &Object) -> Option<Json> {
     Some(signature)
 }
 
-fn append_images(
+pub fn append_images(
     fields: &Object,
     model: Option<&str>,
     parts: &mut Vec<Object>,
@@ -259,15 +125,8 @@ fn append_images(
     let Some(Json::List(items)) = fields.get(IMAGES) else {
         return Ok(());
     };
-    for item in items {
-        let Some(Json::Object(image)) = item.as_object().and_then(|entry| entry.get(IMAGE_URL))
-        else {
-            continue;
-        };
-        let Some(url) = text_of(image, URL).filter(|url| !url.is_empty()) else {
-            continue;
-        };
-        push_url(parts, &url, image, None, (model, MediaField::ImageUrl))?;
-    }
-    Ok(())
+    items
+        .iter()
+        .filter_map(generated_image)
+        .try_for_each(|locator| push_source(parts, &locator, MediaField::ImageUrl, model))
 }

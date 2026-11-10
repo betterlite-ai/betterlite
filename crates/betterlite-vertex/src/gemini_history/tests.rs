@@ -71,6 +71,10 @@ fn converted(source: &str, model: Option<&str>) -> History {
     converted_messages(&parse_messages(source), model)
 }
 
+const TOOL_ROUND_TRIP: &str = r#"[{"role":"user","content":"q"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c1","content":"res"}]"#;
+
+const THINKING_TOOL_CALL: &str = r#"[{"role":"user","content":"q"},{"role":"assistant","content":"calling","thinking_blocks":[{"type":"thinking","thinking":"{\"functionCall\": {\"name\": \"f\", \"args\": {\"a\": 1}}}","signature":"sig"}],"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}]}]"#;
+
 fn assert_parts(source: &str, model: Option<&str>, expected: &str) {
     let history = converted(source, model);
     let resolved = expected.replace("SIGNATURE", DUMMY_THOUGHT_SIGNATURE);
@@ -224,11 +228,7 @@ fn forwards_tool_call_ids_only_for_newer_models(
     #[case] model: Option<&str>,
     #[case] expected: &str,
 ) {
-    assert_parts(
-        r#"[{"role":"user","content":"q"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c1","content":"res"}]"#,
-        model,
-        expected,
-    );
+    assert_parts(TOOL_ROUND_TRIP, model, expected);
 }
 
 #[rstest]
@@ -486,11 +486,7 @@ fn does_not_repeat_a_tool_call_a_thinking_block_already_carries(
     #[case] model: Option<&str>,
     #[case] expected: &str,
 ) {
-    assert_parts(
-        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"calling","thinking_blocks":[{"type":"thinking","thinking":"{\"functionCall\": {\"name\": \"f\", \"args\": {\"a\": 1}}}","signature":"sig"}],"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}]}]"#,
-        model,
-        expected,
-    );
+    assert_parts(THINKING_TOOL_CALL, model, expected);
 }
 
 #[rstest]
