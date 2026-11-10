@@ -17,6 +17,6 @@ call:
                 source:
                   type: base64
                   media_type: image/png
-                  data: iVBORw0KGgoAAAANSUhEUgAAAEAAAABAACAYAAAA=
+                  data: iVBORw0KGgoAAAANSUhEUgAAAEAAAABA
 env: {}
 compare: {ignore: []}

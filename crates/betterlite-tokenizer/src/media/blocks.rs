@@ -1,7 +1,7 @@
 use crate::count::text::Texter;
 use crate::image::tokens::Mode;
 
-use super::count::{Warning, count_items, count_text};
+use super::count::{Warning, apply_fallback, count_items, count_text};
 use super::error::MediaError;
 use super::image_count::{image_source_tokens, image_tokens};
 use super::settings::Settings;
@@ -138,6 +138,9 @@ async fn count_nested(
         NestedContent::Items(items) => {
             let next = depth.saturating_add(1);
             Box::pin(count_items(texter, &items, settings, next, warnings)).await
+        }
+        NestedContent::Unreadable(_) => {
+            apply_fallback(MediaError::UnreadableNested, settings, warnings)
         }
     }
 }

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 from collections.abc import Callable
 from typing import Protocol, TypeAlias, cast
@@ -152,25 +154,27 @@ def _count_content(call: dict[str, Json], model: str) -> Json:
         if use_default is None
         else _boolean(use_default, "use_default_image_token_count")
     )
-    return count_content_list(
-        count_function=get_count_function(model),
-        content_list=_content(call),
-        use_default_image_token_count=uses_default,
-        default_token_count=_optional_integer(
-            call.get("default_token_count"), "default_token_count"
-        ),
-    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        return count_content_list(
+            count_function=get_count_function(model),
+            content_list=_content(call),
+            use_default_image_token_count=uses_default,
+            default_token_count=_optional_integer(
+                call.get("default_token_count"), "default_token_count"
+            ),
+        )
 
 
 def _modified_max_tokens(call: dict[str, Json]) -> Json:
-    return get_modified_max_tokens(
-        model=_string(call.get("model"), "model"),
-        base_model=_string(call.get("base_model"), "base_model"),
-        messages=_messages(call),
-        user_max_tokens=_optional_integer(call.get("user_max_tokens"), "user_max_tokens"),
-        buffer_perc=_optional_float(call.get("buffer_perc"), "buffer_perc"),
-        buffer_num=_optional_float(call.get("buffer_num"), "buffer_num"),
-    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        return get_modified_max_tokens(
+            model=_string(call.get("model"), "model"),
+            base_model=_string(call.get("base_model"), "base_model"),
+            messages=_messages(call),
+            user_max_tokens=_optional_integer(call.get("user_max_tokens"), "user_max_tokens"),
+            buffer_perc=_optional_float(call.get("buffer_perc"), "buffer_perc"),
+            buffer_num=_optional_float(call.get("buffer_num"), "buffer_num"),
+        )
 
 
 def _call(call: dict[str, Json], model: str) -> Json:

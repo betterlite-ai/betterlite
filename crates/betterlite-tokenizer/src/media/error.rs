@@ -14,6 +14,8 @@ pub enum MediaError {
     UnsupportedBlock { kind: String },
     #[error("a nested content block type is not counted")]
     UnsupportedNestedBlock,
+    #[error("a nested content list could not be read")]
+    UnreadableNested,
     #[error("a string image_url must not be blank")]
     BlankImageUrl,
     #[error("an image_url object needs a url")]

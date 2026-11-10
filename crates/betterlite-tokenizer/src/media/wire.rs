@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
 
 use crate::image::tokens::Mode;
@@ -138,5 +139,7 @@ pub(crate) enum Source {
 #[serde(untagged)]
 pub(crate) enum NestedContent {
     Text(String),
-    Items(Vec<Box<RawValue>>),
+    Items(Vec<ContentItem>),
+    // LiteLLM counts a list inside try/except, so an unreadable one takes the fallback alone
+    Unreadable(IgnoredAny),
 }

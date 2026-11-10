@@ -5,7 +5,7 @@ use crate::media::settings::ImageCounting;
 
 use super::support::{self, CaseOptions};
 
-const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAACAYAAAA=";
+const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA";
 const TRUNCATED: &str = "data:image/png;base64,iVBORw0KGgo=";
 const REMOTE: &str = "https://example.com/image.png";
 
@@ -308,10 +308,20 @@ fn file(filename: &str, file_data: &str) -> String {
     FALLBACK,
     fallback_tokens(778)
 )]
+#[case::nested_non_list_content_keeps_siblings(
+    plain(r#""hello world",{"type":"tool_result","tool_use_id":"toolu_1","content":5}"#),
+    FALLBACK,
+    fallback_tokens(779)
+)]
+#[case::nested_non_list_content_without_fallback_fails(
+    plain(r#"{"type":"tool_result","tool_use_id":"toolu_1","content":5}"#),
+    EXACT,
+    failed("a nested content list could not be read")
+)]
 #[case::nested_parse_error_without_fallback_fails(
     plain(r#"{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"image_url"}]}"#),
     EXACT,
-    Expected::Invalid
+    failed("a nested content list could not be read")
 )]
 #[case::depth_at_limit(support::nested_documents(31), EXACT, tokens(1))]
 #[case::depth_past_limit(

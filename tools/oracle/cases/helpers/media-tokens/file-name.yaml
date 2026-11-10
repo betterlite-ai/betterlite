@@ -9,6 +9,6 @@ call:
           - type: file
             file:
               filename: hello
-              file_data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAACAYAAAA="
+              file_data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA"
 env: {}
 compare: {ignore: []}
