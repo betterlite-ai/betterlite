@@ -190,7 +190,10 @@ impl EventDrivenCacheCoordinator {
                 source,
             })?;
         owner.log_step("Result cached");
-        Ok(cached_value(value))
+        if matches!(value, CacheValue::Null) {
+            return Ok(None);
+        }
+        Ok(Some(value))
     }
 
     fn log_step(&self, message: &str) {
@@ -226,11 +229,4 @@ where
     })?;
     // LiteLLM tests `value is not None`, and a cached None reads back as a stored null here
     Ok(stored.filter(|entry| !matches!(entry, CacheValue::Null)))
-}
-
-fn cached_value(value: CacheValue) -> Option<CacheValue> {
-    if matches!(value, CacheValue::Null) {
-        return None;
-    }
-    Some(value)
 }

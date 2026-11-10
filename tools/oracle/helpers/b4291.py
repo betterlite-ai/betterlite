@@ -58,9 +58,7 @@ class StorageStandIn:
 
 def disk_storage() -> None:
     # the oracle pins litellm[proxy], which leaves out the caching extra that carries diskcache
-    if "diskcache" in sys.modules:
-        return
-    if importlib.util.find_spec("diskcache") is not None:
+    if "diskcache" in sys.modules or importlib.util.find_spec("diskcache") is not None:
         return
     module = ModuleType("diskcache")
     setattr(module, "Cache", StorageStandIn)  # noqa: B010 - pyright rejects unknown ModuleType attributes
@@ -256,13 +254,9 @@ async def _settle() -> None:
         await asyncio.sleep(0)
 
 
-def _coordinator() -> EventDrivenCacheCoordinator:
-    return EventDrivenCacheCoordinator(log_prefix="[CACHE]")
-
-
 async def _single_loader(value: Value, requests: int) -> Json:
     cache: AsyncCacheProtocol[Value] = _DictCache()
-    coordinator = _coordinator()
+    coordinator = EventDrivenCacheCoordinator(log_prefix="[CACHE]")
     loads: list[Value] = []
     loader = _BlockingLoader(value, loads)
     first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
@@ -282,7 +276,7 @@ async def _single_loader(value: Value, requests: int) -> Json:
 
 async def _waiter_gets_cached(value: Value) -> Json:
     cache: AsyncCacheProtocol[Value] = _DictCache()
-    coordinator = _coordinator()
+    coordinator = EventDrivenCacheCoordinator(log_prefix="[CACHE]")
     loads: list[Value] = []
     loader = _BlockingLoader(value, loads)
     first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
@@ -299,7 +293,7 @@ async def _waiter_gets_cached(value: Value) -> Json:
 
 async def _loader_failure(value: Value) -> Json:
     cache: AsyncCacheProtocol[Value] = _DictCache()
-    coordinator = _coordinator()
+    coordinator = EventDrivenCacheCoordinator(log_prefix="[CACHE]")
     loads: list[Value] = []
     loader = _FailingLoader(loads)
     first = asyncio.create_task(coordinator.get_or_load("key", cache, loader.load))
