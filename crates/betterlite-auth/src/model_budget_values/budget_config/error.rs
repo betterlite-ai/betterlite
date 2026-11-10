@@ -2,7 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BudgetConfigError {
-    #[error("the model_max_budget entry is not an object or holds a field of the wrong type")]
+    #[error("the model_max_budget entry is not a JSON object")]
+    NotObject,
+    #[error("the model_max_budget entry holds a field of the wrong type")]
     Entry {
         #[source]
         source: serde_json::Error,

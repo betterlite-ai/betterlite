@@ -5,7 +5,6 @@ use betterlite_db::budget_permission_rows::JsonData;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use serde::de::Error as _;
 use serde_with::rust::double_option;
 
 use crate::budget_primitives::window_start::DurationParser;
@@ -83,12 +82,10 @@ struct RawBudgetConfig {
 }
 
 fn parse_entry(raw: &JsonData) -> Result<RawBudgetConfig, BudgetConfigError> {
-    if !matches!(raw, JsonData::Object(_)) {
-        // serde reads a JSON list as struct field values, so a list must fail before the struct does
-        return Err(BudgetConfigError::Entry {
-            source: serde_json::Error::custom("a model_max_budget entry is a JSON object"),
-        });
-    }
+    // serde reads a JSON list as struct field values, so only an object may reach the struct
+    let JsonData::Object(_) = raw else {
+        return Err(BudgetConfigError::NotObject);
+    };
     serde_json::to_string(raw)
         .and_then(|text| serde_json::from_str::<RawBudgetConfig>(&text))
         .map_err(|source| BudgetConfigError::Entry { source })

@@ -76,6 +76,10 @@ fn is_entry(error: &BudgetConfigError) -> bool {
     matches!(error, BudgetConfigError::Entry { .. })
 }
 
+fn is_not_object(error: &BudgetConfigError) -> bool {
+    matches!(error, BudgetConfigError::NotObject)
+}
+
 fn is_missing_duration(error: &BudgetConfigError) -> bool {
     matches!(error, BudgetConfigError::MissingDuration)
 }
@@ -89,11 +93,11 @@ fn is_max_budget(error: &BudgetConfigError) -> bool {
 }
 
 #[rstest]
-#[case::string_entry(r#""1d""#, is_entry)]
-#[case::array_entry("[]", is_entry)]
-#[case::object_array_entry("[{}]", is_entry)]
-#[case::number_entry("5", is_entry)]
-#[case::null_entry("null", is_entry)]
+#[case::string_entry(r#""1d""#, is_not_object)]
+#[case::array_entry("[]", is_not_object)]
+#[case::object_array_entry("[{}]", is_not_object)]
+#[case::number_entry("5", is_not_object)]
+#[case::null_entry("null", is_not_object)]
 #[case::no_duration(r#"{"max_budget": 1}"#, is_missing_duration)]
 #[case::null_duration(r#"{"max_budget": 1, "budget_duration": null}"#, is_missing_duration)]
 #[case::null_reported_duration_wins(
