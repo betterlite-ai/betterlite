@@ -32,11 +32,7 @@ use crate::helpers::HelperError;
 
 const DEFAULT_MAJOR_VERSION: u32 = 7;
 
-#[derive(Clone, Debug)]
-pub(crate) struct RecordedEvent {
-    pub(crate) call_type: String,
-    pub(crate) outcome: &'static str,
-}
+pub(crate) type RecordedEvent = (String, &'static str);
 
 #[derive(Default)]
 pub(crate) struct RecordingHooks {
@@ -45,10 +41,7 @@ pub(crate) struct RecordingHooks {
 
 impl RecordingHooks {
     fn record(&self, call_type: &'static str, outcome: &'static str) {
-        let event = RecordedEvent {
-            call_type: call_type.to_owned(),
-            outcome,
-        };
+        let event = (call_type.to_owned(), outcome);
         match self.events.lock() {
             Ok(mut events) => events.push(event),
             Err(poisoned) => poisoned.into_inner().push(event),
@@ -212,7 +205,7 @@ pub(crate) fn events(events: &[RecordedEvent]) -> Value {
     Value::Array(
         events
             .iter()
-            .map(|event| json!({ "call_type": event.call_type, "outcome": event.outcome }))
+            .map(|(call_type, outcome)| json!({ "call_type": call_type, "outcome": outcome }))
             .collect(),
     )
 }

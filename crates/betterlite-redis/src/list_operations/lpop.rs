@@ -1,20 +1,28 @@
 use std::str;
 
-use redis::Value;
+use redis::{Cmd, Value, cmd};
 
 use crate::cache_primitives::protocol::AsyncRedisCommands as _;
 use crate::cache_primitives::version::parse_major_version;
 use crate::redis_live_client::LiveAsyncClient;
 
-use super::commands::lpop_command;
+use super::Call;
 use super::error::RedisListOperationsError;
-use super::guard::Call;
 use super::namespaced_key;
 use super::results::{
     LpopPipelineEntry, LpopResult, decode_group, decode_popped, decode_reply, popped_items,
     reply_bytes,
 };
 use super::{RedisListOperations, RedisPipelineLpopOperation};
+
+pub(crate) fn lpop_command(key: &str, count: Option<i64>) -> Cmd {
+    let mut command = cmd("LPOP");
+    command.arg(key);
+    if let Some(limit) = count {
+        command.arg(limit);
+    }
+    command
+}
 
 pub(crate) fn lpop_call(key: &str) -> Call {
     Call {
@@ -151,12 +159,8 @@ fn bulk_entry(value: &Value) -> Result<LpopPipelineEntry, RedisListOperationsErr
     let Some(bytes) = reply_bytes(value, "async_lpop_pipeline")? else {
         return Ok(LpopPipelineEntry::Missing);
     };
-    Ok(single_entry(bytes))
-}
-
-fn single_entry(bytes: &[u8]) -> LpopPipelineEntry {
-    match str::from_utf8(bytes) {
+    Ok(match str::from_utf8(bytes) {
         Ok(text) => LpopPipelineEntry::Items(vec![text.to_owned()]),
         Err(_source) => LpopPipelineEntry::ItemsBytes(vec![bytes.to_vec()]),
-    }
+    })
 }

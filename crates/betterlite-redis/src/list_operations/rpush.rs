@@ -1,12 +1,30 @@
-use redis::Value;
+use redis::{Cmd, Value, cmd};
 
 use crate::cache_primitives::namespace::check_and_fix_namespace;
 use crate::cache_primitives::protocol::{AsyncRedisCommands as _, RedisScalar};
 
-use super::commands::{ltrim_command, rpush_command};
+use super::Call;
 use super::error::RedisListOperationsError;
-use super::guard::Call;
 use super::{RedisListOperations, RedisPipelineRpushOperation};
+
+pub(crate) fn rpush_command(key: &str, values: &[RedisScalar]) -> Cmd {
+    let mut command = cmd("RPUSH");
+    command.arg(key);
+    for value in values {
+        match value {
+            RedisScalar::Text(text) => command.arg(text),
+            RedisScalar::Bytes(bytes) => command.arg(bytes),
+            RedisScalar::Float(number) => command.arg(*number),
+        };
+    }
+    command
+}
+
+pub(crate) fn ltrim_command(key: &str, start: i64, stop: i64) -> Cmd {
+    let mut command = cmd("LTRIM");
+    command.arg(key).arg(start).arg(stop);
+    command
+}
 
 pub(crate) fn rpush_call(key: &str) -> Call {
     Call {

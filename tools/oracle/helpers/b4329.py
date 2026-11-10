@@ -1,28 +1,16 @@
 import asyncio
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Self, TypeAlias, cast
+from typing import Self, TypeAlias, cast
 
 from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
 from litellm.types.caching import RedisPipelineLpopOperation, RedisPipelineRpushOperation
 from redis.exceptions import ResponseError
 
+# litellm types these methods with an untyped **kwargs, so their member types are partly unknown
+# pyright: reportUnknownMemberType=false
+
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Value: TypeAlias = str | bytes | int | float
-
-
-class Lists(Protocol):
-    async def async_rpush(self, key: str, values: Sequence[Value]) -> int: ...
-    async def async_rpush_and_trim(
-        self, key: str, values: Sequence[Value], max_len: int
-    ) -> int: ...
-    async def async_rpush_pipeline(
-        self, rpush_list: Sequence[RedisPipelineRpushOperation]
-    ) -> list[int]: ...
-    async def async_lpop(self, key: str, count: int | None = None) -> object: ...
-    async def async_lpop_pipeline(
-        self, lpop_list: Sequence[RedisPipelineLpopOperation]
-    ) -> list[object]: ...
 
 
 def string_value(value: Json, name: str) -> str:
@@ -56,17 +44,11 @@ def list_value(value: Json, name: str) -> list[Json]:
 def decode_value(value: Json) -> Value:
     if isinstance(value, dict):
         raw = value.get("bytes")
-        if not isinstance(raw, list):
+        if not isinstance(raw, list) or not all(isinstance(item, int) for item in raw):
             raise ValueError("a bytes value is an object with a bytes list")
-        return bytes(byte_value(item) for item in raw)
+        return bytes(cast(list[int], raw))
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise ValueError("a list value must be a string, a number or {bytes: [...]}")
-    return value
-
-
-def byte_value(value: Json) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 256:  # noqa: PLR2004
-        raise ValueError("a byte must be an integer from 0 to 255")
     return value
 
 
@@ -210,7 +192,7 @@ def project_value(value: Json) -> Json:
     return value
 
 
-async def apply_operation(input_value: dict[str, Json], cache: Lists) -> Json:
+async def apply_operation(input_value: dict[str, Json], cache: RedisCache) -> Json:
     operation = string_value(input_value.get("operation"), "operation")
     match operation:
         case "rpush":
@@ -248,7 +230,7 @@ async def apply_operation(input_value: dict[str, Json], cache: Lists) -> Json:
             raise ValueError(f"unknown operation {operation}")
 
 
-async def drive(input_value: dict[str, Json], cache: Lists) -> Json:
+async def drive(input_value: dict[str, Json], cache: RedisCache) -> Json:
     result = await apply_operation(input_value, cache)
     await asyncio.sleep(0)
     return result
@@ -281,7 +263,7 @@ def run(input_value: dict[str, Json]) -> Json:
     }
     for name, value in fields.items():
         object.__setattr__(cache, name, value)
-    result = asyncio.run(drive(input_value, cast(Lists, cache)))
+    result = asyncio.run(drive(input_value, cache))
     return {
         "result": result,
         "lists": project_lists(lists),

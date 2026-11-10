@@ -1,6 +1,4 @@
-mod commands;
 pub mod error;
-mod guard;
 mod lpop;
 pub mod results;
 mod rpush;
@@ -15,16 +13,22 @@ use crate::cache_primitives::protocol::RedisScalar;
 use crate::cache_primitives::version::RedisVersionValue;
 use crate::redis_client_reuse::breaker::BreakerAdmission;
 use crate::redis_client_reuse::breaker_gate::BreakerGate;
+use crate::redis_client_reuse::service_event::ServiceEvent;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::transport::RedisTransport;
 
 use self::error::RedisListOperationsError;
-use self::guard::{Call, finish};
 use self::results::{LpopPipelineEntry, LpopResult};
 
 pub(crate) fn namespaced_key(lists: &RedisListOperations, key: &str) -> String {
     check_and_fix_namespace(lists.settings.namespace.as_deref(), Some(key))
         .unwrap_or_else(|| key.to_owned())
+}
+
+pub(crate) struct Call {
+    pub(crate) name: &'static str,
+    pub(crate) key: Option<String>,
+    pub(crate) log: &'static str,
 }
 
 pub type ListResult<T> = Result<T, RedisListOperationsError>;
@@ -124,13 +128,31 @@ impl RedisListOperations {
             .await
     }
 
+    // litellm raises from the guarded method, so a failed call records the failure and never reaches exit
     async fn perform<T, F>(&self, admission: BreakerAdmission, call: Call, body: F) -> ListResult<T>
     where
         F: Future<Output = ListResult<T>>,
     {
         let started = Instant::now();
         let outcome = body.await;
-        finish(self, admission, call, started, outcome)
+        let event = ServiceEvent {
+            call_type: call.name,
+            duration: started.elapsed(),
+            key: call.key,
+        };
+        match outcome {
+            Ok(value) => {
+                self.hooks.success(&event);
+                self.gate.exit(admission);
+                Ok(value)
+            }
+            Err(error) => {
+                self.hooks.failure(&event, &error);
+                tracing::error!(error = %error, "{}", call.log);
+                self.gate.record_failure(&error);
+                Err(error)
+            }
+        }
     }
 
     fn admit(
