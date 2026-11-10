@@ -1,0 +1,12 @@
+kind: helper
+name: cached-string-decode-failure
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        timestamp: 9999999999
+        response: "__import__('os').system('echo hacked')"
+      max_age: 60
+env: {}
+compare:
+  ignore: []
