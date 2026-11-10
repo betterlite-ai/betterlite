@@ -2,7 +2,7 @@
 fn fetch_listing_reads_models_with_the_bearer_key() {
     let get = ScriptedGet::new(vec![body(
         200,
-        r#"{"object":"list","data":[{"id":"gpt-4o","source_model":"openai/gpt-4o"},{"id":"claude"}]}"#,
+        r#"{"object":"list","data":[{"id":"gpt-4o","source_model":"openai/gpt-4o"},{"id":"claude"},{"id":"null-source","source_model":null}]}"#,
     )]);
     let models = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap();
     assert_eq!(
@@ -14,6 +14,10 @@ fn fetch_listing_reads_models_with_the_bearer_key() {
             },
             ListedModel {
                 id: "claude".to_owned(),
+                source_model: None,
+            },
+            ListedModel {
+                id: "null-source".to_owned(),
                 source_model: None,
             },
         ]
