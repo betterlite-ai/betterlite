@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-vertex = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "thinking_part"
+path = "fuzz_targets/thinking_part.rs"
+test = false
+doc = false
+bench = false
