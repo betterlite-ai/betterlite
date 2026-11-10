@@ -338,6 +338,17 @@ fn extra_body_contents_become_provider_fields() {
     assert_eq!(mapping.provider_fields["foo"], value("1"));
 }
 
+fn extra_body_contents_never_overwrite_top_level_fields() {
+    let mapping = mapping(
+        r#"{"bar": 2, "extra_body": {"bar": 1, "zeta": 1}, "zeta": 3}"#,
+        "{}",
+    )
+    .unwrap();
+    assert_eq!(mapping.provider_fields.len(), 2);
+    assert_eq!(mapping.provider_fields["bar"], value("2"));
+    assert_eq!(mapping.provider_fields["zeta"], value("3"));
+}
+
 fn additional_drop_params_remove_extra_body_keys() {
     let mapping = mapping(
         r#"{"extra_body": {"foo": 1, "bar": 2}}"#,
@@ -418,6 +429,9 @@ fn nested_drop_paths_are_rejected() {
 #[case::unvalidated_user_is_dropped_not_rejected(unvalidated_user_is_dropped_not_rejected)]
 #[case::search_model_n_boundaries(search_model_n_boundaries)]
 #[case::extra_body_contents_become_provider_fields(extra_body_contents_become_provider_fields)]
+#[case::extra_body_contents_never_overwrite_top_level_fields(
+    extra_body_contents_never_overwrite_top_level_fields
+)]
 #[case::additional_drop_params_remove_extra_body_keys(
     additional_drop_params_remove_extra_body_keys
 )]

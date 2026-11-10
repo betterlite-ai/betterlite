@@ -252,7 +252,8 @@ impl<'request> MappingState<'request> {
             } else {
                 self.mapping
                     .provider_fields
-                    .insert(name.clone(), entry.clone());
+                    .entry(name.clone())
+                    .or_insert_with(|| entry.clone());
             }
         }
         Ok(())

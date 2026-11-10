@@ -41,6 +41,18 @@ call:
         query:
           provider: openai
           call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          bar: 2
+          extra_body: {bar: 1, zeta: 1}
+          zeta: 3
+        policy: {}
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
           model: unknown-model
           config: unknown_model
           capabilities: []
