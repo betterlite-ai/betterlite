@@ -1,0 +1,9 @@
+# AWS_S3_BUCKET_NAME backs s3_bucket_name when the deployment leaves it out
+model_list:
+  - model_name: bedrock/batch-input
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      s3_bucket_name: batch-input-bucket
+  - model_name: bedrock/batch-inherited
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
