@@ -19,6 +19,38 @@ pub fn parameter_schema(
             field: "parameters",
         });
     };
+    let expanded = expand_parameters(object)?;
+    let mut schema = Object::new();
+    schema.insert("type".to_owned(), root_type(&expanded)?);
+    schema.insert(
+        "properties".to_owned(),
+        take(
+            &expanded,
+            "properties",
+            ExpectedKind::Object,
+            Json::Object(Object::new()),
+        )?,
+    );
+    schema.insert(
+        "required".to_owned(),
+        take(
+            &expanded,
+            "required",
+            ExpectedKind::StringList,
+            Json::List(Vec::new()),
+        )?,
+    );
+    if capabilities.supports_strict_tools
+        && let Some(additional) = expanded
+            .get("additionalProperties")
+            .filter(|value| !matches!(value, Json::Null))
+    {
+        schema.insert("additionalProperties".to_owned(), additional.clone());
+    }
+    Ok(Json::Object(schema))
+}
+
+fn expand_parameters(object: &Object) -> Result<Object, BedrockToolError> {
     let mut fields = object.clone();
     let defs = match fields.shift_remove("$defs") {
         None | Some(Json::Null) => Object::new(),
@@ -30,47 +62,47 @@ pub fn parameter_schema(
     let mut expanded = unpack_defs(fields, &defs, Some(DEFS_MAX_INLINED_BYTES))
         .map_err(|source| BedrockToolError::Schema { source })?;
     normalize_custom_types(&mut expanded, 0);
-    let mut schema = Object::new();
-    schema.insert("type".to_owned(), root_type(&expanded)?);
-    schema.insert("properties".to_owned(), properties(&expanded)?);
-    schema.insert("required".to_owned(), required(&expanded)?);
-    if capabilities.supports_strict_tools
-        && let Some(additional) = expanded
-            .get("additionalProperties")
-            .filter(|value| !matches!(value, Json::Null))
-    {
-        schema.insert("additionalProperties".to_owned(), additional.clone());
-    }
-    Ok(Json::Object(schema))
+    Ok(expanded)
 }
 
 fn root_type(parameters: &Object) -> Result<Json, BedrockToolError> {
-    match parameters.get("type") {
-        Some(Json::Text(name)) if VALID_ROOT_TYPES.contains(&name.as_str()) => {
+    let Some(value) = parameters.get("type") else {
+        return Ok(Json::Text("object".to_owned()));
+    };
+    match value {
+        Json::Text(name) if VALID_ROOT_TYPES.contains(&name.as_str()) => {
             Ok(Json::Text(name.clone()))
         }
-        Some(Json::Text(_) | Json::Null) | None => Ok(Json::Text("object".to_owned())),
-        Some(_) => Err(BedrockToolError::WrongType { field: "type" }),
+        Json::Null | Json::Text(_) => Ok(Json::Text("object".to_owned())),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(BedrockToolError::WrongType { field: "type" })
+        }
     }
 }
 
-fn properties(parameters: &Object) -> Result<Json, BedrockToolError> {
-    match parameters.get("properties") {
-        None | Some(Json::Null) => Ok(Json::Object(Object::new())),
-        Some(Json::Object(fields)) => Ok(Json::Object(fields.clone())),
-        Some(_) => Err(BedrockToolError::WrongType {
-            field: "properties",
-        }),
-    }
+#[derive(Clone, Copy)]
+enum ExpectedKind {
+    Object,
+    StringList,
 }
 
-fn required(parameters: &Object) -> Result<Json, BedrockToolError> {
-    match parameters.get("required") {
-        None | Some(Json::Null) => Ok(Json::List(Vec::new())),
-        Some(Json::List(items)) if items.iter().all(|item| item.as_str().is_some()) => {
+fn take(
+    parameters: &Object,
+    key: &'static str,
+    kind: ExpectedKind,
+    default: Json,
+) -> Result<Json, BedrockToolError> {
+    match (parameters.get(key), kind) {
+        (None | Some(Json::Null), _) => Ok(default),
+        (Some(Json::Object(fields)), ExpectedKind::Object) => Ok(Json::Object(fields.clone())),
+        (Some(Json::List(items)), ExpectedKind::StringList)
+            if items.iter().all(|item| item.as_str().is_some()) =>
+        {
             Ok(Json::List(items.clone()))
         }
-        Some(_) => Err(BedrockToolError::WrongType { field: "required" }),
+        (Some(_), ExpectedKind::Object | ExpectedKind::StringList) => {
+            Err(BedrockToolError::WrongType { field: key })
+        }
     }
 }
 
