@@ -1316,6 +1316,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-logging",
+ "betterlite-models",
  "clap",
  "dbus-secret-service-keyring-store",
  "hex",

@@ -1,14 +1,14 @@
 id: B4563
 milestone: M8 platform
 title: Claude configuration ownership receipts and safe undo
-status: todo
+status: done
 depends_on: [B192, B4562]
 file: tasks/B4563-claude-settings-receipts.yaml
 covers:
   - "litellm/proxy/client/cli/commands/claude_settings.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1187
