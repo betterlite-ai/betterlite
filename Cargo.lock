@@ -1321,6 +1321,7 @@ dependencies = [
  "hex",
  "httparse",
  "keyring-core",
+ "num-traits",
  "regex",
  "rstest",
  "rustix",
@@ -2058,9 +2059,11 @@ dependencies = [
 name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -2724,6 +2727,7 @@ dependencies = [
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "async-trait",
  "axum",
  "base64 0.23.1",
@@ -2736,6 +2740,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
@@ -2756,6 +2761,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "http-body 1.1.0",
  "hyper-util",
  "icu_properties",
