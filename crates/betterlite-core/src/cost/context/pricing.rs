@@ -9,24 +9,29 @@ use rust_decimal::Decimal;
 use serde::de::IgnoredAny;
 
 use super::error::BillingContextError;
-use super::{IdentityRequest, ProviderInference, billing_model_name, response_model};
+use super::{CostResponse, IdentityRequest, ProviderInference, billing_model_name};
+
+// What a deployment price lookup reads: the pricing flag, the router id and the request's logging params.
+pub struct PricingQuery<'query> {
+    pub custom_pricing: Option<bool>,
+    pub router_model_id: Option<&'query str>,
+    pub logging_params: Option<&'query IndexMap<String, Json>>,
+}
 
 // Ports _deployment_model_info: a router id's own raw entry wins even when empty, else the first nonnull model_info.
 pub fn deployment_info(
-    custom_pricing: Option<bool>,
-    router_model_id: Option<&str>,
-    logging_params: Option<&IndexMap<String, Json>>,
+    query: &PricingQuery<'_>,
     lookup: &dyn PriceLookup,
 ) -> Result<Option<PriceRecord>, BillingContextError> {
-    if custom_pricing != Some(true) {
+    if query.custom_pricing != Some(true) {
         return Ok(None);
     }
-    if let Some(router_id) = router_model_id
+    if let Some(router_id) = query.router_model_id
         && let Some(entry) = lookup.raw_cost_map_entry(router_id)
     {
         return Ok(Some(entry));
     }
-    let Some(params) = logging_params else {
+    let Some(params) = query.logging_params else {
         return Ok(None);
     };
     for key in ["metadata", "litellm_metadata"] {
@@ -34,7 +39,16 @@ pub fn deployment_info(
             continue;
         };
         let Json::Object(fields) = metadata else {
-            if nonempty_json(metadata) {
+            let present = match scalar(metadata) {
+                Scalar::Null | Scalar::Object(_) => false,
+                Scalar::Bool(flag) => flag,
+                Scalar::Number(number) => {
+                    Decimal::from_str(&number.to_string()).is_ok_and(|amount| !amount.is_zero())
+                }
+                Scalar::Text(text) => !text.is_empty(),
+                Scalar::Array(items) => !items.is_empty(),
+            };
+            if present {
                 return Err(BillingContextError::MetadataShape { field: key });
             }
             continue;
@@ -53,13 +67,13 @@ pub fn deployment_info(
 
 // Ports _ocr_model_info: top-level logging params overlay the extracted record, field by field, through B1678.
 pub fn ocr_info(
-    custom_pricing: Option<bool>,
-    router_model_id: Option<&str>,
-    logging_params: Option<&IndexMap<String, Json>>,
+    query: &PricingQuery<'_>,
     lookup: &dyn PriceLookup,
 ) -> Result<Option<OcrPricing>, BillingContextError> {
-    let deployment = deployment_info(custom_pricing, router_model_id, logging_params, lookup)?;
-    let overlay = logging_params.filter(|_| custom_pricing == Some(true));
+    let deployment = deployment_info(query, lookup)?;
+    let overlay = query
+        .logging_params
+        .filter(|_| query.custom_pricing == Some(true));
     match (overlay, deployment) {
         (None, None) => Ok(None),
         (None, Some(record)) => layered_ocr_pricing(&[Some(&record)])
@@ -84,23 +98,22 @@ pub fn pricing_entry<Inference>(
 where
     Inference: ProviderInference,
 {
-    let deployment = deployment_info(
-        request.custom_pricing,
-        request.router_model_id,
+    let query = PricingQuery {
+        custom_pricing: request.custom_pricing,
+        router_model_id: request.router_model_id,
         logging_params,
-        lookup,
-    )?;
-    if let Some(entry) = deployment
+    };
+    if let Some(entry) = deployment_info(&query, lookup)?
         && let Some(key) = request.router_model_id.or(request.model)
     {
         return Ok(Some((key.to_owned(), entry)));
     }
     let selected = billing_model_name(request, lookup, inference);
-    let candidates = [
-        selected.as_deref(),
-        response_model(request.response),
-        request.model,
-    ];
+    let from_response = match request.response {
+        Some(CostResponse::Object { model, .. } | CostResponse::Dictionary { model }) => *model,
+        None => None,
+    };
+    let candidates = [selected.as_deref(), from_response, request.model];
     for candidate in candidates.into_iter().flatten() {
         if candidate.is_empty() {
             continue;
@@ -139,18 +152,5 @@ fn scalar(value: &Json) -> Scalar {
         Json::Text(text) => Scalar::Text(text.clone()),
         Json::List(_) => Scalar::Array(Vec::new()),
         Json::Object(_) => Scalar::Object(IgnoredAny),
-    }
-}
-
-fn nonempty_json(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => {
-            Decimal::from_str(&number.to_string()).map_or(true, |amount| !amount.is_zero())
-        }
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
     }
 }

@@ -246,12 +246,3 @@ const fn response_parts<'response>(
         None => (None, None),
     }
 }
-
-const fn response_model<'response>(
-    response: Option<&'response CostResponse<'response>>,
-) -> Option<&'response str> {
-    match response {
-        Some(CostResponse::Object { model, .. } | CostResponse::Dictionary { model }) => *model,
-        None => None,
-    }
-}

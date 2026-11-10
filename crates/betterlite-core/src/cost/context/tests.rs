@@ -16,7 +16,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::error::BillingContextError;
-use super::pricing::{deployment_info, ocr_info, pricing_entry};
+use super::pricing::{PricingQuery, deployment_info, ocr_info, pricing_entry};
 use super::response_time::{ResponseTiming, response_time_ms};
 use super::storage::store_cost_breakdown;
 use super::{CostResponse, IdentityRequest, ProviderInference, billing_model_name};
@@ -119,6 +119,18 @@ fn hidden(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
         .collect()
+}
+
+fn query<'query>(
+    custom_pricing: Option<bool>,
+    router_model_id: Option<&'query str>,
+    logging_params: Option<&'query IndexMap<String, Json>>,
+) -> PricingQuery<'query> {
+    PricingQuery {
+        custom_pricing,
+        router_model_id,
+        logging_params,
+    }
 }
 
 fn params(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {
@@ -423,12 +435,12 @@ fn model_info(value: Json) -> Json {
 fn deployment_info_needs_custom_pricing() {
     let params = params(&[("metadata", model_info(Json::Object(IndexMap::new())))]);
     assert!(
-        deployment_info(None, None, Some(&params), &Lookup::new(&[]))
+        deployment_info(&query(None, None, Some(&params)), &Lookup::new(&[]))
             .expect("the fixture is valid")
             .is_none()
     );
     assert!(
-        deployment_info(Some(false), None, Some(&params), &Lookup::new(&[]))
+        deployment_info(&query(Some(false), None, Some(&params)), &Lookup::new(&[]))
             .expect("the fixture is valid")
             .is_none()
     );
@@ -438,7 +450,7 @@ fn deployment_info_needs_custom_pricing() {
 fn a_registered_router_entry_wins_even_when_empty() {
     let lookup = Lookup::new(&[("router", &[])]);
     let params = params(&[("metadata", model_info(Json::Object(IndexMap::new())))]);
-    let deployment = deployment_info(Some(true), Some("router"), Some(&params), &lookup)
+    let deployment = deployment_info(&query(Some(true), Some("router"), Some(&params)), &lookup)
         .expect("the fixture is valid");
     assert_eq!(deployment.map(|record| record.len()), Some(0));
 }
@@ -455,17 +467,23 @@ fn deployment_info_reads_the_first_nonnull_model_info() {
             )]))),
         ),
     ]);
-    let deployment = deployment_info(Some(true), None, Some(&logging_params), &Lookup::new(&[]))
-        .expect("the fixture is valid");
+    let deployment = deployment_info(
+        &query(Some(true), None, Some(&logging_params)),
+        &Lookup::new(&[]),
+    )
+    .expect("the fixture is valid");
     assert_eq!(
         deployment.as_ref().map(rendered),
         Some(rendered(&record(&[("input_cost_per_token", number("2"))])))
     );
     let empty_metadata = params(&[("metadata", Json::Object(IndexMap::new()))]);
     assert!(
-        deployment_info(Some(true), None, Some(&empty_metadata), &Lookup::new(&[]))
-            .expect("the fixture is valid")
-            .is_none()
+        deployment_info(
+            &query(Some(true), None, Some(&empty_metadata)),
+            &Lookup::new(&[])
+        )
+        .expect("the fixture is valid")
+        .is_none()
     );
 }
 
@@ -473,12 +491,18 @@ fn deployment_info_reads_the_first_nonnull_model_info() {
 fn deployment_info_rejects_a_nonobject_metadata() {
     let text_metadata = params(&[("metadata", Json::Text("metadata".to_owned()))]);
     assert!(matches!(
-        deployment_info(Some(true), None, Some(&text_metadata), &Lookup::new(&[])),
+        deployment_info(
+            &query(Some(true), None, Some(&text_metadata)),
+            &Lookup::new(&[])
+        ),
         Err(BillingContextError::MetadataShape { field: "metadata" })
     ));
     let wrong_model_info = params(&[("metadata", model_info(Json::Bool(true)))]);
     assert!(matches!(
-        deployment_info(Some(true), None, Some(&wrong_model_info), &Lookup::new(&[])),
+        deployment_info(
+            &query(Some(true), None, Some(&wrong_model_info)),
+            &Lookup::new(&[])
+        ),
         Err(BillingContextError::ModelInfoShape)
     ));
 }
@@ -502,7 +526,7 @@ fn ocr_info_layers_logging_params_over_the_deployment_record() {
             Json::Number(serde_json::Number::from(1_u8)),
         ),
     ]);
-    let pricing = ocr_info(Some(true), None, Some(&params), &Lookup::new(&[]))
+    let pricing = ocr_info(&query(Some(true), None, Some(&params)), &Lookup::new(&[]))
         .expect("the fixture is valid")
         .expect("the deployment record prices OCR");
     assert_eq!(pricing.ocr_cost_per_page, Some(Decimal::ONE));
@@ -517,7 +541,7 @@ fn ocr_info_without_a_custom_price_has_nothing_to_layer() {
         Json::Number(serde_json::Number::from(1_u8)),
     )]);
     assert!(
-        ocr_info(None, None, Some(&params), &Lookup::new(&[]))
+        ocr_info(&query(None, None, Some(&params)), &Lookup::new(&[]))
             .expect("the fixture is valid")
             .is_none()
     );

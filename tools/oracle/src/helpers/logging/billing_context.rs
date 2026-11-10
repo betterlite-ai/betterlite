@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 mod execute;
 mod model;
+mod projection;
 
 pub(crate) struct Op;
 
