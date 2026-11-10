@@ -114,7 +114,10 @@ def _mapping(step: Object) -> Json:
     dropped = sorted(
         name
         for name, value in parameters.items()
-        if value is not None and name not in standard and name not in provider
+        if value is not None
+        and name != "extra_body"
+        and name not in standard
+        and name not in provider
     )
     return {
         "standard": cast(Json, standard),

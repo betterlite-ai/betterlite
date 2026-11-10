@@ -393,6 +393,20 @@ fn identical_base_model_adds_nothing() {
     );
 }
 
+fn embeddings_ignores_the_base_model() {
+    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
+    let mut query = query("gpt-4", OpenAiConfigTag::Gpt, &capabilities);
+    query.call_type = CallType::Embeddings;
+    query.base_model = Some(ModelProjection {
+        model: "gpt-4o",
+        capabilities: &capabilities,
+    });
+    assert_eq!(
+        supported_parameters(&query),
+        listed(&[BASE, &["user"]].concat())
+    );
+}
+
 fn embeddings_returns_the_chat_parameter_names() {
     let capabilities = caps(&[OpenAiCapability::CatalogModel]);
     let mut query = query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities);
@@ -440,6 +454,7 @@ fn transcription_is_absent() {
 #[case::gpt_5_search_uses_its_own_list(gpt_5_search_uses_its_own_list)]
 #[case::base_model_adds_names_in_first_seen_order(base_model_adds_names_in_first_seen_order)]
 #[case::identical_base_model_adds_nothing(identical_base_model_adds_nothing)]
+#[case::embeddings_ignores_the_base_model(embeddings_ignores_the_base_model)]
 #[case::embeddings_returns_the_chat_parameter_names(embeddings_returns_the_chat_parameter_names)]
 #[case::unimplemented_provider_is_absent(unimplemented_provider_is_absent)]
 #[case::transcription_is_absent(transcription_is_absent)]

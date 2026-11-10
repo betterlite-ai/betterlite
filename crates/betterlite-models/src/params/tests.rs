@@ -30,14 +30,15 @@ fn caps(names: &[OpenAiCapability]) -> BTreeSet<OpenAiCapability> {
     names.iter().copied().collect()
 }
 
-fn gpt_4o<'model>(
+fn query<'model>(
     model: &'model str,
+    config: OpenAiConfigTag,
     capabilities: &'model BTreeSet<OpenAiCapability>,
 ) -> CapabilityQuery<'model> {
     CapabilityQuery {
         provider: ProviderId::Openai,
         call_type: CallType::ChatCompletion,
-        config: OpenAiConfigTag::Gpt,
+        config,
         model: ModelProjection {
             model,
             capabilities,
@@ -54,7 +55,7 @@ fn mapping(
     let parameters = parameters(parameters_source);
     let policy = policy(policy_source);
     map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
+        capabilities: query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities),
         parameters: &parameters,
         policy: &policy,
     })
@@ -186,7 +187,7 @@ fn allowed_openai_params_do_not_unreserve_controls() {
         .insert("api_key".to_owned(), value(r#""sk-test""#));
     let policy = policy(r#"{"allowed_openai_params": ["api_key"]}"#);
     let error = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
+        capabilities: query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities),
         parameters: &parameters,
         policy: &policy,
     })
@@ -202,7 +203,7 @@ fn typed_passthrough_cannot_overwrite_the_typed_field() {
         .insert("temperature".to_owned(), value("1"));
     let policy = policy("{}");
     let error = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
+        capabilities: query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities),
         parameters: &parameters,
         policy: &policy,
     })
@@ -220,7 +221,7 @@ fn absent_capabilities_fail_mapping() {
     let capabilities = caps(&[OpenAiCapability::CatalogModel]);
     let parameters = parameters(r#"{"temperature": 0.5}"#);
     let policy = policy("{}");
-    let mut query = gpt_4o("claude-3", &capabilities);
+    let mut query = query("claude-3", OpenAiConfigTag::Gpt, &capabilities);
     query.provider = ProviderId::Anthropic;
     let error = map_parameters(&ParameterRequest {
         capabilities: query,
@@ -275,7 +276,7 @@ fn passthrough_values_stay_raw() {
     parameters.passthrough = passthrough;
     let policy = policy("{}");
     let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
+        capabilities: query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities),
         parameters: &parameters,
         policy: &policy,
     })
@@ -283,6 +284,106 @@ fn passthrough_values_stay_raw() {
     assert_eq!(
         mapping.provider_fields["custom_tools"],
         value(r#"[{"type": "function"}]"#)
+    );
+}
+
+fn unvalidated_user_is_dropped_not_rejected() {
+    let capabilities = caps(&[]);
+    let parameters = parameters(r#"{"user": "abc", "temperature": 0.5}"#);
+    let policy = policy("{}");
+    let mapping = map_parameters(&ParameterRequest {
+        capabilities: query(
+            "unknown-model",
+            OpenAiConfigTag::UnknownModel,
+            &capabilities,
+        ),
+        parameters: &parameters,
+        policy: &policy,
+    })
+    .unwrap();
+    assert_eq!(mapping.standard.len(), 1);
+    assert_eq!(mapping.standard["temperature"], value("0.5"));
+    assert_eq!(mapping.dropped_fields, ["user"]);
+}
+
+fn search_model_n_boundaries() {
+    let capabilities = caps(&[OpenAiCapability::CatalogModel, OpenAiCapability::ToolChoice]);
+    let policy = policy("{}");
+    let one = parameters(r#"{"n": 1}"#);
+    let mapping = map_parameters(&ParameterRequest {
+        capabilities: query("gpt-5-search-api", OpenAiConfigTag::Gpt5, &capabilities),
+        parameters: &one,
+        policy: &policy,
+    })
+    .unwrap();
+    assert!(mapping.standard.is_empty());
+    assert_eq!(mapping.dropped_fields, ["n"]);
+    let two = parameters(r#"{"n": 2}"#);
+    let error = map_parameters(&ParameterRequest {
+        capabilities: query("gpt-5-search-api", OpenAiConfigTag::Gpt5, &capabilities),
+        parameters: &two,
+        policy: &policy,
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, ParameterError::Unsupported { names, .. } if names == ["n".to_owned()])
+    );
+}
+
+fn extra_body_contents_become_provider_fields() {
+    let mapping = mapping(r#"{"temperature": 0.5, "extra_body": {"foo": 1}}"#, "{}").unwrap();
+    assert_eq!(mapping.standard.len(), 1);
+    assert_eq!(mapping.standard["temperature"], value("0.5"));
+    assert_eq!(mapping.provider_fields.len(), 1);
+    assert_eq!(mapping.provider_fields["foo"], value("1"));
+}
+
+fn additional_drop_params_remove_extra_body_keys() {
+    let mapping = mapping(
+        r#"{"extra_body": {"foo": 1, "bar": 2}}"#,
+        r#"{"additional_drop_params": ["foo"]}"#,
+    )
+    .unwrap();
+    assert_eq!(mapping.provider_fields.len(), 1);
+    assert_eq!(mapping.provider_fields["bar"], value("2"));
+    assert_eq!(mapping.dropped_fields, ["foo"]);
+}
+
+fn extra_body_model_key_is_dropped_and_reported() {
+    let mapping = mapping(r#"{"extra_body": {"model": "x", "foo": 1}}"#, "{}").unwrap();
+    assert_eq!(mapping.provider_fields.len(), 1);
+    assert!(!mapping.provider_fields.contains_key("model"));
+    assert_eq!(mapping.dropped_fields, ["model"]);
+}
+
+fn extra_body_reserved_key_is_rejected() {
+    let error = mapping(r#"{"extra_body": {"api_key": "sk-test"}}"#, "{}").unwrap_err();
+    assert!(matches!(error, ParameterError::ReservedParameter { name } if name == "api_key"));
+}
+
+fn extra_body_whole_drop_removes_provider_fields() {
+    let mapping = mapping(
+        r#"{"extra_body": {"foo": 1}, "vendor_flag": 2}"#,
+        r#"{"additional_drop_params": ["extra_body"]}"#,
+    )
+    .unwrap();
+    assert!(mapping.provider_fields.is_empty());
+    assert_eq!(mapping.dropped_fields, ["foo", "vendor_flag"]);
+}
+
+fn extra_body_wrong_type_is_rejected() {
+    let error = mapping(r#"{"extra_body": "x"}"#, "{}").unwrap_err();
+    assert!(matches!(error, ParameterError::NotAnObject { name } if name == "extra_body"));
+}
+
+fn nested_drop_paths_are_rejected() {
+    let error = mapping(
+        r#"{"tools": []}"#,
+        r#"{"additional_drop_params": ["tools[*].function.strict"]}"#,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, ParameterError::NestedDropPath { path } if path == "tools[*].function.strict")
     );
 }
 
@@ -314,6 +415,19 @@ fn passthrough_values_stay_raw() {
 #[case::typed_names_are_all_modeled_and_reserved(typed_names_are_all_modeled_and_reserved)]
 #[case::decimal_values_keep_their_exact_text(decimal_values_keep_their_exact_text)]
 #[case::dropped_names_are_sorted_and_unique(dropped_names_are_sorted_and_unique)]
+#[case::unvalidated_user_is_dropped_not_rejected(unvalidated_user_is_dropped_not_rejected)]
+#[case::search_model_n_boundaries(search_model_n_boundaries)]
+#[case::extra_body_contents_become_provider_fields(extra_body_contents_become_provider_fields)]
+#[case::additional_drop_params_remove_extra_body_keys(
+    additional_drop_params_remove_extra_body_keys
+)]
+#[case::extra_body_model_key_is_dropped_and_reported(extra_body_model_key_is_dropped_and_reported)]
+#[case::extra_body_reserved_key_is_rejected(extra_body_reserved_key_is_rejected)]
+#[case::extra_body_whole_drop_removes_provider_fields(
+    extra_body_whole_drop_removes_provider_fields
+)]
+#[case::extra_body_wrong_type_is_rejected(extra_body_wrong_type_is_rejected)]
+#[case::nested_drop_paths_are_rejected(nested_drop_paths_are_rejected)]
 #[case::passthrough_values_stay_raw(passthrough_values_stay_raw)]
 fn provider_params_tests_behavior(#[case] scenario: fn()) {
     scenario();

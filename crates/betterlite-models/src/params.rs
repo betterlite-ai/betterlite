@@ -144,8 +144,10 @@ pub enum ParameterError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the encoded request parameters are not an object")]
-    NotAnObject,
+    #[error("{name} must be an object")]
+    NotAnObject { name: String },
+    #[error("the nested drop path {path} is not supported yet")]
+    NestedDropPath { path: String },
 }
 
 pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping, ParameterError> {
@@ -157,11 +159,16 @@ pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping
             model: model.to_owned(),
         });
     };
+    reject_nested_drop_paths(&request.policy.additional_drop_params)?;
     let mut state = MappingState::new(&supported, request.policy);
     for (name, value) in typed_parameters(request.parameters)? {
         state.place(name, value, false);
     }
     for (name, value) in &request.parameters.passthrough {
+        if name == "extra_body" {
+            state.extra_body(value, request.capabilities.call_type)?;
+            continue;
+        }
         match classify_parameter(name, request.capabilities.call_type) {
             ParameterClass::Reserved => {
                 return Err(ParameterError::ReservedParameter { name: name.clone() });
@@ -171,6 +178,15 @@ pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping
         }
     }
     state.finish(model)
+}
+
+fn reject_nested_drop_paths(paths: &[String]) -> Result<(), ParameterError> {
+    paths
+        .iter()
+        .find(|path| path.contains('.') || path.contains('['))
+        .map_or(Ok(()), |path| {
+            Err(ParameterError::NestedDropPath { path: path.clone() })
+        })
 }
 
 struct MappingState<'request> {
@@ -204,14 +220,56 @@ impl<'request> MappingState<'request> {
         {
             self.mapping.dropped_fields.push(name);
         } else if passthrough {
-            self.mapping.provider_fields.insert(name, value);
+            if self.drops_extra_body() {
+                self.mapping.dropped_fields.push(name);
+            } else {
+                self.mapping.provider_fields.insert(name, value);
+            }
         } else if self.allowed.contains(name.as_str()) {
             self.mapping.standard.insert(name, value);
-        } else if self.policy.drop_params {
+        } else if is_unvalidated(&name, &value) || self.policy.drop_params {
             self.mapping.dropped_fields.push(name);
         } else {
             self.unsupported.push(name);
         }
+    }
+
+    fn extra_body(&mut self, value: &Value, call_type: CallType) -> Result<(), ParameterError> {
+        if value.is_null() {
+            return Ok(());
+        }
+        let Value::Object(fields) = value else {
+            return Err(ParameterError::NotAnObject {
+                name: String::from("extra_body"),
+            });
+        };
+        for (name, entry) in fields {
+            if classify_parameter(name, call_type) == ParameterClass::Reserved {
+                return Err(ParameterError::ReservedParameter { name: name.clone() });
+            }
+            if name == "model" || self.drops_extra_body() || self.drops_name(name) {
+                self.mapping.dropped_fields.push(name.clone());
+            } else {
+                self.mapping
+                    .provider_fields
+                    .insert(name.clone(), entry.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn drops_extra_body(&self) -> bool {
+        self.policy
+            .additional_drop_params
+            .iter()
+            .any(|dropped| dropped == "extra_body")
+    }
+
+    fn drops_name(&self, name: &str) -> bool {
+        self.policy
+            .additional_drop_params
+            .iter()
+            .any(|dropped| dropped == name)
     }
 
     fn finish(self, model: &str) -> Result<ParameterMapping, ParameterError> {
@@ -228,13 +286,15 @@ impl<'request> MappingState<'request> {
     }
 }
 
+fn is_unvalidated(name: &str, value: &Value) -> bool {
+    matches!(name, "user" | "stream" | "stream_options" | "max_retries")
+        || (name == "n" && value.as_i64() == Some(1))
+}
+
 fn typed_parameters(
     parameters: &ChatParameters,
 ) -> Result<BTreeMap<String, Value>, ParameterError> {
     let encoded =
         serde_json::to_value(parameters).map_err(|source| ParameterError::Encode { source })?;
-    let Value::Object(fields) = encoded else {
-        return Err(ParameterError::NotAnObject);
-    };
-    Ok(fields.into_iter().collect())
+    serde_json::from_value(encoded).map_err(|source| ParameterError::Encode { source })
 }

@@ -52,23 +52,37 @@ impl Section for Raw {
     {
         let environment_text = lookup.lookup("LITELLM_DROP_PARAMS").unwrap_or_default();
         let environment = betterlite_env::flag("LITELLM_DROP_PARAMS", &environment_text)?;
+        let mut paths = Vec::new();
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let additional_drop_params = deployment
+                .litellm_params
+                .additional_drop_params
+                .unwrap_or_default();
+            // LiteLLM reads a dotted or bracketed entry as a JSON path; the path engine is B213
+            paths.extend(
+                additional_drop_params
+                    .iter()
+                    .filter(|entry| entry.contains('.') || entry.contains('['))
+                    .map(|entry| {
+                        format!("model_list.{index}.litellm_params.additional_drop_params[{entry}]")
+                    }),
+            );
+            deployments.push(DeploymentDropPolicy {
+                drop_params: deployment.litellm_params.drop_params,
+                additional_drop_params,
+            });
+        }
+        if !paths.is_empty() {
+            return Err(ConfigError::Unsupported { paths });
+        }
         Ok(Settings {
             global_drop_params: self
                 .litellm_settings
                 .drop_params
                 .or(environment)
                 .unwrap_or(false),
-            deployments: self
-                .model_list
-                .into_iter()
-                .map(|deployment| DeploymentDropPolicy {
-                    drop_params: deployment.litellm_params.drop_params,
-                    additional_drop_params: deployment
-                        .litellm_params
-                        .additional_drop_params
-                        .unwrap_or_default(),
-                })
-                .collect(),
+            deployments,
         })
     }
 }

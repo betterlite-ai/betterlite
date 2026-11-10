@@ -83,7 +83,19 @@ fn a_null_deployment_flag_is_unset() {
     assert_eq!(settings.deployments, vec![deployment(None, &[])]);
 }
 
+fn a_nested_drop_path_is_rejected() {
+    let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      additional_drop_params: ['tools[*].function.strict']\n";
+    let error = settings(source, &[]).unwrap_err();
+    assert!(
+        error.contains(
+            "model_list.0.litellm_params.additional_drop_params[tools[*].function.strict]"
+        ),
+        "{error}"
+    );
+}
+
 #[rstest]
+#[case::a_nested_drop_path_is_rejected(a_nested_drop_path_is_rejected)]
 #[case::absent_config_has_no_drop_policy(absent_config_has_no_drop_policy)]
 #[case::litellm_settings_enables_the_global_flag(litellm_settings_enables_the_global_flag)]
 #[case::an_explicit_false_overrides_the_environment(an_explicit_false_overrides_the_environment)]

@@ -128,9 +128,10 @@ pub fn supported_parameters(query: &CapabilityQuery<'_>) -> ParameterCapabilitie
         return ParameterCapabilities::Absent;
     }
     let mut names = config_parameters(query.config, query.model);
-    if let Some(base) = query
-        .base_model
-        .filter(|base| base.model != query.model.model)
+    if query.call_type == CallType::ChatCompletion
+        && let Some(base) = query
+            .base_model
+            .filter(|base| base.model != query.model.model)
     {
         for name in config_parameters(query.config, base) {
             if !names.contains(&name) {
