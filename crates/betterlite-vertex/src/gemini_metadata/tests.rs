@@ -143,6 +143,10 @@ fn a_non_object_candidate_has_no_metadata(#[case] source: &str) {
     r#"{"model_extra": [], "_hidden_params": {"vertex_ai_grounding_metadata": ["hidden"]}}"#,
     Some(r#"["hidden"]"#)
 )]
+#[case::model_extra_without_the_field(
+    r#"{"model_extra": {"other": 1}, "_hidden_params": {"vertex_ai_grounding_metadata": ["hidden"]}}"#,
+    Some(r#"["hidden"]"#)
+)]
 #[case::null_hidden(r#"{"_hidden_params": {"vertex_ai_grounding_metadata": null}}"#, None)]
 #[case::non_object_hidden(r#"{"_hidden_params": "copies"}"#, None)]
 #[case::absent(r#"{"content": "text"}"#, None)]
