@@ -107,6 +107,7 @@ fn parses_missing_session_policy(#[case] line: &str, #[case] expected: Option<Mi
 #[rstest]
 #[case::text("not-a-number")]
 #[case::fraction("20.5")]
+#[case::python_digit_group("1_0")]
 fn a_malformed_initial_prompt_length_fails_loading(#[case] value: &str) {
     let source = "general_settings: {}\n";
     let lookup = environment(&[("MAX_STRING_LENGTH_PROMPT_IN_DB", value)]);

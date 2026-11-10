@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
 
 use super::support::value;
 use crate::spend_bodies::session::{
@@ -202,4 +202,36 @@ fn a_naive_timestamp_is_read_in_the_given_local_zone() {
     let east = FixedOffset::east_opt(10_800).expect("offset");
     let converted = ensure_datetime_utc(naive(), &east).expect("naive conversion");
     assert_eq!(converted.to_rfc3339(), "2024-01-02T00:04:05.600+00:00");
+}
+
+#[derive(Clone)]
+struct GapZone;
+
+impl TimeZone for GapZone {
+    type Offset = FixedOffset;
+
+    fn from_offset(_offset: &FixedOffset) -> Self {
+        Self
+    }
+
+    fn offset_from_local_date(&self, _local: &NaiveDate) -> LocalResult<FixedOffset> {
+        LocalResult::None
+    }
+
+    fn offset_from_local_datetime(&self, _local: &NaiveDateTime) -> LocalResult<FixedOffset> {
+        LocalResult::None
+    }
+
+    fn offset_from_utc_date(&self, _utc: &NaiveDate) -> FixedOffset {
+        FixedOffset::east_opt(0).expect("offset")
+    }
+
+    fn offset_from_utc_datetime(&self, _utc: &NaiveDateTime) -> FixedOffset {
+        FixedOffset::east_opt(0).expect("offset")
+    }
+}
+
+#[test]
+fn a_naive_timestamp_inside_a_local_gap_has_no_utc_instant() {
+    assert!(ensure_datetime_utc(naive(), &GapZone).is_none());
 }
