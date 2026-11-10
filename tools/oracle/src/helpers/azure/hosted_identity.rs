@@ -8,12 +8,15 @@ use betterlite_azure::azure_hosted_identity::error::HostedIdentityError;
 use betterlite_azure::azure_hosted_identity::msal_reply::MsalKind;
 use betterlite_azure::azure_hosted_identity::protocol::select_hosted_protocol;
 use betterlite_azure::azure_hosted_identity::request::{HostedIo, TokenResult};
-use betterlite_config::loader::ConfigLoader;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use fixture::{FixedClock, Recording, Reply, Selection};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::helpers::HelperError;
 
 #[derive(Deserialize)]
 pub(crate) struct Input {
@@ -101,19 +104,35 @@ fn acquire(step: &TokenStep, io: &HostedIo<'_>) -> TokenResult {
     }
 }
 
-fn token_step(step: &TokenStep) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
-    let transport = Recording::new(&step.replies);
-    let clock = FixedClock { now: step.now };
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
-            class: "Redaction".to_owned(),
+#[derive(Debug, thiserror::Error)]
+enum Failure {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Redaction(#[from] RedactionError),
+}
+
+impl From<Failure> for Box<HelperError> {
+    fn from(failure: Failure) -> Self {
+        let class = match &failure {
+            Failure::Config(_) => "ConfigError",
+            Failure::Redaction(_) => "Redaction",
+        };
+        Self::new(HelperError {
+            class: class.to_owned(),
             status: None,
             error_type: None,
             param: None,
             code: None,
-            message: error.to_string(),
+            message: failure.to_string(),
         })
-    })?;
+    }
+}
+
+fn token_step(step: &TokenStep) -> Result<serde_json::Value, Failure> {
+    let transport = Recording::new(&step.replies);
+    let clock = FixedClock { now: step.now };
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
     let io = HostedIo {
         transport: &transport,
         clock: &clock,
@@ -141,7 +160,7 @@ fn select_step(
     environment: &BTreeMap<String, String>,
     platform: Option<&str>,
     files: &BTreeMap<String, String>,
-) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+) -> Result<serde_json::Value, Failure> {
     let settings = ConfigLoader {
         lookup: environment.clone(),
     }
@@ -175,7 +194,7 @@ impl crate::helpers::Helper for Op {
                     files,
                 } => select_step(environment, platform.as_deref(), files),
             })
-            .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
+            .collect::<Result<Vec<_>, Failure>>()?;
         Ok(json!({"steps": steps}))
     }
 }
