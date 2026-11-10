@@ -1,0 +1,2 @@
+task: B1418
+deviations: [{what: "A failing reply whose body is not UTF-8 reaches the failure hook as an empty string. LiteLLM logs httpx's response text, which replaces the bytes it cannot decode.", why: "betterlite refuses bytes that are not UTF-8 instead of mangling them, and the body only reaches a log record; no working setup can rely on the text of a non-UTF-8 error page.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/handler.py#L92"}]
