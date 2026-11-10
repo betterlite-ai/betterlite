@@ -21,20 +21,22 @@ pub(super) fn resolved_provider(
         api_base: params.api_base.as_deref(),
         api_key: params.api_key.as_ref(),
     };
-    let resolved = match resolve_model(&request, context) {
-        Ok(resolved) => Some(resolved),
+    let openai = match resolve_model(&request, context) {
+        Ok(resolved) => matches!(
+            resolved.provider,
+            ProviderIdentity::Known(ProviderId::Openai)
+        )
+        .then_some(resolved.model),
         // The Mantle endpoint is an input betterlite does not build, so only its missing adapter refuses the call.
         Err(ResolutionError::DefaultsA {
             source: DefaultsAError::MissingMantleEndpoint,
         }) => None,
         Err(error) => return Err(error),
     };
-    if let Some(found) = resolved
-        && matches!(found.provider, ProviderIdentity::Known(ProviderId::Openai))
-    {
-        return Ok(Provider::OpenAi { model: found.model });
-    }
-    Ok(Provider::Unsupported {
-        model: litellm_model.to_owned(),
-    })
+    Ok(openai.map_or_else(
+        || Provider::Unsupported {
+            model: litellm_model.to_owned(),
+        },
+        |model| Provider::OpenAi { model },
+    ))
 }
