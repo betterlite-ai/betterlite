@@ -1,0 +1,9 @@
+kind: helper
+name: provider-resolution-anthropic-legacy
+call:
+  provider_resolution:
+    model: claude-2
+    catalog:
+      claude-2: {litellm_provider: anthropic}
+env: {}
+compare: {ignore: []}
