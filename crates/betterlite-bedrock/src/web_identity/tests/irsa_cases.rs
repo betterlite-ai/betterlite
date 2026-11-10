@@ -315,24 +315,25 @@ fn cross_error(
         .unwrap_err()
 }
 
+fn assert_binary_token_file(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
+    let (binary, _binary_recorder) = fixture::sources_with_bytes(
+        &ENVIRONMENT,
+        &[(TOKEN_FILE, vec![b'i', b'r', 0xff])],
+        BTreeMap::new(),
+    );
+    let error = fixture::runtime()
+        .block_on(handle_irsa_cross_account(input, kwargs, &binary))
+        .unwrap_err();
+    assert!(matches!(error, WebIdentityError::TokenFileEncoding { .. }));
+}
+
 fn assert_cross_failures(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
     let missing_file = cross_error(input, kwargs, &[], BTreeMap::new());
     assert!(matches!(
         missing_file,
         WebIdentityError::TokenFile { path, .. } if path.to_str() == Some(TOKEN_FILE)
     ));
-    let (binary, _binary_recorder) = fixture::sources_with_bytes(
-        &ENVIRONMENT,
-        &[(TOKEN_FILE, vec![b'i', b'r', 0xff])],
-        BTreeMap::new(),
-    );
-    let binary_error = fixture::runtime()
-        .block_on(handle_irsa_cross_account(input, kwargs, &binary))
-        .unwrap_err();
-    assert!(matches!(
-        binary_error,
-        WebIdentityError::TokenFileEncoding { .. }
-    ));
+    assert_binary_token_file(input, kwargs);
     let missing = cross_error(
         input,
         kwargs,
