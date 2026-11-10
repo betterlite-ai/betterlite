@@ -47,7 +47,7 @@ async fn text_counting_matches_python_str_and_json_dumps() {
         support::text_tokens(&counter, MODEL, "2").await,
         support::text_tokens(&counter, MODEL, "hi").await,
         support::text_tokens(&counter, MODEL, "3").await,
-        support::text_tokens(&counter, MODEL, "{\"b\": true, \"a\": \"\u{e9}\"}").await,
+        support::text_tokens(&counter, MODEL, "{\"b\": true, \"a\": \"\\u00e9\"}").await,
         support::text_tokens(&counter, MODEL, "{\"k\": \"it's\"}").await,
     ]
     .into_iter()
