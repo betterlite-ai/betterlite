@@ -9,3 +9,6 @@ deviations:
   - what: A batch whose aggregated payload cannot be built or encoded is dropped with an error log instead of raising out of the flush or drain.
     why: LiteLLM lets the exception escape flush_queue and kill the periodic task, which stops every later flush of a working setup; the record cannot succeed on a retry because the same records produce the same failure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L367
+  - what: push_record enforces max_queue_size at admission, dropping the oldest record with a warning, where LiteLLM appends every record without a cap and only trims the queue when a failed batch is requeued.
+    why: While the Metric API stalls or the flush is slow, the queue would grow with traffic without bound; the documented max_queue_size is a retention cap, and a working setup cannot rely on exceeding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L318

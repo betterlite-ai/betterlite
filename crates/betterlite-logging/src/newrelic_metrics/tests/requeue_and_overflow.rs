@@ -58,6 +58,22 @@ async fn requeue_and_overflow_warns_when_it_drops_records() {
     assert!(logs.text().contains("dropped=1"));
 }
 
+#[tokio::test]
+async fn requeue_and_overflow_trims_the_queue_on_push_without_a_flush() {
+    let (logs, _guard) = capture_logs();
+    let fixture = Fixture::new();
+    let logger = fixture.build();
+    (0_usize..=10_000).for_each(|index| push_record(&logger, record_at(index)));
+
+    assert_eq!(queue_length(&logger), 10_000);
+    assert_eq!(models(&logger).first().map(String::as_str), Some("gpt-1"));
+    assert_eq!(
+        models(&logger).last().map(String::as_str),
+        Some("gpt-10000")
+    );
+    assert!(logs.text().contains("dropped=1"));
+}
+
 fn models(logger: &NewRelicMetricsLogger) -> Vec<String> {
     queue_snapshot(logger)
         .iter()

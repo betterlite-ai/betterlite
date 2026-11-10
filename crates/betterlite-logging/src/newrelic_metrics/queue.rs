@@ -1,6 +1,6 @@
-use std::collections::BTreeSet;
-use std::sync::PoisonError;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::atomic::Ordering;
+use std::sync::{MutexGuard, PoisonError};
 
 use super::logger::NewRelicMetricsLogger;
 use super::records::NewRelicMetricRecord;
@@ -14,6 +14,20 @@ pub fn push_record(logger: &NewRelicMetricsLogger, record: NewRelicMetricRecord)
     let id = logger.next_id.fetch_add(1, Ordering::SeqCst);
     let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
     queue.push_back(QueuedRecord { id, record });
+    enforce_cap(logger, queue);
+}
+
+fn enforce_cap(logger: &NewRelicMetricsLogger, mut queue: MutexGuard<'_, VecDeque<QueuedRecord>>) {
+    let overflow = queue.len().saturating_sub(logger.settings.max_queue_size);
+    queue.drain(..overflow);
+    drop(queue);
+    if overflow > 0 {
+        tracing::warn!(
+            max_queue_size = logger.settings.max_queue_size,
+            dropped = overflow,
+            "New Relic Metrics: retry queue exceeded max_queue_size; dropped the oldest records"
+        );
+    }
 }
 
 #[must_use]
@@ -49,16 +63,7 @@ pub fn requeue(logger: &NewRelicMetricsLogger, batch: Vec<QueuedRecord>) {
     for queued in batch.into_iter().rev() {
         queue.push_front(queued);
     }
-    let overflow = queue.len().saturating_sub(logger.settings.max_queue_size);
-    queue.drain(..overflow);
-    drop(queue);
-    if overflow > 0 {
-        tracing::warn!(
-            max_queue_size = logger.settings.max_queue_size,
-            dropped = overflow,
-            "New Relic Metrics: retry queue exceeded max_queue_size; dropped the oldest records"
-        );
-    }
+    enforce_cap(logger, queue);
 }
 
 #[must_use]
