@@ -174,6 +174,22 @@ fn strict_disable_env_flag(#[case] value: &str, #[case] expected: bool) {
     assert_eq!(settings.disable_prepared_statements, expected);
 }
 
+#[rstest]
+#[case::integer_one("1", true)]
+#[case::integer_zero("0", false)]
+#[case::float_nonzero("1.5", true)]
+#[case::float_zero("0.0", false)]
+#[case::empty_list("[]", false)]
+#[case::one_item_list("[a]", true)]
+#[case::empty_mapping("{}", false)]
+#[case::one_entry_mapping("{a: b}", true)]
+#[case::null("null", false)]
+fn nonstring_disable_flag_uses_python_truthiness(#[case] value: &str, #[case] expected: bool) {
+    let source = format!("general_settings:\n  database_disable_prepared_statements: {value}\n");
+    let settings = load(&source, &[]);
+    assert_eq!(settings.disable_prepared_statements, expected);
+}
+
 #[test]
 fn invalid_disable_env_flag_stops_loading() {
     let error = load_error(

@@ -152,6 +152,12 @@ fn literal_schema_then_tls() {
         build_writer_url(&settings, AuthMode::Password).unwrap(),
         Some("postgresql://user@db.example:5432/name?schema=tenant+one&sslmode=require".to_owned())
     );
+    let mut empty_schema = writer();
+    empty_schema.database_schema = Some(String::new());
+    assert_eq!(
+        build_writer_url(&empty_schema, AuthMode::Password).unwrap(),
+        Some("postgresql://user@db.example:5432/name".to_owned())
+    );
 }
 
 #[test]
@@ -365,6 +371,16 @@ fn cli_username_only_no_port() {
         ("DATABASE_NAME", "n"),
     ]);
     assert_eq!(construct_cli_database_url(&without_username).unwrap(), None);
+    let without_password = environment_map(&[
+        ("DATABASE_HOST", "db.example"),
+        ("DATABASE_USERNAME", "user"),
+        ("DATABASE_NAME", "cli_db"),
+        ("DATABASE_PASSWORD", ""),
+    ]);
+    assert_eq!(
+        construct_cli_database_url(&without_password).unwrap(),
+        Some("postgresql://user@db.example/cli_db".to_owned())
+    );
 }
 
 #[test]
