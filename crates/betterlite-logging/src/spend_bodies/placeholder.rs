@@ -1,103 +1,80 @@
-use indexmap::IndexMap;
+use betterlite_models::decisions::Json;
 
-use super::support::{NodeAllocator, as_mapping};
+use super::support::{Fields, as_object};
 use crate::spend_sanitize::UNKNOWN_MODEL;
 use crate::spend_sanitize::raw_model::scrub_raw_model_text;
-use crate::spend_sanitize::value::{SpendMapping, SpendValue};
 
-pub fn placeholder_request_body(
-    litellm_params: &SpendMapping,
-    model_group: &str,
-    raw_model: &str,
-    nodes: &mut NodeAllocator,
-) -> SpendMapping {
-    let Some(proxy) = litellm_params
-        .entries
-        .get("proxy_server_request")
-        .and_then(as_mapping)
-    else {
+#[must_use]
+pub fn placeholder_request_body(litellm_params: &Json, model_group: &str, raw_model: &str) -> Json {
+    let Some(params) = as_object(litellm_params) else {
         return litellm_params.clone();
     };
-    let Some(body) = proxy.entries.get("body").and_then(as_mapping) else {
+    let Some(proxy) = params.get("proxy_server_request").and_then(as_object) else {
         return litellm_params.clone();
     };
-    let placeholdered = if body.entries.contains_key("model") {
-        let mut entries = body.entries.clone();
-        entries.insert(
-            "model".to_owned(),
-            SpendValue::Text(UNKNOWN_MODEL.to_owned()),
-        );
-        SpendMapping {
-            node: nodes.allocate(),
-            entries,
-        }
-    } else {
-        body.clone()
+    let Some(body) = proxy.get("body").and_then(as_object) else {
+        return litellm_params.clone();
     };
-    let new_body = placeholder_request_metadata(&placeholdered, model_group, raw_model, nodes);
-    let mut proxy_entries = proxy.entries.clone();
-    proxy_entries.insert("body".to_owned(), SpendValue::Mapping(new_body));
-    let new_proxy = SpendMapping {
-        node: nodes.allocate(),
-        entries: proxy_entries,
-    };
-    let mut params = litellm_params.entries.clone();
-    params.insert(
-        "proxy_server_request".to_owned(),
-        SpendValue::Mapping(new_proxy),
-    );
-    SpendMapping {
-        node: nodes.allocate(),
-        entries: params,
+    let mut placeholdered = body.clone();
+    if placeholdered.contains_key("model") {
+        placeholdered.insert("model".to_owned(), Json::Text(UNKNOWN_MODEL.to_owned()));
     }
+    let new_body =
+        placeholder_request_metadata(&Json::Object(placeholdered), model_group, raw_model);
+    let mut proxy_fields = proxy.clone();
+    proxy_fields.insert("body".to_owned(), new_body);
+    let mut stored_params = params.clone();
+    stored_params.insert(
+        "proxy_server_request".to_owned(),
+        Json::Object(proxy_fields),
+    );
+    Json::Object(stored_params)
 }
 
+#[must_use]
 pub fn placeholder_request_metadata(
-    request_body: &SpendMapping,
+    request_body: &Json,
     model_group: &str,
     raw_model: &str,
-    nodes: &mut NodeAllocator,
-) -> SpendMapping {
-    let Some(metadata) = request_body.entries.get("metadata").and_then(as_mapping) else {
+) -> Json {
+    let Some(body) = as_object(request_body) else {
         return request_body.clone();
     };
-    let mut entries = metadata.entries.clone();
-    if entries.contains_key("model_group") {
-        entries.insert(
-            "model_group".to_owned(),
-            SpendValue::Text(model_group.to_owned()),
+    if let Some(metadata) = body.get("metadata").and_then(as_object) {
+        let mut stored_body = body.clone();
+        stored_body.insert(
+            "metadata".to_owned(),
+            replaced_metadata(metadata, model_group, raw_model),
         );
+        return Json::Object(stored_body);
     }
-    if let Some(SpendValue::Mapping(error_information)) = metadata.entries.get("error_information")
-    {
-        entries.insert(
-            "error_information".to_owned(),
-            SpendValue::Mapping(scrub_error_information(error_information, raw_model, nodes)),
-        );
-    }
-    SpendMapping {
-        node: nodes.allocate(),
-        entries,
-    }
+    request_body.clone()
 }
 
-fn scrub_error_information(
-    information: &SpendMapping,
-    raw_model: &str,
-    nodes: &mut NodeAllocator,
-) -> SpendMapping {
-    let mut entries = IndexMap::with_capacity(information.entries.len());
-    for (key, value) in &information.entries {
-        let scrubbed = match (key.as_str(), value.as_text()) {
-            ("error_message" | "traceback", Some(text)) => {
-                SpendValue::Text(scrub_raw_model_text(text, raw_model))
+fn replaced_metadata(metadata: &Fields, model_group: &str, raw_model: &str) -> Json {
+    let mut entries = metadata.clone();
+    if entries.contains_key("model_group") {
+        entries.insert("model_group".to_owned(), Json::Text(model_group.to_owned()));
+    }
+    if let Some(Json::Object(error_information)) = metadata.get("error_information") {
+        entries.insert(
+            "error_information".to_owned(),
+            Json::Object(scrub_error_information(error_information, raw_model)),
+        );
+    }
+    Json::Object(entries)
+}
+
+fn scrub_error_information(information: &Fields, raw_model: &str) -> Fields {
+    let mut entries = Fields::with_capacity(information.len());
+    for (key, value) in information {
+        let scrubbed = match (key.as_str(), value) {
+            ("error_message" | "traceback", Json::Text(text)) => {
+                Json::Text(scrub_raw_model_text(text, raw_model))
             }
             _ => value.clone(),
         };
         entries.insert(key.clone(), scrubbed);
     }
-    SpendMapping {
-        node: nodes.allocate(),
-        entries,
-    }
+    entries
 }

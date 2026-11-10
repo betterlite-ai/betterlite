@@ -1,10 +1,10 @@
-use super::support::mapping;
+use super::support::value;
 use crate::spend_bodies::messages::storage_messages;
 
 #[test]
 fn stores_realtime_messages() {
     let payload =
-        mapping(r#"{"call_type": "_arealtime", "messages": [{"role": "user", "content": "hi"}]}"#);
+        value(r#"{"call_type": "_arealtime", "messages": [{"role": "user", "content": "hi"}]}"#);
     assert_eq!(
         storage_messages(Some(&payload), true),
         r#"[{"role": "user", "content": "hi"}]"#
@@ -27,7 +27,7 @@ fn stores_nothing_else(
         |stored| format!(r#"{{"call_type": "{call_type}", "messages": {stored}}}"#),
     );
     assert_eq!(
-        storage_messages(Some(&mapping(&source)), store_bodies),
+        storage_messages(Some(&value(&source)), store_bodies),
         expected
     );
 }
@@ -39,7 +39,7 @@ fn a_missing_payload_stores_nothing() {
 
 #[test]
 fn strips_nul_bytes_from_stored_messages() {
-    let payload = mapping(
+    let payload = value(
         r#"{"call_type": "_arealtime", "messages": [{"role": "user", "content": "a\u0000b"}]}"#,
     );
     assert_eq!(

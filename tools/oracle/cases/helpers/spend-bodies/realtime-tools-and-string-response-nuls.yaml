@@ -2,7 +2,7 @@ kind: helper
 name: realtime-tools-and-string-response-nuls
 call:
   spend_bodies:
-    operation: body_storage
+    function: body_storage
     store_bodies: true
     max_string_length: 2048
     turn_off_message_logging: false

@@ -1,30 +1,24 @@
+use betterlite_models::decisions::Json;
+
 use super::support::value;
 use crate::python_json;
 use crate::spend_bodies::vector_store::redact_vector_store;
 use crate::spend_sanitize::REDACTED_BY_LITELM;
-use crate::spend_sanitize::value::{NodeId, SpendList, SpendValue, to_json};
 
-fn requests(text: &str) -> Vec<SpendValue> {
-    let SpendValue::List(list) = value(text) else {
+fn requests(text: &str) -> Vec<Json> {
+    let Json::List(list) = value(text) else {
         panic!("fixture must be a JSON list");
     };
-    list.items
+    list
 }
 
-fn stored(requests: &mut [SpendValue], store_bodies: bool) -> String {
+fn stored(requests: &mut [Json], store_bodies: bool) -> String {
     redact_vector_store(requests, store_bodies);
-    let list = SpendValue::List(SpendList {
-        node: NodeId::from(90_u64),
-        items: requests.to_vec(),
-    });
-    python_json::dumps(&to_json(&list))
+    python_json::dumps(&Json::List(requests.to_vec()))
 }
 
 fn untouched(text: &str) -> String {
-    python_json::dumps(&to_json(&SpendValue::List(SpendList {
-        node: NodeId::from(90_u64),
-        items: requests(text),
-    })))
+    python_json::dumps(&Json::List(requests(text)))
 }
 
 #[test]

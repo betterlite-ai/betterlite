@@ -6,20 +6,18 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::spend_bodies::SpendStoragePolicy;
+use crate::spend_bodies::support::Fields;
 use crate::spend_sanitize::SpendSanitizePolicy;
-use crate::spend_sanitize::value::{SpendMapping, SpendValue};
 
-pub(super) fn value(text: &str) -> SpendValue {
-    let decoded: Json = serde_json::from_str(text).expect("valid fixture JSON");
-    SpendValue::from(&decoded)
+pub(super) fn value(text: &str) -> Json {
+    serde_json::from_str(text).expect("valid fixture JSON")
 }
 
-pub(super) fn mapping(text: &str) -> SpendMapping {
-    let decoded = value(text);
-    let SpendValue::Mapping(mapping) = decoded else {
+pub(super) fn object(text: &str) -> Fields {
+    let Json::Object(fields) = value(text) else {
         panic!("fixture must be a JSON object");
     };
-    mapping
+    fields
 }
 
 pub(super) fn policy(store_bodies: bool, max_string_length: i64) -> SpendStoragePolicy {

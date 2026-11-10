@@ -2,7 +2,7 @@ kind: helper
 name: vector-text-and-existing-placeholder-fields
 call:
   spend_bodies:
-    operation: vector_and_placeholder
+    function: vector_and_placeholder
     store_bodies: false
     vector_store:
       - vector_store_search_response:

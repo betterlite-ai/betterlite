@@ -1,7 +1,7 @@
+use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, LocalResult, NaiveDateTime, TimeZone, Utc};
 
-use super::support::{counts_as_present, string_value};
-use crate::spend_sanitize::value::{SpendMapping, SpendValue};
+use super::support::{as_object, counts_as_present, string_value};
 
 pub const SESSION_ID_OMITTED_KEY: &str = "litellm_session_id_omitted";
 pub const BATCH_COST_SUFFIX: &str = "_batch_cost";
@@ -20,24 +20,22 @@ pub enum SpendTimestamp {
 }
 
 pub struct SessionInput<'data> {
-    pub kwargs: Option<&'data SpendMapping>,
-    pub metadata: Option<&'data SpendMapping>,
-    pub standard_logging_payload: Option<&'data SpendMapping>,
+    pub kwargs: Option<&'data Json>,
+    pub metadata: Option<&'data Json>,
+    pub standard_logging_payload: Option<&'data Json>,
     pub omit_when_missing: bool,
     pub batch_trace_session_id: Option<&'data str>,
     pub injected_uuid: &'data str,
 }
 
 #[must_use]
-pub fn omits_session_id_when_missing(
-    metadata: Option<&SpendMapping>,
-    configured_omit: bool,
-) -> bool {
+pub fn omits_session_id_when_missing(metadata: Option<&Json>, configured_omit: bool) -> bool {
     if configured_omit {
         return true;
     }
     metadata
-        .and_then(|bucket| bucket.entries.get(SESSION_ID_OMITTED_KEY))
+        .and_then(as_object)
+        .and_then(|fields| fields.get(SESSION_ID_OMITTED_KEY))
         .is_some_and(counts_as_present)
 }
 
@@ -61,7 +59,8 @@ pub fn session_id(input: &SessionInput<'_>) -> Option<String> {
     if input.omit_when_missing {
         let session = input
             .metadata
-            .and_then(|bucket| bucket.entries.get("session_id"));
+            .and_then(as_object)
+            .and_then(|fields| fields.get("session_id"));
         return session
             .filter(|value| counts_as_present(value))
             .map(string_value);
@@ -70,14 +69,14 @@ pub fn session_id(input: &SessionInput<'_>) -> Option<String> {
         return Some(batch.to_owned());
     }
     if let Some(payload) = input.standard_logging_payload
-        && let Some(trace) = payload.entries.get("trace_id")
-        && !matches!(trace, SpendValue::Null)
+        && let Some(trace) = as_object(payload).and_then(|fields| fields.get("trace_id"))
+        && !matches!(trace, Json::Null)
     {
         return Some(string_value(trace));
     }
     if let Some(kwargs) = input.kwargs
-        && let Some(trace) = kwargs.entries.get("litellm_trace_id")
-        && !matches!(trace, SpendValue::Null)
+        && let Some(trace) = as_object(kwargs).and_then(|fields| fields.get("litellm_trace_id"))
+        && !matches!(trace, Json::Null)
     {
         return Some(string_value(trace));
     }

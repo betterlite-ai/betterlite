@@ -2,7 +2,7 @@ kind: helper
 name: classifier-extra-body-and-redaction
 call:
   spend_bodies:
-    operation: classifier
+    function: classifier
     store_bodies: true
     max_string_length: 2048
     turn_off_message_logging: true

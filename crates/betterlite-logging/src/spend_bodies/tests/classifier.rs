@@ -1,33 +1,27 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::support::{mapping, value};
+use super::support::{object, value};
 use crate::python_json;
 use crate::spend_bodies::classifier::{
     SnapshotValue, classifier_audit_fields, classifier_input_snapshot, decode_classifier_snapshot,
     without_classifier_audit,
 };
-use crate::spend_bodies::support::NodeAllocator;
-use crate::spend_sanitize::value::{NodeId, SpendMapping, SpendValue, to_json};
+use crate::spend_bodies::support::Fields;
+use crate::spend_sanitize::value::{NodeId, SpendMapping, SpendValue};
 
 fn snapshot(text: &str) -> Option<String> {
-    let mut nodes = NodeAllocator::default();
-    classifier_input_snapshot(SnapshotValue::Text(text), false, &mut nodes)
-        .map(|mapping| python_json::dumps(&to_json(&SpendValue::Mapping(mapping))))
+    classifier_input_snapshot(SnapshotValue::Text(text), false)
+        .map(|stored| python_json::dumps(&stored))
 }
 
 fn sdk_snapshot(value: &SpendValue) -> Option<String> {
-    let mut nodes = NodeAllocator::default();
-    classifier_input_snapshot(SnapshotValue::Value(value), true, &mut nodes)
-        .map(|mapping| python_json::dumps(&to_json(&SpendValue::Mapping(mapping))))
+    classifier_input_snapshot(SnapshotValue::Value(value), true)
+        .map(|stored| python_json::dumps(&stored))
 }
 
-fn audit(entries: &IndexMap<String, SpendValue>) -> String {
-    let fields = entries
-        .iter()
-        .map(|(key, item)| (key.clone(), to_json(item)))
-        .collect();
-    python_json::dumps(&Json::Object(fields))
+fn audit(entries: &Fields) -> String {
+    python_json::dumps(&Json::Object(entries.clone()))
 }
 
 #[test]
@@ -51,24 +45,21 @@ fn rejects_a_json_value_that_is_not_an_object(#[case] text: &str) {
 
 #[test]
 fn rejects_bytes_that_are_not_utf8() {
-    let mut nodes = NodeAllocator::default();
-    assert!(
-        classifier_input_snapshot(SnapshotValue::Bytes(b"\xff\xfe"), false, &mut nodes).is_none()
-    );
+    assert!(classifier_input_snapshot(SnapshotValue::Bytes(b"\xff\xfe"), false).is_none());
 }
 
 #[test]
 fn openai_sdk_drops_transport_keys_and_merges_extra_body() {
-    let source = value(
+    let sdk_input = value(
         r#"{"model": "gpt-4o", "extra_headers": {"a": "b"}, "extra_query": {"q": 1}, "extra_body": {"temperature": 1, "model": "override"}}"#,
     );
     assert_eq!(
-        sdk_snapshot(&source),
+        sdk_snapshot(&SpendValue::from(&sdk_input)),
         Some(r#"{"model": "override", "temperature": 1}"#.to_owned())
     );
     let without_mapping = value(r#"{"model": "gpt-4o", "extra_body": "not a mapping"}"#);
     assert_eq!(
-        sdk_snapshot(&without_mapping),
+        sdk_snapshot(&SpendValue::from(&without_mapping)),
         Some(r#"{"model": "gpt-4o"}"#.to_owned())
     );
 }
@@ -76,11 +67,11 @@ fn openai_sdk_drops_transport_keys_and_merges_extra_body() {
 #[test]
 fn a_plain_snapshot_keeps_the_transport_keys() {
     let source = value(r#"{"model": "gpt-4o", "extra_body": {"temperature": 1}}"#);
-    let mut nodes = NodeAllocator::default();
-    let snapshot = classifier_input_snapshot(SnapshotValue::Value(&source), false, &mut nodes)
-        .expect("plain object");
+    let snapshot =
+        classifier_input_snapshot(SnapshotValue::Value(&SpendValue::from(&source)), false)
+            .expect("plain object");
     assert_eq!(
-        python_json::dumps(&to_json(&SpendValue::Mapping(snapshot))),
+        python_json::dumps(&snapshot),
         r#"{"model": "gpt-4o", "extra_body": {"temperature": 1}}"#
     );
 }
@@ -95,8 +86,7 @@ fn rejects_foreign_objects_in_a_mapping() {
         node: NodeId::from(2_u64),
         entries: IndexMap::from([("classifier_input".to_owned(), model)]),
     });
-    let mut nodes = NodeAllocator::default();
-    assert!(classifier_input_snapshot(SnapshotValue::Value(&source), false, &mut nodes).is_none());
+    assert!(classifier_input_snapshot(SnapshotValue::Value(&source), false).is_none());
 }
 
 #[rstest::rstest]
@@ -114,19 +104,18 @@ fn rejects_foreign_objects_in_a_mapping() {
 )]
 #[case::neither(r#"{"trace_id": "t"}"#, "{}")]
 fn classifier_audit_fields_keep_only_valid_entries(#[case] payload: &str, #[case] expected: &str) {
-    let decoded = mapping(payload);
-    let fields = classifier_audit_fields(&decoded, &mut NodeAllocator::default());
-    assert_eq!(audit(&fields), expected);
+    let decoded = object(payload);
+    assert_eq!(audit(&classifier_audit_fields(&decoded)), expected);
 }
 
 #[test]
 fn without_classifier_audit_removes_only_those_two_keys() {
-    let payload = mapping(
+    let payload = object(
         r#"{"trace_id": "t", "classifier_input": {"a": 1}, "model": "m", "originating_request_masked": {"b": 2}}"#,
     );
-    let stripped = without_classifier_audit(&payload, &mut NodeAllocator::default());
+    let stripped = without_classifier_audit(&payload);
     assert_eq!(
-        python_json::dumps(&to_json(&SpendValue::Mapping(stripped))),
+        python_json::dumps(&Json::Object(stripped)),
         r#"{"trace_id": "t", "model": "m"}"#
     );
 }

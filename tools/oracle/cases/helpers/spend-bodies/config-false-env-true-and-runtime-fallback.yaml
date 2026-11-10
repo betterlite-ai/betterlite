@@ -2,7 +2,7 @@ kind: helper
 name: config-false-env-true-and-runtime-fallback
 call:
   spend_bodies:
-    operation: storage_policy
+    function: storage_policy
     config_value: false
     env_value: "true"
     initial_max_string_length: "100"

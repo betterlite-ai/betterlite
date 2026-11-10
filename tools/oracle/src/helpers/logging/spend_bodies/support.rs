@@ -1,28 +1,26 @@
-use betterlite_logging::spend_bodies::support::{NodeAllocator, spend_value};
-use betterlite_logging::spend_sanitize::value::{SpendMapping, SpendValue, to_json};
 use betterlite_models::decisions::Json;
 use serde_json::Value;
 
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::HelperError;
 
-pub(super) type Decoded = Result<SpendValue, Box<HelperError>>;
-
-pub(super) fn decode(value: &Value, nodes: &mut NodeAllocator) -> Decoded {
-    let decoded: Json =
+pub(super) fn decode(value: &Value) -> Result<Json, Box<HelperError>> {
+    let decoded =
         serde_json::from_value(value.clone()).map_err(|error| invalid(&error.to_string()))?;
-    Ok(spend_value(&decoded, nodes))
+    Ok(decoded)
 }
 
-pub(super) fn mapping_of(value: &SpendValue) -> Result<&SpendMapping, Box<HelperError>> {
-    let SpendValue::Mapping(mapping) = value else {
-        return Err(invalid("the input must be a JSON object"));
+pub(super) fn decode_optional(value: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
+    match value {
+        Some(present) => Ok(Some(decode(present)?)),
+        None => Ok(None),
+    }
+}
+
+pub(super) fn required<T>(value: Option<T>, name: &str) -> Result<T, Box<HelperError>> {
+    let Some(present) = value else {
+        return Err(invalid(name));
     };
-    Ok(mapping)
-}
-
-pub(super) fn mapping_json(value: &SpendMapping) -> HelperResult {
-    serde_json::to_value(to_json(&SpendValue::Mapping(value.clone())))
-        .map_err(|error| invalid(&error.to_string()))
+    Ok(present)
 }
 
 pub(super) fn invalid(message: &str) -> Box<HelperError> {

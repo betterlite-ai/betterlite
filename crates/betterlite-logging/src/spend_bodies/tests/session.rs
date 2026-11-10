@@ -1,18 +1,18 @@
+use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, NaiveDate};
 
-use super::support::mapping;
+use super::support::value;
 use crate::spend_bodies::session::{
     SessionInput, SpendTimestamp, batch_trace_session_id, ensure_datetime_utc,
     omits_session_id_when_missing, request_duration_ms, session_id,
 };
-use crate::spend_sanitize::value::SpendMapping;
 
 const INJECTED: &str = "11111111-2222-3333-4444-555555555555";
 
 fn session(
-    metadata: Option<&SpendMapping>,
-    payload: Option<&SpendMapping>,
-    kwargs: Option<&SpendMapping>,
+    metadata: Option<&Json>,
+    payload: Option<&Json>,
+    kwargs: Option<&Json>,
     omit: bool,
 ) -> Option<String> {
     session_id(&SessionInput {
@@ -30,10 +30,7 @@ fn session(
 #[case::text_stamp(r#"{"litellm_session_id_omitted": "yes"}"#)]
 #[case::number_stamp(r#"{"litellm_session_id_omitted": 1}"#)]
 fn reads_a_present_omission_stamp(#[case] metadata: &str) {
-    assert!(omits_session_id_when_missing(
-        Some(&mapping(metadata)),
-        false
-    ));
+    assert!(omits_session_id_when_missing(Some(&value(metadata)), false));
 }
 
 #[rstest::rstest]
@@ -44,7 +41,7 @@ fn reads_a_present_omission_stamp(#[case] metadata: &str) {
 #[case::null(r#"{"litellm_session_id_omitted": null}"#)]
 fn ignores_an_absent_or_empty_omission_stamp(#[case] metadata: &str) {
     assert!(!omits_session_id_when_missing(
-        Some(&mapping(metadata)),
+        Some(&value(metadata)),
         false
     ));
 }
@@ -65,7 +62,7 @@ fn under_omission_only_a_present_metadata_session_counts(
     #[case] metadata: &str,
     #[case] expected: Option<&str>,
 ) {
-    let decoded = mapping(metadata);
+    let decoded = value(metadata);
     assert_eq!(
         session(Some(&decoded), None, None, true),
         expected.map(str::to_owned)
@@ -95,8 +92,8 @@ fn a_batch_id_outranks_trace_ids() {
 
 #[test]
 fn a_batch_session_wins_over_the_standard_trace() {
-    let payload = mapping(r#"{"trace_id": "trace"}"#);
-    let kwargs = mapping(r#"{"litellm_trace_id": "other"}"#);
+    let payload = value(r#"{"trace_id": "trace"}"#);
+    let kwargs = value(r#"{"litellm_trace_id": "other"}"#);
     let session = session_id(&SessionInput {
         kwargs: Some(&kwargs),
         metadata: None,
@@ -110,23 +107,23 @@ fn a_batch_session_wins_over_the_standard_trace() {
 
 #[test]
 fn an_empty_or_null_trace_id_follows_the_source_conversion() {
-    let empty_trace = mapping(r#"{"trace_id": ""}"#);
+    let empty_trace = value(r#"{"trace_id": ""}"#);
     assert_eq!(
         session(None, Some(&empty_trace), None, false),
         Some(String::new())
     );
-    let numeric_trace = mapping(r#"{"trace_id": 7}"#);
+    let numeric_trace = value(r#"{"trace_id": 7}"#);
     assert_eq!(
         session(None, Some(&numeric_trace), None, false),
         Some("7".to_owned())
     );
-    let boolean_trace = mapping(r#"{"trace_id": false}"#);
+    let boolean_trace = value(r#"{"trace_id": false}"#);
     assert_eq!(
         session(None, Some(&boolean_trace), None, false),
         Some("False".to_owned())
     );
-    let null_trace = mapping(r#"{"trace_id": null}"#);
-    let kwargs = mapping(r#"{"litellm_trace_id": "from-kwargs"}"#);
+    let null_trace = value(r#"{"trace_id": null}"#);
+    let kwargs = value(r#"{"litellm_trace_id": "from-kwargs"}"#);
     assert_eq!(
         session(None, Some(&null_trace), Some(&kwargs), false),
         Some("from-kwargs".to_owned())
@@ -136,7 +133,7 @@ fn an_empty_or_null_trace_id_follows_the_source_conversion() {
 #[test]
 fn falls_back_to_the_injected_uuid() {
     assert_eq!(session(None, None, None, false), Some(INJECTED.to_owned()));
-    let kwargs = mapping(r#"{"litellm_trace_id": null}"#);
+    let kwargs = value(r#"{"litellm_trace_id": null}"#);
     assert_eq!(
         session(None, None, Some(&kwargs), false),
         Some(INJECTED.to_owned())

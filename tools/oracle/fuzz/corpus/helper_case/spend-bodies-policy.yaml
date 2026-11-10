@@ -2,7 +2,7 @@ kind: helper
 name: spend-bodies-policy-seed
 call:
   spend_bodies:
-    operation: storage_policy
+    function: storage_policy
     config_value: true
     env_value: null
     initial_max_string_length: null

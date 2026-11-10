@@ -2,7 +2,7 @@ kind: helper
 name: omission-stamp-batch-and-empty-trace
 call:
   spend_bodies:
-    operation: session
+    function: session
     sessions:
       - metadata: {litellm_session_id_omitted: true, session_id: ""}
         configured_omit: false

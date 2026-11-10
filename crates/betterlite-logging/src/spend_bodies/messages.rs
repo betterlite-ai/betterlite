@@ -1,28 +1,29 @@
-use super::support::safe_structure;
+use betterlite_models::decisions::Json;
+
+use super::support::{as_object, safe_structure};
 use crate::python_json;
-use crate::spend_sanitize::value::{SpendMapping, SpendValue, to_json};
 
 const REALTIME_CALL_TYPE: &str = "_arealtime";
 
 #[must_use]
-pub fn storage_messages(payload: Option<&SpendMapping>, store_bodies: bool) -> String {
+pub fn storage_messages(payload: Option<&Json>, store_bodies: bool) -> String {
     if !store_bodies {
         return "{}".to_owned();
     }
-    let Some(stored_payload) = payload else {
+    let Some(fields) = payload.and_then(as_object) else {
         return "{}".to_owned();
     };
     if !matches!(
-        stored_payload.entries.get("call_type"),
-        Some(SpendValue::Text(name)) if name == REALTIME_CALL_TYPE
+        fields.get("call_type"),
+        Some(Json::Text(name)) if name == REALTIME_CALL_TYPE
     ) {
         return "{}".to_owned();
     }
-    let Some(messages) = stored_payload.entries.get("messages") else {
+    let Some(messages) = fields.get("messages") else {
         return "{}".to_owned();
     };
-    if matches!(messages, SpendValue::Null) {
+    if matches!(messages, Json::Null) {
         return "{}".to_owned();
     }
-    python_json::dumps(&safe_structure(&to_json(messages), 0))
+    python_json::dumps(&safe_structure(messages, 0))
 }

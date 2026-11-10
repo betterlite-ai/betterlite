@@ -2,7 +2,7 @@ kind: helper
 name: spend-bodies-session-seed
 call:
   spend_bodies:
-    operation: session
+    function: session
     sessions:
       - metadata: {session_id: seed}
         configured_omit: false
