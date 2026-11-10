@@ -1,0 +1,1 @@
+[{"toolSpec": {"name": "native", "description": "kept", "inputSchema": {"json": {"type": "object"}}}}, {"systemTool": {"name": "nova_grounding"}}, {"cachePoint": {"type": "default", "ttl": "1h"}}, {"toolSpec": null}]
