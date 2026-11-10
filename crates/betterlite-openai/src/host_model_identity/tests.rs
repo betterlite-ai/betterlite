@@ -393,6 +393,24 @@ fn a_reply_body_that_is_not_an_object_is_malformed(#[case] body: &[u8]) {
     assert!(matches!(error, HostModelIdentityError::Malformed { .. }));
 }
 
+#[rstest]
+#[case::clarifai(clarifai_mode(), "the clarifai reply is not a chat completion object")]
+#[case::compactifai(
+    compactifai_mode(false),
+    "the compactifai reply is not a chat completion object"
+)]
+fn a_malformed_reply_names_its_host(#[case] mode: HostReplyMode<'static>, #[case] message: &str) {
+    let error = decode(b"[]", mode).unwrap_err();
+    assert_eq!(error.to_string(), message);
+}
+
+#[test]
+fn a_reply_at_the_transport_limit_is_not_too_large() {
+    let body = vec![b' '; MAX_REPLY_BYTES];
+    let error = decode(&body, clarifai_mode()).unwrap_err();
+    assert!(matches!(error, HostModelIdentityError::Json { .. }));
+}
+
 #[test]
 fn a_reply_over_the_transport_limit_is_refused() {
     let body = vec![b' '; MAX_REPLY_BYTES + 1];
