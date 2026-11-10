@@ -1,16 +1,16 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageClock, ImageReply, ImageRequest, ImageTransport};
 use betterlite_http::proxy::transport_error::TransportError;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
 
 use super::input::Reply;
+use super::ops::header_map;
 
 pub(super) struct Fixture {
     pub(super) replies: Mutex<VecDeque<Reply>>,
@@ -38,32 +38,22 @@ impl ImageTransport for FixtureTransport {
     ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
         let body = (!request.body.is_empty())
             .then(|| serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null));
-        self.state
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedCall {
-                method: request.method.to_string(),
-                url: request.url.clone(),
-                headers: request
-                    .headers
-                    .iter()
-                    .map(|(name, value)| {
-                        (
-                            name.as_str().to_owned(),
-                            value.to_str().unwrap_or_default().to_owned(),
-                        )
-                    })
-                    .collect(),
-                body,
-            });
-        let Some(reply) = self
-            .state
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        else {
+        lock(&self.state.calls).push(RecordedCall {
+            method: request.method.to_string(),
+            url: request.url.clone(),
+            headers: request
+                .headers
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_owned(),
+                        value.to_str().unwrap_or_default().to_owned(),
+                    )
+                })
+                .collect(),
+            body,
+        });
+        let Some(reply) = lock(&self.state.replies).pop_front() else {
             return ready(Err(TransportError::Closed));
         };
         if reply.delay > 0 {
@@ -74,23 +64,17 @@ impl ImageTransport for FixtureTransport {
         }
         ready(Ok(ImageReply {
             status: reply.status,
-            headers: reply_headers(&reply.headers),
+            headers: header_map(&reply.headers).unwrap_or_default(),
             body: reply.body.into_bytes(),
         }))
     }
 }
 
-fn reply_headers(headers: &BTreeMap<String, String>) -> HeaderMap {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        if let (Ok(header), Ok(parsed)) = (
-            HeaderName::from_bytes(name.as_bytes()),
-            HeaderValue::from_str(value),
-        ) {
-            map.insert(header, parsed);
-        }
+pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
-    map
 }
 
 #[derive(Default)]
@@ -105,10 +89,7 @@ impl ImageClock for FixtureClock {
     }
 
     fn pause(&self, seconds: i64) -> impl Future<Output = ()> + Send {
-        self.sleeps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(seconds);
+        lock(&self.sleeps).push(seconds);
         if let Ok(positive) = u64::try_from(seconds) {
             self.elapsed.fetch_add(positive, Ordering::SeqCst);
         }
@@ -124,11 +105,7 @@ impl ImageClientConstructor for Constructor {
     type Client = FixtureTransport;
 
     fn construct(&self, timeout: TimeoutPhases) -> FixtureTransport {
-        self.state
-            .constructed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(timeout);
+        lock(&self.state.constructed).push(timeout);
         FixtureTransport {
             state: Arc::clone(&self.state),
         }

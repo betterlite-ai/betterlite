@@ -1,3 +1,4 @@
+mod fixture;
 mod input;
 mod ops;
 mod tests;

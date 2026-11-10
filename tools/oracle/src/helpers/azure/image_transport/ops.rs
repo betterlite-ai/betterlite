@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Display;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_azure::image_transport::ImageResponse;
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::fixture::{Constructor, Fixture, FixtureClock, FixtureTransport};
+use super::fixture::{Constructor, Fixture, FixtureClock, FixtureTransport, lock};
 use super::input::{Input, Step};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
@@ -83,7 +83,9 @@ fn polling_timeout(environment: &BTreeMap<String, String>) -> Result<Duration, B
     .map_err(|error| failure(&error))
 }
 
-fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
+pub(super) fn header_map(
+    headers: &BTreeMap<String, String>,
+) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, text) in headers {
         let header = HeaderName::from_bytes(name.as_bytes()).map_err(|error| failure(&error))?;
@@ -104,13 +106,10 @@ fn failure(message: &dyn Display) -> Box<HelperError> {
     })
 }
 
-fn step_value(
-    state: &Fixture,
-    clock: &FixtureClock,
-    data: &JsonMap,
+fn outcome_fields(
     outcome: &Result<ImageResponse, ImageTransportError>,
-) -> Value {
-    let (kind, status, headers, body, request, message_kind) = match outcome {
+) -> (&'static str, Value, Value, Value, Value, Value) {
+    match outcome {
         Ok(response) => (
             "response",
             json!(response.status),
@@ -119,19 +118,30 @@ fn step_value(
             json!({"method": response.request.method.as_str(), "url": response.request.url}),
             Value::Null,
         ),
-        Err(error) => (
-            "error",
-            json!(error.status_code()),
-            Value::Null,
-            failure_body(error),
-            Value::Null,
-            failure_kind(error),
-        ),
-    };
-    let calls: Vec<Value> = state
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
+        Err(error) => {
+            let detail = failure_detail(error);
+            (
+                "error",
+                json!(error.status_code()),
+                Value::Null,
+                detail.map_or(Value::Null, |(body, _kind)| {
+                    serde_json::to_value(body).unwrap_or(Value::Null)
+                }),
+                Value::Null,
+                detail.map_or(Value::Null, |(_body, kind)| Value::String(kind.to_owned())),
+            )
+        }
+    }
+}
+
+fn step_value(
+    state: &Fixture,
+    clock: &FixtureClock,
+    data: &JsonMap,
+    outcome: &Result<ImageResponse, ImageTransportError>,
+) -> Value {
+    let (kind, status, headers, body, request, message_kind) = outcome_fields(outcome);
+    let calls: Vec<Value> = lock(&state.calls)
         .iter()
         .map(|call| {
             json!({
@@ -143,10 +153,7 @@ fn step_value(
             })
         })
         .collect();
-    let constructed: Vec<Value> = state
-        .constructed
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
+    let constructed: Vec<Value> = lock(&state.constructed)
         .iter()
         .map(|phases| {
             json!({
@@ -157,11 +164,7 @@ fn step_value(
             })
         })
         .collect();
-    let sleeps = clock
-        .sleeps
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let sleeps = lock(&clock.sleeps).clone();
     json!({
         "kind": kind,
         "status": status,
@@ -174,20 +177,6 @@ fn step_value(
         "sleeps": sleeps,
         "constructed": constructed,
     })
-}
-
-fn failure_body(error: &ImageTransportError) -> Value {
-    match failure_detail(error) {
-        Some((body, _kind)) => serde_json::to_value(body).unwrap_or(Value::Null),
-        None => Value::Null,
-    }
-}
-
-fn failure_kind(error: &ImageTransportError) -> Value {
-    match failure_detail(error) {
-        Some((_body, kind)) => Value::String(kind.to_owned()),
-        None => Value::Null,
-    }
 }
 
 fn failure_detail(error: &ImageTransportError) -> Option<(&JsonValue, &'static str)> {
