@@ -21,3 +21,6 @@ deviations:
   - what: Digest summary start and end times are rendered from the process clock in UTC rather than Python's local datetime.now().
     why: betterlite has no local timezone database wired for this module, and every other injected clock in the crate returns UTC, so a host outside UTC sees the digest window in UTC.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1617
+  - what: Digest buckets are capped at 1024 entries, and a new key beyond the cap is folded into a per-alert-type overflow entry instead of opening another bucket.
+    why: LiteLLM keeps one digest bucket per distinct alert_type/request_model/api_base key with no limit, and both the model and the api base come from the request, so a client can grow the map for a whole digest interval. The cap bounds that memory while the overflow entry still reports how many alerts of its type arrived.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1522-L1541

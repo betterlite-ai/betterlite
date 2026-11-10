@@ -13,6 +13,9 @@ use crate::alert_settings::records::{AlertQueueItem, AlertText, DigestEntry};
 
 mod tests;
 
+// The same cap B3962 uses for the Braintrust project cache; the source's digest map has no limit
+const MAX_DIGEST_ENTRIES: usize = 1024;
+
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<FixedOffset>;
 }
@@ -72,24 +75,33 @@ impl DigestBuckets {
 
     pub fn record(&self, alert: DigestAlert<'_>) {
         let now = self.clock.now();
-        let key = format!(
-            "{}:{}:{}",
-            alert.alert_type,
-            alert.request_model.unwrap_or_default(),
-            alert.api_base.unwrap_or_default()
-        );
+        let request_model = alert.request_model.unwrap_or_default();
+        let api_base = alert.api_base.unwrap_or_default();
+        let key = format!("{}:{request_model}:{api_base}", alert.alert_type);
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(entry) = state.entries.get_mut(&key) {
+        let overflow =
+            !state.entries.contains_key(&key) && state.entries.len() >= MAX_DIGEST_ENTRIES;
+        let target = if overflow {
+            format!("{}::", alert.alert_type)
+        } else {
+            key
+        };
+        if let Some(entry) = state.entries.get_mut(&target) {
             entry.count = entry.count.saturating_add(1);
             entry.last_time = now;
             return;
         }
+        let (stored_model, stored_api_base) = if overflow {
+            ("", "")
+        } else {
+            (request_model, api_base)
+        };
         state.entries.insert(
-            key,
+            target,
             DigestEntry {
                 alert_type: alert.alert_type.to_string(),
-                request_model: alert.request_model.unwrap_or_default().to_owned(),
-                api_base: alert.api_base.unwrap_or_default().to_owned(),
+                request_model: stored_model.to_owned(),
+                api_base: stored_api_base.to_owned(),
                 first_message: alert.message.to_owned(),
                 level: alert.level.to_owned(),
                 count: 1,

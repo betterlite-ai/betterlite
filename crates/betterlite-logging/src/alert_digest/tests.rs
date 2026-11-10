@@ -11,8 +11,8 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
-    Clock, DigestAlert, DigestBuckets, DigestState, ExpiredDigest, SystemClock, digest_queue_items,
-    render_summary,
+    Clock, DigestAlert, DigestBuckets, DigestState, ExpiredDigest, MAX_DIGEST_ENTRIES, SystemClock,
+    digest_queue_items, render_summary,
 };
 use crate::alert_settings::records::DigestEntry;
 
@@ -250,6 +250,125 @@ fn digest_buckets_are_keyed_by_alert_type_request_model_and_api_base() {
             "budget_alerts:gpt-4o:https://api.example".to_owned()
         ]
     );
+}
+
+fn fill_to_cap(buckets: &DigestBuckets, alert_type: AlertType) {
+    (0..MAX_DIGEST_ENTRIES).for_each(|index| {
+        let request_model = format!("model-{index}");
+        buckets.record(DigestAlert {
+            alert_type,
+            request_model: Some(&request_model),
+            api_base: None,
+            message: "message",
+            level: "High",
+            webhook_url: url("https://hooks/a"),
+        });
+    });
+}
+
+#[test]
+fn a_new_key_beyond_the_digest_cap_folds_into_the_overflow_entry() {
+    let (buckets, _clock) = buckets(&[(AlertType::BudgetAlerts, 60)]);
+    fill_to_cap(&buckets, AlertType::BudgetAlerts);
+    buckets.record(DigestAlert {
+        alert_type: AlertType::BudgetAlerts,
+        request_model: Some("overflow-model"),
+        api_base: None,
+        message: "overflow message",
+        level: "High",
+        webhook_url: url("https://hooks/a"),
+    });
+    let state = buckets.state.lock().unwrap();
+    assert_eq!(state.entries.len(), MAX_DIGEST_ENTRIES + 1);
+    assert!(!state.entries.contains_key("budget_alerts:overflow-model:"));
+    let overflow = state
+        .entries
+        .get("budget_alerts::")
+        .expect("the overflow entry is created on first use")
+        .clone();
+    drop(state);
+    assert_eq!(overflow.count, 1);
+    assert_eq!(overflow.first_message, "overflow message");
+    assert_eq!(overflow.request_model, "");
+    assert_eq!(overflow.api_base, "");
+}
+
+#[test]
+fn later_overflow_keys_count_in_the_overflow_entry_of_their_alert_type() {
+    let (buckets, _clock) =
+        buckets(&[(AlertType::BudgetAlerts, 60), (AlertType::OutageAlerts, 60)]);
+    fill_to_cap(&buckets, AlertType::BudgetAlerts);
+    record_keyed(&buckets, Some("overflow-one"), None, "one");
+    record_keyed(&buckets, Some("overflow-two"), None, "two");
+    buckets.record(DigestAlert {
+        alert_type: AlertType::OutageAlerts,
+        request_model: Some("outage-model"),
+        api_base: None,
+        message: "outage",
+        level: "High",
+        webhook_url: url("https://hooks/b"),
+    });
+    let state = buckets.state.lock().unwrap();
+    assert_eq!(state.entries.len(), MAX_DIGEST_ENTRIES + 2);
+    let budget = state
+        .entries
+        .get("budget_alerts::")
+        .expect("the budget overflow entry exists")
+        .clone();
+    let outage = state
+        .entries
+        .get("outage_alerts::")
+        .expect("each alert type gets its own overflow entry")
+        .clone();
+    drop(state);
+    assert_eq!(budget.count, 2);
+    assert_eq!(outage.count, 1);
+    assert_eq!(outage.alert_type, "outage_alerts");
+}
+
+#[test]
+fn a_full_digest_map_still_counts_an_existing_key_in_its_own_entry() {
+    let (buckets, _clock) = buckets(&[(AlertType::BudgetAlerts, 60)]);
+    fill_to_cap(&buckets, AlertType::BudgetAlerts);
+    buckets.record(DigestAlert {
+        alert_type: AlertType::BudgetAlerts,
+        request_model: Some("model-0"),
+        api_base: None,
+        message: "message",
+        level: "High",
+        webhook_url: url("https://hooks/a"),
+    });
+    let state = buckets.state.lock().unwrap();
+    assert_eq!(state.entries.len(), MAX_DIGEST_ENTRIES);
+    let count = state
+        .entries
+        .get("budget_alerts:model-0:")
+        .expect("the existing bucket keeps its key")
+        .count;
+    assert!(!state.entries.contains_key("budget_alerts::"));
+    drop(state);
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn a_flushed_bucket_frees_a_slot_for_a_new_key() {
+    let (buckets, clock) = buckets(&[(AlertType::BudgetAlerts, 60)]);
+    fill_to_cap(&buckets, AlertType::BudgetAlerts);
+    clock.set(time(12, 1, 0));
+    assert_eq!(buckets.flush_expired().len(), MAX_DIGEST_ENTRIES);
+    buckets.record(DigestAlert {
+        alert_type: AlertType::BudgetAlerts,
+        request_model: Some("fresh-model"),
+        api_base: None,
+        message: "fresh",
+        level: "High",
+        webhook_url: url("https://hooks/a"),
+    });
+    let state = buckets.state.lock().unwrap();
+    assert_eq!(state.entries.len(), 1);
+    assert!(state.entries.contains_key("budget_alerts:fresh-model:"));
+    assert!(!state.entries.contains_key("budget_alerts::"));
+    drop(state);
 }
 
 #[test]
