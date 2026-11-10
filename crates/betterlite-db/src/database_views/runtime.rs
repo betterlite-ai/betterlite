@@ -15,17 +15,15 @@ where
     }
     Ok(())
 }
-async fn relation_exists<Database>(
-    database: &Database,
+async fn relation_exists<Source>(
+    source: &Source,
     view: &ViewDefinition,
-) -> Result<bool, Database::Error>
+) -> Result<bool, Source::Error>
 where
-    Database: SupportsRawQueries + Sync,
+    Source: SupportsRawQueries + Sync,
 {
-    match database
-        .query_raw(&format!("SELECT 1 FROM \"{}\" LIMIT 1", view.name))
-        .await
-    {
+    let probe = format!("SELECT 1 FROM \"{}\" LIMIT 1", view.name);
+    match source.query_raw(&probe).await {
         Ok(_) => {
             tracing::debug!("{} Exists!", view.name);
             Ok(true)
@@ -36,37 +34,34 @@ where
                 .iter()
                 .any(|marker| message.contains(marker))
             {
-                Ok(false)
-            } else {
-                Err(error)
+                return Ok(false);
             }
+            Err(error)
         }
     }
 }
-pub async fn create_view_tolerating_race<Database>(
-    database: &Database,
+pub async fn create_view_tolerating_race<Executor>(
+    executor: &Executor,
     view_name: &str,
     ddl: &str,
-) -> Result<(), Database::Error>
+) -> Result<(), Executor::Error>
 where
-    Database: SupportsExecuteRaw + Sync,
+    Executor: SupportsExecuteRaw + Sync,
 {
-    match database.execute_raw(ddl).await {
+    let failure = match executor.execute_raw(ddl).await {
         Ok(()) => {
             tracing::debug!("{view_name} Created!");
-            Ok(())
+            return Ok(());
         }
-        Err(error) => {
-            let message = error.to_string().to_lowercase();
-            if VIEW_ALREADY_EXISTS_MARKERS
-                .iter()
-                .any(|marker| message.contains(marker))
-            {
-                tracing::debug!("{view_name} already created by a concurrent replica");
-                Ok(())
-            } else {
-                Err(error)
-            }
-        }
+        Err(error) => error,
+    };
+    let message = failure.to_string().to_lowercase();
+    if !VIEW_ALREADY_EXISTS_MARKERS
+        .iter()
+        .any(|marker| message.contains(marker))
+    {
+        return Err(failure);
     }
+    tracing::debug!("{view_name} already created by a concurrent replica");
+    Ok(())
 }

@@ -16,15 +16,6 @@ use support::{
 };
 use tokio_postgres::Client;
 type VerificationRow = (String, Option<f64>, Option<f64>, Option<i64>, Option<i64>);
-type TokenRow = (
-    String,
-    Option<f64>,
-    Option<f64>,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-    Option<String>,
-);
 type KeyRow = (String, Option<String>, Option<String>, f64);
 type TagRow = (String, NaiveDate, i64, f64);
 type EndUserRow = (String, i64, f64);
@@ -66,162 +57,94 @@ async fn current_date(client: &Client) -> NaiveDate {
         .unwrap()
         .get("today")
 }
+const GLOBAL_SPEND_SQL: &str = r#"SELECT date, spend FROM "MonthlyGlobalSpend" ORDER BY date"#;
+const PER_KEY_SQL: &str =
+    r#"SELECT date, api_key, spend FROM "MonthlyGlobalSpendPerKey" ORDER BY date, api_key"#;
+const PER_USER_KEY_SQL: &str = r#"SELECT date, api_key, "user", spend FROM "MonthlyGlobalSpendPerUserPerKey" ORDER BY date, api_key, "user""#;
+const MODELS_SQL: &str = r#"SELECT model, total_spend FROM "Last30dModelsBySpend""#;
+const KEYS_SQL: &str =
+    r#"SELECT api_key, key_alias, key_name, total_spend FROM "Last30dKeysBySpend""#;
+const TAGS_SQL: &str =
+    r#"SELECT individual_request_tag, spend_date, log_count, total_spend FROM "DailyTagSpend""#;
+const END_USERS_SQL: &str =
+    r#"SELECT end_user, total_events, total_spend FROM "Last30dTopEndUsersSpend""#;
+const VERIFICATION_SQL: &str = r#"SELECT token, team_spend, team_max_budget, team_tpm_limit, team_rpm_limit FROM "LiteLLM_VerificationTokenView" ORDER BY token"#;
+fn spend_of(row: &tokio_postgres::Row) -> (NaiveDate, f64) {
+    (row.get(0_usize), row.get(1_usize))
+}
+fn key_spend_of(row: &tokio_postgres::Row) -> (NaiveDate, String, f64) {
+    (row.get(0_usize), row.get(1_usize), row.get(2_usize))
+}
+fn user_key_spend_of(row: &tokio_postgres::Row) -> (NaiveDate, String, String, f64) {
+    (
+        row.get(0_usize),
+        row.get(1_usize),
+        row.get(2_usize),
+        row.get(3_usize),
+    )
+}
+fn model_of(row: &tokio_postgres::Row) -> (String, f64) {
+    (row.get(0_usize), row.get(1_usize))
+}
+fn key_of(row: &tokio_postgres::Row) -> KeyRow {
+    let api_key = row.get(0_usize);
+    let alias = row.get(1_usize);
+    let name = row.get(2_usize);
+    let spend = row.get(3_usize);
+    (api_key, alias, name, spend)
+}
+fn tag_of(row: &tokio_postgres::Row) -> TagRow {
+    let tag = row.get(0_usize);
+    let day = row.get(1_usize);
+    let count = row.get(2_usize);
+    let spend = row.get(3_usize);
+    (tag, day, count, spend)
+}
+fn end_user_of(row: &tokio_postgres::Row) -> EndUserRow {
+    (row.get(0_usize), row.get(1_usize), row.get(2_usize))
+}
+fn verification_head(row: &tokio_postgres::Row) -> (String, Option<f64>, Option<f64>) {
+    (row.get(0_usize), row.get(1_usize), row.get(2_usize))
+}
+fn verification_limits(row: &tokio_postgres::Row) -> (Option<i64>, Option<i64>) {
+    (row.get(3_usize), row.get(4_usize))
+}
+fn verification_of(row: &tokio_postgres::Row) -> VerificationRow {
+    let (token, spend, budget) = verification_head(row);
+    let (tpm, rpm) = verification_limits(row);
+    (token, spend, budget, tpm, rpm)
+}
 async fn global_spend(client: &Client) -> Vec<(NaiveDate, f64)> {
-    client
-        .query(
-            r#"SELECT date, spend FROM "MonthlyGlobalSpend" ORDER BY date"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| (row.get("date"), row.get("spend")))
-        .collect()
+    let rows = client.query(GLOBAL_SPEND_SQL, &[]).await.unwrap();
+    rows.iter().map(spend_of).collect()
 }
 async fn per_key(client: &Client) -> Vec<(NaiveDate, String, f64)> {
-    client
-        .query(
-            r#"SELECT date, api_key, spend FROM "MonthlyGlobalSpendPerKey" ORDER BY date, api_key"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| (row.get("date"), row.get("api_key"), row.get("spend")))
-        .collect()
+    let rows = client.query(PER_KEY_SQL, &[]).await.unwrap();
+    rows.iter().map(key_spend_of).collect()
 }
 async fn per_user_key(client: &Client) -> Vec<(NaiveDate, String, String, f64)> {
-    client
-        .query(
-            r#"SELECT date, api_key, "user", spend FROM "MonthlyGlobalSpendPerUserPerKey"
-               ORDER BY date, api_key, "user""#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("date"),
-                row.get("api_key"),
-                row.get("user"),
-                row.get("spend"),
-            )
-        })
-        .collect()
+    let rows = client.query(PER_USER_KEY_SQL, &[]).await.unwrap();
+    rows.iter().map(user_key_spend_of).collect()
 }
 async fn models(client: &Client) -> Vec<(String, f64)> {
-    client
-        .query(
-            r#"SELECT model, total_spend FROM "Last30dModelsBySpend""#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| (row.get("model"), row.get("total_spend")))
-        .collect()
+    let rows = client.query(MODELS_SQL, &[]).await.unwrap();
+    rows.iter().map(model_of).collect()
 }
 async fn keys(client: &Client) -> Vec<KeyRow> {
-    client
-        .query(
-            r#"SELECT api_key, key_alias, key_name, total_spend FROM "Last30dKeysBySpend""#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("api_key"),
-                row.get("key_alias"),
-                row.get("key_name"),
-                row.get("total_spend"),
-            )
-        })
-        .collect()
+    let rows = client.query(KEYS_SQL, &[]).await.unwrap();
+    rows.iter().map(key_of).collect()
 }
 async fn tags(client: &Client) -> Vec<TagRow> {
-    client
-        .query(
-            r#"SELECT individual_request_tag, spend_date, log_count, total_spend FROM "DailyTagSpend""#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("individual_request_tag"),
-                row.get("spend_date"),
-                row.get("log_count"),
-                row.get("total_spend"),
-            )
-        })
-        .collect()
+    let rows = client.query(TAGS_SQL, &[]).await.unwrap();
+    rows.iter().map(tag_of).collect()
 }
 async fn end_users(client: &Client) -> Vec<EndUserRow> {
-    client
-        .query(
-            r#"SELECT end_user, total_events, total_spend FROM "Last30dTopEndUsersSpend""#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("end_user"),
-                row.get("total_events"),
-                row.get("total_spend"),
-            )
-        })
-        .collect()
+    let rows = client.query(END_USERS_SQL, &[]).await.unwrap();
+    rows.iter().map(end_user_of).collect()
 }
 async fn verification_rows(client: &Client) -> Vec<VerificationRow> {
-    client
-        .query(
-            r#"SELECT token, team_spend, team_max_budget, team_tpm_limit, team_rpm_limit
-               FROM "LiteLLM_VerificationTokenView" ORDER BY token"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("token"),
-                row.get("team_spend"),
-                row.get("team_max_budget"),
-                row.get("team_tpm_limit"),
-                row.get("team_rpm_limit"),
-            )
-        })
-        .collect()
-}
-async fn token_rows(client: &Client) -> Vec<TokenRow> {
-    client
-        .query(
-            r#"SELECT token, team_spend, team_max_budget, team_tpm_limit, team_rpm_limit,
-                      team_tpd_limit, project_alias
-               FROM "LiteLLM_VerificationTokenView" ORDER BY token"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("token"),
-                row.get("team_spend"),
-                row.get("team_max_budget"),
-                row.get("team_tpm_limit"),
-                row.get("team_rpm_limit"),
-                row.get("team_tpd_limit"),
-                row.get("project_alias"),
-            )
-        })
-        .collect()
+    let rows = client.query(VERIFICATION_SQL, &[]).await.unwrap();
+    rows.iter().map(verification_of).collect()
 }
 async fn assert_probe_error_propagates(message: &str) {
     let database = ScriptedDatabase::default();
@@ -511,41 +434,39 @@ async fn postgres_runtime_and_offline_verification_columns() {
     runtime.close().await;
     offline.close().await;
 }
-async fn assert_token_joins(client: &Client) {
+#[tokio::test]
+async fn left_joins_keep_missing_team_project_and_key() {
+    let database = Database::new().await;
+    execute(&database.client, SEED_LEFT_JOINS).await;
+    create_missing_views(&database.client).await.unwrap();
     assert_eq!(
-        token_rows(client).await,
+        verification_rows(&database.client).await,
         vec![
-            ("tok-ghost".to_owned(), None, None, None, None, None, None),
-            ("tok-null".to_owned(), None, None, None, None, None, None),
-            (
-                "tok-ok".to_owned(),
-                Some(1.5_f64),
-                None,
-                None,
-                None,
-                None,
-                Some("alias-1".to_owned())
-            ),
+            ("tok-ghost".to_owned(), None, None, None, None),
+            ("tok-null".to_owned(), None, None, None, None),
+            ("tok-ok".to_owned(), Some(1.5_f64), None, None, None),
         ]
     );
-}
-async fn assert_key_joins(client: &Client) {
+    let extra = database
+        .client
+        .query_one(
+            r#"SELECT project_alias FROM "LiteLLM_VerificationTokenView" WHERE token = 'tok-ok'"#,
+            &[],
+        )
+        .await
+        .unwrap();
     assert_eq!(
-        keys(client).await,
+        extra.get::<_, Option<String>>("project_alias"),
+        Some("alias-1".to_owned())
+    );
+    assert_eq!(
+        keys(&database.client).await,
         vec![
             key_row("orphan-key", None, None, 4.0),
             key_row("tok-ghost", Some("alias-ghost"), Some("name-ghost"), 2.0),
             key_row("tok-ok", Some("alias-ok"), Some("name-ok"), 1.0),
         ]
     );
-}
-#[tokio::test]
-async fn left_joins_keep_missing_team_project_and_key() {
-    let database = Database::new().await;
-    execute(&database.client, SEED_LEFT_JOINS).await;
-    create_missing_views(&database.client).await.unwrap();
-    assert_token_joins(&database.client).await;
-    assert_key_joins(&database.client).await;
     database.close().await;
 }
 #[tokio::test]

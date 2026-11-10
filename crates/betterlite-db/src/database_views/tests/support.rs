@@ -2,6 +2,8 @@ use crate::database_views::contracts::{
     ExecuteFuture, QueryFuture, RawRow, SupportsExecuteRaw, SupportsRawQueries,
 };
 use crate::database_views::definitions::OFFLINE_VIEWS;
+type FakeExecute<'database> = ExecuteFuture<'database, FakeFailure>;
+type FakeQuery<'database> = QueryFuture<'database, FakeFailure>;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use secrecy::SecretString;
@@ -241,6 +243,37 @@ impl ScriptedDatabase {
             })
             .collect()
     }
+    fn next_create(&self) -> Result<(), FakeFailure> {
+        self.creates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| Err(FakeFailure::new("no create was scripted")))
+    }
+    fn next_probe(&self) -> Result<Vec<RawRow>, FakeFailure> {
+        self.probes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| Err(FakeFailure::new("no probe was scripted")))
+    }
+    fn scripted_execute<'database>(
+        &'database self,
+        query: &'database str,
+    ) -> FakeExecute<'database> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::Create(query.to_owned()));
+        Box::pin(async move { self.next_create() })
+    }
+    fn scripted_query<'database>(&'database self, query: &'database str) -> FakeQuery<'database> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::Probe(query.to_owned()));
+        Box::pin(async move { self.next_probe() })
+    }
 }
 impl SupportsExecuteRaw for ScriptedDatabase {
     type Error = FakeFailure;
@@ -248,17 +281,7 @@ impl SupportsExecuteRaw for ScriptedDatabase {
         &'database self,
         query: &'database str,
     ) -> ExecuteFuture<'database, Self::Error> {
-        Box::pin(async move {
-            self.calls
-                .lock()
-                .unwrap()
-                .push(Call::Create(query.to_owned()));
-            self.creates
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or_else(|| Err(FakeFailure::new("no create was scripted")))
-        })
+        self.scripted_execute(query)
     }
 }
 impl SupportsRawQueries for ScriptedDatabase {
@@ -266,16 +289,6 @@ impl SupportsRawQueries for ScriptedDatabase {
         &'database self,
         query: &'database str,
     ) -> QueryFuture<'database, Self::Error> {
-        Box::pin(async move {
-            self.calls
-                .lock()
-                .unwrap()
-                .push(Call::Probe(query.to_owned()));
-            self.probes
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or_else(|| Err(FakeFailure::new("no probe was scripted")))
-        })
+        self.scripted_query(query)
     }
 }
