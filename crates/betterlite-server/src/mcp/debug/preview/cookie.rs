@@ -1,4 +1,5 @@
 use regex::Regex;
+use secrecy::SecretString;
 
 // CPython http.cookies _CookiePattern with re.ASCII, expanded because the regex crate has no ASCII flag
 const COOKIE_PATTERN: &str = r#"\A[ \t\n\r\f\v]*(?P<key>[0-9A-Za-z_!#%&'~_`><@,:/$*+\-.^|)(?}{=]+?)([ \t\n\r\f\v]*=[ \t\n\r\f\v]*(?P<val>"(?:[^\\"]|\\.)*"|([0-9A-Za-z]{3,6}day|[0-9A-Za-z]{3})[ \t\n\r\f\v][0-9A-Za-z_ \t\n\r\f\v-]{9,11}[ \t\n\r\f\v][0-9:]{8}[ \t\n\r\f\v]GMT|[0-9A-Za-z_!#%&'~_`><@,:/$*+\-.^|)(?}{=\[\]]*))?[ \t\n\r\f\v]*(?:[ \t\n\r\f\v]+|;|\z)"#;
@@ -8,7 +9,7 @@ const RESERVED_ATTRIBUTES: [&str; 9] = [
 const FLAG_ATTRIBUTES: [&str; 2] = ["httponly", "secure"];
 
 // None means the whole header string is not a valid cookie list, so only the raw value stays a secret
-pub(super) fn cookie_values(value: &str) -> Option<Vec<String>> {
+pub(super) fn cookie_values(value: &str) -> Option<Vec<SecretString>> {
     let pattern = Regex::new(COOKIE_PATTERN).ok()?;
     let mut index = 0_usize;
     let mut morsel_seen = false;
@@ -33,18 +34,26 @@ pub(super) fn cookie_values(value: &str) -> Option<Vec<String>> {
             }
             continue;
         }
-        let attribute_value = raw_value?;
-        let unquoted = unquote(attribute_value);
-        match pairs
-            .iter_mut()
-            .find(|(existing, _value)| existing.as_str() == key)
-        {
-            Some(entry) => entry.1 = unquoted,
-            None => pairs.push((key.to_owned(), unquoted)),
-        }
+        record_morsel(&mut pairs, key, raw_value?);
         morsel_seen = true;
     }
-    Some(pairs.into_iter().map(|(_key, quoted)| quoted).collect())
+    Some(
+        pairs
+            .into_iter()
+            .map(|(_key, quoted)| SecretString::from(quoted))
+            .collect(),
+    )
+}
+
+fn record_morsel(pairs: &mut Vec<(String, String)>, key: &str, value: &str) {
+    let unquoted = unquote(value);
+    match pairs
+        .iter_mut()
+        .find(|(existing, _value)| existing.as_str() == key)
+    {
+        Some(entry) => entry.1 = unquoted,
+        None => pairs.push((key.to_owned(), unquoted)),
+    }
 }
 
 fn unquote(value: &str) -> String {

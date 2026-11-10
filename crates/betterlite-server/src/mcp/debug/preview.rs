@@ -14,6 +14,8 @@ use http::{HeaderMap, HeaderValue};
 use self::secrets::sensitive_field;
 use self::text::safe_text;
 use self::upstream::{BodyState, UpstreamFailure, UpstreamRequest, UpstreamResponse};
+use secrecy::SecretString;
+use url::form_urlencoded;
 
 pub const BODY_CAPTURE_BYTES: usize = 0x4000;
 pub const CAPTURE_TIMEOUT_SECONDS: u64 = 1;
@@ -28,7 +30,12 @@ const SAFE_HEADER_NAMES: [&str; 3] = ["accept", "content-length", "content-type"
 pub(super) const FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 
 #[must_use]
-pub fn preview(raw: &[u8], content_type: &str, secrets: &[String], redactor: &Redactor) -> String {
+pub fn preview(
+    raw: &[u8],
+    content_type: &str,
+    secrets: &[SecretString],
+    redactor: &Redactor,
+) -> String {
     if raw.is_empty() {
         return EMPTY_BODY.to_owned();
     }
@@ -74,7 +81,7 @@ fn redact_object(body: JsonValue) -> JsonValue {
     }
 }
 
-fn unstructured_preview(raw: &[u8], content_type: &str, secrets: &[String]) -> String {
+fn unstructured_preview(raw: &[u8], content_type: &str, secrets: &[SecretString]) -> String {
     let text = UTF_8.decode_without_bom_handling(raw).0;
     if !structured_form(&text, content_type) {
         return UNSTRUCTURED_BODY.to_owned();
@@ -89,22 +96,16 @@ fn structured_form(text: &str, content_type: &str) -> bool {
 }
 
 fn encoded_fields(text: &str) -> String {
-    secrets::parse_qsl(text)
-        .into_iter()
-        .map(|(key, value)| {
-            let redacted = if sensitive_field(&key) {
-                REDACTED.to_owned()
-            } else {
-                value
-            };
-            format!(
-                "{}={}",
-                secrets::plus_encode(&key),
-                secrets::plus_encode(&redacted)
-            )
-        })
-        .collect::<Vec<String>>()
-        .join("&")
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    for (key, value) in form_urlencoded::parse(text.as_bytes()) {
+        let redacted = if sensitive_field(&key) {
+            REDACTED.to_owned()
+        } else {
+            value.into_owned()
+        };
+        serializer.append_pair(&key, &redacted);
+    }
+    serializer.finish()
 }
 
 #[must_use]
@@ -145,7 +146,7 @@ pub(super) fn header_text(value: &HeaderValue) -> String {
 #[must_use]
 pub fn request_body_preview(
     request: &UpstreamRequest,
-    secrets: Option<&[String]>,
+    secrets: Option<&[SecretString]>,
     redactor: &Redactor,
 ) -> String {
     match &request.body {
@@ -162,7 +163,7 @@ pub fn request_body_preview(
 #[must_use]
 pub fn response_body_preview(
     response: &UpstreamResponse,
-    secrets: Option<&[String]>,
+    secrets: Option<&[SecretString]>,
     redactor: &Redactor,
 ) -> String {
     let Some(found) = secrets else {

@@ -91,15 +91,28 @@ fn body_scenario(scenario: &BodyScenario, redactor: &Redactor) -> Result<Value, 
     let url = safe_url(scenario.url.as_ref())?;
     let body = scenario.body.as_bytes();
     let content_type = scenario.content_type.as_deref().unwrap_or_default();
-    Ok(json!({ "preview": preview(body, content_type, &scenario.secrets, redactor), "url": url }))
+    let secrets: Vec<SecretString> = scenario
+        .secrets
+        .iter()
+        .map(|secret| SecretString::from(secret.clone()))
+        .collect();
+    Ok(json!({ "preview": preview(body, content_type, &secrets, redactor), "url": url }))
 }
 
 fn safe_url(source: Option<&String>) -> Result<Option<String>, Box<HelperError>> {
     let Some(address) = source else {
         return Ok(None);
     };
-    let parsed = HttpxUrl::parse(address)
-        .map_err(|error| Box::new(failure("InvalidURL", error.to_string())))?;
+    let parsed = HttpxUrl::parse(address).map_err(|error| {
+        Box::new(HelperError {
+            class: "InvalidURL".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     Ok(Some(safe_upstream_url(&parsed)))
 }
 
@@ -117,18 +130,28 @@ fn raw_headers(pairs: &[Pair]) -> Result<RawHeaders, Box<HelperError>> {
         .map(|(name, value)| (name.as_bytes(), value.as_bytes()))
         .collect();
     RawHeaders::from_pairs(&bytes).map_err(|_duplicate| {
-        let mut error = failure(
-            "HTTPException",
-            "Multiple Authorization headers are not allowed".to_owned(),
-        );
-        error.status = Some(400);
-        Box::new(error)
+        Box::new(HelperError {
+            class: "HTTPException".to_owned(),
+            status: Some(400),
+            error_type: None,
+            param: None,
+            code: None,
+            message: "Multiple Authorization headers are not allowed".to_owned(),
+        })
     })
 }
 
 fn redactor() -> Result<Redactor, Box<HelperError>> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|error| Box::new(failure("RedactionError", error.to_string())))
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
+        Box::new(HelperError {
+            class: "RedactionError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }
 
 fn auth_resolution(name: &str) -> Result<AuthResolution, Box<HelperError>> {
@@ -147,20 +170,13 @@ fn auth_resolution(name: &str) -> Result<AuthResolution, Box<HelperError>> {
         "unresolved" => Ok(AuthResolution::Unresolved),
         "resolution-failed" => Ok(AuthResolution::Failed),
         "multiple" => Ok(AuthResolution::Multiple),
-        other => Err(Box::new(failure(
-            "ValueError",
-            format!("unknown auth resolution: {other}"),
-        ))),
-    }
-}
-
-fn failure(class: &str, message: String) -> HelperError {
-    HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
+        other => Err(Box::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("unknown auth resolution: {other}"),
+        })),
     }
 }

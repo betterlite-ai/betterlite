@@ -8,6 +8,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::Instant;
 
 use super::secrets::{
@@ -40,6 +41,10 @@ fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
 
 fn url(text: &str) -> HttpxUrl {
     HttpxUrl::parse(text).expect("valid url")
+}
+
+fn exposed(values: &[SecretString]) -> Vec<&str> {
+    values.iter().map(SecretString::expose_secret).collect()
 }
 
 fn request(
@@ -125,6 +130,7 @@ fn upstream_urls_drop_credentials_and_paths(#[case] address: &str, #[case] expec
 #[case::cost_plus_token("input_cost_per_token", true)]
 #[case::client_assertion("client_assertion", true)]
 #[case::upper_case("API-KEY", true)]
+#[case::folded_sharp_s("pa\u{df}word", true)]
 fn sensitive_field_names(#[case] key: &str, #[case] expected: bool) {
     assert_eq!(sensitive_field(key), expected);
 }
@@ -182,7 +188,7 @@ fn known_secret_values_and_secret_patterns_are_masked() {
         preview(
             b"{\"message\":\"known-secret is here\"}",
             "application/json",
-            &[String::from("known-secret")],
+            &[SecretString::from(String::from("known-secret"))],
             &redactor()
         ),
         "{\"message\":\"REDACTED is here\"}"
@@ -213,7 +219,7 @@ fn form_bodies_keep_their_shape_and_redact_sensitive_fields() {
         preview(
             b"token=query-secret&x=1",
             "application/x-www-form-urlencoded; charset=utf-8",
-            &[String::from("query-secret")],
+            &[SecretString::from(String::from("query-secret"))],
             &redactor()
         ),
         "token=REDACTED&x=1"
@@ -255,9 +261,12 @@ fn form_bodies_keep_their_shape_and_redact_sensitive_fields() {
 #[case::two_digits_are_not_an_escape(r#"token="a\12""#, vec!["a12"])]
 fn cookie_headers_yield_their_morsels(#[case] value: &str, #[case] expected: Vec<&str>) {
     let mut secrets = header_secret_values("cookie", value);
-    assert_eq!(secrets.first().map(String::as_str), Some(value));
+    assert_eq!(
+        secrets.first().map(SecretString::expose_secret),
+        Some(value)
+    );
     secrets.remove(0);
-    assert_eq!(secrets, expected);
+    assert_eq!(exposed(&secrets), expected);
 }
 
 #[test]
@@ -276,17 +285,17 @@ fn request_secrets_come_from_the_body_url_and_headers() {
     ))
     .expect("known body");
     assert_eq!(
-        secrets,
+        exposed(&secrets),
         vec![
-            String::from("session=cookie-secret; other=plain"),
-            String::from("Bearer sk-abcdefghijklmnop"),
-            String::from("sk-abcdefghijklmnop"),
-            String::from("cookie-secret"),
-            String::from("body-secret"),
-            String::from("qsecret"),
-            String::from("secret"),
-            String::from("plain"),
-            String::from("1"),
+            "session=cookie-secret; other=plain",
+            "Bearer sk-abcdefghijklmnop",
+            "sk-abcdefghijklmnop",
+            "cookie-secret",
+            "body-secret",
+            "qsecret",
+            "secret",
+            "plain",
+            "1",
         ]
     );
 }
@@ -305,9 +314,10 @@ fn every_quoted_form_of_a_known_secret_is_masked(
     #[case] secret: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(mask_known_values(text, &[String::from(secret)]), expected);
+    let known = vec![SecretString::from(String::from(secret))];
+    assert_eq!(mask_known_values(text, &known), expected);
     assert_eq!(
-        mask_known_values("nothing to mask", &[String::from(secret)]),
+        mask_known_values("nothing to mask", &known),
         "nothing to mask"
     );
 }
@@ -324,7 +334,7 @@ fn a_root_json_string_is_a_secret_leaf() {
         BodyState::Read(b"\"scalar-secret\"".to_vec()),
     ))
     .expect("known body");
-    assert_eq!(secrets, vec![String::from("scalar-secret")]);
+    assert_eq!(exposed(&secrets), vec!["scalar-secret"]);
 }
 
 #[test]
@@ -341,13 +351,8 @@ fn basic_credentials_contribute_every_decoded_form() {
     ))
     .expect("empty body is readable");
     assert_eq!(
-        secrets,
-        vec![
-            String::from("Basic dXNlcjpwYXNz"),
-            String::from("dXNlcjpwYXNz"),
-            String::from("user:pass"),
-            String::from("pass"),
-        ]
+        exposed(&secrets),
+        vec!["Basic dXNlcjpwYXNz", "dXNlcjpwYXNz", "user:pass", "pass"]
     );
 }
 

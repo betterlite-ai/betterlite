@@ -1,4 +1,3 @@
-import json
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import httpx
@@ -59,14 +58,6 @@ class FakeContext:
         self.request = connection
 
 
-def _json(value: object) -> Json:
-    return cast("Json", json.loads(json.dumps(value)))
-
-
-def _resolution(name: str) -> AuthResolution:
-    return AuthResolution(name)
-
-
 def _debug(scenario: DebugScenario) -> Json:
     oauth2_headers = None if scenario.oauth2_headers is None else dict(scenario.oauth2_headers)
     headers = MCPDebug.build_debug_headers(
@@ -77,11 +68,12 @@ def _debug(scenario: DebugScenario) -> Json:
         server_url=scenario.server_url,
         server_auth_type=scenario.server_auth_type,
     )
-    return _json(
+    return cast(
+        "Json",
         {
             "enabled": MCPDebug.is_debug_enabled(dict(scenario.headers)),
             "headers": [[name, value] for name, value in headers.items()],
-        }
+        },
     )
 
 
@@ -89,7 +81,7 @@ def _diagnostics(scenario: DiagnosticScenario) -> Json:
     diagnostics = MCPAuthDiagnostics()
     if not scenario.through_context:
         for server_id, resolution in scenario.records:
-            diagnostics.record(server_id, _resolution(resolution))
+            diagnostics.record(server_id, AuthResolution(resolution))
     else:
         scope: dict[str, object] = {
             "type": "http",
@@ -101,34 +93,37 @@ def _diagnostics(scenario: DiagnosticScenario) -> Json:
         token = active_mcp_request_ctx_var.set(context)
         try:
             for server_id, resolution in scenario.records:
-                record_auth_resolution(server_id, _resolution(resolution))
+                record_auth_resolution(server_id, AuthResolution(resolution))
         finally:
             active_mcp_request_ctx_var.reset(token)
-    return _json(
+    return cast(
+        "Json",
         {
             "resolution": diagnostics.resolution(),
             "headers": [[name, value] for name, value in diagnostics.headers().items()],
-        }
+        },
     )
 
 
 def _body(scenario: BodyScenario) -> Json:
-    return _json(
+    return cast(
+        "Json",
         {
             "preview": _preview(
                 scenario.body.encode(), scenario.content_type or "", tuple(scenario.secrets)
             ),
             "url": None if scenario.url is None else safe_upstream_url(httpx.URL(scenario.url)),
-        }
+        },
     )
 
 
 def run(input_value: dict[str, Json]) -> Json:
     parsed = Input.model_validate(input_value)
-    return _json(
+    return cast(
+        "Json",
         {
             "debug": [_debug(scenario) for scenario in parsed.debug],
             "diagnostics": [_diagnostics(scenario) for scenario in parsed.diagnostics],
             "bodies": [_body(scenario) for scenario in parsed.bodies],
-        }
+        },
     )

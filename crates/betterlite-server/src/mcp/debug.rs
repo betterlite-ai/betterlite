@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use betterlite_mcp::credential_contracts::auth_spec::AuthResolution;
 use betterlite_mcp::request_headers::client_headers::get_litellm_api_key;
 use betterlite_mcp::request_headers::raw_headers::RawHeaders;
+use betterlite_redact::structured::SensitiveDataMasker;
 use secrecy::SecretString;
 
 use self::auth_diagnostics::MCPAuthDiagnostics;
@@ -34,25 +35,20 @@ pub fn is_debug_enabled(headers: &RawHeaders) -> bool {
 
 #[must_use]
 pub fn mask_secret(value: Option<&str>) -> String {
-    let visible_prefix = 6;
-    let visible_suffix = 4;
     let Some(text) = value.filter(|text| !text.is_empty()) else {
         return "(none)".to_owned();
     };
-    let characters: Vec<char> = text.chars().collect();
-    if characters.len() <= visible_prefix + visible_suffix {
-        return "*".repeat(characters.len());
-    }
-    let prefix: String = characters.iter().take(visible_prefix).collect();
-    let suffix: String = characters
-        .iter()
-        .skip(characters.len().saturating_sub(visible_suffix))
-        .collect();
-    let hidden = characters
-        .len()
-        .saturating_sub(visible_prefix)
-        .saturating_sub(visible_suffix);
-    format!("{prefix}{}{suffix}", "*".repeat(hidden))
+    let defaults = SensitiveDataMasker::default();
+    let masker = SensitiveDataMasker {
+        sensitive_patterns: defaults.sensitive_patterns,
+        non_sensitive_overrides: defaults.non_sensitive_overrides,
+        visible_prefix: 6,
+        visible_suffix: 4,
+        mask_char: defaults.mask_char,
+        mask_short_values: defaults.mask_short_values,
+        max_work: defaults.max_work,
+    };
+    masker.mask_value(text)
 }
 
 pub struct DebugSendHeaders<'diagnostics> {

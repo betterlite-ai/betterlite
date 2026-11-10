@@ -10,31 +10,16 @@ use base64::engine::{DecodePaddingMode, GeneralPurposeConfig};
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::mcp_stored_contracts::decode::decode_mcp_stored_contract;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
-use betterlite_redact::structured::REDACTED;
-use encoding_rs::UTF_8;
+use betterlite_redact::structured::{REDACTED, SensitiveDataMasker};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+use secrecy::{ExposeSecret as _, SecretString};
+use url::form_urlencoded;
 
 use super::cookie::cookie_values;
 use super::upstream::{BodyState, UpstreamRequest};
 use super::{BODY_CAPTURE_BYTES, FORM_URLENCODED, content_type, content_type_base, header_text};
 
 const SENSITIVE_NAMES: [&str; 2] = ["clientassertion", "code"];
-const SENSITIVE_PATTERNS: [&str; 14] = [
-    "access",
-    "auth",
-    "authorization",
-    "certificate",
-    "cookie",
-    "credential",
-    "credentials",
-    "fingerprint",
-    "key",
-    "password",
-    "private",
-    "secret",
-    "tenancy",
-    "token",
-];
 const PUBLIC_HEADER_NAMES: [&str; 7] = [
     "accept",
     "accept-encoding",
@@ -64,51 +49,66 @@ const BASE64_ENGINE: GeneralPurpose = GeneralPurpose::new(
 
 #[must_use]
 pub fn sensitive_field(key: &str) -> bool {
-    let normalized: String = key
-        .to_lowercase()
+    let normalized: String = caseless::default_case_fold_str(key)
         .chars()
         .filter(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
         .collect();
     SENSITIVE_NAMES.contains(&normalized.as_str())
-        || SENSITIVE_PATTERNS
+        || SensitiveDataMasker::default()
+            .sensitive_patterns
             .iter()
-            .any(|pattern| normalized.contains(*pattern))
+            .any(|pattern| normalized.contains(pattern.as_str()))
 }
 
 #[must_use]
-pub fn header_secret_values(name: &str, value: &str) -> Vec<String> {
+pub fn header_secret_values(name: &str, value: &str) -> Vec<SecretString> {
     if name == "cookie" {
         return cookie_values(value).map_or_else(
-            || vec![value.to_owned()],
-            |values| once(value.to_owned()).chain(values).collect(),
+            || vec![SecretString::from(value.to_owned())],
+            |values| {
+                once(SecretString::from(value.to_owned()))
+                    .chain(values)
+                    .collect()
+            },
         );
     }
     if !matches!(name, "authorization" | "proxy-authorization") {
-        return vec![value.to_owned()];
+        return vec![SecretString::from(value.to_owned())];
     }
     let (scheme, credential) = value.split_once(' ').unwrap_or((value, ""));
     if !scheme.eq_ignore_ascii_case("basic") {
-        return vec![value.to_owned(), credential.to_owned()];
+        return vec![
+            SecretString::from(value.to_owned()),
+            SecretString::from(credential.to_owned()),
+        ];
     }
     let Some(values) = basic_credential_values(credential) else {
-        return vec![value.to_owned(), credential.to_owned()];
+        return vec![
+            SecretString::from(value.to_owned()),
+            SecretString::from(credential.to_owned()),
+        ];
     };
-    let mut secrets = vec![value.to_owned()];
+    let mut secrets = vec![SecretString::from(value.to_owned())];
     secrets.extend(values);
     secrets
 }
 
-fn basic_credential_values(credential: &str) -> Option<Vec<String>> {
+fn basic_credential_values(credential: &str) -> Option<Vec<SecretString>> {
     let decoded = String::from_utf8(BASE64_ENGINE.decode(credential).ok()?).ok()?;
     let password = decoded
         .split_once(':')
         .map_or_else(String::new, |(_user, password)| password.to_owned());
     let unescaped = unquote_plus(&password);
-    Some(vec![credential.to_owned(), decoded, password, unescaped])
+    Some(vec![
+        SecretString::from(credential.to_owned()),
+        SecretString::from(decoded),
+        SecretString::from(password),
+        SecretString::from(unescaped),
+    ])
 }
 
 #[must_use]
-pub fn body_secret_values(request: &UpstreamRequest) -> Option<Vec<String>> {
+pub fn body_secret_values(request: &UpstreamRequest) -> Option<Vec<SecretString>> {
     let BodyState::Read(raw) = &request.body else {
         return None;
     };
@@ -119,12 +119,10 @@ pub fn body_secret_values(request: &UpstreamRequest) -> Option<Vec<String>> {
         return None;
     }
     if content_type_base(&content_type(&request.headers)) == FORM_URLENCODED {
-        let text = UTF_8.decode_without_bom_handling(raw).0;
         return Some(
-            parse_qsl(&text)
-                .into_iter()
+            form_urlencoded::parse(raw.as_slice())
                 .filter(|(key, _value)| sensitive_field(key))
-                .map(|(_key, value)| value)
+                .map(|(_key, value)| SecretString::from(value.into_owned()))
                 .collect(),
         );
     }
@@ -140,12 +138,12 @@ fn collect_secret_leaves(
     body: &JsonValue,
     depth: usize,
     sensitive: bool,
-    values: &mut Vec<String>,
+    values: &mut Vec<SecretString>,
 ) {
     match body {
         JsonValue::String(text) => {
             if sensitive || depth == 0 {
-                values.push(text.clone());
+                values.push(SecretString::from(text.clone()));
             }
         }
         JsonValue::Object(fields) => {
@@ -168,7 +166,7 @@ fn collect_secret_leaves(
 }
 
 #[must_use]
-pub fn request_secret_values(request: &UpstreamRequest) -> Option<Vec<String>> {
+pub fn request_secret_values(request: &UpstreamRequest) -> Option<Vec<SecretString>> {
     let mut values = body_secret_values(request)?;
     values.push(url_password(&request.url));
     values.extend(query_values(&request.url));
@@ -181,40 +179,49 @@ pub fn request_secret_values(request: &UpstreamRequest) -> Option<Vec<String>> {
     Some(sorted_secrets(values))
 }
 
-fn url_password(url: &HttpxUrl) -> String {
-    url.userinfo
+fn url_password(url: &HttpxUrl) -> SecretString {
+    let password = url
+        .userinfo
         .split_once(':')
         .map_or_else(String::new, |(_user, password)| {
             percent_decode_str(password)
                 .decode_utf8_lossy()
                 .into_owned()
-        })
+        });
+    SecretString::from(password)
 }
 
-fn query_values(url: &HttpxUrl) -> Vec<String> {
+fn query_values(url: &HttpxUrl) -> Vec<SecretString> {
     url.query.as_deref().map_or_else(Vec::new, |query| {
-        parse_qsl(query)
-            .into_iter()
-            .map(|(_name, value)| value)
+        form_urlencoded::parse(query.as_bytes())
+            .map(|(_name, value)| SecretString::from(value.into_owned()))
             .collect()
     })
 }
 
-fn sorted_secrets(values: Vec<String>) -> Vec<String> {
-    let unique: BTreeSet<String> = values
-        .into_iter()
-        .filter(|value| !value.is_empty())
-        .collect();
-    let mut sorted: Vec<String> = unique.into_iter().collect();
-    sorted.sort_by_key(|value| Reverse(value.chars().count()));
+fn sorted_secrets(values: Vec<SecretString>) -> Vec<SecretString> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut sorted: Vec<SecretString> = Vec::new();
+    for value in values {
+        let text = value.expose_secret();
+        if text.is_empty() || !seen.insert(text.to_owned()) {
+            continue;
+        }
+        sorted.push(value);
+    }
+    sorted.sort_by_key(|value| Reverse(value.expose_secret().chars().count()));
     sorted
 }
 
 #[must_use]
-pub fn mask_known_values(text: &str, secrets: &[String]) -> String {
+pub fn mask_known_values(text: &str, secrets: &[SecretString]) -> String {
     let mut variants: BTreeSet<String> = BTreeSet::new();
-    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
-        variants.insert(secret.clone());
+    for secret in secrets
+        .iter()
+        .map(SecretString::expose_secret)
+        .filter(|secret| !secret.is_empty())
+    {
+        variants.insert(secret.to_owned());
         variants.insert(json_escaped(secret));
         variants.insert(utf8_percent_encode(secret, QUOTE_SET).to_string());
         variants.insert(plus_encode(secret));
@@ -258,21 +265,10 @@ pub(super) fn plus_encode(text: &str) -> String {
         .replace(' ', "+")
 }
 
+// urllib.parse.unquote_plus on one component: the crate decodes the percent escapes, urllib's '+' rule is the replace
 fn unquote_plus(text: &str) -> String {
     let unescaped = text.replace('+', " ");
     percent_decode_str(&unescaped)
         .decode_utf8_lossy()
         .into_owned()
-}
-
-pub(super) fn parse_qsl(text: &str) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-    for field in text.split('&') {
-        if field.is_empty() {
-            continue;
-        }
-        let (name, value) = field.split_once('=').unwrap_or((field, ""));
-        pairs.push((unquote_plus(name), unquote_plus(value)));
-    }
-    pairs
 }
