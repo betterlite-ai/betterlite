@@ -190,11 +190,28 @@ fn shell_commands(run: &str) -> Vec<Vec<ShellWord>> {
         .collect()
 }
 
+// A gate run inside a check waits on the lock the running gate holds until CI's time limit
+fn nested_gate_problem(words: &[ShellWord]) -> Option<String> {
+    for pair in words.windows(2) {
+        if let [first, second] = pair
+            && !first.quoted
+            && first.text == "cargo"
+            && second.text == "gate"
+        {
+            return Some(String::from(
+                "runs cargo gate inside the gate and waits on its lock; the built-in oracle check already runs oracle_cases, so give the check a command of its own",
+            ));
+        }
+    }
+    None
+}
+
 pub(crate) fn argument_problems(run: &str) -> Vec<String> {
     let mut problems = Vec::new();
     for words in shell_commands(run) {
         problems.extend(nextest_problems(&words));
         problems.extend(grep_problem(&words));
+        problems.extend(nested_gate_problem(&words));
     }
     problems
 }
