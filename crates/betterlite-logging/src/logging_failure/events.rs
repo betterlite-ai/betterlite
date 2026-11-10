@@ -53,17 +53,19 @@ impl FailureDelivery<'_> {
         &self,
         logger: &dyn CallbackLogger,
     ) -> Result<Arc<StandardLoggingPayload>, FailureError> {
-        let policy = RedactionPolicy {
-            turn_off_message_logging: self.request_redaction == RequestRedaction::Redact
-                || logger.turn_off_message_logging(),
-            excluded_fields: self.excluded_fields.to_vec(),
-            callback_redacts_itself: logger.redacts_messages_itself(),
-        };
-        if !policy.turn_off_message_logging && policy.excluded_fields.is_empty() {
+        let turn_off_message_logging =
+            self.request_redaction == RequestRedaction::Redact || logger.turn_off_message_logging();
+        if !turn_off_message_logging && self.excluded_fields.is_empty() {
             return Ok(Arc::clone(self.payload));
         }
+        let payload_map = payload_to_map(self.payload.as_ref())?;
+        let policy = RedactionPolicy {
+            turn_off_message_logging,
+            excluded_fields: removable_fields(&payload_map, self.excluded_fields),
+            callback_redacts_itself: logger.redacts_messages_itself(),
+        };
         let details = ModelCallDetails {
-            standard_logging_object: Some(payload_to_map(self.payload.as_ref())?),
+            standard_logging_object: Some(payload_map),
             proxy_server_request: None,
         };
         // ast-grep-ignore: no-long-names
@@ -77,6 +79,23 @@ impl FailureDelivery<'_> {
         };
         Ok(Arc::new(map_to_payload(&standard_logging_object)?))
     }
+}
+
+fn removable_fields(payload: &IndexMap<String, Json>, excluded: &[String]) -> Vec<String> {
+    let mut removable = Vec::new();
+    for field in excluded {
+        let mut probe = payload.clone();
+        probe.shift_remove(field);
+        if map_to_payload(&probe).is_ok() {
+            removable.push(field.clone());
+        } else {
+            tracing::warn!(
+                field,
+                "an excluded payload field is required, so the logger still gets it"
+            );
+        }
+    }
+    removable
 }
 
 pub fn payload_to_map(

@@ -315,8 +315,32 @@ fn excluded_fields_are_removed_from_the_event() {
         &deps,
     );
     let recorded = logger.recorded();
-    let payload = payload_to_map(recorded[0].1.as_ref()).expect("the payload maps");
-    assert!(!payload.contains_key("messages"));
+    assert_eq!(recorded[0].1.messages, None);
+    assert_eq!(recorded[0].1.model, "gpt-4o");
+}
+
+#[test]
+fn an_excluded_field_the_typed_payload_requires_is_kept() {
+    let logger = Arc::new(FakeLogger::new("private"));
+    let registry = registry(&[Arc::clone(&logger)]);
+    let harness = Harness::new();
+    let mut deps: FailureDeps<'_> = harness.deps();
+    let excluded = vec!["model".to_owned(), "messages".to_owned()];
+    deps.excluded_fields = &excluded;
+    let mut state = build(init());
+    let mut record = FailureRecord::default();
+    let mut context = CorrelationContext::default();
+    let mut failure_call = call(&mut state, &mut record, &mut context);
+    failure_handler(
+        &mut failure_call,
+        &report("provider exploded"),
+        &callbacks(&registry),
+        &deps,
+    );
+    let recorded = logger.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].1.model, "gpt-4o");
+    assert_eq!(recorded[0].1.messages, None);
 }
 
 #[test]
@@ -421,6 +445,9 @@ fn placeholder_messages() -> Json {
 )]
 #[case::a_proxy_logger_still_runs_on_a_no_log_request(
     a_proxy_logger_still_runs_on_a_no_log_request
+)]
+#[case::an_excluded_field_the_typed_payload_requires_is_kept(
+    an_excluded_field_the_typed_payload_requires_is_kept
 )]
 #[case::global_disable_no_log_wins(global_disable_no_log_wins)]
 #[case::the_first_failure_is_logged_once(the_first_failure_is_logged_once)]

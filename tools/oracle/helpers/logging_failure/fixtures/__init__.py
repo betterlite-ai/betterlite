@@ -4,6 +4,7 @@ import asyncio
 import calendar
 import datetime as dt
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import TypeAlias, cast, get_type_hints
 
 from litellm.integrations.custom_logger import CustomLogger
@@ -63,6 +64,24 @@ class Probe(CustomLogger):
             raise RuntimeError("the probe refused the event")
         if method == "sync" and "fail_sync" in self.flags:
             raise RuntimeError("the probe refused the event")
+
+
+class Instances(type):
+    def __instancecheck__(cls, instance: object) -> bool:
+        return isinstance(instance, dt.datetime)
+
+
+class Clock(metaclass=Instances):
+    moment: dt.datetime
+
+    @classmethod
+    def now(cls, tz: dt.tzinfo | None = None) -> dt.datetime:
+        del tz
+        return cls.moment
+
+
+def frozen_datetime(moment: dt.datetime) -> SimpleNamespace:
+    return SimpleNamespace(datetime=type("Frozen", (Clock,), {"moment": moment}))
 
 
 class Executor:

@@ -27,3 +27,6 @@ deviations:
   - what: A request whose redaction headers cannot be read has its messages redacted for every failure logger.
     why: Failing closed keeps a prompt out of the logs when the decision cannot be made; LiteLLM would raise out of the failure handler.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L328-L377
+  - what: An excluded standard logging payload field that the typed payload requires, such as model, is kept and a warning names it; the other excluded fields are still removed.
+    why: betterlite sends loggers a typed StandardLoggingPayload that cannot be built without its required fields, while LiteLLM redacts a plain dict that can drop any key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L910-L921

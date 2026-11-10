@@ -62,7 +62,6 @@ call:
         failure:
           exception: {class_name: APIError, message: provider exploded}
           traceback: "Traceback"
-          end_time: "2026-01-01T00:00:02+00:00"
         payload:
           id: chatcmpl-1
           trace_id: trace-1

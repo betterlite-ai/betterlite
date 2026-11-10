@@ -22,6 +22,7 @@ from .fixtures import (
     callbacks,
     exception,
     float_value,
+    frozen_datetime,
     identity,
     list_value,
     micros,
@@ -177,11 +178,12 @@ async def _apply(logging_obj: Logging, report: Report, operation: dict[str, Json
         )
         return None
     if name == "dispatch_failure_handlers":
-        await logging_obj.dispatch_failure_handlers(
-            report.error,
-            report.traceback,
-            prefer_async_handlers=operation.get("prefer_async_handlers") is True,
-        )
+        with patch.object(litellm_logging, "datetime", frozen_datetime(logging_obj.start_time)):
+            await logging_obj.dispatch_failure_handlers(
+                report.error,
+                report.traceback,
+                prefer_async_handlers=operation.get("prefer_async_handlers") is True,
+            )
         return None
     raise ValueError(f"unknown logging_failure operation {name}")
 
