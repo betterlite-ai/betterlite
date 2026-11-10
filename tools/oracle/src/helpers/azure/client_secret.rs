@@ -100,15 +100,12 @@ fn attempts(step: &Step) -> Result<Attempts, Box<HelperError>> {
     let resolver = FixtureResolver::from(step);
     let host = step.authority_host.as_deref();
     let provider = provider_for(&mut cache, &input_of(step), &resolver, host).ok();
-    let tokens = std::iter::once(0)
-        .chain(step.advance)
-        .map(|offset| {
-            clock
-                .now
-                .store(NOW.saturating_add(offset), Ordering::SeqCst);
-            provider.as_ref().and_then(|ready| ready.token().ok())
-        })
-        .collect();
+    let mut tokens = Vec::new();
+    for offset in std::iter::once(0).chain(step.advance) {
+        let later = NOW.saturating_add(offset);
+        clock.now.store(later, Ordering::SeqCst);
+        tokens.push(provider.as_ref().and_then(|ready| ready.token().ok()));
+    }
     Ok((transport, tokens))
 }
 
