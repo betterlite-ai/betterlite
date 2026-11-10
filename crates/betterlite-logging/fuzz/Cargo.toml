@@ -107,3 +107,10 @@ path = "fuzz_targets/classifier_snapshot.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "passthrough_upstream_usage"
+path = "fuzz_targets/passthrough_upstream_usage.rs"
+test = false
+doc = false
+bench = false
