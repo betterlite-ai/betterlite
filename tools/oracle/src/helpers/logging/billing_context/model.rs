@@ -49,7 +49,7 @@ impl PriceLookup for CaseLookup {
         self.raw.get(key).cloned()
     }
 
-    // The identity and deployment views never read tiers, so the case catalog keeps none.
+    // The identity view reads raw entries only, so the case catalog keeps no tier tables.
     fn effective_priced_model(
         &self,
         _model: &str,

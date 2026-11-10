@@ -535,6 +535,16 @@ fn ocr_info_layers_logging_params_over_the_deployment_record() {
 }
 
 #[test]
+fn ocr_info_reads_the_deployment_record_without_logging_params() {
+    let lookup = Lookup::new(&[("router", &[("ocr_cost_per_page", number("2"))])]);
+    let pricing = ocr_info(&query(Some(true), Some("router"), None), &lookup)
+        .expect("the fixture is valid")
+        .expect("the deployment record prices OCR");
+    assert_eq!(pricing.ocr_cost_per_page, Some(Decimal::from(2_u8)));
+    assert_eq!(pricing.ocr_cost_per_credit, None);
+}
+
+#[test]
 fn ocr_info_without_a_custom_price_has_nothing_to_layer() {
     let params = params(&[(
         "ocr_cost_per_page",
@@ -608,6 +618,32 @@ fn pricing_entry_walks_the_candidate_models(#[case] requested: &str, #[case] exp
             ("input_cost_per_token", number("2"))
         ]))
     );
+}
+
+#[test]
+fn pricing_entry_skips_an_empty_candidate_name() {
+    let mut effective = BTreeMap::new();
+    effective.insert(
+        String::new(),
+        record(&[("key", text("")), ("input_cost_per_token", number("1"))]),
+    );
+    effective.insert(
+        "request-model".to_owned(),
+        record(&[
+            ("key", text("request-model")),
+            ("input_cost_per_token", number("2")),
+        ]),
+    );
+    let lookup = Lookup {
+        raw: BTreeMap::new(),
+        effective,
+    };
+    let response = CostResponse::Dictionary { model: Some("") };
+    let identity = request(Some("request-model"), Some(&response), Some("openai"));
+    let entry = pricing_entry(&identity, None, &lookup, &unavailable())
+        .expect("the fixture is valid")
+        .expect("the request model resolves");
+    assert_eq!(entry.0, "request-model");
 }
 
 #[test]
