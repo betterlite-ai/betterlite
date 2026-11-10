@@ -6,9 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 regex.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
