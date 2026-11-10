@@ -1,0 +1,12 @@
+task: B175
+deviations:
+  - what: >-
+      A passthrough parameter named api_key, api_base, base_url, timeout, litellm_metadata, messages,
+      prompt, system, mock_response or another request control is rejected with a typed error naming the
+      field, where LiteLLM copies every keyword outside DEFAULT_CHAT_COMPLETION_PARAM_VALUES into
+      extra_body and sends it to the provider.
+    why: >-
+      extra_body is the request body's passthrough channel, so a client-supplied credential name or an
+      internal metadata key reaches the provider as a body field. Betterlite reserves those names, which
+      keeps the passthrough map from impersonating deployment credentials, content or trusted controls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5060-L5080
