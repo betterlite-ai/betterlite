@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use betterlite_models::passthrough_policies::generic_timeout::DEFAULT_TIMEOUT_SECONDS;
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
@@ -20,7 +22,7 @@ struct RawGeneral {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Settings {
-    pub request_timeout: Option<f64>,
+    pub request_timeout: f64,
 }
 
 impl Section for Raw {
@@ -36,6 +38,8 @@ impl Section for Raw {
             lookup,
             parse_float,
         )?;
-        Ok(Settings { request_timeout })
+        Ok(Settings {
+            request_timeout: request_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
+        })
     }
 }

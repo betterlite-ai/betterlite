@@ -1,4 +1,6 @@
-use betterlite_models::passthrough_policies::generic_timeout::resolve_passthrough_timeout;
+use betterlite_models::passthrough_policies::generic_timeout::{
+    DEFAULT_TIMEOUT_SECONDS, resolve_passthrough_timeout,
+};
 use betterlite_models::passthrough_policies::header_forwarding::forward_headers_from_request;
 use betterlite_models::passthrough_policies::query_merge::{
     QueryParameters, merge_query_parameters,
@@ -26,7 +28,7 @@ impl crate::helpers::Helper for Op {
             Operation::ForwardHeaders => header_output(input),
             Operation::ProxyTimeout => Ok(json!(resolve_passthrough_timeout(
                 input.endpoint_timeout,
-                input.settings_timeout,
+                input.settings_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
             ))),
             Operation::SdkTimeout => sdk_output(input),
         }
@@ -62,7 +64,7 @@ fn sdk_output(input: &Input) -> crate::helpers::HelperResult {
         &deployment,
         &router,
         input.configured_timeout,
-        input.settings_timeout,
+        input.settings_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
     ) {
         Ok(seconds) => Ok(json!(seconds)),
         Err(error) => Err(helper_error("InvalidSeconds", error)),

@@ -24,42 +24,39 @@ fn loads_the_request_timeout() {
         &[],
     )
     .unwrap();
-    assert_eq!(settings.request_timeout, Some(45.5_f64));
+    assert_eq!(settings.request_timeout.to_bits(), 45.5_f64.to_bits());
 }
 
 #[rstest]
-#[case::absent("general_settings: {}\n", None)]
-#[case::empty_document("{}\n", None)]
-#[case::explicit_null("general_settings:\n  pass_through_request_timeout: ~\n", None)]
-#[case::integer(
-    "general_settings:\n  pass_through_request_timeout: 30\n",
-    Some(30.0_f64)
-)]
+#[case::absent("general_settings: {}\n", 600.0_f64)]
+#[case::empty_document("{}\n", 600.0_f64)]
+#[case::explicit_null("general_settings:\n  pass_through_request_timeout: ~\n", 600.0_f64)]
+#[case::integer("general_settings:\n  pass_through_request_timeout: 30\n", 30.0_f64)]
 #[case::fraction(
     "general_settings:\n  pass_through_request_timeout: 12.25\n",
-    Some(12.25_f64)
+    12.25_f64
 )]
-#[case::zero(
-    "general_settings:\n  pass_through_request_timeout: 0\n",
-    Some(0.0_f64)
-)]
-#[case::negative("general_settings:\n  pass_through_request_timeout: -5\n", Some(-5.0_f64))]
+#[case::zero("general_settings:\n  pass_through_request_timeout: 0\n", 0.0_f64)]
+#[case::negative("general_settings:\n  pass_through_request_timeout: -5\n", -5.0_f64)]
 #[case::quoted_number(
     "general_settings:\n  pass_through_request_timeout: \"30\"\n",
-    Some(30.0_f64)
+    30.0_f64
 )]
-fn resolves_values_and_absence(#[case] source: &str, #[case] expected: Option<f64>) {
-    assert_eq!(load(source, &[]).unwrap().request_timeout, expected);
+fn resolves_values_and_absence(#[case] source: &str, #[case] expected: f64) {
+    assert_eq!(
+        load(source, &[]).unwrap().request_timeout.to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[rstest]
-#[case::environment("40.5", Some(40.5_f64))]
-#[case::empty_environment("", None)]
-fn resolves_an_environment_reference(#[case] variable: &str, #[case] expected: Option<f64>) {
+#[case::environment("40.5", 40.5_f64)]
+#[case::empty_environment("", 600.0_f64)]
+fn resolves_an_environment_reference(#[case] variable: &str, #[case] expected: f64) {
     let source =
         "general_settings:\n  pass_through_request_timeout: os.environ/PASS_THROUGH_TIMEOUT\n";
     let settings = load(source, &[("PASS_THROUGH_TIMEOUT", variable)]).unwrap();
-    assert_eq!(settings.request_timeout, expected);
+    assert_eq!(settings.request_timeout.to_bits(), expected.to_bits());
 }
 
 #[rstest]
@@ -72,7 +69,10 @@ fn refuses_a_value_that_is_not_a_number(#[case] source: &str) {
 #[test]
 fn the_shipped_valid_seed_loads() {
     let source = include_str!("../../../fuzz/corpus/config_yaml/passthrough-valid.yaml");
-    assert_eq!(load(source, &[]).unwrap().request_timeout, Some(45.5_f64));
+    assert_eq!(
+        load(source, &[]).unwrap().request_timeout.to_bits(),
+        45.5_f64.to_bits()
+    );
 }
 
 #[test]

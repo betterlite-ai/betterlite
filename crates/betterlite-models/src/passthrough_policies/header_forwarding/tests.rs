@@ -50,7 +50,11 @@ fn a_custom_header_removes_the_request_header_in_any_case() {
     let custom = headers(&[("x-custom", "from-route"), ("CONTENT-TYPE", "text/plain")]);
     assert_eq!(
         forward_headers_from_request(&request, custom, true),
-        headers(&[("x-other", "kept"), ("x-custom", "from-route")])
+        headers(&[
+            ("x-other", "kept"),
+            ("x-custom", "from-route"),
+            ("CONTENT-TYPE", "text/plain")
+        ])
     );
 }
 

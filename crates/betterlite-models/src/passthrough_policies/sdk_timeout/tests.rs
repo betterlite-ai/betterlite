@@ -12,7 +12,7 @@ struct Case {
     deployment: DeploymentTimeouts,
     router: RouterTimeouts,
     configured: Option<f64>,
-    settings: Option<f64>,
+    settings: f64,
 }
 
 impl Case {
@@ -78,7 +78,7 @@ fn request_stream_timeout_wins_over_every_lower_level() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(5.0_f64));
 }
@@ -97,7 +97,7 @@ fn deployment_stream_timeout_beats_the_router_and_the_generic_chain() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(8.0_f64));
 }
@@ -112,7 +112,7 @@ fn router_stream_timeout_beats_the_generic_chain() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(11.0_f64));
 }
@@ -136,7 +136,7 @@ fn stream_timeouts_are_ignored_without_a_streaming_request() {
             timeout: None,
         },
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(6.0_f64));
 }
@@ -153,7 +153,7 @@ fn request_timeout_beats_request_request_timeout() {
         deployment: empty_deployment(),
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(6.0_f64));
 }
@@ -177,7 +177,7 @@ fn request_request_timeout_beats_the_deployment_values() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(7.0_f64));
 }
@@ -196,7 +196,7 @@ fn deployment_timeout_beats_deployment_request_timeout() {
             timeout: Some(number(12.0_f64)),
         },
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(9.0_f64));
 }
@@ -215,7 +215,7 @@ fn deployment_request_timeout_beats_the_router_timeout() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(10.0_f64));
 }
@@ -230,7 +230,7 @@ fn router_timeout_beats_the_configured_request_timeout() {
             timeout: Some(number(12.0_f64)),
         },
         configured: Some(13.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(12.0_f64));
 }
@@ -242,7 +242,7 @@ fn the_configured_request_timeout_beats_the_general_setting() {
         deployment: empty_deployment(),
         router: empty_router(),
         configured: Some(13.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(13.0_f64));
 }
@@ -254,33 +254,21 @@ fn an_explicit_default_request_timeout_is_still_used() {
         deployment: empty_deployment(),
         router: empty_router(),
         configured: Some(6_000.0_f64),
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(6_000.0_f64));
 }
 
 #[test]
-fn the_general_setting_beats_the_six_hundred_second_default() {
+fn without_a_winner_the_settings_timeout_is_returned() {
     let case = Case {
         request: request(false),
         deployment: empty_deployment(),
         router: empty_router(),
         configured: None,
-        settings: Some(14.0_f64),
+        settings: 14.0_f64,
     };
     assert_eq!(case.resolve(), Ok(14.0_f64));
-}
-
-#[test]
-fn nothing_configured_falls_back_to_six_hundred_seconds() {
-    let case = Case {
-        request: request(false),
-        deployment: empty_deployment(),
-        router: empty_router(),
-        configured: None,
-        settings: None,
-    };
-    assert_eq!(case.resolve(), Ok(600.0_f64));
 }
 
 #[test]
@@ -302,7 +290,7 @@ fn an_invalid_lower_precedence_value_never_fails_the_call() {
             timeout: Some(text("bad")),
         },
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(5.0_f64));
 }
@@ -323,7 +311,7 @@ fn an_invalid_lower_precedence_stream_value_never_fails_the_call() {
         },
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(case.resolve(), Ok(5.0_f64));
 }
@@ -340,7 +328,7 @@ fn an_invalid_winner_names_its_request_field() {
         deployment: empty_deployment(),
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(
         case.resolve(),
@@ -363,7 +351,7 @@ fn an_invalid_stream_winner_names_its_field() {
         deployment: empty_deployment(),
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(
         case.resolve(),
@@ -385,7 +373,7 @@ fn an_invalid_deployment_winner_names_its_field() {
         },
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     assert_eq!(
         case.resolve(),
@@ -427,7 +415,7 @@ fn the_winning_text_is_validated_as_seconds(
         deployment: empty_deployment(),
         router: empty_router(),
         configured: None,
-        settings: None,
+        settings: 600.0_f64,
     };
     match expected {
         Ok(seconds) => assert_eq!(case.resolve(), Ok(seconds)),
