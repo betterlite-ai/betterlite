@@ -151,7 +151,7 @@ fn assert_web_identity_call(exchange: &Exchange) {
     assert!(exchange.form.keys().all(|name| !name.starts_with("Tags")));
     assert!(exchange.access_key.is_none());
     assert!(exchange.session_token.is_none());
-    assert_eq!(exchange.region.as_deref(), Some(REGION));
+    assert!(exchange.region.is_none());
     assert_eq!(
         exchange.host.as_deref(),
         Some("sts.us-east-1.amazonaws.com")
