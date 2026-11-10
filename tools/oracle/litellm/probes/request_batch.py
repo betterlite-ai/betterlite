@@ -16,7 +16,6 @@ from probes.protocol import Operation, Strict
 
 class Output(Strict):
     shared: bool
-    separate: bool
     nested: bool
     taken: str | None
 
@@ -30,7 +29,6 @@ def cache(namespace: str) -> RedisCache:
 
 class RequestBatch(Operation):
     namespace: str
-    other: str
     slot: str
     value: str
 
@@ -43,7 +41,6 @@ class RequestBatch(Operation):
         with request_redis_batch_scope() as request:
             batch = active_request_redis_batch(first)
             twin = active_request_redis_batch(cache(self.namespace))
-            separate = active_request_redis_batch(cache(self.other))
             outside = active_request_redis_batches()
             with request_redis_batch_scope() as nested:
                 inside = active_request_redis_batches()
@@ -51,7 +48,6 @@ class RequestBatch(Operation):
             taken = request.prefetched.pop(self.slot, None)
         return Output(
             shared=batch is not None and batch is twin,
-            separate=batch is not separate,
             nested=outside is inside and nested is request,
             taken=cast("str | None", taken),
         )

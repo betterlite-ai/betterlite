@@ -79,16 +79,13 @@ class FakePipeline:
     async def __aexit__(self, kind: object, value: object, traceback: object) -> None:
         _ = (kind, value, traceback)
 
-    def mget(self, keys: Sequence[str]) -> None:
-        _ = keys
+    def mget(self, _keys: Sequence[str]) -> None:
         self._queued.append("MGET")
 
-    def incrbyfloat(self, name: str, amount: float) -> None:
-        _ = (name, amount)
+    def incrbyfloat(self, _name: str, _amount: float) -> None:
         self._queued.append("INCRBYFLOAT")
 
-    def expire(self, name: str, time: timedelta) -> None:
-        _ = (name, time)
+    def expire(self, _name: str, _time: timedelta) -> None:
         self._queued.append("EXPIRE")
 
     async def execute(self, *, raise_on_error: bool = True) -> list[object]:
