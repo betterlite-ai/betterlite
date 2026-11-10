@@ -17,6 +17,8 @@ struct ReplyWire {
     model: Option<String>,
     choices: Option<Vec<ChoiceWire>>,
     usage: Option<UsageWire>,
+    system_fingerprint: Option<String>,
+    service_tier: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +34,8 @@ struct MessageWire {
     role: String,
     content: Option<String>,
     tool_calls: Option<Vec<ToolCall>>,
+    annotations: Option<Vec<Value>>,
+    audio: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -75,8 +79,8 @@ pub(super) fn response_from_wire(reply: Value) -> Result<ChatResponse, serde_jso
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
             }),
-        system_fingerprint: None,
-        service_tier: None,
+        system_fingerprint: wire.system_fingerprint,
+        service_tier: wire.service_tier,
     })
 }
 
@@ -86,7 +90,7 @@ fn choice_from_wire(choice: ChoiceWire) -> ChatChoice {
         message: message_from_wire(choice.message.unwrap_or_default()),
         finish_reason: Some(choice_finish_reason(choice.finish_reason.as_deref()).0),
         logprobs: choice.logprobs,
-        provider_specific_fields: BTreeMap::new(),
+        provider_specific_fields: choice_finish_reason(choice.finish_reason.as_deref()).1,
     }
 }
 
@@ -99,8 +103,8 @@ fn message_from_wire(message: MessageWire) -> AssistantMessage {
         },
         content: message.content,
         tool_calls: message.tool_calls.filter(|calls| !calls.is_empty()),
-        annotations: None,
-        audio: None,
+        annotations: message.annotations,
+        audio: message.audio,
         refusal: None,
         provider_specific_fields: MessageProviderFields::default(),
     }

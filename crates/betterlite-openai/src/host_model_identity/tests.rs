@@ -273,10 +273,15 @@ fn a_missing_or_null_choices_list_becomes_one_default_choice(#[case] choices_val
 }
 
 #[test]
-fn a_mapped_finish_reason_uses_the_openai_name() {
+fn a_mapped_finish_reason_keeps_the_native_value() {
     let body = r#"{"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"max_tokens"}]}"#;
     let response = decode(body.as_bytes(), clarifai_mode()).unwrap();
-    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("length"));
+    let choice = &response.choices[0];
+    assert_eq!(choice.finish_reason.as_deref(), Some("length"));
+    assert_eq!(
+        choice.provider_specific_fields.get("native_finish_reason"),
+        Some(&Value::String(String::from("max_tokens")))
+    );
 }
 
 #[test]
