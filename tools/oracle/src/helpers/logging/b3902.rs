@@ -99,10 +99,10 @@ impl Helper for Op {
 }
 
 fn load_settings(environment: &BTreeMap<String, String>) -> Result<Settings, Box<HelperError>> {
-    Ok(ConfigLoader {
+    let config = ConfigLoader {
         lookup: environment.clone(),
     }
-    .load("")?
-    .sections
-    .langfuse_settings)
+    .load("")
+    .map_err(|error| failure("ConfigError", &error.to_string()))?;
+    Ok(config.sections.langfuse_settings)
 }
