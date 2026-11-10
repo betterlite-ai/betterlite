@@ -29,9 +29,7 @@ pub fn record_text(body: &[u8]) -> Result<String, TextCompletionCodestralError> 
     let mut text = String::with_capacity(body.len());
     for part in body.utf8_chunks() {
         text.push_str(part.valid());
-        if !part.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
+        text.extend((!part.invalid().is_empty()).then_some('\u{fffd}'));
     }
     Ok(text)
 }
