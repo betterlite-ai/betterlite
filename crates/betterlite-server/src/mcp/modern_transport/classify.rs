@@ -1,7 +1,8 @@
 use axum::body::Body;
 use axum::http::{HeaderMap, Response};
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+use base64::alphabet;
+use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
 use rmcp::model::{
     ClientRequest, CustomRequest, ErrorCode, GetMeta as _, JsonRpcRequest, RequestId,
     RequestMetaObject,
@@ -30,6 +31,11 @@ const META_OBJECT_MESSAGE: &str = "params._meta must be an object carrying the r
 const INVALID_PARAMETERS_MESSAGE: &str = "Invalid request parameters";
 const BASE64_PREFIX: &str = "=?base64?";
 const BASE64_SUFFIX: &str = "?=";
+// Python's b64decode(validate=True) tolerates non-canonical trailing bits, so the re-encode check rejects them
+const HEADER_DECODER: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
 // the mcp_types.methods CLIENT_REQUESTS rows for 2026-07-28
 const MODERN_CLIENT_METHODS: [&str; 10] = [
     "completion/complete",
@@ -250,8 +256,8 @@ fn decode_header_value(value: Option<&str>) -> Option<String> {
     else {
         return Some(text.to_owned());
     };
-    let decoded = STANDARD.decode(payload).ok()?;
-    if STANDARD.encode(&decoded) != payload {
+    let decoded = HEADER_DECODER.decode(payload).ok()?;
+    if HEADER_DECODER.encode(&decoded) != payload {
         return None;
     }
     String::from_utf8(decoded).ok()

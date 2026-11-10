@@ -49,6 +49,11 @@ const READ_RESOURCE: &str = concat!(
     r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
 );
 const BASE64_TOOL_NAME: &str = "=?base64?dGVzdC10b29s?=";
+const CORRUPT_NAME_CALL: &str = concat!(
+    r#"{"jsonrpc":"2.0","id":34,"method":"tools/call","params":{"name":"NAME","#,
+    r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+    r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+);
 const NOTIFICATION: &str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
 const NO_META: &str = r#"{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}"#;
 const NO_CAPABILITIES: &str = concat!(
@@ -615,16 +620,29 @@ async fn accepts_a_base64_name_header_that_matches() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+#[rstest]
+#[case::a_bad_payload("=?base64?not base64?=", "=?base64?not base64?=")]
+#[case::a_non_canonical_payload("a", "=?base64?YR==?=")]
 #[tokio::test]
-async fn refuses_a_malformed_base64_name_header() {
+async fn refuses_a_malformed_base64_name_header(
+    #[case] body_name: &str,
+    #[case] name_header: &str,
+) {
+    let body = CORRUPT_NAME_CALL.replace("NAME", body_name);
     let request = accepted_post()
         .header("mcp-protocol-version", PROTOCOL_VERSION)
         .header("mcp-method", "tools/call")
-        .header("mcp-name", "=?base64?not base64?=")
-        .body(Body::from(CALL_TOOL.to_owned()))
+        .header("mcp-name", name_header)
+        .body(Body::from(body))
         .expect("a request");
     let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let refusal: Refusal = refusal(response).await;
+    assert_eq!(refusal.error.code, -32020_i32);
+    assert_eq!(
+        refusal.error.message,
+        "mcp-name header does not match the request body's 'name' parameter"
+    );
 }
 
 #[tokio::test]
