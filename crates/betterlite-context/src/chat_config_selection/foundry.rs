@@ -13,11 +13,8 @@ pub fn get_azure_ai_route(model: &str) -> AzureAiRoute {
         return AzureAiRoute::Agents;
     }
     let lowered = model.to_lowercase();
-    if lowered.contains("model_router/")
-        || lowered.contains("model-router/")
-        || lowered.contains("model-router")
-        || lowered.contains("model_router")
-    {
+    // a "model_router/" or "model-router/" hit already contains the substring checked here
+    if lowered.contains("model_router") || lowered.contains("model-router") {
         return AzureAiRoute::ModelRouter;
     }
     AzureAiRoute::Default
