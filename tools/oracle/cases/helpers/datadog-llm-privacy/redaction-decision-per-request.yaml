@@ -1,0 +1,10 @@
+kind: helper
+name: datadog-llm-privacy-redaction-decision-per-request
+call:
+  b3936:
+    function: redaction_decision
+    turn_off_message_logging: false
+    message_logging: true
+    request_redacts: true
+env: {}
+compare: {ignore: []}
