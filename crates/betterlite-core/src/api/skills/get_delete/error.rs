@@ -7,6 +7,7 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
+use super::call::SkillCall;
 use super::handler::SkillsHandlerError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +57,12 @@ pub struct SkillsFailureError {
 
 // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=...)
 #[must_use]
-pub fn failure(error: SkillsCallError, provider: &str, redactor: &Redactor) -> SkillsFailureError {
+pub fn failure(
+    error: SkillsCallError,
+    call: &SkillCall<'_>,
+    redactor: &Redactor,
+) -> SkillsFailureError {
+    let provider = call.params.provider();
     let class = dispatch(
         &DispatchInput::Raw(Box::new(raw_exception(&error, provider))),
         redactor,

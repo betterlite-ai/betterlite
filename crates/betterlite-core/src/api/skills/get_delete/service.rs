@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use betterlite_anthropic::credentials::AnthropicSettings;
@@ -21,20 +22,26 @@ use super::hosted::{
 use super::logging::log_pre_call;
 use super::principal::user_api_key_auth_from_kwargs;
 
-// the answer one skill action produces, so both actions share one request pipeline
-pub(super) trait SkillAnswer: Sized {
-    fn http_answer<Http>(
-        http: &Http,
-        request: SkillHttpRequest<'_>,
-    ) -> impl Future<Output = Result<Self, SkillsHandlerError>> + Send
-    where
-        Http: SkillsHttpHandler + ?Sized;
+pub(super) type AnswerFuture<'future, Answer> =
+    Pin<Box<dyn Future<Output = Result<Answer, SkillsHandlerError>> + Send + 'future>>;
 
-    fn hosted_answer<Hosted>(
-        hosted: &Hosted,
-        request: HostedSkillRequest<'_>,
-    ) -> impl Future<Output = Result<Self, SkillsHandlerError>> + Send
+// which handler answers a skill call, so both actions share one request pipeline
+pub(super) enum SkillChannel<'channel, Http: ?Sized, Hosted: ?Sized> {
+    Http {
+        http: &'channel Http,
+        request: SkillHttpRequest<'channel>,
+    },
+    Hosted {
+        hosted: &'channel Hosted,
+        request: HostedSkillRequest<'channel>,
+    },
+}
+
+// the answer one skill action produces
+pub(super) trait SkillAnswer: Sized {
+    fn answer<Http, Hosted>(channel: SkillChannel<'_, Http, Hosted>) -> AnswerFuture<'_, Self>
     where
+        Http: SkillsHttpHandler + ?Sized,
         Hosted: HostedSkillsHandler + ?Sized;
 }
 
@@ -73,15 +80,11 @@ where
 {
     pub async fn get_skill(&self, request: SkillRequest<'_>) -> Result<Skill, SkillsFailureError> {
         match self
-            .route(SkillAction::Get, request.call, request.logging)
+            .run(SkillAction::Get, request.call, request.logging)
             .await
         {
             Ok(skill) => Ok(skill),
-            Err(error) => Err(failure(
-                error,
-                request.call.params.provider(),
-                self.redactor,
-            )),
+            Err(error) => Err(failure(error, request.call, self.redactor)),
         }
     }
 
@@ -90,19 +93,15 @@ where
         request: SkillRequest<'_>,
     ) -> Result<DeleteSkillResponse, SkillsFailureError> {
         match self
-            .route(SkillAction::Delete, request.call, request.logging)
+            .run(SkillAction::Delete, request.call, request.logging)
             .await
         {
             Ok(deleted) => Ok(deleted),
-            Err(error) => Err(failure(
-                error,
-                request.call.params.provider(),
-                self.redactor,
-            )),
+            Err(error) => Err(failure(error, request.call, self.redactor)),
         }
     }
 
-    async fn route<Answer>(
+    async fn run<Answer>(
         &self,
         action: SkillAction,
         call: &SkillCall<'_>,
@@ -114,10 +113,18 @@ where
         if call.params.provider() == LITELLM_PROXY_PROVIDER {
             log_pre_call(logging, call, LITELLM_PROXY_PROVIDER)?;
             let handler = hosted_handler(self.hosted);
-            return Ok(Answer::hosted_answer(&*handler, hosted_request(call)).await?);
+            let channel: SkillChannel<'_, Http, Hosted> = SkillChannel::Hosted {
+                hosted: &*handler,
+                request: hosted_request(call),
+            };
+            return Ok(Answer::answer(channel).await?);
         }
         let prepared = self.prepare(action, call, logging)?;
-        Ok(Answer::http_answer(self.http, prepared.request()).await?)
+        let channel: SkillChannel<'_, Http, Hosted> = SkillChannel::Http {
+            http: self.http,
+            request: prepared.request(),
+        };
+        Ok(Answer::answer(channel).await?)
     }
 
     fn prepare(
