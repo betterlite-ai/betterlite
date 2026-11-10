@@ -1496,6 +1496,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-db-admin"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-db",
+ "clap",
+ "rstest",
+ "secrecy",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
