@@ -37,10 +37,11 @@ pub enum WebIdentityError {
         #[source]
         source: FromUtf8Error,
     },
-    #[error("the STS web identity response has no {field}")]
-    WebIdentityResponse { field: &'static str },
-    #[error("the STS assume role response has no {field}")]
-    AssumeRoleResponse { field: &'static str },
+    #[error("the STS {call} response has no {field}")]
+    MissingField {
+        call: &'static str,
+        field: &'static str,
+    },
     #[error("the STS web identity call failed")]
     WebIdentity {
         #[source]

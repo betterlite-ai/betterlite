@@ -4,7 +4,7 @@ use betterlite_bedrock::web_identity::irsa::{CrossAccountIrsa, handle_irsa_cross
 
 use super::fixture::{Answer, assume_role_answer, denied_identity, web_identity_answer};
 use super::input::{Case, Reply, ReplyCredentials, WebIdentityReply};
-use super::ops::{Fixture, failure, fixture_failure, irsa_json, tags_of};
+use super::ops::{failure, fixture, fixture_failure, irsa_json, tags_of};
 use crate::helpers::HelperResult;
 
 fn answers(reply: &ReplyCredentials, irsa_reply: &ReplyCredentials) -> BTreeMap<String, Answer> {
@@ -32,7 +32,7 @@ pub(super) fn cross_account_irsa(case: &Case) -> HelperResult {
         token_file.path.clone(),
         token_file.content.as_bytes().to_vec(),
     )];
-    let fixture = Fixture::new(case, &files, answers(reply, irsa_reply))?;
+    let (native, record, kwargs, runtime) = fixture(case, &files, answers(reply, irsa_reply))?;
     let tags = tags_of(&case.tags);
     let input = CrossAccountIrsa {
         irsa_role_arn: &case.irsa_role_arn,
@@ -42,13 +42,8 @@ pub(super) fn cross_account_irsa(case: &Case) -> HelperResult {
         external_id: case.external_id.as_deref(),
         tags: Some(tags.as_slice()),
     };
-    let response = fixture
-        .runtime
-        .block_on(handle_irsa_cross_account(
-            &input,
-            &fixture.kwargs,
-            &fixture.native,
-        ))
+    let response = runtime
+        .block_on(handle_irsa_cross_account(&input, &kwargs, &native))
         .map_err(|error| failure(&error))?;
-    Ok(irsa_json(&fixture.record, &response))
+    Ok(irsa_json(&record, &response))
 }

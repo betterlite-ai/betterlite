@@ -33,20 +33,17 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let max_policy_size = lookup
-            .lookup("BEDROCK_MAX_POLICY_SIZE")
-            .filter(|value| !value.trim().is_empty())
-            .map(|value| {
-                value
-                    .trim()
-                    .parse::<i64>()
+        let value = lookup.lookup("BEDROCK_MAX_POLICY_SIZE");
+        let max_policy_size = match value.as_deref().map(str::trim) {
+            Some(text) if !text.is_empty() => {
+                text.parse::<i64>()
                     .map_err(|source| ConfigError::InvalidInteger {
                         path: "BEDROCK_MAX_POLICY_SIZE".to_owned(),
                         source,
-                    })
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_MAX_POLICY_SIZE);
+                    })?
+            }
+            _ => DEFAULT_MAX_POLICY_SIZE,
+        };
         Ok(Settings { max_policy_size })
     }
 }

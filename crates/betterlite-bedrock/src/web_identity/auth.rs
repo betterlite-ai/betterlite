@@ -93,19 +93,19 @@ async fn send(
         .send()
         .await
         .map_err(|error| rejected(error, token.expose_secret()))?;
-    let credentials = response
-        .credentials()
-        .ok_or(WebIdentityError::WebIdentityResponse {
+    let Some(credentials) = response.credentials() else {
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
             field: "Credentials",
-        })?
-        .clone();
-    let packed_policy_size =
-        response
-            .packed_policy_size()
-            .ok_or(WebIdentityError::WebIdentityResponse {
-                field: "PackedPolicySize",
-            })?;
-    Ok((credentials, packed_policy_size))
+        });
+    };
+    let Some(packed_policy_size) = response.packed_policy_size() else {
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
+            field: "PackedPolicySize",
+        });
+    };
+    Ok((credentials.clone(), packed_policy_size))
 }
 
 fn finish(

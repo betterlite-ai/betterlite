@@ -345,8 +345,9 @@ fn assert_cross_failures(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs)
     );
     assert!(matches!(
         missing,
-        WebIdentityError::WebIdentityResponse {
-            field: "Credentials"
+        WebIdentityError::MissingField {
+            field: "Credentials",
+            ..
         }
     ));
     let denied = cross_error(

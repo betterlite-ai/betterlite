@@ -22,40 +22,32 @@ use crate::helpers::{HelperError, HelperResult};
 
 const DEFAULT_MAX_POLICY_SIZE: i64 = 75;
 
-pub(super) struct Fixture {
-    pub(super) native: NativeSources,
-    pub(super) record: Record,
-    pub(super) kwargs: StsClientKwargs,
-    pub(super) runtime: Runtime,
-}
+pub(super) type Fixture = (NativeSources, Record, StsClientKwargs, Runtime);
 
-impl Fixture {
-    pub(super) fn new(
-        case: &Case,
-        files: &[(String, Vec<u8>)],
-        answers: BTreeMap<String, Answer>,
-    ) -> Result<Self, Box<HelperError>> {
-        let transport = Transport {
-            answers,
-            record: Record::default(),
-        };
-        let record = transport.record.clone();
-        let native = fixture::sources(&case.environment, files, transport);
-        let kwargs = fixture::kwargs(
-            &case.environment,
-            case.sts_endpoint.as_deref(),
-            case.region_name.as_deref(),
-            case.verify,
-        )
-        .map_err(fixture_failure)?;
-        let runtime = ports::runtime().map_err(fixture_failure)?;
-        Ok(Self {
-            native,
-            record,
-            kwargs,
-            runtime,
-        })
-    }
+pub(super) fn fixture(
+    case: &Case,
+    files: &[(String, Vec<u8>)],
+    answers: BTreeMap<String, Answer>,
+) -> Result<Fixture, Box<HelperError>> {
+    let transport = Transport {
+        answers,
+        record: Record::default(),
+    };
+    let record = transport.record.clone();
+    let native = fixture::sources(&case.environment, files, transport);
+    let kwargs = fixture::kwargs(
+        &case.environment,
+        case.sts_endpoint.as_deref(),
+        case.region_name.as_deref(),
+        case.verify,
+    )
+    .map_err(fixture_failure)?;
+    Ok((
+        native,
+        record,
+        kwargs,
+        ports::runtime().map_err(fixture_failure)?,
+    ))
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -90,8 +82,7 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         | WebIdentityError::Endpoint(_)
         | WebIdentityError::TokenFile { .. }
         | WebIdentityError::TokenFileEncoding { .. }
-        | WebIdentityError::WebIdentityResponse { .. }
-        | WebIdentityError::AssumeRoleResponse { .. }
+        | WebIdentityError::MissingField { .. }
         | WebIdentityError::WebIdentity { .. }
         | WebIdentityError::AssumeRole { .. }
         | WebIdentityError::SecretType { .. }
@@ -153,14 +144,11 @@ fn web_identity(case: &Case) -> HelperResult {
             "the case needs a web identity reply".to_owned(),
         ));
     };
-    let fixture = Fixture::new(
-        case,
-        &[],
-        BTreeMap::from([(
-            "AssumeRoleWithWebIdentity".to_owned(),
-            web_identity_answer(reply),
-        )]),
-    )?;
+    let answers = BTreeMap::from([(
+        "AssumeRoleWithWebIdentity".to_owned(),
+        web_identity_answer(reply),
+    )]);
+    let (native, record, kwargs, runtime) = fixture(case, &[], answers)?;
     let auth = WebIdentityAuth {
         token_reference: &case.token_reference,
         role_arn: &case.role_arn,
@@ -170,16 +158,13 @@ fn web_identity(case: &Case) -> HelperResult {
     };
     let secrets = ports::secrets(case.resolved_token.as_deref());
     let (result, warnings) = ports::warnings(|| {
-        fixture.runtime.block_on(auth_with_web_identity_token(
-            &auth,
-            &fixture.kwargs,
-            &secrets,
-            &fixture.native,
+        runtime.block_on(auth_with_web_identity_token(
+            &auth, &kwargs, &secrets, &native,
         ))
     });
     let credentials = result.map_err(|error| failure(&error))?;
     Ok(json!({
-        "calls": fixture.record.calls(),
+        "calls": record.calls(),
         "credentials": [
             credentials.credentials.access_key_id.expose_secret(),
             credentials.credentials.secret_access_key.expose_secret(),
@@ -203,21 +188,13 @@ fn same_account_irsa(case: &Case) -> HelperResult {
         external_id: case.external_id.as_deref(),
         tags: Some(tags.as_slice()),
     };
-    let fixture = Fixture::new(
-        case,
-        &[],
-        BTreeMap::from([
-            ("GetCallerIdentity".to_owned(), denied_identity()),
-            ("AssumeRole".to_owned(), assume_role_answer(reply)),
-        ]),
-    )?;
-    let response = fixture
-        .runtime
-        .block_on(handle_irsa_same_account(
-            &input,
-            &fixture.kwargs,
-            &fixture.native,
-        ))
+    let answers = BTreeMap::from([
+        ("GetCallerIdentity".to_owned(), denied_identity()),
+        ("AssumeRole".to_owned(), assume_role_answer(reply)),
+    ]);
+    let (native, record, kwargs, runtime) = fixture(case, &[], answers)?;
+    let response = runtime
+        .block_on(handle_irsa_same_account(&input, &kwargs, &native))
         .map_err(|error| failure(&error))?;
-    Ok(irsa_json(&fixture.record, &response))
+    Ok(irsa_json(&record, &response))
 }

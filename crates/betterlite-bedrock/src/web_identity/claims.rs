@@ -32,30 +32,25 @@ pub fn decode_web_identity_claims(token: &str) -> Option<String> {
     let [_, payload, _] = segments.as_slice() else {
         return None;
     };
-    let decoded = decode_base64(payload)?;
-    let claims: Claims = serde_json::from_slice(&decoded).ok()?;
+    let claims: Claims = serde_json::from_slice(&decode_base64(payload)?).ok()?;
     if claims.aud.is_none() && claims.iss.is_none() {
         return None;
     }
-    let aud = claims
-        .aud
-        .as_ref()
-        .map_or_else(|| "None".to_owned(), audience_repr);
+    let aud = claims.aud.as_ref().map_or_else(
+        || "None".to_owned(),
+        |aud| match aud {
+            Audience::Text(text) => claim_repr(text),
+            Audience::List(items) => {
+                let rendered: Vec<String> = items.iter().map(|item| claim_repr(item)).collect();
+                format!("[{}]", rendered.join(", "))
+            }
+        },
+    );
     let iss = claims
         .iss
         .as_ref()
         .map_or_else(|| "None".to_owned(), |value| claim_repr(value));
     Some(format!("aud={aud}, iss={iss}"))
-}
-
-fn audience_repr(value: &Audience) -> String {
-    match value {
-        Audience::Text(text) => claim_repr(text),
-        Audience::List(items) => {
-            let rendered: Vec<String> = items.iter().map(|item| claim_repr(item)).collect();
-            format!("[{}]", rendered.join(", "))
-        }
-    }
 }
 
 // the aud/iss diagnostic prints Python's repr, so the quote and escapes follow str repr
@@ -110,18 +105,17 @@ fn hex_escape(character: char) -> String {
 
 // Python's non-strict urlsafe_b64decode drops non-alphabet chars and starts padding from the raw length
 pub(super) fn decode_base64(payload: &str) -> Option<Vec<u8>> {
-    let mut symbols = base64_symbols(payload)?;
-    let remainder = symbols.len().checked_rem(4).unwrap_or(0);
-    let (needed, added) = match remainder {
+    let (mut symbols, pads) = base64_symbols(payload)?;
+    let needed = match symbols.len().checked_rem(4)? {
         1 => return None,
-        2 => (2_usize, added_padding(payload.len())),
-        3 => (1_usize, added_padding(payload.len())),
-        _ => (0_usize, added_padding(payload.len())),
+        2 => 2_usize,
+        3 => 1_usize,
+        _ => 0_usize,
     };
-    if padding_tail(payload).saturating_add(added) < needed {
+    if pads.saturating_add(added_padding(payload.len())) < needed {
         return None;
     }
-    while symbols.len().checked_rem(4).unwrap_or(0) != 0 {
+    while symbols.len().checked_rem(4) != Some(0) {
         symbols.push('=');
     }
     ENGINE.decode(symbols).ok()
@@ -136,30 +130,27 @@ const fn added_padding(payload_len: usize) -> usize {
     }
 }
 
-fn base64_symbols(payload: &str) -> Option<String> {
-    let mut symbols = String::new();
+fn base64_symbols(payload: &str) -> Option<(String, usize)> {
+    let mut symbols = String::with_capacity(payload.len());
+    let mut pads = 0_usize;
     for character in payload.chars() {
         match character {
-            '-' => symbols.push('+'),
-            '_' => symbols.push('/'),
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '+' | '/' => symbols.push(character),
+            '-' => {
+                symbols.push('+');
+                pads = 0;
+            }
+            '_' => {
+                symbols.push('/');
+                pads = 0;
+            }
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '+' | '/' => {
+                symbols.push(character);
+                pads = 0;
+            }
+            '=' => pads = pads.saturating_add(1),
             '\u{0}'..='\u{7f}' => {}
             _ => return None,
         }
     }
-    Some(symbols)
-}
-
-fn padding_tail(payload: &str) -> usize {
-    let mut pads = 0_usize;
-    for character in payload.chars().rev() {
-        if character == '=' {
-            pads = pads.saturating_add(1);
-            continue;
-        }
-        if character.is_ascii_alphanumeric() || matches!(character, '+' | '/' | '-' | '_') {
-            break;
-        }
-    }
-    pads
+    Some((symbols, pads))
 }

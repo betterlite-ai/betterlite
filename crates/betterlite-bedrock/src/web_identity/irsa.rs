@@ -42,9 +42,7 @@ pub async fn handle_irsa_same_account(
         input.role_arn,
         input.session_name
     );
-    let response = send_assume_role(&client, input).await?;
-    let credentials = assume_role_credentials(&response)?.clone();
-    sts_response(&credentials)
+    assume_role_response(&client, input).await
 }
 
 pub async fn handle_irsa_cross_account(
@@ -72,8 +70,21 @@ pub async fn handle_irsa_cross_account(
         external_id: input.external_id,
         tags: input.tags,
     };
-    let response = send_assume_role(&target_client, &target).await?;
-    sts_response(assume_role_credentials(&response)?)
+    assume_role_response(&target_client, &target).await
+}
+
+async fn assume_role_response(
+    client: &Client,
+    input: &SameAccountIrsa<'_>,
+) -> Result<StsResponse, WebIdentityError> {
+    let response = send_assume_role(client, input).await?;
+    let Some(credentials) = response.credentials() else {
+        return Err(WebIdentityError::MissingField {
+            call: "assume role",
+            field: "Credentials",
+        });
+    };
+    sts_response(credentials)
 }
 
 async fn assume_irsa_role(
@@ -98,11 +109,12 @@ async fn assume_irsa_role(
         .map_err(|source| WebIdentityError::WebIdentity {
             source: Box::new(source),
         })?;
-    let credentials = response
-        .credentials()
-        .ok_or(WebIdentityError::WebIdentityResponse {
+    let Some(credentials) = response.credentials() else {
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
             field: "Credentials",
-        })?;
+        });
+    };
     Ok(credentials.clone())
 }
 
@@ -126,16 +138,6 @@ async fn read_token_file(
     Ok(text.trim().to_owned())
 }
 
-fn assume_role_credentials(
-    response: &AssumeRoleOutput,
-) -> Result<&ResponseCredentials, WebIdentityError> {
-    response
-        .credentials()
-        .ok_or(WebIdentityError::AssumeRoleResponse {
-            field: "Credentials",
-        })
-}
-
 async fn log_caller_identity(client: &Client, prefix: &str) {
     match client.get_caller_identity().send().await {
         Ok(identity) => tracing::debug!("{prefix}{}", identity.arn().unwrap_or("unknown")),
@@ -156,17 +158,13 @@ async fn send_assume_role(
         input.external_id.map(str::to_owned),
         input.tags.map(<[AwsSessionTag]>::to_vec),
     );
-    let mut request = client
+    let tags = params.tags.as_deref().map(tags_to_sdk).transpose()?;
+    client
         .assume_role()
         .role_arn(params.role_arn)
-        .role_session_name(params.role_session_name);
-    if let Some(external_id) = params.external_id {
-        request = request.external_id(external_id);
-    }
-    if let Some(tags) = params.tags {
-        request = request.set_tags(Some(tags_to_sdk(&tags)?));
-    }
-    request
+        .role_session_name(params.role_session_name)
+        .set_external_id(params.external_id)
+        .set_tags(tags)
         .send()
         .await
         .map_err(|source| WebIdentityError::AssumeRole {

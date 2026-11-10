@@ -159,12 +159,6 @@ fn error_xml(code: &str, message: &str) -> String {
     )
 }
 
-fn response_xml(action: &str, inner: &str) -> String {
-    let open = format!("<{action}Response><{action}Result>");
-    let close = format!("</{action}Result></{action}Response>");
-    format!("{open}{inner}{close}")
-}
-
 pub(super) fn denied_identity() -> Answer {
     Answer {
         status: 403,
@@ -176,18 +170,18 @@ pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
     match reply {
         WebIdentityReply::Credentials(credentials) => Answer {
             status: 200,
-            body: response_xml(
-                "AssumeRoleWithWebIdentity",
-                &format!(
-                    "{}{}",
-                    credentials_xml(credentials),
-                    packed_xml(credentials.packed_policy_size)
-                ),
+            body: format!(
+                "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
+                credentials_xml(credentials),
+                packed_xml(credentials.packed_policy_size)
             ),
         },
         WebIdentityReply::MissingPackedPolicySize(credentials) => Answer {
             status: 200,
-            body: response_xml("AssumeRoleWithWebIdentity", &credentials_xml(credentials)),
+            body: format!(
+                "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
+                credentials_xml(credentials)
+            ),
         },
         WebIdentityReply::InvalidIdentityToken { message } => Answer {
             status: 400,
@@ -199,13 +193,10 @@ pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
 pub(super) fn assume_role_answer(credentials: &ReplyCredentials) -> Answer {
     Answer {
         status: 200,
-        body: response_xml(
-            "AssumeRole",
-            &format!(
-                "{}{}",
-                credentials_xml(credentials),
-                packed_xml(credentials.packed_policy_size)
-            ),
+        body: format!(
+            "<AssumeRoleResponse><AssumeRoleResult>{}{}</AssumeRoleResult></AssumeRoleResponse>",
+            credentials_xml(credentials),
+            packed_xml(credentials.packed_policy_size)
         ),
     }
 }
