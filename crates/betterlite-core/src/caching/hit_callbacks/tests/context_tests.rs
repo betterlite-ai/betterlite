@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::support::{base_hit, cached, details, encoded, object, params, state, text};
+use super::support::{base_hit, cached, details, encoded, logging_state, object, params, text};
 use crate::caching::hit_callbacks::context::{
     CacheHitContext, CacheHitError, record_cache_hit_context,
 };
@@ -16,7 +16,7 @@ fn recorded<Adjust>(
 where
     Adjust: FnOnce(&mut CacheHitContext<'_>),
 {
-    let mut state = state(None);
+    let mut state = logging_state(None);
     let mut hit = base_hit(kwargs, cached_result);
     adjust(&mut hit);
     record_cache_hit_context(&mut state, &hit).expect("the cache hit is recorded");
@@ -189,7 +189,7 @@ fn the_caller_kwargs_are_not_changed() {
 
 #[test]
 fn the_preset_key_is_copied_into_the_logging_state() {
-    let mut state = state(None);
+    let mut state = logging_state(None);
     let recorded_key = {
         let kwargs = params(&[(
             "litellm_params",
@@ -214,7 +214,7 @@ fn the_preset_key_is_copied_into_the_logging_state() {
 fn a_wrongly_typed_kwarg_names_the_field(#[case] field: &'static str) {
     let kwargs = params(&[(field, Json::Bool(true))]);
     let cached_result = cached();
-    let mut state = state(None);
+    let mut state = logging_state(None);
     let hit = base_hit(&kwargs, &cached_result);
     let error = record_cache_hit_context(&mut state, &hit).expect_err("the value is refused");
     assert_eq!(error, CacheHitError::FieldType { field });
@@ -225,7 +225,7 @@ fn a_wrongly_typed_kwarg_names_the_field(#[case] field: &'static str) {
 fn a_wrongly_typed_stream_flag_names_the_field() {
     let kwargs = params(&[("stream", text("yes"))]);
     let cached_result = cached();
-    let mut state = state(None);
+    let mut state = logging_state(None);
     let hit = base_hit(&kwargs, &cached_result);
     let error = record_cache_hit_context(&mut state, &hit).expect_err("the value is refused");
     assert_eq!(error, CacheHitError::FieldType { field: "stream" });
@@ -248,7 +248,7 @@ fn a_wrongly_typed_internal_value_names_the_field(
     #[case] field: &'static str,
 ) {
     let cached_result = cached();
-    let mut state = state(None);
+    let mut state = logging_state(None);
     let mut hit = base_hit(&kwargs, &cached_result);
     hit.preset_cache_key = None;
     let error = record_cache_hit_context(&mut state, &hit).expect_err("the value is refused");

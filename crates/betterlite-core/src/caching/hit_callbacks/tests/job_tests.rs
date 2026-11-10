@@ -3,7 +3,9 @@ use betterlite_logging::worker::{Admission, Callback as _, LoggingWorker, Reject
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::support::{Fixture, borrowed_handler, cached, state, success_request, worker_settings};
+use super::support::{
+    Fixture, borrowed_handler, cached, logging_state, success_request, worker_settings,
+};
 use crate::caching::hit_callbacks::job::{LoggingSyncDispatch, SyncSuccessDispatch as _};
 
 #[test]
@@ -89,7 +91,7 @@ fn the_logging_sync_dispatch_reports_whether_it_dispatched(
     let owned = fixture.owned_handler();
     let handler = borrowed_handler(&owned);
     let mut correlation = CorrelationContext::default();
-    let mut state = state(None);
+    let mut state = logging_state(None);
     state
         .litellm_params
         .insert("acompletion".to_owned(), Json::Bool(true));

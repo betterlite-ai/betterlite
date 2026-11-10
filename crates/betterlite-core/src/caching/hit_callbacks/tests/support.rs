@@ -101,7 +101,7 @@ pub(super) fn cached() -> Json {
     ])
 }
 
-pub(super) fn state(stream: Option<bool>) -> LoggingState {
+pub(super) fn logging_state(stream: Option<bool>) -> LoggingState {
     let mut context = CorrelationContext::default();
     LoggingState::new(
         LoggingInit {
@@ -362,7 +362,7 @@ impl Fixture {
             ),
             ("stream", Json::Bool(false)),
         ]);
-        let mut state = state(None);
+        let mut state = logging_state(None);
         record_cache_hit_context(&mut state, &base_hit(&kwargs, result))
             .expect("the cache hit is recorded");
         CacheHitSuccessJob {
