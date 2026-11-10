@@ -1,0 +1,36 @@
+kind: helper
+name: billing-usage-decision-cache-fields-without-output-reasoning
+call:
+  billing_usage:
+    calls:
+      - function: get_usage_object
+        response:
+          kind: decisions_ir
+          usage:
+            kind: decisions_ir
+            value:
+              input_tokens: 9
+              output_tokens: 4
+              cached_tokens: 2
+              cache_write_tokens: 1
+      - function: get_usage_object
+        response:
+          kind: decisions_openai
+          usage:
+            kind: decisions_openai
+            value:
+              input_tokens: 9
+              output_tokens: 4
+              total_tokens: 99
+              input_tokens_details:
+                cached_tokens: 2
+                cache_write_tokens: 1
+              output_tokens_details:
+                reasoning_tokens: 3
+      - function: get_usage_object
+        response:
+          kind: decisions_ir
+          usage:
+            kind: absent
+env: {}
+compare: {ignore: []}

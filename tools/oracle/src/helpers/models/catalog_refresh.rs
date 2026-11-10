@@ -1,9 +1,26 @@
+mod input;
+mod scenario;
+mod scripting;
+
+use crate::helpers::{HelperError, HelperResult};
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("catalog_refresh")
+    fn run(input: &Self::Input) -> HelperResult {
+        scenario::run(input)
     }
+}
+
+pub(super) fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }

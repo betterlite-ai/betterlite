@@ -1,0 +1,5 @@
+kind: helper
+name: verbose-log-env-only-when-both-false
+call: {"b4175": {"operation": "verbose_log_env_only_when_both_false", "worker_config": '{"debug": false, "detailed_debug": false}', "litellm_log": "debug"}}
+env: {"LITELLM_LOG": "debug"}
+compare: {ignore: []}

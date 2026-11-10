@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# Resolves dependency-line conflicts in one Cargo.toml: one line per dependency name; main's line wins, with the feature lists merged when only features differ. In a fuzz manifest whose only open conflict is the target list, the [[bin]] entries of both sides are kept, main's first. Any other hunk with a section header, a blank line or a name or path key keeps its markers, so merge-main stops for a person.
+# Resolves dependency-line conflicts in one Cargo.toml: one line per dependency name; main's line wins, with the feature lists merged when only features differ. Test or bin blocks that both sides added at the same spot are all kept, main's first, also when a side adds several. In a fuzz manifest whose only open conflict is the target list, the [[bin]] entries of both sides are kept, main's first. Any other hunk with a section header, a blank line or a name or path key keeps its markers, so merge-main stops for a person.
 # Usage: perl resolve-manifest.pl <Cargo.toml>
 use strict;
 use warnings;
@@ -8,7 +8,7 @@ my $file = shift;
 open my $in, '<', $file or die "$file: $!\n";
 my $text = do { local $/; <$in> };
 close $in;
-$text =~ s{^\[\[(test|bin)\]\]\n<<<<<<< HEAD\n((?:(?:name|path) = [^\n]*\n)+)=======\n((?:(?:name|path) = [^\n]*\n)+)>>>>>>> origin/main\n((?:[a-z_]+ = [^\n]*\n)*)}{[[$1]]\n$3$4\n[[$1]]\n$2$4}mg;
+$text =~ s{^\[\[(test|bin)\]\]\n<<<<<<< HEAD\n((?:(?:name|path) = [^\n]*\n)+(?:\n\[\[\1\]\]\n(?:(?:name|path) = [^\n]*\n)+)*)=======\n((?:(?:name|path) = [^\n]*\n)+(?:\n\[\[\1\]\]\n(?:(?:name|path) = [^\n]*\n)+)*)>>>>>>> origin/main\n((?:[a-z_]+ = [^\n]*\n)*)}{[[$1]]\n$3$4\n[[$1]]\n$2$4}mg;
 $text =~ s{<<<<<<< HEAD\n(.*?)=======\n(.*?)>>>>>>> origin/main\n}{resolve($1, $2)}sge;
 $text = union_bins($file, $text) if $file =~ m{(^|/)fuzz/Cargo\.toml$} && $text =~ /^<<<<<<< /m;
 open my $out, '>', $file or die "$file: $!\n";

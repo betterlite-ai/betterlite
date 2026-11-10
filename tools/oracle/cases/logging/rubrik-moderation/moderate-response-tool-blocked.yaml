@@ -1,0 +1,24 @@
+kind: helper
+name: rubrik-moderation-moderate-response-tool-blocked
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: [1700000000.0, 1700000001.0]
+    replies:
+      - status: 200
+        body: >-
+          {"choices":[{"message":{"content":"I'll check.\n\nTool call blocked by policy.","tool_calls":[{"id":"call_1"}]}}]}
+    logging_obj: null
+    request_data:
+      litellm_call_id: call-1
+      model: gpt-4o
+      tools: []
+    input_type: response
+    inputs:
+      texts: ["I'll check."]
+      tool_calls:
+        - {id: call_1, type: function, function: {name: a, arguments: "{}"}}
+        - {id: call_2, type: function, function: {name: b, arguments: "{}"}}
+env: {}
+compare: {ignore: []}
