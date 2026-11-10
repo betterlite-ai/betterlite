@@ -1,0 +1,175 @@
+id: B074
+title: Prove usage chat streams and tenant scoping through the booted proxy
+description: >-
+  Finish the HTTP proof left after B074's parts were planned. B3103 owns every usage-chat engine
+  function and currently compares pure helpers; B8271 tests its route with local fake ports;
+  B8673 supplies the production factory and mount but lists only auth-required, invalid-role and
+  missing-messages HTTP cases. Add the missing successful, tool, scope and late-error cases in
+  tools/oracle/cases/http/usage-chat/. No production function remains unassigned, and this task
+  registers no route, builds no adapter and edits no shared mount. Allow roughly 700-800 lines of
+  compact fixture YAML. B9270 supplies independent daily-spend data, and B5076 makes the pinned
+  LiteLLM Prisma client usable. A mismatch belongs to the named implementation owner below;
+  keep its failing case rather than replacing a real collaborator with a test hook.
+
+  Every call uses the real POST /usage/ai/chat, with no /v1, /openai/v1 or provider-prefixed alias.
+  Use the existing ordinary HTTP-case format, including steps where useful: the current decoder
+  selects it by an absent kind field, whereas a nonempty kind selects another driver. These are
+  booted HTTP cases, never helper calls to a FastAPI handler. Run betterlite against LiteLLM,
+  without --self-check. The model transport is the direct SDK completion call from B8673, not a
+  model_list deployment: set case env OPENAI_API_KEY to an inert fixture credential,
+  OPENAI_API_BASE to {{upstream}}/v1 and TZ to UTC, and leave OPENAI_BASE_URL unset. Use
+  general_settings.master_key=oracle-master except the deliberately unbound-caller case.
+  litellm_settings.num_retries is zero so scripted error replies cannot trigger unbounded retry
+  transcripts. The ordinary default model is gpt-4o-mini and temperature is 0.2. Leave
+  litellm_settings.sse_keepalive_ping_interval_seconds absent (default null, no pings).
+
+  Compare response status, the full ordered JSON SSE event list, content-type, cache-control and
+  x-accel-buffering. Successful and late-error streams have HTTP 200, text/event-stream;
+  charset=utf-8, no-cache and no respectively. Script fixed provider ids, created values, text
+  and tool-call ids. The normal oracle also compares every upstream method, path and complete
+  body: retain that comparison, plus authorization, because the second request's tool messages
+  are where an incorrect scope or summary becomes visible even when the mock's final answer is
+  fixed. Do not ignore tools, messages, arguments, the system prompt, totals, chunks or events.
+  Compare SSE as JSON, not Python json.dumps whitespace or key order. Error HTTP cases ignore
+  /error/message with the project reason, retaining status/type/param/code; if the actual handler
+  exposes detail.error instead, ignore only that prose leaf and preserve its envelope.
+
+  plain-defaults.yaml uses three steps, with model absent, null and whitespace-only respectively;
+  one step has messages: []. Each provider answers a normal assistant message and the client gets
+  Thinking..., one chunk and done. All three upstream models are gpt-4o-mini and the first call
+  carries the admin tools. trimmed-model-history.yaml sends model " openai/gpt-4o-mini " and
+  22 distinctly numbered user/assistant messages; only the last 20 follow the system prompt at
+  the provider, and the stripped provider model is gpt-4o-mini. empty-answer.yaml scripts empty
+  assistant content and no tools, giving Thinking... then done with no empty chunk.
+
+  For populated-tool cases use B9270's database.seed.daily_usage and B860's users/keys/teams,
+  with no database_url or disable_prisma_schema_update in config. Seed user usage-owner with key
+  sk-usage-owner (internal_user), user usage-other with sk-usage-other, and an independent viewer
+  with sk-usage-viewer (proxy_admin_viewer). Every key has its own seeded user, since roles are
+  stored on users. Over 2026-01-01 and 2026-01-02, seed two user rows for usage-owner with spend
+  1.25 and 2.75, prompt/completion counts 10/2 and 20/3, and requests 1 and 2, all successful;
+  seed usage-other with spend 90, tokens 900/90, requests 9 and failures 1. Use distinct model
+  names gpt-4o-mini and gpt-4o, provider openai, and consistent successful_requests plus
+  failed_requests. Also seed two teams and two tags with unequal spend and both key indices;
+  choose team-a/team-b and tag-a/tag-b. The fixture never fills daily data through a product
+  request. Use a separate config/master-key value when a case needs a different database seed
+  so the oracle's grouping cannot accidentally reuse it.
+
+  admin-tools.yaml calls all three functions in the first completion: get_usage_data for the
+  fixed dates, get_team_usage_data with team_ids " team-a, ,team-b ", and get_tag_usage_data
+  with tags "tag-a,tag-b". It produces running then complete for each, in provider order,
+  then Analyzing results..., the nonempty deltas from a second streamed completion and done.
+  The second request has no tools and temperature 0.2; the first assistant's tool calls appear
+  once, followed by one tool message per call with the matching tool_call_id. Compare the
+  global sum of both users and the team/tag summaries, including their pinned behavior when
+  entity_metadata_field=None; do not invent aliases or a richer breakdown. The first reply
+  also contains assistant text alongside its tool calls, which must not become a client chunk.
+
+  internal-user-scope.yaml sends a get_usage_data call whose arguments request usage-other
+  while authenticating as sk-usage-owner. The client tool event keeps those original arguments,
+  but the second model request's summary contains only usage-owner's spend 4.0000, 35 tokens
+  and 3 requests. This is the cross-tenant assertion; comparing an empty database would not
+  detect the missing guard. admin-user-filter.yaml makes the same model request as the master
+  and gets usage-other's data instead. viewer-tools.yaml authenticates as sk-usage-viewer,
+  advertises all three tools and successfully fetches global data, proving admin-view rather
+  than write-admin permission selects the role. internal-forbidden-tools.yaml returns team,
+  tag and unknown function calls to an internal user: none emits tool_call events, each becomes
+  a Tool not available tool message, and the final streaming request still runs. The initial
+  tool schema contains only get_usage_data.
+
+  tools-without-database.yaml omits database, requests all three tools with valid dates as the
+  master, and observes running/error for each followed by the final answer and done; a tool
+  failure is not an HTTP 500 or a terminal error event. missing-tool-date.yaml omits start_date
+  from otherwise valid string arguments and checks the same recoverable per-tool error path.
+  malformed-tool-json.yaml uses an invalid JSON argument string and gets Thinking... followed
+  by the generic error event with no tool_call event, second provider request or done, because
+  decoding precedes the per-tool try block. initial-model-error.yaml scripts a provider 400
+  for the first completion; final-model-error.yaml first returns an unknown tool and then a
+  provider 400 for the streamed completion. Both finish with the generic error event and no
+  done, and the latter retains Analyzing results... before the error. These are typed upstream
+  failure cases, not wrong-type request inputs. Finally, unbound-caller.yaml uses no master key
+  and no database; the resulting non-admin caller has no user_id, receives B861's 403 before
+  streaming, and sends no provider request.
+
+  This task writes only cases. It adds no parser or fuzz target: B9270 extends the existing
+  HTTP-case decoder's corpus, B3103 owns decode_tool_arguments and its fuzzing, and B8271 owns
+  request validation. The idle-ping implementation and timing tests remain with B005/B8271;
+  the ordinary oracle intentionally drops SSE comments, so a JSON-event comparison must not
+  claim to prove that ': ping' was delivered.
+scope:
+  paths:
+    - tools/oracle/cases/http/usage-chat/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L24-L76
+    why: Request types, POST decorator at L34, caller guard and SSE response headers; implementation is B8271, HTTP composition proof is here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L125-L240
+    why: Role-specific tool schemas and date-bearing system prompt compared in captured model requests; B3103 owns implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L247-L448
+    why: Real aggregate versus paginated data calls, comma-list filters and summaries observed in the second model request; B3103 owns implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L610
+    why: Argument scoping, allowed-tool dispatch, event order, message truncation and terminal versus recoverable errors; B3103 owns implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L126-L150
+    why: B861's missing-user guard reached by the no-master-key HTTP case, before an SSE response exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1790-L1803
+    why: The OpenAI completion transport resolves OPENAI_BASE_URL, OPENAI_API_BASE and OPENAI_API_KEY, so the direct SDK call can use the local mock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L12-L60
+    why: Default disabled keep-alive and comment framing, retained by the route rather than reimplemented by this case task.
+dod:
+  - text: Booted usage chat accepts the declared model defaults and empty history, truncates long history to 20 messages, and returns the pinned event order and SSE headers.
+    proof: [new-http-cases, oracle]
+  - text: All three admin data tools use real independent database rows, carry their summaries into the second model request and emit running/complete before the final streamed answer.
+    proof: [new-http-cases, oracle]
+  - text: An internal user's model-supplied foreign user_id cannot widen its usage query, an admin can apply that filter, a viewer gets admin tools, and internal callers cannot execute team or tag tools.
+    proof: [new-http-cases, oracle]
+  - text: Tool data failures remain recoverable stream events, malformed tool JSON and model failures terminate with error and no done, and an unbound non-admin fails before contacting the model.
+    proof: [new-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: new-http-cases
+      why: No new booted usage-chat case was added, or a listed scenario is absent or replaced with a helper.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/usage-chat)" &&
+        for name in plain-defaults trimmed-model-history empty-answer admin-tools internal-user-scope admin-user-filter viewer-tools internal-forbidden-tools tools-without-database missing-tool-date malformed-tool-json initial-model-error final-model-error unbound-caller; do
+          test -f "tools/oracle/cases/http/usage-chat/$name.yaml" &&
+          grep -q '/usage/ai/chat' "tools/oracle/cases/http/usage-chat/$name.yaml" &&
+          ! grep -qE '^kind:.*helper' "tools/oracle/cases/http/usage-chat/$name.yaml" || exit 1;
+        done
+oracle_cases:
+  - tools/oracle/cases/http/usage-chat/plain-defaults.yaml
+  - tools/oracle/cases/http/usage-chat/trimmed-model-history.yaml
+  - tools/oracle/cases/http/usage-chat/empty-answer.yaml
+  - tools/oracle/cases/http/usage-chat/admin-tools.yaml
+  - tools/oracle/cases/http/usage-chat/internal-user-scope.yaml
+  - tools/oracle/cases/http/usage-chat/admin-user-filter.yaml
+  - tools/oracle/cases/http/usage-chat/viewer-tools.yaml
+  - tools/oracle/cases/http/usage-chat/internal-forbidden-tools.yaml
+  - tools/oracle/cases/http/usage-chat/tools-without-database.yaml
+  - tools/oracle/cases/http/usage-chat/missing-tool-date.yaml
+  - tools/oracle/cases/http/usage-chat/malformed-tool-json.yaml
+  - tools/oracle/cases/http/usage-chat/initial-model-error.yaml
+  - tools/oracle/cases/http/usage-chat/final-model-error.yaml
+  - tools/oracle/cases/http/usage-chat/unbound-caller.yaml
+deviations: []
+out_of_scope:
+  - "B3103 owns all ai_usage_chat.py functions: get_tools_for_role, _build_system_prompt, _parse_csv_ids, _query_activity, the three _fetch_* functions, _accumulate_breakdown, _ranked_lines, both _summarise_* functions, _sse, _resolve_fetch_kwargs, _execute_tool_call, _process_tool_call, _stream_final_response and stream_usage_ai_chat, plus constants, event types and TOOL_HANDLERS."
+  - "TOP_N_KEYS has no caller at the pin; _UsageDump overloads are typing-only, as B3103 already records."
+  - "B8271 owns ChatMessage, UsageAIChatRequest, usage_ai_chat and usage_endpoints/__init__.py's router re-export; B8673 owns UsageChatFactory's production implementation and the sole route mount."
+  - "B3096, B3097 and B3098 own every daily_activity_routes.py helper and handler; B8482 owns register_daily_activity_routes and the six-resolver loop, its mount and deferred key/search/aggregate HTTP cases."
+  - "B3098 and B3099 already own export and cache-activity HTTP cases; B8661 owns the analytics and gateway-activity mounts and their deferred HTTP cases."
+  - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B5076 owns Prisma generation."
+  - "B005/B8271 own idle-ping timing and stream wrapping; B089 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B8673 passes it to the route."
+  - "B8675 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
+pitfalls:
+  - A model_list api_base does not redirect this route's direct SDK call, so the mock address belongs in OPENAI_API_BASE.
+  - The client tool event echoes a forged user_id even when the database query correctly substitutes the caller's id, so inspect the follow-up model request's summary to detect a leak.
+  - Invalid JSON in tool arguments escapes the per-tool handler, whereas missing dates in valid arguments produces running/error and permits the final answer.
+  - A proxy_admin_viewer receives the admin tool list even though it cannot perform management writes.
+  - The team and tag fetchers request entity_metadata_field=None, so their summaries must follow the pinned read result rather than fabricated team aliases.
+  - Both proxies must read their own seeded database and send their own follow-up model request, never a shared helper result or a captured credential from the other proxy.
+  - The generic SSE error event still follows HTTP 200 and must not be compared as a conventional HTTP error envelope.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,100 @@
+id: B9776
+title: Cover MCP filter, tool-search and web-search settings requests
+description: >-
+  Verify the three retained settings editors and semantic-filter Test panel against their
+  existing backends. B1663 owns all six settings routes. B080 owns Responses, B955 the MCP
+  dispatch, B8201 the semantic filter and response headers, and B8383 its initialization and
+  reload. None is a new route for this task. B150-route-audit.md records the exact requests;
+  the filter currently has helper coverage only, while B1663's planned generic replacement
+  cases do not pin these full editor bodies or the Test panel's Responses request.
+
+  GET /get/mcp_semantic_filter_settings supplies values and field_schema. PATCH
+  /update/mcp_semantic_filter_settings always sends enabled,embedding_model,top_k and
+  similarity_threshold from the mounted form. Source defaults are false,
+  text-embedding-3-small,10 and 0.3. GET /get/mcp_tool_search_settings and PATCH
+  /update/mcp_tool_search_settings use embedding_model (nullable),top_k,similarity_threshold
+  and core_tools. The tool-search text box trims and deduplicates names split on commas or
+  newlines before transmitting the array; use that array, never the raw text. Its default
+  top_k is 5, similarity_threshold 0 and core_tools empty. Read back each complete replacement.
+
+  GET /get/websearch_interception_settings supplies values,field_schema and
+  active_on_this_pod. PATCH /update/websearch_interception_settings sends enabled,
+  enabled_providers,search_tool_name and max_agentic_loops together. Defaults are false,[],
+  null and null. Include an explicit disabled projection and a selected supported provider
+  plus configured search tool; observe active_on_this_pod from the actual callback state,
+  not merely from the saved enabled value. The embedding selectors GET /model_group/info
+  and filter data[].mode=embedding. Search-tool selection GETs /search_tools/list and reads
+  search_tools[].search_tool_name. Reuse B9735's exact populated catalog cases, with its
+  fixed embedding deployment rather than creating a parallel selector test or API.
+
+  The Test panel POSTs /v1/responses with model, input=[{role:"user",content:query,
+  type:"message"}], tools=[{type:"mcp",server_url:"litellm_proxy",require_approval:"never"}]
+  and tool_choice="required". It does not send server_label. The parsed response JSON is
+  not displayed: it reads x-litellm-semantic-filter as total->selected and
+  x-litellm-semantic-filter-tools as a comma-separated list. Configure a fixed local MCP
+  catalog and embedding/model responses; reuse B136's /__mcp_fixture/ protocol handling
+  and $mcp_request_id response marker for initialize/notifications/tools responses. This is
+  a direct fixture dependency on B136, not a request to rebuild its gateway. Use B001's
+  strict ordered upstream scripts for the embedding and final model calls as well.
+  Exercise the enabled filter with at least two tools and one retained result, then the
+  same exact UI body with filtering disabled so the header is absent, the condition behind
+  the panel's warning. Assert the two headers explicitly; comparing JSON alone misses the
+  entire displayed result. /responses and /openai/v1/responses are existing B080 aliases,
+  but the panel never chooses them.
+
+  Use B1630 save/read transcripts on independent B860/B5076 databases with
+  store_model_in_db=true; a fixed boot configuration can provide the enabled filter test
+  without timing a background reload. Add a non-admin write and an unauthenticated panel
+  test, matching source status,error.type,param,code and content-type. Retain tool names,
+  header counts and upstream request bodies in comparisons; normalize only generated
+  response IDs/timestamps. Plan about 650 YAML lines and no new index, parser or helper.
+scope:
+  paths:
+    - tools/oracle/cases/ui/tool-search-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3543-L3676
+    why: Settings methods and the exact Responses request, including custom header lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Settings/AdminSettings/MCPToolSearchSettings/toolSearchForm.ts#L14-L49
+    why: The editor's normalized core_tools array and nullable embedding model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Settings/AdminSettings/MCPSemanticFilterSettings/semanticFilterTestUtils.ts#L15-L65
+    why: Only the semantic-filter headers populate the visible test result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1466-L1664
+    why: Decorators for all six already-owned settings routes and their default records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L216
+    why: B080 owns /v1/responses and both other decorated aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L419-L463
+    why: B8201 emits the header names and total/selected/CSV values consumed by the panel.
+dod:
+  - text: Semantic-filter, tool-search and web-search forms transmit their complete typed projections and read the stored settings without invented defaults.
+    proof: [tool-settings-cases, oracle]
+  - text: The exact Test panel Responses request reaches the real MCP/filter pipeline and distinguishes displayed header results from the disabled-filter response.
+    proof: [tool-settings-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: tool-settings-cases
+      why: Pure filter helpers never prove the panel's response headers exist over HTTP.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/tool-search-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/tool-search-settings/semantic-editor-save-read.yaml
+  - tools/oracle/cases/ui/tool-search-settings/tool-search-normalized-core-tools.yaml
+  - tools/oracle/cases/ui/tool-search-settings/websearch-null-fields-and-activation.yaml
+  - tools/oracle/cases/ui/tool-search-settings/test-panel-filter-headers.yaml
+  - tools/oracle/cases/ui/tool-search-settings/test-panel-disabled-filter.yaml
+  - tools/oracle/cases/ui/tool-search-settings/non-admin-and-missing-key.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+  - tools/oracle/cases/ui/management-selectors/search-and-skill-options.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains the three editors, form converters and test-result parser; B1663 keeps every settings handler and schema.
+  - B080/B955/B8201/B8383 own Responses composition, dispatch, filtering and initialization; B4685 owns the semantic index underneath them.
+  - B060/B3275/B8673 implement the catalogs, B9735 supplies their exact selector acceptance, and B136 supplies the MCP protocol fixture.
+pitfalls:
+  - Adding server_label or replacing input by a plain string would stop testing the request emitted by this panel.
+  - active_on_this_pod reports callback registration rather than the desired enabled setting alone.
+  - Missing x-litellm-semantic-filter is the panel's warning path even when its response JSON is otherwise successful.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

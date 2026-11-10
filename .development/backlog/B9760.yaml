@@ -1,0 +1,15 @@
+id: B9760
+milestone: M10 admin ui
+title: Exercise MCP server forms, submissions and toolsets over HTTP
+status: todo
+depends_on: [B860, B5076, B136, B4720, B4721, B4722, B4725, B8625, B8627, B8701, B3211, B8670, B9735]
+file: tasks/B9760-dashboard-mcp-catalog-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/mcp-servers/**"
+  - "ui/litellm-dashboard/src/components/mcp_server_management/**"
+parent: B149
+split_from: B149
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

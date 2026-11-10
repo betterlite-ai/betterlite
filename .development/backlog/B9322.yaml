@@ -1,0 +1,13 @@
+id: B9322
+milestone: M6 guardrails
+title: Loaded policy configuration and validation HTTP parity
+status: todo
+depends_on: [B9320, B9321, B8669]
+file: tasks/B9322-policy-config-http.yaml
+covers: []
+parent: B079
+split_from: B079
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
