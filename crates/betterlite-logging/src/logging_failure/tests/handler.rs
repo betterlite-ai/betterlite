@@ -5,7 +5,9 @@ use rstest::rstest;
 
 use betterlite_config::sections::logging_privacy::Settings;
 
+use crate::dynamic_callbacks::{DynamicCallback, DynamicCallbackLists};
 use crate::exporter_options::redaction::REDACTED_TEXT;
+use crate::logging_failure::callbacks::FailureCallbacks;
 use crate::logging_failure::handlers::failure_handler;
 use crate::logging_failure::{FailureDeps, FailureRecord, FailureReport};
 use crate::logging_state::correlation::{CorrelationContext, CorrelationSettings, SecretRedaction};
@@ -412,6 +414,40 @@ fn the_context_is_restored() {
 }
 
 #[test]
+fn dynamic_failure_loggers_run_once_beside_the_registry() {
+    let registered = Arc::new(FakeLogger::new("registered"));
+    let dynamic_only = Arc::new(FakeLogger::new("dynamic"));
+    let registry = registry(&[Arc::clone(&registered)]);
+    let harness = Harness::new();
+    let lists = DynamicCallbackLists {
+        input: None,
+        success: None,
+        async_success: None,
+        async_failure: None,
+        failure: Some(vec![
+            DynamicCallback::Logger(Arc::<FakeLogger>::clone(&dynamic_only)),
+            DynamicCallback::Logger(Arc::<FakeLogger>::clone(&dynamic_only)),
+            DynamicCallback::Logger(Arc::<FakeLogger>::clone(&registered)),
+        ]),
+    };
+    let failure_callbacks = FailureCallbacks {
+        registry: &registry,
+        dynamic: Some(&lists),
+    };
+    let mut state = build(init());
+    let mut record = FailureRecord::default();
+    let mut context = CorrelationContext::default();
+    failure_handler(
+        &mut call(&mut state, &mut record, &mut context),
+        &report("provider exploded"),
+        &failure_callbacks,
+        &harness.deps(),
+    );
+    assert_eq!(dynamic_only.calls(), ["sync"]);
+    assert_eq!(registered.calls(), ["sync"]);
+}
+
+#[test]
 fn the_event_carries_the_stream_flag() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -482,6 +518,9 @@ fn placeholder_messages() -> Json {
     a_preparation_error_skips_the_callbacks_and_the_claim
 )]
 #[case::the_context_is_restored(the_context_is_restored)]
+#[case::dynamic_failure_loggers_run_once_beside_the_registry(
+    dynamic_failure_loggers_run_once_beside_the_registry
+)]
 #[case::the_event_carries_the_stream_flag(the_event_carries_the_stream_flag)]
 fn logging_failure_behavior_tests_behavior(#[case] behavior: fn()) {
     behavior();

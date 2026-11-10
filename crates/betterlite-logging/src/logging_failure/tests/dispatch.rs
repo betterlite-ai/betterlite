@@ -17,8 +17,8 @@ use crate::logging_state::correlation::CorrelationContext;
 use crate::registry::CallbackRegistry;
 
 use super::support::{
-    FakeLogger, Harness, RecordingExecutor, build, call, callbacks, init, params, payload,
-    registry, registry_with_channel, report, stamp,
+    CallMethod, FakeLogger, Harness, RecordingExecutor, build, call, callbacks, init, params,
+    payload, registry, registry_with_channel, report, stamp,
 };
 
 type Behavior = fn() -> Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -240,6 +240,26 @@ fn test_a_queued_job_for_an_async_sdk_request_calls_nothing()
     })
 }
 
+fn test_a_queued_job_carries_the_stream_flag() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        for stream in [true, false] {
+            let logger = Arc::new(FakeLogger::new("first"));
+            let registry = registry_with_channel(&[Arc::clone(&logger)]);
+            let harness = Harness::new();
+            let mut logging_init = init();
+            logging_init.stream = Some(stream);
+            dispatch_setup(logging_init, &registry, &harness, true).await;
+            let sync_calls: Vec<bool> = logger
+                .recorded()
+                .iter()
+                .filter(|recorded| recorded.0 == CallMethod::Sync)
+                .map(|recorded| recorded.2)
+                .collect();
+            assert_eq!(sync_calls, [stream]);
+        }
+    })
+}
+
 fn test_a_queued_job_for_a_passthrough_request_calls_nothing()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
@@ -326,6 +346,7 @@ fn test_a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Out
 #[case::a_queued_job_without_a_payload_calls_nothing(
     test_a_queued_job_without_a_payload_calls_nothing
 )]
+#[case::a_queued_job_carries_the_stream_flag(test_a_queued_job_carries_the_stream_flag)]
 #[case::a_queued_job_for_a_passthrough_request_calls_nothing(
     test_a_queued_job_for_a_passthrough_request_calls_nothing
 )]
