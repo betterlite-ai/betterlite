@@ -18,3 +18,6 @@ deviations:
   - what: When router_settings.redis_kwargs.socket_timeout is absent, betterlite uses REDIS_SOCKET_TIMEOUT before the 5-second default; LiteLLM's RedisCache passes its own 5-second default, and only a null socket_timeout reaches REDIS_SOCKET_TIMEOUT (0.1) through the shared client.
     why: The task text asks for the REDIS_SOCKET_TIMEOUT fallback when the router setting does not override it, so the environment value outranks the signature default here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L615-L632
+  - what: get_ttl goes through the B393 breaker, so an open breaker returns the circuit-open error, where LiteLLM's async_get_ttl is not breaker-guarded and returns None for every failure.
+    why: Every routing-state operation shares one failure policy, and the breaker-open path is not a transport failure the read may swallow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2020-L2042
