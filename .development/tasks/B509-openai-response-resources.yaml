@@ -211,7 +211,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_resources)"
       && grep -q 'decode_response_resource' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_resources.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_resources_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_resources_corpus(::|$)/)'
   - id: case-compact-lax-response
     why: Compact shares B508 created_at conversion and ValidationError debug-plus-model_construct fallback, with
       raw and processed hidden headers.

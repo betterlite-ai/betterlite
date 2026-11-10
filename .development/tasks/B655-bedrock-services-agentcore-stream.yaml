@@ -262,7 +262,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream)"
       && grep -q 'decode_agentcore_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_stream.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_agentcore_stream_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_agentcore_stream_corpus(::|$)/)'
   - id: case-stream-http-request
     why: Use supplied correct-kind HTTPHandler/AsyncHTTPHandler or B173 shared default client(params={}, async provider
       BEDROCK). POST api_base with caller headers,data=truthy signed_json_body else json.dumps(data),stream=True,logging_obj;
