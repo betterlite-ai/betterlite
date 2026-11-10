@@ -1,0 +1,24 @@
+kind: helper
+name: unsupported-region-warning
+call:
+  vertex_endpoint:
+    unsupported_region_warning:
+      regions:
+        - {model: gemini-2.5-flash, region: null}
+        - {model: gemini-2.5-flash, region: europe-west1}
+        - {model: deepseek-ai/deepseek-v3.1-maas, region: null}
+        - {model: deepseek-ai/deepseek-v3.1-maas, region: us-central1}
+        - {model: deepseek-ai/deepseek-v3.1-maas, region: europe-west1}
+        - {model: vertex_ai/deepseek-ai/deepseek-v3.1-maas, region: global}
+        - {model: qwen/qwen3-235b-a22b-instruct-2507-maas, region: us-south1}
+        - {model: qwen/qwen3-235b-a22b-instruct-2507-maas, region: europe-west1}
+        - {model: lyria-3-pro-preview, region: us-central1}
+        - {model: text-embedding-005, region: us-east5}
+      api_bases:
+        - {api_base: null, location: null}
+        - {api_base: null, location: europe-west1}
+        - {api_base: https://proxy.example.com, location: europe-west1}
+        - {api_base: "", location: us}
+        - {api_base: null, location: global}
+env: {}
+compare: {ignore: []}

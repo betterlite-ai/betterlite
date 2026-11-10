@@ -1,0 +1,19 @@
+kind: helper
+name: media_tokens-content-seed
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        content:
+          - type: document
+            title: hello
+            source:
+              type: content
+              content:
+                - type: image
+                  source:
+                    type: base64
+                    data: AAAA
+env: {}
+compare: {ignore: []}

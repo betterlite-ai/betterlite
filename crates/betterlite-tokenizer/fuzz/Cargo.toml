@@ -9,8 +9,10 @@ workspace = true
 [package.metadata]
 cargo-fuzz = true
 [dependencies]
+async-trait = "0.1.92"
 betterlite-tokenizer = { path = ".." }
 libfuzzer-sys = "0.4.9"
+tokio.workspace = true
 [[bin]]
 name = "token_request"
 path = "fuzz_targets/token_request.rs"
@@ -30,4 +32,8 @@ test = false
 [[bin]]
 name = "image_token_header"
 path = "fuzz_targets/image_token_header.rs"
+test = false
+[[bin]]
+name = "token_media"
+path = "fuzz_targets/token_media.rs"
 test = false

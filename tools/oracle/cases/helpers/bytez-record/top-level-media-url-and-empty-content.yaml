@@ -1,0 +1,47 @@
+kind: helper
+name: bytez-record-top-level-media-url-and-empty-content
+call:
+  bytez_record:
+    function: request
+    requests:
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content:
+              - type: image_url
+                url: https://img.test/a.png
+              - type: input_audio
+                url: https://audio.test/a.wav
+              - type: video_url
+                url: https://video.test/a.mp4
+              - type: text
+                text: describe
+        optional_params: {stream: true}
+      - model: org/model
+        api_key: secret
+        messages: []
+      - model: org/model
+        messages:
+          - role: user
+            content: hi
+      - model: org/model
+        api_key: secret
+        messages:
+          - content: hi
+            name: dropped
+        optional_params: {}
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content:
+              - type: document
+                url: https://doc.test/a.pdf
+      - model: ""
+        api_key: secret
+        messages:
+          - role: user
+            content: hi
+compare: {ignore: []}
+env: {}

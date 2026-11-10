@@ -1,0 +1,8 @@
+task: B501
+deviations:
+  - what: The token file is read with async IO, must be valid UTF-8 and may not exceed 1 MiB.
+    why: A blocking read inside a request task stalls the runtime, and an unbounded file read is a memory risk. A real service account token is a few kilobytes.
+    link: ""
+  - what: Whether the OpenAI SDK offers workload identity is an injected capability, so the "SDK too old" 500 error cannot occur in production.
+    why: There is no SDK to import in Rust, so the failure only exists as a test seam. The oracle sets the capability to prove the error text and status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/workload_identity.py#L86-L99
