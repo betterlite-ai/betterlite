@@ -23,7 +23,6 @@ deviations:
       with the resolution error. LiteLLM raises its BadRequestError (400) when a request reaches the
       deployment.
     why: >-
-      ChatDeployment is built once per entry at startup, and a model that names no provider can never
-      be served. The error keeps its typed cause, which names the model. provider_resolution_tests_behavior in
-      chat_setup and deployment pins the refusal.
+      A model that names no provider can never be served, so the entry fails at startup with its typed
+      cause. The chat_setup and deployment tests pin it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L549-L562
