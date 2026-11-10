@@ -132,12 +132,13 @@ impl Helper for Op {
             vertex_project: input.params.vertex_project.clone(),
             stream: input.params.stream,
         };
-        let api_base = get_api_base(&input.model, &params, &context).map_err(api_base_error)?;
+        let api_base = get_api_base(&input.model, &params, &context)
+            .map_err(|error| api_base_error(&error))?;
         Ok(json!({ "api_base": api_base }))
     }
 }
 
-fn api_base_error(error: ApiBaseError) -> Box<HelperError> {
+fn api_base_error(error: &ApiBaseError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("ApiBaseError"),
         status: None,
