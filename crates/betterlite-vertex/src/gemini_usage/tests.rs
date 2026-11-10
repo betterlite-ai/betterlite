@@ -49,6 +49,21 @@ fn inclusive_thinking_keeps_the_reported_candidate_count() {
 }
 
 #[test]
+fn inclusive_thinking_counts_tool_tokens_grounding_does_not_bill() {
+    let usage = calculated_with(
+        r#"{"promptTokenCount": 10, "candidatesTokenCount": 5, "toolUsePromptTokenCount": 3,
+            "totalTokenCount": 18, "thoughtsTokenCount": 4}"#,
+        r#"[{"groundingMetadata": {"webSearchQueries": ["q"]}}]"#,
+    );
+    assert_eq!(usage.prompt_tokens, 10);
+    assert_eq!(usage.completion_tokens, 5);
+    assert_eq!(
+        usage.completion_tokens_details.unwrap().reasoning_tokens,
+        Some(4)
+    );
+}
+
+#[test]
 fn exclusive_thinking_adds_reasoning_to_the_completion_count() {
     let usage = calculated(
         r#"{"promptTokenCount": 10, "candidatesTokenCount": 5, "toolUsePromptTokenCount": 3,
