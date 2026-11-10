@@ -1,0 +1,39 @@
+kind: helper
+name: custom-prompt-exact-model
+call:
+  codestral_plan:
+    settings: {}
+    calls:
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}, {role: assistant, content: done}]
+        timeout: 12.5
+        headers: {}
+        api_base: null
+        custom_prompt_dict:
+          codestral-latest:
+            roles:
+              user: {pre_message: "U:", post_message: ""}
+              assistant: {pre_message: "A:", post_message: ""}
+            initial_prompt_value: "<start>"
+            final_prompt_value: "<end>"
+            bos_token: "<ignored>"
+            eos_token: "<ignored>"
+        optional_params: {}
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        timeout: 12.5
+        headers: {}
+        api_base: null
+        custom_prompt_dict:
+          Codestral-Latest:
+            roles:
+              user: {pre_message: "L:", post_message: ""}
+            initial_prompt_value: "<lower>"
+            final_prompt_value: "<stop>"
+        optional_params: {}
+env: {}
+compare: {ignore: []}
