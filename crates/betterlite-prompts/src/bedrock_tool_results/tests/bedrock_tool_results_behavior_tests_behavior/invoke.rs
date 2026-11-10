@@ -52,7 +52,10 @@ fn bedrock_tool_results_behavior_tests_behavior_a_call_without_a_function_is_ski
 #[case::empty(r#"{"id":"call_1","function":{"name":"n","arguments":""}}"#)]
 #[case::blank(r#"{"id":"call_1","function":{"name":"n","arguments":"   "}}"#)]
 #[case::json_null(r#"{"id":"call_1","function":{"name":"n","arguments":null}}"#)]
-#[case::json_list(r#"{"id":"call_1","function":{"name":"n","arguments":[]}}"#)]
+#[case::empty_list(r#"{"id":"call_1","function":{"name":"n","arguments":[]}}"#)]
+#[case::empty_object(r#"{"id":"call_1","function":{"name":"n","arguments":{}}}"#)]
+#[case::zero(r#"{"id":"call_1","function":{"name":"n","arguments":0}}"#)]
+#[case::bool_false(r#"{"id":"call_1","function":{"name":"n","arguments":false}}"#)]
 #[case::json_string(r#"{"id":"call_1","function":{"name":"n","arguments":"\"\""}}"#)]
 #[case::not_json(r#"{"id":"call_1","function":{"name":"n","arguments":"not json"}}"#)]
 #[case::truncated(r#"{"id":"call_1","function":{"name":"n","arguments":"{\"a\":"}}"#)]
@@ -226,6 +229,7 @@ fn failure(call: &str) -> BedrockToolResultsError {
 #[case::numeric_id(r#"{"id":5,"function":{"name":"n"}}"#, "ToolCallIdNotText")]
 #[case::numeric_name(r#"{"id":"c","function":{"name":5}}"#, "FunctionNameNotText")]
 #[case::numeric_arguments(r#"{"id":"c","function":{"arguments":5}}"#, "ArgumentsNotText")]
+#[case::list_arguments(r#"{"id":"c","function":{"arguments":[1]}}"#, "ArgumentsNotText")]
 #[case::object_arguments(r#"{"id":"c","function":{"arguments":{"a":1}}}"#, "ArgumentsNotText")]
 fn bedrock_tool_results_behavior_tests_behavior_an_unusable_tool_call_names_its_failure(
     #[case] call: &str,

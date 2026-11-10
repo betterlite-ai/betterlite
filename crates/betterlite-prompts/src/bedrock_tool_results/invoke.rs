@@ -113,8 +113,10 @@ where
         Some(_) => return Err(BedrockToolResultsError::FunctionNameNotText { index }),
     };
     let name = valid_tool_name(raw_name);
+    // LiteLLM's `not arguments` sends every falsy value down the empty-input branch before any parse
     let arguments = match function.get(ARGUMENTS) {
-        None | Some(Json::Null) => "",
+        None => "",
+        Some(value) if !value.is_truthy() => "",
         Some(Json::Text(arguments)) => arguments.as_str(),
         Some(_) => return Err(BedrockToolResultsError::ArgumentsNotText { index }),
     };
