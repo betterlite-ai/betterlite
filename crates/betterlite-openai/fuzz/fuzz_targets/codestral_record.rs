@@ -15,12 +15,8 @@ fuzz_target!(|bytes: &[u8]| {
         return;
     };
     match tag {
-        b'R' => {
-            let _decoded = decode_codestral_reply(200, body, &source);
-        }
-        b'C' => {
-            let _decoded = decode_codestral_chunk(body, &source);
-        }
+        b'R' => drop(decode_codestral_reply(200, body, &source)),
+        b'C' => drop(decode_codestral_chunk(body, &source)),
         _ => {}
     }
 });
