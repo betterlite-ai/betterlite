@@ -281,3 +281,10 @@ path = "fuzz_targets/mongodb_vector_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "huggingface_embedding_response"
+path = "fuzz_targets/huggingface_embedding_response.rs"
+test = false
+doc = false
+bench = false

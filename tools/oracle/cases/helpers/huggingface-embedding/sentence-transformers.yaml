@@ -1,0 +1,26 @@
+kind: helper
+name: sentence-transformers
+call:
+  b5991:
+    steps:
+      - {kind: transform_input, model: "sentence-transformers/all-MiniLM-L6-v2", input: ["first", "second"], optional_params: {input_type: "query"}}
+      - {kind: transform_input, model: "org/sentence-transformers-model", input: ["only"]}
+      - {kind: transform_input, model: "sentence-transformers/all-MiniLM-L6-v2", input: []}
+      - {kind: transform_input, model: "sentence-transformers/all-MiniLM-L6-v2", input: ["first", "second"], optional_params: {wait_for_model: true, input_type: "query"}}
+      - kind: prepare
+        model: "sentence-transformers/all-MiniLM-L6-v2"
+        input: ["first", "second"]
+        optional_params: {input_type: "embed"}
+        api_base: "https://api.example"
+        pipeline_tag: "rerank"
+      - kind: prepare
+        model: "sentence-transformers/all-MiniLM-L6-v2"
+        input: ["first", "second"]
+        env: {HF_API_BASE: "https://hf.example"}
+      - kind: prepare
+        model: "sentence-transformers/all-MiniLM-L6-v2"
+        input: ["first", "second"]
+        optional_params: {input_type: "query"}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: "embed"}, pipeline_tag: "feature-extraction"}
+env: {}
+compare: {ignore: []}
