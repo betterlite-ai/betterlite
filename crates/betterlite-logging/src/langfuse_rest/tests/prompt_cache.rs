@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::oneshot;
 use tokio::time::timeout;
@@ -7,9 +7,19 @@ use tokio_util::task::TaskTracker;
 use super::support::{
     Answer, FakeClock, FakeLangfuse, capture_logs, client_for, prompt_version, text_prompt,
 };
+use crate::langfuse_rest::cache::{Clock as _, SystemClock};
 
 const TTL: Duration = Duration::from_secs(60);
 const PATIENCE: Duration = Duration::from_secs(5);
+
+#[test]
+fn the_system_clock_reads_the_monotonic_clock() {
+    let before = Instant::now();
+    let now = SystemClock.now();
+    let after = Instant::now();
+    assert!(now >= before);
+    assert!(now <= after);
+}
 
 #[tokio::test]
 async fn a_cached_prompt_is_served_without_a_second_request() {
