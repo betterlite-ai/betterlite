@@ -13,12 +13,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = support::runtime()?;
-        Ok(Value::Array(
+        Ok(support::settled(Value::Array(
             input
                 .steps
                 .iter()
                 .map(|step| ops::execute(step, &runtime))
                 .collect(),
-        ))
+        )))
     }
 }

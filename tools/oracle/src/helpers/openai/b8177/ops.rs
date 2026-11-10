@@ -8,9 +8,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::input::{MapParamsStep, ReplyStep, RequestStep, Step, StreamStep};
-use super::support::{
-    FixedIds, TokenBearer, Uploader, chat_reply_value, settled_body, stream_chunk_value,
-};
+use super::support::{FixedIds, TokenBearer, Uploader, chat_reply_value, stream_chunk_value};
 
 pub(crate) fn execute(step: &Step, runtime: &Runtime) -> Value {
     match step {
@@ -57,7 +55,7 @@ fn request_value(runtime: &Runtime, step: &RequestStep) -> Value {
             "ok": true,
             "url": request.url,
             "headers": request.headers,
-            "body": settled_body(json!(request.body)),
+            "body": request.body,
         }),
         Err(error) => json!({"ok": false, "status_code": error.status_code}),
     }

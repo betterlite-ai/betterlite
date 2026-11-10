@@ -57,13 +57,17 @@ def failure(error: Exception) -> Json:
     return {"ok": False, "status_code": status}
 
 
-def parse_arguments(arguments: Json) -> Json:
-    if not isinstance(arguments, str):
-        return arguments
-    try:
-        return cast("Json", json.loads(arguments))
-    except json.JSONDecodeError:
-        return arguments
+def settled(value: Json) -> Json:
+    if isinstance(value, list):
+        return [settled(item) for item in value]
+    if isinstance(value, dict):
+        return {key: settled(item) for key, item in value.items()}
+    if isinstance(value, str) and value.startswith(("{", "[")):
+        try:
+            return settled(cast("Json", json.loads(value)))
+        except json.JSONDecodeError:
+            return value
+    return value
 
 
 def usage_value(block: Json) -> Json:
@@ -83,7 +87,7 @@ def tool_value(call: Object) -> Object:
         **pick(call, "id", "type", "index"),
         "function": {
             "name": function.get("name"),
-            "arguments": parse_arguments(function.get("arguments")),
+            "arguments": function.get("arguments"),
         },
     }
 
@@ -97,8 +101,7 @@ def reply_value(result: ModelResponse) -> Json:
         choices.append(
             {
                 **pick(choice, "index", "finish_reason", "provider_specific_fields"),
-                "role": message.get("role"),
-                "content": parse_arguments(message.get("content")),
+                **pick(message, "role", "content"),
                 "tool_calls": None
                 if calls is None
                 else [
@@ -163,9 +166,6 @@ def request(step: Object) -> Json:
                 stream=None,
             )
             body = TRANSFORM_REQUEST(model, messages, params, {}, headers)
-            for sent in items(body.get("messages")):
-                if sent.get("role") == "function":
-                    sent["content"] = parse_arguments(sent.get("content"))
         except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
             return failure(error)
     return {"ok": True, "url": url, "headers": headers, "body": body}
@@ -222,4 +222,4 @@ STEPS: dict[str, Callable[[Object], Json]] = {
 
 
 def run(value: dict[str, Json]) -> Json:
-    return [STEPS[cast("str", step["kind"])](step) for step in items(value["steps"])]
+    return settled([STEPS[cast("str", step["kind"])](step) for step in items(value["steps"])])

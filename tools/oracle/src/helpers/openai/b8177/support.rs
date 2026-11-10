@@ -72,7 +72,7 @@ pub(crate) fn chat_reply_value(response: &ChatResponse) -> Value {
             json!({
                 "index": choice.index,
                 "role": choice.message.role,
-                "content": choice.message.content.as_deref().map(parsed_text),
+                "content": choice.message.content,
                 "tool_calls": choice
                     .message
                     .tool_calls
@@ -100,42 +100,9 @@ fn tool_call_value(call: &ToolCall) -> Value {
         "type": call.kind,
         "function": {
             "name": call.function.name,
-            "arguments": parsed_text(&call.function.arguments),
+            "arguments": call.function.arguments,
         },
     })
-}
-
-// LiteLLM writes JSON text with json.dumps spacing, so both helpers compare the parsed value
-fn parsed_text(text: &str) -> Value {
-    if let Ok(value) = serde_json::from_str(text) {
-        return value;
-    }
-    Value::String(text.to_owned())
-}
-
-pub(crate) fn settled_body(mut body: Value) -> Value {
-    if let Some(Value::Array(messages)) = body.get_mut("messages") {
-        for message in messages {
-            if message.get("role").and_then(Value::as_str) != Some("function") {
-                continue;
-            }
-            if let Some(content) = message.get_mut("content")
-                && let Some(text) = content.as_str()
-            {
-                *content = parsed_text(text);
-            }
-        }
-    }
-    body
-}
-
-fn settled_tool_use(mut tool_use: Value) -> Value {
-    if let Some(arguments) = tool_use.pointer_mut("/function/arguments")
-        && let Some(text) = arguments.as_str()
-    {
-        *arguments = parsed_text(text);
-    }
-    tool_use
 }
 
 fn usage_value<Usage>(usage: &Usage) -> Value
@@ -154,10 +121,27 @@ where
 pub(crate) fn stream_chunk_value(chunk: &GenericChunk) -> Value {
     json!({
         "text": chunk.text,
-        "tool_use": settled_tool_use(json!(chunk.tool_use)),
+        "tool_use": chunk.tool_use,
         "is_finished": chunk.is_finished,
         "finish_reason": chunk.finish_reason,
         "usage": chunk.usage.as_ref().map(usage_value),
         "index": chunk.index,
     })
+}
+
+// LiteLLM spaces the JSON text it writes with json.dumps, so a string that holds an object or list is compared parsed
+pub(crate) fn settled(value: Value) -> Value {
+    match value {
+        Value::String(text) if text.starts_with(['{', '[']) => {
+            serde_json::from_str(&text).map_or_else(|_| Value::String(text), settled)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(settled).collect()),
+        Value::Object(fields) => Value::Object(
+            fields
+                .into_iter()
+                .map(|(key, item)| (key, settled(item)))
+                .collect(),
+        ),
+        scalar @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => scalar,
+    }
 }
