@@ -152,20 +152,34 @@ fn accepted_post() -> Builder {
     post().header(header::ACCEPT, "application/json, text/event-stream")
 }
 
-fn content_type_post(content_type: Option<&str>) -> Request<Body> {
+fn envelope_post(accept: Option<&str>, content_type: Option<&str>) -> Request<Body> {
     let builder = Request::builder()
         .method("POST")
         .uri("/mcp")
-        .header(header::ACCEPT, "application/json, text/event-stream")
         .header("mcp-protocol-version", PROTOCOL_VERSION)
         .header("mcp-method", "tools/list");
     let with_type = match content_type {
         Some(value) => builder.header(header::CONTENT_TYPE, value),
         None => builder,
     };
-    with_type
+    let with_accept = match accept {
+        Some(value) => with_type.header(header::ACCEPT, value),
+        None => with_type,
+    };
+    with_accept
         .body(Body::from(LIST_TOOLS.to_owned()))
         .expect("a request")
+}
+
+fn version_headers(values: &[&str]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for value in values {
+        headers.append(
+            "mcp-protocol-version",
+            HeaderValue::from_str(value).expect("a header"),
+        );
+    }
+    headers
 }
 
 fn modern_request(body: &str, method: &str) -> Request<Body> {
@@ -230,30 +244,7 @@ struct RefusalError {
     message: String,
 }
 
-#[derive(Deserialize)]
-struct VersionRefusal {
-    error: VersionRefusalError,
-}
-
-#[derive(Deserialize)]
-struct VersionRefusalError {
-    code: i32,
-    message: String,
-    data: VersionData,
-}
-
-#[derive(Deserialize)]
-struct VersionData {
-    supported: Vec<String>,
-    requested: String,
-}
-
 async fn refusal(response: Response<Body>) -> Refusal {
-    let text = String::from_utf8(body_bytes(response).await).expect("a utf-8 body");
-    serde_json::from_str(&text).expect("a JSON-RPC error body")
-}
-
-async fn version_refusal(response: Response<Body>) -> VersionRefusal {
     let text = String::from_utf8(body_bytes(response).await).expect("a utf-8 body");
     serde_json::from_str(&text).expect("a JSON-RPC error body")
 }
@@ -275,39 +266,20 @@ fn answers() -> FakeHandler {
 #[case::unknown(Some("2027-01-01"), true)]
 #[case::empty(Some(""), true)]
 fn routes_the_protocol_version_header(#[case] version: Option<&str>, #[case] modern: bool) {
-    let mut headers = HeaderMap::new();
-    if let Some(text) = version {
-        headers.insert(
-            "mcp-protocol-version",
-            HeaderValue::from_str(text).expect("a header"),
-        );
-    }
+    let headers = version.map_or_else(HeaderMap::new, |value| version_headers(&[value]));
     assert_eq!(takes_modern_path(&headers), modern);
 }
 
 #[test]
 fn routes_by_the_first_duplicate_version_header() {
-    let mut headers = HeaderMap::new();
-    headers.append(
-        "mcp-protocol-version",
-        HeaderValue::from_static("2026-07-28"),
-    );
-    headers.append(
-        "mcp-protocol-version",
-        HeaderValue::from_static("2025-06-18"),
-    );
-    assert!(takes_modern_path(&headers));
-
-    let mut reversed = HeaderMap::new();
-    reversed.append(
-        "mcp-protocol-version",
-        HeaderValue::from_static("2025-06-18"),
-    );
-    reversed.append(
-        "mcp-protocol-version",
-        HeaderValue::from_static("2026-07-28"),
-    );
-    assert!(!takes_modern_path(&reversed));
+    assert!(takes_modern_path(&version_headers(&[
+        "2026-07-28",
+        "2025-06-18"
+    ])));
+    assert!(!takes_modern_path(&version_headers(&[
+        "2025-06-18",
+        "2026-07-28"
+    ])));
 }
 
 #[test]
@@ -321,33 +293,25 @@ fn routes_a_version_header_that_is_not_utf8() {
 }
 
 #[tokio::test]
-async fn answers_a_request_with_a_json_body() {
-    let router = app(answers());
-    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE),
-        Some(&HeaderValue::from_static("application/json"))
-    );
-    let body = body_text(response).await;
-    let reply: Message = serde_json::from_str(&body).expect("a JSON-RPC reply");
-    assert_eq!(reply.id, Some(RequestId::Number(7)));
-    assert!(reply.method.is_none());
-    assert!(body.contains("\"result\""), "{body}");
-}
-
-#[tokio::test]
-async fn carries_no_session_id_on_this_path() {
-    let router = app(answers());
+async fn answers_a_request_with_json_and_no_session_id() {
     let request = accepted_post()
         .header("mcp-protocol-version", PROTOCOL_VERSION)
         .header("mcp-method", "tools/list")
         .header("mcp-session-id", "0123456789abcdef0123456789abcdef")
         .body(Body::from(LIST_TOOLS.to_owned()))
         .expect("a request");
-    let response = send(&router, request).await;
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&HeaderValue::from_static("application/json"))
+    );
     assert!(response.headers().get("mcp-session-id").is_none());
+    let body = body_text(response).await;
+    let reply: Message = serde_json::from_str(&body).expect("a JSON-RPC reply");
+    assert_eq!(reply.id, Some(RequestId::Number(7)));
+    assert!(reply.method.is_none());
+    assert!(body.contains("\"result\""), "{body}");
 }
 
 #[tokio::test]
@@ -424,11 +388,10 @@ async fn refuses_a_notification_at_an_unserved_version() {
         .expect("a request");
     let response = send(&router, request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let refusal: VersionRefusal = version_refusal(response).await;
-    assert_eq!(refusal.error.code, -32022_i32);
-    assert_eq!(refusal.error.message, "Unsupported protocol version");
-    assert_eq!(refusal.error.data.supported, ["2026-07-28"]);
-    assert_eq!(refusal.error.data.requested, "");
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28"],"requested":""}}}"#
+    );
 }
 
 #[tokio::test]
@@ -440,13 +403,10 @@ async fn refuses_a_posted_response() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let refusal: Refusal = refusal(response).await;
-    assert_eq!(refusal.error.code, -32600_i32);
     assert_eq!(
-        refusal.error.message,
-        "Body must be a single JSON-RPC request or notification object"
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Body must be a single JSON-RPC request or notification object"}}"#
     );
-    assert_eq!(refusal.id, None);
 }
 
 #[tokio::test]
@@ -454,9 +414,10 @@ async fn answers_a_parse_error() {
     let router = app(answers());
     let response = send(&router, modern_request(r#"{"jsonrpc":"2.0"#, "tools/list")).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let refusal: Refusal = refusal(response).await;
-    assert_eq!(refusal.error.code, -32700_i32);
-    assert_eq!(refusal.error.message, "Parse error");
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}"#
+    );
 }
 
 #[tokio::test]
@@ -497,7 +458,7 @@ async fn answers_a_non_post_with_allow_post() {
 #[case::json_with_charset(Some("Application/JSON; charset=utf-8"), StatusCode::OK)]
 #[tokio::test]
 async fn checks_the_content_type(#[case] content_type: Option<&str>, #[case] expected: StatusCode) {
-    let request = content_type_post(content_type);
+    let request = envelope_post(Some("application/json, text/event-stream"), content_type);
     let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), expected);
     if expected == StatusCode::BAD_REQUEST {
@@ -507,33 +468,23 @@ async fn checks_the_content_type(#[case] content_type: Option<&str>, #[case] exp
 }
 
 #[rstest]
-#[case::both("application/json, text/event-stream", StatusCode::OK)]
-#[case::wildcard("*/*", StatusCode::OK)]
-#[case::wildcard_types("application/*, text/*", StatusCode::OK)]
-#[case::json_only("application/json", StatusCode::NOT_ACCEPTABLE)]
-#[case::event_stream_only("text/event-stream", StatusCode::NOT_ACCEPTABLE)]
+#[case::both(Some("application/json, text/event-stream"), StatusCode::OK)]
+#[case::wildcard(Some("*/*"), StatusCode::OK)]
+#[case::wildcard_types(Some("application/*, text/*"), StatusCode::OK)]
+#[case::json_only(Some("application/json"), StatusCode::NOT_ACCEPTABLE)]
+#[case::event_stream_only(Some("text/event-stream"), StatusCode::NOT_ACCEPTABLE)]
+#[case::missing(None, StatusCode::NOT_ACCEPTABLE)]
 #[tokio::test]
-async fn checks_the_accept_media_ranges(#[case] accept: &str, #[case] expected: StatusCode) {
-    let request = post()
-        .header(header::ACCEPT, accept)
-        .header("mcp-protocol-version", PROTOCOL_VERSION)
-        .header("mcp-method", "tools/list")
-        .body(Body::from(LIST_TOOLS.to_owned()))
-        .expect("a request");
-    let response = send(&app(answers()), request).await;
+async fn checks_the_accept_media_ranges(
+    #[case] accept: Option<&str>,
+    #[case] expected: StatusCode,
+) {
+    let response = send(
+        &app(answers()),
+        envelope_post(accept, Some("application/json")),
+    )
+    .await;
     assert_eq!(response.status(), expected);
-}
-
-#[tokio::test]
-async fn refuses_a_request_without_an_accept_header() {
-    let request = post()
-        .header("mcp-protocol-version", PROTOCOL_VERSION)
-        .header("mcp-method", "tools/list")
-        .body(Body::from(LIST_TOOLS.to_owned()))
-        .expect("a request");
-    let response = send(&app(answers()), request).await;
-    assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
-    assert!(body_bytes(response).await.is_empty());
 }
 
 #[tokio::test]
@@ -564,21 +515,9 @@ async fn refuses_a_request_without_the_envelope_pair() {
     let refusal: Refusal = refusal(response).await;
     assert_eq!(refusal.error.code, -32602_i32);
     assert_eq!(refusal.id, Some(RequestId::Number(7)));
-    assert!(
-        refusal
-            .error
-            .message
-            .contains("io.modelcontextprotocol/protocolVersion"),
-        "{}",
-        refusal.error.message
-    );
-    assert!(
-        refusal
-            .error
-            .message
-            .contains("io.modelcontextprotocol/clientCapabilities"),
-        "{}",
-        refusal.error.message
+    assert_eq!(
+        refusal.error.message,
+        "params._meta is missing the required envelope key(s): io.modelcontextprotocol/protocolVersion, io.modelcontextprotocol/clientCapabilities"
     );
 }
 
@@ -688,11 +627,10 @@ async fn refuses_a_version_outside_the_modern_set() {
         .expect("a request");
     let response = send(&router, request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let refusal: VersionRefusal = version_refusal(response).await;
-    assert_eq!(refusal.error.code, -32022_i32);
-    assert_eq!(refusal.error.message, "Unsupported protocol version");
-    assert_eq!(refusal.error.data.supported, ["2026-07-28"]);
-    assert_eq!(refusal.error.data.requested, "2027-01-01");
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":7,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28"],"requested":"2027-01-01"}}}"#
+    );
 }
 
 #[tokio::test]
@@ -715,51 +653,140 @@ async fn refuses_a_duplicated_routing_header() {
 }
 
 #[tokio::test]
-async fn maps_a_method_not_found_error_to_404() {
-    let router = app(FakeHandler {
-        behaviour: Behaviour::Answer,
-        failure: Some(ErrorCode::METHOD_NOT_FOUND),
-    });
-    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+async fn refuses_an_initialize_on_the_modern_path() {
+    let body = concat!(
+        r#"{"jsonrpc":"2.0","id":21,"method":"initialize","params":{"#,
+        r#""protocolVersion":"2026-07-28","capabilities":{},"#,
+        r#""clientInfo":{"name":"test-client","version":"1.0"},"#,
+        r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+        r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+    );
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "initialize")
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let refusal: Refusal = refusal(response).await;
-    assert_eq!(refusal.error.code, -32601_i32);
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":21,"error":{"code":-32601,"message":"Method not found","data":"initialize"}}"#
+    );
 }
 
 #[tokio::test]
-async fn maps_a_missing_capability_error_to_400() {
-    let router = app(FakeHandler {
-        behaviour: Behaviour::Answer,
-        failure: Some(ErrorCode::MISSING_REQUIRED_CLIENT_CAPABILITY),
-    });
-    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+async fn refuses_a_tool_call_without_its_name() {
+    let body = concat!(
+        r#"{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"arguments":{},"#,
+        r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+        r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+    );
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/call")
+        .header("mcp-name", "test-tool")
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let refusal: Refusal = refusal(response).await;
-    assert_eq!(refusal.error.code, -32021_i32);
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":31,"error":{"code":-32602,"message":"Invalid request parameters","data":""}}"#
+    );
 }
 
 #[tokio::test]
-async fn maps_an_invalid_params_error_to_400() {
-    let router = app(FakeHandler {
-        behaviour: Behaviour::Answer,
-        failure: Some(ErrorCode::INVALID_PARAMS),
-    });
-    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+async fn treats_a_null_tool_name_as_absent() {
+    let body = concat!(
+        r#"{"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"name":null,"#,
+        r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+        r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+    );
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/call")
+        .header("mcp-name", "test-tool")
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let refusal: Refusal = refusal(response).await;
     assert_eq!(refusal.error.code, -32602_i32);
+    assert_eq!(refusal.error.message, "Invalid request parameters");
 }
 
 #[tokio::test]
-async fn maps_an_internal_error_to_200() {
+async fn refuses_a_tool_call_with_a_numeric_name() {
+    let body = concat!(
+        r#"{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":5,"#,
+        r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+        r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+    );
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/call")
+        .header("mcp-name", "test-tool")
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let refusal: Refusal = refusal(response).await;
+    assert_eq!(refusal.error.code, -32020_i32);
+    assert_eq!(
+        refusal.error.message,
+        "mcp-name header does not match the request body's 'name' parameter"
+    );
+}
+
+#[tokio::test]
+async fn refuses_a_meta_that_is_not_an_object() {
+    let body = r#"{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{"_meta":5}}"#;
+    let response = send(&app(answers()), modern_request(body, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":7,"error":{"code":-32602,"message":"params._meta must be an object carrying the required 'io.modelcontextprotocol/protocolVersion' and 'io.modelcontextprotocol/clientCapabilities' envelope keys"}}"#
+    );
+}
+
+#[tokio::test]
+async fn refuses_a_numeric_protocol_version() {
+    let body = concat!(
+        r#"{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{"_meta":{"#,
+        r#""io.modelcontextprotocol/protocolVersion":20260728,"#,
+        r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+    );
+    let response = send(&app(answers()), modern_request(body, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":7,"error":{"code":-32020,"message":"mcp-protocol-version header does not match the request envelope's protocol version"}}"#
+    );
+}
+
+#[rstest]
+#[case::method_not_found(ErrorCode::METHOD_NOT_FOUND, StatusCode::NOT_FOUND, -32601_i32)]
+#[case::missing_capability(
+    ErrorCode::MISSING_REQUIRED_CLIENT_CAPABILITY,
+    StatusCode::BAD_REQUEST,
+    -32021_i32
+)]
+#[case::invalid_params(ErrorCode::INVALID_PARAMS, StatusCode::BAD_REQUEST, -32602_i32)]
+#[case::internal(ErrorCode::INTERNAL_ERROR, StatusCode::OK, -32603_i32)]
+#[tokio::test]
+async fn maps_handler_errors_through_the_status_table(
+    #[case] failure: ErrorCode,
+    #[case] status: StatusCode,
+    #[case] code: i32,
+) {
     let router = app(FakeHandler {
         behaviour: Behaviour::Answer,
-        failure: Some(ErrorCode::INTERNAL_ERROR),
+        failure: Some(failure),
     });
     let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), status);
     let refusal: Refusal = refusal(response).await;
-    assert_eq!(refusal.error.code, -32603_i32);
+    assert_eq!(refusal.error.code, code);
 }
 
 #[tokio::test]

@@ -15,7 +15,8 @@ const HANDSHAKE_PROTOCOL_VERSIONS: [&str; 4] =
 pub(super) const MODERN_PROTOCOL_VERSIONS: [&str; 1] = ["2026-07-28"];
 pub(super) const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 const CONTENT_TYPE_JSON: &str = "application/json";
-const INVALID_BODY_MESSAGE: &str = "Body must be a single JSON-RPC request or notification object";
+pub(super) const INVALID_BODY_MESSAGE: &str =
+    "Body must be a single JSON-RPC request or notification object";
 // MCP's DEFAULT_MAX_REQUEST_BODY_SIZE, the body cap the SDK's middleware applies
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
@@ -49,12 +50,7 @@ impl ModernTransport {
                 return error_response(None, ErrorCode::PARSE_ERROR, "Parse error", None);
             }
             Err(wire::DecodeError::Validation { .. }) => {
-                return error_response(
-                    None,
-                    ErrorCode::INVALID_REQUEST,
-                    INVALID_BODY_MESSAGE,
-                    None,
-                );
+                return classify::decode_refusal(&bytes);
             }
         };
         match message {
@@ -84,7 +80,10 @@ where
         ))
         .respond(Some(&call.id));
     }
-    if let Err(rejection) = classify::classify(&call, headers) {
+    if let Err(rejection) = classify::check_envelope_and_headers(&call, headers) {
+        return rejection.respond(Some(&call.id));
+    }
+    if let Err(rejection) = classify::check_method_surface(&call) {
         return rejection.respond(Some(&call.id));
     }
     exchange::serve_request(call, handler).await
@@ -228,6 +227,7 @@ struct ErrorDetail<'text> {
 #[serde(untagged)]
 pub(super) enum RejectionData<'text> {
     UnsupportedVersion(UnsupportedVersionData<'text>),
+    Text(&'text str),
 }
 
 #[derive(Serialize)]

@@ -6,6 +6,6 @@ deviations:
   - what: A request body larger than 4 MiB is refused with 413 before it is decoded, where the modern entry reads the body without a limit.
     why: Rule bounded-inputs forbids an unbounded read of an inbound body; the cap is the one the SDK's body middleware applies to the other transports.
     link: ""
-  - what: A _meta that is not an object, and one that lacks an envelope key, both get the missing-key message naming the keys rmcp's typed metadata could not decode, where the SDK has a separate "params._meta must be an object" message and a non-string version rejection.
-    why: The request is decoded into rmcp's typed model before the classifier sees it, and its metadata accessors report a wrongly typed or absent value the same way. The status is 400 and the code is -32602 on both sides.
+  - what: A _meta whose client-capabilities value is present but does not decode into rmcp's typed client capabilities, a null included, is refused by rmcp's inline lifecycle check with -32602 naming the key, where the SDK's classifier only requires the key to be present and would dispatch the request.
+    why: The request decodes into rmcp's typed model before dispatch, and betterlite treats a value of the wrong type as an error that names the field; the status is 400 and the code -32602 on both sides.
     link: ""
