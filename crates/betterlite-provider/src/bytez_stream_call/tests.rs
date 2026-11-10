@@ -224,7 +224,7 @@ async fn first_fragment(stream: &mut BytezCustomStream<'_>) -> String {
         .expect("text")
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn opens_a_post_with_the_serialized_body_and_the_transport_deadline() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -257,7 +257,7 @@ async fn opens_a_post_with_the_serialized_body_and_the_transport_deadline() {
 #[case::redirect(301)]
 #[case::bad_request(400)]
 #[case::server_error(500)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn rejects_every_status_except_200(#[case] status: u16) {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, status));
@@ -278,7 +278,7 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
     assert_eq!(failure.message, "refused body");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn wraps_a_transport_status_error() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::failing(
@@ -301,7 +301,7 @@ async fn wraps_a_transport_status_error() {
     assert_eq!(failure.message, "upstream down");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn refuses_a_refusal_body_over_the_byte_limit() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 500));
@@ -327,7 +327,7 @@ async fn refuses_a_refusal_body_over_the_byte_limit() {
 #[case::async_keeps_async(ClientKind::Async, ClientKind::Async, true)]
 #[case::sync_replaces_async(ClientKind::Sync, ClientKind::Async, false)]
 #[case::async_replaces_sync(ClientKind::Async, ClientKind::Sync, false)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn uses_a_supplied_client_only_when_its_kind_matches(
     #[case] call_kind: ClientKind,
     #[case] supplied_kind: ClientKind,
@@ -350,7 +350,7 @@ async fn uses_a_supplied_client_only_when_its_kind_matches(
     assert_eq!(default.seen().len(), usize::from(!kept));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn opens_without_a_supplied_client_on_the_default() {
     let redactor = redactor();
     let default = Arc::new(FakeTransport::new(ClientKind::Sync, 200));
@@ -362,7 +362,7 @@ async fn opens_without_a_supplied_client_on_the_default() {
     assert_eq!(default.seen().len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn delivers_each_fragment_before_the_next_one_arrives() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -376,7 +376,7 @@ async fn delivers_each_fragment_before_the_next_one_arrives() {
     assert_eq!(first_fragment(&mut stream).await, "two");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn keeps_a_split_character_for_the_next_fragment() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -387,7 +387,7 @@ async fn keeps_a_split_character_for_the_next_fragment() {
     assert_eq!(first_fragment(&mut stream).await, "\u{e9}");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn refuses_bytes_that_are_not_utf8() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -403,7 +403,7 @@ async fn refuses_bytes_that_are_not_utf8() {
     assert!(matches!(error, BytezStreamError::InvalidUtf8 { .. }));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn refuses_a_character_cut_off_at_the_end_of_the_stream() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -421,7 +421,7 @@ async fn refuses_a_character_cut_off_at_the_end_of_the_stream() {
     assert!(stream.fragments.next().await.is_none());
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn delivers_embedded_newlines_and_data_text_as_plain_content() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -434,7 +434,7 @@ async fn delivers_embedded_newlines_and_data_text_as_plain_content() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_body_error_surfaces_as_a_body_failure() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -455,7 +455,7 @@ async fn a_body_error_surfaces_as_a_body_failure() {
     ));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn dropping_the_stream_drops_the_transport_body() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
@@ -466,7 +466,7 @@ async fn dropping_the_stream_drops_the_transport_body() {
     assert!(transport.dropped.load(Ordering::SeqCst));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn chunk_creator_shapes_a_content_chunk() {
     let redactor = redactor();
     let (mut stream, _default) = opened(None, ClientKind::Sync, &redactor).await;
@@ -482,7 +482,7 @@ async fn chunk_creator_shapes_a_content_chunk() {
     assert_eq!(chunk.choices[0].finish_reason, None);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn chunk_creator_suppresses_an_empty_fragment() {
     let redactor = redactor();
     let (mut stream, _default) = opened(None, ClientKind::Sync, &redactor).await;

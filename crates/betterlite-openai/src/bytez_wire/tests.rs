@@ -248,6 +248,20 @@ fn adapt_messages_rejects_unusable_content(#[case] source: &str) {
     normalize_messages(&messages).expect_err("rejected");
 }
 
+#[rstest]
+#[case::document("document")]
+#[case::file("file")]
+fn adapt_messages_names_a_document_type_as_unsupported(#[case] kind: &str) {
+    let source =
+        format!(r#"[{{"role":"user","content":{{"type":"{kind}","url":"https://d.test/a"}}}}]"#);
+    let messages: Vec<RawMessage> = serde_json::from_str(&source).expect("messages");
+    let error = normalize_messages(&messages).expect_err("rejected");
+    assert!(matches!(
+        &error,
+        BytezConfigError::UnsupportedContentType { kind: named } if named == kind
+    ));
+}
+
 #[test]
 fn request_body_writes_messages_stream_and_params() {
     let body = request_body(
@@ -495,6 +509,16 @@ fn decode_bytez_reply_rejects_a_malformed_output(#[case] body: &str) {
     let error =
         decode_bytez_reply(&reply_input(body, 200, &[], &HeaderMap::new())).expect_err("rejected");
     assert_eq!(error.status_code(), None);
+}
+
+#[test]
+fn decode_bytez_reply_accepts_a_body_of_exactly_the_byte_limit() {
+    let padding = " ".repeat(super::reply::MAX_REPLY_BYTES - OK_BODY.len());
+    let body = format!("{OK_BODY}{padding}");
+    assert_eq!(body.len(), super::reply::MAX_REPLY_BYTES);
+    let reply =
+        decode_bytez_reply(&reply_input(&body, 200, &[], &HeaderMap::new())).expect("reply");
+    assert_eq!(reply.content, "ok");
 }
 
 #[test]
