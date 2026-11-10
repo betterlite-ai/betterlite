@@ -1,0 +1,33 @@
+kind: helper
+name: reservation-tokens-tool-schema-keys-in-size-estimate
+call:
+  reservation_tokens:
+    calls:
+      - function: size
+        request:
+          messages:
+            - role: user
+              content: find the weather
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                description: Get weather
+                parameters:
+                  type: object
+                  properties:
+                    city:
+                      type: string
+                      description: City name
+                    days:
+                      type: integer
+                  required: [city]
+          tool_choice:
+            function:
+              name: get_weather
+      - function: size
+        request:
+          tools: []
+          tool_choice: none
+env: {}
+compare: {ignore: []}
