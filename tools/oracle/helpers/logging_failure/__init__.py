@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
@@ -19,37 +18,25 @@ from .fixtures import (
     Probe,
     Recorders,
     Report,
-    callbacks,
-    exception,
+    build_logging,
+    build_report,
     float_value,
     frozen_datetime,
-    identity,
     list_value,
     micros,
     object_value,
     optional_float,
-    optional_moment,
     payload_builder,
     payload_record,
-    plain_value,
+    snapshot_context,
+    snapshot_details,
     string_value,
 )
 
 if TYPE_CHECKING:
-    from litellm.types.llms.openai import AllMessageValues
+    import datetime as dt
 
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false
-
-DETAIL_KEYS: tuple[str, ...] = (
-    "log_event_type",
-    "traceback_exception",
-    "original_response",
-    "response_cost",
-    "combined_usage_object",
-    "standard_logging_object",
-    "litellm_params",
-)
-CLAIM_KEYS: tuple[str, ...] = ("has_logged_sync_failure", "has_logged_async_failure")
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -95,7 +82,7 @@ async def _run_instance(
     value: dict[str, Json],
 ) -> Json:
     recorders = Recorders()
-    logging_obj = _build(init, settings)
+    logging_obj = build_logging(init, settings)
     specs = list_value(value.get("loggers"))
     probes: list[Probe] = []
     for spec in specs:
@@ -109,7 +96,7 @@ async def _run_instance(
     litellm._async_success_callback = []  # noqa: SLF001
     litellm.failure_callback = probes
     litellm._async_failure_callback = probes  # noqa: SLF001
-    report = _report(object_value(value.get("failure")), init)
+    report = build_report(object_value(value.get("failure")), init)
     raw_payload = value.get("payload")
     payload = None if raw_payload is None else payload_record(object_value(raw_payload))
     with (
@@ -139,8 +126,8 @@ async def _step(
         Json,
         {
             "op": string_value(operation.get("op")),
-            "details": _details(logging_obj),
-            "context": _context(),
+            "details": snapshot_details(logging_obj),
+            "context": snapshot_context(),
             "calls": cast(Json, recorders.calls[before:]),
             "executor_jobs": len(recorders.jobs),
             "timing": timing,
@@ -186,69 +173,3 @@ async def _apply(logging_obj: Logging, report: Report, operation: dict[str, Json
             )
         return None
     raise ValueError(f"unknown logging_failure operation {name}")
-
-
-def _build(init: dict[str, Json], settings: dict[str, Json]) -> Logging:
-    dynamic = object_value(init.get("dynamic_callbacks"))
-    flags = object_value(init.get("request_logging"))
-    with (
-        patch.object(
-            litellm_logging,
-            "get_litellm_params",
-            return_value=object_value(init.get("litellm_params")),
-        ),
-        patch.object(litellm_logging, "scrub_sensitive_keys_in_metadata", identity),
-        patch.object(
-            litellm_logging, "_initialize_standard_callback_dynamic_params", return_value={}
-        ),
-        patch.object(litellm_logging, "get_trusted_callback_params", return_value=()),
-        patch.object(Logging, "process_dynamic_callbacks", return_value=None),
-        patch.object(
-            Logging,
-            "initialize_standard_built_in_tools_params",
-            return_value=object_value(init.get("standard_built_in_tools_params")),
-        ),
-    ):
-        return Logging(
-            model=string_value(init.get("model")),
-            messages=cast("list[AllMessageValues] | None", init.get("messages")),
-            stream=cast("bool | None", init.get("stream")),
-            call_type=string_value(init.get("call_type")),
-            start_time=dt.datetime.fromisoformat(string_value(init.get("start_time"))),
-            litellm_call_id=string_value(init.get("litellm_call_id")),
-            function_id=string_value(init.get("function_id")),
-            litellm_trace_id=cast("str | None", init.get("litellm_trace_id")),
-            dynamic_failure_callbacks=callbacks(dynamic.get("failure")),
-            dynamic_async_failure_callbacks=callbacks(dynamic.get("async_failure")),
-            kwargs=object_value(init.get("kwargs")),
-            log_raw_request_response=flags.get("log_raw_request_response") is True,
-            supports_correlation_logging=settings.get("supports_correlation_logging") is not False,
-        )
-
-
-def _report(failure: dict[str, Json], init: dict[str, Json]) -> Report:
-    clock = dt.datetime.fromisoformat(string_value(init.get("start_time")))
-    start = optional_moment(failure.get("start_time")) or clock
-    end = optional_moment(failure.get("end_time")) or clock
-    return Report(
-        exception(object_value(failure.get("exception"))),
-        string_value(failure.get("traceback")),
-        start,
-        end,
-    )
-
-
-def _details(logging_obj: Logging) -> Json:
-    details = logging_obj.model_call_details
-    output: dict[str, Json] = {}
-    for key in DETAIL_KEYS:
-        output[key] = plain_value(details.get(key))
-    end_time = details.get("end_time")
-    output["end_time_micros"] = micros(end_time) if isinstance(end_time, dt.datetime) else None
-    for claim in CLAIM_KEYS:
-        output[claim] = details.get(claim) is True
-    return cast(Json, output)
-
-
-def _context() -> Json:
-    return cast(Json, {"trace_id": trace_id_var.get(), "session_id": session_id_var.get()})

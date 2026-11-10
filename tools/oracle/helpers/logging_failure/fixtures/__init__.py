@@ -5,15 +5,22 @@ import calendar
 import datetime as dt
 from collections.abc import Callable
 from types import SimpleNamespace
-from typing import TypeAlias, cast, get_type_hints
+from typing import TYPE_CHECKING, TypeAlias, cast, get_type_hints
+from unittest.mock import patch
 
+from litellm._logging import session_id_var, trace_id_var
 from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils import litellm_logging
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.utils import (
     StandardLoggingHiddenParams,
     StandardLoggingMetadata,
     StandardLoggingPayload,
     Usage,
 )
+
+if TYPE_CHECKING:
+    from litellm.types.llms.openai import AllMessageValues
 
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false
 
@@ -221,3 +228,82 @@ def plain_value(value: object) -> Json:
     if isinstance(value, (bool, int, float, str)) or value is None:
         return cast(Json, value)
     return None
+
+
+DETAIL_KEYS: tuple[str, ...] = (
+    "log_event_type",
+    "traceback_exception",
+    "original_response",
+    "response_cost",
+    "combined_usage_object",
+    "standard_logging_object",
+    "litellm_params",
+)
+CLAIM_KEYS: tuple[str, ...] = ("has_logged_sync_failure", "has_logged_async_failure")
+
+
+
+def build_logging(init: dict[str, Json], settings: dict[str, Json]) -> Logging:
+    dynamic = object_value(init.get("dynamic_callbacks"))
+    flags = object_value(init.get("request_logging"))
+    with (
+        patch.object(
+            litellm_logging,
+            "get_litellm_params",
+            return_value=object_value(init.get("litellm_params")),
+        ),
+        patch.object(litellm_logging, "scrub_sensitive_keys_in_metadata", identity),
+        patch.object(
+            litellm_logging, "_initialize_standard_callback_dynamic_params", return_value={}
+        ),
+        patch.object(litellm_logging, "get_trusted_callback_params", return_value=()),
+        patch.object(Logging, "process_dynamic_callbacks", return_value=None),
+        patch.object(
+            Logging,
+            "initialize_standard_built_in_tools_params",
+            return_value=object_value(init.get("standard_built_in_tools_params")),
+        ),
+    ):
+        return Logging(
+            model=string_value(init.get("model")),
+            messages=cast("list[AllMessageValues] | None", init.get("messages")),
+            stream=cast("bool | None", init.get("stream")),
+            call_type=string_value(init.get("call_type")),
+            start_time=dt.datetime.fromisoformat(string_value(init.get("start_time"))),
+            litellm_call_id=string_value(init.get("litellm_call_id")),
+            function_id=string_value(init.get("function_id")),
+            litellm_trace_id=cast("str | None", init.get("litellm_trace_id")),
+            dynamic_failure_callbacks=callbacks(dynamic.get("failure")),
+            dynamic_async_failure_callbacks=callbacks(dynamic.get("async_failure")),
+            kwargs=object_value(init.get("kwargs")),
+            log_raw_request_response=flags.get("log_raw_request_response") is True,
+            supports_correlation_logging=settings.get("supports_correlation_logging") is not False,
+        )
+
+
+def build_report(failure: dict[str, Json], init: dict[str, Json]) -> Report:
+    clock = dt.datetime.fromisoformat(string_value(init.get("start_time")))
+    start = optional_moment(failure.get("start_time")) or clock
+    end = optional_moment(failure.get("end_time")) or clock
+    return Report(
+        exception(object_value(failure.get("exception"))),
+        string_value(failure.get("traceback")),
+        start,
+        end,
+    )
+
+
+def snapshot_details(logging_obj: Logging) -> Json:
+    details = logging_obj.model_call_details
+    output: dict[str, Json] = {}
+    for key in DETAIL_KEYS:
+        output[key] = plain_value(details.get(key))
+    end_time = details.get("end_time")
+    output["end_time_micros"] = micros(end_time) if isinstance(end_time, dt.datetime) else None
+    for claim in CLAIM_KEYS:
+        output[claim] = details.get(claim) is True
+    return cast(Json, output)
+
+
+def snapshot_context() -> Json:
+    return cast(Json, {"trace_id": trace_id_var.get(), "session_id": session_id_var.get()})
