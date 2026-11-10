@@ -1,0 +1,17 @@
+task: B3849
+deviations:
+  - what: Request destinations and the additive flag arrive through an injected RequestScopeSource, not a ContextVar.
+    why: betterlite forbids globals and Rust tasks inherit no contextvar; the proxy supplies the values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L395-L446
+  - what: attach_tenant_fan_out and deliverable_destinations read a TenantFanOutRegistry, not a provider's processor list.
+    why: The Rust SDK fixes processors at build time; the first attach answers true, a repeat false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1165-L1212
+  - what: operator_sink_scopes consults the injected ExporterFactories, not the module-global _EXPORTER_FACTORIES.
+    why: betterlite forbids globals; routability of a registered or unknown kind is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1241-L1243
+  - what: A destination's resource_attributes merge into its export pipeline once, not into a per-span view.
+    why: Rust SpanData has no resource; each delivered span carries the same merged resource, tenant attributes winning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L533-L535
+  - what: shutdown_with_timeout drains for the smaller of the SDK timeout and the configured drain bound.
+    why: Python's shutdown has no timeout and always waits 5 seconds; the Rust trait passes a bound the caller expects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L614-L642

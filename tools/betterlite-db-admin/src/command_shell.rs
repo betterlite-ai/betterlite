@@ -168,11 +168,11 @@ where
     };
     match prepare(cli.config.as_deref(), cli.operation, &environment) {
         Ok((command, config)) => {
-            match command {
-                DbAdminCommand::Migrate(options) => diagnostics.error(&format!(
+            if let DbAdminCommand::Migrate(options) = command {
+                diagnostics.error(&format!(
                     "Starting migration job (use_migrate={}, use_v2_resolver={})",
                     options.use_migrate, options.use_v2_resolver
-                )),
+                ));
             }
             outcome_exit(backend.run(command, config).await, diagnostics)
         }
@@ -257,6 +257,19 @@ fn outcome_exit(
         }
         Ok(DbAdminOutcome::RetriesExhausted | DbAdminOutcome::IndexJobFailed) => {
             diagnostics.error("Migration job failed after retries.");
+            ExitStatus::Failure
+        }
+        Ok(DbAdminOutcome::Views { lines }) => {
+            for line in &lines {
+                diagnostics.output(line);
+            }
+            ExitStatus::Success
+        }
+        Err(DbAdminError::Views { lines, source }) => {
+            for line in &lines {
+                diagnostics.output(line);
+            }
+            diagnostics.error(&source.to_string());
             ExitStatus::Failure
         }
         Err(error @ DbAdminError::Unrecoverable { .. }) => {

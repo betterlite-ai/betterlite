@@ -1,0 +1,35 @@
+task: B674
+deviations:
+  - what: A cached access token is reused until its refresh_on (or expires_on when the reply carries none), where azure-identity treats a token with 300 seconds or less left as expired and backs off after a failed refresh. After a refresh that gets an IdP error reply, the aging token is served while it has any time left, where msal serves it only with more than 300 seconds left.
+    why: The credential owns the token lifetime natively, as the client-secret credential does, so it refreshes later than the SDK would; the token stays valid either way and Azure accepts it.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.39.0/msal/application.py#L1761-L1774
+  - what: The authority is discovered once per credential and the token request goes to the endpoint found, while msal asks the instance-discovery endpoint for authority aliases after a token reply that carries an error member.
+    why: The aliases only serve msal's account cache lookup, which a client-credential grant never uses, and an extra metadata request adds no behavior a caller can observe.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.39.0/msal/application.py#L1689-L1692
+  - what: The token request sends Accept application/json and no x-client-sku, x-client-ver, x-client-os or x-ms-lib-capability telemetry headers.
+    why: Those headers identify the Python MSAL client and its version; a Rust gateway has no MSAL.Python build and Azure does not require them.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.39.0/msal/application.py#L921
+  - what: AZURE_REGIONAL_AUTHORITY_NAME is not read, so the token request always goes to the discovered global authority.
+    why: Regional endpoints need the SDK's region probe against the instance metadata service, which a gateway does not run, and the global endpoint serves the same tokens.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_internal/msal_credentials.py#L39-L41
+  - what: A PEM private key encrypted with a Proc-Type and DEK-Info header (the legacy OpenSSL format) is rejected, where cryptography decrypts it with the password.
+    why: No crate in the dependency set decrypts the legacy format, and the PKCS#8 form (BEGIN ENCRYPTED PRIVATE KEY) that openssl writes by default is supported with the same password.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/certificate.py#L94-L98
+  - what: An RSA private key shorter than 2048 bits cannot sign a client assertion, where cryptography signs with keys down to 512 bits.
+    why: The signing library (aws-lc) refuses RSA keys under 2048 bits, and the RSA keys issued for Azure app registrations today are 2048 bits or longer.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/certificate.py#L94-L98
+  - what: A certificate password must be text, where azure-identity also accepts raw bytes that are not valid UTF-8.
+    why: LiteLLM reads the password from AZURE_CERTIFICATE_PASSWORD, which is always text, so no working setup passes raw bytes.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/certificate.py#L154-L159
+  - what: The error for a PEM private key that cannot be decoded ends after the sentence about an incorrect format, where cryptography appends a Details line with its ASN.1 parser error.
+    why: The Details text is the internal wording of one parser, which another DER reader cannot reproduce, and the text before it is the same.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/certificate.py#L94-L98
+  - what: The exp and iat claims of a client assertion are whole seconds, where msal writes the float seconds of time.time().
+    why: RFC 7519 defines both claims as seconds since the epoch and Entra reads them as integers, so the fractional part carries no meaning.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.39.0/msal/oauth2cli/assertion.py#L108-L120
+  - what: The signing certificate of a PKCS#12 keystore is the first certificate whose local key id equals the key's local key id (two absent ids count as equal), and a keystore with no such certificate is rejected, where cryptography returns the certificate that matches the key.
+    why: The keystore library exposes the key and certificate bags with their local key id attributes and no public key comparison, and files exported by openssl, Windows and Azure Key Vault set that attribute on both bags.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/certificate.py#L101-L125
+  - what: An access token reply with a non-integer expires_in or a non-string token_type is an error that names the field, where Python's int() and dict lookup accept floats, booleans and numeric strings and keep a non-string token_type.
+    why: LiteLLM declares expires_in as int and token_type as text, and a value of the wrong type is an error rather than a silently coerced token lifetime.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_internal/client_credential_base.py#L43-L57
