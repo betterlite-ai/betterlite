@@ -1,6 +1,7 @@
 use crate::helpers::HelperResult;
 
-use input::{Function, Input};
+use betterlite_anthropic::count_tokens::wire::transform_request;
+use input::{Function, Input, Parts};
 
 mod count;
 mod fixture;
@@ -17,13 +18,24 @@ impl crate::helpers::Helper for Op {
             .enable_all()
             .build()
             .map_err(input::failure)?;
+        let cases = &input.cases;
         match input.function {
-            Function::Validate => count::validate(&input.cases),
-            Function::Transform => count::transform(&input.cases),
-            Function::Headers => count::headers(&input.cases),
-            Function::Handle => count::handle(&input.cases, &runtime),
-            Function::Counter => count::counter(&input.cases, &runtime),
-            Function::Factory => count::factory(&input.cases, &runtime),
+            Function::Validate => count::answers("results", cases, count::validate_case),
+            Function::Transform => count::answers("bodies", cases, |case| {
+                let parts = Parts::of(case)?;
+                serde_json::to_value(transform_request(&parts.body(&case.model)))
+                    .map_err(input::failure)
+            }),
+            Function::Headers => count::answers("headers", cases, count::headers_case),
+            Function::Handle => {
+                count::answers("calls", cases, |case| count::handle_case(case, &runtime))
+            }
+            Function::Counter => {
+                count::answers("calls", cases, |case| count::counter_case(case, &runtime))
+            }
+            Function::Factory => {
+                count::answers("cases", cases, |case| count::factory_case(case, &runtime))
+            }
         }
     }
 }

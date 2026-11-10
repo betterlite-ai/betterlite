@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use betterlite_anthropic::count_tokens::wire::CountTokensBody;
 use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::anthropic_count_tokens::Raw as CountTokensRaw;
@@ -91,7 +92,35 @@ pub(crate) fn json_value(value: &Value) -> Result<Json, Box<HelperError>> {
         .map_err(|error| failure(format!("the helper input is not valid JSON: {error}")))
 }
 
-pub(crate) fn optional_params(
+pub(crate) struct Parts {
+    messages: Json,
+    system: Option<Json>,
+    tools: Option<Json>,
+    params: Option<IndexMap<String, Json>>,
+}
+
+impl Parts {
+    pub(crate) fn of(case: &Case) -> Result<Self, Box<HelperError>> {
+        Ok(Self {
+            messages: case.messages.as_ref().map_or(Ok(Json::Null), json_value)?,
+            system: case.system.as_ref().map(json_value).transpose()?,
+            tools: case.tools.as_ref().map(json_value).transpose()?,
+            params: optional_params(case.optional_params.as_ref())?,
+        })
+    }
+
+    pub(crate) const fn body<'case>(&'case self, model: &'case str) -> CountTokensBody<'case> {
+        CountTokensBody {
+            model,
+            messages: &self.messages,
+            tools: self.tools.as_ref(),
+            system: self.system.as_ref(),
+            optional_params: self.params.as_ref(),
+        }
+    }
+}
+
+fn optional_params(
     params: Option<&serde_json::Map<String, Value>>,
 ) -> Result<Option<IndexMap<String, Json>>, Box<HelperError>> {
     let Some(provided) = params else {
