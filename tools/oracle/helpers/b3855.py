@@ -195,14 +195,9 @@ def configured_logger(input_value: dict[str, Json]) -> OpenTelemetry:
 
 
 def plan_value(exporter: _Exporter, headers: Mapping[str, str] | None) -> Json:
-    return cast(
-        Json,
-        {
-            "kind": exporter.kind,
-            "endpoint": exporter.endpoint,
-            "headers": dict(headers or {}),
-        },
-    )
+    fields: dict[str, Json] = {"kind": exporter.kind, "endpoint": exporter.endpoint}
+    fields["headers"] = dict(headers or {})
+    return cast(Json, fields)
 
 
 def endpoint_value(input_value: dict[str, Json]) -> Json:
