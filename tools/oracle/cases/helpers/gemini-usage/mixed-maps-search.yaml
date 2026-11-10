@@ -1,0 +1,32 @@
+kind: helper
+name: gemini-usage-mixed-maps-search
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 10
+      candidatesTokenCount: 2
+      totalTokenCount: 12
+      toolUsePromptTokenCount: 3
+      promptTokensDetails: [{modality: TEXT, tokenCount: 10}]
+    candidates:
+      - groundingMetadata:
+          webSearchQueries: [w1, w2]
+          groundingChunks:
+            - web: {}
+            - maps: {}
+      - groundingMetadata:
+          webSearchQueries: [m1]
+          groundingChunks:
+            - maps: {}
+          googleMapsWidgetContextToken: token
+    grounding_metadata:
+      - webSearchQueries: [w1, w2]
+        groundingChunks:
+          - web: {}
+          - maps: {}
+      - webSearchQueries: [m1]
+        groundingChunks:
+          - maps: {}
+        googleMapsWidgetContextToken: token
+env: {}
+compare: {ignore: []}
