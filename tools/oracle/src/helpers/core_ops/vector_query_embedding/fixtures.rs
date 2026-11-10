@@ -33,6 +33,7 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreContractError, VectorStoreEmbeddingError,
 };
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
@@ -79,6 +80,8 @@ pub(super) fn direct_executor() -> Result<DirectEmbeddingExecutor, Box<HelperErr
             mock: MockSettings::default(),
             mock_chat,
             mock_embedding,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+                .map_err(|error| helper_error(error.to_string()))?,
         },
         deployments: Vec::new(),
         defaults: OpenAiDefaults::default(),

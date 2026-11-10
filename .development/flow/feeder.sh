@@ -5,7 +5,7 @@ worktrees=${BETTERLITE_WORKTREES:-$(dirname "$main")/betterlite-worktrees}
 L=$worktrees/logs
 export BETTERLITE_LOGS=$L
 events=$L/flow-events.log
-cap=${BETTERLITE_MAX_FLOWS:-36}
+cap=${BETTERLITE_MAX_FLOWS:-40}
 mkdir -p "$L/flows"
 while [ ! -f "$L/feeder.STOP" ]; do
   while [ -e "$main/.git/betterlite/maintenance" ] || [ -e "$L/maintenance.STOP" ]; do sleep 60; done

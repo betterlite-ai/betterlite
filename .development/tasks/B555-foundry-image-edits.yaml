@@ -330,7 +330,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_image_edits)"
       && grep -q 'decode_mai_edit_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_image_edits.rs && cargo
-      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_image_edits_corpus$/)'
+      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_image_edits_corpus(::|$)/)'
   - id: config-azure-ai-api-version
     why: The AZURE_AI_API_VERSION setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::foundry_image_edits_config_cases::case_[0-9]+_loads_azure_ai_api_version$/)'

@@ -92,3 +92,10 @@ path = "fuzz_targets/route_pattern.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "custom_code_test_body"
+path = "fuzz_targets/custom_code_test_body.rs"
+test = false
+doc = false
+bench = false
