@@ -8,7 +8,7 @@ from importlib import import_module
 from types import SimpleNamespace
 from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 from unittest import mock
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from azure.core.exceptions import ClientAuthenticationError, DecodeError
 from azure.identity import CredentialUnavailableError
@@ -131,10 +131,25 @@ def recorded_request(
     }
 
 
+class ServiceFabricResponse:
+    def __init__(self, reply: Reply) -> None:
+        self.status_code = reply["status"]
+        self.headers = dict(reply["headers"])
+        self.text = reply["body"]
+
+
 class FixtureTransport:
     def __init__(self, replies: list[Reply]) -> None:
         self.replies = list(replies)
         self.requests: list[dict[str, Json]] = []
+
+    def get(
+        self, url: str, *, params: Mapping[str, str], headers: Mapping[str, str]
+    ) -> ServiceFabricResponse:
+        separator = "&" if urlsplit(url).query else "?"
+        full_url = f"{url}{separator}{urlencode(params)}"
+        self.requests.append(recorded_request("GET", full_url, headers, None))
+        return ServiceFabricResponse(self.replies.pop(0))
 
     def send(self, request: object, **_kwargs: object) -> FixtureResponse:
         http_request = cast(HttpRequestLike, request)
@@ -213,9 +228,7 @@ def build_credential(step: TokenStep, transport: FixtureTransport) -> FixtureCre
             transport=transport, client_id=client_id, identity_config=identity_config
         )
     if protocol == "service_fabric":
-        return ServiceFabricCredential(
-            client_id=client_id, identity_config=identity_config, transport=transport
-        )
+        return ServiceFabricCredential(client_id=client_id, identity_config=identity_config)
     if protocol == "azure_ml":
         return AzureMLCredential(
             client_id=client_id, identity_config=identity_config, transport=transport
@@ -266,7 +279,10 @@ def credential_token(step: TokenStep, transport: FixtureTransport, scope: str) -
 def acquire_token(step: TokenStep) -> dict[str, Json]:
     transport = FixtureTransport(step.get("replies") or [])
     scope = f"{step['resource']}/.default"
-    with fixture_host(step):
+    service_fabric_client = mock.patch.object(
+        msal_managed_identity, "_create_service_fabric_http_client", FixtureFactory(transport)
+    )
+    with fixture_host(step), service_fabric_client:
         outcome = credential_token(step, transport, scope)
     return {"requests": list(transport.requests), "outcome": outcome}
 
