@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, BufReader, Write as _};
+use std::io::{self, BufRead, BufReader, Read, Write as _};
 use std::mem;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +11,7 @@ use super::polling::RedisPolling;
 use crate::http_scenarios::error::ScenarioError;
 
 const MAX_BULK_BYTES: usize = 16 * 1024 * 1024;
+const MAX_HEADER_BYTES: u64 = 64 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
@@ -158,8 +159,18 @@ fn read_command(reader: &mut impl BufRead) -> io::Result<Option<Command>> {
 
 fn read_header(reader: &mut impl BufRead, marker: char) -> io::Result<Option<usize>> {
     let mut line = String::new();
-    if reader.read_line(&mut line)? == 0 {
+    let read = {
+        let mut limited = Read::take(&mut *reader, MAX_HEADER_BYTES);
+        limited.read_line(&mut line)?
+    };
+    if read == 0 {
         return Ok(None);
+    }
+    if !line.ends_with('\n') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a header line exceeds 64 KiB",
+        ));
     }
     line.trim().strip_prefix(marker).map_or(Ok(None), |text| {
         text.parse::<usize>()
