@@ -83,6 +83,14 @@ fn finished(status: &str) -> ScriptedResponse {
     }
 }
 
+fn running_with_retry(retry_after: &str) -> ScriptedResponse {
+    ScriptedResponse {
+        status: 200,
+        headers: vec![(RETRY_SECONDS_HEADER.to_owned(), retry_after.to_owned())],
+        body: br#"{"status":"running"}"#.to_vec(),
+    }
+}
+
 fn operation(body: &str) -> ScriptedResponse {
     ScriptedResponse {
         status: 200,
@@ -503,8 +511,8 @@ async fn a_poll_timeout_caps_the_retry_wait() {
 #[tokio::test]
 async fn a_retry_after_below_one_second_waits_the_minimum() {
     let server = ScriptedServer::start(vec![
-        accepted("0"),
-        finished("running"),
+        accepted("1"),
+        running_with_retry("0"),
         operation(&succeeded("final")),
     ])
     .await;

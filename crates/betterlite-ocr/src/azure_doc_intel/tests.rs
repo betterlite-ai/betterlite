@@ -168,7 +168,10 @@ fn pages_that_name_nothing_leave_the_query(#[case] options: &str) {
 #[case::nested(r#"{"pages":[[1]]}"#, "expected only integers or only strings")]
 #[case::letters(r#"{"pages":"a,b"}"#, "invalid native page range")]
 #[case::triple_range(r#"{"pages":"1-3-5"}"#, "invalid native page range")]
-#[case::bare_number(r#"{"pages":5}"#, "expected an array of integers or strings")]
+#[case::bare_number(
+    r#"{"pages":5}"#,
+    "expected an array of integers or strings, or a native page range"
+)]
 fn invalid_pages_name_the_reason(#[case] options: &str, #[case] reason: &str) {
     let error = map_params(&params(options)).expect_err("the pages are invalid");
     assert!(matches!(error, OcrError::Pages(message) if message == reason));
