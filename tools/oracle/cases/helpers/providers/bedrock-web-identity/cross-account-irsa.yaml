@@ -1,0 +1,33 @@
+kind: helper
+name: bedrock-web-identity-cross-account-irsa
+call:
+  bedrock_web_identity:
+    cross_account_irsa:
+      environment:
+        AWS_ACCESS_KEY_ID: AKIAAMBIENT
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_SESSION_TOKEN: ambient-session
+        AWS_REGION: us-east-1
+      irsa_role_arn: 'arn:aws:iam::123456789012:role/IrsaRole'
+      role_arn: 'arn:aws:iam::999999999999:role/TargetRole'
+      session_name: bedrock-session
+      token_file:
+        path: /var/run/secrets/token
+        content: "  irsa-token\n"
+      external_id: external-1
+      tags:
+        - {key: env, value: prod}
+      irsa_reply:
+        credentials:
+          access_key_id: ASIAIRSA
+          secret_access_key: irsa-secret
+          session_token: irsa-session
+          expiration: '2026-01-01T00:30:00Z'
+      reply:
+        credentials:
+          access_key_id: ASIATARGET
+          secret_access_key: target-secret
+          session_token: target-session
+          expiration: '2026-01-01T01:00:00Z'
+env: {}
+compare: {ignore: []}

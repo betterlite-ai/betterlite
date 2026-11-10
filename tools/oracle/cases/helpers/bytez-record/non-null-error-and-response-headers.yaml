@@ -1,0 +1,46 @@
+kind: helper
+name: bytez-record-non-null-error-and-response-headers
+call:
+  bytez_record:
+    function: reply
+    requests:
+      - body: '{"output":{"role":"assistant","content":[{"type":"text","text":"one two"}]}}'
+        status: 200
+        model: org/model
+        created: 1700000000
+        messages:
+          - role: user
+            content: "hello  world"
+        headers:
+          ratelimit-limit: "10"
+          ratelimit-remaining: "9"
+          ratelimit-reset: "1"
+          inference-meter: "3"
+          inference-time: "42ms"
+          x-request-id: abc
+      - body: '{"error":false}'
+        status: 402
+        model: org/model
+        created: 1700000000
+      - body: '{"error":""}'
+        status: 429
+        model: org/model
+        created: 1700000000
+      - body: '{"error":{"message":"upstream failed"}}'
+        status: 500
+        model: org/model
+        created: 1700000000
+      - body: '{"error":null,"output":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}'
+        status: 200
+        model: org/model
+        created: 1700000001
+      - body: 'not json'
+        status: 200
+        model: org/model
+        created: 1700000000
+      - body: '{"output":{"role":"assistant","content":"plain"}}'
+        status: 200
+        model: org/model
+        created: 1700000000
+compare: {ignore: []}
+env: {}
