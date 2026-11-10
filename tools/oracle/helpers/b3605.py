@@ -1,15 +1,17 @@
 from collections.abc import Callable
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.proxy.pass_through_endpoints import upstream_usage_headers
 from litellm.proxy.pass_through_endpoints.success_handler import PassThroughEndpointLogging
 from litellm.proxy.pass_through_endpoints.upstream_usage_headers import UpstreamReportedUsage
-from litellm.types.passthrough_endpoints.pass_through_endpoints import (
-    PassthroughStandardLoggingPayload,
-)
 from litellm.types.utils import Usage
+
+if TYPE_CHECKING:
+    from litellm.types.passthrough_endpoints.pass_through_endpoints import (
+        PassthroughStandardLoggingPayload,
+    )
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Operation: TypeAlias = Callable[[dict[str, Json]], Json]
