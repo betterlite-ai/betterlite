@@ -156,17 +156,7 @@ where
         return;
     }
     let joined = texts.join("\n\n");
-    let prefix = format!("{LLM_OUTPUT_MESSAGES}.{OUTPUT_MESSAGE_PREFIX}");
-    let role = response
-        .get("role")
-        .cloned()
-        .unwrap_or_else(|| OtelModelValue::String("assistant".to_owned()));
-    span.safe_set_attribute(OUTPUT_VALUE, &OtelModelValue::String(joined.clone()));
-    span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), &role);
-    span.safe_set_attribute(
-        &format!("{prefix}.{MESSAGE_CONTENT}"),
-        &OtelModelValue::String(joined),
-    );
+    write_message_output(span, &joined, response.get("role"));
 }
 
 fn set_choice_output<S>(span: &mut S, response: &MetadataMap)
@@ -190,15 +180,21 @@ where
     else {
         return;
     };
+    write_message_output(span, &text, message.get("role"));
+}
+
+fn write_message_output<S>(span: &mut S, text: &str, role: Option<&OtelModelValue>)
+where
+    S: Span,
+{
     let prefix = format!("{LLM_OUTPUT_MESSAGES}.{OUTPUT_MESSAGE_PREFIX}");
-    let role = message
-        .get("role")
+    let message_role = role
         .cloned()
         .unwrap_or_else(|| OtelModelValue::String("assistant".to_owned()));
-    span.safe_set_attribute(OUTPUT_VALUE, &OtelModelValue::String(text.clone()));
-    span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), &role);
+    span.safe_set_attribute(OUTPUT_VALUE, &OtelModelValue::String(text.to_owned()));
+    span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), &message_role);
     span.safe_set_attribute(
         &format!("{prefix}.{MESSAGE_CONTENT}"),
-        &OtelModelValue::String(text),
+        &OtelModelValue::String(text.to_owned()),
     );
 }

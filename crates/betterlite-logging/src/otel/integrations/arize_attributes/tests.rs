@@ -74,6 +74,13 @@ fn attributes_of(kwargs: &str, response: &str) -> BTreeMap<String, Value> {
     flow(&map(kwargs), &value(response), false).attributes
 }
 
+fn standard_logging_object(kwargs: &MetadataMap) -> Option<MetadataMap> {
+    kwargs
+        .get("standard_logging_object")
+        .and_then(OtelModelValue::as_object)
+        .cloned()
+}
+
 fn with_payload(payload: &str) -> String {
     format!(r#"{{"standard_logging_object":{payload}}}"#)
 }
@@ -350,19 +357,13 @@ fn attributes_is_worth_writing_matches_litellm_truthiness(
 
 fn session_attributes(kwargs: &str) -> BTreeMap<String, Value> {
     let source = map(kwargs);
-    let payload = source
-        .get("standard_logging_object")
-        .and_then(OtelModelValue::as_object)
-        .cloned();
+    let payload = standard_logging_object(&source);
     record(|span| identity::set_session_and_user_attrs(span, &source, payload.as_ref())).attributes
 }
 
 fn cost_attributes(payload: &str) -> BTreeMap<String, Value> {
     let source = map(&with_payload(payload));
-    let standard_logging_object = source
-        .get("standard_logging_object")
-        .and_then(OtelModelValue::as_object)
-        .cloned();
+    let standard_logging_object = standard_logging_object(&source);
     record(|span| identity::set_response_cost_attr(span, standard_logging_object.as_ref()))
         .attributes
 }
@@ -518,10 +519,7 @@ fn passthrough_attributes(
 ) -> BTreeMap<String, Value> {
     let source = map(kwargs);
     let response_value = value(response);
-    let payload = source
-        .get("standard_logging_object")
-        .and_then(OtelModelValue::as_object)
-        .cloned();
+    let payload = standard_logging_object(&source);
     record(|span| {
         passthrough::maybe_normalize_passthrough(
             span,
@@ -774,10 +772,7 @@ fn passthrough_call_type_spellings_run(#[case] call_type: &str) {
 fn mcp_attributes(kwargs: &str, response: &str, redact_messages: bool) -> BTreeMap<String, Value> {
     let source = map(kwargs);
     let response_value = value(response);
-    let payload = source
-        .get("standard_logging_object")
-        .and_then(OtelModelValue::as_object)
-        .cloned();
+    let payload = standard_logging_object(&source);
     record(|span| {
         mcp::maybe_set_mcp_tool_attrs(span, &response_value, payload.as_ref(), redact_messages);
     })

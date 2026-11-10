@@ -75,7 +75,13 @@ fn set_main_attributes<A, S>(
     A: LLMObsAttributes,
     S: Span,
 {
-    set_metadata_attribute(span, payload.get("metadata"));
+    if let Some(metadata) = payload
+        .get("metadata")
+        .filter(|value| !matches!(value, OtelModelValue::Null(())))
+        && let Ok(text) = serde_json::to_string(metadata)
+    {
+        span.safe_set_attribute(keys::METADATA, &OtelModelValue::String(text));
+    }
     set_request_attributes(span, kwargs, payload);
     set_response_identity(span, response);
     let optional_tools = kwargs
@@ -91,18 +97,6 @@ fn set_main_attributes<A, S>(
     A::set_messages(span, kwargs);
     set_model_parameters(span, payload.get("model_parameters"));
     set_response_attributes(span, response);
-}
-
-fn set_metadata_attribute<S>(span: &mut S, metadata: Option<&OtelModelValue>)
-where
-    S: Span,
-{
-    let Some(found) = metadata.filter(|value| !matches!(value, OtelModelValue::Null(()))) else {
-        return;
-    };
-    if let Ok(text) = serde_json::to_string(found) {
-        span.safe_set_attribute(keys::METADATA, &OtelModelValue::String(text));
-    }
 }
 
 fn metadata_tools(metadata: Option<&OtelModelValue>) -> Option<&[OtelModelValue]> {
