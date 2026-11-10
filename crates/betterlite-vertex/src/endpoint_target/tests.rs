@@ -13,7 +13,7 @@ macro_rules! proxy_input {
             model: Some(super::support::MODEL),
             project: Some(super::support::PROJECT),
             location: Some(super::support::LOCATION),
-            api_version: Some(crate::model_urls::ApiVersion::V1),
+            api_version: crate::model_urls::ApiVersion::V1,
             use_psc_endpoint_format: false,
         }
     };
@@ -28,9 +28,9 @@ macro_rules! token_input {
             gemini_api_key: None,
             project: Some(super::support::PROJECT),
             location: Some(super::support::LOCATION),
-            stream: None,
+            stream: false,
             api_base: None,
-            use_v1beta1_features: false,
+            api_version: crate::model_urls::ApiVersion::V1,
             mode: crate::model_urls::UrlMode::Chat,
             use_psc_endpoint_format: false,
         }

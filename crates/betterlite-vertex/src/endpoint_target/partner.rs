@@ -14,7 +14,7 @@ pub struct PartnerUrlInput<'text> {
     pub location: &'text str,
     pub project: &'text str,
     pub partner: Partner,
-    pub stream: Option<bool>,
+    pub stream: bool,
     pub model: &'text str,
     pub api_base: Option<&'text str>,
 }
@@ -37,7 +37,7 @@ pub fn create_vertex_url(input: &PartnerUrlInput<'_>) -> Result<String, Endpoint
         Partner::Ai21 => ("v1beta1", "ai21"),
         Partner::Claude => ("v1", "anthropic"),
     };
-    let endpoint = if input.stream == Some(true) {
+    let endpoint = if input.stream {
         "streamRawPredict"
     } else {
         "rawPredict"

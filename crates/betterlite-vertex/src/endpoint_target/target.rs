@@ -38,13 +38,13 @@ pub struct CustomProxyInput<'text> {
     pub provider: TargetProvider,
     pub gemini_api_key: Option<&'text SecretString>,
     pub endpoint: &'text str,
-    pub stream: Option<bool>,
+    pub stream: bool,
     pub auth_header: Option<&'text AuthHeader>,
     pub url: &'text str,
     pub model: Option<&'text str>,
     pub project: Option<&'text str>,
     pub location: Option<&'text str>,
-    pub api_version: Option<ApiVersion>,
+    pub api_version: ApiVersion,
     pub use_psc_endpoint_format: bool,
 }
 
@@ -84,7 +84,7 @@ pub fn check_custom_proxy(
     } else {
         url = vertex_proxy_url(api_base, input.url, input.endpoint)?;
     }
-    if input.stream == Some(true) {
+    if input.stream {
         url = append_alt_sse(&url);
     }
     Ok(EndpointTarget { url, auth })
@@ -97,19 +97,14 @@ pub struct TokenUrlInput<'text> {
     pub gemini_api_key: Option<&'text SecretString>,
     pub project: Option<&'text str>,
     pub location: Option<&'text str>,
-    pub stream: Option<bool>,
+    pub stream: bool,
     pub api_base: Option<&'text str>,
-    pub use_v1beta1_features: bool,
+    pub api_version: ApiVersion,
     pub mode: UrlMode,
     pub use_psc_endpoint_format: bool,
 }
 
-type NativeSelection = (
-    VertexUrl,
-    Option<AuthHeader>,
-    Option<ApiVersion>,
-    Option<String>,
-);
+type NativeSelection = (VertexUrl, Option<AuthHeader>, ApiVersion, Option<String>);
 
 pub fn get_token_and_url(
     catalog: &ModelCatalog,
@@ -143,14 +138,14 @@ fn gemini_target(input: &TokenUrlInput<'_>) -> Result<NativeSelection, EndpointT
     let url = get_gemini_url(&GeminiUrlInput {
         mode: input.mode,
         model: input.model,
-        stream: input.stream,
+        stream: Some(input.stream),
     })?;
     let mut headers = BTreeMap::new();
     headers.insert("x-goog-api-key".to_owned(), key.clone());
     Ok((
         url,
         Some(AuthHeader::Headers(headers)),
-        None,
+        ApiVersion::V1,
         input.location.map(str::to_owned),
     ))
 }
@@ -160,24 +155,20 @@ fn vertex_target(
     input: &TokenUrlInput<'_>,
 ) -> Result<NativeSelection, EndpointTargetError> {
     let region = select_region(catalog, input.model, input.location).region;
-    let version = if input.use_v1beta1_features {
-        ApiVersion::V1Beta1
-    } else {
-        ApiVersion::V1
-    };
+    let version = input.api_version;
     let url = get_vertex_url(
         catalog,
         &VertexUrlInput {
             mode: input.mode,
             model: input.model,
-            stream: input.stream,
+            stream: Some(input.stream),
             project: input.project,
             location: Some(&region),
             api_version: version,
         },
     )?;
     let auth = input.auth_token.cloned().map(AuthHeader::Token);
-    Ok((url, auth, Some(version), Some(region)))
+    Ok((url, auth, version, Some(region)))
 }
 
 pub struct PartnerRequest<'text> {
@@ -186,7 +177,7 @@ pub struct PartnerRequest<'text> {
     pub vertex_project: Option<&'text str>,
     pub project_id: &'text str,
     pub partner: Partner,
-    pub stream: Option<bool>,
+    pub stream: bool,
     pub model: &'text str,
 }
 
@@ -228,7 +219,7 @@ pub fn get_complete_vertex_url(
         model: Some(request.model),
         project: Some(project),
         location: Some(&region),
-        api_version: Some(ApiVersion::V1),
+        api_version: ApiVersion::V1,
         use_psc_endpoint_format: false,
     })?;
     Ok(target.url)
@@ -251,7 +242,7 @@ fn psc_endpoint_url(
         .filter(|value| !value.is_empty())
         .ok_or(EndpointTargetError::PscInputs)?;
     let base_model = get_vertex_base_model_name(model);
-    let version = input.api_version.unwrap_or(ApiVersion::V1);
+    let version = input.api_version;
     Ok(format!(
         "{}/{}/projects/{project}/locations/{location}/endpoints/{base_model}:{}",
         api_base.trim_end_matches('/'),

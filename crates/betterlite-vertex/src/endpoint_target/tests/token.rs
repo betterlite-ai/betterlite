@@ -6,8 +6,8 @@ use crate::endpoint_target::error::EndpointTargetError;
 use crate::endpoint_target::target::{
     AuthHeader, TargetProvider, TokenUrlInput, get_token_and_url,
 };
-use crate::model_urls::UrlMode;
 use crate::model_urls::error::VertexUrlError;
+use crate::model_urls::{ApiVersion, UrlMode};
 
 use super::support::{catalog, header_of, secret, token_of};
 
@@ -58,7 +58,7 @@ fn token_and_url_cases(#[case] scenario: TokenCase) {
         }
         TokenCase::VertexBeta => {
             let input = TokenUrlInput {
-                use_v1beta1_features: true,
+                api_version: ApiVersion::V1Beta1,
                 ..token_input!(Some(&auth))
             };
             let target = get_token_and_url(&catalog(), &input).unwrap();
@@ -69,7 +69,7 @@ fn token_and_url_cases(#[case] scenario: TokenCase) {
         }
         TokenCase::VertexStream => {
             let input = TokenUrlInput {
-                stream: Some(true),
+                stream: true,
                 ..token_input!(Some(&auth))
             };
             let target = get_token_and_url(&catalog(), &input).unwrap();
@@ -129,7 +129,7 @@ fn token_and_url_cases(#[case] scenario: TokenCase) {
         TokenCase::VertexCountTokensBeta => {
             let input = TokenUrlInput {
                 mode: UrlMode::CountTokens,
-                use_v1beta1_features: true,
+                api_version: ApiVersion::V1Beta1,
                 ..token_input!(Some(&auth))
             };
             let target = get_token_and_url(&catalog(), &input).unwrap();
@@ -168,7 +168,7 @@ fn token_and_url_cases(#[case] scenario: TokenCase) {
             let input = TokenUrlInput {
                 provider: TargetProvider::Gemini,
                 model: "gemini-3-pro-preview",
-                stream: Some(true),
+                stream: true,
                 gemini_api_key: Some(&key),
                 project: None,
                 location: None,

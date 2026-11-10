@@ -198,12 +198,13 @@ fn partner_url_cases(
     #[case] api_base: Option<&str>,
     #[case] expected: &str,
 ) {
+    let streaming = stream == Some(true);
     let url = match kind {
         PartnerUrlKind::Create => {
-            create_vertex_url(&partner_input!(partner, stream, api_base)).unwrap()
+            create_vertex_url(&partner_input!(partner, streaming, api_base)).unwrap()
         }
         PartnerUrlKind::Complete => {
-            get_complete_vertex_url(&catalog(), &partner_request!(partner, stream, api_base))
+            get_complete_vertex_url(&catalog(), &partner_request!(partner, streaming, api_base))
                 .unwrap()
         }
     };
@@ -212,13 +213,13 @@ fn partner_url_cases(
 
 #[test]
 fn create_vertex_url_validates_the_location_only_without_a_custom_base() {
-    let mut with_base = partner_input!(Partner::Llama, None, Some("https://h"));
+    let mut with_base = partner_input!(Partner::Llama, false, Some("https://h"));
     with_base.location = "bad loc!";
     assert_eq!(
         create_vertex_url(&with_base).unwrap(),
         "https://h/v1/projects/proj/locations/bad loc!/endpoints/openapi/chat/completions"
     );
-    let mut without_base = partner_input!(Partner::Llama, None, None);
+    let mut without_base = partner_input!(Partner::Llama, false, None);
     without_base.location = "bad loc!";
     let error = create_vertex_url(&without_base).unwrap_err();
     assert!(matches!(
@@ -226,14 +227,14 @@ fn create_vertex_url_validates_the_location_only_without_a_custom_base() {
         EndpointTargetError::VertexUrl(VertexUrlError::InvalidLocation)
     ));
     assert_eq!(
-        create_vertex_url(&partner_input!(Partner::Llama, None, None)).unwrap(),
+        create_vertex_url(&partner_input!(Partner::Llama, false, None)).unwrap(),
         "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/endpoints/openapi/chat/completions"
     );
 }
 
 #[test]
 fn complete_vertex_url_falls_back_to_the_project_id() {
-    let mut request = partner_request!(Partner::MistralAi, Some(false), None);
+    let mut request = partner_request!(Partner::MistralAi, false, None);
     request.vertex_project = None;
     let url = get_complete_vertex_url(&catalog(), &request).unwrap();
     assert_eq!(
@@ -244,7 +245,7 @@ fn complete_vertex_url_falls_back_to_the_project_id() {
 
 #[test]
 fn complete_vertex_url_requires_a_project() {
-    let mut request = partner_request!(Partner::MistralAi, Some(false), None);
+    let mut request = partner_request!(Partner::MistralAi, false, None);
     request.vertex_project = Some("");
     request.project_id = "";
     assert!(matches!(
@@ -255,7 +256,7 @@ fn complete_vertex_url_requires_a_project() {
 
 #[test]
 fn complete_vertex_url_resolves_a_supported_region() {
-    let mut request = partner_request!(Partner::MistralAi, Some(false), None);
+    let mut request = partner_request!(Partner::MistralAi, false, None);
     request.location = Some("europe-west1");
     request.model = "deepseek-ai/deepseek-v3.1-maas";
     let url = get_complete_vertex_url(&catalog(), &request).unwrap();

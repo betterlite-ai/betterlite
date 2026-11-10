@@ -6,6 +6,7 @@ use crate::endpoint_target::error::EndpointTargetError;
 use crate::endpoint_target::target::{
     AuthHeader, CustomProxyInput, TargetProvider, check_custom_proxy,
 };
+use crate::model_urls::ApiVersion;
 
 use super::support::{
     LOCATION, MODEL, NATIVE_URL, PROJECT, header_of, secret, token_of, version_of,
@@ -102,9 +103,10 @@ fn custom_proxy_cases(
     #[case] url: &str,
     #[case] expected: &str,
 ) {
+    let streaming = stream == Some(true);
     let input = CustomProxyInput {
         url,
-        ..proxy_input!(api_base, stream)
+        ..proxy_input!(api_base, streaming)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(target.url, expected);
@@ -116,8 +118,8 @@ fn custom_proxy_leaves_a_native_query_alone_without_a_custom_base() {
     let url = "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse";
     let input = CustomProxyInput {
         url,
-        stream: Some(true),
-        ..proxy_input!(None, None)
+        stream: true,
+        ..proxy_input!(None, false)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(target.url, url);
@@ -127,7 +129,7 @@ fn custom_proxy_leaves_a_native_query_alone_without_a_custom_base() {
 fn custom_proxy_merges_a_full_model_base_query() {
     let input = CustomProxyInput {
         api_base: Some("https://proxy.example.com/foo?x=1"),
-        ..proxy_input!(None, Some(true))
+        ..proxy_input!(None, true)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(
@@ -141,7 +143,7 @@ fn custom_proxy_appends_the_stream_query_before_an_existing_fragment() {
     let input = CustomProxyInput {
         api_base: Some("https://proxy.example.com/foo#frag"),
         url: "https://h.example.com/v1/foo:generateContent",
-        ..proxy_input!(None, Some(true))
+        ..proxy_input!(None, true)
     };
     assert_eq!(
         check_custom_proxy(&input).unwrap().url,
@@ -154,7 +156,7 @@ fn custom_proxy_passes_the_auth_token_through() {
     let auth = AuthHeader::Token(secret("tok"));
     let input = CustomProxyInput {
         auth_header: Some(&auth),
-        ..proxy_input!(Some("https://proxy.example.com"), None)
+        ..proxy_input!(Some("https://proxy.example.com"), false)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(token_of(&target), Some("tok"));
@@ -206,9 +208,9 @@ fn psc_target_cases(
     let input = CustomProxyInput {
         api_base,
         model: Some(model),
-        api_version: version.map(version_of),
+        api_version: version.map_or(ApiVersion::V1, version_of),
         use_psc_endpoint_format: true,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert_eq!(check_custom_proxy(&input).unwrap().url, expected);
 }
@@ -217,9 +219,9 @@ fn psc_target_cases(
 fn psc_target_streams_with_alt_sse() {
     let input = CustomProxyInput {
         api_base: Some("https://psc.example.com"),
-        stream: Some(true),
+        stream: true,
         use_psc_endpoint_format: true,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert_eq!(
         check_custom_proxy(&input).unwrap().url,
@@ -245,7 +247,7 @@ fn psc_target_requires_every_input(
         location,
         model,
         use_psc_endpoint_format: true,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert!(matches!(
         check_custom_proxy(&input).unwrap_err(),
@@ -260,7 +262,7 @@ fn gemini_custom_base_builds_the_model_path_and_key_header() {
         api_base: Some("https://custom.example.com"),
         provider: TargetProvider::Gemini,
         gemini_api_key: Some(&key),
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(
@@ -278,8 +280,8 @@ fn gemini_custom_base_streams_with_alt_sse() {
         provider: TargetProvider::Gemini,
         gemini_api_key: Some(&key),
         endpoint: "streamGenerateContent",
-        stream: Some(true),
-        ..proxy_input!(None, None)
+        stream: true,
+        ..proxy_input!(None, false)
     };
     assert_eq!(
         check_custom_proxy(&input).unwrap().url,
@@ -295,7 +297,7 @@ fn gemini_custom_base_requires_a_model() {
         provider: TargetProvider::Gemini,
         gemini_api_key: Some(&key),
         model: None,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert!(matches!(
         check_custom_proxy(&input).unwrap_err(),
@@ -308,7 +310,7 @@ fn gemini_custom_base_requires_a_key() {
     let input = CustomProxyInput {
         api_base: Some("https://custom.example.com"),
         provider: TargetProvider::Gemini,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert!(matches!(
         check_custom_proxy(&input).unwrap_err(),
@@ -324,7 +326,7 @@ fn gemini_custom_base_wins_over_psc_format() {
         provider: TargetProvider::Gemini,
         gemini_api_key: Some(&key),
         use_psc_endpoint_format: true,
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     assert_eq!(
         check_custom_proxy(&input).unwrap().url,
@@ -338,7 +340,7 @@ fn gemini_without_a_custom_base_returns_the_passed_auth() {
     let input = CustomProxyInput {
         provider: TargetProvider::Gemini,
         auth_header: Some(&auth),
-        ..proxy_input!(None, None)
+        ..proxy_input!(None, false)
     };
     let target = check_custom_proxy(&input).unwrap();
     assert_eq!(target.url, NATIVE_URL);

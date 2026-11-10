@@ -1,3 +1,4 @@
+use regex::{NoExpand, Regex};
 use url::Url;
 
 use crate::model_urls::ApiVersion;
@@ -5,46 +6,49 @@ use crate::model_urls::ApiVersion;
 use super::error::EndpointTargetError;
 use super::graft::parse_base;
 
+const PROJECT_PATTERN: &str = "/projects/([^/]+)";
+const LOCATION_PATTERN: &str = "/locations/([^/]+)";
+const MODEL_PATTERN: &str = "/models/([^:]+)";
+const ROUTE_PATTERN: &str = "/projects/[^/]+/locations/[^/]+/";
+
 #[must_use]
 pub fn get_vertex_project_id_from_url(url: &str) -> Option<&str> {
-    url.split("/projects/")
-        .skip(1)
-        .find_map(|rest| rest.split('/').next().filter(|value| !value.is_empty()))
+    let pattern = Regex::new(PROJECT_PATTERN).ok()?;
+    pattern
+        .captures(url)?
+        .get(1)
+        .map(|capture| capture.as_str())
 }
 
 #[must_use]
 pub fn get_vertex_location_from_url(url: &str) -> Option<&str> {
-    url.split("/locations/")
-        .skip(1)
-        .find_map(|rest| rest.split('/').next().filter(|value| !value.is_empty()))
+    let pattern = Regex::new(LOCATION_PATTERN).ok()?;
+    pattern
+        .captures(url)?
+        .get(1)
+        .map(|capture| capture.as_str())
 }
 
 #[must_use]
 pub fn get_vertex_model_id_from_url(url: &str) -> Option<&str> {
-    url.split("/models/")
-        .skip(1)
-        .find_map(|rest| rest.split(':').next().filter(|value| !value.is_empty()))
+    let pattern = Regex::new(MODEL_PATTERN).ok()?;
+    pattern
+        .captures(url)?
+        .get(1)
+        .map(|capture| capture.as_str())
 }
 
-#[must_use]
 pub fn replace_route_project_location(
     requested_route: &str,
     vertex_project: &str,
     vertex_location: &str,
-) -> String {
-    let mut replaced = String::with_capacity(requested_route.len());
-    let mut remaining = requested_route;
-    while let Some((before, rest)) = find_project_location_pair(remaining) {
-        replaced.push_str(before);
-        replaced.push_str("/projects/");
-        replaced.push_str(vertex_project);
-        replaced.push_str("/locations/");
-        replaced.push_str(vertex_location);
-        replaced.push('/');
-        remaining = rest;
-    }
-    replaced.push_str(remaining);
-    replaced
+) -> Result<String, EndpointTargetError> {
+    let pattern =
+        Regex::new(ROUTE_PATTERN).map_err(|source| EndpointTargetError::Pattern { source })?;
+    let replacement = format!("/projects/{vertex_project}/locations/{vertex_location}/");
+    Ok(pattern
+        .replace_all(requested_route, NoExpand(&replacement))
+        .into_owned())
 }
 
 #[must_use]
@@ -109,7 +113,7 @@ fn locations_route_target(
         .zip(vertex_location.filter(|value| !value.is_empty()));
     let targeted = match replacements {
         Some((project, location)) => {
-            replace_route_project_location(requested_route, project, location)
+            replace_route_project_location(requested_route, project, location)?
         }
         None => requested_route.to_owned(),
     };
@@ -135,21 +139,4 @@ fn apply_path(base: &mut Url, path: &str) -> Result<String, EndpointTargetError>
     let normalized =
         Url::parse(base.as_ref()).map_err(|source| EndpointTargetError::BaseUrl { source })?;
     Ok(normalized.to_string())
-}
-
-fn find_project_location_pair(text: &str) -> Option<(&str, &str)> {
-    for (index, _marker) in text.match_indices("/projects/") {
-        let after_marker = text.get(index.checked_add("/projects/".len())?..)?;
-        let (project, after_project) = after_marker.split_once("/locations/")?;
-        if project.is_empty() || project.contains('/') {
-            continue;
-        }
-        let (location, after_location) = after_project.split_once('/')?;
-        if location.is_empty() {
-            continue;
-        }
-        let end = text.len().saturating_sub(after_location.len());
-        return Some((text.get(..index)?, text.get(end..)?));
-    }
-    None
 }

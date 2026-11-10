@@ -42,6 +42,12 @@ use crate::model_urls::ApiVersion;
     Some("l"),
     None
 )]
+#[case::nested_models(
+    "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/a/models/b:predict",
+    Some("p"),
+    Some("l"),
+    Some("a/models/b")
+)]
 fn passthrough_extraction_cases(
     #[case] url: &str,
     #[case] project: Option<&str>,
@@ -63,11 +69,15 @@ fn passthrough_extraction_cases(
 #[case::empty_location("/projects/a/locations//x", "/projects/a/locations//x")]
 #[case::empty_project("/projects//locations/l/x", "/projects//locations/l/x")]
 #[case::project_with_slash("/projects/a/b/locations/l/x", "/projects/a/b/locations/l/x")]
+#[case::overlapping_marker(
+    "/projects/projects/x/locations/y/z",
+    "/projects/projects/p/locations/l/z"
+)]
 #[case::not_a_route("/x/projects/a/locations/b/", "/x/projects/p/locations/l/")]
 fn replace_route_project_location_cases(#[case] route: &str, #[case] expected: &str) {
     assert_eq!(
-        replace_route_project_location(route, "p", "l"),
-        expected.to_owned()
+        replace_route_project_location(route, "p", "l").unwrap(),
+        expected
     );
 }
 
@@ -186,6 +196,13 @@ fn with_api_version_cases(#[case] route: &str, #[case] expected: &str) {
     Some("p"),
     Some("l"),
     "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/m:generateContent#frag"
+)]
+#[case::overlapping_marker(
+    "https://h.example.com",
+    "/projects/projects/x/locations/y/z",
+    Some("p"),
+    Some("l"),
+    "https://h.example.com/v1/projects/projects/p/locations/l/z"
 )]
 fn construct_target_url_cases(
     #[case] base_url: &str,

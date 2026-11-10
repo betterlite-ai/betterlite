@@ -1,3 +1,4 @@
+use regex::Error as RegexError;
 use url::ParseError;
 
 use crate::model_urls::error::VertexUrlError;
@@ -17,6 +18,11 @@ pub enum EndpointTargetError {
     DefaultUrl {
         #[source]
         source: ParseError,
+    },
+    #[error("the passthrough route pattern cannot be compiled: {source}")]
+    Pattern {
+        #[source]
+        source: RegexError,
     },
     #[error("a PSC endpoint needs vertex_project, vertex_location and model")]
     PscInputs,

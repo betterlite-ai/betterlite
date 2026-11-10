@@ -11,6 +11,7 @@ use betterlite_vertex::endpoint_target::target::{
     AuthHeader, CustomProxyInput, EndpointTarget, PartnerRequest, TokenUrlInput,
     check_custom_proxy, get_api_base, get_complete_vertex_url, get_token_and_url,
 };
+use betterlite_vertex::model_urls::ApiVersion;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
@@ -27,11 +28,17 @@ pub(crate) fn run(input: &Input) -> Value {
             "api_bases": rows(&operation.api_bases, api_base_row),
         }),
         Input::LlamaOpenapi(operation) => json!({
-            "urls": rows(&operation.complete, |case| complete_row(&catalog, case)),
+            "urls": rows(&operation.complete, |case| {
+                url_json(get_complete_vertex_url(&catalog, &request_for(case)))
+            }),
         }),
         Input::Ai21Stream(operation) => json!({
-            "complete": rows(&operation.complete, |case| complete_row(&catalog, case)),
-            "create": rows(&operation.create, create_row),
+            "complete": rows(&operation.complete, |case| {
+                url_json(get_complete_vertex_url(&catalog, &request_for(case)))
+            }),
+            "create": rows(&operation.create, |case| {
+                url_json(create_vertex_url(&url_input_for(case)))
+            }),
         }),
         Input::HostAndVersionGrafts(operation) => json!({
             "proxies": rows(&operation.proxies, proxy_row),
@@ -79,34 +86,27 @@ fn api_base_row(case: &ApiBaseCase) -> Value {
     }
 }
 
-fn complete_row(catalog: &ModelCatalog, case: &CompletePartnerCase) -> Value {
-    match get_complete_vertex_url(
-        catalog,
-        &PartnerRequest {
-            custom_api_base: case.api_base.as_deref(),
-            location: case.location.as_deref(),
-            vertex_project: case.project.as_deref(),
-            project_id: case.project_id.as_deref().unwrap_or(""),
-            partner: case.partner.partner(),
-            stream: case.stream,
-            model: &case.model,
-        },
-    ) {
-        Ok(url) => json!({"url": url}),
-        Err(_error) => json!({"error": true}),
+fn request_for(case: &CompletePartnerCase) -> PartnerRequest<'_> {
+    PartnerRequest {
+        custom_api_base: case.api_base.as_deref(),
+        location: case.location.as_deref(),
+        vertex_project: case.project.as_deref(),
+        project_id: case.project_id.as_deref().unwrap_or(""),
+        partner: case.partner.partner(),
+        stream: case.stream.unwrap_or(false),
+        model: &case.model,
     }
 }
 
-fn create_row(case: &CreatePartnerCase) -> Value {
-    let input = PartnerUrlInput {
+fn url_input_for(case: &CreatePartnerCase) -> PartnerUrlInput<'_> {
+    PartnerUrlInput {
         location: &case.location,
         project: &case.project,
         partner: case.partner.partner(),
-        stream: case.stream,
+        stream: case.stream.unwrap_or(false),
         model: &case.model,
         api_base: case.api_base.as_deref(),
-    };
-    url_json(create_vertex_url(&input))
+    }
 }
 
 fn token_row(catalog: &ModelCatalog, case: &TokenCase) -> Value {
@@ -125,9 +125,13 @@ fn token_row(catalog: &ModelCatalog, case: &TokenCase) -> Value {
         gemini_api_key: key.as_ref(),
         project: case.project.as_deref(),
         location: case.location.as_deref(),
-        stream: case.stream,
+        stream: case.stream.unwrap_or(false),
         api_base: case.api_base.as_deref(),
-        use_v1beta1_features: case.use_v1beta1_features,
+        api_version: if case.use_v1beta1_features {
+            ApiVersion::V1Beta1
+        } else {
+            ApiVersion::V1
+        },
         mode: case.mode.mode(),
         use_psc_endpoint_format: case.use_psc_endpoint_format,
     };
@@ -148,13 +152,13 @@ fn proxy_row(case: &ProxyCase) -> Value {
         provider: case.provider.provider(),
         gemini_api_key: key.as_ref(),
         endpoint: case.endpoint.endpoint().as_str(),
-        stream: case.stream,
+        stream: case.stream.unwrap_or(false),
         auth_header: auth.as_ref(),
         url: &case.url,
         model: case.model.as_deref(),
         project: case.project.as_deref(),
         location: case.location.as_deref(),
-        api_version: case.version.map(VersionName::version),
+        api_version: case.version.map_or(ApiVersion::V1, VersionName::version),
         use_psc_endpoint_format: case.use_psc_endpoint_format,
     };
     target_json(check_custom_proxy(&input))
@@ -186,15 +190,13 @@ fn extraction_row(url: &String) -> Value {
 }
 
 fn target_row(case: &RouteCase) -> Value {
-    match construct_target_url(
+    construct_target_url(
         &case.base_url,
         &case.route,
         case.project.as_deref(),
         case.location.as_deref(),
-    ) {
-        Ok(url) => json!({"url": url}),
-        Err(_error) => json!({"error": true}),
-    }
+    )
+    .map_or_else(|_error| json!({"error": true}), |url| json!({"url": url}))
 }
 
 fn url_json(result: Result<String, EndpointTargetError>) -> Value {
