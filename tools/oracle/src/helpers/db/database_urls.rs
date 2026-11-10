@@ -9,7 +9,7 @@ use betterlite_db::database_urls::password::{
 use betterlite_db::database_urls::scheme::{validate_cli_urls, validate_component_schemes};
 use betterlite_db::database_urls::settings::{AuthMode, DatabaseUrlSettings, from_env};
 use betterlite_db::database_urls::tls::tls_params;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -59,16 +59,12 @@ impl Helper for Op {
             Input::BuildWriterUrl { settings, auth } => {
                 let url =
                     build_writer_url(settings, *auth).map_err(|error| helper_error(&error))?;
-                Ok(url.map_or(serde_json::Value::Null, |url| {
-                    serde_json::Value::String(url.expose_secret().to_owned())
-                }))
+                Ok(secret_value(url))
             }
             Input::BuildReaderUrl { settings, auth } => {
                 let url =
                     build_reader_url(settings, *auth).map_err(|error| helper_error(&error))?;
-                Ok(url.map_or(serde_json::Value::Null, |url| {
-                    serde_json::Value::String(url.expose_secret().to_owned())
-                }))
+                Ok(secret_value(url))
             }
             Input::TlsParams { settings } => Ok(tls_params_value(settings)),
             Input::FromEnv { environment } => {
@@ -88,15 +84,19 @@ impl Helper for Op {
             Input::ConstructCliUrl { environment } => {
                 let url = construct_cli_database_url(environment)
                     .map_err(|error| helper_error(&error))?;
-                Ok(url.map_or(serde_json::Value::Null, |url| {
-                    serde_json::Value::String(url.expose_secret().to_owned())
-                }))
+                Ok(secret_value(url))
             }
             Input::Batch { calls } => Ok(serde_json::Value::Array(
                 calls.iter().map(scenario_value).collect(),
             )),
         }
     }
+}
+
+fn secret_value(value: Option<SecretString>) -> serde_json::Value {
+    value.map_or(serde_json::Value::Null, |secret| {
+        serde_json::Value::String(secret.expose_secret().to_owned())
+    })
 }
 
 fn scenario_value(input: &Input) -> serde_json::Value {
@@ -124,15 +124,18 @@ fn query_value_json(value: &QueryValue) -> serde_json::Value {
 
 fn settings_value(settings: &DatabaseUrlSettings) -> serde_json::Value {
     serde_json::json!({
-        "database_url": &settings.database_url,
-        "direct_url": &settings.direct_url,
+        "database_url": settings.database_url.as_ref().map(SecretString::expose_secret),
+        "direct_url": settings.direct_url.as_ref().map(SecretString::expose_secret),
         "database_host": &settings.database_host,
         "database_port": &settings.database_port,
         "database_user": &settings.database_user,
         "database_name": &settings.database_name,
         "database_schema": &settings.database_schema,
         "database_password_set": settings.database_password.is_some(),
-        "database_url_read_replica": &settings.database_url_read_replica,
+        "database_url_read_replica": settings
+            .database_url_read_replica
+            .as_ref()
+            .map(SecretString::expose_secret),
         "database_host_read_replica": &settings.database_host_read_replica,
         "database_port_read_replica": &settings.database_port_read_replica,
         "database_user_read_replica": &settings.database_user_read_replica,
