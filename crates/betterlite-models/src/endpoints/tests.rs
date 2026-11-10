@@ -200,31 +200,32 @@ fn parse_rejects_a_non_boolean_route() {
     assert!(matches!(error, RegistryError::Json(_)));
 }
 
+fn joined_entries<F>(last: usize, entry: F) -> String
+where
+    F: Fn(usize) -> String,
+{
+    (0..=last).map(entry).collect::<Vec<_>>().join(",")
+}
+
 fn many_providers() -> String {
-    let entries: Vec<String> = (0_i32..=10_000_i32)
-        .map(|index| format!(r#""p{index}":{{}}"#))
-        .collect();
-    format!(r#"{{"providers":{{{}}}}}"#, entries.join(","))
+    let entries = joined_entries(10_000, |index| format!(r#""p{index}":{{}}"#));
+    format!(r#"{{"providers":{{{entries}}}}}"#)
 }
 
 fn many_provider_endpoints() -> String {
-    let entries: Vec<String> = (0_usize..=MAX_REGISTRY_ENDPOINTS)
-        .map(|index| format!(r#""e{index}":false"#))
-        .collect();
-    format!(
-        r#"{{"providers":{{"a":{{"endpoints":{{{}}}}}}}}}"#,
-        entries.join(",")
-    )
+    let entries = joined_entries(MAX_REGISTRY_ENDPOINTS, |index| {
+        format!(r#""e{index}":false"#)
+    });
+    format!(r#"{{"providers":{{"a":{{"endpoints":{{{entries}}}}}}}}}"#)
 }
 
 fn many_endpoint_labels() -> String {
-    let entries: Vec<String> = (0_usize..=MAX_REGISTRY_ENDPOINTS)
-        .map(|index| format!(r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#))
-        .collect();
-    format!(
-        r#"{{"providers":{{}},"endpoints":{{{}}}}}"#,
-        entries.join(",")
-    )
+    let entries = joined_entries(MAX_REGISTRY_ENDPOINTS, |index| {
+        format!(
+            r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
+        )
+    });
+    format!(r#"{{"providers":{{}},"endpoints":{{{entries}}}}}"#)
 }
 
 #[test]
