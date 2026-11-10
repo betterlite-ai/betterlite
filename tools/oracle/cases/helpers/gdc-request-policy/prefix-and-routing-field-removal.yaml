@@ -1,0 +1,35 @@
+kind: helper
+name: gdc-request-policy-prefix-and-routing-field-removal
+call:
+  gdc_request_policy:
+    scenarios:
+      - config: {}
+        supported:
+          - {model: gemini-2.5-pro, chat_models: [], text_models: []}
+          - {model: gemini-2.5-pro, chat_models: [gemini-2.5-pro], text_models: []}
+          - {model: gpt-4, chat_models: [gpt-4], text_models: []}
+        requests:
+          - model: gdc/gemini-2.5-pro
+            messages: [{role: user, content: hi}]
+            optional_params:
+              vertex_project: project
+              vertex_ai_project: alias-project
+              vertex_location: location
+              vertex_ai_location: alias-location
+              ssl_verify: false
+              gdc_token_caching: true
+              temperature: 1
+          - model: gemini
+            messages: [{role: user, content: hi}]
+            optional_params: {}
+          - model: gdc/gdc/model
+            messages: [{role: user, content: hi}]
+            optional_params: {max_retries: 2, tool_choice: auto}
+          - model: gdc/model
+            messages:
+              - role: user
+                content:
+                  - {type: text, text: hi, cache_control: {type: ephemeral}}
+            optional_params: {}
+env: {}
+compare: {ignore: []}

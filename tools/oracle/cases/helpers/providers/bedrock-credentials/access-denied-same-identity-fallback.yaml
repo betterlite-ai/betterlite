@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-credentials-access-denied-same-identity-fallback
+call:
+  bedrock_credentials:
+    auth_with_aws_role:
+      environment:
+        AWS_ACCESS_KEY_ID: ambient
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_EC2_METADATA_DISABLED: 'true'
+      steps:
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: bedrock
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: bedrock
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: bedrock
+      answers:
+        assume_role:
+          - error: {status: 403, code: AccessDenied, message: the caller may not assume the role}
+          - error: {status: 403, code: AccessDenied, message: the caller may not assume the role}
+          - error: {status: 500, code: InternalFailure, message: the service failed}
+        get_caller_identity:
+          - identity: {arn: 'arn:aws:sts::123456789012:assumed-role/TargetRole/session'}
+          - identity: {arn: 'arn:aws:sts::999999999999:assumed-role/TargetRole/session'}
+env: {}
+compare: {ignore: []}

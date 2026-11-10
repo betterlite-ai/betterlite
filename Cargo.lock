@@ -1103,6 +1103,8 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -1120,6 +1122,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-db",
+ "betterlite-error",
  "chrono",
  "hex",
  "lru",
@@ -1160,6 +1163,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
  "lru",
@@ -1315,12 +1319,15 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-logging",
+ "betterlite-models",
  "betterlite-secrets",
  "clap",
  "dbus-secret-service-keyring-store",
  "hex",
  "httparse",
+ "indexmap 2.14.2",
  "keyring-core",
+ "num-traits",
  "regex",
  "rstest",
  "rustix",
@@ -1335,6 +1342,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "toml_edit",
  "url",
  "windows-native-keyring-store",
 ]
@@ -1523,21 +1531,28 @@ dependencies = [
  "futures-util",
  "hex",
  "percent-encoding",
+ "rcgen",
  "regex",
  "rstest",
  "rust_decimal",
+ "rustls",
+ "rustls-native-certs",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
+ "url",
  "uuid",
 ]
 
@@ -1547,12 +1562,14 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-db",
+ "betterlite-postgres-fixture",
  "clap",
  "rstest",
  "secrecy",
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -1880,6 +1897,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "hyper",
  "indexmap 2.14.2",
  "insta",
  "jiff",
@@ -2040,6 +2058,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "strum",
  "thiserror",
  "tokio",
  "url",
@@ -2050,9 +2069,11 @@ dependencies = [
 name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -2155,6 +2176,8 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-redact",
  "betterlite-paths",
  "betterlite-policy",
  "betterlite-postgres-fixture",
@@ -2180,6 +2203,7 @@ dependencies = [
  "chrono",
  "clap",
  "cookie_store",
+ "flate2",
  "futures-util",
  "hex",
  "http 1.5.0",
@@ -2230,6 +2254,28 @@ dependencies = [
  "serde-saphyr",
  "thiserror",
  "tl",
+]
+
+[[package]]
+name = "betterlite-oracle-helper-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
+name = "betterlite-oracle-redact"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "rstest",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
 ]
 
 [[package]]
@@ -2516,6 +2562,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2716,6 +2763,7 @@ dependencies = [
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "async-trait",
  "axum",
  "base64 0.23.1",
@@ -2728,6 +2776,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
@@ -2748,6 +2797,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "http-body 1.1.0",
  "hyper-util",
  "icu_properties",
@@ -8784,6 +8834,7 @@ dependencies = [
  "indexmap 2.14.2",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
@@ -8795,6 +8846,12 @@ checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.3+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tonic"

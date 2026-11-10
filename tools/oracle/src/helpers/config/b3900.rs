@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
@@ -173,7 +174,8 @@ fn load_settings(environment: &BTreeMap<String, String>) -> Result<Settings, Box
     Ok(ConfigLoader {
         lookup: environment.clone(),
     }
-    .load("")?
+    .load("")
+    .or_config_error()?
     .sections
     .langfuse_settings)
 }

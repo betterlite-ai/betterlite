@@ -1,9 +1,26 @@
+mod input;
+mod ops;
+mod support;
+
+use serde_json::Value;
+
+use crate::helpers::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b8177")
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = support::runtime()?;
+        let mut steps = Value::Array(
+            input
+                .steps
+                .iter()
+                .map(|step| ops::execute(step, &runtime))
+                .collect(),
+        );
+        support::settle(&mut steps);
+        Ok(steps)
     }
 }

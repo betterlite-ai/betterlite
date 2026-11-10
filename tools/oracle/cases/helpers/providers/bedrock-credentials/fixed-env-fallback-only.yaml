@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-credentials-fixed-env-fallback-only
+call:
+  bedrock_credentials:
+    get_credentials:
+      environment:
+        AWS_ACCESS_KEY_ID: env-access
+        AWS_SECRET_ACCESS_KEY: env-secret
+        AWS_SESSION_TOKEN: env-token
+        AWS_REGION_NAME: us-west-2
+        AWS_ROLE_NAME: 'arn:aws:iam::123456789012:role/TargetRole'
+        AWS_SESSION_NAME: env-session
+        AWS_EC2_METADATA_DISABLED: 'true'
+      steps:
+        - params: {}
+        - params:
+            aws_session_name: explicit
+            aws_role_name: 'arn:aws:iam::999999999999:role/TargetRole'
+      answers:
+        get_caller_identity:
+          - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
+          - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
+        assume_role:
+          - credentials: {access_key_id: ASIAENV, secret_access_key: env-secret, session_token: env-token, expiration: '2026-01-01T01:00:00Z'}
+          - credentials: {access_key_id: ASIAEXPLICIT, secret_access_key: env-secret, session_token: env-token, expiration: '2026-01-01T01:00:00Z'}
+env: {}
+compare: {ignore: []}

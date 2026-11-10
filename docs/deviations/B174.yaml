@@ -1,0 +1,22 @@
+task: B174
+deviations:
+  - what: >-
+      An api_base that matches an openai_compatible_endpoints entry but reaches no provider branch and no
+      JSON-registered provider raises a BadRequestError naming the endpoint and the base. LiteLLM returns
+      from the endpoint loop with custom_llm_provider still None, which its declared tuple type does not allow.
+    why: >-
+      No working setup can rely on a provider of None: the call fails later, and the early return skips
+      model inference that would name one. provider_resolution_tests_behavior pins the refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L401-L409
+  - what: >-
+      Resolving github_copilot or chatgpt returns the declared provider and the caller's base and key
+      without starting LiteLLM's OAuth device flow; the provider tasks own that login.
+    why: >-
+      get_llm_provider runs a device login for PROVIDERS_THAT_AUTHENTICATE_ON_PROVIDER_INFO, which blocks
+      on a human. B209 exposes the declaration as authenticating_provider and the resolver keeps only that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L134-L143
+  - what: >-
+      A model_list entry whose model no provider can be resolved for stops the gateway at startup with the
+      resolution error. LiteLLM raises its BadRequestError (400) when a request reaches the deployment.
+    why: A model that names no provider can never be served, so the entry fails early with its typed cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L549-L562

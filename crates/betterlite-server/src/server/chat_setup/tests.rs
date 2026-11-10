@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::deployment::{DeploymentError, Provider};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rcgen::{CertificateParams, KeyPair};
@@ -18,7 +19,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 
-use super::chat_executor;
+use super::{ChatSetupError, chat_executor};
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"u","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#;
 
@@ -88,6 +89,82 @@ async fn http_pool_tests_behavior(#[case] verify: &str, #[case] expected: &str) 
     );
     let observed = answered.map_or_else(|error| error.to_string(), |_outcome| "ok".to_owned());
     assert!(observed.contains(expected), "{observed}");
+}
+
+#[rstest]
+#[case::a_declared_custom_provider_serves_a_bare_model(
+    "      model: vendor-model\n      custom_llm_provider: openai\n      api_key: k\n",
+    "vendor-model"
+)]
+#[case::the_bundled_catalog_resolves_a_bare_openai_model(
+    "      model: gpt-4o\n      api_key: k\n",
+    "gpt-4o"
+)]
+fn provider_resolution_tests_behavior(#[case] params: &str, #[case] expected: &str) {
+    let yaml = format!("model_list:\n  - model_name: g\n    litellm_params:\n{params}");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    assert_eq!(
+        deployment.provider,
+        Provider::OpenAi {
+            model: expected.to_owned()
+        }
+    );
+}
+
+#[test]
+fn a_deployment_no_provider_places_fails_setup_with_the_resolution_error() {
+    let yaml =
+        "model_list:\n  - model_name: g\n    litellm_params:\n      model: not-a-known-model\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let result = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1));
+    assert!(matches!(
+        result,
+        Err(ChatSetupError::Deployment {
+            source: DeploymentError::Resolution { .. }
+        })
+    ));
+}
+
+#[test]
+fn a_bedrock_mantle_deployment_still_starts_as_unsupported() {
+    let yaml = "model_list:\n  - model_name: m\n    litellm_params:\n      model: bedrock_mantle/openai.gpt-oss-120b\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n      api_key: k\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let [mantle, openai] = chat.deployments.as_slice() else {
+        panic!("both deployments start");
+    };
+    assert!(matches!(mantle.provider, Provider::Unsupported { .. }));
+    assert!(matches!(openai.provider, Provider::OpenAi { .. }));
+}
+
+#[test]
+fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
+    let yaml = "model_list:\n  - model_name: g\n    litellm_params:\n      model: groq/llama\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let environment = BTreeMap::from([("GROQ_API_KEY".to_owned(), "groq-secret".to_owned())]);
+    let chat = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    assert!(matches!(deployment.provider, Provider::Unsupported { .. }));
+    assert!(deployment.api_key.is_none());
+    assert_eq!(deployment.api_base, "https://api.openai.com/v1");
 }
 
 #[tokio::test]
