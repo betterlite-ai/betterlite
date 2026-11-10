@@ -1,0 +1,44 @@
+kind: helper
+name: provider-metadata-factory-metadata-adapter-selection
+call:
+  provider_metadata_factory:
+    metadata_adapter_selection:
+      queries:
+        - model: "gpt-4o"
+          providers:
+            - fireworks_ai
+            - openai
+            - gemini
+            - vertex_ai
+            - litellm_proxy
+            - topaz
+            - anthropic
+            - xai
+            - ollama
+            - ollama_chat
+            - vllm
+            - hosted_vllm
+            - lemonade
+            - clarifai
+            - edenai
+            - bedrock
+            - azure_ai
+        - providers:
+            - openai_like
+            - custom_openai
+            - azure
+            - azure_text
+            - vertex_ai_beta
+            - text-completion-openai
+            - chatgpt
+            - cohere
+            - cohere_chat
+            - anthropic_text
+            - bedrock_mantle
+            - gdc
+            - meta_llama
+            - litellm_agent
+            - qwen_ai_platform
+            - petals
+env: {}
+compare: {ignore: []}

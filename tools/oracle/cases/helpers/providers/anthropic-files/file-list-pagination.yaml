@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-files-file-list-pagination
+call:
+  anthropic_files:
+    file_list_pagination:
+      now: 1700000000
+      params_api_base: "https://files.test/v1///"
+      purposes: [messages, "", null]
+      body:
+        data:
+          - {id: file-1, filename: a.txt, size_bytes: 3, created_at: "2025-01-01T00:00:00Z", purpose: messages}
+          - {id: file-2}
+        has_more: true
+        first_id: file-1
+        last_id: file-2
+env: {}
+compare: {ignore: []}

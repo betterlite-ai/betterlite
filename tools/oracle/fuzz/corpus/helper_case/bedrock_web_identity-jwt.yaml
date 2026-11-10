@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-web-identity-jwt-seed
+call:
+  bedrock_web_identity:
+    jwt_audience_hint:
+      tokens:
+        - header.eyJhdWQiOiJsaXRlbGxtIn0.signature
+        - header.e30.signature
+        - a.b
+env: {}
+compare: {ignore: []}

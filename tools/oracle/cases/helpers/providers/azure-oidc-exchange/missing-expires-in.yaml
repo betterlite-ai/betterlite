@@ -1,0 +1,23 @@
+kind: helper
+name: missing-expires-in
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"tok"}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"tok","expires_in":null}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"zero","expires_in":0}'}
+env: {}
+compare: {ignore: []}
