@@ -40,11 +40,12 @@ where
             .ok_or(ImageTransportError::MissingStatusInitial)?;
         while !matches!(&status, JsonValue::String(value) if value.as_str() == "succeeded" || value.as_str() == "failed")
         {
-            if self.clock.now().saturating_sub(started) > self.settings.timeout {
+            let elapsed = self.clock.now().saturating_sub(started);
+            if elapsed > self.settings.timeout {
                 return Err(ImageTransportError::PollingTimeout);
             }
             let seconds = retry_after(&reply.headers)?;
-            sleep(self.clock, seconds, self.settings.style).await?;
+            self.wait(seconds, elapsed).await?;
             reply = send(
                 self.client,
                 Method::GET,
@@ -61,6 +62,17 @@ where
                 .ok_or(ImageTransportError::MissingStatus)?;
         }
         Ok((reply, operation))
+    }
+
+    async fn wait(&self, seconds: i64, elapsed: Duration) -> Result<(), ImageTransportError> {
+        let remaining = self.settings.timeout.saturating_sub(elapsed);
+        let requested = Duration::from_secs(u64::try_from(seconds).unwrap_or(0));
+        if requested > remaining {
+            let capped = i64::try_from(remaining.as_secs()).unwrap_or(i64::MAX);
+            self.clock.pause(capped).await;
+            return Err(ImageTransportError::PollingTimeout);
+        }
+        sleep(self.clock, seconds, self.settings.style).await
     }
 }
 

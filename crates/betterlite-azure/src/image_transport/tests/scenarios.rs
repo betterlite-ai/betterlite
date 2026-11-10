@@ -139,13 +139,16 @@ pub(super) fn poll_default_timeout_120() {
     let outcome = run(Step::preview(vec![
         submit_reply(),
         reply(200, vec![("retry-after", "120")], RUNNING),
-        reply(200, vec![("retry-after", "1")], RUNNING),
-        reply(200, vec![], RUNNING),
+        reply(200, vec![("retry-after", "0")], RUNNING),
+        Reply {
+            delay: 1,
+            ..reply(200, vec![], RUNNING)
+        },
     ]));
     let failure = failure_of(&outcome);
     assert!(matches!(failure, ImageTransportError::PollingTimeout));
     assert_eq!(failure.status_code(), Some(408));
-    assert_eq!(outcome.harness.sleeps(), vec![120, 1]);
+    assert_eq!(outcome.harness.sleeps(), vec![120, 0]);
     assert_eq!(outcome.harness.calls().len(), 4);
 }
 
@@ -223,15 +226,39 @@ fn timeout_strictly_greater() {
     let outcome = run(Step::preview(vec![
         submit_reply(),
         reply(200, vec![("retry-after", "10")], RUNNING),
-        reply(200, vec![("retry-after", "10")], RUNNING),
-        reply(200, vec![], RUNNING),
+        reply(200, vec![("retry-after", "0")], RUNNING),
+        Reply {
+            delay: 1,
+            ..reply(200, vec![], RUNNING)
+        },
     ])
     .with_timeout("10"));
     let failure = failure_of(&outcome);
     assert!(matches!(failure, ImageTransportError::PollingTimeout));
     assert_eq!(failure.status_code(), Some(408));
-    assert_eq!(outcome.harness.sleeps(), vec![10, 10]);
+    assert_eq!(outcome.harness.sleeps(), vec![10, 0]);
     assert_eq!(outcome.harness.calls().len(), 4);
+}
+
+pub(super) fn retry_after_capped_at_deadline() {
+    for (style_sync, header) in [(false, "86400"), (true, "21")] {
+        let mut step = Step::preview(vec![
+            submit_reply(),
+            reply(200, vec![("retry-after", "100")], RUNNING),
+            reply(200, vec![("retry-after", header)], RUNNING),
+            reply(200, vec![], SUCCEEDED),
+        ]);
+        if style_sync {
+            step = step.sync();
+        }
+        let outcome = run(step);
+        let failure = failure_of(&outcome);
+        assert!(matches!(failure, ImageTransportError::PollingTimeout));
+        assert_eq!(failure.status_code(), Some(408));
+        assert_eq!(outcome.harness.sleeps(), vec![100, 20]);
+        assert_eq!(outcome.harness.elapsed_seconds(), 120);
+        assert_eq!(outcome.harness.calls().len(), 3);
+    }
 }
 
 fn timeout_terminal_after_deadline() {

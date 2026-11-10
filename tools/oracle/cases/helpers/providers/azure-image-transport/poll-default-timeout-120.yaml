@@ -13,7 +13,7 @@ call:
         replies:
           - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
           - {status: 200, headers: {retry-after: '120'}, body: '{"status":"running"}'}
-          - {status: 200, headers: {retry-after: '1'}, body: '{"status":"running"}'}
-          - {status: 200, body: '{"status":"running"}'}
+          - {status: 200, headers: {retry-after: '0'}, body: '{"status":"running"}'}
+          - {status: 200, body: '{"status":"running"}', delay: 1}
 env: {}
 compare: {ignore: []}

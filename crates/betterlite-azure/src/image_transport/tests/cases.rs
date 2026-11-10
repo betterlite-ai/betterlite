@@ -14,6 +14,7 @@ use super::scenarios;
 #[case::missing_operation_location_500(scenarios::missing_operation_location_500)]
 #[case::missing_status_502(scenarios::missing_status_502)]
 #[case::polling_timeout_408(scenarios::polling_timeout_408)]
+#[case::retry_after_capped_at_deadline(scenarios::retry_after_capped_at_deadline)]
 #[case::failed_operation_400(scenarios::failed_operation_400)]
 #[case::retry_after_not_integer(scenarios::retry_after_not_integer)]
 #[case::preview_submit_gate(scenarios::preview_submit_gate)]
