@@ -6,7 +6,7 @@ use std::path::Path;
 
 use secrecy::ExposeSecret as _;
 
-use crate::oidc_exchange::decode_azure_oidc_token;
+use crate::oidc_exchange::token::decode_azure_oidc_token;
 use fixture::{
     ASSERTION, ASSERTION_ENV, ASSERTION_REF, CLIENT, Fixture, Reply, TENANT, default_input,
     form_map, input,

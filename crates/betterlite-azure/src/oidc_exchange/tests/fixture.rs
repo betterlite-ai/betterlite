@@ -11,7 +11,6 @@ use crate::oidc_exchange::transport::{Clock, HttpReply, Transport};
 use crate::oidc_exchange::{AzureOidcExchange, OidcExchangeError, OidcExchangeInput};
 
 pub(super) const NOW: f64 = 1_700_000_000.0;
-pub(super) const AUTHORITY: &str = "https://login.microsoftonline.com";
 pub(super) const TENANT: &str = "tenant";
 pub(super) const CLIENT: &str = "client";
 pub(super) const ASSERTION: &str = "assertion-value";

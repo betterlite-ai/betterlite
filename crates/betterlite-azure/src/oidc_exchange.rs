@@ -10,13 +10,14 @@ use betterlite_context::local_ttl_cache::credential::{
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 use crate::azure_client_secret::SecretResolver;
+use token::decode_azure_oidc_token;
 use transport::{Clock, Transport};
 
+pub mod token;
 pub mod transport;
 
 mod tests;
@@ -276,57 +277,4 @@ fn cache_key(
     let digest = hex::encode(Sha256::digest(token.expose_secret().as_bytes()));
     // the digest is a fixed 64 hex digits, so the tenant length prefix keeps the scope boundary exact
     identity.cache_key(&format!("{}:{tenant}:{digest}{scope}", tenant.len()))
-}
-
-#[derive(Deserialize)]
-struct RawToken {
-    access_token: Option<TextField>,
-    expires_in: Option<NumberField>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum TextField {
-    Text(String),
-    Other(IgnoredAny),
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum NumberField {
-    Number(i64),
-    Other(IgnoredAny),
-}
-
-#[derive(Debug)]
-pub struct AzureAdToken {
-    pub access_token: Option<SecretString>,
-    pub expires_in: Option<i64>,
-}
-
-pub fn decode_azure_oidc_token(bytes: &[u8]) -> Result<AzureAdToken, OidcExchangeError> {
-    let parsed: RawToken =
-        serde_json::from_slice(bytes).map_err(|source| OidcExchangeError::TokenJson { source })?;
-    let access_token = match parsed.access_token {
-        Some(TextField::Text(token)) => Some(SecretString::from(token)),
-        Some(TextField::Other(_)) => {
-            return Err(OidcExchangeError::TokenFieldType {
-                field: "access_token",
-            });
-        }
-        None => None,
-    };
-    let expires_in = match parsed.expires_in {
-        Some(NumberField::Number(value)) => Some(value),
-        Some(NumberField::Other(_)) => {
-            return Err(OidcExchangeError::TokenFieldType {
-                field: "expires_in",
-            });
-        }
-        None => None,
-    };
-    Ok(AzureAdToken {
-        access_token,
-        expires_in,
-    })
 }
