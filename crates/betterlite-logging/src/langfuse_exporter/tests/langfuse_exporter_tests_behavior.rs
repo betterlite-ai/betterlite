@@ -258,7 +258,6 @@ fn truncates_the_largest_field_of_a_single_span() {
     assert_eq!(attribute(&requests[3][0], METADATA), None);
 }
 
-#[test]
 #[rstest]
 #[case::output_is_largest("a", "bbbb", OUTPUT)]
 #[case::a_tie_keeps_the_first_group("aa", "bb", INPUT)]
