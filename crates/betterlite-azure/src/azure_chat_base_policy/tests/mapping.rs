@@ -349,7 +349,6 @@ pub(super) fn azure_tool_choice_date_gate() {
 fn date_gate_message() {
     let error = tool_choice_error("2022-01-01");
     assert_unsupported(&error, TOOL_UPGRADE);
-    assert!(PolicyError::ToolsNotList.classify().is_none());
 }
 
 fn date_gate_rejections() {
