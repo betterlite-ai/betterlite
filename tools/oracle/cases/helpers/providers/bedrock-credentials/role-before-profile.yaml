@@ -1,0 +1,38 @@
+kind: helper
+name: bedrock-credentials-role-before-profile
+call:
+  bedrock_credentials:
+    get_credentials:
+      environment:
+        AWS_ACCESS_KEY_ID: ambient
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_EC2_METADATA_DISABLED: 'true'
+      steps:
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_profile_name: named
+            aws_access_key_id: static-key
+            aws_secret_access_key: static-secret
+            aws_region_name: us-east-1
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_profile_name: named
+            aws_access_key_id: static-key
+            aws_secret_access_key: static-secret
+            aws_region_name: us-east-1
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: explicit
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: other
+      answers:
+        get_caller_identity:
+          - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
+          - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
+          - identity: {arn: 'arn:aws:sts::123456789012:assumed-role/TargetRole/session'}
+        assume_role:
+          - credentials: {access_key_id: ASIAFIRST, secret_access_key: first-secret, session_token: first-token, expiration: '2026-01-01T01:00:00Z'}
+          - credentials: {access_key_id: ASIAEXPLICIT, secret_access_key: explicit-secret, session_token: explicit-token, expiration: '2026-01-01T01:00:00Z'}
+env: {}
+compare: {ignore: []}

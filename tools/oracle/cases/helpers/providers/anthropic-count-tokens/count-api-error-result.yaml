@@ -1,0 +1,41 @@
+kind: helper
+name: count-api-error-result
+call:
+  anthropic_count_tokens:
+    function: counter
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 429, body: rate limited}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply:
+            status: 400
+            body: '{"type":"error","error":{"type":"invalid_request_error","message":"bad"}}'
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 201, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 200, body: not json}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 200, body: '[]'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 200, body: ''}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-error}}
+          reply: {status: 200, body: '{"input_tokens":null}'}
+env: {}
+compare: {ignore: []}

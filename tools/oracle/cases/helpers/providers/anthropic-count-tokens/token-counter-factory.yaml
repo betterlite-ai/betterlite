@@ -1,0 +1,19 @@
+kind: helper
+name: token-counter-factory
+call:
+  anthropic_count_tokens:
+    function: factory
+    cases:
+        - models: [claude-3-5-sonnet-20241022, gpt-4o, anthropic/claude-opus-4-1]
+          providers: [anthropic, openai, null]
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-factory}}
+          environment: {ANTHROPIC_API_KEY: sk-factory-environment}
+          reply: {status: 200, body: '{"input_tokens":3}'}
+        - models: [claude-3-5-sonnet-20241022]
+          providers: [anthropic, azure_ai]
+          messages: [{role: user, content: hi}]
+          environment: {ANTHROPIC_API_KEY: sk-factory-environment}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}
