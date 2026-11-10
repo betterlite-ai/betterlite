@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::str;
 
 use chrono::NaiveDate;
 use rstest::rstest;
@@ -152,7 +153,10 @@ fn public_error_detail_serializes_the_fastapi_detail_body() {
 
 #[rstest]
 fn replays_the_canonical_date_corpus(#[files("fuzz/corpus/canonical_date/*")] path: PathBuf) {
-    let text = fs::read_to_string(path).unwrap();
-    let _parsed = parse_canonical_date(&text);
-    let _range = parse_canonical_date_range(Some(&text), Some(&text));
+    let bytes = fs::read(path).unwrap();
+    let Ok(text) = str::from_utf8(&bytes) else {
+        return;
+    };
+    let _parsed = parse_canonical_date(text);
+    let _range = parse_canonical_date_range(Some(text), Some(text));
 }
