@@ -71,7 +71,7 @@ checks:
     - id: hook-oracle
       why: Filtered tool lists or headers differ from LiteLLM on the same input.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-semantic-hook
 
 oracle_cases: []

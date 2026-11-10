@@ -1,0 +1,5 @@
+kind: helper
+name: key-before-auth-token
+call: {anthropic_credentials: {function: auth_header, environment: {ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: auth-token-value}}}
+env: {}
+compare: {ignore: []}

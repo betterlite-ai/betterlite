@@ -1,0 +1,17 @@
+kind: helper
+name: database-urls-reader-batch-seed
+call:
+  database_urls:
+    function: batch
+    calls:
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_host_read_replica: replica.example
+      - function: validate_schemes
+        settings:
+          database_url: postgresql://writer/db
+env: {}
+compare: {ignore: []}

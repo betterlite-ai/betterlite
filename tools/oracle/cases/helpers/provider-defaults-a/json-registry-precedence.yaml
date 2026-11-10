@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-json-registry-precedence
+call:
+  provider_defaults_a:
+    provider: publicai
+    model: any-model
+    environment:
+      PUBLICAI_API_BASE: https://env.publicai.example/v1
+      PUBLICAI_API_KEY: public-key
+env: {}
+compare: {ignore: []}

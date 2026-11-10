@@ -1,0 +1,23 @@
+kind: helper
+name: pipeline-bodies
+call:
+  b5991:
+    steps:
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["hello", "world"], pipeline_tag: "feature-extraction"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["hello", "world"], pipeline_tag: "embed"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["hello", "world"]}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["hello", "world"], pipeline_tag: "text-generation"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["first", "second"], pipeline_tag: "sentence-similarity"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["first", "second", "third"], pipeline_tag: "similarity"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["question", "document one", "document two"], pipeline_tag: "rerank"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["only"], pipeline_tag: "sentence-similarity"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: [], pipeline_tag: "sentence-similarity"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["only"], pipeline_tag: "rerank"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: [], pipeline_tag: "rerank"}
+      - {kind: pipeline_tag, input: ["one", "two"], pipeline_tag: null}
+      - {kind: pipeline_tag, input: ["one", "two"], pipeline_tag: "embed"}
+      - {kind: pipeline_tag, input: ["one", "two"], pipeline_tag: "similarity"}
+      - {kind: pipeline_tag, input: ["only"], pipeline_tag: "sentence-similarity"}
+      - {kind: pipeline_tag, input: ["only"], pipeline_tag: "rerank"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_load_blank_value","call":{"b8191":{"operation":"allowlist_load","settings":{"mcp_allowed_clients":[{"alias":"app one","value":"client-2"},{"alias":"app two","value":""}],"mcp_client_id_header":"X-Client-ID"}}},"env":{},"compare":{"ignore":[]}}

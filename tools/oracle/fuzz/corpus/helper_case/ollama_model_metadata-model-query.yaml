@@ -1,0 +1,15 @@
+kind: helper
+name: ollama-model-metadata-seed-model-query
+call:
+  ollama_model_metadata:
+    runtime_model_query:
+      fixture:
+        env: {OLLAMA_API_BASE: "http://env-host:11434", OLLAMA_API_KEY: env-key}
+        catalog: []
+      model: "ollama/llama3"
+      scenarios:
+        - {kind: success, body: '{"template":"tools"}'}
+        - {kind: failure}
+        - {kind: status, status: 500, body: '{}'}
+env: {}
+compare: {ignore: []}

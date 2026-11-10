@@ -12,6 +12,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["asyn
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
@@ -25,6 +26,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
 unicode-general-category = "1.1.0"
+unicode-normalization = "0.1.26"
 url = "2.5.8"
 
 [dev-dependencies]

@@ -1,0 +1,11 @@
+kind: helper
+name: ollama-model-metadata-seed-static-catalog
+call:
+  ollama_model_metadata:
+    static_catalog_first:
+      fixture:
+        env: {}
+        catalog: ["ollama/llama2", "plain-model"]
+      models: [llama2, ollama/llama2, plain-model, missing-model]
+env: {}
+compare: {ignore: []}

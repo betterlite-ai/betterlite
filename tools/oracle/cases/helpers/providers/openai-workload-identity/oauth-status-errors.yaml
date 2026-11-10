@@ -1,0 +1,39 @@
+kind: helper
+name: openai-workload-identity-oauth-status-errors
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        oauth: "subject"
+      replies:
+        - {status: 400, body: '{"error":"invalid_grant","error_description":"subject token expired"}'}
+        - {status: 401, body: '{"error":"invalid_client"}'}
+        - {status: 403, body: ''}
+        - {status: 400, body: 'not json'}
+        - {status: 400, body: '{"error":"x","error_description":""}'}
+        - {status: 401, body: '{"error":"e","error_description":5}'}
+        - {status: 500, body: ''}
+        - {status: 404, body: '{"error":"nf"}'}
+        - {status: 429, body: '{"error":"rate"}'}
+        - {status: 302, body: ''}
+        - {status: 200, body: ''}
+        - {status: 200, body: '   '}
+        - {status: 200, body: 'null'}
+        - {status: 201, body: '{"access_token":"t-created","expires_in":60}'}
+      steps:
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}
+        - {op: token, identity: {name: oauth}}

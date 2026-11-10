@@ -1,0 +1,10 @@
+kind: helper
+name: cache-coordination-loader-failure-signals
+call:
+  b4291:
+    coordinator_loader_failure:
+      value:
+        retry: ok
+env: {}
+compare:
+  ignore: []

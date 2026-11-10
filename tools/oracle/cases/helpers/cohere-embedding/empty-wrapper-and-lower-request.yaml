@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-empty-wrapper-and-lower-request
+call:
+  cohere_embedding: {function: request, model: embed-english-v3.0, inputs: [[], single string, [1, 2], [[a]]]}
+compare: {ignore: []}
+env: {}
