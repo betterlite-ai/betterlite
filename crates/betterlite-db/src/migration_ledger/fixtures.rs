@@ -69,32 +69,7 @@ pub(super) struct TestDatabase {
     pub url: SecretString,
 }
 
-pub(super) async fn database<F, Fut>(test: F)
-where
-    F: FnOnce(TestDatabase) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    harness(1, move |mut databases| {
-        let only = databases.remove(0);
-        test(only)
-    })
-    .await;
-}
-
-// The live database and the independently initialized reference database a baseline verifies against
-pub(super) async fn database_pair<F, Fut>(test: F)
-where
-    F: FnOnce(TestDatabase, TestDatabase) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    harness(2, move |mut databases| {
-        let reference = databases.remove(1);
-        test(databases.remove(0), reference)
-    })
-    .await;
-}
-
-async fn harness<F, Fut>(count: usize, test: F)
+pub(super) async fn harness<F, Fut>(count: usize, test: F)
 where
     F: FnOnce(Vec<TestDatabase>) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,

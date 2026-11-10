@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::future::Future;
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -17,8 +18,8 @@ use super::baseline::{BaselineError, BaselineInputs, baseline_current_schema};
 use super::environment::{migration_environment, prisma_schema_param};
 use super::fixtures::{
     DrawingJitter, HistorySource, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase,
-    acquired_coordinator, apply_history, database, database_pair, exists, insert_row, ledger_rows,
-    migration, pinned_manifest, read_contract, runtime_catalog, schema_prisma_bytes,
+    acquired_coordinator, apply_history, exists, harness, insert_row, ledger_rows, migration,
+    pinned_manifest, read_contract, runtime_catalog, schema_prisma_bytes,
 };
 use super::inert::{InertError, is_inert_migration, rollback_inert_migration};
 use super::ledger_reads::{FailedLookup, FailedMigration, look_up_failed_migration};
@@ -34,6 +35,27 @@ use super::timeouts::{
 };
 use crate::migration_deploy::catalog::Migration;
 use crate::schema_contract::SchemaContract;
+
+async fn database<F, Fut>(test: F)
+where
+    F: FnOnce(TestDatabase) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    harness(1, move |mut databases| test(databases.remove(0))).await;
+}
+
+// The live database and the independently initialized reference database a baseline verifies against
+async fn database_pair<F, Fut>(test: F)
+where
+    F: FnOnce(TestDatabase, TestDatabase) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    harness(2, move |mut databases| {
+        let reference = databases.remove(1);
+        test(databases.remove(0), reference)
+    })
+    .await;
+}
 
 async fn connection(pool: &Pool) -> ClientWrapper {
     Client::take(pool.get().await.unwrap())
