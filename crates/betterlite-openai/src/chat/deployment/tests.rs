@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error as _;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
@@ -106,8 +105,7 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
 fn a_model_no_provider_places_is_a_resolution_error(#[case] entry: &str) {
     let error = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap_err();
     assert!(matches!(error, DeploymentError::Resolution { .. }));
-    assert!(error.to_string().contains("model_list entry g"));
-    assert!(error.source().is_some());
+    assert!(error.to_string().contains("LLM Provider NOT provided"));
 }
 
 #[rstest]

@@ -27,23 +27,37 @@ pub(super) fn resolve(
             return Ok(super::unchanged(model, identity, request));
         }
     };
-    let prepared = RequestA {
+    let first = RequestA {
         provider: DefaultsProvider::Known(provider),
         model: model.clone(),
         api_base: request.api_base.map(str::to_owned),
         api_key: request.api_key.cloned(),
     };
     match resolve_a(
-        prepared,
+        first,
         context.environment,
         &context.registry,
         &context.policies,
     ) {
-        Ok(resolved) => Ok(from_a(resolved)),
-        Err(DefaultsAError::UnknownProvider { .. }) => {
-            resolve_from_second_table(provider, model, request, context)
-        }
-        Err(source) => Err(ResolutionError::DefaultsA { source }),
+        Ok(resolved) => return Ok(from_a(resolved)),
+        Err(DefaultsAError::UnknownProvider { .. }) => {}
+        Err(source) => return Err(ResolutionError::DefaultsA { source }),
+    }
+    // A provider that neither table knows keeps the caller's base and key, as LiteLLM's fallthrough does.
+    let second = RequestB {
+        provider,
+        model: model.clone(),
+        api_base: request.api_base.map(str::to_owned),
+        api_key: request.api_key.cloned(),
+    };
+    match resolve_b(second, &context.globals, context.environment) {
+        Ok(resolved) => Ok(from_b(provider, resolved)),
+        Err(DefaultsBError::UnknownProvider { .. }) => Ok(super::unchanged(
+            model,
+            ProviderIdentity::Known(provider),
+            request,
+        )),
+        Err(source) => Err(ResolutionError::DefaultsB { source }),
     }
 }
 
@@ -56,30 +70,6 @@ fn from_a(resolved: ResolvedA) -> ResolvedModel {
         },
         api_base: resolved.api_base,
         api_key: resolved.api_key,
-    }
-}
-
-// A provider that neither table knows keeps the caller's base and key, as LiteLLM's fallthrough does.
-fn resolve_from_second_table(
-    provider: ProviderId,
-    model: String,
-    request: &ResolutionRequest<'_>,
-    context: &ResolutionContext<'_>,
-) -> Result<ResolvedModel, ResolutionError> {
-    let prepared = RequestB {
-        provider,
-        model: model.clone(),
-        api_base: request.api_base.map(str::to_owned),
-        api_key: request.api_key.cloned(),
-    };
-    match resolve_b(prepared, &context.globals, context.environment) {
-        Ok(resolved) => Ok(from_b(provider, resolved)),
-        Err(DefaultsBError::UnknownProvider { .. }) => Ok(super::unchanged(
-            model,
-            ProviderIdentity::Known(provider),
-            request,
-        )),
-        Err(source) => Err(ResolutionError::DefaultsB { source }),
     }
 }
 

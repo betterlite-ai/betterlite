@@ -46,10 +46,9 @@ pub enum DeploymentError {
         #[source]
         source: TryFromFloatSecsError,
     },
-    #[error("model_list entry {model_name} names a model no provider is resolved for: {source}")]
+    #[error(transparent)]
     Resolution {
-        model_name: String,
-        #[source]
+        #[from]
         source: ResolutionError,
     },
 }
@@ -118,11 +117,7 @@ impl ChatDeployment {
         let params = &deployment.litellm_params;
         let model_name = &deployment.model_name;
         let litellm_model = params.model.clone().unwrap_or_default();
-        let provider = resolved_provider(&litellm_model, custom_llm_provider, params, context)
-            .map_err(|source| DeploymentError::Resolution {
-                model_name: model_name.clone(),
-                source,
-            })?;
+        let provider = resolved_provider(&litellm_model, custom_llm_provider, params, context)?;
         let api_base = params
             .api_base
             .iter()
