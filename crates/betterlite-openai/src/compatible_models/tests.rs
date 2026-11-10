@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,7 +11,12 @@ use betterlite_http::proxy::ProxiedClient;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
+use tracing::Subscriber;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::set_default;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
 
 use super::error::ModelInfoError;
 use super::{
@@ -23,6 +29,39 @@ use crate::openai_base_config::Headers;
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 const TWO_MIB: usize = 2 * 1024 * 1024;
 const ONE_MODEL: &str = r#"{"data":[{"id":"m","max_model_len":4096,"max_output_tokens":1024}]}"#;
+
+#[derive(Clone, Default)]
+struct DebugMessages(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for DebugMessages {
+    fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+        if event.metadata().level() != &tracing::Level::DEBUG {
+            return;
+        }
+        let mut field = MessageField::default();
+        event.record(&mut field);
+        if let Some(message) = field.0 {
+            self.0.lock().unwrap().push(message);
+        }
+    }
+}
+
+#[derive(Default)]
+struct MessageField(Option<String>);
+
+impl Visit for MessageField {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.0 = Some(value.to_owned());
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = Some(format!("{value:?}"));
+        }
+    }
+}
 
 #[derive(Default)]
 struct Recorder {
@@ -262,6 +301,44 @@ async fn a_failed_fetch_is_an_empty_list_kept_for_60_seconds(
     assert_eq!(found, TokenLimits::default());
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].1, Duration::from_secs(60));
+}
+
+#[tokio::test]
+async fn a_failed_fetch_logs_a_debug_diagnostic() {
+    let messages = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(DebugMessages(Arc::clone(&messages)));
+    let _guard = set_default(subscriber);
+    let (found, _, _) = discovered(500, "", b"").await;
+    assert_eq!(found, TokenLimits::default());
+    let seen = messages.lock().unwrap().clone();
+    assert!(
+        seen.iter()
+            .any(|message| message.contains("Could not discover upstream model token limits"))
+    );
+}
+
+async fn silent_after_request(listener: &TcpListener) {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    drop(read_request(&mut stream).await);
+    sleep(Duration::from_secs(6)).await;
+}
+
+#[tokio::test]
+async fn a_slow_models_endpoint_gives_up_after_five_seconds() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let cache = Recorder::default();
+    let headers = Headers::new();
+    let (found, ()) = timeout(Duration::from_secs(8), async {
+        tokio::join!(
+            discover(&cache, &base, &headers),
+            silent_after_request(&listener)
+        )
+    })
+    .await
+    .expect("the five-second deadline ends the fetch");
+    assert_eq!(found.unwrap(), TokenLimits::default());
+    assert_eq!(cache.stored.lock().unwrap()[0].1, Duration::from_secs(60));
 }
 
 #[tokio::test]
