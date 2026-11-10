@@ -1,0 +1,15 @@
+kind: helper
+name: caching-list-operations-lpop-redis-7-bulk
+call:
+  b4329:
+    operation: lpop
+    namespace: ns
+    redis_version: "7.0.0"
+    lists:
+      "ns:queue":
+        - bytes: [255]
+        - ok
+    key: queue
+    count: 2
+env: {}
+compare: {ignore: []}
