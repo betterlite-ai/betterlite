@@ -1,0 +1,56 @@
+kind: helper
+name: logging-success-single-terminal
+call:
+  logging_success:
+    operations:
+      - operation: dispatch
+        probes:
+          - litellm_params: {acompletion: true}
+            stream: true
+            call_type: completion
+            result: {kind: chat}
+            dispatches: 2
+            built_payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: streamer
+          - litellm_params: {}
+            stream: false
+            call_type: completion
+            result: {kind: chat}
+            dispatches: 2
+            built_payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: langfuse
+          - litellm_params: {}
+            stream: false
+            call_type: pass_through_endpoint
+            result: {kind: chat}
+            dispatches: 1
+            built_payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: cohere
+          - litellm_params: {}
+            stream: false
+            call_type: completion
+            result: {kind: chat}
+            prefer_async_handlers: true
+            dispatches: 1
+            built_payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: langfuse
+          - litellm_params: {acompletion: true}
+            stream: true
+            call_type: completion
+            result: {kind: chat}
+            marker: true
+            dispatches: 1
+            built_payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: skipped
+      - operation: sync_callbacks
+        probes:
+          - {dynamic_success: [legacy_hook], known: [], loggers: [{name: langfuse}]}
+          - {dynamic_success: [legacy_hook], known: [legacy_hook], loggers: []}
+          - {dynamic_success: [], known: [], loggers: []}
+env: {}
+compare: {ignore: []}

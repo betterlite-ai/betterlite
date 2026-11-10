@@ -1136,6 +1136,7 @@ dependencies = [
  "speedate",
  "strum",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -1316,6 +1317,7 @@ dependencies = [
  "betterlite-logging",
  "clap",
  "dbus-secret-service-keyring-store",
+ "hex",
  "httparse",
  "keyring-core",
  "regex",
@@ -1326,6 +1328,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "shlex",
+ "soft-canonicalize",
  "subtle",
  "tempfile",
  "thiserror",
@@ -2093,6 +2097,7 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-tokenizer",
  "http 1.5.0",
  "libfuzzer-sys",
@@ -2853,6 +2858,7 @@ dependencies = [
  "tokenizers",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
