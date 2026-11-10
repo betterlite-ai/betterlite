@@ -1,5 +1,7 @@
 #[path = "b4297/cases.rs"]
 mod cases;
+#[path = "b4297/output.rs"]
+mod output;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -7,7 +9,7 @@ use async_trait::async_trait;
 use betterlite_cache::backend::{CacheResult, Ttl};
 use betterlite_cache::cache_key::request::CacheKeyRequest;
 use betterlite_cache::cache_key::settings::CacheKeySettings;
-use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
+use betterlite_cache::cache_key::value::KeyValue;
 use betterlite_cache::envelope::backend::EnvelopeBackend;
 use betterlite_cache::envelope::facade::{Clock, EnvelopeSettings, ResponseCache};
 use betterlite_cache::envelope::lookup::{CacheLookup, SEMANTIC_SIMILARITY};
@@ -19,7 +21,6 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use serde::Deserialize;
-use serde_json::{Map, Value};
 
 const FIXTURE_NOW: f64 = 1_700_000_000.0;
 
@@ -218,52 +219,6 @@ pub(crate) fn cache(
         },
         clock,
     })
-}
-
-pub(crate) fn object_json(object: &KeyObject) -> Value {
-    Value::Object(
-        object
-            .iter()
-            .map(|(name, value)| (name.clone(), key_value_json(value)))
-            .collect::<Map<String, Value>>(),
-    )
-}
-
-pub(crate) fn key_value_json(value: &KeyValue) -> Value {
-    match value {
-        KeyValue::Null => Value::Null,
-        KeyValue::Bool(flag) => Value::Bool(*flag),
-        KeyValue::Number(number) => Value::Number(number.clone()),
-        KeyValue::String(text) => Value::String(text.clone()),
-        KeyValue::Array(items) => Value::Array(items.iter().map(key_value_json).collect()),
-        KeyValue::Object(fields) => object_json(fields),
-    }
-}
-
-pub(crate) fn lookup_json(lookup: &CacheLookup) -> Value {
-    let mut fields = Map::new();
-    if let Some(messages) = &lookup.messages {
-        fields.insert("messages".to_owned(), key_value_json(messages));
-    }
-    if let Some(input) = &lookup.input {
-        fields.insert("input".to_owned(), key_value_json(input));
-    }
-    if let Some(metadata) = &lookup.metadata {
-        fields.insert("metadata".to_owned(), object_json(metadata));
-    }
-    Value::Object(fields)
-}
-
-pub(crate) fn write_json(record: Option<&RecordedWrite>) -> crate::helpers::HelperResult {
-    let Some(found) = record else {
-        return Ok(Value::Null);
-    };
-    Ok(serde_json::json!({
-        "method": found.method,
-        "key": found.key,
-        "cached": serde_json::to_value(&found.value).map_err(failure)?,
-        "ttl": found.ttl,
-    }))
 }
 
 pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {

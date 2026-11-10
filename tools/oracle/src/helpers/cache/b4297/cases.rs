@@ -4,9 +4,10 @@ use betterlite_cache::envelope::decode::decode_cached;
 use betterlite_cache::envelope::facade::EnvelopeSettings;
 use serde_json::json;
 
+use super::output::{lookup_json, object_json, write_json};
 use super::{
     FIXTURE_NOW, GetCacheInput, GetCacheLogicInput, RecordingBackend, WriteInput, cache, failure,
-    lookup_json, object_json, rebuild, runtime, write_json,
+    rebuild, runtime,
 };
 use crate::helpers::HelperResult;
 
