@@ -403,6 +403,31 @@ async fn a_body_that_is_not_utf8_is_not_retried() {
 }
 
 #[tokio::test]
+async fn a_body_that_fails_content_decoding_is_not_retried() {
+    let server = FakeLangfuse::start(vec![Answer::RespondWith {
+        status: 200,
+        body: String::from("not gzip at all"),
+        headers: vec![("content-encoding", "gzip".to_owned())],
+    }])
+    .await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
+    let client = client_for(&server, TTL, &clock, &tasks);
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the prompt fails");
+    assert!(
+        matches!(
+            &error,
+            LangfuseRestError::Request(RequestFailure::Transport(_))
+        ),
+        "{error:?}"
+    );
+    assert_eq!(server.request_count(), 1);
+}
+
+#[tokio::test]
 async fn a_response_that_is_not_the_declared_prompt_shape_is_a_decode_error() {
     let server = FakeLangfuse::start(vec![Answer::Respond {
         status: 200,
