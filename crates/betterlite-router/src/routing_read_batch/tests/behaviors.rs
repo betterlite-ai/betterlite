@@ -290,7 +290,7 @@ async fn requests_are_isolated() {
         true,
         &mut first_request,
     ));
-    let mut batch = RoutingReadBatch::for_strategy(None, false).unwrap();
+    let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
     let second_results = read_once(
         &mut batch,
         &store,
