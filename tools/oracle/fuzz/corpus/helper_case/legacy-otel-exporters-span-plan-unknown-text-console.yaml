@@ -1,0 +1,10 @@
+kind: helper
+name: span-plan-unknown-text-console
+call:
+  b3855:
+    function: span_processor_plan
+    config:
+      exporter: OTLP_HTTP
+      endpoint: http://collector:4318
+env: {}
+compare: {ignore: []}

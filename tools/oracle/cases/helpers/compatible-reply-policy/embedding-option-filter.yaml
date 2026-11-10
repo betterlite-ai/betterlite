@@ -1,0 +1,10 @@
+kind: helper
+name: compatible-reply-policy-embedding-option-filter
+call:
+  compatible_reply_policy:
+    options:
+      - {model: m, input: [a], options: {user: null, dimensions: 0, encoding_format: "", flag: false, tag: x, empty: []}}
+      - {model: m, input: [a], options: {model: other, input: [b]}}
+      - {model: m, input: [a], options: {model: "", input: null}}
+env: {}
+compare: {ignore: []}
