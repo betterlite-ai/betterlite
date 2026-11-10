@@ -311,6 +311,25 @@ async fn ambient_chain_when_nothing_is_configured() {
 }
 
 #[tokio::test]
+async fn missing_profile_fails() {
+    let mut inputs = preset_inputs(Preset::Direct);
+    inputs.access_key_id = None;
+    inputs.secret_access_key = None;
+    inputs.profile_name = Some("missing".to_owned());
+    let credentials = "[other]\naws_access_key_id = other\naws_secret_access_key = private\n";
+    let error = mint_against(
+        inputs,
+        &[],
+        &[("AWS_SHARED_CREDENTIALS_FILE", "/credentials")],
+        &[("/credentials", credentials)],
+        Reply::WebIdentity,
+    )
+    .await
+    .expect_err("a missing profile fails");
+    assert!(matches!(error, RdsCredentialsError::Profile { .. }));
+}
+
+#[tokio::test]
 async fn role_without_session_falls_through() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.role_name = Some("arn:aws:iam::123456789012:role/db".to_owned());

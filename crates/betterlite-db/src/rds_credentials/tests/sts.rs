@@ -322,6 +322,20 @@ async fn role_without_credentials_uses_the_ambient_chain() {
 }
 
 #[tokio::test]
+async fn empty_role_name_still_takes_the_role_branch() {
+    let mut inputs = preset_inputs(Preset::AssumeRole);
+    inputs.role_name = Some(String::new());
+    let (signer, calls, _) = run(inputs, &[], &[], &[], Reply::AssumeRole).await;
+    signer.expect("an empty role name still asks STS");
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0]
+            .body
+            .contains("RoleArn=&RoleSessionName=db-session")
+    );
+}
+
+#[tokio::test]
 async fn partial_role_credentials_fail_before_the_call() {
     let mut inputs = preset_inputs(Preset::AssumeRole);
     inputs.access_key_id = Some(secret("AKIDONLY"));
