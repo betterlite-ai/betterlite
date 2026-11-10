@@ -1,31 +1,74 @@
+use crate::helpers::{HelperError, HelperResult};
+use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::message_content::Message;
 use betterlite_vertex::gemini_media::equivalence::part_exists;
-use betterlite_vertex::gemini_media::error::{MediaError, MediaField};
-use betterlite_vertex::gemini_media::mime::apply_mime_alias;
+use betterlite_vertex::gemini_media::error::MediaError;
+use betterlite_vertex::gemini_media::mime::{MimeHints, apply_mime_alias};
+use betterlite_vertex::gemini_media::part::VideoMetadata;
 use betterlite_vertex::gemini_media::process::{MediaRequest, process_media};
 use betterlite_vertex::gemini_media::resolution::{convert_detail, max_media_resolution};
+use serde::Deserialize;
 use serde_json::json;
-
-use super::input::{EquivalenceCase, Input, MediaCase};
-use crate::helpers::{HelperError, HelperResult};
-
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    call: String,
+    #[serde(default)]
+    values: Vec<String>,
+    #[serde(default)]
+    cases: Vec<Case>,
+    #[serde(default)]
+    messages: Vec<Message>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Case {
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    hints: MimeHints,
+    #[serde(default)]
+    detail: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    video_metadata: Option<VideoMetadata>,
+    #[serde(default)]
+    parts: Vec<Object>,
+    #[serde(default)]
+    part: Object,
+    #[serde(default)]
+    excluded_keys: Vec<String>,
+}
 pub(super) fn run(input: &Input) -> HelperResult {
-    match input {
-        Input::MimeAlias { values } => {
-            let aliases: Vec<String> = values.iter().map(|value| apply_mime_alias(value)).collect();
+    match input.call.as_str() {
+        "mime_alias" => {
+            let aliases: Vec<String> = input
+                .values
+                .iter()
+                .map(|value| apply_mime_alias(value))
+                .collect();
             Ok(json!({"values": aliases}))
         }
-        Input::ExplicitGcsFormat { cases }
-        | Input::FilesUriWithoutMime { cases }
-        | Input::HttpsPassthrough { cases }
-        | Input::VideoOffsets { cases } => parts(cases),
-        Input::ResolutionMaximum { messages } => Ok(json!({
-            "maximum": max_media_resolution(messages),
+        "explicit_gcs_format"
+        | "files_uri_without_mime"
+        | "https_passthrough"
+        | "video_offsets" => parts(&input.cases),
+        "resolution_maximum" => Ok(json!({
+            "maximum": max_media_resolution(&input.messages),
         })),
-        Input::PartKeyEquivalence { cases } => Ok(json!({"matches": matches(cases)})),
+        "part_key_equivalence" => Ok(json!({"matches": matches(&input.cases)})),
+        other => Err(Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("unknown gemini_media operation: {other}"),
+        })),
     }
 }
-
-fn parts(cases: &[MediaCase]) -> HelperResult {
+fn parts(cases: &[Case]) -> HelperResult {
     let mut output = Vec::with_capacity(cases.len());
     for case in cases {
         let request = MediaRequest {
@@ -34,14 +77,13 @@ fn parts(cases: &[MediaCase]) -> HelperResult {
             resolution: case.detail.as_deref().and_then(convert_detail),
             video_metadata: case.video_metadata.as_ref(),
             model: case.model.as_deref(),
-            field: MediaField::ImageUrl,
+            field: "image_url",
         };
         output.push(process_media(&request).map_err(|error| media_error(&error))?);
     }
     Ok(json!({"parts": output}))
 }
-
-fn matches(cases: &[EquivalenceCase]) -> Vec<bool> {
+fn matches(cases: &[Case]) -> Vec<bool> {
     cases
         .iter()
         .map(|case| {
@@ -50,11 +92,10 @@ fn matches(cases: &[EquivalenceCase]) -> Vec<bool> {
         })
         .collect()
 }
-
 fn media_error(error: &MediaError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "BadRequestError".to_owned(),
-        status: Some(error.failure().status),
+        status: Some(400),
         error_type: None,
         param: None,
         code: None,

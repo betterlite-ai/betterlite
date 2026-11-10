@@ -1,14 +1,11 @@
-use betterlite_prompts::media_metadata::url_mime::image_mime_type_from_url;
-
 use crate::gemini_media::GEMINI_FILES_API_URI_PREFIX;
 use crate::gemini_media::mime::MimeHints;
-
+use betterlite_prompts::media_metadata::url_mime::image_mime_type_from_url;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoogleProvider {
     AiStudio,
     Vertex,
 }
-
 #[must_use]
 pub fn inlines_remote(provider: GoogleProvider, url: &str, hints: &MimeHints) -> bool {
     let remote = url.starts_with("http://") || url.starts_with("https://");
@@ -17,7 +14,6 @@ pub fn inlines_remote(provider: GoogleProvider, url: &str, hints: &MimeHints) ->
         GoogleProvider::Vertex => remote && vertex_inlines(url, hints),
     }
 }
-
 fn vertex_inlines(url: &str, hints: &MimeHints) -> bool {
     if url.starts_with(GEMINI_FILES_API_URI_PREFIX) {
         return false;
