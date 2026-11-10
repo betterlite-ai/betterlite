@@ -68,6 +68,14 @@ call:
               provider_specific_fields: {thought_signature: "s"}
             provider_specific_fields: {thought_signatures: ["s"]}
           - {role: function, name: "f", content: "r"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              thought_signatures: ["sig-resp"]
+              server_side_tool_invocations:
+                - {id: "s1", response: {}, response_thought_signature: "sig-resp"}
 env: {}
 compare:
   ignore: []

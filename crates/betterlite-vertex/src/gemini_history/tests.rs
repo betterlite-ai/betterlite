@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::str::from_utf8;
 
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::gemini_tool_invokes::error::GeminiToolInvokesError;
+use betterlite_prompts::gemini_tool_invokes::limits::MAX_TOOL_CALLS;
 use betterlite_prompts::gemini_tool_invokes::signatures::DUMMY_THOUGHT_SIGNATURE;
 use betterlite_prompts::gemini_tool_results::error::GeminiToolResultsError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
@@ -278,13 +280,53 @@ fn keeps_file_format_before_mime_type_and_content_type() {
     );
 }
 
-#[test]
-fn forwards_video_metadata_and_detail_from_a_file_block() {
+#[rstest]
+#[case::older_model_drops_the_resolution(
+    "gemini-2.5-flash",
+    r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://bucket/clip.mp4"},"video_metadata":{"fps":2,"startOffset":"1s"}},{"text":" "}]}]"#
+)]
+#[case::newer_model_keeps_the_resolution(
+    "gemini-3-pro-preview",
+    r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://bucket/clip.mp4"},"media_resolution":{"level":"MEDIA_RESOLUTION_HIGH"},"video_metadata":{"fps":2,"startOffset":"1s"}},{"text":" "}]}]"#
+)]
+fn forwards_video_metadata_and_detail_from_a_file_block(
+    #[case] model: &str,
+    #[case] expected: &str,
+) {
     assert_parts(
         r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"gs://bucket/clip.mp4","detail":"high","video_metadata":{"fps":2,"start_offset":"1s"}}}]}]"#,
-        Some("gemini-2.5-flash"),
-        r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://bucket/clip.mp4"},"video_metadata":{"fps":2,"startOffset":"1s"}},{"text":" "}]}]"#,
+        Some(model),
+        expected,
     );
+}
+
+#[rstest]
+#[case::with_a_model(
+    Some("gemini-2.5-flash"),
+    r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://b/clip.mp4"},"video_metadata":{"fps":1}},{"text":" "}]}]"#
+)]
+#[case::without_a_model(
+    None,
+    r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://b/clip.mp4"}},{"text":" "}]}]"#
+)]
+fn ignores_video_metadata_keys_other_than_fps_and_offsets(
+    #[case] model: Option<&str>,
+    #[case] expected: &str,
+) {
+    assert_parts(
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"gs://b/clip.mp4","video_metadata":{"fps":1,"note":"x"}}}]}]"#,
+        model,
+        expected,
+    );
+}
+
+#[test]
+fn rejects_video_metadata_that_is_not_an_object() {
+    let error = error_of(
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"gs://b/clip.mp4","video_metadata":"fps"}}]}]"#,
+        None,
+    );
+    assert_field_error(&error, "video_metadata");
 }
 
 #[test]
@@ -374,6 +416,27 @@ fn replays_generated_images() {
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"image_url":{"url":"data:image/png;base64,YWJj","detail":"auto"},"index":0,"type":"image_url"}]}]"#,
         None,
         r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]}]"#,
+    );
+}
+
+#[rstest]
+#[case::format_first(r#""format":"image/gif","mime_type":"image/webp""#, "image/gif")]
+#[case::mime_type_second(r#""mime_type":"image/webp","content_type":"image/bmp""#, "image/webp")]
+#[case::content_type_last(r#""content_type":"image/bmp""#, "image/bmp")]
+fn takes_the_mime_hint_and_detail_of_a_generated_image(
+    #[case] hints: &str,
+    #[case] mime_type: &str,
+) {
+    let assistant = format!(
+        r#"{{"role":"assistant","content":"a","images":[{{"image_url":{{"url":"data:image/png;base64,YWJj","detail":"high",{hints}}},"index":0,"type":"image_url"}}]}}"#
+    );
+    let expected = format!(
+        r#"[{{"role":"user","parts":[{{"text":"q"}}]}},{{"role":"model","parts":[{{"text":"a"}},{{"inline_data":{{"data":"YWJj","mime_type":"{mime_type}"}},"media_resolution":{{"level":"MEDIA_RESOLUTION_HIGH"}}}}]}}]"#
+    );
+    assert_parts(
+        &format!(r#"[{{"role":"user","content":"q"}},{assistant}]"#),
+        Some("gemini-3-pro-preview"),
+        &expected,
     );
 }
 
@@ -470,6 +533,14 @@ fn collects_a_signature_from_a_server_side_invocation() {
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":["sig-server"],"server_side_tool_invocations":[{"id":"s1","thought_signature":"sig-server"}]}}]"#,
         None,
         r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"toolCall":{"toolType":null,"id":"s1","args":null},"thoughtSignature":"sig-server"}]}]"#,
+    );
+}
+
+#[test]
+fn collects_a_signature_from_a_server_side_response() {
+    assert_model_turn(
+        r#"{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":["sig-resp"],"server_side_tool_invocations":[{"id":"s1","response":{},"response_thought_signature":"sig-resp"}]}}"#,
+        r#"[{"text":"a"},{"toolCall":{"toolType":null,"id":"s1","args":null}},{"toolResponse":{"id":"s1","response":{}},"thoughtSignature":"sig-resp"}]"#,
     );
 }
 
@@ -677,6 +748,21 @@ fn caps_each_message_list_at_the_part_limit(#[case] template: &str, #[case] item
     assert!(matches!(
         error,
         HistoryError::TooManyParts(limit) if limit == MAX_MESSAGE_PARTS
+    ));
+    assert_eq!(error.status(), 400);
+}
+
+#[test]
+fn caps_the_tool_calls_a_text_signature_scan_walks() {
+    let call = r#"{"id":"c","type":"function","function":{"name":"f","arguments":"{}"}}"#;
+    let at_limit = r#"[{"role":"assistant","content":"a","provider_specific_fields":{"thought_signatures":["s"]},"tool_calls":[ITEMS]}]"#;
+    converted_messages(&with_items(at_limit, call, MAX_TOOL_CALLS), None);
+    let over_limit = at_limit.replace("[ITEMS]", "[1,ITEMS]");
+    let error = error_for(&with_items(&over_limit, call, MAX_TOOL_CALLS), None);
+    assert!(matches!(
+        error,
+        HistoryError::ToolInvoke(GeminiToolInvokesError::TooManyToolCalls { limit })
+            if limit == MAX_TOOL_CALLS
     ));
     assert_eq!(error.status(), 400);
 }

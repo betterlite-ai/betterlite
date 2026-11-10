@@ -18,6 +18,7 @@ const DATA: &str = "data";
 const FILE_ID: &str = "file_id";
 const FILE_DATA: &str = "file_data";
 const VIDEO_METADATA: &str = "video_metadata";
+const VIDEO_KEYS: [&str; 3] = ["fps", "start_offset", "end_offset"];
 
 pub type Locator = (String, Object);
 
@@ -119,13 +120,22 @@ fn file_source(fields: &Object) -> Result<Locator, HistoryError> {
 }
 
 fn decode_video(file: &Object) -> Result<Option<VideoMetadata>, HistoryError> {
-    let Some(value) = file
-        .get(VIDEO_METADATA)
-        .filter(|value| !matches!(value, Json::Null))
-    else {
-        return Ok(None);
+    let metadata = match file.get(VIDEO_METADATA) {
+        None | Some(Json::Null) => return Ok(None),
+        Some(Json::Object(metadata)) => metadata,
+        Some(_) => {
+            return Err(HistoryError::Invalid(
+                "video_metadata must be an object".to_owned(),
+            ));
+        }
     };
-    let encoded = serde_json::to_value(value).map_err(HistoryError::Encode)?;
+    let mut kept = Object::default();
+    for key in VIDEO_KEYS {
+        if let Some(value) = metadata.get(key) {
+            kept.insert(key.to_owned(), value.clone());
+        }
+    }
+    let encoded = serde_json::to_value(Json::Object(kept)).map_err(HistoryError::Encode)?;
     Ok(Some(
         serde_json::from_value(encoded).map_err(HistoryError::Decode)?,
     ))

@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::gemini_tool_invokes::error::GeminiToolInvokesError;
 use betterlite_prompts::gemini_tool_invokes::invoke::convert_tool_calls_to_gemini;
+use betterlite_prompts::gemini_tool_invokes::limits::MAX_TOOL_CALLS;
 use betterlite_prompts::gemini_tool_invokes::signatures::thought_signature_from_tool;
 use betterlite_prompts::gemini_tool_invokes::types::GeminiTool;
 use betterlite_prompts::gemini_tool_results::types::LastToolCallMessage;
@@ -73,6 +75,13 @@ pub fn append_tool_calls(
 pub fn collect_tool_signatures(fields: &Object) -> Result<BTreeSet<String>, HistoryError> {
     let mut signatures = BTreeSet::new();
     if let Some(Json::List(tools)) = fields.get(TOOL_CALLS) {
+        if tools.len() > MAX_TOOL_CALLS {
+            return Err(HistoryError::ToolInvoke(
+                GeminiToolInvokesError::TooManyToolCalls {
+                    limit: MAX_TOOL_CALLS,
+                },
+            ));
+        }
         for tool in tools.iter().filter_map(|tool| {
             let encoded = serde_json::to_value(tool).ok()?;
             serde_json::from_value(encoded).ok()
@@ -92,6 +101,14 @@ pub fn collect_tool_signatures(fields: &Object) -> Result<BTreeSet<String>, Hist
             signatures.insert(signature);
         }
     }
+    add_invocation_signatures(fields, &mut signatures)?;
+    Ok(signatures)
+}
+
+fn add_invocation_signatures(
+    fields: &Object,
+    signatures: &mut BTreeSet<String>,
+) -> Result<(), HistoryError> {
     for invocation in invocations_of(fields)? {
         let Some(entry) = invocation.as_object() else {
             continue;
@@ -104,7 +121,7 @@ pub fn collect_tool_signatures(fields: &Object) -> Result<BTreeSet<String>, Hist
             }
         }
     }
-    Ok(signatures)
+    Ok(())
 }
 
 pub fn append_invocations(fields: &Object, parts: &mut Vec<Object>) -> Result<(), HistoryError> {
