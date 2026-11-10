@@ -172,7 +172,7 @@ fn call_provider(
     clock: &FixtureClock,
 ) -> Result<Vec<AccessToken>, UsernamePasswordError> {
     let mut tokens = Vec::new();
-    for index in 0..step.calls {
+    for index in 0..step.calls.unwrap_or(1) {
         if index > 0 {
             clock
                 .now
@@ -252,7 +252,7 @@ pub(super) fn construction_step(step: &Step) -> Value {
     let subscriber = tracing_subscriber::registry().with(capture.clone());
     let mut value = tracing::subscriber::with_default(subscriber, || {
         with_provider(step, |provider, attempt| {
-            if step.calls > 0
+            if step.calls.is_some_and(|calls| calls > 0)
                 && let Err(error) = provider.token()
             {
                 return token_failure(&error, attempt);

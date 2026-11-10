@@ -25,16 +25,11 @@ pub(super) struct Step {
     pub(super) scope: Option<String>,
     #[serde(default)]
     pub(super) replies: Vec<Reply>,
-    #[serde(default = "default_calls")]
-    pub(super) calls: usize,
+    pub(super) calls: Option<usize>,
     #[serde(default)]
     pub(super) advance: i64,
     #[serde(default)]
     pub(super) observe: Observe,
-}
-
-const fn default_calls() -> usize {
-    1
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
