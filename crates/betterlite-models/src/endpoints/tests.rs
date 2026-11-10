@@ -6,8 +6,8 @@ use rstest::rstest;
 
 use super::projection::{clean_display_name, project};
 use super::{
-    EndpointSupport, MAX_REGISTRY_BYTES, MAX_REGISTRY_ENDPOINTS, PACKAGED_ASSET, ROOT_ASSET,
-    RUNTIME_ASSET, RegistryAsset, RegistryError, parse, support,
+    EndpointSupport, MAX_REGISTRY_BYTES, MAX_REGISTRY_ENDPOINTS, MAX_REGISTRY_PROVIDERS,
+    PACKAGED_ASSET, ROOT_ASSET, RUNTIME_ASSET, RegistryAsset, RegistryError, parse, support,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -119,6 +119,15 @@ fn packaged_projection() {
     let first_provider = first.providers.first().unwrap();
     assert_eq!(first_provider.slug, "a2a");
     assert_eq!(first_provider.display_name, "A2A (Agent-to-Agent)");
+    let agent_gateway = entries.iter().find(|entry| entry.key == "a2a").unwrap();
+    assert_eq!(agent_gateway.label, "A2A (Agent Gateway)");
+    assert_eq!(agent_gateway.endpoint, "/a2a/{agent}/message/send");
+    let count_tokens = entries
+        .iter()
+        .find(|entry| entry.key == "count_tokens")
+        .unwrap();
+    assert_eq!(count_tokens.label, "Count Tokens");
+    assert_eq!(count_tokens.endpoint, "/utils/token_counter");
     assert!(entries.iter().all(|entry| !entry.providers.is_empty()));
 }
 
@@ -153,6 +162,15 @@ fn display_name() {
     assert_eq!(clean_display_name("  Padded  "), "Padded");
     assert_eq!(clean_display_name("Odd (not-a-slug)"), "Odd (not-a-slug)");
     assert_eq!(clean_display_name("Odd (`a`b`)"), "Odd (`a`b`)");
+    assert_eq!(clean_display_name("Name (``)"), "Name (``)");
+}
+
+#[test]
+fn parse_accepts_the_size_limit() {
+    let mut bytes = vec![b' '; MAX_REGISTRY_BYTES - 2];
+    bytes.extend_from_slice(b"{}");
+    let registry = parse(&bytes, RegistryAsset::Packaged).unwrap();
+    assert!(registry.providers.is_empty());
 }
 
 #[test]
@@ -171,10 +189,25 @@ fn parse_rejects_deep_nesting() {
     assert!(matches!(error, RegistryError::TooDeep { limit: 8 }));
 }
 
+#[test]
+fn parse_rejects_deep_arrays() {
+    let source = deep_array();
+    let error = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap_err();
+    assert!(matches!(error, RegistryError::TooDeep { limit: 8 }));
+}
+
 fn deep() -> String {
     let mut value = String::from("1");
     for _ in 0_i32..12_i32 {
         value = format!("{{\"a\":{value}}}");
+    }
+    format!("{{\"extra\":{value}}}")
+}
+
+fn deep_array() -> String {
+    let mut value = String::from("1");
+    for _ in 0_i32..12_i32 {
+        value = format!("[{value}]");
     }
     format!("{{\"extra\":{value}}}")
 }
@@ -200,37 +233,48 @@ fn parse_rejects_a_non_boolean_route() {
     assert!(matches!(error, RegistryError::Json(_)));
 }
 
-fn joined_entries<F>(last: usize, entry: F) -> String
-where
-    F: Fn(usize) -> String,
-{
-    (0..=last).map(entry).collect::<Vec<_>>().join(",")
+fn registry_with_providers(count: usize) -> String {
+    let entries: Vec<String> = (0..count)
+        .map(|index| format!(r#""p{index}":{{}}"#))
+        .collect();
+    format!(r#"{{"providers":{{{}}}}}"#, entries.join(","))
 }
 
-fn many_providers() -> String {
-    let entries = joined_entries(10_000, |index| format!(r#""p{index}":{{}}"#));
-    format!(r#"{{"providers":{{{entries}}}}}"#)
+fn registry_with_provider_endpoints(count: usize) -> String {
+    let entries: Vec<String> = (0..count)
+        .map(|index| format!(r#""e{index}":false"#))
+        .collect();
+    format!(
+        r#"{{"providers":{{"a":{{"endpoints":{{{}}}}}}}}}"#,
+        entries.join(",")
+    )
 }
 
-fn many_provider_endpoints() -> String {
-    let entries = joined_entries(MAX_REGISTRY_ENDPOINTS, |index| {
-        format!(r#""e{index}":false"#)
-    });
-    format!(r#"{{"providers":{{"a":{{"endpoints":{{{entries}}}}}}}}}"#)
+fn registry_with_endpoint_labels(count: usize) -> String {
+    let entries: Vec<String> = (0..count)
+        .map(|index| {
+            format!(
+                r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"providers":{{}},"endpoints":{{{}}}}}"#,
+        entries.join(",")
+    )
 }
 
-fn many_endpoint_labels() -> String {
-    let entries = joined_entries(MAX_REGISTRY_ENDPOINTS, |index| {
-        format!(
-            r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
-        )
-    });
-    format!(r#"{{"providers":{{}},"endpoints":{{{entries}}}}}"#)
+#[test]
+fn parse_accepts_the_provider_limit() {
+    let source = registry_with_providers(MAX_REGISTRY_PROVIDERS);
+    let registry = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap();
+    assert_eq!(registry.providers.len(), MAX_REGISTRY_PROVIDERS);
 }
 
 #[test]
 fn parse_rejects_too_many_providers() {
-    let error = parse(many_providers().as_bytes(), RegistryAsset::Packaged).unwrap_err();
+    let source = registry_with_providers(MAX_REGISTRY_PROVIDERS + 1);
+    let error = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap_err();
     assert!(matches!(
         error,
         RegistryError::TooManyProviders { limit: 10_000, .. }
@@ -238,12 +282,19 @@ fn parse_rejects_too_many_providers() {
 }
 
 #[test]
+fn parse_accepts_the_provider_endpoint_limit() {
+    let source = registry_with_provider_endpoints(MAX_REGISTRY_ENDPOINTS);
+    let registry = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap();
+    assert_eq!(
+        registry.providers["a"].endpoints.len(),
+        MAX_REGISTRY_ENDPOINTS
+    );
+}
+
+#[test]
 fn parse_rejects_too_many_provider_endpoints() {
-    let error = parse(
-        many_provider_endpoints().as_bytes(),
-        RegistryAsset::Packaged,
-    )
-    .unwrap_err();
+    let source = registry_with_provider_endpoints(MAX_REGISTRY_ENDPOINTS + 1);
+    let error = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap_err();
     assert!(matches!(
         error,
         RegistryError::TooManyProviderEndpoints { limit: 1_024, .. }
@@ -251,8 +302,16 @@ fn parse_rejects_too_many_provider_endpoints() {
 }
 
 #[test]
+fn parse_accepts_the_endpoint_label_limit() {
+    let source = registry_with_endpoint_labels(MAX_REGISTRY_ENDPOINTS);
+    let registry = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap();
+    assert_eq!(registry.endpoints.len(), MAX_REGISTRY_ENDPOINTS);
+}
+
+#[test]
 fn parse_rejects_too_many_endpoint_labels() {
-    let error = parse(many_endpoint_labels().as_bytes(), RegistryAsset::Packaged).unwrap_err();
+    let source = registry_with_endpoint_labels(MAX_REGISTRY_ENDPOINTS + 1);
+    let error = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap_err();
     assert!(matches!(
         error,
         RegistryError::TooManyEndpointLabels { limit: 1_024, .. }
