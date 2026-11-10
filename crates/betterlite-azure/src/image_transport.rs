@@ -85,7 +85,6 @@ impl ImageClock for SystemClock {
     }
 
     async fn pause(&self, seconds: i64) {
-        let allowed = u64::try_from(seconds).unwrap_or(0);
-        sleep(Duration::from_secs(allowed)).await;
+        sleep(Duration::from_secs(u64::try_from(seconds).unwrap_or(0))).await;
     }
 }

@@ -33,17 +33,19 @@ where
     ) -> Result<(ImageReply, ImageOperation), ImageTransportError> {
         let mut reply = first;
         let mut operation = decode_image_operation(&reply.body)?;
+        let mut capped = false;
         let mut status = operation
             .status
             .clone()
             .ok_or(ImageTransportError::MissingStatusInitial)?;
-        while !terminal(&status) {
+        while !matches!(&status, JsonValue::String(value) if value.as_str() == "succeeded" || value.as_str() == "failed")
+        {
             let elapsed = self.clock.now().saturating_sub(started);
-            if elapsed > self.settings.timeout {
+            if capped || elapsed > self.settings.timeout {
                 return Err(ImageTransportError::PollingTimeout);
             }
             let seconds = retry_after(&reply.headers)?;
-            let capped = self.wait(seconds, elapsed).await?;
+            capped = self.wait(seconds, elapsed).await?;
             reply = send(
                 self.client,
                 Method::GET,
@@ -57,9 +59,6 @@ where
                 .status
                 .clone()
                 .ok_or(ImageTransportError::MissingStatus)?;
-            if capped && !terminal(&status) {
-                return Err(ImageTransportError::PollingTimeout);
-            }
         }
         Ok((reply, operation))
     }
@@ -74,17 +73,6 @@ where
         }
         sleep(self.clock, seconds, self.settings.style).await?;
         Ok(false)
-    }
-}
-
-fn terminal(status: &JsonValue) -> bool {
-    match status {
-        JsonValue::String(value) => value.as_str() == "succeeded" || value.as_str() == "failed",
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => false,
     }
 }
 

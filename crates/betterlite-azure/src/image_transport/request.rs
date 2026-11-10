@@ -61,13 +61,11 @@ pub struct PollingSettings {
     pub style: CallStyle,
 }
 
-// `client` is LiteLLM's optional handler and `timeout` its httpx timeout argument
 pub struct Connection<Client> {
     pub client: Option<Client>,
     pub timeout: Option<f64>,
 }
 
-// builds the handler LiteLLM would have built when the caller supplied none
 pub trait ImageClientConstructor: Sync {
     type Client: ImageTransport;
 
@@ -93,10 +91,9 @@ where
     C: ImageClientConstructor,
     K: ImageClock,
 {
-    let client = match connection.client {
-        Some(client) => client,
-        None => constructor.construct(TimeoutPhases::from_argument(connection.timeout)),
-    };
+    let client = connection
+        .client
+        .unwrap_or_else(|| constructor.construct(TimeoutPhases::from_argument(connection.timeout)));
     if call.api_base.contains("images/generations")
         && body::PREVIEW_API_VERSIONS.contains(&call.api_version)
     {
