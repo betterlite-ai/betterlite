@@ -8,6 +8,16 @@ pub enum BudgetScope {
     Team,
 }
 
+fn scope_prefix(scope: BudgetScope, names: [&'static str; 4]) -> &'static str {
+    let [key, user, end_user, team] = names;
+    match scope {
+        BudgetScope::Key => key,
+        BudgetScope::User => user,
+        BudgetScope::EndUser => end_user,
+        BudgetScope::Team => team,
+    }
+}
+
 #[must_use]
 pub fn model_budget_spend_cache_key(
     scope: BudgetScope,
@@ -15,12 +25,13 @@ pub fn model_budget_spend_cache_key(
     budget_model: &str,
     budget_duration: &str,
 ) -> String {
-    let prefix = match scope {
-        BudgetScope::Key => "virtual_key_spend",
-        BudgetScope::User => "user_model_spend",
-        BudgetScope::EndUser => "end_user_model_spend",
-        BudgetScope::Team => "team_model_spend",
-    };
+    let names = [
+        "virtual_key_spend",
+        "user_model_spend",
+        "end_user_model_spend",
+        "team_model_spend",
+    ];
+    let prefix = scope_prefix(scope, names);
     format!("{prefix}:{entity_id}:{budget_model}:{budget_duration}")
 }
 
@@ -32,13 +43,16 @@ pub fn model_budget_start_time_cache_key(
     budget_model: &str,
     budget_duration: &str,
 ) -> String {
-    let prefix = match scope {
-        BudgetScope::Key => "virtual_key_budget_start_time",
-        BudgetScope::User => "user_model_budget_start_time",
-        BudgetScope::EndUser => "end_user_budget_start_time",
-        BudgetScope::Team => "team_model_budget_start_time",
-    };
-    format!("{prefix}:{entity_id}:{budget_model}:{budget_duration}")
+    let prefix = scope_prefix(
+        scope,
+        [
+            "virtual_key_budget_start_time",
+            "user_model_budget_start_time",
+            "end_user_budget_start_time",
+            "team_model_budget_start_time",
+        ],
+    );
+    [prefix, entity_id, budget_model, budget_duration].join(":")
 }
 
 #[must_use]
