@@ -21,5 +21,11 @@ call:
         environment: {}
         settings:
           - {deployment: 0}
+      - config:
+          model_list:
+            - litellm_params: {}
+        environment: {SSL_VERIFY: ca.pem}
+        settings:
+          - {deployment: 0}
 env: {SSL_VERIFY: "off", GDC_TOKEN_CACHING: "true"}
 compare: {ignore: []}

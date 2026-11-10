@@ -138,6 +138,10 @@ fn bool_settings_keep_their_original_string_form() {
         output["scenarios"][1]["settings"][0],
         json!({"ssl_verify": true, "gdc_token_caching": false, "caching_enabled": false})
     );
+    assert_eq!(
+        output["scenarios"][2]["settings"][0],
+        json!({"ssl_verify": "ca.pem", "gdc_token_caching": false, "caching_enabled": false})
+    );
 }
 
 #[test]

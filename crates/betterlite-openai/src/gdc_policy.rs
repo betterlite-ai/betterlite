@@ -145,15 +145,12 @@ pub fn audience(api_base: &str) -> String {
 pub fn read_env_bool(setting: &str, value: Option<&BoolOrString>, environment: Option<&str>, default: bool) -> BoolOrString {
     match value {
         Some(BoolOrString::Bool(configured)) => BoolOrString::Bool(*configured),
-        Some(BoolOrString::Text(text)) => parse_setting(setting, text, BoolOrString::Text(text.clone())),
-        None => environment.map_or(BoolOrString::Bool(default), |text| parse_setting(setting, text, BoolOrString::Bool(default))),
-    }
-}
-
-fn parse_setting(setting: &str, text: &str, unrecognized: BoolOrString) -> BoolOrString {
-    match flag(setting, text) {
-        Ok(Some(parsed)) => BoolOrString::Bool(parsed),
-        Ok(None) | Err(_) => unrecognized,
+        Some(BoolOrString::Text(text)) => flag(setting, text).ok().flatten().map_or_else(|| BoolOrString::Text(text.clone()), BoolOrString::Bool),
+        None => environment.map_or(BoolOrString::Bool(default), |text| match flag(setting, text).ok().flatten() {
+            Some(parsed) => BoolOrString::Bool(parsed),
+            None if text.trim().is_empty() => BoolOrString::Bool(default),
+            None => BoolOrString::Text(text.to_owned()),
+        }),
     }
 }
 

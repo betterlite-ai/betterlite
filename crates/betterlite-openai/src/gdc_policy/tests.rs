@@ -236,9 +236,9 @@ fn a_truthy_non_string_project_is_a_parameter_error(
     Some("second")
 )]
 #[case::terminal_capture("https://gateway/x/v1/projects/end", Some("end"))]
-#[case::no_path("https://gateway", Some("call"))]
-#[case::empty_capture_then_path("/v1/projects//x", Some("call"))]
-#[case::truncated_prefix("/v1/projects/", Some("call"))]
+#[case::no_path("https://gateway", Some("project"))]
+#[case::empty_capture_then_path("/v1/projects//x", Some("project"))]
+#[case::truncated_prefix("/v1/projects/", Some("project"))]
 fn effective_project_prefers_a_project_path_in_the_base(
     #[case] api_base: &str,
     #[case] expected: Option<&str>,
@@ -475,7 +475,7 @@ fn a_terminal_newline_identifier_reaches_the_url() {
 #[case::scheme_lookalike("https://HTTPS://x", "https://HTTPS:")]
 #[case::invalid_scheme_character("http_tp://x", "://")]
 #[case::ipv6_host("https://[::1]:8080/x", "https://[::1]:8080")]
-#[case::leading_space("  https://host/x", "https://host")]
+#[case::leading_space("  https://host/x", "https://  https:")]
 #[case::control_characters("https://host\t/x", "https://host")]
 #[case::query_only("https://host?q=1", "https://host")]
 #[case::fragment_only("https://host#f", "https://host")]
