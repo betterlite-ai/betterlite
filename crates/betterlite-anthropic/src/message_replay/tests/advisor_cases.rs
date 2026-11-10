@@ -46,6 +46,30 @@ fn advisor_matches_truthy_non_string_ids() {
 }
 
 #[test]
+fn advisor_handles_distinct_ids_in_one_message() {
+    let mut messages = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"adv_a","name":"advisor","input":{}},{"type":"server_tool_use","id":"adv_b","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"adv_a","content":"advice a"},{"type":"advisor_tool_result","tool_use_id":"adv_b","content":"advice b"}]}]"#,
+    );
+    strip_advisor_blocks(&mut messages, true);
+    let expected = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"text","text":"<advisor_feedback>\nadvice a\n</advisor_feedback>"},{"type":"text","text":"<advisor_feedback>\nadvice b\n</advisor_feedback>"}]}]"#,
+    );
+    assert_eq!(messages, expected);
+}
+
+#[test]
+fn advisor_only_touches_advisor_uses_and_results() {
+    let mut messages = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"adv","name":"advisor","input":{}},{"type":"tool_use","id":"adv","name":"lookup","input":{}},{"type":"other","tool_use_id":"adv","payload":1},{"type":"advisor_tool_result","tool_use_id":"adv","content":"advice"}]}]"#,
+    );
+    strip_advisor_blocks(&mut messages, true);
+    let expected = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"text","text":"<advisor_feedback>\nadvice\n</advisor_feedback>"},{"type":"tool_use","id":"adv","name":"lookup","input":{}},{"type":"other","tool_use_id":"adv","payload":1}]}]"#,
+    );
+    assert_eq!(messages, expected);
+}
+
+#[test]
 fn advisor_replaces_every_use_of_a_repeated_id() {
     let mut messages = list_fixture(
         r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"adv","name":"advisor","input":{}},{"type":"server_tool_use","id":"adv","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"adv","content":"once"}]}]"#,

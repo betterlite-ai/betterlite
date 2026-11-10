@@ -35,6 +35,7 @@ fn invalid_error_rejects_empty_unrelated_and_signature_only_texts() {
     assert!(!is_invalid_thinking_error("rate limit exceeded"));
     assert!(!is_invalid_thinking_error("thinking block is fine"));
     assert!(!is_invalid_thinking_error("signature invalid"));
+    assert!(!is_invalid_thinking_error("thinking block is invalid"));
     assert!(!is_invalid_thinking_error(
         "thinking.signature: must be a string"
     ));
