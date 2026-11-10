@@ -1,5 +1,7 @@
 use crate::identity::provider_id::ProviderId;
 
+use super::EndpointProvider::{Anyscale, Known};
+
 #[derive(Clone, Copy)]
 pub(super) enum EndpointProvider {
     Anyscale,
@@ -62,187 +64,175 @@ pub(super) const ENDPOINTS: [&str; 52] = [
     "https://gigachat.devices.sberbank.ru/api/v1",
 ];
 
-pub(super) enum KeySource {
-    Env(&'static [&'static str]),
-    EnvUnlessGiven(&'static [&'static str]),
-    HttpsOnly(&'static [&'static str]),
-}
+// An elif arm of LiteLLM's loop, compared against the matched endpoint's literal string.
+pub(super) type Branch = (&'static str, EndpointProvider, &'static [&'static str]);
 
-pub(super) struct Branch {
-    pub endpoint: &'static str,
-    pub provider: EndpointProvider,
-    pub keys: KeySource,
-}
+const TOGETHER_KEYS: &[&str] = &[
+    "TOGETHER_API_KEY",
+    "TOGETHER_AI_API_KEY",
+    "TOGETHERAI_API_KEY",
+    "TOGETHER_AI_TOKEN",
+];
 
-pub(super) const BRANCHES: &[Branch] = &[
-    Branch {
-        endpoint: "api.perplexity.ai",
-        provider: EndpointProvider::Known(ProviderId::Perplexity),
-        keys: KeySource::Env(&["PERPLEXITYAI_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.endpoints.anyscale.com/v1",
-        provider: EndpointProvider::Anyscale,
-        keys: KeySource::Env(&["ANYSCALE_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.deepinfra.com/v1/openai",
-        provider: EndpointProvider::Known(ProviderId::Deepinfra),
-        keys: KeySource::Env(&["DEEPINFRA_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.mistral.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::Mistral),
-        keys: KeySource::Env(&["MISTRAL_API_KEY"]),
-    },
-    Branch {
-        endpoint: "codestral.mistral.ai/v1/chat/completions",
-        provider: EndpointProvider::Known(ProviderId::Codestral),
-        keys: KeySource::Env(&["CODESTRAL_API_KEY"]),
-    },
-    Branch {
-        endpoint: "codestral.mistral.ai/v1/fim/completions",
-        provider: EndpointProvider::Known(ProviderId::TextCompletionCodestral),
-        keys: KeySource::Env(&["CODESTRAL_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.groq.com/openai/v1",
-        provider: EndpointProvider::Known(ProviderId::Groq),
-        keys: KeySource::Env(&["GROQ_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://integrate.api.nvidia.com/v1",
-        provider: EndpointProvider::Known(ProviderId::NvidiaNim),
-        keys: KeySource::Env(&["NVIDIA_NIM_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.getnadir.com/v1",
-        provider: EndpointProvider::Known(ProviderId::Nadir),
-        keys: KeySource::HttpsOnly(&["NADIR_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.deepseek.com/v1",
-        provider: EndpointProvider::Known(ProviderId::Deepseek),
-        keys: KeySource::Env(&["DEEPSEEK_API_KEY"]),
-    },
-    Branch {
-        endpoint: "api.together.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::TogetherAi),
-        keys: KeySource::EnvUnlessGiven(&[
-            "TOGETHER_API_KEY",
-            "TOGETHER_AI_API_KEY",
-            "TOGETHERAI_API_KEY",
-            "TOGETHER_AI_TOKEN",
-        ]),
-    },
-    Branch {
-        endpoint: "api.together.xyz/v1",
-        provider: EndpointProvider::Known(ProviderId::TogetherAi),
-        keys: KeySource::EnvUnlessGiven(&[
-            "TOGETHER_API_KEY",
-            "TOGETHER_AI_API_KEY",
-            "TOGETHERAI_API_KEY",
-            "TOGETHER_AI_TOKEN",
-        ]),
-    },
-    Branch {
-        endpoint: "app.empower.dev/api/v1",
-        provider: EndpointProvider::Known(ProviderId::Empower),
-        keys: KeySource::Env(&["EMPOWER_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.friendli.ai/serverless/v1",
-        provider: EndpointProvider::Known(ProviderId::Friendliai),
-        keys: KeySource::Env(&["FRIENDLIAI_API_KEY", "FRIENDLI_TOKEN"]),
-    },
-    Branch {
-        endpoint: "api.sambanova.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::Sambanova),
-        keys: KeySource::Env(&["SAMBANOVA_API_KEY"]),
-    },
-    Branch {
-        endpoint: "ollama.com",
-        provider: EndpointProvider::Known(ProviderId::Ollama),
-        keys: KeySource::Env(&["OLLAMA_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api-inference.modelscope.cn/v1",
-        provider: EndpointProvider::Known(ProviderId::Modelscope),
-        keys: KeySource::Env(&["MODELSCOPE_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.synthetic.new/openai/v1",
-        provider: EndpointProvider::Known(ProviderId::Synthetic),
-        keys: KeySource::Env(&["SYNTHETIC_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.stima.tech/v1",
-        provider: EndpointProvider::Known(ProviderId::Apertis),
-        keys: KeySource::Env(&["STIMA_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://nano-gpt.com/api/v1",
-        provider: EndpointProvider::Known(ProviderId::Nanogpt),
-        keys: KeySource::Env(&["NANOGPT_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.poe.com/v1",
-        provider: EndpointProvider::Known(ProviderId::Poe),
-        keys: KeySource::Env(&["POE_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://llm.chutes.ai/v1/",
-        provider: EndpointProvider::Known(ProviderId::Chutes),
-        keys: KeySource::Env(&["CHUTES_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.v0.dev/v1",
-        provider: EndpointProvider::Known(ProviderId::V0),
-        keys: KeySource::Env(&["V0_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.lambda.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::LambdaAi),
-        keys: KeySource::Env(&["LAMBDA_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.inceptionlabs.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::Inception),
-        keys: KeySource::Env(&["INCEPTION_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.hyperbolic.xyz/v1",
-        provider: EndpointProvider::Known(ProviderId::Hyperbolic),
-        keys: KeySource::Env(&["HYPERBOLIC_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://ai-gateway.vercel.sh/v1",
-        provider: EndpointProvider::Known(ProviderId::VercelAiGateway),
-        keys: KeySource::Env(&["VERCEL_AI_GATEWAY_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.edenai.run/v3",
-        provider: EndpointProvider::Known(ProviderId::Edenai),
-        keys: KeySource::Env(&["EDENAI_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.inference.wandb.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::Wandb),
-        keys: KeySource::Env(&["WANDB_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://pinstripes.io/v1",
-        provider: EndpointProvider::Known(ProviderId::Pinstripes),
-        keys: KeySource::Env(&["PINSTRIPES_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://api.meta.ai/v1",
-        provider: EndpointProvider::Known(ProviderId::Meta),
-        keys: KeySource::Env(&["META_API_KEY"]),
-    },
-    Branch {
-        endpoint: "https://gigachat.devices.sberbank.ru/api/v1",
-        provider: EndpointProvider::Known(ProviderId::Gigachat),
-        keys: KeySource::Env(&["GIGACHAT_API_KEY"]),
-    },
+pub(super) const ENV_BRANCHES: [Branch; 29] = [
+    (
+        "api.perplexity.ai",
+        Known(ProviderId::Perplexity),
+        &["PERPLEXITYAI_API_KEY"],
+    ),
+    (
+        "api.endpoints.anyscale.com/v1",
+        Anyscale,
+        &["ANYSCALE_API_KEY"],
+    ),
+    (
+        "api.deepinfra.com/v1/openai",
+        Known(ProviderId::Deepinfra),
+        &["DEEPINFRA_API_KEY"],
+    ),
+    (
+        "api.mistral.ai/v1",
+        Known(ProviderId::Mistral),
+        &["MISTRAL_API_KEY"],
+    ),
+    (
+        "codestral.mistral.ai/v1/chat/completions",
+        Known(ProviderId::Codestral),
+        &["CODESTRAL_API_KEY"],
+    ),
+    (
+        "codestral.mistral.ai/v1/fim/completions",
+        Known(ProviderId::TextCompletionCodestral),
+        &["CODESTRAL_API_KEY"],
+    ),
+    (
+        "api.groq.com/openai/v1",
+        Known(ProviderId::Groq),
+        &["GROQ_API_KEY"],
+    ),
+    (
+        "https://integrate.api.nvidia.com/v1",
+        Known(ProviderId::NvidiaNim),
+        &["NVIDIA_NIM_API_KEY"],
+    ),
+    (
+        "api.deepseek.com/v1",
+        Known(ProviderId::Deepseek),
+        &["DEEPSEEK_API_KEY"],
+    ),
+    (
+        "app.empower.dev/api/v1",
+        Known(ProviderId::Empower),
+        &["EMPOWER_API_KEY"],
+    ),
+    (
+        "https://api.friendli.ai/serverless/v1",
+        Known(ProviderId::Friendliai),
+        &["FRIENDLIAI_API_KEY", "FRIENDLI_TOKEN"],
+    ),
+    (
+        "api.sambanova.ai/v1",
+        Known(ProviderId::Sambanova),
+        &["SAMBANOVA_API_KEY"],
+    ),
+    ("ollama.com", Known(ProviderId::Ollama), &["OLLAMA_API_KEY"]),
+    (
+        "https://api-inference.modelscope.cn/v1",
+        Known(ProviderId::Modelscope),
+        &["MODELSCOPE_API_KEY"],
+    ),
+    (
+        "https://api.synthetic.new/openai/v1",
+        Known(ProviderId::Synthetic),
+        &["SYNTHETIC_API_KEY"],
+    ),
+    (
+        "https://api.stima.tech/v1",
+        Known(ProviderId::Apertis),
+        &["STIMA_API_KEY"],
+    ),
+    (
+        "https://nano-gpt.com/api/v1",
+        Known(ProviderId::Nanogpt),
+        &["NANOGPT_API_KEY"],
+    ),
+    (
+        "https://api.poe.com/v1",
+        Known(ProviderId::Poe),
+        &["POE_API_KEY"],
+    ),
+    (
+        "https://llm.chutes.ai/v1/",
+        Known(ProviderId::Chutes),
+        &["CHUTES_API_KEY"],
+    ),
+    (
+        "https://api.v0.dev/v1",
+        Known(ProviderId::V0),
+        &["V0_API_KEY"],
+    ),
+    (
+        "https://api.lambda.ai/v1",
+        Known(ProviderId::LambdaAi),
+        &["LAMBDA_API_KEY"],
+    ),
+    (
+        "https://api.inceptionlabs.ai/v1",
+        Known(ProviderId::Inception),
+        &["INCEPTION_API_KEY"],
+    ),
+    (
+        "https://api.hyperbolic.xyz/v1",
+        Known(ProviderId::Hyperbolic),
+        &["HYPERBOLIC_API_KEY"],
+    ),
+    (
+        "https://ai-gateway.vercel.sh/v1",
+        Known(ProviderId::VercelAiGateway),
+        &["VERCEL_AI_GATEWAY_API_KEY"],
+    ),
+    (
+        "https://api.edenai.run/v3",
+        Known(ProviderId::Edenai),
+        &["EDENAI_API_KEY"],
+    ),
+    (
+        "https://api.inference.wandb.ai/v1",
+        Known(ProviderId::Wandb),
+        &["WANDB_API_KEY"],
+    ),
+    (
+        "https://pinstripes.io/v1",
+        Known(ProviderId::Pinstripes),
+        &["PINSTRIPES_API_KEY"],
+    ),
+    (
+        "https://api.meta.ai/v1",
+        Known(ProviderId::Meta),
+        &["META_API_KEY"],
+    ),
+    (
+        "https://gigachat.devices.sberbank.ru/api/v1",
+        Known(ProviderId::Gigachat),
+        &["GIGACHAT_API_KEY"],
+    ),
+];
+
+pub(super) const HTTPS_ONLY_BRANCHES: [Branch; 1] = [(
+    "https://api.getnadir.com/v1",
+    Known(ProviderId::Nadir),
+    &["NADIR_API_KEY"],
+)];
+
+pub(super) const EXPLICIT_BRANCHES: [Branch; 2] = [
+    (
+        "api.together.ai/v1",
+        Known(ProviderId::TogetherAi),
+        TOGETHER_KEYS,
+    ),
+    (
+        "api.together.xyz/v1",
+        Known(ProviderId::TogetherAi),
+        TOGETHER_KEYS,
+    ),
 ];

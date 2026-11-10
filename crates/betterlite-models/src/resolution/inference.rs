@@ -34,21 +34,27 @@ pub(super) fn infer(model: &str, catalog: &ModelCatalog) -> Option<Inference> {
     let mode = entry.and_then(|found| found.fields.metadata.mode);
     openai_family(model, provider)
         .or_else(|| declared_family(model, provider))
-        .or_else(|| cohere_family(model, provider))
-        .or_else(|| vertex_family(model, provider))
-        .or_else(|| named_family(model, provider, mode))
+        .or_else(|| later_family(model, provider, mode))
         .or_else(|| (model == "*").then_some(Inference::from(ProviderId::Openai)))
         .or_else(|| prefixed(model))
-        .or_else(|| generalization(model, catalog))
+        .or_else(|| {
+            let slug = catalog.generalizations.match_routing(model)?;
+            let identity = slug.parse::<ProviderId>().map_or_else(
+                |_| ProviderIdentity::Custom(slug.to_owned()),
+                ProviderIdentity::Known,
+            );
+            Some(Inference {
+                identity,
+                needs_defaults: false,
+            })
+        })
 }
 
-// The finetune rule only keeps single-colon ft: keys out; a model named by the two ft: substrings resolves anyway.
+// The finetune rule keeps only single-colon ft: keys out of the openai set; the ft: substrings win anyway.
 fn openai_family(model: &str, provider: Option<&str>) -> Option<Inference> {
-    if provider == Some("openai") {
-        let finetune = model.starts_with("ft:") && model.matches(':').count() <= 1;
-        if !finetune {
-            return Some(Inference::from(ProviderId::Openai));
-        }
+    let finetune = model.starts_with("ft:") && model.matches(':').count() <= 1;
+    if provider == Some("openai") && !finetune {
+        return Some(Inference::from(ProviderId::Openai));
     }
     let fine_tuned = model.contains("ft:gpt-3.5-turbo") || model.contains("ft:gpt-4");
     let generated = OPENAI_IMAGE_GENERATION_MODELS.contains(&model)
@@ -62,25 +68,27 @@ fn declared_family(model: &str, provider: Option<&str>) -> Option<Inference> {
         Some("text-completion-openai") => Some(Inference::from(ProviderId::TextCompletionOpenai)),
         Some("anthropic") => {
             let (_, identified) = anthropic_text_provider(model, Some("anthropic"));
-            let provider = if identified.as_deref() == Some("anthropic_text") {
-                ProviderId::AnthropicText
+            let text = identified.as_deref() == Some("anthropic_text");
+            let identity = if text {
+                ProviderIdentity::Known(ProviderId::AnthropicText)
             } else {
-                ProviderId::Anthropic
+                ProviderIdentity::Known(ProviderId::Anthropic)
             };
-            Some(Inference::from(provider))
+            Some(Inference {
+                identity,
+                needs_defaults: false,
+            })
         }
-        _ => None,
+        _ => named_by_model(model, provider),
     }
 }
 
-fn cohere_family(model: &str, provider: Option<&str>) -> Option<Inference> {
-    match provider {
-        Some("cohere") => return Some(Inference::from(ProviderId::Cohere)),
-        Some("cohere_chat") => return Some(Inference::from(ProviderId::CohereChat)),
-        _ => {}
-    }
-    if COHERE_EMBEDDING_MODELS.contains(&model) {
+fn named_by_model(model: &str, provider: Option<&str>) -> Option<Inference> {
+    if provider == Some("cohere") || COHERE_EMBEDDING_MODELS.contains(&model) {
         return Some(Inference::from(ProviderId::Cohere));
+    }
+    if provider == Some("cohere_chat") {
+        return Some(Inference::from(ProviderId::CohereChat));
     }
     if is_replicate(model) {
         return Some(Inference::from(ProviderId::Replicate));
@@ -88,19 +96,16 @@ fn cohere_family(model: &str, provider: Option<&str>) -> Option<Inference> {
     if provider == Some("openrouter") {
         return Some(Inference::from(ProviderId::Openrouter));
     }
-    MARITALK_MODELS
-        .contains(&model)
-        .then_some(Inference::from(ProviderId::Maritalk))
+    if MARITALK_MODELS.contains(&model) {
+        return Some(Inference::from(ProviderId::Maritalk));
+    }
+    vertex_family(model, provider)
 }
 
 fn vertex_family(model: &str, provider: Option<&str>) -> Option<Inference> {
     let name = provider?;
-    if name.starts_with("vertex_ai-")
-        && (is_vertex_text_set(name) || vertex_name_matches(model, name))
-    {
-        return Some(Inference::from(ProviderId::VertexAi));
-    }
-    None
+    let listed = is_vertex_text_set(name) || vertex_name_matches(model, name);
+    (name.starts_with("vertex_ai-") && listed).then_some(Inference::from(ProviderId::VertexAi))
 }
 
 fn is_vertex_text_set(name: &str) -> bool {
@@ -122,47 +127,37 @@ fn vertex_name_matches(model: &str, name: &str) -> bool {
         && !model.contains("vertex_ai/")
 }
 
-fn named_family(model: &str, provider: Option<&str>, mode: Option<Mode>) -> Option<Inference> {
+fn later_family(model: &str, provider: Option<&str>, mode: Option<Mode>) -> Option<Inference> {
     if provider == Some("ai21") {
         return Some(Inference {
             identity: ProviderIdentity::Known(ProviderId::Ai21Chat),
             needs_defaults: true,
         });
     }
-    aleph_baseten_nlp_petals(model, provider)
-        .or_else(|| {
-            is_bedrock(model, provider, mode).then_some(Inference::from(ProviderId::Bedrock))
-        })
-        .or_else(|| remaining_named_providers(model, provider))
-}
-
-fn aleph_baseten_nlp_petals(model: &str, provider: Option<&str>) -> Option<Inference> {
-    match provider {
-        // aleph_alpha is a provider slug LiteLLM knows but its typed provider list does not.
-        Some("aleph_alpha") => {
-            return Some(Inference {
-                identity: ProviderIdentity::Custom(String::from("aleph_alpha")),
-                needs_defaults: false,
-            });
-        }
-        Some("nlp_cloud") => return Some(Inference::from(ProviderId::NlpCloud)),
-        _ => {}
+    // aleph_alpha is a provider slug LiteLLM knows but its typed provider list does not.
+    if provider == Some("aleph_alpha") {
+        return Some(Inference {
+            identity: ProviderIdentity::Custom(String::from("aleph_alpha")),
+            needs_defaults: false,
+        });
     }
     if BASETEN_MODELS.contains(&model) {
         return Some(Inference::from(ProviderId::Baseten));
     }
-    PETALS_MODELS
-        .contains(&model)
-        .then_some(Inference::from(ProviderId::Petals))
-}
-
-fn remaining_named_providers(model: &str, provider: Option<&str>) -> Option<Inference> {
-    match provider {
-        Some("watsonx") => return Some(Inference::from(ProviderId::Watsonx)),
-        _ if OPEN_AI_EMBEDDING_MODELS.contains(&model) => {
-            return Some(Inference::from(ProviderId::Openai));
-        }
-        _ => {}
+    if provider == Some("nlp_cloud") {
+        return Some(Inference::from(ProviderId::NlpCloud));
+    }
+    if PETALS_MODELS.contains(&model) {
+        return Some(Inference::from(ProviderId::Petals));
+    }
+    if is_bedrock(model, provider, mode) {
+        return Some(Inference::from(ProviderId::Bedrock));
+    }
+    if provider == Some("watsonx") {
+        return Some(Inference::from(ProviderId::Watsonx));
+    }
+    if OPEN_AI_EMBEDDING_MODELS.contains(&model) {
+        return Some(Inference::from(ProviderId::Openai));
     }
     if provider == Some("empower") || EMPOWER_MODELS.contains(&model) {
         return Some(Inference::from(ProviderId::Empower));
@@ -187,18 +182,6 @@ fn prefixed(model: &str) -> Option<Inference> {
         model
             .starts_with(prefix)
             .then_some(Inference::from(*provider))
-    })
-}
-
-fn generalization(model: &str, catalog: &ModelCatalog) -> Option<Inference> {
-    let slug = catalog.generalizations.match_routing(model)?;
-    let identity = slug.parse::<ProviderId>().map_or_else(
-        |_| ProviderIdentity::Custom(slug.to_owned()),
-        ProviderIdentity::Known,
-    );
-    Some(Inference {
-        identity,
-        needs_defaults: false,
     })
 }
 

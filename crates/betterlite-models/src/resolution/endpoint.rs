@@ -6,7 +6,7 @@ use crate::identity::endpoint::endpoint_matches_api_base;
 use crate::provider_defaults_a::environment::first_set;
 
 use super::{ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest};
-use table::{BRANCHES, Branch, ENDPOINTS, EndpointProvider, KeySource};
+use table::{ENDPOINTS, ENV_BRANCHES, EXPLICIT_BRANCHES, EndpointProvider, HTTPS_ONLY_BRANCHES};
 
 mod table;
 
@@ -28,14 +28,11 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    if let Some(branch) = BRANCHES.iter().find(|branch| branch.endpoint == endpoint) {
-        return Ok(Some(EndpointMatch {
-            provider: identity(branch.provider),
-            api_key: key(branch, api_base, request, context.environment),
-        }));
+    let environment = context.environment;
+    if let Some((provider, api_key)) = known_branch(endpoint, api_base, request, environment) {
+        return Ok(Some(matched(provider, api_key)));
     }
     if let Some(descriptor) = context.registry.get_by_base_url(endpoint) {
-        let environment = context.environment;
         let api_key = request.api_key.cloned().or_else(|| {
             first_set(environment, &[descriptor.config.api_key_env.as_str()])
                 .map(SecretString::from)
@@ -49,30 +46,48 @@ pub(super) fn resolve(
     })
 }
 
-const fn identity(provider: EndpointProvider) -> ProviderIdentity {
-    match provider {
-        EndpointProvider::Anyscale => ProviderIdentity::Anyscale,
-        EndpointProvider::Known(known) => ProviderIdentity::Known(known),
-    }
-}
-
-fn key(
-    branch: &Branch,
+fn known_branch(
+    endpoint: &str,
     api_base: &str,
     request: &ResolutionRequest<'_>,
     environment: &BTreeMap<String, String>,
-) -> Option<SecretString> {
-    match &branch.keys {
-        KeySource::Env(names) => first_set(environment, names).map(SecretString::from),
-        KeySource::EnvUnlessGiven(names) => request
-            .api_key
-            .cloned()
-            .or_else(|| first_set(environment, names).map(SecretString::from)),
-        KeySource::HttpsOnly(names) => api_base
+) -> Option<(EndpointProvider, Option<SecretString>)> {
+    if let Some((_, provider, names)) = ENV_BRANCHES.iter().find(|(name, ..)| *name == endpoint) {
+        let api_key = first_set(environment, names).map(SecretString::from);
+        return Some((*provider, api_key));
+    }
+    if let Some((_, provider, names)) = HTTPS_ONLY_BRANCHES
+        .iter()
+        .find(|(name, ..)| *name == endpoint)
+    {
+        let api_key = api_base
             .to_lowercase()
             .starts_with("https://")
             .then(|| first_set(environment, names))
             .flatten()
-            .map(SecretString::from),
+            .map(SecretString::from);
+        return Some((*provider, api_key));
+    }
+    let (_, provider, names) = EXPLICIT_BRANCHES
+        .iter()
+        .find(|(name, ..)| *name == endpoint)?;
+    let api_key = request
+        .api_key
+        .cloned()
+        .or_else(|| first_set(environment, names).map(SecretString::from));
+    Some((*provider, api_key))
+}
+
+const fn matched(provider: EndpointProvider, api_key: Option<SecretString>) -> EndpointMatch {
+    EndpointMatch {
+        provider: identity(provider),
+        api_key,
+    }
+}
+
+const fn identity(provider: EndpointProvider) -> ProviderIdentity {
+    match provider {
+        EndpointProvider::Anyscale => ProviderIdentity::Anyscale,
+        EndpointProvider::Known(known) => ProviderIdentity::Known(known),
     }
 }
