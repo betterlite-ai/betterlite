@@ -318,6 +318,9 @@ pub(crate) fn factories() -> Arc<ExporterFactories> {
     ))
 }
 
+pub(crate) const RELEASE_SLOTS: usize = 16;
+const RELEASE_BOUND: Duration = Duration::from_secs(10);
+
 #[derive(Debug)]
 pub(crate) struct SignalCloser {
     pub(crate) signal: SyncSender<()>,
@@ -365,7 +368,7 @@ impl Debug for BlockingProcessor {
 fn block_until_released(entered: &SyncSender<()>, release: &Mutex<Receiver<()>>) {
     let _signalled = entered.send(());
     let guard = lock(release);
-    let _released = guard.recv();
+    let _released = guard.recv_timeout(RELEASE_BOUND);
     drop(guard);
 }
 
@@ -400,8 +403,8 @@ impl BlockingProcessor {
 }
 
 fn blocking_processor(block: BlockPoint) -> (Arc<BlockingProcessor>, Receiver<()>, SyncSender<()>) {
-    let (entered, entered_rx) = mpsc::sync_channel(0);
-    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let (entered, entered_rx) = mpsc::sync_channel(RELEASE_SLOTS);
+    let (release_tx, release_rx) = mpsc::sync_channel(RELEASE_SLOTS);
     let processor = Arc::new(BlockingProcessor {
         entered,
         release: Mutex::new(release_rx),

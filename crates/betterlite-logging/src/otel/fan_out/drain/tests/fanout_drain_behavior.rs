@@ -9,13 +9,13 @@ use opentelemetry_sdk::trace::SpanProcessor;
 
 use crate::otel::fan_out::drain::DrainPool;
 use crate::otel::fan_out::tests::support::{
-    Recorder, SignalCloser, blocking_closer, blocking_recorder,
+    RELEASE_SLOTS, Recorder, SignalCloser, blocking_closer, blocking_recorder,
 };
 
 const WAIT: Duration = Duration::from_secs(10);
 
 fn signal_closer(fail: bool) -> (Arc<SignalCloser>, Receiver<()>) {
-    let (signal, received) = mpsc::sync_channel(0);
+    let (signal, received) = mpsc::sync_channel(RELEASE_SLOTS);
     (Arc::new(SignalCloser { signal, fail }), received)
 }
 
