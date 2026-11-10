@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-files-beta-seed
+call:
+  anthropic_files:
+    file_beta_header:
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: seed-key}
+          error: {status: 400, message: bad, headers: []}
+env: {}
+compare: {ignore: []}

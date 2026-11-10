@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "anthropic_files"
+path = "fuzz_targets/anthropic_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "anthropic_response_content"
 path = "fuzz_targets/anthropic_response_content.rs"
 test = false
