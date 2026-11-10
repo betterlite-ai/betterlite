@@ -1,23 +1,14 @@
+use opentelemetry_sdk::trace::SpanProcessor;
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-
-use opentelemetry_sdk::trace::SpanProcessor;
-
-// Workers closing shed destination processors, so cycling a tenant's config cannot spawn threads per request.
 pub const DRAIN_WORKERS: usize = 2;
-
-// Shed processors waiting to be closed before the fan-out stops building new ones.
 pub const MAX_PENDING_DRAINS: usize = 64;
-
-// How long shutdown waits for spans already being forwarded, so teardown closes no processor under one.
 pub const SHUTDOWN_DRAIN: Duration = Duration::from_secs(5);
-
 #[derive(Debug, Default)]
 struct DrainState {
     closed: bool,
-    // submitted processors whose close has not returned
     backlog: usize,
     live_workers: usize,
     queue: VecDeque<Arc<dyn SpanProcessor>>,
@@ -29,12 +20,19 @@ struct DrainShared {
     wake: Condvar,
 }
 
+fn lock_state(shared: &DrainShared) -> MutexGuard<'_, DrainState> {
+    match shared.state.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 // litellm.integrations.otel.plumbing.providers._DrainPool
 #[derive(Debug)]
 pub struct DrainPool {
     shared: Arc<DrainShared>,
     capacity: usize,
-    // kept so the pool owns its workers; Drop below tells them to finish and exit
+    // kept so the pool owns its workers; Drop tells them to finish and exit
     _workers: Vec<JoinHandle<()>>,
 }
 
@@ -44,10 +42,10 @@ impl DrainPool {
         let shared = Arc::new(DrainShared::default());
         let mut handles = Vec::with_capacity(workers);
         for index in 0..workers {
-            let worker_shared = Arc::clone(&shared);
+            let worker = Arc::clone(&shared);
             let spawned = thread::Builder::new()
                 .name(format!("otel-destination-drain-{index}"))
-                .spawn(move || drain_until_closed(&worker_shared));
+                .spawn(move || drain_until_closed(&worker));
             match spawned {
                 Ok(handle) => handles.push(handle),
                 Err(error) => {
@@ -55,13 +53,7 @@ impl DrainPool {
                 }
             }
         }
-        let live = handles.len();
-        let mut state = match shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        state.live_workers = live;
-        drop(state);
+        lock_state(&shared).live_workers = handles.len();
         Self {
             shared,
             capacity,
@@ -69,26 +61,21 @@ impl DrainPool {
         }
     }
 
-    // litellm.integrations.otel.plumbing.providers._DrainPool.submit
     pub fn submit(&self, processor: Arc<dyn SpanProcessor>) {
-        let mut state = match self.shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = lock_state(&self.shared);
         if !state.closed && state.live_workers > 0 {
             state.backlog = state.backlog.saturating_add(1);
             state.queue.push_back(processor);
             self.shared.wake.notify_one();
             return;
         }
-        // No worker was ever started, so this thread closes the processor itself.
         let close_inline = !state.closed;
         drop(state);
         if close_inline {
             shutdown_quietly(&processor);
             return;
         }
-        // Past close, closing on the span-ending thread would park it on a flush shutdown no longer waits for.
+        // Past close the span-ending thread must not park on a flush shutdown no longer waits for.
         let straggler = thread::Builder::new()
             .name("otel-destination-drain-straggler".to_owned())
             .spawn(move || shutdown_quietly(&processor));
@@ -97,24 +84,16 @@ impl DrainPool {
         }
     }
 
-    // litellm.integrations.otel.plumbing.providers._DrainPool.saturated
     #[must_use]
     pub fn saturated(&self) -> bool {
-        let state = match self.shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let state = lock_state(&self.shared);
         let backlog = state.backlog;
         drop(state);
         backlog >= self.capacity
     }
 
-    // litellm.integrations.otel.plumbing.providers._DrainPool.close
     pub fn close(&self, timeout: Option<Duration>) {
-        let mut state = match self.shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = lock_state(&self.shared);
         if state.closed {
             return;
         }
@@ -142,24 +121,17 @@ impl DrainPool {
 
 impl Drop for DrainPool {
     fn drop(&mut self) {
-        let mut state = match self.shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = lock_state(&self.shared);
         state.closed = true;
         self.shared.wake.notify_all();
         drop(state);
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._DrainPool._drain_until_closed
 fn drain_until_closed(shared: &DrainShared) {
     while let Some(processor) = next_processor(shared) {
         shutdown_quietly(&processor);
-        let mut state = match shared.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = lock_state(shared);
         state.backlog = state.backlog.saturating_sub(1);
         shared.wake.notify_all();
         drop(state);
@@ -168,10 +140,7 @@ fn drain_until_closed(shared: &DrainShared) {
 
 // A closed worker that finds the queue empty retires here and reports itself gone.
 fn next_processor(shared: &DrainShared) -> Option<Arc<dyn SpanProcessor>> {
-    let mut state = match shared.state.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut state = lock_state(shared);
     loop {
         if let Some(processor) = state.queue.pop_front() {
             return Some(processor);
@@ -188,7 +157,6 @@ fn next_processor(shared: &DrainShared) -> Option<Arc<dyn SpanProcessor>> {
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._shutdown_quietly
 fn shutdown_quietly(processor: &Arc<dyn SpanProcessor>) {
     if let Err(error) = processor.shutdown() {
         tracing::debug!(%error, "otel: closing a destination processor failed");

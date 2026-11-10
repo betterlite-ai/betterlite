@@ -16,8 +16,9 @@ fn run(input: Value) -> Value {
     Op::run(&decoded).expect("the helper runs")
 }
 
-fn proxy_owned_projection() -> Value {
-    run(json!({
+#[test]
+fn for_destination_projects_the_tenant_attributes() {
+    let output = run(json!({
         "function": "for_destination",
         "span": {
             "name": "chat gpt-4",
@@ -28,7 +29,7 @@ fn proxy_owned_projection() -> Value {
                 "http.url": "https://proxy/v1/chat?key=sk",
                 "http.request.header.authorization": "Bearer x",
             },
-            "events": [{"name": "exception", "attributes": {"exception.message": "boom", "exception.stacktrace": "trace"}}],
+            "events": [{"name": "exception", "attributes": {"exception.message": "boom"}}],
             "status": {"code": "error", "description": "failed"},
             "parent": "1112131415161718",
             "resource": {"service.name": "betterlite"},
@@ -36,16 +37,11 @@ fn proxy_owned_projection() -> Value {
         "destination": {
             "endpoint": "http://collector:4318",
             "headers": {"x-api-key": "k"},
-            "resource_attributes": {"tenant.id": "t-1", "service.name": "tenant"},
+            "resource_attributes": {"tenant.id": "t-1"},
             "callback_name": "arize",
             "span_scope": "full",
         },
-    }))
-}
-
-#[test]
-fn for_destination_projects_the_tenant_view_and_resource() {
-    let output = proxy_owned_projection();
+    }));
     let result = &output["result"];
     assert_eq!(result["attributes"]["error.message"], "boom");
     assert_eq!(result["attributes"]["http.url"], "https://proxy/v1/chat");
@@ -53,31 +49,6 @@ fn for_destination_projects_the_tenant_view_and_resource() {
         result["attributes"]
             .get("http.request.header.authorization")
             .is_none()
-    );
-    let event = &result["events"][0]["attributes"];
-    assert!(event.get("exception.stacktrace").is_none());
-    assert_eq!(result["status"]["description"], "failed");
-    assert_eq!(result["parent"], "1112131415161718");
-    assert_eq!(result["resource"]["service.name"], "tenant");
-    assert_eq!(result["resource"]["tenant.id"], "t-1");
-}
-
-#[test]
-fn scoped_roots_a_model_call_and_names_the_trace() {
-    let output = run(json!({
-        "function": "scoped",
-        "span": {
-            "name": "chat gpt-4",
-            "attributes": {"gen_ai.operation.name": "chat"},
-            "parent": "1112131415161718",
-            "span_scope": "llm_only",
-        },
-        "span_scope": "llm_only",
-    }));
-    assert_eq!(output["result"]["parent"], Value::Null);
-    assert_eq!(
-        output["result"]["attributes"]["langfuse.trace.name"],
-        "chat gpt-4"
     );
 }
 

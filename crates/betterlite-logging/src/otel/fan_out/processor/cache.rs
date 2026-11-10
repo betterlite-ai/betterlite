@@ -1,17 +1,11 @@
+use super::{FanOutInner, lock_cache};
+use crate::otel::config::destination::{CacheKey, OtelDestination};
+use indexmap::IndexMap;
+use opentelemetry_sdk::trace::SpanProcessor;
 use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
-
-use indexmap::IndexMap;
-use opentelemetry_sdk::trace::SpanProcessor;
-
-use crate::otel::config::destination::{CacheKey, OtelDestination};
-
-use super::{FanOutInner, lock_cache};
-
-// Distinct tenant destinations whose exporters stay alive; each holds a pool and a batch thread.
 pub(super) const MAX_CACHED_PROCESSORS: usize = 32;
-
 #[derive(Debug)]
 pub(super) struct CachedProcessor {
     pub(super) id: u64,
@@ -28,7 +22,6 @@ pub(super) struct CacheState {
     pub(super) next_id: u64,
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._acquire
 pub(super) fn acquire(
     inner: &FanOutInner,
     destination: &OtelDestination,
@@ -48,7 +41,6 @@ pub(super) fn acquire(
     Some(processor)
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._buildable
 pub(super) fn buildable(inner: &FanOutInner, destination: &OtelDestination) -> bool {
     let mut cache = lock_cache(&inner.cache);
     if cache.closed {
@@ -61,7 +53,6 @@ pub(super) fn buildable(inner: &FanOutInner, destination: &OtelDestination) -> b
     built
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._release
 pub(super) fn release(inner: &FanOutInner, processor: &Arc<CachedProcessor>) {
     let mut cache = lock_cache(&inner.cache);
     let remaining = cache
@@ -83,7 +74,6 @@ pub(super) fn release(inner: &FanOutInner, processor: &Arc<CachedProcessor>) {
     submit_drained(inner, drained);
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._cached_or_built_locked
 fn cached_or_built(
     inner: &FanOutInner,
     cache: &mut CacheState,
@@ -106,7 +96,6 @@ fn cached_or_built(
     build_locked(inner, cache, destination, key)
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._build_locked
 fn build_locked(
     inner: &FanOutInner,
     cache: &mut CacheState,
@@ -129,7 +118,6 @@ fn build_locked(
     Some(cached)
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._retire_overflow_locked
 fn retire_overflow(inner: &FanOutInner, cache: &mut CacheState) {
     if cache.processors.len() <= MAX_CACHED_PROCESSORS || inner.drain.saturated() {
         return;
@@ -139,7 +127,6 @@ fn retire_overflow(inner: &FanOutInner, cache: &mut CacheState) {
     }
 }
 
-// litellm.integrations.otel.plumbing.providers.TenantFanOutSpanProcessor._drainable_locked
 fn drainable_locked(cache: &mut CacheState) -> Vec<Arc<CachedProcessor>> {
     let retired = mem::take(&mut cache.retired);
     let mut drained = Vec::new();

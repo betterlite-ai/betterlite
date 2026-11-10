@@ -1,17 +1,13 @@
-use std::sync::Arc;
-use std::time::Duration;
-
-use opentelemetry::Context;
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::error::OTelSdkResult;
-use opentelemetry_sdk::trace::{Span, SpanData, SpanProcessor};
-
 use crate::otel::config::destination::SpanScope;
 use crate::otel::fan_out::attach::{SinkKey, sink_key};
 use crate::otel::fan_out::attributes::{in_scope, scoped};
 use crate::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
-
-// litellm.integrations.otel.plumbing.providers._OverriddenBackendFilter
+use opentelemetry::Context;
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::trace::{Span, SpanData, SpanProcessor};
+use std::sync::Arc;
+use std::time::Duration;
 #[derive(Debug)]
 pub struct OverriddenBackendFilter {
     pub inner: Box<dyn SpanProcessor>,
@@ -22,7 +18,6 @@ pub struct OverriddenBackendFilter {
 }
 
 impl OverriddenBackendFilter {
-    // litellm.integrations.otel.plumbing.providers._OverriddenBackendFilter._account_scope
     fn account_scope(&self, request: &RequestOtelScope) -> SpanScope {
         if self.scope == SpanScope::Full {
             return SpanScope::Full;

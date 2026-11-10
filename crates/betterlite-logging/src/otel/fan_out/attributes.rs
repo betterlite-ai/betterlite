@@ -1,43 +1,33 @@
-use std::borrow::Cow;
-use std::collections::BTreeSet;
-
-use opentelemetry::trace::{Event, SpanId, Status};
-use opentelemetry::{Key, KeyValue, StringValue, Value};
-use opentelemetry_sdk::trace::{SpanData, SpanEvents, SpanLinks};
-
 use crate::otel::config::destination::SpanScope;
 use crate::otel::mappers::base::AttributeMap;
 use crate::otel::vocabulary::constants::attribute_keys::{
     db, error, exception_event, gen_ai, litellm, litellm_error, mcp, server,
 };
-
-// litellm.integrations.otel.mappers.langfuse.LANGFUSE_TRACE_NAME
+use opentelemetry::trace::{Event, SpanId, Status};
+use opentelemetry::{Key, KeyValue, StringValue, Value};
+use opentelemetry_sdk::trace::{SpanData, SpanEvents};
+use std::borrow::Cow;
+use std::collections::BTreeSet;
 pub const LANGFUSE_TRACE_NAME: &str = "langfuse.trace.name";
-
-const DB_SYSTEM_KEYS: [&str; 2] = [db::SYSTEM_NAME, db::SYSTEM_LEGACY];
-// Keys on a database span that describe the proxy's own datastore: its host, its port, its schema.
-const DATASTORE_ENDPOINT_KEYS: [&str; 3] = [server::ADDRESS, server::PORT, db::NAMESPACE];
-const TENANT_OWNED_KEYS: [&str; 3] = [
+const DB_KEYS: [&str; 2] = [db::SYSTEM_NAME, db::SYSTEM_LEGACY];
+const DATASTORE_KEYS: [&str; 3] = [server::ADDRESS, server::PORT, db::NAMESPACE];
+const OWNED_KEYS: [&str; 3] = [
     gen_ai::OPERATION_NAME,
     mcp::METHOD_NAME,
     litellm::GUARDRAIL_NAME,
 ];
-const PROXY_ERROR_TEXT_KEYS: [&str; 2] = [error::MESSAGE, error::MESSAGE_LEGACY];
-// The second spelling is the legacy status the request-level logger still maps.
-const GUARDRAIL_UNREACHABLE_STATUSES: [&str; 2] = ["guardrail_failed_to_respond", "failure"];
-// Prefixes the FastAPI instrumentor uses for headers the operator opted to capture.
-const CAPTURED_HEADER_PREFIXES: [&str; 2] = ["http.request.header.", "http.response.header."];
-// The instrumentor stamps the request URL with its query string, where a virtual key may ride.
+const ERROR_KEYS: [&str; 2] = [error::MESSAGE, error::MESSAGE_LEGACY];
+const UNREACHABLE: [&str; 2] = ["guardrail_failed_to_respond", "failure"];
+const HEADER_PREFIXES: [&str; 2] = ["http.request.header.", "http.response.header."];
 const URL_KEYS: [&str; 3] = ["http.url", "http.target", "url.full"];
-const URL_QUERY_KEY: &str = "url.query";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+const URL_QUERY: &str = "url.query";
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum GuardrailState {
     Responded,
     Unreachable,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct Redaction {
     database: bool,
     owned: bool,
@@ -45,23 +35,22 @@ struct Redaction {
 }
 
 impl Redaction {
-    // litellm.integrations.otel.plumbing.providers._tenant_visible
     fn tenant_visible(self, key: &str) -> bool {
-        if CAPTURED_HEADER_PREFIXES
+        if HEADER_PREFIXES
             .iter()
             .any(|prefix| key.starts_with(*prefix))
             || key == litellm_error::STACK_TRACE
-            || key == URL_QUERY_KEY
+            || key == URL_QUERY
         {
             return false;
         }
-        if self.database && DATASTORE_ENDPOINT_KEYS.contains(&key) {
+        if self.database && DATASTORE_KEYS.contains(&key) {
             return false;
         }
         if self.guardrail == GuardrailState::Unreachable && key == litellm::GUARDRAIL_RESPONSE {
             return false;
         }
-        self.owned || !PROXY_ERROR_TEXT_KEYS.contains(&key)
+        self.owned || !ERROR_KEYS.contains(&key)
     }
 }
 
@@ -74,7 +63,6 @@ pub fn attribute_map(attributes: &[KeyValue]) -> AttributeMap {
     map
 }
 
-// litellm.integrations.otel.plumbing.providers.is_llm_call_span
 #[must_use]
 pub fn is_llm_call_span(span: &SpanData) -> bool {
     let attributes = attribute_map(&span.attributes);
@@ -83,7 +71,6 @@ pub fn is_llm_call_span(span: &SpanData) -> bool {
     operation && !mcp_call
 }
 
-// litellm.integrations.otel.plumbing.providers._in_scope
 #[must_use]
 pub fn in_scope(span: &SpanData, scope: SpanScope) -> bool {
     if scope == SpanScope::Full {
@@ -92,21 +79,18 @@ pub fn in_scope(span: &SpanData, scope: SpanScope) -> bool {
     is_llm_call_span(span)
 }
 
-// litellm.integrations.otel.plumbing.providers._is_excluded_database_span
 #[must_use]
 pub fn is_excluded_database_span(attributes: &AttributeMap, excluded: &BTreeSet<String>) -> bool {
     if excluded.is_empty() {
         return false;
     }
-    let system = attributes
+    attributes
         .get(db::SYSTEM_NAME)
-        .or_else(|| attributes.get(db::SYSTEM_LEGACY));
-    system
+        .or_else(|| attributes.get(db::SYSTEM_LEGACY))
         .and_then(string_value)
-        .is_some_and(|name| excluded.contains(name))
+        .is_some_and(|system| excluded.contains(system))
 }
 
-// LiteLLM checks isinstance(value, str); every other Value variant is not a system name.
 fn string_value(value: &Value) -> Option<&str> {
     match value {
         Value::String(text) => Some(text.as_str()),
@@ -114,27 +98,39 @@ fn string_value(value: &Value) -> Option<&str> {
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._for_destination, minus the resource its exporter carries
 #[must_use]
 pub fn tenant_view(span: &SpanData) -> SpanData {
     let attributes = attribute_map(&span.attributes);
     let redaction = Redaction {
-        database: DB_SYSTEM_KEYS
-            .iter()
-            .any(|key| attributes.contains_key(*key)),
-        owned: TENANT_OWNED_KEYS
-            .iter()
-            .any(|key| attributes.contains_key(*key)),
+        database: DB_KEYS.iter().any(|key| attributes.contains_key(*key)),
+        owned: OWNED_KEYS.iter().any(|key| attributes.contains_key(*key)),
         guardrail: guardrail_state(&attributes),
     };
-    if redaction.owned && unchanged(span, &attributes, redaction) {
+    let mut changed = !redaction.owned;
+    let mut kept = Vec::with_capacity(attributes.len());
+    for (key, value) in &attributes {
+        if !redaction.tenant_visible(key) {
+            changed = true;
+            continue;
+        }
+        let stripped = without_query(key, value);
+        changed |= stripped != *value;
+        kept.push(KeyValue::new(Key::new(key.clone()), stripped));
+    }
+    if !changed
+        && span
+            .events
+            .events
+            .iter()
+            .all(|event| !has_stack_trace(event))
+    {
         return span.clone();
     }
     let mut view = span.clone();
-    view.attributes = kept_attributes(&attributes, redaction);
+    view.attributes = kept;
     view.dropped_attributes_count = 0;
     view.events = projected_events(span, redaction.owned);
-    view.links = zeroed_links(span);
+    view.links.dropped_count = 0;
     view.status = if redaction.owned {
         span.status.clone()
     } else {
@@ -143,7 +139,6 @@ pub fn tenant_view(span: &SpanData) -> SpanData {
     view
 }
 
-// litellm.integrations.otel.plumbing.providers._scoped
 #[must_use]
 pub fn scoped(mut span: SpanData, scope: SpanScope) -> SpanData {
     if scope == SpanScope::Full {
@@ -169,33 +164,6 @@ pub fn scoped(mut span: SpanData, scope: SpanScope) -> SpanData {
     span
 }
 
-fn unchanged(span: &SpanData, attributes: &AttributeMap, redaction: Redaction) -> bool {
-    let untouched_urls = |key: &str, value: &Value| {
-        string_value(value).is_none_or(|text| !URL_KEYS.contains(&key) || !text.contains('?'))
-    };
-    attributes
-        .iter()
-        .all(|(key, value)| redaction.tenant_visible(key) && untouched_urls(key, value))
-        && span
-            .events
-            .events
-            .iter()
-            .all(|event| !has_stack_trace(event))
-}
-
-fn kept_attributes(attributes: &AttributeMap, redaction: Redaction) -> Vec<KeyValue> {
-    let mut kept = Vec::with_capacity(attributes.len());
-    for (key, value) in attributes {
-        if redaction.tenant_visible(key) {
-            kept.push(KeyValue::new(
-                Key::new(key.clone()),
-                without_query(key, value),
-            ));
-        }
-    }
-    kept
-}
-
 fn projected_events(span: &SpanData, owned: bool) -> SpanEvents {
     let mut events = SpanEvents::default();
     if owned {
@@ -209,17 +177,11 @@ fn projected_events(span: &SpanData, owned: bool) -> SpanEvents {
     events
 }
 
-fn zeroed_links(span: &SpanData) -> SpanLinks {
-    let mut links = span.links.clone();
-    links.dropped_count = 0;
-    links
-}
-
 fn guardrail_state(attributes: &AttributeMap) -> GuardrailState {
     let unreachable = attributes
         .get(litellm::GUARDRAIL_STATUS)
         .and_then(string_value)
-        .is_some_and(|status| GUARDRAIL_UNREACHABLE_STATUSES.contains(&status));
+        .is_some_and(|status| UNREACHABLE.contains(&status));
     if unreachable {
         GuardrailState::Unreachable
     } else {
@@ -235,17 +197,11 @@ fn has_stack_trace(event: &Event) -> bool {
 }
 
 fn without_query(key: &str, value: &Value) -> Value {
-    if !URL_KEYS.contains(&key) {
-        return value.clone();
-    }
-    let Value::String(text) = value else {
+    let Some(text) = string_value(value).filter(|_| URL_KEYS.contains(&key)) else {
         return value.clone();
     };
-    let base = text.as_str().split_once('?').map_or_else(
-        || Cow::Borrowed(text.as_str()),
-        |(base, _query)| Cow::Borrowed(base),
-    );
-    Value::String(StringValue::from(base.into_owned()))
+    let base = text.split_once('?').map_or(text, |(base, _query)| base);
+    Value::String(StringValue::from(base.to_owned()))
 }
 
 const fn status_without_description(status: &Status) -> Status {

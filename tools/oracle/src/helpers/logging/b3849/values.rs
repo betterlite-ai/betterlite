@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_logging::otel::fan_out::attributes::attribute_map;
 use betterlite_logging::otel::mappers::base::AttributeMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
-use opentelemetry::trace::{Event, SpanId, Status};
 use opentelemetry::{Array, Key, KeyValue, StringValue, Value};
-use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::SpanData;
 use serde_json::{Value as Json, json};
 
@@ -25,11 +23,10 @@ pub(super) fn error(class: &str, message: String) -> Box<HelperError> {
 pub(super) fn attributes_of(
     values: &BTreeMap<String, OtelModelValue>,
 ) -> Result<Vec<KeyValue>, Box<HelperError>> {
-    let mut attributes = Vec::with_capacity(values.len());
-    for (key, value) in values {
-        attributes.push(KeyValue::new(Key::new(key.clone()), otel_value(value)?));
-    }
-    Ok(attributes)
+    values
+        .iter()
+        .map(|(key, value)| Ok(KeyValue::new(Key::new(key.clone()), otel_value(value)?)))
+        .collect()
 }
 
 fn otel_value(value: &OtelModelValue) -> Result<Value, Box<HelperError>> {
@@ -59,42 +56,18 @@ fn string_array(items: &[OtelModelValue]) -> Result<Value, Box<HelperError>> {
             | OtelModelValue::Number(_)
             | OtelModelValue::Array(_)
             | OtelModelValue::Object(_) => {
-                return Err(error(
-                    "InvalidInput",
-                    "only string arrays stand for OTel attribute arrays".to_owned(),
-                ));
+                return Err(error("InvalidInput", "string arrays only".to_owned()));
             }
         }
     }
     Ok(Value::Array(Array::String(texts)))
 }
 
-pub(super) fn resource_of(values: &BTreeMap<String, String>) -> Resource {
-    Resource::builder_empty()
-        .with_attributes(
-            values.iter().map(|(key, value)| {
-                KeyValue::new(Key::new(key.clone()), Value::from(value.clone()))
-            }),
-        )
-        .build()
-}
-
 pub(super) fn view_json(span: &SpanData) -> Json {
     json!({
         "name": span.name.as_ref(),
         "attributes": attributes_json(&attribute_map(&span.attributes)),
-        "events": span.events.events.iter().map(event_json).collect::<Vec<Json>>(),
-        "status": status_json(&span.status),
-        "parent": parent_json(span.parent_span_id),
     })
-}
-
-pub(super) fn resource_json(resource: &Resource) -> Json {
-    let mut fields = serde_json::Map::new();
-    for (key, value) in resource {
-        fields.insert(key.to_string(), json_value(value));
-    }
-    Json::Object(fields)
 }
 
 fn attributes_json(attributes: &AttributeMap) -> Json {
@@ -104,32 +77,6 @@ fn attributes_json(attributes: &AttributeMap) -> Json {
             .map(|(key, value)| (key.clone(), json_value(value)))
             .collect(),
     )
-}
-
-fn event_json(event: &Event) -> Json {
-    let attributes: AttributeMap = event
-        .attributes
-        .iter()
-        .map(|pair| (pair.key.to_string(), pair.value.clone()))
-        .collect();
-    json!({"name": event.name.as_ref(), "attributes": attributes_json(&attributes)})
-}
-
-fn status_json(status: &Status) -> Json {
-    let (code, description) = match status {
-        Status::Unset => ("unset", ""),
-        Status::Ok => ("ok", ""),
-        Status::Error { description } => ("error", description.as_ref()),
-    };
-    json!({"code": code, "description": description})
-}
-
-fn parent_json(parent: SpanId) -> Json {
-    if parent == SpanId::INVALID {
-        Json::Null
-    } else {
-        Json::String(format!("{parent:016x}"))
-    }
 }
 
 fn json_value(value: &Value) -> Json {

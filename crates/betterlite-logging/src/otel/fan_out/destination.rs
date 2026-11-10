@@ -1,16 +1,12 @@
-use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::sync::Arc;
-
-use opentelemetry::{Key, KeyValue, Value};
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::trace::SpanProcessor;
-
 use crate::otel::config::ExporterSpec;
 use crate::otel::config::destination::OtelDestination;
 use crate::otel::plumbing::exporters::{ExporterFactories, Transport};
 use crate::otel::plumbing::processors::processor_for;
-
-// The fan-out's injected builder for one destination's export pipeline; nothing here reads a registry.
+use opentelemetry::{Key, KeyValue, Value};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::SpanProcessor;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::sync::Arc;
 pub trait DestinationProcessorFactory: Send + Sync + Debug {
     fn build(
         &self,
@@ -30,7 +26,6 @@ impl Debug for ExporterDestinationFactory {
 }
 
 impl DestinationProcessorFactory for ExporterDestinationFactory {
-    // litellm.integrations.otel.plumbing.providers._destination_processor
     fn build(
         &self,
         destination: &OtelDestination,
@@ -56,36 +51,27 @@ impl DestinationProcessorFactory for ExporterDestinationFactory {
             use_simple_processor: Some(false),
             requires_headers: false,
         };
-        let sink = match self.factories.exporter_from_spec(&spec) {
-            Ok(sink) => sink,
-            Err(error) => {
-                tracing::debug!(
-                    endpoint = %fields.endpoint,
-                    %error,
-                    "otel: tenant destination exporter did not build"
-                );
-                return None;
-            }
-        };
+        let sink = self.factories.exporter_from_spec(&spec).map_err(|error| {
+            tracing::debug!(endpoint = %fields.endpoint, %error, "otel: tenant destination did not build");
+        }).ok()?;
         let mut processor = processor_for(sink, Some(false));
         processor.set_resource(resource);
         Some(Arc::new(processor))
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._for_destination's resource merge, carried by the destination processor
 #[must_use]
 pub fn destination_resource(base: &Resource, destination: &OtelDestination) -> Resource {
-    let mut merged: Vec<KeyValue> = base
+    let extra = destination
+        .as_ref()
+        .resource_attributes
+        .iter()
+        .map(|(key, value)| KeyValue::new(Key::new(key.clone()), Value::from(value.clone())));
+    let merged: Vec<KeyValue> = base
         .iter()
         .map(|(key, value)| KeyValue::new(key.clone(), value.clone()))
+        .chain(extra)
         .collect();
-    for (key, value) in &destination.as_ref().resource_attributes {
-        merged.push(KeyValue::new(
-            Key::new(key.clone()),
-            Value::from(value.clone()),
-        ));
-    }
     let builder = Resource::builder_empty();
     match base.schema_url() {
         Some(url) => builder.with_schema_url(merged, url.to_owned()).build(),

@@ -1,6 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-
 use crate::otel::config::destination::{OtelDestination, SpanScope};
 use crate::otel::config::{ExporterOwner, ExporterSpec, Settings, Signal};
 use crate::otel::fan_out::destination::{DestinationProcessorFactory, ExporterDestinationFactory};
@@ -10,20 +7,15 @@ use crate::otel::fan_out::scope::RequestScopeSource;
 use crate::otel::plumbing::endpoints::signal_endpoint;
 use crate::otel::plumbing::exporters::{ExporterFactories, Transport};
 use crate::otel::plumbing::headers::parse_headers;
-
-// An exporter's account: its normalized endpoint and the credentials it presents.
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 pub type SinkKey = (String, Vec<(String, String)>);
-
-// Header names that spell one credential two ways: Arize's exporter sends space_id, a tenant arize-space-id.
 const CREDENTIAL_ALIASES: [(&str, &str); 1] = [("arize_space_id", "space_id")];
-
-// The processors attached to the one provider every span passes through; the fan-out lives here.
 #[derive(Debug, Default)]
 pub struct TenantFanOutRegistry {
     pub fan_out: Option<TenantFanOutSpanProcessor>,
 }
 
-// litellm.integrations.otel.plumbing.providers._credential_name
 #[must_use]
 pub fn credential_name(header: &str) -> String {
     let normalized = header.trim().to_lowercase().replace('-', "_");
@@ -36,7 +28,6 @@ pub fn credential_name(header: &str) -> String {
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._sink_key
 #[must_use]
 pub fn sink_key(endpoint: Option<&str>, headers: &BTreeMap<String, String>) -> Option<SinkKey> {
     let normalized = signal_endpoint(endpoint, Signal::Traces)?;
@@ -48,7 +39,6 @@ pub fn sink_key(endpoint: Option<&str>, headers: &BTreeMap<String, String>) -> O
     Some((normalized, credentials))
 }
 
-// litellm.integrations.otel.plumbing.providers.operator_sink_scopes
 #[must_use]
 pub fn operator_sink_scopes(
     configs: &[Settings],
@@ -74,7 +64,6 @@ pub fn operator_sink_scopes(
     scoped
 }
 
-// litellm.integrations.otel.plumbing.providers.attach_tenant_fan_out; the bool tells a repeat attach from the first
 #[must_use]
 pub fn attach_tenant_fan_out(
     registry: &mut TenantFanOutRegistry,
@@ -100,7 +89,6 @@ pub fn attach_tenant_fan_out(
     true
 }
 
-// litellm.integrations.otel.plumbing.providers.deliverable_destinations
 #[must_use]
 pub fn deliverable_destinations(
     destinations: &[OtelDestination],
@@ -112,7 +100,6 @@ pub fn deliverable_destinations(
         .map_or_else(Vec::new, |fan_out| fan_out.deliverable(destinations))
 }
 
-// litellm.integrations.otel.plumbing.providers._operator_scope
 fn operator_scope(config: &Settings, spec: &ExporterSpec) -> SpanScope {
     if spec.owner == Some(ExporterOwner::LangfuseOtel) {
         config.langfuse_span_scope
@@ -121,7 +108,6 @@ fn operator_scope(config: &Settings, spec: &ExporterSpec) -> SpanScope {
     }
 }
 
-// litellm.integrations.otel.plumbing.providers._exports_to_the_wire
 fn exports_to_the_wire(spec: &ExporterSpec, factories: &ExporterFactories) -> bool {
     factories.exporter_transport(&spec.kind) != Transport::Headerless
         && !(spec.requires_headers && spec.headers.is_none())
