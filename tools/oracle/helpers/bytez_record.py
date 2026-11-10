@@ -202,24 +202,24 @@ def chunks(fields: Object) -> Json:
     provider = cast(str, fields.get("provider", ""))
     fragments = cast("list[str]", fields.get("fragments", []))
     details: dict[str, object] = {"litellm_params": {}, "custom_llm_provider": provider}
-    wrapper = BytezCustomStreamWrapper(
-        completion_stream=iter(fragments),
-        model=model,
-        custom_llm_provider=provider,
-        logging_obj=cast("Logging", Recording(details)),
-    )
     outcomes: list[Json] = []
-    for fragment in fragments:
-        try:
-            with patch("litellm.suppress_debug_info", new=True):
+    with patch("litellm.suppress_debug_info", new=True):
+        wrapper = BytezCustomStreamWrapper(
+            completion_stream=iter(fragments),
+            model=model,
+            custom_llm_provider=provider,
+            logging_obj=cast("Logging", Recording(details)),
+        )
+        for fragment in fragments:
+            try:
                 chunk = wrapper.chunk_creator(fragment)
-        except StopIteration:
-            outcomes.append({"end": True})
-            continue
-        except Exception:  # noqa: BLE001 - the status is what a caller can branch on
-            outcomes.append({"failed": True})
-            continue
-        outcomes.append({"chunk": None if chunk is None else chunk_projection(chunk)})
+            except StopIteration:
+                outcomes.append({"end": True})
+                continue
+            except Exception:  # noqa: BLE001 - the status is what a caller can branch on
+                outcomes.append({"failed": True})
+                continue
+            outcomes.append({"chunk": None if chunk is None else chunk_projection(chunk)})
     return outcomes
 
 
