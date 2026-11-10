@@ -1,0 +1,8 @@
+kind: helper
+name: cache-mode-default-on-default-off
+call:
+  b4296:
+    cache_mode_values: null
+env: {}
+compare:
+  ignore: []
