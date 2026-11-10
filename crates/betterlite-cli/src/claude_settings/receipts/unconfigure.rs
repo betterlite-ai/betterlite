@@ -28,9 +28,9 @@ pub struct UnconfigureOutcome {
     pub file_removed: bool,
 }
 
-struct Documents {
-    settings: Option<SettingsDocument>,
-    receipt: Option<ConfigureReceipt>,
+struct Documents<'input> {
+    settings: Option<&'input SettingsDocument>,
+    receipt: Option<&'input ConfigureReceipt>,
 }
 
 struct UnconfigurePlan {
@@ -52,8 +52,8 @@ pub async fn unconfigure_claude_settings(
 ) -> Result<UnconfigureOutcome, ReceiptsError> {
     let plan = plan_off_thread(settings_path, state_path, owners).await?;
     let documents = Documents {
-        settings: (!plan.file_removed).then(|| plan.restored.settings.clone()),
-        receipt: plan.kept_receipt.clone(),
+        settings: (!plan.file_removed).then_some(&plan.restored.settings),
+        receipt: plan.kept_receipt.as_ref(),
     };
     write_documents(files, landers, state_path, &plan.target, &documents).await?;
     let restored = plan
@@ -160,13 +160,13 @@ async fn write_documents(
     landers: &dyn SettingsLanding,
     state_path: &Path,
     target: &Path,
-    documents: &Documents,
+    documents: &Documents<'_>,
 ) -> Result<(), ReceiptsError> {
-    let staged_settings = stage_settings(files, target, documents.settings.as_ref()).await?;
+    let staged_settings = stage_settings(files, target, documents.settings).await?;
     let staged_receipt = stage_receipt(
         files,
         state_path,
-        documents.receipt.as_ref(),
+        documents.receipt,
         staged_settings.as_ref(),
     )
     .await?;
