@@ -25,7 +25,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 WORKDIR /ui
 
-# The dashboard sources land with B144; until then this stage ships an empty bundle so the image still builds.
+# The dashboard sources are not in the tree yet; until they land this stage ships an empty bundle so the image builds.
 RUN --mount=type=bind,target=/src \
     if [ -f /src/ui/litellm-dashboard/package.json ]; then \
         cp -a /src/ui/litellm-dashboard/. /ui/ && \
