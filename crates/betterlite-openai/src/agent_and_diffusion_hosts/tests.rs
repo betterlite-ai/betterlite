@@ -268,76 +268,61 @@ fn gradient_complete_url_reads_the_agent_environment_again(
 #[rstest]
 #[case::explicit_base(
     Some("https://explicit"),
-    None,
-    None,
+    &[],
     Some("explicit-key"),
     Some("https://explicit"),
     Some("explicit-key")
 )]
 #[case::explicit_base_beats_agent_environment(
     Some("https://explicit"),
-    Some("https://agent"),
-    Some("env-key"),
+    &[("GRADIENT_AI_AGENT_ENDPOINT", "https://agent"), ("GRADIENT_AI_API_KEY", "env-key")],
     None,
     Some("https://explicit"),
     Some("env-key")
 )]
 #[case::agent_environment_default(
     None,
-    Some("https://agent"),
-    Some("env-key"),
+    &[("GRADIENT_AI_AGENT_ENDPOINT", "https://agent"), ("GRADIENT_AI_API_KEY", "env-key")],
     None,
     Some("https://agent"),
     Some("env-key")
 )]
 #[case::serverless_default(
     None,
-    None,
-    Some("env-key"),
+    &[("GRADIENT_AI_API_KEY", "env-key")],
     None,
     Some(SERVERLESS_ENDPOINT),
     Some("env-key")
 )]
 #[case::empty_base_falls_to_agent_environment(
     Some(""),
-    Some("https://agent"),
-    Some("env-key"),
+    &[("GRADIENT_AI_AGENT_ENDPOINT", "https://agent"), ("GRADIENT_AI_API_KEY", "env-key")],
     None,
     Some("https://agent"),
     Some("env-key")
 )]
 #[case::empty_environment_values_fall_through(
     None,
-    Some(""),
-    Some(""),
+    &[("GRADIENT_AI_AGENT_ENDPOINT", ""), ("GRADIENT_AI_API_KEY", "")],
     Some("explicit"),
     Some(SERVERLESS_ENDPOINT),
     Some("explicit")
 )]
 #[case::both_empty_environment_values(
     None,
-    Some(""),
-    Some(""),
+    &[("GRADIENT_AI_AGENT_ENDPOINT", ""), ("GRADIENT_AI_API_KEY", "")],
     None,
     Some(SERVERLESS_ENDPOINT),
     Some("")
 )]
 fn gradient_provider_info_prefers_explicit_then_agent_then_serverless(
     #[case] explicit_base: Option<&str>,
-    #[case] agent_endpoint: Option<&str>,
-    #[case] environment_key: Option<&str>,
+    #[case] entries: &[(&str, &str)],
     #[case] explicit_key: Option<&str>,
     #[case] expected_base: Option<&str>,
     #[case] expected_key: Option<&str>,
 ) {
-    let mut entries: Vec<(&str, &str)> = Vec::new();
-    if let Some(endpoint) = agent_endpoint {
-        entries.push(("GRADIENT_AI_AGENT_ENDPOINT", endpoint));
-    }
-    if let Some(key) = environment_key {
-        entries.push(("GRADIENT_AI_API_KEY", key));
-    }
-    let loaded = settings(&entries);
+    let loaded = settings(entries);
     let key_override = explicit_key.map(secret);
     let (base, key) =
         AgentHost::Gradient.provider_info(&loaded, explicit_base, key_override.as_ref());
