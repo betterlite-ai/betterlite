@@ -9,20 +9,26 @@ use serde_json::{Value, json};
 use super::ResponseSpec;
 
 pub(super) fn sort_view(chunks: &[Chunk]) -> Value {
-    match StreamedChunks::new(chunks.to_vec()) {
-        Ok(streamed) => json!({
+    with_chunks(chunks, |streamed| {
+        json!({
             "chunks": streamed.chunks.iter().map(chunk_view).collect::<Vec<_>>(),
             "first_chunk": chunk_view(&streamed.first_chunk),
-        }),
-        Err(StreamBaseAssemblyError::NoChunks) => {
-            json!({"ok": false, "error_type": "empty_chunks"})
-        }
-    }
+        })
+    })
 }
 
 pub(super) fn response_json(chunks: &[Chunk]) -> Value {
+    with_chunks(chunks, |streamed| {
+        response_view(&build_base_response(streamed))
+    })
+}
+
+fn with_chunks<F>(chunks: &[Chunk], view: F) -> Value
+where
+    F: FnOnce(&StreamedChunks) -> Value,
+{
     match StreamedChunks::new(chunks.to_vec()) {
-        Ok(streamed) => response_view(&build_base_response(&streamed)),
+        Ok(streamed) => view(&streamed),
         Err(StreamBaseAssemblyError::NoChunks) => {
             json!({"ok": false, "error_type": "empty_chunks"})
         }
