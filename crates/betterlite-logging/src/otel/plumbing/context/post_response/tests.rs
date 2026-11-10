@@ -88,6 +88,37 @@ fn a_parent_that_never_ended_keeps_a_request_phase_span_nested() {
 }
 
 #[test]
+fn an_unsampled_parent_stays_the_parent_and_gets_no_link() {
+    let unsampled = SpanContext::new(
+        TraceId::from(1),
+        SpanId::from(2),
+        TraceFlags::default(),
+        false,
+        TraceState::default(),
+    );
+    let ambient = Context::new().with_remote_span_context(unsampled);
+    let _guard = ambient.attach();
+    let (context, links) = resolve_service_span_context(None, &timing(None, None, true));
+    assert_eq!(context.span().span_context().span_id(), SpanId::from(2_u64));
+    assert!(links.is_empty());
+}
+
+// the extracted-carrier shape a kwargs parent takes in betterlite
+#[test]
+fn a_carrier_parent_reaches_the_service_span_without_a_link() {
+    let carrier = SpanContext::new(
+        TraceId::from(1),
+        SpanId::from(2),
+        TraceFlags::SAMPLED,
+        true,
+        TraceState::default(),
+    );
+    let (context, links) = resolve_service_span_context(Some(&carrier), &timing(None, None, true));
+    assert_eq!(context.span().span_context().trace_id(), TraceId::from(1));
+    assert!(links.is_empty());
+}
+
+#[test]
 fn without_a_known_parent_the_timing_is_ignored() {
     let (context, links) =
         resolve_service_span_context(None, &timing(moment(20), moment(10), false));
@@ -137,7 +168,7 @@ fn an_invalid_threaded_span_is_not_a_parent() {
 
 #[rstest]
 #[case::equal(moment(10), moment(10), false)]
-#[case::later(moment(11), moment(10), false)]
+#[case::later(moment(11), moment(10), true)]
 fn only_strictly_later_work_links_back(
     #[case] end: Option<SystemTime>,
     #[case] parent_end: Option<SystemTime>,

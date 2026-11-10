@@ -35,16 +35,16 @@ pub fn resolve_service_span_context(
 ) -> (Context, Vec<Link>) {
     let context = resolve_parent_context(threaded);
     let parent = context.span().span_context().clone();
-    if !is_post_response(timing, parent.is_valid()) {
+    if !is_post_response(timing, &parent) {
         return (context, Vec::new());
     }
     let rooted = context.with_remote_span_context(SpanContext::NONE);
     (rooted, vec![Link::with_context(parent)])
 }
 
-// litellm.integrations.otel.plumbing.context._is_post_response
-fn is_post_response(timing: &ServiceSpanTiming, parent_valid: bool) -> bool {
-    if !parent_valid {
+// litellm.integrations.otel.plumbing.context._is_post_response; a parent this SDK did not record is never a link target
+fn is_post_response(timing: &ServiceSpanTiming, parent: &SpanContext) -> bool {
+    if !parent.is_valid() || !parent.is_sampled() || parent.is_remote() {
         return false;
     }
     if timing.post_response {

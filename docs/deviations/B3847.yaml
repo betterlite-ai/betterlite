@@ -91,3 +91,13 @@ deviations:
       past 8 KB, such as a large team metadata blob, therefore does not reach the span attributes the
       allowlist would otherwise stamp. W3C propagation never carries such a value either.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L192-L197
+  - what: >-
+      A service span whose only parent is the W3C carrier named in kwargs metadata stays nested under
+      that parent; LiteLLM moves it to a linked root once its end time is past the parent's or the
+      request is in its post-response phase, because metadata names a live SDK span object there.
+    why: >-
+      _is_post_response starts from isinstance(parent, ReadableSpan), and betterlite reads recordability
+      off the carrier that replaces the live span object (the litellm_parent_otel_span entry). A carrier
+      the propagator extracted is always remote, so it is treated like the extracted contexts LiteLLM
+      itself refuses to link. The ambient parent keeps both behaviors, so every in-request span links.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L249-L256
