@@ -339,3 +339,10 @@ path = "fuzz_targets/huggingface_embedding_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gigachat_stream_chunk"
+path = "fuzz_targets/gigachat_stream_chunk.rs"
+test = false
+doc = false
+bench = false
