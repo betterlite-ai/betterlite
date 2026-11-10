@@ -1,0 +1,27 @@
+kind: helper
+name: gemma-envelope-seed-lookalikes
+call:
+  vertex_gemma_envelope:
+    wrapper_keys:
+      model: gemma/123456
+      messages:
+        - {role: system, content: be brief}
+        - {role: user, content: hello}
+      optional_params: {max_tokens: 8, top_p: 0.9}
+      litellm_params: {custom_llm_provider: vertex_ai_beta}
+    context_management_removed:
+      model: gemma/123456
+      messages:
+        - {role: user, content: hello}
+      optional_params: {context_management: {}}
+      litellm_params: {custom_llm_provider: vertex_ai}
+    missing_predictions: []
+    embedded_429: {predictions: {object: ERROR, message: rate limited, code: 429}}
+    invalid_error_code: {predictions: {object: error, message: rate limited, code: "429.5"}}
+    coercible_error_code: {predictions: {object: error, message: too many requests, code: 429.0, detail: extra}}
+    fake_stream_flag:
+      cases:
+        - {model: null, stream: false, provider: null}
+        - {model: gemma/123456, stream: true, provider: vertex_ai_beta}
+env: {}
+compare: {ignore: []}

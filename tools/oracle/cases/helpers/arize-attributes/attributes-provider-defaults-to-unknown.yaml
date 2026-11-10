@@ -1,0 +1,12 @@
+kind: helper
+name: attributes-provider-defaults-to-unknown
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+        metadata: null
+    response: null
+env: {}
+compare: {ignore: []}

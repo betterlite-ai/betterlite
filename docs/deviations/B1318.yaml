@@ -1,0 +1,14 @@
+task: B1318
+deviations:
+  - what: betterlite exposes one async check_cache where LiteLLM has the identical sync check_cache and async_check_cache loops.
+    why: the two Python loops differ only in whether the client call is awaited, and this gateway is native async, so a second blocking entry point would duplicate the loop and the transport; the request sequence, matching and every result are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L93-L276
+  - what: A cache target with no vertex_project is a typed error before any request, where LiteLLM interpolates the literal None into the projects/None segment of the cachedContents path.
+    why: projects/None is a URL no working Vertex setup relies on; failing at construction names the missing value instead of sending a request Google cannot route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L68-L77
+  - what: A cached content list page larger than 4 MiB is refused with a typed error before it is parsed, where LiteLLM reads and parses whatever size the provider sends.
+    why: the provider page is untrusted input, and a real page for a project stays far below 4 MiB, so the cap bounds memory for a hostile or broken upstream without refusing a working reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L160
+  - what: A Studio cache target without a gemini_api_key is a typed error at construction, where LiteLLM's caller passes the literal dummy as the key so the list request fails later with Google's 401 or 403.
+    why: a Studio request without its API key cannot succeed, and naming the missing key before a request is clearer than sending a placeholder the provider must reject.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1289

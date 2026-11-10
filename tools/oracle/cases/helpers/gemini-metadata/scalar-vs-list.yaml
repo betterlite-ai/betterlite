@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-metadata-scalar-vs-list
+call:
+  gemini_metadata:
+    call: scalar_vs_list
+    candidates:
+      - groundingMetadata:
+          webSearchQueries: [alpha, beta]
+      - groundingMetadata:
+          - webSearchQueries: [first]
+          - webSearchQueries: [second, first]
+      - groundingMetadata: []
+      - content: {role: model}
+      - groundingMetadata: {}
+env: {}
+compare: {ignore: []}

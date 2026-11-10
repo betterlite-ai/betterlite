@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-redacted-keeps-tool-name
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: call_mcp_tool
+        metadata:
+          mcp_tool_call_metadata:
+            name: get_weather
+            arguments:
+              city: Paris
+    response:
+      content:
+        - {type: text, text: sunny}
+    redact_messages: true
+env: {}
+compare: {ignore: []}

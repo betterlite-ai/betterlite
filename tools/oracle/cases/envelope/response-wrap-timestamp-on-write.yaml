@@ -1,0 +1,20 @@
+kind: helper
+name: response-wrap-timestamp-on-write
+call:
+  b4297:
+    add_cache:
+      request:
+        cache_key: key-1
+        key:
+          params:
+            - {name: model, value: gpt-4}
+      result:
+        choices:
+          - {message: {role: assistant, content: hi}}
+      settings:
+        ttl: 1.5
+env: {}
+compare:
+  ignore:
+    - pointer: /value/cached/timestamp
+      why: a cache write stamps the wall clock
