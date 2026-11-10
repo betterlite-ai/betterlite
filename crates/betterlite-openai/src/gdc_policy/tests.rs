@@ -473,6 +473,7 @@ fn a_terminal_newline_identifier_reaches_the_url() {
 #[case::prefix_checked_before_parsing("HTTP://API.Example.COM:443/x", "https://HTTP:")]
 #[case::userinfo_and_port("https://user:pw@host:8080/p?q=1#f", "https://user:pw@host:8080")]
 #[case::scheme_lookalike("https://HTTPS://x", "https://HTTPS:")]
+#[case::invalid_scheme_character("http_tp://x", "://")]
 #[case::ipv6_host("https://[::1]:8080/x", "https://[::1]:8080")]
 #[case::leading_space("  https://host/x", "https://host")]
 #[case::control_characters("https://host\t/x", "https://host")]
