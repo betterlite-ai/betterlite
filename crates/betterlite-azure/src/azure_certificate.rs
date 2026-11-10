@@ -17,17 +17,6 @@ mod tests;
 
 pub const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 
-impl CertificateError {
-    // msal serves the aging cached token when the IdP refuses the refresh or the request cannot be sent
-    #[must_use]
-    pub const fn keeps_cached_token(&self) -> bool {
-        matches!(
-            self,
-            Self::Refused { .. } | Self::Client(ClientSecretError::TokenTransport { .. })
-        )
-    }
-}
-
 // the library error that made a PKCS#12 keystore unreadable
 #[derive(Debug, Error)]
 pub enum DecodeFailure {

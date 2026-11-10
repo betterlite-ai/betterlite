@@ -122,7 +122,8 @@ impl CertificateCredential {
                 self.state()?.token = Some(token.clone());
                 Ok(token)
             }
-            Err(error) if error.keeps_cached_token() => match cached {
+            // msal serves the aging cached token only when the IdP refuses the refresh; other failures raise
+            Err(error @ CertificateError::Refused { .. }) => match cached {
                 Some(token) if now < token.expires_on => Ok(token),
                 _ => Err(error),
             },

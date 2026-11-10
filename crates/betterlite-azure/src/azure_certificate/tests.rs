@@ -133,7 +133,6 @@ fn aging(reply: Option<(u16, &str)>, at: i64) -> Result<AccessToken, Certificate
 #[rstest]
 #[case::idp_error(Some((400, ERROR_REPLY)), NOW + 30)]
 #[case::empty_reply(Some((400, "{}")), NOW + 30)]
-#[case::transport_failure(None, NOW + 30)]
 #[case::last_valid_second(Some((400, ERROR_REPLY)), NOW + 3599)]
 fn azure_certificate_serves_aging_token(#[case] reply: Option<(u16, &str)>, #[case] at: i64) {
     assert_eq!(aging(reply, at).unwrap().token.expose_secret(), "a");
@@ -144,6 +143,7 @@ fn azure_certificate_serves_aging_token(#[case] reply: Option<(u16, &str)>, #[ca
 #[case::description_only(Some((400, r#"{"error_description":"throttled"}"#)), NOW + 30, "Authentication failed: throttled")]
 #[case::server_error(Some((500, "busy")), NOW + 30, "Authentication failed: HTTP Error: 500")]
 #[case::not_json(Some((400, "busy")), NOW + 30, "the token response is not JSON")]
+#[case::transport_failure(None, NOW + 30, "Authentication failed: no reply left")]
 fn azure_certificate_refuses_without_serving_the_aging_token(
     #[case] reply: Option<(u16, &str)>,
     #[case] at: i64,
