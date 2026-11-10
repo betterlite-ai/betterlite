@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-files-file-content-bytes
+call:
+  anthropic_files:
+    file_content_bytes:
+      environment: {}
+      params_api_base: "https://files.test/v1/"
+      file_ids: ["file-1", "msgbatch_abc/1", "MSGBATCH_abc", "a b"]
+      status: 200
+      headers: [[content-type, application/octet-stream], [x-request-id, req-1]]
+      body: [0, 255, 10, 128]
+      error:
+        status: 429
+        message: slow down
+        headers: [[X-Request-Id, req-err]]
+env: {}
+compare: {ignore: []}
