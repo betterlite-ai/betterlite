@@ -180,11 +180,14 @@ seed_row!(ManagedFileRow, SetupList::ManagedFiles, "INSERT INTO \"LiteLLM_Manage
 seed_row!(ManagedObjectRow, SetupList::ManagedObjects, "INSERT INTO \"LiteLLM_ManagedObjectTable\" (\"id\",\"unified_object_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3),'{}'::jsonb)", unified_object_id, unified_object_id, content);
 #[rustfmt::skip]
 seed_row!(VectorStoreRow, SetupList::VectorStores, "INSERT INTO \"LiteLLM_ManagedVectorStoreTable\" (\"id\",\"unified_resource_id\",\"model_mappings\") VALUES ($1,$2,'{}'::jsonb)", unified_resource_id, unified_resource_id);
-async fn insert_all<T: SeedRow>(
+async fn insert_all<T>(
     client: &Client,
     rows: &[T],
     journal: &mut Vec<SetupJournalEntry>,
-) -> Result<(), FixtureError> {
+) -> Result<(), FixtureError>
+where
+    T: SeedRow + Sync,
+{
     let mut index = 0_usize;
     while let Some(row) = rows.get(index) {
         let params = row.params();

@@ -175,14 +175,13 @@ fn reject_header(
             break;
         }
     }
-    match secret {
-        Some(name) => Err(ScenarioError::SecretCaptureHeader {
+    secret.map_or(Ok(()), |name| {
+        Err(ScenarioError::SecretCaptureHeader {
             index,
             header: header.to_owned(),
             name,
-        }),
-        None => Ok(()),
-    }
+        })
+    })
 }
 
 fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {

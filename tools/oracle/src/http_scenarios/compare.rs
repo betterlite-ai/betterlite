@@ -130,16 +130,18 @@ fn mismatch(
 }
 
 fn remap(index: usize, pointer: &str) -> String {
-    let mapped = match pointer.strip_prefix("/upstream") {
-        Some(rest) => format!("/provider{rest}"),
-        None => match pointer.strip_prefix("/headers") {
-            Some(rest) => format!("/response/headers{rest}"),
-            None => match pointer {
-                "/status" => "/status".to_owned(),
-                "" | "/" => "/response".to_owned(),
-                other => format!("/response{other}"),
-            },
+    let mapped = pointer.strip_prefix("/upstream").map_or_else(
+        || {
+            pointer.strip_prefix("/headers").map_or_else(
+                || match pointer {
+                    "/status" => "/status".to_owned(),
+                    "" | "/" => "/response".to_owned(),
+                    other => format!("/response{other}"),
+                },
+                |rest| format!("/response/headers{rest}"),
+            )
         },
-    };
+        |rest| format!("/provider{rest}"),
+    );
     format!("/steps/{index}{mapped}")
 }

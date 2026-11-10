@@ -79,7 +79,7 @@ impl Peer for GatewayPeer {
     }
 
     fn log(&self) -> Result<String, ScenarioError> {
-        super::read_log(&self.gateway.log_path)
+        super::adapters::read_log(&self.gateway.log_path)
     }
 
     fn stop(&mut self) -> Result<(), ScenarioError> {

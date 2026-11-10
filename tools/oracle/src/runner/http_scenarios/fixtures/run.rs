@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use secrecy::SecretString;
 
-use super::JournalPolling;
-use super::PostgresRepository;
-use super::SystemClock;
+use super::adapters::JournalPolling;
+use super::adapters::PostgresRepository;
+use super::adapters::SystemClock;
 use super::gateway::GatewayPeerFactory;
 use super::scripted::ScriptedProvider;
 use crate::OracleError;

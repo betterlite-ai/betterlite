@@ -113,6 +113,7 @@ pub(crate) struct CapturedValue {
     pub(crate) secret: bool,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum Segment<'input> {
     Text(&'input str),
     Capture(&'input str),
@@ -148,24 +149,28 @@ pub(crate) struct Placeholders<'input> {
 
 impl Placeholders<'_> {
     pub(crate) fn resolve(&self, text: &str) -> Result<String, ScenarioError> {
-        segments(text, self.index)?.into_iter().try_fold(
-            String::new(),
-            |mut output, segment| -> Result<String, ScenarioError> {
-                match segment {
-                    Segment::Text(text) => output.push_str(text),
-                    Segment::Capture(name) => {
-                        let Some(value) = self.captures.get(name) else {
-                            return Err(ScenarioError::UnresolvedCapture {
-                                index: self.index,
-                                name: name.to_owned(),
-                            });
-                        };
-                        output.push_str(value.text.expose_secret());
-                    }
-                }
-                Ok(output)
-            },
-        )
+        let mut output = String::new();
+        for segment in segments(text, self.index)? {
+            self.append(&mut output, segment)?;
+        }
+        Ok(output)
+    }
+
+    fn append(&self, output: &mut String, segment: Segment<'_>) -> Result<(), ScenarioError> {
+        match segment {
+            Segment::Text(chunk) => output.push_str(chunk),
+            Segment::Capture(name) => {
+                let value =
+                    self.captures
+                        .get(name)
+                        .ok_or_else(|| ScenarioError::UnresolvedCapture {
+                            index: self.index,
+                            name: name.to_owned(),
+                        })?;
+                output.push_str(value.text.expose_secret());
+            }
+        }
+        Ok(())
     }
 }
 

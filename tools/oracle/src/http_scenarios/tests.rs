@@ -3,6 +3,7 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -24,8 +25,9 @@ use support::{
 use super::compare::compare_transcripts;
 use super::decode_http_scenario;
 use super::model::{Limits, Step, StepCompare};
-use crate::case::{Case, LoadedCase, Request, parse_case};
+use crate::case::{Case, Ignore, LoadedCase, Request, decode_case, parse_case};
 use crate::http_scenarios::run::StepCapture;
+use crate::mock::ProviderRequest;
 
 const FIXTURE_LIMIT_BYTES: usize = 0x0100_0000;
 const OVERSIZE_BYTES: usize = 0x0100_0001;
@@ -248,7 +250,7 @@ fn boundary_document(boundary: &Boundary) -> (String, Limits) {
         Boundary::Steps(count) => (scenario_text(&steps_yaml(*count)), Limits::default()),
         Boundary::Users(count) => {
             let users = (0..*count).fold(String::new(), |mut text, index| {
-                text.push_str(&format!("    - user_id: user-{index}\n"));
+                writeln!(text, "    - user_id: user-{index}").unwrap();
                 text
             });
             let text = format!(
@@ -495,7 +497,7 @@ fn error_documents(field: &str, ignored: Option<&str>) -> Comparison {
         headers_present: Vec::new(),
         upstream_headers: Vec::new(),
         ignore: ignored
-            .map(|pointer| crate::case::Ignore {
+            .map(|pointer| Ignore {
                 pointer: pointer.to_owned(),
                 why: "the scenario ignores this pointer".to_owned(),
             })
@@ -562,7 +564,7 @@ fn provider_documents(change: &str) -> Comparison {
     let rust = match change {
         "body" => provider_request("POST", "/v1/echo", json("{\"echo\":\"second\"}")),
         "path" => provider_request("POST", "/v1/other", json("{\"echo\":\"first\"}")),
-        _ => crate::mock::ProviderRequest {
+        _ => ProviderRequest {
             method: "POST".to_owned(),
             path: "/v1/echo".to_owned(),
             headers: BTreeMap::from([("x-upstream".to_owned(), "second".to_owned())]),
@@ -646,11 +648,10 @@ fn assert_changed_status() {
 
 fn assert_changed_journal() {
     let mut harness = Harness::new(&two_step_scenario());
-    let mut changed = Vec::new();
-    changed.push(SetupJournalEntry {
+    let changed = vec![SetupJournalEntry {
         list: SetupList::Users,
         index: 0,
-    });
+    }];
     harness.first.journal = changed;
     harness.push_peer(PlannedPeer::new(vec![
         Ok(response(200, Value::Null)),
@@ -791,6 +792,7 @@ fn assert_success_cleanup() {
     assert_eq!(harness.second.closes, 1);
 }
 
+#[derive(Clone, Copy)]
 enum PeerFailure {
     Timeout,
     Provider,
@@ -859,7 +861,7 @@ fn preserves_legacy_cases() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cases/health/liveliness.yaml"),
     )
     .unwrap();
-    let case = crate::case::decode_case(Path::new("<legacy>"), legacy.as_bytes()).unwrap();
+    let case = decode_case(Path::new("<legacy>"), legacy.as_bytes()).unwrap();
     let loaded = parse_case(Path::new("<legacy>"), &legacy).unwrap();
     let LoadedCase::Http(parsed) = loaded else {
         panic!("a no-kind document stayed a B001 HttpCase");

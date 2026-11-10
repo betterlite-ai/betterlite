@@ -81,6 +81,7 @@ impl ScriptedProvider {
             .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
         state.index = 0;
         state.requests.clear();
+        drop(state);
         Ok(())
     }
 }
@@ -128,7 +129,7 @@ async fn handle(
     let Ok(captured) = capture(&parts, &bytes) else {
         return failure(StatusCode::BAD_REQUEST);
     };
-    let answer = {
+    let queued = {
         let Ok(mut recorded) = state.lock() else {
             return failure(StatusCode::INTERNAL_SERVER_ERROR);
         };
@@ -137,10 +138,7 @@ async fn handle(
         recorded.index = recorded.index.saturating_add(1);
         answer
     };
-    match answer {
-        Some(answer) => reply(answer),
-        None => failure(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    queued.map_or_else(|| failure(StatusCode::INTERNAL_SERVER_ERROR), reply)
 }
 
 fn capture(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, Error> {

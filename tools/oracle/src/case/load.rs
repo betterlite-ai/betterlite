@@ -13,13 +13,18 @@ use super::{CaseKind, LoadedCase, parse_case};
 
 // sdk_http, probe and http_scenario cases run through their own drivers, so this list leaves them out
 pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
-    let texts = cases_matching(paths, |kind| {
-        !matches!(kind, Some("sdk_http" | "probe" | "http_scenario"))
-    })?;
-    texts
-        .iter()
-        .map(|(path, text)| parse_case(path, text))
-        .collect()
+    let mut cases = Vec::new();
+    for (path, text) in read_case_files(paths)? {
+        let probe: CaseKind = parse_case_text(&path, &text)?;
+        if matches!(
+            probe.kind.as_deref(),
+            Some("sdk_http" | "probe" | "http_scenario")
+        ) {
+            continue;
+        }
+        cases.push(parse_case(&path, &text)?);
+    }
+    Ok(cases)
 }
 
 pub(crate) fn load_http_scenario_cases(
@@ -33,8 +38,7 @@ pub(crate) fn load_http_scenario_cases(
 
 fn decode_scenarios(selection: Vec<(PathBuf, String)>) -> Result<Vec<HttpScenario>, OracleError> {
     let mut scenarios = Vec::with_capacity(selection.len());
-    let mut remaining = selection.into_iter();
-    while let Some((path, text)) = remaining.next() {
+    for (path, text) in selection {
         match decode_http_scenario(text.as_bytes(), &Limits::default()) {
             Ok(scenario) => scenarios.push(scenario),
             Err(source) => {

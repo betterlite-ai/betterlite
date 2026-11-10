@@ -169,8 +169,8 @@ impl PeerFactory for FakeFactory {
                 })
             },
             |peer| {
-                let peer: Box<dyn Peer> = Box::new(peer);
-                Ok(peer)
+                let boxed: Box<dyn Peer> = Box::new(peer);
+                Ok(boxed)
             },
         )
     }
@@ -326,7 +326,7 @@ pub(crate) fn response(status: u16, body: Value) -> Response {
     }
 }
 
-fn locked<'guard, T>(mutex: &'guard Mutex<T>) -> Result<MutexGuard<'guard, T>, ScenarioError> {
+fn locked<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, ScenarioError> {
     mutex.lock().map_err(|_source| ScenarioError::Peer {
         message: "the test mutex was poisoned".to_owned(),
     })
