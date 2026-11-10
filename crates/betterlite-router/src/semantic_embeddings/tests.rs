@@ -433,7 +433,7 @@ async fn qdrant_async_embedding_propagates_the_wait_for_timeout() {
 
 #[tokio::test(start_paused = true)]
 async fn non_positive_embedding_timeout_times_out_at_once() {
-    let calls = RecordingCalls::hanging();
+    let calls = RecordingCalls::succeeding(vec![vec![0.5_f64]]);
     let service = support::service(
         support::settings(None, Some(-1.0_f64)),
         None,
@@ -452,6 +452,7 @@ async fn non_positive_embedding_timeout_times_out_at_once() {
         .await
         .unwrap_err();
     assert!(matches!(redis_error, SemanticEmbeddingError::Failed { .. }));
+    assert_eq!(calls.recorded().len(), 0);
 }
 
 const ZERO_TIMEOUT: f64 = 0.0;
