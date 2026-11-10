@@ -7,7 +7,7 @@ use betterlite_prompts::message_fields::tool_reference::drop_tool_reference_part
 use betterlite_prompts::schema::drop_non_python_regex_patterns;
 use betterlite_prompts::schema::flatten::{flatten_top_level, tool_with_sanitized_parameters};
 
-use super::PolicyError;
+use super::error::PolicyError;
 
 #[must_use]
 pub fn sanitized_tools_update(optional: &Object) -> Object {

@@ -2,9 +2,10 @@ use betterlite_openai::base_helpers::provider_config;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 
+use crate::azure_chat_base_policy::AzureChatSettings;
+use crate::azure_chat_base_policy::error::PolicyError;
 use crate::azure_chat_base_policy::mapping::{MapPolicy, map_openai_params};
 use crate::azure_chat_base_policy::messages::transform_request;
-use crate::azure_chat_base_policy::{AzureChatSettings, PolicyError};
 
 pub(super) const TOOL_UPGRADE: &str = "Azure does not support 'tool_choice', for api_version=2022-01-01. Bump your API version to '2023-12-01-preview' or later. This parameter requires 'api_version=\"2023-12-01-preview\"' or later. Azure API Reference: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions";
 

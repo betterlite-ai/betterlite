@@ -1,9 +1,10 @@
 use betterlite_error::envelope::WireField;
 
+use crate::azure_chat_base_policy::SUPPORTED_OPENAI_PARAMS;
+use crate::azure_chat_base_policy::error::PolicyError;
 use crate::azure_chat_base_policy::mapping::{
-    format_supported_for_version, requires_max_completion_tokens, supports_response_format,
+    format_supported_for_version, requires_max_completion_tokens,
 };
-use crate::azure_chat_base_policy::{PolicyError, SUPPORTED_OPENAI_PARAMS};
 
 use super::support::{
     DropMode, REQUIRED_UPGRADE, TOOL_UPGRADE, blocked, mapped, object, policy,
@@ -50,16 +51,16 @@ fn assert_unsupported(error: &PolicyError, message: &str) {
     assert_eq!(metadata.code, "400");
 }
 
-const SUPPORTED_MODELS: [(&str, bool); 9] = [
-    ("gpt-4o", true),
-    ("gpt-4.1", true),
-    ("gpt-4-1", true),
-    ("azure/gpt-4-1", true),
-    ("gpt-3x5", true),
-    ("gpt-3.5-turbo", false),
-    ("gpt-3-5-turbo", false),
-    ("gpt-35-turbo", false),
-    ("azure/gpt-3-5", false),
+const SUPPORTED_MODELS: [(&str, &str); 9] = [
+    ("gpt-4o", FORMAT_REQUEST),
+    ("gpt-4.1", FORMAT_REQUEST),
+    ("gpt-4-1", FORMAT_REQUEST),
+    ("azure/gpt-4-1", FORMAT_REQUEST),
+    ("gpt-3x5", FORMAT_REQUEST),
+    ("gpt-3.5-turbo", EMULATED_FORMAT),
+    ("gpt-3-5-turbo", EMULATED_FORMAT),
+    ("gpt-35-turbo", EMULATED_FORMAT),
+    ("azure/gpt-3-5", EMULATED_FORMAT),
 ];
 
 const SUPPORTED_VERSIONS: [(&str, &str, bool); 10] = [
@@ -214,7 +215,7 @@ pub(super) fn api_version_response_format() {
 
 fn response_format_models() {
     for (model, expected) in SUPPORTED_MODELS {
-        assert_eq!(supports_response_format(model), expected, "{model}");
+        assert_mapped(FORMAT_REQUEST, EMPTY, model, "2024-08-01", expected);
     }
 }
 

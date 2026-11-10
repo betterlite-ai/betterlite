@@ -4,7 +4,8 @@ use betterlite_context::provider_message_primitives::{
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 
-use super::{PolicyError, SUPPORTED_OPENAI_PARAMS};
+use super::SUPPORTED_OPENAI_PARAMS;
+use super::error::PolicyError;
 
 const GPT_REASONING_SERIES_MARKERS: [&str; 2] = ["gpt-5", "gpt-6"];
 const SUPPORTED_RESPONSE_YEAR: i64 = 2024;
@@ -26,16 +27,9 @@ pub fn requires_max_completion_tokens(model: &str) -> bool {
         || model.contains("gpt5_series")
 }
 
-#[must_use]
-pub fn supports_response_format(model: &str) -> bool {
-    if normalize_model_digits(model).contains("gpt-3.5") || model.contains("gpt-35") {
-        return false;
-    }
-    true
-}
-
 // Python's re.sub(r"(\d)-(\d)", r"\1.\2") consumes both digits, so "4-1-2" normalizes to "4.1-2"
-fn normalize_model_digits(model: &str) -> String {
+#[must_use]
+pub fn normalize_model_digits(model: &str) -> String {
     let characters: Vec<char> = model.chars().collect();
     let mut normalized = String::with_capacity(model.len());
     let mut index = 0_usize;
@@ -188,7 +182,9 @@ fn apply_response_format(
     let version_supported = date.map_or(Ok(true), |(year, month, _day)| {
         format_supported_for_version(year, month)
     })?;
-    let native = version_supported && supports_response_format(policy.model);
+    let native = version_supported
+        && !normalize_model_digits(policy.model).contains("gpt-3.5")
+        && !policy.model.contains("gpt-35");
     let existing_tools = optional.get("tools");
     let malformed_tools = existing_tools.is_some_and(|tools| !matches!(tools, Json::List(_)));
     let tools = match existing_tools {
