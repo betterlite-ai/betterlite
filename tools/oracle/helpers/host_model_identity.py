@@ -38,17 +38,16 @@ class Log:
         self.events: list[Json] = []
 
     def post_call(self, **kwargs: object) -> None:
-        extra = cast(object, kwargs.get("additional_args"))
+        extra = kwargs.get("additional_args")
         complete: Json = None
         if isinstance(extra, dict):
             complete = cast(Object, extra).get("complete_input_dict")
-        self.events.append({
-            "name": "post_call",
-            "input": cast(Json, kwargs.get("input")),
-            "api_key": cast(Json, kwargs.get("api_key")),
-            "original_response": cast(Json, kwargs.get("original_response")),
-            "complete_input_dict": complete,
-        })
+        self.events.append([
+            cast(Json, kwargs.get("input")),
+            cast(Json, kwargs.get("api_key")),
+            cast(Json, kwargs.get("original_response")),
+            complete,
+        ])
 
 
 def obj(value: Json) -> Object:
@@ -85,19 +84,17 @@ def clarifai_model(model: Json) -> Object:
     try:
         base = CLARIFAI.get_base_model(model if isinstance(model, str) else None)
     except Exception:  # noqa: BLE001 - a wrong arity is the outcome a caller branches on
-        return {"model": model, "ok": False, "base_model": None, "request_model": None}
+        return {"model": model, "ok": False}
     return {"model": model, "ok": True, "base_model": base, "request_model": base or model}
 
 
-def identity(step: Object) -> Json:
-    host = text(step, "host")
-    base = opt(step, "api_base")
-    key = opt(step, "api_key")
-    with patch.dict(os.environ, string_map(step, "env"), clear=True):
+def identity(call: Object) -> Json:
+    host, base, key = text(call, "host"), opt(call, "api_base"), opt(call, "api_key")
+    with patch.dict(os.environ, string_map(call, "env"), clear=True):
         resolved, resolved_key = INFO[host](base, key)
         if host == "clarifai":
             supported = cast(Json, list(CLARIFAI.get_supported_openai_params("")))
-            models: list[Json] = [clarifai_model(model) for model in items(step, "models")]
+            models: list[Json] = [clarifai_model(model) for model in items(call, "models")]
             return {
                 "host": host,
                 "api_base": resolved,
@@ -115,40 +112,39 @@ def identity(step: Object) -> Json:
         }
 
 
+def choice_value(choice: Object) -> Json:
+    message = choice.get("message")
+    fields = cast(Object, message) if isinstance(message, dict) else {}
+    return [
+        choice.get("index"),
+        choice.get("finish_reason"),
+        fields.get("role"),
+        fields.get("content"),
+        fields.get("tool_calls"),
+    ]
+
+
 def reply_value(result: ModelResponse) -> Object:
     dumped = cast(Object, result.model_dump())
     usage = dumped.get("usage")
     counts = cast(Object, usage) if isinstance(usage, dict) else {}
     choices = dumped.get("choices")
+    picked: list[Json] = []
+    if isinstance(choices, list):
+        picked = [choice_value(cast(Object, choice)) for choice in cast("list[Json]", choices)]
     return {
+        "kind": "reply",
         "object": dumped.get("object"),
         "model": dumped.get("model") or "",
-        "usage": {
-            name: counts.get(name) or 0
+        "usage": [
+            counts.get(name) or 0
             for name in ("prompt_tokens", "completion_tokens", "total_tokens")
-        },
-        "choices": [choice_value(choice) for choice in cast("list[Json]", choices)]
-        if isinstance(choices, list)
-        else [],
+        ],
+        "choices": picked,
     }
 
 
-def choice_value(choice: Json) -> Object:
-    fields = obj(choice)
-    message = fields.get("message")
-    message_fields = cast(Object, message) if isinstance(message, dict) else {}
-    return {
-        "index": fields.get("index"),
-        "finish_reason": fields.get("finish_reason"),
-        "message": {
-            "role": message_fields.get("role"),
-            "content": message_fields.get("content"),
-            "tool_calls": message_fields.get("tool_calls"),
-        },
-    }
-
-
-def error_outcome(error: Exception, supplied: dict[str, str]) -> Object:
+def error_value(error: Exception, supplied: dict[str, str]) -> Object:
     status = cast(object, getattr(error, "status_code", None))
     carried = cast(object, getattr(error, "headers", None))
     headers: Json = None
@@ -161,47 +157,43 @@ def error_outcome(error: Exception, supplied: dict[str, str]) -> Object:
     }
 
 
-def reply(step: Object) -> Json:
-    host = text(step, "host")
+def reply(call: Object) -> Json:
+    host = text(call, "host")
     transform = TRANSFORM.get(host)
     if transform is None:
         raise ValueError(f"unknown reply host {host}")
-    supplied = string_map(step, "headers")
+    supplied = string_map(call, "headers")
     logger = Log()
-    data = step.get("request_data")
+    data = call.get("request_data")
     try:
         result = transform(
-            model=text(step, "model"),
+            model=opt(call, "model") or "",
             raw_response=httpx.Response(
-                cast(int, step.get("status", 200)),
-                text=text(step, "body"),
+                cast(int, call.get("status", 0)),
+                text=opt(call, "body") or "",
                 headers=dict(supplied),
             ),
             model_response=ModelResponse(),
             logging_obj=logger,
             request_data=cast(Object, data) if isinstance(data, dict) else {},
-            messages=cast("list[AllMessageValues]", items(step, "messages")),
+            messages=cast("list[AllMessageValues]", items(call, "messages")),
             optional_params={},
             litellm_params={},
             encoding=None,
-            api_key=opt(step, "api_key"),
-            json_mode=bool(step.get("json_mode", False)),
+            api_key=opt(call, "api_key"),
+            json_mode=bool(call.get("json_mode", False)),
         )
     except Exception as error:  # noqa: BLE001 - the error record is what the helper compares
-        return {"host": host, "events": logger.events, "outcome": error_outcome(error, supplied)}
-    return {
-        "host": host,
-        "events": logger.events,
-        "outcome": {"kind": "reply", "reply": reply_value(result)},
-    }
+        return {"events": logger.events, "outcome": error_value(error, supplied)}
+    return {"events": logger.events, "outcome": reply_value(result)}
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    steps = input_value.get("steps")
-    if not isinstance(steps, list):
-        raise TypeError("steps must be a list")
+    calls = input_value.get("calls")
+    if not isinstance(calls, list):
+        raise TypeError("calls must be a list")
     results: list[Json] = []
-    for step in cast("list[Json]", steps):
-        fields = obj(step)
-        results.append(identity(fields) if text(fields, "kind") == "identity" else reply(fields))
+    for call in cast("list[Json]", calls):
+        fields = obj(call)
+        results.append(reply(fields) if text(fields, "kind") == "reply" else identity(fields))
     return results

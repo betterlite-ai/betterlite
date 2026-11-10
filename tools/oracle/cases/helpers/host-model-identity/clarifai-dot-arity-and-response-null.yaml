@@ -2,19 +2,13 @@ kind: helper
 name: clarifai-dot-arity-and-response-null
 call:
   host_model_identity:
-    steps:
+    calls:
       - kind: identity
         host: clarifai
         env: {CLARIFAI_API_KEY: env-key}
         api_base: https://explicit.example/v1
         api_key: explicit-key
-        models:
-          - user.app.model
-          - user.app
-          - null
-          - ""
-          - user..model
-          - a.b.c.d
+        models: [user.app.model, user.app, null, "", user..model, a.b.c.d]
       - kind: reply
         host: clarifai
         status: 200

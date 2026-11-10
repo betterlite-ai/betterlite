@@ -7,15 +7,12 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
-use uuid::Uuid;
 
 use super::error::{HostModelIdentityError, get_error_class};
-use super::identity::{
-    SUPPORTED_OPENAI_PARAMS, clarifai_base_model, clarifai_request_model, datarobot_api_base,
-};
 use super::{
-    HostReply, HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, ReplySource,
-    decode_host_named_reply, process_host_response,
+    HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, SUPPORTED_OPENAI_PARAMS,
+    clarifai_base_model, clarifai_request_model, datarobot_api_base, decode_host_named_reply,
+    process_host_response,
 };
 use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::openai_base_config::{Headers, Object};
@@ -36,7 +33,7 @@ fn object(fields: Vec<(&str, Value)>) -> Value {
 struct Recorder(Vec<Value>);
 
 impl PostCallLogger for Recorder {
-    fn post_call(&mut self, call: PostCall<'_>) {
+    fn post_call(&mut self, call: &PostCall<'_>) {
         let api_key = call.api_key.map_or(Value::Null, |key| {
             Value::String(key.expose_secret().to_owned())
         });
@@ -52,21 +49,6 @@ impl PostCallLogger for Recorder {
                 Value::Object(call.complete_input_dict.clone()),
             ),
         ]));
-    }
-}
-
-fn fixed_id() -> Uuid {
-    Uuid::nil()
-}
-
-fn fixed_clock() -> i64 {
-    1_700_000_000
-}
-
-fn source() -> ReplySource {
-    ReplySource {
-        identifier: fixed_id,
-        clock: fixed_clock,
     }
 }
 
@@ -86,7 +68,7 @@ fn secret(text: &str) -> SecretString {
 }
 
 fn decode(bytes: &[u8], mode: HostReplyMode<'_>) -> Result<ChatResponse, HostModelIdentityError> {
-    decode_host_named_reply(bytes, mode, &source())
+    decode_host_named_reply(bytes, mode)
 }
 
 fn clarifai_mode() -> HostReplyMode<'static> {
@@ -274,8 +256,7 @@ fn null_token_counts_read_as_zero() {
 #[rstest]
 #[case::null("null")]
 #[case::absent("")]
-#[case::an_object("{\"index\":0}")]
-fn choices_that_are_not_a_list_become_one_default_choice(#[case] choices_value: &str) {
+fn a_missing_or_null_choices_list_becomes_one_default_choice(#[case] choices_value: &str) {
     let choices_field = if choices_value.is_empty() {
         String::new()
     } else {
@@ -292,22 +273,24 @@ fn choices_that_are_not_a_list_become_one_default_choice(#[case] choices_value: 
 }
 
 #[test]
-fn a_mapped_finish_reason_keeps_the_native_value() {
+fn a_mapped_finish_reason_uses_the_openai_name() {
     let body = r#"{"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"max_tokens"}]}"#;
     let response = decode(body.as_bytes(), clarifai_mode()).unwrap();
-    let choice = &response.choices[0];
-    assert_eq!(choice.finish_reason.as_deref(), Some("length"));
-    assert_eq!(
-        choice.provider_specific_fields.get("native_finish_reason"),
-        Some(&Value::String(String::from("max_tokens")))
-    );
+    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("length"));
 }
 
 #[test]
-fn an_exact_finish_reason_keeps_no_native_value() {
+fn choices_that_are_not_a_list_are_refused() {
+    let body = r#"{"model":"m","choices":{"index":0}}"#;
+    let error = decode(body.as_bytes(), clarifai_mode()).unwrap_err();
+    assert!(matches!(error, HostModelIdentityError::Reply { .. }));
+}
+
+#[test]
+fn an_exact_finish_reason_stays_as_sent() {
     let body = r#"{"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#;
     let response = decode(body.as_bytes(), clarifai_mode()).unwrap();
-    assert!(response.choices[0].provider_specific_fields.is_empty());
+    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
 }
 
 #[rstest]
@@ -353,14 +336,13 @@ fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
     let request_data =
         Object::from_iter([(String::from("model"), Value::String(String::from("m")))]);
     let mut recorder = Recorder::default();
-    let reply = HostReply {
-        body,
+    let reply = PostCall {
+        input: &input,
+        api_key: Some(&key),
+        original_response: body,
+        complete_input_dict: &request_data,
         status_code: 400,
         headers: &supplied,
-        messages: &input,
-        api_key: Some(&key),
-        request_data: &request_data,
-        source: source(),
     };
     let error = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap_err();
     (recorder, supplied, error)
@@ -403,14 +385,13 @@ fn compactifai_logs_the_raw_reply_before_its_json_failure() {
     let key = secret("request-key");
     let input = messages(value("[]"));
     let mut recorder = Recorder::default();
-    let reply = HostReply {
-        body,
+    let reply = PostCall {
+        input: &input,
+        api_key: Some(&key),
+        original_response: body,
+        complete_input_dict: &Object::new(),
         status_code: 200,
         headers: &Headers::new(),
-        messages: &input,
-        api_key: Some(&key),
-        request_data: &Object::new(),
-        source: source(),
     };
     let error = process_host_response(compactifai_mode(false), reply, &mut recorder).unwrap_err();
     assert_eq!(recorder.0.len(), 1);
@@ -424,14 +405,13 @@ fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
     let key = secret("request-key");
     let input = messages(value(r#"[{"role":"user","content":"hello"}]"#));
     let mut recorder = Recorder::default();
-    let reply = HostReply {
-        body: &body,
+    let reply = PostCall {
+        input: &input,
+        api_key: Some(&key),
+        original_response: &body,
+        complete_input_dict: &Object::new(),
         status_code: 200,
         headers: &Headers::new(),
-        messages: &input,
-        api_key: Some(&key),
-        request_data: &Object::new(),
-        source: source(),
     };
     let response = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap();
     assert_eq!(recorder.0.len(), 1);
@@ -516,5 +496,5 @@ fn replays_host_named_reply_corpus(#[files("fuzz/corpus/host_named_reply/*")] pa
         name.starts_with(prefix),
         "{name} does not match its mode tag"
     );
-    let _decoded = decode_host_named_reply(body, mode, &source());
+    let _decoded = decode_host_named_reply(body, mode);
 }

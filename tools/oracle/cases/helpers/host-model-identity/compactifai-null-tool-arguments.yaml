@@ -2,7 +2,7 @@ kind: helper
 name: compactifai-null-tool-arguments
 call:
   host_model_identity:
-    steps:
+    calls:
       - kind: identity
         host: compactifai
         env: {COMPACTIFAI_API_KEY: env-key}

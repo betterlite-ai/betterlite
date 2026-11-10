@@ -2,7 +2,7 @@ kind: helper
 name: log-before-json-failure
 call:
   host_model_identity:
-    steps:
+    calls:
       - kind: reply
         host: clarifai
         status: 400
