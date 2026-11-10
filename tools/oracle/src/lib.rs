@@ -17,6 +17,7 @@ mod gateway;
 )]
 mod helpers;
 pub mod http;
+pub mod http_scenarios;
 pub mod mock;
 pub mod multipart_oracle;
 pub mod oracle_comparison_contracts;
@@ -269,6 +270,20 @@ pub enum OracleError {
         "scenario needs at least {requests} upstream answers, one per request, but only {upstream} are scripted"
     )]
     ScenarioUpstreamShort { requests: usize, upstream: usize },
+    #[error("invalid scenario {path}: {source}")]
+    HttpScenarioCase {
+        path: PathBuf,
+        #[source]
+        source: Box<http_scenarios::error::ScenarioError>,
+    },
+    #[error(transparent)]
+    HttpScenario(Box<http_scenarios::error::ScenarioError>),
+}
+
+impl From<http_scenarios::error::ScenarioError> for OracleError {
+    fn from(source: http_scenarios::error::ScenarioError) -> Self {
+        Self::HttpScenario(Box::new(source))
+    }
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
@@ -276,8 +291,11 @@ pub fn run() -> Result<ExitCode, OracleError> {
     let cases = case::load_cases(&options.paths)?;
     let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
     let probe_cases = case::load_probe_cases(&options.paths)?;
+    let scenario_limits = http_scenarios::model::Limits::default();
+    let http_scenarios = case::load_http_scenario_cases(&options.paths, &scenario_limits)?;
     let mut different = runner::sdk_http::run_cases(&options, &sdk_cases)?.contains(&true);
     different |= routing_component_oracle::run_cases(&options, &probe_cases)?.contains(&true);
+    different |= runner::http_scenarios::run_cases(&options, &http_scenarios)?;
     if cases.is_empty() {
         return Ok(runner::exit_status(different));
     }

@@ -85,16 +85,15 @@ esac
 # dependency policy and the expect budget stay with a person
 grep -q -E 'deny\.toml|max_new_expects' <<< "$reason" && exit 1
 
-if grep -q -E 'FAIL diff-budget|max_changed_lines|[0-9]+ (changed|counted) lines' <<< "$reason"; then
+# a reason that only mentions the budget, with no count over it, goes on to the scope rule
+need=$(grep -o -E '[0-9]+ (changed|counted) lines' <<< "$reason" | head -n 1 | cut -d' ' -f1)
+old=$(grep -o -E 'max_changed_lines: [0-9]+' "$task" | head -n 1 | cut -d' ' -f2)
+if [ -n "$need" ] && [ -n "$old" ] && [ "$need" -gt "$old" ]; then
   grep -q "^docs(tasks): $id budget " <<< "$commits" && exit 1
-  need=$(grep -o -E '[0-9]+ (changed|counted) lines' <<< "$reason" | head -n 1 | cut -d' ' -f1)
-  [ -n "$need" ] || exit 1
-  old=$(grep -o -E 'max_changed_lines: [0-9]+' "$task" | head -n 1 | cut -d' ' -f2)
-  [ -n "$old" ] || exit 1
   most=$((old * 3 / 2))
   new=$(( (need * 11 / 10 / 100 + 1) * 100 ))
   [ "$new" -gt "$most" ] && new=$most
-  [ "$new" -ge "$need" ] && [ "$new" -gt "$old" ] || exit 1
+  [ "$new" -ge "$need" ] || exit 1
   sed -i -E "s/max_changed_lines: [0-9]+/max_changed_lines: $new/" "$task"
   git add "$task"
   git commit -q -m "docs(tasks): $id budget $new" -m "The branch counts $need changed lines against a budget of $old, inside the 1.5x a block rule may raise it." -- "$task" || exit 1
@@ -105,15 +104,23 @@ fi
 if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']+ ){0,3}scope" <<< "$reason"; then
   [ "$(grep -c "^docs(tasks): $id scope " <<< "$commits")" -lt 3 ] || exit 1
   added=
-  for path in $(grep -o -E '(crates|tools)/[A-Za-z0-9_.*/-]+' <<< "$reason" | sed -E 's/[.\/]+$//' | sort -u); do
+  # mapfile, not a for over $(...), so a path like dir/** stays a pattern instead of the files on disk
+  mapfile -t paths < <(grep -o -E '(crates|tools)/[A-Za-z0-9_.*/-]+' <<< "$reason" | sed -E 's/[.\/]+$//' | sort -u)
+  for path in "${paths[@]}"; do
     grep -q -x -F "$path" <<< "$scope" && continue
+    covered=
+    while read -r glob; do
+      [[ "$path/" == $glob ]] && covered=1
+    done <<< "$scope"
+    [ -n "$covered" ] && continue
     grep -q -F "$path" <<< "$excluded" && exit 1
     crate=$(crate_of "$path")
     grep -q -E "^$crate(/|$)" <<< "$scope" || exit 1
     added="$added $path"
   done
   [ -n "$added" ] || exit 1
-  for path in $added; do
+  read -r -a new <<< "$added"
+  for path in "${new[@]}"; do
     sed -i "0,/^  paths:\$/s||  paths:\n$indent- \"$path\"|" "$task"
   done
   backlog=.development/backlog/$id.yaml
