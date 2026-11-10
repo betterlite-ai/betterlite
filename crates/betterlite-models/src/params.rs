@@ -159,15 +159,15 @@ pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping
     };
     let mut state = MappingState::new(&supported, request.policy);
     for (name, value) in typed_parameters(request.parameters)? {
-        state.standard(name, value);
+        state.place(name, value, false);
     }
     for (name, value) in &request.parameters.passthrough {
         match classify_parameter(name, request.capabilities.call_type) {
             ParameterClass::Reserved => {
                 return Err(ParameterError::ReservedParameter { name: name.clone() });
             }
-            ParameterClass::Standard => state.standard(name.clone(), value.clone()),
-            ParameterClass::ProviderPassthrough => state.provider(name, value),
+            ParameterClass::Standard => state.place(name.clone(), value.clone(), false),
+            ParameterClass::ProviderPassthrough => state.place(name.clone(), value.clone(), true),
         }
     }
     state.finish(model)
@@ -192,7 +192,7 @@ impl<'request> MappingState<'request> {
         }
     }
 
-    fn standard(&mut self, name: String, value: Value) {
+    fn place(&mut self, name: String, value: Value, passthrough: bool) {
         if value.is_null() {
             return;
         }
@@ -203,30 +203,14 @@ impl<'request> MappingState<'request> {
             .any(|dropped| dropped == &name)
         {
             self.mapping.dropped_fields.push(name);
+        } else if passthrough {
+            self.mapping.provider_fields.insert(name, value);
         } else if self.allowed.contains(name.as_str()) {
             self.mapping.standard.insert(name, value);
         } else if self.policy.drop_params {
             self.mapping.dropped_fields.push(name);
         } else {
             self.unsupported.push(name);
-        }
-    }
-
-    fn provider(&mut self, name: &str, value: &Value) {
-        if value.is_null() {
-            return;
-        }
-        if self
-            .policy
-            .additional_drop_params
-            .iter()
-            .any(|dropped| dropped == name)
-        {
-            self.mapping.dropped_fields.push(name.to_owned());
-        } else {
-            self.mapping
-                .provider_fields
-                .insert(name.to_owned(), value.clone());
         }
     }
 

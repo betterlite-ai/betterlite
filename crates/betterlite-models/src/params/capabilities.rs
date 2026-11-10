@@ -174,25 +174,23 @@ fn base_parameters(projection: ModelProjection<'_>) -> Vec<&'static str> {
 fn o_series_parameters(projection: ModelProjection<'_>) -> Vec<&'static str> {
     let mut names = base_parameters(projection);
     names.push("reasoning_effort");
+    let gates: [(OpenAiCapability, &[&str]); 3] = [
+        (
+            OpenAiCapability::FunctionCalling,
+            O_SERIES_TOOL_PARAMETER_NAMES,
+        ),
+        (
+            OpenAiCapability::ParallelToolCalls,
+            &["parallel_tool_calls"],
+        ),
+        (OpenAiCapability::ResponseSchema, &["response_format"]),
+    ];
+    for (capability, excluded) in gates {
+        if !projection.capabilities.contains(&capability) {
+            names.retain(|name| !excluded.contains(name));
+        }
+    }
     names.retain(|name| !O_SERIES_UNSUPPORTED_NAMES.contains(name));
-    if !projection
-        .capabilities
-        .contains(&OpenAiCapability::FunctionCalling)
-    {
-        names.retain(|name| !O_SERIES_TOOL_PARAMETER_NAMES.contains(name));
-    }
-    if !projection
-        .capabilities
-        .contains(&OpenAiCapability::ParallelToolCalls)
-    {
-        names.retain(|name| *name != "parallel_tool_calls");
-    }
-    if !projection
-        .capabilities
-        .contains(&OpenAiCapability::ResponseSchema)
-    {
-        names.retain(|name| *name != "response_format");
-    }
     names
 }
 
@@ -201,8 +199,7 @@ fn gpt_5_parameters(projection: ModelProjection<'_>) -> Vec<&'static str> {
         return GPT_5_SEARCH_PARAMETER_NAMES.to_vec();
     }
     let mut names = base_parameters(projection);
-    names.push("reasoning_effort");
-    names.push("verbosity");
+    names.extend(["reasoning_effort", "verbosity"]);
     if !projection
         .capabilities
         .contains(&OpenAiCapability::ToolChoice)

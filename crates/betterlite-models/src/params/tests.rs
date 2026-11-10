@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::capabilities::{CapabilityQuery, ModelProjection, OpenAiCapability, OpenAiConfigTag};
 use super::classification::{ParameterClass, classify_parameter};
 use super::{
-    CallType, ChatParameters, ParameterError, ParameterPolicy, ParameterRequest,
+    CallType, ChatParameters, ParameterError, ParameterMapping, ParameterPolicy, ParameterRequest,
     TYPED_PARAMETER_NAMES, map_parameters,
 };
 use crate::identity::provider_id::ProviderId;
@@ -46,17 +46,35 @@ fn gpt_4o<'model>(
     }
 }
 
-fn supported_parameters_are_separated() {
+fn mapping(parameters_source: &str, policy_source: &str) -> ParameterMapping {
     let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters =
-        parameters(r#"{"temperature": 0.5, "logprobs": true, "vendor_flag": {"mode": "fast"}}"#);
-    let policy = policy("{}");
-    let mapping = map_parameters(&ParameterRequest {
+    let parameters = parameters(parameters_source);
+    let policy = policy(policy_source);
+    map_parameters(&ParameterRequest {
         capabilities: gpt_4o("gpt-4o", &capabilities),
         parameters: &parameters,
         policy: &policy,
     })
-    .unwrap();
+    .unwrap()
+}
+
+fn mapping_error(parameters_source: &str, policy_source: &str) -> ParameterError {
+    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
+    let parameters = parameters(parameters_source);
+    let policy = policy(policy_source);
+    map_parameters(&ParameterRequest {
+        capabilities: gpt_4o("gpt-4o", &capabilities),
+        parameters: &parameters,
+        policy: &policy,
+    })
+    .unwrap_err()
+}
+
+fn supported_parameters_are_separated() {
+    let mapping = mapping(
+        r#"{"temperature": 0.5, "logprobs": true, "vendor_flag": {"mode": "fast"}}"#,
+        "{}",
+    );
     assert_eq!(mapping.standard.len(), 2);
     assert_eq!(mapping.standard["temperature"], value("0.5"));
     assert_eq!(mapping.standard["logprobs"], value("true"));
@@ -69,17 +87,10 @@ fn supported_parameters_are_separated() {
 }
 
 fn explicit_zero_and_empty_values_survive() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(
+    let mapping = mapping(
         r#"{"temperature": 0, "n": 0, "stop": "", "user": "", "stream": false, "logprobs": false}"#,
+        "{}",
     );
-    let policy = policy("{}");
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
     assert_eq!(mapping.standard["temperature"], value("0"));
     assert_eq!(mapping.standard["n"], value("0"));
     assert_eq!(mapping.standard["stop"], value(r#""""#));
@@ -90,47 +101,25 @@ fn explicit_zero_and_empty_values_survive() {
 }
 
 fn null_values_take_the_default() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(
+    let mapping = mapping(
         r#"{"temperature": null, "top_p": null, "stop": null, "vendor_flag": null, "vendor_name": "x"}"#,
+        "{}",
     );
-    let policy = policy("{}");
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
     assert!(mapping.standard.is_empty());
     assert_eq!(mapping.provider_fields.len(), 1);
     assert_eq!(mapping.provider_fields["vendor_name"], value(r#""x""#));
 }
 
 fn stop_accepts_the_list_form() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"stop": ["a", "b"]}"#);
-    let policy = policy("{}");
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(r#"{"stop": ["a", "b"]}"#, "{}");
     assert_eq!(mapping.standard["stop"], value(r#"["a", "b"]"#));
 }
 
 fn unsupported_names_fail_together() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(
+    let error = mapping_error(
         r#"{"reasoning_effort": "low", "metadata": {"trace": "x"}, "temperature": 0.5}"#,
+        "{}",
     );
-    let policy = policy("{}");
-    let error = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap_err();
     assert!(matches!(
         error,
         ParameterError::Unsupported { model, names }
@@ -139,76 +128,49 @@ fn unsupported_names_fail_together() {
 }
 
 fn drop_params_removes_unsupported_names() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"reasoning_effort": "low", "temperature": 0.5}"#);
-    let policy = policy(r#"{"drop_params": true}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"reasoning_effort": "low", "temperature": 0.5}"#,
+        r#"{"drop_params": true}"#,
+    );
     assert_eq!(mapping.dropped_fields, ["reasoning_effort"]);
     assert_eq!(mapping.standard["temperature"], value("0.5"));
     assert_eq!(mapping.standard.len(), 1);
 }
 
 fn additional_drop_params_remove_supported_names() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"temperature": 0.5, "logprobs": true}"#);
-    let policy = policy(r#"{"additional_drop_params": ["temperature"]}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"temperature": 0.5, "logprobs": true}"#,
+        r#"{"additional_drop_params": ["temperature"]}"#,
+    );
     assert_eq!(mapping.dropped_fields, ["temperature"]);
     assert_eq!(mapping.standard["logprobs"], value("true"));
     assert_eq!(mapping.standard.len(), 1);
 }
 
 fn additional_drop_params_remove_provider_fields() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"vendor_flag": {"a": 1}, "vendor_name": "x"}"#);
-    let policy = policy(r#"{"additional_drop_params": ["vendor_flag"]}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"vendor_flag": {"a": 1}, "vendor_name": "x"}"#,
+        r#"{"additional_drop_params": ["vendor_flag"]}"#,
+    );
     assert_eq!(mapping.dropped_fields, ["vendor_flag"]);
     assert_eq!(mapping.provider_fields.len(), 1);
     assert_eq!(mapping.provider_fields["vendor_name"], value(r#""x""#));
 }
 
 fn additional_drop_params_skip_validation() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"reasoning_effort": "low"}"#);
-    let policy = policy(r#"{"additional_drop_params": ["reasoning_effort"]}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"reasoning_effort": "low"}"#,
+        r#"{"additional_drop_params": ["reasoning_effort"]}"#,
+    );
     assert_eq!(mapping.dropped_fields, ["reasoning_effort"]);
     assert!(mapping.standard.is_empty());
 }
 
 fn allowed_openai_params_extend_the_supported_list() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(
+    let mapping = mapping(
         r#"{"reasoning_effort": "low", "thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
+        r#"{"allowed_openai_params": ["reasoning_effort", "thinking"]}"#,
     );
-    let policy = policy(r#"{"allowed_openai_params": ["reasoning_effort", "thinking"]}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
     assert_eq!(mapping.standard["reasoning_effort"], value(r#""low""#));
     assert_eq!(
         mapping.standard["thinking"],
@@ -249,15 +211,7 @@ fn typed_passthrough_cannot_overwrite_the_typed_field() {
 }
 
 fn provider_fields_are_not_validated() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"vendor_flag": {"a": 1}}"#);
-    let policy = policy(r#"{"drop_params": true}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(r#"{"vendor_flag": {"a": 1}}"#, r#"{"drop_params": true}"#);
     assert_eq!(mapping.provider_fields["vendor_flag"], value(r#"{"a": 1}"#));
     assert!(mapping.dropped_fields.is_empty());
 }
@@ -291,30 +245,20 @@ fn typed_names_are_all_modeled_and_reserved() {
 }
 
 fn decimal_values_keep_their_exact_text() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"temperature": 0.1, "top_p": 2.5, "presence_penalty": -1.25}"#);
-    let policy = policy("{}");
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"temperature": 0.1, "top_p": 2.5, "presence_penalty": -1.25}"#,
+        "{}",
+    );
     assert_eq!(mapping.standard["temperature"].to_string(), "0.1");
     assert_eq!(mapping.standard["top_p"].to_string(), "2.5");
     assert_eq!(mapping.standard["presence_penalty"].to_string(), "-1.25");
 }
 
 fn dropped_names_are_sorted_and_unique() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(r#"{"vendor_b": 1, "vendor_a": 2, "temperature": 0.5}"#);
-    let policy = policy(r#"{"additional_drop_params": ["vendor_b", "temperature", "vendor_b"]}"#);
-    let mapping = map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap();
+    let mapping = mapping(
+        r#"{"vendor_b": 1, "vendor_a": 2, "temperature": 0.5}"#,
+        r#"{"additional_drop_params": ["vendor_b", "temperature", "vendor_b"]}"#,
+    );
     assert_eq!(mapping.dropped_fields, ["temperature", "vendor_b"]);
 }
 

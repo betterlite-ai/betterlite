@@ -369,28 +369,26 @@ fn gpt_5_search_uses_its_own_list() {
     );
 }
 
-fn base_model_adds_names_in_first_seen_order() {
+fn union(model: &str, base: &str) -> ParameterCapabilities {
     let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let mut query = query("gpt-4", OpenAiConfigTag::Gpt, &capabilities);
+    let mut query = query(model, OpenAiConfigTag::Gpt, &capabilities);
     query.base_model = Some(ModelProjection {
-        model: "gpt-4o",
+        model: base,
         capabilities: &capabilities,
     });
+    supported_parameters(&query)
+}
+
+fn base_model_adds_names_in_first_seen_order() {
     assert_eq!(
-        supported_parameters(&query),
+        union("gpt-4", "gpt-4o"),
         listed(&[BASE, &["user", "response_format"]].concat())
     );
 }
 
 fn identical_base_model_adds_nothing() {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let mut query = query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities);
-    query.base_model = Some(ModelProjection {
-        model: "gpt-4o",
-        capabilities: &capabilities,
-    });
     assert_eq!(
-        supported_parameters(&query),
+        union("gpt-4o", "gpt-4o"),
         listed(&[BASE, &["response_format", "user"]].concat())
     );
 }
