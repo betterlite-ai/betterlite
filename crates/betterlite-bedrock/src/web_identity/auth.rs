@@ -1,19 +1,16 @@
-use std::time::Duration;
-
-use aws_sdk_sts::Client;
-use aws_sdk_sts::error::SdkError;
-use aws_sdk_sts::operation::assume_role_with_web_identity::AssumeRoleWithWebIdentityError;
-use aws_sdk_sts::types::Credentials as ResponseCredentials;
-use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
-use secrecy::{ExposeSecret as _, SecretString};
-
 use super::claims::decode_web_identity_claims;
 use super::error::{WebIdentityError, auth_error};
 use super::sts::sts_client;
 use crate::aws_endpoints::sts::StsClientKwargs;
 use crate::aws_settings::policy::web_identity_policy;
 use crate::aws_settings::sources::{Credentials, NativeSources};
-
+use aws_sdk_sts::Client;
+use aws_sdk_sts::error::SdkError;
+use aws_sdk_sts::operation::assume_role_with_web_identity::AssumeRoleWithWebIdentityError;
+use aws_sdk_sts::types::Credentials as ResponseCredentials;
+use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
+use secrecy::{ExposeSecret as _, SecretString};
+use std::time::Duration;
 pub struct WebIdentityAuth<'text> {
     pub token_reference: &'text str,
     pub role_arn: &'text str,
@@ -21,13 +18,11 @@ pub struct WebIdentityAuth<'text> {
     pub external_id: Option<&'text str>,
     pub max_policy_size: i64,
 }
-
 #[derive(Debug)]
 pub struct WebIdentityCredentials {
     pub credentials: Credentials,
     pub cache_ttl: Duration,
 }
-
 pub async fn auth_with_web_identity_token(
     auth: &WebIdentityAuth<'_>,
     sts: &StsClientKwargs,
@@ -50,7 +45,6 @@ pub async fn auth_with_web_identity_token(
     let (response_credentials, packed_policy_size) = send(&client, auth, &token).await?;
     Ok(finish(auth, &response_credentials, packed_policy_size))
 }
-
 fn resolve_token(
     auth: &WebIdentityAuth<'_>,
     secrets: &SecretLookup,
@@ -75,7 +69,6 @@ fn resolve_token(
         )))),
     }
 }
-
 async fn send(
     client: &Client,
     auth: &WebIdentityAuth<'_>,
@@ -107,7 +100,6 @@ async fn send(
     };
     Ok((credentials.clone(), packed_policy_size))
 }
-
 fn finish(
     auth: &WebIdentityAuth<'_>,
     response_credentials: &ResponseCredentials,
@@ -131,7 +123,6 @@ fn finish(
         cache_ttl: Duration::from_mins(59),
     }
 }
-
 fn rejected(error: SdkError<AssumeRoleWithWebIdentityError>, token: &str) -> WebIdentityError {
     if matches!(
         error.as_service_error(),

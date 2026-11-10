@@ -32,11 +32,31 @@ class FakeSts:
         self.answers = answers
         self.environment = environment
         self.calls: list[Json] = []
+        self.access_key_id: str | None = None
+        self.session_token: str | None = None
 
-    def client(self, _service: str, **kwargs: object) -> "FakeClient":
-        return FakeClient(self, kwargs)
+    def client(self, _service: str, **kwargs: object) -> "FakeSts":
+        access = kwargs.get("aws_access_key_id")
+        token = kwargs.get("aws_session_token")
+        if not isinstance(access, str):
+            access = self.environment.get("AWS_ACCESS_KEY_ID")
+        if not isinstance(token, str):
+            token = self.environment.get("AWS_SESSION_TOKEN")
+        self.access_key_id = access
+        self.session_token = token
+        return self
 
-    def record(self, action: str, client: "FakeClient", params: Mapping[str, object]) -> Json:
+    def assume_role_with_web_identity(self, **params: object) -> Json:
+        return self.record("AssumeRoleWithWebIdentity", params)
+
+    def assume_role(self, **params: object) -> Json:
+        return self.record("AssumeRole", params)
+
+    def get_caller_identity(self) -> Json:
+        self.record("GetCallerIdentity", {})
+        raise RuntimeError("the fixture identity call is denied")
+
+    def record(self, action: str, params: Mapping[str, object]) -> Json:
         form: dict[str, str] = {"Action": action, "Version": "2011-06-15"}
         for name, value in params.items():
             if isinstance(value, (list, tuple)):
@@ -50,8 +70,8 @@ class FakeSts:
             Json,
             {
                 "form": form,
-                "access_key_id": client.access_key_id,
-                "session_token": client.session_token,
+                "access_key_id": self.access_key_id,
+                "session_token": self.session_token,
             },
         )
         self.calls.append(call)
@@ -59,29 +79,6 @@ class FakeSts:
         if isinstance(answer, dict) and "error" in answer:
             raise InvalidIdentityTokenError(cast(str, answer["error"]))
         return answer
-
-
-class FakeClient:
-    def __init__(self, sts: FakeSts, kwargs: Mapping[str, object]) -> None:
-        self.sts = sts
-        access = kwargs.get("aws_access_key_id")
-        token = kwargs.get("aws_session_token")
-        if not isinstance(access, str):
-            access = sts.environment.get("AWS_ACCESS_KEY_ID")
-        if not isinstance(token, str):
-            token = sts.environment.get("AWS_SESSION_TOKEN")
-        self.access_key_id = access
-        self.session_token = token
-
-    def assume_role_with_web_identity(self, **params: object) -> Json:
-        return self.sts.record("AssumeRoleWithWebIdentity", self, params)
-
-    def assume_role(self, **params: object) -> Json:
-        return self.sts.record("AssumeRole", self, params)
-
-    def get_caller_identity(self) -> Json:
-        self.sts.record("GetCallerIdentity", self, {})
-        raise RuntimeError("the fixture identity call is denied")
 
 
 def one(value: Json, name: str) -> tuple[str, Json]:
@@ -173,8 +170,8 @@ def web_identity(params: Params) -> Json:
             aws_role_name=field(params, "role_arn"),
             aws_session_name=field(params, "session_name"),
             aws_external_id=optional(params, "external_id"),
-            aws_sts_endpoint=optional(params, "sts_endpoint"),
-            aws_region_name=optional(params, "region_name"),
+            aws_sts_endpoint=None,
+            aws_region_name=None,
             ssl_verify=True,
         )
     token = cast(str | None, creds.token)  # pyright: ignore[reportUnknownMemberType]
@@ -198,8 +195,8 @@ def same_account(params: Params) -> Json:
             aws_session_name=field(params, "session_name"),
             aws_session_tags=session_tags(params),
             aws_external_id=optional(params, "external_id"),
-            aws_sts_endpoint=optional(params, "sts_endpoint"),
-            aws_region_name=optional(params, "region_name"),
+            aws_sts_endpoint=None,
+            aws_region_name=None,
             ssl_verify=True,
         )
     return irsa_result(sts.calls, cast(Json, response))
@@ -225,8 +222,8 @@ def cross_account(params: Params) -> Json:
                 web_identity_token_file=str(path),
                 aws_session_tags=session_tags(params),
                 aws_external_id=optional(params, "external_id"),
-                aws_sts_endpoint=optional(params, "sts_endpoint"),
-                aws_region_name=optional(params, "region_name"),
+                aws_sts_endpoint=None,
+                aws_region_name=None,
                 ssl_verify=True,
             )
     return irsa_result(sts.calls, cast(Json, response))

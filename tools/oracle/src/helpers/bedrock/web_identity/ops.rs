@@ -1,5 +1,10 @@
-use std::collections::BTreeMap;
-
+use super::cross::cross_account_irsa;
+use super::fixture::{
+    self, Answer, Record, Transport, assume_role_answer, denied_identity, web_identity_answer,
+};
+use super::input::{Case, Input, Reply, ReplyTag};
+use super::ports;
+use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
 use betterlite_bedrock::aws_endpoints::sts::StsClientKwargs;
 use betterlite_bedrock::aws_settings::AwsSessionTag;
@@ -10,20 +15,10 @@ use betterlite_bedrock::web_identity::error::WebIdentityError;
 use betterlite_bedrock::web_identity::irsa::{SameAccountIrsa, handle_irsa_same_account};
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use tokio::runtime::Runtime;
-
-use super::cross::cross_account_irsa;
-use super::fixture::{
-    self, Answer, Record, Transport, assume_role_answer, denied_identity, web_identity_answer,
-};
-use super::input::{Case, Input, Reply, ReplyTag};
-use super::ports;
-use crate::helpers::{HelperError, HelperResult};
-
 const DEFAULT_MAX_POLICY_SIZE: i64 = 75;
-
 pub(super) type Fixture = (NativeSources, Record, StsClientKwargs, Runtime);
-
 pub(super) fn fixture(
     case: &Case,
     files: &[(String, Vec<u8>)],
@@ -35,21 +30,14 @@ pub(super) fn fixture(
     };
     let record = transport.record.clone();
     let native = fixture::sources(&case.environment, files, transport);
-    let kwargs = fixture::kwargs(
-        &case.environment,
-        case.sts_endpoint.as_deref(),
-        case.region_name.as_deref(),
-        case.verify,
-    )
-    .map_err(fixture_failure)?;
-    Ok((
-        native,
-        record,
-        kwargs,
-        ports::runtime().map_err(fixture_failure)?,
-    ))
+    let kwargs = fixture::kwargs(&case.environment).map_err(fixture_failure)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())
+        .map_err(fixture_failure)?;
+    Ok((native, record, kwargs, runtime))
 }
-
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::JwtAudienceHint { tokens } | Input::MalformedToken { tokens } => {
@@ -64,7 +52,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::CrossAccountIrsa(case) => cross_account_irsa(case),
     }
 }
-
 fn audiences(tokens: &[String]) -> Value {
     let decoded: Vec<Option<String>> = tokens
         .iter()
@@ -72,7 +59,6 @@ fn audiences(tokens: &[String]) -> Value {
         .collect();
     json!({ "audiences": decoded })
 }
-
 pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
     let (class, status) = match error {
         WebIdentityError::Auth(auth) | WebIdentityError::RejectedToken { error: auth, .. } => {
@@ -100,7 +86,6 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
-
 pub(super) fn fixture_failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "FixtureError".to_owned(),
@@ -111,7 +96,6 @@ pub(super) fn fixture_failure(message: String) -> Box<HelperError> {
         message,
     })
 }
-
 pub(super) fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
     tags.iter()
         .map(|tag| AwsSessionTag {
@@ -120,7 +104,6 @@ pub(super) fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
         })
         .collect()
 }
-
 pub(super) fn irsa_json(record: &Record, response: &StsResponse) -> Value {
     let credentials = &response.credentials;
     let expiration = match &credentials.expiration {
@@ -137,7 +120,6 @@ pub(super) fn irsa_json(record: &Record, response: &StsResponse) -> Value {
         "expiration": expiration,
     })
 }
-
 fn web_identity(case: &Case) -> HelperResult {
     let Some(Reply::Web(reply)) = case.reply.as_ref() else {
         return Err(fixture_failure(
@@ -174,7 +156,6 @@ fn web_identity(case: &Case) -> HelperResult {
         "warnings": warnings,
     }))
 }
-
 fn same_account_irsa(case: &Case) -> HelperResult {
     let Some(Reply::Credentials(reply)) = case.reply.as_ref() else {
         return Err(fixture_failure(

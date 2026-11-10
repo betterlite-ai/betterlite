@@ -1,8 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
-use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, UNIX_EPOCH};
-
+use super::input::{ReplyCredentials, WebIdentityReply};
 use aws_smithy_async::{
     rt::sleep::{SharedAsyncSleep, TokioSleep},
     time::{SharedTimeSource, StaticTimeSource},
@@ -19,13 +15,13 @@ use betterlite_bedrock::aws_endpoints::sts::{StsClientKwargs, StsSettings, sts_c
 use betterlite_bedrock::aws_settings::sources::NativeSources;
 use betterlite_config::tls::Verification;
 use serde_json::{Value, json};
+use std::collections::{BTreeMap, HashMap};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, UNIX_EPOCH};
 use url::form_urlencoded;
-
-use super::input::{ReplyCredentials, WebIdentityReply};
-
 #[derive(Clone, Debug, Default)]
 pub(super) struct Record(Arc<Mutex<Vec<Value>>>);
-
 impl Record {
     pub(super) fn add(&self, call: Value) {
         self.0
@@ -33,7 +29,6 @@ impl Record {
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
     }
-
     pub(super) fn calls(&self) -> Vec<Value> {
         self.0
             .lock()
@@ -41,39 +36,33 @@ impl Record {
             .clone()
     }
 }
-
 #[derive(Clone, Debug)]
 pub(super) struct Answer {
     pub(super) status: u16,
     pub(super) body: String,
 }
-
 #[derive(Clone, Debug)]
 pub(super) struct Transport {
     pub(super) answers: BTreeMap<String, Answer>,
     pub(super) record: Record,
 }
-
 fn refused(message: &'static str) -> HttpConnectorFuture {
     HttpConnectorFuture::ready(Err(ConnectorError::other(
         Box::new(io::Error::other(message)),
         None,
     )))
 }
-
 fn access_key(request: &HttpRequest) -> Option<String> {
     let authorization = request.headers().get("authorization")?;
     let credential = authorization.split("Credential=").nth(1)?;
     credential.split('/').next().map(str::to_owned)
 }
-
 fn form_fields(request: &HttpRequest) -> BTreeMap<String, String> {
     let body = request.body().bytes().unwrap_or_default();
     form_urlencoded::parse(body)
         .map(|(name, value)| (name.into_owned(), value.into_owned()))
         .collect()
 }
-
 impl HttpConnector for Transport {
     fn call(&self, request: HttpRequest) -> HttpConnectorFuture {
         let fields = form_fields(&request);
@@ -97,7 +86,6 @@ impl HttpConnector for Transport {
         )))
     }
 }
-
 pub(super) fn sources(
     environment: &BTreeMap<String, String>,
     files: &[(String, Vec<u8>)],
@@ -117,27 +105,15 @@ pub(super) fn sources(
         timeout: Duration::from_secs(5),
     }
 }
-
-pub(super) fn kwargs(
-    environment: &BTreeMap<String, String>,
-    endpoint: Option<&str>,
-    region: Option<&str>,
-    verify: Option<bool>,
-) -> Result<StsClientKwargs, String> {
+pub(super) fn kwargs(environment: &BTreeMap<String, String>) -> Result<StsClientKwargs, String> {
     let settings = StsSettings {
-        endpoint,
+        endpoint: None,
         aws_region: environment.get("AWS_REGION").map(String::as_str),
         aws_default_region: environment.get("AWS_DEFAULT_REGION").map(String::as_str),
-        configured_region: region,
+        configured_region: None,
     };
-    let verification = if verify.unwrap_or(true) {
-        Verification::Enabled
-    } else {
-        Verification::Disabled
-    };
-    sts_client_kwargs(&settings, verification).map_err(|error| error.to_string())
+    sts_client_kwargs(&settings, Verification::Enabled).map_err(|error| error.to_string())
 }
-
 fn credentials_xml(credentials: &ReplyCredentials) -> String {
     format!(
         "<Credentials><AccessKeyId>{}</AccessKeyId><SecretAccessKey>{}</SecretAccessKey><SessionToken>{}</SessionToken><Expiration>{}</Expiration></Credentials>",
@@ -147,25 +123,21 @@ fn credentials_xml(credentials: &ReplyCredentials) -> String {
         credentials.expiration
     )
 }
-
 fn packed_xml(size: Option<i32>) -> String {
     size.map(|value| format!("<PackedPolicySize>{value}</PackedPolicySize>"))
         .unwrap_or_default()
 }
-
 fn error_xml(code: &str, message: &str) -> String {
     format!(
         "<ErrorResponse><Error><Type>Sender</Type><Code>{code}</Code><Message>{message}</Message></Error><RequestId>oracle</RequestId></ErrorResponse>"
     )
 }
-
 pub(super) fn denied_identity() -> Answer {
     Answer {
         status: 403,
         body: error_xml("AccessDenied", "the fixture identity call is denied"),
     }
 }
-
 pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
     match reply {
         WebIdentityReply::Credentials(credentials) => Answer {
@@ -189,7 +161,6 @@ pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
         },
     }
 }
-
 pub(super) fn assume_role_answer(credentials: &ReplyCredentials) -> Answer {
     Answer {
         status: 200,

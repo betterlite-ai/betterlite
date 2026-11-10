@@ -1,7 +1,3 @@
-use std::fmt::Debug;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Instant;
-
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
     OidcTokenCache,
@@ -12,20 +8,20 @@ use betterlite_secret_managers::secret_read_dispatch::protocols::SyncSecretReade
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use secrecy::SecretString;
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
-
 struct Ports(Option<SecretString>);
-
 impl SyncSecretReader for Ports {
     fn sync_read_secret(&self, _: &str) -> Option<SecretString> {
         self.0.clone()
     }
 }
-
 impl OidcHttp for Ports {
     fn get(&self, _: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
         Err(OidcHttpError::Request {
@@ -33,23 +29,19 @@ impl OidcHttp for Ports {
         })
     }
 }
-
 impl AzureOidcTokens for Ports {
     fn token(&self, _: &str) -> Result<Option<SecretString>, AzureOidcError> {
         Ok(None)
     }
 }
-
 impl OidcClock for Ports {
     fn now(&self) -> Instant {
         Instant::now()
     }
-
     fn unix_seconds(&self) -> i64 {
         0
     }
 }
-
 pub(super) fn secrets(token: Option<&str>) -> SecretLookup {
     let client = SecretManagerClient::Vault(Arc::new(Ports(token.map(SecretString::from))));
     SecretLookup {
@@ -66,27 +58,17 @@ pub(super) fn secrets(token: Option<&str>) -> SecretLookup {
         oidc_cache: OidcTokenCache::default(),
     }
 }
-
 #[derive(Clone, Default)]
 pub(super) struct Warnings(Arc<Mutex<Vec<String>>>);
-
 #[derive(Default)]
 struct Fields(String);
-
 impl Visit for Fields {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
     }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            value.clone_into(&mut self.0);
-        }
-    }
 }
-
 impl<S: Subscriber> Layer<S> for Warnings {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
         if *event.metadata().level() != Level::WARN {
@@ -103,16 +85,6 @@ impl<S: Subscriber> Layer<S> for Warnings {
         }
     }
 }
-
-impl Warnings {
-    pub(super) fn collected(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
 pub(super) fn warnings<F, R>(run: F) -> (R, Vec<String>)
 where
     F: FnOnce() -> R,
@@ -120,12 +92,10 @@ where
     let warnings = Warnings::default();
     let subscriber = registry().with(warnings.clone());
     let value = with_default(subscriber, run);
-    (value, warnings.collected())
-}
-
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, String> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())
+    let collected = warnings
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    (value, collected)
 }

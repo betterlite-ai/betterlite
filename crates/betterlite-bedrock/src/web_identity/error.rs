@@ -1,16 +1,13 @@
-use std::io;
-use std::path::PathBuf;
-use std::string::FromUtf8Error;
-
+use crate::aws_endpoints::error::AwsEndpointError;
+use crate::aws_settings::error::{AWS_CONSOLE_URL, AwsAuthError};
 use aws_sdk_sts::error::{BuildError, SdkError};
 use aws_sdk_sts::operation::assume_role::AssumeRoleError;
 use aws_sdk_sts::operation::assume_role_with_web_identity::AssumeRoleWithWebIdentityError;
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
-
-use crate::aws_endpoints::error::AwsEndpointError;
-use crate::aws_settings::error::{AWS_CONSOLE_URL, AwsAuthError};
-
+use std::io;
+use std::path::PathBuf;
+use std::string::FromUtf8Error;
 #[derive(Debug, thiserror::Error)]
 pub enum WebIdentityError {
     #[error("{0}")]
@@ -69,7 +66,6 @@ pub enum WebIdentityError {
     #[error("the STS credential expiry is outside the representable range")]
     Expiry,
 }
-
 pub(super) fn auth_error(status: u16, message: String) -> AwsAuthError {
     let request = ErrorRequest {
         method: "POST".to_owned(),

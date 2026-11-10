@@ -1,5 +1,7 @@
-use std::collections::HashMap;
-
+use super::error::WebIdentityError;
+use crate::assume_role::expiry::{Expiration, StsCredentials, StsResponse};
+use crate::aws_endpoints::sts::StsClientKwargs;
+use crate::aws_settings::sources::NativeSources;
 use aws_config::{BehaviorVersion, Region, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_credential_types::Credentials as SdkCredentials;
 use aws_sdk_sts::Client;
@@ -8,12 +10,7 @@ use aws_sdk_sts::types::Credentials as ResponseCredentials;
 use aws_types::os_shim_internal::Env;
 use chrono::{DateTime, Utc};
 use secrecy::SecretString;
-
-use super::error::WebIdentityError;
-use crate::assume_role::expiry::{Expiration, StsCredentials, StsResponse};
-use crate::aws_endpoints::sts::StsClientKwargs;
-use crate::aws_settings::sources::NativeSources;
-
+use std::collections::HashMap;
 pub(super) async fn sts_client(
     kwargs: &StsClientKwargs,
     native: &NativeSources,
@@ -48,7 +45,6 @@ pub(super) async fn sts_client(
     }
     Client::from_conf(builder.build())
 }
-
 pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
     SdkCredentials::new(
         credentials.access_key_id(),
@@ -58,7 +54,6 @@ pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
         "manual-irsa",
     )
 }
-
 pub(super) fn sts_response(
     credentials: &ResponseCredentials,
 ) -> Result<StsResponse, WebIdentityError> {

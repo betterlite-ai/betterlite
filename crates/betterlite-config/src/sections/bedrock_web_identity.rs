@@ -1,23 +1,18 @@
 #[path = "bedrock_web_identity/tests.rs"]
 mod tests;
-
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
-
 pub const DEFAULT_MAX_POLICY_SIZE: i64 = 75;
-
 // this section reads no YAML key; BEDROCK_MAX_POLICY_SIZE comes from the process environment
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
     #[serde(skip)]
     _unused: (),
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub max_policy_size: i64,
 }
-
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -25,10 +20,8 @@ impl Default for Settings {
         }
     }
 }
-
 impl Section for Raw {
     type Settings = Settings;
-
     fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,

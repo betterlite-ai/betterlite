@@ -1,12 +1,9 @@
-use std::collections::BTreeMap;
-
-use betterlite_bedrock::web_identity::irsa::{CrossAccountIrsa, handle_irsa_cross_account};
-
 use super::fixture::{Answer, assume_role_answer, denied_identity, web_identity_answer};
 use super::input::{Case, Reply, ReplyCredentials, WebIdentityReply};
 use super::ops::{failure, fixture, fixture_failure, irsa_json, tags_of};
 use crate::helpers::HelperResult;
-
+use betterlite_bedrock::web_identity::irsa::{CrossAccountIrsa, handle_irsa_cross_account};
+use std::collections::BTreeMap;
 fn answers(reply: &ReplyCredentials, irsa_reply: &ReplyCredentials) -> BTreeMap<String, Answer> {
     BTreeMap::from([
         (
@@ -17,7 +14,6 @@ fn answers(reply: &ReplyCredentials, irsa_reply: &ReplyCredentials) -> BTreeMap<
         ("AssumeRole".to_owned(), assume_role_answer(reply)),
     ])
 }
-
 pub(super) fn cross_account_irsa(case: &Case) -> HelperResult {
     let (Some(token_file), Some(irsa_reply), Some(Reply::Credentials(reply))) = (
         case.token_file.as_ref(),

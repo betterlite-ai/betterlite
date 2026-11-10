@@ -1,25 +1,21 @@
-use std::path::Path;
-
-use aws_sdk_sts::Client;
-use aws_sdk_sts::operation::assume_role::AssumeRoleOutput;
-use aws_sdk_sts::types::Credentials as ResponseCredentials;
-use aws_sdk_sts::types::Tag;
-use aws_smithy_types::error::display::DisplayErrorContext;
-
 use super::error::WebIdentityError;
 use super::sts::{identity, sts_client, sts_response};
 use crate::assume_role::expiry::StsResponse;
 use crate::aws_endpoints::sts::StsClientKwargs;
 use crate::aws_settings::sources::NativeSources;
 use crate::aws_settings::{AwsSessionTag, assume_role_parameters};
-
+use aws_sdk_sts::Client;
+use aws_sdk_sts::operation::assume_role::AssumeRoleOutput;
+use aws_sdk_sts::types::Credentials as ResponseCredentials;
+use aws_sdk_sts::types::Tag;
+use aws_smithy_types::error::display::DisplayErrorContext;
+use std::path::Path;
 pub struct SameAccountIrsa<'text> {
     pub role_arn: &'text str,
     pub session_name: &'text str,
     pub external_id: Option<&'text str>,
     pub tags: Option<&'text [AwsSessionTag]>,
 }
-
 pub struct CrossAccountIrsa<'text> {
     pub irsa_role_arn: &'text str,
     pub role_arn: &'text str,
@@ -28,7 +24,6 @@ pub struct CrossAccountIrsa<'text> {
     pub external_id: Option<&'text str>,
     pub tags: Option<&'text [AwsSessionTag]>,
 }
-
 pub async fn handle_irsa_same_account(
     input: &SameAccountIrsa<'_>,
     sts: &StsClientKwargs,
@@ -44,7 +39,6 @@ pub async fn handle_irsa_same_account(
     );
     assume_role_response(&client, input).await
 }
-
 pub async fn handle_irsa_cross_account(
     input: &CrossAccountIrsa<'_>,
     sts: &StsClientKwargs,
@@ -72,7 +66,6 @@ pub async fn handle_irsa_cross_account(
     };
     assume_role_response(&target_client, &target).await
 }
-
 async fn assume_role_response(
     client: &Client,
     input: &SameAccountIrsa<'_>,
@@ -86,7 +79,6 @@ async fn assume_role_response(
     };
     sts_response(credentials)
 }
-
 async fn assume_irsa_role(
     sts: &StsClientKwargs,
     native: &NativeSources,
@@ -117,7 +109,6 @@ async fn assume_irsa_role(
     };
     Ok(credentials.clone())
 }
-
 async fn read_token_file(
     token_file: &str,
     native: &NativeSources,
@@ -137,7 +128,6 @@ async fn read_token_file(
     })?;
     Ok(text.trim().to_owned())
 }
-
 async fn log_caller_identity(client: &Client, prefix: &str) {
     match client.get_caller_identity().send().await {
         Ok(identity) => tracing::debug!("{prefix}{}", identity.arn().unwrap_or("unknown")),
@@ -147,7 +137,6 @@ async fn log_caller_identity(client: &Client, prefix: &str) {
         ),
     }
 }
-
 async fn send_assume_role(
     client: &Client,
     input: &SameAccountIrsa<'_>,
@@ -171,7 +160,6 @@ async fn send_assume_role(
             source: Box::new(source),
         })
 }
-
 fn tags_to_sdk(tags: &[AwsSessionTag]) -> Result<Vec<Tag>, WebIdentityError> {
     tags.iter()
         .map(|tag| {
