@@ -313,7 +313,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_image_transport)"
       && grep -q 'decode_image_operation' crates/betterlite-azure/fuzz/fuzz_targets/azure_image_transport.rs &&
-      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_image_transport_corpus$/)'
+      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_image_transport_corpus(::|$)/)'
   - id: config-azure-operation-polling-timeout
     why: The AZURE_OPERATION_POLLING_TIMEOUT setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_image_transport_config_cases::case_[0-9]+_loads_azure_operation_polling_timeout$/)'

@@ -1,7 +1,7 @@
 id: B4302
 milestone: M8 platform
 title: Reconstruct cached responses and stream replay
-status: todo
+status: done
 depends_on: [B004, B005, B189, B4290]
 file: tasks/B4302-cache-response-replay.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/caching/caching.py"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1062
