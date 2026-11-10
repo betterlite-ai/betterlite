@@ -35,10 +35,27 @@ pub(crate) struct Input {
 
 pub(super) fn run(input: &Input) -> Value {
     match input.call {
-        Call::ScalarVsList => scalar_vs_list(&input.candidates),
-        Call::NestedSafety => nested_safety(&input.candidates),
+        Call::ScalarVsList => rendered(&input.candidates, |extension| {
+            json!({
+                "grounding_metadata": extension.grounding_metadata,
+                "url_context_metadata": extension.url_context_metadata,
+                "safety_ratings": extension.safety_ratings,
+                "citation_metadata": extension.citation_metadata,
+            })
+        }),
+        Call::NestedSafety => rendered(&input.candidates, |extension| {
+            json!({
+                "fields": object(
+                    &MetadataField::ALL
+                        .map(|field| (field.wire_name(), extension.values(field)))
+                ),
+                "hidden": object(&extension.populated_fields()),
+            })
+        }),
         Call::HiddenFallback | Call::EmptyVisibleShadow | Call::DuplicateChunks => {
-            assembled(&input.chunks)
+            let extension = assemble_stream_metadata(&input.chunks);
+            let populated = object(&extension.populated_fields());
+            json!({"fields": populated, "hidden": populated})
         }
         Call::FirstNonwebIndex | Call::CitationEmptyTitle => {
             json!({"annotations": grounding_annotations(&input.grounding_metadata)})
@@ -46,48 +63,12 @@ pub(super) fn run(input: &Input) -> Value {
     }
 }
 
-fn scalar_vs_list(candidates: &[Json]) -> Value {
-    let extracted: Vec<Value> = candidates
+fn rendered(candidates: &[Json], render: fn(&MetadataExtension) -> Value) -> Value {
+    let entries: Vec<Value> = candidates
         .iter()
-        .map(|candidate| {
-            let extension = extract_candidate_metadata(candidate);
-            json!({
-                "grounding_metadata": extension.grounding_metadata,
-                "url_context_metadata": extension.url_context_metadata,
-                "safety_ratings": extension.safety_ratings,
-                "citation_metadata": extension.citation_metadata,
-            })
-        })
+        .map(|candidate| render(&extract_candidate_metadata(candidate)))
         .collect();
-    json!({"candidates": extracted})
-}
-
-fn nested_safety(candidates: &[Json]) -> Value {
-    let applied: Vec<Value> = candidates
-        .iter()
-        .map(|candidate| {
-            let extension = extract_candidate_metadata(candidate);
-            json!({
-                "fields": all_fields(&extension),
-                "hidden": object(&extension.populated_fields()),
-            })
-        })
-        .collect();
-    json!({"candidates": applied})
-}
-
-fn all_fields(extension: &MetadataExtension) -> Value {
-    let fields: Vec<(&'static str, &[Json])> = MetadataField::ALL
-        .into_iter()
-        .map(|field| (field.wire_name(), extension.values(field)))
-        .collect();
-    object(&fields)
-}
-
-fn assembled(chunks: &[Json]) -> Value {
-    let extension = assemble_stream_metadata(chunks);
-    let populated = object(&extension.populated_fields());
-    json!({"fields": populated, "hidden": populated})
+    json!({"candidates": entries})
 }
 
 fn object(fields: &[(&str, &[Json])]) -> Value {

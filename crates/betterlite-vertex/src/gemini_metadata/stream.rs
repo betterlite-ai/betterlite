@@ -19,8 +19,7 @@ pub fn stream_chunk_attr<'chunk>(chunk: &'chunk Json, field: &str) -> Option<&'c
         Some(Json::Object(hidden_params)) => hidden_params
             .get(field)
             .filter(|value| **value != Json::Null),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => None,
+        Some(_) | None => None,
     }
 }
 

@@ -28,14 +28,14 @@ pub fn grounding_annotations(grounding_metadata: &[Json]) -> Vec<GroundingAnnota
     let mut annotations = Vec::new();
     for metadata in grounding_metadata {
         let web_chunks = web_chunks(metadata);
-        for support in object_get(metadata, "groundingSupports")
+        let supports = object_get(metadata, "groundingSupports")
             .and_then(as_list)
-            .unwrap_or_default()
-        {
-            if let Some(annotation) = support_annotation(support, &web_chunks) {
-                annotations.push(annotation);
-            }
-        }
+            .unwrap_or_default();
+        annotations.extend(
+            supports
+                .iter()
+                .filter_map(|support| support_annotation(support, &web_chunks)),
+        );
     }
     annotations
 }
@@ -48,16 +48,12 @@ fn web_chunks(metadata: &Json) -> Vec<(i64, &Json)> {
         .iter()
         .enumerate()
     {
-        let Some(web) = object_get(chunk, "web") else {
+        let Some(web @ Json::Object(_)) = object_get(chunk, "web") else {
             continue;
         };
-        let Json::Object(_) = web else {
-            continue;
-        };
-        let Ok(index) = i64::try_from(position) else {
-            continue;
-        };
-        chunks.push((index, web));
+        if let Ok(index) = i64::try_from(position) {
+            chunks.push((index, web));
+        }
     }
     chunks
 }
@@ -66,12 +62,10 @@ fn support_annotation(support: &Json, web_chunks: &[(i64, &Json)]) -> Option<Gro
     let segment = object_get(support, "segment")?;
     let start_index = integer(object_get(segment, "startIndex")?)?;
     let end_index = integer(object_get(segment, "endIndex")?)?;
-    let first_chunk = integer(
-        object_get(support, "groundingChunkIndices")
-            .and_then(as_list)
-            .unwrap_or_default()
-            .first()?,
-    )?;
+    let indices = object_get(support, "groundingChunkIndices")
+        .and_then(as_list)
+        .unwrap_or_default();
+    let first_chunk = integer(indices.first()?)?;
     let (_, web) = web_chunks.iter().find(|(index, _)| *index == first_chunk)?;
     Some(GroundingAnnotation {
         kind: AnnotationType::UrlCitation,

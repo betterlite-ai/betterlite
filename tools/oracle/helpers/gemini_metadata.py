@@ -12,70 +12,55 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 Params: TypeAlias = dict[str, Json]
 Handler: TypeAlias = Callable[[Params], Json]
 Extracted: TypeAlias = tuple[list[Json], list[Json], list[Json], list[Json]]
-Extractor: TypeAlias = Callable[[Candidates], Extracted]
-Writer: TypeAlias = Callable[[ModelResponse, list[Json], list[Json], list[Json], list[Json]], None]
 
 
 def _extract(candidate: Json) -> Extracted:
-    extract = cast(Extractor, VertexGeminiConfig._extract_candidate_metadata)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
-    return extract(cast(Candidates, candidate))
+    extracted = VertexGeminiConfig._extract_candidate_metadata(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
+        cast(Candidates, candidate)
+    )
+    return cast("Extracted", extracted)
 
 
-def _write(response: ModelResponse, values: Extracted) -> None:
-    write = cast(Writer, VertexGeminiConfig._set_stream_metadata_on_response)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
-    grounding, url_context, safety, citation = values
-    write(response, grounding, url_context, safety, citation)
-
-
-def _visible(response: ModelResponse) -> dict[str, Json]:
-    found: dict[str, Json] = {}
+def _state(response: ModelResponse) -> Json:
+    fields: dict[str, Json] = {}
     for name in VERTEX_AI_PROVIDER_METADATA_FIELDS:
         if hasattr(response, name):
-            found[name] = cast(Json, getattr(response, name))
-    return found
-
-
-def _hidden(response: ModelResponse) -> dict[str, Json]:
-    return cast("dict[str, Json]", dict(response._hidden_params))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
-
-
-def _extracted(candidate: Json) -> Json:
-    grounding, url_context, safety, citation = _extract(candidate)
-    return {
-        "grounding_metadata": grounding,
-        "url_context_metadata": url_context,
-        "safety_ratings": safety,
-        "citation_metadata": citation,
-    }
-
-
-def _applied(candidate: Json) -> Json:
-    response = ModelResponse()
-    _write(response, _extract(candidate))
-    return {"fields": _visible(response), "hidden": _hidden(response)}
+            fields[name] = cast(Json, getattr(response, name))
+    hidden = cast("dict[str, Json]", dict(response._hidden_params))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
+    return {"fields": fields, "hidden": hidden}
 
 
 def scalar_vs_list(params: Params) -> Json:
-    return {
-        "candidates": [
-            _extracted(candidate) for candidate in cast("list[Json]", params["candidates"])
-        ]
-    }
+    entries: list[Json] = []
+    for candidate in cast("list[Json]", params["candidates"]):
+        grounding, url_context, safety, citation = _extract(candidate)
+        entries.append(
+            {
+                "grounding_metadata": grounding,
+                "url_context_metadata": url_context,
+                "safety_ratings": safety,
+                "citation_metadata": citation,
+            }
+        )
+    return {"candidates": entries}
 
 
 def nested_safety(params: Params) -> Json:
-    return {
-        "candidates": [
-            _applied(candidate) for candidate in cast("list[Json]", params["candidates"])
-        ]
-    }
+    entries: list[Json] = []
+    for candidate in cast("list[Json]", params["candidates"]):
+        response = ModelResponse()
+        VertexGeminiConfig._set_stream_metadata_on_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportArgumentType]
+            response, *_extract(candidate)
+        )
+        entries.append(_state(response))
+    return {"candidates": entries}
 
 
 def _assembled(params: Params) -> Json:
     response = ModelResponse()
     chunks = cast("list[object]", cast("list[Json]", params["chunks"]))
     VertexGeminiConfig().apply_assembled_streaming_response_metadata(response, chunks)
-    return {"fields": _visible(response), "hidden": _hidden(response)}
+    return _state(response)
 
 
 def _annotations(params: Params) -> Json:
