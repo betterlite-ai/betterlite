@@ -14,6 +14,7 @@ use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 use betterlite_openai::aleph_alpha::lines::LineStream;
 use betterlite_openai::aleph_alpha::request::CompletionInput;
 use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat::response::ChatChoice;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
@@ -94,8 +95,16 @@ async fn execute(input: &Input) -> HelperResult {
     let mut sink = |phase: CallPhase<'_>| phases.push(phase_value(&phase));
     let outcome = adapter.completion(&call, &mut sink).await;
     let captured = server.finish().await?;
+    outcome_value(outcome, captured.as_ref(), phases).await
+}
+
+async fn outcome_value(
+    outcome: Result<CompletionOutcome, AlephAlphaError>,
+    captured: Option<&Captured>,
+    phases: Vec<Value>,
+) -> HelperResult {
     let mut output = Object::new();
-    output.insert(String::from("ok"), Value::Bool(matches!(outcome, Ok(_))));
+    output.insert(String::from("ok"), Value::Bool(outcome.is_ok()));
     output.insert(
         String::from("status"),
         outcome
@@ -104,27 +113,21 @@ async fn execute(input: &Input) -> HelperResult {
             .and_then(AlephAlphaError::status_code)
             .map_or(Value::Null, Value::from),
     );
-    match &outcome {
+    let mut reply_field = Value::Null;
+    let mut lines_field = Value::Null;
+    let mut tokens_field = Value::Array(Vec::new());
+    match outcome {
         Ok(CompletionOutcome::Reply(reply)) => {
-            output.insert(String::from("reply"), reply_value(reply));
-            output.insert(String::from("lines"), Value::Null);
-            output.insert(
-                String::from("tokens"),
-                tokens_value(captured.as_ref(), reply),
-            );
+            reply_field = reply_value(&reply);
+            tokens_field = tokens_value(captured, &reply);
         }
-        Ok(CompletionOutcome::Stream(lines)) => {
-            output.insert(String::from("reply"), Value::Null);
-            output.insert(String::from("tokens"), Value::Array(Vec::new()));
-            output.insert(String::from("lines"), lines_value(lines).await?);
-        }
-        Err(_) => {
-            output.insert(String::from("reply"), Value::Null);
-            output.insert(String::from("lines"), Value::Null);
-            output.insert(String::from("tokens"), Value::Array(Vec::new()));
-        }
+        Ok(CompletionOutcome::Stream(stream)) => lines_field = lines_value(stream).await?,
+        Err(_) => {}
     }
-    request_value(&mut output, captured.as_ref());
+    output.insert(String::from("reply"), reply_field);
+    output.insert(String::from("lines"), lines_field);
+    output.insert(String::from("tokens"), tokens_field);
+    request_value(&mut output, captured);
     output.insert(String::from("log"), Value::Array(phases));
     Ok(Value::Object(output))
 }
@@ -150,38 +153,7 @@ fn request_value(output: &mut Object, captured: Option<&Captured>) {
 }
 
 fn reply_value(reply: &CompletionReply) -> Value {
-    let choices: Vec<Value> = reply
-        .choices
-        .iter()
-        .map(|choice| {
-            let mut fields = Object::new();
-            fields.insert(String::from("index"), Value::from(choice.index));
-            fields.insert(
-                String::from("content"),
-                choice
-                    .message
-                    .content
-                    .clone()
-                    .map_or(Value::Null, Value::from),
-            );
-            fields.insert(
-                String::from("finish_reason"),
-                choice
-                    .finish_reason
-                    .clone()
-                    .map_or(Value::Null, Value::from),
-            );
-            fields.insert(
-                String::from("native_finish_reason"),
-                choice
-                    .provider_specific_fields
-                    .get("native_finish_reason")
-                    .cloned()
-                    .unwrap_or(Value::Null),
-            );
-            Value::Object(fields)
-        })
-        .collect();
+    let choices: Vec<Value> = reply.choices.iter().map(choice_value).collect();
     let mut usage = Object::new();
     usage.insert(
         String::from("prompt_tokens"),
@@ -203,6 +175,35 @@ fn reply_value(reply: &CompletionReply) -> Value {
     Value::Object(value)
 }
 
+fn choice_value(choice: &ChatChoice) -> Value {
+    let mut fields = Object::new();
+    fields.insert(String::from("index"), Value::from(choice.index));
+    fields.insert(
+        String::from("content"),
+        choice
+            .message
+            .content
+            .clone()
+            .map_or(Value::Null, Value::from),
+    );
+    fields.insert(
+        String::from("finish_reason"),
+        choice
+            .finish_reason
+            .clone()
+            .map_or(Value::Null, Value::from),
+    );
+    fields.insert(
+        String::from("native_finish_reason"),
+        choice
+            .provider_specific_fields
+            .get("native_finish_reason")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    Value::Object(fields)
+}
+
 fn tokens_value(captured: Option<&Captured>, reply: &CompletionReply) -> Value {
     let prompt = captured
         .and_then(|found| found.body.get("prompt"))
@@ -216,12 +217,11 @@ fn tokens_value(captured: Option<&Captured>, reply: &CompletionReply) -> Value {
     Value::Array(vec![Value::from(prompt), Value::from(first)])
 }
 
-async fn lines_value(lines: LineStream) -> HelperResult {
+async fn lines_value(mut stream: LineStream) -> HelperResult {
     let mut collected = Vec::new();
-    let mut lines = lines;
-    while let Some(line) = lines.next().await {
-        let line = line.map_err(|error| failure("AlephAlphaError", &error))?;
-        collected.push(Value::from(line));
+    while let Some(item) = stream.next().await {
+        let text = item.map_err(|error| failure("AlephAlphaError", &error))?;
+        collected.push(Value::from(text));
     }
     Ok(Value::Array(collected))
 }
