@@ -1,12 +1,12 @@
-use std::slice;
-
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::files::SUPPORTED_OPENAI_PARAMS;
 use betterlite_anthropic::files::api::response_error;
 use betterlite_anthropic::files::request::{
     FilesUrl, create_file_parts, files_url, validate_environment,
 };
-use betterlite_anthropic::files::wire::{decode_anthropic_delete, decode_anthropic_file};
+use betterlite_anthropic::files::wire::{
+    decode_anthropic_delete, decode_anthropic_file, decode_anthropic_file_list,
+};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::files::records::{BinaryContent, FileObject};
 use betterlite_prompts::media_metadata::{FileBody, FileData};
@@ -99,8 +99,14 @@ pub(crate) fn file_list_pagination(case: &ListCase) -> HelperResult {
     let resolved = settings(&case.environment)?;
     let url =
         files_url(case.params_api_base.as_deref(), &resolved, FilesUrl::Files).map_err(failure)?;
-    let files = decode_values(slice::from_ref(&case.body), case.now, file_view)?;
+    let files = decode_file_list(&case.body, case.now)?;
     Ok(json!({"url": url, "queries": list_queries(&case.purposes), "files": files}))
+}
+
+fn decode_file_list(body: &Value, now_epoch: i64) -> Result<Vec<Value>, Box<HelperError>> {
+    let bytes = serde_json::to_vec(body).map_err(failure)?;
+    let files = decode_anthropic_file_list(&bytes, now_epoch).map_err(failure)?;
+    Ok(files.iter().map(file_view).collect())
 }
 
 fn list_queries(purposes: &[Option<String>]) -> Vec<Vec<(String, String)>> {
