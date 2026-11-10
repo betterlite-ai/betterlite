@@ -7,7 +7,7 @@ use betterlite_prompts::gemini_tool_invokes::types::GeminiTool;
 use betterlite_prompts::gemini_tool_results::types::LastToolCallMessage;
 use betterlite_prompts::message_content::Message;
 
-use crate::gemini_history::content::{object, object_of};
+use crate::gemini_history::content::{bounded, object, object_of};
 use crate::gemini_history::error::HistoryError;
 use crate::gemini_history::turns::AssistantOptions;
 use crate::gemini_media::equivalence::part_exists;
@@ -24,13 +24,13 @@ const THOUGHT_SIGNATURE: &str = "thought_signature";
 const RESPONSE_THOUGHT_SIGNATURE: &str = "response_thought_signature";
 const EXCLUDED: [&str; 1] = ["thoughtSignature"];
 
-fn invocations_of(fields: &Object) -> &[Json] {
+fn invocations_of(fields: &Object) -> Result<&[Json], HistoryError> {
     if let Some(Json::Object(provider)) = fields.get(PROVIDER_FIELDS)
         && let Some(Json::List(invocations)) = provider.get(SERVER_INVOCATIONS)
     {
-        return invocations;
+        return bounded(invocations);
     }
-    &[]
+    Ok(&[])
 }
 
 pub fn append_tool_calls(
@@ -70,8 +70,7 @@ pub fn append_tool_calls(
     Ok(())
 }
 
-#[must_use]
-pub fn collect_tool_signatures(fields: &Object) -> BTreeSet<String> {
+pub fn collect_tool_signatures(fields: &Object) -> Result<BTreeSet<String>, HistoryError> {
     let mut signatures = BTreeSet::new();
     if let Some(Json::List(tools)) = fields.get(TOOL_CALLS) {
         for tool in tools.iter().filter_map(|tool| {
@@ -93,7 +92,7 @@ pub fn collect_tool_signatures(fields: &Object) -> BTreeSet<String> {
             signatures.insert(signature);
         }
     }
-    for invocation in invocations_of(fields) {
+    for invocation in invocations_of(fields)? {
         let Some(entry) = invocation.as_object() else {
             continue;
         };
@@ -105,11 +104,11 @@ pub fn collect_tool_signatures(fields: &Object) -> BTreeSet<String> {
             }
         }
     }
-    signatures
+    Ok(signatures)
 }
 
-pub fn append_invocations(fields: &Object, parts: &mut Vec<Object>) {
-    for invocation in invocations_of(fields) {
+pub fn append_invocations(fields: &Object, parts: &mut Vec<Object>) -> Result<(), HistoryError> {
+    for invocation in invocations_of(fields)? {
         let Some(entry) = invocation.as_object() else {
             continue;
         };
@@ -118,6 +117,7 @@ pub fn append_invocations(fields: &Object, parts: &mut Vec<Object>) {
             parts.push(part);
         }
     }
+    Ok(())
 }
 
 fn call_part(invocation: &Object) -> Object {

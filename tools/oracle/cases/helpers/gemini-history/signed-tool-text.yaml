@@ -58,6 +58,16 @@ call:
             content: "a"
             provider_specific_fields: {thought_signatures: ["none"]}
             tool_calls: []
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "calling"
+            function_call:
+              name: "f"
+              arguments: "{}"
+              provider_specific_fields: {thought_signature: "s"}
+            provider_specific_fields: {thought_signatures: ["s"]}
+          - {role: function, name: "f", content: "r"}
 env: {}
 compare:
   ignore: []

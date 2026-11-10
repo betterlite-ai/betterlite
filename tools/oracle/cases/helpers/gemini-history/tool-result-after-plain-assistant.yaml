@@ -29,6 +29,20 @@ call:
           - {role: tool, tool_call_id: "c1", content: "r1"}
           - {role: tool, tool_call_id: "c2", content: "r2"}
           - {role: user, content: "thanks"}
+      - model: "gemini-2.5-flash"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: null
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+          - role: tool
+            tool_call_id: "c1"
+            content:
+              - {type: text, text: "t"}
+              - {type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}
 env: {}
 compare:
   ignore: []

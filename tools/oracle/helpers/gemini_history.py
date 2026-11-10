@@ -37,7 +37,16 @@ def _history(case: Json) -> Json:
             contents = _gemini_convert_messages_with_history(messages, model=model)
     except Exception as error:  # noqa: BLE001 - every conversion failure is part of the answer
         status = getattr(error, "status_code", None)
-        return {"error": {"status": status if isinstance(status, int) else None}}
+        error_type = getattr(error, "type", None)
+        param = getattr(error, "param", None)
+        return {
+            "error": {
+                "status": status if isinstance(status, int) else None,
+                "type": error_type if isinstance(error_type, str) else None,
+                "param": param if isinstance(param, str) else None,
+                "code": str(status) if isinstance(status, int) else None,
+            }
+        }
     return {"contents": cast(Json, contents), "warnings": cast(Json, recorder.subjects)}
 
 

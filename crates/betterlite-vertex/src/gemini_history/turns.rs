@@ -2,7 +2,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_results::types::LastToolCallMessage;
 use betterlite_prompts::message_content::{Content, Message};
 
-use crate::gemini_history::content::{decode_thinking_part, object};
+use crate::gemini_history::content::{bounded, decode_thinking_part, object};
 use crate::gemini_history::error::HistoryError;
 use crate::gemini_history::media_source::{
     append_user_part, generated_image, push_source, text_of,
@@ -30,18 +30,16 @@ pub fn append_user_parts(
     model: Option<&str>,
     parts: &mut Vec<Object>,
 ) -> Result<(), HistoryError> {
-    let items = match &message.content {
-        None => return Ok(()),
+    match &message.content {
+        None => Ok(()),
         Some(Content::Text(text)) => {
             parts.push(object!(TEXT => Json::Text(text.clone())));
-            return Ok(());
+            Ok(())
         }
-        Some(Content::Parts(items)) => items,
-    };
-    for item in items {
-        append_user_part(item, model, parts)?;
+        Some(Content::Parts(items)) => bounded(items)?
+            .iter()
+            .try_for_each(|item| append_user_part(item, model, parts)),
     }
-    Ok(())
 }
 
 pub fn append_assistant_parts(
@@ -54,7 +52,7 @@ pub fn append_assistant_parts(
     if let Some(text) = text_of(fields, REASONING_CONTENT) {
         parts.push(object!("thought" => Json::Bool(true), TEXT => Json::Text(text)));
     }
-    for block in blocks_of(fields) {
+    for block in blocks_of(fields)? {
         let Some(entry) = block.as_object() else {
             continue;
         };
@@ -67,54 +65,59 @@ pub fn append_assistant_parts(
             parts.push(decode_thinking_part(thinking, signature));
         }
     }
-    append_content(message, fields, parts);
+    append_content(message, fields, parts)?;
     append_images(fields, options.model, parts)?;
     append_tool_calls(message, fields, options, parts, last_tool_calls)?;
-    append_invocations(fields, parts);
+    append_invocations(fields, parts)
+}
+
+fn blocks_of(fields: &Object) -> Result<&[Json], HistoryError> {
+    if let Some(Json::List(blocks)) = fields.get(THINKING_BLOCKS) {
+        return bounded(blocks);
+    }
+    Ok(&[])
+}
+
+fn append_content(
+    message: &Message,
+    fields: &Object,
+    parts: &mut Vec<Object>,
+) -> Result<(), HistoryError> {
+    if let Some(Content::Text(text)) = &message.content {
+        let mut part = object!(TEXT => Json::Text(text.clone()));
+        if let Some(signature) = text_signature(fields)? {
+            part.insert("thoughtSignature".to_owned(), signature);
+        }
+        parts.push(part);
+    }
+    if let Some(Content::Parts(items)) = &message.content {
+        for item in bounded(items)? {
+            if item.kind.as_str() == TEXT
+                && let Some(text) = text_of(&item.fields, TEXT)
+            {
+                parts.push(object!(TEXT => Json::Text(text)));
+            }
+        }
+    }
     Ok(())
 }
 
-fn blocks_of(fields: &Object) -> &[Json] {
-    if let Some(Json::List(blocks)) = fields.get(THINKING_BLOCKS) {
-        return blocks;
-    }
-    &[]
-}
-
-fn append_content(message: &Message, fields: &Object, parts: &mut Vec<Object>) {
-    match &message.content {
-        None => {}
-        Some(Content::Text(text)) => {
-            let mut part = object!(TEXT => Json::Text(text.clone()));
-            if let Some(signature) = text_signature(fields) {
-                part.insert("thoughtSignature".to_owned(), signature);
-            }
-            parts.push(part);
-        }
-        Some(Content::Parts(items)) => {
-            for item in items {
-                if item.kind.as_str() == TEXT
-                    && let Some(text) = text_of(&item.fields, TEXT)
-                {
-                    parts.push(object!(TEXT => Json::Text(text)));
-                }
-            }
-        }
-    }
-}
-
-fn text_signature(fields: &Object) -> Option<Json> {
-    let provider = fields.get(PROVIDER_FIELDS)?.as_object()?;
-    let Some(Json::List(signatures)) = provider.get(THOUGHT_SIGNATURES) else {
-        return None;
+fn text_signature(fields: &Object) -> Result<Option<Json>, HistoryError> {
+    let Some(Json::Object(provider)) = fields.get(PROVIDER_FIELDS) else {
+        return Ok(None);
     };
-    let signature = signatures.first()?.clone();
-    let tool_signatures = collect_tool_signatures(fields);
-    let unhashable = matches!(&signature, Json::List(_) | Json::Object(_));
-    if unhashable || matches!(&signature, Json::Text(raw) if tool_signatures.contains(raw)) {
-        return None;
+    let Some(Json::List(signatures)) = provider.get(THOUGHT_SIGNATURES) else {
+        return Ok(None);
+    };
+    let Some(signature) = signatures.first() else {
+        return Ok(None);
+    };
+    let tool_signatures = collect_tool_signatures(fields)?;
+    let unhashable = matches!(signature, Json::List(_) | Json::Object(_));
+    if unhashable || matches!(signature, Json::Text(raw) if tool_signatures.contains(raw)) {
+        return Ok(None);
     }
-    Some(signature)
+    Ok(Some(signature.clone()))
 }
 
 pub fn append_images(
@@ -125,8 +128,6 @@ pub fn append_images(
     let Some(Json::List(items)) = fields.get(IMAGES) else {
         return Ok(());
     };
-    items
-        .iter()
-        .filter_map(generated_image)
-        .try_for_each(|locator| push_source(parts, &locator, MediaField::ImageUrl, model))
+    let mut locators = bounded(items)?.iter().filter_map(generated_image);
+    locators.try_for_each(|locator| push_source(parts, &locator, MediaField::ImageUrl, model))
 }

@@ -10,7 +10,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_invokes::signatures::DUMMY_THOUGHT_SIGNATURE;
 use betterlite_prompts::gemini_tool_results::error::GeminiToolResultsError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
-use betterlite_prompts::media::limits::MAX_MESSAGES;
+use betterlite_prompts::media::limits::{MAX_MESSAGE_PARTS, MAX_MESSAGES};
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
 use rstest::rstest;
@@ -559,6 +559,9 @@ fn rejects_a_message_role_the_history_cannot_place() {
     );
     assert_field_error(&error, "developer");
     assert!(matches!(error, HistoryError::Invalid(_)));
+    assert_eq!(error.error_type(), None);
+    assert_eq!(error.param(), None);
+    assert_eq!(error.code(), Some("400"));
 }
 
 #[test]
@@ -571,6 +574,9 @@ fn propagates_the_remote_media_rejection() {
         error,
         HistoryError::Media(MediaError::RemoteMediaRequired(MediaField::ImageUrl))
     ));
+    assert_eq!(error.error_type(), Some("invalid_request_error"));
+    assert_eq!(error.param(), Some("image_url"));
+    assert_eq!(error.code(), Some("unsupported_remote_media"));
     let HistoryError::Media(source) = error else {
         panic!("a remote media reference must stay a media error");
     };
@@ -601,6 +607,103 @@ fn caps_the_history_at_the_message_limit() {
         error_for(&over_limit, None),
         HistoryError::TooManyMessages(limit) if limit == MAX_MESSAGES
     ));
+}
+
+#[rstest]
+#[case::no_branch(r#"{"file_data":"plain-text"}"#, "provided data")]
+#[case::inline_without_data_prefix(r#"{"file_data":"base64-payload"}"#, "provided data")]
+#[case::named_by_file_id(r#"{"file_id":"plain-id"}"#, "plain-id")]
+fn reports_unusable_file_media_as_a_bodyless_bad_request(#[case] file: &str, #[case] named: &str) {
+    let source = format!(r#"[{{"role":"user","content":[{{"type":"file","file":{file}}}]}}]"#);
+    let error = error_of(&source, None);
+    assert!(matches!(error, HistoryError::FileMedia(_)));
+    assert_field_error(
+        &error,
+        &format!("Unable to determine mime type for file: {named}, set this explicitly"),
+    );
+    assert_eq!(error.error_type(), None);
+    assert_eq!(error.param(), None);
+    assert_eq!(error.code(), Some("400"));
+}
+
+#[test]
+fn keeps_an_unusable_image_url_a_media_error() {
+    let error = error_of(
+        r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"plain-text"}}]}]"#,
+        None,
+    );
+    assert!(matches!(
+        error,
+        HistoryError::Media(MediaError::InvalidMedia(_))
+    ));
+    assert_eq!(error.error_type(), Some("invalid_request_error"));
+    assert_eq!(error.code(), None);
+}
+
+fn with_items(template: &str, item: &str, count: usize) -> Vec<Message> {
+    let items = repeat_n(item, count).collect::<Vec<_>>().join(",");
+    parse_messages(&template.replace("ITEMS", &items))
+}
+
+#[rstest]
+#[case::user_content(
+    r#"[{"role":"user","content":[ITEMS]}]"#,
+    r#"{"type":"text","text":"x"}"#
+)]
+#[case::assistant_content(
+    r#"[{"role":"assistant","content":[ITEMS]}]"#,
+    r#"{"type":"text","text":"x"}"#
+)]
+#[case::thinking_blocks(
+    r#"[{"role":"assistant","content":"a","thinking_blocks":[ITEMS]}]"#,
+    "1"
+)]
+#[case::images(r#"[{"role":"assistant","content":"a","images":[ITEMS]}]"#, "1")]
+#[case::server_side_invocations(
+    r#"[{"role":"assistant","content":"a","provider_specific_fields":{"server_side_tool_invocations":[ITEMS]}}]"#,
+    "1"
+)]
+fn caps_each_message_list_at_the_part_limit(#[case] template: &str, #[case] item: &str) {
+    converted_messages(&with_items(template, item, MAX_MESSAGE_PARTS), None);
+    let error = error_for(&with_items(template, item, MAX_MESSAGE_PARTS + 1), None);
+    assert!(matches!(
+        error,
+        HistoryError::TooManyParts(limit) if limit == MAX_MESSAGE_PARTS
+    ));
+    assert_eq!(error.status(), 400);
+}
+
+#[test]
+fn replays_a_legacy_function_call_and_its_function_result() {
+    let history = converted(
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"calling","function_call":{"name":"f","arguments":"{}","provider_specific_fields":{"thought_signature":"s"}},"provider_specific_fields":{"thought_signatures":["s"]}},{"role":"function","name":"f","content":"r"}]"#,
+        None,
+    );
+    let text_part = history.contents[1].parts.first().unwrap();
+    assert_eq!(
+        text_part.get("text"),
+        Some(&Json::Text("calling".to_owned()))
+    );
+    assert!(!text_part.contains_key("thoughtSignature"));
+    let result_turn = &history.contents[2];
+    assert_eq!(result_turn.role, Role::User);
+    assert_eq!(result_turn.parts.len(), 1);
+    assert!(
+        result_turn
+            .parts
+            .first()
+            .unwrap()
+            .contains_key("function_response")
+    );
+}
+
+#[test]
+fn nests_tool_media_inside_the_function_response_turn() {
+    assert_parts(
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c1","content":[{"type":"text","text":"t"},{"type":"image_url","image_url":{"url":"data:image/png;base64,YWJj"}}]}]"#,
+        None,
+        r#"[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"function_call":{"name":"f","args":{}}}]},{"role":"user","parts":[{"function_response":{"name":"f","response":{"content":"t"},"parts":[{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]}}]}]"#,
+    );
 }
 
 #[test]
@@ -662,7 +765,10 @@ fn refuses_thinking_json_past_the_byte_bound() {
     let filler = "a".repeat(MAX_THINKING_BYTES);
     let inside = format!("{{\"text\":\"{filler}\"}}");
     assert!(inside.len() > MAX_THINKING_BYTES);
-    assert!(decode_thinking_part(&inside, "sig").contains_key("thoughtSignature"));
+    assert_eq!(
+        decode_thinking_part(&inside, "sig").get("text"),
+        Some(&Json::Text(inside.clone()))
+    );
 
     let room = MAX_THINKING_BYTES.saturating_sub("{\"text\":\"\"}".len());
     let exact = format!("{{\"text\":\"{}\"}}", "a".repeat(room));
@@ -674,7 +780,10 @@ fn refuses_thinking_json_past_the_byte_bound() {
 
     let over = format!("{{\"text\":\"{}\"}}", "a".repeat(room.saturating_add(1)));
     assert_eq!(over.len(), MAX_THINKING_BYTES.saturating_add(1));
-    assert!(decode_thinking_part(&over, "sig").contains_key("thoughtSignature"));
+    assert_eq!(
+        decode_thinking_part(&over, "sig").get("text"),
+        Some(&Json::Text(over.clone()))
+    );
 }
 
 #[test]

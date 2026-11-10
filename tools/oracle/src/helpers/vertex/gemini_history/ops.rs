@@ -60,7 +60,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
                     .map(|warning| warning.subject())
                     .collect::<Vec<&str>>(),
             }),
-            Err(error) => json!({"error": {"status": error.status()}}),
+            Err(error) => json!({"error": {
+                "status": error.status(),
+                "type": error.error_type(),
+                "param": error.param(),
+                "code": error.code(),
+            }}),
         });
     }
     Ok(json!({"results": results}))

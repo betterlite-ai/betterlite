@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::media::limits::MAX_MESSAGE_PARTS;
 use serde::Serialize;
 
 use crate::gemini_history::error::HistoryError;
@@ -10,20 +11,6 @@ macro_rules! object {
     };
 }
 pub(crate) use object;
-
-macro_rules! media_request {
-    ($url:expr, $hints:expr, $resolution:expr, $video:expr, $model:expr, $field:expr) => {
-        $crate::gemini_media::process::MediaRequest {
-            url: $url,
-            hints: $hints,
-            resolution: $resolution,
-            video_metadata: $video,
-            model: $model,
-            field: $field,
-        }
-    };
-}
-pub(crate) use media_request;
 
 pub const FORMAT: &str = "format";
 pub const MIME_TYPE: &str = "mime_type";
@@ -73,4 +60,11 @@ where
 pub fn push_media(parts: &mut Vec<Object>, request: &MediaRequest<'_>) -> Result<(), HistoryError> {
     parts.push(object_of(process_media(request)?)?);
     Ok(())
+}
+
+pub const fn bounded<Item>(items: &[Item]) -> Result<&[Item], HistoryError> {
+    if items.len() > MAX_MESSAGE_PARTS {
+        return Err(HistoryError::TooManyParts(MAX_MESSAGE_PARTS));
+    }
+    Ok(items)
 }

@@ -9,6 +9,6 @@ deviations:
   - what: "A thinking_blocks[].thinking string over 1048576 bytes, or JSON serde_json cannot read such as an over-deep nest, NaN or Infinity, replays as the literal signed text part where LiteLLM's json.loads parses any size and accepts NaN and Infinity."
     why: "Rule bounded-inputs caps untrusted JSON parsing, and the fallback is LiteLLM's own malformed-JSON path."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L893-L906
-  - what: "A history with more than 1024 messages returns HTTP 400, where LiteLLM converts any number of messages."
-    why: "Rule bounded-inputs gives the traversal a ceiling, the same one the media traversal uses."
+  - what: "A history with more than 1024 messages, or a message list (content, thinking_blocks, images, server_side_tool_invocations) with more than 256 entries, returns HTTP 400, where LiteLLM converts any number."
+    why: "Rule bounded-inputs gives each traversal a ceiling, the same ones the media traversal uses."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L722-L724

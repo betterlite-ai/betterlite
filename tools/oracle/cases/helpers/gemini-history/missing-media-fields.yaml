@@ -19,6 +19,12 @@ call:
           - {role: user, content: [{type: image_url, image_url: {url: "gs://bucket/anim.gif"}}]}
       - messages:
           - {role: user, content: [{type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "plain-text"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "base64-payload"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_id: "plain-id"}}]}
 env: {}
 compare:
   ignore: []

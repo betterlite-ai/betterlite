@@ -20,6 +20,8 @@ pub enum HistoryError {
     ToolInvoke(#[from] GeminiToolInvokesError),
     #[error("{0}")]
     ToolResult(#[from] GeminiToolResultsError),
+    #[error("{0}")]
+    FileMedia(String),
     #[error("a content part cannot be encoded")]
     Encode(#[source] serde_json::Error),
 }
@@ -31,5 +33,30 @@ impl HistoryError {
             return source.status();
         }
         400
+    }
+
+    // every error except a media one is a bodyless BadRequestError: type and param null, code 400
+    #[must_use]
+    pub const fn error_type(&self) -> Option<&'static str> {
+        if let Self::Media(source) = self {
+            return source.error_type();
+        }
+        None
+    }
+
+    #[must_use]
+    pub const fn param(&self) -> Option<&'static str> {
+        if let Self::Media(source) = self {
+            return source.param();
+        }
+        None
+    }
+
+    #[must_use]
+    pub const fn code(&self) -> Option<&'static str> {
+        if let Self::Media(source) = self {
+            return source.code();
+        }
+        Some("400")
     }
 }

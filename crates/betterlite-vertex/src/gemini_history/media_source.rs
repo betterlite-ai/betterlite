@@ -1,13 +1,12 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::ContentPart;
 
-use crate::gemini_history::content::{
-    CONTENT_TYPE, DETAIL, FORMAT, MIME_TYPE, media_request, object, push_media,
-};
+use crate::gemini_history::content::{CONTENT_TYPE, DETAIL, FORMAT, MIME_TYPE, object, push_media};
 use crate::gemini_history::error::HistoryError;
-use crate::gemini_media::error::MediaField;
+use crate::gemini_media::error::{MediaError, MediaField};
 use crate::gemini_media::mime::MimeHints;
 use crate::gemini_media::part::VideoMetadata;
+use crate::gemini_media::process::MediaRequest;
 use crate::gemini_media::resolution::convert_detail;
 
 const IMAGE_URL: &str = "image_url";
@@ -51,15 +50,27 @@ pub fn push_source(
     } else {
         None
     };
-    let request = media_request!(
+    let request = MediaRequest {
         url,
-        &hints_of(fields),
+        hints: &hints_of(fields),
         resolution,
-        video.as_ref(),
+        video_metadata: video.as_ref(),
         model,
-        field
-    );
-    push_media(parts, &request)
+        field,
+    };
+    push_media(parts, &request).map_err(|error| {
+        let unusable = matches!(
+            error,
+            HistoryError::Media(MediaError::InvalidMedia(_) | MediaError::InvalidInlineData(_))
+        );
+        if !unusable || field != MediaField::File {
+            return error;
+        }
+        let named = text_of(fields, FILE_ID).unwrap_or_else(|| "provided data".to_owned());
+        HistoryError::FileMedia(format!(
+            "Unable to determine mime type for file: {named}, set this explicitly using file.format (or file.mime_type/content_type). Original error: {error}"
+        ))
+    })
 }
 
 fn image_source(fields: &Object) -> Result<Locator, HistoryError> {
