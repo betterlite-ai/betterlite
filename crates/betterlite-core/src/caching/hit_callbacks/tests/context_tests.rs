@@ -103,20 +103,26 @@ fn records_the_defaults_when_the_request_omits_the_optional_values() {
 }
 
 #[test]
-fn a_null_kwarg_takes_the_field_default() {
+fn a_present_null_kwarg_stays_null() {
     let kwargs = params(&[
         ("api_base", Json::Null),
         ("metadata", Json::Null),
-        ("user", Json::Null),
+        ("model_info", Json::Null),
+        ("stream_response", Json::Null),
+        ("messages", Json::Null),
         ("stream", Json::Null),
+        ("user", Json::Null),
     ]);
     let cached_result = cached();
     let state = recorded(&kwargs, &cached_result, |_hit| {});
     assert_eq!(state.user, None);
-    assert_eq!(details(&state, &["stream"]), r#"{"stream":false}"#);
+    assert_eq!(
+        details(&state, &["input", "stream"]),
+        r#"{"input":null,"stream":null}"#
+    );
     assert_eq!(
         encoded(&Json::Object(state.litellm_params)),
-        r#"{"logger_fn":null,"acompletion":true,"api_base":"","metadata":{},"model_info":{},"proxy_server_request":null,"stream_response":{},"custom_llm_provider":"openai","preset_cache_key":"preset-key"}"#
+        r#"{"logger_fn":null,"acompletion":true,"api_base":null,"metadata":null,"model_info":null,"proxy_server_request":null,"stream_response":null,"custom_llm_provider":"openai","preset_cache_key":"preset-key"}"#
     );
 }
 

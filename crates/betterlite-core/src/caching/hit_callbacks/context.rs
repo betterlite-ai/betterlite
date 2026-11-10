@@ -105,18 +105,16 @@ impl Declared {
     }
 }
 
-fn declared_value<'kwargs>(
+// LiteLLM reads these with kwargs.get(key, default): the default holds only when the key is absent
+fn keyword<'kwargs>(
     kwargs: &'kwargs IndexMap<String, Json>,
     field: &'static str,
     declared: Declared,
 ) -> Result<Option<&'kwargs Json>, CacheHitError> {
-    let Some(value) = kwargs
-        .get(field)
-        .filter(|value| !matches!(value, Json::Null))
-    else {
+    let Some(value) = kwargs.get(field) else {
         return Ok(None);
     };
-    if declared.holds(value) {
+    if matches!(value, Json::Null) || declared.holds(value) {
         return Ok(Some(value));
     }
     Err(CacheHitError::FieldType { field })
@@ -138,22 +136,20 @@ fn request_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json
         ("metadata", Declared::Object),
         ("model_info", Declared::Object),
     ] {
-        let value = declared_value(hit.kwargs, field, declared)?
-            .cloned()
-            .unwrap_or_else(|| declared.fallback());
+        let value =
+            keyword(hit.kwargs, field, declared)?.map_or_else(|| declared.fallback(), Json::clone);
         parameters.insert(field.to_owned(), value);
     }
     parameters.insert(
         "proxy_server_request".to_owned(),
-        declared_value(hit.kwargs, "proxy_server_request", Declared::Object)?
+        keyword(hit.kwargs, "proxy_server_request", Declared::Object)?
             .cloned()
             .unwrap_or(Json::Null),
     );
     parameters.insert(
         "stream_response".to_owned(),
-        declared_value(hit.kwargs, "stream_response", Declared::Object)?
-            .cloned()
-            .unwrap_or_else(|| Declared::Object.fallback()),
+        keyword(hit.kwargs, "stream_response", Declared::Object)?
+            .map_or_else(|| Declared::Object.fallback(), Json::clone),
     );
     parameters.insert("custom_llm_provider".to_owned(), provider);
     parameters.insert(
@@ -164,9 +160,8 @@ fn request_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json
 }
 
 fn call_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json>, CacheHitError> {
-    let stream = declared_value(hit.kwargs, "stream", Declared::Boolean)?
-        .cloned()
-        .unwrap_or_else(|| Declared::Boolean.fallback());
+    let stream = keyword(hit.kwargs, "stream", Declared::Boolean)?
+        .map_or_else(|| Declared::Boolean.fallback(), Json::clone);
     let provider = hit
         .custom_llm_provider
         .map_or_else(|| Json::Null, |name| Json::Text(name.to_owned()));
@@ -209,10 +204,10 @@ fn input_value(hit: &CacheHitContext<'_>) -> Json {
     } else {
         "messages"
     };
-    match hit.kwargs.get(field) {
-        None | Some(Json::Null) => Json::Text(String::new()),
-        Some(value) => value.clone(),
-    }
+    hit.kwargs
+        .get(field)
+        .cloned()
+        .unwrap_or_else(|| Json::Text(String::new()))
 }
 
 fn optional_text(
