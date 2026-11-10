@@ -114,7 +114,7 @@ dod:
   - response-headers
 - text: Every oracle case exactly reproduces LiteLLM's request/response/header behavior for the scenario listed.
   proof:
-  - oracle-cases
+  - oracle
 checks:
   optional:
   - mutants
@@ -169,10 +169,6 @@ checks:
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
       -E 'test(/^pillar::response_headers_tests/)'
-  - id: oracle-cases
-    why: Any oracle case does not match LiteLLM's exact request, response or headers
-    run: >-
-      cargo gate run B3790 --only oracle
 oracle_cases:
 - tools/oracle/cases/guardrails/pillar/encode-json-basic.yaml
 - tools/oracle/cases/guardrails/pillar/encode-json-unicode.yaml
