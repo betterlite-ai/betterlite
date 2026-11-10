@@ -1,12 +1,11 @@
 use opentelemetry::trace::Span;
 
+use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::legacy_policy::capture::CaptureMode;
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::span_attributes::SafeSetAttribute as _;
-
-mod tests;
 
 pub struct AttributeContext<'request> {
     pub callback_name: Option<&'request str>,
@@ -23,24 +22,11 @@ pub struct InferenceCall<'request> {
     pub response: Option<&'request OtelModelValue>,
 }
 
-// LiteLLM asks `if value:` before every optional write; the rule matches B3861's is_truthy
-#[must_use]
-pub fn truthiness(value: &OtelModelValue) -> bool {
-    match value {
-        OtelModelValue::Null(()) => false,
-        OtelModelValue::Bool(flag) => *flag,
-        OtelModelValue::Number(number) => number.as_f64().is_none_or(|parsed| parsed != 0.0_f64),
-        OtelModelValue::String(text) => !text.is_empty(),
-        OtelModelValue::Array(items) => !items.is_empty(),
-        OtelModelValue::Object(fields) => !fields.is_empty(),
-    }
-}
-
 pub(super) fn write_present<S>(span: &mut S, key: &str, source: Option<&OtelModelValue>)
 where
     S: Span,
 {
-    if let Some(value) = source.filter(|value| truthiness(value)) {
+    if let Some(value) = source.filter(|value| is_truthy(value)) {
         span.safe_set_attribute(key, value);
     }
 }

@@ -1,5 +1,6 @@
 use opentelemetry::trace::Span;
 
+use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::legacy_policy::semconv_attrs::{
     gen_ai_operation_name, semconv_latest_experimental,
 };
@@ -11,7 +12,7 @@ use crate::otel::transforms::transform_messages;
 use crate::otel::vocabulary::constants::attribute_keys::gen_ai;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
-use super::context::{AttributeContext, InferenceCall, truthiness, write_present};
+use super::context::{AttributeContext, InferenceCall, write_present};
 use super::request::keys;
 
 mod tests;
@@ -28,16 +29,12 @@ pub fn set_content_attributes<S>(
     if let Some(tools) = call
         .optional_params
         .get("tools")
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .and_then(OtelModelValue::as_array)
     {
         set_tools_attributes(span, tools);
     }
-    if let Some(messages) = call
-        .kwargs
-        .get("messages")
-        .filter(|value| truthiness(value))
-    {
+    if let Some(messages) = call.kwargs.get("messages").filter(|value| is_truthy(value)) {
         write_message_text(span, gen_ai::INPUT_MESSAGES, messages);
     }
     write_system_instructions(span, call.kwargs);
@@ -67,7 +64,7 @@ where
             .get(*key)
             .filter(|value| !matches!(value, OtelModelValue::Null(())))
     });
-    let Some(instructions) = chosen.filter(|value| truthiness(value)) else {
+    let Some(instructions) = chosen.filter(|value| is_truthy(value)) else {
         return;
     };
     if let OtelModelValue::String(text) = instructions {

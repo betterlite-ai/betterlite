@@ -1,5 +1,6 @@
 use opentelemetry::trace::Span;
 
+use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::span_attributes::SafeSetAttribute as _;
@@ -7,8 +8,6 @@ use crate::otel::transforms::tools::tool_calls_kv_pair;
 use crate::otel::transforms::{transform_choices, transform_responses_output};
 use crate::otel::vocabulary::constants::attribute_keys::gen_ai;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
-
-use super::context::truthiness;
 
 mod tests;
 
@@ -22,11 +21,11 @@ where
     let Some(fields) = present.as_object() else {
         return;
     };
-    if let Some(choices) = fields.get("choices").filter(|value| truthiness(value)) {
+    if let Some(choices) = fields.get("choices").filter(|value| is_truthy(value)) {
         write_choices(span, choices);
         return;
     }
-    if let Some(output) = fields.get("output").filter(|value| truthiness(value)) {
+    if let Some(output) = fields.get("output").filter(|value| is_truthy(value)) {
         write_responses_output(span, fields, output);
     }
 }
@@ -57,7 +56,7 @@ fn choice_finish_reason(choice: &OtelModelValue) -> Option<OtelModelValue> {
     choice
         .as_object()?
         .get("finish_reason")
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .cloned()
 }
 
@@ -65,14 +64,14 @@ fn choice_tool_call_pairs(choice: &OtelModelValue) -> Vec<(String, OtelModelValu
     let Some(fields) = choice.as_object() else {
         return Vec::new();
     };
-    if !fields.get("finish_reason").is_some_and(truthiness) {
+    if !fields.get("finish_reason").is_some_and(is_truthy) {
         return Vec::new();
     }
     let declared = fields
         .get("message")
         .and_then(OtelModelValue::as_object)
         .and_then(|message| message.get("tool_calls"))
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .and_then(OtelModelValue::as_array);
     declared.map_or_else(Vec::new, tool_calls_kv_pair)
 }
@@ -94,7 +93,7 @@ where
             span.safe_set_attribute(&key, &value);
         }
     }
-    let status = fields.get("status").filter(|value| truthiness(value));
+    let status = fields.get("status").filter(|value| is_truthy(value));
     if let Some(found) = status {
         write_serialized(span, gen_ai::RESPONSE_FINISH_REASONS, &[found]);
     }

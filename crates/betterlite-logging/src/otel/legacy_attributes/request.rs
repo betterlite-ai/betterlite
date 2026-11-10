@@ -1,6 +1,7 @@
 use opentelemetry::trace::Span;
 
 use crate::logging_privacy::internal::{Origin, call_category, is_unbilled};
+use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::legacy_policy::annotations::{
     set_service_tier_attributes, write_identity_attributes,
 };
@@ -14,7 +15,7 @@ use crate::otel::span_attributes::SafeSetAttribute as _;
 use crate::otel::vocabulary::constants::attribute_keys::{gen_ai, litellm};
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
-use super::context::{AttributeContext, InferenceCall, truthiness, write_present};
+use super::context::{AttributeContext, InferenceCall, write_present};
 
 mod tests;
 
@@ -56,7 +57,7 @@ fn write_payload_attributes<S>(
     let hidden = call
         .payload
         .get("hidden_params")
-        .filter(|value| truthiness(value));
+        .filter(|value| is_truthy(value));
     if let Some(found) = hidden
         && let Ok(text) = safe_dumps(found, DEFAULT_MAX_RECURSE_DEPTH, None)
     {
@@ -72,7 +73,7 @@ fn write_payload_attributes<S>(
     let breakdown = call
         .payload
         .get("cost_breakdown")
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .and_then(OtelModelValue::as_object);
     let entries = breakdown
         .into_iter()
@@ -134,7 +135,7 @@ where
     }
     let streaming = match call.optional_params.get("stream") {
         Some(OtelModelValue::Null(())) => "None",
-        Some(value) if truthiness(value) => "True",
+        Some(value) if is_truthy(value) => "True",
         None | Some(_) => "False",
     };
     span.safe_set_attribute(
@@ -151,7 +152,7 @@ fn write_response_identity<S>(
     S: Span,
 {
     let identifier = response_field(response, "id")
-        .or_else(|| payload.get("id").filter(|value| truthiness(value)));
+        .or_else(|| payload.get("id").filter(|value| is_truthy(value)));
     write_present(span, gen_ai::RESPONSE_ID, identifier);
     write_present(span, litellm::CALL_ID, payload.get("litellm_call_id"));
     write_present(
@@ -167,10 +168,10 @@ fn response_field<'source>(
     key: &str,
 ) -> Option<&'source OtelModelValue> {
     response
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .and_then(OtelModelValue::as_object)
         .and_then(|fields| fields.get(key))
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
 }
 
 fn write_usage<S>(
@@ -181,7 +182,7 @@ fn write_usage<S>(
 ) where
     S: Span,
 {
-    let Some(returned) = response.filter(|value| truthiness(value)) else {
+    let Some(returned) = response.filter(|value| is_truthy(value)) else {
         return;
     };
     if is_unbilled_call(kwargs, litellm_params, returned) {
@@ -190,7 +191,7 @@ fn write_usage<S>(
     let usage = returned
         .as_object()
         .and_then(|fields| fields.get("usage"))
-        .filter(|value| truthiness(value))
+        .filter(|value| is_truthy(value))
         .and_then(OtelModelValue::as_object);
     let Some(counts) = usage else {
         return;
