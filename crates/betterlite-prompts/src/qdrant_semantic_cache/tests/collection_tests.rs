@@ -5,23 +5,23 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::fixtures::{
-    ConstantEmbedder, Reply, ScriptedTransport, answer, body_of, build, capture, created,
-    default_env, details, env_with, exists, field, index_created, json, options,
+    ConstantEmbedder, FakeQdrant, Reply, answer, body_of, build, capture, created, default_env,
+    details, env_with, exists, field, index_created, json, options,
 };
 use crate::arguments::json::Json;
 use crate::qdrant_semantic_cache::QdrantSemanticCache;
 use crate::qdrant_semantic_cache::options::{QdrantEnv, QdrantSemanticOptions};
 use crate::qdrant_semantic_cache::ports::QdrantRequest;
 
-fn backend(replies: Vec<Reply>) -> Arc<ScriptedTransport> {
-    Arc::new(ScriptedTransport::new(replies))
+fn backend(replies: Vec<Reply>) -> Arc<FakeQdrant> {
+    Arc::new(FakeQdrant::new(0.9_f64, replies))
 }
 
 fn initialized(
     settings: QdrantSemanticOptions,
     environment: &QdrantEnv,
     replies: Vec<Reply>,
-) -> (QdrantSemanticCache, Arc<ScriptedTransport>) {
+) -> (QdrantSemanticCache, Arc<FakeQdrant>) {
     let transport = backend(replies);
     let cache = build(
         settings,
@@ -181,6 +181,21 @@ fn env_resolution_treats_an_empty_variable_as_unset() {
     )
     .expect("the second fallback base");
     assert_eq!(cache.api_base, "http://api-base.test");
+}
+
+#[test]
+fn env_missing_url_reports_litellms_failure() {
+    let mut settings = options();
+    settings.qdrant_api_base = None;
+    let Err(error) = build(
+        settings,
+        &default_env(),
+        backend(Vec::new()),
+        Arc::new(ConstantEmbedder::new()),
+    ) else {
+        panic!("a cache without a qdrant url must fail");
+    };
+    assert_eq!(error.to_string(), "Qdrant url must be provided");
 }
 
 #[test]
@@ -450,6 +465,36 @@ async fn index_creation_warns_on_a_status_outside_created() {
             .text()
             .contains("could not create cache-key payload index: bad request")
     );
+}
+
+#[tokio::test]
+async fn index_creation_accepts_a_created_status() {
+    let (captured, _guard) = capture();
+    let (cache, _transport) = initialized(
+        options(),
+        &default_env(),
+        vec![exists(true), details(), answer(201, "created")],
+    );
+    cache
+        .initialize()
+        .await
+        .expect("a created index status is not an error");
+    assert!(
+        !captured
+            .text()
+            .contains("could not create cache-key payload index")
+    );
+}
+
+#[tokio::test]
+async fn init_parses_the_exists_response() {
+    let (cache, _transport) = initialized(options(), &default_env(), vec![answer(200, "{}")]);
+    let error = cache
+        .initialize()
+        .await
+        .expect_err("an exists response without result must fail");
+    assert!(error.to_string().contains("collection exists"));
+    assert!(error.to_string().contains("result"));
 }
 
 #[tokio::test]

@@ -1,21 +1,22 @@
 use std::sync::Arc;
 
 use http::Method;
+use tokio::runtime::{Builder, Handle};
 use uuid::Uuid;
 
 use super::fixtures::{
-    ConstantEmbedder, FIXED_ID, MemoryTransport, Reply, ScriptedTransport, answer, body_of,
-    cache_from, cache_with, field, json, kwargs, metadata, similarity_of,
+    ConstantEmbedder, FIXED_ID, FakeQdrant, Reply, answer, body_of, cache_from, cache_with, field,
+    json, kwargs, metadata, similarity_of,
 };
 use crate::arguments::json::Json;
 use crate::qdrant_semantic_cache::error::QdrantSemanticError;
-use crate::qdrant_semantic_cache::ports::{EmbeddingMode, QdrantRequest, QdrantTransport};
+use crate::qdrant_semantic_cache::ports::{QdrantRequest, QdrantTransport};
 use crate::qdrant_semantic_cache::{QdrantCacheKwargs, QdrantSemanticCache};
 
 const VALUE: &str = r#"{"choices":[{"message":{"content":"hi"}}]}"#;
 
-fn memory_cache(score: f64) -> (Arc<MemoryTransport>, QdrantSemanticCache) {
-    let transport = Arc::new(MemoryTransport::new(score));
+fn memory_cache(score: f64) -> (Arc<FakeQdrant>, QdrantSemanticCache) {
+    let transport = Arc::new(FakeQdrant::new(score, Vec::new()));
     let concrete = Arc::clone(&transport);
     let backend: Arc<dyn QdrantTransport> = concrete;
     let cache = cache_from(backend, Arc::new(ConstantEmbedder::new()));
@@ -34,18 +35,19 @@ fn stored_key(request: &QdrantRequest) -> String {
         .to_owned()
 }
 
-#[tokio::test]
-async fn qdrant_semantic_cache_roundtrip() {
+#[test]
+fn qdrant_semantic_cache_roundtrip() {
     let (transport, cache) = memory_cache(0.9);
+    let runtime = Builder::new_current_thread()
+        .build()
+        .expect("a test runtime");
     let value = json(VALUE);
     cache
-        .set_cache("scope-1", &value, &kwargs())
-        .await
+        .set_cache(runtime.handle(), "scope-1", &value, &kwargs())
         .expect("the write");
     let mut found = metadata();
     let cached = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
-        .await
+        .get_cache(runtime.handle(), "scope-1", &kwargs(), Some(&mut found))
         .expect("the read");
     assert_eq!(cached, Some(value));
     assert_eq!(similarity_of(&found), Some(0.9_f64));
@@ -63,7 +65,7 @@ async fn qdrant_semantic_cache_roundtrip() {
 
 #[tokio::test]
 async fn qdrant_semantic_cache_async_roundtrip() {
-    let transport = Arc::new(MemoryTransport::new(0.9));
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, Vec::new()));
     let embedder = Arc::new(ConstantEmbedder::new());
     let concrete = Arc::clone(&transport);
     let backend: Arc<dyn QdrantTransport> = concrete;
@@ -80,24 +82,32 @@ async fn qdrant_semantic_cache_async_roundtrip() {
         .expect("the asynchronous read");
     assert_eq!(cached, Some(value));
     assert_eq!(similarity_of(&found), Some(0.9_f64));
-    assert_eq!(
-        embedder.calls().len(),
-        2,
-        "both operations embed through the asynchronous client"
-    );
+    assert_eq!(embedder.calls().len(), 2);
     assert!(
         embedder
             .calls()
             .iter()
-            .all(|(_, _, mode)| *mode == EmbeddingMode::Async)
+            .all(|(prompt, _metadata)| prompt == "what is cached")
     );
+}
+
+#[tokio::test]
+async fn sync_cache_calls_inside_a_runtime_are_refused() {
+    let (transport, cache) = memory_cache(0.9);
+    let handle = Handle::current();
+    let mut found = metadata();
+    let write = cache.set_cache(&handle, "scope-1", &json("{}"), &kwargs());
+    assert!(matches!(write, Err(QdrantSemanticError::BlockingRuntime)));
+    let read = cache.get_cache(&handle, "scope-1", &kwargs(), Some(&mut found));
+    assert!(matches!(read, Err(QdrantSemanticError::BlockingRuntime)));
+    assert!(transport.requests().is_empty());
 }
 
 #[tokio::test]
 async fn uuid_provider_generates_point_ids() {
     let (transport, cache) = memory_cache(0.9);
     cache
-        .set_cache("scope-1", &json("{}"), &kwargs())
+        .async_set_cache("scope-1", &json("{}"), &kwargs())
         .await
         .expect("the write");
     let body = body_of(&transport.requests()[0]);
@@ -114,7 +124,7 @@ async fn uuid_provider_generates_point_ids() {
 async fn store_sends_the_wait_query() {
     let (transport, cache) = memory_cache(0.9);
     cache
-        .set_cache("scope-1", &json("{}"), &kwargs())
+        .async_set_cache("scope-1", &json("{}"), &kwargs())
         .await
         .expect("the write");
     let request = &transport.requests()[0];
@@ -131,7 +141,7 @@ async fn store_without_messages_writes_nothing() {
         metadata: None,
     };
     cache
-        .set_cache("scope-1", &json("{}"), &empty)
+        .async_set_cache("scope-1", &json("{}"), &empty)
         .await
         .expect("a write without messages");
     assert!(transport.requests().is_empty());
@@ -139,12 +149,12 @@ async fn store_without_messages_writes_nothing() {
 
 #[tokio::test]
 async fn store_embedding_failure_propagates() {
-    let transport = Arc::new(MemoryTransport::new(0.9));
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, Vec::new()));
     let concrete = Arc::clone(&transport);
     let backend: Arc<dyn QdrantTransport> = concrete;
     let cache = cache_from(backend, Arc::new(ConstantEmbedder::failing()));
     let error = cache
-        .set_cache("scope-1", &json("{}"), &kwargs())
+        .async_set_cache("scope-1", &json("{}"), &kwargs())
         .await
         .expect_err("an embedding failure must fail the write");
     assert_eq!(error.to_string(), "the embedding provider failed");
@@ -153,10 +163,10 @@ async fn store_embedding_failure_propagates() {
 
 #[tokio::test]
 async fn batch_write_propagates_the_first_error() {
-    let transport = Arc::new(ScriptedTransport::new(vec![
-        answer(200, r#"{"result":true}"#),
-        Reply::Fail,
-    ]));
+    let transport = Arc::new(FakeQdrant::new(
+        0.9_f64,
+        vec![answer(200, r#"{"result":true}"#), Reply::Fail],
+    ));
     let cache = cache_with(Arc::clone(&transport), Arc::new(ConstantEmbedder::new()));
     let entries = vec![("a".to_owned(), json("{}")), ("b".to_owned(), json("{}"))];
     let error = cache
@@ -168,10 +178,13 @@ async fn batch_write_propagates_the_first_error() {
 
 #[tokio::test]
 async fn pipeline_writes_every_entry() {
-    let transport = Arc::new(ScriptedTransport::new(vec![
-        answer(200, r#"{"result":true}"#),
-        answer(200, r#"{"result":true}"#),
-    ]));
+    let transport = Arc::new(FakeQdrant::new(
+        0.9_f64,
+        vec![
+            answer(200, r#"{"result":true}"#),
+            answer(200, r#"{"result":true}"#),
+        ],
+    ));
     let cache = cache_with(Arc::clone(&transport), Arc::new(ConstantEmbedder::new()));
     let entries = vec![("a".to_owned(), json("{}")), ("b".to_owned(), json("{}"))];
     cache

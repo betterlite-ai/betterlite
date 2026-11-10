@@ -9,8 +9,7 @@ use betterlite_prompts::qdrant_semantic_cache::error::QdrantSemanticError;
 use betterlite_prompts::qdrant_semantic_cache::lookup::SIMILARITY_FIELD;
 use betterlite_prompts::qdrant_semantic_cache::options::{QdrantEnv, QdrantSemanticOptions};
 use betterlite_prompts::qdrant_semantic_cache::ports::{
-    EmbeddingMode, QdrantEmbedError, QdrantEmbedder, QdrantReply, QdrantRequest, QdrantTransport,
-    UuidSource,
+    QdrantEmbedError, QdrantEmbedder, QdrantReply, QdrantRequest, QdrantTransport, UuidSource,
 };
 use betterlite_prompts::qdrant_semantic_cache::{QdrantCacheKwargs, QdrantSemanticCache};
 use serde::Deserialize;
@@ -70,7 +69,6 @@ impl QdrantEmbedder for ConstantEmbedder {
         &self,
         _prompt: &str,
         _metadata: Option<&Object>,
-        _mode: EmbeddingMode,
     ) -> Result<Vec<f64>, QdrantEmbedError> {
         Ok(self.vector.clone())
     }
@@ -145,7 +143,7 @@ async fn search(input: &Input) -> HelperResult {
         .map_err(|error| helper_error("ValueError", error))?;
     let mut metadata = input.metadata.clone();
     let value = cache
-        .get_cache(&input.key, &kwargs(input), metadata.as_mut())
+        .async_get_cache(&input.key, &kwargs(input), metadata.as_mut())
         .await
         .map_err(|error| helper_error("ValueError", error))?;
     let similarity = metadata

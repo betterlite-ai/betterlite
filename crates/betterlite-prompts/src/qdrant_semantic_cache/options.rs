@@ -65,16 +65,9 @@ pub(crate) fn resolve_base(
     configured: Option<String>,
     env: &dyn EnvironmentLookup,
 ) -> Result<String, QdrantSemanticError> {
-    let explicit = match configured {
-        Some(value) => resolve_reference(&value, "qdrant_api_base", env)?,
-        None => None,
-    };
+    let explicit = resolve_reference(configured, "qdrant_api_base", env)?;
     explicit
-        .or_else(|| {
-            BASE_ENVIRONMENT_NAMES
-                .iter()
-                .find_map(|name| env.lookup(name).filter(|value| !value.is_empty()))
-        })
+        .or_else(|| first_set(env, &BASE_ENVIRONMENT_NAMES))
         .ok_or(QdrantSemanticError::MissingUrl)
 }
 
@@ -82,26 +75,29 @@ pub(crate) fn resolve_key(
     configured: Option<SecretString>,
     env: &dyn EnvironmentLookup,
 ) -> Result<Option<SecretString>, QdrantSemanticError> {
-    let explicit = match configured {
-        Some(secret) => resolve_reference(secret.expose_secret(), "qdrant_api_key", env)?
-            .map(SecretString::from),
-        None => None,
-    };
-    Ok(explicit.or_else(|| {
-        env.lookup(API_KEY_ENVIRONMENT_NAME)
-            .filter(|value| !value.is_empty())
-            .map(SecretString::from)
-    }))
+    let fallback = first_set(env, &[API_KEY_ENVIRONMENT_NAME]).map(SecretString::from);
+    let text = configured.map(|secret| secret.expose_secret().to_owned());
+    let explicit = resolve_reference(text, "qdrant_api_key", env)?.map(SecretString::from);
+    Ok(explicit.or(fallback))
+}
+
+fn first_set(env: &dyn EnvironmentLookup, names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| env.lookup(name).filter(|value| !value.is_empty()))
 }
 
 // get_secret_str reads an os.environ/ reference and treats a variable that resolves empty as unset.
 fn resolve_reference(
-    value: &str,
+    configured: Option<String>,
     path: &'static str,
     env: &dyn EnvironmentLookup,
 ) -> Result<Option<String>, QdrantSemanticError> {
+    let Some(value) = configured else {
+        return Ok(None);
+    };
     let Some(name) = value.strip_prefix(ENVIRONMENT_PREFIX) else {
-        return Ok(Some(value.to_owned()));
+        return Ok(Some(value));
     };
     let resolved = env
         .lookup(name)

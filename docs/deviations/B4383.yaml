@@ -12,6 +12,9 @@ deviations:
   - what: Point ids come from an injected UUID source instead of uuid.uuid4.
     why: An injected source lets the cache be tested with fixed ids and keeps generation out of the module.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L291-L300
+  - what: The synchronous set_cache and get_cache block the supplied runtime on the asynchronous operations, so their embedding call is the asynchronous one; LiteLLM's sync methods call its sync embedding client, which skips the wait_for timeout.
+    why: betterlite has one pooled HTTP client and an async-first cache; the sync entry points exist for callers outside a runtime, and the async embedding path is the only one the injected embedder offers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L220-L252
   - what: A search hit whose payload lacks text is an error naming the field instead of LiteLLM's KeyError, and a missing result key is a parse error instead of a KeyError.
     why: Both are malformed Qdrant responses that LiteLLM already fails; betterlite names the field and the endpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L370-L380

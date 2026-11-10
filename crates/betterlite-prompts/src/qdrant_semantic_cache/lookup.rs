@@ -1,60 +1,13 @@
-use http::Method;
 use serde_json::Number;
 
 use super::error::QdrantSemanticError;
-use super::options::CACHE_KEY_FIELD_NAME;
-use super::ports::QdrantRequest;
-use super::wire::{
-    CacheKeyCondition, CacheKeyFilter, MatchValue, QuantizationRescore, SearchHit, SearchParams,
-    SearchRequest, SearchResponse,
-};
-use super::{QdrantSemanticCache, decode};
+use super::wire::SearchHit;
 use crate::arguments::json::{Json, Object};
 use crate::semantic_cache_records::decode_cached_response;
 
 pub const SIMILARITY_FIELD: &str = "semantic-similarity";
 
-pub(crate) async fn search(
-    cache: &QdrantSemanticCache,
-    key: &str,
-    vector: Vec<f64>,
-    metadata: Option<&mut Object>,
-) -> Result<Option<Json>, QdrantSemanticError> {
-    let body = SearchRequest {
-        vector,
-        params: SearchParams {
-            quantization: QuantizationRescore {
-                ignore: false,
-                rescore: true,
-                oversampling: 3.0,
-            },
-        },
-        limit: 1,
-        with_payload: true,
-        filter: CacheKeyFilter {
-            must: vec![CacheKeyCondition {
-                key: CACHE_KEY_FIELD_NAME,
-                matches: MatchValue {
-                    value: key.to_owned(),
-                },
-            }],
-        },
-    };
-    let reply = cache
-        .transport
-        .send(QdrantRequest {
-            method: Method::POST,
-            path: format!("/collections/{}/points/search", cache.collection_name),
-            query: Vec::new(),
-            body: Some(serde_json::to_vec(&body).map_err(QdrantSemanticError::Encode)?),
-        })
-        .await?;
-    let response: SearchResponse = decode(&reply.body, "points search")?;
-    let hit = response.result.as_deref().and_then(|hits| hits.first());
-    read_hit(hit, key, cache.similarity_threshold, metadata)
-}
-
-fn read_hit(
+pub(crate) fn read_hit(
     hit: Option<&SearchHit>,
     key: &str,
     threshold: f64,

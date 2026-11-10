@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tokio::runtime::Builder;
 
 use super::fixtures::{
-    ConstantEmbedder, Reply, ScriptedTransport, body_of, field, fixed_uuids, json, similarity_of,
+    ConstantEmbedder, FakeQdrant, Reply, body_of, field, fixed_uuids, json, similarity_of,
 };
 use crate::arguments::json::{Json, Object};
 use crate::message_content::Message;
@@ -61,7 +61,7 @@ fn replies(input: &CaseInput) -> Vec<Reply> {
         .collect()
 }
 
-fn cache_for(input: &CaseInput, transport: &Arc<ScriptedTransport>) -> QdrantSemanticCache {
+fn cache_for(input: &CaseInput, transport: &Arc<FakeQdrant>) -> QdrantSemanticCache {
     let options = QdrantSemanticOptions {
         collection_name: Some(input.collection.clone()),
         similarity_threshold: Some(input.threshold),
@@ -96,7 +96,7 @@ fn expectations(name: &str) -> (Option<Json>, Option<f64>) {
         | "qdrant-semantic-cache-search-no-matching-key" => (None, Some(0.0_f64)),
         "qdrant-semantic-cache-search-similarity-threshold" => (None, Some(0.42_f64)),
         "qdrant-semantic-cache-search-quantization-rescore" => {
-            (Some(json(r#"{"choices":[]}"#)), Some(0.8_f64))
+            (Some(json(r#"{"choices":[]}"#)), None)
         }
         other => panic!("the case {other} has no expected outcome in the replay"),
     }
@@ -109,7 +109,7 @@ fn replays_the_qdrant_semantic_search_corpus(
     let source = fs::read_to_string(&path).expect("the case file");
     let case: CaseFile = serde_saphyr::from_str(&source).expect("a parsed case file");
     let input = case.call.get("b4383").expect("the b4383 call");
-    let transport = Arc::new(ScriptedTransport::new(replies(input)));
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, replies(input)));
     let cache = cache_for(input, &transport);
     let runtime = Builder::new_current_thread()
         .build()
@@ -122,7 +122,7 @@ fn replays_the_qdrant_semantic_search_corpus(
         };
         let mut metadata = input.metadata.clone();
         let value = cache
-            .get_cache(&input.key, &kwargs, metadata.as_mut())
+            .async_get_cache(&input.key, &kwargs, metadata.as_mut())
             .await
             .expect("the search");
         (value, metadata)

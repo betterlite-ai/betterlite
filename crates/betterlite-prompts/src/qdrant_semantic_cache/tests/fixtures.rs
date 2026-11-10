@@ -12,8 +12,7 @@ use crate::message_content::{Content, Message};
 use crate::qdrant_semantic_cache::error::QdrantSemanticError;
 use crate::qdrant_semantic_cache::options::{QdrantEnv, QdrantSemanticOptions};
 use crate::qdrant_semantic_cache::ports::{
-    EmbeddingMode, QdrantEmbedError, QdrantEmbedder, QdrantReply, QdrantRequest, QdrantTransport,
-    UuidSource,
+    QdrantEmbedError, QdrantEmbedder, QdrantReply, QdrantRequest, QdrantTransport, UuidSource,
 };
 use crate::qdrant_semantic_cache::{QdrantCacheKwargs, QdrantSemanticCache};
 
@@ -26,70 +25,45 @@ pub(crate) enum Reply {
     Fail,
 }
 
-pub(crate) struct ScriptedTransport {
-    replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<QdrantRequest>>,
-}
+#[derive(Default)]
+pub(crate) struct RequestLog(Mutex<Vec<QdrantRequest>>);
 
-impl ScriptedTransport {
-    pub(crate) fn new(replies: Vec<Reply>) -> Self {
-        Self {
-            replies: Mutex::new(VecDeque::from(replies)),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(crate) fn requests(&self) -> Vec<QdrantRequest> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl QdrantTransport for ScriptedTransport {
-    async fn send(&self, request: QdrantRequest) -> Result<QdrantReply, QdrantSemanticError> {
-        let path = request.path.clone();
-        self.requests
+impl RequestLog {
+    fn record(&self, request: QdrantRequest) {
+        self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        let reply = self
-            .replies
+    }
+
+    pub(crate) fn requests(&self) -> Vec<QdrantRequest> {
+        self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        match reply {
-            Some(Reply::Answer(answer)) => Ok(answer),
-            Some(Reply::Fail) | None => Err(QdrantSemanticError::Transport {
-                path,
-                source: TransportError::Closed,
-            }),
-        }
+            .clone()
     }
 }
 
-pub(crate) struct MemoryTransport {
+// Scripted replies answer first; once they run out the transport keeps the points and searches them.
+pub(crate) struct FakeQdrant {
     pub(crate) score: f64,
+    replies: Mutex<VecDeque<Reply>>,
     payloads: Mutex<Vec<Object>>,
-    requests: Mutex<Vec<QdrantRequest>>,
+    log: RequestLog,
 }
 
-impl MemoryTransport {
-    pub(crate) fn new(score: f64) -> Self {
+impl FakeQdrant {
+    pub(crate) fn new(score: f64, replies: Vec<Reply>) -> Self {
         Self {
             score,
+            replies: Mutex::new(VecDeque::from(replies)),
             payloads: Mutex::new(Vec::new()),
-            requests: Mutex::new(Vec::new()),
+            log: RequestLog::default(),
         }
     }
 
     pub(crate) fn requests(&self) -> Vec<QdrantRequest> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.log.requests()
     }
 
     pub(crate) fn payloads(&self) -> Vec<Object> {
@@ -155,22 +129,28 @@ impl MemoryTransport {
 }
 
 #[async_trait]
-impl QdrantTransport for MemoryTransport {
+impl QdrantTransport for FakeQdrant {
     async fn send(&self, request: QdrantRequest) -> Result<QdrantReply, QdrantSemanticError> {
+        let path = request.path.clone();
         let body = request
             .body
             .as_ref()
             .map(|bytes| serde_json::from_slice::<Json>(bytes).expect("a JSON request body"));
-        let searching = request.path.ends_with("/points/search");
-        self.requests
+        let scripted = self
+            .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        Ok(if searching {
-            self.search(body.as_ref())
-        } else {
-            self.store(body.as_ref())
-        })
+            .pop_front();
+        self.log.record(request);
+        match scripted {
+            Some(Reply::Answer(answer)) => Ok(answer),
+            Some(Reply::Fail) => Err(QdrantSemanticError::Transport {
+                path,
+                source: TransportError::Closed,
+            }),
+            None if path.ends_with("/points/search") => Ok(self.search(body.as_ref())),
+            None => Ok(self.store(body.as_ref())),
+        }
     }
 }
 
@@ -203,7 +183,7 @@ fn failed_reply() -> QdrantReply {
 pub(crate) struct ConstantEmbedder {
     pub(crate) vector: Vec<f64>,
     pub(crate) failure: Option<String>,
-    pub(crate) calls: Mutex<Vec<(String, Option<Object>, EmbeddingMode)>>,
+    pub(crate) calls: Mutex<Vec<(String, Option<Object>)>>,
 }
 
 impl ConstantEmbedder {
@@ -227,7 +207,7 @@ impl ConstantEmbedder {
         }
     }
 
-    pub(crate) fn calls(&self) -> Vec<(String, Option<Object>, EmbeddingMode)> {
+    pub(crate) fn calls(&self) -> Vec<(String, Option<Object>)> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -241,12 +221,11 @@ impl QdrantEmbedder for ConstantEmbedder {
         &self,
         prompt: &str,
         metadata: Option<&Object>,
-        mode: EmbeddingMode,
     ) -> Result<Vec<f64>, QdrantEmbedError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((prompt.to_owned(), metadata.cloned(), mode));
+            .push((prompt.to_owned(), metadata.cloned()));
         if let Some(message) = &self.failure {
             return Err(QdrantEmbedError::Failed {
                 message: message.clone(),
@@ -301,7 +280,7 @@ pub(crate) fn env_with(values: &[(&str, &str)]) -> QdrantEnv {
 pub(crate) fn build(
     options: QdrantSemanticOptions,
     env: &QdrantEnv,
-    transport: Arc<ScriptedTransport>,
+    transport: Arc<FakeQdrant>,
     embedder: Arc<ConstantEmbedder>,
 ) -> Result<QdrantSemanticCache, QdrantSemanticError> {
     let backend: Arc<dyn QdrantTransport> = transport;
@@ -323,7 +302,7 @@ pub(crate) fn cache_from(
 }
 
 pub(crate) fn cache_with(
-    transport: Arc<ScriptedTransport>,
+    transport: Arc<FakeQdrant>,
     embedder: Arc<ConstantEmbedder>,
 ) -> QdrantSemanticCache {
     let backend: Arc<dyn QdrantTransport> = transport;

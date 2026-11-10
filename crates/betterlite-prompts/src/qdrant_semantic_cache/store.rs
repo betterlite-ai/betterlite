@@ -26,7 +26,7 @@ pub(crate) async fn write_point(
         }],
     };
     cache
-        .transport
+        .http_client
         .send(QdrantRequest {
             method: Method::PUT,
             path: format!("/collections/{}/points", cache.collection_name),

@@ -3,16 +3,16 @@ use std::sync::Arc;
 use http::Method;
 
 use super::fixtures::{
-    ConstantEmbedder, Reply, SIMILARITY, ScriptedTransport, answer, body_of, cache_with, field,
-    json, kwargs, metadata, search_hit, search_result_null, similarity_of,
+    ConstantEmbedder, FakeQdrant, Reply, SIMILARITY, answer, body_of, cache_with, field, json,
+    kwargs, metadata, search_hit, search_result_null, similarity_of,
 };
 use crate::arguments::json::{Json, Object};
 use crate::qdrant_semantic_cache::{QdrantCacheKwargs, QdrantSemanticCache};
 
 const CACHED: &str = r#""{\"choices\":[]}""#;
 
-fn search_cache(reply: Reply) -> (QdrantSemanticCache, Arc<ScriptedTransport>) {
-    let transport = Arc::new(ScriptedTransport::new(vec![reply]));
+fn search_cache(reply: Reply) -> (QdrantSemanticCache, Arc<FakeQdrant>) {
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, vec![reply]));
     let cache = cache_with(Arc::clone(&transport), Arc::new(ConstantEmbedder::new()));
     (cache, transport)
 }
@@ -20,7 +20,7 @@ fn search_cache(reply: Reply) -> (QdrantSemanticCache, Arc<ScriptedTransport>) {
 async fn lookup(cache: &QdrantSemanticCache, key: &str) -> (Option<Json>, Object) {
     let mut found = metadata();
     let value = cache
-        .get_cache(key, &kwargs(), Some(&mut found))
+        .async_get_cache(key, &kwargs(), Some(&mut found))
         .await
         .expect("the cache lookup");
     (value, found)
@@ -130,7 +130,7 @@ async fn search_response_rejects_invalid_json() {
     let (cache, _transport) = search_cache(answer(200, "not json"));
     let mut found = metadata();
     let error = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
         .await
         .expect_err("an unparsable search response must fail");
     assert!(error.to_string().contains("points search"));
@@ -142,7 +142,7 @@ async fn response_parse_error_names_the_missing_result() {
     let (cache, _transport) = search_cache(answer(200, "{}"));
     let mut found = metadata();
     let error = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
         .await
         .expect_err("a search response without result must fail");
     assert!(error.to_string().contains("points search"));
@@ -156,7 +156,7 @@ async fn search_hit_without_text_errors() {
     let (cache, _transport) = search_cache(answer(200, body));
     let mut found = metadata();
     let error = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
         .await
         .expect_err("a hit without text must fail");
     assert!(error.to_string().contains("text"));
@@ -168,7 +168,7 @@ async fn search_hit_without_a_response_errors_when_it_hits() {
     let (cache, _transport) = search_cache(answer(200, body));
     let mut found = metadata();
     let error = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
         .await
         .expect_err("a hit without a response must fail");
     assert!(error.to_string().contains("response"));
@@ -183,7 +183,7 @@ async fn search_without_messages_returns_no_hit() {
         metadata: None,
     };
     let value = cache
-        .get_cache("scope-1", &empty, Some(&mut found))
+        .async_get_cache("scope-1", &empty, Some(&mut found))
         .await
         .expect("a lookup without messages");
     assert_eq!(value, None);
@@ -192,14 +192,14 @@ async fn search_without_messages_returns_no_hit() {
 
 #[tokio::test]
 async fn search_embedding_failure_propagates() {
-    let transport = Arc::new(ScriptedTransport::new(Vec::new()));
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, Vec::new()));
     let cache = cache_with(
         Arc::clone(&transport),
         Arc::new(ConstantEmbedder::failing()),
     );
     let mut found = metadata();
     let error = cache
-        .get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
         .await
         .expect_err("an embedding failure must fail the lookup");
     assert_eq!(error.to_string(), "the embedding provider failed");

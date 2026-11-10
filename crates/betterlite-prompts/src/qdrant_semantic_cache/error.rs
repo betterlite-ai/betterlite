@@ -51,6 +51,8 @@ pub enum QdrantSemanticError {
     MissingPayloadField { field: &'static str },
     #[error("the similarity {similarity} cannot be written as a JSON number")]
     NonFiniteSimilarity { similarity: f64 },
+    #[error("a synchronous cache call cannot block a thread that already runs a runtime")]
+    BlockingRuntime,
     #[error(transparent)]
     Embed(#[from] QdrantEmbedError),
     #[error(transparent)]

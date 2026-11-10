@@ -6,13 +6,6 @@ use uuid::Uuid;
 use super::error::QdrantSemanticError;
 use crate::arguments::json::Object;
 
-// LiteLLM's sync cache methods embed through the sync client and its async ones through the async client
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EmbeddingMode {
-    Sync,
-    Async,
-}
-
 #[derive(Debug, Error)]
 pub enum QdrantEmbedError {
     #[error("{message}")]
@@ -25,7 +18,6 @@ pub trait QdrantEmbedder: Send + Sync {
         &self,
         prompt: &str,
         metadata: Option<&Object>,
-        mode: EmbeddingMode,
     ) -> Result<Vec<f64>, QdrantEmbedError>;
 }
 
