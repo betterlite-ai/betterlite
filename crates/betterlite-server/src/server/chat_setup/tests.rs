@@ -136,6 +136,22 @@ fn a_deployment_no_provider_places_fails_setup_with_the_resolution_error() {
 }
 
 #[test]
+fn a_bedrock_mantle_deployment_still_starts_as_unsupported() {
+    let yaml = "model_list:\n  - model_name: m\n    litellm_params:\n      model: bedrock_mantle/openai.gpt-oss-120b\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n      api_key: k\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let [mantle, openai] = chat.deployments.as_slice() else {
+        panic!("both deployments start");
+    };
+    assert!(matches!(mantle.provider, Provider::Unsupported { .. }));
+    assert!(matches!(openai.provider, Provider::OpenAi { .. }));
+}
+
+#[test]
 fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
     let yaml = "model_list:\n  - model_name: g\n    litellm_params:\n      model: groq/llama\n";
     let config = ConfigLoader {

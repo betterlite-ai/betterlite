@@ -1,22 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, TryFromFloatSecsError};
 
-use betterlite_config::types::{LiteLlmParams, ModelDeployment};
+use betterlite_config::types::ModelDeployment;
 use betterlite_http::url_policy::base::ConfiguredBase;
 use betterlite_http::url_policy::error::UrlPolicyError;
 use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest,
-    resolve as resolve_model,
-};
+use betterlite_models::resolution::{ResolutionContext, ResolutionError};
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use url::Url;
+
+use provider::resolved_provider;
 
 const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 const API_BASE_KEY: &str = "litellm_params.api_base";
@@ -180,33 +178,6 @@ impl ChatDeployment {
     }
 }
 
-// Only the OpenAI adapter is built, so every other resolved identity stays a clear refusal.
-fn resolved_provider(
-    litellm_model: &str,
-    custom_llm_provider: Option<&str>,
-    params: &LiteLlmParams,
-    context: &ResolutionContext<'_>,
-) -> Result<Provider, ResolutionError> {
-    let request = ResolutionRequest {
-        model: litellm_model,
-        custom_llm_provider,
-        api_base: params.api_base.as_deref(),
-        api_key: params.api_key.as_ref(),
-    };
-    let resolved = resolve_model(&request, context)?;
-    if matches!(
-        resolved.provider,
-        ProviderIdentity::Known(ProviderId::Openai)
-    ) {
-        return Ok(Provider::OpenAi {
-            model: resolved.model,
-        });
-    }
-    Ok(Provider::Unsupported {
-        model: litellm_model.to_owned(),
-    })
-}
-
 // the base as written without its query, or rebuilt from the parsed URL when userinfo had to come out
 fn stored_api_base(configured: &ConfiguredBase, written: &str) -> String {
     if configured.authorization.is_none() {
@@ -295,4 +266,5 @@ fn model_id(deployment: &ModelDeployment) -> String {
     hex::encode(hasher.finalize())
 }
 
+mod provider;
 mod tests;

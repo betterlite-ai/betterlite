@@ -275,6 +275,11 @@ fn provider_observation(entry: &str, custom_llm_provider: Option<&str>) -> Strin
     None,
     "unsupported:groq/llama"
 )]
+#[case::bedrock_mantle_without_an_endpoint_stays_unsupported(
+    "{model_name: g, litellm_params: {model: bedrock_mantle/openai.gpt-oss-120b}}",
+    None,
+    "unsupported:bedrock_mantle/openai.gpt-oss-120b"
+)]
 #[case::azure_stays_unsupported(
     "{model_name: g, litellm_params: {model: azure/m}}",
     None,
