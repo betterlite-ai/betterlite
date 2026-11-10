@@ -80,3 +80,11 @@ fn the_shipped_invalid_seed_is_refused() {
     let source = include_str!("../../../fuzz/corpus/config_yaml/passthrough-invalid.yaml");
     drop(load(source, &[]).unwrap_err());
 }
+
+#[test]
+fn the_default_settings_use_six_hundred_seconds() {
+    assert_eq!(
+        Settings::default().request_timeout.to_bits(),
+        600.0_f64.to_bits()
+    );
+}

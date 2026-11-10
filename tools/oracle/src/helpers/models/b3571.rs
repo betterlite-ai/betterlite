@@ -1,6 +1,4 @@
-use betterlite_models::passthrough_policies::generic_timeout::{
-    DEFAULT_TIMEOUT_SECONDS, resolve_passthrough_timeout,
-};
+use betterlite_models::passthrough_policies::generic_timeout::DEFAULT_TIMEOUT_SECONDS;
 use betterlite_models::passthrough_policies::header_forwarding::forward_headers_from_request;
 use betterlite_models::passthrough_policies::query_merge::{
     QueryParameters, merge_query_parameters,
@@ -26,10 +24,12 @@ impl crate::helpers::Helper for Op {
         match input.operation {
             Operation::QueryMerge => query_output(input),
             Operation::ForwardHeaders => header_output(input),
-            Operation::ProxyTimeout => Ok(json!(resolve_passthrough_timeout(
-                input.endpoint_timeout,
-                input.settings_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
-            ))),
+            Operation::ProxyTimeout => Ok(json!(
+                input
+                    .endpoint_timeout
+                    .or(input.settings_timeout)
+                    .unwrap_or(DEFAULT_TIMEOUT_SECONDS)
+            )),
             Operation::SdkTimeout => sdk_output(input),
         }
     }

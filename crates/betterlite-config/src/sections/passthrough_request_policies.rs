@@ -20,9 +20,17 @@ struct RawGeneral {
     pass_through_request_timeout: Option<RawNumber>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub request_timeout: f64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            request_timeout: DEFAULT_TIMEOUT_SECONDS,
+        }
+    }
 }
 
 impl Section for Raw {
@@ -39,7 +47,7 @@ impl Section for Raw {
             parse_float,
         )?;
         Ok(Settings {
-            request_timeout: request_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
+            request_timeout: request_timeout.unwrap_or_else(|| Settings::default().request_timeout),
         })
     }
 }
