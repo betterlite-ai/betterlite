@@ -123,12 +123,15 @@ impl AvailableModelsCache {
         let now = self.read_clock()?;
         self.prune_expired(now);
         while self.state.values.len() >= self.limits.capacity {
-            let known = self.state.expiries.len();
-            self.evict_earliest()?;
-            // an expiry left behind by an environment clear has no value, so a call that removes nothing would spin
-            if self.state.expiries.len() == known {
-                return Err(CacheError::MissingExpiry);
-            }
+            let earliest = self
+                .state
+                .expiries
+                .iter()
+                .min_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)))
+                .map(|(key, _expiry)| key.clone())
+                .ok_or(CacheError::MissingExpiry)?;
+            self.state.values.remove(&earliest);
+            self.state.expiries.remove(&earliest);
         }
         let key = cache_key(Some(provider), parameters);
         // prune_expired dropped every expiry at or before now, so only an absent one needs a new expiry
@@ -172,19 +175,6 @@ impl AvailableModelsCache {
             self.state.values.remove(&key);
             self.state.expiries.remove(&key);
         }
-    }
-
-    fn evict_earliest(&mut self) -> Result<(), CacheError> {
-        let earliest = self
-            .state
-            .expiries
-            .iter()
-            .min_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)))
-            .map(|(key, _expiry)| key.clone())
-            .ok_or(CacheError::MissingExpiry)?;
-        self.state.values.remove(&earliest);
-        self.state.expiries.remove(&earliest);
-        Ok(())
     }
 }
 
