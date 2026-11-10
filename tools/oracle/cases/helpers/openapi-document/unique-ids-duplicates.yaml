@@ -1,0 +1,14 @@
+kind: helper
+name: unique-ids-duplicates
+call:
+  b123:
+    op: ensure_unique_operation_ids
+    document:
+      paths:
+        /a: {get: {operationId: dup}, post: {operationId: dup}}
+        /b: {get: {operationId: dup}, post: {operationId: taken}}
+        /c: {get: {operationId: taken}, x-custom: {operationId: dup}}
+    reserved: null
+env: {}
+compare:
+  ignore: []
