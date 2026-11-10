@@ -12,29 +12,21 @@ const LATEST_YEAR: i64 = 9999;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct AnthropicFile {
-    #[serde(default)]
     id: Option<String>,
-    #[serde(default)]
     filename: Option<String>,
-    #[serde(default)]
     size_bytes: Option<i64>,
-    #[serde(default)]
     bytes: Option<i64>,
-    #[serde(default)]
     purpose: Option<FilesPurpose>,
-    #[serde(default)]
     created_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct FileListReply {
-    #[serde(default)]
     data: Option<Vec<AnthropicFile>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteReply {
-    #[serde(default)]
     id: Option<String>,
 }
 

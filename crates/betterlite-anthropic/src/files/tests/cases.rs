@@ -97,6 +97,7 @@ async fn file_upload_multipart() {
     assert_eq!(file_parts[1].data, b"messages");
     guessed_and_blank_parts();
     upload_over_transport(&simple).await;
+    failure_is_status_error().await;
 }
 
 fn guessed_and_blank_parts() {
@@ -174,6 +175,92 @@ async fn upload_over_transport(simple: &FileData) {
 async fn native_file_object() {
     same_projection().await;
     defaults_and_fallbacks().await;
+    get_replies_decode_error_bodies().await;
+}
+
+async fn failure_is_status_error() {
+    let upload_fixture =
+        Fixture::answering_with(413, &[("x-request-id", "req-upload")], b"too large");
+    let file = bytes_file();
+    let upload_error = upload(
+        &upload_fixture,
+        &client(Some("sk-files"), None),
+        &Upload {
+            file: Some(&file),
+            purpose: None,
+            boundary: "b".to_owned(),
+            headers: &HeaderMap::new(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_status_error(
+        upload_error,
+        413,
+        "too large",
+        ("x-request-id", "req-upload"),
+    );
+    assert_eq!(upload_fixture.sent(), 1);
+
+    let delete_fixture =
+        Fixture::answering_with(404, &[("x-request-id", "req-delete")], b"missing");
+    let delete_error = delete(
+        &delete_fixture,
+        &client(Some("sk-files"), None),
+        &FileCall {
+            file_id: "file-1",
+            headers: &HeaderMap::new(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_status_error(delete_error, 404, "missing", ("x-request-id", "req-delete"));
+    assert_eq!(delete_fixture.sent(), 1);
+}
+
+fn assert_status_error(error: FilesError, status: u16, message: &str, header: (&str, &str)) {
+    let FilesError::Provider(provider) = error else {
+        panic!("a non-2xx reply is the provider status error");
+    };
+    assert_eq!(provider.status_code, status);
+    assert_eq!(provider.message, message);
+    let headers: BTreeMap<String, String> =
+        provider.headers.unwrap_or_default().into_iter().collect();
+    assert_eq!(headers.get(header.0).map(String::as_str), Some(header.1));
+}
+
+async fn get_replies_decode_error_bodies() {
+    let retrieve_fixture = Fixture::answering_with(
+        404,
+        &[],
+        br#"{"type":"error","error":{"type":"not_found_error"}}"#,
+    );
+    let file = retrieve(
+        &retrieve_fixture,
+        &client(Some("sk-files"), None),
+        &FileCall {
+            file_id: "file-1",
+            headers: &HeaderMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(file.id, "");
+    assert_eq!(file.bytes, 0);
+    assert_eq!(file.created_at, NOW);
+
+    let list_fixture = Fixture::answering_with(500, &[], b"{\"type\":\"error\"}");
+    let files = list(
+        &list_fixture,
+        &client(Some("sk-files"), None),
+        &ListCall {
+            purpose: None,
+            headers: &HeaderMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(files.is_empty());
 }
 
 async fn same_projection() {
@@ -298,6 +385,7 @@ fn check_created_at(cases: &[(&str, i64)]) {
 async fn file_list_pagination() {
     list_page().await;
     list_query_shapes().await;
+    get_replies_decode_error_bodies().await;
 }
 
 async fn list_page() {
@@ -370,6 +458,7 @@ async fn file_delete_shape() {
     delete_projection().await;
     check_delete_rejections().await;
     trailing_base().await;
+    failure_is_status_error().await;
 }
 
 async fn retrieve_encoding() {
@@ -629,6 +718,10 @@ fn complete_urls() {
     assert_eq!(
         files_url(Some("https://api.test/v1///"), &settings, FilesUrl::Files).unwrap(),
         "https://api.test/v1/v1/files"
+    );
+    assert_eq!(
+        files_url(Some(""), &settings, FilesUrl::Files).unwrap(),
+        "https://api.anthropic.com/v1/files"
     );
 }
 

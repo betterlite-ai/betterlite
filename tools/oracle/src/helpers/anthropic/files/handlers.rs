@@ -1,8 +1,9 @@
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::files::SUPPORTED_OPENAI_PARAMS;
-use betterlite_anthropic::files::api::response_error;
+use betterlite_anthropic::files::api::{response_error, status_failure};
+use betterlite_anthropic::files::error::FilesError;
 use betterlite_anthropic::files::request::{
-    FilesUrl, create_file_parts, files_url, validate_environment,
+    FilesUrl, create_file_parts, files_url, purpose_query, validate_environment,
 };
 use betterlite_anthropic::files::wire::{
     decode_anthropic_delete, decode_anthropic_file, decode_anthropic_file_list,
@@ -16,7 +17,7 @@ use serde_json::{Value, json};
 use super::common::{failure, header_map, raised, settings};
 use super::input::{
     BetaHeaderCase, BetaScenario, ContentCase, CreatedAtCase, DeleteCase, ErrorFixture,
-    FileObjectCase, ListCase, UploadCase, UploadItem,
+    FailureFixture, FileObjectCase, ListCase, UploadCase, UploadItem,
 };
 use super::views::{deleted_view, file_view, headers_view, pairs_object, parts_view};
 use crate::helpers::{HelperError, HelperResult};
@@ -27,12 +28,18 @@ enum UrlKind {
     Content,
 }
 
-pub(crate) fn file_upload_multipart(case: &UploadCase) -> Value {
+pub(crate) fn file_upload_multipart(case: &UploadCase) -> HelperResult {
+    let failure = case
+        .failure
+        .as_ref()
+        .map(failure_value)
+        .transpose()?
+        .unwrap_or(Value::Null);
     let mut uploads = Vec::new();
     for item in &case.uploads {
         uploads.push(upload_view(item, case.now));
     }
-    json!({"supported": SUPPORTED_OPENAI_PARAMS, "uploads": uploads})
+    Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS, "uploads": uploads, "failure": failure}))
 }
 
 fn upload_view(item: &UploadItem, now_epoch: i64) -> Value {
@@ -112,17 +119,15 @@ fn decode_file_list(body: &Value, now_epoch: i64) -> Result<Vec<Value>, Box<Help
 fn list_queries(purposes: &[Option<String>]) -> Vec<Vec<(String, String)>> {
     purposes
         .iter()
-        .map(|purpose| {
-            purpose
-                .as_ref()
-                .filter(|value| !value.is_empty())
-                .map(|value| vec![("purpose".to_owned(), value.clone())])
-                .unwrap_or_default()
-        })
+        .map(|purpose| purpose_query(purpose.as_deref()))
         .collect()
 }
 
 pub(crate) fn file_delete_shape(case: &DeleteCase) -> HelperResult {
+    let failure = match &case.failure {
+        Some(fixture) => failure_value(fixture)?,
+        None => Value::Null,
+    };
     let resolved = settings(&case.environment)?;
     let views = url_views(
         &case.file_ids,
@@ -131,7 +136,34 @@ pub(crate) fn file_delete_shape(case: &DeleteCase) -> HelperResult {
         UrlKind::File,
     );
     let responses = deleted_replies(&case.bodies)?;
-    Ok(json!({"retrieve": views, "delete": views, "responses": responses}))
+    Ok(json!({
+        "retrieve": views,
+        "delete": views,
+        "responses": responses,
+        "failure": failure,
+    }))
+}
+
+fn failure_value(fixture: &FailureFixture) -> Result<Value, Box<HelperError>> {
+    let reply = UpstreamResponse {
+        status: fixture.status,
+        headers: header_map(&fixture.headers)?,
+        body: fixture.body.clone().into_bytes(),
+    };
+    Ok(status_view(status_failure(&reply).as_ref()))
+}
+
+fn status_view(error: Option<&FilesError>) -> Value {
+    let Some(FilesError::Provider(provider)) = error else {
+        return Value::Null;
+    };
+    let headers = provider.headers.clone().unwrap_or_default();
+    json!({
+        "kind": "status",
+        "status": provider.status_code,
+        "message": provider.message,
+        "headers": pairs_object(&headers),
+    })
 }
 
 fn url_views(
@@ -195,10 +227,11 @@ fn reply_of(case: &ContentCase) -> Result<UpstreamResponse, Box<HelperError>> {
 
 fn error_view(error: &ErrorFixture) -> Value {
     let failure = response_error(error.status, error.message.clone(), error.headers.clone());
+    let headers = failure.headers.clone().unwrap_or_default();
     json!({
         "status": failure.status_code,
         "message": failure.message,
-        "headers": pairs_object(&error.headers),
+        "headers": pairs_object(&headers)
     })
 }
 

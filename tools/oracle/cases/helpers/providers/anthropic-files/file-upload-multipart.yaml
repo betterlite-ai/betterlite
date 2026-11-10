@@ -11,5 +11,9 @@ call:
         - {missing: true, data: z}
         - {filename: null, content_type: '', data: z}
         - {filename: x.json, content_type: '', data: z}
+      failure:
+        status: 413
+        headers: [[content-type, application/json], [x-request-id, req-upload]]
+        body: '{"type":"error","error":{"type":"request_too_large","message":"too large"}}'
 env: {}
 compare: {ignore: []}

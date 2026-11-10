@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from typing import Final, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Protocol, TypeAlias, TypedDict, cast
 from unittest import mock
 
 import httpx
@@ -48,52 +48,16 @@ class Dumpable(Protocol):
     def model_dump(self) -> dict[str, object]: ...
 
 
-class BinaryView(Protocol):
-    response: httpx.Response
-
-
 class ErrorView(Protocol):
     status_code: int
     message: str
     headers: dict[str, str]
 
 
-class UploadItem(TypedDict):
-    missing: NotRequired[bool]
-    filename: NotRequired[str | None]
-    content_type: NotRequired[str | None]
-    data: NotRequired[str]
-    purpose: NotRequired[str | None]
-
-
-class UploadCase(TypedDict):
-    now: int
-    uploads: list[UploadItem]
-
-
-class FileObjectCase(TypedDict):
-    now: int
-    bodies: list[Json]
-
-
-class CreatedAtCase(TypedDict):
-    now: int
-    values: list[Json]
-
-
-class ListCase(TypedDict):
-    environment: NotRequired[dict[str, str]]
-    params_api_base: NotRequired[str | None]
-    now: int
-    purposes: list[str | None]
-    body: Json
-
-
-class DeleteCase(TypedDict):
-    environment: NotRequired[dict[str, str]]
-    params_api_base: NotRequired[str | None]
-    file_ids: list[str]
-    bodies: list[Json]
+class FailureFixture(TypedDict):
+    status: int
+    headers: Pairs
+    body: str
 
 
 class ErrorFixture(TypedDict):
@@ -102,36 +66,8 @@ class ErrorFixture(TypedDict):
     headers: Pairs
 
 
-class ContentCase(TypedDict):
-    environment: NotRequired[dict[str, str]]
-    params_api_base: NotRequired[str | None]
-    file_ids: list[str]
-    status: int
-    headers: Pairs
-    body: list[int]
-    error: ErrorFixture
-
-
-class BetaScenario(TypedDict):
-    environment: NotRequired[dict[str, str]]
-    api_key: NotRequired[str | None]
-    api_base: NotRequired[str | None]
-    params_api_base: NotRequired[str | None]
-    url_bases: NotRequired[list[str | None]]
-    caller_headers: NotRequired[Pairs]
-    error: ErrorFixture
-
-
-class BetaHeaderCase(TypedDict):
-    scenarios: list[BetaScenario]
-
-
-def dumped(file: Dumpable) -> dict[str, Json]:
-    return cast("dict[str, Json]", file.model_dump())
-
-
 def field(file: Dumpable, names: tuple[str, ...]) -> Object:
-    values = dumped(file)
+    values = cast("dict[str, Json]", file.model_dump())
     return {name: values[name] for name in names}
 
 
@@ -178,12 +114,48 @@ def error_view(error: ErrorView) -> Object:
     }
 
 
-def upload_file(item: UploadItem) -> FileValue:
+def status_view(error: ErrorView) -> Object:
+    return {"kind": "status", **error_view(error)}
+
+
+def response_of(
+    status: int, body: bytes, pairs: Pairs, request: httpx.Request | None = None
+) -> httpx.Response:
+    response = httpx.Response(
+        status,
+        content=body,
+        headers=[(name, value) for name, value in pairs],
+        request=request,
+    )
+    if not any(name.lower() == "content-length" for name, _ in pairs):
+        response.headers.pop("content-length", None)
+    return response
+
+
+def failure_view(fixture: FailureFixture | None, method: str) -> Json:
+    if fixture is None:
+        return None
+    request = httpx.Request(method, "https://api.anthropic.com/v1/files")
+    response = response_of(
+        fixture["status"], fixture["body"].encode(), fixture["headers"], request
+    )
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        error = cast(
+            ErrorView,
+            GET_ERROR_CLASS(response.text, response.status_code, response.headers),
+        )
+        return cast(Json, status_view(error))
+    return None
+
+
+def upload_file(item: Object) -> FileValue:
     if item.get("missing") is True:
         return None
-    data = item.get("data", "").encode()
-    filename = item.get("filename")
-    content_type = item.get("content_type")
+    data = cast(str, item.get("data", "")).encode()
+    filename = cast(str | None, item.get("filename"))
+    content_type = cast(str | None, item.get("content_type"))
     if filename is not None and content_type is not None:
         return (filename, data, content_type)
     if filename is not None:
@@ -191,12 +163,41 @@ def upload_file(item: UploadItem) -> FileValue:
     return data
 
 
-def file_upload_multipart(argument: UploadCase) -> Object:
+def created(body: Json, now: int) -> Dumpable:
+    response = httpx.Response(200, json=body)
+    with mock.patch(CLOCK, return_value=float(now)):
+        return cast(
+            Dumpable,
+            CREATE_RESPONSE(
+                model=None,
+                raw_response=response,
+                logging_obj=cast(Logging, None),
+                litellm_params={},
+            ),
+        )
+
+
+def retrieved(body: Json, now: int) -> Dumpable:
+    response = httpx.Response(200, json=body)
+    with mock.patch(CLOCK, return_value=float(now)):
+        return cast(
+            Dumpable,
+            RETRIEVE_RESPONSE(
+                raw_response=response,
+                logging_obj=cast(Logging, None),
+                litellm_params={},
+            ),
+        )
+
+
+def file_upload_multipart(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    now = cast(int, supplied["now"])
     uploads: list[Json] = []
-    with mock.patch(CLOCK, return_value=float(argument["now"])):
-        for item in argument["uploads"]:
+    with mock.patch(CLOCK, return_value=float(now)):
+        for item in cast("list[Object]", supplied["uploads"]):
             create: Object = {"file": cast(Json, upload_file(item))}
-            purpose = item.get("purpose")
+            purpose = cast(str | None, item.get("purpose"))
             if purpose is not None:
                 create["purpose"] = purpose
             try:
@@ -210,79 +211,57 @@ def file_upload_multipart(argument: UploadCase) -> Object:
                 uploads.append({"raised": raised(error)})
                 continue
             uploads.append({"parts": parts_view(request)})
-    return {"supported": cast(Json, SUPPORTED("")), "uploads": uploads}
+    return {
+        "supported": cast(Json, SUPPORTED("")),
+        "uploads": uploads,
+        "failure": failure_view(
+            cast("FailureFixture | None", supplied.get("failure")), "POST"
+        ),
+    }
 
 
-def native_file_object(argument: FileObjectCase) -> Object:
-    created: list[Json] = []
-    retrieved: list[Json] = []
-    with mock.patch(CLOCK, return_value=float(argument["now"])):
-        for body in argument["bodies"]:
-            response = httpx.Response(200, json=body)
-            created.append(
-                field(
-                    cast(
-                        Dumpable,
-                        CREATE_RESPONSE(
-                            model=None,
-                            raw_response=response,
-                            logging_obj=cast(Logging, None),
-                            litellm_params={},
-                        ),
-                    ),
-                    FILE_FIELDS,
-                )
-            )
-            retrieved.append(
-                field(
-                    cast(
-                        Dumpable,
-                        RETRIEVE_RESPONSE(
-                            raw_response=response,
-                            logging_obj=cast(Logging, None),
-                            litellm_params={},
-                        ),
-                    ),
-                    FILE_FIELDS,
-                )
-            )
-    return {"create": created, "retrieve": retrieved}
+def native_file_object(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    now = cast(int, supplied["now"])
+    bodies = cast("list[Json]", supplied["bodies"])
+    return {
+        "create": [cast(Json, field(created(body, now), FILE_FIELDS)) for body in bodies],
+        "retrieve": [
+            cast(Json, field(retrieved(body, now), FILE_FIELDS)) for body in bodies
+        ],
+    }
 
 
-def created_at_timezone(argument: CreatedAtCase) -> Object:
-    values: list[Json] = []
-    with mock.patch(CLOCK, return_value=float(argument["now"])):
-        for value in argument["values"]:
-            response = httpx.Response(200, json={"created_at": value})
-            parsed = cast(
-                Dumpable,
-                CREATE_RESPONSE(
-                    model=None,
-                    raw_response=response,
-                    logging_obj=cast(Logging, None),
-                    litellm_params={},
-                ),
-            )
-            values.append(dumped(parsed)["created_at"])
-    return {"created_at": values}
+def created_at_timezone(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    now = cast(int, supplied["now"])
+    stamps = [
+        field(created(value, now), ("created_at",))["created_at"]
+        for value in cast("list[Json]", supplied["values"])
+    ]
+    return {"created_at": stamps}
 
 
-def file_list_pagination(argument: ListCase) -> Object:
-    with mock.patch.dict(os.environ, argument.get("environment", {}), clear=True):
+def file_list_pagination(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    now = cast(int, supplied["now"])
+    environment = cast("dict[str, str]", supplied.get("environment", {}))
+    params_api_base = cast(str | None, supplied.get("params_api_base"))
+    with mock.patch.dict(os.environ, environment, clear=True):
         queries: list[Json] = []
         url = ""
-        for purpose in argument["purposes"]:
+        for purpose in cast("list[str | None]", supplied["purposes"]):
             url, query = cast(
                 "tuple[str, dict[str, str]]",
                 LIST_REQUEST(
                     purpose=purpose,
                     optional_params={},
-                    litellm_params={"api_base": argument.get("params_api_base")},
+                    litellm_params={"api_base": params_api_base},
                 ),
             )
             queries.append(cast(Json, pairs_view(query)))
-        with mock.patch(CLOCK, return_value=float(argument["now"])):
-            response = httpx.Response(200, json=argument["body"])
+        response = httpx.Response(200, json=supplied["body"])
+        with mock.patch(CLOCK, return_value=float(now)):
             files = cast(
                 "list[Dumpable]",
                 LIST_RESPONSE(
@@ -313,19 +292,22 @@ def request_view(
     return {"url": url, "query": cast(Json, pairs_view(query))}
 
 
-def file_delete_shape(argument: DeleteCase) -> Object:
-    with mock.patch.dict(os.environ, argument.get("environment", {}), clear=True):
-        params: Object = {"api_base": argument.get("params_api_base")}
+def file_delete_shape(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    environment = cast("dict[str, str]", supplied.get("environment", {}))
+    params_api_base = cast(str | None, supplied.get("params_api_base"))
+    failure = cast("FailureFixture | None", supplied.get("failure"))
+    with mock.patch.dict(os.environ, environment, clear=True):
+        params: Object = {"api_base": params_api_base}
+        file_ids = cast("list[str]", supplied["file_ids"])
         retrieve: list[Json] = [
-            request_view(RETRIEVE_REQUEST, file_id, params)
-            for file_id in argument["file_ids"]
+            request_view(RETRIEVE_REQUEST, file_id, params) for file_id in file_ids
         ]
         delete: list[Json] = [
-            request_view(DELETE_REQUEST, file_id, params)
-            for file_id in argument["file_ids"]
+            request_view(DELETE_REQUEST, file_id, params) for file_id in file_ids
         ]
         responses: list[Json] = []
-        for body in argument["bodies"]:
+        for body in cast("list[Json]", supplied["bodies"]):
             response = httpx.Response(200, json=body)
             deleted = cast(
                 Dumpable,
@@ -336,41 +318,46 @@ def file_delete_shape(argument: DeleteCase) -> Object:
                 ),
             )
             responses.append(cast(Json, field(deleted, DELETED_FIELDS)))
-    return {"retrieve": retrieve, "delete": delete, "responses": responses}
+    return {
+        "retrieve": retrieve,
+        "delete": delete,
+        "responses": responses,
+        "failure": failure_view(failure, "DELETE"),
+    }
 
 
-def file_content_bytes(argument: ContentCase) -> Object:
-    with mock.patch.dict(os.environ, argument.get("environment", {}), clear=True):
+def file_content_bytes(argument: Json) -> Object:
+    supplied = cast(Object, argument)
+    environment = cast("dict[str, str]", supplied.get("environment", {}))
+    params_api_base = cast(str | None, supplied.get("params_api_base"))
+    with mock.patch.dict(os.environ, environment, clear=True):
         urls: list[Json] = []
-        for file_id in argument["file_ids"]:
+        for file_id in cast("list[str]", supplied["file_ids"]):
             url, query = cast(
                 "tuple[str, dict[str, str]]",
                 CONTENT_REQUEST(
                     file_content_request={"file_id": file_id},
                     optional_params={},
-                    litellm_params={"api_base": argument.get("params_api_base")},
+                    litellm_params={"api_base": params_api_base},
                 ),
             )
             urls.append({"url": url, "query": cast(Json, pairs_view(query))})
-        response = httpx.Response(
-            argument["status"],
-            content=bytes(argument["body"]),
-            headers=[(name, value) for name, value in argument["headers"]],
+        response = response_of(
+            cast(int, supplied["status"]),
+            bytes(cast("list[int]", supplied["body"])),
+            cast(Pairs, supplied["headers"]),
         )
-        binary = cast(
-            BinaryView,
-            CONTENT_RESPONSE(
-                raw_response=response,
-                logging_obj=cast(Logging, None),
-                litellm_params={},
-            ),
+        _ = CONTENT_RESPONSE(
+            raw_response=response,
+            logging_obj=cast(Logging, None),
+            litellm_params={},
         )
         result: Object = {
-            "status": binary.response.status_code,
-            "headers": cast(Json, dict(binary.response.headers)),
-            "body": cast(Json, list(binary.response.content)),
+            "status": response.status_code,
+            "headers": cast(Json, dict(response.headers)),
+            "body": cast(Json, list(response.content)),
         }
-        error_spec = argument["error"]
+        error_spec = cast(ErrorFixture, supplied["error"])
         error = cast(
             ErrorView,
             GET_ERROR_CLASS(
@@ -382,12 +369,17 @@ def file_content_bytes(argument: ContentCase) -> Object:
     return {"urls": urls, "result": result, "error": error_view(error)}
 
 
-def file_beta_header(argument: BetaHeaderCase) -> Object:
+def file_beta_header(argument: Json) -> Object:
+    supplied = cast(Object, argument)
     scenarios: list[Json] = []
-    for scenario in argument["scenarios"]:
-        with mock.patch.dict(os.environ, scenario.get("environment", {}), clear=True):
-            params: Object = {"api_base": scenario.get("params_api_base")}
-            api_key = scenario.get("api_key")
+    for scenario in cast("list[Object]", supplied["scenarios"]):
+        environment = cast("dict[str, str]", scenario.get("environment", {}))
+        with mock.patch.dict(os.environ, environment, clear=True):
+            params: Object = {
+                "api_base": cast(str | None, scenario.get("params_api_base"))
+            }
+            api_key = cast(str | None, scenario.get("api_key"))
+            url_bases = cast("list[str | None]", scenario.get("url_bases", []))
             urls: list[Json] = [
                 cast(
                     Json,
@@ -399,10 +391,10 @@ def file_beta_header(argument: BetaHeaderCase) -> Object:
                         litellm_params=params,
                     ),
                 )
-                for base in scenario.get("url_bases", [])
+                for base in url_bases
             ]
             headers: dict[str, str] = pairs_object(
-                scenario.get("caller_headers", [])
+                cast(Pairs, scenario.get("caller_headers", []))
             )
             entry: Object = {"urls": urls, "headers": None, "raised": None}
             try:
@@ -413,11 +405,11 @@ def file_beta_header(argument: BetaHeaderCase) -> Object:
                     optional_params={},
                     litellm_params=params,
                     api_key=api_key,
-                    api_base=scenario.get("api_base"),
+                    api_base=cast(str | None, scenario.get("api_base")),
                 )
             except ValueError as error:
                 entry["raised"] = raised(error)
-            error_spec = scenario["error"]
+            error_spec = cast(ErrorFixture, scenario["error"])
             error = cast(
                 ErrorView,
                 GET_ERROR_CLASS(

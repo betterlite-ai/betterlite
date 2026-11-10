@@ -42,9 +42,10 @@ pub struct FilesApi<T> {
 impl<T: FileTransport> FilesApi<T> {
     pub async fn create_file(&self, client: &Client, call: &Upload<'_>) -> Reply<FileObject> {
         let reply = self
-            .reply(client.create_request(call, (self.clock)())?)
+            .checked_reply(client.create_request(call, (self.clock)())?)
             .await?;
-        decode_anthropic_file(&reply.body, (self.clock)())
+        let file = decode_anthropic_file(&reply.body, (self.clock)())?;
+        Ok(file)
     }
 
     pub async fn retrieve_file(&self, client: &Client, call: &FileCall<'_>) -> Reply<FileObject> {
@@ -55,7 +56,7 @@ impl<T: FileTransport> FilesApi<T> {
 
     pub async fn delete_file(&self, client: &Client, call: &FileCall<'_>) -> Reply<FileDeleted> {
         let reply = self
-            .reply(client.file_request(Method::DELETE, call)?)
+            .checked_reply(client.file_request(Method::DELETE, call)?)
             .await?;
         decode_anthropic_delete(&reply.body)
     }
@@ -67,8 +68,8 @@ impl<T: FileTransport> FilesApi<T> {
     }
 
     pub async fn content(&self, client: &Client, call: &FileCall<'_>) -> Reply<BinaryContent> {
-        let reply = self.reply(client.content_request(call)?).await?;
-        let content = content_reply(reply)?;
+        let reply = self.checked_reply(client.content_request(call)?).await?;
+        let content = BinaryContent::from_response(reply);
         Ok(content)
     }
 
@@ -78,16 +79,23 @@ impl<T: FileTransport> FilesApi<T> {
             .await
             .map_err(|source| FilesError::Transport { source })
     }
+
+    async fn checked_reply(&self, request: OutboundRequest) -> Reply<UpstreamResponse> {
+        let reply = self.reply(request).await?;
+        let failure = status_failure(&reply);
+        failure.map_or_else(|| Ok(reply), Err)
+    }
 }
 
-fn content_reply(reply: UpstreamResponse) -> Reply<BinaryContent> {
-    if reply.status >= 400 {
-        let headers: Vec<(String, String)> = flatten_headers(&reply.headers).into_iter().collect();
-        let message = error_message(&reply.body);
-        let error = response_error(reply.status, message, headers);
-        return Err(FilesError::Provider(Box::new(error)));
+#[must_use]
+pub fn status_failure(reply: &UpstreamResponse) -> Option<FilesError> {
+    if reply.status < 400 {
+        return None;
     }
-    Ok(BinaryContent::from_response(reply))
+    let headers: Vec<(String, String)> = flatten_headers(&reply.headers).into_iter().collect();
+    let message = error_message(&reply.body);
+    let error = response_error(reply.status, message, headers);
+    Some(FilesError::Provider(Box::new(error)))
 }
 
 fn error_message(body: &[u8]) -> String {

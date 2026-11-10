@@ -8,5 +8,9 @@ call:
       bodies:
         - {id: file-1, type: file, deleted: false, object: banana}
         - {}
+      failure:
+        status: 404
+        headers: [[content-type, application/json], [x-request-id, req-delete]]
+        body: '{"type":"error","error":{"type":"not_found_error","message":"missing"}}'
 env: {}
 compare: {ignore: []}

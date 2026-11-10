@@ -15,7 +15,6 @@ use super::error::FilesError;
 use super::{DEFAULT_PURPOSE, FILES_BETA_HEADER, MESSAGE_BATCH_ID_PREFIX};
 
 type Entry = Result<OutboundRequest, FilesError>;
-
 #[derive(Debug, Clone)]
 pub struct FilesClient {
     pub api_key: Option<SecretString>,
@@ -30,7 +29,6 @@ pub struct Upload<'call> {
     pub boundary: String,
     pub headers: &'call HeaderMap,
 }
-
 pub struct FileCall<'call> {
     pub file_id: &'call str,
     pub headers: &'call HeaderMap,
@@ -53,7 +51,9 @@ pub fn files_url(
     settings: &AnthropicSettings,
     target: FilesUrl<'_>,
 ) -> Result<String, FilesError> {
-    let base = api_base.unwrap_or(&settings.api_base);
+    let base = api_base
+        .filter(|base| !base.is_empty())
+        .unwrap_or(&settings.api_base);
     let trimmed = base.trim_end_matches('/');
     match target {
         FilesUrl::Files => Ok(format!("{trimmed}/v1/files")),
@@ -185,29 +185,20 @@ impl FilesClient {
             self.api_base.as_deref(),
             &self.settings,
         )?;
-        entry(method, &url, headers, body, self.timeout)
+        let parsed = Url::parse(&url).map_err(|source| FilesError::InvalidBase { source })?;
+        Ok(OutboundRequest {
+            method,
+            url: parsed,
+            query: Vec::new(),
+            headers,
+            body,
+            deadline: self.timeout,
+        })
     }
 }
 
-fn entry(
-    method: Method,
-    url: &str,
-    headers: HeaderMap,
-    body: RequestBody,
-    timeout: Duration,
-) -> Entry {
-    let parsed = Url::parse(url).map_err(|source| FilesError::InvalidBase { source })?;
-    Ok(OutboundRequest {
-        method,
-        url: parsed,
-        query: Vec::new(),
-        headers,
-        body,
-        deadline: timeout,
-    })
-}
-
-fn purpose_query(purpose: Option<&str>) -> Vec<(String, String)> {
+#[must_use]
+pub fn purpose_query(purpose: Option<&str>) -> Vec<(String, String)> {
     purpose
         .filter(|value| !value.is_empty())
         .map(|value| vec![("purpose".to_owned(), value.to_owned())])

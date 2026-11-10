@@ -13,7 +13,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            input::Input::FileUploadMultipart(case) => Ok(handlers::file_upload_multipart(case)),
+            input::Input::FileUploadMultipart(case) => handlers::file_upload_multipart(case),
             input::Input::NativeFileObject(case) => handlers::native_file_object(case),
             input::Input::CreatedAtTimezone(case) => handlers::created_at_timezone(case),
             input::Input::FileListPagination(case) => handlers::file_list_pagination(case),

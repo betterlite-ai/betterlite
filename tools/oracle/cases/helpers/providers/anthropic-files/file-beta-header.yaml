@@ -5,7 +5,7 @@ call:
     file_beta_header:
       scenarios:
         - environment: {ANTHROPIC_API_KEY: sk-ant-fixture-key}
-          url_bases: [null, "https://api.anthropic.com", "https://custom.example/v1/files/"]
+          url_bases: [null, "", "https://api.anthropic.com", "https://custom.example/v1/files/"]
           caller_headers: [[anthropic-version, old], [anthropic-beta, caller-beta], [x-keep, keep], [content-type, application/json]]
           error: {status: 429, message: slow down, headers: [[X-Request-Id, req-1]]}
         - environment: {ANTHROPIC_AUTH_TOKEN: fixture-token}

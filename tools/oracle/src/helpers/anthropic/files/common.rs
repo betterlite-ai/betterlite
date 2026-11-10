@@ -31,23 +31,14 @@ pub(crate) fn settings(
 }
 
 pub(crate) fn raised(error: &FilesError) -> serde_json::Value {
-    match error {
-        FilesError::Provider(provider) => serde_json::json!({
+    if let FilesError::Provider(provider) = error {
+        return serde_json::json!({
             "kind": "status",
             "status": provider.status_code,
             "message": provider.message,
-        }),
-        FilesError::FileDataRequired
-        | FilesError::MissingApiKey
-        | FilesError::InvalidHeader { .. }
-        | FilesError::InvalidBase { .. }
-        | FilesError::Segment(_)
-        | FilesError::Media(_)
-        | FilesError::Decode { .. }
-        | FilesError::Transport { .. } => {
-            serde_json::json!({"kind": "ValueError", "message": error.to_string()})
-        }
+        });
     }
+    serde_json::json!({"kind": "ValueError", "message": error.to_string()})
 }
 
 pub(crate) fn failure<E>(error: E) -> Box<HelperError>

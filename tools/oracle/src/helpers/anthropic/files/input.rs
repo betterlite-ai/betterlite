@@ -20,6 +20,15 @@ pub(crate) enum Input {
 pub(crate) struct UploadCase {
     pub(crate) now: i64,
     pub(crate) uploads: Vec<UploadItem>,
+    pub(crate) failure: Option<FailureFixture>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FailureFixture {
+    pub(crate) status: u16,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,13 +36,10 @@ pub(crate) struct UploadCase {
 pub(crate) struct UploadItem {
     #[serde(default)]
     pub(crate) missing: bool,
-    #[serde(default)]
     pub(crate) filename: Option<String>,
-    #[serde(default)]
     pub(crate) content_type: Option<String>,
     #[serde(default)]
     pub(crate) data: String,
-    #[serde(default)]
     pub(crate) purpose: Option<String>,
 }
 
@@ -56,7 +62,6 @@ pub(crate) struct CreatedAtCase {
 pub(crate) struct ListCase {
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default)]
     pub(crate) params_api_base: Option<String>,
     pub(crate) now: i64,
     pub(crate) purposes: Vec<Option<String>>,
@@ -68,10 +73,10 @@ pub(crate) struct ListCase {
 pub(crate) struct DeleteCase {
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default)]
     pub(crate) params_api_base: Option<String>,
     pub(crate) file_ids: Vec<String>,
     pub(crate) bodies: Vec<Value>,
+    pub(crate) failure: Option<FailureFixture>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +84,6 @@ pub(crate) struct DeleteCase {
 pub(crate) struct ContentCase {
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default)]
     pub(crate) params_api_base: Option<String>,
     pub(crate) file_ids: Vec<String>,
     pub(crate) status: u16,
@@ -99,11 +103,8 @@ pub(crate) struct BetaHeaderCase {
 pub(crate) struct BetaScenario {
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default)]
     pub(crate) api_key: Option<String>,
-    #[serde(default)]
     pub(crate) api_base: Option<String>,
-    #[serde(default)]
     pub(crate) params_api_base: Option<String>,
     #[serde(default)]
     pub(crate) url_bases: Vec<Option<String>>,
