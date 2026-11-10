@@ -7,9 +7,8 @@ use std::sync::Arc;
 use rstest::rstest;
 use serde_json::json;
 
-use self::support::{CallMethod, RecordingCalls, TestResponse};
+use self::support::{CallMethod, RecordingCalls, TestResponse, qdrant_embedding};
 use super::error::SemanticEmbeddingError;
-use super::qdrant::qdrant_embedding;
 use super::redis::redis_embedding;
 use super::{EmbeddingCachePolicy, EmbeddingMode, EmbeddingRoute, MetadataMap};
 use crate::semantic_embedding_inputs::build_router_embedding_metadata;
@@ -465,8 +464,6 @@ const HUGE_TIMEOUT: f64 = f64::MAX;
 #[case::zero(ZERO_TIMEOUT)]
 #[case::negative(NEGATIVE_TIMEOUT)]
 #[case::nan(NAN_TIMEOUT)]
-#[case::infinite(INFINITE_TIMEOUT)]
-#[case::huge(HUGE_TIMEOUT)]
 #[tokio::test(start_paused = true)]
 async fn unusable_embedding_timeout_skips_the_call(#[case] timeout: f64) {
     let calls = RecordingCalls::succeeding(vec![vec![0.5_f64]]);
@@ -482,6 +479,28 @@ async fn unusable_embedding_timeout_skips_the_call(#[case] timeout: f64) {
         .unwrap_err();
     assert!(matches!(error, SemanticEmbeddingError::Timeout { .. }));
     assert_eq!(calls.recorded().len(), 0);
+}
+
+#[rstest]
+#[case::infinite(INFINITE_TIMEOUT)]
+#[case::huge(HUGE_TIMEOUT)]
+#[tokio::test(start_paused = true)]
+async fn unbounded_embedding_timeout_runs_the_call(#[case] timeout: f64) {
+    let calls = RecordingCalls::succeeding(vec![vec![0.5_f64]]);
+    let service = support::service(
+        support::settings(None, Some(timeout)),
+        None,
+        None,
+        &calls,
+        Arc::new(support::selector()),
+    );
+    let reply = qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
+        .await
+        .unwrap();
+    assert_eq!(reply.vectors, vec![vec![0.5_f64]]);
+    let recorded = calls.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request.timeout.to_bits(), timeout.to_bits());
 }
 
 #[test]

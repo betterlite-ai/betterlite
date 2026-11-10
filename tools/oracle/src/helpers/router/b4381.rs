@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use betterlite_config::sections::semantic_embedding_inputs::DEFAULT_TIMEOUT_SECONDS;
 use betterlite_router::semantic_embeddings::error::SemanticEmbeddingError;
-use betterlite_router::semantic_embeddings::qdrant::qdrant_embedding;
 use betterlite_router::semantic_embeddings::redis::redis_embedding;
 use betterlite_router::semantic_embeddings::{
     EmbeddingMode, EmbeddingRequest, EmbeddingRoute, SemanticEmbeddingService,
@@ -81,9 +80,16 @@ async fn backend<'input>(
         Backend::Redis => redis_embedding(&service, &input.prompt, input.metadata.as_ref(), mode)
             .await
             .map(|vector| json!(vector)),
-        Backend::Qdrant => qdrant_embedding(&service, &input.prompt, input.metadata.as_ref(), mode)
+        Backend::Qdrant => match service
+            .prepare(&input.prompt, input.metadata.as_ref())
             .await
-            .map(|response| response_json(&response.vectors, &response.model)),
+        {
+            Ok(request) => service
+                .call(&request, mode)
+                .await
+                .map(|response| response_json(&response.vectors, &response.model)),
+            Err(error) => Err(error),
+        },
     };
     outcome_json(&log, result)
 }

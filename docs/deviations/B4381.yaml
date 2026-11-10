@@ -6,7 +6,7 @@ deviations:
       B195's tokenizer selection and encode are async and B4310's truncate_embedding_input awaits them, so the call already yields instead of blocking the executor; betterlite does not copy Python's thread-pool asyncify.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L526
   - what: >-
-      An embedding_timeout that is NaN, infinite, or too large for Rust's Duration is an immediate timeout instead of a deadline asyncio cannot schedule.
+      A NaN embedding_timeout is an immediate Timeout without running the embedding call.
     why: >-
-      A NaN or infinite delay never fires, so the async path would wait forever, which is a hang and not a behavior a working setup can rely on; the configured value still reaches the embedding call as its timeout argument.
+      asyncio.wait_for with a NaN delay starts the call and then makes the event loop raise "cannot convert float NaN to integer" (checked on Python 3.13), so no working setup can rely on it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L546

@@ -25,13 +25,24 @@ use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::Instant;
 
 use crate::semantic_embedding_inputs::ConfiguredTokenLimits;
+use crate::semantic_embeddings::error::SemanticEmbeddingError;
 use crate::semantic_embeddings::{
-    EmbeddedReply, EmbeddingCalls, EmbeddingFailure, EmbeddingRequest, ModelListEntry,
-    SemanticEmbeddingService, SemanticEmbeddingSettings,
+    EmbeddedReply, EmbeddingCalls, EmbeddingFailure, EmbeddingMode, EmbeddingRequest, MetadataMap,
+    ModelListEntry, SemanticEmbeddingService, SemanticEmbeddingSettings,
 };
 
 pub(crate) const MODEL: &str = "text-embedding-3-small";
 pub(crate) use betterlite_config::sections::semantic_embedding_inputs::DEFAULT_TIMEOUT_SECONDS as DEFAULT_TIMEOUT;
+
+pub(crate) async fn qdrant_embedding(
+    service: &Service,
+    prompt: &str,
+    metadata: Option<&MetadataMap>,
+    mode: EmbeddingMode,
+) -> Result<TestResponse, SemanticEmbeddingError<TestCallError>> {
+    let request = service.prepare(prompt, metadata).await?;
+    service.call(&request, mode).await
+}
 
 pub(crate) type Service = SemanticEmbeddingService<TestRouter, RecordingCalls>;
 
