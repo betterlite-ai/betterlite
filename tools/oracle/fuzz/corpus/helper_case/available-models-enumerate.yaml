@@ -1,0 +1,15 @@
+kind: helper
+name: available-models-enumerate
+call:
+  available_models:
+    enumerate:
+      environment: {OPENAI_API_KEY: ""}
+      provider_list: [openai, cohere]
+      models_by_provider: {openai: [gpt-a, gpt-a], cohere: [cohere-a]}
+      global_check_provider_endpoint: false
+      calls:
+        - {listing: {}}
+        - {custom_llm_provider: openai, global_check_provider_endpoint: true, listing: {OpenAIGPTConfig: {models: [listed]}}}
+        - {custom_llm_provider: not-a-provider, listing: {}}
+env: {}
+compare: {ignore: []}

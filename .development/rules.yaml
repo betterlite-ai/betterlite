@@ -302,6 +302,27 @@ rules:
         assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
         assert_eq!(body.error.code, "408");
 
+  - id: paused-clock-tests
+    title: Timer tests start paused and let spawned tasks run before advancing
+    statement: >-
+      A test that drives timers through tokio's paused clock uses #[tokio::test(start_paused = true)] instead of calling pause() inside the test, and after building something that spawns a timer task it yields before the first advance. advance moves the clock first and yields after, so a task first polled inside advance starts its timer late. pause() inside a running test also leaves deadlines between millisecond ticks, so advancing by exactly the interval stops one tick short.
+    why: Both mistakes make the timer never fire, so the test waits for a flush that never comes and fails only once CI runs it.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        #[tokio::test]
+        async fn flushes_after_the_interval() {
+            pause();
+            let logger = fixture.build();
+            advance(Duration::from_secs(5)).await;
+      write: |
+        #[tokio::test(start_paused = true)]
+        async fn flushes_after_the_interval() {
+            let logger = fixture.build();
+            yield_now().await;
+            advance(Duration::from_secs(5)).await;
+
   - id: no-subprocess
     title: Gateway code never spawns processes
     statement: Only tests and crates under tools/ start other processes.

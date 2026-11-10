@@ -1103,6 +1103,8 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -1155,6 +1157,7 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1170,6 +1173,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -1317,6 +1321,7 @@ dependencies = [
  "hex",
  "httparse",
  "keyring-core",
+ "num-traits",
  "regex",
  "rstest",
  "rustix",
@@ -1519,21 +1524,28 @@ dependencies = [
  "futures-util",
  "hex",
  "percent-encoding",
+ "rcgen",
  "regex",
  "rstest",
  "rust_decimal",
+ "rustls",
+ "rustls-native-certs",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-postgres-rustls-improved",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
+ "url",
  "uuid",
 ]
 
@@ -2049,6 +2061,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -2511,6 +2524,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2711,6 +2725,7 @@ dependencies = [
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "async-trait",
  "axum",
  "base64 0.23.1",
@@ -2723,6 +2738,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
@@ -2743,6 +2759,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "http-body 1.1.0",
  "hyper-util",
  "icu_properties",

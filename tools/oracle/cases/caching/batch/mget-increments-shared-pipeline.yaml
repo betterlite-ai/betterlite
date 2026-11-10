@@ -1,0 +1,16 @@
+kind: helper
+name: caching-batch-mget-increments-shared-pipeline
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    replies:
+      MGET: [{array: [{bulk: "1"}, nil]}]
+      INCRBYFLOAT: [{bulk: "1.5"}]
+      EXPIRE: [{int: 1}]
+    steps:
+      - declare: {kind: mget, keys: [a, b]}
+      - declare: {kind: increment, key: c, value: 1.5, ttl: 20}
+      - await_all
+env: {}
+compare: {ignore: []}

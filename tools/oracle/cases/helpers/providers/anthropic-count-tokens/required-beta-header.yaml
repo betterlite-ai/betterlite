@@ -1,0 +1,12 @@
+kind: helper
+name: required-beta-header
+call:
+  anthropic_count_tokens:
+    function: headers
+    cases:
+        - api_key: sk-ant-api03-key
+        - api_key: ''
+        - api_key: sk-ant-oat01-token
+        - api_key: Bearer sk-ant-oat01-token
+env: {}
+compare: {ignore: []}

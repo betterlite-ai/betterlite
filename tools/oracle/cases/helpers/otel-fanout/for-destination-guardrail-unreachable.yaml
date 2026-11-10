@@ -1,0 +1,16 @@
+kind: helper
+name: for-destination-guardrail-unreachable
+call:
+  b3849:
+    function: for_destination
+    endpoint: http://collector:4318
+    span:
+      name: guardrail pii
+      attributes:
+        litellm.guardrail.name: pii
+        litellm.guardrail.status: guardrail_failed_to_respond
+        litellm.guardrail.response: http://guardrail.internal:8000 failed
+        error.message: guardrail rejected the call
+        server.address: db.internal
+env: {}
+compare: {ignore: []}
