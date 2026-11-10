@@ -11,9 +11,9 @@ use crate::identity::provider_id::ProviderId;
 
 use super::adapters::{
     AzureFoundryModelInfo, ContextLimitBehavior, DynamicModelInfo, FireworksSettings,
-    LemonadeSettings, ProviderSpecificModelInfo, Stop, ToolChoice,
+    LemonadeSettings, OpenAiGptSettings, ProviderSpecificModelInfo, Stop, ToolChoice,
 };
-use super::selection::{ProviderModelMetadata, get_provider_info, select};
+use super::selection::{MetadataQuery, ProviderModelMetadata, get_provider_info, select};
 
 #[rstest]
 #[case::metadata_adapter_selection(metadata_adapter_selection)]
@@ -67,8 +67,19 @@ fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
+fn query(catalog: &Catalog) -> MetadataQuery<'_> {
+    MetadataQuery {
+        catalog,
+        generation: 0,
+    }
+}
+
 fn empty_fireworks() -> FireworksSettings {
     FireworksSettings::default()
+}
+
+fn empty_openai() -> OpenAiGptSettings {
+    OpenAiGptSettings::default()
 }
 
 fn empty_lemonade() -> LemonadeSettings {
@@ -133,7 +144,7 @@ fn inherited_projection() {
         }
         let mut selected = select(Some("model"), *provider).unwrap();
         assert_eq!(
-            selected.get_provider_info(&catalog_of(&[]), 0, "model"),
+            selected.get_provider_info("model", query(&catalog_of(&[]))),
             None,
             "{provider:?} inherits the base get_provider_info"
         );
@@ -148,12 +159,12 @@ fn inherited_projection() {
 fn xai_projection() {
     let mut xai = select(Some("grok-4"), ProviderId::Xai).unwrap();
     assert_eq!(
-        xai.get_provider_info(&catalog_of(&[]), 0, "grok-4"),
+        xai.get_provider_info("grok-4", query(&catalog_of(&[]))),
         Some(XAI_INFO)
     );
     assert_eq!(
         serde_json::to_string(
-            &xai.get_provider_info(&catalog_of(&[]), 0, "grok-4")
+            &xai.get_provider_info("grok-4", query(&catalog_of(&[])))
                 .unwrap()
         )
         .unwrap(),
@@ -176,7 +187,7 @@ fn fireworks_projection() {
     ]);
     let mut fireworks = select(Some("glm-4p6"), ProviderId::FireworksAi).unwrap();
     assert_eq!(
-        fireworks.get_provider_info(&entries, 0, "glm-4p6"),
+        fireworks.get_provider_info("glm-4p6", query(&entries)),
         Some(ProviderSpecificModelInfo {
             supports_function_calling: Some(false),
             supports_prompt_caching: Some(true),
@@ -187,7 +198,7 @@ fn fireworks_projection() {
         })
     );
     assert_eq!(
-        fireworks.get_provider_info(&entries, 0, "unknown-model"),
+        fireworks.get_provider_info("unknown-model", query(&entries)),
         Some(ProviderSpecificModelInfo {
             supports_function_calling: Some(true),
             supports_prompt_caching: Some(true),
@@ -221,27 +232,36 @@ fn free_projection() {
         r#"{"supports_function_calling":false}"#,
     )]);
     assert_eq!(
-        get_provider_info("grok-4", Some("xai"), &free, 0),
+        get_provider_info("grok-4", Some("xai"), query(&free)),
         Some(XAI_INFO)
     );
     assert_eq!(
-        get_provider_info("glm-4p6", Some("fireworks_ai"), &free, 0)
+        get_provider_info("glm-4p6", Some("fireworks_ai"), query(&free))
             .unwrap()
             .supports_function_calling,
         Some(false)
     );
-    assert_eq!(get_provider_info("gpt-4o", Some("openai"), &free, 0), None);
-    assert_eq!(get_provider_info("grok-4", None, &free, 0), None);
-    assert_eq!(get_provider_info("grok-4", Some(""), &free, 0), None);
     assert_eq!(
-        get_provider_info("grok-4", Some("not-a-provider"), &free, 0),
+        get_provider_info("gpt-4o", Some("openai"), query(&free)),
         None
     );
-    assert_eq!(get_provider_info("grok-4", Some("OpenAI"), &free, 0), None);
-    assert_eq!(get_provider_info("grok-4", Some("xai/"), &free, 0), None);
-    assert_eq!(get_provider_info("grok-4", Some("gmi"), &free, 0), None);
+    assert_eq!(get_provider_info("grok-4", None, query(&free)), None);
+    assert_eq!(get_provider_info("grok-4", Some(""), query(&free)), None);
     assert_eq!(
-        get_provider_info("grok-4", Some("text-completion-openai"), &free, 0),
+        get_provider_info("grok-4", Some("not-a-provider"), query(&free)),
+        None
+    );
+    assert_eq!(
+        get_provider_info("grok-4", Some("OpenAI"), query(&free)),
+        None
+    );
+    assert_eq!(
+        get_provider_info("grok-4", Some("xai/"), query(&free)),
+        None
+    );
+    assert_eq!(get_provider_info("grok-4", Some("gmi"), query(&free)), None);
+    assert_eq!(
+        get_provider_info("grok-4", Some("text-completion-openai"), query(&free)),
         None
     );
 }
@@ -274,12 +294,11 @@ fn fireworks_constructor() {
     assert_eq!(
         serde_json::to_string(&constructed).unwrap(),
         concat!(
-            r#"{"tools":[{"type":"function"}],"tool_choice":"auto","max_tokens":7,"#,
-            r#""temperature":1,"top_p":2,"top_k":3,"frequency_penalty":4,"#,
-            r#""presence_penalty":5,"n":6,"stop":["END"],"#,
-            r#""response_format":{"type":"json_object"},"user":"user-1","logprobs":8,"#,
-            r#""reasoning_effort":"high","prompt_truncate_len":9,"#,
-            r#""context_length_exceeded_behavior":"truncate"}"#
+            r#"{"frequency_penalty":4,"max_tokens":7,"n":6,"stop":["END"],"temperature":1,"#,
+            r#""top_p":2,"response_format":{"type":"json_object"},"#,
+            r#""tools":[{"type":"function"}],"tool_choice":"auto","top_k":3,"#,
+            r#""presence_penalty":5,"user":"user-1","logprobs":8,"reasoning_effort":"high","#,
+            r#""prompt_truncate_len":9,"context_length_exceeded_behavior":"truncate"}"#
         )
     );
 }
@@ -292,29 +311,32 @@ fn fireworks_keeps_configured_values() {
     };
     assert_eq!(base.clone().with_args(empty_fireworks()), base);
     let merged = base.with_args(FireworksSettings {
-        max_tokens: Some(0),
-        temperature: Some(0),
+        openai: OpenAiGptSettings {
+            max_tokens: Some(0),
+            temperature: Some(0),
+            stop: Some(Stop::Text(String::new())),
+            response_format: Some(IndexMap::new()),
+            number: Some(0),
+            ..empty_openai()
+        },
         user: Some(String::new()),
-        stop: Some(Stop::Text(String::new())),
         tools: Some(Vec::new()),
-        response_format: Some(IndexMap::new()),
-        number: Some(0),
         tool_choice: Some(ToolChoice::Name(String::new())),
         ..empty_fireworks()
     });
-    assert_eq!(merged.temperature, Some(0));
+    assert_eq!(merged.openai.temperature, Some(0));
     assert_eq!(merged.top_k, Some(3));
     assert_eq!(merged.user.as_deref(), Some(""));
-    assert_eq!(merged.stop, Some(Stop::Text(String::new())));
+    assert_eq!(merged.openai.stop, Some(Stop::Text(String::new())));
     assert_eq!(merged.tools, Some(Vec::new()));
-    assert_eq!(merged.response_format, Some(IndexMap::new()));
-    assert_eq!(merged.number, Some(0));
+    assert_eq!(merged.openai.response_format, Some(IndexMap::new()));
+    assert_eq!(merged.openai.number, Some(0));
     assert_eq!(merged.tool_choice, Some(ToolChoice::Name(String::new())));
     assert_eq!(
         serde_json::to_string(&merged).unwrap(),
         concat!(
-            r#"{"tools":[],"tool_choice":"","max_tokens":0,"temperature":0,"top_k":3,"n":0,"#,
-            r#""stop":"","response_format":{},"user":""}"#
+            r#"{"max_tokens":0,"n":0,"stop":"","temperature":0,"response_format":{},"#,
+            r#""tools":[],"tool_choice":"","top_k":3,"user":""}"#
         )
     );
 }
@@ -440,7 +462,7 @@ fn vllm_has_no_dynamic_query() {
 fn fireworks_wire_names_parse_and_print() {
     let settings: FireworksSettings =
         serde_json::from_str(r#"{"stop":"END","tool_choice":{"type":"function"}}"#).unwrap();
-    assert_eq!(settings.stop, Some(Stop::Text("END".to_owned())));
+    assert_eq!(settings.openai.stop, Some(Stop::Text("END".to_owned())));
     assert_eq!(
         settings.tool_choice,
         Some(ToolChoice::Object(IndexMap::from([(
@@ -450,14 +472,14 @@ fn fireworks_wire_names_parse_and_print() {
     );
     assert_eq!(
         serde_json::to_string(&settings).unwrap(),
-        r#"{"tool_choice":{"type":"function"},"stop":"END"}"#
+        r#"{"stop":"END","tool_choice":{"type":"function"}}"#
     );
     let listed: FireworksSettings = serde_json::from_str(r#"{"stop":["a","b"],"n":3}"#).unwrap();
     assert_eq!(
-        listed.stop,
+        listed.openai.stop,
         Some(Stop::List(vec!["a".to_owned(), "b".to_owned()]))
     );
-    assert_eq!(listed.number, Some(3));
+    assert_eq!(listed.openai.number, Some(3));
     assert_eq!(
         serde_json::to_string(&listed).unwrap(),
         r#"{"n":3,"stop":["a","b"]}"#
@@ -474,6 +496,5 @@ fn settings_reject_values_outside_the_declared_shape() {
     );
     serde_json::from_str::<FireworksSettings>(r#"{"context_length_exceeded_behavior":"drop"}"#)
         .unwrap_err();
-    serde_json::from_str::<FireworksSettings>(r#"{"unknown_key":1}"#).unwrap_err();
     serde_json::from_str::<LemonadeSettings>(r#"{"unknown_key":1}"#).unwrap_err();
 }

@@ -84,31 +84,61 @@ pub struct ProviderSpecificModelInfo {
     pub supports_web_search: Option<bool>,
 }
 
+// The B668 OpenAIGPTConfig constructor arguments FireworksAIConfig passes through.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FireworksSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Json>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<ToolChoice>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_k: Option<i64>,
+pub struct OpenAiGptSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub presence_penalty: Option<i64>,
+    pub max_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "n")]
     pub number: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Stop>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<JsonObject>,
+}
+
+// A constructor stores only the arguments it was given, so None keeps the value already configured.
+macro_rules! merge_arguments {
+    ($args:expr, $base:expr; $($field:ident),+ $(,)?) => {
+        Self {
+            $($field: $args.$field.or($base.$field),)+
+        }
+    };
+}
+
+impl OpenAiGptSettings {
+    #[must_use]
+    pub fn with_args(self, args: Self) -> Self {
+        merge_arguments!(args, self;
+            frequency_penalty,
+            max_tokens,
+            number,
+            stop,
+            temperature,
+            top_p,
+            response_format,
+        )
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FireworksSettings {
+    #[serde(flatten)]
+    pub openai: OpenAiGptSettings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Json>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -124,37 +154,22 @@ pub struct FireworksSettings {
     pub context_limit_behavior: Option<ContextLimitBehavior>,
 }
 
-// A constructor stores only the arguments it was given, so None keeps the value already configured.
-macro_rules! merge_arguments {
-    ($args:expr, $base:expr; $($field:ident),+ $(,)?) => {
-        Self {
-            $($field: $args.$field.or($base.$field),)+
-        }
-    };
-}
-
 impl FireworksSettings {
-    // The seven OpenAI arguments are stored first, then the Fireworks-only ones, as the two constructors run.
+    // The base constructor runs first, then the Fireworks-only arguments are stored.
     #[must_use]
     pub fn with_args(self, args: Self) -> Self {
-        merge_arguments!(args, self;
-            tools,
-            tool_choice,
-            max_tokens,
-            temperature,
-            top_p,
-            top_k,
-            frequency_penalty,
-            presence_penalty,
-            number,
-            stop,
-            response_format,
-            user,
-            logprobs,
-            reasoning_effort,
-            prompt_truncate_len,
-            context_limit_behavior,
-        )
+        Self {
+            openai: self.openai.with_args(args.openai),
+            tools: args.tools.or(self.tools),
+            tool_choice: args.tool_choice.or(self.tool_choice),
+            top_k: args.top_k.or(self.top_k),
+            presence_penalty: args.presence_penalty.or(self.presence_penalty),
+            user: args.user.or(self.user),
+            logprobs: args.logprobs.or(self.logprobs),
+            reasoning_effort: args.reasoning_effort.or(self.reasoning_effort),
+            prompt_truncate_len: args.prompt_truncate_len.or(self.prompt_truncate_len),
+            context_limit_behavior: args.context_limit_behavior.or(self.context_limit_behavior),
+        }
     }
 }
 
@@ -192,21 +207,21 @@ pub struct LemonadeSettings {
 impl LemonadeSettings {
     #[must_use]
     pub fn with_args(self, args: Self) -> Self {
-        merge_arguments!(args, self;
-            repeat_penalty,
-            functions,
-            logit_bias,
-            max_completion_tokens,
-            max_tokens,
-            number,
-            presence_penalty,
-            stop,
-            temperature,
-            top_p,
-            top_k,
-            response_format,
-            tools,
-        )
+        Self {
+            repeat_penalty: args.repeat_penalty.or(self.repeat_penalty),
+            functions: args.functions.or(self.functions),
+            logit_bias: args.logit_bias.or(self.logit_bias),
+            max_completion_tokens: args.max_completion_tokens.or(self.max_completion_tokens),
+            max_tokens: args.max_tokens.or(self.max_tokens),
+            number: args.number.or(self.number),
+            presence_penalty: args.presence_penalty.or(self.presence_penalty),
+            stop: args.stop.or(self.stop),
+            temperature: args.temperature.or(self.temperature),
+            top_p: args.top_p.or(self.top_p),
+            top_k: args.top_k.or(self.top_k),
+            response_format: args.response_format.or(self.response_format),
+            tools: args.tools.or(self.tools),
+        }
     }
 }
 

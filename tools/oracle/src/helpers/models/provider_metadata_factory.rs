@@ -5,7 +5,7 @@ use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::provider_metadata_factory::adapters::{FireworksSettings, LemonadeSettings};
 use betterlite_models::provider_metadata_factory::selection::{
-    ProviderModelMetadata, get_provider_info, select,
+    MetadataQuery, ProviderModelMetadata, get_provider_info, select,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -158,14 +158,18 @@ fn catalog_of(entries: &[CatalogModel]) -> Catalog {
 }
 
 fn projection_step(step: &ProjectionStep, catalog: &Catalog) -> Result<Value, Box<HelperError>> {
+    let query = MetadataQuery {
+        catalog,
+        generation: 0,
+    };
     match step {
         ProjectionStep::Free { model, provider } => {
-            to_json(get_provider_info(model, provider.as_deref(), catalog, 0))
+            to_json(get_provider_info(model, provider.as_deref(), query))
         }
         ProjectionStep::AdapterProviderInfo { model, provider } => {
             let mut selected = select(Some(model), provider_id(provider)?);
             selected.as_mut().map_or(Ok(Value::Null), |adapter| {
-                to_json(adapter.get_provider_info(catalog, 0, model))
+                to_json(adapter.get_provider_info(model, query))
             })
         }
         ProjectionStep::AdapterCostKey { model, provider } => {

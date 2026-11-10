@@ -6,6 +6,12 @@ use super::adapters::{
     ProviderSpecificModelInfo, StatelessAdapter,
 };
 
+#[derive(Clone, Copy, Debug)]
+pub struct MetadataQuery<'catalog> {
+    pub catalog: &'catalog Catalog,
+    pub generation: u64,
+}
+
 #[derive(Debug)]
 pub enum ProviderModelMetadata {
     FireworksAi(FireworksAIConfig),
@@ -93,12 +99,13 @@ impl ProviderModelMetadata {
 
     pub fn get_provider_info(
         &mut self,
-        catalog: &Catalog,
-        generation: u64,
         model: &str,
+        query: MetadataQuery<'_>,
     ) -> Option<ProviderSpecificModelInfo> {
         match self {
-            Self::FireworksAi(config) => Some(config.get_provider_info(catalog, generation, model)),
+            Self::FireworksAi(config) => {
+                Some(config.get_provider_info(query.catalog, query.generation, model))
+            }
             Self::Xai => Some(ProviderSpecificModelInfo {
                 supports_function_calling: None,
                 supports_prompt_caching: None,
@@ -136,10 +143,9 @@ pub fn select(model: Option<&str>, provider: ProviderId) -> Option<ProviderModel
 pub fn get_provider_info(
     model: &str,
     custom_llm_provider: Option<&str>,
-    catalog: &Catalog,
-    generation: u64,
+    query: MetadataQuery<'_>,
 ) -> Option<ProviderSpecificModelInfo> {
     let provider = custom_llm_provider?.parse::<ProviderId>().ok()?;
     let mut adapter = select(Some(model), provider)?;
-    adapter.get_provider_info(catalog, generation, model)
+    adapter.get_provider_info(model, query)
 }
