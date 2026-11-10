@@ -12,3 +12,6 @@ deviations:
   - what: "The redaction answer given to the `weave_otel` writer treats the global `turn_off_message_logging` setting as false; only the request's dynamic param and the redaction headers count."
     why: "LiteLLM's `should_redact_message_logging` falls back to the process-global `litellm.turn_off_message_logging`. That setting lives in betterlite's logging-privacy config section, which neither the OTel legacy logger settings (B3854) nor the context carries; the lifecycle decides redaction globally before the logger sees the request."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L372-L377"
+  - what: "With callback `langtrace` and no response object, `set_attributes` writes the Langtrace request attributes and prompt event and stops, and returns `Ok`. The callback-failure count LiteLLM bumps for that call is left to the caller."
+    why: "LiteLLM raises on `response_obj.get(\"id\")` right after the request attributes, and its handler swallows the error. Rule errors-surface forbids the swallow; the span content written before the raise is the same."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langtrace.py#L73"

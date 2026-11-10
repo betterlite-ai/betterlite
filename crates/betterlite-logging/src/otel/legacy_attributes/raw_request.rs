@@ -22,32 +22,34 @@ where
             .and_then(OtelModelValue::as_object)
             .unwrap_or(&empty),
     );
-    let complete_input = kwargs
+    let mut entries = kwargs
         .get("additional_args")
         .and_then(OtelModelValue::as_object)
         .and_then(|args| args.get("complete_input_dict"))
         .and_then(OtelModelValue::as_object)
-        .filter(|entries| !entries.is_empty());
-    if let Some(entries) = complete_input {
-        write_entries(span, &provider, entries);
-    }
-    let Some(text) = kwargs
+        .cloned()
+        .unwrap_or_default();
+    if let Some(text) = kwargs
         .get("original_response")
         .and_then(OtelModelValue::as_str)
         .filter(|text| !text.is_empty())
-    else {
-        return;
-    };
-    match parse_raw_response(text) {
-        Some(OtelModelValue::Object(entries)) => write_entries(span, &provider, &entries),
-        Some(_) => tracing::error!("OpenTelemetry logging error in set_raw_request_attributes"),
-        None => {
-            tracing::debug!("raw_response not json string");
-            span.safe_set_attribute(
-                &format!("{ATTRIBUTE_PREFIX}{provider}.{STRINGIFIED_RAW_RESPONSE}"),
-                &OtelModelValue::String(text.to_owned()),
-            );
+    {
+        match parse_raw_response(text) {
+            Some(OtelModelValue::Object(response_entries)) => entries.extend(response_entries),
+            Some(_) => {
+                tracing::error!("OpenTelemetry logging error in set_raw_request_attributes");
+            }
+            None => {
+                tracing::debug!("raw_response not json string");
+                entries.insert(
+                    STRINGIFIED_RAW_RESPONSE.to_owned(),
+                    OtelModelValue::String(text.to_owned()),
+                );
+            }
         }
+    }
+    for (param, value) in &entries {
+        span.safe_set_attribute(&format!("{ATTRIBUTE_PREFIX}{provider}.{param}"), value);
     }
 }
 
@@ -57,15 +59,6 @@ fn provider_label(litellm_params: &MetadataMap) -> String {
         Some(OtelModelValue::Null(())) => "None".to_owned(),
         Some(OtelModelValue::String(text)) => text.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
-fn write_entries<S>(span: &mut S, provider: &str, entries: &MetadataMap)
-where
-    S: Span,
-{
-    for (param, value) in entries {
-        span.safe_set_attribute(&format!("{ATTRIBUTE_PREFIX}{provider}.{param}"), value);
     }
 }
 

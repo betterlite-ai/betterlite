@@ -65,11 +65,17 @@ where
         .get_finished_spans()
         .map_err(|error| invalid(&error.to_string()))?;
     let finished = spans.first().ok_or_else(|| invalid("no exported span"))?;
-    let attributes = finished
-        .attributes
-        .iter()
-        .map(|pair| (pair.key.to_string(), attribute_json(&pair.value)))
-        .collect();
+    let mut attributes = Map::new();
+    for pair in &finished.attributes {
+        let key = pair.key.to_string();
+        // OTLP forbids repeated keys, and LiteLLM's dict keeps one value per key
+        if attributes
+            .insert(key.clone(), attribute_json(&pair.value))
+            .is_some()
+        {
+            return Err(invalid(&format!("the exported span repeats the key {key}")));
+        }
+    }
     Ok((attributes, result))
 }
 

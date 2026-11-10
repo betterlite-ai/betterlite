@@ -96,6 +96,28 @@ fn tool_calls_are_written_for_a_choice_with_a_finish_reason() {
 }
 
 #[test]
+fn the_last_tool_calling_choice_wins_each_tool_call_key() {
+    let response = value(
+        r#"{"choices": [
+            {"finish_reason": "tool_calls", "message": {"role": "assistant",
+                "tool_calls": [{"id": "call_1", "function": {"name": "first", "arguments": "{}"}}]}},
+            {"finish_reason": "tool_calls", "message": {"role": "assistant",
+                "tool_calls": [{"id": "call_2", "function": {"name": "second", "arguments": "{}"}}]}}
+        ]}"#,
+    );
+    let attributes = response_attributes(Some(&response));
+    let names: Vec<_> = attributes
+        .iter()
+        .filter(|(key, _)| key == "gen_ai.completion.0.function_call.name")
+        .collect();
+    assert_eq!(names.len(), 1);
+    assert_eq!(
+        names.first().map(|(_, found)| found),
+        Some(&Value::from("second"))
+    );
+}
+
+#[test]
 fn tool_calls_are_skipped_for_a_choice_without_a_finish_reason() {
     let response = value(
         r#"{"choices": [{"message": {"role": "assistant",

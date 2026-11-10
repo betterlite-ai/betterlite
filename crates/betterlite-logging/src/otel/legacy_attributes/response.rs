@@ -44,8 +44,12 @@ where
     if !finish_reasons.is_empty() {
         write_serialized(span, gen_ai::RESPONSE_FINISH_REASONS, &finish_reasons);
     }
+    let mut tool_call_pairs = MetadataMap::new();
     for choice in items {
-        write_choice_tool_calls(span, choice);
+        tool_call_pairs.extend(choice_tool_call_pairs(choice));
+    }
+    for (key, value) in &tool_call_pairs {
+        span.safe_set_attribute(key, value);
     }
 }
 
@@ -57,15 +61,12 @@ fn choice_finish_reason(choice: &OtelModelValue) -> Option<OtelModelValue> {
         .cloned()
 }
 
-fn write_choice_tool_calls<S>(span: &mut S, choice: &OtelModelValue)
-where
-    S: Span,
-{
+fn choice_tool_call_pairs(choice: &OtelModelValue) -> Vec<(String, OtelModelValue)> {
     let Some(fields) = choice.as_object() else {
-        return;
+        return Vec::new();
     };
     if !fields.get("finish_reason").is_some_and(truthiness) {
-        return;
+        return Vec::new();
     }
     let declared = fields
         .get("message")
@@ -73,12 +74,7 @@ where
         .and_then(|message| message.get("tool_calls"))
         .filter(|value| truthiness(value))
         .and_then(OtelModelValue::as_array);
-    let Some(tool_calls) = declared else {
-        return;
-    };
-    for (key, value) in tool_calls_kv_pair(tool_calls) {
-        span.safe_set_attribute(&key, &value);
-    }
+    declared.map_or_else(Vec::new, tool_calls_kv_pair)
 }
 
 fn write_responses_output<S>(span: &mut S, fields: &MetadataMap, output: &OtelModelValue)

@@ -73,13 +73,13 @@ fn write_vendor_attributes<S>(
     S: Span,
 {
     match name {
-        "langtrace" => {
-            let empty = MetadataMap::new();
-            let response_obj = response
-                .and_then(OtelModelValue::as_object)
-                .unwrap_or(&empty);
-            LangtraceAttributes::set_langtrace_attributes(span, kwargs, response_obj);
-        }
+        "langtrace" => match response.and_then(OtelModelValue::as_object) {
+            Some(response_obj) => {
+                LangtraceAttributes::set_langtrace_attributes(span, kwargs, response_obj);
+            }
+            // LiteLLM raises on None.get("id") after the request attributes, so no completion event
+            None => write_langtrace_request(span, kwargs),
+        },
         "langfuse_otel" => {
             // the legacy logger carries no environment snapshot; only the dynamic param applies
             let environment: BTreeMap<String, String> = BTreeMap::new();
@@ -101,6 +101,29 @@ fn write_vendor_attributes<S>(
         }
         _ => {}
     }
+}
+
+fn write_langtrace_request<S>(span: &mut S, kwargs: &MetadataMap)
+where
+    S: Span,
+{
+    let mut options = kwargs.clone();
+    if let Some(optional) = kwargs
+        .get("optional_params")
+        .and_then(OtelModelValue::as_object)
+    {
+        options.extend(
+            optional
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
+    let vendor = kwargs
+        .get("litellm_params")
+        .and_then(OtelModelValue::as_object)
+        .and_then(|params| params.get("custom_llm_provider"))
+        .and_then(OtelModelValue::as_str);
+    LangtraceAttributes::set_request_attributes(span, &options, vendor);
 }
 
 fn redact_messages(kwargs: &MetadataMap) -> bool {

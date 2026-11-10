@@ -1,7 +1,8 @@
 import ast
 import json
+import sys
 from collections.abc import Callable
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, TypeAlias, cast, override
 
 import litellm
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
@@ -11,7 +12,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 CAPTURE_MODES = ("NO_CONTENT", "SPAN_ONLY", "EVENT_ONLY", "SPAN_AND_EVENT")
 DEFAULT_CAPTURE_MODE = "SPAN_AND_EVENT"
 VENDOR_NAMES = ("langtrace", "langfuse_otel", "weave_otel")
-MISSING_PAYLOAD = "standard_logging_object not found in kwargs"
 
 SetAttributes = Callable[[object, object, dict[str, Json], Json], None]
 SetRawRequestAttributes = Callable[[object, object, dict[str, Json], object], None]
@@ -41,6 +41,14 @@ class RecordingSpan:
 
     def record_exception(self, _exception: BaseException) -> None:
         pass
+
+
+class RecordingLogger(OpenTelemetry):
+    failures: list[str]
+
+    @override
+    def handle_callback_failure(self, callback_name: str) -> None:
+        self.failures.append(str(sys.exc_info()[1]))
 
 
 def attribute_value(value: Json) -> Json:
@@ -106,8 +114,9 @@ def config_from(input_value: dict[str, Json]) -> OpenTelemetryConfig:
     )
 
 
-def new_logger(input_value: dict[str, Json], name: str | None) -> OpenTelemetry:
-    logger = OpenTelemetry.__new__(OpenTelemetry)
+def new_logger(input_value: dict[str, Json], name: str | None) -> RecordingLogger:
+    logger = RecordingLogger.__new__(RecordingLogger)
+    logger.failures = []
     logger.config = config_from(input_value)
     logger.callback_name = name
     logger.message_logging = True
@@ -145,10 +154,11 @@ def name_value(value: Json) -> str | None:
 
 def named_record(input_value: dict[str, Json], name: str | None) -> Json:
     kwargs = object_value(input_value.get("kwargs"), "kwargs")
-    if name not in VENDOR_NAMES and kwargs.get("standard_logging_object") is None:
-        return {"error": MISSING_PAYLOAD}
     span = RecordingSpan()
-    set_attributes(new_logger(input_value, name), span, kwargs, input_value.get("response"))
+    logger = new_logger(input_value, name)
+    set_attributes(logger, span, kwargs, input_value.get("response"))
+    if logger.failures:
+        return {"error": logger.failures[0], "attributes": span.attributes}
     return {"attributes": span.attributes}
 
 

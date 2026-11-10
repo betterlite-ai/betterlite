@@ -64,6 +64,24 @@ fn run(
     (attributes, result)
 }
 
+fn event_names(context: &AttributeContext<'_>, kwargs: &MetadataMap) -> Vec<String> {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let mut span = provider.tracer("b3856-dispatch-events").start("case");
+    set_attributes(&mut span, context, kwargs, None).expect("langtrace attributes");
+    span.end();
+    let spans = exporter.get_finished_spans().expect("spans");
+    spans
+        .first()
+        .expect("one span")
+        .events
+        .iter()
+        .map(|event| event.name.to_string())
+        .collect()
+}
+
 fn chat_kwargs() -> MetadataMap {
     map(r#"{
             "model": "gpt-4o",
@@ -117,6 +135,26 @@ fn langtrace_hands_the_span_to_the_langtrace_writer() {
         Some(&Value::from("chat"))
     );
     assert_no_generic_keys(&attributes);
+}
+
+#[test]
+fn langtrace_without_a_response_writes_the_request_and_no_completion_event() {
+    let config = OpenTelemetryConfig::default();
+    let context = context(&config, Some("langtrace"));
+    assert_eq!(
+        event_names(&context, &chat_kwargs()),
+        vec!["gen_ai.content.prompt".to_owned()]
+    );
+    let (attributes, result) = run(&context, &chat_kwargs(), None);
+    result.expect("attributes");
+    assert_eq!(
+        attributes.get("langtrace.service.name"),
+        Some(&Value::from("openai"))
+    );
+    assert_eq!(
+        attributes.get("gen_ai.request.max_tokens"),
+        Some(&Value::from(50_i64))
+    );
 }
 
 #[test]

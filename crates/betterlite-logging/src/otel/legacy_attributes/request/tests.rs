@@ -391,6 +391,12 @@ fn an_empty_usage_object_writes_no_counts() {
         "litellm_params": {"metadata": {"internal_call_origin": "autorouter_classifier"}},
         "standard_logging_object": {"call_type": "get_responses"}}"#
 ))]
+#[case::metadata_origin_wins_over_litellm_metadata(map(
+    r#"{"call_type": "get_responses",
+        "litellm_params": {"metadata": {"internal_call_origin": "autorouter_classifier"},
+                           "litellm_metadata": {"internal_call_origin": "background_response_cost_poll"}},
+        "standard_logging_object": {"call_type": "get_responses"}}"#
+))]
 fn usage_is_skipped_for_an_unbilled_management_call(#[case] kwargs: MetadataMap) {
     let response = value(r#"{"usage": {"total_tokens": 3}}"#);
     let attributes = request_attributes(&config(false), &kwargs, Some(&response));

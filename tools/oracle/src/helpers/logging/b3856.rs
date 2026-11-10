@@ -58,14 +58,10 @@ fn named_record(
     let (attributes, result) =
         record(|span| set_attributes(span, &context, &input.kwargs, input.response.as_ref()))?;
     let mut record = serde_json::Map::new();
-    match result {
-        Ok(()) => {
-            record.insert("attributes".to_owned(), Value::Object(attributes));
-        }
-        Err(error) => {
-            record.insert("error".to_owned(), Value::String(error.to_string()));
-        }
+    if let Err(error) = result {
+        record.insert("error".to_owned(), Value::String(error.to_string()));
     }
+    record.insert("attributes".to_owned(), Value::Object(attributes));
     Ok(record)
 }
 

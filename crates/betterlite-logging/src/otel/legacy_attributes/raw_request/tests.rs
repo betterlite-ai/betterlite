@@ -155,7 +155,7 @@ fn an_unusable_raw_response_writes_nothing(#[case] raw: &str) {
 }
 
 #[rstest]
-#[case::object("{\"model\": \"m\"}")]
+#[case::broken_object("{\"model\": }")]
 #[case::trailing_garbage("{\"model\": \"m\"} tail")]
 #[case::empty("")]
 fn parse_raw_response_returns_none_for_unparsable_text(#[case] text: &str) {
