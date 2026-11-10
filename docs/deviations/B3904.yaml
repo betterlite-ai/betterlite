@@ -1,0 +1,60 @@
+task: B3904
+deviations:
+  - what: >-
+      A stale prompt is refreshed by a tokio task tracked in the TaskTracker the caller passes to
+      build_langfuse_client, not by a Python daemon thread. The caller serves the cached prompt at once
+      either way, only one refresh per key is in flight, and a failed refresh keeps the stale value.
+    why: >-
+      Rust async is the concurrency model here, and rules.yaml forbids detached tasks. Tracking the
+      refresh in the server's TaskTracker preserves LiteLLM's serve-stale behavior while letting the
+      server drain the work on shutdown.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1172-L1186
+  - what: >-
+      LangfusePromptError is a struct carrying status_code and body for an API failure, and it is wrapped
+      in LangfuseRestError, which also carries transport, declared-shape and non-UTF-8 body failures.
+      LiteLLM raises LangfusePromptError for an ApiError only and lets httpx and pydantic exceptions escape.
+    why: >-
+      A Rust call returns one error type, so the API failure stays the header-free LangfusePromptError and
+      the other failures are named variants beside it. Response headers are still never carried.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1079-L1087
+  - what: >-
+      The cache holds the prompt as the typed wire record from Langfuse's declared Prompt union
+      (Prompt::Chat or Prompt::Text with name, version, config, labels, tags, commitMessage and
+      resolutionGraph). LiteLLM caches the SDK's compiled ChatPromptClient or TextPromptClient.
+    why: >-
+      The external langfuse package has no Rust equivalent, and compiling the prompt for a completion is
+      B3908's job. The wire fields are the ones LiteLLM's pydantic models declare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1052-L1053
+  - what: >-
+      The fetch clock is injected as a Clock returning std::time::Instant instead of calling
+      time.monotonic() directly. It is monotonic like time.monotonic(), so the TTL boundary is unchanged.
+    why: >-
+      rules.yaml forbids reading an outside dependency outside the constructor. The injection also lets
+      the tests advance time deterministically instead of sleeping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1141-L1144
+  - what: >-
+      A response body that is not UTF-8 is a typed Body failure. LiteLLM reads the same body through
+      httpx's Response.text, which decodes it with replacement characters and puts that text into the
+      ApiError body.
+    why: >-
+      rules.yaml refuses to mangle bytes that are not UTF-8, and a body outside UTF-8 cannot be the JSON
+      LiteLLM's pydantic models declare. LiteLLM's own json() raises UnicodeDecodeError for such a body,
+      which escapes _request_prompt without a retry, so refusing it without a retry keeps the request count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1079-L1087
+  - what: >-
+      build_langfuse_client with httpx_client=None builds a pooled betterlite client from an empty proxy
+      policy, while the Langfuse SDK builds a default httpx client that honors HTTP_PROXY and HTTPS_PROXY.
+      LiteLLM's own callers always pass an httpx client, so only a direct caller of this factory can see it.
+    why: >-
+      betterlite builds outbound clients in betterlite-http only, and the proxy policy arrives with the
+      injected client. The None path exists because the factory accepts an optional client; it is not a
+      path a LiteLLM deployment reaches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1189-L1214
+  - what: >-
+      The x-langfuse-sdk-version header carries 4.15.2, the langfuse release in LiteLLM's lock file,
+      rather than version("langfuse") of an installed package that may be older within LiteLLM's
+      >=4.7,<5 range.
+    why: >-
+      betterlite links no langfuse package, so there is no installed version to read. The pinned release
+      is what LiteLLM's own lock resolves to, and Langfuse treats the header as SDK identification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1201-L1210

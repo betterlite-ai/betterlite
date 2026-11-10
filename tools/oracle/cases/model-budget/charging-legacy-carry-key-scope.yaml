@@ -1,0 +1,26 @@
+kind: helper
+name: charging-legacy-carry-key-scope
+call:
+  b3006:
+    uptime_seconds: 0.0
+    memory:
+      "virtual_key_spend:key-1:openai/gpt-4o:1d": 3.0
+    calls:
+      - kind: charge
+        model_group: openai/gpt-4o
+        response_cost: 2.0
+        key_hash: key-1
+        key_budget:
+          gpt-4o:
+            max_budget: 10.0
+            budget_duration: 1d
+      - kind: key
+        entity_id: key-1
+        model: openai/gpt-4o
+        budget:
+          gpt-4o:
+            max_budget: 4.5
+            budget_duration: 1d
+env: {}
+compare:
+  ignore: []

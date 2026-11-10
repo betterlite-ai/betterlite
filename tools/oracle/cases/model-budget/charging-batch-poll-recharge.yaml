@@ -1,0 +1,40 @@
+kind: helper
+name: charging-batch-poll-recharge
+call:
+  b3006:
+    uptime_seconds: 0.0
+    memory: {}
+    calls:
+      - kind: charge
+        model_group: gpt-4o
+        response_cost: 2.0
+        key_hash: key-1
+        call_type: retrieve_batch
+        batch_id: batch-1
+        key_budget:
+          gpt-4o:
+            max_budget: 10.0
+            budget_duration: 1d
+      - kind: charge
+        model_group: gpt-4o
+        response_cost: 2.0
+        key_hash: key-1
+        call_type: retrieve_batch
+        batch_id: batch-1
+        key_budget:
+          gpt-4o:
+            max_budget: 10.0
+            budget_duration: 1d
+      - kind: charge
+        model_group: gpt-4o
+        response_cost: 3.0
+        key_hash: key-1
+        call_type: aretrieve_batch
+        batch_id: batch-2
+        key_budget:
+          gpt-4o:
+            max_budget: 10.0
+            budget_duration: 1d
+env: {}
+compare:
+  ignore: []

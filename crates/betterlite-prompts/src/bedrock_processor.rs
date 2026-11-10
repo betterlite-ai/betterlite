@@ -1,1 +1,13 @@
-
+mod assistant;
+mod blocks;
+pub mod conversation;
+pub mod document;
+pub mod error;
+pub mod file;
+mod media;
+pub mod setup;
+mod tests;
+pub mod thinking;
+mod tool;
+mod user;
+mod user_blocks;

@@ -1,0 +1,14 @@
+task: B8726
+deviations:
+  - what: A POST body larger than 4 MiB is refused with the SDK's 413 only after the Content-Type and session id checks, where the SDK's request body limit middleware answers it before both.
+    why: post receives the parsed request parts, so the body is read last and a request an earlier check refuses never buffers up to the limit; the status and body text match the middleware's.
+    link: ""
+  - what: A message whose session lost its service, so the send fails, is answered 404 "Could not find session" and the stale session is removed, where the SDK answers 202 and then raises the failed write into its ASGI stack.
+    why: The client cannot receive a message the service is gone for, and a 202 would drop it silently; the SDK's 202-then-error leaves a working client with nothing to act on.
+    link: ""
+  - what: "An endpoint that is a full URL or holds a query or fragment marker is accepted with the leading slash normalization, where the SDK's constructor raises ValueError."
+    why: The task fixes new(endpoint &str) as an infallible constructor and LiteLLM passes the constant "/sse/messages", so no caller reaches the validation.
+    link: ""
+  - what: "The ping comment's timestamp always carries six fractional digits, where Python's datetime leaves the fraction out when the microsecond is zero."
+    why: The text is the server's clock inside a comment clients ignore, so the difference can only show to a client that parses an ignored keep-alive line.
+    link: ""

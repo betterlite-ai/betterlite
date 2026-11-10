@@ -64,6 +64,22 @@ description: >-
   deleted and no operation is renamed.
 scope:
   paths:
+  - "tools/oracle/src/helpers/tests.rs"
+  - "tools/oracle/src/helpers/openai/workload_identity.rs"
+  - "tools/oracle/src/helpers/openai/credentials.rs"
+  - "tools/oracle/src/helpers/mcp/b4654.rs"
+  - "tools/oracle/src/helpers/context/local_ttl_cache/dual.rs"
+  - "tools/oracle/src/helpers/config/b3900.rs"
+  - "tools/oracle/src/helpers/azure/arc_identity.rs"
+  - "tools/oracle/src/helpers/server/assets.rs"
+  - "tools/oracle/src/helpers/redis/b4329/operations.rs"
+  - "tools/oracle/src/helpers/openai/provider_base_helpers.rs"
+  - "tools/oracle/src/helpers/openai/b3360.rs"
+  - "tools/oracle/src/helpers/mcp/b4654/support.rs"
+  - "tools/oracle/src/helpers/logging/private_json.rs"
+  - "tools/oracle/src/helpers/context/local_ttl_cache.rs"
+  - "tools/oracle/src/helpers/context/cloud_storage.rs"
+  - "tools/oracle/src/case.rs"
   - Cargo.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/helper-api/**

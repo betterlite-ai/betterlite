@@ -362,3 +362,10 @@ path = "fuzz_targets/compatible_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gigachat_stream_chunk"
+path = "fuzz_targets/gigachat_stream_chunk.rs"
+test = false
+doc = false
+bench = false

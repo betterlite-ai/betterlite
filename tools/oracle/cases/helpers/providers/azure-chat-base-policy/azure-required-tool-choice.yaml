@@ -1,0 +1,50 @@
+kind: helper
+name: azure-required-tool-choice
+call:
+  azure_chat_base_policy:
+    action: azure_required_tool_choice
+    settings: {}
+    steps:
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-05-31'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-04-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-5-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-06-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2023-12-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2022-01-01'
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        drop_params: true
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        global_drop_params: true
+        non_default: {tool_choice: required}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        non_default: {tool_choice: ''}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        non_default: {tool_choice: false}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        non_default: {tool_choice: none}
+      - model: gpt-4o
+        api_version: '2024-05-01'
+        non_default: {tool_choice: auto}
+env: {}
+compare: {ignore: []}

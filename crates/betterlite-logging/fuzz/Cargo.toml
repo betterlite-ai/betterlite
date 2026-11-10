@@ -46,6 +46,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "langfuse_response"
+path = "fuzz_targets/langfuse_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "s3_v2"
 path = "fuzz_targets/s3_v2.rs"
 test = false
@@ -104,6 +111,13 @@ bench = false
 [[bin]]
 name = "classifier_snapshot"
 path = "fuzz_targets/classifier_snapshot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_upstream_usage"
+path = "fuzz_targets/passthrough_upstream_usage.rs"
 test = false
 doc = false
 bench = false

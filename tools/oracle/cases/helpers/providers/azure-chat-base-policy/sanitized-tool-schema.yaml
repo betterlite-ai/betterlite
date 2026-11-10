@@ -1,0 +1,29 @@
+kind: helper
+name: sanitized-tool-schema
+call:
+  azure_chat_base_policy:
+    action: sanitized_tool_schema
+    optional:
+      tools:
+        - type: function
+          function:
+            name: f
+            parameters:
+              type: object
+              properties:
+                a: {type: string, pattern: '\p{L}'}
+        - 42
+        - text
+        - {type: function}
+        - type: function
+          function:
+            name: g
+            parameters:
+              type: object
+              anyOf:
+                - properties:
+                    a: {type: string}
+                - properties:
+                    b: {type: number}
+env: {}
+compare: {ignore: []}

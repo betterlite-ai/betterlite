@@ -1,0 +1,43 @@
+kind: helper
+name: azure-tool-choice-without-tools
+call:
+  azure_chat_base_policy:
+    action: azure_tool_choice_without_tools
+    settings: {openai_system_messages_first: true}
+    steps:
+      - messages: []
+        optional: {tool_choice: auto}
+      - messages: []
+        optional: {tool_choice: null}
+      - messages: []
+        optional: {tool_choice: auto, tools: []}
+      - messages: []
+        optional: {tool_choice: auto, tools: null}
+      - messages: []
+        optional: {tool_choice: auto, tools: {}}
+      - messages: []
+        optional: {tool_choice: auto, tools: 'x'}
+      - messages: []
+        optional: {tool_choice: auto, functions: []}
+      - messages: []
+        optional:
+          tool_choice: auto
+          functions:
+            - {name: f}
+      - messages: []
+        optional: {tool_choice: auto, functions: {}}
+      - messages: []
+        optional: {tool_choice: auto, functions: 'f'}
+      - messages: []
+        optional:
+          tool_choice: auto
+          tools:
+            - type: function
+              function:
+                name: f
+                parameters:
+                  type: object
+                  properties:
+                    p: {type: string, pattern: '\p{L}'}
+env: {}
+compare: {ignore: []}

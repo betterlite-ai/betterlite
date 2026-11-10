@@ -1,19 +1,35 @@
 use std::env;
 use std::io;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use betterlite_db_admin::command_shell::{
     AdminEnvironment, DbAdminBackend, Diagnostics as _, Streams, run,
 };
+use betterlite_db_admin::commands::Operation;
 use tokio::runtime::Builder;
+
+use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
 
 mod database_repair;
 mod database_startup;
+mod database_views;
 mod spend_backfills;
 mod spend_partitions;
 
+fn backend() -> DbAdminBackend {
+    let mut backend = DbAdminBackend::default();
+    let views = DatabaseViewsService {
+        deadline: OFFLINE_TIMEOUT,
+    };
+    backend
+        .services
+        .insert(Operation::DatabaseViews, Arc::new(views));
+    backend
+}
+
 fn main() -> ExitCode {
-    let backend = DbAdminBackend::default();
+    let backend = backend();
     let mut output = io::stdout();
     let mut errors = io::stderr();
     let mut streams = Streams {
