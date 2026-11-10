@@ -1,4 +1,7 @@
-use betterlite_models::passthrough_policies::generic_timeout::DEFAULT_TIMEOUT_SECONDS;
+use std::collections::BTreeMap;
+
+use betterlite_config::loader::ConfigLoader;
+use betterlite_models::passthrough_policies::generic_timeout::resolve_passthrough_timeout;
 use betterlite_models::passthrough_policies::header_forwarding::forward_headers_from_request;
 use betterlite_models::passthrough_policies::query_merge::{
     QueryParameters, merge_query_parameters,
@@ -24,12 +27,13 @@ impl crate::helpers::Helper for Op {
         match input.operation {
             Operation::QueryMerge => query_output(input),
             Operation::ForwardHeaders => header_output(input),
-            Operation::ProxyTimeout => Ok(json!(
-                input
-                    .endpoint_timeout
-                    .or(input.settings_timeout)
-                    .unwrap_or(DEFAULT_TIMEOUT_SECONDS)
-            )),
+            Operation::ProxyTimeout => {
+                let settings = settings_timeout(input)?;
+                Ok(json!(resolve_passthrough_timeout(
+                    input.endpoint_timeout,
+                    settings
+                )))
+            }
             Operation::SdkTimeout => sdk_output(input),
         }
     }
@@ -55,7 +59,22 @@ fn header_output(input: &Input) -> crate::helpers::HelperResult {
     serde_json::to_value(merged).map_err(|error| helper_error("Serialize", error))
 }
 
+fn settings_timeout(input: &Input) -> Result<f64, Box<HelperError>> {
+    let source = json!({
+        "general_settings": {"pass_through_request_timeout": input.settings_timeout}
+    })
+    .to_string();
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let config = loader
+        .load(&source)
+        .map_err(|error| helper_error("InvalidConfig", error))?;
+    Ok(config.sections.passthrough_request_policies.request_timeout)
+}
+
 fn sdk_output(input: &Input) -> crate::helpers::HelperResult {
+    let settings = settings_timeout(input)?;
     let request = request_timeouts(input.request.as_ref());
     let deployment = deployment_timeouts(input.deployment.as_ref());
     let router = router_timeouts(input.router.as_ref());
@@ -64,7 +83,7 @@ fn sdk_output(input: &Input) -> crate::helpers::HelperResult {
         &deployment,
         &router,
         input.configured_timeout,
-        input.settings_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
+        settings,
     ) {
         Ok(seconds) => Ok(json!(seconds)),
         Err(error) => Err(helper_error("InvalidSeconds", error)),
