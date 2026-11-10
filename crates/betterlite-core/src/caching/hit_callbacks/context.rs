@@ -80,36 +80,82 @@ pub fn record_cache_hit_context(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Declared {
+    Text,
+    Object,
+    Boolean,
+}
+
+impl Declared {
+    const fn holds(self, value: &Json) -> bool {
+        match self {
+            Self::Text => matches!(value, Json::Text(_)),
+            Self::Object => matches!(value, Json::Object(_)),
+            Self::Boolean => matches!(value, Json::Bool(_)),
+        }
+    }
+
+    fn fallback(self) -> Json {
+        match self {
+            Self::Text => Json::Text(String::new()),
+            Self::Object => Json::Object(IndexMap::new()),
+            Self::Boolean => Json::Bool(false),
+        }
+    }
+}
+
+fn declared_value<'kwargs>(
+    kwargs: &'kwargs IndexMap<String, Json>,
+    field: &'static str,
+    declared: Declared,
+) -> Result<Option<&'kwargs Json>, CacheHitError> {
+    let Some(value) = kwargs
+        .get(field)
+        .filter(|value| !matches!(value, Json::Null))
+    else {
+        return Ok(None);
+    };
+    if declared.holds(value) {
+        return Ok(Some(value));
+    }
+    Err(CacheHitError::FieldType { field })
+}
+
 fn request_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json>, CacheHitError> {
     let preset_cache_key = preset_cache_key(hit)?;
+    let provider = hit
+        .custom_llm_provider
+        .map_or_else(|| Json::Null, |name| Json::Text(name.to_owned()));
     let mut parameters = IndexMap::new();
     parameters.insert(
         "logger_fn".to_owned(),
         hit.kwargs.get("logger_fn").cloned().unwrap_or(Json::Null),
     );
     parameters.insert("acompletion".to_owned(), Json::Bool(hit.is_async));
-    parameters.insert("api_base".to_owned(), default_text(hit.kwargs, "api_base")?);
-    parameters.insert(
-        "metadata".to_owned(),
-        default_object(hit.kwargs, "metadata")?,
-    );
-    parameters.insert(
-        "model_info".to_owned(),
-        default_object(hit.kwargs, "model_info")?,
-    );
+    for (field, declared) in [
+        ("api_base", Declared::Text),
+        ("metadata", Declared::Object),
+        ("model_info", Declared::Object),
+    ] {
+        let value = declared_value(hit.kwargs, field, declared)?
+            .cloned()
+            .unwrap_or_else(|| declared.fallback());
+        parameters.insert(field.to_owned(), value);
+    }
     parameters.insert(
         "proxy_server_request".to_owned(),
-        optional_object(hit.kwargs, "proxy_server_request")?,
+        declared_value(hit.kwargs, "proxy_server_request", Declared::Object)?
+            .cloned()
+            .unwrap_or(Json::Null),
     );
     parameters.insert(
         "stream_response".to_owned(),
-        default_object(hit.kwargs, "stream_response")?,
+        declared_value(hit.kwargs, "stream_response", Declared::Object)?
+            .cloned()
+            .unwrap_or_else(|| Declared::Object.fallback()),
     );
-    parameters.insert(
-        "custom_llm_provider".to_owned(),
-        hit.custom_llm_provider
-            .map_or_else(|| Json::Null, |name| Json::Text(name.to_owned())),
-    );
+    parameters.insert("custom_llm_provider".to_owned(), provider);
     parameters.insert(
         PRESET_CACHE_KEY.to_owned(),
         preset_cache_key
@@ -120,19 +166,21 @@ fn request_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json
 }
 
 fn call_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json>, CacheHitError> {
-    let mut parameters = IndexMap::new();
-    parameters.insert("input".to_owned(), input_value(hit));
+    let stream = declared_value(hit.kwargs, "stream", Declared::Boolean)?
+        .cloned()
+        .unwrap_or_else(|| Declared::Boolean.fallback());
+    let provider = hit
+        .custom_llm_provider
+        .map_or_else(|| Json::Null, |name| Json::Text(name.to_owned()));
     // LiteLLM copies the request's api_key here; a secret never enters the logging state
-    parameters.insert("api_key".to_owned(), Json::Null);
-    parameters.insert("original_response".to_owned(), hit.cached_result.clone());
-    parameters.insert("additional_args".to_owned(), Json::Null);
-    parameters.insert("stream".to_owned(), Json::Bool(stream_flag(hit.kwargs)?));
-    parameters.insert(
-        "custom_llm_provider".to_owned(),
-        hit.custom_llm_provider
-            .map_or_else(|| Json::Null, |name| Json::Text(name.to_owned())),
-    );
-    Ok(parameters)
+    Ok(IndexMap::from([
+        ("input".to_owned(), input_value(hit)),
+        ("api_key".to_owned(), Json::Null),
+        ("original_response".to_owned(), hit.cached_result.clone()),
+        ("additional_args".to_owned(), Json::Null),
+        ("stream".to_owned(), stream),
+        ("custom_llm_provider".to_owned(), provider),
+    ]))
 }
 
 fn preset_cache_key(hit: &CacheHitContext<'_>) -> Result<Option<String>, CacheHitError> {
@@ -169,14 +217,6 @@ fn input_value(hit: &CacheHitContext<'_>) -> Json {
     }
 }
 
-fn stream_flag(kwargs: &IndexMap<String, Json>) -> Result<bool, CacheHitError> {
-    match kwargs.get("stream") {
-        None | Some(Json::Null) => Ok(false),
-        Some(Json::Bool(stream)) => Ok(*stream),
-        Some(_) => Err(CacheHitError::FieldType { field: "stream" }),
-    }
-}
-
 fn optional_text(
     kwargs: &IndexMap<String, Json>,
     field: &'static str,
@@ -184,39 +224,6 @@ fn optional_text(
     match kwargs.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(CacheHitError::FieldType { field }),
-    }
-}
-
-fn default_text(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Json, CacheHitError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(Json::Text(String::new())),
-        Some(Json::Text(value)) => Ok(Json::Text(value.clone())),
-        Some(_) => Err(CacheHitError::FieldType { field }),
-    }
-}
-
-fn default_object(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Json, CacheHitError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(Json::Object(IndexMap::new())),
-        Some(Json::Object(value)) => Ok(Json::Object(value.clone())),
-        Some(_) => Err(CacheHitError::FieldType { field }),
-    }
-}
-
-fn optional_object(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Json, CacheHitError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(Json::Null),
-        Some(Json::Object(value)) => Ok(Json::Object(value.clone())),
         Some(_) => Err(CacheHitError::FieldType { field }),
     }
 }
