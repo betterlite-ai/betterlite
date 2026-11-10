@@ -11,7 +11,6 @@ use crate::http::{self, Response};
 use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::run::{Peer, PeerFactory, PeerStart, ProviderSplit};
 use crate::mock::{MockProvider, ProviderRequest};
-use crate::paths::free_port;
 use crate::process::Gateway;
 
 pub(super) struct GatewayPeerFactory<'input> {
@@ -36,13 +35,7 @@ impl PeerFactory for GatewayPeerFactory<'_> {
             config_path: &config_path,
             case_env: input.env,
         };
-        let port = free_port().map_err(|source| ScenarioError::Request(Box::new(source)))?;
-        let spec = gateway::spec(&gateway_input, input.role.is_first(), port)
-            .map_err(|source| ScenarioError::Request(Box::new(source)))?;
-        let mut gateway =
-            Gateway::start(spec).map_err(|source| ScenarioError::Request(Box::new(source)))?;
-        gateway
-            .wait_ready(&self.client)
+        let gateway = gateway::start(&gateway_input, input.role.is_first())
             .map_err(|source| ScenarioError::Request(Box::new(source)))?;
         Ok(Box::new(GatewayPeer {
             gateway,

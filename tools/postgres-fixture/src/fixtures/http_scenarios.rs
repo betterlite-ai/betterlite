@@ -113,9 +113,7 @@ async fn apply_async(
     setup: &ScenarioSetup,
 ) -> Result<Vec<SetupJournalEntry>, FixtureError> {
     let mut drivers = JoinSet::new();
-    let (client, connection) = options
-        .config
-        .connect(NoTls)
+    let (client, connection) = tokio_postgres::connect(options.url.expose_secret(), NoTls)
         .await
         .map_err(FixtureError::Connect)?;
     drivers.spawn(async move { connection.await.map_err(FixtureError::Driver) });

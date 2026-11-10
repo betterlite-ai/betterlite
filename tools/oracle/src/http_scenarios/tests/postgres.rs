@@ -8,7 +8,7 @@ use betterlite_postgres_fixture::fixtures::http_scenarios::{
 use betterlite_postgres_fixture::seed::{
     BudgetRow, CallerRole, JwtMapping, KeyRow, Membership, TeamRow, UserRow,
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Builder;
 use tokio_postgres::NoTls;
 
@@ -135,7 +135,7 @@ fn expected_seed_journal() -> Vec<SetupJournalEntry> {
 async fn seeded_state(
     options: &ConnectionOptions,
 ) -> Result<(Vec<i64>, String), tokio_postgres::Error> {
-    let (client, connection) = options.config.connect(NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(options.url.expose_secret(), NoTls).await?;
     let queries = async {
         let mut counts = Vec::new();
         for table in SEEDED_TABLES {

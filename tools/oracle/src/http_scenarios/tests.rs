@@ -26,7 +26,9 @@ use support::{
 use super::compare::compare_transcripts;
 use super::decode_http_scenario;
 use super::model::{Limits, Step, StepCompare};
-use crate::case::{Case, Ignore, LoadedCase, Request, decode_case, parse_case};
+use crate::case::{
+    Case, Ignore, LoadedCase, Request, decode_case, load_http_scenario_cases, parse_case,
+};
 use crate::http_scenarios::run::StepCapture;
 use crate::mock::ProviderRequest;
 
@@ -211,12 +213,23 @@ fn rejects_unknown_field() {
     let text = "kind: http_scenario\nname: n\nconfig: c\nbogus: 1\nsteps:\n  - name: s\n    request: {method: GET, path: /x}\n";
     let error = decode_http_scenario(text.as_bytes(), &Limits::default()).unwrap_err();
     assert_eq!(error.to_string(), "scenario field \"bogus\" is not allowed");
-    let loaded = parse_case(Path::new("<test>"), text).unwrap_err();
+    let loaded = load_error(text);
     assert!(
-        loaded
-            .to_string()
-            .contains("scenario field \"bogus\" is not allowed")
+        loaded.contains("scenario field \"bogus\" is not allowed"),
+        "{loaded}"
     );
+}
+
+fn load_error(text: &str) -> String {
+    let directory = tempfile::Builder::new()
+        .prefix("scenario-case-")
+        .tempdir()
+        .unwrap();
+    let path = directory.path().join("case.yaml");
+    fs::write(&path, text).unwrap();
+    load_http_scenario_cases(&[path], &Limits::default())
+        .unwrap_err()
+        .to_string()
 }
 
 #[test]
@@ -425,8 +438,8 @@ fn rejects_secret_capture_header() {
     let error =
         decode_http_scenario(SECRET_HEADER_SCENARIO.as_bytes(), &Limits::default()).unwrap_err();
     assert_eq!(error.to_string(), message);
-    let loaded = parse_case(Path::new("<test>"), SECRET_HEADER_SCENARIO).unwrap_err();
-    assert!(loaded.to_string().contains(message));
+    let loaded = load_error(SECRET_HEADER_SCENARIO);
+    assert!(loaded.contains(message), "{loaded}");
 }
 
 #[test]
