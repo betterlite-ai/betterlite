@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-text-embeddings-bge-seed
+call:
+  vertex_text_embeddings:
+    requests:
+      - {model: BGE-small-en-v1.5, input: hello, optional: {title: doc}}
+    replies:
+      - {model: bge-small, response: {predictions: [[0.1, 0.2]]}}
+compare: {ignore: []}
+env: {}
