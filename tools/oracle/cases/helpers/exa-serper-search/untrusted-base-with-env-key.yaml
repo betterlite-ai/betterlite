@@ -1,0 +1,40 @@
+kind: helper
+name: untrusted_base_with_env_key
+call:
+  b8020:
+    environment:
+      EXA_API_KEY: sk-exa-server
+      SERPER_API_KEY: sk-serper-server
+    calls:
+      - provider: exa_ai
+        call: {kind: settings}
+      - provider: serper
+        call: {kind: settings}
+      - provider: exa_ai
+        call: {kind: validate_environment, api_base: "https://evil.test"}
+      - provider: exa_ai
+        call: {kind: validate_environment, api_base: "https://api.exa.ai/search"}
+      - provider: exa_ai
+        call: {kind: validate_environment, api_base: "https://API.EXA.AI"}
+      - provider: exa_ai
+        call: {kind: validate_environment, api_base: "https://api.exa.ai:8443"}
+      - provider: exa_ai
+        call:
+          kind: validate_environment
+          api_key: sk-caller
+          api_base: "https://evil.test"
+      - provider: exa_ai
+        call: {kind: validate_environment}
+      - provider: serper
+        call: {kind: validate_environment, api_base: "https://google.serper.dev/search"}
+      - provider: serper
+        call: {kind: validate_environment, api_base: "https://evil.test"}
+      - provider: serper
+        call:
+          kind: validate_environment
+          api_key: sk-caller
+          api_base: "https://evil.test"
+      - provider: serper
+        call: {kind: validate_environment}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: oci-chat-wire-cohere-response-without-finish-reason
+call:
+  b5942:
+    function: cohere_response
+    model: m
+    created: 0
+    status: 200
+    body:
+      modelId: m
+      modelVersion: "1"
+      chatResponse:
+        text: "hi"
+        apiFormat: COHERE
+        usage:
+          promptTokens: 1
+          completionTokens: 1
+          totalTokens: 2
+compare:
+  ignore:
+    - pointer: /value/choices/0/message/provider_specific_fields
+      why: "betterlite's shared AssistantMessage always serializes this object; LiteLLM's Message drops it when unset"
+    - pointer: /value/choices/0/provider_specific_fields
+      why: "betterlite's shared ChatChoice always serializes this object; LiteLLM's Choices drops it when unset"
+env: {}

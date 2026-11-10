@@ -16,6 +16,7 @@ use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde::Serialize;
@@ -138,6 +139,8 @@ pub(crate) async fn send(
         mock: MockSettings::default(),
         mock_chat,
         mock_embedding,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
     };
     let wire = WireChat {
         model: &chat.model,

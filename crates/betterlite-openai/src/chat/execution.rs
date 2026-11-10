@@ -5,6 +5,7 @@ use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mo
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
+use betterlite_redact::secret::Redactor;
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
@@ -81,6 +82,8 @@ pub struct ChatExecutor {
     pub mock: MockSettings,
     pub mock_chat: MockChatBuilder,
     pub mock_embedding: MockEmbeddingBuilder,
+    // built once at startup and shared by every request that renders a provider error
+    pub redactor: Redactor,
 }
 
 impl ChatExecutor {
