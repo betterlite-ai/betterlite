@@ -128,3 +128,30 @@ fn restamping_keeps_a_stamp_the_new_one_does_not_name() {
         })
     );
 }
+
+#[test]
+fn restamping_replaces_a_stamp_the_point_already_carries() {
+    let carried =
+        CacheControlInjectionPoint::Message(message_point()).restamped(Some(true), Some(1));
+    let stamped = carried.restamped(Some(false), Some(3));
+    assert_eq!(
+        stamped,
+        CacheControlInjectionPoint::Message(MessageInjectionPoint {
+            role: None,
+            index: None,
+            control: None,
+            openai_dialect: Some(false),
+            external_breakpoints: Some(3),
+        })
+    );
+    assert_eq!(
+        carried,
+        CacheControlInjectionPoint::Message(MessageInjectionPoint {
+            role: None,
+            index: None,
+            control: None,
+            openai_dialect: Some(true),
+            external_breakpoints: Some(1),
+        })
+    );
+}

@@ -162,12 +162,6 @@ def request_extraction(fields: Params) -> Json:
         request_kwargs = probe.get("request_kwargs")
         probes.append(
             {
-                "value": cast(
-                    Json,
-                    AnthropicCacheControlHook._request_value(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                        request_kwargs, string_of(probe, "key")
-                    ),
-                ),
                 "user_agent": AnthropicCacheControlHook._request_user_agent(request_kwargs),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 "system": cast(
                     Json,

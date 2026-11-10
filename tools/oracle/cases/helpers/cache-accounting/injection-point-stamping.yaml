@@ -25,6 +25,11 @@ call:
       - points: [{location: message, role: user, control: {type: ephemeral}, _litellm_openai_dialect: true}]
         model: gpt-5.6
         custom_llm_provider: openai
+        api_base: https://gateway.example
+      - points: [{location: message, role: user, _litellm_external_breakpoints: 1}]
+        external_breakpoints: 3
+        model: gpt-5.6
+        custom_llm_provider: openai
         api_base: https://api.openai.com
       - points: []
         external_breakpoints: 2
