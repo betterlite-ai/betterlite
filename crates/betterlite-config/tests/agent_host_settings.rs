@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::agent_host_settings::Settings;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 #[derive(Debug, Clone, Copy)]
 enum Host {
