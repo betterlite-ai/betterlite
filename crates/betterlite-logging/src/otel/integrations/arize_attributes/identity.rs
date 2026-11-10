@@ -4,7 +4,7 @@ use crate::otel::span_attributes::SafeSetAttribute as _;
 use opentelemetry::trace::Span;
 
 use super::keys;
-use super::truthy::is_effectively_true;
+use super::truthy::is_truthy;
 
 const SESSION_SOURCES: [(&str, &str); 3] = [
     ("user_api_key_team_id", keys::LITELLM_TEAM_ID),
@@ -25,33 +25,27 @@ pub(super) fn set_session_and_user_attrs<S>(
     let empty = MetadataMap::new();
     let metadata = match payload.get("metadata") {
         Some(OtelModelValue::Object(fields)) => fields,
-        Some(value) if is_effectively_true(value) => return,
+        Some(value) if is_truthy(value) => return,
         _ => &empty,
     };
     if let Some(session_id) = metadata
         .get("user_api_key_end_user_id")
-        .filter(|value| is_effectively_true(value))
+        .filter(|value| is_truthy(value))
     {
         span.safe_set_attribute(keys::SESSION_ID, session_id);
     }
-    if let Some(trace_id) = payload
-        .get("trace_id")
-        .filter(|value| is_effectively_true(value))
-    {
+    if let Some(trace_id) = payload.get("trace_id").filter(|value| is_truthy(value)) {
         span.safe_set_attribute(keys::LITELLM_TRACE_ID, trace_id);
     }
     if !has_user(kwargs, payload)
         && let Some(user_id) = metadata
             .get("user_api_key_user_id")
-            .filter(|value| is_effectively_true(value))
+            .filter(|value| is_truthy(value))
     {
         span.safe_set_attribute(keys::USER_ID, user_id);
     }
     for (source, attribute) in SESSION_SOURCES {
-        if let Some(value) = metadata
-            .get(source)
-            .filter(|value| is_effectively_true(value))
-        {
+        if let Some(value) = metadata.get(source).filter(|value| is_truthy(value)) {
             span.safe_set_attribute(attribute, value);
         }
     }
@@ -62,12 +56,12 @@ fn has_user(kwargs: &MetadataMap, payload: &MetadataMap) -> bool {
         .get("optional_params")
         .and_then(OtelModelValue::as_object)
         .and_then(|params| params.get("user"))
-        .is_some_and(is_effectively_true);
+        .is_some_and(is_truthy);
     let model_user = payload
         .get("model_parameters")
         .and_then(OtelModelValue::as_object)
         .and_then(|params| params.get("user"))
-        .is_some_and(is_effectively_true);
+        .is_some_and(is_truthy);
     optional_user || model_user
 }
 

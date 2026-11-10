@@ -8,7 +8,7 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::span_attributes::SafeSetAttribute as _;
 use opentelemetry::trace::Span;
 
-use super::truthy::is_effectively_true;
+use super::truthy::is_truthy;
 
 // passthrough is the spelling real call types use: allm_passthrough_route
 const PASSTHROUGH_KEYWORDS: [&str; 2] = ["passthrough", "pass_through"];
@@ -93,10 +93,7 @@ where
     S: Span,
 {
     let prefix = format!("{LLM_INPUT_MESSAGES}.{index}");
-    if let Some(role) = fields
-        .get("role")
-        .filter(|value| is_effectively_true(value))
-    {
+    if let Some(role) = fields.get("role").filter(|value| is_truthy(value)) {
         span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), role);
     }
     if let Some(text) = fields.get("content").and_then(coerce_text) {

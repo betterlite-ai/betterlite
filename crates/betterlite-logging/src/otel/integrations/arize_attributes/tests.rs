@@ -6,7 +6,7 @@ use super::identity;
 use super::mcp;
 use super::passthrough;
 use super::set_attributes;
-use super::truthy::is_effectively_true;
+use super::truthy::is_truthy;
 use crate::otel::integrations::arize_messages::ArizeOtelAttributes;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -323,11 +323,8 @@ fn attributes_missing_payload_writes_span_kind_and_exception_event() {
 #[case::array("[1]", true)]
 #[case::empty_object("{}", false)]
 #[case::object(r#"{"a":1}"#, true)]
-fn attributes_is_effectively_true_matches_litellm_truthiness(
-    #[case] raw: &str,
-    #[case] expected: bool,
-) {
-    assert_eq!(is_effectively_true(&value(raw)), expected);
+fn attributes_is_truthy_matches_litellm_truthiness(#[case] raw: &str, #[case] expected: bool) {
+    assert_eq!(is_truthy(&value(raw)), expected);
 }
 
 fn session_attributes(kwargs: &str) -> BTreeMap<String, Value> {
