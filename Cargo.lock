@@ -1675,6 +1675,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
  "chrono",
