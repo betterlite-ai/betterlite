@@ -378,6 +378,23 @@ async fn cache_coordination_cancelled_loader_signals_waiters() {
 }
 
 #[tokio::test]
+async fn cache_coordination_null_load_counts_as_a_miss() {
+    let cache = FakeCache::new(false);
+    let coordinator = coordinator(Duration::from_secs(5));
+    let loads = AtomicUsize::new(0);
+    let load = || async {
+        loads.fetch_add(1, Ordering::SeqCst);
+        Ok::<_, FakeError>(CacheValue::Null)
+    };
+    let first = coordinator.get_or_load("key", &cache, load).await.unwrap();
+    assert_eq!(first, None);
+    assert_eq!(cache.stored("key"), Some(CacheValue::Null));
+    let second = coordinator.get_or_load("key", &cache, load).await.unwrap();
+    assert_eq!(second, None);
+    assert_eq!(loads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn cache_coordination_logs_only_with_a_prefix() {
     let quiet = captured_log("").await;
     assert!(!quiet.contains("Cache miss"), "{quiet}");

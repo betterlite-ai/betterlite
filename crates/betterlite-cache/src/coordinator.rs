@@ -92,7 +92,7 @@ impl EventDrivenCacheCoordinator {
         let Some(signal) = self.claim_role() else {
             let _signal = LoadSignal { coordinator: self };
             let value = Self::load_and_cache(self, cache, cache_key, load_fn()).await?;
-            return Ok(Some(value));
+            return Ok(value);
         };
         self.wait_for_signal_and_get(signal, cache_key, cache).await
     }
@@ -166,7 +166,7 @@ impl EventDrivenCacheCoordinator {
         cache: &Cache,
         cache_key: &str,
         load: Load,
-    ) -> Result<CacheValue, CoordinatorError<Cache::Error, LoadError>>
+    ) -> Result<Option<CacheValue>, CoordinatorError<Cache::Error, LoadError>>
     where
         Cache: AsyncCacheProtocol,
         Load: Future<Output = Result<CacheValue, LoadError>>,
@@ -175,7 +175,7 @@ impl EventDrivenCacheCoordinator {
         let rechecked = cache_read(cache, cache_key).await?;
         if let Some(value) = rechecked {
             owner.log_step("Cache filled while acquiring lock");
-            return Ok(value);
+            return Ok(Some(value));
         }
         owner.log_step("Running load");
         let value = load.await.map_err(|source| CoordinatorError::Load {
@@ -190,7 +190,7 @@ impl EventDrivenCacheCoordinator {
                 source,
             })?;
         owner.log_step("Result cached");
-        Ok(value)
+        Ok(cached_value(value))
     }
 
     fn log_step(&self, message: &str) {
@@ -220,8 +220,17 @@ where
     LoadError: Error,
 {
     let value = cache.async_get_cache(cache_key).await;
-    value.map_err(|source| CoordinatorError::Cache {
+    let stored = value.map_err(|source| CoordinatorError::Cache {
         key: cache_key.to_owned(),
         source,
-    })
+    })?;
+    // LiteLLM tests `value is not None`, and a cached None reads back as a stored null here
+    Ok(stored.filter(|entry| !matches!(entry, CacheValue::Null)))
+}
+
+fn cached_value(value: CacheValue) -> Option<CacheValue> {
+    if matches!(value, CacheValue::Null) {
+        return None;
+    }
+    Some(value)
 }
