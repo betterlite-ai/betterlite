@@ -183,7 +183,10 @@ fn declare(
     }
 }
 
-fn settled_hook<T: 'static>(index: usize, log: Arc<Mutex<Vec<Json>>>) -> SettledHook<T> {
+fn settled_hook<T>(index: usize, log: Arc<Mutex<Vec<Json>>>) -> SettledHook<T>
+where
+    T: 'static,
+{
     Arc::new(move |settled: &Settled<T>| {
         let text = match settled {
             Ok(_) => "completed",
