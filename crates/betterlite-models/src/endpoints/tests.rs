@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fmt::Write as _;
 use std::fs;
 
 use rstest::rstest;
@@ -251,17 +252,18 @@ fn registry_with_provider_endpoints(count: usize) -> String {
 }
 
 fn registry_with_endpoint_labels(count: usize) -> String {
-    let entries: Vec<String> = (0..count)
-        .map(|index| {
-            format!(
-                r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
-            )
-        })
-        .collect();
-    format!(
-        r#"{{"providers":{{}},"endpoints":{{{}}}}}"#,
-        entries.join(",")
-    )
+    let mut labels = String::new();
+    for index in 0..count {
+        if index > 0 {
+            labels.push(',');
+        }
+        write!(
+            labels,
+            r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
+        )
+        .unwrap();
+    }
+    format!(r#"{{"providers":{{}},"endpoints":{{{labels}}}}}"#)
 }
 
 #[test]
