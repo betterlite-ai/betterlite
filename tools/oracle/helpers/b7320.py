@@ -10,6 +10,9 @@ from litellm.litellm_core_utils.llm_response_utils.get_api_base import (
 )
 from litellm.types.router import LiteLLM_Params
 
+# get_llm_provider prints the provider list on stdout when an unknown model cannot be resolved.
+litellm.suppress_debug_info = True
+
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
