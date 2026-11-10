@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::converse_usage::counts::{cache_write_count, number_value};
+use crate::converse_usage::counts::{cache_counts, number_value};
 use crate::converse_usage::error::ConverseUsageError;
 use crate::converse_usage::wire::ConverseTokenUsage;
 
@@ -36,7 +36,8 @@ pub fn parse_cache_details(
             .ok_or(ConverseUsageError::Overflow {
                 field: "cacheDetails",
             })?;
-    if total != cache_write_count(usage)? {
+    let (_, cache_write) = cache_counts(usage)?;
+    if total != cache_write {
         return Ok(None);
     }
     Ok(Some(CacheCreationTokenDetails {

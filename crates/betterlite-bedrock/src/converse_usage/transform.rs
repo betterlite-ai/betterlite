@@ -5,9 +5,7 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::converse_usage::cache_details::{CacheCreationTokenDetails, parse_cache_details};
-use crate::converse_usage::counts::{
-    cache_read_count, cache_write_count, count_value, live_count, number_value,
-};
+use crate::converse_usage::counts::{cache_counts, count_value, live_count, number_value};
 use crate::converse_usage::error::{ConverseUsageError, UsageError};
 use crate::converse_usage::wire::ConverseTokenUsage;
 use crate::converse_usage::{CompletionTokensDetails, PromptTokensDetails, Usage};
@@ -47,8 +45,7 @@ where
 pub fn usage_from_batch_output(usage: &ConverseTokenUsage) -> Result<Usage, ConverseUsageError> {
     let input = count_value(usage.input_tokens.as_ref(), "inputTokens")?.unwrap_or(0);
     let output = count_value(usage.output_tokens.as_ref(), "outputTokens")?.unwrap_or(0);
-    let cache_read = cache_read_count(usage)?;
-    let cache_creation = cache_write_count(usage)?;
+    let (cache_read, cache_creation) = cache_counts(usage)?;
     let supplied = count_value(usage.remaining.get("totalTokens"), "totalTokens")?.unwrap_or(0);
     let total = if supplied == 0 {
         input
@@ -85,8 +82,7 @@ struct ProjectedUsage {
 fn project(usage: &ConverseTokenUsage) -> Result<ProjectedUsage, ConverseUsageError> {
     let raw_input = live_count(usage.input_tokens.as_ref(), "inputTokens")?;
     let output = live_count(usage.output_tokens.as_ref(), "outputTokens")?;
-    let cache_read = cache_read_count(usage)?;
-    let cache_creation = cache_write_count(usage)?;
+    let (cache_read, cache_creation) = cache_counts(usage)?;
     let input = raw_input
         .checked_add(cache_read)
         .and_then(|sum| sum.checked_add(cache_creation))

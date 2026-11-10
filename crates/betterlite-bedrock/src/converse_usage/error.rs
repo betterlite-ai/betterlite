@@ -9,8 +9,6 @@ pub enum ConverseUsageError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the Bedrock usage block is not an object")]
-    UsageNotObject,
     #[error("a Bedrock reasoning content block is not an object")]
     BlockNotObject,
     #[error("the field {field} has a type the Converse usage shape does not allow")]

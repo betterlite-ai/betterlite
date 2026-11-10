@@ -109,7 +109,7 @@ def total_tokens(fields: Object) -> Json:
     block = usage_block(fields)
     live = config.transform_usage(block)  # pyright: ignore[reportUnknownMemberType]
     batch = config.usage_from_batch_output(block)  # pyright: ignore[reportUnknownMemberType]
-    return {"live": to_json(live), "batch": to_json(batch)}
+    return [to_json(live), to_json(batch)]
 
 
 HANDLERS: dict[str, Callable[[Object], Json]] = {

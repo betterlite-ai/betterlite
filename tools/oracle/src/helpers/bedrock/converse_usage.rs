@@ -164,10 +164,7 @@ fn totals(usage: &Json) -> HelperResult {
     let live = transform_usage(&block, None, false, None, &TokenizerCounter)
         .map_err(|error| failure(error.to_string()))?;
     let batch = usage_from_batch_output(&block).map_err(|error| failure(error.to_string()))?;
-    payload(json!({
-        "live": serde_json::to_value(&live).map_err(|error| failure(error.to_string()))?,
-        "batch": serde_json::to_value(&batch).map_err(|error| failure(error.to_string()))?,
-    }))
+    payload((live, batch))
 }
 
 pub(crate) struct Op;

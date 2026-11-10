@@ -316,26 +316,14 @@ fn total_token_normalization() {
 }
 
 fn batch_total_normalization() {
-    for (source, expected) in [
-        (
-            r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": 0}"#,
-            "5",
-        ),
-        (
-            r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": null}"#,
-            "5",
-        ),
-        (
-            r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": -1}"#,
-            "-1",
-        ),
-        (
-            r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": 9}"#,
-            "9",
-        ),
-    ] {
-        assert_eq!(total(&batch(source)), &json(expected));
-    }
+    let zero = batch(r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": 0}"#);
+    assert_eq!(total(&zero), &json("5"));
+    let null = batch(r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": null}"#);
+    assert_eq!(total(&null), &json("5"));
+    let negative = batch(r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": -1}"#);
+    assert_eq!(total(&negative), &json("-1"));
+    let supplied = batch(r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": 9}"#);
+    assert_eq!(total(&supplied), &json("9"));
 }
 
 fn reasoning_and_thinking_blocks() {

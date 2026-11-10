@@ -29,9 +29,6 @@ pub struct ConverseTokenUsage {
 
 impl ConverseTokenUsage {
     pub fn decode(value: &Json) -> Result<Self, ConverseUsageError> {
-        let Json::Object(_) = value else {
-            return Err(ConverseUsageError::UsageNotObject);
-        };
         let text =
             serde_json::to_string(value).map_err(|source| ConverseUsageError::Decode { source })?;
         serde_json::from_str(&text).map_err(|source| ConverseUsageError::Decode { source })
