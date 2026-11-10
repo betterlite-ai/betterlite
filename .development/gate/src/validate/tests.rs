@@ -121,6 +121,22 @@ fn check_commands_pass_nextest_and_grep_arguments_they_accept() {
 }
 
 #[test]
+fn check_commands_do_not_run_the_gate_inside_the_gate() {
+    let quoted =
+        "grep -qF 'cargo gate run <ID>' AGENTS.md && ! grep -qF 'cargo gate run B000' AGENTS.md";
+    assert!(argument_problems(quoted).is_empty(), "{quoted}");
+    let nested = "the built-in oracle check already runs oracle_cases";
+    for bad in [
+        "cargo gate run B3790 --only oracle",
+        "test -n \"$(git diff --name-only \"$GATE_BASE\" -- tools/oracle/cases/x)\" && cargo gate run B4291 --only oracle",
+    ] {
+        let problems = argument_problems(bad);
+        assert_eq!(problems.len(), 1, "{bad}");
+        assert!(problems[0].contains(nested), "{bad}");
+    }
+}
+
+#[test]
 fn check_commands_pass_filtersets_nextest_can_parse() {
     let good = "cargo nextest run -p a --filterset='test(/^a::/) - test(/replays_the_/)'";
     assert!(argument_problems(good).is_empty(), "{good}");

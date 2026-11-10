@@ -1,0 +1,16 @@
+kind: helper
+name: ollama-model-metadata-seed-model-fields
+call:
+  ollama_model_metadata:
+    runtime_model_fields:
+      fixture:
+        env: {}
+        catalog: []
+      model: "ollama/qwen2.5"
+      bodies:
+        - '{"template":"tools","model_info":{"llama.context_length":8192}}'
+        - '{}'
+        - '{"model_info":null}'
+        - 'not json'
+env: {}
+compare: {ignore: []}
