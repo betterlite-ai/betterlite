@@ -537,6 +537,7 @@ fn a_terminal_newline_identifier_reaches_the_url() {
 #[case::scoped_ipv6_without_encoding("https://[fe80::1%eth0]/x", "https://[fe80::1%eth0]")]
 #[case::brackets_in_userinfo("https://u[]@v1.x", "https://u[]@v1.x")]
 #[case::brackets_in_userinfo_with_port("https://u[x]@v1.x:443/p", "https://u[x]@v1.x:443")]
+#[case::ipvfuture_in_userinfo("https://u[@v1.a]b", "https://u[@v1.a]b")]
 #[case::nfkc_clean("https://gdc.ex\u{e9}mple", "https://gdc.ex\u{e9}mple")]
 fn audience_is_the_scheme_and_netloc_of_the_original_base(
     #[case] base: &str,
