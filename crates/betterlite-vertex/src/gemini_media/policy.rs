@@ -11,13 +11,11 @@ pub fn inlines_remote(provider: GoogleProvider, url: &str, hints: &MimeHints) ->
     let remote = url.starts_with("http://") || url.starts_with("https://");
     match provider {
         GoogleProvider::AiStudio => remote && !url.starts_with(GEMINI_FILES_API_URI_PREFIX),
-        GoogleProvider::Vertex => remote && vertex_inlines(url, hints),
+        GoogleProvider::Vertex => {
+            remote
+                && !url.starts_with(GEMINI_FILES_API_URI_PREFIX)
+                && (url.starts_with("http://")
+                    || (hints.explicit().is_none() && image_mime_type_from_url(url).is_none()))
+        }
     }
-}
-fn vertex_inlines(url: &str, hints: &MimeHints) -> bool {
-    if url.starts_with(GEMINI_FILES_API_URI_PREFIX) {
-        return false;
-    }
-    url.starts_with("http://")
-        || (hints.explicit().is_none() && image_mime_type_from_url(url).is_none())
 }

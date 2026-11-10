@@ -1,6 +1,5 @@
 use betterlite_openai::api::file_type_records::FileTypeError;
 use thiserror::Error;
-const INVALID_REQUEST: &str = "invalid_request_error";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaField {
     ImageUrl,
@@ -42,7 +41,7 @@ impl MediaError {
             Self::UnsupportedMediaType(..)
             | Self::RemoteMediaRequired(..)
             | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => INVALID_REQUEST,
+            | Self::InvalidInlineData(..) => "invalid_request_error",
         }
     }
     #[must_use]

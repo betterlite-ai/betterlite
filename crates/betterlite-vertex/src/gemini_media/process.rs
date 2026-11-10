@@ -49,20 +49,17 @@ fn payload_for(request: &MediaRequest<'_>) -> Result<MediaPart, MediaError> {
 }
 fn uri_payload(request: &MediaRequest<'_>) -> Option<FileData> {
     let url = request.url;
+    let explicit = request.hints.explicit().map(str::to_owned);
     if url.starts_with(GEMINI_FILES_API_URI_PREFIX) {
         return Some(FileData {
-            mime_type: request.hints.explicit().map(str::to_owned),
+            mime_type: explicit,
             file_uri: url.to_owned(),
         });
     }
     if !url.contains("https://") {
         return None;
     }
-    let mime_type = request
-        .hints
-        .explicit()
-        .map(str::to_owned)
-        .or_else(|| image_mime_type_from_url(url).map(str::to_owned))?;
+    let mime_type = explicit.or_else(|| image_mime_type_from_url(url).map(str::to_owned))?;
     Some(FileData {
         mime_type: Some(mime_type),
         file_uri: url.to_owned(),

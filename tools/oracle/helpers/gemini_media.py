@@ -34,23 +34,22 @@ def _mime_alias(params: Params) -> Json:
 
 
 def _media_parts(params: Params) -> Json:
-    return {"parts": [_media_part(case) for case in cast("list[Json]", params["cases"])]}
-
-
-def _media_part(case: Json) -> Json:
-    fields = cast("dict[str, Json]", case)
-    hints = cast("dict[str, Json]", fields.get("hints") or {})
-    with patch.object(transformation, "_get_gcs_object_content_type", _blocked_metadata):
-        part = _process_gemini_media(
-            image_url=cast(str, fields["url"]),
-            format=_explicit_mime_type(hints),
-            media_resolution_enum=_convert_detail_to_media_resolution_enum(
-                cast("str | None", fields.get("detail"))
-            ),
-            model=cast("str | None", fields.get("model")),
-            video_metadata=cast("dict[str, Json] | None", fields.get("video_metadata")),
-        )
-    return cast(Json, part)
+    parts: list[Json] = []
+    for case in cast("list[Json]", params["cases"]):
+        fields = cast("dict[str, Json]", case)
+        hints = cast("dict[str, Json]", fields.get("hints") or {})
+        with patch.object(transformation, "_get_gcs_object_content_type", _blocked_metadata):
+            part = _process_gemini_media(
+                image_url=cast(str, fields["url"]),
+                format=_explicit_mime_type(hints),
+                media_resolution_enum=_convert_detail_to_media_resolution_enum(
+                    cast("str | None", fields.get("detail"))
+                ),
+                model=cast("str | None", fields.get("model")),
+                video_metadata=cast("dict[str, Json] | None", fields.get("video_metadata")),
+            )
+        parts.append(cast(Json, part))
+    return {"parts": parts}
 
 
 def _resolution_maximum(params: Params) -> Json:

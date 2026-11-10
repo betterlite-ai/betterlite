@@ -21,11 +21,10 @@ impl MimeHints {
 }
 #[must_use]
 pub fn apply_mime_alias(mime_type: &str) -> String {
-    let normalized = mime_type
+    let media_type = mime_type
         .split_once(';')
-        .map_or(mime_type, |(media_type, _parameters)| media_type)
-        .trim()
-        .to_lowercase();
+        .map_or(mime_type, |(head, _parameters)| head);
+    let normalized = media_type.trim().to_lowercase();
     GEMINI_MIME_TYPE_ALIASES
         .iter()
         .find_map(|(alias, canonical)| (*alias == normalized).then_some(*canonical))

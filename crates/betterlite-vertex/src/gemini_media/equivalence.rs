@@ -4,13 +4,13 @@ pub fn equivalent_key<'available>(
     key: &str,
     available: &'available Object,
 ) -> Option<&'available str> {
-    let candidates = [key.to_owned(), snake_to_camel(key), camel_to_snake(key)];
-    for candidate in candidates {
-        if let Some((stored, _)) = available.get_key_value(candidate.as_str()) {
-            return Some(stored.as_str());
-        }
-    }
-    None
+    [key.to_owned(), snake_to_camel(key), camel_to_snake(key)]
+        .into_iter()
+        .find_map(|candidate| {
+            available
+                .get_key_value(candidate.as_str())
+                .map(|(stored, _)| stored.as_str())
+        })
 }
 #[must_use]
 pub fn part_exists(parts: &[Object], part: &Object, excluded_keys: &[&str]) -> bool {
@@ -23,26 +23,16 @@ pub fn part_exists(parts: &[Object], part: &Object, excluded_keys: &[&str]) -> b
     })
 }
 fn snake_to_camel(text: &str) -> String {
-    text.split('_')
-        .enumerate()
-        .map(|(index, component)| {
-            if index == 0 {
-                component.to_owned()
-            } else {
-                capitalize(component)
-            }
-        })
-        .collect()
-}
-fn capitalize(component: &str) -> String {
-    let mut characters = component.chars();
-    let Some(first) = characters.next() else {
-        return String::new();
-    };
-    first
-        .to_uppercase()
-        .chain(characters.as_str().to_lowercase().chars())
-        .collect()
+    let mut components = text.split('_');
+    let mut converted = components.next().unwrap_or_default().to_owned();
+    for component in components {
+        let mut characters = component.chars();
+        if let Some(first) = characters.next() {
+            converted.extend(first.to_uppercase());
+            converted.push_str(&characters.as_str().to_lowercase());
+        }
+    }
+    converted
 }
 fn camel_to_snake(text: &str) -> String {
     let mut segments: Vec<String> = Vec::new();
