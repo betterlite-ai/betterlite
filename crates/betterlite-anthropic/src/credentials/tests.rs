@@ -56,10 +56,7 @@ fn header_pairs(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 #[case::oauth_direct_key_headers(8)]
 fn credentials_cases(#[case] case: u8) {
     match case {
-        0 => {
-            key_before_auth_token_resolution();
-            key_before_auth_token_oauth();
-        }
+        0 => key_before_auth_token_case(),
         1 => base_env_precedence_case(),
         2 => {
             oauth_key_prefix_detection();
@@ -87,7 +84,7 @@ fn credentials_cases(#[case] case: u8) {
     }
 }
 
-fn key_before_auth_token_resolution() {
+fn key_before_auth_token_case() {
     let environment = configured(Some("env-key"), Some("auth-token-value"), None);
     let env_header = get_auth_header(None, None, false, &environment).unwrap();
     assert_eq!(env_header.name, "x-api-key");
@@ -101,9 +98,7 @@ fn key_before_auth_token_resolution() {
     let empty_header = get_auth_header(None, None, false, &empty).unwrap();
     assert_eq!(empty_header.name, "x-api-key");
     assert_eq!(empty_header.value.expose_secret(), "");
-}
 
-fn key_before_auth_token_oauth() {
     let oauth = configured(Some("sk-ant-oat-token"), None, None);
     let oauth_header = get_auth_header(None, None, false, &oauth).unwrap();
     assert_eq!(oauth_header.name, "authorization");
