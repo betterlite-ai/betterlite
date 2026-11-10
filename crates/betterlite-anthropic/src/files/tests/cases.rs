@@ -583,6 +583,7 @@ async fn file_content_bytes() {
     content_prefixes().await;
     content_redirect().await;
     content_error().await;
+    first_failing_status_is_error().await;
 }
 
 async fn content_result() {
@@ -690,6 +691,21 @@ async fn content_error() {
         headers.get("x-request-id").map(String::as_str),
         Some("req-err")
     );
+}
+
+async fn first_failing_status_is_error() {
+    let boundary = Fixture::answering_with(400, &[("x-request-id", "req-400")], b"bad request");
+    let error = content(
+        &boundary,
+        &client(Some("sk-files"), None),
+        &FileCall {
+            file_id: "file-1",
+            headers: &HeaderMap::new(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_status_error(error, 400, "bad request", ("x-request-id", "req-400"));
 }
 
 fn file_beta_header() {
