@@ -28,7 +28,8 @@ call:
             content: "a"
             provider_specific_fields:
               server_side_tool_invocations:
-                - {id: "s1", response: {r: 2}}
+                - {id: "s1", response: null}
+                - {id: "s2", response: {r: 2}}
       - messages:
           - {role: user, content: "q"}
           - role: assistant

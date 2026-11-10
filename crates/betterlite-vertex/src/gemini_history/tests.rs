@@ -390,9 +390,9 @@ fn skips_a_generated_image_whose_image_url_is_a_string() {
     r#"{"id":"s1"}"#,
     r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}}]"#
 )]
-#[case::null_response_is_no_response(
+#[case::null_response(
     r#"{"id":"s1","response":null}"#,
-    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}}]"#
+    r#"[{"toolCall":{"toolType":null,"id":"s1","args":null}},{"toolResponse":{"id":"s1","response":null}}]"#
 )]
 #[case::empty_tool_type_kept(
     r#"{"id":"s1","tool_type":"","response":{}}"#,

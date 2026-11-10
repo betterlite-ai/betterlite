@@ -139,7 +139,10 @@ fn response_part(invocation: &Object) -> Option<Object> {
         ID => invocation.get(ID).cloned().unwrap_or(Json::Null),
         RESPONSE => response.clone(),
     );
-    if let Some(tool_type) = invocation.get(TOOL_TYPE) {
+    if let Some(tool_type) = invocation
+        .get(TOOL_TYPE)
+        .filter(|value| !matches!(value, Json::Null))
+    {
         fields.insert("toolType".to_owned(), tool_type.clone());
     }
     let mut part = object!("toolResponse" => Json::Object(fields));
