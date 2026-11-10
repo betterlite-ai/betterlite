@@ -30,6 +30,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "azure_oidc_exchange"
+path = "fuzz_targets/azure_oidc_exchange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "azure_image_transport"
 path = "fuzz_targets/azure_image_transport.rs"
 test = false

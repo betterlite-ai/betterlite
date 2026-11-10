@@ -1,0 +1,18 @@
+kind: helper
+name: custom-header-replaces-request-header-in-any-case
+call:
+  b3571:
+    operation: forward_headers
+    request_headers:
+      X-Custom: from-request
+      x-other: kept
+      content-type: application/json
+      content-length: "42"
+      host: client.example
+      accept-encoding: br
+    custom_headers:
+      x-custom: from-route
+      CONTENT-TYPE: text/plain
+    forward_headers: true
+compare: {ignore: []}
+env: {}

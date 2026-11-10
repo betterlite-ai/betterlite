@@ -1,0 +1,20 @@
+kind: helper
+name: semantic_embeddings-router-sync-success-seed
+call:
+  b4381:
+    embedding_model: text-embedding-3-small
+    prompt: hello world
+    metadata: {user: a, trace: 7}
+    embedding_max_input_tokens: null
+    embedding_timeout: 2.5
+    router_present: true
+    model_list:
+      - model_name: text-embedding-3-small
+        max_input_tokens: 1
+      - model_name: other-embedding-model
+        max_input_tokens: null
+    method: sync
+    outcome: success
+    vectors: [[0.25, 0.5], [0.75, 1.0]]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: passthrough-original-response-fallback
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      original_response:
+        choices:
+          - message: {role: assistant, content: fallback text}
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response: null
+env: {}
+compare: {ignore: []}
