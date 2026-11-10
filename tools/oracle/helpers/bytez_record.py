@@ -22,7 +22,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 Object: TypeAlias = dict[str, Json]
 
 CONFIG = BytezChatConfig()
-SUPPORTED = cast("Callable[[str], list[str]]", CONFIG.get_supported_openai_params)
 MAP_PARAMS = cast("Callable[..., Object]", CONFIG.map_openai_params)
 VALIDATE = cast("Callable[..., Object]", CONFIG.validate_environment)
 COMPLETE_URL = cast("Callable[..., str]", CONFIG.get_complete_url)
@@ -41,57 +40,34 @@ def obj(value: Json) -> Object:
     return value
 
 
-def text(fields: Object, name: str) -> str:
-    value = fields.get(name)
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be a string")
-    return value
+def at(fields: Object, name: str) -> Object:
+    return obj(fields.get(name, {}))
 
 
-def integer(fields: Object, name: str) -> int:
-    value = fields.get(name)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"{name} must be an integer")
-    return value
-
-
-def listing(fields: Object, name: str) -> list[Json]:
-    value = fields.get(name)
-    if value is None:
-        return []
+def messages(fields: Object) -> "list[AllMessageValues]":
+    value = fields.get("messages")
     if not isinstance(value, list):
-        raise TypeError(f"{name} must be a list")
-    return value
+        raise TypeError("messages must be a list")
+    return cast("list[AllMessageValues]", value)
 
 
-def strings(fields: Object, name: str) -> list[str]:
-    items = listing(fields, name)
-    if not all(isinstance(item, str) for item in items):
-        raise TypeError(f"{name} must hold strings")
-    return [cast(str, item) for item in items]
-
-
-def header_map(fields: Object) -> dict[str, str]:
+def headers(fields: Object) -> dict[str, str]:
     return {
         name: value
-        for name, value in obj(fields.get("headers", {})).items()
+        for name, value in at(fields, "headers").items()
         if isinstance(value, str)
     }
 
 
-def messages(fields: Object) -> "list[AllMessageValues]":
-    return cast("list[AllMessageValues]", listing(fields, "messages"))
-
-
 def options(fields: Object) -> Json:
-    model = text(fields, "supported_model")
+    model = cast(str, fields.get("supported_model", ""))
     mapped: list[Json] = []
-    for entry in listing(fields, "mappings"):
+    for entry in cast("list[Json]", fields.get("mappings", [])):
         mapping = obj(entry)
         try:
             adapted = MAP_PARAMS(
-                obj(mapping.get("non_default_params", {})),
-                obj(mapping.get("optional_params", {})),
+                at(mapping, "non_default_params"),
+                at(mapping, "optional_params"),
                 model,
                 bool(mapping.get("drop_params", False)),
             )
@@ -99,7 +75,8 @@ def options(fields: Object) -> Json:
             mapped.append({"ok": False})
             continue
         mapped.append({"ok": True, "value": adapted})
-    return {"supported": cast(Json, list(SUPPORTED(model))), "mapped": mapped}
+    supported = cast(Json, list(CONFIG.get_supported_openai_params(model)))
+    return {"supported": supported, "mapped": mapped}
 
 
 def usage(fields: Object) -> Json:
@@ -116,15 +93,15 @@ def usage(fields: Object) -> Json:
 
 def request_entry(entry: Json) -> Json:
     fields = obj(entry)
-    model = text(fields, "model")
+    model = cast(str, fields.get("model", ""))
     api_key = fields.get("api_key")
     key = api_key if isinstance(api_key, str) else None
     try:
         validated = VALIDATE(
-            headers=header_map(fields),
+            headers=headers(fields),
             model=model,
             messages=messages(fields),
-            optional_params=obj(fields.get("optional_params", {})),
+            optional_params=at(fields, "optional_params"),
             litellm_params={},
             api_key=key,
             api_base=None,
@@ -133,14 +110,14 @@ def request_entry(entry: Json) -> Json:
             api_base=None,
             api_key=key,
             model=model,
-            optional_params=obj(fields.get("optional_params", {})),
+            optional_params=at(fields, "optional_params"),
             litellm_params={},
             stream=None,
         )
         body = TRANSFORM_REQUEST(
             model=model,
             messages=messages(fields),
-            optional_params=obj(fields.get("optional_params", {})),
+            optional_params=at(fields, "optional_params"),
             litellm_params={},
             headers=validated,
         )
@@ -151,41 +128,41 @@ def request_entry(entry: Json) -> Json:
 
 def reply_entry(entry: Json) -> Json:
     fields = obj(entry)
-    body = text(fields, "body")
-    status = integer(fields, "status")
-    model = text(fields, "model")
-    created = integer(fields, "created")
+    model = cast(str, fields.get("model", ""))
+    created = cast(int, fields.get("created", 0))
     response = ModelResponse()
     try:
         with patch(
             "litellm.llms.bytez.chat.transformation.time.time",
             return_value=float(created),
         ):
-            result = cast(
-                ModelResponse,
-                TRANSFORM_RESPONSE(
-                    model=model,
-                    raw_response=httpx.Response(status, text=body, headers=header_map(fields)),
-                    model_response=response,
-                    logging_obj=cast("Logging", None),
-                    request_data={},
-                    messages=messages(fields),
-                    optional_params={},
-                    litellm_params={},
-                    encoding=None,
+            result = TRANSFORM_RESPONSE(
+                model=model,
+                raw_response=httpx.Response(
+                    cast(int, fields.get("status", 200)),
+                    text=cast(str, fields.get("body", "")),
+                    headers=headers(fields),
                 ),
+                model_response=response,
+                logging_obj=cast("Logging", None),
+                request_data={},
+                messages=messages(fields),
+                optional_params={},
+                litellm_params={},
+                encoding=None,
             )
     except Exception as error:  # noqa: BLE001 - the status is what a caller can branch on
         return {"ok": False, "status": cast(Json, getattr(error, "status_code", None))}
-    choice = result.choices[0]
-    counted = cast(Usage, getattr(result, "usage", None))
-    hidden = cast("Mapping[str, object]", result._hidden_params)
+    reply = cast(ModelResponse, result)
+    choice = reply.choices[0]
+    counted = cast(Usage, getattr(reply, "usage", None))
+    hidden = cast("Mapping[str, object]", reply._hidden_params)
     additional = cast("Mapping[str, str]", hidden["additional_headers"])
     return {
         "ok": True,
         "value": {
-            "created": result.created,
-            "model": result.model,
+            "created": reply.created,
+            "model": reply.model,
             "content": choice.message.content,
             "usage": {
                 "prompt_tokens": counted.prompt_tokens,
@@ -219,16 +196,15 @@ def chunk_projection(chunk: ModelResponseStream) -> Json:
 
 
 def chunks(fields: Object) -> Json:
-    model = text(fields, "model")
-    provider = text(fields, "provider")
-    fragments = strings(fields, "fragments")
+    model = cast(str, fields.get("model", ""))
+    provider = cast(str, fields.get("provider", ""))
+    fragments = cast("list[str]", fields.get("fragments", []))
     details: dict[str, object] = {"litellm_params": {}, "custom_llm_provider": provider}
-    logging_obj = cast("Logging", Recording(details))
     wrapper = BytezCustomStreamWrapper(
         completion_stream=iter(fragments),
         model=model,
         custom_llm_provider=provider,
-        logging_obj=logging_obj,
+        logging_obj=cast("Logging", Recording(details)),
     )
     outcomes: list[Json] = []
     for fragment in fragments:
@@ -244,18 +220,22 @@ def chunks(fields: Object) -> Json:
     return outcomes
 
 
+def entries(fields: Object, handler: Callable[[Json], Json]) -> Json:
+    return [handler(entry) for entry in cast("list[Json]", fields.get("requests", []))]
+
+
 HANDLERS: dict[str, Callable[[Object], Json]] = {
     "options": options,
-    "request": lambda f: [request_entry(entry) for entry in listing(f, "requests")],
+    "request": lambda f: entries(f, request_entry),
     "usage": usage,
-    "reply": lambda f: [reply_entry(entry) for entry in listing(f, "requests")],
+    "reply": lambda f: entries(f, reply_entry),
     "chunks": chunks,
 }
 
 
 def run(argument: Json) -> Json:
     fields = obj(argument)
-    handler = HANDLERS.get(text(fields, "function"))
+    handler = HANDLERS.get(cast(str, fields.get("function", "")))
     if handler is None:
         raise ValueError("unknown bytez_record function")
     return handler(fields)
