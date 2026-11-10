@@ -15,7 +15,7 @@ pub(super) struct SplitUrl {
     pub(super) fragment: String,
 }
 
-// Mirrors urllib.parse.urlsplit: control characters are stripped, then scheme, netloc, path, query and fragment.
+// Mirrors urllib.parse.urlsplit, which B2307's pub(super) and out-of-scope database_url_policy::url_codec already has.
 pub(super) fn split_url(url: &str) -> SplitUrl {
     let cleaned: String = url
         .trim_start_matches(|character: char| u32::from(character) <= 0x20)
