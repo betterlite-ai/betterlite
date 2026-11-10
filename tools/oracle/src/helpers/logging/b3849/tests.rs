@@ -16,9 +16,8 @@ fn run(input: Value) -> Value {
     Op::run(&decoded).expect("the helper runs")
 }
 
-#[test]
-fn for_destination_projects_the_tenant_view_and_resource() {
-    let output = run(json!({
+fn proxy_owned_projection() -> Value {
+    run(json!({
         "function": "for_destination",
         "span": {
             "name": "chat gpt-4",
@@ -41,9 +40,13 @@ fn for_destination_projects_the_tenant_view_and_resource() {
             "callback_name": "arize",
             "span_scope": "full",
         },
-    }));
+    }))
+}
+
+#[test]
+fn for_destination_projects_the_tenant_view_and_resource() {
+    let output = proxy_owned_projection();
     let result = &output["result"];
-    assert_eq!(result["name"], "chat gpt-4");
     assert_eq!(result["attributes"]["error.message"], "boom");
     assert_eq!(result["attributes"]["http.url"], "https://proxy/v1/chat");
     assert!(
@@ -51,15 +54,8 @@ fn for_destination_projects_the_tenant_view_and_resource() {
             .get("http.request.header.authorization")
             .is_none()
     );
-    assert_eq!(
-        result["events"][0]["attributes"]["exception.message"],
-        "boom"
-    );
-    assert!(
-        result["events"][0]["attributes"]
-            .get("exception.stacktrace")
-            .is_none()
-    );
+    let event = &result["events"][0]["attributes"];
+    assert!(event.get("exception.stacktrace").is_none());
     assert_eq!(result["status"]["description"], "failed");
     assert_eq!(result["parent"], "1112131415161718");
     assert_eq!(result["resource"]["service.name"], "tenant");

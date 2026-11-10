@@ -79,21 +79,12 @@ pub(crate) fn keys(span: &SpanData) -> BTreeSet<String> {
         .collect()
 }
 
-pub(crate) fn destination(endpoint: &str, scope: SpanScope) -> OtelDestination {
-    OtelDestination::from(DestinationFields {
-        endpoint: endpoint.to_owned(),
-        headers: BTreeMap::new(),
-        resource_attributes: BTreeMap::new(),
-        callback_name: None,
-        protocol: None,
-        span_scope: scope,
-    })
-}
-
-pub(crate) fn destination_with(
+fn destination_of(
     endpoint: &str,
     headers: &[(&str, &str)],
+    protocol: Option<&str>,
     callback_name: Option<&str>,
+    scope: SpanScope,
 ) -> OtelDestination {
     OtelDestination::from(DestinationFields {
         endpoint: endpoint.to_owned(),
@@ -103,9 +94,21 @@ pub(crate) fn destination_with(
             .collect(),
         resource_attributes: BTreeMap::new(),
         callback_name: callback_name.map(str::to_owned),
-        protocol: None,
-        span_scope: SpanScope::Full,
+        protocol: protocol.map(str::to_owned),
+        span_scope: scope,
     })
+}
+
+pub(crate) fn destination(endpoint: &str, scope: SpanScope) -> OtelDestination {
+    destination_of(endpoint, &[], None, None, scope)
+}
+
+pub(crate) fn destination_with(
+    endpoint: &str,
+    headers: &[(&str, &str)],
+    callback_name: Option<&str>,
+) -> OtelDestination {
+    destination_of(endpoint, headers, None, callback_name, SpanScope::Full)
 }
 
 pub(crate) fn destination_with_protocol(
@@ -113,14 +116,7 @@ pub(crate) fn destination_with_protocol(
     protocol: &str,
     scope: SpanScope,
 ) -> OtelDestination {
-    OtelDestination::from(DestinationFields {
-        endpoint: endpoint.to_owned(),
-        headers: BTreeMap::new(),
-        resource_attributes: BTreeMap::new(),
-        callback_name: None,
-        protocol: Some(protocol.to_owned()),
-        span_scope: scope,
-    })
+    destination_of(endpoint, &[], Some(protocol), None, scope)
 }
 
 #[derive(Debug, Default)]
@@ -324,70 +320,39 @@ impl SpanProcessor for SignalCloser {
     }
 }
 
-pub(crate) struct BlockingCloser {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockPoint {
+    End,
+    Close,
+}
+
+pub(crate) struct BlockingProcessor {
     pub(crate) entered: SyncSender<()>,
     pub(crate) release: Mutex<Receiver<()>>,
     pub(crate) shutdowns: Mutex<usize>,
+    pub(crate) block: BlockPoint,
 }
 
-impl Debug for BlockingCloser {
+impl Debug for BlockingProcessor {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str("BlockingCloser")
+        f.write_str("BlockingProcessor")
     }
 }
 
-impl SpanProcessor for BlockingCloser {
-    fn on_start(&self, _span: &mut Span, _cx: &Context) {}
-
-    fn on_end(&self, _span: SpanData) {}
-
-    fn force_flush(&self) -> OTelSdkResult {
-        Ok(())
-    }
-
-    fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
-        let mut shutdowns = lock(&self.shutdowns);
-        *shutdowns = shutdowns.saturating_add(1);
-        drop(shutdowns);
-        let _signalled = self.entered.send(());
-        let release = lock(&self.release);
-        let _released = release.recv();
-        drop(release);
-        Ok(())
-    }
+fn block_until_released(entered: &SyncSender<()>, release: &Mutex<Receiver<()>>) {
+    let _signalled = entered.send(());
+    let guard = lock(release);
+    let _released = guard.recv();
+    drop(guard);
 }
 
-pub(crate) fn blocking_closer() -> (Arc<BlockingCloser>, Receiver<()>, SyncSender<()>) {
-    let (entered, entered_rx) = mpsc::sync_channel(0);
-    let (release_tx, release_rx) = mpsc::sync_channel(0);
-    let closer = Arc::new(BlockingCloser {
-        entered,
-        release: Mutex::new(release_rx),
-        shutdowns: Mutex::new(0),
-    });
-    (closer, entered_rx, release_tx)
-}
-
-pub(crate) struct BlockingRecorder {
-    pub(crate) entered: SyncSender<()>,
-    pub(crate) release: Mutex<Receiver<()>>,
-    pub(crate) shutdowns: Mutex<usize>,
-}
-
-impl Debug for BlockingRecorder {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str("BlockingRecorder")
-    }
-}
-
-impl SpanProcessor for BlockingRecorder {
+impl SpanProcessor for BlockingProcessor {
     fn on_start(&self, _span: &mut Span, _cx: &Context) {}
 
     fn on_end(&self, _span: SpanData) {
-        let _signalled = self.entered.send(());
-        let release = lock(&self.release);
-        let _released = release.recv();
-        drop(release);
+        if self.block == BlockPoint::End {
+            block_until_released(&self.entered, &self.release);
+        }
     }
 
     fn force_flush(&self) -> OTelSdkResult {
@@ -398,48 +363,58 @@ impl SpanProcessor for BlockingRecorder {
         let mut shutdowns = lock(&self.shutdowns);
         *shutdowns = shutdowns.saturating_add(1);
         drop(shutdowns);
+        if self.block == BlockPoint::Close {
+            block_until_released(&self.entered, &self.release);
+        }
         Ok(())
     }
 }
 
-impl BlockingRecorder {
+impl BlockingProcessor {
     pub(crate) fn shutdown_count(&self) -> usize {
         *lock(&self.shutdowns)
     }
 }
 
-pub(crate) fn blocking_recorder() -> (Arc<BlockingRecorder>, Receiver<()>, SyncSender<()>) {
+fn blocking_processor(block: BlockPoint) -> (Arc<BlockingProcessor>, Receiver<()>, SyncSender<()>) {
     let (entered, entered_rx) = mpsc::sync_channel(0);
     let (release_tx, release_rx) = mpsc::sync_channel(0);
-    let recorder = Arc::new(BlockingRecorder {
+    let processor = Arc::new(BlockingProcessor {
         entered,
         release: Mutex::new(release_rx),
         shutdowns: Mutex::new(0),
+        block,
     });
-    (recorder, entered_rx, release_tx)
+    (processor, entered_rx, release_tx)
+}
+
+pub(crate) fn blocking_closer() -> (Arc<BlockingProcessor>, Receiver<()>, SyncSender<()>) {
+    blocking_processor(BlockPoint::Close)
+}
+
+pub(crate) fn blocking_recorder() -> (Arc<BlockingProcessor>, Receiver<()>, SyncSender<()>) {
+    blocking_processor(BlockPoint::End)
 }
 
 #[derive(Debug)]
 pub(crate) struct OneBlockingFactory {
     pub(crate) blocking_endpoint: String,
-    pub(crate) blocking: Arc<BlockingRecorder>,
-    pub(crate) others: Mutex<Vec<Arc<Recorder>>>,
+    pub(crate) blocking: Arc<BlockingProcessor>,
+    pub(crate) others: Arc<RecordingFactory>,
 }
 
 impl DestinationProcessorFactory for OneBlockingFactory {
     fn build(
         &self,
         destination: &OtelDestination,
-        _resource: &Resource,
+        resource: &Resource,
     ) -> Option<Arc<dyn SpanProcessor>> {
         if destination.as_ref().endpoint == self.blocking_endpoint {
             let concrete = Arc::clone(&self.blocking);
             let blocking: Arc<dyn SpanProcessor> = concrete;
             return Some(blocking);
         }
-        let recorder = Arc::new(Recorder::default());
-        lock(&self.others).push(Arc::clone(&recorder));
-        Some(recorder)
+        self.others.build(destination, resource)
     }
 }
 

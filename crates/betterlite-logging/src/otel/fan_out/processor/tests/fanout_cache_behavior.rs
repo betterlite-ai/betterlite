@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -166,7 +166,7 @@ fn a_processor_exporting_a_span_is_not_closed_under_it() {
     let factory = Arc::new(OneBlockingFactory {
         blocking_endpoint: "http://slow:4318".to_owned(),
         blocking: Arc::clone(&blocking),
-        others: Mutex::new(Vec::new()),
+        others: RecordingFactory::new(),
     });
     let scope = FixedScope::new(
         vec![destination("http://slow:4318", SpanScope::Full)],
