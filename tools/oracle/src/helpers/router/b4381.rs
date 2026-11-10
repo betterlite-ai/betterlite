@@ -6,8 +6,11 @@ use std::sync::Arc;
 
 use betterlite_config::sections::semantic_embedding_inputs::DEFAULT_TIMEOUT_SECONDS;
 use betterlite_router::semantic_embeddings::error::SemanticEmbeddingError;
+use betterlite_router::semantic_embeddings::qdrant::qdrant_embedding;
+use betterlite_router::semantic_embeddings::redis::redis_embedding;
 use betterlite_router::semantic_embeddings::{
-    EmbeddingRequest, EmbeddingRoute, SemanticEmbeddingService, SemanticEmbeddingSettings,
+    EmbeddingMode, EmbeddingRequest, EmbeddingRoute, SemanticEmbeddingService,
+    SemanticEmbeddingSettings,
 };
 use betterlite_tokenizer::engine::selection::Selector;
 use serde_json::{Value, json};
@@ -70,21 +73,15 @@ async fn backend<'input>(
         calls,
         selector,
     );
-    let result = match (backend, input.method) {
-        (Backend::Redis, Method::Sync) => service
-            .redis_embedding(&input.prompt, input.metadata.as_ref())
+    let mode = match input.method {
+        Method::Sync => EmbeddingMode::Sync,
+        Method::Async => EmbeddingMode::Async,
+    };
+    let result = match backend {
+        Backend::Redis => redis_embedding(&service, &input.prompt, input.metadata.as_ref(), mode)
             .await
             .map(|vector| json!(vector)),
-        (Backend::Redis, Method::Async) => service
-            .redis_async_embedding(&input.prompt, input.metadata.as_ref())
-            .await
-            .map(|vector| json!(vector)),
-        (Backend::Qdrant, Method::Sync) => service
-            .qdrant_embedding(&input.prompt, input.metadata.as_ref())
-            .await
-            .map(|response| response_json(&response.vectors, &response.model)),
-        (Backend::Qdrant, Method::Async) => service
-            .qdrant_async_embedding(&input.prompt, input.metadata.as_ref())
+        Backend::Qdrant => qdrant_embedding(&service, &input.prompt, input.metadata.as_ref(), mode)
             .await
             .map(|response| response_json(&response.vectors, &response.model)),
     };

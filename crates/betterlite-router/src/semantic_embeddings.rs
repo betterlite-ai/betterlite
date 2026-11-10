@@ -1,4 +1,6 @@
 pub mod error;
+pub mod qdrant;
+pub mod redis;
 mod tests;
 
 use std::error::Error;
@@ -9,7 +11,7 @@ use std::time::Duration;
 use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::timeout;
 
-use self::error::{EmbeddingReplyError, SemanticEmbeddingError};
+use self::error::SemanticEmbeddingError;
 // ast-grep-ignore: no-long-names
 use crate::semantic_embedding_inputs::build_router_embedding_metadata as router_metadata;
 // ast-grep-ignore: no-long-names
@@ -30,6 +32,13 @@ pub struct SemanticEmbeddingSettings {
 pub enum EmbeddingRoute {
     Router,
     Direct,
+}
+
+// LiteLLM's sync embedding method returns without the wait_for wrapper, its async one applies it
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EmbeddingMode {
+    Sync,
+    Async,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,65 +118,34 @@ where
         }
     }
 
-    pub async fn redis_embedding(
+    async fn call(
         &self,
-        prompt: &str,
-        metadata: Option<&MetadataMap>,
-    ) -> Result<Vec<f64>, SemanticEmbeddingError<C::Error>> {
-        let request = self.prepare(prompt, metadata).await?;
-        let response = self
-            .calls
-            .embedding(&request)
-            .await
-            .map_err(SemanticEmbeddingError::Call)?;
-        response
-            .first_embedding()
-            .ok_or(EmbeddingReplyError::NoVector)
-            .map_err(SemanticEmbeddingError::Reply)
-    }
-
-    pub async fn redis_async_embedding(
-        &self,
-        prompt: &str,
-        metadata: Option<&MetadataMap>,
-    ) -> Result<Vec<f64>, SemanticEmbeddingError<C::Error>> {
-        let request = self.prepare(prompt, metadata).await?;
-        // LiteLLM wraps everything the try block reaches: the awaited call and the vector read
-        let response =
-            self.call_async(&request)
+        request: &EmbeddingRequest,
+        mode: EmbeddingMode,
+    ) -> Result<C::Response, SemanticEmbeddingError<C::Error>> {
+        match mode {
+            EmbeddingMode::Sync => self
+                .calls
+                .embedding(request)
                 .await
-                .map_err(|source| SemanticEmbeddingError::Failed {
-                    source: Box::new(source),
-                })?;
-        response
-            .first_embedding()
-            .ok_or(EmbeddingReplyError::NoVector)
-            .map_err(SemanticEmbeddingError::Reply)
-            .map_err(|source| SemanticEmbeddingError::Failed {
-                source: Box::new(source),
-            })
-    }
-
-    pub async fn qdrant_embedding(
-        &self,
-        prompt: &str,
-        metadata: Option<&MetadataMap>,
-    ) -> Result<C::Response, SemanticEmbeddingError<C::Error>> {
-        let request = self.prepare(prompt, metadata).await?;
-        self.calls
-            .embedding(&request)
-            .await
-            .map_err(SemanticEmbeddingError::Call)
-    }
-
-    // ast-grep-ignore: no-one-line-functions, no-padded-one-line-functions
-    pub async fn qdrant_async_embedding(
-        &self,
-        prompt: &str,
-        metadata: Option<&MetadataMap>,
-    ) -> Result<C::Response, SemanticEmbeddingError<C::Error>> {
-        let request = self.prepare(prompt, metadata).await?;
-        self.call_async(&request).await
+                .map_err(SemanticEmbeddingError::Call),
+            EmbeddingMode::Async => {
+                // asyncio.wait_for refuses a timeout at or below zero without ever running the call
+                if self.embedding_timeout <= 0.0_f64 || !self.embedding_timeout.is_finite() {
+                    return Err(SemanticEmbeddingError::Timeout {
+                        seconds: self.embedding_timeout,
+                    });
+                }
+                let wait =
+                    Duration::try_from_secs_f64(self.embedding_timeout).unwrap_or(Duration::ZERO);
+                match timeout(wait, self.calls.aembedding(request)).await {
+                    Ok(result) => result.map_err(SemanticEmbeddingError::Call),
+                    Err(_elapsed) => Err(SemanticEmbeddingError::Timeout {
+                        seconds: self.embedding_timeout,
+                    }),
+                }
+            }
+        }
     }
 
     fn resolved_max_input_tokens(&self, router: Option<&R>) -> Option<i64> {
@@ -214,24 +192,5 @@ where
             timeout: self.embedding_timeout,
             num_retries: 0,
         })
-    }
-
-    async fn call_async(
-        &self,
-        request: &EmbeddingRequest,
-    ) -> Result<C::Response, SemanticEmbeddingError<C::Error>> {
-        // asyncio.wait_for refuses a timeout at or below zero without ever running the call
-        if self.embedding_timeout <= 0.0_f64 || !self.embedding_timeout.is_finite() {
-            return Err(SemanticEmbeddingError::Timeout {
-                seconds: self.embedding_timeout,
-            });
-        }
-        let wait = Duration::try_from_secs_f64(self.embedding_timeout).unwrap_or(Duration::ZERO);
-        match timeout(wait, self.calls.aembedding(request)).await {
-            Ok(result) => result.map_err(SemanticEmbeddingError::Call),
-            Err(_elapsed) => Err(SemanticEmbeddingError::Timeout {
-                seconds: self.embedding_timeout,
-            }),
-        }
     }
 }

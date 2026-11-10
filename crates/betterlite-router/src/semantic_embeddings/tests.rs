@@ -9,7 +9,9 @@ use serde_json::json;
 
 use self::support::{CallMethod, RecordingCalls, TestResponse};
 use super::error::SemanticEmbeddingError;
-use super::{EmbeddingCachePolicy, EmbeddingRoute, MetadataMap};
+use super::qdrant::qdrant_embedding;
+use super::redis::redis_embedding;
+use super::{EmbeddingCachePolicy, EmbeddingMode, EmbeddingRoute, MetadataMap};
 use crate::semantic_embedding_inputs::build_router_embedding_metadata;
 
 const MODEL: &str = support::MODEL;
@@ -40,17 +42,22 @@ async fn embedding_route_follows_the_injected_router_state(
         &calls,
         Arc::new(support::selector()),
     );
-    service.redis_embedding("hello", None).await.unwrap();
+    redis_embedding(&service, "hello", None, EmbeddingMode::Sync)
+        .await
+        .unwrap();
     let recorded = calls.recorded();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].request.route, expected);
 }
 
 #[rstest]
-#[case::sync_embedding_uses_the_sync_entry_point(CallMethod::Sync)]
-#[case::async_embedding_uses_the_async_entry_point(CallMethod::Async)]
+#[case::sync_embedding_uses_the_sync_entry_point(EmbeddingMode::Sync, CallMethod::Sync)]
+#[case::async_embedding_uses_the_async_entry_point(EmbeddingMode::Async, CallMethod::Async)]
 #[tokio::test]
-async fn embedding_method_matches_the_cache_path(#[case] method: CallMethod) {
+async fn embedding_method_matches_the_cache_path(
+    #[case] mode: EmbeddingMode,
+    #[case] expected: CallMethod,
+) {
     let calls = RecordingCalls::succeeding(vec![vec![0.5_f64]]);
     let service = support::service(
         support::settings(None, None),
@@ -59,19 +66,15 @@ async fn embedding_method_matches_the_cache_path(#[case] method: CallMethod) {
         &calls,
         Arc::new(support::selector()),
     );
-    match method {
-        CallMethod::Sync => {
-            service.redis_embedding("hello", None).await.unwrap();
-            service.qdrant_embedding("hello", None).await.unwrap();
-        }
-        CallMethod::Async => {
-            service.redis_async_embedding("hello", None).await.unwrap();
-            service.qdrant_async_embedding("hello", None).await.unwrap();
-        }
-    }
+    redis_embedding(&service, "hello", None, mode)
+        .await
+        .unwrap();
+    qdrant_embedding(&service, "hello", None, mode)
+        .await
+        .unwrap();
     let recorded = calls.recorded();
     assert_eq!(recorded.len(), 2);
-    assert!(recorded.iter().all(|call| call.method == method));
+    assert!(recorded.iter().all(|call| call.method == expected));
 }
 
 #[tokio::test]
@@ -85,8 +88,7 @@ async fn embedding_router_calls_carry_a_flagged_metadata_copy() {
         Arc::new(support::selector()),
     );
     let metadata = caller_metadata();
-    service
-        .redis_embedding("hello", Some(&metadata))
+    redis_embedding(&service, "hello", Some(&metadata), EmbeddingMode::Sync)
         .await
         .unwrap();
     let request = &calls.recorded()[0].request;
@@ -106,8 +108,7 @@ async fn embedding_direct_calls_forward_no_metadata() {
         Arc::new(support::selector()),
     );
     let metadata = caller_metadata();
-    service
-        .redis_embedding("hello", Some(&metadata))
+    redis_embedding(&service, "hello", Some(&metadata), EmbeddingMode::Sync)
         .await
         .unwrap();
     let request = &calls.recorded()[0].request;
@@ -131,7 +132,9 @@ async fn embedding_requests_carry_the_cache_flags_retries_and_timeout(
         &calls,
         Arc::new(support::selector()),
     );
-    service.qdrant_embedding("hello", None).await.unwrap();
+    qdrant_embedding(&service, "hello", None, EmbeddingMode::Sync)
+        .await
+        .unwrap();
     let request = &calls.recorded()[0].request;
     assert_eq!(
         request.cache,
@@ -190,7 +193,9 @@ async fn embedding_input_is_truncated_by_the_resolved_max_tokens(
         &calls,
         Arc::new(support::selector()),
     );
-    service.redis_embedding("hello world", None).await.unwrap();
+    redis_embedding(&service, "hello world", None, EmbeddingMode::Sync)
+        .await
+        .unwrap();
     assert_eq!(calls.recorded()[0].request.input, expected);
 }
 
@@ -204,7 +209,9 @@ async fn embedding_without_a_max_input_token_skips_the_tokenizer() {
         &calls,
         Arc::new(support::failing_selector()),
     );
-    service.redis_embedding("hello world", None).await.unwrap();
+    redis_embedding(&service, "hello world", None, EmbeddingMode::Sync)
+        .await
+        .unwrap();
     assert_eq!(calls.recorded()[0].request.input, "hello world");
 }
 
@@ -218,19 +225,16 @@ async fn embedding_preparation_errors_propagate_unwrapped() {
         &calls,
         Arc::new(support::failing_selector()),
     );
-    let async_error = service
-        .redis_async_embedding("hello world", None)
+    let async_error = redis_embedding(&service, "hello world", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(async_error, SemanticEmbeddingError::Input(_)));
     assert_eq!(async_error.status_code(), None);
-    let qdrant_error = service
-        .qdrant_async_embedding("hello world", None)
+    let qdrant_error = qdrant_embedding(&service, "hello world", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(qdrant_error, SemanticEmbeddingError::Input(_)));
-    let sync_error = service
-        .redis_embedding("hello world", None)
+    let sync_error = redis_embedding(&service, "hello world", None, EmbeddingMode::Sync)
         .await
         .unwrap_err();
     assert!(matches!(sync_error, SemanticEmbeddingError::Input(_)));
@@ -248,11 +252,15 @@ async fn redis_embedding_returns_only_the_first_vector() {
         Arc::new(support::selector()),
     );
     assert_eq!(
-        service.redis_embedding("hello", None).await.unwrap(),
+        redis_embedding(&service, "hello", None, EmbeddingMode::Sync)
+            .await
+            .unwrap(),
         vec![0.25_f64, 0.5_f64]
     );
     assert_eq!(
-        service.redis_async_embedding("hello", None).await.unwrap(),
+        redis_embedding(&service, "hello", None, EmbeddingMode::Async)
+            .await
+            .unwrap(),
         vec![0.25_f64, 0.5_f64]
     );
 }
@@ -271,11 +279,15 @@ async fn qdrant_embedding_returns_the_whole_reply() {
         vectors: vec![vec![0.25_f64, 0.5_f64], vec![0.75_f64, 1.0_f64]],
     };
     assert_eq!(
-        service.qdrant_embedding("hello", None).await.unwrap(),
+        qdrant_embedding(&service, "hello", None, EmbeddingMode::Sync)
+            .await
+            .unwrap(),
         whole
     );
     assert_eq!(
-        service.qdrant_async_embedding("hello", None).await.unwrap(),
+        qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
+            .await
+            .unwrap(),
         whole
     );
 }
@@ -290,10 +302,14 @@ async fn embedding_sync_paths_propagate_call_failures() {
         &calls,
         Arc::new(support::selector()),
     );
-    let redis_error = service.redis_embedding("hello", None).await.unwrap_err();
+    let redis_error = redis_embedding(&service, "hello", None, EmbeddingMode::Sync)
+        .await
+        .unwrap_err();
     assert!(matches!(redis_error, SemanticEmbeddingError::Call(_)));
     assert_eq!(redis_error.status_code(), Some(500));
-    let qdrant_error = service.qdrant_embedding("hello", None).await.unwrap_err();
+    let qdrant_error = qdrant_embedding(&service, "hello", None, EmbeddingMode::Sync)
+        .await
+        .unwrap_err();
     assert!(matches!(qdrant_error, SemanticEmbeddingError::Call(_)));
     assert_eq!(qdrant_error.status_code(), Some(500));
 }
@@ -308,8 +324,7 @@ async fn redis_async_embedding_wraps_call_failures() {
         &calls,
         Arc::new(support::selector()),
     );
-    let error = service
-        .redis_async_embedding("hello", None)
+    let error = redis_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(error, SemanticEmbeddingError::Failed { .. }));
@@ -326,8 +341,7 @@ async fn qdrant_async_embedding_propagates_call_failures() {
         &calls,
         Arc::new(support::selector()),
     );
-    let error = service
-        .qdrant_async_embedding("hello", None)
+    let error = qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(error, SemanticEmbeddingError::Call(_)));
@@ -344,11 +358,12 @@ async fn redis_embedding_reports_a_reply_without_a_vector() {
         &calls,
         Arc::new(support::selector()),
     );
-    let sync_error = service.redis_embedding("hello", None).await.unwrap_err();
+    let sync_error = redis_embedding(&service, "hello", None, EmbeddingMode::Sync)
+        .await
+        .unwrap_err();
     assert!(matches!(sync_error, SemanticEmbeddingError::Reply(_)));
     assert_eq!(sync_error.status_code(), None);
-    let async_error = service
-        .redis_async_embedding("hello", None)
+    let async_error = redis_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(async_error, SemanticEmbeddingError::Failed { .. }));
@@ -364,17 +379,20 @@ async fn qdrant_embedding_returns_a_reply_without_a_vector() {
         &calls,
         Arc::new(support::selector()),
     );
+    let empty = TestResponse {
+        vectors: Vec::new(),
+    };
     assert_eq!(
-        service.qdrant_embedding("hello", None).await.unwrap(),
-        TestResponse {
-            vectors: Vec::new()
-        }
+        qdrant_embedding(&service, "hello", None, EmbeddingMode::Sync)
+            .await
+            .unwrap(),
+        empty
     );
     assert_eq!(
-        service.qdrant_async_embedding("hello", None).await.unwrap(),
-        TestResponse {
-            vectors: Vec::new()
-        }
+        qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
+            .await
+            .unwrap(),
+        empty
     );
 }
 
@@ -388,8 +406,7 @@ async fn redis_async_embedding_wraps_the_wait_for_timeout() {
         &calls,
         Arc::new(support::selector()),
     );
-    let error = service
-        .redis_async_embedding("hello", None)
+    let error = redis_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(error, SemanticEmbeddingError::Failed { .. }));
@@ -406,8 +423,7 @@ async fn qdrant_async_embedding_propagates_the_wait_for_timeout() {
         &calls,
         Arc::new(support::selector()),
     );
-    let error = service
-        .qdrant_async_embedding("hello", None)
+    let error = qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     let SemanticEmbeddingError::Timeout { seconds } = error else {
@@ -426,16 +442,14 @@ async fn non_positive_embedding_timeout_times_out_at_once() {
         &calls,
         Arc::new(support::selector()),
     );
-    let qdrant_error = service
-        .qdrant_async_embedding("hello", None)
+    let qdrant_error = qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(
         qdrant_error,
         SemanticEmbeddingError::Timeout { .. }
     ));
-    let redis_error = service
-        .redis_async_embedding("hello", None)
+    let redis_error = redis_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(redis_error, SemanticEmbeddingError::Failed { .. }));
@@ -461,8 +475,7 @@ async fn unusable_embedding_timeout_skips_the_call(#[case] timeout: f64) {
         &calls,
         Arc::new(support::selector()),
     );
-    let error = service
-        .qdrant_async_embedding("hello", None)
+    let error = qdrant_embedding(&service, "hello", None, EmbeddingMode::Async)
         .await
         .unwrap_err();
     assert!(matches!(error, SemanticEmbeddingError::Timeout { .. }));

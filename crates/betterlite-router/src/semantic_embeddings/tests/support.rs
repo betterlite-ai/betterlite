@@ -101,33 +101,23 @@ pub(crate) struct RecordingCalls {
 
 impl RecordingCalls {
     pub(crate) fn succeeding(vectors: Vec<Vec<f64>>) -> Self {
-        Self {
-            log: CallLog::default(),
-            response: TestResponse { vectors },
-            outcome: CallOutcome::Succeed,
-            status: None,
-        }
+        Self::scripted(CallOutcome::Succeed, vectors, None)
     }
 
     pub(crate) fn failing(status: u16) -> Self {
-        Self {
-            log: CallLog::default(),
-            response: TestResponse {
-                vectors: Vec::new(),
-            },
-            outcome: CallOutcome::Fail,
-            status: Some(status),
-        }
+        Self::scripted(CallOutcome::Fail, Vec::new(), Some(status))
     }
 
     pub(crate) fn hanging() -> Self {
+        Self::scripted(CallOutcome::Hang, Vec::new(), None)
+    }
+
+    fn scripted(outcome: CallOutcome, vectors: Vec<Vec<f64>>, status: Option<u16>) -> Self {
         Self {
             log: CallLog::default(),
-            response: TestResponse {
-                vectors: Vec::new(),
-            },
-            outcome: CallOutcome::Hang,
-            status: None,
+            response: TestResponse { vectors },
+            outcome,
+            status,
         }
     }
 
@@ -145,33 +135,13 @@ impl RecordingCalls {
                 request: request.clone(),
             });
     }
-}
 
-impl EmbeddingCalls for RecordingCalls {
-    type Response = TestResponse;
-    type Error = TestCallError;
-
-    fn embedding(
+    fn respond(
         &self,
+        method: CallMethod,
         request: &EmbeddingRequest,
-    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send {
-        self.record(CallMethod::Sync, request);
-        let outcome = self.outcome;
-        let response = self.response.clone();
-        let status = self.status;
-        async move {
-            match outcome {
-                CallOutcome::Succeed => Ok(response),
-                CallOutcome::Fail | CallOutcome::Hang => Err(TestCallError { status }),
-            }
-        }
-    }
-
-    fn aembedding(
-        &self,
-        request: &EmbeddingRequest,
-    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send {
-        self.record(CallMethod::Async, request);
+    ) -> impl Future<Output = Result<TestResponse, TestCallError>> + Send {
+        self.record(method, request);
         let outcome = self.outcome;
         let response = self.response.clone();
         let status = self.status;
@@ -182,6 +152,25 @@ impl EmbeddingCalls for RecordingCalls {
                 CallOutcome::Hang => pending().await,
             }
         }
+    }
+}
+
+impl EmbeddingCalls for RecordingCalls {
+    type Response = TestResponse;
+    type Error = TestCallError;
+
+    fn embedding(
+        &self,
+        request: &EmbeddingRequest,
+    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send {
+        self.respond(CallMethod::Sync, request)
+    }
+
+    fn aembedding(
+        &self,
+        request: &EmbeddingRequest,
+    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send {
+        self.respond(CallMethod::Async, request)
     }
 }
 
