@@ -85,24 +85,25 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut settings = Settings::resolve_environment(lookup)?;
+        let environment = Settings::resolve_environment(lookup)?;
         let module_bearer = self
             .litellm_settings
             .use_bearer_for_custom_base
             .unwrap_or(false);
-        let deployment_bearer_opt_ins = self
-            .model_list
-            .into_iter()
-            .map(|deployment| {
-                deployment
-                    .litellm_params
-                    .use_bearer_for_custom_base
-                    .unwrap_or(module_bearer)
-            })
-            .collect();
-        settings.use_bearer_for_custom_base = module_bearer;
-        settings.deployment_bearer_opt_ins = deployment_bearer_opt_ins;
-        Ok(settings)
+        Ok(Settings {
+            use_bearer_for_custom_base: module_bearer,
+            deployment_bearer_opt_ins: self
+                .model_list
+                .into_iter()
+                .map(|deployment| {
+                    deployment
+                        .litellm_params
+                        .use_bearer_for_custom_base
+                        .unwrap_or(module_bearer)
+                })
+                .collect(),
+            ..environment
+        })
     }
 }
 
