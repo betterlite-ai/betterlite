@@ -431,6 +431,20 @@ fn read_saved_setup_accepts_claude_without_model() {
 }
 
 #[test]
+fn read_saved_setup_rejects_unknown_version() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let current = format!("\"version\":{SAVED_SETUP_VERSION}");
+    let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
+        .replace(&current, "\"version\":2");
+    write_profile(&environment, Target::Claude, &document);
+    assert!(matches!(
+        read_saved_setup(Target::Claude, &environment),
+        Err(Error::Invalid(Target::Claude, _))
+    ));
+}
+
+#[test]
 fn read_saved_setup_error_names_unconfigure_forget() {
     let home = TempDir::new().expect("a home");
     let environment = home_environment(home.path());
@@ -539,12 +553,12 @@ async fn setup_locks_times_out_after_ten_seconds() {
     let environment = home_environment(home.path());
     let claude = lock_path_for(Target::Claude, &environment).expect("a lock path");
     let _held = hold_lock(&claude);
-    let clock = StepClock::new(Duration::from_secs(2));
+    let clock = StepClock::new(Duration::from_secs(1));
     let result = setup_locks(&[Target::Claude], &environment, &clock).await;
     assert!(matches!(result, Err(Error::Locked)));
     assert_eq!(
         clock.calls(),
-        6,
+        11,
         "the tenth second is the first to lock out"
     );
 }
@@ -576,8 +590,18 @@ async fn save_setup_creates_parent_directory() {
     let settings_path = settings_path_for(Target::Claude, &environment).expect("a settings path");
     let profile =
         setup_profile_path(Target::Claude, &settings_path, &environment).expect("a profile path");
-    assert!(profile.parent().expect("a profile directory").is_dir());
+    let parent = profile.parent().expect("a profile directory");
+    assert!(parent.is_dir());
     assert!(profile.is_file());
+    #[cfg(unix)]
+    {
+        let mode = fs::metadata(parent)
+            .expect("the profile directory")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
+    }
 }
 
 #[tokio::test]
