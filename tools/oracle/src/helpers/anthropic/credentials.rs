@@ -98,18 +98,8 @@ impl Helper for Op {
                     input.provider.as_deref(),
                 ),
             })),
-            Function::HandleOauth => handle_oauth(input),
-            Function::ApiKeyHeader => {
-                let Some(api_key) = input.api_key.clone().map(SecretString::from) else {
-                    return Err(failure("the api_key_header case needs an api_key"));
-                };
-                let header = make_api_key_auth_header(
-                    &api_key,
-                    input.api_base.as_deref(),
-                    input.use_bearer_for_custom_base,
-                );
-                Ok(json!({ "header": header_object(Some(header)) }))
-            }
+            Function::HandleOauth => Ok(handle_oauth(input)),
+            Function::ApiKeyHeader => api_key_header(input),
             Function::BaseModel => Ok(json!({
                 "model": get_base_model(input.model.as_deref()),
             })),
@@ -129,7 +119,19 @@ fn settings(input: &Input) -> Result<AnthropicSettings, Box<HelperError>> {
     })
 }
 
-fn handle_oauth(input: &Input) -> HelperResult {
+fn api_key_header(input: &Input) -> HelperResult {
+    let Some(api_key) = input.api_key.clone().map(SecretString::from) else {
+        return Err(failure("the api_key_header case needs an api_key"));
+    };
+    let header = make_api_key_auth_header(
+        &api_key,
+        input.api_base.as_deref(),
+        input.use_bearer_for_custom_base,
+    );
+    Ok(json!({ "header": header_object(Some(header)) }))
+}
+
+fn handle_oauth(input: &Input) -> Value {
     let mut headers: IndexMap<String, String> = input
         .headers
         .iter()
@@ -137,10 +139,10 @@ fn handle_oauth(input: &Input) -> HelperResult {
         .collect();
     let api_key = input.api_key.clone().map(SecretString::from);
     let resolved = handle_anthropic_oauth(&mut headers, api_key);
-    Ok(json!({
+    json!({
         "headers": headers,
         "api_key": resolved.as_ref().map(ExposeSecret::expose_secret),
-    }))
+    })
 }
 
 fn models(input: &Input, settings: &AnthropicSettings) -> HelperResult {
@@ -159,15 +161,14 @@ fn models(input: &Input, settings: &AnthropicSettings) -> HelperResult {
 }
 
 fn header_object(header: Option<AuthHeader>) -> Value {
-    let Some(header) = header else {
-        return Value::Null;
-    };
-    let mut fields = Map::new();
-    fields.insert(
-        header.name.to_owned(),
-        Value::String(header.value.expose_secret().to_owned()),
-    );
-    Value::Object(fields)
+    header.map_or(Value::Null, |found| {
+        let mut fields = Map::new();
+        fields.insert(
+            found.name.to_owned(),
+            Value::String(found.value.expose_secret().to_owned()),
+        );
+        Value::Object(fields)
+    })
 }
 
 fn failure<E>(error: E) -> Box<HelperError>
