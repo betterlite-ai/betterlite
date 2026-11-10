@@ -28,3 +28,10 @@ path = "fuzz_targets/azure_client_secret.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_username_password"
+path = "fuzz_targets/azure_username_password.rs"
+test = false
+doc = false
+bench = false
