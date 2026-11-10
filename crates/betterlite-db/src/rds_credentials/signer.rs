@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::iter::once;
+use std::iter::empty;
 use std::time::Duration;
 
 use aws_sigv4::http_request::{
@@ -46,8 +46,6 @@ impl RdsSigner {
             utf8_percent_encode(endpoint.user, RDS_ESCAPE)
         );
         let uri = format!("https://{}:{}/?{operation}", endpoint.host, endpoint.port);
-        // botocore keeps the port in the signed host even when it is the scheme default
-        let host = format!("{}:{}", endpoint.host, endpoint.port);
         let identity = Identity::from(self.session.credentials.clone());
         let mut settings = SigningSettings::default();
         settings.signature_location = SignatureLocation::QueryParams;
@@ -60,8 +58,8 @@ impl RdsSigner {
             .settings(settings)
             .build()
             .map_err(|source| RdsCredentialsError::SigningParams { source })?;
-        let headers = once(("host", host.as_str()));
-        let signable = SignableRequest::new("GET", uri.as_str(), headers, SignableBody::Bytes(&[]))
+        // aws-sigv4 derives the host header and drops the default port, exactly as botocore does
+        let signable = SignableRequest::new("GET", uri.as_str(), empty(), SignableBody::Bytes(&[]))
             .map_err(|source| RdsCredentialsError::SignableRequest { source })?;
         let output = sign(signable, &SigningParams::from(params))
             .map_err(|source| RdsCredentialsError::Sign { source })?;

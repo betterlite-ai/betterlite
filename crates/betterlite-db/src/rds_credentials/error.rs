@@ -59,6 +59,8 @@ pub enum RdsCredentialsError {
     },
     #[error("the STS response carries no credentials")]
     StsWithoutCredentials,
+    #[error("the STS response has no {field}")]
+    StsMissingField { field: &'static str },
     #[error("the AWS timeout is outside the duration range")]
     Timeout {
         #[source]

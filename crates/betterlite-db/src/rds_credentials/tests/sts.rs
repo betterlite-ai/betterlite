@@ -123,8 +123,7 @@ async fn empty_oidc_reaches_sts() {
     );
 }
 
-#[tokio::test]
-async fn web_identity_duration_3600() {
+pub(super) async fn web_identity_duration() {
     let pinned = botocore_fixture();
     let request = &pinned.sts.assume_role_with_web_identity;
     let mut inputs = preset_inputs(Preset::WebIdentity);
@@ -150,8 +149,9 @@ async fn web_identity_duration_3600() {
 #[tokio::test]
 async fn web_identity_sts_uses_ambient_credentials() {
     let mut inputs = preset_inputs(Preset::WebIdentity);
+    // a partial explicit pair fails the role and direct branches, so this branch must not use it
     inputs.access_key_id = Some(secret("AKIDPARAM"));
-    inputs.secret_access_key = Some(secret("paramsecret"));
+    inputs.secret_access_key = None;
     let (signer, calls, _) = run(
         inputs,
         &[],
@@ -163,9 +163,11 @@ async fn web_identity_sts_uses_ambient_credentials() {
         Reply::WebIdentity,
     )
     .await;
-    signer.expect("the web identity signer builds");
-    assert!(calls[0].authorization.contains("Credential=AKIDAMBIENT/"));
-    assert!(!calls[0].authorization.contains("AKIDPARAM"));
+    signer.expect("the web identity branch ignores the explicit pair");
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].body.contains("Action=AssumeRoleWithWebIdentity"));
+    // AssumeRoleWithWebIdentity is an unsigned STS operation, and botocore sends it without an Authorization header too
+    assert!(calls[0].authorization.is_empty());
 }
 
 #[tokio::test]
@@ -268,9 +270,33 @@ async fn missing_sts_response_field_fails() {
     let missing_error = missing.expect_err("a response without a session token fails");
     assert!(matches!(
         missing_error,
-        RdsCredentialsError::AssumeRole { .. }
+        RdsCredentialsError::StsMissingField {
+            field: "SessionToken"
+        }
     ));
-    assert!(missing_error.source().is_some());
+}
+
+#[tokio::test]
+async fn missing_sts_access_key_fails() {
+    let (no_key, _, _) = run(
+        preset_inputs(Preset::AssumeRole),
+        &[],
+        &[],
+        &[],
+        Reply::MissingAccessKey,
+    )
+    .await;
+    let no_key_error = no_key.expect_err("a response without an access key fails");
+    assert!(matches!(
+        no_key_error,
+        RdsCredentialsError::StsMissingField {
+            field: "AccessKeyId"
+        }
+    ));
+}
+
+#[tokio::test]
+async fn sts_response_without_credentials_fails() {
     let (empty, _, _) = run(
         preset_inputs(Preset::AssumeRole),
         &[],
@@ -348,7 +374,11 @@ async fn role_without_credentials_uses_the_ambient_chain() {
     )
     .await;
     signer.expect("the ambient credentials sign the STS call");
-    assert!(calls[0].authorization.contains("Credential=AKIDAMBIENT/"));
+    assert!(
+        calls[0].authorization.contains("Credential=AKIDAMBIENT/"),
+        "authorization: {}",
+        calls[0].authorization
+    );
 }
 
 #[tokio::test]

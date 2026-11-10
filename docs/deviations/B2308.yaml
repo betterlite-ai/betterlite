@@ -9,3 +9,6 @@ deviations:
   - what: betterlite reads the seven AWS inputs from general_settings.aws_access_key_id, aws_secret_access_key, aws_region_name, aws_session_name, aws_profile_name, aws_role_name and aws_web_identity_token before the environment; LiteLLM has no config keys for them and reads the environment only.
     why: The proxy's database settings live in general_settings in betterlite, and the task asks for these inputs to load through the config loader with os.environ/ references resolved; LiteLLM has no config keys for them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L158-L166
+  - what: An STS response whose AccessKeyId, SecretAccessKey or SessionToken element is empty fails with a missing-field error; LiteLLM only fails when the element is absent and would build a client with the empty value.
+    why: The AWS SDK decoder fills an absent element with an empty string, so betterlite cannot tell an absent field from an empty one, and an STS response with an empty credential field cannot produce a working database token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L94-L101

@@ -29,6 +29,8 @@ pub(super) const ASSUME_ROLE_XML: &str = "<AssumeRoleResponse><AssumeRoleResult>
 
 const MISSING_SESSION_TOKEN_XML: &str = "<AssumeRoleResponse><AssumeRoleResult><Credentials><AccessKeyId>ASIAROLE</AccessKeyId><SecretAccessKey>rolesecret</SecretAccessKey></Credentials></AssumeRoleResult></AssumeRoleResponse>";
 
+const MISSING_ACCESS_KEY_XML: &str = "<AssumeRoleResponse><AssumeRoleResult><Credentials><SecretAccessKey>rolesecret</SecretAccessKey><SessionToken>roletoken</SessionToken></Credentials></AssumeRoleResult></AssumeRoleResponse>";
+
 const WITHOUT_CREDENTIALS_XML: &str =
     "<AssumeRoleResponse><AssumeRoleResult></AssumeRoleResult></AssumeRoleResponse>";
 
@@ -125,6 +127,7 @@ pub(super) enum Reply {
     AssumeRole,
     Status(u16, &'static str),
     MissingSessionToken,
+    MissingAccessKey,
     WithoutCredentials,
 }
 
@@ -135,6 +138,7 @@ impl Reply {
             Self::AssumeRole => (200, ASSUME_ROLE_XML),
             Self::Status(status, body) => (status, body),
             Self::MissingSessionToken => (200, MISSING_SESSION_TOKEN_XML),
+            Self::MissingAccessKey => (200, MISSING_ACCESS_KEY_XML),
             Self::WithoutCredentials => (200, WITHOUT_CREDENTIALS_XML),
         }
     }

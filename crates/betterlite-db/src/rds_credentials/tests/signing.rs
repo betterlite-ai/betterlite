@@ -82,8 +82,7 @@ async fn assert_vector(pinned: &BotocoreFixture, name: &str) {
     }
 }
 
-#[tokio::test]
-async fn fixed_clock_botocore_signature() {
+pub(super) async fn pinned_vectors() {
     let pinned = botocore_fixture();
     assert_vector(&pinned, "direct_credentials").await;
     assert_vector(&pinned, "no_session_token_special_user").await;
@@ -183,7 +182,9 @@ async fn whole_token_percent_encoding() {
     assert!(
         password
             .expose_secret()
-            .contains("DBUser=user%2540example.com%252Fweird%2520%252Bname")
+            .contains("DBUser%3Duser%2540example.com%252Fweird%2520%252Bname"),
+        "unexpected password: {}",
+        password.expose_secret()
     );
     assert!(is_fully_escaped(password.expose_secret()));
     assert_eq!(

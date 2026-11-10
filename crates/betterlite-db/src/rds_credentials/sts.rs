@@ -79,9 +79,28 @@ pub(super) async fn assume_role(
         .load()
         .await;
     let returned = send_sts_request(&Client::new(&config), request).await?;
-    let temporary = returned
-        .as_ref()
-        .ok_or(RdsCredentialsError::StsWithoutCredentials)?;
+    temporary_credentials(returned.as_ref())
+}
+
+fn temporary_credentials(
+    returned: Option<&StsCredentials>,
+) -> Result<Credentials, RdsCredentialsError> {
+    let temporary = returned.ok_or(RdsCredentialsError::StsWithoutCredentials)?;
+    if temporary.access_key_id().is_empty() {
+        return Err(RdsCredentialsError::StsMissingField {
+            field: "AccessKeyId",
+        });
+    }
+    if temporary.secret_access_key().is_empty() {
+        return Err(RdsCredentialsError::StsMissingField {
+            field: "SecretAccessKey",
+        });
+    }
+    if temporary.session_token().is_empty() {
+        return Err(RdsCredentialsError::StsMissingField {
+            field: "SessionToken",
+        });
+    }
     Ok(Credentials::new(
         temporary.access_key_id(),
         temporary.secret_access_key(),

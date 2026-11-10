@@ -101,11 +101,15 @@ async fn region_lookup_before_parameter_secrets() {
     let (token, _, calls) = mint(inputs, &answers)
         .await
         .expect("the references resolve");
-    assert_eq!(calls.first().map(String::as_str), Some("AWS_REGION_NAME"));
-    assert_eq!(calls.get(1).map(String::as_str), Some("AWS_REGION"));
-    let region_position = calls.iter().position(|name| name == "REGION_REF").unwrap();
-    let key_position = calls.iter().position(|name| name == "KEY_REF").unwrap();
-    assert!(region_position > 1 && key_position > region_position);
+    let expected = [
+        "AWS_REGION_NAME",
+        "AWS_REGION",
+        "KEY_REF",
+        "SECRET_REF",
+        "REGION_REF",
+    ]
+    .map(str::to_owned);
+    assert_eq!(calls, expected.to_vec());
     assert_eq!(region_of(&token), "eu-west-1");
     assert!(token.contains("X-Amz-Credential=AKIDREF%2F"));
 }
