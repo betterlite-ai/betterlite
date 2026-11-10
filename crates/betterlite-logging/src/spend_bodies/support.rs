@@ -4,7 +4,7 @@ use serde_json::Number;
 
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, MAX_DEPTH_MARKER};
 use crate::python_json;
-use crate::spend_sanitize::value::{NodeId, SpendList, SpendMapping, SpendValue};
+use crate::spend_sanitize::value::{NodeId, SpendList, SpendMapping, SpendValue, to_json};
 
 // Fresh mappings need identities that cannot collide with the ids a case or a request tree already uses
 #[derive(Debug)]
@@ -27,29 +27,10 @@ impl NodeAllocator {
 }
 
 pub(super) const fn as_mapping(value: &SpendValue) -> Option<&SpendMapping> {
-    match value {
-        SpendValue::Mapping(mapping) => Some(mapping),
-        SpendValue::Null
-        | SpendValue::Bool(_)
-        | SpendValue::Number(_)
-        | SpendValue::Text(_)
-        | SpendValue::List(_)
-        | SpendValue::Model(_)
-        | SpendValue::Object(_) => None,
+    if let SpendValue::Mapping(mapping) = value {
+        return Some(mapping);
     }
-}
-
-pub(super) const fn as_mapping_mut(value: &mut SpendValue) -> Option<&mut SpendMapping> {
-    match value {
-        SpendValue::Mapping(mapping) => Some(mapping),
-        SpendValue::Null
-        | SpendValue::Bool(_)
-        | SpendValue::Number(_)
-        | SpendValue::Text(_)
-        | SpendValue::List(_)
-        | SpendValue::Model(_)
-        | SpendValue::Object(_) => None,
-    }
+    None
 }
 
 // LiteLLM asks `if value:` everywhere a policy flag or an overlay is read
@@ -73,70 +54,21 @@ fn number_is_nonzero(number: &Number) -> bool {
         .map_or(true, |value| (value.to_bits() & 0x7fff_ffff_ffff_ffff) != 0)
 }
 
-// Python's str(), used where the source stringifies a trace id or a session id
+// Python's str() for the declared string types, with containers projected as JSON
 pub(super) fn string_value(value: &SpendValue) -> String {
-    match value {
-        SpendValue::Null => "None".to_owned(),
-        SpendValue::Bool(true) => "True".to_owned(),
-        SpendValue::Bool(false) => "False".to_owned(),
-        SpendValue::Number(number) => python_json::dumps(&Json::Number(number.clone())),
-        SpendValue::Text(text) => text.clone(),
-        SpendValue::List(_)
-        | SpendValue::Mapping(_)
-        | SpendValue::Model(_)
-        | SpendValue::Object(_) => representation(value),
+    if let SpendValue::Text(text) = value {
+        return text.clone();
     }
-}
-
-fn representation(value: &SpendValue) -> String {
-    match value {
-        SpendValue::Text(text) => quoted(text),
-        SpendValue::List(list) => format!(
-            "[{}]",
-            list.items
-                .iter()
-                .map(representation)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        SpendValue::Mapping(mapping) | SpendValue::Model(mapping) | SpendValue::Object(mapping) => {
-            format!(
-                "{{{}}}",
-                mapping
-                    .entries
-                    .iter()
-                    .map(|(key, item)| format!("{}: {}", quoted(key), representation(item)))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        }
-        SpendValue::Null | SpendValue::Bool(_) | SpendValue::Number(_) => string_value(value),
+    if matches!(value, SpendValue::Null) {
+        return "None".to_owned();
     }
-}
-
-fn quoted(text: &str) -> String {
-    let quote = if text.contains('\'') && !text.contains('"') {
-        '"'
-    } else {
-        '\''
-    };
-    let mut out = String::with_capacity(text.len().saturating_add(2));
-    out.push(quote);
-    for character in text.chars() {
-        if character == quote || character == '\\' {
-            out.push('\\');
-            out.push(character);
-            continue;
-        }
-        match character {
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(character),
-        }
+    if let SpendValue::Bool(flag) = value {
+        return (if *flag { "True" } else { "False" }).to_owned();
     }
-    out.push(quote);
-    out
+    if let SpendValue::Number(number) = value {
+        return python_json::dumps(&Json::Number(number.clone()));
+    }
+    python_json::dumps(&to_json(value))
 }
 
 // LiteLLM's safe_json_structure: strip NULs and replace anything past the depth bound

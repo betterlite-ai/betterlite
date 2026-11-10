@@ -1,11 +1,12 @@
-use betterlite_logging::spend_bodies::messages::storage_messages;
+use betterlite_logging::spend_bodies::response::{ResponseKwargs, storage_response};
 use betterlite_logging::spend_bodies::support::NodeAllocator;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
-use betterlite_logging::spend_sanitize::value::SpendValue;
+use betterlite_logging::spend_sanitize::value::{SpendMapping, SpendValue};
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::pipeline::{Renderer, optional_decode, request_text, response_text, storage_policy_of};
-use super::support::{decode, mapping_of};
+use super::pipeline::{Renderer, messages_text, optional_decode, request_text, storage_policy_of};
+use super::support::decode;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +23,16 @@ pub(crate) struct BodyStorageSpec {
     messages_payload: Option<Value>,
 }
 
+struct DecodedBody {
+    params: SpendValue,
+    standard: Option<SpendValue>,
+    tools: Option<SpendValue>,
+    dynamic: Option<SpendValue>,
+    response: SpendValue,
+    tool_calls: Option<SpendValue>,
+    messages: Option<SpendValue>,
+}
+
 pub(super) fn body_storage(spec: &BodyStorageSpec) -> crate::helpers::HelperResult {
     let mut nodes = NodeAllocator::default();
     let mut render = Renderer {
@@ -34,41 +45,34 @@ pub(super) fn body_storage(spec: &BodyStorageSpec) -> crate::helpers::HelperResu
         ),
         nodes: &mut nodes,
     };
-    let params = decode(&spec.litellm_params, render.nodes)?;
-    let standard = optional_decode(spec.standard_logging_object.as_ref(), render.nodes)?;
-    let tools = optional_decode(spec.realtime_tools.as_ref(), render.nodes)?;
-    let dynamic = optional_decode(spec.dynamic_params.as_ref(), render.nodes)?;
-    let stored_response = decode(&spec.response, render.nodes)?;
-    let tool_calls = optional_decode(spec.realtime_tool_calls.as_ref(), render.nodes)?;
-    let stored_messages = optional_decode(spec.messages_payload.as_ref(), render.nodes)?;
-    let request = request_text(
-        &mut render,
-        &params,
-        standard.as_ref(),
-        tools.as_ref(),
-        dynamic.as_ref(),
-    )?;
-    let response = response_text(
-        &mut render,
-        &stored_response,
-        tool_calls.as_ref(),
-        Some(&params),
-        dynamic.as_ref(),
-    );
-    let messages = messages_text(stored_messages.as_ref(), spec.store_bodies)?;
+    let decoded = decode_body(spec, render.nodes)?;
+    let payload = SpendMapping {
+        node: render.nodes.allocate(),
+        entries: IndexMap::from([("response".to_owned(), decoded.response)]),
+    };
+    let kwargs = ResponseKwargs {
+        realtime_tool_calls: decoded.tool_calls.as_ref(),
+        litellm_params: Some(&decoded.params),
+        dynamic_params: decoded.dynamic.as_ref(),
+    };
     Ok(json!({
-        "request": request,
-        "response": response,
-        "messages": messages,
+        "request": request_text(&mut render, &decoded.params, decoded.standard.as_ref(), decoded.tools.as_ref(), decoded.dynamic.as_ref())?,
+        "response": storage_response(Some(&payload), Some(&kwargs), render.policy, render.nodes),
+        "messages": messages_text(decoded.messages.as_ref(), spec.store_bodies)?,
     }))
 }
 
-fn messages_text(payload: Option<&SpendValue>, store_bodies: bool) -> crate::helpers::HelperResult {
-    match payload {
-        Some(stored) => Ok(Value::String(storage_messages(
-            Some(mapping_of(stored)?),
-            store_bodies,
-        ))),
-        None => Ok(Value::String("{}".to_owned())),
-    }
+fn decode_body(
+    spec: &BodyStorageSpec,
+    nodes: &mut NodeAllocator,
+) -> Result<DecodedBody, Box<crate::helpers::HelperError>> {
+    Ok(DecodedBody {
+        params: decode(&spec.litellm_params, nodes)?,
+        standard: optional_decode(spec.standard_logging_object.as_ref(), nodes)?,
+        tools: optional_decode(spec.realtime_tools.as_ref(), nodes)?,
+        dynamic: optional_decode(spec.dynamic_params.as_ref(), nodes)?,
+        response: decode(&spec.response, nodes)?,
+        tool_calls: optional_decode(spec.realtime_tool_calls.as_ref(), nodes)?,
+        messages: optional_decode(spec.messages_payload.as_ref(), nodes)?,
+    })
 }

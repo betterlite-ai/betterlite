@@ -1,12 +1,11 @@
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
+use betterlite_logging::spend_bodies::messages::storage_messages;
 use betterlite_logging::spend_bodies::request::{RequestKwargs, storage_request_body};
-use betterlite_logging::spend_bodies::response::{ResponseKwargs, storage_response};
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_bodies::support::NodeAllocator;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
-use betterlite_logging::spend_sanitize::value::{SpendMapping, SpendValue};
+use betterlite_logging::spend_sanitize::value::SpendValue;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
-use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::support::{decode, invalid, mapping_of};
@@ -37,23 +36,17 @@ pub(super) fn request_text(
     )))
 }
 
-pub(super) fn response_text(
-    render: &mut Renderer<'_>,
-    response: &SpendValue,
-    tool_calls: Option<&SpendValue>,
-    litellm_params: Option<&SpendValue>,
-    dynamic: Option<&SpendValue>,
-) -> String {
-    let payload = SpendMapping {
-        node: render.nodes.allocate(),
-        entries: IndexMap::from([("response".to_owned(), response.clone())]),
-    };
-    let kwargs = ResponseKwargs {
-        realtime_tool_calls: tool_calls,
-        litellm_params,
-        dynamic_params: dynamic,
-    };
-    storage_response(Some(&payload), Some(&kwargs), render.policy, render.nodes)
+pub(super) fn messages_text(
+    payload: Option<&SpendValue>,
+    store_bodies: bool,
+) -> crate::helpers::HelperResult {
+    match payload {
+        Some(stored) => Ok(Value::String(storage_messages(
+            Some(mapping_of(stored)?),
+            store_bodies,
+        ))),
+        None => Ok(Value::String("{}".to_owned())),
+    }
 }
 
 pub(super) type OptionalDecoded = Result<Option<SpendValue>, Box<crate::helpers::HelperError>>;

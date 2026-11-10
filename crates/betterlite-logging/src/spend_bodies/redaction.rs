@@ -100,7 +100,15 @@ pub fn redact_request_body(body: &mut Json) {
     fields.insert("prompt".to_owned(), Json::Text(String::new()));
     fields.insert("input".to_owned(), Json::Text(String::new()));
     fields.shift_remove("served_output_texts");
-    scrub_vertex_litellm_params(fields);
+    for key in ["metadata", "litellm_metadata"] {
+        if let Some(Json::Object(metadata)) = fields.get_mut(key)
+            && let Some(Json::Object(hidden)) = metadata.get_mut("hidden_params")
+        {
+            for field in VERTEX_METADATA_FIELDS {
+                hidden.shift_remove(field);
+            }
+        }
+    }
 }
 
 #[must_use]
@@ -115,7 +123,14 @@ pub fn redact_response(mut response: Json) -> Json {
         if let Some(Json::List(choices)) = fields.get_mut("choices") {
             redact_choices(choices);
         }
-        scrub_vertex_logged_object(fields);
+        for field in VERTEX_METADATA_FIELDS {
+            if fields.contains_key(field) {
+                fields.insert(field.to_owned(), Json::List(Vec::new()));
+            }
+        }
+        if let Some(Json::Object(hidden)) = fields.get_mut("_hidden_params") {
+            hidden.retain(|key, _| !VERTEX_METADATA_FIELDS.contains(&key.as_str()));
+        }
         return response;
     }
     if fields.contains_key("output") {
@@ -135,20 +150,18 @@ fn redact_choices(choices: &mut [Json]) {
         let Json::Object(fields) = choice else {
             continue;
         };
-        if let Some(Json::Object(message)) = fields.get_mut("message") {
+        redact_choice(fields);
+    }
+}
+
+fn redact_choice(fields: &mut IndexMap<String, Json>) {
+    for role in ["message", "delta"] {
+        if let Some(Json::Object(message)) = fields.get_mut(role) {
             redact_message(message);
-            continue;
-        }
-        if let Some(Json::Object(delta)) = fields.get_mut("delta") {
-            redact_message(delta);
-            continue;
-        }
-        if let Some(text) = fields.get_mut("text")
-            && !matches!(text, Json::Null)
-        {
-            *text = Json::Text(REDACTED_BY_LITELLM.to_owned());
+            return;
         }
     }
+    redact_present_text(fields, "text");
 }
 
 fn redact_message(message: &mut IndexMap<String, Json>) {
@@ -192,8 +205,7 @@ fn redact_output_items(items: &mut [Json]) {
             continue;
         };
         redact_present_text(fields, "text");
-        redact_output_content(fields);
-        redact_output_summary(fields);
+        redact_output_lists(fields);
         if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "function_call")
             && fields.contains_key("arguments")
         {
@@ -213,27 +225,23 @@ fn redact_output_items(items: &mut [Json]) {
     }
 }
 
-fn redact_output_content(fields: &mut IndexMap<String, Json>) {
-    let Some(Json::List(content)) = fields.get_mut("content") else {
-        return;
-    };
-    for content_item in content {
-        if let Json::Object(entry) = content_item {
+fn redact_output_lists(fields: &mut IndexMap<String, Json>) {
+    if let Some(Json::List(content)) = fields.get_mut("content") {
+        for content_item in content {
+            let Json::Object(entry) = content_item else {
+                continue;
+            };
             redact_present_text(entry, "text");
             redact_present_text(entry, "refusal");
         }
     }
-}
-
-fn redact_output_summary(fields: &mut IndexMap<String, Json>) {
-    if !matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "reasoning") {
-        return;
-    }
-    let Some(Json::List(summary)) = fields.get_mut("summary") else {
-        return;
-    };
-    for summary_item in summary {
-        if let Json::Object(entry) = summary_item {
+    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "reasoning")
+        && let Some(Json::List(summary)) = fields.get_mut("summary")
+    {
+        for summary_item in summary {
+            let Json::Object(entry) = summary_item else {
+                continue;
+            };
             redact_present_text(entry, "text");
         }
     }
@@ -244,30 +252,5 @@ fn redact_present_text(fields: &mut IndexMap<String, Json>, name: &str) {
         && !matches!(value, Json::Null)
     {
         *value = Json::Text(REDACTED_BY_LITELLM.to_owned());
-    }
-}
-
-fn scrub_vertex_logged_object(fields: &mut IndexMap<String, Json>) {
-    for field in VERTEX_METADATA_FIELDS {
-        if fields.contains_key(field) {
-            fields.insert(field.to_owned(), Json::List(Vec::new()));
-        }
-    }
-    if let Some(Json::Object(hidden)) = fields.get_mut("_hidden_params") {
-        for field in VERTEX_METADATA_FIELDS {
-            hidden.shift_remove(field);
-        }
-    }
-}
-
-fn scrub_vertex_litellm_params(fields: &mut IndexMap<String, Json>) {
-    for key in ["metadata", "litellm_metadata"] {
-        if let Some(Json::Object(metadata)) = fields.get_mut(key)
-            && let Some(Json::Object(hidden)) = metadata.get_mut("hidden_params")
-        {
-            for field in VERTEX_METADATA_FIELDS {
-                hidden.shift_remove(field);
-            }
-        }
     }
 }
