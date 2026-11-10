@@ -1,0 +1,30 @@
+kind: helper
+name: openai-workload-identity-exchange-json-fields
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        exchange: "subject"
+      replies:
+        - {status: 200, body: '{"access_token":"t-float","expires_in":3600.5,"token_type":"Bearer","scope":"x"}'}
+        - {status: 200, body: '{"expires_in":3600}'}
+        - {status: 200, body: '{"access_token":"","expires_in":3600}'}
+        - {status: 200, body: '{"access_token":5,"expires_in":3600}'}
+        - {status: 200, body: '{"access_token":"t","expires_in":"3600"}'}
+        - {status: 200, body: '{"access_token":"t"}'}
+        - {status: 200, body: '{"access_token":"t","expires_in":null}'}
+        - {status: 200, body: '{}'}
+        - {status: 200, body: '{"access_token":"t-last","expires_in":10}'}
+      steps:
+        - {op: token, identity: {name: exchange}}
+        - {op: advance, ms: 4000000}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
+        - {op: token, identity: {name: exchange}}
