@@ -8,7 +8,7 @@ deviations:
       Rust async is the concurrency model here, and rules.yaml forbids detached tasks. Tracking the
       refresh in the server's TaskTracker preserves LiteLLM's serve-stale behavior while letting the
       server drain the work on shutdown.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1163-L1187
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1172-L1186
   - what: >-
       LangfusePromptError is a struct carrying status_code and body for an API failure, and it is wrapped
       in LangfuseRestError, which also carries transport, declared-shape and non-UTF-8 body failures.
@@ -16,7 +16,7 @@ deviations:
     why: >-
       A Rust call returns one error type, so the API failure stays the header-free LangfusePromptError and
       the other failures are named variants beside it. Response headers are still never carried.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1076-L1091
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1079-L1087
   - what: >-
       The cache holds the prompt as the typed wire record from Langfuse's declared Prompt union
       (Prompt::Chat or Prompt::Text with name, version, config, labels, tags, commitMessage and
@@ -24,16 +24,23 @@ deviations:
     why: >-
       The external langfuse package has no Rust equivalent, and compiling the prompt for a completion is
       B3908's job. The wire fields are the ones LiteLLM's pydantic models declare.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1050-L1052
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1052-L1053
   - what: >-
       The fetch clock is injected as a Clock returning std::time::Instant instead of calling
-      time.monotonic() directly, and a response body that is not UTF-8 is a typed Body failure instead
-      of being decoded with replacement.
+      time.monotonic() directly. It is monotonic like time.monotonic(), so the TTL boundary is unchanged.
     why: >-
-      rules.yaml forbids reading an outside dependency outside the constructor, and Instant is monotonic
-      like time.monotonic(), so the TTL boundary is unchanged. A body outside UTF-8 cannot be the JSON
-      LiteLLM's pydantic models declare, so betterlite refuses it rather than mangling it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1073-L1078
+      rules.yaml forbids reading an outside dependency outside the constructor. The injection also lets
+      the tests advance time deterministically instead of sleeping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1141-L1144
+  - what: >-
+      A response body that is not UTF-8 is a typed Body failure. LiteLLM reads the same body through
+      httpx's Response.text, which decodes it with replacement characters and puts that text into the
+      ApiError body.
+    why: >-
+      rules.yaml refuses to mangle bytes that are not UTF-8, and a body outside UTF-8 cannot be the JSON
+      LiteLLM's pydantic models declare. The retry classification still follows the status code, so a 5xx
+      with such a body is still retried once like LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1079-L1087
   - what: >-
       build_langfuse_client with httpx_client=None builds a pooled betterlite client from an empty proxy
       policy, while the Langfuse SDK builds a default httpx client that honors HTTP_PROXY and HTTPS_PROXY.
