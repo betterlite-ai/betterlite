@@ -43,8 +43,7 @@ pub(super) fn maybe_normalize_passthrough<S>(
     let Some(parsed) = parse_passthrough_response(response, kwargs) else {
         return;
     };
-    set_content_output(span, &parsed);
-    set_choice_output(span, &parsed);
+    set_output_attributes(span, &parsed);
 }
 
 fn set_input_attributes<S>(span: &mut S, kwargs: &MetadataMap)
@@ -136,41 +135,15 @@ fn parse_object(text: &str) -> Option<MetadataMap> {
     }
 }
 
-fn set_content_output<S>(span: &mut S, response: &MetadataMap)
+fn set_output_attributes<S>(span: &mut S, response: &MetadataMap)
 where
     S: Span,
 {
-    let Some(parts) = response
-        .get("content")
-        .and_then(OtelModelValue::as_array)
-        .filter(|parts| !parts.is_empty())
-    else {
-        return;
-    };
-    let texts = parts
-        .iter()
-        .filter_map(|part| part.as_object()?.get("text")?.as_str())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>();
-    if texts.is_empty() {
-        return;
+    let joined = content_text(response);
+    if !joined.is_empty() {
+        write_message_output(span, &joined, response.get("role"));
     }
-    let joined = texts.join("\n\n");
-    write_message_output(span, &joined, response.get("role"));
-}
-
-fn set_choice_output<S>(span: &mut S, response: &MetadataMap)
-where
-    S: Span,
-{
-    let Some(message) = response
-        .get("choices")
-        .and_then(OtelModelValue::as_array)
-        .and_then(|choices| choices.first())
-        .and_then(OtelModelValue::as_object)
-        .and_then(|choice| choice.get("message"))
-        .and_then(OtelModelValue::as_object)
-    else {
+    let Some(message) = choice_message(response) else {
         return;
     };
     let Some(text) = message
@@ -181,6 +154,28 @@ where
         return;
     };
     write_message_output(span, &text, message.get("role"));
+}
+
+fn content_text(response: &MetadataMap) -> String {
+    let Some(parts) = response.get("content").and_then(OtelModelValue::as_array) else {
+        return String::new();
+    };
+    parts
+        .iter()
+        .filter_map(|part| part.as_object()?.get("text")?.as_str())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn choice_message(response: &MetadataMap) -> Option<&MetadataMap> {
+    response
+        .get("choices")
+        .and_then(OtelModelValue::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(OtelModelValue::as_object)
+        .and_then(|choice| choice.get("message"))
+        .and_then(OtelModelValue::as_object)
 }
 
 fn write_message_output<S>(span: &mut S, text: &str, role: Option<&OtelModelValue>)

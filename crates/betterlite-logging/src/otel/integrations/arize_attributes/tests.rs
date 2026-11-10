@@ -512,24 +512,30 @@ fn cost_null_and_absent_write_nothing() {
 
 // passthrough.rs
 
+fn flow_attributes<F>(kwargs: &str, response: &str, apply: F) -> BTreeMap<String, Value>
+where
+    F: FnOnce(&mut SdkSpan, &MetadataMap, &OtelModelValue, Option<&MetadataMap>),
+{
+    let source = map(kwargs);
+    let response_value = value(response);
+    let payload = standard_logging_object(&source);
+    record(|span| apply(span, &source, &response_value, payload.as_ref())).attributes
+}
+
 fn passthrough_attributes(
     kwargs: &str,
     response: &str,
     redact_messages: bool,
 ) -> BTreeMap<String, Value> {
-    let source = map(kwargs);
-    let response_value = value(response);
-    let payload = standard_logging_object(&source);
-    record(|span| {
+    flow_attributes(kwargs, response, |span, source, response_value, payload| {
         passthrough::maybe_normalize_passthrough(
             span,
-            &source,
-            &response_value,
-            payload.as_ref(),
+            source,
+            response_value,
+            payload,
             redact_messages,
         );
     })
-    .attributes
 }
 
 #[test]
@@ -770,13 +776,9 @@ fn passthrough_call_type_spellings_run(#[case] call_type: &str) {
 // mcp.rs
 
 fn mcp_attributes(kwargs: &str, response: &str, redact_messages: bool) -> BTreeMap<String, Value> {
-    let source = map(kwargs);
-    let response_value = value(response);
-    let payload = standard_logging_object(&source);
-    record(|span| {
-        mcp::maybe_set_mcp_tool_attrs(span, &response_value, payload.as_ref(), redact_messages);
+    flow_attributes(kwargs, response, |span, _, response_value, payload| {
+        mcp::maybe_set_mcp_tool_attrs(span, response_value, payload, redact_messages);
     })
-    .attributes
 }
 
 #[test]
