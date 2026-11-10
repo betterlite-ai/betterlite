@@ -135,11 +135,13 @@ jobs:
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
-      # a test build fills the runner's disk on some runner images, and the Android SDK holds about 14 GiB of it
+      # a test build filled the disk on runner image 20261018.96; emptying the 14 GiB Android SDK takes 30 to 270 s, so it waits for a runner with less than 60 GiB free
       - name: Free the runner's disk
         if: matrix.part != 'lint'
         run: |
           df -h /
+          free=$(df --output=avail -B 1G / | tail -n 1 | tr -d ' G')
+          if (( free >= 60 )); then echo "$free GiB free, the Android SDK stays"; exit 0; fi
           rm -rf /runner-android/*
           df -h /
 
@@ -258,7 +260,9 @@ jobs:
               if [[ -z $packages ]]; then echo "the change affects no package"; exit 0; fi
               # the tests use LiteLLM but not its dev tools, about 330 MB
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
-            task) for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
+            task)
+              export NEXTEST_PROFILE=task
+              for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
             mutants-*)
               if ! cargo gate list "$TASK" | awk '$1 == "mutants" {found = 1} END {exit !found}'; then echo "the task has no mutants check"; exit 0; fi
               export UV_NO_DEV=1
