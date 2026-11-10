@@ -1,0 +1,19 @@
+kind: helper
+name: missing-client-tenant
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {}
+        calls:
+          - azure_ad_token: os.environ/MISSING
+        replies: []
+      - environment: {AZURE_CLIENT_ID: client}
+        calls:
+          - azure_ad_token: os.environ/MISSING
+        replies: []
+      - environment: {AZURE_TENANT_ID: tenant}
+        calls:
+          - azure_ad_token: os.environ/MISSING
+        replies: []
+env: {}
+compare: {ignore: []}
