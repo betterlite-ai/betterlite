@@ -9,6 +9,7 @@ publish.workspace = true
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
