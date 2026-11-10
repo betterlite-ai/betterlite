@@ -212,9 +212,9 @@ impl ModelBudgetCache for FakeCache {
         ready(Ok(()))
     }
 
-    fn flush_increments(&self) -> impl Future<Output = bool> + Send {
+    fn flush_increments(&self) -> impl Future<Output = ()> + Send {
         self.flushes.fetch_add(1, Ordering::SeqCst);
-        ready(true)
+        ready(())
     }
 }
 

@@ -38,8 +38,8 @@ pub trait ModelBudgetCache: Send + Sync {
         cost: Decimal,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    // B3016's flush_increments: write queued increments to Redis, false when the batch was kept for a retry
-    fn flush_increments(&self) -> impl Future<Output = bool> + Send;
+    // B3016's flush_increments: write queued increments to Redis; a failed batch is kept and logged there
+    fn flush_increments(&self) -> impl Future<Output = ()> + Send;
 }
 
 pub(crate) async fn cached_spend<C>(limiter: &ModelBudgetLimiter<C>, key: &str) -> Decimal

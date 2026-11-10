@@ -128,8 +128,8 @@ impl ModelBudgetCache for OracleCache {
         ready(Ok(()))
     }
 
-    fn flush_increments(&self) -> impl Future<Output = bool> + Send {
-        ready(true)
+    fn flush_increments(&self) -> impl Future<Output = ()> + Send {
+        ready(())
     }
 }
 

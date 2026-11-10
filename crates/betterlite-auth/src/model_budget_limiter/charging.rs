@@ -170,8 +170,8 @@ async fn flush_increments<C>(limiter: &ModelBudgetLimiter<C>)
 where
     C: ModelBudgetCache,
 {
-    if limiter.cache.redis_configured() && !limiter.cache.flush_increments().await {
-        tracing::debug!("model budget spend increments stay queued for the next flush");
+    if limiter.cache.redis_configured() {
+        limiter.cache.flush_increments().await;
     }
 }
 
