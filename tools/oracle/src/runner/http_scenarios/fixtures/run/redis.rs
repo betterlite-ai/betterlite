@@ -25,7 +25,7 @@ pub(super) type Entries = Arc<Mutex<Registry>>;
 
 // B1139 provisions the Redis the two peers seed; no redis-server binary exists in the gate image.
 pub(super) struct RedisServer {
-    addr: SocketAddr,
+    pub(super) addr: SocketAddr,
     entries: Entries,
     unsupported: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,

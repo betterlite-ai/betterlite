@@ -57,7 +57,25 @@ fn store_polling(
     ttl_seconds: u64,
 ) -> Result<(), ScenarioError> {
     let entry = RawValue::from_string(value.to_owned()).map_err(ScenarioError::Json)?;
-    let cache = cache(polling.addr)?;
+    let settings = connection_settings(polling.addr)?;
+    let transport = RedisTransport::new(
+        settings,
+        RedisCacheFamily::Standalone,
+        Arc::new(LiveClientFactory::new(None)),
+        Arc::new(RedisClientStore::new()),
+        None,
+    )
+    .map_err(|source| ScenarioError::PollingTransport { source })?;
+    let cache = RedisCacheValues::new(
+        RedisCacheValuesSettings {
+            namespace: None,
+            default_ttl: None,
+            redis_flush_size: None,
+        },
+        Arc::new(transport),
+        Arc::new(AllowHooks),
+        Arc::new(AllowGate),
+    );
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -69,6 +87,15 @@ fn store_polling(
             key: full_key.to_owned(),
             source,
         })?;
+    verify_stored(polling, full_key, value, ttl_seconds)
+}
+
+fn verify_stored(
+    polling: &RedisPolling,
+    full_key: &str,
+    value: &str,
+    ttl_seconds: u64,
+) -> Result<(), ScenarioError> {
     let expected = i64::try_from(ttl_seconds).ok();
     let stored = polling.entry(full_key);
     if stored.is_some_and(|record| record.value == value && record.ttl_seconds == expected) {
@@ -79,67 +106,45 @@ fn store_polling(
     })
 }
 
-fn cache(addr: SocketAddr) -> Result<RedisCacheValues, ScenarioError> {
-    let settings = connection_settings(addr)?;
-    let transport = RedisTransport::new(
-        settings,
-        RedisCacheFamily::Standalone,
-        Arc::new(LiveClientFactory::new(None)),
-        Arc::new(RedisClientStore::new()),
-        None,
-    )
-    .map_err(|source| ScenarioError::PollingTransport { source })?;
-    Ok(RedisCacheValues::new(
-        RedisCacheValuesSettings {
-            namespace: None,
-            default_ttl: None,
-            redis_flush_size: None,
-        },
-        Arc::new(transport),
-        Arc::new(AllowHooks),
-        Arc::new(AllowGate),
-    ))
-}
-
 fn connection_settings(addr: SocketAddr) -> Result<RedisConnectionSettings, ScenarioError> {
     let environment: BTreeMap<String, String> = BTreeMap::new();
-    resolve_redis_kwargs(overrides(addr), ClientKind::Async, &environment)
-        .map_err(|source| ScenarioError::PollingSettings { source })
-}
-
-fn overrides(addr: SocketAddr) -> RedisOverrides {
-    RedisOverrides {
-        host: Some(addr.ip().to_string()),
-        port: Some(Scalar::Value(i64::from(addr.port()))),
-        db: None,
-        username: None,
-        password: None,
-        url: None,
-        ssl: None,
-        socket_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
-        socket_connect_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
-        credential_provider: false,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        gcp_service_account: None,
-        gcp_ssl_ca_certs: None,
-        azure_redis_ad_token: None,
-        azure_client_id: None,
-        azure_tenant_id: None,
-        azure_client_secret: None,
-        aws_iam_auth: None,
-        aws_iam_user_name: None,
-        aws_iam_cache_name: None,
-        aws_iam_region: None,
-        aws_iam_serverless: None,
-        passthrough: BTreeMap::new(),
-    }
+    resolve_redis_kwargs(
+        RedisOverrides {
+            host: Some(addr.ip().to_string()),
+            port: Some(Scalar::Value(i64::from(addr.port()))),
+            db: None,
+            username: None,
+            password: None,
+            url: None,
+            ssl: None,
+            socket_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
+            socket_connect_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
+            socket_keepalive: None,
+            max_connections: None,
+            health_check_interval: None,
+            credential_provider: false,
+            startup_nodes: None,
+            sentinel_nodes: None,
+            sentinel_password: None,
+            service_name: None,
+            ssl_password: None,
+            gcp_service_account: None,
+            gcp_ssl_ca_certs: None,
+            azure_redis_ad_token: None,
+            azure_client_id: None,
+            azure_tenant_id: None,
+            azure_client_secret: None,
+            aws_iam_auth: None,
+            aws_iam_user_name: None,
+            aws_iam_cache_name: None,
+            aws_iam_region: None,
+            aws_iam_serverless: None,
+            passthrough: BTreeMap::new(),
+        },
+        ClientKind::Async,
+        &environment,
+    )
+    .map_err(|source| ScenarioError::PollingSettings { source })
 }
 
 struct AllowHooks;

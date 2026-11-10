@@ -95,12 +95,15 @@ pub(crate) fn run_case(
         upstream: &environment.provider.base_url,
         artifact_root: root,
     })?;
-    if let Some(command) = environment.redis.unsupported() {
-        return Err(OracleError::HttpScenario(Box::new(
-            ScenarioError::UnknownCommand { command },
-        )));
-    }
+    ensure_supported(&environment.redis)?;
     Ok(outcome)
+}
+
+fn ensure_supported(redis: &RedisServer) -> Result<(), ScenarioError> {
+    redis.unsupported().map_or_else(
+        || Ok(()),
+        |command| Err(ScenarioError::UnknownCommand { command }),
+    )
 }
 
 fn repositories(
