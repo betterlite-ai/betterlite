@@ -36,28 +36,25 @@ pub enum ErrorCode {
     Number(serde_json::Number),
 }
 
+fn plain(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
+}
+
 impl From<serde_json::Error> for Box<HelperError> {
     fn from(error: serde_json::Error) -> Self {
-        Self::new(HelperError {
-            class: "ValidationError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
+        plain("ValidationError", error.to_string())
     }
 }
 
 impl From<io::Error> for Box<HelperError> {
     fn from(error: io::Error) -> Self {
-        Self::new(HelperError {
-            class: "OSError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
+        plain("OSError", error.to_string())
     }
 }
