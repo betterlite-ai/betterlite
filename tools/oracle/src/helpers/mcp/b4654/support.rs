@@ -103,7 +103,7 @@ pub(super) fn parse_headers(input: &Value) -> Result<RawHeaders, Box<HelperError
     for (name, value) in &entries {
         pairs.push((name.as_bytes(), value.as_bytes()));
     }
-    Ok(RawHeaders::from_pairs(&pairs).map_err(duplicate_authorization_error)?)
+    RawHeaders::from_pairs(&pairs).map_err(duplicate_authorization_error)
 }
 
 pub(super) fn expose(map: BTreeMap<String, SecretString>) -> BTreeMap<String, String> {

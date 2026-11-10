@@ -113,8 +113,7 @@ fn request_base_url(input: &Value) -> Result<String, Box<HelperError>> {
         from_trusted_proxy: support::boolean(input, "from_trusted_proxy")?,
     };
     let configured = support::optional(input, "proxy_base_url")?.unwrap_or_default();
-    Ok(base_url::get_request_base_url(configured, &origin)
-        .map_err(support::url_parse_helper_error)?)
+    base_url::get_request_base_url(configured, &origin).map_err(support::url_parse_helper_error)
 }
 
 fn metadata_url(input: &Value) -> Result<String, Box<HelperError>> {
@@ -139,13 +138,13 @@ fn token_client_auth(input: &Value) -> Result<TokenEndpointClientAuth, Box<Helpe
     let client_id = support::optional(input, "client_id")?;
     let secret = support::optional(input, "client_secret")?
         .map(|value| SecretString::from(value.to_owned()));
-    Ok(resource_identity::build_upstream_token_request(
+    resource_identity::build_upstream_token_request(
         &upstream(input)?,
         auth_method,
         client_id,
         secret.as_ref(),
     )
-    .map_err(support::token_endpoint_auth_error)?)
+    .map_err(support::token_endpoint_auth_error)
 }
 
 fn safe_header_values(input: &Value) -> Result<Value, Box<HelperError>> {

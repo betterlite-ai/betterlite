@@ -100,34 +100,22 @@ pub(crate) struct ModifyCall {
 }
 
 pub(crate) fn invoke(call: &BaseCall) -> Outcome {
-    let encode = |source| OpenAiError::Encode { source };
+    let openai = |error: OpenAiError| openai_helper_error(&error);
     let value = match call.clone() {
         BaseCall::BaseError(parts) => serde_json::to_value(ProviderError::from(parts)),
         BaseCall::ClassConfig(members) => Ok(Value::Object(
-            provider_config(&members.values).map_err(openai_helper_error)?,
+            provider_config(&members.values).map_err(openai)?,
         )),
         BaseCall::Thinking(params) => serde_json::to_value(thinking_request(&params)),
-        BaseCall::ThinkingMaxTokens(mut input) => {
-            let default_max_tokens = ConfigLoader {
-                lookup: input.environment,
-            }
-            .load("")
-            .map_err(config_helper_error)?
-            .litellm_settings
-            .default_max_tokens;
-            add_thinking_max_tokens(&input.requested, &mut input.options, default_max_tokens)
-                .map_err(openai_helper_error)?;
-            Ok(Value::Object(input.options))
-        }
+        BaseCall::ThinkingMaxTokens(input) => return input.run(),
         BaseCall::AppendTools(mut input) => {
-            append_tools(&mut input.options, input.tools).map_err(openai_helper_error)?;
+            append_tools(&mut input.options, input.tools).map_err(openai)?;
             Ok(Value::Object(input.options))
         }
         BaseCall::ResponseFormat(input) => {
             let template = input.ref_template.as_deref();
             serde_json::to_value(
-                response_format_refs(input.format.as_ref(), template)
-                    .map_err(openai_helper_error)?,
+                response_format_refs(input.format.as_ref(), template).map_err(openai)?,
             )
         }
         BaseCall::HiddenParams(input) => input.run(),
@@ -140,18 +128,33 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
         BaseCall::ModifyParams(input) => return input.run(),
         BaseCall::ResponsesInit(()) => serde_json::to_value(
             provider_config(&ResponsesBase)
-                .map_err(openai_helper_error)?
+                .map_err(openai)?
                 .keys()
                 .collect::<Vec<_>>(),
         ),
         BaseCall::ImageEditInit(()) => serde_json::to_value(
             provider_config(&ImageEditBase)
-                .map_err(openai_helper_error)?
+                .map_err(openai)?
                 .keys()
                 .collect::<Vec<_>>(),
         ),
     };
-    Ok(value.map_err(encode).map_err(openai_helper_error)?)
+    value.map_err(|source| openai(OpenAiError::Encode { source }))
+}
+
+impl TokensCall {
+    fn run(mut self) -> Outcome {
+        let default_max_tokens = ConfigLoader {
+            lookup: self.environment,
+        }
+        .load("")
+        .map_err(config_helper_error)?
+        .litellm_settings
+        .default_max_tokens;
+        add_thinking_max_tokens(&self.requested, &mut self.options, default_max_tokens)
+            .map_err(|error| openai_helper_error(&error))?;
+        Ok(Value::Object(self.options))
+    }
 }
 
 impl HiddenCall {
@@ -186,8 +189,8 @@ impl ModifyCall {
     }
 }
 
-fn openai_helper_error(error: OpenAiError) -> Box<HelperError> {
-    let class = match &error {
+fn openai_helper_error(error: &OpenAiError) -> Box<HelperError> {
+    let class = match error {
         OpenAiError::MissingKey { .. } | OpenAiError::TemplateField { .. } => "KeyError",
         OpenAiError::NotSubscriptable { .. }
         | OpenAiError::ToolsNotList

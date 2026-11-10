@@ -5,7 +5,7 @@ use std::sync::{
 #[path = "local_ttl_cache/dual.rs"]
 mod dual;
 
-use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
+use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -135,7 +135,10 @@ fn projection(value: &str) -> crate::helpers::HelperResult {
     Ok(json!({"value": cache.get("value").map_err(cache_helper_error)?}))
 }
 
-fn cache_helper_error(error: CacheError) -> Box<crate::helpers::HelperError> {
+fn cache_helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,

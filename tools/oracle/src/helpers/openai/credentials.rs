@@ -67,11 +67,11 @@ fn invalid_input(message: String) -> Box<HelperError> {
 }
 
 fn load_config(env: &BTreeMap<String, String>) -> Result<Config, Box<HelperError>> {
-    Ok(ConfigLoader {
+    ConfigLoader {
         lookup: env.clone(),
     }
     .load("")
-    .map_err(crate::helpers::config_helper_error)?)
+    .map_err(crate::helpers::config_helper_error)
 }
 
 fn credentials(fields: &CredentialFields) -> HelperResult {

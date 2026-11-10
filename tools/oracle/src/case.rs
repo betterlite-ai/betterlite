@@ -23,7 +23,7 @@ pub mod helper;
 mod load;
 
 pub(crate) use group::{LoadedCase, ScenarioCase};
-pub use helper::HelperCase;
+pub(crate) use helper::HelperCase;
 pub(crate) use load::{
     load_cases, load_http_scenario_cases, load_probe_cases, load_sdk_http_cases,
 };

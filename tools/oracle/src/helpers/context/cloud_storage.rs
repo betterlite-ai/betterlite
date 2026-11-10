@@ -117,9 +117,10 @@ fn text(value: Option<&Scalar>) -> Option<&str> {
         Some(Scalar::Boolean(_) | Scalar::Other(_)) | None => None,
     }
 }
-fn storage_helper_error(
-    error: cloud_storage::CloudStorageError,
-) -> Box<crate::helpers::HelperError> {
+fn storage_helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,

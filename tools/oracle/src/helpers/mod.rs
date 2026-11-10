@@ -85,9 +85,10 @@ use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
 
-use betterlite_config::loader::ConfigError;
-
-pub(crate) fn config_helper_error(error: ConfigError) -> Box<HelperError> {
+pub(crate) fn config_helper_error<E>(error: E) -> Box<HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(HelperError {
         class: "ConfigError".to_owned(),
         status: None,
