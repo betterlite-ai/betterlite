@@ -99,7 +99,6 @@ fn hex_escape(character: char) -> String {
 pub(super) fn decode_base64(payload: &str) -> Option<Vec<u8>> {
     let (mut symbols, pads) = base64_symbols(payload)?;
     let needed = match symbols.len().checked_rem(4)? {
-        1 => return None,
         2 => 2_usize,
         3 => 1_usize,
         _ => 0_usize,

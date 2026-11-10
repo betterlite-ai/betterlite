@@ -54,8 +54,8 @@ fn assert_repr_escapes() {
         Some(r#"aud='it\'s "x"', iss=None"#)
     );
     assert_eq!(
-        audience(r#"{"aud":"back\\slash\nline\ttab"}"#).as_deref(),
-        Some(r"aud='back\\slash\nline\ttab', iss=None")
+        audience(r#"{"aud":"back\\slash\nline\ttab\rend"}"#).as_deref(),
+        Some(r"aud='back\\slash\nline\ttab\rend', iss=None")
     );
     assert_eq!(
         audience("{\"aud\":\"h\\u00e9llo\"}").as_deref(),
@@ -108,9 +108,26 @@ fn assert_no_claims() {
 
 fn assert_broken_tokens() {
     for raw in [
-        "", "a.b", "a.b.c.d", "a..c", "a.!!!.c", "a.e30=.c", "a.Zm9v.c",
+        "",
+        "a.b",
+        "a.b.c.d",
+        "a..c",
+        "a.!!!.c",
+        "a.e30=.c",
+        "a.Zm9v.c",
+        "a.eyJhdWQiOiJ4I.c",
     ] {
         assert_eq!(decode_web_identity_claims(raw), None, "{raw}");
+    }
+    for (claims, tail, decodes) in [
+        (r#"{"aud":"x"}"#, "!", false),
+        (r#"{"aud":""}"#, "!!", false),
+        (r#"{"aud":"x"}"#, "=", true),
+        (r#"{"aud":""}"#, "==", true),
+        (r#"{"aud":"xy"}"#, "!", true),
+    ] {
+        let raw = format!("h.{}{tail}.c", URL_SAFE_NO_PAD.encode(claims));
+        assert_eq!(decode_web_identity_claims(&raw).is_some(), decodes, "{raw}");
     }
     assert_eq!(
         decode_web_identity_claims(".eyJhdWQiOiJ4In0.").as_deref(),
