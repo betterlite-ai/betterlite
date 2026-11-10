@@ -1,0 +1,32 @@
+kind: helper
+name: logging-success-assembled-stream
+call:
+  logging_success:
+    operations:
+      - operation: assembled
+        probes:
+          - {stream: false, result: {kind: chat}}
+          - {stream: true, result: {kind: chat}}
+          - {stream: true, result: {kind: chunk}}
+          - {stream: true, result: {kind: chunk}, async_key: "null"}
+          - {stream: true, result: {kind: chunk}, complete_key: "null"}
+          - {stream: true, result: {kind: chunk}, complete_key: assembled}
+          - {stream: true, result: {kind: other, value: {object: chat.completion}}}
+          - {stream: true, result: {kind: other, value: null}}
+          - {stream: true, result: {kind: other, value: null}, async_key: "null"}
+          - {stream: true, result: {kind: other, value: null}, async_key: assembled}
+          - {stream: true, result: {kind: other, value: null}, complete_key: "null"}
+          - {stream: true, result: {kind: other, value: null}, complete_key: assembled}
+          - {stream: false, result: {kind: other, value: null}}
+      - operation: recognized
+        probes:
+          - {result: {kind: chat}, call_type: completion}
+          - {result: {kind: embeddings}, call_type: embedding}
+          - {result: {kind: chunk}, call_type: completion}
+          - {result: {kind: other, value: {object: search}}, call_type: search}
+          - {result: {kind: other, value: {object: chat.completion}}, call_type: completion}
+          - {result: {kind: other, value: [one, two]}, call_type: completion}
+          - {result: {kind: other, value: null}, call_type: completion}
+          - {result: {kind: other, value: null}, call_type: call_mcp_tool}
+env: {}
+compare: {ignore: []}
