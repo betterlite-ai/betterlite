@@ -2490,6 +2490,7 @@ dependencies = [
  "percent-encoding",
  "prometheus-client",
  "py_literal",
+ "rand 0.10.3",
  "rcgen",
  "redis",
  "rstest",
