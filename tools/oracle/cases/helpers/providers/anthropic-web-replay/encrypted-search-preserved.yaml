@@ -1,0 +1,50 @@
+kind: helper
+name: anthropic-web-replay-encrypted-search-preserved
+call:
+  anthropic_web_replay:
+    messages:
+      - role: assistant
+        content:
+          - type: web_search_tool_result
+            tool_use_id: e1
+            content:
+              - {type: web_search_result, url: "https://a.example", encrypted_content: cipher}
+          - type: web_search_tool_result
+            tool_use_id: e2
+            content:
+              - {type: web_search_result, url: "https://b.example"}
+              - {type: web_search_result, encrypted_content: more}
+          - {type: web_search_tool_result, tool_use_id: e8, content: [{type: web_search_result, title: 5}]}
+          - type: web_search_tool_result
+            tool_use_id: e3
+            content:
+              - {type: web_search_result, url: "https://c.example", encrypted_content: ""}
+      - role: user
+        content:
+          - type: web_search_tool_result
+            tool_use_id: e4
+            content:
+              - {type: web_search_result, encrypted_content: x}
+          - {type: server_tool_use, id: e4, input: {query: kept}}
+      - null
+      - 7
+      - text
+      - {role: user, content: plain string}
+      - {content: {type: web_search_tool_result, tool_use_id: e5, content: []}}
+      - {content: []}
+      - {role: assistant}
+      - {content: null}
+      - content:
+          - type: web_search_tool_result
+            tool_use_id: e6
+            content:
+              - {type: web_search_result, title: only title}
+      - role: assistant
+        name: helper
+        content:
+          - type: web_search_tool_result
+            tool_use_id: e7
+            content:
+              - {type: web_search_result, url: "https://d.example"}
+env: {}
+compare: {ignore: []}
