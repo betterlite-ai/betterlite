@@ -15,6 +15,7 @@ num-traits = "0.2.19"
 percent-encoding.workspace = true
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 redis = { workspace = true, features = ["cluster-async", "connection-manager", "script", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true

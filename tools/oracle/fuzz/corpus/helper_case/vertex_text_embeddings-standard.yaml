@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-text-embeddings-standard-seed
+call:
+  vertex_text_embeddings:
+    requests:
+      - {model: text-embedding-005, input: [hello, world], optional: {task_type: CLASSIFICATION, title: doc, dimensions: 3}}
+    replies:
+      - {model: text-embedding-005, response: {predictions: [{embeddings: {values: [0.1], statistics: {token_count: 2}}}]}}
+compare: {ignore: []}
+env: {}
