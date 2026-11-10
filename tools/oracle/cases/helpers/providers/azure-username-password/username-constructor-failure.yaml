@@ -1,0 +1,37 @@
+kind: helper
+name: username-constructor-failure
+call:
+  azure_username_password:
+    action: username_constructor_failure
+    steps:
+      - environment: {}
+        authority_host: http://insecure
+        client_id: client
+        username: alice@example.com
+        password: hunter2-fixture-value
+        replies: []
+      - environment: {}
+        authority_host: ftp://login.example.com
+        client_id: client
+        username: alice@example.com
+        password: hunter2-fixture-value
+        replies: []
+      - environment: {}
+        client_id: ''
+        username: alice@example.com
+        password: hunter2-fixture-value
+        replies: []
+      - environment: {}
+        authority_host: ''
+        client_id: client
+        username: alice@example.com
+        password: hunter2-fixture-value
+        calls: 1
+        replies: []
+      - environment: {}
+        client_id: client
+        username: alice@example.com
+        password: hunter2-fixture-value
+        replies: []
+env: {}
+compare: {ignore: []}
