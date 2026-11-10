@@ -5,9 +5,11 @@ later gateway, configuration, provider, and routing crates live beside it.
 
 Run `cargo gate run <ID>` for the complete task gate. It runs only the tests the
 task's own commands name; a push to main runs the whole suite. During development,
-`cargo fmt --all` and `cargo clippy -p <crate> --all-targets --locked -- -D warnings`
-on the crates you changed cover formatting and linting. CI lints every package the
-change can affect, so don't use `--workspace`. `cargo gate run <ID> --only <check>`
+`cargo fmt --all` and `cargo clippy -p <crate> --lib --locked -- -D warnings`
+on the crates you changed cover formatting and linting; use `--tests` instead of
+`--lib` when you changed a tests.rs too. The gate's clippy check lints all targets,
+so run `cargo gate run <ID> --only clippy` once before you finish. CI lints every package
+the change can affect, so don't use `--workspace`. `cargo gate run <ID> --only <check>`
 runs one of the task's test commands. Use `cargo deny --locked check` for dependency policy.
 
 Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases`.

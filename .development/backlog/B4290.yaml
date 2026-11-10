@@ -1,7 +1,7 @@
 id: B4290
 milestone: M8 platform
 title: Cache contracts and remaining local operations
-status: todo
+status: done
 depends_on: [B2226, B390]
 file: tasks/B4290-cache-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/caching.py"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1033

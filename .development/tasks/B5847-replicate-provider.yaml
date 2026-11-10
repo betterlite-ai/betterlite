@@ -194,4 +194,4 @@ pitfalls:
   - An empty joined output becomes one space in transform_response, and usage counts that space.
   - The create POST status is not checked, so an error body without `urls.get` surfaces as the 400 prediction-url error.
 review_level: standard
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2600, max_new_expects: 0}

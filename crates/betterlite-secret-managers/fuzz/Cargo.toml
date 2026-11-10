@@ -25,6 +25,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "github_oidc_response"
+path = "fuzz_targets/github_oidc_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "oidc_jwt_payload"
 path = "fuzz_targets/oidc_jwt_payload.rs"
 test = false

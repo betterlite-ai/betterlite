@@ -109,3 +109,7 @@ path = "src/langsmith_payloads/tests.rs"
 [[test]]
 name = "zerobus"
 path = "src/zerobus/client/tests/suite.rs"
+
+[[test]]
+name = "rubrik_moderation"
+path = "src/rubrik_moderation/tests.rs"
