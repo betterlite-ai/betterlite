@@ -6,16 +6,22 @@ use std::fs;
 use std::future::{Future, ready};
 use std::io;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse, base_builder};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 
 use super::error::CacheLookupError;
 use super::lookup::{MAX_PAGINATION_PAGES, check_cache};
@@ -160,6 +166,77 @@ fn proxy_target() -> EndpointTarget {
         url: format!("{PROXY_TARGET_URL}?x=1"),
         auth: None,
     }
+}
+
+struct Redirecting {
+    base: String,
+    paths: Arc<Mutex<Vec<String>>>,
+    _tasks: JoinSet<()>,
+}
+
+async fn redirecting_server() -> Redirecting {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let paths: Arc<Mutex<Vec<String>>> = Arc::default();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_redirects(listener, Arc::clone(&paths)));
+    Redirecting {
+        base,
+        paths,
+        _tasks: tasks,
+    }
+}
+
+async fn serve_redirects(listener: TcpListener, paths: Arc<Mutex<Vec<String>>>) {
+    loop {
+        let Ok((mut stream, _peer)) = listener.accept().await else {
+            return;
+        };
+        let Some(head) = read_request_head(&mut stream).await else {
+            continue;
+        };
+        let path = head
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or_default()
+            .to_owned();
+        paths.lock().unwrap().push(path.clone());
+        let response = if path == "/redirected" {
+            page_response()
+        } else {
+            redirect_response()
+        };
+        let _written = stream.write_all(response.as_bytes()).await;
+    }
+}
+
+async fn read_request_head(stream: &mut TcpStream) -> Option<String> {
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    loop {
+        if let Some(position) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+            return String::from_utf8(received[..position].to_vec()).ok();
+        }
+        let read = stream.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            return None;
+        }
+        received.extend_from_slice(&chunk[..read]);
+    }
+}
+
+fn page_response() -> String {
+    let body = r#"{"cachedContents":[{"displayName":"key-1","name":"name-1"}]}"#;
+    format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+fn redirect_response() -> String {
+    "HTTP/1.1 307 Temporary Redirect\r\nlocation: /redirected\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+        .to_owned()
 }
 
 #[rstest]
@@ -526,6 +603,32 @@ async fn list_request_carries_auth_and_extras() {
         "Bearer token-abc"
     );
     assert_eq!(headers.get("x-extra").unwrap(), "extra-value");
+}
+
+#[tokio::test]
+async fn redirecting_list_page_is_followed() {
+    let server = redirecting_server().await;
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT).unwrap();
+    let target = EndpointTarget {
+        url: format!(
+            "{}/v1/projects/proj/locations/us-central1/cachedContents",
+            server.base
+        ),
+        auth: Some(AuthHeader::Token(SecretString::from("token-abc"))),
+    };
+    let found = check_cache(&client, &target, "key-1", &BTreeMap::new(), DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(found.as_deref(), Some("name-1"));
+    let paths = server.paths.lock().unwrap().clone();
+    assert_eq!(
+        paths,
+        vec![
+            "/v1/projects/proj/locations/us-central1/cachedContents".to_owned(),
+            "/redirected".to_owned(),
+        ]
+    );
 }
 
 #[tokio::test]

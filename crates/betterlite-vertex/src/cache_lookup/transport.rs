@@ -24,7 +24,11 @@ pub trait CacheTransport: Send + Sync {
 
 impl CacheTransport for ProxiedClient {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        self.send_buffered(request).await
+        // LiteLLM's httpx handlers follow redirects, so the list path must re-check each hop too
+        self.send_following(request)
+            .await?
+            .buffered(self.limits.body_bytes)
+            .await
     }
 }
 
