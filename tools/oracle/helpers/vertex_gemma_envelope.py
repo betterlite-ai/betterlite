@@ -9,7 +9,6 @@ from litellm.types.llms.openai import AllMessageValues
 litellm.suppress_debug_info = True
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Params: TypeAlias = dict[str, Json]
 
 
 def object_of(value: Json, name: str) -> dict[str, Json]:
@@ -24,21 +23,11 @@ def list_of(value: Json, name: str) -> list[Json]:
     return value
 
 
-def string_of(fields: Params, name: str) -> str:
+def string_of(fields: dict[str, Json], name: str) -> str:
     value = fields.get(name)
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
     return value
-
-
-def optional_string(fields: Params, name: str) -> str | None:
-    value = fields.get(name)
-    return value if isinstance(value, str) else None
-
-
-def optional_bool(fields: Params, name: str) -> bool | None:
-    value = fields.get(name)
-    return value if isinstance(value, bool) else None
 
 
 def transform_section(config: VertexGemmaConfig, section: Json) -> Json:
@@ -53,14 +42,7 @@ def transform_section(config: VertexGemmaConfig, section: Json) -> Json:
         litellm_params=litellm_params,
         headers={},
     )
-    request_value = cast(dict[str, Json], request)
-    instance = object_of(list_of(request_value.get("instances"), "instances")[0], "instance")
-    result: dict[str, Json] = {
-        "request": request_value,
-        "instance_keys": cast(Json, sorted(instance)),
-        "top_keys": cast(Json, sorted(request_value)),
-    }
-    return result
+    return cast(Json, request)
 
 
 def outcome_section(config: VertexGemmaConfig, section: Json) -> Json:
@@ -73,26 +55,28 @@ def outcome_section(config: VertexGemmaConfig, section: Json) -> Json:
 
 
 def fake_stream_section(config: VertexGemmaConfig, section: Json) -> Json:
-    fields = object_of(section, "fake stream case")
     results: list[Json] = []
-    for item in list_of(fields.get("cases"), "cases"):
+    for item in list_of(object_of(section, "fake stream case").get("cases"), "cases"):
         query = object_of(item, "fake stream query")
+        model = query.get("model")
+        stream = query.get("stream")
+        provider = query.get("provider")
         results.append(
             {
-                "model": query.get("model"),
-                "stream": query.get("stream"),
-                "provider": query.get("provider"),
+                "model": model,
+                "stream": stream,
+                "provider": provider,
                 "faked": config.should_fake_stream(
-                    model=optional_string(query, "model"),
-                    stream=optional_bool(query, "stream"),
-                    custom_llm_provider=optional_string(query, "provider"),
+                    model=model if isinstance(model, str) else None,
+                    stream=stream if isinstance(stream, bool) else None,
+                    custom_llm_provider=provider if isinstance(provider, str) else None,
                 ),
             }
         )
     return {"results": results}
 
 
-def run(input_value: Params) -> Json:
+def run(input_value: dict[str, Json]) -> Json:
     config = VertexGemmaConfig()
     return {
         "wrapper_keys": transform_section(config, input_value.get("wrapper_keys")),

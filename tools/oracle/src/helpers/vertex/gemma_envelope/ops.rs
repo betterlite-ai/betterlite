@@ -4,7 +4,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat_content::{ChatContent, RefuseDownloads};
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_vertex::gemma_envelope::config::VertexGemmaConfig;
-use betterlite_vertex::gemma_envelope::error::GemmaEnvelopeError;
 use betterlite_vertex::gemma_envelope::request::transform_request;
 use betterlite_vertex::gemma_envelope::response::unwrap_predictions;
 use serde_json::{Value, json};
@@ -43,30 +42,15 @@ fn transform(case: &TransformCase) -> Result<Value, Box<HelperError>> {
         environment: &environment,
         downloads: &RefuseDownloads,
     };
-    let request = transform_request(&content).map_err(|error| envelope_failure(&error))?;
-    let (instance_keys, top_keys) = key_lists(&request);
-    Ok(json!({
-        "request": serde_json::to_value(&request).map_err(|source| encode_failure(&source))?,
-        "instance_keys": instance_keys,
-        "top_keys": top_keys,
-    }))
-}
-
-fn key_lists(request: &PromptJson) -> (Vec<String>, Vec<String>) {
-    let PromptJson::Object(root) = request else {
-        return (Vec::new(), Vec::new());
-    };
-    let mut top_keys: Vec<String> = root.keys().cloned().collect();
-    top_keys.sort_unstable();
-    let Some(PromptJson::List(instances)) = root.get("instances") else {
-        return (Vec::new(), top_keys);
-    };
-    let Some(PromptJson::Object(instance)) = instances.first() else {
-        return (Vec::new(), top_keys);
-    };
-    let mut instance_keys: Vec<String> = instance.keys().cloned().collect();
-    instance_keys.sort_unstable();
-    (instance_keys, top_keys)
+    let request = transform_request(&content).map_err(|error| {
+        helper_failure(
+            "GemmaEnvelopeError",
+            Some(error.status_code()),
+            error.to_string(),
+        )
+    })?;
+    serde_json::to_value(&request)
+        .map_err(|source| helper_failure("EncodeError", None, source.to_string()))
 }
 
 fn outcome(response: &Json) -> Value {
@@ -95,24 +79,13 @@ fn fake_streams(case: &FakeStreamCase) -> Value {
     json!({"results": results})
 }
 
-fn envelope_failure(error: &GemmaEnvelopeError) -> Box<HelperError> {
+fn helper_failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: String::from("GemmaEnvelopeError"),
-        status: Some(error.status_code()),
+        class: class.to_owned(),
+        status,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
-    })
-}
-
-fn encode_failure(source: &serde_json::Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("EncodeError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: source.to_string(),
+        message,
     })
 }

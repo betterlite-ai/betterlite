@@ -1,7 +1,4 @@
 use betterlite_models::decisions::Json;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
-use serde_json::Number;
 
 pub const MIN_CODE: u16 = 400;
 pub const MAX_CODE: u16 = 599;
@@ -18,82 +15,49 @@ pub fn parse_gemma_container_error(predictions: &Json) -> Option<VertexGemmaCont
     let Json::Object(fields) = predictions else {
         return None;
     };
-    let Some(Json::Text(object)) = fields.get("object") else {
+    let Json::Text(object) = fields.get("object")? else {
         return None;
     };
     if object != "error" {
         return None;
     }
-    let Some(Json::Text(message)) = fields.get("message") else {
+    let Json::Text(message) = fields.get("message")? else {
         return None;
     };
-    let code = code_value(fields.get("code")?)?;
+    let code = match fields.get("code")? {
+        // pydantic reads a float the way it reads its shortest round-trip text
+        Json::Number(number) => text_code(&number.as_f64()?.to_string()),
+        Json::Text(text) => text_code(text),
+        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
+    }?;
     Some(VertexGemmaContainerError {
         code,
-        message: message.clone(),
+        message: message.to_owned(),
     })
 }
 
-fn code_value(value: &Json) -> Option<u16> {
-    match value {
-        Json::Number(number) => number_code(number),
-        Json::Text(text) => text_code(text),
-        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
-    }
-}
-
-fn number_code(number: &Number) -> Option<u16> {
-    if let Some(integer) = number.as_i64() {
-        return u16::try_from(integer)
-            .ok()
-            .filter(|code| (MIN_CODE..=MAX_CODE).contains(code));
-    }
-    let decimal = Decimal::from_f64_retain(number.as_f64()?)?;
-    if decimal.fract() != Decimal::ZERO {
-        return None;
-    }
-    decimal
-        .to_u16()
-        .filter(|code| (MIN_CODE..=MAX_CODE).contains(code))
-}
-
+// pydantic reads the string the way Python's int() does: ASCII digits, single underscores between them, and a zero fraction
 fn text_code(text: &str) -> Option<u16> {
     let trimmed = text.trim();
-    let (negative, unsigned) = trimmed.strip_prefix('-').map_or_else(
-        || {
-            trimmed
-                .strip_prefix('+')
-                .map_or((false, trimmed), |rest| (false, rest))
-        },
-        |rest| (true, rest),
-    );
+    let negative = trimmed.starts_with('-');
+    let unsigned = trimmed
+        .strip_prefix('-')
+        .or_else(|| trimmed.strip_prefix('+'))
+        .unwrap_or(trimmed);
     let (whole, fraction) = match unsigned.split_once('.') {
         Some((whole, fraction)) => (whole, Some(fraction)),
         None => (unsigned, None),
     };
-    let value = parse_digits(whole)?;
+    if whole.is_empty() || whole.starts_with('_') || whole.ends_with('_') || whole.contains("__") {
+        return None;
+    }
     if let Some(rest) = fraction
         && (rest.is_empty() || !rest.bytes().all(|byte| byte == b'0'))
     {
         return None;
     }
-    let signed = if negative {
-        value.checked_neg()?
-    } else {
-        value
-    };
-    u16::try_from(signed)
-        .ok()
-        .filter(|code| (MIN_CODE..=MAX_CODE).contains(code))
-}
-
-// pydantic reads the string the way Python's int() does: ASCII digits, with single underscores between them
-fn parse_digits(text: &str) -> Option<i64> {
-    if text.is_empty() || text.starts_with('_') || text.ends_with('_') || text.contains("__") {
-        return None;
-    }
     let mut value: i64 = 0;
-    for byte in text.bytes() {
+    for byte in whole.bytes() {
         if byte == b'_' {
             continue;
         }
@@ -103,5 +67,12 @@ fn parse_digits(text: &str) -> Option<i64> {
         let digit = u32::from(byte).checked_sub(u32::from(b'0'))?;
         value = value.checked_mul(10)?.checked_add(i64::from(digit))?;
     }
-    Some(value)
+    let signed = if negative {
+        value.checked_neg()?
+    } else {
+        value
+    };
+    u16::try_from(signed)
+        .ok()
+        .filter(|code| (MIN_CODE..=MAX_CODE).contains(code))
 }

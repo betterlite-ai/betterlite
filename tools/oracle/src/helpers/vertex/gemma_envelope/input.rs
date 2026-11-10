@@ -35,10 +35,7 @@ pub(crate) struct FakeStreamCase {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FakeStreamQuery {
-    #[serde(default)]
     pub(crate) model: Option<String>,
-    #[serde(default)]
     pub(crate) stream: Option<bool>,
-    #[serde(default)]
     pub(crate) provider: Option<String>,
 }

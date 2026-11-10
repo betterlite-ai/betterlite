@@ -13,18 +13,14 @@ pub fn transform_request(content: &ChatContent<'_>) -> Result<Json, GemmaEnvelop
     body.shift_remove("stream");
     body.shift_remove("stream_options");
     body.shift_remove("context_management");
-    Ok(instances(body))
-}
-
-fn instances(body: Object) -> Json {
     let mut instance = Object::new();
     instance.insert(
         REQUEST_FORMAT_KEY.to_owned(),
         Json::Text(CHAT_COMPLETIONS.to_owned()),
     );
     instance.extend(body);
-    Json::Object(Object::from_iter([(
+    Ok(Json::Object(Object::from_iter([(
         String::from("instances"),
         Json::List(vec![Json::Object(instance)]),
-    )]))
+    )])))
 }

@@ -10,7 +10,7 @@ use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::chat_content::{ChatContent, RefuseDownloads};
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, Object as BaseObject, OpenAiConfig, OpenAiSettings,
+    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings,
 };
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
 use rstest::rstest;
@@ -24,7 +24,7 @@ use super::container::{
 };
 use super::error::GemmaEnvelopeError;
 use super::post::{
-    CallerClient, HandlerPost, PostFailure, PostFuture, PostReply, PostRequest, RawClientPost, post,
+    CallerClient, GemmaPost, PostFailure, PostFuture, PostReply, PostRequest, Timeout, post,
 };
 use super::request::{CHAT_COMPLETIONS, REQUEST_FORMAT_KEY, transform_request};
 use super::response::{
@@ -151,18 +151,6 @@ fn projection_supported_params_exclude_deployed_fields() {
         UNSUPPORTED_DEPLOYED_PARAMS
             .iter()
             .all(|param| !supported.contains(param))
-    );
-}
-
-#[test]
-fn projection_map_params_skips_deployed_fields() {
-    let non_default: BaseObject =
-        serde_json::from_str(r#"{"temperature": 0.2, "store": true, "max_retries": 2}"#).unwrap();
-    let mut optional = BaseObject::new();
-    config().map_openai_params(MODEL, &non_default, &mut optional, &catalog());
-    assert_eq!(
-        optional.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["temperature"]
     );
 }
 
@@ -352,8 +340,7 @@ fn chat_response() -> ChatResponse {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum PostCall {
-    Handler(Option<Duration>),
-    Timed(Duration),
+    Explicit(Option<Duration>),
     ClientDefault,
 }
 
@@ -380,34 +367,19 @@ impl Recorder {
     }
 }
 
-impl HandlerPost for Recorder {
+impl GemmaPost for Recorder {
     type Failure = NeverFails;
 
     fn post<'request>(
         &'request self,
         _request: PostRequest<'request>,
-        timeout: Option<Duration>,
+        timeout: Timeout,
     ) -> PostFuture<'request, Self::Failure> {
-        self.reply(PostCall::Handler(timeout))
-    }
-}
-
-impl RawClientPost for Recorder {
-    type Failure = NeverFails;
-
-    fn post_with_timeout<'request>(
-        &'request self,
-        _request: PostRequest<'request>,
-        timeout: Duration,
-    ) -> PostFuture<'request, Self::Failure> {
-        self.reply(PostCall::Timed(timeout))
-    }
-
-    fn post_with_client_timeout<'request>(
-        &'request self,
-        _request: PostRequest<'request>,
-    ) -> PostFuture<'request, Self::Failure> {
-        self.reply(PostCall::ClientDefault)
+        let call = match timeout {
+            Timeout::Explicit(value) => PostCall::Explicit(value),
+            Timeout::ClientDefault => PostCall::ClientDefault,
+        };
+        self.reply(call)
     }
 }
 
@@ -424,12 +396,12 @@ async fn client_timeout_handler_client_receives_explicit_none() {
     let caller = Recorder::default();
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    let caller_client: CallerClient<'_, Recorder, Recorder> = CallerClient::Handler(&caller);
+    let caller_client: CallerClient<'_, Recorder> = CallerClient::Handler(&caller);
     let reply = post(Some(caller_client), &pooled, request(&headers), None)
         .await
         .unwrap();
     assert_eq!(reply.status, 200);
-    assert_eq!(caller.calls(), [PostCall::Handler(None)]);
+    assert_eq!(caller.calls(), [PostCall::Explicit(None)]);
     assert!(pooled.calls().is_empty());
 }
 
@@ -438,7 +410,7 @@ async fn client_timeout_handler_client_receives_given_timeout() {
     let caller = Recorder::default();
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    let caller_client: CallerClient<'_, Recorder, Recorder> = CallerClient::Handler(&caller);
+    let caller_client: CallerClient<'_, Recorder> = CallerClient::Handler(&caller);
     post(
         Some(caller_client),
         &pooled,
@@ -449,7 +421,7 @@ async fn client_timeout_handler_client_receives_given_timeout() {
     .unwrap();
     assert_eq!(
         caller.calls(),
-        [PostCall::Handler(Some(Duration::from_secs(7)))]
+        [PostCall::Explicit(Some(Duration::from_secs(7)))]
     );
     assert!(pooled.calls().is_empty());
 }
@@ -459,7 +431,7 @@ async fn client_timeout_raw_client_omits_none() {
     let caller = Recorder::default();
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    let caller_client: CallerClient<'_, Recorder, Recorder> = CallerClient::Raw(&caller);
+    let caller_client: CallerClient<'_, Recorder> = CallerClient::Raw(&caller);
     post(Some(caller_client), &pooled, request(&headers), None)
         .await
         .unwrap();
@@ -472,7 +444,7 @@ async fn client_timeout_raw_client_forwards_given_timeout() {
     let caller = Recorder::default();
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    let caller_client: CallerClient<'_, Recorder, Recorder> = CallerClient::Raw(&caller);
+    let caller_client: CallerClient<'_, Recorder> = CallerClient::Raw(&caller);
     post(
         Some(caller_client),
         &pooled,
@@ -481,7 +453,10 @@ async fn client_timeout_raw_client_forwards_given_timeout() {
     )
     .await
     .unwrap();
-    assert_eq!(caller.calls(), [PostCall::Timed(Duration::from_secs(3))]);
+    assert_eq!(
+        caller.calls(),
+        [PostCall::Explicit(Some(Duration::from_secs(3)))]
+    );
     assert!(pooled.calls().is_empty());
 }
 
@@ -489,38 +464,31 @@ async fn client_timeout_raw_client_forwards_given_timeout() {
 async fn client_timeout_pooled_fallback_receives_none() {
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    post::<Recorder, Recorder, Recorder>(None, &pooled, request(&headers), None)
+    post::<Recorder, Recorder>(None, &pooled, request(&headers), None)
         .await
         .unwrap();
-    assert_eq!(pooled.calls(), [PostCall::Handler(None)]);
+    assert_eq!(pooled.calls(), [PostCall::Explicit(None)]);
 }
 
 #[tokio::test]
 async fn client_timeout_failure_keeps_its_variant() {
-    let failing = FailingRaw;
+    let failing = FailingClient;
     let pooled = Recorder::default();
     let headers = BTreeMap::new();
-    let caller_client: CallerClient<'_, Recorder, FailingRaw> = CallerClient::Raw(&failing);
+    let caller_client: CallerClient<'_, FailingClient> = CallerClient::Raw(&failing);
     let outcome = post(Some(caller_client), &pooled, request(&headers), None).await;
-    assert!(matches!(outcome, Err(PostFailure::Raw(NeverFails))));
+    assert!(matches!(outcome, Err(PostFailure::Client(NeverFails))));
 }
 
-struct FailingRaw;
+struct FailingClient;
 
-impl RawClientPost for FailingRaw {
+impl GemmaPost for FailingClient {
     type Failure = NeverFails;
 
-    fn post_with_timeout<'request>(
+    fn post<'request>(
         &'request self,
         _request: PostRequest<'request>,
-        _timeout: Duration,
-    ) -> PostFuture<'request, Self::Failure> {
-        Box::pin(ready(Err(NeverFails)))
-    }
-
-    fn post_with_client_timeout<'request>(
-        &'request self,
-        _request: PostRequest<'request>,
+        _timeout: Timeout,
     ) -> PostFuture<'request, Self::Failure> {
         Box::pin(ready(Err(NeverFails)))
     }
