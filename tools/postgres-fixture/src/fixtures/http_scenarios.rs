@@ -1,7 +1,6 @@
 use crate::connection::ConnectionOptions;
 use crate::error::FixtureError;
 use crate::seed::{BudgetRow, FixtureSeed, JwtMapping, KeyRow, Membership, TeamRow, UserRow};
-use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use tokio::runtime::Builder;
@@ -141,7 +140,7 @@ async fn insert_setup(
     insert_all(client, &setup.users, &mut journal).await?;
     insert_all(client, &setup.teams, &mut journal).await?;
     insert_all(client, &setup.memberships, &mut journal).await?;
-    insert_budgets(client, setup, &mut journal).await?;
+    insert_all(client, &setup.budgets, &mut journal).await?;
     insert_jwt_mappings(client, setup, &mut journal).await?;
     insert_keys(client, setup, &mut journal).await?;
     insert_all(client, &setup.managed_files, &mut journal).await?;
@@ -172,6 +171,8 @@ seed_row!(TeamRow, SetupList::Teams, "INSERT INTO \"LiteLLM_TeamTable\" (\"team_
 #[rustfmt::skip]
 seed_row!(Membership, SetupList::Memberships, "INSERT INTO \"LiteLLM_TeamMembership\" (\"user_id\",\"team_id\") VALUES ($1,$2)", user_id, team_id);
 #[rustfmt::skip]
+seed_row!(BudgetRow, SetupList::Budgets, "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2::numeric::float8,$3,$4)", budget_id, max_budget, user_id, user_id);
+#[rustfmt::skip]
 seed_row!(ManagedFileRow, SetupList::ManagedFiles, "INSERT INTO \"LiteLLM_ManagedFileTable\" (\"id\",\"unified_file_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3),'{}'::jsonb)", unified_file_id, unified_file_id, content);
 #[rustfmt::skip]
 seed_row!(ManagedObjectRow, SetupList::ManagedObjects, "INSERT INTO \"LiteLLM_ManagedObjectTable\" (\"id\",\"unified_object_id\",\"file_object\",\"model_mappings\") VALUES ($1,$2,jsonb_build_object('content',$3),'{}'::jsonb)", unified_object_id, unified_object_id, content);
@@ -201,29 +202,6 @@ where
     }
     Ok(())
 }
-// max_budget is FLOAT8 in LiteLLM's schema, and rust_decimal binds only to NUMERIC
-async fn insert_budgets(
-    client: &Client,
-    setup: &ScenarioSetup,
-    journal: &mut Vec<SetupJournalEntry>,
-) -> Result<(), FixtureError> {
-    let sql = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)";
-    for (index, row) in setup.budgets.iter().enumerate() {
-        let max_budget = row.max_budget.and_then(|budget| budget.to_f64());
-        let params: &[&(dyn ToSql + Sync)] =
-            &[&row.budget_id, &max_budget, &row.user_id, &row.user_id];
-        client
-            .execute(sql, params)
-            .await
-            .map_err(FixtureError::Database)?;
-        journal.push(SetupJournalEntry {
-            list: SetupList::Budgets,
-            index,
-        });
-    }
-    Ok(())
-}
-
 async fn insert_jwt_mappings(
     client: &Client,
     setup: &ScenarioSetup,
