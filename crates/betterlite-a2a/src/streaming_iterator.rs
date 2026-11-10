@@ -181,7 +181,9 @@ where
         if text.is_some() {
             self.last_text.clone_from(&text);
         }
-        self.retain(chunk, wire.to_string().len(), text);
+        let text_len = text.as_ref().map_or(0, String::len);
+        let cost = wire.to_string().len().saturating_add(text_len);
+        self.retain(chunk, cost, text);
     }
 
     // an agent's stream is untrusted input, so the kept copies stop at a byte cap and the stream goes on
@@ -189,16 +191,10 @@ where
         if self.retention_capped {
             return;
         }
-        let total = self
-            .retained_bytes
-            .saturating_add(cost)
-            .saturating_add(text.as_ref().map_or(0, String::len));
+        let total = self.retained_bytes.saturating_add(cost);
         if total > self.max_retained_bytes {
             self.retention_capped = true;
-            tracing::warn!(
-                max_retained_bytes = self.max_retained_bytes,
-                "A2A streaming chunks are no longer retained, the stream continues"
-            );
+            tracing::warn!("A2A streaming retention cap reached, chunks are forwarded unkept");
             return;
         }
         self.retained_bytes = total;

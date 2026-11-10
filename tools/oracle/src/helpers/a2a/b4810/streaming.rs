@@ -6,7 +6,8 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use betterlite_a2a::client::records::compat::SendMessageRequest;
 use betterlite_a2a::streaming_iterator::{
-    A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
+    A2AStreamingIterator, DEFAULT_MAX_RETAINED_BYTES, StreamSetup, StreamSuccessCall,
+    StreamSuccessDispatch, StreamedChunk,
 };
 use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::logging_state::LoggingState;
@@ -141,6 +142,7 @@ async fn iterate(
         logging,
         StreamSetup {
             counter,
+            max_retained_bytes: DEFAULT_MAX_RETAINED_BYTES,
             dispatch: Recorder::default(),
             clock: clock_for(instance),
         },
