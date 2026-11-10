@@ -12,6 +12,13 @@ description: >-
 
 scope:
   paths:
+    - "tools/oracle/helpers/semantic_embeddings"
+    - "tools/oracle/helpers/b4381/pyrightconfig.json"
+    - "tools/oracle/helpers/b4381/__init__.py"
+    - "tools/oracle/helpers/b4381/pyrightconfig.json"
+    - "tools/oracle/helpers/b4381/__pycache__"
+    - "tools/oracle/helpers/b4381/__init__.py"
+    - "tools/oracle/helpers/b4381"
     - crates/betterlite-router/src/semantic_embeddings.rs
     - crates/betterlite-router/src/semantic_embeddings/**
     - tools/oracle/cases/helpers/semantic-embeddings/**
