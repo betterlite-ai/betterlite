@@ -14,13 +14,14 @@ use tokio::time::timeout;
 
 use super::error::ModelInfoError;
 use super::{
-    MAX_RESPONSE_BYTES, MODEL_INFO_DISCOVERY_PROVIDERS, MODEL_INFO_REFRESH_CONCURRENCY,
-    MODEL_INFO_REFRESH_SECONDS, ModelCard, ModelList, ModelListCache, ModelQuery, TokenLimits,
-    cache_key, decode_compatible_model_list, discover_model_limits,
+    MODEL_INFO_DISCOVERY_PROVIDERS, MODEL_INFO_REFRESH_CONCURRENCY, MODEL_INFO_REFRESH_SECONDS,
+    ModelCard, ModelList, ModelListCache, ModelQuery, TokenLimits, cache_key,
+    decode_compatible_model_list, discover_model_limits,
 };
 use crate::openai_base_config::Headers;
 
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+const TWO_MIB: usize = 2_097_152;
 const ONE_MODEL: &str = r#"{"data":[{"id":"m","max_model_len":4096,"max_output_tokens":1024}]}"#;
 
 #[derive(Default)]
@@ -284,7 +285,7 @@ async fn a_list_without_the_model_gives_no_limits_but_is_still_kept_for_300_seco
 #[tokio::test]
 async fn the_response_is_capped_at_2_mib(#[case] excess: usize, #[case] max_tokens: Option<u64>) {
     let head = r#"{"data":[{"id":"m","max_model_len":10}],"pad":""#;
-    let padding = MAX_RESPONSE_BYTES
+    let padding = TWO_MIB
         .saturating_add(excess)
         .saturating_sub(head.len())
         .saturating_sub(2);
