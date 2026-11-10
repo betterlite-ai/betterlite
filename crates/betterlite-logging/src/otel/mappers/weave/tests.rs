@@ -86,7 +86,7 @@ fn weave_llm_call_writes_the_output_choices() {
 
 #[test]
 fn weave_llm_call_omits_absent_values() {
-    let attributes = attributes_of(r#"{"id": "call-1", "call_type": "completion"}"#, false);
+    let attributes = attributes_of(r#"{"call_type": "completion"}"#, false);
     assert!(attributes.is_empty());
 }
 

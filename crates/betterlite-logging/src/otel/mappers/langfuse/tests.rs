@@ -77,6 +77,21 @@ fn attributes_of(payload_text_value: &str) -> AttributeMap {
     LangfuseMapper.map(&SpanData::LLMCall(&call), &BTreeMap::new())
 }
 
+fn attributes_of_default_trace(payload_text_value: &str) -> AttributeMap {
+    let call = LLMCallSpanData::from_standard_logging_payload(
+        &payload_text(payload_text_value),
+        LLMCallOptions {
+            capture_content: true,
+            time_to_first_chunk_seconds: None,
+            request_route: None,
+            trace: TraceControls::default(),
+            session_id: None,
+        },
+    )
+    .expect("llm call");
+    LangfuseMapper.map(&SpanData::LLMCall(&call), &BTreeMap::new())
+}
+
 fn attributes() -> AttributeMap {
     attributes_of(PAYLOAD)
 }
@@ -206,7 +221,7 @@ fn langfuse_llm_call_writes_only_the_embedding_summary_for_embeddings() {
 
 #[test]
 fn langfuse_llm_call_omits_absent_values() {
-    let attributes = attributes_of(r#"{"id": "call-1", "model": "gpt-4o"}"#);
+    let attributes = attributes_of_default_trace(r#"{"id": "call-1"}"#);
     assert_eq!(
         attributes.get("langfuse.observation.type"),
         Some(&Value::from("generation"))
