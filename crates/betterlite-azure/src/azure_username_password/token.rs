@@ -135,20 +135,6 @@ pub fn decode_password_token(bytes: &[u8]) -> Result<PasswordToken, PasswordToke
     })
 }
 
-pub fn token_request(
-    endpoint: &str,
-    input: &UsernamePasswordInput,
-) -> Result<HttpRequest, UsernamePasswordError> {
-    let decorated = scope::decorate(input.scope.as_deref().unwrap_or(DEFAULT_SCOPE))?;
-    Ok(HttpRequest {
-        method: HttpMethod::Post,
-        url: endpoint.to_owned(),
-        query: Vec::new(),
-        headers: vec![("Accept".to_owned(), "application/json".to_owned())],
-        form: password_form(input, &decorated),
-    })
-}
-
 // MSAL drops a falsy form value, so an empty client id, username or password leaves its field out
 fn password_form(input: &UsernamePasswordInput, scope: &str) -> Vec<(String, String)> {
     let mut form = Vec::new();
@@ -175,7 +161,14 @@ pub fn request_token(
     endpoint: &str,
     input: &UsernamePasswordInput,
 ) -> Result<PasswordToken, UsernamePasswordError> {
-    let request = token_request(endpoint, input)?;
+    let decorated = scope::decorate(input.scope.as_deref().unwrap_or(DEFAULT_SCOPE))?;
+    let request = HttpRequest {
+        method: HttpMethod::Post,
+        url: endpoint.to_owned(),
+        query: Vec::new(),
+        headers: vec![("Accept".to_owned(), "application/json".to_owned())],
+        form: password_form(input, &decorated),
+    };
     let reply = transport
         .send(&request)
         .map_err(|source| UsernamePasswordError::Transport { source })?;

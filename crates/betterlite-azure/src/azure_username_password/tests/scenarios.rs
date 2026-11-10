@@ -4,7 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::fixture::{
     CLIENT, Fixture, HOST, NOW, PASSWORD, Reply, USERNAME, form_map, input, input_for,
-    instance_metadata, openid, openid_for, scope_set, token, token_url, well_known_url,
+    instance_metadata, openid, scope_set, token, token_url, well_known_url,
 };
 use crate::azure_client_secret::ClientSecretError;
 use crate::azure_client_secret::ResolvedCredentials;
@@ -83,9 +83,20 @@ pub(super) fn password_grant_form() {
 pub(super) fn default_tenant() {
     default_host();
     custom_host();
-    default_scope();
-    empty_scope();
-    explicit_scope();
+    decorated_scope(
+        None,
+        &[DEFAULT_SCOPE, "offline_access", "openid", "profile"],
+    );
+    decorated_scope(Some(""), &["offline_access", "openid", "profile"]);
+    decorated_scope(
+        Some("https://management.azure.com/.default"),
+        &[
+            "https://management.azure.com/.default",
+            "offline_access",
+            "openid",
+            "profile",
+        ],
+    );
 }
 
 fn default_host() {
@@ -112,7 +123,7 @@ fn custom_host() {
         let fixture = granted(
             vec![
                 instance_metadata(discovery),
-                openid_for("login.contoso.test"),
+                openid("login.contoso.test"),
                 token(&token_body()),
             ],
             &input_for(USERNAME, PASSWORD, None),
@@ -131,73 +142,20 @@ fn custom_host() {
     }
 }
 
-fn default_scope() {
+fn decorated_scope(scope: Option<&str>, expected: &[&str]) {
     let fixture = granted(
         vec![openid(HOST), token(&token_body())],
-        &input_for(USERNAME, PASSWORD, None),
+        &input_for(USERNAME, PASSWORD, scope),
         None,
     );
-    assert_eq!(
-        scope_set(&fixture.transport.posts()[0]),
-        vec![
-            DEFAULT_SCOPE.to_owned(),
-            "offline_access".to_owned(),
-            "openid".to_owned(),
-            "profile".to_owned(),
-        ]
-    );
+    assert_eq!(scope_set(&fixture.transport.posts()[0]), expected);
 }
 
-fn empty_scope() {
-    let fixture = granted(
-        vec![openid(HOST), token(&token_body())],
-        &input_for(USERNAME, PASSWORD, Some("")),
-        None,
-    );
-    assert_eq!(
-        scope_set(&fixture.transport.posts()[0]),
-        vec![
-            "offline_access".to_owned(),
-            "openid".to_owned(),
-            "profile".to_owned(),
-        ]
-    );
-}
-
-fn explicit_scope() {
-    let scope = "https://management.azure.com/.default";
-    let fixture = granted(
-        vec![openid(HOST), token(&token_body())],
-        &input_for(USERNAME, PASSWORD, Some(scope)),
-        None,
-    );
-    assert_eq!(
-        scope_set(&fixture.transport.posts()[0]),
-        vec![
-            scope.to_owned(),
-            "offline_access".to_owned(),
-            "openid".to_owned(),
-            "profile".to_owned(),
-        ]
-    );
-}
-
-fn token_error(body: &str) -> String {
+fn token_error(status: u16, body: &str) -> String {
     let fixture = Fixture::new(vec![
         openid(HOST),
-        Reply::status(400, "/oauth2/v2.0/token", body),
+        Reply::status(status, "/oauth2/v2.0/token", body),
     ]);
-    let error = fixture
-        .provider(&input_for(USERNAME, PASSWORD, None))
-        .unwrap()
-        .token()
-        .unwrap_err();
-    assert_eq!(fixture.transport.posts().len(), 1);
-    error.to_string()
-}
-
-fn record_error(body: &str) -> String {
-    let fixture = Fixture::new(vec![openid(HOST), token(body)]);
     let error = fixture
         .provider(&input_for(USERNAME, PASSWORD, None))
         .unwrap()
@@ -215,39 +173,42 @@ pub(super) fn invalid_grant() {
 
 fn descriptions() {
     assert_eq!(
-        token_error(r#"{"error":"invalid_grant","error_description":"AADSTS50126: bad password"}"#),
+        token_error(
+            400,
+            r#"{"error":"invalid_grant","error_description":"AADSTS50126: bad password"}"#
+        ),
         "Authentication failed: AADSTS50126: bad password"
     );
     assert_eq!(
-        token_error(r#"{"error":"invalid_grant"}"#),
+        token_error(400, r#"{"error":"invalid_grant"}"#),
         "Authentication failed: invalid_grant"
     );
     assert_eq!(
-        token_error(r#"{"error":"invalid_grant","error_description":""}"#),
+        token_error(400, r#"{"error":"invalid_grant","error_description":""}"#),
         "Authentication failed: invalid_grant"
     );
 }
 
 fn identity_token_failures() {
     assert_eq!(
-        record_error(r#"{"access_token":"tok","expires_in":3600}"#),
+        token_error(200, r#"{"access_token":"tok","expires_in":3600}"#),
         "Failed to build AuthenticationRecord from unexpected identity token"
     );
     let missing_aud = r#"{"access_token":"tok","expires_in":3600,"id_token_claims":{"iss":"https://login.microsoftonline.com/tenant/v2.0","sub":"subject","preferred_username":"user@example.com"},"client_info":"eyJ1aWQiOiJ1aWQiLCJ1dGlkIjoidXRpZCJ9"}"#;
     assert_eq!(
-        record_error(missing_aud),
+        token_error(200, missing_aud),
         "Failed to build AuthenticationRecord from unexpected identity token"
     );
     let malformed_client_info = r#"{"access_token":"tok","expires_in":3600,"id_token_claims":{"aud":"client","iss":"https://login.microsoftonline.com/tenant/v2.0","sub":"subject","preferred_username":"user@example.com"},"client_info":"not-base64!!"}"#;
     assert_eq!(
-        record_error(malformed_client_info),
+        token_error(200, malformed_client_info),
         "Failed to build AuthenticationRecord from unexpected identity token"
     );
 }
 
 fn server_failures() {
     assert_eq!(
-        token_error("unexpected"),
+        token_error(400, "unexpected"),
         "Authentication failed: HTTP Error: 500"
     );
     let fixture = Fixture::new(vec![openid(HOST), Reply::failure("/oauth2/v2.0/token")]);

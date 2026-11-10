@@ -187,42 +187,37 @@ fn call_provider(
 
 pub(super) fn attempt_step(step: &Step) -> Value {
     with_provider(step, |provider, attempt| {
-        match call_provider(provider, step, &attempt.clock) {
-            Ok(acquired) => json!({
+        if matches!(step.observe, Observe::Lazy) {
+            return json!({
+                "kind": "callable",
+                "callable": true,
+                "token_requests": attempt.transport.posts().len(),
+            });
+        }
+        let acquired = match call_provider(provider, step, &attempt.clock) {
+            Ok(acquired) => acquired,
+            Err(error) => return token_failure(&error, attempt),
+        };
+        let token_requests = attempt.transport.posts().len();
+        let record = acquired.last().map(|token| record_json(&token.record));
+        match (step.observe, acquired.last()) {
+            (Observe::Info, Some(token)) => json!({
+                "kind": "info",
+                "token": token.token.expose_secret(),
+                "expires_on": token.expires_on,
+                "token_type": &token.token_type,
+                "refresh_on": token.refresh_on,
+                "token_requests": token_requests,
+                "record": record,
+            }),
+            _ => json!({
                 "kind": "token",
                 "tokens": acquired.iter().map(|token| token.token.expose_secret()).collect::<Vec<_>>(),
-                "token_requests": attempt.transport.posts().len(),
-                "record": acquired.last().map(|token| record_json(&token.record)),
+                "token_requests": token_requests,
+                "record": record,
             }),
-            Err(error) => token_failure(&error, attempt),
         }
     })
-}
-
-fn info_step(step: &Step) -> Value {
-    with_provider(step, |provider, attempt| match provider.token() {
-        Ok(token) => json!({
-            "kind": "info",
-            "token": token.token.expose_secret(),
-            "expires_on": token.expires_on,
-            "token_type": &token.token_type,
-            "refresh_on": token.refresh_on,
-            "token_requests": attempt.transport.posts().len(),
-            "record": record_json(&token.record),
-        }),
-        Err(error) => token_failure(&error, attempt),
-    })
-}
-
-pub(super) fn token_response_step(step: &Step) -> Value {
-    match step.observe {
-        Observe::Lazy => with_provider(
-            step,
-            |_provider, _attempt| json!({"kind": "callable", "callable": true, "token_requests": 0}),
-        ),
-        Observe::Info => info_step(step),
-        Observe::Token => attempt_step(step),
-    }
 }
 
 fn exposes_identity(message: &str, step: &Step) -> bool {
@@ -232,10 +227,11 @@ fn exposes_identity(message: &str, step: &Step) -> bool {
 
 fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
     let mut lines = Vec::new();
-    for event in events
-        .iter()
-        .filter(|event| event.level == tracing::Level::DEBUG)
-    {
+    for event in events.iter().filter(|event| {
+        event.level == tracing::Level::DEBUG
+            && (event.message.starts_with("client_id=")
+                || event.message.starts_with("token_provider "))
+    }) {
         let exposes = exposes_identity(&event.message, step);
         if event.message.starts_with("client_id=") {
             lines.push(json!({
@@ -245,7 +241,7 @@ fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
                 "password_set": event.fields.get("password_set").is_some_and(|flag| flag == "true"),
                 "exposes_identity": exposes,
             }));
-        } else if event.message.starts_with("token_provider ") {
+        } else {
             lines.push(json!({
                 "kind": "provider",
                 "identity": "present",

@@ -32,16 +32,11 @@ impl Helper for Op {
             Input::PasswordGrantForm(steps) | Input::DefaultTenant(steps) => {
                 Value::Array(steps.steps.iter().map(report::grant_step).collect())
             }
-            Input::InvalidGrant(steps) | Input::PasswordScopeDecoration(steps) => {
+            Input::InvalidGrant(steps)
+            | Input::TokenResponse(steps)
+            | Input::PasswordScopeDecoration(steps) => {
                 Value::Array(steps.steps.iter().map(report::attempt_step).collect())
             }
-            Input::TokenResponse(steps) => Value::Array(
-                steps
-                    .steps
-                    .iter()
-                    .map(report::token_response_step)
-                    .collect(),
-            ),
             Input::UsernameDebugWarning(steps) | Input::UsernameConstructorFailure(steps) => {
                 Value::Array(steps.steps.iter().map(report::construction_step).collect())
             }

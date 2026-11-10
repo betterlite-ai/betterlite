@@ -58,15 +58,6 @@ pub(super) fn openid(host: &str) -> Reply {
     )
 }
 
-pub(super) fn openid_for(host: &str) -> Reply {
-    Reply::ok(
-        "well-known/openid-configuration",
-        &format!(
-            r#"{{"authorization_endpoint":"https://{host}/{TENANT}/oauth2/v2.0/authorize","token_endpoint":"https://{host}/{TENANT}/oauth2/v2.0/token"}}"#
-        ),
-    )
-}
-
 pub(super) fn token(body: &str) -> Reply {
     Reply::ok("/oauth2/v2.0/token", body)
 }

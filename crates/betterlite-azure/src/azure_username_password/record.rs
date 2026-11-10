@@ -1,8 +1,5 @@
-use std::iter::repeat_n;
-use std::str;
-
 use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::Deserialize;
 use thiserror::Error;
 use url::Url;
@@ -24,21 +21,8 @@ pub enum RecordError {
     IdentityTokenMissing,
     #[error("the identity token has no {claim}")]
     ClaimMissing { claim: &'static str },
-    #[error("the client info is not base64")]
-    ClientInfoBase64 {
-        #[source]
-        source: base64::DecodeError,
-    },
-    #[error("the client info is not UTF-8")]
-    ClientInfoUtf8 {
-        #[source]
-        source: str::Utf8Error,
-    },
-    #[error("the client info is not JSON")]
-    ClientInfoJson {
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the client info is unreadable: {0}")]
+    ClientInfo(String),
 }
 
 #[derive(Deserialize)]
@@ -89,18 +73,11 @@ pub fn build(
 }
 
 fn client_info_id(raw: &str) -> Result<String, RecordError> {
-    let unpadded = raw.trim_end_matches('=');
-    let padding = 4_usize
-        .saturating_sub(unpadded.len().rem_euclid(4))
-        .rem_euclid(4);
-    let mut padded = unpadded.to_owned();
-    padded.extend(repeat_n('=', padding));
-    let bytes = URL_SAFE
-        .decode(padded.as_bytes())
-        .map_err(|source| RecordError::ClientInfoBase64 { source })?;
-    let text = str::from_utf8(&bytes).map_err(|source| RecordError::ClientInfoUtf8 { source })?;
-    let info: ClientInfo =
-        serde_json::from_str(text).map_err(|source| RecordError::ClientInfoJson { source })?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(raw.trim_end_matches('='))
+        .map_err(|error| RecordError::ClientInfo(error.to_string()))?;
+    let info: ClientInfo = serde_json::from_slice(&bytes)
+        .map_err(|error| RecordError::ClientInfo(error.to_string()))?;
     Ok(format!("{}.{}", info.uid, info.utid))
 }
 

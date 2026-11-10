@@ -64,8 +64,8 @@ fn azure_username_password_credential_identity_isolation() {
         openid(HOST),
         token(&identity_body("token-two")),
     ]);
-    let first = first_identity(&fixture);
-    let second = second_identity(&fixture);
+    let first = identity(&fixture, "one");
+    let second = identity(&fixture, "two");
     assert_eq!(first.token().unwrap().token.expose_secret(), "token-one");
     assert_eq!(second.token().unwrap().token.expose_secret(), "token-two");
     let posts = fixture.transport.posts();
@@ -87,24 +87,13 @@ fn azure_username_password_credential_identity_isolation() {
     assert_ne!(posts[0].form, posts[1].form);
 }
 
-fn first_identity(fixture: &Fixture) -> UsernamePasswordProvider {
+fn identity(fixture: &Fixture, word: &str) -> UsernamePasswordProvider {
     fixture
         .provider(&input(
-            "client-one",
-            "user-one",
-            "password-one",
-            Some("scope-one"),
-        ))
-        .unwrap()
-}
-
-fn second_identity(fixture: &Fixture) -> UsernamePasswordProvider {
-    fixture
-        .provider(&input(
-            "client-two",
-            "user-two",
-            "password-two",
-            Some("scope-two"),
+            &format!("client-{word}"),
+            &format!("user-{word}"),
+            &format!("password-{word}"),
+            Some(&format!("scope-{word}")),
         ))
         .unwrap()
 }
