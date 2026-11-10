@@ -434,6 +434,17 @@ async fn answers_an_invalid_jsonrpc_body() {
 }
 
 #[tokio::test]
+async fn answers_a_mismatched_jsonrpc_version_as_invalid() {
+    let body = r#"{"jsonrpc":"1.0","id":3,"method":"tools/list","params":{}}"#;
+    let response = send(&app(answers()), modern_request(body, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body_text(response).await,
+        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Body must be a single JSON-RPC request or notification object"}}"#
+    );
+}
+
+#[tokio::test]
 async fn answers_a_non_post_with_allow_post() {
     let router = app(answers());
     let request = Request::builder()
