@@ -45,12 +45,15 @@ fn capitalize(component: &str) -> String {
         .collect()
 }
 fn camel_to_snake(text: &str) -> String {
-    let mut converted = String::with_capacity(text.len());
+    let mut segments: Vec<String> = Vec::new();
+    let mut current = String::new();
     for character in text.chars() {
-        if character.is_ascii_uppercase() && !converted.is_empty() {
-            converted.push('_');
+        if character.is_ascii_uppercase() && !current.is_empty() {
+            segments.push(current);
+            current = String::new();
         }
-        converted.extend(character.to_lowercase());
+        current.extend(character.to_lowercase());
     }
-    converted
+    segments.push(current);
+    segments.join("_")
 }
