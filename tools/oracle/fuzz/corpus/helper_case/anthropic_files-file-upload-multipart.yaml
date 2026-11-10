@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-files-upload-seed
+call:
+  anthropic_files:
+    file_upload_multipart:
+      now: 1700000000
+      uploads:
+        - {filename: a.txt, data: hi}
+env: {}
+compare: {ignore: []}
