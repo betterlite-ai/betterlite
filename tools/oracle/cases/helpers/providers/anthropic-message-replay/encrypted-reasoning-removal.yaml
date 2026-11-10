@@ -1,0 +1,45 @@
+kind: helper
+name: encrypted-reasoning-removal
+call:
+  anthropic_message_replay:
+    function: strip_encrypted
+    messages:
+    - pass-through
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: native
+        signature: anthropic-signature
+      - type: thinking
+        thinking: foreign
+        signature: litellm_encrypted_reasoning:abc
+      - type: redacted_thinking
+        data: litellm_encrypted_reasoning:def
+      - type: redacted_thinking
+        data: opaque-anthropic-blob
+      - type: tool_use
+        id: t
+        input: {}
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: foreign
+        signature: 'litellm_encrypted_reasoning:'
+    - role: assistant
+      content: string content
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: native
+        signature: anthropic-signature
+    - role: assistant
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: x
+        signature: 5
+    - role: assistant
+      content: []
+env: {}
+compare:
+  ignore: []

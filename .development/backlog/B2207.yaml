@@ -1,7 +1,7 @@
 id: B2207
 milestone: M3 providers
 title: Bedrock Mantle input and model metadata policy
-status: todo
+status: done
 depends_on: [B591, B8500, B2203, B193, B002, B171]
 file: tasks/B2207-bedrock-mantle-inputs.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/bedrock_mantle/chat/transformation.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1072

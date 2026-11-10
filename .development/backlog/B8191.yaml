@@ -1,7 +1,7 @@
 id: B8191
 milestone: M9 agents and mcp
 title: MCP request context, client allowlist, elicitation and legacy callbacks
-status: todo
+status: done
 depends_on: [B8190]
 file: tasks/B8191-mcp-context-allowlist.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/proxy/_experimental/mcp_server/legacy_callbacks.py"
 parent: B136
 split_from: B136
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1091

@@ -1,0 +1,32 @@
+kind: helper
+name: ollama-model-metadata-runtime-model-fields
+call:
+  ollama_model_metadata:
+    runtime_model_fields:
+      fixture:
+        env: {}
+        catalog: []
+      model: "ollama/qwen2.5"
+      bodies:
+        - '{"template":"{{ .Tools }}","model_info":{"z.context_length":8192,"a.context_length":4096}}'
+        - '{"template":"TOOLS","model_info":{"llama.context_length":131072}}'
+        - '{"template":"tool","model_info":{"llama.context_length":5}}'
+        - '{"template":"no tools here"}'
+        - '{"model_info":{}}'
+        - '{}'
+        - '{"template":null}'
+        - '{"template":""}'
+        - '{"model_info":{"llama.context_length":null,"other.context_length":7}}'
+        - '{"model_info":{"llama.embedding_length":4096}}'
+        - '{"model_info":{"weird_context_length_extra":12}}'
+        - '{"model_info":{"llama.context_length":8192,"extra":"x"}}'
+        - ''
+        - '{"model_info":'
+        - '{"template":"tools","model_info":{"llama.context_length":819'
+        - '[]'
+        - '"text"'
+        - 'null'
+        - '{"model_info":null}'
+        - '{"model_info":[]}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+task: B8191
+deviations:
+  - what: >-
+      Per-request state is an explicit McpContext built by the caller and passed by reference, not the ContextVars of
+      mcp_context.py. Its request_scope field carries the inbound request's extensions, the part of the SDK
+      ServerRequestContext that mcp_debug.py reads, while the session and handler peer LiteLLM also reads from that
+      context are fields of B8720's gateway handler.
+    why: >-
+      The Rust rules forbid module state and task locals, and a request extension cannot leak into another request or
+      task. Every value the Python stores is carried, and the same consumer reads the same value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_context.py#L1-L42
+  - what: >-
+      create_sampling_callback and create_elicitation_callback capture the caller auth, raw headers, client IP, default
+      sampling model, downstream session and its capabilities as explicit arguments instead of reading
+      get_active_auth_context, litellm.default_mcp_sampling_model and get_active_mcp_session. The callbacks are Rust
+      traits implemented by a value that holds that captured state.
+    why: >-
+      Those reads are ContextVars and a module attribute, which the Rust rules forbid. The capture precedence and the
+      arguments each callback forwards are unchanged, and the default model is resolved once at construction because
+      betterlite keeps no mutable module attribute.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/legacy_callbacks.py#L28-L81
+  - what: >-
+      The elicitation handler returns ElicitResult and never ErrorData. LiteLLM's outer catch answers ErrorData(-1,
+      "Elicitation failed: ...") only when an SDK attribute access throws, and its "mcp package not installed" branch
+      cannot happen in a Rust build; neither is reachable for input of the declared ElicitRequestParams union.
+    why: >-
+      A relay failure already becomes a decline inside the relay step, exactly as in LiteLLM, and the remaining
+      ErrorData paths are Python runtime accidents that no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/elicitation_handler.py#L72-L102
+  - what: >-
+      The generic ElicitRequestParams fallback that calls downstream_session.elicit(message, requested_schema) is not
+      ported; the handler matches the URL and form variants of the declared union only.
+    why: >-
+      The fallback only runs for an object that is neither ElicitRequestURLParams nor ElicitRequestFormParams, which is
+      duck typing outside the type LiteLLM declares, so docs/compatibility.md excludes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/elicitation_handler.py#L157-L164

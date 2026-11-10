@@ -1,0 +1,18 @@
+kind: helper
+name: replicate-request-no-version-key
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: request
+    requests:
+      - model: "meta/llama-2-70b-chat:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        messages:
+          - {role: user, content: hi}
+        custom_prompt_dict:
+          "meta/llama-2-70b-chat:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":
+            roles: {}
+            initial_prompt_value: ""
+            final_prompt_value: ""
+            bos_token: ""
+            eos_token: ""

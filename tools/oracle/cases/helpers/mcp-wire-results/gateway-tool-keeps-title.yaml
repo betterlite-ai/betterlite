@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_gateway_tool_keeps_title","call":{"b8190":{"function":"to_gateway_tool","tool":{"name":"a","description":"d","inputSchema":{"type":"object"},"title":"T"},"name":"srv-a"}},"env":{},"compare":{"ignore":[]}}

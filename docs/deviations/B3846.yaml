@@ -1,0 +1,11 @@
+task: B3846
+deviations:
+  - what: >-
+      A Langtrace logging call whose kwargs carry no litellm_params dict, whose response usage is not an
+      object, or whose choices include an entry without a message dict is recorded with that piece
+      skipped. LiteLLM raises AttributeError from the callback in each of those cases.
+    why: >-
+      betterlite never panics, and a logging callback that raises loses the whole span. Every working
+      LiteLLM setup passes litellm_params, a usage object and chat-shaped choices, so no setup relies on
+      the exception, and the well-formed case is byte-for-byte the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langtrace.py#L27-L110

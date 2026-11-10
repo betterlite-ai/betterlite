@@ -1,0 +1,12 @@
+kind: helper
+name: provider-headers-before-prefixed-additional-headers
+call:
+  ptu_pricing:
+    operation: spillover
+    response_headers:
+      x-ms-is-spilled-over: "false"
+    additional_headers:
+      llm_provider-x-ms-is-spilled-over: "TRUE"
+      llm_provider-x-ms-spillover-from-deployment: dep-pay-as-you-go
+compare: {ignore: []}
+env: {}

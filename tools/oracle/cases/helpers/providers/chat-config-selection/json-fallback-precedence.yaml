@@ -1,0 +1,18 @@
+kind: helper
+name: chat-config-selection-json-fallback
+call:
+  chat_config_selection:
+    function: json_fallback_precedence
+    providers:
+      - {provider: openai_like, exists: true, record: true}
+      - {provider: anthropic, exists: true}
+      - {provider: publicai, exists: true, record: true}
+      - {provider: aiml, exists: true}
+    calls:
+      - {provider: openai_like, model: test-model}
+      - {provider: anthropic, model: test-model}
+      - {provider: publicai, model: test-model}
+      - {provider: aiml, model: test-model}
+      - {provider: publicai, model: test-model, base_model: null}
+env: {}
+compare: {ignore: []}

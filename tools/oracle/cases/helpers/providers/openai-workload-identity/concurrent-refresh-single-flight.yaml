@@ -1,0 +1,21 @@
+kind: helper
+name: openai-workload-identity-concurrent-refresh-single-flight
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        shared: "subject"
+      replies:
+        - {status: 200, body: '{"access_token":"shared-1","expires_in":3600}'}
+        - {status: 200, body: '{"access_token":"shared-2","expires_in":3600}'}
+        - {status: 200, body: '{"access_token":"shared-3","expires_in":3600}'}
+      steps:
+        - {op: concurrent, identity: {name: shared}, callers: 5}
+        - {op: concurrent, identity: {name: shared}, callers: 5}
+        - {op: advance, ms: 2400000}
+        - {op: concurrent, identity: {name: shared}, callers: 5}
+        - {op: concurrent, identity: {name: shared}, callers: 5}
+        - {op: advance, ms: 3600000}
+        - {op: concurrent, identity: {name: shared}, callers: 5}

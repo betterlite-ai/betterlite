@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_elicitation_meta","call":{"b8191":{"operation":"elicitation","scenarios":[{"params":{"mode":"form","message":"who are you","requestedSchema":{"type":"object"}},"session":{"result":{"action":"accept","_meta":{"trace":"t-1","n":2}}}}]}},"env":{},"compare":{"ignore":[]}}

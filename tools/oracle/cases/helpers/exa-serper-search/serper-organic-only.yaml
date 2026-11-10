@@ -1,0 +1,26 @@
+kind: helper
+name: serper_organic_only
+call:
+  b8020:
+    environment: {}
+    calls:
+      - provider: serper
+        call:
+          kind: reply
+          body: '{"organic": [{"title": "t", "link": "u", "snippet": "s", "date": "2024-01-02"}], "knowledgeGraph": {"title": "k"}, "answerBox": {"answer": "a"}}'
+      - provider: serper
+        call: {kind: reply, body: '{"knowledgeGraph": {"title": "k"}}'}
+      - provider: serper
+        call: {kind: reply, body: '{"organic": null}'}
+      - provider: serper
+        call:
+          kind: reply
+          body: '{"organic": [{"title": "t"}]}'
+      - provider: serper
+        call:
+          kind: reply
+          body: '{"organic": [{"title": null}]}'
+      - provider: serper
+        call: {kind: reply, body: '{"organic": "abc"}'}
+env: {}
+compare: {ignore: []}
