@@ -117,7 +117,7 @@ fn run_call(
         "mode": plan.mode,
         "request": {"url": plan.url, "headers": plan.headers, "body": plan.body},
         "provider": plan.wrapper,
-        "timeout": plan.timeout.map(|timeout| timeout.as_secs_f64()),
+        "timeout": plan.timeout.map(|duration| duration.as_secs_f64()),
         "events": recorder.events,
     })
 }
