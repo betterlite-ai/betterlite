@@ -121,18 +121,19 @@ impl TestHooks {
     }
 
     pub(crate) fn durations_for(&self, call_type: &str) -> Vec<Duration> {
+        let mut found = Vec::new();
+        for (name, duration) in self.recorded() {
+            if name == call_type {
+                found.push(duration);
+            }
+        }
+        found
+    }
+
+    fn recorded(&self) -> Vec<(&'static str, Duration)> {
         match self.durations.lock() {
-            Ok(durations) => durations
-                .iter()
-                .filter(|(name, _duration)| *name == call_type)
-                .map(|(_name, duration)| *duration)
-                .collect(),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .iter()
-                .filter(|(name, _duration)| *name == call_type)
-                .map(|(_name, duration)| *duration)
-                .collect(),
+            Ok(durations) => durations.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
 
@@ -212,12 +213,9 @@ pub(crate) fn overrides(host: &str, port: u16) -> RedisOverrides {
 }
 
 pub(crate) fn overrides_without_socket_timeout(host: &str, port: u16) -> RedisOverrides {
-    RedisOverrides {
-        host: Some(host.to_owned()),
-        port: Some(IntOrText::Value(i64::from(port))),
-        socket_connect_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
-        ..blank_overrides()
-    }
+    let mut cleared = overrides(host, port);
+    cleared.socket_timeout = None;
+    cleared
 }
 
 pub(crate) async fn connect_cache(

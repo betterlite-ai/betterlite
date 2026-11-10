@@ -117,32 +117,27 @@ impl RedisCache {
     pub async fn async_get_cache(&self, key: &str) -> Result<Option<CachedValue>, RedisCacheError> {
         let started = Instant::now();
         let admission = self.gate.enter("async_get_cache")?;
-        let namespaced = check_and_fix_namespace(self.namespace.as_deref(), Some(key))
-            .unwrap_or_else(|| key.to_owned());
-        let client = match self.transport.async_client().await {
-            Ok(client) => client,
-            Err(source) => {
-                return finish(
-                    self.gate.as_ref(),
-                    admission,
-                    Err(RedisCacheError::from(source)),
-                );
-            }
-        };
-        let outcome = reads::get_cached(&client, &namespaced).await;
-        let event = ServiceEvent {
-            call_type: "async_get_cache",
-            duration: started.elapsed(),
-            key: Some(namespaced),
-        };
-        match outcome {
-            Ok(value) => {
-                self.hooks.success(&event);
+        let namespaced = self.namespaced(key);
+        match reads::get_cached(self, &namespaced).await {
+            reads::Read::Value(value) => {
+                self.hooks.success(&ServiceEvent {
+                    call_type: "async_get_cache",
+                    duration: started.elapsed(),
+                    key: Some(namespaced),
+                });
                 self.gate.exit(admission);
                 Ok(value)
             }
-            Err(error) => {
-                self.hooks.failure(&event, &error);
+            reads::Read::Client(error) => finish(self.gate.as_ref(), admission, Err(error)),
+            reads::Read::Failure(error) => {
+                self.hooks.failure(
+                    &ServiceEvent {
+                        call_type: "async_get_cache",
+                        duration: started.elapsed(),
+                        key: Some(namespaced),
+                    },
+                    &error,
+                );
                 tracing::debug!(error = %error, "async get() - Got exception from REDIS");
                 self.gate.swallowed(&admission, &error);
                 self.gate.exit(admission);
@@ -186,20 +181,8 @@ impl RedisCache {
 
     pub async fn async_get_ttl(&self, key: &str) -> Result<Option<i64>, RedisCacheError> {
         let admission = self.gate.enter("async_get_ttl")?;
-        let namespaced = check_and_fix_namespace(self.namespace.as_deref(), Some(key))
-            .unwrap_or_else(|| key.to_owned());
-        match ttl::get(self, &namespaced).await {
-            Ok(remaining) => {
-                self.gate.exit(admission);
-                Ok(remaining)
-            }
-            Err(error) => {
-                tracing::debug!("Redis TTL Error: {error}");
-                self.gate.swallowed(&admission, &error);
-                self.gate.exit(admission);
-                Ok(None)
-            }
-        }
+        let namespaced = self.namespaced(key);
+        Ok(ttl::read(self, &namespaced, admission).await)
     }
 
     pub async fn async_refresh_ttl(
@@ -208,8 +191,7 @@ impl RedisCache {
         ttl: Option<i64>,
     ) -> Result<bool, RedisCacheError> {
         let admission = self.gate.enter("async_refresh_ttl")?;
-        let namespaced = check_and_fix_namespace(self.namespace.as_deref(), Some(key))
-            .unwrap_or_else(|| key.to_owned());
+        let namespaced = self.namespaced(key);
         let outcome = ttl::expire(self, &namespaced, ttl.unwrap_or(self.default_ttl)).await;
         finish(self.gate.as_ref(), admission, outcome)
     }
@@ -223,6 +205,11 @@ impl RedisCache {
         let admission = self.gate.enter("run_script")?;
         let outcome = script.run(keys, args).await.map_err(RedisCacheError::from);
         finish(self.gate.as_ref(), admission, outcome)
+    }
+
+    fn namespaced(&self, key: &str) -> String {
+        check_and_fix_namespace(self.namespace.as_deref(), Some(key))
+            .unwrap_or_else(|| key.to_owned())
     }
 }
 
