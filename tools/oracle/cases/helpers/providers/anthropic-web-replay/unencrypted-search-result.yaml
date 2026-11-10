@@ -23,6 +23,7 @@ call:
           - {type: web_search_tool_result, tool_use_id: s3, content: {type: web_search_tool_result_error, error_code: too_many_requests}}
           - {type: web_search_tool_result, tool_use_id: s4, content: {type: web_search_tool_result_error}}
           - {type: web_search_tool_result, tool_use_id: 5, content: []}
+          - {type: web_search_tool_result, tool_use_id: s5, content: text}
           - {type: web_search_tool_result, content: []}
           - {type: web_search_result, url: "https://c.example"}
           - {type: text, text: unchanged}
