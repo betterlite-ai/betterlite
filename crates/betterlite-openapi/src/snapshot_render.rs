@@ -1,36 +1,51 @@
 use std::collections::BTreeMap;
 
+use thiserror::Error;
+
 use crate::schema_transforms::object_in;
 use crate::schema_transforms::tree::{JsonObject, JsonTree};
 
 mod tests;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SnapshotDrift {
-    pub added: Vec<String>,
-    pub removed: Vec<String>,
-    pub changed: Vec<String>,
-    pub unreadable: Option<String>,
+#[derive(Debug, Error)]
+pub enum SnapshotDrift {
+    #[error("the {origin} file is not valid JSON: {source}")]
+    Unreadable {
+        origin: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the committed snapshot differs from the rendered document")]
+    Paths {
+        added: Vec<String>,
+        removed: Vec<String>,
+        changed: Vec<String>,
+    },
 }
 
 impl SnapshotDrift {
     #[must_use]
     pub fn message(&self) -> String {
-        if let Some(reason) = &self.unreadable {
-            return format!("the snapshot cannot be compared: {reason}");
-        }
-        let mut message = "the committed snapshot differs from the rendered document".to_owned();
-        if !self.added.is_empty() {
+        let mut message = self.to_string();
+        let Self::Paths {
+            added,
+            removed,
+            changed,
+        } = self
+        else {
+            return message;
+        };
+        if !added.is_empty() {
             message.push_str("\nadded paths: ");
-            message.push_str(&self.added.join(", "));
+            message.push_str(&added.join(", "));
         }
-        if !self.removed.is_empty() {
+        if !removed.is_empty() {
             message.push_str("\nremoved paths: ");
-            message.push_str(&self.removed.join(", "));
+            message.push_str(&removed.join(", "));
         }
-        if !self.changed.is_empty() {
+        if !changed.is_empty() {
             message.push_str("\nchanged paths: ");
-            message.push_str(&self.changed.join(", "));
+            message.push_str(&changed.join(", "));
         }
         message
     }
@@ -53,13 +68,9 @@ pub fn check_snapshot(committed: &str, rendered: &str) -> Result<(), SnapshotDri
     Err(path_drift(&committed_document, &rendered_document))
 }
 
-fn parse_snapshot(text: &str, origin: &str) -> Result<JsonObject, SnapshotDrift> {
-    serde_json::from_str::<JsonObject>(text).map_err(|source| SnapshotDrift {
-        added: Vec::new(),
-        removed: Vec::new(),
-        changed: Vec::new(),
-        unreadable: Some(format!("the {origin} file is not valid JSON: {source}")),
-    })
+fn parse_snapshot(text: &str, origin: &'static str) -> Result<JsonObject, SnapshotDrift> {
+    serde_json::from_str::<JsonObject>(text)
+        .map_err(|source| SnapshotDrift::Unreadable { origin, source })
 }
 
 fn path_drift(committed: &JsonObject, rendered: &JsonObject) -> SnapshotDrift {
@@ -82,11 +93,10 @@ fn path_drift(committed: &JsonObject, rendered: &JsonObject) -> SnapshotDrift {
         .filter(|path| !rendered_paths.contains_key(*path))
         .map(|path| (*path).to_owned())
         .collect();
-    SnapshotDrift {
+    SnapshotDrift::Paths {
         added,
         removed,
         changed,
-        unreadable: None,
     }
 }
 

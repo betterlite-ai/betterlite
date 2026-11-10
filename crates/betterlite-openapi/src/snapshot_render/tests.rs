@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::document_builder::{DocumentInputs, build_document};
 use crate::schema_transforms::tree::{JsonObject, JsonTree};
-use crate::snapshot_render::{check_snapshot, render_snapshot};
+use crate::snapshot_render::{SnapshotDrift, check_snapshot, render_snapshot};
 
 const DOCUMENT_INPUTS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -78,12 +78,19 @@ fn rendering_round_trips_through_serde_json() {
 
 #[test]
 fn check_snapshot_is_ok_only_on_byte_equality() {
-    assert_eq!(check_snapshot("{}\n", "{}\n"), Ok(()));
+    check_snapshot("{}\n", "{}\n").expect("identical bytes are accepted");
     let drift = check_snapshot("{}", "{}\n").expect_err("a trailing newline is a difference");
-    assert!(drift.added.is_empty());
-    assert!(drift.removed.is_empty());
-    assert!(drift.changed.is_empty());
-    assert_eq!(drift.unreadable, None);
+    let SnapshotDrift::Paths {
+        added,
+        removed,
+        changed,
+    } = &drift
+    else {
+        panic!("expected a path drift");
+    };
+    assert!(added.is_empty());
+    assert!(removed.is_empty());
+    assert!(changed.is_empty());
     assert_eq!(
         drift.message(),
         "the committed snapshot differs from the rendered document"
@@ -96,10 +103,20 @@ fn check_snapshot_names_added_removed_and_changed_paths() {
     let rendered = document(r#"{"paths": {"/a": {}, "/b": {"get": {"x": 1}}, "/d": {}}}"#);
     let drift =
         check_snapshot(committed, &render_snapshot(&rendered)).expect_err("the documents differ");
-    assert_eq!(drift.added, vec!["/d".to_owned()]);
-    assert_eq!(drift.removed, vec!["/c".to_owned()]);
-    assert_eq!(drift.changed, vec!["/b".to_owned()]);
-    assert_eq!(drift.unreadable, None);
+    let SnapshotDrift::Paths {
+        added,
+        removed,
+        changed,
+    } = &drift
+    else {
+        panic!("expected a path drift");
+    };
+    let expected_added = vec!["/d".to_owned()];
+    let expected_removed = vec!["/c".to_owned()];
+    let expected_changed = vec!["/b".to_owned()];
+    assert_eq!(added, &expected_added);
+    assert_eq!(removed, &expected_removed);
+    assert_eq!(changed, &expected_changed);
     let message = drift.message();
     assert!(message.contains("added paths: /d"), "{message}");
     assert!(message.contains("removed paths: /c"), "{message}");
@@ -109,20 +126,28 @@ fn check_snapshot_names_added_removed_and_changed_paths() {
 #[test]
 fn check_snapshot_reports_a_committed_file_that_is_not_json() {
     let drift = check_snapshot("not json", "{}\n").expect_err("the committed file is unreadable");
-    assert!(drift.added.is_empty());
-    assert!(drift.removed.is_empty());
-    assert!(drift.changed.is_empty());
-    let reason = drift
-        .unreadable
-        .as_deref()
-        .expect("the drift names the parse failure");
-    assert!(reason.contains("the committed file is not valid JSON"));
-    assert!(drift.message().contains("not valid JSON"));
+    let SnapshotDrift::Unreadable { origin, source } = &drift else {
+        panic!("expected an unreadable snapshot");
+    };
+    assert_eq!(*origin, "committed");
+    assert!(source.to_string().contains("line 1"), "{source}");
+    assert_eq!(
+        drift.message(),
+        format!("the committed file is not valid JSON: {source}")
+    );
 }
 
 #[test]
 fn a_change_outside_paths_still_fails_the_check() {
     let drift = check_snapshot(r#"{"info": {"title": "old"}}"#, "{\n  \"info\": {}\n}\n")
         .expect_err("the documents differ");
-    assert!(drift.added.is_empty() && drift.removed.is_empty() && drift.changed.is_empty());
+    let SnapshotDrift::Paths {
+        added,
+        removed,
+        changed,
+    } = &drift
+    else {
+        panic!("expected a path drift");
+    };
+    assert!(added.is_empty() && removed.is_empty() && changed.is_empty());
 }

@@ -4,7 +4,7 @@ use std::io::{self, Write as _};
 use std::process::ExitCode;
 
 use betterlite_openapi::document_builder::{DocumentInputs, build_document};
-use betterlite_openapi::snapshot_render::{check_snapshot, render_snapshot};
+use betterlite_openapi::snapshot_render::{SnapshotDrift, check_snapshot, render_snapshot};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,8 +31,15 @@ enum ExportError {
         #[source]
         source: io::Error,
     },
+    #[error("the snapshot file {path} is missing\nrun: {command}")]
+    MissingSnapshot { path: String, command: String },
     #[error("{message}\nrun: {command}")]
-    Snapshot { message: String, command: String },
+    Snapshot {
+        message: String,
+        command: String,
+        #[source]
+        drift: SnapshotDrift,
+    },
 }
 
 fn main() -> ExitCode {
@@ -83,8 +90,8 @@ fn check_snapshot_file(output: &str, inputs: &str, rendered: &str) -> Result<(),
     let committed = match fs::read_to_string(output) {
         Ok(text) => text,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Err(ExportError::Snapshot {
-                message: format!("the snapshot file {output} is missing"),
+            return Err(ExportError::MissingSnapshot {
+                path: output.to_owned(),
                 command,
             });
         }
@@ -97,9 +104,13 @@ fn check_snapshot_file(output: &str, inputs: &str, rendered: &str) -> Result<(),
     };
     match check_snapshot(&committed, rendered) {
         Ok(()) => Ok(()),
-        Err(drift) => Err(ExportError::Snapshot {
-            message: drift.message(),
-            command,
-        }),
+        Err(drift) => {
+            let message = drift.message();
+            Err(ExportError::Snapshot {
+                message,
+                command,
+                drift,
+            })
+        }
     }
 }
