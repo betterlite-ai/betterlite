@@ -11,7 +11,9 @@ use crate::redis_client_reuse::service_event::ServiceEvent;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::store::RedisClientStore;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
-use crate::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
+use crate::redis_connection_settings::model::scalars::{
+    BoolOrText, FloatOrText, IntOrText, PassthroughValue,
+};
 use crate::redis_connection_settings::model::settings::RedisOverrides;
 use crate::redis_live_client::LiveClientFactory;
 use crate::redis_live_client::tests::fake_server::FakeServer;
@@ -222,6 +224,15 @@ pub(crate) fn overrides_with_missing_credentials(host: &str, port: u16) -> Redis
     let mut credential = overrides(host, port);
     credential.credential_provider = true;
     credential
+}
+
+pub(crate) fn unreadable_ca(mut overrides: RedisOverrides) -> RedisOverrides {
+    overrides.ssl = Some(BoolOrText::Value(true));
+    overrides.passthrough = BTreeMap::from([(
+        "ssl_ca_certs".to_owned(),
+        PassthroughValue::Text("/nonexistent-ca.pem".to_owned()),
+    )]);
+    overrides
 }
 
 pub(crate) async fn connect_cache(

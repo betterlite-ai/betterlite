@@ -1,6 +1,6 @@
 use super::support::{
-    DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness, harness_at,
-    overrides_with_missing_credentials,
+    DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness, harness_at, overrides,
+    overrides_with_missing_credentials, unreadable_ca,
 };
 use crate::cache_primitives::pipeline_increment::IncrementOperation;
 use crate::redis_cache::error::RedisCacheError;
@@ -116,6 +116,32 @@ async fn a_client_build_error_returns_before_any_hook() {
             .for_call("async_increment_pipeline")
             .is_empty()
     );
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_increment_pipeline");
+    assert!(gate[1].starts_with("failure:"));
+    assert_eq!(gate.len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_tls_file_fires_the_failure_hook() {
+    let server = FakeServer::start().await;
+    let harness = connect_cache(
+        unreadable_ca(overrides(&server.host(), server.port())),
+        Some("ns"),
+        60,
+        DEFAULT_MAJOR_VERSION,
+        TestGate::never(),
+    )
+    .await;
+    let error = harness
+        .cache
+        .async_increment_pipeline(&[operation("alpha", 1.0_f64, None)])
+        .await
+        .expect_err("the tls file error");
+    assert!(matches!(error, RedisCacheError::ClientReuse(_)));
+    let hooks = harness.hooks.for_call("async_increment_pipeline");
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_increment_pipeline:None:"));
     let gate = harness.gate.entries();
     assert_eq!(gate[0], "enter:async_increment_pipeline");
     assert!(gate[1].starts_with("failure:"));

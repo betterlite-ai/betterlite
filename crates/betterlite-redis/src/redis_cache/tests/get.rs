@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::support::{
-    DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness, harness_at,
-    overrides_with_missing_credentials,
+    DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness, harness_at, overrides,
+    overrides_with_missing_credentials, unreadable_ca,
 };
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_cache::error::RedisCacheError;
@@ -108,6 +108,32 @@ async fn a_client_build_error_returns_before_any_hook() {
     assert_eq!(gate[0], "enter:async_get_cache");
     assert!(gate[1].starts_with("failure:"));
     assert_eq!(gate.len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_tls_file_is_swallowed_into_none() {
+    let server = FakeServer::start().await;
+    let harness = connect_cache(
+        unreadable_ca(overrides(&server.host(), server.port())),
+        Some("ns"),
+        60,
+        DEFAULT_MAJOR_VERSION,
+        TestGate::never(),
+    )
+    .await;
+    let cached = harness
+        .cache
+        .async_get_cache("alpha")
+        .await
+        .expect("the swallow");
+    assert_eq!(cached, None);
+    let hooks = harness.hooks.for_call("async_get_cache");
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_get_cache:Some(\"ns:alpha\"):"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_get_cache");
+    assert!(gate[1].starts_with("swallowed:1:"));
+    assert_eq!(gate[2], "exit:1");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
