@@ -19,12 +19,16 @@ use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
+use serde_json::Number;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 
 use super::BytezStreamCall;
 use super::error::BytezStreamError;
 use super::stream::BytezCustomStream;
 use super::transport::{BytezStreamTransport, ClientError, StreamHead};
+
+type Frame = Result<Vec<u8>, HttpError>;
 
 const URL: &str = "https://api.bytez.com/models/v2/org/model";
 
@@ -41,8 +45,8 @@ struct FakeTransport {
     kind: ClientKind,
     status: u16,
     failure: Option<(u16, String)>,
-    queue: Mutex<Option<mpsc::Sender<Result<Vec<u8>, HttpError>>>>,
-    receiver: Mutex<Option<mpsc::Receiver<Result<Vec<u8>, HttpError>>>>,
+    queue: Mutex<Option<mpsc::Sender<Frame>>>,
+    receiver: Mutex<Option<mpsc::Receiver<Frame>>>,
     seen: Mutex<Vec<Seen>>,
     dropped: Arc<AtomicBool>,
 }
@@ -88,10 +92,6 @@ impl FakeTransport {
             .expect("queued failure");
     }
 
-    fn close(&self) {
-        self.queue.lock().unwrap().take();
-    }
-
     fn seen(&self) -> Vec<Seen> {
         self.seen.lock().unwrap().clone()
     }
@@ -133,8 +133,8 @@ impl BytezStreamTransport for FakeTransport {
         }
         let receiver = self.receiver.lock().unwrap().take().expect("receiver");
         let guard = DropFlag(Arc::clone(&self.dropped));
-        let chunks = stream::unfold((receiver, guard), |(mut receiver, guard)| async move {
-            receiver.recv().await.map(|item| (item, (receiver, guard)))
+        let chunks = stream::unfold((receiver, guard), |(mut inbox, flag)| async move {
+            inbox.recv().await.map(|item| (item, (inbox, flag)))
         });
         Ok(StreamHead {
             status: self.status,
@@ -152,23 +152,22 @@ fn message() -> RawMessage {
 }
 
 fn params() -> Object {
-    match serde_json::from_str(r#"{"stream":true,"max_new_tokens":10}"#).expect("params") {
-        Json::Object(fields) => fields,
-        other => panic!("{other:?} is not an object"),
-    }
+    let parsed: Json =
+        serde_json::from_str(r#"{"stream":true,"max_new_tokens":10}"#).expect("params");
+    parsed.as_object().expect("object params").clone()
 }
 
-fn call<'request>(
+fn call(
     supplied: Option<Arc<FakeTransport>>,
     default: Arc<FakeTransport>,
     kind: ClientKind,
-    redactor: &'request Redactor,
-) -> BytezStreamCall<'request> {
-    let supplied: Option<Arc<dyn BytezStreamTransport>> = supplied.map(|transport| {
+    redactor: &Redactor,
+) -> BytezStreamCall<'_> {
+    let custom_client: Option<Arc<dyn BytezStreamTransport>> = supplied.map(|transport| {
         let shared: Arc<dyn BytezStreamTransport> = transport;
         shared
     });
-    let default: Arc<dyn BytezStreamTransport> = default;
+    let fallback_client: Arc<dyn BytezStreamTransport> = default;
     let mut headers = HeaderMap::new();
     headers.insert("Authorization", HeaderValue::from_static("Key secret"));
     BytezStreamCall {
@@ -178,8 +177,8 @@ fn call<'request>(
         headers,
         body: request_body(&[message()], &params()).expect("body"),
         kind,
-        supplied,
-        default_client: default,
+        supplied: custom_client,
+        default_client: fallback_client,
         repeated_chunk_limit: 100,
         redactor,
     }
@@ -221,13 +220,18 @@ async fn opens_a_post_with_the_serialized_body_and_the_stream_timeout() {
     assert_eq!(seen[0].headers["Authorization"], "Key secret");
     assert_eq!(seen[0].deadline, super::STREAMING_TIMEOUT);
     assert_eq!(seen[0].deadline, Duration::from_secs(300));
-    let body: serde_json::Value = serde_json::from_slice(&seen[0].body).expect("body");
-    assert_eq!(body["stream"], serde_json::Value::Bool(true));
+    let sent: Json = serde_json::from_slice(&seen[0].body).expect("body");
+    let fields = sent.as_object().expect("object body");
+    assert_eq!(fields.get("stream"), Some(&Json::Bool(true)));
+    let sent_params = fields
+        .get("params")
+        .and_then(Json::as_object)
+        .expect("params");
     assert_eq!(
-        body["params"]["max_new_tokens"],
-        serde_json::Value::from(10)
+        sent_params.get("max_new_tokens"),
+        Some(&Json::Number(Number::from(10_u8)))
     );
-    assert!(body["params"].get("stream").is_none());
+    assert!(!sent_params.contains_key("stream"));
 }
 
 #[rstest]
@@ -241,7 +245,7 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, status));
     transport.push(b"refused body");
-    let Err(error) = call(
+    let Err(BytezStreamError::Api(failure)) = call(
         Some(Arc::clone(&transport)),
         Arc::new(FakeTransport::new(ClientKind::Async, 200)),
         ClientKind::Async,
@@ -250,15 +254,10 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
     .open()
     .await
     else {
-        panic!("opened");
+        panic!("expected an API error");
     };
-    match error {
-        BytezStreamError::Api(error) => {
-            assert_eq!(error.status_code, status);
-            assert_eq!(error.message, "refused body");
-        }
-        other => panic!("{other:?}"),
-    }
+    assert_eq!(failure.status_code, status);
+    assert_eq!(failure.message, "refused body");
 }
 
 #[tokio::test]
@@ -269,7 +268,7 @@ async fn wraps_a_transport_status_error() {
         503,
         "upstream down",
     ));
-    let Err(error) = call(
+    let Err(BytezStreamError::Api(failure)) = call(
         Some(Arc::clone(&transport)),
         Arc::new(FakeTransport::new(ClientKind::Async, 200)),
         ClientKind::Async,
@@ -278,15 +277,10 @@ async fn wraps_a_transport_status_error() {
     .open()
     .await
     else {
-        panic!("opened");
+        panic!("expected an API error");
     };
-    match error {
-        BytezStreamError::Api(error) => {
-            assert_eq!(error.status_code, 503);
-            assert_eq!(error.message, "upstream down");
-        }
-        other => panic!("{other:?}"),
-    }
+    assert_eq!(failure.status_code, 503);
+    assert_eq!(failure.message, "upstream down");
 }
 
 #[tokio::test]
@@ -358,8 +352,8 @@ async fn delivers_each_fragment_before_the_next_one_arrives() {
     let (mut stream, _default) =
         opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
     assert_eq!(first_fragment(&mut stream).await, "one");
-    let pending = tokio::time::timeout(Duration::from_millis(20), stream.fragments.next()).await;
-    assert!(pending.is_err());
+    let pending = timeout(Duration::from_millis(20), stream.fragments.next()).await;
+    pending.expect_err("still pending");
     transport.push(b"two");
     assert_eq!(first_fragment(&mut stream).await, "two");
 }
@@ -372,7 +366,7 @@ async fn keeps_a_split_character_for_the_next_fragment() {
     transport.push(&[0xa9]);
     let (mut stream, _default) =
         opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
-    assert_eq!(first_fragment(&mut stream).await, "é");
+    assert_eq!(first_fragment(&mut stream).await, "\u{e9}");
 }
 
 #[tokio::test]
@@ -480,36 +474,32 @@ fn maps_other_chunk_failures_through_the_error_classifier() {
         provider: String::new(),
     };
     let error = BytezStreamError::from_chunk(
-        ProviderChunkError::Shape { source: repetition },
+        &ProviderChunkError::Shape { source: repetition },
         "org/model",
         "bytez",
         &redactor,
     );
-    match error {
-        BytezStreamError::Chunk(failure) => {
-            assert_eq!(failure.status_code, 500);
-            assert_eq!(failure.error_type, "internal_server_error");
-            assert_eq!(failure.param, None);
-            assert_eq!(
-                failure.message,
-                "The model is repeating the same chunk = same."
-            );
-        }
-        other => panic!("{other:?}"),
-    }
+    let BytezStreamError::Chunk(failure) = error else {
+        panic!("expected a chunk error");
+    };
+    assert_eq!(failure.status_code, 500);
+    assert_eq!(failure.error_type, "internal_server_error");
+    assert_eq!(failure.param, None);
+    assert_eq!(
+        failure.message,
+        "The model is repeating the same chunk = same."
+    );
     let field = BytezStreamError::from_chunk(
         &ProviderChunkError::MissingField { field: "role" },
         "org/model",
         "bytez",
         &redactor,
     );
-    match field {
-        BytezStreamError::Chunk(failure) => {
-            assert_eq!(failure.status_code, 500);
-            assert_eq!(failure.error_type, "internal_server_error");
-        }
-        other => panic!("{other:?}"),
-    }
+    let BytezStreamError::Chunk(missing) = field else {
+        panic!("expected a chunk error");
+    };
+    assert_eq!(missing.status_code, 500);
+    assert_eq!(missing.error_type, "internal_server_error");
 }
 
 #[test]

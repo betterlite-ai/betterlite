@@ -77,18 +77,12 @@ fn helper_seeds_normalize_messages_and_count_usage() {
         .into_iter()
         .map(|(path, case)| (path, invoke(&case.call)))
         .collect();
-    let counted: Vec<&str> = outputs
-        .iter()
-        .filter(|(_, output)| prompt_tokens(output).is_some())
-        .map(|(path, _)| path.as_str())
-        .collect();
-    let normalized: Vec<&str> = outputs
-        .iter()
-        .filter(|(_, output)| has_blocks(output))
-        .map(|(path, _)| path.as_str())
-        .collect();
-    assert!(!counted.is_empty());
-    assert!(!normalized.is_empty());
+    assert!(
+        outputs
+            .iter()
+            .any(|(_, output)| prompt_tokens(output).is_some())
+    );
+    assert!(outputs.iter().any(|(_, output)| has_blocks(output)));
     let uncounted: Vec<&str> = outputs
         .iter()
         .filter(|(_, output)| prompt_tokens(output).is_some_and(|tokens| tokens <= 0))

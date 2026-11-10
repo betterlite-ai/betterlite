@@ -15,7 +15,7 @@ use betterlite_streaming::stream_chunk_shaping::ChunkShaper;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamChunk};
 use futures_util::StreamExt as _;
 use futures_util::stream::empty;
-use http::{HeaderMap, HeaderValue};
+use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -53,11 +53,12 @@ pub(crate) enum Input {
 
 #[derive(Deserialize)]
 pub(crate) struct Mapping {
-    non_default_params: Object,
-    #[serde(default)]
-    optional_params: Object,
-    #[serde(default)]
-    drop_params: bool,
+    #[serde(rename = "non_default_params")]
+    supplied: Object,
+    #[serde(default, rename = "optional_params")]
+    existing: Object,
+    #[serde(default, rename = "drop_params")]
+    drop: bool,
 }
 
 #[derive(Deserialize)]
@@ -108,11 +109,7 @@ impl crate::helpers::Helper for Op {
 }
 
 fn mapped(mapping: &Mapping) -> Value {
-    match map_openai_params(
-        &mapping.non_default_params,
-        mapping.optional_params.clone(),
-        mapping.drop_params,
-    ) {
+    match map_openai_params(&mapping.supplied, mapping.existing.clone(), mapping.drop) {
         Ok(adapted) => json!({"ok": true, "value": adapted}),
         Err(error) => json!({"ok": false, "message": error.to_string()}),
     }
@@ -198,10 +195,10 @@ fn chunk(stream: &mut BytezCustomStream<'_>, fragment: &str) -> Value {
 fn projection(chunk: &StreamChunk) -> Value {
     let choice = chunk.choices.first();
     json!({
-        "content": choice.and_then(|choice| choice.delta.content.clone()),
-        "role": choice.and_then(|choice| choice.delta.role.clone()),
-        "finish_reason": choice.and_then(|choice| choice.finish_reason.clone()),
-        "index": choice.map(|choice| choice.index),
+        "content": choice.and_then(|first| first.delta.content.clone()),
+        "role": choice.and_then(|first| first.delta.role.clone()),
+        "finish_reason": choice.and_then(|first| first.finish_reason.clone()),
+        "index": choice.map(|first| first.index),
         "model": chunk.model.clone(),
         "object": chunk.object.clone(),
         "id_prefix": chunk.id.starts_with("chatcmpl-"),
@@ -210,9 +207,12 @@ fn projection(chunk: &StreamChunk) -> Value {
 
 fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
     let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        if let Ok(value) = HeaderValue::from_str(value) {
-            map.insert(name.as_str(), value);
+    for (raw_name, raw_value) in headers {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(raw_name.as_bytes()),
+            HeaderValue::from_str(raw_value),
+        ) {
+            map.insert(name, value);
         }
     }
     map

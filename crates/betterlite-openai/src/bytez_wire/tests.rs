@@ -1,11 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_prompts::arguments::json::{Json, Object};
-use http::{HeaderMap, HeaderValue};
+use http::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -13,22 +14,19 @@ use super::API_BASE;
 use super::environment::{complete_url, validate_environment};
 use super::error::{BytezConfigError, BytezError, get_error_class};
 use super::messages::{
-    NormalizedBlock, NormalizedMessage, RawMessage, adapt_messages_to_bytez_standard,
-    get_tokens_from_messages,
+    NormalizedBlock, NormalizedMessage, RawMessage, get_tokens_from_messages, normalize_messages,
 };
 use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::reply::{ReplyInput, decode_bytez_reply};
 use super::request::request_body;
+use crate::error::ProviderError;
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("json")
 }
 
 fn object(text: &str) -> Object {
-    match json(text) {
-        Json::Object(fields) => fields,
-        other => panic!("{other:?} is not an object"),
-    }
+    json(text).as_object().expect("object").clone()
 }
 
 fn message(text: &str) -> RawMessage {
@@ -38,7 +36,10 @@ fn message(text: &str) -> RawMessage {
 fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in pairs {
-        headers.append(*name, HeaderValue::from_str(value).expect("header"));
+        headers.append(
+            HeaderName::from_bytes(name.as_bytes()).expect("name"),
+            HeaderValue::from_str(value).expect("header"),
+        );
     }
     headers
 }
@@ -132,9 +133,7 @@ fn map_openai_params_reports_the_first_unsupported_key_in_merge_order() {
 
 #[test]
 fn validate_environment_overwrites_the_identity_headers() {
-    let caller = [("Authorization".to_owned(), String::from("Bearer old"))]
-        .into_iter()
-        .collect();
+    let caller = BTreeMap::from([("Authorization".to_owned(), String::from("Bearer old"))]);
     let key = SecretString::from("secret");
     let validated = validate_environment(
         caller,
@@ -150,7 +149,7 @@ fn validate_environment_overwrites_the_identity_headers() {
 #[test]
 fn validate_environment_rejects_empty_messages_before_a_missing_key() {
     assert!(matches!(
-        validate_environment(std::collections::BTreeMap::new(), &[], None),
+        validate_environment(BTreeMap::new(), &[], None),
         Err(BytezConfigError::MissingMessages)
     ));
 }
@@ -162,7 +161,7 @@ fn validate_environment_rejects_a_missing_or_empty_key(#[case] key: Option<&str>
     let secret = key.map(SecretString::from);
     assert!(matches!(
         validate_environment(
-            std::collections::BTreeMap::new(),
+            BTreeMap::new(),
             &[message(r#"{"role":"user","content":"hi"}"#)],
             secret.as_ref()
         ),
@@ -223,7 +222,7 @@ fn adapt_messages_normalizes_content_shapes(
     #[case] value: &str,
 ) {
     let messages: Vec<RawMessage> = serde_json::from_str(source).expect("messages");
-    let normalized = adapt_messages_to_bytez_standard(&messages).expect("normalized");
+    let normalized = normalize_messages(&messages).expect("normalized");
     let encoded = serde_json::to_string(&normalized[0].content).expect("encoded");
     let expected = format!(r#"[{{"type":"{kind}","{payload}":"{value}"}}]"#);
     assert_eq!(encoded, expected);
@@ -233,7 +232,7 @@ fn adapt_messages_normalizes_content_shapes(
 #[test]
 fn adapt_messages_discards_extra_message_fields_and_keeps_an_absent_role() {
     let messages = [message(r#"{"content":"hi","name":"nick","tool_calls":[]}"#)];
-    let normalized = adapt_messages_to_bytez_standard(&messages).expect("normalized");
+    let normalized = normalize_messages(&messages).expect("normalized");
     assert_eq!(normalized[0].role, None);
     let encoded = serde_json::to_string(&normalized[0]).expect("encoded");
     assert_eq!(
@@ -257,7 +256,7 @@ fn adapt_messages_discards_extra_message_fields_and_keeps_an_absent_role() {
 #[case::unknown(r#"[{"role":"user","content":{"type":"mystery","url":"x"}}]"#)]
 fn adapt_messages_rejects_unusable_content(#[case] source: &str) {
     let messages: Vec<RawMessage> = serde_json::from_str(source).expect("messages");
-    assert!(adapt_messages_to_bytez_standard(&messages).is_err());
+    normalize_messages(&messages).expect_err("rejected");
 }
 
 #[test]
@@ -277,9 +276,9 @@ fn request_body_writes_messages_stream_and_params() {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#, "false", r#"{"params":{}}"#)]
-#[case::explicit_false(r#"{"stream":false}"#, "false", r#"{"params":{"stream":false}}"#)]
-#[case::explicit_null(r#"{"stream":null}"#, "null", r#"{"params":{"stream":null}}"#)]
+#[case::absent("{}", "false", "{}")]
+#[case::explicit_false(r#"{"stream":false}"#, "false", r#"{"stream":false}"#)]
+#[case::explicit_null(r#"{"stream":null}"#, "null", r#"{"stream":null}"#)]
 fn request_body_keeps_a_non_truthy_stream_in_params(
     #[case] params: &str,
     #[case] stream: &str,
@@ -291,12 +290,7 @@ fn request_body_keeps_a_non_truthy_stream_in_params(
     )
     .expect("body");
     assert_eq!(serde_json::to_string(&body.stream).expect("stream"), stream);
-    let encoded = serde_json::to_string(&body.params).expect("params");
-    let expected = match json(expected) {
-        Json::Object(fields) => fields["params"].clone(),
-        _ => panic!("expected an object"),
-    };
-    assert_eq!(json(&encoded), expected);
+    assert_eq!(body.params, object(expected));
 }
 
 #[test]
@@ -469,7 +463,11 @@ fn decode_bytez_reply_rejects_a_body_over_the_byte_limit() {
 
 #[test]
 fn get_error_class_keeps_the_status_and_drops_headers() {
-    let error = get_error_class("boom", 400, &headers(&[("x-test", "1")]));
+    let error = get_error_class(
+        "boom",
+        400,
+        &BTreeMap::from([(String::from("x-test"), String::from("1"))]),
+    );
     assert_eq!(
         error,
         BytezError {
@@ -477,7 +475,7 @@ fn get_error_class_keeps_the_status_and_drops_headers() {
             message: String::from("boom")
         }
     );
-    let provider = crate::error::ProviderError::from(error);
+    let provider = ProviderError::from(error);
     assert_eq!(provider.status_code, 400);
     assert_eq!(provider.message, "boom");
     assert_eq!(provider.headers, None);
