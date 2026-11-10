@@ -5,9 +5,10 @@ use std::sync::Arc;
 use betterlite_context::local_ttl_cache::CacheValue;
 
 use super::support_tests::{
-    Failure, FakeBackend, NOW, cache, control, default_settings, envelope, fake_cache,
+    BatchStore, Failure, FakeBackend, NOW, cache, control, default_settings, envelope, fake_cache,
     key_settings, messages, number, object, param, reply, reply_response, string, with_params,
 };
+use crate::backend::CacheBackend;
 use crate::backend::memory::MemoryCache;
 use crate::backend::memory::local::LocalMemoryOps;
 use crate::cache_key::request::LiteLlmParams;
@@ -256,6 +257,78 @@ fn get_cache_reads_through_the_memory_backend() {
     cache.add_cache(&mut write_request(), &reply_response());
     let mut request = write_request();
     assert_eq!(cache.get_cache(None, &mut request), Some(reply_response()));
+}
+
+#[tokio::test]
+async fn async_get_cache_reads_through_the_memory_backend() {
+    let operations = LocalMemoryOps::new(1024, Arc::new(|| NOW)).expect("a memory cache");
+    let memory: MemoryCache<LocalMemoryOps> = MemoryCache { operations };
+    let stored = StoredBackend {
+        backend: Arc::new(memory),
+    };
+    let cache = cache(
+        Arc::new(stored),
+        key_settings(CacheMode::DefaultOn),
+        default_settings(),
+    );
+    cache.add_cache(&mut write_request(), &reply_response());
+    let mut request = write_request();
+    assert_eq!(
+        cache.async_get_cache(None, &mut request).await,
+        Some(reply_response())
+    );
+}
+
+#[tokio::test]
+async fn async_add_cache_writes_through_the_memory_backend() {
+    let operations = LocalMemoryOps::new(1024, Arc::new(|| NOW)).expect("a memory cache");
+    let memory: MemoryCache<LocalMemoryOps> = MemoryCache { operations };
+    let stored = StoredBackend {
+        backend: Arc::new(memory),
+    };
+    let cache = cache(
+        Arc::new(stored),
+        key_settings(CacheMode::DefaultOn),
+        default_settings(),
+    );
+    cache
+        .async_add_cache(None, &mut write_request(), &reply_response())
+        .await;
+    let mut request = write_request();
+    assert_eq!(cache.get_cache(None, &mut request), Some(reply_response()));
+}
+
+#[tokio::test]
+async fn batch_cache_write_delegates_to_the_stored_backend() {
+    let store = Arc::new(BatchStore::default());
+    let plain: Arc<BatchStore> = Arc::clone(&store);
+    let backend: Arc<dyn CacheBackend> = plain;
+    let cache = cache(
+        Arc::new(StoredBackend { backend }),
+        key_settings(CacheMode::DefaultOn),
+        default_settings(),
+    );
+    cache
+        .batch_cache_write(&mut write_request(), &reply_response())
+        .await
+        .expect("a cache write");
+    let batches = store.batches();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].1, envelope(Some(NOW), reply_response()));
+    assert_eq!(batches[0].2, None);
+}
+
+#[tokio::test]
+async fn async_get_cache_returns_none_when_the_cache_is_off() {
+    let fake = Arc::new(FakeBackend::new(Some(reply())));
+    let cache = fake_cache(
+        &fake,
+        key_settings(CacheMode::DefaultOff),
+        default_settings(),
+    );
+    let mut request = write_request();
+    assert_eq!(cache.async_get_cache(None, &mut request).await, None);
+    assert!(fake.gets().is_empty());
 }
 
 #[tokio::test]

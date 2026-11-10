@@ -9,7 +9,7 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 
-use crate::backend::{BackendError, CacheResult, Ttl};
+use crate::backend::{BackendError, CacheBackend, CacheResult, Ttl};
 use crate::cache_key::request::{CacheKeyRequest, KeyParam};
 use crate::cache_key::settings::CacheKeySettings;
 use crate::cache_key::value::{KeyObject, KeyValue};
@@ -222,6 +222,35 @@ impl EnvelopeBackend for FakeBackend {
         if self.failure == Failure::Batch {
             return Err(BackendError::Unsupported("batch_cache_write"));
         }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct BatchStore {
+    batches: Mutex<Vec<(String, CacheValue, Ttl)>>,
+}
+
+impl BatchStore {
+    pub(crate) fn batches(&self) -> Vec<(String, CacheValue, Ttl)> {
+        self.batches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+#[async_trait]
+impl CacheBackend for BatchStore {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+
+    async fn batch_cache_write(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
+        self.batches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((key.to_owned(), value, ttl));
         Ok(())
     }
 }
