@@ -1888,6 +1888,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "hyper",
  "indexmap 2.14.2",
  "insta",
  "jiff",
