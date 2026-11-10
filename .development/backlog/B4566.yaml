@@ -1,14 +1,14 @@
 id: B4566
 milestone: M8 platform
 title: Agent model listing and OpenCode provider projection
-status: todo
+status: done
 depends_on: [B4564]
 file: tasks/B4566-opencode-model-sync.yaml
 covers:
   - "litellm/proxy/client/cli/commands/agents.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1182

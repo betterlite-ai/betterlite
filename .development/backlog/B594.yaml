@@ -1,14 +1,14 @@
 id: B594
 milestone: M3 providers
 title: AWS credential resolver composition
-status: todo
+status: done
 depends_on: [B590, B591, B592, B593, B171, B682]
 file: tasks/B594-bedrock-credentials.yaml
 covers:
   - "litellm/llms/bedrock/base_aws_llm.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1169

@@ -1103,6 +1103,8 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -1155,6 +1157,7 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1171,6 +1174,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -2512,6 +2516,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
