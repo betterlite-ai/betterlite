@@ -56,11 +56,13 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::BuildWriterUrl { settings, auth } => {
-                let url = build_writer_url(settings, *auth).map_err(|error| helper_error(&error))?;
+                let url =
+                    build_writer_url(settings, *auth).map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::BuildReaderUrl { settings, auth } => {
-                let url = build_reader_url(settings, *auth).map_err(|error| helper_error(&error))?;
+                let url =
+                    build_reader_url(settings, *auth).map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::TlsParams { settings } => Ok(tls_params_value(settings)),
@@ -79,7 +81,8 @@ impl Helper for Op {
             }
             Input::ApplyWriterUrl { settings } => writer_update_value(settings),
             Input::ConstructCliUrl { environment } => {
-                let url = construct_cli_database_url(environment).map_err(|error| helper_error(&error))?;
+                let url = construct_cli_database_url(environment)
+                    .map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::Batch { calls } => Ok(serde_json::Value::Array(
@@ -146,7 +149,8 @@ fn settings_value(settings: &DatabaseUrlSettings) -> serde_json::Value {
 }
 
 fn writer_update_value(settings: &DatabaseUrlSettings) -> HelperResult {
-    let result = apply_writer_url_to_env(settings, AuthMode::Password).map_err(|error| helper_error(&error))?;
+    let result = apply_writer_url_to_env(settings, AuthMode::Password)
+        .map_err(|error| helper_error(&error))?;
     let updates: Vec<serde_json::Value> = result
         .updates
         .iter()
