@@ -1,5 +1,8 @@
 use betterlite_models::identity::provider_id::ProviderId;
 
+use crate::bedrock_config_selection::chat::{BedrockInvokeProvider, BedrockRoute};
+
+use super::super::facts::BedrockFacts;
 use super::super::table::{PROVIDER_CONFIG_ROWS, ProviderConfigTable};
 use super::super::tags::{ChatConfigTag, ConfigConstruction};
 use super::harness::{CHAT_CATALOG, CallSpec, TEXT_CATALOG, World, make_world};
@@ -202,6 +205,22 @@ const MODEL_FACTORIES: &[ProviderId] = &[
     ProviderId::CohereChat,
 ];
 
+// LiteLLM derives the Bedrock route, provider and base model from the model name before the row runs
+fn case_spec(provider: ProviderId, model: &'static str) -> CallSpec<'static> {
+    if provider == ProviderId::Bedrock {
+        CallSpec {
+            bedrock: BedrockFacts {
+                route: BedrockRoute::Invoke,
+                invoke_provider: Some(BedrockInvokeProvider::Anthropic),
+                base_model: model,
+            },
+            ..CallSpec::plain(provider, model)
+        }
+    } else {
+        CallSpec::plain(provider, model)
+    }
+}
+
 pub(super) fn factory_table() {
     let world = make_world(CHAT_CATALOG, TEXT_CATALOG);
     factory_table_rows(&world);
@@ -212,10 +231,7 @@ pub(super) fn factory_table() {
 
 fn factory_table_rows(world: &World) {
     for &(provider, model, class) in FACTORY_CASES {
-        let selection = world
-            .select(&CallSpec::plain(provider, model))
-            .unwrap()
-            .unwrap();
+        let selection = world.select(&case_spec(provider, model)).unwrap().unwrap();
         assert_eq!(selection.tag.class_name(), class, "{provider:?}");
     }
 }
@@ -223,10 +239,7 @@ fn factory_table_rows(world: &World) {
 fn factory_table_arguments(world: &World) {
     let mut model_aware = Vec::new();
     for &(provider, model, _) in FACTORY_CASES {
-        let selection = world
-            .select(&CallSpec::plain(provider, model))
-            .unwrap()
-            .unwrap();
+        let selection = world.select(&case_spec(provider, model)).unwrap().unwrap();
         let arguments = if MODEL_FACTORIES.contains(&provider) {
             model_aware.push(provider);
             vec![model.to_owned()]

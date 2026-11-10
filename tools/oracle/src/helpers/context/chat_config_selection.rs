@@ -13,6 +13,7 @@ use reports::{chat_call, foundry_call, image_report, json_reports, report_each};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
+    #[serde(rename = "openai_family_selection")]
     OpenAiFamilySelection {
         #[serde(default)]
         catalog: Catalog,
