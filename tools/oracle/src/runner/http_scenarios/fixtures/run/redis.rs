@@ -183,7 +183,7 @@ fn read_argument(reader: &mut impl BufRead, length: usize) -> io::Result<String>
 
 fn answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
     match command.name.as_str() {
-        "SET" => Some(store(entries, command)),
+        "SET" => set_answer(entries, command),
         "GET" => Some(lookup(entries, command)),
         "PING" => Some(b"+PONG\r\n".to_vec()),
         "SELECT" => select_answer(command),
@@ -211,29 +211,23 @@ fn record_unsupported(unsupported: &Mutex<Option<String>>, name: &str) {
     }
 }
 
-fn store(entries: &Entries, command: &Command) -> Vec<u8> {
-    let (Some(key), Some(value)) = (command.args.get(1), command.args.get(2)) else {
-        return b"-ERR wrong number of arguments for 'set' command\r\n".to_vec();
+// only the plain and EX forms are implemented; any other option is reported as unsupported
+fn set_answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
+    let ttl = match command.args.get(3..).unwrap_or_default() {
+        [] => None,
+        [option, seconds] if option.eq_ignore_ascii_case("EX") => {
+            Some(seconds.parse::<i64>().ok()?)
+        }
+        _ => return None,
     };
+    let key = command.args.get(1)?;
+    let value = command.args.get(2)?;
     let entry = StoredEntry {
         value: value.clone(),
-        ttl_seconds: expiry(&command.args),
+        ttl_seconds: ttl,
     };
     locked(entries).insert(key.clone(), entry);
-    b"+OK\r\n".to_vec()
-}
-
-fn expiry(args: &[String]) -> Option<i64> {
-    args.get(3..)?
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .find(|pair| {
-            pair.first()
-                .is_some_and(|option| option.eq_ignore_ascii_case("EX"))
-        })
-        .and_then(|pair| pair.get(1))
-        .and_then(|value| value.parse::<i64>().ok())
+    Some(b"+OK\r\n".to_vec())
 }
 
 fn lookup(entries: &Entries, command: &Command) -> Vec<u8> {
