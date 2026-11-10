@@ -10,7 +10,9 @@ use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rstest::rstest;
 use tokio::time::Instant;
 
-use super::secrets::{header_secret_values, request_secret_values, sensitive_field};
+use super::secrets::{
+    header_secret_values, mask_known_values, request_secret_values, sensitive_field,
+};
 use super::text::{safe_text, safe_upstream_url};
 use super::upstream::{
     BodyState, UpstreamFailure, UpstreamRequest, UpstreamResponse, capture_error_response,
@@ -247,6 +249,10 @@ fn form_bodies_keep_their_shape_and_redact_sensitive_fields() {
 #[case::dollar_attribute("$Version=1; a=b", vec!["b"])]
 #[case::quoted_value(r#"other="quoted value""#, vec!["quoted value"])]
 #[case::comma_inside_a_value("a=1, b=2", vec!["1,", "2"])]
+#[case::three_octal_digits(r#"token="a\077b""#, vec!["a?b"])]
+#[case::leading_digit_out_of_range(r#"token="a\477b""#, vec!["a477b"])]
+#[case::non_octal_digit(r#"token="a\108b""#, vec!["a108b"])]
+#[case::two_digits_are_not_an_escape(r#"token="a\12""#, vec!["a12"])]
 fn cookie_headers_yield_their_morsels(#[case] value: &str, #[case] expected: Vec<&str>) {
     let mut secrets = header_secret_values("cookie", value);
     assert_eq!(secrets.first().map(String::as_str), Some(value));
@@ -283,6 +289,42 @@ fn request_secrets_come_from_the_body_url_and_headers() {
             String::from("1"),
         ]
     );
+}
+
+#[rstest]
+#[case::raw("known-secret", "known-secret", "REDACTED")]
+#[case::plus("a+b", "a b", "REDACTED")]
+#[case::percent("a%20b", "a b", "REDACTED")]
+#[case::slash("x%2Fy", "x/y", "REDACTED")]
+#[case::underscore_is_safe("a%5Fb", "a_b", "a%5Fb")]
+#[case::dot_is_safe("a%2Eb", "a.b", "a%2Eb")]
+#[case::dash_is_safe("a%2Db", "a-b", "a%2Db")]
+#[case::tilde_is_safe("a%7Eb", "a~b", "a%7Eb")]
+fn every_quoted_form_of_a_known_secret_is_masked(
+    #[case] text: &str,
+    #[case] secret: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(mask_known_values(text, &[String::from(secret)]), expected);
+    assert_eq!(
+        mask_known_values("nothing to mask", &[String::from(secret)]),
+        "nothing to mask"
+    );
+}
+
+#[test]
+fn a_root_json_string_is_a_secret_leaf() {
+    let secrets = request_secret_values(&request(
+        "POST",
+        "https://mcp.example.com/mcp",
+        &[
+            ("host", "mcp.example.com"),
+            ("content-type", "application/json"),
+        ],
+        BodyState::Read(b"\"scalar-secret\"".to_vec()),
+    ))
+    .expect("known body");
+    assert_eq!(secrets, vec![String::from("scalar-secret")]);
 }
 
 #[test]
