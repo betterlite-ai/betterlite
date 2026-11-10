@@ -115,7 +115,7 @@ fn tool_use_of(call: &Object, ids: &dyn IdSource) -> JsonValue {
         (String::from("function"), JsonValue::Object(function)),
         (
             String::from("index"),
-            JsonValue::Number(Number::from(0_i64)),
+            JsonValue::Number(Number::from(0_i32)),
         ),
     ]))
 }

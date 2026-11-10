@@ -82,11 +82,7 @@ pub async fn transform_messages(
                 arguments: serde_json::from_str(&call.function.arguments)
                     .unwrap_or_else(|_| Value::Object(Object::new())),
             }),
-            tool_calls: if first_call.is_some() {
-                None
-            } else {
-                message.tool_calls.clone()
-            },
+            tool_calls: message.tool_calls.clone().filter(|_| first_call.is_none()),
             tool_call_id: message.tool_call_id.clone(),
             passthrough: message.passthrough.clone(),
         };

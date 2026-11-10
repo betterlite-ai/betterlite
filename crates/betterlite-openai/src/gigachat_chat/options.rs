@@ -82,10 +82,8 @@ pub fn map_openai_params(
                 optional_params.insert(String::from("max_tokens"), value.clone());
             }
             "tools" => {
-                optional_params.insert(
-                    String::from("functions"),
-                    Value::Array(tools_to_functions(value)?),
-                );
+                let functions = tools_to_functions(value)?;
+                optional_params.insert(String::from("functions"), Value::Array(functions));
             }
             "tool_choice" => {
                 if let Some(choice) = map_tool_choice(value) {
@@ -209,10 +207,8 @@ fn apply_response_format(
         parameters: schema.schema.unwrap_or_default(),
     }));
     optional_params.insert(String::from("functions"), Value::Array(functions));
-    optional_params.insert(
-        String::from("function_call"),
-        json!(FunctionName { name: &name }),
-    );
+    let call = json!(FunctionName { name: &name });
+    optional_params.insert(String::from("function_call"), call);
     optional_params.insert(String::from(STRUCTURED_OUTPUT), Value::Bool(true));
     Ok(())
 }
