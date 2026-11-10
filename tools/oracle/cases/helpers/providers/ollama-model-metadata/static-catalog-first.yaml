@@ -1,0 +1,30 @@
+kind: helper
+name: ollama-model-metadata-static-catalog-first
+call:
+  ollama_model_metadata:
+    static_catalog_first:
+      fixture:
+        env: {}
+        catalog:
+          - "ollama/llama2"
+          - "Ollama/Mixtral"
+          - "plain-model"
+          - "ollama_chat/codellama"
+          - "namespace/model:tag"
+      models:
+        - llama2
+        - ollama/llama2
+        - LLAMA2
+        - ollama/LLAMA2
+        - mixtral
+        - OLLAMA/MIXTRAL
+        - ollama_chat/llama2
+        - plain-model
+        - ollama_chat/plain-model
+        - codellama
+        - ollama/codellama
+        - namespace/model:tag
+        - missing-model
+        - ollama/missing-model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: openai-workload-identity-identity-cache-boundary
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      replies: []
+      steps:
+        - {op: auth, identity: {name: a}, label: a}
+        - {op: auth, identity: {name: a}, label: a2}
+        - {op: auth, identity: {name: a, provider: other}, label: p}
+        - {op: auth, identity: {name: a, account: other}, label: s}
+        - {op: auth, identity: {name: b}, label: b}
+        - {op: auth, identity: {name: a}, label: a3}
+        - {op: auth, identity: {name: n0}, label: n0}
+        - {op: auth, identity: {name: n1}, label: n1}
+        - {op: auth, identity: {name: n2}, label: n2}
+        - {op: auth, identity: {name: n3}, label: n3}
+        - {op: auth, identity: {name: n4}, label: n4}
+        - {op: auth, identity: {name: n5}, label: n5}
+        - {op: auth, identity: {name: n6}, label: n6}
+        - {op: auth, identity: {name: n7}, label: n7}
+        - {op: auth, identity: {name: n8}, label: n8}
+        - {op: auth, identity: {name: n9}, label: n9}
+        - {op: auth, identity: {name: n10}, label: n10}
+        - {op: auth, identity: {name: n11}, label: n11}
+        - {op: auth, identity: {name: n12}, label: n12}
+        - {op: auth, identity: {name: a, provider: other}, label: p2}
+        - {op: auth, identity: {name: a}, label: a4}
+        - {op: auth, identity: {name: a, account: other}, label: s2}
+        - {op: auth, identity: {name: b}, label: b2}
