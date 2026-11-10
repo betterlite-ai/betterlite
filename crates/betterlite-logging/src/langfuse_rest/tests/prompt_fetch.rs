@@ -152,6 +152,30 @@ async fn a_transport_error_is_retried_once() {
 }
 
 #[tokio::test]
+async fn a_body_that_ends_early_is_retried_once() {
+    let body = text_prompt("greeting", 2);
+    let server = FakeLangfuse::start(vec![
+        Answer::Truncated {
+            body: String::from("short"),
+        },
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
+    ])
+    .await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
+    let client = client_for(&server, TTL, &clock, &tasks);
+    let prompt = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect("the prompt");
+    assert_eq!(prompt_version(&prompt), 2);
+    assert_eq!(server.request_count(), 2);
+}
+
+#[tokio::test]
 async fn two_server_errors_raise_the_last_status() {
     let server = FakeLangfuse::start(vec![
         Answer::Respond {
