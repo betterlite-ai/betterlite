@@ -3,14 +3,19 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
-use toml_edit::{InlineTable, Item, Table, Value};
+use toml_edit::{Item, Value};
 
 pub(crate) fn to_json(item: &Item) -> Json {
     match item {
         Item::None => Json::Null,
         Item::Value(value) => value_to_json(value),
-        Item::Table(table) => table_to_json(table),
-        Item::ArrayOfTables(tables) => Json::List(tables.iter().map(table_to_json).collect()),
+        Item::Table(table) => sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))),
+        Item::ArrayOfTables(tables) => Json::List(
+            tables
+                .iter()
+                .map(|table| sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))))
+                .collect(),
+        ),
     }
 }
 
@@ -22,7 +27,9 @@ fn value_to_json(value: &Value) -> Json {
         Value::Boolean(flag) => Json::Bool(*flag.value()),
         Value::Datetime(moment) => Json::Text(moment.value().to_string()),
         Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
-        Value::InlineTable(table) => inline_table_to_json(table),
+        Value::InlineTable(table) => {
+            sorted_object(table.iter().map(|(key, child)| (key, value_to_json(child))))
+        }
     }
 }
 
@@ -34,24 +41,12 @@ fn float_to_json(value: f64) -> Json {
     )
 }
 
-fn table_to_json(table: &Table) -> Json {
-    let sorted: BTreeMap<&str, Json> = table
-        .iter()
-        .map(|(key, item)| (key, to_json(item)))
-        .collect();
-    Json::Object(
-        sorted
-            .into_iter()
-            .map(|(key, value)| (key.to_owned(), value))
-            .collect::<IndexMap<String, Json>>(),
-    )
-}
-
-fn inline_table_to_json(table: &InlineTable) -> Json {
-    let sorted: BTreeMap<&str, Json> = table
-        .iter()
-        .map(|(key, value)| (key, value_to_json(value)))
-        .collect();
+// json.dumps sorts object keys by code point
+fn sorted_object<'pairs, Pairs>(pairs: Pairs) -> Json
+where
+    Pairs: Iterator<Item = (&'pairs str, Json)>,
+{
+    let sorted: BTreeMap<&str, Json> = pairs.collect();
     Json::Object(
         sorted
             .into_iter()

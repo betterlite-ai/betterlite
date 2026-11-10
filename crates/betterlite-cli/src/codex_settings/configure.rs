@@ -155,25 +155,19 @@ async fn stage_receipt(
     receipt: &CodexReceipt,
 ) -> Result<StagedFile, CodexSettingsError> {
     let parent = state_path.parent().unwrap_or_else(|| Path::new("."));
-    files
-        .ensure_private_dir(parent)
-        .await
-        .map_err(|source| CodexSettingsError::StageReceipt {
-            path: state_path.to_owned(),
-            source,
-        })?;
-    let document =
-        PrivateDocument::json(receipt).map_err(|source| CodexSettingsError::StageReceipt {
-            path: state_path.to_owned(),
-            source,
-        })?;
-    files
-        .stage_private(state_path, document)
-        .await
-        .map_err(|source| CodexSettingsError::StageReceipt {
-            path: state_path.to_owned(),
-            source,
-        })
+    stage_error(state_path, files.ensure_private_dir(parent).await)?;
+    let document = stage_error(state_path, PrivateDocument::json(receipt))?;
+    stage_error(state_path, files.stage_private(state_path, document).await)
+}
+
+fn stage_error<T>(
+    state_path: &Path,
+    result: Result<T, PrivateJsonError>,
+) -> Result<T, CodexSettingsError> {
+    result.map_err(|source| CodexSettingsError::StageReceipt {
+        path: state_path.to_owned(),
+        source,
+    })
 }
 
 async fn commit_settings(
