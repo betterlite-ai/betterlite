@@ -297,6 +297,19 @@ async fn sync_log(
     Ok(json!({"queue_length": logger.queue.pending().len()}))
 }
 
+fn queue_report(logger: &DatadogLogger) -> Value {
+    let payloads = logger.queue.pending();
+    let head: Vec<Value> = payloads.iter().take(3).map(normalize::payload).collect();
+    let tail: Vec<Value> = payloads
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .map(normalize::payload)
+        .collect();
+    json!({"length": payloads.len(), "head": head, "tail": tail})
+}
+
 fn run_scenario(scenario: &Scenario) -> Result<Value, Box<crate::helpers::HelperError>> {
     let init = build_init(&scenario.init);
     let transport = Arc::new(ScriptedTransport::new(&scenario.replies));
