@@ -63,9 +63,9 @@ fn resolves_explicit_empty_and_absent_values(
     #[case] base: Option<&str>,
     #[case] key: &str,
 ) {
-    let explicit_key = explicit_key.map(SecretString::from);
+    let key_override = explicit_key.map(SecretString::from);
     let (resolved_base, resolved_key) =
-        settings(environment).resolve(explicit_base, explicit_key.as_ref());
+        settings(environment).resolve(explicit_base, key_override.as_ref());
     assert_eq!(resolved_base.as_deref(), base);
     assert_eq!(resolved_key.expose_secret(), key);
 }

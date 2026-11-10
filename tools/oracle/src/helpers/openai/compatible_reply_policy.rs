@@ -22,7 +22,7 @@ pub(crate) struct Input {
     #[serde(default)]
     transform: Vec<Transform>,
     #[serde(default)]
-    options: Vec<Options>,
+    options: Vec<EmbeddingOptions>,
 }
 
 #[derive(Deserialize)]
@@ -48,7 +48,7 @@ struct Transform {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Options {
+struct EmbeddingOptions {
     model: String,
     input: Json,
     options: IndexMap<String, Json>,

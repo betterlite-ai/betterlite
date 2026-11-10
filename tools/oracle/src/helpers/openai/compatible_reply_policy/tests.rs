@@ -41,11 +41,11 @@ fn helper_seeds_select_compatible_reply_policy() {
 #[test]
 fn missing_and_empty_headers_and_base_follow_the_python_checks() {
     let validated = &run_case("missing-empty-headers-and-base.yaml")["validate"];
-    assert_eq!(validated[0]["status"], 400);
-    assert_eq!(validated[1]["status"], 400);
+    assert_eq!(validated[0]["status"], 400_i32);
+    assert_eq!(validated[1]["status"], 400_i32);
     assert_eq!(validated[2]["headers"], json!({}));
     assert_eq!(validated[3]["headers"]["Authorization"], "Bearer ");
-    assert_eq!(validated[4]["status"], 400);
+    assert_eq!(validated[4]["status"], 400_i32);
     assert_eq!(validated[5]["url"], "/chat/completions");
     assert_eq!(validated[6]["headers"]["Authorization"], "Bearer k");
     assert_eq!(validated[7]["headers"], json!({"Authorization": "mine"}));
@@ -55,7 +55,7 @@ fn missing_and_empty_headers_and_base_follow_the_python_checks() {
 #[test]
 fn null_tokens_become_zero_and_only_one_tool_call_converts() {
     let transformed = &run_case("null-token-and-single-tool.yaml")["transform"];
-    assert_eq!(transformed[0]["usage"], json!([0, 5, 0]));
+    assert_eq!(transformed[0]["usage"], json!([0_i32, 5_i32, 0_i32]));
     assert_eq!(
         transformed[1]["choices"][0],
         json!({"content": "{\"a\":1}", "tool_calls": null})
@@ -64,11 +64,11 @@ fn null_tokens_become_zero_and_only_one_tool_call_converts() {
     assert_eq!(transformed[3]["choices"][0]["content"], "");
     assert_eq!(
         transformed[4]["choices"][0],
-        json!({"content": null, "tool_calls": 2})
+        json!({"content": null, "tool_calls": 2_i32})
     );
     assert_eq!(
         transformed[5]["choices"][0],
-        json!({"content": null, "tool_calls": 1})
+        json!({"content": null, "tool_calls": 1_i32})
     );
 }
 
@@ -87,7 +87,7 @@ fn embedding_options_keep_false_and_zero_and_override_model_and_input() {
     let options = &run_case("embedding-option-filter.yaml")["options"];
     assert_eq!(
         options[0],
-        json!({"model": "m", "input": ["a"], "dimensions": 0, "flag": false, "tag": "x", "empty": []})
+        json!({"model": "m", "input": ["a"], "dimensions": 0_i32, "flag": false, "tag": "x", "empty": []})
     );
     assert_eq!(options[1], json!({"model": "other", "input": ["b"]}));
     assert_eq!(options[2], json!({"model": "m", "input": ["a"]}));

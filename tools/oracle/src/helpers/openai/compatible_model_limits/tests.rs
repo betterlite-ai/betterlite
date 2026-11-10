@@ -43,21 +43,21 @@ fn limits_take_positive_integers_and_clamp_to_the_context() {
     let limits = run_case("positive-nonbool-and-clamp.yaml");
     assert_eq!(
         limits[0],
-        json!({"max_tokens": 4096, "max_input_tokens": 4096, "max_output_tokens": 1024})
+        json!({"max_tokens": 4096_i32, "max_input_tokens": 4096_i32, "max_output_tokens": 1024_i32})
     );
     assert_eq!(
         limits[1],
-        json!({"max_tokens": 2048, "max_input_tokens": 2048, "max_output_tokens": 2048})
+        json!({"max_tokens": 2048_i32, "max_input_tokens": 2048_i32, "max_output_tokens": 2048_i32})
     );
-    assert_eq!(limits[2]["max_tokens"], 4096);
-    assert_eq!(limits[3]["max_tokens"], 512);
-    assert_eq!(limits[4], json!({"max_input_tokens": 7}));
-    assert_eq!(limits[5], json!({"max_input_tokens": 300}));
+    assert_eq!(limits[2]["max_tokens"], 4096_i32);
+    assert_eq!(limits[3]["max_tokens"], 512_i32);
+    assert_eq!(limits[4], json!({"max_input_tokens": 7_i32}));
+    assert_eq!(limits[5], json!({"max_input_tokens": 300_i32}));
 }
 
 #[test]
 fn the_first_matching_id_wins_and_any_bad_list_is_empty() {
     let limits = run_case("first-id-and-empty-list.yaml");
-    assert_eq!(limits[0]["max_tokens"], 10);
+    assert_eq!(limits[0]["max_tokens"], 10_i32);
     assert_eq!(limits.as_array().unwrap()[1..], vec![json!({}); 7]);
 }

@@ -6,9 +6,9 @@ fuzz_target!(|data: &[u8]| {
     let Some((tag, body)) = data.split_first() else {
         return;
     };
-    if tag % 2 == 0 {
+    if tag.is_multiple_of(2) {
         let options = ReplyOptions {
-            json_mode: tag % 4 == 0,
+            json_mode: tag.is_multiple_of(4),
             provider: Some("fuzz"),
             base_model: Some("base"),
         };

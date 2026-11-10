@@ -21,7 +21,7 @@ use super::{
 use crate::openai_base_config::Headers;
 
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
-const TWO_MIB: usize = 2_097_152;
+const TWO_MIB: usize = 2 * 1024 * 1024;
 const ONE_MODEL: &str = r#"{"data":[{"id":"m","max_model_len":4096,"max_output_tokens":1024}]}"#;
 
 #[derive(Default)]
