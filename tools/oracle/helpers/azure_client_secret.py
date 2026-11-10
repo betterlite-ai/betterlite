@@ -3,7 +3,7 @@ import os
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Literal, Self, TypeAlias, TypedDict, cast
+from typing import Self, TypeAlias, TypedDict, cast
 from unittest import mock
 
 import azure.identity
@@ -33,124 +33,37 @@ class ReplyRequired(TypedDict):
     body: str
 
 
-class ReplyOptional(ReplyRequired, total=False):
+class Reply(ReplyRequired, total=False):
     url_contains: str
     error: str
 
 
-class GrantStepRequired(TypedDict):
+class Call(TypedDict):
     tenant_id: str
     client_id: str
     client_secret: str
 
 
-class GrantStep(GrantStepRequired, total=False):
+class Step(TypedDict, total=False):
     environment: dict[str, str]
+    tenant_id: str
+    client_id: str
+    client_secret: str
     scope: str | None
     authority_host: str | None
-    replies: list[ReplyOptional]
-
-
-class GrantInput(TypedDict):
-    action: Literal["client_secret_form", "tenant_scope", "oauth_failure"]
-    steps: list[GrantStep]
-
-
-class TokenExpiryInput(TypedDict):
-    action: Literal["token_expiry"]
-    steps: list[GrantStep]
-
-
-class ResolveStepRequired(TypedDict):
-    tenant_id: str
-    client_id: str
-    client_secret: str
-
-
-class ResolveStep(ResolveStepRequired, total=False):
-    environment: dict[str, str]
-    scope: str | None
-
-
-class ResolveInput(TypedDict):
-    action: Literal["client_secret_reference_resolution"]
-    steps: list[ResolveStep]
-
-
-class CacheCallRequired(TypedDict):
-    tenant_id: str
-    client_id: str
-    client_secret: str
-
-
-class CacheCall(CacheCallRequired, total=False):
-    scope: str | None
-
-
-class CacheStep(TypedDict, total=False):
-    environment: dict[str, str]
-    calls: list[CacheCall]
-
-
-class CacheInput(TypedDict):
-    action: Literal["client_secret_provider_cache"]
-    steps: list[CacheStep]
-
-
-class RequestFixture(TypedDict):
-    method: str
-    url: str
-
-
-class ResponseFixture(TypedDict):
-    status_code: int
-
-
-class ErrorStepRequired(TypedDict):
+    replies: list[Reply]
+    calls: list[Call]
     status_code: int
     message: str
-
-
-class ErrorStep(ErrorStepRequired, total=False):
     headers: dict[str, str]
-    request: RequestFixture
-    response: ResponseFixture
+    request: dict[str, str]
+    response: dict[str, int]
     body: Json
 
 
-class ErrorInput(TypedDict):
-    action: Literal["azure_error_fields"]
-    steps: list[ErrorStep]
-
-
-class RegionStep(TypedDict, total=False):
-    environment: dict[str, str]
-    replies: list[ReplyOptional]
-
-
-class RegionInput(TypedDict):
-    action: Literal[
-        "regional_authority_inputs",
-        "regional_authority_discovery",
-        "regional_authority_host",
-    ]
-    steps: list[RegionStep]
-
-
-Input: TypeAlias = (
-    GrantInput | TokenExpiryInput | ResolveInput | CacheInput | ErrorInput | RegionInput
-)
-
-
-class FixtureResponse:
-    def __init__(self, reply: ReplyOptional) -> None:
-        self.status_code = reply["status"]
-        self.text = reply["body"]
-        self.headers: dict[str, str] = {}
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= HTTP_ERROR_STATUS:
-            raise RuntimeError(f"HTTP Error: {self.status_code}")
+class Input(TypedDict):
+    action: str
+    steps: list[Step]
 
 
 class RecordedRequest(TypedDict):
@@ -161,8 +74,19 @@ class RecordedRequest(TypedDict):
     headers: dict[str, str]
 
 
+class FixtureResponse:
+    def __init__(self, reply: Reply) -> None:
+        self.status_code = reply["status"]
+        self.text = reply["body"]
+        self.headers: dict[str, str] = {}
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= HTTP_ERROR_STATUS:
+            raise RuntimeError(f"HTTP Error: {self.status_code}")
+
+
 class FixtureClient:
-    def __init__(self, replies: list[ReplyOptional]) -> None:
+    def __init__(self, replies: list[Reply]) -> None:
         self.replies = list(replies)
         self.requests: list[RecordedRequest] = []
 
@@ -264,11 +188,11 @@ def fixture_msal_client(client: FixtureClient) -> Generator[None]:
         yield
 
 
-def environment_of(step: GrantStep | ResolveStep | RegionStep) -> dict[str, str]:
+def environment_of(step: Step) -> dict[str, str]:
     return dict(step.get("environment", {}))
 
 
-def grant_environment(step: GrantStep) -> dict[str, str]:
+def grant_environment(step: Step) -> dict[str, str]:
     environment = environment_of(step)
     host = step.get("authority_host")
     if host is not None:
@@ -276,11 +200,12 @@ def grant_environment(step: GrantStep) -> dict[str, str]:
     return environment
 
 
-def scope_args(scope: str | None) -> tuple[str, ...]:
+def scope_args(step: Step) -> tuple[str, ...]:
+    scope = step.get("scope")
     return () if scope is None else (scope,)
 
 
-def grant_step(step: GrantStep) -> Json:
+def grant_step(step: Step) -> Json:
     _cached_entra_id_token_provider.cache_clear()
     client = FixtureClient(list(step.get("replies", [])))
     with (
@@ -290,10 +215,10 @@ def grant_step(step: GrantStep) -> Json:
     ):
         try:
             provider = get_azure_ad_token_from_entra_id(
-                step["tenant_id"],
-                step["client_id"],
-                step["client_secret"],
-                *scope_args(step.get("scope")),
+                step.get("tenant_id", ""),
+                step.get("client_id", ""),
+                step.get("client_secret", ""),
+                *scope_args(step),
             )
             token = provider()
         except (ClientAuthenticationError, ValueError, RuntimeError, OSError):
@@ -307,7 +232,7 @@ def grant_step(step: GrantStep) -> Json:
     )
 
 
-def expiry_step(step: GrantStep) -> dict[str, Json]:
+def expiry_step(step: Step) -> Json:
     client = FixtureClient(list(step.get("replies", [])))
     with (
         fixture_environment(grant_environment(step)),
@@ -315,7 +240,9 @@ def expiry_step(step: GrantStep) -> dict[str, Json]:
         fixed_clock(),
     ):
         credential = ClientSecretCredential(
-            step["tenant_id"], step["client_id"], step["client_secret"]
+            step.get("tenant_id", ""),
+            step.get("client_id", ""),
+            step.get("client_secret", ""),
         )
         scope = step.get("scope")
         info = credential.get_token_info(DEFAULT_SCOPE if scope is None else scope)
@@ -335,7 +262,7 @@ class FakeCredential:
         self.client_secret = client_secret
 
 
-def resolve_step(step: ResolveStep) -> dict[str, Json]:
+def resolve_step(step: Step) -> Json:
     _cached_entra_id_token_provider.cache_clear()
     captured: list[tuple[str, str, str, str]] = []
 
@@ -357,10 +284,10 @@ def resolve_step(step: ResolveStep) -> dict[str, Json]:
     ):
         try:
             get_azure_ad_token_from_entra_id(
-                step["tenant_id"],
-                step["client_id"],
-                step["client_secret"],
-                *scope_args(step.get("scope")),
+                step.get("tenant_id", ""),
+                step.get("client_id", ""),
+                step.get("client_secret", ""),
+                *scope_args(step),
             )
         except ValueError:
             return {"kind": "error"}
@@ -381,7 +308,7 @@ class CacheState:
         self.constructed = 0
 
 
-def cache_report(steps: list[CacheStep]) -> list[dict[str, Json]]:
+def cache_report(steps: list[Step]) -> list[dict[str, Json]]:
     _cached_entra_id_token_provider.cache_clear()
     state = CacheState()
 
@@ -407,7 +334,6 @@ def cache_report(steps: list[CacheStep]) -> list[dict[str, Json]]:
                         call["tenant_id"],
                         call["client_id"],
                         call["client_secret"],
-                        *scope_args(call.get("scope")),
                     )
                     for call in step.get("calls", [])
                 ]
@@ -420,7 +346,7 @@ def cache_report(steps: list[CacheStep]) -> list[dict[str, Json]]:
     return results
 
 
-def error_step(step: ErrorStep) -> Json:
+def error_step(step: Step) -> Json:
     request_fixture = step.get("request")
     request_object = (
         None
@@ -435,8 +361,8 @@ def error_step(step: ErrorStep) -> Json:
     )
     body = step.get("body")
     error = AzureOpenAIError(
-        status_code=step["status_code"],
-        message=step["message"],
+        status_code=step.get("status_code", 0),
+        message=step.get("message", ""),
         request=request_object,
         response=response_object,
         headers=step.get("headers"),
@@ -484,23 +410,15 @@ def debug_of(messages: list[tuple[int, str]]) -> str | None:
     return None
 
 
-def discovery_hosts(requests: list[RecordedRequest]) -> list[str]:
-    return [
+def regional_host(requests: list[RecordedRequest], environment: dict[str, str]) -> str | None:
+    hosts = [
         request["url"].split("://", maxsplit=1)[-1].split("/", maxsplit=1)[0]
         for request in requests
         if OPENID_PATH in request["url"]
     ]
-
-
-def central_host(environment: dict[str, str]) -> str:
-    return environment.get("AZURE_AUTHORITY_HOST", "login.microsoftonline.com").removeprefix(
-        "https://"
-    ).rstrip(" /")
-
-
-def regional_host(requests: list[RecordedRequest], environment: dict[str, str]) -> str | None:
-    hosts = discovery_hosts(requests)
-    if not hosts or hosts[-1] == central_host(environment):
+    configured = environment.get("AZURE_AUTHORITY_HOST", "login.microsoftonline.com")
+    central = configured.removeprefix("https://").rstrip(" /")
+    if not hosts or hosts[-1] == central:
         return None
     return hosts[-1]
 
@@ -517,7 +435,7 @@ def imds_reports(requests: list[RecordedRequest]) -> tuple[int, str | None]:
     return len(imds), metadata
 
 
-def region_flow(step: RegionStep) -> tuple[FixtureClient, dict[str, str], Json]:
+def region_flow(step: Step) -> tuple[FixtureClient, dict[str, str], Json]:
     client = FixtureClient(list(step.get("replies", [])))
     environment = environment_of(step)
     CAPTURE.messages.clear()
@@ -534,7 +452,7 @@ def region_flow(step: RegionStep) -> tuple[FixtureClient, dict[str, str], Json]:
     return client, environment, configured
 
 
-def region_inputs_report(step: RegionStep) -> Json:
+def region_inputs_report(step: Step) -> Json:
     client, environment, configured = region_flow(step)
     host = regional_host(client.requests, environment)
     return cast(
@@ -549,7 +467,7 @@ def region_inputs_report(step: RegionStep) -> Json:
     )
 
 
-def region_discovery_report(step: RegionStep) -> Json:
+def region_discovery_report(step: Step) -> Json:
     client, environment, _configured = region_flow(step)
     host = regional_host(client.requests, environment)
     imds_requests, metadata = imds_reports(client.requests)
@@ -566,7 +484,7 @@ def region_discovery_report(step: RegionStep) -> Json:
     )
 
 
-def region_host_report(step: RegionStep) -> Json:
+def region_host_report(step: Step) -> Json:
     client = FixtureClient(list(step.get("replies", [])))
     environment = environment_of(step)
     CAPTURE.messages.clear()
@@ -610,23 +528,18 @@ def run(argument: Input) -> Json:
 
 
 def run_steps(argument: Input) -> Json:
-    action = argument["action"]
-    if action in ("client_secret_form", "tenant_scope", "oauth_failure"):
-        return [grant_step(step) for step in cast("GrantInput", argument)["steps"]]
-    if action == "token_expiry":
-        return [expiry_step(step) for step in cast("TokenExpiryInput", argument)["steps"]]
-    if action == "client_secret_reference_resolution":
-        return [
-            resolve_step(step)
-            for step in cast("ResolveInput", argument)["steps"]
-        ]
-    if action == "azure_error_fields":
-        return [error_step(step) for step in cast("ErrorInput", argument)["steps"]]
-    if action == "regional_authority_discovery":
-        return [
-            region_discovery_report(step)
-            for step in cast("RegionInput", argument)["steps"]
-        ]
-    return [
-        region_host_report(step) for step in cast("RegionInput", argument)["steps"]
-    ]
+    if argument["action"] == "client_secret_reference_resolution":
+        return [resolve_step(step) for step in argument["steps"]]
+    if argument["action"] == "token_expiry":
+        return [expiry_step(step) for step in argument["steps"]]
+    if argument["action"] == "azure_error_fields":
+        return [error_step(step) for step in argument["steps"]]
+    return run_regional(argument)
+
+
+def run_regional(argument: Input) -> Json:
+    if argument["action"] == "regional_authority_discovery":
+        return [region_discovery_report(step) for step in argument["steps"]]
+    if argument["action"] == "regional_authority_host":
+        return [region_host_report(step) for step in argument["steps"]]
+    return [grant_step(step) for step in argument["steps"]]

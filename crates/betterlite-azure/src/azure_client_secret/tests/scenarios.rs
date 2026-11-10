@@ -1,3 +1,4 @@
+use std::mem::discriminant;
 use std::sync::Arc;
 
 use betterlite_config::sections::azure_client_secret::Settings;
@@ -8,8 +9,9 @@ use super::fixture::{
     CLIENT, Fixture, FixtureResolver, FixtureTransport, HOST, NOW, Reply, SECRET, TENANT,
     error_text, form_map, imds, input, input_for, instance_metadata, openid, openid_for, token,
 };
-use crate::azure_client_secret::authority::{self, Authority, ConfiguredRegion, IMDS_REGION_URL};
+use crate::azure_client_secret::authority::{self, Authority};
 use crate::azure_client_secret::provider::{ClientSecretProvider, ProviderCache};
+use crate::azure_client_secret::region::{self, ConfiguredRegion, IMDS_REGION_URL};
 use crate::azure_client_secret::transport::HttpMethod;
 use crate::azure_client_secret::{
     ClientSecretError, ClientSecretInput, DEFAULT_SCOPE, PROVIDER_CACHE_CAPACITY,
@@ -77,10 +79,7 @@ fn form_redaction() {
 pub(super) fn tenant_scope() {
     explicit_scope();
     empty_scope();
-    empty_client_id();
-    empty_client_secret();
-    empty_tenant_id();
-    invalid_tenant();
+    credential_errors();
 }
 
 fn explicit_scope() {
@@ -111,57 +110,34 @@ fn empty_scope() {
     assert_eq!(form_map(&post).get("scope").map(String::as_str), Some(""));
 }
 
-fn empty_client_id() {
-    let fixture = Fixture::new(Vec::new());
-    let error = fixture
-        .cache()
-        .provider(
-            &input_for(TENANT, "", FIXTURE_SECRET, None),
-            &fixture.resolver,
-            None,
-        )
-        .unwrap_err();
-    assert!(matches!(error, ClientSecretError::EmptyClientId));
-}
-
-fn empty_client_secret() {
-    let fixture = Fixture::new(Vec::new());
-    let error = fixture
-        .cache()
-        .provider(
-            &input_for(TENANT, CLIENT, "", None),
-            &fixture.resolver,
-            None,
-        )
-        .unwrap_err();
-    assert!(matches!(error, ClientSecretError::EmptyClientSecret));
-}
-
-fn empty_tenant_id() {
-    let fixture = Fixture::new(Vec::new());
-    let error = fixture
-        .cache()
-        .provider(
-            &input_for("", CLIENT, FIXTURE_SECRET, None),
-            &fixture.resolver,
-            None,
-        )
-        .unwrap_err();
-    assert!(matches!(error, ClientSecretError::EmptyTenantId));
-}
-
-fn invalid_tenant() {
-    let fixture = Fixture::new(Vec::new());
-    let error = fixture
-        .cache()
-        .provider(
-            &input_for("tenant name", CLIENT, FIXTURE_SECRET, None),
-            &fixture.resolver,
-            None,
-        )
-        .unwrap_err();
-    assert!(matches!(error, ClientSecretError::InvalidTenantId));
-    assert!(fixture.transport.requests().is_empty());
+fn credential_errors() {
+    let cases = [
+        (
+            input_for(TENANT, "", FIXTURE_SECRET, None),
+            ClientSecretError::EmptyClientId,
+        ),
+        (
+            input_for(TENANT, CLIENT, "", None),
+            ClientSecretError::EmptyClientSecret,
+        ),
+        (
+            input_for("", CLIENT, FIXTURE_SECRET, None),
+            ClientSecretError::EmptyTenantId,
+        ),
+        (
+            input_for("tenant name", CLIENT, FIXTURE_SECRET, None),
+            ClientSecretError::InvalidTenantId,
+        ),
+    ];
+    for (input, expected) in cases {
+        let fixture = Fixture::new(Vec::new());
+        let error = fixture
+            .cache()
+            .provider(&input, &fixture.resolver, None)
+            .unwrap_err();
+        assert_eq!(discriminant(&error), discriminant(&expected));
+        assert!(fixture.transport.requests().is_empty());
+    }
 }
 
 pub(super) fn oauth_failure() {
@@ -450,7 +426,7 @@ fn auto_detection_inputs() {
     for auto in ["true", "True", "tryautodetect", "TryAutoDetect"] {
         let transport = FixtureTransport::new(Vec::new());
         let selection =
-            authority::select_region(&region_settings(Some(auto), None, "westus2"), &transport);
+            region::select_region(&region_settings(Some(auto), None, "westus2"), &transport);
         assert_eq!(
             selection.configured,
             Some(ConfiguredRegion::AutoDetect),
@@ -464,7 +440,7 @@ fn auto_detection_inputs() {
 
 fn explicit_region() {
     let transport = FixtureTransport::new(Vec::new());
-    let selection = authority::select_region(
+    let selection = region::select_region(
         &region_settings(Some("westus3"), Some("ignored"), " West US 2 "),
         &transport,
     );
@@ -480,8 +456,7 @@ fn explicit_region() {
 
 fn forced_region() {
     let transport = FixtureTransport::new(vec![imds("eastus\n")]);
-    let selection =
-        authority::select_region(&region_settings(None, Some("eastus"), ""), &transport);
+    let selection = region::select_region(&region_settings(None, Some("eastus"), ""), &transport);
     assert_eq!(
         selection.configured,
         Some(ConfiguredRegion::Named("eastus".to_owned()))
@@ -500,7 +475,7 @@ fn forced_region() {
 fn empty_configured_region() {
     let transport = FixtureTransport::new(vec![imds("westus2\n")]);
     let selection =
-        authority::select_region(&region_settings(Some(""), Some("ignored"), ""), &transport);
+        region::select_region(&region_settings(Some(""), Some("ignored"), ""), &transport);
     assert_eq!(
         selection.configured,
         Some(ConfiguredRegion::Named(String::new()))
@@ -517,7 +492,7 @@ fn empty_configured_region() {
 
 fn no_configured_region() {
     let transport = FixtureTransport::new(Vec::new());
-    let selection = authority::select_region(&region_settings(None, None, "westus2"), &transport);
+    let selection = region::select_region(&region_settings(None, None, "westus2"), &transport);
     assert_eq!(selection.configured, None);
     assert_eq!(selection.detected.as_deref(), Some("westus2"));
     assert_eq!(selection.region, None);
@@ -531,7 +506,7 @@ fn no_configured_region() {
 
 fn no_regional_inputs() {
     let transport = FixtureTransport::new(Vec::new());
-    let selection = authority::select_region(&region_settings(None, None, ""), &transport);
+    let selection = region::select_region(&region_settings(None, None, ""), &transport);
     assert_eq!(selection.detected, None);
     assert!(selection.warnings.is_empty());
     assert_eq!(selection.region_debug, "Region to be used: None");
@@ -548,7 +523,7 @@ pub(super) fn regional_authority_discovery() {
 
 fn imds_request() {
     let transport = FixtureTransport::new(vec![imds("  westus2 \n")]);
-    let selection = authority::select_region(&region_settings(Some("true"), None, ""), &transport);
+    let selection = region::select_region(&region_settings(Some("true"), None, ""), &transport);
     assert_eq!(selection.detected.as_deref(), Some("westus2"));
     assert_eq!(selection.region.as_deref(), Some("westus2"));
     let requests = transport.requests();
@@ -564,14 +539,14 @@ fn imds_request() {
 
 fn imds_status_is_ignored() {
     let transport = FixtureTransport::new(vec![Reply::status(500, "169.254.169.254", "westus2")]);
-    let selection = authority::select_region(&region_settings(Some("true"), None, ""), &transport);
+    let selection = region::select_region(&region_settings(Some("true"), None, ""), &transport);
     assert_eq!(selection.detected.as_deref(), Some("westus2"));
     assert_eq!(selection.region.as_deref(), Some("westus2"));
 }
 
 fn imds_failure() {
     let transport = FixtureTransport::new(vec![Reply::failure("169.254.169.254")]);
-    let selection = authority::select_region(&region_settings(Some("true"), None, ""), &transport);
+    let selection = region::select_region(&region_settings(Some("true"), None, ""), &transport);
     assert_eq!(selection.detected, None);
     assert_eq!(selection.region, None);
     assert_eq!(selection.region_debug, "Region to be used: None");
@@ -579,7 +554,7 @@ fn imds_failure() {
 
 fn no_imds_without_configured_region() {
     let transport = FixtureTransport::new(Vec::new());
-    let selection = authority::select_region(&region_settings(None, None, ""), &transport);
+    let selection = region::select_region(&region_settings(None, None, ""), &transport);
     assert!(transport.requests().is_empty());
     assert_eq!(selection.region, None);
 }
@@ -587,7 +562,7 @@ fn no_imds_without_configured_region() {
 fn region_name_skips_imds() {
     let transport = FixtureTransport::new(Vec::new());
     let selection =
-        authority::select_region(&region_settings(Some("true"), None, "westus2"), &transport);
+        region::select_region(&region_settings(Some("true"), None, "westus2"), &transport);
     assert!(transport.requests().is_empty());
     assert_eq!(selection.detected.as_deref(), Some("westus2"));
 }
@@ -676,34 +651,33 @@ fn fixed_instance_discovery() {
 }
 
 fn authority_errors() {
-    invalid_authority();
-    invalid_instance();
+    authority_value_errors();
     discovery_status_error();
     malformed_configuration();
 }
 
-fn invalid_authority() {
-    let fixture = Fixture::new(Vec::new());
-    let error = authority::discover_authority(
-        &*fixture.transport,
+fn authority_value_errors() {
+    let unreachable = Fixture::new(Vec::new());
+    let invalid = authority::discover_authority(
+        &*unreachable.transport,
         "http://login.contoso.test",
         TENANT,
         true,
     )
     .unwrap_err();
-    assert!(matches!(error, ClientSecretError::InvalidAuthority { .. }));
-}
-
-fn invalid_instance() {
+    assert!(matches!(
+        invalid,
+        ClientSecretError::InvalidAuthority { .. }
+    ));
     let fixture = Fixture::new(vec![instance_metadata(r#"{"error":"invalid_instance"}"#)]);
-    let error = authority::discover_authority(
+    let refused = authority::discover_authority(
         &*fixture.transport,
         "https://login.contoso.test",
         TENANT,
         true,
     )
     .unwrap_err();
-    assert!(matches!(error, ClientSecretError::InvalidInstance { .. }));
+    assert!(matches!(refused, ClientSecretError::InvalidInstance { .. }));
     assert_eq!(fixture.transport.requests().len(), 1);
 }
 

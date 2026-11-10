@@ -6,6 +6,7 @@ use thiserror::Error;
 
 pub mod authority;
 pub mod provider;
+pub mod region;
 pub mod token;
 pub mod transport;
 

@@ -7,6 +7,7 @@ use secrecy::ExposeSecret as _;
 use sha2::{Digest as _, Sha256};
 
 use super::authority::{self, Authority};
+use super::region;
 use super::token::{self, AccessToken};
 use super::transport::{Clock, Transport};
 use super::{
@@ -87,7 +88,7 @@ impl ClientSecretProvider {
     }
 
     fn acquire(&self) -> Result<AccessToken, ClientSecretError> {
-        let selection = authority::select_region(&self.settings, &*self.transport);
+        let selection = region::select_region(&self.settings, &*self.transport);
         let central = self.central_authority(selection.opted_in)?;
         let endpoint = match selection
             .region
