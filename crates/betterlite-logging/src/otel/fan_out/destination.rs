@@ -55,7 +55,7 @@ impl DestinationProcessorFactory for ExporterDestinationFactory {
             tracing::debug!(endpoint = %fields.endpoint, %error, "otel: tenant destination did not build");
         }).ok()?;
         let mut processor = processor_for(sink, Some(false));
-        processor.set_resource(resource);
+        processor.set_resource(&destination_resource(resource, destination));
         Some(Arc::new(processor))
     }
 }

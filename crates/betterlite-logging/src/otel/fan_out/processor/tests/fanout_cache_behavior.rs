@@ -153,7 +153,7 @@ fn eviction_waits_for_the_drain_to_have_room() {
     assert_eq!(factory.build_count(&endpoint(0)), 1);
 
     release.send(()).expect("the drain may finish");
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
     send(&fanout, &scope, destination(&endpoint(33), SpanScope::Full));
     send(&fanout, &scope, destination(&endpoint(1), SpanScope::Full));
     assert_eq!(factory.build_count(&endpoint(1)), 2);

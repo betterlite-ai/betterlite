@@ -120,6 +120,9 @@ def attributes_json(attributes: Mapping[str, object]) -> dict[str, Json]:
 
 def span_from(value: Json) -> FakeSpan:
     fields = cast(dict[str, Json], value)
+    unknown = set(fields) - {"name", "attributes"}
+    if unknown:
+        raise ValueError(f"unknown span fields {sorted(unknown)}")
     attributes = cast(dict[str, Json], fields.get("attributes") or {})
     return FakeSpan(
         name=fields.get("name"),
@@ -137,18 +140,6 @@ def span_from(value: Json) -> FakeSpan:
     )
 
 
-def destination_from(value: Json) -> object:
-    fields = cast(dict[str, Json], value)
-    return _destination(
-        endpoint=fields.get("endpoint"),
-        headers=fields.get("headers") or {},
-        resource_attributes={},
-        callback_name=fields.get("callback_name"),
-        protocol=fields.get("protocol"),
-        span_scope=fields.get("span_scope") or "full",
-    )
-
-
 def record_json(span: object) -> Json:
     like = cast(SpanRecord, span)
     return {"name": like.name, "attributes": cast(Json, attributes_json(like.attributes))}
@@ -162,7 +153,14 @@ def dispatch(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
     span = span_from(input_value.get("span") or {})
     if function == "for_destination":
-        destination = destination_from(input_value.get("destination") or {})
+        destination = _destination(
+            endpoint=input_value.get("endpoint") or "",
+            headers=input_value.get("headers") or {},
+            resource_attributes={},
+            callback_name=None,
+            protocol=None,
+            span_scope="full",
+        )
         return record_json(_for_destination(span, destination))
     if function == "sink_key":
         return sink_json(input_value)

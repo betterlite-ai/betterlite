@@ -20,6 +20,7 @@ fn run(input: Value) -> Value {
 fn for_destination_projects_the_tenant_attributes() {
     let output = run(json!({
         "function": "for_destination",
+        "endpoint": "http://collector:4318",
         "span": {
             "name": "chat gpt-4",
             "attributes": {
@@ -29,17 +30,6 @@ fn for_destination_projects_the_tenant_attributes() {
                 "http.url": "https://proxy/v1/chat?key=sk",
                 "http.request.header.authorization": "Bearer x",
             },
-            "events": [{"name": "exception", "attributes": {"exception.message": "boom"}}],
-            "status": {"code": "error", "description": "failed"},
-            "parent": "1112131415161718",
-            "resource": {"service.name": "betterlite"},
-        },
-        "destination": {
-            "endpoint": "http://collector:4318",
-            "headers": {"x-api-key": "k"},
-            "resource_attributes": {"tenant.id": "t-1"},
-            "callback_name": "arize",
-            "span_scope": "full",
         },
     }));
     let result = &output["result"];

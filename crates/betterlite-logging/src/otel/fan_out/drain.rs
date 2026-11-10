@@ -1,6 +1,6 @@
 use opentelemetry_sdk::trace::SpanProcessor;
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 pub const DRAIN_WORKERS: usize = 2;
@@ -18,13 +18,6 @@ struct DrainState {
 struct DrainShared {
     state: Mutex<DrainState>,
     wake: Condvar,
-}
-
-fn lock_state(shared: &DrainShared) -> MutexGuard<'_, DrainState> {
-    match shared.state.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
 }
 
 // litellm.integrations.otel.plumbing.providers._DrainPool
@@ -53,7 +46,11 @@ impl DrainPool {
                 }
             }
         }
-        lock_state(&shared).live_workers = handles.len();
+        shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .live_workers = handles.len();
         Self {
             shared,
             capacity,
@@ -62,7 +59,11 @@ impl DrainPool {
     }
 
     pub fn submit(&self, processor: Arc<dyn SpanProcessor>) {
-        let mut state = lock_state(&self.shared);
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if !state.closed && state.live_workers > 0 {
             state.backlog = state.backlog.saturating_add(1);
             state.queue.push_back(processor);
@@ -86,24 +87,25 @@ impl DrainPool {
 
     #[must_use]
     pub fn saturated(&self) -> bool {
-        let state = lock_state(&self.shared);
-        let backlog = state.backlog;
-        drop(state);
-        backlog >= self.capacity
+        match self.shared.state.lock() {
+            Ok(state) => state.backlog >= self.capacity,
+            Err(poisoned) => poisoned.into_inner().backlog >= self.capacity,
+        }
     }
 
-    pub fn close(&self, timeout: Option<Duration>) {
-        let mut state = lock_state(&self.shared);
+    pub fn close(&self, timeout: Duration) {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if state.closed {
             return;
         }
         state.closed = true;
         self.shared.wake.notify_all();
-        let Some(limit) = timeout else {
-            return;
-        };
         let deadline = Instant::now()
-            .checked_add(limit)
+            .checked_add(timeout)
             .unwrap_or_else(Instant::now);
         while state.live_workers > 0 {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
@@ -121,7 +123,11 @@ impl DrainPool {
 
 impl Drop for DrainPool {
     fn drop(&mut self) {
-        let mut state = lock_state(&self.shared);
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         state.closed = true;
         self.shared.wake.notify_all();
         drop(state);
@@ -131,7 +137,7 @@ impl Drop for DrainPool {
 fn drain_until_closed(shared: &DrainShared) {
     while let Some(processor) = next_processor(shared) {
         shutdown_quietly(&processor);
-        let mut state = lock_state(shared);
+        let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.backlog = state.backlog.saturating_sub(1);
         shared.wake.notify_all();
         drop(state);
@@ -140,7 +146,7 @@ fn drain_until_closed(shared: &DrainShared) {
 
 // A closed worker that finds the queue empty retires here and reports itself gone.
 fn next_processor(shared: &DrainShared) -> Option<Arc<dyn SpanProcessor>> {
-    let mut state = lock_state(shared);
+    let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
     loop {
         if let Some(processor) = state.queue.pop_front() {
             return Some(processor);

@@ -3,6 +3,7 @@ name: for-destination-tenant-owned
 call:
   b3849:
     function: for_destination
+    endpoint: http://collector:4318
     span:
       name: chat gpt-4
       attributes:
@@ -12,18 +13,5 @@ call:
         error.message: provider rejected the request
         http.url: https://provider.example/v1/chat?api-version=2024
         http.request.header.authorization: Bearer sk-1
-      events:
-        - name: exception
-          attributes:
-            exception.message: boom
-            exception.stacktrace: at provider.py:1
-      status: {code: error, description: rate limited}
-      parent: "1112131415161718"
-      resource: {service.name: betterlite}
-    destination:
-      endpoint: http://collector:4318
-      headers: {}
-      resource_attributes: {}
-      span_scope: full
 env: {}
 compare: {ignore: []}

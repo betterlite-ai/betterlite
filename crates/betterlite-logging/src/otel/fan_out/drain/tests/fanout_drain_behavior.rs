@@ -26,7 +26,7 @@ fn workers_close_submitted_processors() {
     received
         .recv_timeout(WAIT)
         .expect("a worker closes the processor");
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
 }
 
 #[test]
@@ -50,14 +50,14 @@ fn saturation_counts_processors_whose_close_has_not_returned() {
     second_release
         .send(())
         .expect("the second close may return");
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
     assert!(!pool.saturated());
 }
 
 #[test]
 fn a_processor_submitted_past_close_is_closed_off_the_submitting_thread() {
     let pool = DrainPool::new(1, 64);
-    pool.close(None);
+    pool.close(Duration::ZERO);
     let (closer, received) = signal_closer(false);
     pool.submit(closer);
     received.recv_timeout(WAIT).expect("a straggler closes it");
@@ -70,7 +70,7 @@ fn close_waits_only_for_its_deadline_before_abandoning_a_flush() {
     pool.submit(closer);
     entered.recv_timeout(WAIT).expect("the close starts");
     let started = Instant::now();
-    pool.close(Some(Duration::from_millis(50)));
+    pool.close(Duration::from_millis(50));
     assert!(started.elapsed() < Duration::from_secs(3));
     release.send(()).expect("the flush finishes");
 }
@@ -88,7 +88,7 @@ fn a_failing_close_keeps_the_worker_draining() {
     healthy_received
         .recv_timeout(WAIT)
         .expect("the next close runs");
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
 }
 
 #[test]
@@ -104,9 +104,9 @@ fn a_pool_that_could_not_start_a_worker_closes_the_processor_inline() {
 #[test]
 fn close_twice_does_not_wait_for_the_workers_again() {
     let pool = DrainPool::new(2, 64);
-    pool.close(None);
+    pool.close(Duration::ZERO);
     let started = Instant::now();
-    pool.close(Some(Duration::from_secs(10)));
+    pool.close(Duration::from_secs(10));
     assert!(started.elapsed() < Duration::from_secs(1));
 }
 
@@ -117,6 +117,6 @@ fn a_retired_processor_is_closed_exactly_once() {
     let shared = Arc::clone(&closer);
     let processor: Arc<dyn SpanProcessor> = shared;
     pool.submit(processor);
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
     assert_eq!(closer.shutdown_count(), 1);
 }

@@ -12,11 +12,12 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::trace::{Span, SpanData, SpanProcessor};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 mod cache;
 use cache::{CacheState, CachedProcessor};
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FanOutSettings {
     pub operator_sinks: BTreeMap<SinkKey, SpanScope>,
     pub excluded_db_systems: BTreeSet<String>,
@@ -25,7 +26,22 @@ pub struct FanOutSettings {
     pub drain_pool: Option<Arc<DrainPool>>,
 }
 
-#[derive(Debug)]
+impl Debug for FanOutSettings {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("FanOutSettings")
+            .field("pending_drains", &self.pending_drains)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Debug for FanOutInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("FanOutInner")
+            .field("shutdown_drain", &self.shutdown_drain)
+            .finish_non_exhaustive()
+    }
+}
+
 struct FanOutInner {
     operator_sinks: BTreeMap<SinkKey, SpanScope>,
     excluded_db_systems: BTreeSet<String>,
@@ -133,13 +149,6 @@ impl SpanProcessor for TenantFanOutSpanProcessor {
     }
 }
 
-fn lock_cache(cache: &Mutex<CacheState>) -> MutexGuard<'_, CacheState> {
-    match cache.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
 impl FanOutInner {
     fn operator_already_writes(
         &self,
@@ -168,7 +177,7 @@ impl FanOutInner {
         let deadline = Instant::now()
             .checked_add(timeout)
             .unwrap_or_else(Instant::now);
-        let mut cache = lock_cache(&self.cache);
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache.closed = true;
         while !cache.exporting.is_empty() {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
@@ -201,11 +210,11 @@ impl FanOutInner {
             self.drain.submit(processor);
         }
         self.drain
-            .close(Some(deadline.saturating_duration_since(Instant::now())));
+            .close(deadline.saturating_duration_since(Instant::now()));
     }
 
     fn snapshot(&self) -> Vec<Arc<dyn SpanProcessor>> {
-        let cache = lock_cache(&self.cache);
+        let cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache
             .processors
             .values()

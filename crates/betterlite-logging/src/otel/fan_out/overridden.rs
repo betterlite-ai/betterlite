@@ -6,15 +6,24 @@ use opentelemetry::Context;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::trace::{Span, SpanData, SpanProcessor};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::sync::Arc;
 use std::time::Duration;
-#[derive(Debug)]
 pub struct OverriddenBackendFilter {
     pub inner: Box<dyn SpanProcessor>,
     pub owner: Option<String>,
     pub scope: SpanScope,
     pub sink: Option<SinkKey>,
     pub scope_source: Arc<dyn RequestScopeSource>,
+}
+
+impl Debug for OverriddenBackendFilter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("OverriddenBackendFilter")
+            .field("owner", &self.owner)
+            .field("scope", &self.scope)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OverriddenBackendFilter {

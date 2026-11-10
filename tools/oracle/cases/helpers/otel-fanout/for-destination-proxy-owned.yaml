@@ -3,6 +3,7 @@ name: for-destination-proxy-owned
 call:
   b3849:
     function: for_destination
+    endpoint: http://collector:4318
     span:
       name: POST /v1/chat
       attributes:
@@ -15,17 +16,5 @@ call:
         http.request.header.authorization: Bearer sk-1
         http.response.header.set-cookie: session=1
         litellm.provider.error.stack_trace: at operator.py:1
-      events:
-        - name: exception
-          attributes: {exception.message: boom}
-      status: {code: error, description: the datastore is down}
-      parent: "1112131415161718"
-      resource: {service.name: betterlite}
-    destination:
-      endpoint: http://collector:4318
-      headers: {x-api-key: k}
-      resource_attributes: {tenant.id: t-1, service.name: tenant-service}
-      callback_name: arize
-      span_scope: full
 env: {}
 compare: {ignore: []}

@@ -1,10 +1,10 @@
-use super::{FanOutInner, lock_cache};
+use super::FanOutInner;
 use crate::otel::config::destination::{CacheKey, OtelDestination};
 use indexmap::IndexMap;
 use opentelemetry_sdk::trace::SpanProcessor;
 use std::collections::HashMap;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 pub(super) const MAX_CACHED_PROCESSORS: usize = 32;
 #[derive(Debug)]
 pub(super) struct CachedProcessor {
@@ -26,7 +26,7 @@ pub(super) fn acquire(
     inner: &FanOutInner,
     destination: &OtelDestination,
 ) -> Option<Arc<CachedProcessor>> {
-    let mut cache = lock_cache(&inner.cache);
+    let mut cache = inner.cache.lock().unwrap_or_else(PoisonError::into_inner);
     if cache.closed {
         return None;
     }
@@ -42,7 +42,7 @@ pub(super) fn acquire(
 }
 
 pub(super) fn buildable(inner: &FanOutInner, destination: &OtelDestination) -> bool {
-    let mut cache = lock_cache(&inner.cache);
+    let mut cache = inner.cache.lock().unwrap_or_else(PoisonError::into_inner);
     if cache.closed {
         return false;
     }
@@ -54,7 +54,7 @@ pub(super) fn buildable(inner: &FanOutInner, destination: &OtelDestination) -> b
 }
 
 pub(super) fn release(inner: &FanOutInner, processor: &Arc<CachedProcessor>) {
-    let mut cache = lock_cache(&inner.cache);
+    let mut cache = inner.cache.lock().unwrap_or_else(PoisonError::into_inner);
     let remaining = cache
         .exporting
         .get(&processor.id)

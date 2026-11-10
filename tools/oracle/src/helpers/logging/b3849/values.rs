@@ -9,17 +9,6 @@ use serde_json::{Value as Json, json};
 
 use crate::helpers::HelperError;
 
-pub(super) fn error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 pub(super) fn attributes_of(
     values: &BTreeMap<String, OtelModelValue>,
 ) -> Result<Vec<KeyValue>, Box<HelperError>> {
@@ -37,11 +26,11 @@ fn otel_value(value: &OtelModelValue) -> Result<Value, Box<HelperError>> {
             .as_i64()
             .map(Value::I64)
             .or_else(|| number.as_f64().map(Value::F64))
-            .ok_or_else(|| error("InvalidInput", "unrepresentable number".to_owned())),
+            .ok_or_else(|| helper_error!("InvalidInput", "unrepresentable number".to_owned())),
         OtelModelValue::Array(items) => string_array(items),
-        OtelModelValue::Null(()) | OtelModelValue::Object(_) => Err(error(
+        OtelModelValue::Null(()) | OtelModelValue::Object(_) => Err(helper_error!(
             "InvalidInput",
-            "unsupported span attribute value".to_owned(),
+            "unsupported span attribute value".to_owned()
         )),
     }
 }
@@ -56,7 +45,10 @@ fn string_array(items: &[OtelModelValue]) -> Result<Value, Box<HelperError>> {
             | OtelModelValue::Number(_)
             | OtelModelValue::Array(_)
             | OtelModelValue::Object(_) => {
-                return Err(error("InvalidInput", "string arrays only".to_owned()));
+                return Err(helper_error!(
+                    "InvalidInput",
+                    "string arrays only".to_owned()
+                ));
             }
         }
     }

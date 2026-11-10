@@ -3,6 +3,7 @@ name: for-destination-guardrail-unreachable
 call:
   b3849:
     function: for_destination
+    endpoint: http://collector:4318
     span:
       name: guardrail pii
       attributes:
@@ -11,13 +12,5 @@ call:
         litellm.guardrail.response: http://guardrail.internal:8000 failed
         error.message: guardrail rejected the call
         server.address: db.internal
-      events: []
-      status: {code: unset}
-      resource: {service.name: betterlite}
-    destination:
-      endpoint: http://collector:4318
-      headers: {}
-      resource_attributes: {}
-      span_scope: full
 env: {}
 compare: {ignore: []}

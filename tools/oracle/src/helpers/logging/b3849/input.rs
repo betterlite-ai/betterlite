@@ -4,6 +4,7 @@ use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) function: String,
     #[serde(default)]
@@ -14,6 +15,7 @@ pub(crate) struct Input {
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SpanInput {
     #[serde(default)]
     pub(crate) name: String,

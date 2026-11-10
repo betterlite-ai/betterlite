@@ -127,5 +127,5 @@ fn a_saturated_drain_refuses_new_destinations_but_keeps_cached_ones() {
     assert_eq!(deliverable.len(), 1);
     assert_eq!(deliverable[0].as_ref().endpoint, "http://cached:4318");
     release.send(()).expect("the drain may finish");
-    pool.close(Some(WAIT));
+    pool.close(WAIT);
 }
