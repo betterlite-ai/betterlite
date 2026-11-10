@@ -5,10 +5,13 @@ mod support;
 use std::collections::BTreeMap;
 use std::future::Future;
 
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Map, Value};
@@ -18,7 +21,10 @@ use super::call::{
     TextCompletionCall, TextCompletionOutcome, TextCompletionRequest, validate_environment,
 };
 use super::error::{ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure};
-use super::logging::{PreCallRecord, ResponseKind, SecretHeaders, base_hidden_params};
+use super::logging::{
+    CompletionLogger as _, PostCallRecord, PreCallRecord, PrePostLogger, ResponseKind,
+    SecretHeaders, base_hidden_params,
+};
 use super::sdk::{ClientKind, HttpClientSource, SdkArguments, SdkError, StatusError};
 use support::{Answer, RecordingLogger};
 
@@ -382,6 +388,133 @@ fn buffered_reply() {
     assert_eq!(logger.post[0].original_response, expected_response());
     assert_eq!(logger.post[0].headers.0, first_pre(&logger).headers.0);
     async_buffered_reply(&transport);
+    blank_values_are_defaulted();
+    prepost_logger_records_the_call();
+}
+
+fn normalized_reply(usage: Value, finish_reason: Value) -> Value {
+    let mut body = support::completion_body();
+    body["usage"] = usage;
+    body["choices"][0]["finish_reason"] = finish_reason;
+    let (transport, _constructor) = support::transport(Answer::buffered(&body));
+    let exchange = begin_send(&transport, text_request(Vec::new()));
+    let (outcome, _logger) = finish(&transport, exchange);
+    let TextCompletionOutcome::Buffered(reply) = outcome else {
+        panic!("the buffered path answered with a stream");
+    };
+    reply.response
+}
+
+// Usage and TextChoices default a blank value and keep a truthy one
+fn blank_values_are_defaulted() {
+    let reasoning = support::object(vec![("reasoning_tokens", Value::from(1_i64))]);
+    let usage = support::object(vec![
+        ("prompt_tokens", Value::from(3_i64)),
+        ("completion_tokens", Value::from(0_i64)),
+        ("total_tokens", Value::from(3_i64)),
+        ("completion_tokens_details", reasoning.clone()),
+        ("prompt_tokens_details", support::object(Vec::new())),
+    ]);
+    let reply = normalized_reply(usage, support::text(""));
+    assert_eq!(reply["usage"]["completion_tokens"], Value::from(0_i64));
+    assert_eq!(reply["usage"]["completion_tokens_details"], reasoning);
+    assert_eq!(reply["usage"]["prompt_tokens_details"], Value::Null);
+    assert_eq!(reply["choices"][0]["finish_reason"], Value::Null);
+}
+
+fn stream_include_usage(logging: &mut LoggingState, options: Option<Json>) -> Option<bool> {
+    logging.stream_options = options;
+    let redactor = support::redactor();
+    let env = support::prepost_env(logging, &redactor, &support::DiscardingSink);
+    PrePostLogger {
+        state: logging,
+        env: &env,
+    }
+    .stream_defaults()
+    .stream_options
+    .map(|stream_options| stream_options.include_usage)
+}
+
+fn include_usage_option(value: bool) -> Json {
+    Json::Object(IndexMap::from([(
+        "include_usage".to_owned(),
+        Json::Bool(value),
+    )]))
+}
+
+fn logged(logging: &LoggingState, name: &str) -> Value {
+    serde_json::to_value(&logging.model_call_details[name]).expect("the detail serializes")
+}
+
+fn prepost_logger_records_the_call() {
+    let redactor = support::redactor();
+    let sink = support::DiscardingSink;
+    let mut logging = support::logging_state();
+    assert_eq!(stream_include_usage(&mut logging, None), None);
+    assert_eq!(
+        stream_include_usage(&mut logging, Some(include_usage_option(false))),
+        Some(false)
+    );
+    assert_eq!(
+        stream_include_usage(&mut logging, Some(include_usage_option(true))),
+        Some(true)
+    );
+    let env = support::prepost_env(&logging, &redactor, &sink);
+    let headers = SecretHeaders(BTreeMap::from([("x-trace".to_owned(), "t1".to_owned())]));
+    pre_call_is_logged(&mut logging, &env, headers.clone());
+    post_call_is_logged(&mut logging, &env, headers);
+}
+
+fn pre_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers: SecretHeaders) {
+    PrePostLogger {
+        state: logging,
+        env,
+    }
+    .pre_call(PreCallRecord {
+        input: vec![support::message("hi")],
+        api_key: None,
+        headers,
+        api_base: Some("https://host/v1".to_owned()),
+        complete_input_dict: Map::from_iter([("model".to_owned(), support::text("m"))]),
+    })
+    .expect("pre_call");
+    let args = logged(logging, "additional_args");
+    assert_eq!(args["api_base"], support::text("https://host/v1"));
+    assert!(args["headers"].get("x-trace").is_some());
+    assert_eq!(
+        args["complete_input_dict"],
+        support::object(vec![("model", support::text("m"))])
+    );
+    assert_eq!(
+        logged(logging, "log_event_type"),
+        support::text("pre_api_call")
+    );
+}
+
+fn post_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers: SecretHeaders) {
+    PrePostLogger {
+        state: logging,
+        env,
+    }
+    .post_call(PostCallRecord {
+        api_key: None,
+        original_response: support::object(vec![("id", support::text("cmpl-1"))]),
+        kind: ResponseKind::DumpedDict,
+        headers,
+        api_base: Some("https://host/v1".to_owned()),
+    });
+    let args = logged(logging, "additional_args");
+    assert_eq!(args["api_base"], support::text("https://host/v1"));
+    assert!(args.get("complete_input_dict").is_none());
+    assert_eq!(
+        logged(logging, "log_event_type"),
+        support::text("post_api_call")
+    );
+    assert!(
+        logged(logging, "original_response")
+            .as_str()
+            .is_some_and(|shown| shown.contains("cmpl-1"))
+    );
 }
 
 fn async_buffered_reply(transport: &Transport) {
@@ -786,4 +919,31 @@ fn text_completion_transport_secret_safe_failure() {
     let failure = TextCompletionFailure::Wrapped(error);
     assert!(!format!("{failure:?}").contains(secret));
     assert!(!failure.to_string().contains(secret));
+    status_error_debug_names_no_header_value(secret);
+    sent_completion_debug_names_the_variant();
+}
+
+fn status_error_debug_names_no_header_value(secret: &str) {
+    let status_error = StatusError {
+        status: Some(401),
+        message: "provider rejected the key".to_owned(),
+        headers: support::headers(&[("authorization", &format!("Bearer {secret}"))]),
+        error_type: None,
+        param: None,
+        code: None,
+    };
+    let shown = format!("{status_error:?}");
+    assert!(shown.starts_with("StatusError"));
+    assert!(shown.contains("401"));
+    assert!(shown.contains("provider rejected the key"));
+    assert!(!shown.contains(secret));
+}
+
+fn sent_completion_debug_names_the_variant() {
+    assert_eq!(
+        format!("{:?}", super::SentCompletion::Buffered(Value::Null)),
+        "SentCompletion::Buffered"
+    );
+    let sent = super::SentCompletion::Stream(Box::pin(stream::empty()));
+    assert_eq!(format!("{sent:?}"), "SentCompletion::Stream");
 }

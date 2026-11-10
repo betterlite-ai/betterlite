@@ -130,24 +130,17 @@ fn finalize(state: &mut StreamState) -> Option<Item> {
     Some(Ok(chunk))
 }
 
-async fn read_bytes(state: &mut StreamState) -> Result<(), TextCompletionError> {
-    match state.bytes.next().await {
-        Some(Ok(bytes)) => match state.parser.push(&bytes) {
-            Ok(events) => state.pending.extend(events),
-            Err(error) => {
-                let source = ErrorSource::Sdk(Box::new(SdkError::Sse(error)));
-                return Err(TextCompletionError::wrapped(source));
-            }
-        },
-        Some(Err(error)) => {
-            let source = ErrorSource::Sdk(Box::new(error));
-            return Err(TextCompletionError::wrapped(source));
-        }
-        None => {
-            state.pending.extend(state.parser.finish());
-            state.phase = Phase::Exhausted;
-        }
-    }
+// A byte read that is dropped here still advances the byte stream, so the loop in step ends.
+fn absorb(
+    state: &mut StreamState,
+    read: Result<Vec<u8>, SdkError>,
+) -> Result<(), TextCompletionError> {
+    let bytes =
+        read.map_err(|error| TextCompletionError::wrapped(ErrorSource::Sdk(Box::new(error))))?;
+    let events = state.parser.push(&bytes).map_err(|error| {
+        TextCompletionError::wrapped(ErrorSource::Sdk(Box::new(SdkError::Sse(error))))
+    })?;
+    state.pending.extend(events);
     Ok(())
 }
 
@@ -172,7 +165,12 @@ async fn advance(state: &mut StreamState) -> Advance {
     if state.phase == Phase::Exhausted {
         return Advance::Closing;
     }
-    match read_bytes(state).await {
+    let Some(read) = state.bytes.next().await else {
+        state.pending.extend(state.parser.finish());
+        state.phase = Phase::Exhausted;
+        return Advance::Next;
+    };
+    match absorb(state, read) {
         Ok(()) => Advance::Next,
         Err(error) => Advance::Item(Box::new(Err(error))),
     }

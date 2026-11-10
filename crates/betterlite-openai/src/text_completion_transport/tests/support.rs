@@ -1,8 +1,18 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamOptions};
 use futures_util::stream;
@@ -392,4 +402,53 @@ pub(super) fn completion_body() -> Value {
 
 pub(super) fn message(value: &str) -> Value {
     object(vec![("role", text("user")), ("content", text(value))])
+}
+
+pub(super) struct DiscardingSink;
+
+impl LogSink for DiscardingSink {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+pub(super) fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles")
+}
+
+pub(super) fn logging_state() -> LoggingState {
+    let init: LoggingInit = serde_json::from_str(
+        r#"{"model":"text-davinci-003","call_type":"text_completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+    )
+    .expect("the fixture is valid");
+    LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor(),
+        || "generated".to_owned(),
+        Duration::default,
+    )
+    .expect("the fixture builds")
+}
+
+pub(super) fn prepost_env<'env>(
+    state: &LoggingState,
+    redactor: &'env Redactor,
+    sink: &'env DiscardingSink,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: state.start_time,
+    }
 }
