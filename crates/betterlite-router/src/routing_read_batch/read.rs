@@ -102,7 +102,7 @@ where
     Some((cooldown, usage, None))
 }
 
-fn apply_prefetched<V>(
+pub(super) fn apply_prefetched<V>(
     tier: &LocalTier<V>,
     keys: &[RouteKey],
     fetched: &[RouteKey],

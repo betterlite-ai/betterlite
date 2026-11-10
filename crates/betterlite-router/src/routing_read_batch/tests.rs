@@ -50,6 +50,7 @@ fn routing_read_batch_behaviors(#[case] name: &str) {
 #[case::take_releases_a_short_prefetch("take_releases_a_short_prefetch")]
 #[case::local_entries_are_capped("local_entries_are_capped")]
 #[case::last_reads_are_capped("last_reads_are_capped")]
+#[case::apply_prefetched_requires_a_covered_key("apply_prefetched_requires_a_covered_key")]
 #[case::empty_keys_never_arm_or_read("empty_keys_never_arm_or_read")]
 #[case::usage_without_keys_still_tracks_the_selector(
     "usage_without_keys_still_tracks_the_selector"

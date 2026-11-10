@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::slice;
 
 use super::support::{
@@ -5,6 +6,7 @@ use super::support::{
     seed_remote, tier, tier_capped, tiers, usage, values,
 };
 use crate::routing_read_batch::local::{DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_READ_EXPIRY_SECONDS};
+use crate::routing_read_batch::read::apply_prefetched;
 use crate::routing_read_batch::store::ReadWarning;
 use crate::routing_read_batch::{RequestReads, RoutingPrefetch, RoutingReadBatch};
 use crate::routing_state_store::test_support::FakeRedis;
@@ -18,6 +20,7 @@ pub(crate) async fn run(name: &str) {
         "take_releases_a_short_prefetch" => take_releases_a_short_prefetch(),
         "local_entries_are_capped" => local_entries_are_capped(),
         "last_reads_are_capped" => last_reads_are_capped(),
+        "apply_prefetched_requires_a_covered_key" => apply_prefetched_requires_a_covered_key(),
         "local_value_is_readable_at_its_exact_expiry" => {
             local_value_is_readable_at_its_exact_expiry();
         }
@@ -534,5 +537,23 @@ async fn real_store_serves_a_recovered_probe() {
     assert_eq!(
         tiers.cooldown.batch_get(slice::from_ref(&recovered)),
         vec![Some(counter(7))]
+    );
+}
+
+fn apply_prefetched_requires_a_covered_key() {
+    let clock = TestClock::new();
+    let first = key("a");
+    let second = key("b");
+    let cooldown = tier(&clock, None, 10.0);
+    seed(&cooldown, &first, counter(1));
+    let fetched = vec![second.clone()];
+    let values = BTreeMap::from([(second.clone(), counter(7))]);
+    assert_eq!(
+        apply_prefetched(&cooldown, &[first.clone(), second], &fetched, &values),
+        Some(vec![Some(counter(1)), Some(counter(7))])
+    );
+    assert_eq!(
+        apply_prefetched(&cooldown, &[first, key("c")], &fetched, &values),
+        None
     );
 }
