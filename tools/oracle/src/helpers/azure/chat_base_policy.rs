@@ -1,3 +1,5 @@
+use betterlite_azure::azure_chat_base_policy::SUPPORTED_OPENAI_PARAMS;
+use betterlite_azure::azure_chat_base_policy::mapping::requires_max_completion_tokens;
 use betterlite_azure::azure_chat_base_policy::messages::sanitized_tools_update;
 use serde_json::{Value, json};
 
@@ -5,8 +7,8 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 use input::Input;
 use reports::{
-    auth_report, class_report, error_report, load_settings, mapping_steps, predicate_report,
-    supported_report, transform_steps, version_reports,
+    auth_report, class_report, error_report, load_settings, mapping_steps, model_report,
+    transform_steps, version_reports,
 };
 
 mod input;
@@ -25,12 +27,16 @@ impl Helper for Op {
             Input::ApiVersionResponseFormat(call) => {
                 Ok(version_reports(call, load_settings(call.settings)?))
             }
-            Input::MaxCompletionTokens(call) => {
-                Ok(predicate_report(call, load_settings(call.settings)?))
-            }
-            Input::UnsupportedParam(call) => {
-                Ok(supported_report(call, load_settings(call.settings)?))
-            }
+            Input::MaxCompletionTokens(call) => Ok(model_report(
+                call,
+                load_settings(call.settings)?,
+                |model| json!({"model": model, "requires": requires_max_completion_tokens(model)}),
+            )),
+            Input::UnsupportedParam(call) => Ok(model_report(
+                call,
+                load_settings(call.settings)?,
+                |model| json!({"model": model, "params": SUPPORTED_OPENAI_PARAMS}),
+            )),
             Input::AzureToolChoiceDateGate(call)
             | Input::AzureRequiredToolChoice(call)
             | Input::AzureParameterShapes(call) => Ok(json!({

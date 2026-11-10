@@ -144,8 +144,8 @@ def map_step(config: AzureConfig, raw: Json, *, global_drop: bool) -> Json:
             api_version=as_string(step.get("api_version", ""), "api_version"),
         )
     except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
-        return {"ok": False, "params": None, "status": status_of(error)}
-    return {"ok": True, "params": cast(Json, mapped), "status": None}
+        return {"ok": False, "value": None, "status": status_of(error)}
+    return {"ok": True, "value": cast(Json, mapped), "status": None}
 
 
 def mapping_steps(config: AzureConfig, call: dict[str, Json], *, global_drop: bool) -> Json:
@@ -186,8 +186,8 @@ def version_reports(call: dict[str, Json]) -> Json:
     return cast(
         Json,
         {
-            "model_supported": models,
-            "version_supported": versions,
+            "models": models,
+            "versions": versions,
             "steps": mapping_steps(config, call, global_drop=drop_params),
         },
     )
@@ -203,7 +203,7 @@ def predicate_report(call: dict[str, Json]) -> Json:
     return cast(
         Json,
         {
-            "requires": flags,
+            "models": flags,
             "steps": mapping_steps(config, call, global_drop=drop_params),
         },
     )
@@ -219,7 +219,7 @@ def supported_report(call: dict[str, Json]) -> Json:
     return cast(
         Json,
         {
-            "supported": lists,
+            "models": lists,
             "steps": mapping_steps(config, call, global_drop=drop_params),
         },
     )
@@ -240,8 +240,8 @@ def transform_step(config: AzureConfig, raw: Json, *, system_first: bool) -> Jso
             headers={},
         )
     except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
-        return {"ok": False, "body": None, "status": status_of(error)}
-    return {"ok": True, "body": body, "status": None}
+        return {"ok": False, "value": None, "status": status_of(error)}
+    return {"ok": True, "value": body, "status": None}
 
 
 def transform_steps(call: dict[str, Json]) -> Json:

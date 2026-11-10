@@ -8,8 +8,8 @@ use serde::Deserialize;
 #[serde(tag = "action", rename_all = "snake_case")]
 pub(crate) enum Input {
     ApiVersionResponseFormat(VersionCall),
-    MaxCompletionTokens(PredicateCall),
-    UnsupportedParam(SupportedCall),
+    MaxCompletionTokens(ModelCall),
+    UnsupportedParam(ModelCall),
     AzureToolChoiceDateGate(MappingCall),
     AzureRequiredToolChoice(MappingCall),
     AzureParameterShapes(MappingCall),
@@ -81,18 +81,7 @@ pub(crate) struct VersionPair {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PredicateCall {
-    #[serde(default)]
-    pub(crate) settings: Settings,
-    #[serde(default)]
-    pub(crate) models: Vec<String>,
-    #[serde(default)]
-    pub(crate) steps: Vec<MapStep>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SupportedCall {
+pub(crate) struct ModelCall {
     #[serde(default)]
     pub(crate) settings: Settings,
     #[serde(default)]

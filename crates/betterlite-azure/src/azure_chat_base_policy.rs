@@ -108,24 +108,16 @@ impl PolicyError {
 
     #[must_use]
     pub fn classify(&self) -> Option<ErrorClass> {
-        match self {
-            Self::ToolChoiceUnsupported { .. } | Self::RequiredToolChoice { .. } => {
-                Some(ErrorClass::UnsupportedParams(Box::new(ErrorContext {
-                    message: self.to_string(),
-                    model: None,
-                    provider: None,
-                    max_retries: None,
-                    num_retries: None,
-                    body_type: None,
-                    body_param: None,
-                    body_code: None,
-                })))
-            }
-            Self::ApiVersionNumber { .. }
-            | Self::ToolsNotList
-            | Self::ResponseFormat { .. }
-            | Self::Messages { .. }
-            | Self::Encode { .. } => None,
-        }
+        let _status = self.status_code()?;
+        Some(ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+            message: self.to_string(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        })))
     }
 }

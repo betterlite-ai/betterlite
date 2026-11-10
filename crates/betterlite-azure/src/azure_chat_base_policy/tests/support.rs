@@ -10,34 +10,32 @@ pub(super) const TOOL_UPGRADE: &str = "Azure does not support 'tool_choice', for
 
 pub(super) const REQUIRED_UPGRADE: &str = "Azure does not support 'required' as a tool_choice param, for api_version=2024-05-01. To drop 'tool_choice=required' for calls with this Azure API version, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n drop_params: true`\nAzure API Reference: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions";
 
+#[derive(Clone, Copy)]
+pub(super) enum DropMode {
+    Off,
+    PerCall,
+    Global,
+}
+
+pub(super) fn policy<'call>(
+    model: &'call str,
+    api_version: &'call str,
+    mode: DropMode,
+) -> MapPolicy<'call> {
+    MapPolicy {
+        model,
+        api_version,
+        drop_params: matches!(mode, DropMode::PerCall),
+        global_drop_params: matches!(mode, DropMode::Global),
+    }
+}
+
 pub(super) fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
 }
 
 pub(super) fn parse_messages(text: &str) -> Vec<Message> {
     serde_json::from_str(text).unwrap()
-}
-
-pub(super) fn policy<'call>(
-    model: &'call str,
-    api_version: &'call str,
-    drop_params: bool,
-) -> MapPolicy<'call> {
-    MapPolicy {
-        model,
-        api_version,
-        drop_params,
-        global_drop_params: false,
-    }
-}
-
-pub(super) fn global_policy<'call>(model: &'call str, api_version: &'call str) -> MapPolicy<'call> {
-    MapPolicy {
-        model,
-        api_version,
-        drop_params: false,
-        global_drop_params: true,
-    }
 }
 
 pub(super) fn mapped(non_default: &Object, initial: &str, policy: &MapPolicy<'_>) -> Object {
@@ -63,7 +61,7 @@ pub(super) fn tool_choice_error(api_version: &str) -> PolicyError {
     blocked(
         &object(r#"{"tool_choice":"auto"}"#),
         "{}",
-        &policy("gpt-4o", api_version, false),
+        &policy("gpt-4o", api_version, DropMode::Off),
     )
 }
 
@@ -71,7 +69,7 @@ pub(super) fn required_tool_choice_error(api_version: &str) -> PolicyError {
     blocked(
         &object(r#"{"tool_choice":"required"}"#),
         "{}",
-        &policy("gpt-4o", api_version, false),
+        &policy("gpt-4o", api_version, DropMode::Off),
     )
 }
 

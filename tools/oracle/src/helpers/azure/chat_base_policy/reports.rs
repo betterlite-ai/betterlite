@@ -1,13 +1,11 @@
 use std::collections::BTreeMap;
 
-use betterlite_azure::azure_chat_base_policy::SUPPORTED_OPENAI_PARAMS;
 use betterlite_azure::azure_chat_base_policy::auth::{
     EU_REGIONS, SPECIAL_AUTH_PARAMS, US_REGIONS, map_special_auth_params,
 };
 use betterlite_azure::azure_chat_base_policy::errors::provider_error;
 use betterlite_azure::azure_chat_base_policy::mapping::{
-    MapPolicy, format_supported_for_version, map_openai_params, requires_max_completion_tokens,
-    supports_response_format,
+    MapPolicy, format_supported_for_version, map_openai_params, supports_response_format,
 };
 use betterlite_azure::azure_chat_base_policy::messages::transform_request;
 use betterlite_config::loader::ConfigLoader;
@@ -19,8 +17,8 @@ use crate::helpers::HelperError;
 
 use super::TRANSFORM_MODEL;
 use super::input::{
-    ClassStep, ErrorStep, Loaded, MapStep, PredicateCall, Settings, SpecialAuthCall, SupportedCall,
-    TransformStep, VersionCall,
+    ClassStep, ErrorStep, Loaded, MapStep, ModelCall, Settings, SpecialAuthCall, TransformStep,
+    VersionCall,
 };
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
@@ -63,22 +61,31 @@ pub(super) fn load_settings(settings: Settings) -> Result<Loaded, Box<HelperErro
     })
 }
 
-fn map_step(step: &MapStep, loaded: Loaded) -> Value {
-    let mut optional = step.optional.clone();
-    let policy = MapPolicy {
+fn step_result(result: Result<Object, Option<u16>>) -> Value {
+    match result {
+        Ok(value) => json!({"ok": true, "value": value, "status": null}),
+        Err(status) => json!({"ok": false, "value": null, "status": status}),
+    }
+}
+
+fn step_policy(step: &MapStep, loaded: Loaded) -> MapPolicy<'_> {
+    MapPolicy {
         model: &step.model,
         api_version: &step.api_version,
         drop_params: step.drop_params,
         global_drop_params: step.global_drop_params.unwrap_or(loaded.drop_params),
-    };
-    match map_openai_params(&step.non_default, &mut optional, &policy) {
-        Ok(()) => json!({"ok": true, "params": optional, "status": null}),
-        Err(error) => json!({
-            "ok": false,
-            "params": null,
-            "status": error.status_code(),
-        }),
     }
+}
+
+fn map_step(step: &MapStep, loaded: Loaded) -> Value {
+    let mut optional = step.optional.clone();
+    let policy = step_policy(step, loaded);
+    let outcome = map_openai_params(&step.non_default, &mut optional, &policy);
+    step_result(
+        outcome
+            .map(|()| optional)
+            .map_err(|error| error.status_code()),
+    )
 }
 
 pub(super) fn mapping_steps(steps: &[MapStep], loaded: Loaded) -> Value {
@@ -100,24 +107,21 @@ fn transform_step(step: &TransformStep, loaded: Loaded) -> Value {
     let system_first = step
         .openai_system_messages_first
         .unwrap_or(loaded.openai_system_messages_first);
-    match transform_request(
+    let outcome = transform_request(
         TRANSFORM_MODEL,
         &step.messages,
         &step.optional,
         system_first,
-    ) {
-        Ok(body) => json!({"ok": true, "body": body, "status": null}),
-        Err(error) => json!({"ok": false, "body": null, "status": error.status_code()}),
-    }
+    );
+    step_result(outcome.map_err(|error| error.status_code()))
 }
 
 pub(super) fn transform_steps(steps: &[TransformStep], loaded: Loaded) -> Value {
-    Value::Array(
-        steps
-            .iter()
-            .map(|step| transform_step(step, loaded))
-            .collect(),
-    )
+    let mut reports = Vec::with_capacity(steps.len());
+    for step in steps {
+        reports.push(transform_step(step, loaded));
+    }
+    Value::Array(reports)
 }
 
 pub(super) fn class_report(step: &ClassStep) -> Result<Value, Box<HelperError>> {
@@ -166,43 +170,29 @@ pub(super) fn error_report(step: &ErrorStep) -> Value {
     })
 }
 
-pub(super) fn predicate_report(call: &PredicateCall, loaded: Loaded) -> Value {
-    let flags: Vec<Value> = call
-        .models
-        .iter()
-        .map(|model| json!({"model": model, "requires": requires_max_completion_tokens(model)}))
-        .collect();
-    json!({"requires": flags, "steps": mapping_steps(&call.steps, loaded)})
+fn model_entries(models: &[String], entry: fn(&str) -> Value) -> Vec<Value> {
+    let mut entries = Vec::with_capacity(models.len());
+    for model in models {
+        entries.push(entry(model));
+    }
+    entries
 }
 
-pub(super) fn supported_report(call: &SupportedCall, loaded: Loaded) -> Value {
-    let lists: Vec<Value> = call
-        .models
-        .iter()
-        .map(|model| {
-            json!({
-                "model": model,
-                "params": SUPPORTED_OPENAI_PARAMS,
-            })
-        })
-        .collect();
-    json!({"supported": lists, "steps": mapping_steps(&call.steps, loaded)})
+pub(super) fn model_report(call: &ModelCall, loaded: Loaded, entry: fn(&str) -> Value) -> Value {
+    json!({
+        "models": model_entries(&call.models, entry),
+        "steps": mapping_steps(&call.steps, loaded),
+    })
 }
 
 pub(super) fn version_reports(call: &VersionCall, loaded: Loaded) -> Value {
-    let versions: Vec<Value> = call
-        .versions
-        .iter()
-        .map(|pair| version_report(&pair.year, &pair.month))
-        .collect();
-    let models: Vec<Value> = call
-        .models
-        .iter()
-        .map(|model| json!({"model": model, "supported": supports_response_format(model)}))
-        .collect();
-    json!({
-        "model_supported": models,
-        "version_supported": versions,
-        "steps": mapping_steps(&call.steps, loaded),
-    })
+    let models = model_entries(
+        &call.models,
+        |model| json!({"model": model, "supported": supports_response_format(model)}),
+    );
+    let mut versions = Vec::with_capacity(call.versions.len());
+    for pair in &call.versions {
+        versions.push(version_report(&pair.year, &pair.month));
+    }
+    json!({"models": models, "versions": versions, "steps": mapping_steps(&call.steps, loaded)})
 }
