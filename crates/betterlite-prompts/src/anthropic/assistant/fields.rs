@@ -96,7 +96,7 @@ pub(super) fn list_has_thinking(content: ContentField<'_>) -> bool {
     })
 }
 
-pub(super) fn has_server_tool_call(calls: Option<&[Json]>) -> bool {
+pub(crate) fn has_server_tool_call(calls: Option<&[Json]>) -> bool {
     calls.is_some_and(|declared| {
         declared.iter().any(|call| {
             call.as_object()

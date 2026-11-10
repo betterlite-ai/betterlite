@@ -12,7 +12,7 @@ use fields::{has_server_tool_call, list_has_thinking, read_calls, read_content};
 use tools::convert_tool_calls;
 
 mod blocks;
-mod fields;
+pub(crate) mod fields;
 mod tools;
 
 const ASSISTANT: &str = "assistant";

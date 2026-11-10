@@ -1,5 +1,6 @@
 use rstest::rstest;
 
+use crate::anthropic::assistant::fields::has_server_tool_call;
 use crate::arguments::json::Json;
 
 use super::fixtures::{converted, expected};
@@ -190,4 +191,25 @@ async fn anthropic_prompts_anthropic_prompt_tests_behavior_filtered_thinking_sti
         r#"{"type":"text","text":"answer"}"#.to_owned(),
     ]);
     assert_eq!(converted(&input, false).await, output);
+}
+
+#[rstest]
+#[case::no_tool_calls(None, false)]
+#[case::a_server_tool_call(
+    Some(r#"{"id":"srvtoolu_1","type":"function","function":{"name":"web_search","arguments":"{}"}}"#),
+    true
+)]
+#[case::a_regular_tool_call(
+    Some(r#"{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}"#),
+    false
+)]
+#[case::a_non_string_id(Some(r#"{"id":5}"#), false)]
+#[case::a_non_object_call(Some("7"), false)]
+#[case::an_empty_list(Some("[]"), false)]
+fn anthropic_prompts_anthropic_prompt_tests_behavior_recognizes_server_tool_calls(
+    #[case] calls: Option<&str>,
+    #[case] expected: bool,
+) {
+    let parsed: Option<Vec<Json>> = calls.map(|raw| serde_json::from_str(raw).unwrap());
+    assert_eq!(has_server_tool_call(parsed.as_deref()), expected);
 }

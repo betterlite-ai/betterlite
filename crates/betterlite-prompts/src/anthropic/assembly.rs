@@ -37,6 +37,8 @@ pub enum AssemblyError {
     TrailingBlock { block: usize, field: &'static str },
 }
 
+struct NextTurn(usize);
+
 struct RoleAt<'input> {
     index: usize,
     message: &'input Json,
@@ -92,7 +94,8 @@ where
         while let Some(role) = role_at(messages, index)? {
             index = self
                 .convert_turn(messages, role, &builder, &mut assembled)
-                .await?;
+                .await?
+                .0;
         }
         Ok(assembled)
     }
@@ -103,7 +106,7 @@ where
         role: RoleAt<'_>,
         builder: &UserBlockBuilder<'_, Source, Blocks, Ids>,
         assembled: &mut Vec<Json>,
-    ) -> Result<usize, AnthropicPromptError<Blocks::Failure>> {
+    ) -> Result<NextTurn, AnthropicPromptError<Blocks::Failure>> {
         let start = role.index;
         let user = builder.convert(messages, start).await?;
         if let Some(message) = user.message() {
@@ -130,7 +133,7 @@ where
                 },
             ));
         }
-        Ok(index)
+        Ok(NextTurn(index))
     }
 }
 
