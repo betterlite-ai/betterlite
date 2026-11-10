@@ -1,0 +1,20 @@
+kind: helper
+name: bytez-record-repeated-spaces-and-media-token
+call:
+  bytez_record:
+    function: usage
+    messages:
+      - role: user
+        content: "hello  world "
+      - role: user
+        content:
+          - type: image_url
+            url: https://img.test/a.png
+          - type: text
+            text: one
+      - role: assistant
+        content:
+          - type: video_url
+            url: https://video.test/a.mp4
+compare: {ignore: []}
+env: {}

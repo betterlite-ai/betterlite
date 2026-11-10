@@ -1,0 +1,18 @@
+kind: probe
+name: atomic-increments-two-workers
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state_store:
+        settings:
+          namespace: null
+          password: null
+          failure_threshold: 5
+          recovery_timeout_millis: 30000
+        steps:
+          - {kind: increment, now_millis: 0, worker: 0, key: counter, by: {counter: 5}}
+          - {kind: increment, now_millis: 0, worker: 1, key: counter, by: {counter: 7}}
+          - {kind: increment, now_millis: 0, worker: 0, key: counter, by: {counter: 3}}
+          - {kind: increment, now_millis: 0, worker: 0, key: spend, by: {spend: "1.25"}}
+          - {kind: increment, now_millis: 0, worker: 1, key: spend, by: {spend: "2.5"}}
