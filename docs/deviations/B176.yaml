@@ -1,0 +1,36 @@
+---
+task: B176
+deviations:
+  - what: >-
+      ControlOptions.stream_chunk_size is built only from deployment config and server code. A
+      client that puts stream_chunk_size in a request is rejected when the request options decode,
+      while LiteLLM reads the value straight from request kwargs.
+    why: >-
+      The chunk size drives how provider streams are read, so a client-chosen value is a resource
+      control the deployment owns. The task requires trusted control constructors, and no working
+      setup relies on a client picking the deployment's chunking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L101-L105
+  - what: >-
+      extra_body is forwarded unchanged but must fit within 1 MiB and 100 levels of nesting; a
+      larger payload fails with a typed error. LiteLLM forwards an extra_body of any size and
+      depth.
+    why: >-
+      The field carries arbitrary provider JSON from the caller, and an unbounded tree is a free
+      denial of service. The depth bound matches LiteLLM's own DEFAULT_MAX_RECURSE_DEPTH.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L109-L133
+  - what: >-
+      Affinity session ids are strings. A non-string session_id, litellm_session_id or metadata
+      session_id is rejected with an error that names the field, while LiteLLM converts any value
+      with Python's str().
+    why: >-
+      A session id is written into an HTTP header, and Python's str() output for containers and
+      booleans is not a stable header value. Values outside the declared type are rejected where
+      they enter, as docs/compatibility.md says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/provider_affinity.py#L56-L83
+  - what: >-
+      DEFAULT_MAX_RECURSE_DEPTH is a caller-supplied parameter that defaults to 100 instead of an
+      import-time environment read; the config/server layer owns reading the variable.
+    why: >-
+      Gateway code reads the environment only through the config crate, so the multipart helpers
+      take the bound as an argument and keep LiteLLM's default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
