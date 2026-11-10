@@ -1,0 +1,60 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-langtrace-integration-request-attributes",
+  "call": {
+    "b3846": {
+      "function": "langtrace_integration",
+      "kwargs": {
+        "model": "gpt-4o",
+        "stream": true,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "top_k": 5,
+        "user": "user-1",
+        "max_tokens": 64,
+        "stop": [
+          "END",
+          "STOP"
+        ],
+        "frequency_penalty": 0.1,
+        "presence_penalty": 0.2,
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "litellm_params": {
+          "custom_llm_provider": "openai"
+        },
+        "optional_params": {
+          "temperature": 0.3,
+          "top_k": 7
+        }
+      },
+      "response": {
+        "id": "resp-9",
+        "model": "gpt-4o-2024",
+        "system_fingerprint": "fp-1",
+        "choices": [
+          {
+            "message": {
+              "role": "assistant",
+              "content": "done"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 5,
+          "total_tokens": 17
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
