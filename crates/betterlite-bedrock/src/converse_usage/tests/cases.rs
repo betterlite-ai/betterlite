@@ -141,6 +141,13 @@ fn cache_detail_ttl() {
         detail(&unknown, "cache_creation_token_details"),
         &json(r#"{"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}"#)
     );
+    let unknown_without_tokens = plain(
+        r#"{"inputTokens": 1, "outputTokens": 1, "cacheWriteInputTokens": 0, "cacheDetails": [{"ttl": "2h"}, {}]}"#,
+    );
+    assert_eq!(
+        detail(&unknown_without_tokens, "cache_creation_token_details"),
+        &json(r#"{"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}"#)
+    );
     let empty = usage(r#"{"inputTokens": 1, "outputTokens": 1, "cacheDetails": []}"#);
     assert_eq!(parse_cache_details(&empty).unwrap(), None);
     let _missing = parse_cache_details(&usage(
@@ -264,6 +271,9 @@ fn batch_usage_shape() {
     assert!(is_converse_usage_shape(&json(r#"{"inputTokens": null}"#)));
     assert!(is_converse_usage_shape(&json(r#"{"outputTokens": null}"#)));
     assert!(!is_converse_usage_shape(&json(r#"{"totalTokens": 1}"#)));
+    assert!(!is_converse_usage_shape(&json(
+        r#"{"cacheReadInputTokens": 1, "cacheWriteInputTokens": 1, "cacheReadInputTokenCount": 1}"#
+    )));
     let empty = batch("{}");
     assert_eq!(prompt(&empty), &json("0"));
 }
