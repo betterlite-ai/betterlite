@@ -1,6 +1,6 @@
 use crate::helpers::HelperResult;
 
-use input::Input;
+use input::{Function, Input};
 
 mod count;
 mod fixture;
@@ -17,13 +17,13 @@ impl crate::helpers::Helper for Op {
             .enable_all()
             .build()
             .map_err(input::failure)?;
-        match input {
-            Input::Validate { cases } => count::validate(cases),
-            Input::Transform { cases } => count::transform(cases),
-            Input::Headers { cases } => count::headers(cases),
-            Input::Handle { cases } => count::handle(cases, &runtime),
-            Input::Counter { cases } => count::counter(cases, &runtime),
-            Input::Factory { cases } => count::factory(cases, &runtime),
+        match input.function {
+            Function::Validate => count::validate(&input.cases),
+            Function::Transform => count::transform(&input.cases),
+            Function::Headers => count::headers(&input.cases),
+            Function::Handle => count::handle(&input.cases, &runtime),
+            Function::Counter => count::counter(&input.cases, &runtime),
+            Function::Factory => count::factory(&input.cases, &runtime),
         }
     }
 }

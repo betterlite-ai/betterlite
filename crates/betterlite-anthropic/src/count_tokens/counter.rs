@@ -118,22 +118,17 @@ fn failure(call: &CountTokensCall<'_>, error: &ApiError) -> TokenCountResponse {
     let status = error.status_code;
     let message = &error.message;
     tracing::warn!("Anthropic CountTokens API error: status={status}, message={message}");
-    TokenCountResponse {
-        total_tokens: 0,
-        request_model: call.request_model.to_owned(),
-        model_used: call.model_to_use.to_owned(),
-        tokenizer_type: TOKENIZER_TYPE.to_owned(),
-        original_response: None,
-        error: true,
-        error_message: Some(error.message.clone()),
-        status_code: Some(error.status_code),
-    }
+    error_record(call, error.status_code, &error.message)
 }
 
 // LiteLLM's except Exception branch, reached when the response has no integer input_tokens
 fn generic_failure(call: &CountTokensCall<'_>, error: &CountTokensError) -> TokenCountResponse {
     let message = error.to_string();
     tracing::warn!("Error calling Anthropic CountTokens API: {message}");
+    error_record(call, 500, &message)
+}
+
+fn error_record(call: &CountTokensCall<'_>, status_code: u16, message: &str) -> TokenCountResponse {
     TokenCountResponse {
         total_tokens: 0,
         request_model: call.request_model.to_owned(),
@@ -141,7 +136,7 @@ fn generic_failure(call: &CountTokensCall<'_>, error: &CountTokensError) -> Toke
         tokenizer_type: TOKENIZER_TYPE.to_owned(),
         original_response: None,
         error: true,
-        error_message: Some(message),
-        status_code: Some(500),
+        error_message: Some(message.to_owned()),
+        status_code: Some(status_code),
     }
 }

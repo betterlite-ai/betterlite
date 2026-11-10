@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_anthropic::count_tokens::counter::{
@@ -12,7 +11,6 @@ use betterlite_anthropic::count_tokens::validate::validate_request;
 use betterlite_anthropic::count_tokens::wire::{
     CountResponse, CountTokensBody, CountTokensRequest, transform_request,
 };
-use betterlite_config::types::LiteLlmParams;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use secrecy::SecretString;
@@ -23,17 +21,12 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::fixture::{COUNT_HEADERS, Logs, Script, request_json, request_timeout};
 use super::input::{
-    CounterCase, FactoryCase, HandleCase, HeaderCase, Reply, TransformCase, ValidateCase,
-    beta_version, credential_settings, deployment, failure, json_value, optional_params,
+    Case, beta_version, credential_settings, deployment, failure, json_value, optional_params,
 };
-
-const fn reply_of(failure: bool, reply: &Reply) -> Option<&Reply> {
-    if failure { None } else { Some(reply) }
-}
 
 use crate::helpers::{HelperError, HelperResult};
 
-pub(crate) fn validate(cases: &[ValidateCase]) -> HelperResult {
+pub(crate) fn validate(cases: &[Case]) -> HelperResult {
     let mut results = Vec::new();
     for case in cases {
         let messages = case.messages.as_ref().map_or(Ok(Json::Null), json_value)?;
@@ -54,31 +47,35 @@ pub(crate) fn validate(cases: &[ValidateCase]) -> HelperResult {
     Ok(json!({"results": results}))
 }
 
-pub(crate) fn transform(cases: &[TransformCase]) -> HelperResult {
-    let mut bodies = Vec::new();
-    for case in cases {
-        let messages = case.messages.as_ref().map_or(Ok(Json::Null), json_value)?;
-        let system = case.system.as_ref().map(json_value).transpose()?;
-        let tools = case.tools.as_ref().map(json_value).transpose()?;
-        let params = optional_params(case.optional_params.as_ref())?;
-        let body = CountTokensBody {
-            model: &case.model,
-            messages: &messages,
-            tools: tools.as_ref(),
-            system: system.as_ref(),
-            optional_params: params.as_ref(),
-        };
-        bodies.push(serde_json::to_value(transform_request(&body)).map_err(failure)?);
-    }
+pub(crate) fn transform(cases: &[Case]) -> HelperResult {
+    let bodies = cases
+        .iter()
+        .map(transformed)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({"bodies": bodies}))
 }
 
-pub(crate) fn headers(cases: &[HeaderCase]) -> HelperResult {
-    let beta = beta_version(&BTreeMap::new())?;
+fn transformed(case: &Case) -> Result<Value, Box<HelperError>> {
+    let messages = case.messages.as_ref().map_or(Ok(Json::Null), json_value)?;
+    let system = case.system.as_ref().map(json_value).transpose()?;
+    let tools = case.tools.as_ref().map(json_value).transpose()?;
+    let params = optional_params(case.optional_params.as_ref())?;
+    let body = CountTokensBody {
+        model: &case.model,
+        messages: &messages,
+        tools: tools.as_ref(),
+        system: system.as_ref(),
+        optional_params: params.as_ref(),
+    };
+    serde_json::to_value(transform_request(&body)).map_err(failure)
+}
+
+pub(crate) fn headers(cases: &[Case]) -> HelperResult {
+    let beta = beta_version(&std::collections::BTreeMap::new())?;
     let mut answers = Vec::new();
     for case in cases {
-        let map = get_required_headers(&SecretString::from(case.api_key.clone()), &beta)
-            .map_err(failure)?;
+        let key = SecretString::from(case.api_key.clone().unwrap_or_default());
+        let map = get_required_headers(&key, &beta).map_err(failure)?;
         let mut fields = Map::new();
         for name in COUNT_HEADERS {
             fields.insert(name.to_owned(), header_value(&map, name));
@@ -95,7 +92,7 @@ fn header_value(headers: &HeaderMap, name: &str) -> Value {
         .map_or(Value::Null, |found| Value::String(found.to_owned()))
 }
 
-pub(crate) fn handle(cases: &[HandleCase], runtime: &Runtime) -> HelperResult {
+pub(crate) fn handle(cases: &[Case], runtime: &Runtime) -> HelperResult {
     let mut answers = Vec::new();
     for case in cases {
         answers.push(handle_case(case, runtime)?);
@@ -103,19 +100,17 @@ pub(crate) fn handle(cases: &[HandleCase], runtime: &Runtime) -> HelperResult {
     Ok(json!({"calls": answers}))
 }
 
-fn handle_case(case: &HandleCase, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
-    let timeout = request_timeout(case.request_timeout)?;
-    let script = Script::new(reply_of(case.failure, &case.reply));
+fn handle_case(case: &Case, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let handler = AnthropicCountTokensHandler {
-        transport: script,
-        request_timeout: timeout,
+        transport: Script::new(case.reply.as_ref()),
+        request_timeout: request_timeout(case.request_timeout)?,
         beta_version: beta_version(&case.environment)?,
     };
     let messages = case.messages.as_ref().map_or(Ok(Json::Null), json_value)?;
     let system = case.system.as_ref().map(json_value).transpose()?;
     let tools = case.tools.as_ref().map(json_value).transpose()?;
     let params = optional_params(case.optional_params.as_ref())?;
-    let key = SecretString::from(case.api_key.clone());
+    let key = SecretString::from(case.api_key.clone().unwrap_or_default());
     let request = CountTokensRequest {
         body: CountTokensBody {
             model: &case.model,
@@ -152,7 +147,7 @@ fn response_json(outcome: Result<CountResponse, ApiError>) -> Result<Value, Box<
     }
 }
 
-pub(crate) fn counter(cases: &[CounterCase], runtime: &Runtime) -> HelperResult {
+pub(crate) fn counter(cases: &[Case], runtime: &Runtime) -> HelperResult {
     let mut answers = Vec::new();
     for case in cases {
         answers.push(counter_case(case, runtime)?);
@@ -160,11 +155,10 @@ pub(crate) fn counter(cases: &[CounterCase], runtime: &Runtime) -> HelperResult 
     Ok(json!({"calls": answers}))
 }
 
-fn counter_case(case: &CounterCase, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
+fn counter_case(case: &Case, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let settings = credential_settings(&case.environment)?;
-    let script = Script::new(reply_of(case.failure, &case.reply));
     let handler = AnthropicCountTokensHandler {
-        transport: script,
+        transport: Script::new(case.reply.as_ref()),
         request_timeout: request_timeout(None)?,
         beta_version: beta_version(&case.environment)?,
     };
@@ -199,7 +193,7 @@ fn counter_case(case: &CounterCase, runtime: &Runtime) -> Result<Value, Box<Help
     }))
 }
 
-pub(crate) fn factory(cases: &[FactoryCase], runtime: &Runtime) -> HelperResult {
+pub(crate) fn factory(cases: &[Case], runtime: &Runtime) -> HelperResult {
     let mut answers = Vec::new();
     for case in cases {
         answers.push(factory_case(case, runtime)?);
@@ -207,15 +201,14 @@ pub(crate) fn factory(cases: &[FactoryCase], runtime: &Runtime) -> HelperResult 
     Ok(json!({"cases": answers}))
 }
 
-fn factory_case(case: &FactoryCase, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
+fn factory_case(case: &Case, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let settings = credential_settings(&case.environment)?;
     let handler = AnthropicCountTokensHandler {
-        transport: Script::new(Some(&case.reply)),
+        transport: Script::new(case.reply.as_ref()),
         request_timeout: request_timeout(None)?,
         beta_version: beta_version(&case.environment)?,
     };
-    let model_info = AnthropicModelInfo { settings };
-    let counter = model_info.get_token_counter(handler);
+    let counter = AnthropicModelInfo { settings }.get_token_counter(handler);
     let messages = case.messages.as_ref().map_or(Ok(Json::Null), json_value)?;
     let params = deployment(case.deployment.as_ref());
     let selected: Vec<Value> = case
@@ -237,9 +230,9 @@ fn factory_case(case: &FactoryCase, runtime: &Runtime) -> Result<Value, Box<Help
 
 async fn factory_counts(
     counter: &AnthropicTokenCounter<Script>,
-    case: &FactoryCase,
+    case: &Case,
     messages: &Json,
-    deployment: Option<&LiteLlmParams>,
+    deployment: Option<&betterlite_config::types::LiteLlmParams>,
 ) -> Vec<Option<TokenCountResponse>> {
     let mut outcomes = Vec::new();
     for model in &case.models {

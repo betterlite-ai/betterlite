@@ -14,158 +14,63 @@ use serde_json::Value;
 
 use crate::helpers::HelperError;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    Validate {
-        #[serde(default)]
-        cases: Vec<ValidateCase>,
-    },
-    Transform {
-        #[serde(default)]
-        cases: Vec<TransformCase>,
-    },
-    Headers {
-        #[serde(default)]
-        cases: Vec<HeaderCase>,
-    },
-    Handle {
-        #[serde(default)]
-        cases: Vec<HandleCase>,
-    },
-    Counter {
-        #[serde(default)]
-        cases: Vec<CounterCase>,
-    },
-    Factory {
-        #[serde(default)]
-        cases: Vec<FactoryCase>,
-    },
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Function {
+    Validate,
+    Transform,
+    Headers,
+    Handle,
+    Counter,
+    Factory,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ValidateCase {
+pub(crate) struct Input {
+    pub(crate) function: Function,
+    #[serde(default)]
+    pub(crate) cases: Vec<Case>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct Case {
     pub(crate) model: String,
-    #[serde(default)]
     pub(crate) messages: Option<Value>,
-    #[serde(default)]
-    pub(crate) system: Option<Value>,
-    #[serde(default)]
-    pub(crate) tools: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TransformCase {
-    pub(crate) model: String,
-    #[serde(default)]
-    pub(crate) messages: Option<Value>,
-    #[serde(default)]
-    pub(crate) system: Option<Value>,
-    #[serde(default)]
-    pub(crate) tools: Option<Value>,
-    #[serde(default)]
-    pub(crate) optional_params: Option<serde_json::Map<String, Value>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HeaderCase {
-    pub(crate) api_key: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HandleCase {
-    pub(crate) model: String,
-    #[serde(default)]
-    pub(crate) messages: Option<Value>,
-    pub(crate) api_key: String,
-    #[serde(default)]
-    pub(crate) api_base: Option<String>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) request_timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) tools: Option<Value>,
-    #[serde(default)]
-    pub(crate) system: Option<Value>,
-    #[serde(default)]
-    pub(crate) optional_params: Option<serde_json::Map<String, Value>>,
-    #[serde(default = "default_reply")]
-    pub(crate) reply: Reply,
-    #[serde(default)]
-    pub(crate) failure: bool,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CounterCase {
-    pub(crate) model: String,
-    #[serde(default)]
-    pub(crate) messages: Option<Value>,
-    #[serde(default)]
     pub(crate) contents: Option<Value>,
-    #[serde(default)]
-    pub(crate) deployment: Option<Deployment>,
-    #[serde(default)]
-    pub(crate) request_model: Option<String>,
-    #[serde(default)]
-    pub(crate) tools: Option<Value>,
-    #[serde(default)]
     pub(crate) system: Option<Value>,
-    #[serde(default)]
-    pub(crate) provider: Option<String>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default, rename = "module_api_key")]
-    pub(crate) _module_api_key: Option<String>,
-    #[serde(default, rename = "module_anthropic_key")]
-    pub(crate) _module_anthropic_key: Option<String>,
-    #[serde(default = "default_reply")]
-    pub(crate) reply: Reply,
-    #[serde(default)]
-    pub(crate) failure: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FactoryCase {
-    #[serde(default)]
-    pub(crate) models: Vec<String>,
-    #[serde(default)]
-    pub(crate) providers: Vec<Option<String>>,
-    #[serde(default)]
-    pub(crate) messages: Option<Value>,
-    #[serde(default)]
+    pub(crate) tools: Option<Value>,
+    pub(crate) optional_params: Option<serde_json::Map<String, Value>>,
+    pub(crate) api_key: Option<String>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) timeout: Option<f64>,
+    pub(crate) request_timeout: Option<f64>,
     pub(crate) deployment: Option<Deployment>,
-    #[serde(default)]
+    pub(crate) request_model: Option<String>,
+    pub(crate) provider: Option<String>,
     pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default = "default_reply")]
-    pub(crate) reply: Reply,
+    #[serde(rename = "module_api_key")]
+    pub(crate) _module_api_key: Option<String>,
+    #[serde(rename = "module_anthropic_key")]
+    pub(crate) _module_anthropic_key: Option<String>,
+    pub(crate) reply: Option<Reply>,
+    pub(crate) models: Vec<String>,
+    pub(crate) providers: Vec<Option<String>>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct Deployment {
-    #[serde(default)]
     pub(crate) litellm_params: Option<DeploymentParams>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct DeploymentParams {
-    #[serde(default)]
     pub(crate) api_key: Option<String>,
-    #[serde(default)]
     pub(crate) api_base: Option<String>,
-    #[serde(default)]
     pub(crate) timeout: Option<f64>,
-    #[serde(default)]
     pub(crate) model: Option<String>,
 }
 
@@ -179,13 +84,6 @@ pub(crate) struct Reply {
 
 const fn default_status() -> u16 {
     200
-}
-
-fn default_reply() -> Reply {
-    Reply {
-        status: 200,
-        body: String::from(r#"{"input_tokens":0}"#),
-    }
 }
 
 pub(crate) fn json_value(value: &Value) -> Result<Json, Box<HelperError>> {

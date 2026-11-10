@@ -451,30 +451,15 @@ fn validation_accepts_valid_input() {
 }
 
 fn counted_call<'call>(
-    messages: &'call Json,
-    deployment: Option<&'call LiteLlmParams>,
-) -> CountTokensCall<'call> {
-    CountTokensCall {
-        model_to_use: MODEL,
-        messages: Some(messages),
-        contents: None,
-        deployment,
-        request_model: REQUEST_MODEL,
-        tools: None,
-        system: None,
-    }
-}
-
-fn model_call<'call>(
     model: &'call str,
     messages: &'call Json,
-    deployment: &'call LiteLlmParams,
+    deployment: Option<&'call LiteLlmParams>,
 ) -> CountTokensCall<'call> {
     CountTokensCall {
         model_to_use: model,
         messages: Some(messages),
         contents: None,
-        deployment: Some(deployment),
+        deployment,
         request_model: REQUEST_MODEL,
         tools: None,
         system: None,
@@ -497,7 +482,7 @@ async fn native_success_maps_fields() {
         environment_api_key: None,
     };
     let outcome = counter
-        .count_tokens(&counted_call(&messages, Some(&params)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     assert_eq!(outcome.total_tokens, 42);
@@ -530,7 +515,7 @@ async fn native_success_defaults_input_tokens() {
         environment_api_key: None,
     };
     let outcome = counter
-        .count_tokens(&counted_call(&messages, Some(&params)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     assert_eq!(outcome.total_tokens, 0);
@@ -541,7 +526,6 @@ async fn native_success_defaults_input_tokens() {
 async fn count_selection() {
     selection_matches_the_provider();
     falsey_messages_skip_the_request().await;
-    absent_messages_skip_the_request().await;
     deployment_key_beats_the_environment().await;
     missing_key_warns_and_returns_none().await;
     deployment_connection_fields_are_not_forwarded().await;
@@ -581,18 +565,6 @@ async fn falsey_messages_skip_the_request() {
         system: Some(&system),
     };
     assert!(counter.count_tokens(&empty_call).await.is_none());
-    assert!(counter.handler.transport.requests().is_empty());
-}
-
-async fn absent_messages_skip_the_request() {
-    let contents = json(r#"[{"type":"text","text":"ignored"}]"#);
-    let tools = json(r#"[{"name":"t"}]"#);
-    let system = Json::Text("sys".to_owned());
-    let params = deployment(Some("sk-deployment"));
-    let counter = AnthropicTokenCounter {
-        handler: handler(Script::replying(200, SUCCESS)),
-        environment_api_key: None,
-    };
     let absent_call = CountTokensCall {
         model_to_use: MODEL,
         messages: None,
@@ -615,7 +587,7 @@ async fn deployment_key_beats_the_environment() {
         environment_api_key: Some(secret("sk-environment")),
     };
     environment_counter
-        .count_tokens(&counted_call(&messages, Some(&empty_key)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&empty_key)))
         .await
         .unwrap();
     assert_eq!(
@@ -630,7 +602,7 @@ async fn deployment_key_beats_the_environment() {
         environment_api_key: Some(secret("sk-environment")),
     };
     deployment_counter
-        .count_tokens(&counted_call(&messages, Some(&params)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     assert_eq!(
@@ -650,7 +622,9 @@ async fn missing_key_warns_and_returns_none() {
     let logs = Logs::default();
     let outcome = {
         let _guard = set_default(subscriber(logs.clone()));
-        counter.count_tokens(&counted_call(&messages, None)).await
+        counter
+            .count_tokens(&counted_call(MODEL, &messages, None))
+            .await
     };
     assert!(outcome.is_none());
     assert!(counter.handler.transport.requests().is_empty());
@@ -670,7 +644,7 @@ async fn deployment_connection_fields_are_not_forwarded() {
         environment_api_key: None,
     };
     counter
-        .count_tokens(&counted_call(&messages, Some(&params)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     let sent = counter.handler.transport.request();
@@ -703,7 +677,7 @@ async fn contents_are_ignored() {
     };
     counter.count_tokens(&with_contents).await.unwrap();
     counter
-        .count_tokens(&counted_call(&messages, Some(&params)))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     let requests = counter.handler.transport.requests();
@@ -765,15 +739,19 @@ async fn factory_is_model_independent() {
         (200, SUCCESS),
     ])));
     let first = counter
-        .count_tokens(&model_call(MODEL, &messages, &params))
+        .count_tokens(&counted_call(MODEL, &messages, Some(&params)))
         .await
         .unwrap();
     let second = counter
-        .count_tokens(&model_call("gpt-4o", &messages, &params))
+        .count_tokens(&counted_call("gpt-4o", &messages, Some(&params)))
         .await
         .unwrap();
     let third = counter
-        .count_tokens(&model_call("anthropic/claude-opus-4-1", &messages, &params))
+        .count_tokens(&counted_call(
+            "anthropic/claude-opus-4-1",
+            &messages,
+            Some(&params),
+        ))
         .await
         .unwrap();
     assert_eq!(first.tokenizer_type, "anthropic_api");
@@ -795,7 +773,7 @@ async fn factory_supplies_the_environment_key() {
     let model_info = AnthropicModelInfo { settings };
     let counter = model_info.get_token_counter(handler(Script::replying(200, SUCCESS)));
     counter
-        .count_tokens(&counted_call(&messages, None))
+        .count_tokens(&counted_call(MODEL, &messages, None))
         .await
         .unwrap();
     assert_eq!(
@@ -814,7 +792,9 @@ async fn counted(script: Script, params: Option<&LiteLlmParams>, messages: &Json
     let logs = Logs::default();
     let outcome = {
         let _guard = set_default(subscriber(logs.clone()));
-        counter.count_tokens(&counted_call(messages, params)).await
+        counter
+            .count_tokens(&counted_call(MODEL, messages, params))
+            .await
     };
     (outcome, logs.messages())
 }

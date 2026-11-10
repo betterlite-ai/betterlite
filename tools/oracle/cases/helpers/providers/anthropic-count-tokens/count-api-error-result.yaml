@@ -2,8 +2,8 @@ kind: helper
 name: count-api-error-result
 call:
   anthropic_count_tokens:
-    counter:
-      cases:
+    function: counter
+    cases:
         - model: claude-3-5-sonnet-20241022
           messages: [{role: user, content: hi}]
           deployment: {litellm_params: {api_key: sk-error}}
@@ -21,7 +21,6 @@ call:
         - model: claude-3-5-sonnet-20241022
           messages: [{role: user, content: hi}]
           deployment: {litellm_params: {api_key: sk-error}}
-          failure: true
         - model: claude-3-5-sonnet-20241022
           messages: [{role: user, content: hi}]
           deployment: {litellm_params: {api_key: sk-error}}

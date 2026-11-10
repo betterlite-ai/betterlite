@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use serde_json::Value;
+
 use crate::case::{HelperCase, helper::validate_helper};
 
 const VARIANTS: [&str; 6] = [
@@ -30,13 +32,9 @@ fn helper_seeds_select_anthropic_count_tokens() {
         .collect();
     assert!(!seeds.is_empty(), "no anthropic_count_tokens seeds");
     assert!(seeds.iter().all(|case| {
-        let variant = case
-            .call
-            .input
-            .as_object()
-            .and_then(|fields| fields.keys().next());
+        let function = case.call.input.get("function").and_then(Value::as_str);
         case.call.operation == "anthropic_count_tokens"
-            && variant.is_some_and(|name| VARIANTS.contains(&name.as_str()))
+            && function.is_some_and(|name| VARIANTS.contains(&name))
             && validate_helper(Path::new("<helper>"), case).is_ok()
     }));
 }

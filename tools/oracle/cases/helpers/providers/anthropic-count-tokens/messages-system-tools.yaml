@@ -2,8 +2,8 @@ kind: helper
 name: messages-system-tools
 call:
   anthropic_count_tokens:
-    transform:
-      cases:
+    function: transform
+    cases:
         - model: claude-3-5-sonnet-20241022
           messages:
             - role: user
