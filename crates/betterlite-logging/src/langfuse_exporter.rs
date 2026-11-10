@@ -13,7 +13,6 @@ pub mod truncation;
 pub const LANGFUSE_SDK_NAME: &str = "python";
 pub const LANGFUSE_SDK_VERSION: &str = "4.15.2";
 pub const LANGFUSE_INGESTION_VERSION: &str = "4";
-pub const DEFAULT_BASE_URL: &str = "https://cloud.langfuse.com";
 pub const DEFAULT_EXPORT_PATH: &str = "/api/public/otel/v1/traces";
 pub const EXPORT_PATH_VARIABLE: &str = "LANGFUSE_OTEL_TRACES_EXPORT_PATH";
 pub const PROTOBUF_CONTENT_TYPE: &str = "application/x-protobuf";

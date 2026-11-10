@@ -27,7 +27,12 @@ impl Transport for HttpTransport {
             },
             deadline: request.timeout,
         };
-        let response = self.client.send_buffered(outbound).await?;
+        let response = self
+            .client
+            .send_following(outbound)
+            .await?
+            .buffered(self.client.limits.body_bytes)
+            .await?;
         Ok(HttpResponse {
             status: response.status,
         })

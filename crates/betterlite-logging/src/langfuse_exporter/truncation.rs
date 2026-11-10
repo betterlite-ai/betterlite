@@ -54,7 +54,7 @@ fn group_size(attributes: &[KeyValue], group: &[&str]) -> usize {
                 && attribute.value.as_str().as_ref() != TRUNCATION_MARKER
         })
         .fold(0, |total, attribute| {
-            total.saturating_add(attribute.value.as_str().len())
+            total.saturating_add(attribute.value.as_str().chars().count())
         })
 }
 

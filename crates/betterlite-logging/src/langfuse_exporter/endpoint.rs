@@ -6,24 +6,17 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::langfuse_exporter::error::LangfuseExporterError;
 use crate::langfuse_exporter::{
-    DEFAULT_BASE_URL, DEFAULT_EXPORT_PATH, INGESTION_VERSION_HEADER, LANGFUSE_INGESTION_VERSION,
-    LANGFUSE_SDK_NAME, LANGFUSE_SDK_VERSION, PROTOBUF_CONTENT_TYPE, PUBLIC_KEY_HEADER,
-    SDK_NAME_HEADER, SDK_VERSION_HEADER,
+    INGESTION_VERSION_HEADER, LANGFUSE_INGESTION_VERSION, LANGFUSE_SDK_NAME, LANGFUSE_SDK_VERSION,
+    PROTOBUF_CONTENT_TYPE, PUBLIC_KEY_HEADER, SDK_NAME_HEADER, SDK_VERSION_HEADER,
 };
 
 // LiteLLM joins the two with rstrip('/') on the base and lstrip('/') on the path, so one slash separates them
 #[must_use]
-pub fn endpoint(base_url: Option<&str>, export_path: Option<&str>) -> String {
-    let base = base_url
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_BASE_URL);
-    let path = export_path
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_EXPORT_PATH);
+pub fn endpoint(base_url: &str, export_path: &str) -> String {
     format!(
         "{}/{}",
-        base.trim_end_matches('/'),
-        path.trim_start_matches('/')
+        base_url.trim_end_matches('/'),
+        export_path.trim_start_matches('/')
     )
 }
 

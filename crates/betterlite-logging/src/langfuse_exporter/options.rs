@@ -4,8 +4,8 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::langfuse_settings::Settings;
 use secrecy::SecretString;
 
-use crate::langfuse_exporter::EXPORT_PATH_VARIABLE;
 use crate::langfuse_exporter::error::LangfuseExporterError;
+use crate::langfuse_exporter::{DEFAULT_EXPORT_PATH, EXPORT_PATH_VARIABLE};
 use crate::langfuse_settings::Credentials;
 use crate::langfuse_settings::export::{max_retries, timeout_seconds};
 
@@ -14,8 +14,8 @@ use crate::langfuse_settings::export::{max_retries, timeout_seconds};
 pub struct ExporterOptions {
     pub public_key: Option<String>,
     pub secret_key: Option<SecretString>,
-    pub base_url: Option<String>,
-    pub export_path: Option<String>,
+    pub base_url: String,
+    pub export_path: String,
     pub timeout: Duration,
     pub retries: u32,
 }
@@ -35,10 +35,11 @@ pub fn exporter_options(
     Ok(ExporterOptions {
         public_key: credentials.public_key.clone(),
         secret_key: credentials.secret_key.clone(),
-        base_url: Some(credentials.host.clone()),
+        base_url: credentials.host.clone(),
         export_path: environment
             .lookup(EXPORT_PATH_VARIABLE)
-            .filter(|value| !value.is_empty()),
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| DEFAULT_EXPORT_PATH.to_owned()),
         timeout,
         retries: max_retries(settings),
     })

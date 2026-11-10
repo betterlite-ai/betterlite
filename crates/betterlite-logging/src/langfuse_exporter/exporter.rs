@@ -102,7 +102,7 @@ where
         encoder: Arc<dyn SpanEncoder>,
         sleep: Arc<dyn Sleep>,
     ) -> Result<Self, LangfuseExporterError> {
-        let requested = endpoint(options.base_url.as_deref(), options.export_path.as_deref());
+        let requested = endpoint(&options.base_url, &options.export_path);
         let endpoint =
             Url::parse(&requested).map_err(|source| LangfuseExporterError::Endpoint {
                 endpoint: requested,
@@ -239,7 +239,7 @@ where
     }
 }
 
-// None means the request is worth sending again; 413 asks for a smaller body and every other 4xx is final
+// None means the request is worth sending again; 413 asks for a smaller body and every other non-2xx is final, as httpx raise_for_status makes it
 fn status_outcome(status: u16) -> Option<DeliveryOutcome> {
     if matches!(status, 408 | 429) || (500..=599).contains(&status) {
         tracing::warn!(
@@ -251,13 +251,13 @@ fn status_outcome(status: u16) -> Option<DeliveryOutcome> {
     if status == 413 {
         return Some(DeliveryOutcome::TooLarge);
     }
-    if status >= 400 {
-        // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
-        let hint = if status == 404 { SERVER_FLOOR_HINT } else { "" };
-        tracing::error!(status, "langfuse rejected the export{hint}");
-        return Some(DeliveryOutcome::Rejected);
+    if (200..300).contains(&status) {
+        return Some(DeliveryOutcome::Delivered);
     }
-    Some(DeliveryOutcome::Delivered)
+    // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
+    let hint = if status == 404 { SERVER_FLOOR_HINT } else { "" };
+    tracing::error!(status, "langfuse rejected the export{hint}");
+    Some(DeliveryOutcome::Rejected)
 }
 
 fn smaller(batch: &[SpanData]) -> Vec<Vec<SpanData>> {

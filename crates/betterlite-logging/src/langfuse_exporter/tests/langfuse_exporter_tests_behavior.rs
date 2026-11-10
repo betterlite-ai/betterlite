@@ -1,8 +1,13 @@
+use std::collections::BTreeMap;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::any_value::Value as AnyValueKind;
 use opentelemetry_proto::tonic::resource::v1::Resource as ProtoResource;
@@ -14,10 +19,14 @@ use tokio::runtime::Builder;
 
 use crate::langfuse_exporter::TRUNCATION_MARKER;
 use crate::langfuse_exporter::discard::DiscardingSpanExporter;
+use crate::langfuse_exporter::encoder::OtlpSpanEncoder;
 use crate::langfuse_exporter::endpoint::endpoint;
 use crate::langfuse_exporter::error::LangfuseExporterError;
 use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
+use crate::langfuse_exporter::http_transport::HttpTransport;
+use crate::langfuse_exporter::sleep::TokioSleep;
 
+use super::server::{reply, scripted};
 use super::support::{
     CLOUD_ENDPOINT, DecodedSpan, ScriptedTransport, Step, UNENCODABLE_KEY, attribute, captured,
     exporter_with, header, options_for, rejecting_exporter_with, span, spans_of,
@@ -49,38 +58,39 @@ fn names(batches: &[Vec<DecodedSpan>]) -> Vec<Vec<&str>> {
 }
 
 #[rstest]
-#[case::cloud_default(None, None, CLOUD_ENDPOINT)]
-#[case::empty_base(
-    None,
-    Some("/custom/traces"),
-    "https://cloud.langfuse.com/custom/traces"
-)]
 #[case::trailing_base_and_leading_path(
-    Some("https://langfuse.example/"),
-    Some("/custom/traces"),
+    "https://langfuse.example/",
+    "/custom/traces",
     "https://langfuse.example/custom/traces"
 )]
 #[case::neither_side_slashed(
-    Some("https://langfuse.example"),
-    Some("custom/traces"),
+    "https://langfuse.example",
+    "custom/traces",
     "https://langfuse.example/custom/traces"
 )]
 #[case::many_slashes(
-    Some("https://langfuse.example///"),
-    Some("///custom/traces"),
+    "https://langfuse.example///",
+    "///custom/traces",
     "https://langfuse.example/custom/traces"
 )]
-#[case::empty_path_uses_the_default(
-    Some("https://langfuse.example"),
-    Some(""),
-    "https://langfuse.example/api/public/otel/v1/traces"
-)]
 fn joins_the_base_url_and_the_export_path(
-    #[case] base_url: Option<&str>,
-    #[case] export_path: Option<&str>,
+    #[case] base_url: &str,
+    #[case] export_path: &str,
     #[case] expected: &str,
 ) {
     assert_eq!(endpoint(base_url, export_path), expected);
+}
+
+#[rstest]
+#[case::unset(&[], CLOUD_ENDPOINT)]
+#[case::empty_counts_as_unset(&[("LANGFUSE_OTEL_TRACES_EXPORT_PATH", "")], CLOUD_ENDPOINT)]
+fn defaults_the_export_path_when_the_environment_has_none(
+    #[case] environment: &[(&str, &str)],
+    #[case] expected: &str,
+) {
+    let fixture = exporter_with(vec![Step::Status(200)], environment);
+    assert!(export(&fixture.exporter, vec![span("one", &[])]));
+    assert_eq!(fixture.transport.seen()[0].url, expected);
 }
 
 #[test]
@@ -161,12 +171,26 @@ fn rejects_the_statuses_litellm_does_not_retry(#[case] status: u16) {
 }
 
 #[rstest]
-#[case::redirect(302)]
+#[case::ok(200)]
 #[case::no_content(204)]
-fn accepts_any_status_httpx_would_not_raise_for(#[case] status: u16) {
+#[case::last_2xx(299)]
+fn accepts_every_2xx_status(#[case] status: u16) {
     let fixture = exporter_with(vec![Step::Status(status)], &[]);
     assert!(export(&fixture.exporter, vec![span("one", &[])]));
     assert_eq!(fixture.transport.seen().len(), 1);
+}
+
+#[rstest]
+#[case::informational(100)]
+#[case::last_below_2xx(199)]
+#[case::first_3xx(300)]
+#[case::redirect(302)]
+#[case::not_modified(304)]
+fn rejects_the_statuses_httpx_raises_for_below_400(#[case] status: u16) {
+    let fixture = exporter_with(vec![Step::Status(status)], &[]);
+    assert!(!export(&fixture.exporter, vec![span("one", &[])]));
+    assert_eq!(fixture.transport.seen().len(), 1);
+    assert!(fixture.sleep.seconds().is_empty());
 }
 
 #[test]
@@ -260,6 +284,11 @@ fn truncates_the_largest_field_of_a_single_span() {
 
 #[rstest]
 #[case::output_is_largest("a", "bbbb", OUTPUT)]
+#[case::characters_not_bytes_decide(
+    "\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43c}\u{438}\u{440}",
+    "abcdefghijkl",
+    OUTPUT
+)]
 #[case::a_tie_keeps_the_first_group("aa", "bb", INPUT)]
 fn truncates_the_larger_group_first(
     #[case] input: &str,
@@ -414,14 +443,62 @@ fn passes_the_configured_timeout_to_every_request() {
 
 #[test]
 fn rejects_a_timeout_that_is_not_a_number() {
-    let error = options_for(&[("LANGFUSE_TIMEOUT", "soon")], None).unwrap_err();
+    let error = options_for(&[("LANGFUSE_TIMEOUT", "soon")]).unwrap_err();
     assert!(matches!(error, LangfuseExporterError::Settings(_)));
 }
 
 #[test]
 fn the_secret_never_reaches_the_options_debug_output() {
-    let options = options_for(&[], None).unwrap();
+    let options = options_for(&[]).unwrap();
     let debug = format!("{options:?}");
     assert!(!debug.contains("sk-lf-test"));
     assert!(debug.contains("pk-lf-test"));
+}
+
+#[rstest]
+#[case::final_hop_accepts(204, true)]
+#[case::final_hop_rejects(404, false)]
+#[tokio::test]
+async fn follows_a_308_with_the_same_body_and_headers(
+    #[case] final_status: u16,
+    #[case] delivered: bool,
+) {
+    let server = scripted(vec![
+        reply(308, Some("/moved/traces")),
+        reply(final_status, None),
+    ])
+    .await;
+    let mut options = options_for(&[]).unwrap();
+    options.base_url = server.base.clone();
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let transport = HttpTransport {
+        client: ProxiedClient::outbound(&policy).unwrap(),
+    };
+    let exporter = LangfuseSpanExporter::new(
+        &options,
+        transport,
+        Arc::new(OtlpSpanEncoder),
+        Arc::new(TokioSleep),
+    )
+    .unwrap();
+    let result = exporter
+        .export(vec![span("one", &[(INPUT, "hello")])])
+        .await;
+    assert_eq!(result.is_ok(), delivered);
+    let seen = server.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(seen[0].head.starts_with("POST /api/public/otel/v1/traces "));
+    assert!(seen[1].head.starts_with("POST /moved/traces "));
+    assert!(!seen[0].body.is_empty());
+    assert_eq!(seen[1].body, seen[0].body);
+    let expected = [
+        Some("application/x-protobuf"),
+        Some("python"),
+        Some("4.15.2"),
+        Some("4"),
+        Some("pk-lf-test"),
+        Some("Basic cGstbGYtdGVzdDpzay1sZi10ZXN0"),
+    ];
+    assert_eq!(seen[0].sent_headers(), expected);
+    assert_eq!(seen[1].sent_headers(), expected);
 }

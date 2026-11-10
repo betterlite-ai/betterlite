@@ -193,25 +193,16 @@ pub(super) struct Fixture {
 }
 
 pub(super) fn exporter_with(steps: Vec<Step>, environment: &[(&str, &str)]) -> Fixture {
-    exporter_at(steps, environment, None)
-}
-
-pub(super) fn rejecting_exporter_with(steps: Vec<Step>) -> Fixture {
-    build(steps, &[], Arc::new(RejectingEncoder), &credentials(), None)
-}
-
-pub(super) fn exporter_at(
-    steps: Vec<Step>,
-    environment: &[(&str, &str)],
-    base_url: Option<&str>,
-) -> Fixture {
     build(
         steps,
         environment,
         Arc::new(OtlpSpanEncoder),
         &credentials(),
-        base_url,
     )
+}
+
+pub(super) fn rejecting_exporter_with(steps: Vec<Step>) -> Fixture {
+    build(steps, &[], Arc::new(RejectingEncoder), &credentials())
 }
 
 fn build(
@@ -219,16 +210,12 @@ fn build(
     environment: &[(&str, &str)],
     encoder: Arc<dyn SpanEncoder>,
     credentials: &Credentials,
-    base_url: Option<&str>,
 ) -> Fixture {
     let lookup = lookup(environment);
     let settings = settings_from(&lookup);
     let transport = ScriptedTransport::new(steps);
     let sleep = Arc::new(RecordingSleep::default());
-    let mut options = exporter_options(&settings, &lookup, credentials).unwrap();
-    if let Some(given) = base_url {
-        options.base_url = Some(given.to_owned());
-    }
+    let options = exporter_options(&settings, &lookup, credentials).unwrap();
     let recording = Arc::clone(&sleep);
     let sleep_dependency: Arc<dyn Sleep> = recording;
     let exporter =
@@ -242,13 +229,10 @@ fn build(
 
 pub(super) fn options_for(
     environment: &[(&str, &str)],
-    base_url: Option<&str>,
 ) -> Result<ExporterOptions, LangfuseExporterError> {
     let lookup = lookup(environment);
     let settings = settings_from(&lookup);
-    let mut options = exporter_options(&settings, &lookup, &credentials())?;
-    options.base_url = base_url.map(str::to_owned);
-    Ok(options)
+    exporter_options(&settings, &lookup, &credentials())
 }
 
 pub(super) fn lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
