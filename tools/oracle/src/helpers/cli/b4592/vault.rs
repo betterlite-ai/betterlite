@@ -51,7 +51,7 @@ pub(super) struct FakeVault {
     pub(super) blob: Option<SecretString>,
     failure: KeyringUnusable,
     refusals: Vec<VaultRefusal>,
-    events: Arc<Events>,
+    pub(super) events: Arc<Events>,
 }
 
 impl FakeVault {

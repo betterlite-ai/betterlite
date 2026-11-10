@@ -5,32 +5,9 @@ use std::path::PathBuf;
 use betterlite_logging::private_json::error::PrivateJsonError;
 
 use crate::credential_lifecycle::outcome::{
-    CredentialNotCleared, CredentialNotRecorded, CredentialNotSaved, SecretClear, SecretSave,
+    CredentialNotCleared, CredentialNotRecorded, CredentialNotSaved,
 };
 use crate::token_records::error::TokenRecordError;
-
-fn save_outcome_name(outcome: &SecretSave) -> &'static str {
-    match outcome {
-        SecretSave::SecretStored => "secret_stored",
-        SecretSave::KeyringDiscardsWrites => "keyring_discards_writes",
-        SecretSave::KeyringDisabled => "keyring_disabled",
-        SecretSave::KeyringNotInstalled => "keyring_not_installed",
-        SecretSave::KeyringUnreachable => "keyring_unreachable",
-        SecretSave::CredentialNotSaved(_) => "credential_not_saved",
-        SecretSave::CredentialNotRecorded(_) => "credential_not_recorded",
-    }
-}
-
-fn clear_outcome_name(outcome: &SecretClear) -> &'static str {
-    match outcome {
-        SecretClear::SecretErased => "secret_erased",
-        SecretClear::SecretStranded => "secret_stranded",
-        SecretClear::KeyringDisabled => "keyring_disabled",
-        SecretClear::KeyringNotInstalled => "keyring_not_installed",
-        SecretClear::KeyringUnreachable => "keyring_unreachable",
-        SecretClear::CredentialNotCleared(_) => "credential_not_cleared",
-    }
-}
 
 fn not_saved() -> CredentialNotSaved {
     CredentialNotSaved {
@@ -41,58 +18,6 @@ fn not_saved() -> CredentialNotSaved {
             ),
         },
     }
-}
-
-#[test]
-fn save_outcomes_are_the_closed_set() {
-    let outcomes = [
-        SecretSave::SecretStored,
-        SecretSave::KeyringDiscardsWrites,
-        SecretSave::KeyringDisabled,
-        SecretSave::KeyringNotInstalled,
-        SecretSave::KeyringUnreachable,
-        SecretSave::CredentialNotSaved(not_saved()),
-        SecretSave::CredentialNotRecorded(CredentialNotRecorded),
-    ];
-    let names: Vec<&str> = outcomes.iter().map(save_outcome_name).collect();
-    assert_eq!(
-        names,
-        [
-            "secret_stored",
-            "keyring_discards_writes",
-            "keyring_disabled",
-            "keyring_not_installed",
-            "keyring_unreachable",
-            "credential_not_saved",
-            "credential_not_recorded",
-        ]
-    );
-}
-
-#[test]
-fn clear_outcomes_are_the_closed_set() {
-    let outcomes = [
-        SecretClear::SecretErased,
-        SecretClear::SecretStranded,
-        SecretClear::KeyringDisabled,
-        SecretClear::KeyringNotInstalled,
-        SecretClear::KeyringUnreachable,
-        SecretClear::CredentialNotCleared(CredentialNotCleared {
-            source: io::Error::other("the directory is read-only"),
-        }),
-    ];
-    let names: Vec<&str> = outcomes.iter().map(clear_outcome_name).collect();
-    assert_eq!(
-        names,
-        [
-            "secret_erased",
-            "secret_stranded",
-            "keyring_disabled",
-            "keyring_not_installed",
-            "keyring_unreachable",
-            "credential_not_cleared",
-        ]
-    );
 }
 
 #[test]

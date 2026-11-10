@@ -69,6 +69,15 @@ impl ScriptedFiles {
             source: PrivateJsonError::Stage(self.inner.path.clone(), io::Error::other(reason)),
         }
     }
+
+    fn write_refusal(&self) -> TokenRecordError {
+        TokenRecordError::Write {
+            source: PrivateJsonError::Commit(
+                self.inner.path.clone(),
+                io::Error::other("scripted write failure"),
+            ),
+        }
+    }
 }
 
 #[async_trait]
@@ -107,12 +116,7 @@ impl CredentialFiles for ScriptedFiles {
     async fn write(&self, record: &CliTokenRecord) -> Result<(), TokenRecordError> {
         self.note("write");
         if self.refusals.contains(&Refusal::Write) {
-            return Err(TokenRecordError::Write {
-                source: PrivateJsonError::Commit(
-                    self.inner.path.clone(),
-                    io::Error::other("scripted write failure"),
-                ),
-            });
+            return Err(self.write_refusal());
         }
         self.inner.write(record).await
     }

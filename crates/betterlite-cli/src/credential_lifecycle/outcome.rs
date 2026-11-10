@@ -47,9 +47,15 @@ pub(super) const fn saved_as(outcome: &SecretWrite) -> SecretSave {
     match outcome {
         Ok(Write::SecretStored) => SecretSave::SecretStored,
         Ok(Write::KeyringDiscardsWrites) => SecretSave::KeyringDiscardsWrites,
-        Err(KeyringUnusable::KeyringDisabled) => SecretSave::KeyringDisabled,
-        Err(KeyringUnusable::KeyringNotInstalled) => SecretSave::KeyringNotInstalled,
-        Err(KeyringUnusable::KeyringUnreachable) => SecretSave::KeyringUnreachable,
+        Err(unusable) => unusable_saved(*unusable),
+    }
+}
+
+const fn unusable_saved(unusable: KeyringUnusable) -> SecretSave {
+    match unusable {
+        KeyringUnusable::KeyringDisabled => SecretSave::KeyringDisabled,
+        KeyringUnusable::KeyringNotInstalled => SecretSave::KeyringNotInstalled,
+        KeyringUnusable::KeyringUnreachable => SecretSave::KeyringUnreachable,
     }
 }
 
@@ -57,8 +63,14 @@ pub(super) const fn cleared_as(outcome: &SecretErase) -> SecretClear {
     match outcome {
         Ok(Erase::SecretErased) => SecretClear::SecretErased,
         Ok(Erase::SecretStranded) => SecretClear::SecretStranded,
-        Err(KeyringUnusable::KeyringDisabled) => SecretClear::KeyringDisabled,
-        Err(KeyringUnusable::KeyringNotInstalled) => SecretClear::KeyringNotInstalled,
-        Err(KeyringUnusable::KeyringUnreachable) => SecretClear::KeyringUnreachable,
+        Err(unusable) => unusable_cleared(*unusable),
+    }
+}
+
+const fn unusable_cleared(unusable: KeyringUnusable) -> SecretClear {
+    match unusable {
+        KeyringUnusable::KeyringDisabled => SecretClear::KeyringDisabled,
+        KeyringUnusable::KeyringNotInstalled => SecretClear::KeyringNotInstalled,
+        KeyringUnusable::KeyringUnreachable => SecretClear::KeyringUnreachable,
     }
 }

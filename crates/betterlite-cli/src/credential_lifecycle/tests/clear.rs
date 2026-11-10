@@ -4,6 +4,8 @@ use crate::credential_lifecycle::clear::clear_cli_token;
 use crate::credential_lifecycle::outcome::SecretClear;
 use crate::keyring::KeyringUnusable;
 
+use rstest::rstest;
+
 use super::support::{
     Refusal, SERVER, StageRefusal, VaultRefusal, fake_vault, metadata, record, scripted_files,
     vault_entry,
@@ -151,17 +153,32 @@ async fn clear_does_not_alarm_over_a_metadata_file_it_cannot_remove() {
     assert!(vault.blob.is_none());
 }
 
+#[rstest]
+#[case::not_installed(KeyringUnusable::KeyringNotInstalled, "keyring_not_installed")]
+#[case::disabled(KeyringUnusable::KeyringDisabled, "keyring_disabled")]
+#[case::unreachable(KeyringUnusable::KeyringUnreachable, "keyring_unreachable")]
 #[tokio::test]
-async fn clear_takes_the_file_secret_away_from_a_note_it_keeps() {
+async fn clear_takes_the_file_secret_away_from_a_note_it_keeps(
+    #[case] failure: KeyringUnusable,
+    #[case] expected: &str,
+) {
     let files = scripted_files();
     files.put(&record(1_000.0));
     let mut vault = fake_vault();
     vault.refusals.push(VaultRefusal::Unavailable);
-    vault.failure = KeyringUnusable::KeyringNotInstalled;
+    vault.failure = failure;
 
     let outcome = clear_cli_token(&files, &mut vault).await;
 
-    assert!(matches!(outcome, SecretClear::KeyringNotInstalled));
+    let reported = match outcome {
+        SecretClear::KeyringNotInstalled => "keyring_not_installed",
+        SecretClear::KeyringDisabled => "keyring_disabled",
+        SecretClear::KeyringUnreachable => "keyring_unreachable",
+        SecretClear::SecretErased => "secret_erased",
+        SecretClear::SecretStranded => "secret_stranded",
+        SecretClear::CredentialNotCleared(_) => "credential_not_cleared",
+    };
+    assert_eq!(reported, expected);
     let note = files.stored().expect("the note stays");
     assert!(note.key.is_none());
     assert!(note.refresh_token.is_none());

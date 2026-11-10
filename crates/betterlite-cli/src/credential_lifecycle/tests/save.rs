@@ -2,7 +2,10 @@ use secrecy::ExposeSecret as _;
 
 use crate::credential_lifecycle::outcome::SecretSave;
 use crate::credential_lifecycle::save::save_cli_token;
+use crate::keyring::KeyringUnusable;
 use crate::token_records::secret::decode_secret;
+
+use rstest::rstest;
 
 use super::support::{
     Refusal, SERVER, StageRefusal, VaultRefusal, encoded, fake_vault, metadata, record,
@@ -58,15 +61,32 @@ async fn save_reports_not_recorded_when_the_vault_took_the_secret_but_the_file_d
     assert!(files.stored().is_none());
 }
 
+#[rstest]
+#[case::unreachable(KeyringUnusable::KeyringUnreachable, "keyring_unreachable")]
+#[case::not_installed(KeyringUnusable::KeyringNotInstalled, "keyring_not_installed")]
+#[case::disabled(KeyringUnusable::KeyringDisabled, "keyring_disabled")]
 #[tokio::test]
-async fn save_keeps_the_secret_in_the_file_when_the_keychain_is_unreachable() {
+async fn save_keeps_the_secret_in_the_file_when_the_keychain_is_unusable(
+    #[case] failure: KeyringUnusable,
+    #[case] expected: &str,
+) {
     let files = scripted_files();
     let mut vault = fake_vault();
     vault.refusals.push(VaultRefusal::Unavailable);
+    vault.failure = failure;
 
     let outcome = save_cli_token(&files, &mut vault, record(1_000.0)).await;
 
-    assert!(matches!(outcome, SecretSave::KeyringUnreachable));
+    let reported = match outcome {
+        SecretSave::KeyringUnreachable => "keyring_unreachable",
+        SecretSave::KeyringNotInstalled => "keyring_not_installed",
+        SecretSave::KeyringDisabled => "keyring_disabled",
+        SecretSave::SecretStored => "secret_stored",
+        SecretSave::KeyringDiscardsWrites => "keyring_discards_writes",
+        SecretSave::CredentialNotSaved(_) => "credential_not_saved",
+        SecretSave::CredentialNotRecorded(_) => "credential_not_recorded",
+    };
+    assert_eq!(reported, expected);
     let stored = files.stored().expect("the owner-only file");
     assert_eq!(
         stored.key.as_ref().expect("a key").expose_secret(),

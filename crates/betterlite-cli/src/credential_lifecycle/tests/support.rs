@@ -249,6 +249,15 @@ impl ScriptedFiles {
     pub(crate) fn exists(&self) -> bool {
         self.inner.path.exists()
     }
+
+    fn write_refusal(&self) -> TokenRecordError {
+        TokenRecordError::Write {
+            source: PrivateJsonError::Commit(
+                self.inner.path.clone(),
+                io::Error::other("the fixture refuses the write"),
+            ),
+        }
+    }
 }
 
 #[async_trait]
@@ -287,12 +296,7 @@ impl CredentialFiles for ScriptedFiles {
 
     async fn write(&self, record: &CliTokenRecord) -> Result<(), TokenRecordError> {
         if self.refuses(Refusal::Write) {
-            return Err(TokenRecordError::Write {
-                source: PrivateJsonError::Commit(
-                    self.inner.path.clone(),
-                    io::Error::other("the fixture refuses the write"),
-                ),
-            });
+            return Err(self.write_refusal());
         }
         self.inner.write(record).await
     }
