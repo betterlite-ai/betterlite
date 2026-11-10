@@ -1,0 +1,17 @@
+kind: helper
+name: response-id-payload-fallback
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        call_type: acompletion
+        id: payload-id
+        litellm_call_id: call-1
+        metadata: {}
+    response:
+      model: gpt-4o
+      usage: {total_tokens: 3, completion_tokens: 1, prompt_tokens: 2}
+env: {}
+compare: {ignore: []}
