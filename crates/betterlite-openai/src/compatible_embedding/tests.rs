@@ -249,6 +249,31 @@ fn explicit_headers_are_kept_and_a_custom_endpoint_is_used_as_given() {
     );
 }
 
+// LiteLLM sends such a body without a Content-Type, and the shared transport always names the JSON body
+#[tokio::test]
+async fn the_transport_adds_a_json_content_type_the_plan_did_not_carry() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let explicit = Headers::from([("X-Team".to_owned(), "1".to_owned())]);
+    let (plan, _, _) = observe(|state, env| {
+        plan_embedding(call(Some(&url), Some(explicit), true), state, env).unwrap()
+    });
+    let client = client();
+    let (sent, request) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(
+            send_embedding(&client, &plan),
+            serve(&listener, 200, EMBEDDING.as_bytes(), Duration::ZERO)
+        )
+    })
+    .await
+    .unwrap();
+    sent.unwrap();
+    let lowered = request.to_ascii_lowercase();
+    assert!(!plan.headers.contains_key("Content-Type"));
+    assert!(lowered.contains("content-type: application/json"));
+    assert!(lowered.contains("x-team: 1"));
+}
+
 #[test]
 fn a_missing_base_stops_planning_before_anything_is_logged() {
     let (error, state, records) =
