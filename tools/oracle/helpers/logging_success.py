@@ -82,10 +82,6 @@ def _optional_text(value: Json) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _optional_string(value: Json) -> str | None:
-    return cast("str | None", value)
-
-
 def _datetime(value: Json, name: str) -> dt.datetime:
     return dt.datetime.fromisoformat(_text(value, name))
 
@@ -452,7 +448,7 @@ def _prepare(probe: Fields, list_mode: str) -> _Run:
     trace_id_var.set(trace_id)
     session_id_var.set(session_id)
     kwargs: Fields = {}
-    session = _optional_string(probe.get("session_id"))
+    session = _optional_text(probe.get("session_id"))
     if session is not None:
         kwargs["litellm_session_id"] = session
     obj = Logging(
@@ -465,7 +461,7 @@ def _prepare(probe: Fields, list_mode: str) -> _Run:
         else dt.datetime.fromisoformat("2024-01-01T00:00:00+00:00"),
         litellm_call_id="call-1",
         function_id="function-1",
-        litellm_trace_id=_optional_string(probe.get("trace_id")),
+        litellm_trace_id=_optional_text(probe.get("trace_id")),
         kwargs=kwargs,
     )
     obj.model_call_details["stream"] = obj.stream  # pyright: ignore[reportUnknownMemberType]
@@ -493,10 +489,6 @@ def _events(records: Records) -> Json:
     return cast("Json", [call for calls in records for call in calls])
 
 
-def _context() -> Json:
-    return {"trace_id": trace_id_var.get(), "session_id": session_id_var.get()}
-
-
 def _details(obj: Logging) -> Json:
     details = obj.model_call_details
     return {
@@ -513,14 +505,7 @@ def _isoformat(value: object) -> Json:
     return cast("Json", value) if isinstance(value, str) else None
 
 
-def _key_state(probe: Fields, name: str) -> str | None:
-    value = probe.get(name)
-    return value if isinstance(value, str) else None
-
-
 def _state_value(key: str | None) -> Json:
-    if key is None:
-        return None
     return None if key == "null" else key
 
 
@@ -530,8 +515,8 @@ def _assembled(probes: list[Fields]) -> Json:
         with _probe_patches(probe):
             run = _prepare(probe, "sync")
             state = run.obj.model_call_details
-            async_key = _key_state(probe, "async_key")
-            complete_key = _key_state(probe, "complete_key")
+            async_key = _optional_text(probe.get("async_key"))
+            complete_key = _optional_text(probe.get("complete_key"))
             if async_key is not None:
                 state["async_complete_streaming_response"] = _state_value(async_key)
             if complete_key is not None:
@@ -640,7 +625,7 @@ def _handler_output(run: _Run) -> Json:
     return {
         "events": _events(run.records),
         "counters": cast("Json", [counter.recorded for counter in run.counters]),
-        "context": _context(),
+        "context": {"trace_id": trace_id_var.get(), "session_id": session_id_var.get()},
         "details": _details(run.obj),
     }
 

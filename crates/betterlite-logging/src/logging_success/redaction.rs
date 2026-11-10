@@ -55,8 +55,6 @@ pub(super) fn redacted_payload(
         "the typed standard logging payload cannot drop these excluded fields"
     );
     let mut merged = original;
-    for (key, value) in standard_logging_object {
-        merged.insert(key, value);
-    }
+    merged.extend(standard_logging_object);
     payload_from_object(&merged)
 }

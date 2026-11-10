@@ -12,9 +12,7 @@ pub const PASS_THROUGH_CALL_TYPE: &str = "pass_through_endpoint";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SuccessResult {
-    // a complete chat completion response
     Chat(Json),
-    // a complete embeddings response
     Embeddings(Json),
     // one streamed chunk; the assembled response is not ready yet
     Chunk(Json),

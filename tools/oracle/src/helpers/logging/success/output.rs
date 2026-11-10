@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::compare::helper::HelperError;
 
 use super::scenario::Scenario;
-use super::support::{LoggedEvent, RecordingLogger};
+use super::support::RecordingLogger;
 
 #[derive(Serialize)]
 pub(crate) struct EventOut {
@@ -33,21 +33,17 @@ pub(crate) fn events(loggers: &[Arc<RecordingLogger>]) -> Result<Vec<EventOut>, 
     let mut output = Vec::new();
     for logger in loggers {
         for call in logger.calls() {
-            output.push(event(&call)?);
+            output.push(EventOut {
+                messages: optional_json(call.messages.as_ref())?,
+                response: optional_json(call.response.as_ref())?,
+                logger: call.logger,
+                event: call.event,
+                stream: call.stream,
+                model: call.model,
+            });
         }
     }
     Ok(output)
-}
-
-fn event(call: &LoggedEvent) -> Result<EventOut, Box<HelperError>> {
-    Ok(EventOut {
-        logger: call.logger.clone(),
-        event: call.event.clone(),
-        stream: call.stream,
-        model: call.model.clone(),
-        messages: optional_json(call.messages.as_ref())?,
-        response: optional_json(call.response.as_ref())?,
-    })
 }
 
 pub(crate) fn optional_json(value: Option<&Json>) -> Result<Value, Box<HelperError>> {

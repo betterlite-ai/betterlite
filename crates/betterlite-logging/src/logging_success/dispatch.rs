@@ -2,7 +2,6 @@ use super::assembled::{claim_final_stream_dispatch, is_assembled_stream_success}
 use super::delivery::global_loggers;
 use super::handler::{SuccessHandler, async_success_handler, success_handler};
 use super::types::{PASS_THROUGH_CALL_TYPE, SuccessRequest};
-use crate::dynamic_callbacks::DynamicCallback;
 use crate::dynamic_callbacks::DynamicCallbackLists;
 use crate::dynamic_callbacks::filters::{
     get_combined_callback_list, remove_internal_callbacks, remove_logger_callbacks,
@@ -62,7 +61,5 @@ pub fn should_run_sync_success_callbacks_for_async_calls(
 ) -> bool {
     let lists = DynamicCallbackLists::from(&state.dynamic_callbacks);
     let combined = get_combined_callback_list(lists.success.as_deref(), &global_loggers(registry));
-    let legacy: Vec<DynamicCallback> =
-        remove_internal_callbacks(&remove_logger_callbacks(&combined, is_known));
-    !legacy.is_empty()
+    !remove_internal_callbacks(&remove_logger_callbacks(&combined, is_known)).is_empty()
 }

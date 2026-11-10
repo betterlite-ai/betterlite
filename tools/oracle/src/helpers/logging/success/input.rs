@@ -64,7 +64,7 @@ pub(crate) struct LoggerSpec {
     pub(crate) fail: bool,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct MessageFlagsSpec {
     #[serde(default)]
     pub(crate) turn_off_message_logging: bool,

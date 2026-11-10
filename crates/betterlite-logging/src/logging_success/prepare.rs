@@ -66,7 +66,7 @@ pub(super) fn prepare(
     }
 }
 
-fn store_payload(state: &mut LoggingState, payload: Option<&StandardLoggingPayload>) {
+pub(super) fn store_payload(state: &mut LoggingState, payload: Option<&StandardLoggingPayload>) {
     if let Err(error) = set_standard_logging_object(state, payload) {
         tracing::warn!(%error, "the standard logging payload could not be stored");
     }

@@ -48,7 +48,6 @@ fn assembled(probes: &[AssembledProbe]) -> Result<Value, Box<HelperError>> {
 fn assembled_probe(probe: &AssembledProbe) -> Result<bool, Box<HelperError>> {
     let empty = BTreeMap::new();
     let context = ContextSpec::default();
-    let dynamic = Vec::new();
     let (mut state, _) = state::build(&StateSpec {
         stream: probe.stream,
         call_type: "completion",
@@ -56,7 +55,7 @@ fn assembled_probe(probe: &AssembledProbe) -> Result<bool, Box<HelperError>> {
         start_time: scenario::default_time()?,
         trace_id: None,
         session_id: None,
-        dynamic_success: &dynamic,
+        dynamic_success: &[],
         context: &context,
         request_correlation: false,
     })?;
@@ -77,18 +76,12 @@ fn assembled_probe(probe: &AssembledProbe) -> Result<bool, Box<HelperError>> {
 }
 
 fn recognized(probes: &[RecognizedProbe]) -> Result<Value, Box<HelperError>> {
-    let decisions = probes
-        .iter()
-        .map(recognized_probe)
-        .collect::<Result<Vec<bool>, Box<HelperError>>>()?;
+    let mut decisions = Vec::with_capacity(probes.len());
+    for probe in probes {
+        let result = scenario::result(&probe.result)?;
+        decisions.push(is_recognized_call_type(&result, &probe.call_type));
+    }
     Ok(json!({"operation": "recognized", "results": decisions}))
-}
-
-fn recognized_probe(probe: &RecognizedProbe) -> Result<bool, Box<HelperError>> {
-    Ok(is_recognized_call_type(
-        &scenario::result(&probe.result)?,
-        &probe.call_type,
-    ))
 }
 
 fn dispatch(probes: &[DispatchProbe]) -> Result<Value, Box<HelperError>> {
@@ -112,7 +105,6 @@ fn dispatch_probe(probe: &DispatchProbe, runtime: &Runtime) -> Result<Value, Box
         excluded_fields: Vec::new(),
         stamp: None,
     })?;
-    let empty_dynamic = Vec::new();
     let context_spec = ContextSpec::default();
     let (mut state, mut context) = state::build(&StateSpec {
         stream: probe.stream,
@@ -121,11 +113,15 @@ fn dispatch_probe(probe: &DispatchProbe, runtime: &Runtime) -> Result<Value, Box
         start_time: scenario::default_time()?,
         trace_id: None,
         session_id: None,
-        dynamic_success: &empty_dynamic,
+        dynamic_success: &[],
         context: &context_spec,
         request_correlation: false,
     })?;
-    apply_marker(probe, &mut state);
+    if probe.marker == Some(true) {
+        state
+            .model_call_details
+            .insert(FINAL_STREAM_DISPATCH_MARKER.to_owned(), Json::Bool(true));
+    }
     let request = dispatch_request(probe)?;
     let logging = scenario.handler();
     for _ in 0..probe.dispatches {
@@ -139,14 +135,6 @@ fn dispatch_probe(probe: &DispatchProbe, runtime: &Runtime) -> Result<Value, Box
     let marker =
         state.model_call_details.get(FINAL_STREAM_DISPATCH_MARKER) == Some(&Json::Bool(true));
     output::dispatch_value(&scenario, marker)
-}
-
-fn apply_marker(probe: &DispatchProbe, state: &mut LoggingState) {
-    if probe.marker == Some(true) {
-        state
-            .model_call_details
-            .insert(FINAL_STREAM_DISPATCH_MARKER.to_owned(), Json::Bool(true));
-    }
 }
 
 fn dispatch_request(probe: &DispatchProbe) -> Result<SuccessRequest, Box<HelperError>> {

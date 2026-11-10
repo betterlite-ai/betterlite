@@ -95,11 +95,10 @@ fn init(spec: &StateSpec<'_>) -> Result<LoggingInit, Box<crate::compare::helper:
 pub(crate) fn params(
     values: &BTreeMap<String, Value>,
 ) -> Result<IndexMap<String, Json>, Box<crate::compare::helper::HelperError>> {
-    let mut converted = IndexMap::new();
-    for (name, value) in values {
-        converted.insert(name.clone(), decode::<Json>(value)?);
-    }
-    Ok(converted)
+    values
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), decode::<Json>(value)?)))
+        .collect()
 }
 
 pub(crate) fn decode<T>(value: &Value) -> Result<T, Box<crate::compare::helper::HelperError>>

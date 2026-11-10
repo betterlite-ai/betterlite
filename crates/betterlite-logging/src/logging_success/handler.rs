@@ -10,11 +10,9 @@ use super::callback_failure::handle_callback_failure;
 use super::delivery::{
     callback_logger, deliver_async, deliver_sync, global_loggers, may_run_callback,
 };
-use super::payload_state::{
-    STANDARD_LOGGING_OBJECT, set_standard_logging_object, standard_logging_object,
-};
+use super::payload_state::{STANDARD_LOGGING_OBJECT, standard_logging_object};
 use super::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
-use super::prepare::{Prepared, prepare};
+use super::prepare::{Prepared, prepare, store_payload};
 use super::redaction::redacted_payload;
 use super::request_redaction::{
     redact_payload, redact_stored_payload, should_redact_message_logging,
@@ -60,8 +58,7 @@ pub fn success_handler(
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
-    let pending = begin(handler, state, request, SuccessMode::Sync);
-    if let Some(plan) = pending {
+    if let Some(plan) = begin(handler, state, request, SuccessMode::Sync) {
         run_sync_callbacks(handler, state, &plan);
     }
     // LiteLLM restores the caller's trace and session ids once this call's own logging is done
@@ -161,8 +158,7 @@ async fn run_async_callbacks(
         let Some(event) = callback_event(handler, logging, plan, logger, SuccessMode::Async) else {
             continue;
         };
-        let delivered = deliver_async(logger.as_ref(), event, plan.stream_event).await;
-        if let Err(failure) = delivered {
+        if let Err(failure) = deliver_async(logger.as_ref(), event, plan.stream_event).await {
             handle_callback_failure(handler, logger.callback_name(), &failure);
         }
     }
@@ -210,10 +206,10 @@ fn complete_stream(
     prepared: &Prepared,
     mode: SuccessMode,
 ) -> Option<Json> {
-    let assembled = handler
+    let Some(complete) = handler
         .stream_assembler
-        .assemble(state, &prepared.result, mode);
-    let Some(complete) = assembled else {
+        .assemble(state, &prepared.result, mode)
+    else {
         return pass_through_response(handler, state, prepared, mode);
     };
     state
@@ -260,9 +256,7 @@ fn store_built_payload(
         handler
             .payload_builder
             .build(state, response, prepared.start_time, prepared.end_time);
-    if let Err(error) = set_standard_logging_object(state, payload.as_ref()) {
-        tracing::warn!(%error, "the assembled response payload could not be stored");
-    }
+    store_payload(state, payload.as_ref());
 }
 
 // The event's payload is the standard logging object; a chunk without one asks B190 for a fresh build

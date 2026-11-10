@@ -131,24 +131,24 @@ fn counters() -> (
 }
 
 fn stamp_value(spec: Option<&StampSpec>) -> ResponseStamp {
-    spec.map_or_else(default_stamp, |stamp| ResponseStamp {
-        id: stamp.id.clone(),
-        created: stamp.created,
-    })
-}
-
-fn default_stamp() -> ResponseStamp {
-    ResponseStamp {
-        id: "chatcmpl-placeholder".to_owned(),
-        created: 1_704_067_200,
-    }
+    spec.map_or_else(
+        || ResponseStamp {
+            id: "chatcmpl-placeholder".to_owned(),
+            created: 1_704_067_200,
+        },
+        |stamp| ResponseStamp {
+            id: stamp.id.clone(),
+            created: stamp.created,
+        },
+    )
 }
 
 pub(crate) fn result(spec: &ResultSpec) -> Result<SuccessResult, Box<HelperError>> {
-    match &spec.value {
-        Some(raw) => Ok(spec.kind.wrap(decode::<Json>(raw)?)),
-        None => Ok(spec.kind.wrap(default_value(spec.kind)?)),
-    }
+    let value = match &spec.value {
+        Some(raw) => decode::<Json>(raw)?,
+        None => default_value(spec.kind)?,
+    };
+    Ok(spec.kind.wrap(value))
 }
 
 impl ResultKind {

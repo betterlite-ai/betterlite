@@ -128,10 +128,9 @@ fn objects<'fields>(
     fields: &'fields mut IndexMap<String, Json>,
     key: &str,
 ) -> impl Iterator<Item = &'fields mut IndexMap<String, Json>> {
-    let items = if let Some(Json::List(items)) = fields.get_mut(key) {
-        items.as_mut_slice()
-    } else {
-        &mut []
+    let items = match fields.get_mut(key) {
+        Some(Json::List(items)) => items.as_mut_slice(),
+        _ => &mut [],
     };
     items.iter_mut().filter_map(|item| {
         if let Json::Object(object) = item {
@@ -186,21 +185,23 @@ fn redact_output_item(item: &mut IndexMap<String, Json>) {
         redact_present(part, "text");
         redact_present(part, "refusal");
     }
-    let reasoning = item.get("type") == Some(&Json::Text("reasoning".to_owned()));
-    let function_call = item.get("type") == Some(&Json::Text("function_call".to_owned()))
-        && item.contains_key("arguments");
-    let custom_call = item.get("type") == Some(&Json::Text("custom_tool_call".to_owned()))
-        && item.contains_key("input");
-    if reasoning {
-        for summary in objects(item, "summary") {
-            redact_present(summary, "text");
+    let kind = match item.get("type") {
+        Some(Json::Text(kind)) => kind.clone(),
+        _ => String::new(),
+    };
+    match kind.as_str() {
+        "reasoning" => {
+            for summary in objects(item, "summary") {
+                redact_present(summary, "text");
+            }
         }
-    }
-    if function_call {
-        item.insert("arguments".to_owned(), Json::Text(REDACTED.to_owned()));
-    }
-    if custom_call {
-        item.insert("input".to_owned(), Json::Text(REDACTED.to_owned()));
+        "function_call" if item.contains_key("arguments") => {
+            item.insert("arguments".to_owned(), Json::Text(REDACTED.to_owned()));
+        }
+        "custom_tool_call" if item.contains_key("input") => {
+            item.insert("input".to_owned(), Json::Text(REDACTED.to_owned()));
+        }
+        _ => {}
     }
 }
 

@@ -37,10 +37,7 @@ impl RecordingLogger {
     pub(crate) fn new(name: &str, flags: &MessageFlagsSpec, fail: bool) -> Self {
         Self {
             name: name.to_owned(),
-            flags: MessageFlagsSpec {
-                turn_off_message_logging: flags.turn_off_message_logging,
-                redacts_messages_itself: flags.redacts_messages_itself,
-            },
+            flags: flags.clone(),
             fail,
             calls: Mutex::new(Vec::new()),
         }
