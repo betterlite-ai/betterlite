@@ -135,6 +135,20 @@ fn the_wrapper_wraps_a_string_and_the_lower_request_accepts_an_empty_list() {
     ));
 }
 
+#[test]
+fn the_wrapper_passes_a_non_empty_list_through() {
+    let request = transform_embedding_request(
+        "m",
+        &serde_json::from_str(r#"["a","b"]"#).unwrap(),
+        &Object::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&request).unwrap()["texts"],
+        serde_json::json!(["a", "b"])
+    );
+}
+
 #[rstest]
 #[case::tokens("[1, 2]")]
 #[case::token_lists("[[1], [2]]")]
