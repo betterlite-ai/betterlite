@@ -209,8 +209,8 @@ const SYNTHETIC: &[u8] = br#"{
   "zed-own": {"litellm_provider": "acme", "mode": "chat", "max_input_tokens": 5, "supports_reasoning": false},
   "bare-model": {"mode": "chat"},
   "fallback_generalizations": {"rules": [
-    {"name": "fill", "pattern": "^zed", "fill_missing_for_providers": ["acme"], "model_info": {"supports_reasoning": true, "max_input_tokens": 999}},
-    {"name": "cap", "pattern": "^cap-", "model_info": {"mode": "chat", "max_output_tokens": 7, "supports_vision": true}}
+    {"name": "fill", "pattern": "zed", "fill_missing_for_providers": ["acme"], "model_info": {"supports_reasoning": true, "max_input_tokens": 999}},
+    {"name": "cap", "pattern": "cap-", "model_info": {"mode": "chat", "max_output_tokens": 7, "supports_vision": true}}
   ]}
 }"#;
 
