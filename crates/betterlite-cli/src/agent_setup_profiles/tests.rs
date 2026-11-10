@@ -17,10 +17,10 @@ use sha2::{Digest as _, Sha256};
 use soft_canonicalize::soft_canonicalize;
 use tempfile::TempDir;
 
+use super::locks::{Clock, SystemClock, lock_path_for, setup_locks};
 use super::{
-    Clock, Error, SAVED_SETUP_VERSION, SavedSetup, SystemClock, Target, forget_saved_setup,
-    lock_path_for, read_saved_setup, receipt_path_for, save_setup, settings_path_for, setup_locks,
-    setup_profile_path,
+    Error, SAVED_SETUP_VERSION, SavedSetup, Target, forget_saved_setup, read_saved_setup,
+    receipt_path_for, save_setup, settings_path_for, setup_profile_path,
 };
 use crate::agent_launch::codex_config_path;
 use crate::claude_settings::paths::{

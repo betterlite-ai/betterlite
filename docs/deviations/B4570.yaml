@@ -9,6 +9,6 @@ deviations:
   - what: read_saved_setup compares the resolved live settings path with a resolved copy of the stored path, so a hand-edited profile that stores a symlinked or relative settings_path still matches; LiteLLM compares the stored string verbatim with the resolved live path and rejects it.
     why: The task asks for both sides to go through soft-canonicalize, and LiteLLM's own save path (configure_setup.py) always writes the resolved path, so a profile either tool wrote is unaffected. Only a profile written by hand, or by a tool that did not resolve the path, sees the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L91-L96
-  - what: A machine with no home directory gets AgentSetupProfilesError::Path ("could not resolve the <target> setup paths; set HOME and retry") where LiteLLM's Path.home() raises an uncaught RuntimeError.
+  - what: A machine with no home directory gets AgentSetupProfilesError::Path ("the environment has no home directory for the <target> setup") where LiteLLM's Path.home() raises an uncaught RuntimeError.
     why: Rule no-panics forbids a panic, and a Python traceback is not behavior a working setup can rely on. Every other setup has a home, so the message is the only thing that changes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L65-L66
