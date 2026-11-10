@@ -5,7 +5,9 @@ use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use tokio::sync::watch;
 use tokio::task::yield_now;
+use tokio::time::{sleep, timeout};
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -228,12 +230,15 @@ impl JitterSource for FixedJitter {
     }
 }
 
-pub(crate) fn test_subscriber(
+pub(crate) fn test_subscriber<C>(
     client: ScriptedClient,
-    clock: FakeClock,
+    clock: C,
     jitter: FixedJitter,
     callbacks: Vec<ResyncCallback<&'static str>>,
-) -> TestSubscriber {
+) -> ConfigSyncSubscriber<ScriptedClient, C, &'static str>
+where
+    C: ConfigSyncClock,
+{
     ConfigSyncSubscriber {
         client,
         clock,
@@ -241,6 +246,53 @@ pub(crate) fn test_subscriber(
         callbacks,
         settings: ConfigSyncSettings::default(),
     }
+}
+
+#[derive(Clone)]
+pub(crate) struct SlowClock {
+    journal: Journal,
+}
+
+impl SlowClock {
+    pub(crate) fn recording(journal: &Journal) -> Self {
+        Self {
+            journal: journal.clone(),
+        }
+    }
+}
+
+impl ConfigSyncClock for SlowClock {
+    fn now(&self) -> Duration {
+        Duration::ZERO
+    }
+
+    fn pause(&self, duration: Duration) -> impl Future<Output = ()> + Send {
+        slow_pause(self.journal.clone(), duration)
+    }
+}
+
+async fn slow_pause(journal: Journal, duration: Duration) {
+    journal.record(&format!("pause-start:{:.3}", duration.as_secs_f64()));
+    sleep(duration).await;
+    journal.record(&format!("pause-done:{:.3}", duration.as_secs_f64()));
+}
+
+pub(crate) fn shutdown_channel() -> (watch::Sender<bool>, watch::Receiver<bool>) {
+    watch::channel(false)
+}
+
+pub(crate) async fn wait_for_entry(journal: &Journal, entry: &str) {
+    let recorded = timeout(Duration::from_secs(2), async {
+        while journal.first_index(entry).is_none() {
+            yield_now().await;
+        }
+    })
+    .await;
+    assert!(
+        recorded.is_ok(),
+        "the journal never recorded {entry}: {:?}",
+        journal.entries()
+    );
 }
 
 pub(crate) fn recording_callback(

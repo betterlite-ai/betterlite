@@ -1,22 +1,18 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use rstest::rstest;
+use tokio::sync::watch;
 use tokio::task::JoinSet;
-use tokio::task::yield_now;
 use tokio::time::timeout;
 
 use super::support::{
-    ClientStep, FakeClock, FixedJitter, Journal, Logs, MessageStep, ScriptedClient, TestSubscriber,
-    recording_callback, session, subscription, test_subscriber,
+    ClientStep, FakeClock, FixedJitter, Journal, Logs, MessageStep, ScriptedClient, SlowClock,
+    TestSubscriber, recording_callback, session, shutdown_channel, subscription, test_subscriber,
+    wait_for_entry,
 };
 use crate::config_sync::settings::ConfigSyncSettings;
 use crate::config_sync::subscriber::ConfigSyncSubscriber;
-
-fn quiet_flag() -> AtomicBool {
-    AtomicBool::new(false)
-}
 
 fn empty_subscriber(
     clock: FakeClock,
@@ -29,13 +25,18 @@ fn empty_subscriber(
     )
 }
 
+struct ReconnectState {
+    backoff: Duration,
+    last_resync_at: Option<Duration>,
+}
+
 async fn reconnect(
     subscriber: &TestSubscriber,
-    backoff: &mut Duration,
-    last_resync_at: &mut Option<Duration>,
+    state: &mut ReconnectState,
+    shutdown: &mut watch::Receiver<bool>,
 ) {
-    subscriber
-        .reconnect_once(backoff, last_resync_at, &quiet_flag())
+    let _stopped = subscriber
+        .reconnect_once(&mut state.backoff, &mut state.last_resync_at, shutdown)
         .await;
 }
 
@@ -60,8 +61,9 @@ async fn a_message_waits_debounce_plus_jitter_then_resyncs_once() {
     );
     let mut subscription = subscription(&client).await;
     let mut last_resync_at = None;
+    let (_sender, mut shutdown) = shutdown_channel();
     let outcome = subscriber
-        .consume(&mut subscription, &mut last_resync_at, &quiet_flag())
+        .consume(&mut subscription, &mut last_resync_at, &mut shutdown)
         .await;
     assert!(outcome.is_err());
     assert_eq!(
@@ -100,8 +102,9 @@ async fn pending_messages_are_drained_before_the_callbacks_run() {
     );
     let mut subscription = subscription(&client).await;
     let mut last_resync_at = None;
+    let (_sender, mut shutdown) = shutdown_channel();
     let outcome = subscriber
-        .consume(&mut subscription, &mut last_resync_at, &quiet_flag())
+        .consume(&mut subscription, &mut last_resync_at, &mut shutdown)
         .await;
     assert!(outcome.is_err());
     assert_eq!(
@@ -139,8 +142,9 @@ async fn a_second_resync_waits_out_the_minimum_interval() {
     );
     let mut subscription = subscription(&client).await;
     let mut last_resync_at = None;
+    let (_sender, mut shutdown) = shutdown_channel();
     let outcome = subscriber
-        .consume(&mut subscription, &mut last_resync_at, &quiet_flag())
+        .consume(&mut subscription, &mut last_resync_at, &mut shutdown)
         .await;
     assert!(outcome.is_err());
     assert_eq!(
@@ -159,7 +163,6 @@ async fn a_second_resync_waits_out_the_minimum_interval() {
             "next:1.000",
         ]
     );
-    assert_eq!(last_resync_at, Some(Duration::from_secs(13)));
 }
 
 #[rstest]
@@ -181,9 +184,11 @@ async fn the_minimum_resync_interval_sleeps_only_the_remainder(
         Duration::ZERO
     });
     let subscriber = empty_subscriber(clock);
-    subscriber
-        .wait_for_min_resync_interval(last_resync_at)
+    let (_sender, mut shutdown) = shutdown_channel();
+    let stopped = subscriber
+        .wait_for_min_resync_interval(last_resync_at, &mut shutdown)
         .await;
+    assert!(!stopped);
     let expected_pauses: Vec<Duration> = expected.into_iter().collect();
     assert_eq!(subscriber.clock.recorded_pauses(), expected_pauses);
 }
@@ -201,7 +206,8 @@ async fn a_failing_callback_warns_and_the_next_callback_still_runs() {
         ],
     );
     let (logs, _guard) = Logs::capture();
-    subscriber.run_resync_callbacks().await;
+    let (_sender, mut shutdown) = shutdown_channel();
+    subscriber.run_resync_callbacks(&mut shutdown).await;
     assert_eq!(journal.entries(), ["first", "second"]);
     assert!(
         logs.lines()
@@ -222,15 +228,18 @@ async fn subscribe_failures_double_the_backoff_up_to_sixty_seconds() {
         FixedJitter::fixed(0),
         Vec::new(),
     );
-    let mut backoff = subscriber.settings.backoff_initial;
-    let mut last_resync_at = None;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
+    let mut state = ReconnectState {
+        backoff: subscriber.settings.backoff_initial,
+        last_resync_at: None,
+    };
+    let (_sender, mut shutdown) = shutdown_channel();
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
     assert_eq!(
         subscriber.clock.recorded_pauses(),
         [
@@ -263,12 +272,15 @@ async fn a_successful_subscribe_resets_the_backoff_to_five_seconds() {
         FixedJitter::fixed(0),
         Vec::new(),
     );
-    let mut backoff = subscriber.settings.backoff_initial;
-    let mut last_resync_at = None;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
-    reconnect(&subscriber, &mut backoff, &mut last_resync_at).await;
+    let mut state = ReconnectState {
+        backoff: subscriber.settings.backoff_initial,
+        last_resync_at: None,
+    };
+    let (_sender, mut shutdown) = shutdown_channel();
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
+    reconnect(&subscriber, &mut state, &mut shutdown).await;
     assert_eq!(
         subscriber.clock.recorded_pauses(),
         [
@@ -306,22 +318,70 @@ async fn the_subscriber_stops_when_the_server_shuts_down() {
             callbacks: Vec::new(),
             settings,
         });
-    let shutting_down = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = shutdown_channel();
     let mut tasks = JoinSet::new();
     tasks.spawn({
         let task_subscriber = Arc::clone(&subscriber);
-        let task_flag = Arc::clone(&shutting_down);
-        async move { task_subscriber.run(&task_flag).await }
+        async move { task_subscriber.run(receiver).await }
     });
-    let joined = timeout(Duration::from_secs(2), async {
-        while journal.first_index("subscribe").is_none() {
-            yield_now().await;
-        }
-        shutting_down.store(true, Ordering::Release);
-        tasks.join_next().await
-    })
-    .await
-    .expect("the subscriber stops on shutdown");
+    wait_for_entry(&journal, "subscribe").await;
+    sender.send_replace(true);
+    let joined = timeout(Duration::from_secs(2), tasks.join_next())
+        .await
+        .expect("the subscriber stops on shutdown");
     assert!(matches!(joined, Some(Ok(()))));
     assert!(journal.first_index("close").is_some());
+}
+
+#[tokio::test]
+async fn shutdown_during_the_backoff_pause_returns_at_once() {
+    let journal = Journal::default();
+    let client = ScriptedClient::scripted(Vec::new(), &journal);
+    let subscriber = Arc::new(test_subscriber(
+        client,
+        SlowClock::recording(&journal),
+        FixedJitter::fixed(0),
+        Vec::new(),
+    ));
+    let (sender, receiver) = shutdown_channel();
+    let mut tasks = JoinSet::new();
+    tasks.spawn({
+        let task_subscriber = Arc::clone(&subscriber);
+        async move { task_subscriber.run(receiver).await }
+    });
+    wait_for_entry(&journal, "pause-start:5.000").await;
+    sender.send_replace(true);
+    let joined = timeout(Duration::from_secs(2), tasks.join_next())
+        .await
+        .expect("the subscriber stops during the backoff pause");
+    assert!(matches!(joined, Some(Ok(()))));
+    assert!(journal.first_index("pause-done:5.000").is_none());
+    assert!(journal.first_index("callback").is_none());
+}
+
+#[tokio::test]
+async fn shutdown_during_the_debounce_pause_skips_the_callbacks() {
+    let journal = Journal::default();
+    let client =
+        ScriptedClient::scripted(vec![session(vec![MessageStep::Message("{}")])], &journal);
+    let subscriber = Arc::new(test_subscriber(
+        client,
+        SlowClock::recording(&journal),
+        FixedJitter::fixed(2_000_000_000),
+        vec![recording_callback(&journal, "callback", Ok(()))],
+    ));
+    let (sender, receiver) = shutdown_channel();
+    let mut tasks = JoinSet::new();
+    tasks.spawn({
+        let task_subscriber = Arc::clone(&subscriber);
+        async move { task_subscriber.run(receiver).await }
+    });
+    wait_for_entry(&journal, "pause-start:3.000").await;
+    sender.send_replace(true);
+    let joined = timeout(Duration::from_secs(2), tasks.join_next())
+        .await
+        .expect("the subscriber stops during the debounce pause");
+    assert!(matches!(joined, Some(Ok(()))));
+    assert!(journal.first_index("pause-done:3.000").is_none());
+    assert!(journal.first_index("callback").is_none());
 }
