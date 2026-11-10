@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use betterlite_redis::batch::error::{BatchError, PipelineFailure};
+use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::batch::result::{BatchResult, Settled, SettledHook};
 use betterlite_redis::batch::{MgetValues, RedisBatch};
 use betterlite_redis::cache_primitives::decode::CachedValue;
@@ -13,6 +13,7 @@ use serde_json::{Value as Json, json};
 use super::failure;
 use super::input::{Arg, Call, Operation, Reply, Step};
 use super::server::{FakeServer, connect_cache};
+use super::taxonomy;
 use crate::helpers::{HelperError, HelperResult};
 
 const REPORTED: [&str; 8] = [
@@ -214,43 +215,28 @@ async fn take(handle: Handle, index: usize) -> Json {
     match handle {
         Handle::Mget(result) => match result.await {
             Ok(values) => json!({"handle": index, "ok": true, "value": values_json(&values)}),
-            Err(error) => json!({"handle": index, "ok": false, "error": taxonomy(&error)}),
+            Err(error) => {
+                json!({"handle": index, "ok": false, "error": taxonomy::classify(&error)})
+            }
         },
         Handle::Increment(result) => match result.await {
             Ok(value) => json!({"handle": index, "ok": true, "value": value}),
-            Err(error) => json!({"handle": index, "ok": false, "error": taxonomy(&error)}),
+            Err(error) => {
+                json!({"handle": index, "ok": false, "error": taxonomy::classify(&error)})
+            }
         },
         Handle::Set(result) => match result.await {
             Ok(()) => json!({"handle": index, "ok": true, "value": Json::Null}),
-            Err(error) => json!({"handle": index, "ok": false, "error": taxonomy(&error)}),
+            Err(error) => {
+                json!({"handle": index, "ok": false, "error": taxonomy::classify(&error)})
+            }
         },
         Handle::Script(result) => match result.await {
             Ok(value) => json!({"handle": index, "ok": true, "value": value_json(&value)}),
-            Err(error) => json!({"handle": index, "ok": false, "error": taxonomy(&error)}),
+            Err(error) => {
+                json!({"handle": index, "ok": false, "error": taxonomy::classify(&error)})
+            }
         },
-    }
-}
-
-const fn taxonomy(error: &BatchError) -> &'static str {
-    match error {
-        BatchError::Pipeline(failure) => match failure {
-            PipelineFailure::Breaker(_) => "breaker",
-            PipelineFailure::Client(_) | PipelineFailure::Live(_) => "connection",
-            PipelineFailure::Encode { .. } | PipelineFailure::Ttl(_) => "pipeline",
-        },
-        BatchError::Reply(_)
-        | BatchError::MissingReply { .. }
-        | BatchError::MgetReply { .. }
-        | BatchError::MgetValue { .. }
-        | BatchError::IncrementReply { .. } => "reply",
-        BatchError::MissingKeys { .. }
-        | BatchError::Fallback(_)
-        | BatchError::Delete(_)
-        | BatchError::SetFallback(_)
-        | BatchError::Script(_) => "connection",
-        BatchError::Decode(_) => "decode",
-        BatchError::Serialize { .. } => "pipeline",
-        BatchError::Cancelled => "cancelled",
     }
 }
 

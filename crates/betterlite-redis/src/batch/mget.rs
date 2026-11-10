@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 
 use redis::Value;
 
-use super::MgetValues;
 use super::error::BatchError;
 use super::operation::Settlement;
 use super::replies::{kind, namespaced, ordered, settle_pipeline};
 use super::slot::Slot;
+use super::{MgetValues, deduplicated};
 use crate::cache_primitives::decode::{CachedValue, decode_cached_value};
 use crate::redis_cache::RedisCache;
 use crate::redis_live_client::LiveClientError;
@@ -19,6 +19,18 @@ pub(crate) struct MgetOperation {
 }
 
 impl MgetOperation {
+    pub(crate) fn new(
+        keys: &[String],
+        misses: &Arc<Mutex<BTreeSet<String>>>,
+        slot: &Arc<Slot<MgetValues>>,
+    ) -> Self {
+        Self {
+            keys: deduplicated(keys),
+            misses: Arc::clone(misses),
+            slot: Arc::clone(slot),
+        }
+    }
+
     pub(crate) fn enqueue(&self, cache: &RedisCache, pipeline: &mut redis::Pipeline) -> usize {
         let mut command = redis::cmd("MGET");
         for key in &self.keys {

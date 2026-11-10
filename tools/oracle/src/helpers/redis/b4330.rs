@@ -1,6 +1,7 @@
 pub(crate) mod input;
 mod scenario;
 mod server;
+mod taxonomy;
 
 use std::fmt::Display;
 

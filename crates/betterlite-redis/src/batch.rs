@@ -63,11 +63,7 @@ impl RedisBatch {
 
     pub fn mget(self: &Arc<Self>, keys: &[String]) -> BatchResult<MgetValues> {
         let (slot, receiver) = Slot::channel();
-        let operation = MgetOperation {
-            keys: deduplicated(keys),
-            misses: Arc::clone(&self.misses),
-            slot: Arc::clone(&slot),
-        };
+        let operation = MgetOperation::new(keys, &self.misses, &slot);
         self.declare(Operation::Mget(operation), slot, receiver)
     }
 
