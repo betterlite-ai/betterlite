@@ -1,0 +1,8 @@
+kind: helper
+name: embedding-host-plan-seed
+call:
+  embedding_host_plan:
+    jina: {model: jina-v3, input: [hello], base: null}
+    infinity: {model: bge, input: [hello], base: "https://infinity.test"}
+env: {}
+compare: {ignore: []}
