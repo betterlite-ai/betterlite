@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-mixed-last-image
+call:
+  cohere_embedding: {function: request, model: embed-english-v3.0, options: {encoding_format: float, dimensions: 256}, api_key: sk-test, headers: {Content-Type: text/plain, x-caller: kept}, inputs: [[hello world, "data:image/png;base64,YWJj"], ["data:image/png;base64,YWJj", hello world], [hello, world]]}
+compare: {ignore: []}
+env: {}

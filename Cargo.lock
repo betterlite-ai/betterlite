@@ -2025,6 +2025,7 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "betterlite-tokenizer",
  "libfuzzer-sys",
  "serde_json",
  "uuid",
