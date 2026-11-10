@@ -19,7 +19,7 @@ use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
@@ -192,15 +192,9 @@ async fn serve_redirects(listener: TcpListener, paths: Arc<Mutex<Vec<String>>>) 
         let Ok((mut stream, _peer)) = listener.accept().await else {
             return;
         };
-        let Some(head) = read_request_head(&mut stream).await else {
+        let Some(path) = request_path(&mut stream).await else {
             continue;
         };
-        let path = head
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .unwrap_or_default()
-            .to_owned();
         paths.lock().unwrap().push(path.clone());
         let response = if path == "/redirected" {
             page_response()
@@ -211,19 +205,11 @@ async fn serve_redirects(listener: TcpListener, paths: Arc<Mutex<Vec<String>>>) 
     }
 }
 
-async fn read_request_head(stream: &mut TcpStream) -> Option<String> {
-    let mut received = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    loop {
-        if let Some(position) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
-            return String::from_utf8(received[..position].to_vec()).ok();
-        }
-        let read = stream.read(&mut chunk).await.ok()?;
-        if read == 0 {
-            return None;
-        }
-        received.extend_from_slice(&chunk[..read]);
-    }
+async fn request_path(stream: &mut TcpStream) -> Option<String> {
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).await.ok()?;
+    line.split_whitespace().nth(1).map(str::to_owned)
 }
 
 fn page_response() -> String {
