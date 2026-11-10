@@ -70,6 +70,7 @@ pub(crate) struct MessageFlagsSpec {
     pub(crate) turn_off_message_logging: bool,
     #[serde(default)]
     pub(crate) redacts_messages_itself: bool,
+    pub(crate) message_logging: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -145,13 +146,10 @@ pub(crate) struct HandlerProbe {
     pub(crate) session_id: Option<String>,
     #[serde(default)]
     pub(crate) request_correlation: bool,
-    // the request's standard_callback_dynamic_params
     #[serde(default)]
     pub(crate) dynamic_params: BTreeMap<String, Value>,
-    // litellm.turn_off_message_logging
     #[serde(default)]
     pub(crate) global_redaction: Option<bool>,
-    // the stream assembler declines every result that is not a chunk
     #[serde(default)]
     pub(crate) assembler_returns_none: Option<bool>,
 }

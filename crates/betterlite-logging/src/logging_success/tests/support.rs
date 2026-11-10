@@ -96,6 +96,7 @@ pub(super) struct FakeLogger {
     pub name: String,
     pub calls: Arc<CallLog>,
     pub flags: MessageFlags,
+    pub message_logging: bool,
     pub fail: bool,
 }
 
@@ -105,6 +106,7 @@ impl FakeLogger {
             name: name.to_owned(),
             calls: Arc::clone(calls),
             flags: MessageFlags::default(),
+            message_logging: true,
             fail: false,
         }
     }
@@ -139,6 +141,10 @@ impl CallbackLogger for FakeLogger {
 
     fn redacts_messages_itself(&self) -> bool {
         self.flags.redacts_messages_itself
+    }
+
+    fn message_logging(&self) -> bool {
+        self.message_logging
     }
 
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {

@@ -414,10 +414,13 @@ def _loggers(specs: list[Fields]) -> tuple[Loggers, Records]:
         name = _text(spec.get("name"), "loggers[].name")
         turn_off = _boolean(spec.get("turn_off_message_logging", False), "turn_off_message_logging")
         redacts = _boolean(spec.get("redacts_messages_itself", False), "redacts_messages_itself")
+        message_logging = _boolean(spec.get("message_logging", True), "message_logging")
         fail = _boolean(spec.get("fail", False), "loggers[].fail")
         calls: list[Fields] = []
         logger_class = _logger_class(name, redacts=redacts, fail=fail, records=calls)
-        loggers.append(logger_class(turn_off_message_logging=turn_off))
+        loggers.append(
+            logger_class(turn_off_message_logging=turn_off, message_logging=message_logging)
+        )
         records.append(calls)
     return loggers, records
 

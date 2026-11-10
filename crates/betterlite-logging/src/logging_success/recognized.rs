@@ -7,7 +7,6 @@ pub const MCP_TOOL_CALL_TYPE: &str = "call_mcp_tool";
 const VECTOR_STORE_SEARCH_OBJECT: &str = "vector_store.search_results.page";
 const SEARCH_OBJECT: &str = "search";
 
-// LiteLLM's isinstance checklist decides whether the success body builds a standard payload for a result
 #[must_use]
 pub fn is_recognized_call_type(result: &SuccessResult, call_type: &str) -> bool {
     if call_type == MCP_TOOL_CALL_TYPE {
@@ -26,7 +25,6 @@ pub fn is_recognized_call_type(result: &SuccessResult, call_type: &str) -> bool 
     }
 }
 
-// Only interaction creation is billable; the create call type is the recognition half of that rule
 #[must_use]
 pub fn is_interactions_create(call_type: &str) -> bool {
     matches!(

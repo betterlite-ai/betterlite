@@ -11,15 +11,16 @@ use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_success::payload_state::standard_logging_object;
 use crate::logging_success::types::SuccessResult;
 
-const SECRET_MESSAGES: &str = r#"[{"role": "system", "content": "secret prompt"}]"#;
-const SECRET_RESPONSE: &str = r#"{"id": "r1", "choices": [{"message": {"role": "assistant", "content": "secret answer", "audio": {"id": "a"}, "tool_calls": [{"function": {"name": "f", "arguments": "{\"k\": 1}"}}]}}]}"#;
-const REDACTED_MESSAGES: &str = r#"[{"role": "user", "content": "redacted-by-litellm"}]"#;
-const REDACTED_RESPONSE: &str = r#"{"id": "r1", "choices": [{"message": {"role": "assistant", "content": "redacted-by-litellm", "audio": null, "tool_calls": [{"function": {"name": "f", "arguments": "redacted-by-litellm"}}]}}]}"#;
+pub(super) const SECRET_MESSAGES: &str = r#"[{"role": "system", "content": "secret prompt"}]"#;
+pub(super) const SECRET_RESPONSE: &str = r#"{"id": "r1", "choices": [{"message": {"role": "assistant", "content": "secret answer", "audio": {"id": "a"}, "tool_calls": [{"function": {"name": "f", "arguments": "{\"k\": 1}"}}]}}]}"#;
+pub(super) const REDACTED_MESSAGES: &str =
+    r#"[{"role": "user", "content": "redacted-by-litellm"}]"#;
+pub(super) const REDACTED_RESPONSE: &str = r#"{"id": "r1", "choices": [{"message": {"role": "assistant", "content": "redacted-by-litellm", "audio": null, "tool_calls": [{"function": {"name": "f", "arguments": "redacted-by-litellm"}}]}}]}"#;
 const ENABLE: &str = "litellm-enable-message-redaction";
 const X_ENABLE: &str = "x-litellm-enable-message-redaction";
 const DISABLE: &str = "litellm-disable-message-redaction";
 
-fn secret_payload() -> StandardLoggingPayload {
+pub(super) fn secret_payload() -> StandardLoggingPayload {
     let mut secret = payload();
     secret.messages = Some(parse(SECRET_MESSAGES));
     secret.response = Some(parse(SECRET_RESPONSE));

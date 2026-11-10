@@ -7,14 +7,12 @@ use thiserror::Error;
 use crate::callback_logger::event::GuardrailRequestSnapshot;
 use crate::fields::payload::StandardLoggingPayload;
 
-// the call type LiteLLM reserves for pass-through routes, whose success logging is always async
 pub const PASS_THROUGH_CALL_TYPE: &str = "pass_through_endpoint";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SuccessResult {
     Chat(Json),
     Embeddings(Json),
-    // one streamed chunk; the assembled response is not ready yet
     Chunk(Json),
     // a result betterlite does not model, logged only when LiteLLM accepts it as a dict or list
     Other(Json),
@@ -46,7 +44,6 @@ pub struct SuccessRequest {
     pub end_time: Option<DateTime<FixedOffset>>,
     pub cache_hit: Option<bool>,
     pub prefer_async_handlers: bool,
-    // the standard_logging_object kwarg a caller built before dispatch
     pub standard_logging_object: Option<StandardLoggingPayload>,
     pub guardrail_snapshot: Option<Arc<GuardrailRequestSnapshot>>,
 }

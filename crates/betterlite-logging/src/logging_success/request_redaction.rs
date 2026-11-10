@@ -79,7 +79,6 @@ pub(super) fn redact_stored_payload(state: &mut LoggingState) {
     }
 }
 
-// _redact_standard_logging_object
 pub(super) fn redact_payload(payload: &mut StandardLoggingPayload) {
     payload.classifier_input = None;
     payload.originating_request_masked = None;

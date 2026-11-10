@@ -86,6 +86,10 @@ impl CallbackLogger for RecordingLogger {
         self.flags.redacts_messages_itself
     }
 
+    fn message_logging(&self) -> bool {
+        self.flags.message_logging.unwrap_or(true)
+    }
+
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
         self.record("log_success_event", event)
     }

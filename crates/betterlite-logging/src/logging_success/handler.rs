@@ -62,7 +62,6 @@ pub fn success_handler(
     if let Some(plan) = pending {
         run_sync_callbacks(handler, state, &plan);
     }
-    // LiteLLM restores the caller's trace and session ids once this call's own logging is done
     restore_correlation_context(state, correlation);
 }
 
@@ -117,7 +116,13 @@ fn begin(
     };
     let callbacks =
         get_combined_callback_list(dynamic.as_deref(), &global_loggers(handler.registry));
-    let redact = should_redact_message_logging(state, handler.privacy);
+    // the async hook loop redacts the shared payload for every logger once one has message_logging off
+    let opted_out = mode == SuccessMode::Async
+        && callbacks
+            .iter()
+            .filter_map(callback_logger)
+            .any(|logger| !logger.message_logging());
+    let redact = opted_out || should_redact_message_logging(state, handler.privacy);
     if redact {
         redact_stored_payload(state);
     }
