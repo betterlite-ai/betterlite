@@ -8,6 +8,14 @@ pub enum BudgetScope {
     Team,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct BudgetSlot<'slot> {
+    pub scope: BudgetScope,
+    pub entity_id: &'slot str,
+    pub budget_model: &'slot str,
+    pub budget_duration: &'slot str,
+}
+
 fn scope_prefix(scope: BudgetScope, names: [&'static str; 4]) -> &'static str {
     let [key, user, end_user, team] = names;
     match scope {
@@ -36,14 +44,9 @@ pub fn model_budget_spend_cache_key(
 
 #[must_use]
 // ast-grep-ignore: no-long-names
-pub fn model_budget_start_time_cache_key(
-    scope: BudgetScope,
-    entity_id: &str,
-    budget_model: &str,
-    budget_duration: &str,
-) -> String {
+pub fn model_budget_start_time_cache_key(slot: &BudgetSlot<'_>) -> String {
     let prefix = scope_prefix(
-        scope,
+        slot.scope,
         [
             "virtual_key_budget_start_time",
             "user_model_budget_start_time",
@@ -51,7 +54,13 @@ pub fn model_budget_start_time_cache_key(
             "team_model_budget_start_time",
         ],
     );
-    [prefix, entity_id, budget_model, budget_duration].join(":")
+    [
+        prefix,
+        slot.entity_id,
+        slot.budget_model,
+        slot.budget_duration,
+    ]
+    .join(":")
 }
 
 #[must_use]

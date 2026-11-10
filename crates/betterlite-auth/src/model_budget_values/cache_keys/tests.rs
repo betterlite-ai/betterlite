@@ -2,7 +2,7 @@
 use rstest::rstest;
 
 use super::{
-    BudgetScope, batch_charged_once_marker_key, model_budget_spend_cache_key,
+    BudgetScope, BudgetSlot, batch_charged_once_marker_key, model_budget_spend_cache_key,
     model_budget_start_time_cache_key,
 };
 
@@ -27,10 +27,13 @@ fn cache_keys_for_start_times_use_the_scope_prefix(
     #[case] scope: BudgetScope,
     #[case] expected: &str,
 ) {
-    assert_eq!(
-        model_budget_start_time_cache_key(scope, "id-1", "gpt-4o", "30d"),
-        expected
-    );
+    let slot = BudgetSlot {
+        scope,
+        entity_id: "id-1",
+        budget_model: "gpt-4o",
+        budget_duration: "30d",
+    };
+    assert_eq!(model_budget_start_time_cache_key(&slot), expected);
 }
 
 #[test]
@@ -47,8 +50,14 @@ fn spend_keys_order_the_entity_before_the_model_before_the_duration() {
         model_budget_spend_cache_key(BudgetScope::Team, "entity", "model", "duration"),
         "team_model_spend:entity:model:duration"
     );
+    let slot = BudgetSlot {
+        scope: BudgetScope::Team,
+        entity_id: "entity",
+        budget_model: "model",
+        budget_duration: "duration",
+    };
     assert_eq!(
-        model_budget_start_time_cache_key(BudgetScope::Team, "entity", "model", "duration"),
+        model_budget_start_time_cache_key(&slot),
         "team_model_budget_start_time:entity:model:duration"
     );
 }
