@@ -132,11 +132,11 @@ fn tuned_answers_require_one_nested_vector(
     VertexTextEmbeddingError::MissingField { field: "values" }
 )]
 #[case::values_not_list(
-    r#"{"predictions": [{"embeddings": {"values": "no"}}]}"#,
+    r#"{"predictions": [{"embeddings": {"values": "no", "statistics": {"token_count": 1}}}]}"#,
     VertexTextEmbeddingError::NotNumbers { field: "values" }
 )]
 #[case::values_not_numbers(
-    r#"{"predictions": [{"embeddings": {"values": [true]}}]}"#,
+    r#"{"predictions": [{"embeddings": {"values": [true], "statistics": {"token_count": 1}}}]}"#,
     VertexTextEmbeddingError::NotNumbers { field: "values" }
 )]
 #[case::statistics_missing(
