@@ -63,33 +63,6 @@ impl AlephAlphaAdapter {
         if request.stream {
             return Ok(CompletionOutcome::Stream(decode_lines(response)));
         }
-        self.reply(input, &request, response, log).await
-    }
-
-    async fn send(&self, request: &CompletionRequest) -> Result<StreamResponse, AlephAlphaError> {
-        let body = serde_json::to_vec(&request.body)
-            .map_err(|source| AlephAlphaError::Encode { source })?;
-        let outbound = OutboundRequest {
-            method: Method::POST,
-            url: request.url.clone(),
-            query: Vec::new(),
-            headers: request.headers.clone(),
-            body: RequestBody::Json(body),
-            deadline: self.timeout,
-        };
-        self.client
-            .send(outbound)
-            .await
-            .map_err(|source| AlephAlphaError::Transport { source })
-    }
-
-    async fn reply(
-        &self,
-        input: &CompletionInput<'_>,
-        request: &CompletionRequest,
-        response: StreamResponse,
-        log: &mut (dyn FnMut(CallPhase<'_>) + Send),
-    ) -> Result<CompletionOutcome, AlephAlphaError> {
         let upstream = response
             .buffered(self.client.limits.body_bytes)
             .await
@@ -109,5 +82,22 @@ impl AlephAlphaAdapter {
             model: input.model.to_owned(),
             usage,
         })))
+    }
+
+    async fn send(&self, request: &CompletionRequest) -> Result<StreamResponse, AlephAlphaError> {
+        let body = serde_json::to_vec(&request.body)
+            .map_err(|source| AlephAlphaError::Encode { source })?;
+        let outbound = OutboundRequest {
+            method: Method::POST,
+            url: request.url.clone(),
+            query: Vec::new(),
+            headers: request.headers.clone(),
+            body: RequestBody::Json(body),
+            deadline: self.timeout,
+        };
+        self.client
+            .send(outbound)
+            .await
+            .map_err(|source| AlephAlphaError::Transport { source })
     }
 }
