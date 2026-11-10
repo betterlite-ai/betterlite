@@ -195,19 +195,15 @@ pub(super) fn attribute_at<'envelope>(
 
 #[derive(Clone)]
 pub(super) struct ScriptedClock {
-    values: Arc<Mutex<VecDeque<Duration>>>,
-    fallback: Duration,
+    values: Arc<Mutex<VecDeque<f64>>>,
+    fallback: f64,
 }
 
 impl ScriptedClock {
     pub(super) fn new(seconds: &[f64]) -> Self {
-        let values: VecDeque<Duration> = seconds
-            .iter()
-            .map(|value| Duration::try_from_secs_f64(*value).expect("a scripted clock instant"))
-            .collect();
-        let fallback = values.back().copied().unwrap_or_default();
+        let fallback = seconds.last().copied().unwrap_or_default();
         Self {
-            values: Arc::new(Mutex::new(values)),
+            values: Arc::new(Mutex::new(seconds.iter().copied().collect())),
             fallback,
         }
     }
@@ -216,11 +212,12 @@ impl ScriptedClock {
         let values = Arc::clone(&self.values);
         let fallback = self.fallback;
         Arc::new(move || {
-            values
+            let seconds = values
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .pop_front()
-                .unwrap_or(fallback)
+                .unwrap_or(fallback);
+            Duration::try_from_secs_f64(seconds).expect("a scripted clock instant")
         })
     }
 }
@@ -238,7 +235,6 @@ pub(super) struct Recorded {
     pub(super) body: Vec<u8>,
 }
 
-#[derive(Default)]
 pub(super) struct FakeTransport {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<Recorded>>,
@@ -247,16 +243,6 @@ pub(super) struct FakeTransport {
 }
 
 impl FakeTransport {
-    pub(super) fn new(replies: &[Reply]) -> Self {
-        let transport = Self::default();
-        transport
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend(replies.iter().copied());
-        transport
-    }
-
     pub(super) fn attach(&self, logger: &Arc<NewRelicMetricsLogger>) {
         *self.attached.lock().unwrap_or_else(PoisonError::into_inner) =
             Some(Arc::downgrade(logger));
@@ -379,7 +365,12 @@ impl Fixture {
 
     pub(super) fn new_with_replies(replies: &[Reply]) -> Self {
         Self {
-            transport: Arc::new(FakeTransport::new(replies)),
+            transport: Arc::new(FakeTransport {
+                replies: Mutex::new(replies.iter().copied().collect()),
+                requests: Mutex::new(Vec::new()),
+                attached: Mutex::new(None),
+                during_send: Mutex::new(None),
+            }),
             clock: ScriptedClock::new(&[1_000.0_f64]),
             sleeper: Arc::new(RecordingSleeper::default()),
             batch_size: MAX_BATCH_SIZE,
