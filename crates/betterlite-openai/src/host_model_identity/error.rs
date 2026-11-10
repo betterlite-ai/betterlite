@@ -1,3 +1,5 @@
+use std::num::TryFromIntError;
+
 use betterlite_models::provider_defaults_a::url::UrlError;
 use thiserror::Error;
 
@@ -14,6 +16,12 @@ pub enum HostModelIdentityError {
         host: &'static str,
         #[source]
         source: serde_json::Error,
+    },
+    #[error("the {host} reply has no created time and the clock reading does not fit one")]
+    Clock {
+        host: &'static str,
+        #[source]
+        source: TryFromIntError,
     },
     #[error("the {host} reply is not a chat completion object")]
     Malformed { host: &'static str },
@@ -32,28 +40,20 @@ pub enum HostModelIdentityError {
         source: UrlError,
     },
     // LiteLLM's Clarifai transform rethrows a json failure as the provider's OpenAIError, headers and all
-    #[error("{message}")]
-    Api {
+    #[error("the Clarifai response body is not valid JSON")]
+    ClarifaiJson {
         status_code: u16,
         headers: Headers,
-        message: String,
+        #[source]
+        source: serde_json::Error,
     },
 }
 
+// the OpenAIError both get_error_class methods build, with the response headers copied in
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct HostApiError {
     pub status_code: u16,
     pub message: String,
     pub headers: Headers,
-}
-
-// get_error_class builds the native OpenAIError for both hosts and copies the response headers into it
-#[must_use]
-pub fn get_error_class(message: &str, status_code: u16, headers: &Headers) -> HostApiError {
-    HostApiError {
-        status_code,
-        message: message.to_owned(),
-        headers: headers.clone(),
-    }
 }

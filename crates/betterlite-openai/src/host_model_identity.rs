@@ -1,13 +1,19 @@
 pub mod error;
 
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_logging::logging_pre_post::args::AdditionalArgs;
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::provider_defaults_a::url::{parse, unparse};
-use secrecy::SecretString;
+use indexmap::IndexMap;
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::chat::response::ChatResponse;
-use crate::openai_base_config::{Headers, Object};
+use crate::compatible_wire::LogInput;
+use crate::openai_base_config::Headers;
 
 use self::error::HostModelIdentityError;
 use self::reply::response_from_wire;
@@ -31,18 +37,11 @@ pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &[
     "stream_options",
 ];
 
-#[derive(Debug, Clone, Copy)]
-pub struct PostCall<'request> {
-    pub input: &'request Json,
-    pub api_key: Option<&'request SecretString>,
-    pub original_response: &'request str,
-    pub complete_input_dict: &'request Object,
-    pub status_code: u16,
-    pub headers: &'request Headers,
-}
-
-pub trait PostCallLogger {
-    fn post_call(&mut self, call: &PostCall<'_>);
+// the id and the time ModelResponse invents for a reply that has none
+#[derive(Clone, Copy)]
+pub struct ReplyDefaults {
+    pub identifier: fn() -> Uuid,
+    pub clock: fn() -> i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +67,7 @@ impl HostReplyMode<'_> {
 pub fn decode_host_named_reply(
     bytes: &[u8],
     mode: HostReplyMode<'_>,
+    defaults: ReplyDefaults,
 ) -> Result<ChatResponse, HostModelIdentityError> {
     let host = mode.host();
     if bytes.len() > MAX_REPLY_BYTES {
@@ -85,11 +85,7 @@ pub fn decode_host_named_reply(
         convert_single_tool_calls(&mut reply).ok_or(HostModelIdentityError::Malformed { host })?;
     }
     let model_is_absent = reply.get("model").is_none_or(Value::is_null);
-    let mut response =
-        response_from_wire(reply).map_err(|cause| HostModelIdentityError::Reply {
-            host,
-            source: cause,
-        })?;
+    let mut response = response_from_wire(reply, host, defaults)?;
     match mode {
         HostReplyMode::Clarifai { request_model } => {
             if !model_is_absent {
@@ -149,31 +145,53 @@ fn wrap_json_failure(
     headers: Headers,
 ) -> HostModelIdentityError {
     match failure {
-        HostModelIdentityError::Json { source, .. } => HostModelIdentityError::Api {
+        HostModelIdentityError::Json { source, .. } => HostModelIdentityError::ClarifaiJson {
             status_code,
             headers,
-            message: format!("the Clarifai response body is not valid JSON: {source}"),
+            source,
         },
         unchanged @ (HostModelIdentityError::TooLarge
         | HostModelIdentityError::Malformed { .. }
         | HostModelIdentityError::Reply { .. }
+        | HostModelIdentityError::Clock { .. }
         | HostModelIdentityError::ModelName { .. }
         | HostModelIdentityError::ApiBase { .. }
-        | HostModelIdentityError::Api { .. }) => unchanged,
+        | HostModelIdentityError::ClarifaiJson { .. }) => unchanged,
     }
+}
+
+pub struct HostReply<'call> {
+    pub mode: HostReplyMode<'call>,
+    pub defaults: ReplyDefaults,
+    pub status_code: u16,
+    pub headers: &'call Headers,
 }
 
 // both pinned transforms log the raw text before parsing; only Clarifai wraps a json failure
 pub fn process_host_response(
-    mode: HostReplyMode<'_>,
-    call: PostCall<'_>,
-    logger: &mut dyn PostCallLogger,
+    raw: &str,
+    reply: &HostReply<'_>,
+    input: LogInput,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
 ) -> Result<ChatResponse, HostModelIdentityError> {
-    logger.post_call(&call);
-    let decoded = decode_host_named_reply(call.original_response.as_bytes(), mode);
-    match mode {
+    let call = PostCall {
+        original_response: Json::Text(raw.to_owned()),
+        input: input.messages,
+        additional_args: AdditionalArgs {
+            api_base: None,
+            headers: None,
+            complete_input_dict: Some(input.data),
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::new(),
+        },
+    };
+    post_call(state, &call, env);
+    let decoded = decode_host_named_reply(raw.as_bytes(), reply.mode, reply.defaults);
+    match reply.mode {
         HostReplyMode::Clarifai { .. } => decoded
-            .map_err(|error| wrap_json_failure(error, call.status_code, call.headers.clone())),
+            .map_err(|error| wrap_json_failure(error, reply.status_code, reply.headers.clone())),
         HostReplyMode::Compactifai { .. } => decoded,
     }
 }

@@ -44,7 +44,6 @@ class Log:
             complete = cast(Object, extra).get("complete_input_dict")
         self.events.append([
             cast(Json, kwargs.get("input")),
-            cast(Json, kwargs.get("api_key")),
             cast(Json, kwargs.get("original_response")),
             complete,
         ])
@@ -180,7 +179,7 @@ def reply(call: Object) -> Json:
             optional_params={},
             litellm_params={},
             encoding=None,
-            api_key=opt(call, "api_key"),
+            api_key=None,
             json_mode=bool(call.get("json_mode", False)),
         )
     except Exception as error:  # noqa: BLE001 - the error record is what the helper compares
@@ -195,5 +194,11 @@ def run(input_value: dict[str, Json]) -> Json:
     results: list[Json] = []
     for call in cast("list[Json]", calls):
         fields = obj(call)
-        results.append(reply(fields) if text(fields, "kind") == "reply" else identity(fields))
+        kind = text(fields, "kind")
+        if kind == "reply":
+            results.append(reply(fields))
+        elif kind == "identity":
+            results.append(identity(fields))
+        else:
+            raise ValueError(f"unknown call kind {kind}")
     return results

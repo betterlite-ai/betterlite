@@ -10,7 +10,6 @@ call:
         headers: {x-request-id: req-1, x-trace: trace-1}
         model: user.app.model
         messages: [{role: user, content: hello}]
-        api_key: request-key
         request_data: {model: user.app.model, messages: []}
       - kind: reply
         host: compactifai

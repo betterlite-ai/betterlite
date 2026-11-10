@@ -3,12 +3,13 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::ReplyDefaults;
+use super::error::HostModelIdentityError;
 use crate::chat::ToolCall;
 use crate::chat::choice_finish_reason;
 use crate::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
-use crate::compatible_wire::{NEW_ID, system_clock};
 
 #[derive(Deserialize)]
 struct ReplyWire {
@@ -49,14 +50,24 @@ struct UsageWire {
 }
 
 // ModelResponse(**body): a null or absent id, created and model take their defaults, and Usage turns a null count into zero
-pub(super) fn response_from_wire(reply: Value) -> Result<ChatResponse, serde_json::Error> {
-    let wire: ReplyWire = serde_json::from_value(reply)?;
+pub(super) fn response_from_wire(
+    reply: Value,
+    host: &'static str,
+    defaults: ReplyDefaults,
+) -> Result<ChatResponse, HostModelIdentityError> {
+    let wire: ReplyWire = serde_json::from_value(reply)
+        .map_err(|source| HostModelIdentityError::Reply { host, source })?;
+    let created = match wire.created {
+        Some(created) => created,
+        None => u64::try_from((defaults.clock)())
+            .map_err(|source| HostModelIdentityError::Clock { host, source })?,
+    };
     Ok(ChatResponse {
-        id: wire.id.unwrap_or_else(|| format!("chatcmpl-{}", NEW_ID())),
+        id: wire
+            .id
+            .unwrap_or_else(|| format!("chatcmpl-{}", (defaults.identifier)())),
         object: String::from("chat.completion"),
-        created: wire
-            .created
-            .unwrap_or_else(|| u64::try_from(system_clock()).unwrap_or_default()),
+        created,
         model: wire.model.unwrap_or_default(),
         choices: wire.choices.map_or_else(
             || {

@@ -14,7 +14,6 @@ call:
         body: '{"id":"reply-1","created":1700000003,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"lookup","arguments":"{\"city\":\"Oslo\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}'
         model: user.app.model
         messages: [{role: user, content: weather}]
-        api_key: request-key
         json_mode: true
       - kind: reply
         host: compactifai

@@ -1,54 +1,112 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
+use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
+use uuid::Uuid;
 
-use super::error::{HostModelIdentityError, get_error_class};
+use super::error::HostModelIdentityError;
 use super::{
-    HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, SUPPORTED_OPENAI_PARAMS,
+    HostReply, HostReplyMode, MAX_REPLY_BYTES, ReplyDefaults, SUPPORTED_OPENAI_PARAMS,
     clarifai_base_model, clarifai_request_model, datarobot_api_base, decode_host_named_reply,
     process_host_response,
 };
 use crate::chat::response::{ChatResponse, ChatUsage};
-use crate::openai_base_config::{Headers, Object};
+use crate::compatible_wire::LogInput;
+use crate::openai_base_config::Headers;
+
+const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
-fn object(fields: Vec<(&str, Value)>) -> Value {
-    Value::Object(Object::from_iter(
-        fields
-            .into_iter()
-            .map(|(name, value)| (name.to_owned(), value)),
-    ))
+fn fixed_id() -> Uuid {
+    Uuid::nil()
 }
 
-#[derive(Default)]
-struct Recorder(Vec<Value>);
+fn fixed_clock() -> i64 {
+    1_700_000_000
+}
 
-impl PostCallLogger for Recorder {
-    fn post_call(&mut self, call: &PostCall<'_>) {
-        let api_key = call.api_key.map_or(Value::Null, |key| {
-            Value::String(key.expose_secret().to_owned())
-        });
-        self.0.push(object(vec![
-            ("input", serde_json::to_value(call.input).unwrap()),
-            ("api_key", api_key),
-            (
-                "original_response",
-                Value::String(call.original_response.to_owned()),
-            ),
-            (
-                "complete_input_dict",
-                Value::Object(call.complete_input_dict.clone()),
-            ),
-        ]));
+fn negative_clock() -> i64 {
+    -1
+}
+
+const DEFAULTS: ReplyDefaults = ReplyDefaults {
+    identifier: fixed_id,
+    clock: fixed_clock,
+};
+
+struct Sink(Mutex<Vec<LogRecord>>);
+
+impl LogSink for Sink {
+    fn emit(&self, record: LogRecord) {
+        self.0.lock().unwrap().push(record);
+    }
+}
+
+fn logged<T, A>(action: A) -> (T, LoggingState)
+where
+    A: FnOnce(&mut LoggingState, &PrePostEnv<'_>) -> T,
+{
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || "trace".to_owned(),
+        Duration::default,
+    )
+    .unwrap();
+    let sink = Sink(Mutex::new(Vec::new()));
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
+    };
+    let result = action(&mut state, &env);
+    (result, state)
+}
+
+fn log_input(messages: &str, data: &[(&str, &str)]) -> LogInput {
+    LogInput {
+        messages: serde_json::from_str(messages).unwrap(),
+        data: RawBody::Object(
+            data.iter()
+                .map(|(name, text)| ((*name).to_owned(), Json::Text((*text).to_owned())))
+                .collect::<IndexMap<String, Json>>(),
+        ),
     }
 }
 
@@ -59,16 +117,8 @@ fn headers(pairs: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn messages(value: Value) -> Json {
-    serde_json::from_value(value).unwrap()
-}
-
-fn secret(text: &str) -> SecretString {
-    SecretString::from(text.to_owned())
-}
-
 fn decode(bytes: &[u8], mode: HostReplyMode<'_>) -> Result<ChatResponse, HostModelIdentityError> {
-    decode_host_named_reply(bytes, mode)
+    decode_host_named_reply(bytes, mode, DEFAULTS)
 }
 
 fn clarifai_mode() -> HostReplyMode<'static> {
@@ -333,46 +383,57 @@ fn a_reply_over_the_transport_limit_is_refused() {
     assert!(matches!(error, HostModelIdentityError::TooLarge));
 }
 
-fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
-    let body = "not json at all";
+fn failing_clarifai_reply() -> (LoggingState, Headers, HostModelIdentityError) {
     let supplied = headers(&[("x-request-id", "req-1"), ("x-trace", "trace-1")]);
-    let key = secret("request-key");
-    let input = messages(value(r#"[{"role":"user","content":"hello"}]"#));
-    let request_data =
-        Object::from_iter([(String::from("model"), Value::String(String::from("m")))]);
-    let mut recorder = Recorder::default();
-    let reply = PostCall {
-        input: &input,
-        api_key: Some(&key),
-        original_response: body,
-        complete_input_dict: &request_data,
+    let reply = HostReply {
+        mode: clarifai_mode(),
+        defaults: DEFAULTS,
         status_code: 400,
         headers: &supplied,
     };
-    let error = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap_err();
-    (recorder, supplied, error)
+    let (outcome, state) = logged(|state, env| {
+        process_host_response(
+            "not json at all",
+            &reply,
+            log_input(r#"[{"role":"user","content":"hello"}]"#, &[("model", "m")]),
+            state,
+            env,
+        )
+    });
+    (state, supplied, outcome.unwrap_err())
 }
 
 #[test]
 fn clarifai_logs_the_raw_reply_before_it_parses() {
-    let (recorder, _supplied, _error) = failing_clarifai_reply();
-    assert_eq!(recorder.0.len(), 1);
-    assert_eq!(recorder.0[0]["original_response"], "not json at all");
-    assert_eq!(recorder.0[0]["api_key"], "request-key");
+    let (state, _supplied, _error) = failing_clarifai_reply();
+    let details = &state.model_call_details;
     assert_eq!(
-        recorder.0[0]["input"],
+        details["original_response"],
+        Json::Text("not json at all".to_owned())
+    );
+    assert_eq!(
+        serde_json::to_value(&details["input"]).unwrap(),
         value(r#"[{"role":"user","content":"hello"}]"#)
     );
     assert_eq!(
-        recorder.0[0]["complete_input_dict"],
-        value(r#"{"model":"m"}"#)
+        serde_json::to_value(&details["additional_args"]).unwrap(),
+        value(r#"{"complete_input_dict":{"model":"m"}}"#)
+    );
+    assert_eq!(
+        details["log_event_type"],
+        Json::Text("post_api_call".to_owned())
     );
 }
 
 #[test]
 fn a_clarifai_json_failure_carries_the_status_and_headers() {
-    let (_recorder, supplied, error) = failing_clarifai_reply();
-    let HostModelIdentityError::Api {
+    let (_state, supplied, error) = failing_clarifai_reply();
+    assert_eq!(
+        error.to_string(),
+        "the Clarifai response body is not valid JSON"
+    );
+    assert!(error.source().is_some());
+    let HostModelIdentityError::ClarifaiJson {
         status_code,
         headers,
         ..
@@ -387,42 +448,68 @@ fn a_clarifai_json_failure_carries_the_status_and_headers() {
 #[test]
 fn compactifai_logs_the_raw_reply_before_its_json_failure() {
     let body = r#"{"choices": [}"#;
-    let key = secret("request-key");
-    let input = messages(value("[]"));
-    let mut recorder = Recorder::default();
-    let reply = PostCall {
-        input: &input,
-        api_key: Some(&key),
-        original_response: body,
-        complete_input_dict: &Object::new(),
+    let reply = HostReply {
+        mode: compactifai_mode(false),
+        defaults: DEFAULTS,
         status_code: 200,
         headers: &Headers::new(),
     };
-    let error = process_host_response(compactifai_mode(false), reply, &mut recorder).unwrap_err();
-    assert_eq!(recorder.0.len(), 1);
-    assert_eq!(recorder.0[0]["original_response"], body);
-    assert!(matches!(error, HostModelIdentityError::Json { .. }));
+    let (outcome, state) =
+        logged(|state, env| process_host_response(body, &reply, log_input("[]", &[]), state, env));
+    assert_eq!(
+        state.model_call_details["original_response"],
+        Json::Text(body.to_owned())
+    );
+    assert!(matches!(
+        outcome.unwrap_err(),
+        HostModelIdentityError::Json { .. }
+    ));
 }
 
 #[test]
 fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
     let body = reply_body("\"upstream\"", PLAIN, USAGE);
-    let key = secret("request-key");
-    let input = messages(value(r#"[{"role":"user","content":"hello"}]"#));
-    let mut recorder = Recorder::default();
-    let reply = PostCall {
-        input: &input,
-        api_key: Some(&key),
-        original_response: &body,
-        complete_input_dict: &Object::new(),
+    let reply = HostReply {
+        mode: clarifai_mode(),
+        defaults: DEFAULTS,
         status_code: 200,
         headers: &Headers::new(),
     };
-    let response = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap();
-    assert_eq!(recorder.0.len(), 1);
-    assert_eq!(recorder.0[0]["original_response"], body);
+    let (outcome, state) =
+        logged(|state, env| process_host_response(&body, &reply, log_input("[]", &[]), state, env));
+    let response = outcome.unwrap();
+    assert_eq!(
+        state.model_call_details["original_response"],
+        Json::Text(body)
+    );
     assert_eq!(response.model, "clarifai/user.app.model");
     assert_eq!(response.choices[0].message.content.as_deref(), Some("hi"));
+}
+
+#[test]
+fn a_reply_without_id_or_created_takes_the_injected_defaults() {
+    let body = format!(r#"{{"choices":[{{"index":0,"message":{PLAIN}}}]}}"#);
+    let response = decode(body.as_bytes(), clarifai_mode()).unwrap();
+    assert_eq!(response.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
+    assert_eq!(response.created, 1_700_000_000);
+    let given = decode(
+        reply_body("\"m\"", PLAIN, USAGE).as_bytes(),
+        clarifai_mode(),
+    )
+    .unwrap();
+    assert_eq!(given.id, "reply");
+    assert_eq!(given.created, 7);
+}
+
+#[test]
+fn a_clock_reading_below_zero_is_an_error() {
+    let body = format!(r#"{{"choices":[{{"index":0,"message":{PLAIN}}}]}}"#);
+    let defaults = ReplyDefaults {
+        identifier: fixed_id,
+        clock: negative_clock,
+    };
+    let error = decode_host_named_reply(body.as_bytes(), clarifai_mode(), defaults).unwrap_err();
+    assert!(matches!(error, HostModelIdentityError::Clock { .. }));
 }
 
 #[rstest]
@@ -460,15 +547,6 @@ fn datarobot_edits_only_the_path(#[case] api_base: &str, #[case] expected: &str)
     assert_eq!(datarobot_api_base(api_base).unwrap(), expected);
 }
 
-#[test]
-fn error_class_keeps_the_status_message_and_headers() {
-    let supplied = headers(&[("x-request-id", "req-2")]);
-    let error = get_error_class("rate limited", 429, &supplied);
-    assert_eq!(error.status_code, 429);
-    assert_eq!(error.message, "rate limited");
-    assert_eq!(error.headers, supplied);
-}
-
 fn corpus_mode(tag: u8) -> HostReplyMode<'static> {
     if tag.is_multiple_of(2) {
         HostReplyMode::Clarifai {
@@ -501,5 +579,5 @@ fn replays_host_named_reply_corpus(#[files("fuzz/corpus/host_named_reply/*")] pa
         name.starts_with(prefix),
         "{name} does not match its mode tag"
     );
-    let _decoded = decode_host_named_reply(body, mode);
+    let _decoded = decode_host_named_reply(body, mode, DEFAULTS);
 }
