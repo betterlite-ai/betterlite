@@ -233,3 +233,15 @@ async fn bedrock_processor_behavior_tests_behavior_a_tool_message_of_another_sha
         ProcessorError::ToolMessageShape { message: 0, .. }
     ));
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_tool_result_file_without_media_is_reported() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages =
+        list(r#"[{"role":"tool","tool_call_id":"call_1","content":[{"type":"file","file":{}}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProcessorError::ToolResult { .. }));
+}

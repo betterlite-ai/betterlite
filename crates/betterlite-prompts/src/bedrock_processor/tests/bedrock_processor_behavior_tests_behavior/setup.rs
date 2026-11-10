@@ -136,3 +136,23 @@ async fn bedrock_processor_behavior_tests_behavior_a_non_boolean_prefix_is_rejec
         ProcessorError::PrefixNotBool { message: 0 }
     ));
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_leading_assistant_gets_an_explicit_continue_user_turn()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let continue_message = json(r#"{"role":"user","content":"go on"}"#);
+    let settings = Settings::default().with_user_continue(&continue_message);
+    let messages = list(r#"[{"role":"assistant","content":"draft"}]"#);
+    let converted = harness.convert(&messages, &settings).await.unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[
+                {"role":"user","content":[{"text":"go on"}]},
+                {"role":"assistant","content":[{"text":"draft"}]},
+                {"role":"user","content":[{"text":"go on"}]}
+            ]"#
+        )
+    );
+}

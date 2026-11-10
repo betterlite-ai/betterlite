@@ -373,3 +373,122 @@ async fn bedrock_processor_behavior_tests_behavior_the_document_hash_ignores_whi
         )
     );
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_file_id_that_is_not_a_string_is_rejected() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":[{"type":"file","file":{"file_id":5}}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProcessorError::FileIdNotText { block: 0 }));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_file_format_that_is_not_a_string_is_rejected()
+{
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{"type":"file","file":{
+            "file_data":"data:application/pdf;base64,JVBERi0=","format":5
+        }}]}]"#,
+    );
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::FileFormatNotText { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_document_source_that_is_not_an_object_is_rejected()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":[{"type":"document","source":5}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::DocumentSourceNotObject { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_document_without_a_media_type_is_rejected() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{"type":"document","source":{
+            "type":"base64","data":"x"
+        }}]}]"#,
+    );
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::DocumentMediaTypeMissing { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_document_media_type_that_is_not_a_string_is_rejected()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{"type":"document","source":{
+            "type":"base64","media_type":5,"data":"x"
+        }}]}]"#,
+    );
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::DocumentMediaTypeNotText { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_document_without_data_is_rejected() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{"type":"document","source":{
+            "type":"base64","media_type":"application/pdf"
+        }}]}]"#,
+    );
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::DocumentDataMissing { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_document_data_that_is_not_a_string_is_rejected()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{"type":"document","source":{
+            "type":"base64","media_type":"application/pdf","data":5
+        }}]}]"#,
+    );
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::DocumentDataNotText { block: 0 }
+    ));
+}

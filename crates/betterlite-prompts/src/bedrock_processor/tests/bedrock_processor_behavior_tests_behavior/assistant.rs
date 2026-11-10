@@ -349,3 +349,73 @@ async fn bedrock_processor_behavior_tests_behavior_a_failed_tool_call_conversion
         .unwrap_err();
     assert!(matches!(error, ProcessorError::ToolInvoke { .. }));
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_an_assistant_string_cache_control_adds_a_cache_point()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages =
+        list(r#"[{"role":"assistant","content":"answer","cache_control":{"type":"ephemeral"}}]"#);
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[{"role":"assistant","content":[
+                {"text":"answer"},
+                {"cachePoint":{"type":"default"}}
+            ]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_blank_assistant_string_adds_no_cache_point() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages =
+        list(r#"[{"role":"assistant","content":" ","cache_control":{"type":"ephemeral"}}]"#);
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(converted, Vec::new());
+    assert_eq!(harness.cache.seen().len(), 0);
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_an_assistant_element_cache_control_adds_a_cache_point()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"assistant","content":[
+            {"type":"text","text":"answer","cache_control":{"type":"ephemeral"}}
+        ]}]"#,
+    );
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[{"role":"assistant","content":[
+                {"text":"answer"},
+                {"cachePoint":{"type":"default"}}
+            ]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_an_assistant_message_without_content_adds_no_block()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"assistant","content":null}]"#);
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(converted, Vec::new());
+}

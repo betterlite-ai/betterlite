@@ -247,3 +247,51 @@ async fn bedrock_processor_behavior_tests_behavior_a_blank_user_text_with_modify
         list(r#"[{"role":"user","content":[{"text":"Please continue."}]}]"#)
     );
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_user_message_without_content_adds_no_block() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":null}]"#);
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(converted, Vec::new());
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_an_unknown_user_block_still_takes_its_cache_point()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"user","content":[{
+            "type":"audio","audio":{"data":"QQ=="},"cache_control":{"type":"ephemeral"}
+        }]}]"#,
+    );
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[{"role":"user","content":[
+                {"cachePoint":{"type":"default"}}
+            ]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_user_image_without_an_image_url_is_rejected() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":[{"type":"image_url"}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::ImageUrlMissing { block: 0 }
+    ));
+}
