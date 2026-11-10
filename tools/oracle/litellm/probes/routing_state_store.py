@@ -212,8 +212,7 @@ async def leak(step: Step, caches: list[Cache], settings: Settings) -> StepOutpu
     try:
         _ = await cache.async_increment(step.key, 1.0, ttl=None)
     except (RedisCircuitBreakerOpenError, RedisConnectionError) as error:
-        password = settings.password
-        leaked = password is not None and password in str(error)
+        leaked = settings.password is not None and settings.password in str(error)
         return StepOutput(kind=step.kind, value=leaked, error=None)
     return StepOutput(kind=step.kind, value=False, error=None)
 

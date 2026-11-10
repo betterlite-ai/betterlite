@@ -1,5 +1,4 @@
 #[derive(Debug, Clone, Default)]
-// The redis client options a router_settings cache_kwargs entry can carry; each one stays unset until a key sets it, and the REDIS_* environment fills the rest.
 pub struct Connection {
     pub db: Option<i64>,
     pub username: Option<String>,

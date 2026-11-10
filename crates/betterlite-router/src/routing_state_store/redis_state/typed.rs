@@ -14,9 +14,11 @@ pub(crate) async fn read_one(
     namespaced: &str,
 ) -> Result<StoreRead, StateStoreError> {
     let client = state.transport.async_client().await?;
+    let mut command = cmd("GET");
+    command.arg(namespaced);
     let reply: Option<Vec<u8>> =
         client
-            .query(cmd("GET").arg(namespaced))
+            .query(&command)
             .await
             .map_err(|source| StateStoreError::Redis {
                 operation: "async_increment",
