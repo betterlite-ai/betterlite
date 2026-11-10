@@ -181,11 +181,11 @@ def failing_projection(calls: list[Json]) -> Callable[..., None]:
     return fail
 
 
-def select_nothing(_model: str, _provider: object) -> None:
-    return None
+def select_nothing(*_args: object, **_kwargs: object) -> None:
+    pass
 
 
-def select_failing(_model: str, _provider: object) -> None:
+def select_failing(*_args: object, **_kwargs: object) -> None:
     raise RuntimeError("fixture selector failure")
 
 
