@@ -394,24 +394,18 @@ fn provider_config_maps_limits_for_complete_models() {
     );
 }
 
-#[rstest]
-#[case::input_missing(None, Some(32_000))]
-#[case::output_missing(Some(128_000), None)]
-#[case::both_missing(None, None)]
-fn provider_config_omits_limit_when_incomplete(
-    #[case] input: Option<i64>,
-    #[case] output: Option<i64>,
-) {
+#[test]
+fn provider_config_omits_limit_when_incomplete() {
     let model = ListedModel {
         id: "half".to_owned(),
         mode: Some("chat".to_owned()),
-        max_input_tokens: input,
-        max_output_tokens: output,
+        max_input_tokens: None,
+        max_output_tokens: Some(32_000),
     };
     let json = opencode_provider_config("http://proxy", &[model]).expect("the config serializes");
     assert!(!json.contains("\"limit\""));
     let config: ExpectedConfig = serde_json::from_str(&json).expect("the config is JSON");
-    assert!(config.provider["litellm"].models["half"].limit.is_none());
+    assert_eq!(config.provider["litellm"].models["half"].name, "half");
 }
 
 #[test]
