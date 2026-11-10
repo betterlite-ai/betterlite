@@ -78,6 +78,9 @@ pub fn decode_host_named_reply(
             host,
             source: cause,
         })?;
+    if !reply.is_object() {
+        return Err(HostModelIdentityError::Malformed { host });
+    }
     if let HostReplyMode::Compactifai {
         json_mode: true, ..
     } = mode
