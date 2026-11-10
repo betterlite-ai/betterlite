@@ -1,0 +1,13 @@
+kind: helper
+name: websocket-stub-new-path
+call:
+  b123:
+    op: inject_websocket_stubs
+    document: {paths: {}}
+    routes:
+      - path: /v1/realtime
+        name: realtime
+        query_params: [{name: model, required: true}]
+env: {}
+compare:
+  ignore: []

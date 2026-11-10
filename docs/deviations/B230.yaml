@@ -1,0 +1,12 @@
+task: B230
+deviations:
+  - what: >-
+      A document block whose source type is not base64, or whose source, media_type or data is
+      missing or of the wrong type, is rejected with a typed ProcessorError. LiteLLM raises a bare
+      ValueError or KeyError from the same lines, which the proxy turns into a 500.
+    why: >-
+      The input is the caller's and invalid, so the 4xx a request path derives from a typed
+      ProcessorError names the bad field instead of reporting a server error. No working setup
+      relies on the 500; the request fails either way. The oracle helper reports the status
+      LiteLLM raises, so no helper case covers this input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4658-L4667
