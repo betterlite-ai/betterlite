@@ -1,0 +1,4 @@
+environment_variables:
+  AZURE_OPERATION_POLLING_TIMEOUT: ''
+litellm_settings:
+  num_retries: 2
