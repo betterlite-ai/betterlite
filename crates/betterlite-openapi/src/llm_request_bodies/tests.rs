@@ -104,36 +104,26 @@ fn document_with_every_llm_path() -> JsonObject {
     ])
 }
 
+fn at<'openapi>(openapi: &'openapi JsonObject, keys: &[&str]) -> Option<&'openapi JsonObject> {
+    let mut current = openapi;
+    for key in keys {
+        let JsonTree::Object(next) = current.get(*key)? else {
+            return None;
+        };
+        current = next;
+    }
+    Some(current)
+}
+
 fn request_body<'openapi>(
     openapi: &'openapi JsonObject,
     path: &str,
 ) -> Option<&'openapi JsonObject> {
-    let JsonTree::Object(paths) = openapi.get("paths")? else {
-        return None;
-    };
-    let JsonTree::Object(path_item) = paths.get(path)? else {
-        return None;
-    };
-    let JsonTree::Object(operation) = path_item.get("post")? else {
-        return None;
-    };
-    let JsonTree::Object(request_body) = operation.get("requestBody")? else {
-        return None;
-    };
-    Some(request_body)
+    at(openapi, &["paths", path, "post", "requestBody"])
 }
 
 fn component<'openapi>(openapi: &'openapi JsonObject, name: &str) -> Option<&'openapi JsonObject> {
-    let JsonTree::Object(components) = openapi.get("components")? else {
-        return None;
-    };
-    let JsonTree::Object(schemas) = components.get("schemas")? else {
-        return None;
-    };
-    let JsonTree::Object(component) = schemas.get(name)? else {
-        return None;
-    };
-    Some(component)
+    at(openapi, &["components", "schemas", name])
 }
 
 fn assert_only_these_paths_carry_the_body(

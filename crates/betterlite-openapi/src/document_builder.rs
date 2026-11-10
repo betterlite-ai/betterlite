@@ -110,28 +110,32 @@ fn info_object(info: &OpenApiInfo) -> JsonObject {
 fn build_paths(routes: &[RouteDoc]) -> JsonObject {
     let mut paths = JsonObject::new();
     for route in routes {
-        let method = route.method.to_lowercase();
-        let operation = build_operation(route, &method);
-        let path_entry = paths
-            .entry(route.path.clone())
-            .or_insert_with(|| JsonTree::Object(JsonObject::new()));
-        let JsonTree::Object(path_operations) = path_entry else {
-            continue;
-        };
-        path_operations.insert(method, JsonTree::Object(operation));
+        add_route(&mut paths, route);
     }
     paths
 }
 
+fn add_route(paths: &mut JsonObject, route: &RouteDoc) {
+    let method = route.method.to_lowercase();
+    let operation = build_operation(route, &method);
+    let path_entry = paths
+        .entry(route.path.clone())
+        .or_insert_with(|| JsonTree::Object(JsonObject::new()));
+    let JsonTree::Object(path_operations) = path_entry else {
+        return;
+    };
+    path_operations.insert(method, JsonTree::Object(operation));
+}
+
 fn build_schemas(routes: &[RouteDoc]) -> JsonObject {
-    let mut schemas = JsonObject::new();
     if routes.iter().any(|route| route.error_responses) {
-        schemas.insert(
+        JsonObject::from([(
             "ErrorResponse".to_owned(),
             JsonTree::Object(error_response_schema()),
-        );
+        )])
+    } else {
+        JsonObject::new()
     }
-    schemas
 }
 
 fn build_operation(route: &RouteDoc, method: &str) -> JsonObject {
@@ -193,38 +197,20 @@ fn parameter_json(parameter: &ParamDoc) -> JsonTree {
 }
 
 fn build_responses(with_errors: bool) -> JsonObject {
-    let mut responses = JsonObject::from([("200".to_owned(), successful_response())]);
+    let success = response_json("Successful Response", JsonTree::Object(JsonObject::new()));
+    let mut responses = JsonObject::from([("200".to_owned(), success)]);
     if with_errors {
         for error in error_responses() {
             responses.insert(
                 error.status.to_string(),
-                error_response_status(&error.description),
+                response_json(&error.description, error_schema_ref()),
             );
         }
     }
     responses
 }
 
-fn successful_response() -> JsonTree {
-    JsonTree::Object(JsonObject::from([
-        (
-            "description".to_owned(),
-            JsonTree::Text("Successful Response".to_owned()),
-        ),
-        (
-            "content".to_owned(),
-            JsonTree::Object(JsonObject::from([(
-                "application/json".to_owned(),
-                JsonTree::Object(JsonObject::from([(
-                    "schema".to_owned(),
-                    JsonTree::Object(JsonObject::new()),
-                )])),
-            )])),
-        ),
-    ]))
-}
-
-fn error_response_status(description: &str) -> JsonTree {
+fn response_json(description: &str, schema: JsonTree) -> JsonTree {
     JsonTree::Object(JsonObject::from([
         (
             "description".to_owned(),
@@ -234,16 +220,17 @@ fn error_response_status(description: &str) -> JsonTree {
             "content".to_owned(),
             JsonTree::Object(JsonObject::from([(
                 "application/json".to_owned(),
-                JsonTree::Object(JsonObject::from([(
-                    "schema".to_owned(),
-                    JsonTree::Object(JsonObject::from([(
-                        "$ref".to_owned(),
-                        JsonTree::Text("#/components/schemas/ErrorResponse".to_owned()),
-                    )])),
-                )])),
+                JsonTree::Object(JsonObject::from([("schema".to_owned(), schema)])),
             )])),
         ),
     ]))
+}
+
+fn error_schema_ref() -> JsonTree {
+    JsonTree::Object(JsonObject::from([(
+        "$ref".to_owned(),
+        JsonTree::Text("#/components/schemas/ErrorResponse".to_owned()),
+    )]))
 }
 
 // Python's title() uppercases a cased character only after an uncased one
