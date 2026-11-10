@@ -63,13 +63,16 @@ pub(crate) fn open(
         Arc::new(NoopHooks),
         Arc::new(NoopGate),
     );
+    let update_window = Duration::try_from_secs_f64(settings.socket_timeout).unwrap_or_default();
+    let policy = Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None)));
+    let namespace = settings.namespace.clone();
     Ok(RedisState {
         transport,
         counters,
-        namespace: settings.namespace.clone(),
+        namespace,
         default_ttl: DEFAULT_TTL,
-        update_window: Duration::try_from_secs_f64(settings.socket_timeout).unwrap_or_default(),
-        policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
+        update_window,
+        policy,
         clock,
         cas,
     })
