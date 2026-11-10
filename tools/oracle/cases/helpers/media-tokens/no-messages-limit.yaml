@@ -1,0 +1,11 @@
+kind: helper
+name: media-tokens-no-messages-limit
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: gpt-3.5-turbo
+        base_model: gpt-3.5-turbo
+        user_max_tokens: 5000
+env: {}
+compare: {ignore: []}

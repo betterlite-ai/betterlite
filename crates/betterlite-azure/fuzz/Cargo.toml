@@ -21,3 +21,10 @@ path = "fuzz_targets/azure_arc_identity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_client_secret"
+path = "fuzz_targets/azure_client_secret.rs"
+test = false
+doc = false
+bench = false

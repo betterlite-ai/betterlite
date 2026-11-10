@@ -1,0 +1,101 @@
+kind: helper
+name: token-expiry
+call:
+  azure_client_secret:
+    action: token_expiry
+    steps:
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":"3600","refresh_on":"1700003000"}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":7200,"token_type":"Custom"}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":-5}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":3600,"refresh_in":1200}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        advance: 200
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-1","expires_in":3600,"refresh_in":100}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_client"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_client"}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        advance: 200
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-1","expires_in":100}'
+          - url_contains: /oauth2/v2.0/token
+            status: 500
+            error: connection reset
+            body: ''
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        advance: 200
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-1","expires_in":3600,"refresh_in":100}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-2","expires_in":3600}'
+env: {}
+compare: {ignore: []}

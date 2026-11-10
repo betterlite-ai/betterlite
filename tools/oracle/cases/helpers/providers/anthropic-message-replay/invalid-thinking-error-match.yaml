@@ -1,0 +1,57 @@
+kind: helper
+name: invalid-thinking-error-match
+call:
+  anthropic_message_replay:
+    function: invalid_thinking_error
+    texts:
+    - 'messages.2.content.0.thinking.signature.str: Input should be a valid string'
+    - 'messages.N.content.M: Invalid `signature` in `thinking` block'
+    - 'messages.N.content.M.thinking: each thinking block must contain thinking'
+    - 'INPUT SHOULD BE A VALID STRING: THINKING.SIGNATURE'
+    - ''
+    - rate limit exceeded
+    - thinking block is fine
+    - signature invalid
+    - 'thinking.signature: must be a string'
+    - 'messages.1.content.0: Invalid `signature` in `thinking` block, and each thinking block must contain thinking'
+    requests:
+    - model: m
+      thinking:
+        type: enabled
+        budget_tokens: 1024
+      messages:
+      - role: assistant
+        content:
+        - type: thinking
+          thinking: a
+          signature: s
+        - type: text
+          text: keep
+        - type: redacted_thinking
+          data: d
+      - role: assistant
+        content:
+        - type: thinking
+          thinking: only
+      - role: assistant
+        content: []
+      - role: user
+        content: hi
+    - thinking:
+        type: enabled
+      messages: not a list
+      other: 1
+    - messages:
+      - role: user
+        content:
+        - type: text
+          text: x
+    - messages:
+      - role: assistant
+        content:
+        - type: thinking
+          thinking: a
+          signature: s
+env: {}
+compare:
+  ignore: []

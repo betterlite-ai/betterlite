@@ -66,7 +66,7 @@ checks:
     - id: listing-oracle
       why: Results or errors differ from LiteLLM on the same input.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-ops-listing
 
 oracle_cases: []
