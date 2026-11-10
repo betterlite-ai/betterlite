@@ -1,57 +1,109 @@
-mod bodies;
-mod capture;
-mod debug;
-mod failures;
-
 use std::collections::BTreeMap;
 
+use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_mcp::credential_contracts::auth_spec::AuthResolution;
+use betterlite_mcp::request_context::McpContext;
+use betterlite_mcp::request_headers::raw_headers::RawHeaders;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_server::mcp::debug::mask_secret;
-use betterlite_server::mcp::debug::preview::upstream::{
-    BodyState, UpstreamRequest, UpstreamResponse,
-};
-use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use betterlite_server::mcp::debug::auth_diagnostics::{MCPAuthDiagnostics, record_auth_resolution};
+use betterlite_server::mcp::debug::headers::{DebugHeaderInputs, build_debug_headers};
+use betterlite_server::mcp::debug::is_debug_enabled;
+use betterlite_server::mcp::debug::preview::preview;
+use betterlite_server::mcp::debug::preview::text::safe_upstream_url;
 use secrecy::SecretString;
 use serde_json::{Value, json};
-use tokio::runtime::{Builder, Runtime};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::{Input, MaskInput, Pair, ResponseSpec};
+use super::input::{BodyScenario, DebugScenario, DiagnosticScenario, Input, Pair};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
-    match input {
-        Input::DebugHeaders(value) => debug::debug_headers(value),
-        Input::AuthDiagnostics(value) => debug::auth_diagnostics(value),
-        Input::WrapSend(value) => debug::wrap_send(value),
-        Input::MaskSecret(value) => Ok(masked(value)),
-        Input::Preview(value) => bodies::previews(value),
-        Input::RequestSecrets(value) => bodies::request_secrets(value),
-        Input::DescribeUpstream(value) => bodies::describe(value),
-        Input::DescribeFailure(value) => failures::describe_failure(value),
-        Input::Capture(value) => capture::capture(value),
+    let redactor = redactor()?;
+    let mut debug: Vec<Value> = Vec::with_capacity(input.debug.len());
+    for scenario in &input.debug {
+        debug.push(debug_scenario(scenario)?);
     }
-}
-
-fn masked(input: &MaskInput) -> Value {
-    json!({
-        "masks": input.values.iter().map(|value| mask_secret(value.as_deref())).collect::<Vec<_>>(),
-    })
-}
-
-pub(super) fn mapped<Item, Output, Step>(items: &[Item], step: Step) -> Vec<Output>
-where
-    Step: Fn(&Item) -> Output,
-{
-    let mut output = Vec::with_capacity(items.len());
-    for item in items {
-        output.push(step(item));
+    let mut diagnostics: Vec<Value> = Vec::with_capacity(input.diagnostics.len());
+    for scenario in &input.diagnostics {
+        diagnostics.push(diagnostic_scenario(scenario)?);
     }
-    output
+    let mut bodies: Vec<Value> = Vec::with_capacity(input.bodies.len());
+    for scenario in &input.bodies {
+        bodies.push(body_scenario(scenario, &redactor)?);
+    }
+    Ok(json!({
+        "debug": debug,
+        "diagnostics": diagnostics,
+        "bodies": bodies,
+    }))
 }
 
-pub(super) fn secret_map(pairs: &[Pair]) -> BTreeMap<String, SecretString> {
+fn debug_scenario(scenario: &DebugScenario) -> Result<Value, Box<HelperError>> {
+    let headers = raw_headers(&scenario.headers)?;
+    let oauth2 = scenario
+        .oauth2_headers
+        .as_ref()
+        .map(|pairs| secret_map(pairs));
+    let api_key = scenario
+        .litellm_api_key
+        .as_ref()
+        .map(|value| SecretString::from(value.clone()));
+    let built = build_debug_headers(&DebugHeaderInputs {
+        inbound_headers: &headers,
+        oauth2_headers: oauth2.as_ref(),
+        litellm_api_key: api_key.as_ref(),
+        auth_resolution: auth_resolution(&scenario.auth_resolution)?,
+        server_url: scenario.server_url.as_deref(),
+        server_auth_type: scenario.server_auth_type.as_deref(),
+    });
+    Ok(json!({
+        "enabled": is_debug_enabled(&headers),
+        "headers": built,
+    }))
+}
+
+fn diagnostic_scenario(scenario: &DiagnosticScenario) -> Result<Value, Box<HelperError>> {
+    let filled = if scenario.through_context {
+        let mut context = McpContext::default();
+        context.request_scope.insert(MCPAuthDiagnostics::default());
+        for (server_id, resolution) in &scenario.records {
+            record_auth_resolution(&mut context, server_id, auth_resolution(resolution)?);
+        }
+        context
+            .request_scope
+            .get::<MCPAuthDiagnostics>()
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        let mut collected = MCPAuthDiagnostics::default();
+        for (server_id, resolution) in &scenario.records {
+            collected.record(server_id, auth_resolution(resolution)?);
+        }
+        collected
+    };
+    Ok(json!({
+        "resolution": filled.resolution().to_string(),
+        "headers": filled.headers(),
+    }))
+}
+
+fn body_scenario(scenario: &BodyScenario, redactor: &Redactor) -> Result<Value, Box<HelperError>> {
+    let url = safe_url(scenario.url.as_ref())?;
+    let body = scenario.body.as_bytes();
+    let content_type = scenario.content_type.as_deref().unwrap_or_default();
+    Ok(json!({ "preview": preview(body, content_type, &scenario.secrets, redactor), "url": url }))
+}
+
+fn safe_url(source: Option<&String>) -> Result<Option<String>, Box<HelperError>> {
+    let Some(address) = source else {
+        return Ok(None);
+    };
+    let parsed = HttpxUrl::parse(address)
+        .map_err(|error| Box::new(failure("InvalidURL", error.to_string())))?;
+    Ok(Some(safe_upstream_url(&parsed)))
+}
+
+fn secret_map(pairs: &[Pair]) -> BTreeMap<String, SecretString> {
     let mut map = BTreeMap::new();
     for (name, value) in pairs {
         map.insert(name.clone(), SecretString::from(value.clone()));
@@ -59,68 +111,27 @@ pub(super) fn secret_map(pairs: &[Pair]) -> BTreeMap<String, SecretString> {
     map
 }
 
-pub(super) fn response_list(
-    specs: &[ResponseSpec],
-) -> Result<Vec<UpstreamResponse>, Box<HelperError>> {
-    let mut responses = Vec::with_capacity(specs.len());
-    for spec in specs {
-        responses.push(upstream_response(spec, None)?);
-    }
-    Ok(responses)
-}
-
-pub(super) fn body_state(body: Option<&String>) -> BodyState {
-    body.map_or(BodyState::NotRead, |text| {
-        BodyState::Read(text.as_bytes().to_vec())
+fn raw_headers(pairs: &[Pair]) -> Result<RawHeaders, Box<HelperError>> {
+    let bytes: Vec<(&[u8], &[u8])> = pairs
+        .iter()
+        .map(|(name, value)| (name.as_bytes(), value.as_bytes()))
+        .collect();
+    RawHeaders::from_pairs(&bytes).map_err(|_duplicate| {
+        let mut error = failure(
+            "HTTPException",
+            "Multiple Authorization headers are not allowed".to_owned(),
+        );
+        error.status = Some(400);
+        Box::new(error)
     })
 }
 
-pub(super) fn upstream_response(
-    spec: &ResponseSpec,
-    request: Option<UpstreamRequest>,
-) -> Result<UpstreamResponse, Box<HelperError>> {
-    let status = status_code(spec.status)?;
-    let headers = header_map(&spec.headers)?;
-    let body = body_state(spec.body.as_ref());
-    Ok(UpstreamResponse {
-        status,
-        headers,
-        body,
-        request,
-        captured: spec.captured.clone(),
-    })
-}
-
-pub(super) fn status_code(status: u16) -> Result<StatusCode, Box<HelperError>> {
-    StatusCode::from_u16(status)
-        .map_err(|error| Box::new(failure("InvalidStatus", error.to_string())))
-}
-
-pub(super) fn header_map(pairs: &[Pair]) -> Result<HeaderMap, Box<HelperError>> {
-    let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        let header_name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|error| Box::new(failure("InvalidHeader", error.to_string())))?;
-        let header_value = HeaderValue::from_str(value)
-            .map_err(|error| Box::new(failure("InvalidHeader", error.to_string())))?;
-        headers.append(header_name, header_value);
-    }
-    Ok(headers)
-}
-
-pub(super) fn redactor() -> Result<Redactor, Box<HelperError>> {
+fn redactor() -> Result<Redactor, Box<HelperError>> {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| Box::new(failure("RedactionError", error.to_string())))
 }
 
-pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| Box::new(failure("RuntimeError", error.to_string())))
-}
-
-pub(super) fn auth_resolution(name: &str) -> Result<AuthResolution, Box<HelperError>> {
+fn auth_resolution(name: &str) -> Result<AuthResolution, Box<HelperError>> {
     match name {
         "no-auth" => Ok(AuthResolution::NoAuth),
         "stored-user-token" => Ok(AuthResolution::StoredUserToken),
@@ -143,7 +154,7 @@ pub(super) fn auth_resolution(name: &str) -> Result<AuthResolution, Box<HelperEr
     }
 }
 
-pub(super) fn failure(class: &str, message: String) -> HelperError {
+fn failure(class: &str, message: String) -> HelperError {
     HelperError {
         class: class.to_owned(),
         status: None,

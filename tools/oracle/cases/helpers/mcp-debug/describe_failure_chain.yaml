@@ -1,1 +1,0 @@
-{"kind":"helper","name":"describe_failure_chain","call":{"b8194":{"operation":"describe_failure","responses":[{"status":429,"headers":[["content-type","application/json"]],"body":"{\"error\":\"rate limited\"}"},{"status":503,"headers":[],"body":null}],"chains":[[0,1],[0,null],[null],[],[1],[0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1]]}},"env":{},"compare":{"ignore":[]}}
