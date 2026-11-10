@@ -55,8 +55,8 @@ const fn processor_text(kind: ProcessorKind) -> &'static str {
 }
 
 pub(super) fn plan_json(plan: &ExporterPlan, processor: Option<ProcessorKind>) -> Value {
-    let kind = kind_text(plan.kind);
-    let mut value = json!({ "kind": kind, "endpoint": plan.endpoint, "headers": plan.headers });
+    let mut value =
+        json!({ "kind": kind_text(plan.kind), "endpoint": plan.endpoint, "headers": plan.headers });
     if let (Some(processor), Value::Object(fields)) = (processor, &mut value) {
         fields.insert("processor".to_owned(), json!(processor_text(processor)));
     }
@@ -77,9 +77,7 @@ struct NoServer;
 #[async_trait::async_trait]
 impl HttpClient for NoServer {
     async fn send_bytes(&self, _request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
-        Err(HttpError::from(
-            "the exporter cache helper opens no connection",
-        ))
+        Err(HttpError::from("no connection is opened by this helper"))
     }
 }
 
@@ -119,34 +117,14 @@ impl SpanProcessor for ShutdownRecorder {
     }
 }
 
-fn recording_provider(
-    index: usize,
-    caller_thread: Option<&str>,
-    sender: &SyncSender<usize>,
-) -> SdkTracerProvider {
-    SdkTracerProvider::builder()
-        .with_span_processor(ShutdownRecorder {
-            index,
-            caller_thread: caller_thread.map(str::to_owned),
-            sender: sender.clone(),
-        })
-        .build()
-}
-
 fn echo(requests: &[RequestInput], keys: &[CacheKey]) -> Vec<Value> {
-    let parsed: Vec<Option<CacheKey>> = requests
-        .iter()
-        .map(|request| cache_key(&request.key))
-        .collect();
-    keys.iter()
-        .map(|key| {
-            parsed
-                .iter()
-                .position(|candidate| candidate.as_ref() == Some(key))
-                .and_then(|index| requests.get(index))
-                .map_or(Value::Null, |request| request.key.clone())
-        })
-        .collect()
+    let key_of = |key: &CacheKey| {
+        requests
+            .iter()
+            .find(|request| cache_key(&request.key).as_ref() == Some(key))
+            .map_or(Value::Null, |request| request.key.clone())
+    };
+    keys.iter().map(key_of).collect()
 }
 
 fn fill_cache(
@@ -159,11 +137,18 @@ fn fill_cache(
     let mut built = Vec::with_capacity(keys.len());
     for (index, (request, key)) in input.requests.iter().zip(keys).enumerate() {
         let ran = Cell::new(false);
-        let provider_sender = sender.clone();
         cache
             .cached_dynamic_tracer(key.clone(), request.owns_exporter, || {
                 ran.set(true);
-                Ok(recording_provider(index, caller_thread, &provider_sender))
+                let sender = sender.clone();
+                let processor = ShutdownRecorder {
+                    index,
+                    caller_thread: caller_thread.map(str::to_owned),
+                    sender,
+                };
+                Ok(SdkTracerProvider::builder()
+                    .with_span_processor(processor)
+                    .build())
             })
             .map_err(|error| invalid(&error.to_string()))?;
         built.push(ran.get());
@@ -172,12 +157,12 @@ fn fill_cache(
 }
 
 pub(super) fn tracer_cache_sequence(input: &Input) -> HelperResult {
-    let keys: Vec<CacheKey> = input
+    let keys = input
         .requests
         .iter()
         .map(|request| cache_key(&request.key))
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| invalid("every request key must be a config or a headers key"))?;
+        .ok_or_else(|| invalid("a request key must be a config or a headers key"))?;
     let (sender, receiver) = sync_channel(input.requests.len().max(1));
     let cache = DynamicTracerCache::new(
         CacheSettings {
@@ -192,10 +177,7 @@ pub(super) fn tracer_cache_sequence(input: &Input) -> HelperResult {
     let caller_thread = thread::current().name().map(str::to_owned);
     let built = fill_cache(&cache, input, &keys, &sender, caller_thread.as_deref())?;
     cache.join_shutdowns();
-    let mut shut_down = Vec::new();
-    while let Ok(index) = receiver.try_recv() {
-        shut_down.push(index);
-    }
+    let mut shut_down: Vec<usize> = receiver.try_iter().collect();
     shut_down.sort_unstable();
     let order = echo(&input.requests, &cache.cached_keys());
     let shut_down_json: Vec<Value> = shut_down
@@ -203,9 +185,5 @@ pub(super) fn tracer_cache_sequence(input: &Input) -> HelperResult {
         .filter_map(|index| input.requests.get(*index))
         .map(|request| request.key.clone())
         .collect();
-    Ok(json!({
-        "built": built,
-        "order": order,
-        "shut_down": shut_down_json,
-    }))
+    Ok(json!({ "built": built, "order": order, "shut_down": shut_down_json }))
 }

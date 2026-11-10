@@ -36,20 +36,12 @@ pub(crate) struct Input {
     requests: Vec<RequestInput>,
 }
 
-fn parse_signal(text: &str) -> Option<Signal> {
-    match text {
-        "traces" => Some(Signal::Traces),
-        "metrics" => Some(Signal::Metrics),
-        "logs" => Some(Signal::Logs),
-        _ => None,
-    }
-}
-
 fn headers_dictionary_reply(input: &Input) -> HelperResult {
-    let source = input
-        .headers
-        .as_ref()
-        .map_or(HeadersInput::None, HeadersValue::as_input);
+    let source = match input.headers.as_ref() {
+        Some(HeadersValue::Text(text)) => HeadersInput::Text(text),
+        Some(HeadersValue::Map(map)) => HeadersInput::Map(map),
+        None => HeadersInput::None,
+    };
     let headers = headers_dictionary(source).map_err(|error| invalid(&error.to_string()))?;
     Ok(serde_json::json!(headers))
 }
@@ -90,8 +82,11 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function.as_str() {
             "normalize_otel_endpoint" => {
-                let Some(signal) = input.signal.as_deref().and_then(parse_signal) else {
-                    return Err(invalid("the signal must be traces, metrics or logs"));
+                let signal = match input.signal.as_deref() {
+                    Some("traces") => Signal::Traces,
+                    Some("metrics") => Signal::Metrics,
+                    Some("logs") => Signal::Logs,
+                    _ => return Err(invalid("the signal must be traces, metrics or logs")),
                 };
                 let normalized = normalize_otel_endpoint(
                     input.endpoint.as_deref(),

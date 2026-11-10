@@ -11,37 +11,11 @@ const SERVICE_NAME: &str = "service.name";
 const RESOURCE_ATTRIBUTES_ENV: &str = "OTEL_RESOURCE_ATTRIBUTES";
 const SERVICE_NAME_ENV: &str = "OTEL_SERVICE_NAME";
 
-fn base_attributes(config: &OpenTelemetryConfig) -> BTreeMap<String, String> {
-    let mut attributes = BTreeMap::new();
-    if !config.service_name.is_empty() {
-        attributes.insert(SERVICE_NAME.to_owned(), config.service_name.clone());
-    }
-    if !config.deployment_environment.is_empty() {
-        attributes.insert(
-            "deployment.environment".to_owned(),
-            config.deployment_environment.clone(),
-        );
-    }
-    let model_id = if config.model_id.is_empty() {
-        config.service_name.as_str()
-    } else {
-        config.model_id.as_str()
-    };
-    if !model_id.is_empty() {
-        attributes.insert("model_id".to_owned(), model_id.to_owned());
-    }
-    attributes
-}
-
 // The SDK's OTELResourceDetector reads the same two variables, values percent-decoded and names trimmed.
 fn env_attributes(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut attributes = BTreeMap::new();
-    for (index, item) in env
-        .get(RESOURCE_ATTRIBUTES_ENV)
-        .map_or("", String::as_str)
-        .split(',')
-        .enumerate()
-    {
+    let raw = env.get(RESOURCE_ATTRIBUTES_ENV).map_or("", String::as_str);
+    for (index, item) in raw.split(',').enumerate() {
         if item.is_empty() {
             continue;
         }
@@ -71,7 +45,24 @@ fn env_attributes(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
 
 #[must_use]
 pub fn legacy_resource(config: &OpenTelemetryConfig, env: &BTreeMap<String, String>) -> Resource {
-    let mut attributes = base_attributes(config);
+    let mut attributes = BTreeMap::new();
+    if !config.service_name.is_empty() {
+        attributes.insert(SERVICE_NAME.to_owned(), config.service_name.clone());
+    }
+    if !config.deployment_environment.is_empty() {
+        attributes.insert(
+            "deployment.environment".to_owned(),
+            config.deployment_environment.clone(),
+        );
+    }
+    let model_id = if config.model_id.is_empty() {
+        config.service_name.as_str()
+    } else {
+        config.model_id.as_str()
+    };
+    if !model_id.is_empty() {
+        attributes.insert("model_id".to_owned(), model_id.to_owned());
+    }
     attributes.extend(env_attributes(env));
     Resource::builder_empty()
         .with_attributes(

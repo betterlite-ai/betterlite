@@ -12,24 +12,6 @@ const fn signal_suffix(signal: Signal) -> &'static str {
     }
 }
 
-// LiteLLM leaves Splunk's newer trace path and Langtrace's trace path exactly as configured.
-fn keeps_its_path(base: &str, signal: Signal, callback_name: Option<&str>) -> bool {
-    if !matches!(signal, Signal::Traces) {
-        return false;
-    }
-    base.contains("/v2/trace/otlp")
-        || (callback_name == Some("langtrace") && base.ends_with(LANGTRACE_TRACE_PATH))
-}
-
-// A sibling path is only swapped when it is the whole final segment, so /v1/logs/extra is appended to.
-const fn sibling_suffixes(signal: Signal) -> [&'static str; 2] {
-    match signal {
-        Signal::Traces => ["/metrics", "/logs"],
-        Signal::Metrics => ["/traces", "/logs"],
-        Signal::Logs => ["/traces", "/metrics"],
-    }
-}
-
 #[must_use]
 pub fn normalize_otel_endpoint(
     endpoint: Option<&str>,
@@ -41,7 +23,10 @@ pub fn normalize_otel_endpoint(
         return Some(String::new());
     }
     let base = text.trim_end_matches('/');
-    if keeps_its_path(base, signal, callback_name) {
+    // LiteLLM leaves Splunk's newer trace path and Langtrace's trace path exactly as configured.
+    let splunk = base.contains("/v2/trace/otlp");
+    let langtrace = callback_name == Some("langtrace") && base.ends_with(LANGTRACE_TRACE_PATH);
+    if matches!(signal, Signal::Traces) && (splunk || langtrace) {
         return Some(base.to_owned());
     }
     let suffix = signal_suffix(signal);
@@ -49,7 +34,13 @@ pub fn normalize_otel_endpoint(
     if base.ends_with(target.as_str()) {
         return Some(base.to_owned());
     }
-    for other in sibling_suffixes(signal) {
+    // A sibling path is only swapped when it is the whole final segment, so /v1/logs/extra is appended to.
+    let siblings = match signal {
+        Signal::Traces => ["/metrics", "/logs"],
+        Signal::Metrics => ["/traces", "/logs"],
+        Signal::Logs => ["/traces", "/metrics"],
+    };
+    for other in siblings {
         let other_path = format!("{V1_PREFIX}{other}");
         if let Some(root) = base.strip_suffix(other_path.as_str()) {
             return Some(format!("{root}{target}"));

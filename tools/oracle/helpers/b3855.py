@@ -2,6 +2,7 @@ import os
 import sys
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
+from functools import partial
 from threading import Lock
 from types import ModuleType
 from typing import Protocol, TypeAlias, cast
@@ -19,8 +20,16 @@ SERVICE_NAME = "service.name"
 RESOURCE_ATTRIBUTES_ENV = "OTEL_RESOURCE_ATTRIBUTES"
 SERVICE_NAME_ENV = "OTEL_SERVICE_NAME"
 DEFAULT_MAX_DYNAMIC_TRACER_PROVIDERS = 256
+KEY_PARTS = ("exporter", "endpoint", "headers")
 
 _RECORDED_SHUTDOWNS: list[int] = []
+_normalize_endpoint = OpenTelemetry._normalize_otel_endpoint  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+_headers_dictionary = OpenTelemetry._get_headers_dictionary  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+_span_processor = OpenTelemetry._get_span_processor  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+_log_plan = OpenTelemetry._get_log_exporter  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+_metric_plan = OpenTelemetry._get_metric_reader  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+_litellm_resource = OpenTelemetry._get_litellm_resource  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
+_cached_tracer = OpenTelemetry._cached_dynamic_tracer  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
 
 
 class ResourceLike(Protocol):
@@ -74,9 +83,7 @@ class PeriodicExportingMetricReader:
 
 class Resource:
     def __init__(self, attributes: Mapping[str, str | None]) -> None:
-        self.attributes = {
-            key: value for key, value in attributes.items() if key and value is not None
-        }
+        self.attributes = {key: value for key, value in attributes.items() if value}
 
     @staticmethod
     def create(attributes: Mapping[str, str | None] | None = None) -> "Resource":
@@ -86,7 +93,7 @@ class Resource:
         return Resource(merged)
 
     def merge(self, other: "Resource") -> "Resource":
-        return Resource({**self.attributes, **other.attributes})
+        return Resource(self.attributes | other.attributes)
 
 
 class OTELResourceDetector:
@@ -96,61 +103,48 @@ class OTELResourceDetector:
             key, separator, value = item.partition("=")
             if separator:
                 attributes[key.strip()] = parse.unquote(value.strip())
-        service_name = os.environ.get(SERVICE_NAME_ENV, "")
-        if service_name:
+        if service_name := os.environ.get(SERVICE_NAME_ENV):
             attributes[SERVICE_NAME] = service_name
         return Resource(attributes)
 
 
 def _install(name: str, attributes: Mapping[str, object]) -> None:
-    module = ModuleType(name)
+    module = sys.modules.get(name) or ModuleType(name)
     module.__path__ = []
     for attribute_name, value in attributes.items():
         setattr(module, attribute_name, value)
     sys.modules[name] = module
 
 
+SDK = "opentelemetry.sdk"
+OTLP = "opentelemetry.exporter.otlp.proto"
 SDK_PACKAGES = (
-    "opentelemetry.sdk", "opentelemetry.sdk.trace", "opentelemetry.sdk._logs",
-    "opentelemetry.sdk.metrics", "opentelemetry.exporter", "opentelemetry.exporter.otlp",
-    "opentelemetry.exporter.otlp.proto", "opentelemetry.exporter.otlp.proto.http",
-    "opentelemetry.exporter.otlp.proto.grpc",
+    SDK, f"{SDK}.trace", f"{SDK}._logs", f"{SDK}.metrics",
+    "opentelemetry.exporter", OTLP, f"{OTLP}.http", f"{OTLP}.grpc",
 )
-SDK_MODULES = {
-    "opentelemetry.sdk.trace.export": {
-        "BatchSpanProcessor": BatchSpanProcessor,
-        "ConsoleSpanExporter": ConsoleExporter,
-        "SimpleSpanProcessor": SimpleSpanProcessor,
-        "SpanExporter": ConsoleExporter,
-    },
-    "opentelemetry.sdk.trace.export.in_memory_span_exporter": {
-        "InMemorySpanExporter": InMemorySpanExporter
-    },
-    "opentelemetry.sdk._logs.export": {"ConsoleLogExporter": ConsoleExporter},
-    "opentelemetry.sdk.metrics.export": {
-        "ConsoleMetricExporter": ConsoleExporter,
-        "PeriodicExportingMetricReader": PeriodicExportingMetricReader,
-    },
-    "opentelemetry.sdk.resources": {
-        "OTELResourceDetector": OTELResourceDetector, "Resource": Resource
-    },
-}
-OTLP_EXPORTERS = (
-    ("trace_exporter", "OTLPSpanExporter"),
-    ("_log_exporter", "OTLPLogExporter"),
-    ("metric_exporter", "OTLPMetricExporter"),
+SDK_MODULES = (
+    (f"{SDK}.trace.export", "BatchSpanProcessor", BatchSpanProcessor),
+    (f"{SDK}.trace.export", "ConsoleSpanExporter", ConsoleExporter),
+    (f"{SDK}.trace.export", "SimpleSpanProcessor", SimpleSpanProcessor),
+    (f"{SDK}.trace.export", "SpanExporter", ConsoleExporter),
+    (f"{SDK}.trace.export.in_memory_span_exporter", "InMemorySpanExporter", InMemorySpanExporter),
+    (f"{SDK}._logs.export", "ConsoleLogExporter", ConsoleExporter),
+    (f"{SDK}.metrics.export", "ConsoleMetricExporter", ConsoleExporter),
+    (f"{SDK}.metrics.export", "PeriodicExportingMetricReader", PeriodicExportingMetricReader),
+    (f"{SDK}.resources", "OTELResourceDetector", OTELResourceDetector),
+    (f"{SDK}.resources", "Resource", Resource),
 )
 
 
 def _install_sdk_stubs() -> None:
     for name in SDK_PACKAGES:
         _install(name, {})
-    for name, attributes in SDK_MODULES.items():
-        _install(name, attributes)
+    for name, attribute, exporter in SDK_MODULES:
+        _install(name, {attribute: exporter})
     for transport, exporter in (("http", _OtlpHttpExporter), ("grpc", _OtlpGrpcExporter)):
-        for module_name, attribute in OTLP_EXPORTERS:
-            module = f"opentelemetry.exporter.otlp.proto.{transport}.{module_name}"
-            _install(module, {attribute: exporter})
+        names = (("trace", "OTLPSpanExporter"), ("_log", "OTLPLogExporter"))
+        for kind, attribute in (*names, ("metric", "OTLPMetricExporter")):
+            _install(f"{OTLP}.{transport}.{kind}_exporter", {attribute: exporter})
 
 
 _install_sdk_stubs()
@@ -180,15 +174,8 @@ def string_value(value: Json, name: str) -> str:
     return value
 
 
-def bool_value(value: Json, name: str) -> bool:
-    if not isinstance(value, bool):
-        raise ValueError(f"{name} must be a boolean")
-    return value
-
-
 def config_from(fields: dict[str, Json]) -> OpenTelemetryConfig:
-    exporter = fields.get("exporter")
-    exporter_value: object = "console" if exporter is None else exporter
+    exporter_value: object = fields.get("exporter") or "console"
     if exporter_value == "in_memory":
         exporter_value = InMemorySpanExporter()
     return OpenTelemetryConfig(
@@ -201,18 +188,13 @@ def config_from(fields: dict[str, Json]) -> OpenTelemetryConfig:
     )
 
 
-def new_logger(config: OpenTelemetryConfig) -> OpenTelemetry:
+def configured_logger(input_value: dict[str, Json]) -> OpenTelemetry:
     logger = OpenTelemetry.__new__(OpenTelemetry)
+    config = config_from(object_value(input_value.get("config", {}), "config"))
     logger.config = config
-    logger.callback_name = None
     logger.OTEL_EXPORTER = cast("str", config.exporter)
     logger.OTEL_ENDPOINT = config.endpoint
     logger.OTEL_HEADERS = config.headers
-    return logger
-
-
-def configured_logger(input_value: dict[str, Json]) -> OpenTelemetry:
-    logger = new_logger(config_from(object_value(input_value.get("config", {}), "config")))
     logger.callback_name = cast("str | None", input_value.get("callback_name"))
     return logger
 
@@ -229,16 +211,10 @@ def plan_value(exporter: _Exporter, headers: Mapping[str, str] | None) -> Json:
 
 
 def endpoint_value(input_value: dict[str, Json]) -> Json:
-    logger = new_logger(OpenTelemetryConfig())
-    logger.callback_name = cast("str | None", input_value.get("callback_name"))
+    logger = configured_logger(input_value)
     endpoint = cast("str | None", input_value.get("endpoint"))
     signal = string_value(input_value.get("signal"), "signal")
-    return cast(
-        Json,
-        logger._normalize_otel_endpoint(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            endpoint, signal
-        ),
-    )
+    return cast(Json, _normalize_endpoint(logger, endpoint, signal))
 
 
 def headers_value(input_value: dict[str, Json]) -> Json:
@@ -250,33 +226,26 @@ def headers_value(input_value: dict[str, Json]) -> Json:
         headers = {name: string_value(item, "header value") for name, item in value.items()}
     elif value is not None:
         raise ValueError("headers must be a string, an object or absent")
-    return cast(
-        Json,
-        OpenTelemetry._get_headers_dictionary(headers),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    )
+    return cast(Json, _headers_dictionary(headers))
 
 
 def parsed_headers(value: str | Mapping[str, str] | None) -> dict[str, str]:
     # _get_span_processor keeps headers private for a console exporter, so parse them here.
-    return OpenTelemetry._get_headers_dictionary(value)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return _headers_dictionary(value)
 
 
 def span_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
     override = input_value.get("config_override")
     dynamic_headers = input_value.get("dynamic_headers")
-    override_config = (
-        None if override is None else config_from(object_value(override, "config_override"))
-    )
+    override_config = None if override is None else config_from(object_value(override, "override"))
     chosen = logger.OTEL_HEADERS if override_config is None else override_config.headers
     dynamic_map = (
         cast("dict[str, str]", dynamic_headers) if isinstance(dynamic_headers, dict) else None
     )
     processor = cast(
         SimpleSpanProcessor,
-        logger._get_span_processor(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            dynamic_headers=dynamic_map, config_override=override_config
-        ),
+        _span_processor(logger, dynamic_headers=dynamic_map, config_override=override_config),
     )
     value = cast(
         "dict[str, Json]",
@@ -289,30 +258,22 @@ def span_plan_value(input_value: dict[str, Json]) -> Json:
 def log_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
     headers = parsed_headers(logger.OTEL_HEADERS)
-    exporter = cast(
-        _Exporter,
-        logger._get_log_exporter(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    )
+    exporter = cast(_Exporter, _log_plan(logger))
     return plan_value(exporter, headers)
 
 
 def metric_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
     headers = parsed_headers(logger.OTEL_HEADERS)
-    reader = cast(
-        PeriodicExportingMetricReader,
-        logger._get_metric_reader(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    )
+    reader = cast(PeriodicExportingMetricReader, _metric_plan(logger))
     return plan_value(reader.exporter, headers)
 
 
 def cache_key_text(key: dict[str, Json]) -> str:
     if "config" in key:
         config = object_value(key["config"], "key.config")
-        return (
-            f"dynamic_config:{config.get('exporter')}:"
-            f"{config.get('endpoint')}:{config.get('headers')}"
-        )
+        exporter, endpoint, headers = (config.get(name) for name in KEY_PARTS)
+        return f"dynamic_config:{exporter}:{endpoint}:{headers}"
     headers = cast("dict[str, str]", object_value(key["headers"], "key.headers"))
     return str(sorted(headers.items()))
 
@@ -328,22 +289,16 @@ def tracer_cache_value(input_value: dict[str, Json]) -> Json:
     requests = cast("list[Json]", input_value.get("requests", []))
     for index, request_value in enumerate(requests):
         request = object_value(request_value, "request")
-        key_value = request.get("key")
-        if key_value is None:
-            raise ValueError("every request needs a key")
-        key_text = cache_key_text(object_value(key_value, "request.key"))
+        key_value = object_value(request.get("key"), "request.key")
+        key_text = cache_key_text(key_value)
         key_of[key_text] = key_value
-        logger._cached_dynamic_tracer(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-            key_text,
-            lambda index=index: RecordingProvider(index, built),
-            bool_value(request.get("owns_exporter"), "owns_exporter"),
-        )
+        recorder = partial(RecordingProvider, index, built)
+        _cached_tracer(logger, key_text, recorder, cast(bool, request.get("owns_exporter")))
     _PROVIDER_SHUTDOWN_EXECUTOR.shutdown(wait=True)
     cache = logger._tracer_provider_cache  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     order = [key_of[text] for text in cache]
     shut_down = [
-        object_value(requests[index], "request").get("key")
-        for index in sorted(_RECORDED_SHUTDOWNS)
+        object_value(requests[i], "request").get("key") for i in sorted(_RECORDED_SHUTDOWNS)
     ]
     built_flags = [index in built for index in range(len(requests))]
     return cast(Json, {"built": built_flags, "order": order, "shut_down": shut_down})
@@ -351,15 +306,8 @@ def tracer_cache_value(input_value: dict[str, Json]) -> Json:
 
 def resource_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
-    resource = cast(
-        ResourceLike,
-        OpenTelemetry._get_litellm_resource(logger.config),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-    )
-    attributes = {
-        name: value
-        for name, value in resource.attributes.items()
-        if not name.startswith("telemetry.sdk.")
-    }
+    resource = cast(ResourceLike, _litellm_resource(logger.config))
+    attributes = {k: v for k, v in resource.attributes.items() if "telemetry.sdk." not in k}
     return cast(Json, {"attributes": attributes})
 
 

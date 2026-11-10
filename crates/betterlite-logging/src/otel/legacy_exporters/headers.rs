@@ -20,13 +20,7 @@ pub fn headers_dictionary(
     let mut headers = BTreeMap::new();
     match input {
         HeadersInput::None => {}
-        HeadersInput::Map(source) => {
-            headers.extend(
-                source
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone())),
-            );
-        }
+        HeadersInput::Map(source) => headers = source.clone(),
         HeadersInput::Text(text) => {
             if text.is_empty() {
                 return Ok(headers);

@@ -80,14 +80,6 @@ fn otlp_endpoint(
     }
 }
 
-fn unknown_console(text: &str) -> ExporterKind {
-    debug!(
-        exporter = text,
-        "otel: unknown OpenTelemetry exporter, using the console exporter"
-    );
-    ExporterKind::Console
-}
-
 pub fn span_processor_plan(
     base: &OpenTelemetryConfig,
     dynamic_headers: Option<&BTreeMap<String, String>>,
@@ -100,7 +92,13 @@ pub fn span_processor_plan(
         Exporter::InMemory => (ExporterKind::Shared, ProcessorKind::Simple),
         Exporter::Console => (ExporterKind::Console, ProcessorKind::Batch),
         Exporter::Named(text) => (
-            named_exporter_kind(text).unwrap_or_else(|| unknown_console(text)),
+            named_exporter_kind(text).unwrap_or_else(|| {
+                debug!(
+                    exporter = text,
+                    "otel: unknown OpenTelemetry exporter, using the console exporter"
+                );
+                ExporterKind::Console
+            }),
             ProcessorKind::Batch,
         ),
     };
@@ -129,17 +127,15 @@ fn log_exporter_kind(config: &OpenTelemetryConfig, env: &BTreeMap<String, String
 
 // The metric reader has no shared-exporter branch, so an in-memory exporter counts as unknown here.
 fn metric_exporter_kind(config: &OpenTelemetryConfig) -> ExporterKind {
-    match &config.exporter {
-        Exporter::Console => ExporterKind::Console,
-        Exporter::Named(text) => named_exporter_kind(text).unwrap_or_else(|| {
-            warn!("OpenTelemetry: Unknown metric exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
-            ExporterKind::Console
-        }),
-        Exporter::InMemory => {
-            warn!("OpenTelemetry: Unknown metric exporter 'in_memory', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
-            ExporterKind::Console
-        }
-    }
+    let text = match &config.exporter {
+        Exporter::Console => return ExporterKind::Console,
+        Exporter::Named(text) => text.clone(),
+        Exporter::InMemory => "in_memory".to_owned(),
+    };
+    named_exporter_kind(&text).unwrap_or_else(|| {
+        warn!("OpenTelemetry: Unknown metric exporter '{text}', defaulting to console. Supported: {SUPPORTED_EXPORTERS}");
+        ExporterKind::Console
+    })
 }
 
 fn signal_plan(

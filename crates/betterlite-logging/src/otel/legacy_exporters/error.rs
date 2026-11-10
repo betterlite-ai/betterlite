@@ -1,5 +1,4 @@
-use crate::otel::legacy_exporters::headers::HeadersError;
-use crate::otel::plumbing::exporters::ExporterError;
+use crate::otel::{legacy_exporters::headers::HeadersError, plumbing::exporters::ExporterError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LegacyExporterError {

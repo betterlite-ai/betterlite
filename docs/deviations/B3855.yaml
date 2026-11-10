@@ -12,11 +12,8 @@ deviations:
   - what: A dropped provider is shut down on its own short-lived std::thread, not on a pool of 4 workers, and no provider registers an exit hook (shutdown_on_exit).
     why: Evictions are rare (above 256 distinct credential sets) and the Rust SDK has no interpreter-exit hook. The shared-exporter provider that LiteLLM kept out of the hook is also never shut down here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L96-L106
-  - what: The resource has no telemetry.sdk.* attributes.
-    why: It starts from an empty builder so the SDK cannot read the process environment, which this crate only receives as a snapshot.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L464
-  - what: An empty service.name stays absent instead of becoming "unknown_service".
-    why: LiteLLM builds its base resource with the SDK's Resource.create, which fills in "unknown_service" when the config's service name is empty; the config layer normally fills the name first, and betterlite writes only the values the config holds.
+  - what: The resource carries no telemetry.sdk.* attributes, and an empty service.name stays absent instead of becoming "unknown_service".
+    why: It starts from an empty builder so the SDK cannot read the process environment, which this crate only receives as a snapshot, and it writes only the values the config holds; the config layer normally fills the service name first.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L464
   - what: The dynamic-config cache key is the exporter, endpoint and headers as separate fields, not LiteLLM's "dynamic_config:<exporter>:<endpoint>:<headers>" string.
     why: A colon-joined key makes two different configs share one provider when a field contains a colon or spells "None", and a structured key cannot. Every config whose fields hold those characters still gets its own provider.

@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_logging::otel::legacy_exporters::headers::HeadersInput;
 use betterlite_logging::otel::legacy_exporters::tracer_cache::CacheKey;
 use betterlite_logging::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use serde::Deserialize;
@@ -19,13 +18,7 @@ pub(super) struct ConfigInput {
 
 impl ConfigInput {
     pub(super) fn to_config(&self, environment: &BTreeMap<String, String>) -> OpenTelemetryConfig {
-        let mut config = self.raw_config();
-        config.normalize(environment);
-        config
-    }
-
-    fn raw_config(&self) -> OpenTelemetryConfig {
-        OpenTelemetryConfig {
+        let mut config = OpenTelemetryConfig {
             exporter: match self.exporter.as_deref() {
                 Some("in_memory") => Exporter::InMemory,
                 Some("console") | None => Exporter::Console,
@@ -40,11 +33,13 @@ impl ConfigInput {
             ignore_context_propagation: false,
             skip_set_global: false,
             capture_message_content: None,
-            semconv_stability_opt_in: std::collections::BTreeSet::new(),
+            semconv_stability_opt_in: BTreeSet::new(),
             baggage_team_metadata_keys: Vec::new(),
             baggage_metadata_keys: Vec::new(),
             attributes: None,
-        }
+        };
+        config.normalize(environment);
+        config
     }
 }
 
@@ -53,15 +48,6 @@ impl ConfigInput {
 pub(super) enum HeadersValue {
     Text(String),
     Map(BTreeMap<String, String>),
-}
-
-impl HeadersValue {
-    pub(super) fn as_input(&self) -> HeadersInput<'_> {
-        match self {
-            Self::Text(text) => HeadersInput::Text(text),
-            Self::Map(map) => HeadersInput::Map(map),
-        }
-    }
 }
 
 #[derive(Deserialize, Default)]
