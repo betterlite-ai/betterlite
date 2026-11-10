@@ -1,0 +1,27 @@
+kind: helper
+name: gemma-envelope-missing-predictions
+call:
+  vertex_gemma_envelope:
+    wrapper_keys:
+      model: gemma/gemma-3-12b-it
+      messages:
+        - {role: user, content: hello}
+      optional_params: {temperature: 0.2, stream: true, stream_options: {include_usage: true}, max_retries: 1, n: 1}
+      litellm_params: {custom_llm_provider: vertex_ai}
+    context_management_removed:
+      model: gemma/gemma-3-12b-it
+      messages:
+        - {role: user, content: hello}
+      optional_params: {context_management: {edits: []}, temperature: 0.2}
+      litellm_params: {custom_llm_provider: vertex_ai}
+    missing_predictions: {object: chat.completion, choices: [], model: gemma-3-12b-it}
+    embedded_429: {predictions: {object: error, message: rate limited, code: 429}}
+    invalid_error_code: {predictions: {object: error, message: rate limited, code: 399}}
+    coercible_error_code: {predictions: {object: error, message: rate limited, code: "429", detail: extra}}
+    fake_stream_flag:
+      cases:
+        - {model: gemma/gemma-3-12b-it, stream: true, provider: vertex_ai}
+        - {model: gemma/gemma-3-12b-it, stream: false, provider: vertex_ai}
+        - {model: null, stream: null, provider: null}
+env: {}
+compare: {ignore: []}

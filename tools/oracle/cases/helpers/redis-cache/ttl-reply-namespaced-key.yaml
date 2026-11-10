@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-ttl-reply-namespaced-key
+call:
+  b5640:
+    function: ttl_reply
+    namespace: ns
+    key: ns:alpha
+    reply: 5
+env: {}
+compare: {ignore: []}

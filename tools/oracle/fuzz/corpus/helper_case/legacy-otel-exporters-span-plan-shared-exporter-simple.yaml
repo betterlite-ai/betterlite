@@ -1,0 +1,10 @@
+kind: helper
+name: span-plan-shared-exporter-simple
+call:
+  b3855:
+    function: span_processor_plan
+    config:
+      exporter: in_memory
+      headers: x-key=one
+env: {}
+compare: {ignore: []}
