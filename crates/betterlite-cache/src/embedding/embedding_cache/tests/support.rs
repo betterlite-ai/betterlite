@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -28,6 +29,43 @@ use crate::types::embedding::{CachedEmbedding, EmbeddingPayload};
 use crate::types::semantic::SemanticCacheScope;
 
 const NOW: f64 = 1_700_000_000.0;
+
+#[derive(Default)]
+pub(super) struct StoringBackend {
+    values: Mutex<BTreeMap<String, CacheValue>>,
+}
+
+#[async_trait]
+impl CacheBackend for StoringBackend {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+
+    fn get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
+        Ok(self
+            .values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned())
+    }
+
+    fn set_cache(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
+        Ok(())
+    }
+
+    async fn async_get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
+        self.get_cache(key)
+    }
+
+    async fn async_set_cache(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
+        self.set_cache(key, value, None)
+    }
+}
 
 type Stored = (String, CacheValue, Ttl);
 type PipelineWrite = (Vec<(String, CacheValue)>, Ttl);
@@ -252,11 +290,12 @@ pub(super) fn settings(ttl: Option<f64>) -> EnvelopeSettings {
     }
 }
 
-pub(super) fn cache(
-    backend: Arc<RecordingCache>,
-    mode: CacheMode,
-    settings: EnvelopeSettings,
-) -> ResponseCache<RecordingLogger, RecordingConsole> {
+pub(super) type TestCache = ResponseCache<RecordingLogger, RecordingConsole>;
+
+pub(super) fn cache<B>(backend: Arc<B>, mode: CacheMode, settings: EnvelopeSettings) -> TestCache
+where
+    B: CacheBackend + 'static,
+{
     ResponseCache {
         backend: Arc::new(StoredBackend { backend }),
         key_settings: key_settings(mode),

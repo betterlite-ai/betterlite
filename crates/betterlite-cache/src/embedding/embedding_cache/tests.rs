@@ -6,12 +6,14 @@ mod support;
 use std::sync::{Arc, Mutex};
 
 use rstest::rstest;
+use serde_json::Number;
 
 use betterlite_models::decisions::{Extra, Json};
 
 use crate::backend::CacheBackend;
 use crate::cache_key::derive::get_cache_key;
-use crate::cache_key::request::RequestCacheControl;
+use crate::cache_key::request::{LiteLlmParams, RequestCacheControl};
+use crate::codec::CacheCodec;
 use crate::embedding::embedding_cache::pipeline::async_add_cache_pipeline;
 use crate::embedding::embedding_cache::{
     EmbeddingCacheError, add_embedding_entry_to_cache, convert_to_cached_embedding, tokens,
@@ -20,8 +22,8 @@ use crate::embedding::response::EmbeddingRecord;
 use crate::types::cache_type::CacheMode;
 use crate::types::embedding::{CachedEmbedding, EMBEDDING_CACHE_FORMAT_VERSION, EmbeddingPayload};
 use support::{
-    RecordingCache, RecordingNative, RecordingStore, assert_envelope, cache, cached, decimal,
-    details, inputs, integer, param, request, response, settings, text,
+    RecordingCache, RecordingNative, RecordingStore, StoringBackend, TestCache, assert_envelope,
+    cache, cached, decimal, details, inputs, integer, param, request, response, settings, text,
 };
 
 #[test]
@@ -785,4 +787,75 @@ fn per_item_details_extra_integer_value_divides() {
         tokens::per_item_prompt_tokens_details(&result, 1),
         Some(details(&[("ratio_count", integer(2))]))
     );
+}
+
+async fn read_embedding(cache: &TestCache, input: &str) -> CachedEmbedding {
+    let mut read_request = request(vec![param("model", text("m")), param("input", text(input))]);
+    let cached = cache
+        .async_get_cache(None, &mut read_request)
+        .await
+        .expect("the input is cached");
+    CacheCodec::decode(Some(&cached)).expect("the cached embedding decodes")
+}
+
+#[tokio::test]
+async fn pipeline_keys_each_batch_input_on_its_own_input() {
+    let storing = Arc::new(StoringBackend::default());
+    let cache = cache(Arc::clone(&storing), CacheMode::DefaultOn, settings(None));
+    let mut write_request = request(vec![
+        param("model", text("m")),
+        param("input", inputs(&["a", "b"])),
+    ]);
+    write_request.key.litellm_params = Some(LiteLlmParams {
+        preset_cache_key: None,
+        metadata: None,
+        litellm_metadata: None,
+        file_name: None,
+    });
+    let result = response(2, Some(10), None);
+    async_add_cache_pipeline(&cache, None, None, &mut write_request, &result).await;
+    let first = read_embedding(&cache, "a").await;
+    assert_eq!(
+        first.embedding,
+        Some(EmbeddingPayload::Vector(vec![Number::from(0_u64)]))
+    );
+    let second = read_embedding(&cache, "b").await;
+    assert_eq!(
+        second.embedding,
+        Some(EmbeddingPayload::Vector(vec![Number::from(1_u64)]))
+    );
+}
+
+#[tokio::test]
+async fn pipeline_ignores_a_caller_preset_for_each_item() {
+    let storing = Arc::new(StoringBackend::default());
+    let cache = cache(Arc::clone(&storing), CacheMode::DefaultOn, settings(None));
+    let mut write_request = request(vec![
+        param("model", text("m")),
+        param("input", inputs(&["a", "b"])),
+    ]);
+    write_request.key.litellm_params = Some(LiteLlmParams {
+        preset_cache_key: Some("preset".to_owned()),
+        metadata: None,
+        litellm_metadata: None,
+        file_name: None,
+    });
+    let result = response(2, Some(10), None);
+    async_add_cache_pipeline(&cache, None, None, &mut write_request, &result).await;
+    let first = read_embedding(&cache, "a").await;
+    assert_eq!(
+        first.embedding,
+        Some(EmbeddingPayload::Vector(vec![Number::from(0_u64)]))
+    );
+    let second = read_embedding(&cache, "b").await;
+    assert_eq!(
+        second.embedding,
+        Some(EmbeddingPayload::Vector(vec![Number::from(1_u64)]))
+    );
+    let preset = write_request
+        .key
+        .litellm_params
+        .as_ref()
+        .and_then(|params| params.preset_cache_key.as_deref());
+    assert_eq!(preset, Some("preset"));
 }

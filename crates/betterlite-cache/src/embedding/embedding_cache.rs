@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
@@ -9,7 +8,7 @@ use thiserror::Error;
 use crate::backend::{BackendError, Ttl};
 use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::error::CacheKeyError;
-use crate::cache_key::request::KeyParam;
+use crate::cache_key::request::{CacheKeyRequest, KeyParam};
 use crate::cache_key::value::KeyValue;
 use crate::codec::{CacheCodec, CodecError};
 use crate::envelope::facade::ResponseCache;
@@ -113,46 +112,34 @@ where
     })
 }
 
-// get_cache_key derives from a copy of the kwargs whose input is the item, while the caller's own input stays the full value.
+// Each item keys on its own input from a private copy of the key request, so no preset key stands in for it.
 fn entry_key<L, C>(
     cache: &ResponseCache<L, C>,
-    request: &mut EnvelopeRequest,
+    request: &EnvelopeRequest,
     input: &KeyValue,
 ) -> Result<String, CacheKeyError>
 where
     L: LoggerSink,
     C: ConsoleSink,
 {
-    let mut displaced = None;
-    for param in &mut request.key.params {
-        if param.name == "input" {
-            displaced = Some(mem::replace(&mut param.value, input.clone()));
-            break;
-        }
-    }
-    if displaced.is_none() {
-        request.key.params.push(KeyParam {
+    let mut key = CacheKeyRequest {
+        params: request.key.params.clone(),
+        metadata: request.key.metadata.clone(),
+        litellm_metadata: request.key.litellm_metadata.clone(),
+        litellm_params: request.key.litellm_params.clone(),
+        cache_control: request.key.cache_control.clone(),
+    };
+    match key.params.iter_mut().find(|param| param.name == "input") {
+        Some(param) => param.value = input.clone(),
+        None => key.params.push(KeyParam {
             name: "input".to_owned(),
             value: input.clone(),
-        });
+        }),
     }
-    let derived = get_cache_key(&mut request.key, &cache.key_settings, &cache.hooks);
-    match displaced {
-        Some(value) => {
-            if let Some(param) = request
-                .key
-                .params
-                .iter_mut()
-                .find(|param| param.name == "input")
-            {
-                param.value = value;
-            }
-        }
-        None => {
-            request.key.params.pop();
-        }
+    if let Some(params) = key.litellm_params.as_mut() {
+        params.preset_cache_key = None;
     }
-    derived
+    get_cache_key(&mut key, &cache.key_settings, &cache.hooks)
 }
 
 pub(super) fn request_ttl<L, C>(cache: &ResponseCache<L, C>, request: &EnvelopeRequest) -> Ttl
