@@ -7,29 +7,29 @@ use toml_edit::{Item, Value};
 
 pub(crate) fn to_json(item: &Item) -> Json {
     match item {
-        Item::None => Json::Null,
         Item::Value(value) => value_to_json(value),
-        Item::Table(table) => sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))),
         Item::ArrayOfTables(tables) => Json::List(
             tables
                 .iter()
                 .map(|table| sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))))
                 .collect(),
         ),
+        Item::Table(table) => sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))),
+        Item::None => Json::Null,
     }
 }
 
 fn value_to_json(value: &Value) -> Json {
     match value {
-        Value::String(text) => Json::Text(text.value().clone()),
-        Value::Integer(number) => Json::Number(Number::from(*number.value())),
-        Value::Float(number) => float_to_json(*number.value()),
         Value::Boolean(flag) => Json::Bool(*flag.value()),
+        Value::String(text) => Json::Text(text.value().clone()),
         Value::Datetime(moment) => Json::Text(moment.value().to_string()),
-        Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
+        Value::Integer(number) => Json::Number(Number::from(*number.value())),
         Value::InlineTable(table) => {
             sorted_object(table.iter().map(|(key, child)| (key, value_to_json(child))))
         }
+        Value::Float(number) => float_to_json(*number.value()),
+        Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
     }
 }
 
