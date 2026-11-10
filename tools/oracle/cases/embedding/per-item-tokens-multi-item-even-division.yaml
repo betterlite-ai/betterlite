@@ -1,0 +1,12 @@
+kind: helper
+name: per-item-tokens-multi-item-even-division
+call:
+  b4298:
+    get_per_item_prompt_tokens:
+      usage:
+        prompt_tokens: 10
+      data_count: 2
+      idx: 1
+env: {}
+compare:
+  ignore: []
