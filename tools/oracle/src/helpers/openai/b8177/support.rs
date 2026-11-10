@@ -107,10 +107,10 @@ fn tool_call_value(call: &ToolCall) -> Value {
 
 // LiteLLM writes JSON text with json.dumps spacing, so both helpers compare the parsed value
 fn parsed_text(text: &str) -> Value {
-    match serde_json::from_str(text) {
-        Ok(value) => value,
-        Err(_) => Value::String(text.to_owned()),
+    if let Ok(value) = serde_json::from_str(text) {
+        return value;
     }
+    Value::String(text.to_owned())
 }
 
 pub(crate) fn settled_body(mut body: Value) -> Value {
