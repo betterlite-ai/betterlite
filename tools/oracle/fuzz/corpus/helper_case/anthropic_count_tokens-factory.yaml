@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-count-tokens-factory
+call:
+  anthropic_count_tokens:
+    function: factory
+    cases:
+        - models: [claude-3-5-sonnet-20241022]
+          providers: [anthropic]
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-seed}}
+          reply: {status: 200, body: '{"input_tokens":3}'}
+env: {}
+compare: {ignore: []}

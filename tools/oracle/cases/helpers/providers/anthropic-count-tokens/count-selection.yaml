@@ -1,0 +1,85 @@
+kind: helper
+name: count-selection
+call:
+  anthropic_count_tokens:
+    function: counter
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          provider: anthropic
+          request_model: requested-model
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          provider: Anthropic
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          provider: ''
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          provider: null
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: []
+          system: sys
+          tools: [{name: lookup}]
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: null
+          system: sys
+          tools: [{name: lookup}]
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: ''}}
+          environment: {ANTHROPIC_API_KEY: sk-environment}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          environment: {ANTHROPIC_API_KEY: sk-environment}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment: {litellm_params: {}}
+          environment: {ANTHROPIC_AUTH_TOKEN: auth-token}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          module_api_key: sk-module
+          module_anthropic_key: sk-module-anthropic
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          deployment:
+            litellm_params:
+              api_key: sk-deployment
+              api_base: http://deployment.example
+              timeout: 7
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          contents: [{type: text, text: ignored}]
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          system: sys
+          tools: [{name: lookup}]
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}
