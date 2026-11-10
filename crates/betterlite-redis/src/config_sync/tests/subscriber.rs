@@ -24,7 +24,7 @@ fn empty_subscriber(
     test_subscriber(
         ScriptedClient::scripted(Vec::new(), &Journal::default()),
         clock,
-        FixedJitter::fixed(Duration::ZERO),
+        FixedJitter::fixed(0),
         Vec::new(),
     )
 }
@@ -50,11 +50,11 @@ async fn a_message_waits_debounce_plus_jitter_then_resyncs_once() {
         ])],
         &journal,
     );
-    let jitter = FixedJitter::fixed(Duration::from_secs(2));
+    let jitter = FixedJitter::fixed(2_000_000_000);
     let jitter_handle = jitter.clone();
     let subscriber = test_subscriber(
         client.clone(),
-        FakeClock::default(),
+        FakeClock::recording(&journal),
         jitter,
         vec![recording_callback(&journal, "callback", Ok(()))],
     );
@@ -69,13 +69,14 @@ async fn a_message_waits_debounce_plus_jitter_then_resyncs_once() {
         [
             "subscribe",
             "next:1.000",
+            "pause:3.000",
             "next:0.000",
             "callback",
             "next:1.000"
         ]
     );
     assert_eq!(subscriber.clock.recorded_pauses(), [Duration::from_secs(3)]);
-    assert_eq!(jitter_handle.recorded_limits(), [Duration::from_secs(5)]);
+    assert_eq!(jitter_handle.recorded_limits(), [5_000_000_000]);
     assert_eq!(last_resync_at, Some(Duration::from_secs(3)));
 }
 
@@ -93,8 +94,8 @@ async fn pending_messages_are_drained_before_the_callbacks_run() {
     );
     let subscriber = test_subscriber(
         client.clone(),
-        FakeClock::default(),
-        FixedJitter::fixed(Duration::ZERO),
+        FakeClock::recording(&journal),
+        FixedJitter::fixed(0),
         vec![recording_callback(&journal, "callback", Ok(()))],
     );
     let mut subscription = subscription(&client).await;
@@ -108,6 +109,7 @@ async fn pending_messages_are_drained_before_the_callbacks_run() {
         [
             "subscribe",
             "next:1.000",
+            "pause:1.000",
             "next:0.000",
             "next:0.000",
             "callback",
@@ -131,8 +133,8 @@ async fn a_second_resync_waits_out_the_minimum_interval() {
     );
     let subscriber = test_subscriber(
         client.clone(),
-        FakeClock::default(),
-        FixedJitter::fixed(Duration::from_secs(2)),
+        FakeClock::recording(&journal),
+        FixedJitter::fixed(2_000_000_000),
         vec![recording_callback(&journal, "callback", Ok(()))],
     );
     let mut subscription = subscription(&client).await;
@@ -142,20 +144,20 @@ async fn a_second_resync_waits_out_the_minimum_interval() {
         .await;
     assert!(outcome.is_err());
     assert_eq!(
-        subscriber.clock.recorded_pauses(),
+        journal.entries(),
         [
-            Duration::from_secs(3),
-            Duration::from_secs(3),
-            Duration::from_secs(7),
+            "subscribe",
+            "next:1.000",
+            "pause:3.000",
+            "next:0.000",
+            "callback",
+            "next:1.000",
+            "pause:3.000",
+            "pause:7.000",
+            "next:0.000",
+            "callback",
+            "next:1.000",
         ]
-    );
-    assert_eq!(
-        journal
-            .entries()
-            .iter()
-            .filter(|entry| entry.as_str() == "callback")
-            .count(),
-        2
     );
     assert_eq!(last_resync_at, Some(Duration::from_secs(13)));
 }
@@ -192,7 +194,7 @@ async fn a_failing_callback_warns_and_the_next_callback_still_runs() {
     let subscriber = test_subscriber(
         ScriptedClient::scripted(Vec::new(), &Journal::default()),
         FakeClock::default(),
-        FixedJitter::fixed(Duration::ZERO),
+        FixedJitter::fixed(0),
         vec![
             recording_callback(&journal, "first", Err("boom")),
             recording_callback(&journal, "second", Ok(())),
@@ -217,7 +219,7 @@ async fn subscribe_failures_double_the_backoff_up_to_sixty_seconds() {
     let subscriber = test_subscriber(
         client,
         FakeClock::default(),
-        FixedJitter::fixed(Duration::ZERO),
+        FixedJitter::fixed(0),
         Vec::new(),
     );
     let mut backoff = subscriber.settings.backoff_initial;
@@ -258,7 +260,7 @@ async fn a_successful_subscribe_resets_the_backoff_to_five_seconds() {
     let subscriber = test_subscriber(
         client,
         FakeClock::default(),
-        FixedJitter::fixed(Duration::ZERO),
+        FixedJitter::fixed(0),
         Vec::new(),
     );
     let mut backoff = subscriber.settings.backoff_initial;
@@ -291,7 +293,7 @@ async fn the_subscriber_stops_when_the_server_shuts_down() {
     let settings = ConfigSyncSettings {
         poll_timeout: Duration::from_millis(5),
         debounce: Duration::from_secs(1),
-        jitter_max: Duration::from_secs(5),
+        jitter_max_nanos: 5_000_000_000,
         min_resync_interval: Duration::from_secs(10),
         backoff_initial: Duration::from_secs(5),
         backoff_max: Duration::from_secs(60),
@@ -300,7 +302,7 @@ async fn the_subscriber_stops_when_the_server_shuts_down() {
         Arc::new(ConfigSyncSubscriber {
             client: client.clone(),
             clock: FakeClock::default(),
-            jitter: Arc::new(FixedJitter::fixed(Duration::ZERO)),
+            jitter: Arc::new(FixedJitter::fixed(0)),
             callbacks: Vec::new(),
             settings,
         });

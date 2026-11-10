@@ -80,7 +80,8 @@ where
             if message.is_none() {
                 continue;
             }
-            let jitter = self.jitter.uniform(self.settings.jitter_max);
+            let jitter =
+                Duration::from_nanos(self.jitter.uniform_nanos(self.settings.jitter_max_nanos));
             self.clock
                 .pause(self.settings.debounce.saturating_add(jitter))
                 .await;

@@ -19,10 +19,10 @@ async fn the_monotonic_clock_advances_with_its_pauses() {
 #[test]
 fn the_system_jitter_stays_inside_the_limit_and_can_vary() {
     let jitter = SystemJitter::try_new().expect("a seeded jitter source");
-    let limit = Duration::from_millis(10);
-    let inside = (0_i32..100_i32).all(|_| jitter.uniform(limit) <= limit);
-    let varied = (0_i32..100_i32).any(|_| !jitter.uniform(limit).is_zero());
+    let limit_nanos = 10_000_000_u64;
+    let inside = (0_i32..100_i32).all(|_| jitter.uniform_nanos(limit_nanos) < limit_nanos);
+    let varied = (0_i32..100_i32).any(|_| jitter.uniform_nanos(limit_nanos) > 0);
     assert!(inside);
     assert!(varied);
-    assert!(jitter.uniform(Duration::ZERO).is_zero());
+    assert_eq!(jitter.uniform_nanos(0), 0);
 }

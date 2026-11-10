@@ -22,7 +22,7 @@ fn the_config_sync_channel_is_litellms_channel_name() {
 fn the_config_sync_defaults_match_litellm() {
     let settings = ConfigSyncSettings::default();
     assert_eq!(settings.debounce, Duration::from_secs(1));
-    assert_eq!(settings.jitter_max, Duration::from_secs(5));
+    assert_eq!(settings.jitter_max_nanos, 5_000_000_000);
     assert_eq!(settings.min_resync_interval, Duration::from_secs(10));
     assert_eq!(settings.poll_timeout, Duration::from_secs(1));
     assert_eq!(settings.backoff_initial, Duration::from_secs(5));

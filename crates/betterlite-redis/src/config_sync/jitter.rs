@@ -1,5 +1,4 @@
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use rand::RngExt as _;
 use rand::SeedableRng as _;
@@ -8,7 +7,7 @@ use rand::rngs::{StdRng, SysRng};
 use super::error::ConfigSyncError;
 
 pub trait JitterSource: Send + Sync {
-    fn uniform(&self, upper_exclusive: Duration) -> Duration;
+    fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64;
 }
 
 pub struct SystemJitter {
@@ -26,14 +25,11 @@ impl SystemJitter {
 }
 
 impl JitterSource for SystemJitter {
-    fn uniform(&self, upper_exclusive: Duration) -> Duration {
-        if upper_exclusive.is_zero() {
-            return Duration::ZERO;
+    fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64 {
+        if upper_exclusive_nanos == 0 {
+            return 0;
         }
-        let seconds = {
-            let mut random = self.random.lock().unwrap_or_else(PoisonError::into_inner);
-            random.random_range(0.0_f64..upper_exclusive.as_secs_f64())
-        };
-        Duration::try_from_secs_f64(seconds).unwrap_or_default()
+        let mut random = self.random.lock().unwrap_or_else(PoisonError::into_inner);
+        random.random_range(0_u64..upper_exclusive_nanos)
     }
 }

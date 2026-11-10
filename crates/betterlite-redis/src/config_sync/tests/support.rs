@@ -153,9 +153,18 @@ pub(crate) async fn subscription(client: &ScriptedClient) -> ScriptedSubscriptio
 pub(crate) struct FakeClock {
     pub(crate) now: Mutex<Duration>,
     pub(crate) pauses: Mutex<Vec<Duration>>,
+    journal: Option<Journal>,
 }
 
 impl FakeClock {
+    pub(crate) fn recording(journal: &Journal) -> Self {
+        Self {
+            now: Mutex::new(Duration::ZERO),
+            pauses: Mutex::new(Vec::new()),
+            journal: Some(journal.clone()),
+        }
+    }
+
     pub(crate) fn advance(&self, duration: Duration) {
         let mut now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
         *now = now.saturating_add(duration);
@@ -177,6 +186,9 @@ impl ConfigSyncClock for FakeClock {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(duration);
+        if let Some(journal) = &self.journal {
+            journal.record(&format!("pause:{:.3}", duration.as_secs_f64()));
+        }
         self.advance(duration);
         ready(())
     }
@@ -184,35 +196,35 @@ impl ConfigSyncClock for FakeClock {
 
 #[derive(Clone)]
 pub(crate) struct FixedJitter {
-    pub(crate) amount: Duration,
-    limits: Arc<Mutex<Vec<Duration>>>,
+    pub(crate) amount_nanos: u64,
+    limits: Arc<Mutex<Vec<u64>>>,
 }
 
 impl FixedJitter {
-    pub(crate) fn fixed(amount: Duration) -> Self {
+    pub(crate) fn fixed(amount_nanos: u64) -> Self {
         Self {
-            amount,
+            amount_nanos,
             limits: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    pub(crate) fn recorded_limits(&self) -> Vec<Duration> {
+    pub(crate) fn recorded_limits(&self) -> Vec<u64> {
         let limits = self.limits.lock().unwrap_or_else(PoisonError::into_inner);
         limits.clone()
     }
 
-    fn record_limit(&self, upper_exclusive: Duration) {
+    fn record_limit(&self, upper_exclusive_nanos: u64) {
         self.limits
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(upper_exclusive);
+            .push(upper_exclusive_nanos);
     }
 }
 
 impl JitterSource for FixedJitter {
-    fn uniform(&self, upper_exclusive: Duration) -> Duration {
-        self.record_limit(upper_exclusive);
-        self.amount
+    fn uniform_nanos(&self, upper_exclusive_nanos: u64) -> u64 {
+        self.record_limit(upper_exclusive_nanos);
+        self.amount_nanos
     }
 }
 
@@ -379,12 +391,13 @@ impl BreakerGate for OpenGate {
 }
 
 pub(crate) async fn redis_cache(server: &FakeServer, namespace: Option<&str>) -> RedisCache {
-    let overrides: RedisOverrides = serde_json::from_str(&format!(
-        r#"{{"host": "{}", "port": {}}}"#,
-        server.host(),
-        server.port()
-    ))
-    .expect("redis overrides from JSON");
+    redis_cache_at(&server.host(), server.port(), namespace).await
+}
+
+pub(crate) async fn redis_cache_at(host: &str, port: u16, namespace: Option<&str>) -> RedisCache {
+    let overrides: RedisOverrides =
+        serde_json::from_str(&format!(r#"{{"host": "{host}", "port": {port}}}"#))
+            .expect("redis overrides from JSON");
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
