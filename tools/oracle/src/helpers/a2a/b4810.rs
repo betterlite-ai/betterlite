@@ -7,6 +7,7 @@ use betterlite_a2a::logging_context::{
     LoggingDeps, StreamingLoggingRequest, a2a_cost_params, build_streaming_logging_obj,
     get_a2a_model_info, set_agent_id_on_logging_obj, set_usage_on_logging_obj,
 };
+use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -90,7 +91,7 @@ pub(crate) struct ModelInfoInstance {
 
 #[derive(Deserialize)]
 pub(crate) struct BuildStreamingInstance {
-    request: SendMessageRequest,
+    request: AgentJson,
     agent_name: String,
     #[serde(default)]
     agent_id: Option<String>,
@@ -100,6 +101,11 @@ pub(crate) struct BuildStreamingInstance {
     metadata: Option<Json>,
     #[serde(default)]
     proxy_server_request: Option<Json>,
+}
+
+pub(super) fn typed_request(request: &AgentJson) -> Result<SendMessageRequest, Box<HelperError>> {
+    serde_json::from_value(request.clone())
+        .map_err(|error| helper_error("RequestError", error.to_string()))
 }
 
 pub(crate) fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
@@ -183,19 +189,23 @@ fn model_info_result(instance: &ModelInfoInstance) -> HelperResult {
     }))
 }
 
-fn build_streaming_result(instance: &BuildStreamingInstance) -> HelperResult {
+fn streaming_logging(instance: &BuildStreamingInstance) -> Result<LoggingState, Box<HelperError>> {
+    let request_id = instance
+        .request
+        .get("id")
+        .map_or(AgentJson::Null, AgentJson::clone);
     let mut context = CorrelationContext::default();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| helper_error("RedactorError", error.to_string()))?;
     let request = StreamingLoggingRequest {
-        id: &instance.request.id,
+        request_id: &request_id,
         agent_name: &instance.agent_name,
         agent_id: instance.agent_id.as_deref(),
         litellm_params: instance.litellm_params.as_ref(),
         metadata: instance.metadata.as_ref(),
         proxy_server_request: instance.proxy_server_request.as_ref(),
     };
-    let logging = build_streaming_logging_obj(
+    build_streaming_logging_obj(
         &request,
         LoggingDeps {
             start_time: state::fixed_time(state::FIXED_START)?,
@@ -208,7 +218,12 @@ fn build_streaming_result(instance: &BuildStreamingInstance) -> HelperResult {
             clock: || Duration::ZERO,
         },
     )
-    .map_err(|error| helper_error("LoggingContextError", error.to_string()))?;
+    .map_err(|error| helper_error("LoggingContextError", error.to_string()))
+}
+
+fn build_streaming_result(instance: &BuildStreamingInstance) -> HelperResult {
+    typed_request(&instance.request)?;
+    let logging = streaming_logging(instance)?;
     let trace_generated = !logging.litellm_trace_id.is_empty();
     let details = state::details_value(&logging)?;
     Ok(serde_json::json!({

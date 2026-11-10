@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::JsonRpcId;
 use betterlite_logging::logging_state::correlation::CorrelationSetup;
 use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, Messages, RequestLoggingFlags,
@@ -33,8 +32,6 @@ pub enum LoggingContextError {
     UsageOverflow,
     #[error("the A2A logging {field} value must be an object")]
     NotObject { field: &'static str },
-    #[error("the A2A value cannot be converted to JSON")]
-    Json(#[source] serde_json::Error),
     #[error(transparent)]
     State(#[from] LoggingStateError),
 }
@@ -151,18 +148,31 @@ fn card_name(agent_card: &AgentCard) -> Option<&str> {
     }
 }
 
-pub(crate) fn json_rpc_id_text(id: &JsonRpcId) -> Result<String, LoggingContextError> {
+// The wire id of a typed A2A request is always a string or an integer number
+pub(crate) fn json_rpc_id_text(id: &AgentJson) -> String {
     match id {
-        JsonRpcId::String(text) => Ok(text.clone()),
-        JsonRpcId::Integer(_) => {
-            let value = serde_json::to_value(id).map_err(LoggingContextError::Json)?;
-            Ok(value.to_string())
-        }
+        AgentJson::String(text) => text.clone(),
+        other @ (AgentJson::Null
+        | AgentJson::Bool(_)
+        | AgentJson::Number(_)
+        | AgentJson::Array(_)
+        | AgentJson::Object(_)) => other.to_string(),
+    }
+}
+
+pub(crate) fn json_rpc_id_json(id: &AgentJson) -> Json {
+    match id {
+        AgentJson::String(text) => Json::Text(text.clone()),
+        AgentJson::Number(number) => Json::Number(number.clone()),
+        other @ (AgentJson::Null
+        | AgentJson::Bool(_)
+        | AgentJson::Array(_)
+        | AgentJson::Object(_)) => Json::Text(other.to_string()),
     }
 }
 
 pub struct StreamingLoggingRequest<'request> {
-    pub id: &'request JsonRpcId,
+    pub request_id: &'request AgentJson,
     pub agent_name: &'request str,
     pub agent_id: Option<&'request str>,
     pub litellm_params: Option<&'request IndexMap<String, Json>>,
@@ -192,7 +202,7 @@ where
         generated_trace_id,
         clock,
     } = deps;
-    let request_id = json_rpc_id_text(request.id)?;
+    let request_id = json_rpc_id_text(request.request_id);
     let model = format!("a2a_agent/{}", request.agent_name);
     let init = streaming_logging_init(&request_id, &model, start_time);
     let mut logging = LoggingState::new(

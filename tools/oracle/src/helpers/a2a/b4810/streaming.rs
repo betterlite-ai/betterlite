@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
-use betterlite_a2a::client::records::compat::SendMessageRequest;
 use betterlite_a2a::streaming_iterator::{
     A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
 };
@@ -18,12 +17,13 @@ use serde::Deserialize;
 
 use super::state::{details_value, state};
 use super::tokenizer::Cl100kCounter;
+use super::typed_request;
 use crate::compare::helper::HelperError;
 use crate::helpers::a2a::b4810::helper_error;
 
 #[derive(Deserialize)]
 pub(crate) struct IterateInstance {
-    request: SendMessageRequest,
+    request: AgentJson,
     logging: IndexMap<String, Json>,
     start_time: DateTime<FixedOffset>,
     end_time: DateTime<FixedOffset>,
@@ -134,10 +134,16 @@ async fn iterate(
     instance: &IterateInstance,
     counter: &Cl100kCounter,
 ) -> Result<AgentJson, Box<HelperError>> {
+    let request = typed_request(&instance.request)?;
+    let request_id = instance
+        .request
+        .get("id")
+        .map_or(AgentJson::Null, AgentJson::clone);
     let logging = state(&instance.logging)?;
     let mut iterator = A2AStreamingIterator::new(
         scripted(instance),
-        instance.request.clone(),
+        request,
+        request_id,
         logging,
         StreamSetup {
             counter,

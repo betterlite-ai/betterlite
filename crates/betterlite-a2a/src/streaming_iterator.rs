@@ -3,7 +3,6 @@ use std::str::FromStr as _;
 
 use async_trait::async_trait;
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::JsonRpcId;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::Counter;
@@ -21,7 +20,7 @@ use crate::a2a_text::{A2aResponse, A2aTextError};
 use crate::client::records::compat::{Message, Part, SendMessageRequest};
 use crate::client::records::response::SendMessageResponse;
 use crate::cost_calculator::{CostCalculatorError, a2a_call_cost};
-use crate::logging_context::{LoggingContextError, usage_json};
+use crate::logging_context::{LoggingContextError, json_rpc_id_json, usage_json};
 
 mod tests;
 
@@ -86,6 +85,7 @@ pub enum StreamCompletionError {
 pub struct A2AStreamingIterator<'counter, Chunk, Source, Dispatch, Clock> {
     pub stream: Source,
     pub request: SendMessageRequest,
+    pub request_id: AgentJson,
     pub logging: LoggingState,
     pub counter: &'counter dyn TokenCounter,
     pub dispatch: Dispatch,
@@ -107,6 +107,7 @@ where
     pub fn new(
         stream: Source,
         request: SendMessageRequest,
+        request_id: AgentJson,
         logging: LoggingState,
         mut setup: StreamSetup<'counter, Dispatch, Clock>,
     ) -> Self {
@@ -114,6 +115,7 @@ where
         Self {
             stream,
             request,
+            request_id,
             logging,
             counter: setup.counter,
             dispatch: setup.dispatch,
@@ -195,7 +197,7 @@ where
         self.logging
             .model_call_details
             .insert("response_cost".to_owned(), Json::Number(cost_value));
-        let result = self.build_logging_result(&usage)?;
+        let result = self.build_logging_result(&usage);
         let call = StreamSuccessCall {
             result,
             start_time: self.start_time,
@@ -213,9 +215,9 @@ where
         Ok(())
     }
 
-    fn build_logging_result(&self, usage: &Json) -> Result<Json, StreamCompletionError> {
+    fn build_logging_result(&self, usage: &Json) -> Json {
         let mut result = IndexMap::new();
-        result.insert("id".to_owned(), json_rpc_id_json(&self.request.id)?);
+        result.insert("id".to_owned(), json_rpc_id_json(&self.request_id));
         result.insert("jsonrpc".to_owned(), Json::Text("2.0".to_owned()));
         result.insert("usage".to_owned(), usage.clone());
         // LiteLLM drops the final result when the chunk cannot be dumped, and still dispatches
@@ -226,7 +228,7 @@ where
         {
             result.insert("result".to_owned(), converted);
         }
-        Ok(Json::Object(result))
+        Json::Object(result)
     }
 }
 
@@ -236,13 +238,6 @@ fn input_text(message: &Message) -> String {
         Part::Data(_) | Part::File(_) => None,
     });
     parts.collect::<Vec<_>>().join(" ")
-}
-
-pub(crate) fn json_rpc_id_json(id: &JsonRpcId) -> Result<Json, LoggingContextError> {
-    match serde_json::to_value(id) {
-        Ok(value) => serde_json::from_value(value).map_err(LoggingContextError::Json),
-        Err(error) => Err(LoggingContextError::Json(error)),
-    }
 }
 
 fn chunk_text(wire: &AgentJson) -> Result<String, StreamCompletionError> {

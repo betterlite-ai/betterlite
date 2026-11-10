@@ -23,10 +23,15 @@ use futures_core::Stream;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
-
 use super::support::counter;
-use crate::client::records::compat::SendMessageRequest;
+use betterlite_core::agents::provider::a2a::JsonRpcId;
+
+use crate::client::records::MessageCommon;
+use crate::client::records::compat::{
+    Message, MessageKind, Part, Role, SendMessageRequest, StatusUpdateKind, TaskState, TaskStatus,
+    TaskStatusUpdate, TextPart,
+};
+use crate::client::records::response::{SendMessageResponse, StreamResult};
 use crate::streaming_iterator::{
     A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
     TokenCounter, json_rpc_id_json,
@@ -222,6 +227,14 @@ fn plain_request() -> SendMessageRequest {
     request_of(r#""req-1""#, "[]")
 }
 
+fn request_id() -> AgentJson {
+    AgentJson::String("req-1".to_owned())
+}
+
+fn numeric_request_id() -> AgentJson {
+    AgentJson::Number(Number::from(7_u64))
+}
+
 fn text_request(parts: &str) -> SendMessageRequest {
     request_of(r#""req-1""#, parts)
 }
@@ -287,6 +300,7 @@ async fn collects_every_chunk_and_extracts_its_text() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, HELLO_WORLD, COMPLETED]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -313,6 +327,7 @@ async fn the_completion_counts_only_the_last_extracted_text() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, HELLO_WORLD]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -337,6 +352,7 @@ async fn the_prompt_counts_the_request_message_text() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO]),
         text_request(r#"[{"kind":"text","text":"one"},{"kind":"text","text":"two"}]"#),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -361,6 +377,7 @@ async fn non_text_parts_add_nothing_to_the_prompt() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO]),
         text_request(r#"[{"kind":"data","data":{"value":1}},{"kind":"text","text":"ok"}]"#),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -385,6 +402,7 @@ async fn the_last_chunk_is_the_final_chunk_without_a_completion_marker() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, SECOND]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -409,6 +427,7 @@ async fn the_first_completed_chunk_stays_the_final_chunk() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, COMPLETED, SECOND]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -428,6 +447,7 @@ async fn status_and_task_chunks_add_no_text() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[WORKING, COMPLETED, TASK]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -456,6 +476,7 @@ async fn completion_sets_the_logging_details_and_the_dispatch_request() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, COMPLETED]),
         plain_request(),
+        request_id(),
         logging(&[(
             "litellm_params",
             object(&[
@@ -493,6 +514,7 @@ async fn the_dispatch_result_carries_the_id_usage_and_final_result() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO, COMPLETED]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -525,6 +547,7 @@ async fn the_completion_dispatches_only_once() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -542,6 +565,7 @@ async fn an_empty_stream_dispatches_zero_usage_without_a_result() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -570,6 +594,7 @@ async fn a_stream_error_is_propagated_without_completing() {
     let mut iterator = A2AStreamingIterator::new(
         failing_stream(&[HELLO]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -596,6 +621,7 @@ async fn an_accounting_failure_is_swallowed_and_skips_the_dispatch() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO]),
         plain_request(),
+        request_id(),
         logging(&[("litellm_params", text("not-an-object"))]),
         setup(dispatch, &counter, START, END),
     );
@@ -624,6 +650,7 @@ async fn a_chunk_with_a_malformed_part_is_still_collected() {
             r#"{"id":"req-1","jsonrpc":"2.0","result":{"kind":"message","messageId":"m9","role":"agent","parts":null}}"#,
         ]),
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -656,6 +683,7 @@ async fn an_unreadable_final_chunk_dispatches_without_a_result() {
     let mut iterator = A2AStreamingIterator::new(
         stream,
         plain_request(),
+        request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -677,6 +705,7 @@ async fn token_rates_price_the_counts() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO_WORLD]),
         text_request(r#"[{"kind":"text","text":"ab"}]"#),
+        request_id(),
         logging(&[(
             "litellm_params",
             object(&[
@@ -700,6 +729,7 @@ async fn the_result_keeps_an_integer_request_id() {
     let mut iterator = A2AStreamingIterator::new(
         chunks(&[HELLO]),
         request_of("7", "[]"),
+        numeric_request_id(),
         priced(),
         setup(dispatch, &counter, START, END),
     );
@@ -714,15 +744,9 @@ async fn the_result_keeps_an_integer_request_id() {
 }
 
 #[test]
-fn integer_request_ids_keep_their_json_form() {
-    let numeric_id = JsonRpcId::Integer(
-        IntegerId::try_from(Number::from(12_u64)).expect("the id is an integer"),
-    );
-
-    assert_eq!(
-        json_rpc_id_json(&numeric_id).expect("the id converts"),
-        number(12)
-    );
+fn request_ids_keep_their_json_form() {
+    assert_eq!(json_rpc_id_json(&numeric_request_id()), number(7));
+    assert_eq!(json_rpc_id_json(&request_id()), text("req-1"));
 }
 
 #[tokio::test]
@@ -731,4 +755,84 @@ async fn the_counter_adapter_counts_the_default_encoding_tokens() {
 
     assert_eq!(counter.count_tokens("hello world").await, 2);
     assert_eq!(counter.count_tokens("").await, 0);
+}
+
+fn response_message(text: &str) -> SendMessageResponse {
+    SendMessageResponse {
+        jsonrpc: "2.0".to_owned(),
+        id: JsonRpcId::String("req-1".to_owned()),
+        result: StreamResult::Message(Message {
+            kind: MessageKind::Message,
+            role: Role::Agent,
+            parts: vec![Part::Text(TextPart {
+                text: text.to_owned(),
+                metadata: None,
+            })],
+            common: MessageCommon {
+                message_id: "m2".to_owned(),
+                context_id: None,
+                task_id: None,
+                reference_task_ids: None,
+                metadata: None,
+                extensions: None,
+            },
+        }),
+    }
+}
+
+fn completed_status() -> SendMessageResponse {
+    SendMessageResponse {
+        jsonrpc: "2.0".to_owned(),
+        id: JsonRpcId::String("req-1".to_owned()),
+        result: StreamResult::StatusUpdate(TaskStatusUpdate {
+            kind: StatusUpdateKind::StatusUpdate,
+            task_id: "t1".to_owned(),
+            context_id: "c1".to_owned(),
+            status: TaskStatus {
+                state: TaskState::Completed,
+                message: None,
+                timestamp: None,
+            },
+            is_final: true,
+            metadata: None,
+        }),
+    }
+}
+
+#[tokio::test]
+async fn production_response_chunks_are_read_through_their_wire_form() {
+    let (dispatch, calls) = recorder();
+    let counter = CharCounter;
+    let stream = ScriptedStream {
+        items: VecDeque::from([Ok(response_message("Hello")), Ok(completed_status())]),
+    };
+    let mut iterator = A2AStreamingIterator::new(
+        stream,
+        plain_request(),
+        request_id(),
+        priced(),
+        setup(dispatch, &counter, START, END),
+    );
+
+    let items = collect_chunks(&mut iterator).await;
+
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(Result::is_ok));
+    assert_eq!(iterator.collected_text_parts.as_slice(), ["Hello"]);
+    assert!(matches!(
+        iterator.final_chunk.as_ref().map(|chunk| &chunk.result),
+        Some(StreamResult::StatusUpdate(_))
+    ));
+    assert_eq!(
+        iterator
+            .final_chunk
+            .as_ref()
+            .map(|chunk| chunk.wire().expect("the chunk serializes")),
+        Some(chunk(COMPLETED).0)
+    );
+    let recorded = snapshot(&calls);
+    assert_eq!(
+        result_object(&recorded[0].call.result, "result"),
+        Some(chunk_result(COMPLETED))
+    );
 }

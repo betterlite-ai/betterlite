@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -96,10 +95,8 @@ fn details_of(logging: &LoggingState, key: &str) -> Option<Json> {
     logging.model_call_details.get(key).cloned()
 }
 
-fn integer_id(value: u64) -> JsonRpcId {
-    JsonRpcId::Integer(
-        IntegerId::try_from(Number::from(value)).expect("the fixture id is an integer"),
-    )
+fn numeric_id(value: u64) -> AgentJson {
+    AgentJson::Number(Number::from(value))
 }
 
 fn build_logging(
@@ -420,27 +417,21 @@ fn an_empty_card_name_is_used_as_given() {
 
 #[test]
 fn json_rpc_ids_keep_their_text_form() {
-    let text_id = JsonRpcId::String("req-7".to_owned());
-    let numeric_id = integer_id(12);
+    let text_id = AgentJson::String("req-7".to_owned());
+    let number_id = numeric_id(12);
 
-    assert_eq!(
-        json_rpc_id_text(&text_id).expect("the id converts"),
-        "req-7".to_owned()
-    );
-    assert_eq!(
-        json_rpc_id_text(&numeric_id).expect("the id converts"),
-        "12".to_owned()
-    );
+    assert_eq!(json_rpc_id_text(&text_id), "req-7".to_owned());
+    assert_eq!(json_rpc_id_text(&number_id), "12".to_owned());
 }
 
 fn full_request<'request>(
-    id: &'request JsonRpcId,
+    request_id: &'request AgentJson,
     litellm_params: &'request IndexMap<String, Json>,
     metadata: &'request Json,
     proxy: &'request Json,
 ) -> StreamingLoggingRequest<'request> {
     StreamingLoggingRequest {
-        id,
+        request_id,
         agent_name: "card-agent",
         agent_id: Some("agent-9"),
         litellm_params: Some(litellm_params),
@@ -468,7 +459,7 @@ fn proxy_object() -> Json {
 
 #[test]
 fn streaming_logging_builds_the_object_from_the_request() {
-    let id = JsonRpcId::String("req-7".to_owned());
+    let id = AgentJson::String("req-7".to_owned());
     let litellm_params = pricing_params();
     let metadata = metadata_object();
     let proxy = proxy_object();
@@ -494,7 +485,7 @@ fn streaming_logging_builds_the_object_from_the_request() {
 
 #[test]
 fn streaming_logging_merges_the_prices_and_the_request_context() {
-    let id = JsonRpcId::String("req-7".to_owned());
+    let id = AgentJson::String("req-7".to_owned());
     let litellm_params = pricing_params();
     let metadata = metadata_object();
     let proxy = proxy_object();
@@ -525,9 +516,9 @@ fn streaming_logging_merges_the_prices_and_the_request_context() {
 
 #[test]
 fn streaming_logging_uses_the_integer_request_id_as_text() {
-    let id = integer_id(12);
+    let id = numeric_id(12);
     let request = StreamingLoggingRequest {
-        id: &id,
+        request_id: &id,
         agent_name: "other-agent",
         agent_id: None,
         litellm_params: None,
@@ -551,11 +542,11 @@ fn streaming_logging_uses_the_integer_request_id_as_text() {
 
 #[test]
 fn streaming_logging_keeps_an_explicit_empty_metadata_object() {
-    let id = JsonRpcId::String("req-8".to_owned());
+    let id = AgentJson::String("req-8".to_owned());
     let litellm_params = params(&[("output_cost_per_token", number(2))]);
     let empty = Json::Object(IndexMap::new());
     let request = StreamingLoggingRequest {
-        id: &id,
+        request_id: &id,
         agent_name: "card-agent",
         agent_id: None,
         litellm_params: Some(&litellm_params),
@@ -578,10 +569,10 @@ fn streaming_logging_keeps_an_explicit_empty_metadata_object() {
 #[case::metadata("metadata")]
 #[case::proxy_server_request("proxy_server_request")]
 fn streaming_logging_rejects_a_non_object_request_context(#[case] field: &'static str) {
-    let id = JsonRpcId::String("req-9".to_owned());
+    let id = AgentJson::String("req-9".to_owned());
     let wrong = text("not-an-object");
     let request = StreamingLoggingRequest {
-        id: &id,
+        request_id: &id,
         agent_name: "card-agent",
         agent_id: None,
         litellm_params: None,
