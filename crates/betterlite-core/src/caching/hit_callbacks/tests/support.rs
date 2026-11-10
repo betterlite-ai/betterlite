@@ -228,7 +228,12 @@ impl StandardPayloadBuilder for FakeBuilder {
     ) -> Option<StandardLoggingPayload> {
         let recorded = state.model_call_details.contains_key(CACHING_DETAILS);
         let marked = state.model_call_details.get("cache_hit") == Some(&Json::Bool(true));
-        if recorded && marked {
+        if state
+            .model_call_details
+            .contains_key("has_logged_sync_success")
+        {
+            self.calls.record("build-after-sync");
+        } else if recorded && marked {
             self.calls.record("build-with-cache-hit");
         } else {
             self.calls.record("build-without-cache-hit");
@@ -364,9 +369,9 @@ pub(super) fn recorded_state(result: &Json) -> LoggingState {
     state
 }
 
-pub(super) fn success_request(result: &Json) -> SuccessRequest {
+pub(super) fn success_request(result: SuccessResult) -> SuccessRequest {
     SuccessRequest {
-        result: SuccessResult::Chat(result.clone()),
+        result,
         start_time: Some(time("2024-01-01T00:00:00+00:00")),
         end_time: Some(time("2024-01-01T00:00:02+00:00")),
         cache_hit: Some(true),

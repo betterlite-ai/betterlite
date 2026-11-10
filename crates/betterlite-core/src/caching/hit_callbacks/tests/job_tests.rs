@@ -1,4 +1,5 @@
 use betterlite_logging::logging_state::correlation::CorrelationContext;
+use betterlite_logging::logging_success::types::SuccessResult;
 use betterlite_logging::worker::{Admission, Callback as _, LoggingWorker, Rejection};
 use betterlite_models::decisions::Json;
 
@@ -18,7 +19,7 @@ fn a_cache_hit_job_names_the_cache_hit_success_event() {
         handler: fixture.owned_handler(),
         state: logging_state(None),
         correlation: CorrelationContext::default(),
-        request: success_request(&cached()),
+        request: success_request(SuccessResult::Chat(cached())),
     };
     assert_eq!(job.name(), "cache_hit_success");
 }
@@ -98,12 +99,12 @@ async fn a_refused_value_returns_a_typed_error_without_queueing() {
 #[tokio::test]
 async fn the_runner_awaits_the_async_handler_before_the_sync_callbacks() {
     let fixture = Fixture::new(false);
-    let cached_result = cached();
-    let mut state = recorded_state(&cached_result);
+    let mut state = recorded_state(&cached());
     state.dynamic_callbacks.success = Some(vec!["legacy_hook".to_owned()]);
     let owned = fixture.owned_handler();
     let mut correlation = CorrelationContext::default();
-    let request = success_request(&cached_result);
+    // a null result makes the payload build at event time, so a sync-first run would record build-after-sync
+    let request = success_request(SuccessResult::Other(Json::Null));
     run_cache_hit_success(&owned, &mut state, &mut correlation, &request).await;
     assert_eq!(
         state.model_call_details.get("has_logged_async_success"),
