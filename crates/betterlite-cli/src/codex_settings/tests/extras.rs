@@ -437,3 +437,70 @@ async fn unconfigure_skips_a_field_restored_unchanged() {
     let document = document_at(&settings);
     assert_eq!(string_at(&document, "model").as_deref(), Some("original"));
 }
+
+#[tokio::test]
+async fn unconfigure_after_the_user_deleted_the_file() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"original\"\nprofile = \"work\"\n").unwrap();
+    let files = PrivateFiles::default();
+    configure_with(&settings, &files, GATEWAY, KEY, MODEL)
+        .await
+        .unwrap();
+    fs::remove_file(&settings).unwrap();
+    let outcome = unconfigure_at(&settings, &files).await.unwrap();
+    assert!(outcome.file_removed);
+    assert!(outcome.restored.is_empty());
+    assert!(!settings.exists());
+}
+
+#[tokio::test]
+async fn configure_round_trips_an_api_key_with_toml_specials() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    let api_key = "sk-\"quoted\"\\slash\nnext-line";
+    let files = PrivateFiles::default();
+    configure_with(&settings, &files, GATEWAY, api_key, MODEL)
+        .await
+        .unwrap();
+    let document = document_at(&settings);
+    assert_eq!(
+        string_at(
+            &document,
+            "model_providers.litellm.http_headers.Authorization"
+        ),
+        Some(format!("Bearer {api_key}"))
+    );
+    unconfigure_at(&settings, &files).await.unwrap();
+    assert!(!settings.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configure_through_a_symlink_updates_the_target() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let target = home.path().join("real-config.toml");
+    fs::write(&target, "model = \"old\"\n").unwrap();
+    let alias = home.path().join("config.toml");
+    symlink(&target, &alias).unwrap();
+    let files = PrivateFiles::default();
+    configure_with(&alias, &files, GATEWAY, KEY, MODEL)
+        .await
+        .unwrap();
+    assert!(alias.is_symlink());
+    assert!(
+        fs::read_to_string(&target)
+            .unwrap()
+            .contains("Bearer sk-test")
+    );
+    assert_eq!(
+        codex_configure_state_path(&alias).unwrap(),
+        codex_configure_state_path(&target).unwrap()
+    );
+    unconfigure_at(&alias, &files).await.unwrap();
+    assert!(alias.is_symlink());
+    let document = document_at(&alias);
+    assert_eq!(string_at(&document, "model").as_deref(), Some("old"));
+}
