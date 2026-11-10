@@ -235,7 +235,11 @@ fn custom_name_mismatch(key: &str, custom: &CustomRequest, headers: &HeaderMap) 
     let header_name = headers
         .get(MCP_NAME_HEADER)
         .and_then(|header| header.to_str().ok());
-    value.as_str() != decode_header_value(header_name).as_deref()
+    let decoded = decode_header_value(header_name);
+    // only a string equal to the decoded header matches; any other value, and an absent header, disagrees
+    value
+        .as_str()
+        .is_none_or(|text| decoded.as_deref() != Some(text))
 }
 
 fn decode_header_value(value: Option<&str>) -> Option<String> {

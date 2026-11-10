@@ -726,17 +726,24 @@ async fn treats_a_null_tool_name_as_absent() {
     assert_eq!(refusal.error.message, "Invalid request parameters");
 }
 
+#[rstest]
+#[case::with_the_name_header(Some("test-tool"))]
+#[case::without_the_name_header(None)]
 #[tokio::test]
-async fn refuses_a_tool_call_with_a_numeric_name() {
+async fn refuses_a_tool_call_with_a_numeric_name(#[case] name_header: Option<&str>) {
     let body = concat!(
         r#"{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":5,"#,
         r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
         r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
     );
-    let request = accepted_post()
+    let builder = accepted_post()
         .header("mcp-protocol-version", PROTOCOL_VERSION)
-        .header("mcp-method", "tools/call")
-        .header("mcp-name", "test-tool")
+        .header("mcp-method", "tools/call");
+    let with_name = match name_header {
+        Some(value) => builder.header("mcp-name", value),
+        None => builder,
+    };
+    let request = with_name
         .body(Body::from(body.to_owned()))
         .expect("a request");
     let response = send(&app(answers()), request).await;
