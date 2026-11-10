@@ -429,9 +429,11 @@ async fn a_sync_request_uses_the_shared_client_timeout() {
     assert!(matches!(
         error,
         CodestralCallError::Transport {
-            source: TransportError::Deadline(_)
+            source: TransportError::Deadline(_),
+            ..
         }
     ));
+    assert_eq!(error.status_code(), Some(408));
 }
 
 #[tokio::test]
@@ -473,7 +475,9 @@ async fn a_sync_stream_uses_the_shared_client_timeout() {
     assert!(matches!(
         error,
         CodestralCallError::Transport {
-            source: TransportError::Deadline(_)
+            source: TransportError::Deadline(_),
+            ..
         }
     ));
+    assert_eq!(error.status_code(), Some(408));
 }

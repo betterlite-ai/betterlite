@@ -21,7 +21,8 @@ pub(super) async fn make_call(
     mut log: Box<dyn CallLogger + Send>,
 ) -> Result<ChunkStream, CodestralCallError> {
     let limit = client.limits.body_bytes;
-    let response = client.send_following(request).await?;
+    let timed = |source| CodestralCallError::transport(source, false);
+    let response = client.send_following(request).await.map_err(timed)?;
     if response.response.status().as_u16() != COMPLETION_OK {
         return Err(status_failure(response, limit).await);
     }
@@ -62,6 +63,6 @@ async fn status_failure(response: StreamResponse, limit: usize) -> CodestralCall
         Ok(failed) => match native_failure(failed.status, &failed.body) {
             Ok(error) | Err(error) => error,
         },
-        Err(failure) => CodestralCallError::Transport { source: failure },
+        Err(failure) => CodestralCallError::transport(failure, false),
     }
 }

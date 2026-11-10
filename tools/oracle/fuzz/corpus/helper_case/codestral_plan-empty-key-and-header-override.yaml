@@ -14,6 +14,15 @@ call:
         custom_prompt_dict: {}
         optional_params: {}
       - mode: sync
+        api_key: ""
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        timeout: 12.5
+        headers: {}
+        api_base: null
+        custom_prompt_dict: {}
+        optional_params: {}
+      - mode: sync
         api_key: sk-codestral
         model: codestral-latest
         messages: [{role: user, content: write}]

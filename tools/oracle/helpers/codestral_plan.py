@@ -21,11 +21,8 @@ class SyncClient:
     def __init__(self) -> None:
         self.calls: list[Object] = []
     def post(
-        self,
-        url: str | None = None,
-        headers: object = None,
-        data: str = "",
-        stream: object = None,
+        self, url: str | None = None, headers: object = None,
+        data: str = "", stream: object = None,
     ) -> "SyncClient":
         self.calls.append(request_facts(url, headers, data))
         if stream is True:

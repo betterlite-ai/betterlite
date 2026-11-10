@@ -40,7 +40,8 @@ pub enum CodestralCallError {
     Record(#[from] TextCompletionCodestralError),
     #[error("the Codestral provider could not be reached")]
     Transport {
-        #[from]
+        status: u16,
+        #[source]
         source: TransportError,
     },
     #[error("the Codestral line stream could not be read")]
@@ -51,10 +52,17 @@ pub enum CodestralCallError {
 }
 impl CodestralCallError {
     #[must_use]
+    pub const fn transport(source: TransportError, wrapped: bool) -> Self {
+        let deadline = matches!(&source, TransportError::Deadline(_));
+        let status = if wrapped || !deadline { 500 } else { 408 };
+        Self::Transport { status, source }
+    }
+    #[must_use]
     pub fn status_code(&self) -> Option<u16> {
         match self {
             Self::Record(TextCompletionCodestralError::Native(native)) => Some(native.status_code),
-            Self::Record(_) | Self::Transport { .. } => Some(TRANSPORT_STATUS),
+            Self::Record(_) => Some(TRANSPORT_STATUS),
+            Self::Transport { status, .. } => Some(*status),
             Self::MissingApiKey
             | Self::Prompt(_)
             | Self::PromptNotText

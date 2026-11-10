@@ -15,7 +15,6 @@ pub struct StreamPostCall<'call> {
     pub api_key: &'call str,
     // make_call hands its callbacks the line iterator itself, so the marker names the stream instead
     pub original_response: &'static str,
-    // make_call logs json.dumps(data), a string, where the pre-call log holds the object
     pub request_data: &'call str,
 }
 pub trait CallLogger: PostCallLogger {

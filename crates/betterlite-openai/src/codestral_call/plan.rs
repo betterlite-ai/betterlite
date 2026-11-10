@@ -51,7 +51,7 @@ pub struct Plan {
 pub fn validate_environment(
     api_key: Option<&SecretString>,
     user_headers: &Headers,
-) -> Result<Headers, CodestralCallError> {
+) -> Result<(Headers, SecretString), CodestralCallError> {
     let key = api_key.ok_or(CodestralCallError::MissingApiKey)?;
     let mut headers = Headers::from([
         ("content-type".to_owned(), "application/json".to_owned()),
@@ -61,7 +61,7 @@ pub fn validate_environment(
         ),
     ]);
     headers.extend(user_headers.clone());
-    Ok(headers)
+    Ok((headers, key.clone()))
 }
 pub async fn prepare(
     request: &CodestralRequest<'_>,
@@ -69,16 +69,11 @@ pub async fn prepare(
     now: DateTime<Utc>,
     log: &mut (dyn CallLogger + Send),
 ) -> Result<Plan, CodestralCallError> {
-    let headers = validate_environment(request.api_key, request.headers)?;
-    let api_key = request
-        .api_key
-        .ok_or(CodestralCallError::MissingApiKey)?
-        .clone();
+    let (headers, api_key) = validate_environment(request.api_key, request.headers)?;
     let mut options = request.optional_params.clone();
     let url = resolve_url(&mut options, request.api_base);
     let prompt = build_prompt(request, prompts, now).await?;
     let (body, streaming) = build_body(request, &options, &prompt)?;
-    // async_streaming never uses the timeout it is handed: make_call posts through the shared async client
     let (wrapper, timeout) = match (request.mode, streaming) {
         (Mode::Sync, false) => (None, None),
         (Mode::Sync, true) => (Some(Wrapper::Codestral), None),

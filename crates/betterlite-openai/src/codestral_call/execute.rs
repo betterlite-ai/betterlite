@@ -1,6 +1,6 @@
 use super::error::CodestralCallError;
 use super::log::CallLogger;
-use super::plan::Plan;
+use super::plan::{Mode, Plan};
 use super::stream::{self, ChunkStream};
 use crate::codestral_records::RecordSource;
 use crate::codestral_records::record_text;
@@ -25,8 +25,11 @@ impl CodestralCall {
         log: &mut (dyn CallLogger + Send),
     ) -> Result<CodestralReply, CodestralCallError> {
         let request = outbound(plan, &self.client)?;
-        let response = self.client.send_following(request).await?;
-        let upstream = response.buffered(self.client.limits.body_bytes).await?;
+        let wrapped = plan.mode == Mode::Async;
+        let timed = |failure| CodestralCallError::transport(failure, wrapped);
+        let limit = self.client.limits.body_bytes;
+        let response = self.client.send_following(request).await.map_err(timed)?;
+        let upstream = response.buffered(limit).await.map_err(timed)?;
         // httpx's raise_for_status fails a 4xx or 5xx before process_text_completion_response logs post_call
         if !(200..=299).contains(&upstream.status) {
             return Err(stream::native_failure(upstream.status, &upstream.body)?);
