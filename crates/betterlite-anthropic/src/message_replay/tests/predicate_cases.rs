@@ -95,6 +95,15 @@ fn empty_kind_selects_the_block_type_and_field() {
     assert!(is_empty_block(&thinking_block, EmptyKind::Thinking));
 }
 
+// Python's str.strip also removes U+001C to U+001F; see docs/deviations/B571.yaml.
+#[test]
+fn empty_predicates_keep_the_python_only_separators() {
+    let text = json_fixture(r#"{"type":"text","text":"\u001c"}"#);
+    let thinking = json_fixture(r#"{"type":"thinking","thinking":"\u001f"}"#);
+    assert!(!is_empty_block(&text, EmptyKind::Text));
+    assert!(!is_empty_block(&thinking, EmptyKind::Thinking));
+}
+
 #[test]
 fn empty_predicates_reject_non_objects() {
     assert!(!is_empty_block(

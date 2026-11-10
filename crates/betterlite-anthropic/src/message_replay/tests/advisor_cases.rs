@@ -105,6 +105,32 @@ fn advisor_result_without_text_block_yields_no_feedback_block() {
     );
 }
 
+// LiteLLM raises TypeError on this content shape; see docs/deviations/B571.yaml.
+#[test]
+fn advisor_non_iterable_result_content_yields_no_feedback_block() {
+    let mut messages = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"adv","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"adv","content":5}]}]"#,
+    );
+    strip_advisor_blocks(&mut messages, true);
+    assert_eq!(
+        messages,
+        list_fixture(r#"[{"role":"assistant","content":[]}]"#)
+    );
+}
+
+// LiteLLM formats a non-string text value with an f-string; see docs/deviations/B571.yaml.
+#[test]
+fn advisor_non_string_text_value_yields_no_feedback_block() {
+    let mut messages = list_fixture(
+        r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"adv","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"adv","content":[{"type":"text","text":5}]}]}]"#,
+    );
+    strip_advisor_blocks(&mut messages, true);
+    assert_eq!(
+        messages,
+        list_fixture(r#"[{"role":"assistant","content":[]}]"#)
+    );
+}
+
 #[test]
 fn advisor_ignores_messages_without_assistant_role_or_list_content() {
     let mut messages = list_fixture(
