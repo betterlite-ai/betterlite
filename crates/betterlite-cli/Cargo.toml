@@ -23,7 +23,7 @@ keyring-core = { version = "1.0.1", optional = true }
 regex.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_json = { version = "1.0.154", features = ["float_roundtrip", "raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
 shlex = "2.0.1"
