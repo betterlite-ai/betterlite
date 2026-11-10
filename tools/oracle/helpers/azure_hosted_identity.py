@@ -73,7 +73,7 @@ class HttpRequestLike(Protocol):
 
 
 class WithinDac(Protocol):
-    def set(self, *, value: bool) -> object: ...
+    def set(self, value: object, /) -> object: ...
 
     def reset(self, marker: object) -> None: ...
 
@@ -114,13 +114,11 @@ class FixtureResponse:
 def recorded_request(
     method: str,
     url: str,
-    params: Mapping[str, str],
     headers: Mapping[str, str],
     form: Mapping[str, str] | None,
 ) -> dict[str, Json]:
     parts = urlsplit(url)
     query: dict[str, Json] = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query.update(params)
     kept: dict[str, Json] = {
         name.lower(): value for name, value in headers.items() if name.lower() in KEPT_HEADERS
     }
@@ -144,20 +142,10 @@ class FixtureTransport:
             recorded_request(
                 http_request.method,
                 http_request.url,
-                {},
                 http_request.headers,
                 http_request.content,
             )
         )
-        return FixtureResponse(self.replies.pop(0))
-
-    def get(
-        self,
-        url: str,
-        params: Mapping[str, str] | None = None,
-        headers: Mapping[str, str] | None = None,
-    ) -> FixtureResponse:
-        self.requests.append(recorded_request("GET", url, params or {}, headers or {}, None))
         return FixtureResponse(self.replies.pop(0))
 
 
@@ -225,7 +213,9 @@ def build_credential(step: TokenStep, transport: FixtureTransport) -> FixtureCre
             transport=transport, client_id=client_id, identity_config=identity_config
         )
     if protocol == "service_fabric":
-        return ServiceFabricCredential(client_id=client_id, identity_config=identity_config)
+        return ServiceFabricCredential(
+            client_id=client_id, identity_config=identity_config, transport=transport
+        )
     if protocol == "azure_ml":
         return AzureMLCredential(
             client_id=client_id, identity_config=identity_config, transport=transport
@@ -247,26 +237,19 @@ def litellm_bearer(credential: FixtureCredential, scope: str) -> str | None:
             return None
 
 
-def credential_token(step: TokenStep, transport: FixtureTransport, scope: str) -> dict[str, Json]:
-    credential = build_credential(step, transport)
-    protocol = step["protocol"]
+@contextmanager
+def default_credential_scope(*, enabled: bool) -> Generator[None]:
+    marker = identity_internal.within_dac.set(enabled)
     try:
-        if protocol == "cloud_shell" and step.get("within_default_credential"):
-            marker = identity_internal.within_dac.set(value=True)
-            try:
-                token = credential.get_token_info(scope)
-            finally:
-                identity_internal.within_dac.reset(marker)
-        elif protocol == "service_fabric":
-            factory = FixtureFactory(transport)
-            with mock.patch.object(
-                msal_managed_identity,
-                "_create_service_fabric_http_client",
-                create=True,
-                new=factory,
-            ):
-                token = credential.get_token_info(scope)
-        else:
+        yield
+    finally:
+        identity_internal.within_dac.reset(marker)
+
+
+def credential_token(step: TokenStep, transport: FixtureTransport, scope: str) -> dict[str, Json]:
+    try:
+        with default_credential_scope(enabled=step.get("within_default_credential", False)):
+            credential = build_credential(step, transport)
             token = credential.get_token_info(scope)
     except (ClientAuthenticationError, DecodeError, KeyError, OSError, ValueError) as error:
         return {"kind": "error", "category": category(error)}
