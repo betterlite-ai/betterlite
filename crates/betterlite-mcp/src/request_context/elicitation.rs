@@ -16,19 +16,17 @@ pub enum ElicitAction {
     Cancel,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum ElicitContentValue {
     Null,
     Bool(bool),
-    Integer(i64),
-    Unsigned(u64),
-    Float(f64),
+    Number(serde_json::Number),
     Text(String),
     Texts(Vec<String>),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ElicitResult {
     pub action: ElicitAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]

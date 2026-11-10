@@ -224,6 +224,20 @@ async fn a_url_request_relays_to_elicit_url_with_the_elicitation_id() {
     assert_eq!(outcome.action, ElicitAction::Decline);
 }
 
+#[rstest]
+#[case::small_integer("7")]
+#[case::largest_unsigned("18446744073709551615")]
+#[case::negative_integer("-3")]
+#[case::fraction("2.5")]
+fn a_number_in_the_content_round_trips_with_its_text(#[case] number: &str) {
+    let raw = format!(r#"{{"action":"accept","content":{{"n":{number}}}}}"#);
+    let parsed = result(&raw);
+    assert_eq!(
+        serde_json::to_string(&parsed).expect("the result should serialize"),
+        raw
+    );
+}
+
 #[tokio::test]
 async fn a_url_request_without_an_elicitation_id_is_relayed_with_none() {
     let session = FakeSession::returning(result(r#"{"action":"accept"}"#));
