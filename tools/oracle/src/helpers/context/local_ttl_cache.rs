@@ -105,7 +105,10 @@ fn projection(value: &str) -> CacheResult {
     Ok(json!({"value": cache.get("value")?}))
 }
 
-fn cache_helper_error(error: CacheError) -> Box<crate::helpers::HelperError> {
+fn cache_helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,
