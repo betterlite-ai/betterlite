@@ -24,7 +24,7 @@ pub enum ProcessorKind {
     Batch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SpanProcessorPlan {
     pub kind: ExporterKind,
     pub endpoint: Option<String>,
@@ -32,7 +32,7 @@ pub struct SpanProcessorPlan {
     pub processor: ProcessorKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ExporterPlan {
     pub kind: ExporterKind,
     pub endpoint: Option<String>,

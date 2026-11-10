@@ -1,12 +1,15 @@
 #![cfg(test)]
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::mem;
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use http::HeaderMap;
 use opentelemetry::Context;
+use opentelemetry::trace::{Span as _, Tracer as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
@@ -65,7 +68,12 @@ fn config(
     }
 }
 
-fn cache(settings_config: OpenTelemetryConfig, max_providers: usize) -> DynamicTracerCache {
+fn cache_with(
+    settings_config: OpenTelemetryConfig,
+    max_providers: usize,
+    shared: InMemorySpanExporter,
+    http: HttpClients,
+) -> DynamicTracerCache {
     DynamicTracerCache::new(
         CacheSettings {
             config: settings_config,
@@ -74,8 +82,59 @@ fn cache(settings_config: OpenTelemetryConfig, max_providers: usize) -> DynamicT
             tracer_name: "litellm".to_owned(),
             max_providers,
         },
-        LegacyExporterBuilder::new(clients(), InMemorySpanExporter::default()),
+        LegacyExporterBuilder::new(http, shared),
     )
+}
+
+fn cache(settings_config: OpenTelemetryConfig, max_providers: usize) -> DynamicTracerCache {
+    cache_with(
+        settings_config,
+        max_providers,
+        InMemorySpanExporter::default(),
+        clients(),
+    )
+}
+
+#[derive(Debug, Clone)]
+struct Posted {
+    uri: String,
+    headers: HeaderMap,
+}
+
+#[derive(Debug, Default)]
+struct Recorder(Mutex<Vec<Posted>>);
+
+impl Recorder {
+    fn take(&self) -> Vec<Posted> {
+        let mut posted = self.0.lock().expect("request lock");
+        mem::take(&mut *posted)
+    }
+}
+
+#[async_trait::async_trait]
+impl HttpClient for Recorder {
+    async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        let posted = Posted {
+            uri: request.uri().to_string(),
+            headers: request.headers().clone(),
+        };
+        self.0.lock().expect("request lock").push(posted);
+        Ok(Response::new(Bytes::new()))
+    }
+}
+
+fn recording_clients(recorder: &Arc<Recorder>) -> HttpClients {
+    let concrete: Arc<Recorder> = Arc::clone(recorder);
+    let shared: Arc<dyn HttpClient> = concrete;
+    HttpClients {
+        traces: Arc::clone(&shared),
+        metrics: Arc::clone(&shared),
+        logs: shared,
+    }
+}
+
+fn header<'posted>(posted: &'posted Posted, name: &str) -> Option<&'posted str> {
+    posted.headers.get(name)?.to_str().ok()
 }
 
 fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -426,6 +485,137 @@ fn tracer_for_headers_with_an_empty_map_uses_the_configured_headers() {
         cache.cached_keys(),
         vec![CacheKey::Headers(BTreeMap::new())]
     );
+}
+
+#[test]
+fn a_dynamic_header_reaches_the_exporters_post() {
+    let recorder = Arc::new(Recorder::default());
+    let cache = cache_with(
+        config(
+            Exporter::Named("otlp_http".to_owned()),
+            Some("http://collector:4318"),
+            None,
+        ),
+        1,
+        InMemorySpanExporter::default(),
+        recording_clients(&recorder),
+    );
+    let tracer = cache
+        .tracer_for_headers(&map(&[("authorization", "Bearer-one")]))
+        .expect("first tracer");
+    tracer.start("operation").end();
+    drop(tracer);
+    cache
+        .tracer_for_headers(&map(&[("authorization", "Bearer-two")]))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 1);
+    let posted = recorder.take();
+    assert_eq!(posted[0].uri, "http://collector:4318/v1/traces");
+    assert_eq!(header(&posted[0], "authorization"), Some("Bearer-one"));
+}
+
+#[test]
+fn an_empty_dynamic_map_posts_the_configured_headers() {
+    let recorder = Arc::new(Recorder::default());
+    let cache = cache_with(
+        config(
+            Exporter::Named("otlp_http".to_owned()),
+            Some("http://collector:4318"),
+            Some("x-config=1"),
+        ),
+        1,
+        InMemorySpanExporter::default(),
+        recording_clients(&recorder),
+    );
+    let tracer = cache
+        .tracer_for_headers(&BTreeMap::new())
+        .expect("a tracer from the configured headers");
+    tracer.start("operation").end();
+    drop(tracer);
+    cache
+        .tracer_for_headers(&map(&[("x-other", "2")]))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 1);
+    assert_eq!(header(&recorder.take()[0], "x-config"), Some("1"));
+}
+
+#[test]
+fn tracer_for_config_posts_to_the_overrides_normalized_endpoint() {
+    let recorder = Arc::new(Recorder::default());
+    let cache = cache_with(
+        config(
+            Exporter::Named("otlp_http".to_owned()),
+            Some("http://logger:4318"),
+            None,
+        ),
+        1,
+        InMemorySpanExporter::default(),
+        recording_clients(&recorder),
+    );
+    let override_config = config(
+        Exporter::Named("otlp_http".to_owned()),
+        Some("http://override:4318/v1/logs"),
+        None,
+    );
+    let tracer = cache
+        .tracer_for_config(&override_config)
+        .expect("the override tracer");
+    tracer.start("operation").end();
+    drop(tracer);
+    cache
+        .tracer_for_config(&config(
+            Exporter::Named("otlp_http".to_owned()),
+            Some("http://other:4318"),
+            None,
+        ))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 1);
+    let posted = recorder.take();
+    assert_eq!(posted[0].uri, "http://override:4318/v1/traces");
+}
+
+#[test]
+fn an_evicted_provider_never_shuts_the_shared_exporter_down() {
+    let shared = InMemorySpanExporter::default();
+    let cache = cache_with(
+        config(Exporter::Console, None, None),
+        1,
+        shared.clone(),
+        clients(),
+    );
+    let tracer = cache
+        .tracer_for_config(&config(Exporter::InMemory, None, None))
+        .expect("a tracer over the shared exporter");
+    tracer.start("shared-span").end();
+    cache
+        .tracer_for_config(&config(Exporter::Console, None, None))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 0);
+    let spans = shared.get_finished_spans().expect("spans");
+    assert_eq!(spans.len(), 1);
+    assert!(!shared.is_shutdown_called());
+}
+
+#[test]
+fn an_evicted_headers_provider_never_shuts_the_shared_exporter_down() {
+    let shared = InMemorySpanExporter::default();
+    let cache = cache_with(
+        config(Exporter::InMemory, None, None),
+        1,
+        shared.clone(),
+        clients(),
+    );
+    let tracer = cache
+        .tracer_for_headers(&map(&[("authorization", "one")]))
+        .expect("a tracer over the shared exporter");
+    tracer.start("shared-span").end();
+    cache
+        .tracer_for_headers(&map(&[("authorization", "two")]))
+        .expect("the evicting tracer");
+    assert_eq!(cache.join_shutdowns(), 0);
+    let spans = shared.get_finished_spans().expect("spans");
+    assert_eq!(spans.len(), 1);
+    assert!(!shared.is_shutdown_called());
 }
 
 #[test]

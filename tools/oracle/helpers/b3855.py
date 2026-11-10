@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from functools import partial
 from threading import Lock
 from types import ModuleType
-from typing import Protocol, TypeAlias, cast
+from typing import TypeAlias, cast
 from urllib import parse
 
 import litellm
@@ -16,9 +16,6 @@ from litellm.integrations.opentelemetry import (
 )
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-SERVICE_NAME = "service.name"
-RESOURCE_ATTRIBUTES_ENV = "OTEL_RESOURCE_ATTRIBUTES"
-SERVICE_NAME_ENV = "OTEL_SERVICE_NAME"
 DEFAULT_MAX_DYNAMIC_TRACER_PROVIDERS = 256
 
 _RECORDED_SHUTDOWNS: list[int] = []
@@ -29,11 +26,6 @@ _log_plan = OpenTelemetry._get_log_exporter  # noqa: SLF001  # pyright: ignore[r
 _metric_plan = OpenTelemetry._get_metric_reader  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 _litellm_resource = OpenTelemetry._get_litellm_resource  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
 _cached_tracer = OpenTelemetry._cached_dynamic_tracer  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-
-
-class ResourceLike(Protocol):
-    @property
-    def attributes(self) -> dict[str, str]: ...
 
 
 class _Exporter:
@@ -85,7 +77,7 @@ class Resource:
     def create(attributes: Mapping[str, str | None] | None = None) -> "Resource":
         merged = OTELResourceDetector().detect().attributes
         merged.update({key: value for key, value in (attributes or {}).items() if value})
-        merged.setdefault(SERVICE_NAME, "unknown_service")
+        merged.setdefault("service.name", "unknown_service")
         return Resource(merged)
 
     def merge(self, other: "Resource") -> "Resource":
@@ -95,12 +87,12 @@ class Resource:
 class OTELResourceDetector:
     def detect(self) -> "Resource":
         attributes: dict[str, str] = {}
-        for item in os.environ.get(RESOURCE_ATTRIBUTES_ENV, "").split(","):
+        for item in os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "").split(","):
             key, separator, value = item.partition("=")
             if separator:
                 attributes[key.strip()] = parse.unquote(value.strip())
-        if service_name := os.environ.get(SERVICE_NAME_ENV):
-            attributes[SERVICE_NAME] = service_name
+        if service_name := os.environ.get("OTEL_SERVICE_NAME"):
+            attributes["service.name"] = service_name
         return Resource(attributes)
 
 
@@ -219,10 +211,6 @@ def headers_value(input_value: dict[str, Json]) -> Json:
     return cast(Json, _headers_dictionary(headers))
 
 
-def parsed_headers(value: str | Mapping[str, str] | None) -> dict[str, str]:
-    return _headers_dictionary(value)
-
-
 def span_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
     override = input_value.get("config_override")
@@ -238,7 +226,7 @@ def span_plan_value(input_value: dict[str, Json]) -> Json:
     )
     value = cast(
         "dict[str, Json]",
-        plan_value(processor.exporter, parsed_headers(dynamic_map or chosen)),
+        plan_value(processor.exporter, _headers_dictionary(dynamic_map or chosen)),
     )
     value["processor"] = "batch" if isinstance(processor, BatchSpanProcessor) else "simple"
     return cast(Json, value)
@@ -246,16 +234,14 @@ def span_plan_value(input_value: dict[str, Json]) -> Json:
 
 def log_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
-    headers = parsed_headers(logger.OTEL_HEADERS)
     exporter = cast(_Exporter, _log_plan(logger))
-    return plan_value(exporter, headers)
+    return plan_value(exporter, _headers_dictionary(logger.OTEL_HEADERS))
 
 
 def metric_plan_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
-    headers = parsed_headers(logger.OTEL_HEADERS)
     reader = cast(PeriodicExportingMetricReader, _metric_plan(logger))
-    return plan_value(reader.exporter, headers)
+    return plan_value(reader.exporter, _headers_dictionary(logger.OTEL_HEADERS))
 
 
 def cache_key_text(key: dict[str, Json]) -> str:
@@ -295,7 +281,7 @@ def tracer_cache_value(input_value: dict[str, Json]) -> Json:
 
 def resource_value(input_value: dict[str, Json]) -> Json:
     logger = configured_logger(input_value)
-    resource = cast(ResourceLike, _litellm_resource(logger.config))
+    resource = cast(Resource, _litellm_resource(logger.config))
     attributes = {k: v for k, v in resource.attributes.items() if "telemetry.sdk." not in k}
     return cast(Json, {"attributes": attributes})
 

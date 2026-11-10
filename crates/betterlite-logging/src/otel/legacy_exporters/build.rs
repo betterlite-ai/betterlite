@@ -88,7 +88,8 @@ impl LegacyExporterBuilder {
                 self.factories.exporter_from_spec(&ExporterSpec {
                     kind: exporter_kind_text(plan.kind).to_owned(),
                     endpoint: plan.endpoint.clone(),
-                    traces_endpoint: None,
+                    // The legacy rule already chose the exact path, which signal_endpoint would rewrite.
+                    traces_endpoint: plan.endpoint.clone(),
                     headers: joined_headers(&plan.headers),
                     owner: None,
                     options: None,

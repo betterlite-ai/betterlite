@@ -19,23 +19,18 @@ fn env_attributes(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
         if item.is_empty() {
             continue;
         }
-        let Some((name, value)) = item.split_once('=') else {
+        let Some((name, value)) = item
+            .split_once('=')
+            .filter(|(name, _value)| !name.trim().is_empty())
+        else {
             warn!(
                 position = index.saturating_add(1),
                 "otel: dropping an OTEL_RESOURCE_ATTRIBUTES entry that is not name=value"
             );
             continue;
         };
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            warn!(
-                position = index.saturating_add(1),
-                "otel: dropping an OTEL_RESOURCE_ATTRIBUTES entry with an empty name"
-            );
-            continue;
-        }
         let decoded = percent_decode_str(value.trim()).decode_utf8_lossy();
-        attributes.insert(trimmed.to_owned(), decoded.into_owned());
+        attributes.insert(name.trim().to_owned(), decoded.into_owned());
     }
     if let Some(name) = env.get(SERVICE_NAME_ENV).filter(|value| !value.is_empty()) {
         attributes.insert(SERVICE_NAME.to_owned(), name.clone());

@@ -2,7 +2,6 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, sync_channel};
-use std::thread;
 use std::time::Duration;
 
 use betterlite_logging::otel::legacy_exporters::build::LegacyExporterBuilder;
@@ -21,10 +20,8 @@ use opentelemetry_sdk::trace::{
     InMemorySpanExporter, SdkTracerProvider, Span, SpanData, SpanProcessor,
 };
 use serde_json::{Value, json};
-use tracing::debug;
 
-use super::Input;
-use super::inputs::{RequestInput, cache_key};
+use super::{Input, RequestInput, cache_key};
 use crate::helpers::{HelperError, HelperResult};
 
 pub(super) fn invalid(message: &str) -> Box<HelperError> {
@@ -100,8 +97,7 @@ fn no_server_clients() -> HttpClients {
 
 #[derive(Debug)]
 struct ShutdownRecorder {
-    index: usize,
-    caller_thread: Option<String>,
+    index: Option<usize>,
     sender: SyncSender<usize>,
 }
 
@@ -114,25 +110,24 @@ impl SpanProcessor for ShutdownRecorder {
         Ok(())
     }
 
-    // A provider dropped without owning its exporter still shuts down on the dropping thread.
+    // A provider that does not own its exporter is dropped on the caller's thread and never recorded.
     fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
-        if thread::current().name().map(str::to_owned) != self.caller_thread
-            && self.sender.try_send(self.index).is_err()
-        {
-            debug!("otel: the tracer cache helper lost a shutdown record");
+        if let Some(index) = self.index {
+            _ = self.sender.try_send(index);
         }
         Ok(())
     }
 }
 
 fn echo(requests: &[RequestInput], keys: &[CacheKey]) -> Vec<Value> {
-    let key_of = |key: &CacheKey| {
-        requests
-            .iter()
-            .find(|request| cache_key(&request.key).as_ref() == Some(key))
-            .map_or(Value::Null, |request| request.key.clone())
-    };
-    keys.iter().map(key_of).collect()
+    keys.iter()
+        .map(|key| {
+            requests
+                .iter()
+                .find(|request| cache_key(&request.key).as_ref() == Some(key))
+                .map_or(Value::Null, |request| request.key.clone())
+        })
+        .collect()
 }
 
 fn fill_cache(
@@ -140,7 +135,6 @@ fn fill_cache(
     input: &Input,
     keys: &[CacheKey],
     sender: &SyncSender<usize>,
-    caller_thread: Option<&str>,
 ) -> Result<Vec<bool>, Box<HelperError>> {
     let mut built = Vec::with_capacity(keys.len());
     for (index, (request, key)) in input.requests.iter().zip(keys).enumerate() {
@@ -148,11 +142,9 @@ fn fill_cache(
         cache
             .cached_dynamic_tracer(key.clone(), request.owns_exporter, || {
                 ran.set(true);
-                let recorder = sender.clone();
                 let processor = ShutdownRecorder {
-                    index,
-                    caller_thread: caller_thread.map(str::to_owned),
-                    sender: recorder,
+                    index: request.owns_exporter.then_some(index),
+                    sender: sender.clone(),
                 };
                 Ok(SdkTracerProvider::builder()
                     .with_span_processor(processor)
@@ -182,9 +174,8 @@ pub(super) fn tracer_cache_sequence(input: &Input) -> HelperResult {
         },
         LegacyExporterBuilder::new(no_server_clients(), InMemorySpanExporter::default()),
     );
-    let caller_thread = thread::current().name().map(str::to_owned);
-    let built = fill_cache(&cache, input, &keys, &sender, caller_thread.as_deref())?;
-    cache.join_shutdowns();
+    let built = fill_cache(&cache, input, &keys, &sender)?;
+    let _joined = cache.join_shutdowns();
     let mut shut_down: Vec<usize> = receiver.try_iter().collect();
     shut_down.sort_unstable();
     let order = echo(&input.requests, &cache.cached_keys());

@@ -180,6 +180,7 @@ fn span_processor_plan_falls_back_from_empty_dynamic_headers_to_the_config_text(
 #[case::shared(Exporter::InMemory)]
 fn span_processor_plan_parses_headers_before_choosing_the_exporter(#[case] exporter: Exporter) {
     let error = span_processor_plan(&config(exporter, None, Some("oops")), None, None, None)
+        .map(|plan| plan.kind)
         .expect_err("the headers text has no equals sign");
     assert_eq!(error, HeadersError::MissingSeparator { position: 1 });
 }
@@ -293,6 +294,7 @@ fn log_exporter_plan_parses_headers_before_choosing_the_exporter() {
         None,
         &BTreeMap::new(),
     )
+    .map(|plan| plan.kind)
     .expect_err("the third part has no equals sign");
     assert_eq!(error, HeadersError::MissingSeparator { position: 2 });
 }
@@ -346,6 +348,7 @@ fn metric_reader_plan_warns_for_an_in_memory_exporter() {
 #[test]
 fn metric_reader_plan_parses_headers_before_choosing_the_exporter() {
     let error = metric_reader_plan(&config(Exporter::Console, None, Some("oops")), None)
+        .map(|plan| plan.kind)
         .expect_err("the headers text has no equals sign");
     assert_eq!(error, HeadersError::MissingSeparator { position: 1 });
 }

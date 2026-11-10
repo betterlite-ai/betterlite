@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
-use std::mem;
+use std::fmt;
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Mutex, PoisonError};
-use std::thread::{Builder, JoinHandle};
+use std::thread::Builder;
 
 use indexmap::IndexMap;
 use opentelemetry::trace::TracerProvider as _;
@@ -20,8 +21,10 @@ pub const MAX_DYNAMIC_TRACER_PROVIDERS: usize = 256;
 const DEFAULT_TRACER_NAME: &str = "litellm";
 const TRACER_NAME_ENV: &str = "OTEL_TRACER_NAME";
 const SHUTDOWN_THREAD_NAME: &str = "otel-dynamic-provider-shutdown";
+// LiteLLM shuts dropped providers down on a four-worker pool; one worker behind this queue has the same cap.
+const SHUTDOWN_QUEUE: usize = 4;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum CacheKey {
     Config {
         exporter: String,
@@ -29,6 +32,18 @@ pub enum CacheKey {
         headers: Option<String>,
     },
     Headers(BTreeMap<String, String>),
+}
+
+// The header values are collector credentials, so Debug prints only the header names.
+impl fmt::Debug for CacheKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Config { exporter, .. } => write!(f, "Config({exporter}, redacted)"),
+            Self::Headers(headers) => {
+                write!(f, "Headers({:?})", headers.keys().collect::<Vec<_>>())
+            }
+        }
+    }
 }
 
 pub struct CacheSettings {
@@ -44,6 +59,11 @@ struct CachedProvider {
     owns_exporter: bool,
 }
 
+enum ShutdownJob {
+    Drop(CachedProvider),
+    Flush(SyncSender<usize>),
+}
+
 pub struct DynamicTracerCache {
     config: OpenTelemetryConfig,
     callback_name: Option<String>,
@@ -52,7 +72,7 @@ pub struct DynamicTracerCache {
     tracer_name: String,
     max_providers: usize,
     entries: Mutex<IndexMap<CacheKey, CachedProvider>>,
-    shutdowns: Mutex<Vec<JoinHandle<()>>>,
+    shutdowns: SyncSender<ShutdownJob>,
 }
 
 #[must_use]
@@ -61,14 +81,6 @@ pub fn legacy_tracer_name(env: &BTreeMap<String, String>) -> String {
         .filter(|value| !value.is_empty())
         .cloned()
         .unwrap_or_else(|| DEFAULT_TRACER_NAME.to_owned())
-}
-
-fn exporter_text(exporter: &Exporter) -> String {
-    match exporter {
-        Exporter::Console => "console".to_owned(),
-        Exporter::InMemory => "in_memory".to_owned(),
-        Exporter::Named(text) => text.clone(),
-    }
 }
 
 fn evicted(
@@ -83,9 +95,37 @@ fn evicted(
         .map(|(_key, provider)| provider)
 }
 
+fn shut_down(dropped: &CachedProvider) {
+    if let Err(error) = dropped.provider.shutdown() {
+        debug!(error = %error, "otel: a dropped dynamic tracer provider failed to shut down");
+    }
+}
+
+fn start_shutdown_worker(receiver: Receiver<ShutdownJob>) {
+    let worker = Builder::new()
+        .name(SHUTDOWN_THREAD_NAME.to_owned())
+        .spawn(move || {
+            let mut shut_down_count = 0_usize;
+            while let Ok(job) = receiver.recv() {
+                match job {
+                    ShutdownJob::Drop(dropped) => {
+                        shut_down(&dropped);
+                        shut_down_count = shut_down_count.saturating_add(1);
+                    }
+                    ShutdownJob::Flush(done) => _ = done.send(shut_down_count),
+                }
+            }
+        });
+    if let Err(error) = worker {
+        debug!(error = %error, "otel: no worker started to shut dropped tracer providers down");
+    }
+}
+
 impl DynamicTracerCache {
     #[must_use]
     pub fn new(settings: CacheSettings, builder: LegacyExporterBuilder) -> Self {
+        let (shutdowns, receiver) = sync_channel(SHUTDOWN_QUEUE);
+        start_shutdown_worker(receiver);
         Self {
             config: settings.config,
             callback_name: settings.callback_name,
@@ -94,7 +134,7 @@ impl DynamicTracerCache {
             max_providers: settings.max_providers.max(1),
             builder,
             entries: Mutex::new(IndexMap::new()),
-            shutdowns: Mutex::new(Vec::new()),
+            shutdowns,
         }
     }
 
@@ -103,7 +143,11 @@ impl DynamicTracerCache {
         dynamic_config: &OpenTelemetryConfig,
     ) -> Result<SdkTracer, LegacyExporterError> {
         let key = CacheKey::Config {
-            exporter: exporter_text(&dynamic_config.exporter),
+            exporter: match &dynamic_config.exporter {
+                Exporter::Console => "console".to_owned(),
+                Exporter::InMemory => "in_memory".to_owned(),
+                Exporter::Named(text) => text.clone(),
+            },
             endpoint: dynamic_config.endpoint.clone(),
             headers: dynamic_config.headers.clone(),
         };
@@ -128,15 +172,14 @@ impl DynamicTracerCache {
     ) -> Result<SdkTracer, LegacyExporterError> {
         let owns_exporter = !matches!(exporter, Exporter::InMemory);
         let callback_name = self.callback_name.as_deref();
-        let plan = || {
+        self.tracer_for_key(key, owns_exporter, || {
             span_processor_plan(
                 &self.config,
                 dynamic_headers,
                 config_override,
                 callback_name,
             )
-        };
-        self.tracer_for_key(key, owns_exporter, plan)
+        })
     }
 
     fn tracer_for_key<F>(
@@ -200,22 +243,8 @@ impl DynamicTracerCache {
         if !dropped.owns_exporter {
             return;
         }
-        let spawned = Builder::new()
-            .name(SHUTDOWN_THREAD_NAME.to_owned())
-            .spawn(move || {
-                if let Err(error) = dropped.provider.shutdown() {
-                    debug!(error = %error, "otel: a dropped dynamic tracer provider failed to shut down");
-                }
-            });
-        match spawned {
-            Ok(handle) => self
-                .shutdowns
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(handle),
-            Err(error) => {
-                debug!(error = %error, "otel: no thread started to shut a dropped dynamic tracer provider down");
-            }
+        if self.shutdowns.send(ShutdownJob::Drop(dropped)).is_err() {
+            debug!("otel: no shutdown worker took a dropped dynamic tracer provider");
         }
     }
 
@@ -227,20 +256,13 @@ impl DynamicTracerCache {
         keys
     }
 
+    #[must_use]
     pub fn join_shutdowns(&self) -> usize {
-        let handles = mem::take(
-            &mut *self
-                .shutdowns
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        let joined = handles.len();
-        for handle in handles {
-            if handle.join().is_err() {
-                debug!("otel: a dynamic tracer provider shutdown thread panicked");
-            }
+        let (done, ack) = sync_channel(1);
+        if self.shutdowns.send(ShutdownJob::Flush(done)).is_err() {
+            return 0;
         }
-        joined
+        ack.recv().unwrap_or(0)
     }
 }
 

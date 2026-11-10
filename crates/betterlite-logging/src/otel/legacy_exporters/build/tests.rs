@@ -157,6 +157,32 @@ fn otlp_http_plan_sends_to_the_normalized_endpoint_with_the_plan_headers() {
     assert_eq!(header(&posted, "x-team"), Some("one"));
 }
 
+#[rstest]
+#[case::langtrace(
+    "http://collector/api/trace",
+    Some("langtrace"),
+    "http://collector/api/trace"
+)]
+#[case::v1_base("http://collector/v1", None, "http://collector/v1/traces")]
+fn the_normalized_trace_path_reaches_the_exporter_verbatim(
+    #[case] endpoint: &str,
+    #[case] callback_name: Option<&str>,
+    #[case] expected: &str,
+) {
+    let recorder = Arc::new(LastRequest::default());
+    let plan = span_processor_plan(
+        &config(named("otlp_http"), Some(endpoint), None),
+        None,
+        None,
+        callback_name,
+    )
+    .expect("plan");
+    let processor = builder(&recorder).span_processor(&plan).expect("processor");
+    export_one_span(processor);
+    let posted = recorder.take();
+    assert_eq!(posted.uri, expected);
+}
+
 #[test]
 fn otlp_http_plan_posts_protobuf_for_the_json_http_name() {
     let recorder = Arc::new(LastRequest::default());
