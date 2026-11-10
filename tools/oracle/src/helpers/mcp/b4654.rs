@@ -52,7 +52,7 @@ fn resource_operation(function: &str, input: &Value) -> HelperResult {
             json!({"value": challenge::byok_www_authenticate(support::optional(input, "proxy_base_url")?.unwrap_or_default(), support::optional(input, "request_root_path")?.unwrap_or_default())}),
         ),
         "canonicalize" => Ok(
-            json!({"value": if support::boolean(input, "resource_only").unwrap_or(false) { json!(resource_identity::canonical_resource_uri(support::string(input, "url")?).map_err(support::url_identity_helper_error)?) } else { json!(resource_identity::canonicalize_url_identity(support::string(input, "url")?).map_err(support::url_identity_helper_error)?) }}),
+            json!({"value": if support::boolean(input, "resource_only").unwrap_or(false) { json!(resource_identity::canonical_resource_uri(support::string(input, "url")?).map_err(|error| support::invalid("ValueError", None, error.to_string()))?) } else { json!(resource_identity::canonicalize_url_identity(support::string(input, "url")?).map_err(|error| support::invalid("ValueError", None, error.to_string()))?) }}),
         ),
         "redact_url" => Ok(json!({
             "value": resource_identity::redact_mcp_resource_url(support::optional(input, "url")?)
@@ -113,7 +113,8 @@ fn request_base_url(input: &Value) -> Result<String, Box<HelperError>> {
         from_trusted_proxy: support::boolean(input, "from_trusted_proxy")?,
     };
     let configured = support::optional(input, "proxy_base_url")?.unwrap_or_default();
-    base_url::get_request_base_url(configured, &origin).map_err(support::url_parse_helper_error)
+    base_url::get_request_base_url(configured, &origin)
+        .map_err(|error| support::invalid("ValueError", None, error.to_string()))
 }
 
 fn metadata_url(input: &Value) -> Result<String, Box<HelperError>> {
@@ -144,7 +145,7 @@ fn token_client_auth(input: &Value) -> Result<TokenEndpointClientAuth, Box<Helpe
         client_id,
         secret.as_ref(),
     )
-    .map_err(support::token_endpoint_auth_error)
+    .map_err(|error| support::invalid("TokenEndpointAuthConfigError", None, error.to_string()))
 }
 
 fn safe_header_values(input: &Value) -> Result<Value, Box<HelperError>> {

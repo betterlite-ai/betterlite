@@ -85,18 +85,51 @@ use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
 
-pub(crate) fn config_helper_error<E>(error: E) -> Box<HelperError>
+pub(crate) trait OrHelperError<T> {
+    fn or_config_error(self) -> Result<T, Box<HelperError>>;
+    fn or_value_error(self) -> Result<T, Box<HelperError>>;
+}
+
+enum ErrorClass {
+    Config,
+    Value,
+}
+
+fn map_helper_error<T, E>(result: Result<T, E>, class: &ErrorClass) -> Result<T, Box<HelperError>>
 where
     E: std::fmt::Display,
 {
-    Box::new(HelperError {
-        class: "ConfigError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
+    result.map_err(|error| {
+        let message = error.to_string();
+        Box::new(match class {
+            ErrorClass::Config => HelperError {
+                class: "ConfigError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message,
+            },
+            ErrorClass::Value => HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+                message,
+            },
+        })
     })
+}
+
+impl<T, E: std::fmt::Display> OrHelperError<T> for Result<T, E> {
+    fn or_config_error(self) -> Result<T, Box<HelperError>> {
+        map_helper_error(self, &ErrorClass::Config)
+    }
+
+    fn or_value_error(self) -> Result<T, Box<HelperError>> {
+        map_helper_error(self, &ErrorClass::Value)
+    }
 }
 
 const GROUPS: [Group; 46] = [

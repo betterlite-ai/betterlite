@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
@@ -10,7 +11,7 @@ use betterlite_openai::base_helpers::{
 use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
 use serde_json::{Map, Value};
 
-use crate::helpers::{HelperError, config_helper_error};
+use crate::helpers::HelperError;
 
 mod tests;
 
@@ -189,7 +190,7 @@ fn load_settings(
         lookup: environment,
     }
     .load(source);
-    Ok(loaded.map_err(config_helper_error)?.litellm_settings)
+    Ok(loaded.or_config_error()?.litellm_settings)
 }
 
 fn openai_helper_error(error: &OpenAiError) -> Box<HelperError> {

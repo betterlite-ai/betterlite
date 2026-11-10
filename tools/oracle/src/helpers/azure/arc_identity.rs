@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::sync::Mutex;
@@ -59,7 +60,7 @@ impl<'fixture> Host<'fixture> {
             lookup: fixture.environment.clone(),
         }
         .load("")
-        .map_err(crate::helpers::config_helper_error)?;
+        .or_config_error()?;
         Ok(Self {
             fixture,
             settings: config.sections.azure_arc_identity,

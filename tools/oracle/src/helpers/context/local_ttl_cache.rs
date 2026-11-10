@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -39,7 +40,7 @@ impl crate::helpers::Helper for Op {
             Input::CachedJsonProjection { value } => projection(value),
             Input::DualLocalDefaultsErrors => return dual::run(),
         };
-        value.map_err(cache_helper_error)
+        value.or_value_error()
     }
 }
 
@@ -103,18 +104,4 @@ fn projection(value: &str) -> CacheResult {
     let mut cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))?;
     cache.set("value", CacheValue::Text(value.to_owned()), None)?;
     Ok(json!({"value": cache.get("value")?}))
-}
-
-fn cache_helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
-where
-    E: std::fmt::Display,
-{
-    Box::new(crate::helpers::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: error.to_string(),
-    })
 }

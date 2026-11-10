@@ -1,43 +1,12 @@
 use std::collections::BTreeMap;
 
-use betterlite_mcp::credential_contracts::token_endpoint_auth::TokenEndpointAuthConfigError;
-use betterlite_mcp::oauth_resource::python_url::UrlParseError;
-use betterlite_mcp::oauth_resource::resource_identity::UrlIdentityError;
-use betterlite_mcp::request_headers::raw_headers::{DuplicateAuthorization, RawHeaders};
+use betterlite_mcp::request_headers::raw_headers::RawHeaders;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
 use crate::helpers::HelperError;
 
 type FieldResult<T> = Result<T, Box<HelperError>>;
-
-macro_rules! helper_error {
-    ($name:ident, $error:ty, $class:literal, $status:expr) => {
-        pub(super) fn $name(error: $error) -> Box<HelperError> {
-            invalid($class, $status, error.to_string())
-        }
-    };
-}
-
-helper_error!(url_parse_helper_error, UrlParseError, "ValueError", None);
-helper_error!(
-    url_identity_helper_error,
-    UrlIdentityError,
-    "ValueError",
-    None
-);
-helper_error!(
-    duplicate_authorization_error,
-    DuplicateAuthorization,
-    "HTTPException",
-    Some(400)
-);
-helper_error!(
-    token_endpoint_auth_error,
-    TokenEndpointAuthConfigError,
-    "TokenEndpointAuthConfigError",
-    None
-);
 
 pub(super) fn invalid(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -103,7 +72,8 @@ pub(super) fn parse_headers(input: &Value) -> Result<RawHeaders, Box<HelperError
     for (name, value) in &entries {
         pairs.push((name.as_bytes(), value.as_bytes()));
     }
-    RawHeaders::from_pairs(&pairs).map_err(duplicate_authorization_error)
+    RawHeaders::from_pairs(&pairs)
+        .map_err(|error| invalid("HTTPException", Some(400), error.to_string()))
 }
 
 pub(super) fn expose(map: BTreeMap<String, SecretString>) -> BTreeMap<String, String> {

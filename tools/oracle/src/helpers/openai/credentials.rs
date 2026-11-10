@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use crate::helpers::{HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -71,7 +72,7 @@ fn load_config(env: &BTreeMap<String, String>) -> Result<Config, Box<HelperError
         lookup: env.clone(),
     }
     .load("")
-    .map_err(crate::helpers::config_helper_error)
+    .or_config_error()
 }
 
 fn credentials(fields: &CredentialFields) -> HelperResult {

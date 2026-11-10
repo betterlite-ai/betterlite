@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::{
     CacheError, CacheValue, LocalTtlCache,
@@ -21,7 +22,7 @@ pub(super) fn run() -> crate::helpers::HelperResult {
             1024,
             Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed))),
         )
-        .map_err(super::cache_helper_error)?,
+        .or_value_error()?,
     ));
     let events = Arc::new(Mutex::new(Vec::<CacheEvent>::new()));
     let dual = DualLocalCache::new(
@@ -45,7 +46,8 @@ pub(super) fn run() -> crate::helpers::HelperResult {
     let failure = dual.get("failure");
     let captured = events
         .lock()
-        .map_err(|_poisoned| super::cache_helper_error(CacheError::Unavailable))?;
+        .map_err(|_poisoned| CacheError::Unavailable)
+        .or_value_error()?;
     Ok(json!({"expired": expired, "zero": zero, "failure": failure,
         "set_event": captured.iter().any(|event| event.message.starts_with("set cache:")),
         "get_event": captured.iter().any(|event| event.kind == EventKind::Error)}))
