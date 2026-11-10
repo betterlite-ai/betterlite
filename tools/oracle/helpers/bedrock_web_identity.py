@@ -180,8 +180,7 @@ def web_identity(params: Params) -> Json:
 
 
 def same_account(params: Params) -> Json:
-    reply = cast(dict[str, Json], params["reply"])
-    sts = FakeSts({"AssumeRole": credentials(reply)}, environment(params))
+    sts = FakeSts({"AssumeRole": web_identity_answer(params["reply"])}, environment(params))
     with harness(sts, params):
         response = BaseAWSLLM()._handle_irsa_same_account(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
             aws_role_name=cast(str, params["role_arn"]),
@@ -199,8 +198,8 @@ def cross_account(params: Params) -> Json:
     token_file = cast(dict[str, str], params["token_file"])
     sts = FakeSts(
         {
-            "AssumeRoleWithWebIdentity": credentials(cast(dict[str, Json], params["irsa_reply"])),
-            "AssumeRole": credentials(cast(dict[str, Json], params["reply"])),
+            "AssumeRoleWithWebIdentity": web_identity_answer(params["irsa_reply"]),
+            "AssumeRole": web_identity_answer(params["reply"]),
         },
         environment(params),
     )
@@ -234,7 +233,6 @@ def audiences(params: Params) -> Json:
 
 HANDLERS: dict[str, Callable[[Params], Json]] = {
     "jwt_audience_hint": audiences,
-    "malformed_token": audiences,
     "web_identity": web_identity,
     "same_account_irsa": same_account,
     "cross_account_irsa": cross_account,

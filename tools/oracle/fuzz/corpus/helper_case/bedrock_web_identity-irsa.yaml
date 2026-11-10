@@ -10,9 +10,10 @@ call:
       tags: [{key: team, value: genai}]
       identity: {arn: 'arn:aws:sts::123456789012:assumed-role/Current/session'}
       reply:
-        access_key_id: ASIATARGET
-        secret_access_key: target-secret
-        session_token: target-session
-        expiration: '2026-01-01T01:00:00Z'
+        credentials:
+          access_key_id: ASIATARGET
+          secret_access_key: target-secret
+          session_token: target-session
+          expiration: '2026-01-01T01:00:00Z'
 env: {}
 compare: {ignore: []}

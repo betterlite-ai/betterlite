@@ -63,7 +63,6 @@ fn claim_repr(text: &str) -> String {
             '\t' => rendered.push_str("\\t"),
             '\n' => rendered.push_str("\\n"),
             '\r' => rendered.push_str("\\r"),
-            ' ' => rendered.push(' '),
             _ if character == quote => {
                 rendered.push('\\');
                 rendered.push(quote);
@@ -76,16 +75,17 @@ fn claim_repr(text: &str) -> String {
     rendered
 }
 fn printable(character: char) -> bool {
-    !matches!(
-        get_general_category(character),
-        GeneralCategory::Control
-            | GeneralCategory::Format
-            | GeneralCategory::PrivateUse
-            | GeneralCategory::Unassigned
-            | GeneralCategory::LineSeparator
-            | GeneralCategory::ParagraphSeparator
-            | GeneralCategory::SpaceSeparator
-    )
+    character == ' '
+        || !matches!(
+            get_general_category(character),
+            GeneralCategory::Control
+                | GeneralCategory::Format
+                | GeneralCategory::PrivateUse
+                | GeneralCategory::Unassigned
+                | GeneralCategory::LineSeparator
+                | GeneralCategory::ParagraphSeparator
+                | GeneralCategory::SpaceSeparator
+        )
 }
 fn hex_escape(character: char) -> String {
     let code = u32::from(character);
@@ -104,10 +104,7 @@ pub(super) fn decode_base64(payload: &str) -> Option<Vec<u8>> {
         3 => 1_usize,
         _ => 0_usize,
     };
-    let added = 4_usize
-        .saturating_sub(payload.len().checked_rem(4).unwrap_or(0))
-        .checked_rem(4)
-        .unwrap_or(0);
+    let added = payload.len().wrapping_neg().checked_rem(4).unwrap_or(0);
     if pads.saturating_add(added) < needed {
         return None;
     }

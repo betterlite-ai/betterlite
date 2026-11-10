@@ -2,7 +2,7 @@ use super::cross::cross_account_irsa;
 use super::fixture::{
     self, Answer, Record, Transport, assume_role_answer, denied_identity, web_identity_answer,
 };
-use super::input::{Case, Input, Reply, ReplyTag};
+use super::input::{Case, Input, ReplyTag, WebIdentityReply};
 use super::ports;
 use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
@@ -61,20 +61,16 @@ pub(super) fn fixture(
 }
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::JwtAudienceHint { tokens } | Input::MalformedToken { tokens } => {
-            Ok(audiences(tokens))
-        }
+        Input::JwtAudienceHint { tokens } => Ok(json!({
+            "audiences": tokens
+                .iter()
+                .map(|token| decode_web_identity_claims(token))
+                .collect::<Vec<Option<String>>>()
+        })),
         Input::WebIdentity(case) => web_identity(case),
         Input::SameAccountIrsa(case) => same_account_irsa(case),
         Input::CrossAccountIrsa(case) => cross_account_irsa(case),
     }
-}
-fn audiences(tokens: &[String]) -> Value {
-    let decoded: Vec<Option<String>> = tokens
-        .iter()
-        .map(|token| decode_web_identity_claims(token))
-        .collect();
-    json!({ "audiences": decoded })
 }
 pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
     let (class, status) = match error {
@@ -85,10 +81,10 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         | WebIdentityError::Endpoint(_)
         | WebIdentityError::TokenFile { .. }
         | WebIdentityError::TokenFileEncoding { .. }
-        | WebIdentityError::MissingField { .. }
+        | WebIdentityError::MissingField(_)
         | WebIdentityError::WebIdentity { .. }
         | WebIdentityError::AssumeRole { .. }
-        | WebIdentityError::SecretType { .. }
+        | WebIdentityError::SecretType
         | WebIdentityError::UnsupportedParameter { .. }
         | WebIdentityError::Policy { .. }
         | WebIdentityError::Tag { .. }
@@ -128,7 +124,7 @@ pub(super) fn irsa_json(record: &Record, response: &StsResponse) -> Value {
     })
 }
 fn web_identity(case: &Case) -> HelperResult {
-    let Some(Reply::Web(reply)) = case.reply.as_ref() else {
+    let Some(reply) = case.reply.as_ref() else {
         return Err(Box::<HelperError>::from(FixtureError::Case(
             "the case needs a web identity reply",
         )));
@@ -164,7 +160,7 @@ fn web_identity(case: &Case) -> HelperResult {
     }))
 }
 fn same_account_irsa(case: &Case) -> HelperResult {
-    let Some(Reply::Credentials(reply)) = case.reply.as_ref() else {
+    let Some(WebIdentityReply::Credentials(reply)) = case.reply.as_ref() else {
         return Err(Box::<HelperError>::from(FixtureError::Case(
             "the case needs a credentials reply",
         )));

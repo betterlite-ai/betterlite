@@ -34,11 +34,8 @@ pub enum WebIdentityError {
         #[source]
         source: FromUtf8Error,
     },
-    #[error("the STS {call} response has no {member}")]
-    MissingField {
-        call: &'static str,
-        member: &'static str,
-    },
+    #[error("{0}")]
+    MissingField(String),
     #[error("the STS web identity call failed")]
     WebIdentity {
         #[source]
@@ -49,8 +46,8 @@ pub enum WebIdentityError {
         #[source]
         source: Box<SdkError<AssumeRoleError>>,
     },
-    #[error("the {field} secret is not text")]
-    SecretType { field: &'static str },
+    #[error("the aws_web_identity_token secret is not text")]
+    SecretType,
     #[error("the {field} parameter is not part of the AssumeRoleWithWebIdentity API")]
     UnsupportedParameter { field: &'static str },
     #[error("the policy document does not serialize")]

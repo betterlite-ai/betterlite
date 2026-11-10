@@ -2,7 +2,7 @@ kind: helper
 name: bedrock-web-identity-malformed-token
 call:
   bedrock_web_identity:
-    malformed_token:
+    jwt_audience_hint:
       tokens:
         - a.b
         - a.b.c.d

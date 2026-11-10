@@ -268,7 +268,7 @@ pub(super) fn web_identity_ok(
 pub(super) fn assert_missing(error: &WebIdentityError, member: &str) {
     assert!(matches!(
         error,
-        WebIdentityError::MissingField { member: found, .. } if *found == member
+        WebIdentityError::MissingField(message) if message.ends_with(&format!("no {member}"))
     ));
 }
 

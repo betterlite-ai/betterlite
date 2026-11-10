@@ -45,29 +45,27 @@ pub(super) async fn sts_client(
     }
     Client::from_conf(builder.build())
 }
-pub(super) fn required_credentials(
-    credentials: &ResponseCredentials,
+pub(super) fn required_credentials<'creds>(
+    required: Option<&'creds ResponseCredentials>,
     call: &'static str,
-) -> Result<(), WebIdentityError> {
-    match (
-        credentials.access_key_id().is_empty(),
-        credentials.secret_access_key().is_empty(),
-        credentials.session_token().is_empty(),
-    ) {
-        (true, _, _) => Err(WebIdentityError::MissingField {
-            call,
-            member: "AccessKeyId",
-        }),
-        (_, true, _) => Err(WebIdentityError::MissingField {
-            call,
-            member: "SecretAccessKey",
-        }),
-        (_, _, true) => Err(WebIdentityError::MissingField {
-            call,
-            member: "SessionToken",
-        }),
-        _ => Ok(()),
+) -> Result<&'creds ResponseCredentials, WebIdentityError> {
+    let Some(credentials) = required else {
+        return Err(WebIdentityError::MissingField(format!(
+            "the STS {call} response has no Credentials"
+        )));
+    };
+    for (member, value) in [
+        ("AccessKeyId", credentials.access_key_id()),
+        ("SecretAccessKey", credentials.secret_access_key()),
+        ("SessionToken", credentials.session_token()),
+    ] {
+        if value.is_empty() {
+            return Err(WebIdentityError::MissingField(format!(
+                "the STS {call} response has no {member}"
+            )));
+        }
     }
+    Ok(credentials)
 }
 pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
     SdkCredentials::new(
@@ -81,13 +79,12 @@ pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
 pub(super) fn sts_response(
     credentials: &ResponseCredentials,
 ) -> Result<StsResponse, WebIdentityError> {
-    required_credentials(credentials, "assume role")?;
+    required_credentials(Some(credentials), "assume role")?;
     let expiration = credentials.expiration();
     if expiration.secs() == 0 && expiration.subsec_nanos() == 0 {
-        return Err(WebIdentityError::MissingField {
-            call: "assume role",
-            member: "Expiration",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS assume role response has no Expiration".to_owned(),
+        ));
     }
     let expiry = DateTime::<Utc>::from_timestamp(expiration.secs(), expiration.subsec_nanos())
         .ok_or(WebIdentityError::Expiry)?

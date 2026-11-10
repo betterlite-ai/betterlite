@@ -12,14 +12,16 @@ call:
       tags: [{key: team, value: genai}]
       identity: {denied: denied by the fixture}
       irsa_reply:
-        access_key_id: ASIAIRSA
-        secret_access_key: irsa-secret
-        session_token: irsa-session
-        expiration: '2026-01-01T00:30:00Z'
+        credentials:
+          access_key_id: ASIAIRSA
+          secret_access_key: irsa-secret
+          session_token: irsa-session
+          expiration: '2026-01-01T00:30:00Z'
       reply:
-        access_key_id: ASIATARGET
-        secret_access_key: target-secret
-        session_token: target-session
-        expiration: '2026-01-01T01:00:00Z'
+        credentials:
+          access_key_id: ASIATARGET
+          secret_access_key: target-secret
+          session_token: target-session
+          expiration: '2026-01-01T01:00:00Z'
 env: {}
 compare: {ignore: []}

@@ -61,9 +61,7 @@ fn resolve_token(
     }
     match secrets.get_secret(&native.environment, auth.token_reference, None)? {
         Some(SecretValue::Text(token)) => Ok(token),
-        Some(SecretValue::Bool(_)) => Err(WebIdentityError::SecretType {
-            field: "aws_web_identity_token",
-        }),
+        Some(SecretValue::Bool(_)) => Err(WebIdentityError::SecretType),
         None => Err(WebIdentityError::Auth(Box::new(AwsAuthError::from((
             401_u16,
             "OIDC token could not be retrieved from secret manager.".to_owned(),
@@ -91,18 +89,11 @@ async fn send(
         .send()
         .await
         .map_err(|error| rejected(error, token.expose_secret()))?;
-    let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField {
-            call: "web identity",
-            member: "Credentials",
-        });
-    };
-    required_credentials(credentials, "web identity")?;
+    let credentials = required_credentials(response.credentials(), "web identity")?;
     let Some(packed_policy_size) = response.packed_policy_size() else {
-        return Err(WebIdentityError::MissingField {
-            call: "web identity",
-            member: "PackedPolicySize",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS web identity response has no PackedPolicySize".to_owned(),
+        ));
     };
     Ok((credentials.clone(), packed_policy_size))
 }

@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
     JwtAudienceHint { tokens: Vec<String> },
-    MalformedToken { tokens: Vec<String> },
     WebIdentity(Case),
     SameAccountIrsa(Case),
     CrossAccountIrsa(Case),
@@ -22,14 +21,8 @@ pub(crate) struct Case {
     pub(super) external_id: Option<String>,
     pub(super) tags: Vec<ReplyTag>,
     pub(super) max_policy_size: Option<i64>,
-    pub(super) reply: Option<Reply>,
-    pub(super) irsa_reply: Option<ReplyCredentials>,
-}
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum Reply {
-    Web(WebIdentityReply),
-    Credentials(ReplyCredentials),
+    pub(super) reply: Option<WebIdentityReply>,
+    pub(super) irsa_reply: Option<WebIdentityReply>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
