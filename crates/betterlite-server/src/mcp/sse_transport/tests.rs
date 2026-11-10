@@ -32,8 +32,8 @@ impl ServerHandler for FakeHandler {
     }
 }
 
-fn app_with_root(root_path: &'static str) -> (Arc<SseTransport>, Router) {
-    let transport = Arc::new(SseTransport::new("/sse/messages"));
+fn app_with(root_path: &'static str, endpoint: &'static str) -> (Arc<SseTransport>, Router) {
+    let transport = Arc::new(SseTransport::new(endpoint));
     let connect = {
         let shared = Arc::clone(&transport);
         move |request: Request<Body>| {
@@ -61,7 +61,7 @@ fn app_with_root(root_path: &'static str) -> (Arc<SseTransport>, Router) {
 }
 
 fn app() -> (Arc<SseTransport>, Router) {
-    app_with_root("/mcp")
+    app_with("/mcp", "/sse/messages")
 }
 
 fn owner_of(request: &Request<Body>) -> String {
@@ -187,6 +187,7 @@ async fn connect_answers_the_endpoint_event_first() {
         response.headers().get("x-accel-buffering"),
         Some(&HeaderValue::from_static("no"))
     );
+    assert!(response.headers().get("mcp-session-id").is_none());
     let mut stream = response.into_body().into_data_stream();
     let uri = endpoint_data(&next_event(&mut stream).await);
     let id = session_id_of(&uri);
@@ -203,6 +204,7 @@ async fn connect_answers_the_endpoint_event_first() {
 #[case::top_level("", "/sse/messages")]
 #[case::mounted("/mcp", "/mcp/sse/messages")]
 #[case::trailing_slash("/mcp/", "/mcp/sse/messages")]
+#[case::many_trailing_slashes("/mcp///", "/mcp/sse/messages")]
 #[case::quoted_space("/mc p", "/mc%20p/sse/messages")]
 #[case::quoted_non_ascii("/m\u{e7}p", "/m%C3%A7p/sse/messages")]
 #[tokio::test]
@@ -210,12 +212,23 @@ async fn connect_builds_the_message_path_from_the_root_path(
     #[case] root_path: &'static str,
     #[case] expected_path: &str,
 ) {
-    let (_, router) = app_with_root(root_path);
+    let (_, router) = app_with(root_path, "/sse/messages");
     let (_, uri) = open_stream(&router).await;
     let (path, _) = uri
         .split_once("?session_id=")
         .expect("the session id query");
     assert_eq!(path, expected_path);
+}
+
+#[tokio::test]
+async fn new_adds_a_leading_slash_to_a_relative_endpoint() {
+    let (_, router) = app_with("", "sse/messages");
+    let (_, uri) = open_stream(&router).await;
+    let path = uri
+        .split_once("?session_id=")
+        .expect("the session id query")
+        .0;
+    assert_eq!(path, "/sse/messages");
 }
 
 #[tokio::test]
@@ -283,6 +296,40 @@ async fn rejects_a_session_id_that_is_not_a_hex_uuid(#[case] target: &str) {
     let refused = send(&router, message_request(target, DEFAULT_OWNER, PING)).await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
     assert_eq!(body_text(refused).await, "Invalid session ID");
+}
+
+#[tokio::test]
+async fn checks_the_session_before_the_body() {
+    let (_, router) = app();
+    let missing = send(
+        &router,
+        message_request("/mcp/sse/messages", DEFAULT_OWNER, "not json"),
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_text(missing).await, "session_id is required");
+    let malformed = send(
+        &router,
+        message_request(
+            "/mcp/sse/messages?session_id=bad",
+            DEFAULT_OWNER,
+            "not json",
+        ),
+    )
+    .await;
+    assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_text(malformed).await, "Invalid session ID");
+    let unknown = send(
+        &router,
+        message_request(
+            "/mcp/sse/messages?session_id=ffffffffffffffffffffffffffffffff",
+            DEFAULT_OWNER,
+            "not json",
+        ),
+    )
+    .await;
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_text(unknown).await, "Could not find session");
 }
 
 #[tokio::test]
@@ -370,6 +417,13 @@ async fn matches_the_session_id_in_any_standard_uuid_spelling() {
     )
     .await;
     assert_eq!(accepted_hyphenated.status(), StatusCode::ACCEPTED);
+    let braced_target = format!("/mcp/sse/messages?session_id=%7B{id}%7D");
+    let accepted_braced = send(
+        &router,
+        message_request(&braced_target, DEFAULT_OWNER, PING),
+    )
+    .await;
+    assert_eq!(accepted_braced.status(), StatusCode::ACCEPTED);
     let initialize: InitializeReply =
         serde_json::from_str(&message_data(&next_event(&mut stream).await))
             .expect("the initialize reply");
