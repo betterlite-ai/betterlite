@@ -1,0 +1,18 @@
+task: B4331
+deviations:
+  - what: >-
+      flush_all disarms the post-call deadline timer when no post-call write is pending, before the request scope
+      closes. LiteLLM leaves the timer armed, so it fires a no-op flush one second later.
+    why: >-
+      The timer only holds the request and its batches alive until it fires. Disarming it at request close drops the
+      strong reference immediately, and a post-call write declared after that flush arms a fresh timer instead of
+      being flushed by the stale one. A working LiteLLM setup cannot rely on which of the two timers sends an
+      otherwise identical no-op flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L475-L477
+  - what: >-
+      A post-call write declared where no Tokio runtime is running logs a warning and arms no deadline; the write
+      still goes out through flush_post_call or drain. LiteLLM raises RuntimeError from asyncio.get_running_loop.
+    why: >-
+      Betterlite never panics or raises from a library call for a missing event loop. The request scope itself is
+      driven by the runtime, so this is a caller misuse that no working setup triggers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L465
