@@ -141,8 +141,7 @@ fn tls_request(pairs: &[(String, String)]) -> Result<TlsRequest, ConnectionOptio
     let sslcert = value("sslcert");
     let sslkey = value("sslkey");
     reject_unsupported_identity(pairs)?;
-    let has_root = pairs.iter().any(|(key, _)| key == "sslrootcert")
-        || (sslcert.is_some() && sslkey.is_none());
+    let has_root = pairs.iter().any(|(key, _)| key == "sslrootcert");
     let mode = tls_mode(sslmode.as_deref());
     let verifies_mode = matches!(sslmode.as_deref(), Some("verify-ca" | "verify-full"));
     let verify = mode != SslMode::Disable

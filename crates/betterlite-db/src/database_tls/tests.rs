@@ -697,6 +697,29 @@ async fn tls_root_without_mode_verifies() {
 }
 
 #[tokio::test]
+async fn tls_require_with_prisma_cert_without_accept_is_unverified() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[("sslmode", "require"), ("sslcert", path_of(&ca))],
+    );
+    connect_and_query(&url).await;
+    server.close().await;
+}
+
+#[tokio::test]
 async fn tls_explicit_accept_invalid_certs_stays_unverified() {
     let server = server::start().await;
     let authority = certificates::authority();
