@@ -27,7 +27,10 @@ fn full_kwargs() -> IndexMap<String, Json> {
     params(&[
         (
             "messages",
-            object(&[("role", text("user")), ("content", text("hi"))]),
+            Json::List(vec![object(&[
+                ("role", text("user")),
+                ("content", text("hi")),
+            ])]),
         ),
         ("api_base", text("https://api.openai.com")),
         ("metadata", object(&[("key", text("value"))])),

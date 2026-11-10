@@ -355,7 +355,10 @@ pub(super) fn hit_kwargs() -> IndexMap<String, Json> {
     params(&[
         (
             "messages",
-            object(&[("role", text("user")), ("content", text("hi"))]),
+            Json::List(vec![object(&[
+                ("role", text("user")),
+                ("content", text("hi")),
+            ])]),
         ),
         ("stream", Json::Bool(false)),
     ])
