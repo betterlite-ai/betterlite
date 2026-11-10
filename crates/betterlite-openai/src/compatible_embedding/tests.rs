@@ -229,6 +229,14 @@ fn planning_validates_filters_and_logs_the_request() {
 }
 
 #[test]
+fn the_plan_debug_names_the_authorization_header_without_its_value() {
+    let planned = plan("https://h/embeddings", Duration::from_secs(1), Mode::Async);
+    let shown = format!("{planned:?}");
+    assert!(shown.contains("Authorization"));
+    assert!(!shown.contains("Bearer k"));
+}
+
+#[test]
 fn explicit_headers_are_kept_and_a_custom_endpoint_is_used_as_given() {
     let explicit = Headers::from([("X-Team".to_owned(), "1".to_owned())]);
     let (plan, _, _) = observe(|state, env| {

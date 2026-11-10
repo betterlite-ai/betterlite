@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
@@ -41,7 +42,7 @@ pub struct EmbeddingCall {
     pub mode: Mode,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EmbeddingPlan {
     pub url: String,
     pub headers: Headers,
@@ -49,6 +50,20 @@ pub struct EmbeddingPlan {
     pub input: Json,
     pub timeout: Duration,
     pub mode: Mode,
+}
+
+// the headers carry the bearer token, so Debug names them without their values as OpenAiConfig does
+impl fmt::Debug for EmbeddingPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbeddingPlan")
+            .field("url", &self.url)
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
+            .field("data", &self.data)
+            .field("input", &self.input)
+            .field("timeout", &self.timeout)
+            .field("mode", &self.mode)
+            .finish()
+    }
 }
 
 // options set to None or "" are left out, and the rest override model and input as the dict merge does

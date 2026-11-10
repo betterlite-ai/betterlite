@@ -28,7 +28,7 @@ use super::{
     ChatParams, EndpointType, LogInput, MISSING_BASE, MISSING_KEY, ReplyOptions,
     decode_compatible_chat_reply, header_map, transform_response, validate_environment,
 };
-use crate::chat::response::ChatResponse;
+use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::compatible_models::decode_compatible_model_list;
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
@@ -301,6 +301,12 @@ fn null_top_level_token_counts_become_zero_and_nothing_else_changes() {
         response.usage.completion_tokens_details,
         Some(BTreeMap::from([("reasoning_tokens".to_owned(), None)]))
     );
+}
+
+#[test]
+fn a_null_usage_is_read_as_the_default_usage() {
+    let response = decode(&chat_reply("\"m\"", "null", PLAIN), false);
+    assert_eq!(response.usage, ChatUsage::default());
 }
 
 #[rstest]

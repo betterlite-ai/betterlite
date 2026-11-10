@@ -143,6 +143,12 @@ pub fn decode_compatible_chat_reply(
     options: &ReplyOptions<'_>,
 ) -> Result<CompatibleReply, CompatibleWireError> {
     let mut reply: Value = serde_json::from_slice(bytes).map_err(CompatibleWireError::Json)?;
+    // a null usage is the absent one, which B004's response reads as zero counts
+    if reply.get("usage").is_some_and(Value::is_null)
+        && let Some(fields) = reply.as_object_mut()
+    {
+        fields.remove("usage");
+    }
     if let Some(usage) = reply.get_mut("usage").and_then(Value::as_object_mut) {
         for (name, tokens) in usage.iter_mut() {
             if name.ends_with("_tokens") && tokens.is_null() {
