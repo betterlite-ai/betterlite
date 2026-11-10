@@ -1964,6 +1964,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
@@ -2810,10 +2811,14 @@ name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
  "regex",
  "rstest",
  "rust_decimal",
+ "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tracing",
  "url",
