@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::ptu_pricing::spillover::{AzureSpillover, azure_spillover};
+use betterlite_models::ptu_pricing::spillover::azure_spillover;
 use betterlite_models::ptu_pricing::{
     PtuModelInfo, declares_ptu, ptu_config_error, ptu_identity_error, ptu_terms,
 };
@@ -61,19 +61,16 @@ impl crate::helpers::Helper for Op {
             )
             .map_or(Value::Null, Value::String),
             Operation::Declares => Value::Bool(declares_ptu(&model_info)),
-            Operation::Spillover => spillover_value(azure_spillover(
+            Operation::Spillover => azure_spillover(
                 input.response_headers.as_ref(),
                 input.additional_headers.as_ref(),
-            )),
+            )
+            .map_or(
+                Value::Null,
+                |found| json!({"from_deployment": found.from_deployment}),
+            ),
         };
         Ok(value)
-    }
-}
-
-fn spillover_value(spillover: Option<AzureSpillover>) -> Value {
-    match spillover {
-        Some(spillover) => json!({"from_deployment": spillover.from_deployment}),
-        None => Value::Null,
     }
 }
 

@@ -37,7 +37,11 @@ pub fn zeroed_ptu_pricing(
     entries.insert(TIERED_PRICING_FIELD, PtuZero::EmptyTiers);
     entries.insert(
         SEARCH_CONTEXT_QUERY_FIELD,
-        PtuZero::SearchContext(search_context_zeros()),
+        PtuZero::SearchContext(SearchContextPricing {
+            search_context_size_low: Some(Decimal::ZERO),
+            search_context_size_medium: Some(Decimal::ZERO),
+            search_context_size_high: Some(Decimal::ZERO),
+        }),
     );
     for field in CUSTOM_PRICING_FIELDS {
         if field != SEARCH_CONTEXT_QUERY_FIELD && declared.contains(field) {
@@ -45,12 +49,4 @@ pub fn zeroed_ptu_pricing(
         }
     }
     Some(PtuZeroedPricing { entries })
-}
-
-const fn search_context_zeros() -> SearchContextPricing {
-    SearchContextPricing {
-        search_context_size_low: Some(Decimal::ZERO),
-        search_context_size_medium: Some(Decimal::ZERO),
-        search_context_size_high: Some(Decimal::ZERO),
-    }
 }
