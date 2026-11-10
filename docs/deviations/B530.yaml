@@ -1,0 +1,5 @@
+task: B530
+deviations:
+  - what: The access-token cache identity includes the requested scope next to the authority host, tenant, client and resolved OIDC assertion, where LiteLLM keys only on the last four.
+    why: The pinned cache omits scope, so a token fetched for one Azure resource is reused for a different audience; keeping the scope in the key prevents that without changing any request LiteLLM sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L199-L284

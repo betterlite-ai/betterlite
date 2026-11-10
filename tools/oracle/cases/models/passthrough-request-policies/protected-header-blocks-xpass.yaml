@@ -1,0 +1,18 @@
+kind: helper
+name: protected-header-blocks-xpass
+call:
+  b3571:
+    operation: forward_headers
+    request_headers:
+      x-pass-authorization: Bearer mine
+      X-Pass-X-Api-Key: mine
+      x-pass-x-goog-api-key: mine
+      x-pass-ocp-apim-subscription-key: mine
+      x-pass-host: elsewhere.example
+      x-pass-content-length: "5"
+      x-pass-accept-encoding: br
+      x-pass-anthropic-beta: beta
+    custom_headers: {}
+    forward_headers: false
+compare: {ignore: []}
+env: {}
