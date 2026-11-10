@@ -1,0 +1,18 @@
+kind: helper
+name: text-completion-transport-stream-failure-seed
+call:
+  text_completion_transport:
+    provider: openai
+    request:
+      model: gpt-3.5-turbo-instruct
+      messages: [{role: user, content: hello}]
+      api_key: sk-fixture
+      api_base: https://api.openai.com/v1
+      timeout: 600.0
+      organization: org-fixture
+      optional_params: {stream: true}
+      headers: null
+      acompletion: false
+    answer: {stream: {chunks: [{id: cmpl-1, object: text_completion, created: 1700000000, model: gpt-3.5-turbo-instruct, choices: [{text: hi, index: 0, logprobs: null, finish_reason: null}]}], failure: {status: null, message: boom}}}
+env: {}
+compare: {ignore: []}

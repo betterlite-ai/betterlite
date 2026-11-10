@@ -1,0 +1,35 @@
+task: B4144
+deviations:
+  - what: >-
+      The coordinate-redis cache reaches the publisher and the subscriber as a constructor
+      argument instead of LiteLLM's module-global `redis_usage_cache` lookup in
+      `coordination_redis_cache`.
+    why: >-
+      betterlite has no global proxy state, so dependencies enter as constructor arguments;
+      the wiring task passes the same coordination RedisCache LiteLLM reads from the global.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-L122
+  - what: >-
+      The write wrapper is a typed adapter over the seven write methods instead of a dynamic
+      attribute proxy, and a repository reaches reads and every other method through
+      `AsRef<A>` on the adapter. A table outside the allowlist gets an adapter whose
+      publication target is absent, so its writes take no publish step and never reach
+      Redis, rather than the original actions object LiteLLM returns.
+    why: >-
+      Rust has no attribute proxy over typed methods; the trait keeps every intercepted write
+      checked at compile time, and reads never cross the adapter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L125-L160
+  - what: >-
+      Closing a subscription cannot report an error, so the debug line LiteLLM logs when
+      aclose fails never appears; dropping the subscription closes the redis-rs pub/sub
+      connection.
+    why: >-
+      redis-rs has no separate close call that can fail, so there is nothing to catch and log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L280-L284
+  - what: >-
+      betterlite skips parsing and validation of the published pubsub message body, matching
+      LiteLLM's behavior.
+    why: >-
+      At the pinned commit, LiteLLM's ConfigSyncSubscriber._consume (line 244-253) never parses
+      or decodes the message body; it only checks that the message is not None before
+      proceeding. Neither side validates the message content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L244-L253

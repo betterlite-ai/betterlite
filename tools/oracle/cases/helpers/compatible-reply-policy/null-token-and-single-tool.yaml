@@ -1,0 +1,19 @@
+kind: helper
+name: compatible-reply-policy-null-token-and-single-tool
+call:
+  compatible_reply_policy:
+    transform:
+      - reply: {id: c1, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: hi}, finish_reason: stop}], usage: {prompt_tokens: null, completion_tokens: 5, total_tokens: null}}
+      - json_mode: true
+        reply: {id: c2, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: json_tool_call, arguments: "{\"a\":1}"}}]}, finish_reason: tool_calls}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - json_mode: true
+        reply: {id: c3, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: other, arguments: "{\"b\":2}"}}]}, finish_reason: tool_calls}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - json_mode: true
+        reply: {id: c4, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: json_tool_call, arguments: ""}}]}, finish_reason: tool_calls}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - json_mode: true
+        reply: {id: c5, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: a, arguments: "{}"}}, {id: call_2, type: function, function: {name: b, arguments: "{}"}}]}, finish_reason: tool_calls}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - json_mode: false
+        reply: {id: c6, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: json_tool_call, arguments: "{}"}}]}, finish_reason: tool_calls}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - reply: {id: c7, object: chat.completion, created: 1, model: m, choices: [{index: 0, message: {role: assistant, content: hi}, finish_reason: stop}], usage: {completion_tokens: 5}}
+env: {}
+compare: {ignore: []}

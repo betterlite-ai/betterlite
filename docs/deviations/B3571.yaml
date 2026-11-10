@@ -1,0 +1,20 @@
+task: B3571
+deviations:
+  - what: >-
+      The general pass-through timeout is loaded through the config boundary
+      (general_settings.pass_through_request_timeout) and passed into the pure resolver, instead of
+      being read from litellm.proxy.proxy_server inside the resolver at call time.
+    why: >-
+      The policy lives in betterlite-models, which must not import proxy or router execution. A
+      loaded proxy passes the configured value, and a context without one keeps the 600 second
+      default, so the resolved timeout is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L30-L37
+  - what: >-
+      A general setting that is not a number is a config error naming
+      general_settings.pass_through_request_timeout. LiteLLM coerces a boolean to 1.0 seconds, and
+      when the conversion of another value raises it swallows the error and falls back to 600
+      seconds.
+    why: >-
+      A timeout setting that is silently replaced or coerced hides a misconfiguration. The config
+      boundary turns a wrong-typed value into an error that names the field, per docs/compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L33-L37
