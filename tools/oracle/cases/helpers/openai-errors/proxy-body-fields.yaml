@@ -1,0 +1,14 @@
+kind: helper
+name: openai-errors-proxy-body-fields
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: litellm_proxy
+    error_str: "litellm.BadRequestError: bad input"
+    status_code: 400
+    body:
+      type: invalid_request_error
+      param: messages
+env: {}
+compare: {ignore: []}

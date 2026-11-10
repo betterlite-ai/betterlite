@@ -1,0 +1,19 @@
+kind: helper
+name: predibase-url-and-stream-suffix
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: url
+    requests:
+      - {model: m, tenant: t}
+      - {model: m, tenant: t, api_base: ""}
+      - {model: org/model, tenant: t, api_base: "https://host/"}
+      - {model: m, tenant: t, api_base: "https://host", stream: true}
+      - {model: m, tenant: t, api_base: "https://host", stream: false, options: {stream: true}}
+      - {model: m, tenant: t, api_base: "https://host", options: {stream: true}}
+      - {model: m, tenant: t, api_base: "https://host", options: {stream: 1}}
+      - {model: m, tenant: t, api_base: "https://host", options: {stream: "true"}}
+      - {model: m, tenant: t, api_base: "https://host", options: {stream: false}}
+      - {model: m}
+      - {model: m, tenant: ""}

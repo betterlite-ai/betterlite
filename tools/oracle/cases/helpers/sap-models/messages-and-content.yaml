@@ -1,0 +1,26 @@
+kind: helper
+name: sap-models-messages-and-content
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              prompt_templating:
+                prompt:
+                  template:
+                    - {role: system, content: [{text: a}, b, {other: 1}]}
+                    - {role: developer, content: {text: d}}
+                    - {role: user, content: hi}
+                    - {role: user, content: {text: hi}}
+                    - {role: user, content: [{type: text, text: hi}, {type: image_url, image_url: {url: "https://example.test/x", detail: low}}]}
+                    - {role: user, content: {type: image_url, image_url: {url: u}}}
+                    - {role: assistant, content: "", refusal: r, tool_calls: [{id: "1", function: {name: n, arguments: "{}"}}]}
+                    - {role: tool, tool_call_id: "1", content: ok}
+                    - {content: no-role}
+                model: {name: m}
+      - model: sap_message
+        data: {role: user, content: [{type: nope, text: a}]}
+env: {}
+compare: {ignore: []}

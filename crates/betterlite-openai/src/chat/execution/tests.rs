@@ -13,6 +13,7 @@ use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -82,12 +83,7 @@ fn fixed_id() -> Uuid {
     Uuid::from_u128(7)
 }
 
-fn executor(
-    entries: &str,
-    seed: u64,
-    operator_mock: Option<MockResponse>,
-    permission: MockPermission,
-) -> ChatExecutor {
+fn resolved_deployments(entries: &str) -> Vec<ChatDeployment> {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
@@ -98,11 +94,20 @@ fn executor(
         api_keys: Vec::new(),
         organization: Some("org-7".to_owned()),
     };
-    let deployments: Vec<ChatDeployment> = config
+    config
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults).unwrap())
-        .collect();
+        .collect()
+}
+
+fn executor(
+    entries: &str,
+    seed: u64,
+    operator_mock: Option<MockResponse>,
+    permission: MockPermission,
+) -> ChatExecutor {
+    let deployments = resolved_deployments(entries);
     let responses = operator_mock.map_or_else(BTreeMap::new, |response| {
         deployments
             .iter()
@@ -127,6 +132,7 @@ fn executor(
         },
         mock_chat: echo_mock,
         mock_embedding: unused_embedding,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     }
 }
 
@@ -224,7 +230,7 @@ async fn reports_what_went_wrong_upstream(
     let error = answered.err().unwrap();
     assert!(error.to_string().contains(message), "{error}");
     if delay > Duration::ZERO {
-        assert_eq!(error.failure().status, 408);
+        assert_eq!(error.failure(&chat.redactor).status, 408);
     }
 }
 
@@ -314,7 +320,7 @@ async fn stream_distinguishes_status(#[case] status: u16) {
         assert_eq!(response.status, status);
         assert_eq!(response.body, body.as_bytes());
     } else {
-        let failure = result.err().unwrap().failure();
+        let failure = result.err().unwrap().failure(&chat.redactor);
         assert_eq!(failure.status, status);
         assert_eq!(failure.error_type, "throttling_error");
         assert_eq!(failure.param.as_deref(), Some("p"));
@@ -500,7 +506,7 @@ async fn mock_calls_behavior_tests_behavior(
         }
         Expected::Failure(status, error_type) => {
             let error = chat.send(deployment, &request).await.err().unwrap();
-            let failure = error.failure();
+            let failure = error.failure(&chat.redactor);
             assert_eq!(failure.status, status);
             assert_eq!(failure.error_type, error_type);
         }
