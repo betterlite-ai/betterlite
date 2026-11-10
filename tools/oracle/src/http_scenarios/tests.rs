@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod postgres;
 mod support;
 
 use std::collections::BTreeMap;
