@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, BodyDataStream, to_bytes};
@@ -10,6 +11,7 @@ use futures_util::StreamExt as _;
 use rmcp::ServerHandler;
 use rmcp::model::{RequestId, ServerConfig};
 use rstest::rstest;
+use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use crate::mcp::sse_transport::SseTransport;
@@ -21,6 +23,7 @@ const INITIALIZE: &str = concat!(
     r#""capabilities":{},"clientInfo":{"name":"test-client","version":"1.0"}}}"#
 );
 const PING: &str = r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#;
+const INITIALIZED: &str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
 const OVERSIZED_BYTES: usize = super::MAX_REQUEST_BYTES + 1;
 
 #[derive(Clone, Copy)]
@@ -261,6 +264,22 @@ async fn drops_the_session_when_the_client_leaves() {
     let (stream, uri) = open_stream(&router).await;
     drop(stream);
     let refused = send(&router, message_request(&uri, DEFAULT_OWNER, PING)).await;
+    assert_eq!(refused.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_text(refused).await, "Could not find session");
+}
+
+#[tokio::test]
+async fn ends_the_stream_and_the_session_when_the_service_stops() {
+    let (_, router) = app();
+    let (mut stream, uri) = open_stream(&router).await;
+    let early = send(&router, message_request(&uri, DEFAULT_OWNER, INITIALIZED)).await;
+    assert_eq!(early.status(), StatusCode::ACCEPTED);
+    timeout(Duration::from_secs(5), async {
+        while stream.next().await.is_some() {}
+    })
+    .await
+    .expect("the stopped service to end the stream");
+    let refused = send(&router, message_request(&uri, DEFAULT_OWNER, INITIALIZE)).await;
     assert_eq!(refused.status(), StatusCode::NOT_FOUND);
     assert_eq!(body_text(refused).await, "Could not find session");
 }
