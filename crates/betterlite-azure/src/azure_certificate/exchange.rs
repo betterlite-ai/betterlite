@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
-use super::ASSERTION_TYPE;
+use super::{ASSERTION_TYPE, CertificateError};
 use crate::azure_client_secret::ClientSecretError;
 use crate::azure_client_secret::token::{AccessToken, decode_client_secret_token};
 use crate::azure_client_secret::transport::{HttpMethod, HttpReply, HttpRequest};
@@ -12,6 +12,29 @@ struct Outcome {
     access_token: Option<IgnoredAny>,
     error_description: Option<String>,
     error: Option<String>,
+}
+
+// a unit struct reads null, so the brackets stay: only an object with no members parses
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[expect(
+    clippy::empty_structs_with_brackets,
+    reason = "a unit struct deserializes from null, not from an object"
+)]
+struct EmptyReply {}
+
+// msal hands back an error member or an empty reply only after trying the cache
+fn rejection(outcome: Outcome, body: &[u8]) -> CertificateError {
+    let refused = outcome.error.is_some() || serde_json::from_slice::<EmptyReply>(body).is_ok();
+    let message = outcome
+        .error_description
+        .filter(|text| !text.is_empty())
+        .or(outcome.error)
+        .unwrap_or_else(|| "None".to_owned());
+    if refused {
+        return CertificateError::Refused { message };
+    }
+    CertificateError::Client(ClientSecretError::Authentication { message })
 }
 
 // the form has a client_assertion where the client secret grant has a client_secret
@@ -44,23 +67,19 @@ pub fn assertion_request(
     }
 }
 
-// azure-identity raises the IdP's error_description, else its error, else the text None
-pub fn read_token_reply(reply: &HttpReply, now: i64) -> Result<AccessToken, ClientSecretError> {
+pub fn read_token_reply(reply: &HttpReply, now: i64) -> Result<AccessToken, CertificateError> {
     if reply.status >= 500 {
-        return Err(ClientSecretError::Authentication {
-            message: format!("HTTP Error: {}", reply.status),
-        });
+        return Err(CertificateError::Client(
+            ClientSecretError::Authentication {
+                message: format!("HTTP Error: {}", reply.status),
+            },
+        ));
     }
     let body = reply.body.expose_secret().as_bytes();
     let outcome: Outcome =
         serde_json::from_slice(body).map_err(|source| ClientSecretError::TokenJson { source })?;
     if outcome.access_token.is_none() {
-        let message = outcome
-            .error_description
-            .filter(|text| !text.is_empty())
-            .or(outcome.error)
-            .unwrap_or_else(|| "None".to_owned());
-        return Err(ClientSecretError::Authentication { message });
+        return Err(rejection(outcome, body));
     }
     let response = decode_client_secret_token(body)?;
     let expires_on = now

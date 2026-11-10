@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::env::temp_dir;
+use std::error::Error as _;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -10,9 +11,11 @@ use std::sync::atomic::Ordering;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_certificate::CertificateError;
 use crate::azure_certificate::assertion::{IdSource as _, RandomIds};
 use crate::azure_certificate::credential::{FileReader as _, StdFiles};
 use crate::azure_certificate::material::decode_certificate_material;
+use crate::azure_client_secret::token::AccessToken;
 use crate::azure_client_secret::transport::HttpRequest;
 use fixture::{
     CLIENT, Fixture, NOW, PASSWORD, RSA_ENCRYPTED, RSA_PKCS8, TENANT, decode, form, input, openid,
@@ -112,6 +115,52 @@ fn azure_certificate_secret_safe_failure() {
     assert!(!denied_text.contains(PASSWORD));
     let second_assertion = form(&fixture.transport.posts()[1])["client_assertion"].clone();
     assert!(!denied_text.contains(&second_assertion));
+}
+
+const ERROR_REPLY: &str = r#"{"error":"temporarily_unavailable"}"#;
+
+fn aging(reply: Option<(u16, &str)>, at: i64) -> Result<AccessToken, CertificateError> {
+    let first = r#"{"access_token":"a","expires_in":3600,"refresh_in":30}"#;
+    let mut replies = vec![openid(TENANT), token_reply(first)];
+    replies.extend(reply.map(|(status, body)| (status, body.to_owned())));
+    let fixture = Fixture::new(replies);
+    let credential = fixture.credential(input(RSA_PKCS8))?;
+    credential.token()?;
+    fixture.clock.0.store(at, Ordering::SeqCst);
+    credential.token()
+}
+
+#[rstest]
+#[case::idp_error(Some((400, ERROR_REPLY)), NOW + 30)]
+#[case::empty_reply(Some((400, "{}")), NOW + 30)]
+#[case::transport_failure(None, NOW + 30)]
+#[case::last_valid_second(Some((400, ERROR_REPLY)), NOW + 3599)]
+fn azure_certificate_serves_aging_token(#[case] reply: Option<(u16, &str)>, #[case] at: i64) {
+    assert_eq!(aging(reply, at).unwrap().token.expose_secret(), "a");
+}
+
+#[rstest]
+#[case::expired(Some((400, ERROR_REPLY)), NOW + 3600, "Authentication failed: temporarily_unavailable")]
+#[case::description_only(Some((400, r#"{"error_description":"throttled"}"#)), NOW + 30, "Authentication failed: throttled")]
+#[case::server_error(Some((500, "busy")), NOW + 30, "Authentication failed: HTTP Error: 500")]
+#[case::not_json(Some((400, "busy")), NOW + 30, "the token response is not JSON")]
+fn azure_certificate_refuses_without_serving_the_aging_token(
+    #[case] reply: Option<(u16, &str)>,
+    #[case] at: i64,
+    #[case] message: &str,
+) {
+    assert_eq!(aging(reply, at).unwrap_err().to_string(), message);
+}
+
+#[rstest]
+#[case::pkcs12(b"\x00\x01\x02not a keystore".as_slice(), None)]
+#[case::pem_framing(&RSA_PKCS8[..400], None)]
+#[case::key_data(b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n".as_slice(), None)]
+#[case::bad_password(RSA_ENCRYPTED, Some("wrong"))]
+fn azure_certificate_keeps_the_library_cause(#[case] data: &[u8], #[case] password: Option<&str>) {
+    let secret = password.map(SecretString::from);
+    let error = decode_certificate_material(data, secret.as_ref()).unwrap_err();
+    assert!(error.source().is_some(), "{error}");
 }
 
 #[test]

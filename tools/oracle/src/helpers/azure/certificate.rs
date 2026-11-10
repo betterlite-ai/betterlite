@@ -35,10 +35,10 @@ pub(crate) struct Input {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Step {
-    #[serde(default)]
-    tenant_id: Option<String>,
-    #[serde(default)]
-    client_id: Option<String>,
+    #[serde(default = "default_tenant_id")]
+    tenant_id: String,
+    #[serde(default = "default_client_id")]
+    client_id: String,
     #[serde(default)]
     certificate: Option<String>,
     #[serde(default)]
@@ -55,6 +55,14 @@ struct Step {
     replies: Vec<Reply>,
     #[serde(default)]
     advance: Option<i64>,
+}
+
+fn default_tenant_id() -> String {
+    "tenant".to_owned()
+}
+
+fn default_client_id() -> String {
+    "client".to_owned()
 }
 
 #[derive(Deserialize, Clone)]
@@ -234,14 +242,8 @@ fn run_step(step: &Step) -> HelperResult {
     });
     let now = Arc::new(AtomicI64::new(FIXTURE_NOW));
     let input = CertificateInput {
-        tenant_id: step
-            .tenant_id
-            .clone()
-            .unwrap_or_else(|| "tenant".to_owned()),
-        client_id: step
-            .client_id
-            .clone()
-            .unwrap_or_else(|| "client".to_owned()),
+        tenant_id: step.tenant_id.clone(),
+        client_id: step.client_id.clone(),
         scope: step.scope.clone(),
         certificate_path: Some(CERTIFICATE_PATH.to_owned()),
         certificate_data: None,

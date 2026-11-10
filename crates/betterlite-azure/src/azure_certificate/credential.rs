@@ -112,14 +112,22 @@ impl CertificateCredential {
     pub fn token(&self) -> Result<AccessToken, CertificateError> {
         let now = self.clock.now_unix_seconds();
         let cached = self.state()?.token.clone();
-        if let Some(token) = cached
+        if let Some(token) = &cached
             && now < token.refresh_on.unwrap_or(token.expires_on)
         {
-            return Ok(token);
+            return Ok(token.clone());
         }
-        let token = self.acquire(now)?;
-        self.state()?.token = Some(token.clone());
-        Ok(token)
+        match self.acquire(now) {
+            Ok(token) => {
+                self.state()?.token = Some(token.clone());
+                Ok(token)
+            }
+            Err(error) if error.keeps_cached_token() => match cached {
+                Some(token) if now < token.expires_on => Ok(token),
+                _ => Err(error),
+            },
+            Err(error) => Err(error),
+        }
     }
 
     fn state(&self) -> Result<MutexGuard<'_, State>, ClientSecretError> {
@@ -149,7 +157,7 @@ impl CertificateCredential {
             .transport
             .send(&request)
             .map_err(|source| ClientSecretError::TokenTransport { source })?;
-        Ok(read_token_reply(&reply, now)?)
+        read_token_reply(&reply, now)
     }
 }
 
