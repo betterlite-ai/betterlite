@@ -5,9 +5,7 @@ use betterlite_openai::cohere_embedding::request::{
     CohereEmbeddingRequest, get_complete_url, map_openai_params, transform_embedding_request,
     transform_request, validate_environment,
 };
-use betterlite_openai::cohere_embedding::response::{
-    TransformInput, transform_embedding_response,
-};
+use betterlite_openai::cohere_embedding::response::{TransformInput, transform_embedding_response};
 use betterlite_openai::cohere_embedding::{
     DEFAULT_EMBEDDING_INPUT_TYPE, EmbeddingLogging, ModelCallDetails, PostCall,
     SUPPORTED_OPENAI_PARAMS, TextEncoding,
