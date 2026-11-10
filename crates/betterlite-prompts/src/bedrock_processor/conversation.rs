@@ -57,6 +57,9 @@ pub(crate) fn push_user_blocks(
     if let Some(Json::Object(fields)) = contents.last_mut()
         && let Some(Json::List(existing)) = fields.get_mut(CONTENT)
     {
+        tracing::warn!(
+            "consecutive user or tool blocks are merged; set assistant_continue_message or modify_params to insert a continue message"
+        );
         existing.extend(blocks);
         return Ok(());
     }

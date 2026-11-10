@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -7,6 +8,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::arguments::json::{Json, Object};
 use crate::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS};
@@ -148,4 +150,44 @@ impl Harness {
         let new_id = || "call_generated".to_owned();
         converse_messages(messages, &conversion, &new_id).await
     }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(super) fn text(&self) -> String {
+        String::from_utf8(
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
+        .unwrap()
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(super) fn capture() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    (captured, set_default(subscriber))
 }

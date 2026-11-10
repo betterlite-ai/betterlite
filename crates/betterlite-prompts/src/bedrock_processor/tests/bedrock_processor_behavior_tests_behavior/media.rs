@@ -1,3 +1,4 @@
+use crate::arguments::json::Json;
 use crate::bedrock_processor::error::ProcessorError;
 
 use super::prelude::{Harness, RecordingCachePoints, Settings, list};
@@ -493,13 +494,49 @@ async fn bedrock_processor_behavior_tests_behavior_a_document_data_that_is_not_a
     ));
 }
 
+fn block_at(converted: &[Json], index: usize) -> &Json {
+    let Some(Json::Object(message)) = converted.first() else {
+        panic!("the merged user message is missing");
+    };
+    let Some(Json::List(blocks)) = message.get("content") else {
+        panic!("the merged user message has no content list");
+    };
+    &blocks[index]
+}
+
+fn document_field(converted: &[Json], index: usize, key: &str) -> Json {
+    let Some(document) = block_at(converted, index)
+        .as_object()
+        .and_then(|fields| fields.get("document"))
+        .and_then(Json::as_object)
+    else {
+        panic!("block {index} is not a document");
+    };
+    document.get(key).cloned().unwrap_or(Json::Null)
+}
+
+fn document_bytes(converted: &[Json], index: usize) -> Json {
+    let source = document_field(converted, index, "source");
+    source
+        .as_object()
+        .and_then(|fields| fields.get("bytes"))
+        .cloned()
+        .unwrap_or_else(|| panic!("document {index} has no bytes"))
+}
+
 #[tokio::test]
-async fn bedrock_processor_behavior_tests_behavior_a_large_document_hashes_its_full_payload() {
+async fn bedrock_processor_behavior_tests_behavior_the_document_name_hashes_only_the_first_64_kib()
+{
     let harness = Harness::new(RecordingCachePoints::accepting());
-    let data = "A".repeat(2000);
+    let shared = "A".repeat(0x0001_0000);
+    let first = format!("{shared}{}", "B".repeat(4464));
+    let second = format!("{shared}{}", "C".repeat(4464));
     let messages = list(&format!(
         r#"[{{"role":"user","content":[{{"type":"document","source":{{
-            "type":"base64","media_type":"application/pdf","data":"{data}"
+            "type":"base64","media_type":"application/pdf","data":"{first}"
+        }}}}]}},
+        {{"role":"user","content":[{{"type":"document","source":{{
+            "type":"base64","media_type":"application/pdf","data":"{second}"
         }}}}]}}]"#
     ));
     let converted = harness
@@ -507,16 +544,17 @@ async fn bedrock_processor_behavior_tests_behavior_a_large_document_hashes_its_f
         .await
         .unwrap();
     assert_eq!(
-        converted,
-        list(&format!(
-            r#"[{{"role":"user","content":[
-                {{"document":{{
-                    "format":"pdf",
-                    "source":{{"bytes":"{data}"}},
-                    "name":"Document_52aba26af5dbf741_pdf"
-                }}}},
-                {{"text":"."}}
-            ]}}]"#
-        ))
+        document_field(&converted, 0, "name"),
+        Json::Text("Document_43f36e3528732b21_pdf".to_owned())
     );
+    assert_eq!(
+        document_field(&converted, 1, "name"),
+        Json::Text("Document_43f36e3528732b21_pdf_2".to_owned())
+    );
+    assert_eq!(document_bytes(&converted, 0), Json::Text(first));
+    assert_eq!(document_bytes(&converted, 1), Json::Text(second));
+    let Some(placeholder) = block_at(&converted, 2).as_object() else {
+        panic!("the placeholder is missing");
+    };
+    assert_eq!(placeholder.get("text"), Some(&Json::Text(".".to_owned())));
 }

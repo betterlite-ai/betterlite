@@ -70,11 +70,9 @@ async fn bedrock_processor_behavior_tests_behavior_a_leading_assistant_turn_gets
 async fn bedrock_processor_behavior_tests_behavior_a_leading_assistant_turn_with_prefix_keeps_its_place()
  {
     let harness = Harness::new(RecordingCachePoints::accepting());
+    let settings = Settings::default().with_modify_params();
     let messages = list(r#"[{"role":"assistant","content":"draft","prefix":true}]"#);
-    let converted = harness
-        .convert(&messages, &Settings::default())
-        .await
-        .unwrap();
+    let converted = harness.convert(&messages, &settings).await.unwrap();
     assert_eq!(
         converted,
         list(r#"[{"role":"assistant","content":[{"text":"draft"}]}]"#)
@@ -105,13 +103,11 @@ async fn bedrock_processor_behavior_tests_behavior_a_trailing_assistant_turn_get
 async fn bedrock_processor_behavior_tests_behavior_a_trailing_assistant_turn_with_prefix_is_left_alone()
  {
     let harness = Harness::new(RecordingCachePoints::accepting());
+    let settings = Settings::default().with_modify_params();
     let messages = list(
         r#"[{"role":"user","content":"hi"},{"role":"assistant","content":"hello","prefix":true}]"#,
     );
-    let converted = harness
-        .convert(&messages, &Settings::default())
-        .await
-        .unwrap();
+    let converted = harness.convert(&messages, &settings).await.unwrap();
     assert_eq!(
         converted,
         list(

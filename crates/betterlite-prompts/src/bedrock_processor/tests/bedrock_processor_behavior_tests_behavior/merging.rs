@@ -1,7 +1,7 @@
 use crate::bedrock_processor::conversation::push_user_blocks;
 use crate::bedrock_processor::error::ProcessorError;
 
-use super::prelude::{Harness, RecordingCachePoints, Settings, json, list};
+use super::prelude::{Harness, RecordingCachePoints, Settings, capture, json, list};
 
 const TOOL_MESSAGE: &str = r#"{"role":"tool","tool_call_id":"call_1","content":"x"}"#;
 
@@ -255,4 +255,28 @@ fn bedrock_processor_behavior_tests_behavior_merging_rejects_content_that_is_not
         error,
         ProcessorError::MergedContentNotList { message: 0 }
     ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_merging_consecutive_blocks_is_logged() {
+    let (captured, _guard) = capture();
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(&format!(
+        r#"[{{"role":"user","content":"hi"}},{TOOL_MESSAGE}]"#
+    ));
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[{"role":"user","content":[
+                {"text":"hi"},
+                {"toolResult":{"content":[{"text":"x"}],"toolUseId":"call_1"}}
+            ]}]"#
+        )
+    );
+    let logged = captured.text();
+    assert!(logged.contains("consecutive user or tool blocks are merged"));
 }
