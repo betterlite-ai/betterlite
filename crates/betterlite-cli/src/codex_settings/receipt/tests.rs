@@ -53,6 +53,53 @@ async fn receipt_records_missing_profile_as_the_sentinel() {
 }
 
 #[tokio::test]
+async fn receipt_rejects_a_wrong_version() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    let resolved = resolve_settings_path(&settings).unwrap();
+    let quoted = serde_json::to_string(&settings_path_text(&resolved).unwrap()).unwrap();
+    let receipt = format!(
+        "{{\"version\":2,\"settings_path\":{quoted},\"file_existed\":false,\"providers_existed\":false,\"previous\":{{}},\"written\":{{}}}}"
+    );
+    fs::write(&state_path, receipt).unwrap();
+    let error = read_receipt(&settings).await.unwrap_err();
+    assert!(matches!(
+        error,
+        CodexSettingsError::Receipt {
+            source: ReceiptSource::Version(2),
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn receipt_rejects_another_settings_path() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    let other = home.path().join("other.toml");
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    let quoted = serde_json::to_string(
+        &settings_path_text(&resolve_settings_path(&other).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let receipt = format!(
+        "{{\"version\":1,\"settings_path\":{quoted},\"file_existed\":false,\"providers_existed\":false,\"previous\":{{}},\"written\":{{}}}}"
+    );
+    fs::write(&state_path, receipt).unwrap();
+    let error = read_receipt(&settings).await.unwrap_err();
+    assert!(matches!(
+        error,
+        CodexSettingsError::Receipt {
+            source: ReceiptSource::Scope,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
 async fn receipt_rejects_a_mismatched_field_set() {
     let home = TempDir::new().unwrap();
     let settings = home.path().join("config.toml");
