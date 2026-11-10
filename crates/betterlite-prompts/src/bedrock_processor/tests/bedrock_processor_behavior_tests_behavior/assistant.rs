@@ -430,3 +430,26 @@ async fn bedrock_processor_behavior_tests_behavior_a_control_only_text_block_is_
         .unwrap();
     assert_eq!(converted, Vec::new());
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_an_unknown_assistant_block_still_takes_its_cache_point()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(
+        r#"[{"role":"assistant","content":[{
+            "type":"audio","audio":{"data":"QQ=="},"cache_control":{"type":"ephemeral"}
+        }]}]"#,
+    );
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(
+            r#"[{"role":"assistant","content":[
+                {"cachePoint":{"type":"default"}}
+            ]}]"#
+        )
+    );
+}
