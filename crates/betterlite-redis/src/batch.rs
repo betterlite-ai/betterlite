@@ -17,14 +17,14 @@ use std::sync::{Arc, Mutex};
 
 use redis::Value;
 use serde::Serialize;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, oneshot};
 use tokio::task::JoinSet;
 
 use self::delete::DeleteOperation;
 use self::increment::IncrementOperation;
 use self::mget::MgetOperation;
 use self::operation::Operation;
-use self::result::BatchResult;
+use self::result::{BatchResult, Settled};
 use self::script::ScriptOperation;
 use self::set::SetOperation;
 use self::slot::Slot;
@@ -68,12 +68,7 @@ impl RedisBatch {
             misses: Arc::clone(&self.misses),
             slot: Arc::clone(&slot),
         };
-        self.declare(Operation::Mget(operation));
-        BatchResult {
-            batch: Arc::clone(self),
-            slot,
-            receiver,
-        }
+        self.declare(Operation::Mget(operation), slot, receiver)
     }
 
     pub fn script(
@@ -89,12 +84,7 @@ impl RedisBatch {
             args: args.to_vec(),
             slot: Arc::clone(&slot),
         };
-        self.declare(Operation::Script(operation));
-        BatchResult {
-            batch: Arc::clone(self),
-            slot,
-            receiver,
-        }
+        self.declare(Operation::Script(operation), slot, receiver)
     }
 
     pub fn increment(
@@ -110,12 +100,7 @@ impl RedisBatch {
             ttl,
             slot: Arc::clone(&slot),
         };
-        self.declare(Operation::Increment(operation));
-        BatchResult {
-            batch: Arc::clone(self),
-            slot,
-            receiver,
-        }
+        self.declare(Operation::Increment(operation), slot, receiver)
     }
 
     pub fn set<V>(self: &Arc<Self>, key: &str, value: &V, ttl: Option<f64>) -> BatchResult<()>
@@ -142,12 +127,7 @@ impl RedisBatch {
             encode_error,
             slot: Arc::clone(&slot),
         };
-        self.declare(Operation::Set(operation));
-        BatchResult {
-            batch: Arc::clone(self),
-            slot,
-            receiver,
-        }
+        self.declare(Operation::Set(operation), slot, receiver)
     }
 
     pub fn delete(self: &Arc<Self>, key: &str) -> BatchResult<()> {
@@ -164,12 +144,7 @@ impl RedisBatch {
             key: key.to_owned(),
             slot: Arc::clone(&slot),
         };
-        self.declare(Operation::Delete(operation));
-        BatchResult {
-            batch: Arc::clone(self),
-            slot,
-            receiver,
-        }
+        self.declare(Operation::Delete(operation), slot, receiver)
     }
 
     pub fn add_flush_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
@@ -208,10 +183,20 @@ impl RedisBatch {
         flush::flush(self).await;
     }
 
-    fn declare(&self, operation: Operation) {
+    fn declare<T>(
+        self: &Arc<Self>,
+        operation: Operation,
+        slot: Arc<Slot<T>>,
+        receiver: oneshot::Receiver<Settled<T>>,
+    ) -> BatchResult<T> {
         match self.pending.lock() {
             Ok(mut pending) => pending.push(operation),
             Err(poisoned) => poisoned.into_inner().push(operation),
+        }
+        BatchResult {
+            batch: Arc::clone(self),
+            slot,
+            receiver,
         }
     }
 }

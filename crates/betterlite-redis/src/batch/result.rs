@@ -12,6 +12,8 @@ pub type Settled<T> = Result<T, Arc<BatchError>>;
 
 pub type SettledFollowUp = Pin<Box<dyn Future<Output = ()> + Send>>;
 
+pub(crate) type HookCall = Box<dyn FnOnce() -> Option<SettledFollowUp> + Send>;
+
 pub type SettledHook<T> = Arc<dyn Fn(&Settled<T>) -> Option<SettledFollowUp> + Send + Sync>;
 
 pub struct BatchResult<T> {

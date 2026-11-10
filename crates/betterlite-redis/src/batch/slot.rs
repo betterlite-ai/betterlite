@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::oneshot;
 
 use super::error::BatchError;
-use super::result::{Settled, SettledFollowUp, SettledHook};
+use super::result::{HookCall, Settled, SettledHook};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Outcome {
@@ -86,26 +86,23 @@ impl<T: Clone> Slot<T> {
         }
     }
 
-    fn take_hooks(&self) -> (Vec<SettledHook<T>>, Settled<T>) {
+    pub(crate) fn pending_hooks(&self) -> Vec<HookCall>
+    where
+        T: Send + Sync + 'static,
+    {
         let mut inner = self.inner();
-        let outcome = inner
-            .result
-            .clone()
-            .unwrap_or_else(|| Err(Arc::new(BatchError::Cancelled)));
-        (mem::take(&mut inner.hooks), outcome)
-    }
-
-    pub(crate) async fn run_hooks(&self) {
-        let (hooks, outcome) = self.take_hooks();
-        for hook in hooks {
-            if let Some(follow_up) = hook(&outcome) {
-                follow_up.await;
-            }
-        }
-    }
-
-    pub(crate) fn run_hooks_now(&self) -> Vec<SettledFollowUp> {
-        let (hooks, outcome) = self.take_hooks();
-        hooks.iter().filter_map(|hook| hook(&outcome)).collect()
+        let outcome = Arc::new(
+            inner
+                .result
+                .clone()
+                .unwrap_or_else(|| Err(Arc::new(BatchError::Cancelled))),
+        );
+        mem::take(&mut inner.hooks)
+            .into_iter()
+            .map(|hook| -> HookCall {
+                let settled = Arc::clone(&outcome);
+                Box::new(move || hook(&settled))
+            })
+            .collect()
     }
 }

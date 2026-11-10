@@ -127,37 +127,36 @@ fn push_entry(log: &Mutex<Vec<String>>, entry: String) {
     }
 }
 
-fn recording_hook<T>(name: &'static str, log: Arc<Mutex<Vec<String>>>) -> SettledHook<T>
+fn status_text<T>(settled: &Settled<T>) -> String {
+    match settled {
+        Ok(_) => "completed".to_owned(),
+        Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => "cancelled".to_owned(),
+        Err(_) => "failed".to_owned(),
+    }
+}
+
+fn value_text<T>(settled: &Settled<T>) -> String
+where
+    T: Debug,
+{
+    match settled {
+        Ok(value) => format!("ok:{value:?}"),
+        Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => "err:cancelled".to_owned(),
+        Err(error) if matches!(error.as_ref(), BatchError::Reply(_)) => "err:reply".to_owned(),
+        Err(_) => "err:other".to_owned(),
+    }
+}
+
+fn recording_hook<T>(
+    name: &'static str,
+    log: Arc<Mutex<Vec<String>>>,
+    render: fn(&Settled<T>) -> String,
+) -> SettledHook<T>
 where
     T: 'static,
 {
     Arc::new(move |settled: &Settled<T>| {
-        let text = match settled {
-            Ok(_) => "completed",
-            Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => "cancelled",
-            Err(_) => "failed",
-        };
-        push_entry(&log, format!("{name}:{text}"));
-        None
-    })
-}
-
-fn outcome_hook<T>(name: &'static str, log: Arc<Mutex<Vec<String>>>) -> SettledHook<T>
-where
-    T: Debug + 'static,
-{
-    Arc::new(move |settled: &Settled<T>| {
-        let text = match settled {
-            Ok(value) => format!("{name}:ok:{value:?}"),
-            Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => {
-                format!("{name}:err:cancelled")
-            }
-            Err(error) if matches!(error.as_ref(), BatchError::Reply(_)) => {
-                format!("{name}:err:reply")
-            }
-            Err(_) => format!("{name}:err:other"),
-        };
-        push_entry(&log, text);
+        push_entry(&log, format!("{name}:{}", render(settled)));
         let later = Arc::clone(&log);
         Some(Box::pin(async move {
             push_entry(&later, format!("{name}:follow-up"));
@@ -442,7 +441,7 @@ async fn cancellation() {
     let log = Arc::new(Mutex::new(Vec::new()));
 
     let mget = batch.mget(&["a".to_owned()]);
-    mget.on_settled(recording_hook("mget", Arc::clone(&log)));
+    mget.on_settled(recording_hook("mget", Arc::clone(&log), status_text));
     let increment = batch.increment("b", 1.5, None);
     mget.cancel();
     assert!(!mget.slot.is_pending());
@@ -454,7 +453,7 @@ async fn cancellation() {
     let cancelled = mget.await.expect_err("the cancelled mget");
     assert!(matches!(cancelled.as_ref(), BatchError::Cancelled));
     assert_eq!(batch.flushes(), 1);
-    assert_eq!(log_entries(&log), ["mget:cancelled"]);
+    assert_eq!(log_entries(&log), ["mget:cancelled", "mget:follow-up"]);
 }
 
 async fn cluster_standalone() {
@@ -488,17 +487,22 @@ async fn cluster_standalone() {
 }
 
 fn script_ordered_replies(server: &FakeServer) {
-    server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
     let noscript = "NOSCRIPT No matching script. Please use EVAL.";
-    server.script("EVALSHA", Reply::Error(noscript.to_owned()));
-    server.script("EVALSHA", Reply::Error(noscript.to_owned()));
-    server.script("INCRBYFLOAT", Reply::Bulk("2.5".to_owned()));
-    server.script(
-        "INCRBYFLOAT",
-        Reply::Error("ERR value is not a valid float".to_owned()),
-    );
-    server.script("EXPIRE", Reply::Int(1));
-    server.script("EXPIRE", Reply::Int(1));
+    let replies = [
+        ("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())])),
+        ("EVALSHA", Reply::Error(noscript.to_owned())),
+        ("EVALSHA", Reply::Error(noscript.to_owned())),
+        ("INCRBYFLOAT", Reply::Bulk("2.5".to_owned())),
+        (
+            "INCRBYFLOAT",
+            Reply::Error("ERR value is not a valid float".to_owned()),
+        ),
+        ("EXPIRE", Reply::Int(1)),
+        ("EXPIRE", Reply::Int(1)),
+    ];
+    for (name, reply) in replies {
+        server.script(name, reply);
+    }
 }
 
 async fn settled_hook_order() {
@@ -512,13 +516,13 @@ async fn settled_hook_order() {
     let log = Arc::new(Mutex::new(Vec::new()));
 
     let scripted = batch.script(&script, &["f".to_owned()], &[]);
-    scripted.on_settled(recording_hook("script", Arc::clone(&log)));
+    scripted.on_settled(recording_hook("script", Arc::clone(&log), status_text));
     let mget = batch.mget(&["a".to_owned()]);
-    mget.on_settled(recording_hook("mget", Arc::clone(&log)));
+    mget.on_settled(recording_hook("mget", Arc::clone(&log), status_text));
     let grown = batch.increment("c", 2.5, None);
-    grown.on_settled(outcome_hook("grown", Arc::clone(&log)));
+    grown.on_settled(recording_hook("grown", Arc::clone(&log), value_text));
     let broken = batch.increment("d", 1.5, None);
-    broken.on_settled(outcome_hook("broken", Arc::clone(&log)));
+    broken.on_settled(recording_hook("broken", Arc::clone(&log), value_text));
 
     assert_eq!(scripted.await.expect("the script"), Value::Int(7));
     mget.await.expect("the mget");
@@ -531,7 +535,9 @@ async fn settled_hook_order() {
         log_entries(&log),
         [
             "script:completed",
+            "script:follow-up",
             "mget:completed",
+            "mget:follow-up",
             "grown:ok:2.5",
             "grown:follow-up",
             "broken:err:reply",
@@ -548,7 +554,7 @@ async fn dropped_flush() {
     let log = Arc::new(Mutex::new(Vec::new()));
 
     let mget = batch.mget(&["a".to_owned()]);
-    mget.on_settled(outcome_hook("mget", Arc::clone(&log)));
+    mget.on_settled(recording_hook("mget", Arc::clone(&log), value_text));
     let sibling = batch.increment("b", 1.5, None);
     let mut tasks = JoinSet::new();
     let flushing = tasks.spawn(async move { mget.await });

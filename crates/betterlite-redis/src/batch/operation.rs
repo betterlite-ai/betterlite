@@ -7,7 +7,7 @@ use super::error::{BatchError, PipelineFailure};
 use super::increment::IncrementOperation;
 use super::mget::MgetOperation;
 use super::replies::settle_pipeline;
-use super::result::SettledFollowUp;
+use super::result::HookCall;
 use super::script::ScriptOperation;
 use super::set::SetOperation;
 use crate::redis_cache::RedisCache;
@@ -76,23 +76,13 @@ impl Operation {
         }
     }
 
-    pub(crate) async fn run_hooks(&self) {
+    pub(crate) fn pending_hooks(&self) -> Vec<HookCall> {
         match self {
-            Self::Mget(op) => op.slot.run_hooks().await,
-            Self::Script(op) => op.slot.run_hooks().await,
-            Self::Increment(op) => op.slot.run_hooks().await,
-            Self::Set(op) => op.slot.run_hooks().await,
-            Self::Delete(op) => op.slot.run_hooks().await,
-        }
-    }
-
-    pub(crate) fn run_hooks_now(&self) -> Vec<SettledFollowUp> {
-        match self {
-            Self::Mget(op) => op.slot.run_hooks_now(),
-            Self::Script(op) => op.slot.run_hooks_now(),
-            Self::Increment(op) => op.slot.run_hooks_now(),
-            Self::Set(op) => op.slot.run_hooks_now(),
-            Self::Delete(op) => op.slot.run_hooks_now(),
+            Self::Mget(op) => op.slot.pending_hooks(),
+            Self::Script(op) => op.slot.pending_hooks(),
+            Self::Increment(op) => op.slot.pending_hooks(),
+            Self::Set(op) => op.slot.pending_hooks(),
+            Self::Delete(op) => op.slot.pending_hooks(),
         }
     }
 }

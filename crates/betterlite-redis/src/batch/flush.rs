@@ -151,8 +151,10 @@ impl Draining<'_> {
         for op in &self.ops {
             op.settle_unresolved(None);
         }
-        for op in &self.ops {
-            op.run_hooks().await;
+        for call in self.ops.iter().flat_map(Operation::pending_hooks) {
+            if let Some(follow_up) = call() {
+                follow_up.await;
+            }
         }
         self.done = true;
     }
@@ -168,7 +170,7 @@ impl Drop for Draining<'_> {
         }
         let mut follow_ups = Vec::new();
         for op in &self.ops {
-            follow_ups.extend(op.run_hooks_now());
+            follow_ups.extend(op.pending_hooks().into_iter().filter_map(|call| call()));
         }
         let Ok(runtime) = Handle::try_current() else {
             return;
