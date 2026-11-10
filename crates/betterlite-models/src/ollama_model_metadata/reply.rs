@@ -7,7 +7,7 @@ pub(super) const MAX_REPLY_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ShowReply {
-    pub template: Option<String>,
+    pub template: String,
     pub context_length: Option<i64>,
 }
 
@@ -67,7 +67,7 @@ pub fn decode_ollama_model_reply(bytes: &[u8]) -> Result<ShowReply, OllamaMetada
         None => None,
     };
     Ok(ShowReply {
-        template: raw.template,
+        template: raw.template.unwrap_or_default(),
         context_length,
     })
 }

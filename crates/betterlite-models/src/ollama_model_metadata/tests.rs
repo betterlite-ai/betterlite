@@ -441,8 +441,9 @@ fn query_status_fallbacks() {
         globals: &nothing,
         catalog: &empty_catalog,
     };
-    for status in [400_u16, 404, 500] {
-        let transport = FixtureTransport::replying(status, "{\"model_info\":{}}");
+    let fallback_body = "{\"model_info\":{\"llama.context_length\":2048}}";
+    for status in [199_u16, 300, 304, 399, 400, 404, 500] {
+        let transport = FixtureTransport::replying(status, fallback_body);
         let resolver = OllamaModelInfo {
             settings: fixture.settings,
             globals: fixture.globals,
@@ -475,7 +476,10 @@ fn query_success_boundary() {
     let empty_settings = settings(None, None);
     let nothing = globals(None, None, None);
     let empty_catalog = catalog(&[]);
-    let transport = FixtureTransport::replying(399, "{\"template\":\"tools\"}");
+    let transport = FixtureTransport::replying(
+        299,
+        "{\"template\":\"tools\",\"model_info\":{\"llama.context_length\":4096}}",
+    );
     let resolver = OllamaModelInfo {
         settings: &empty_settings,
         globals: &nothing,
@@ -485,7 +489,7 @@ fn query_success_boundary() {
     let info = resolver
         .get_runtime_model_info("llama3", None, None)
         .unwrap();
-    assert_eq!(info, successful_info("llama3", None, true));
+    assert_eq!(info, successful_info("llama3", Some(4096), true));
 }
 
 fn runtime_model_query() {

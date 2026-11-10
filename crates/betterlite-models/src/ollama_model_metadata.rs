@@ -112,7 +112,7 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
         let stripped = strip_ollama_model_prefix(model);
         let request = self.show_request(&stripped, api_base, api_key);
         let response = match self.transport.post_show(&request) {
-            Ok(response) if response.status < 400 => response,
+            Ok(response) if (200..300).contains(&response.status) => response,
             Ok(_) | Err(_) => {
                 tracing::debug!("OllamaError: Could not get model info.");
                 return Ok(RuntimeModelInfo {
@@ -129,7 +129,7 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
             }
         };
         let reply = decode_ollama_model_reply(&response.body)?;
-        Ok(runtime_info(stripped, reply))
+        Ok(runtime_info(stripped, &reply))
     }
 
     fn show_request(
@@ -213,17 +213,13 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
     }
 }
 
-fn runtime_info(key: String, reply: ShowReply) -> RuntimeModelInfo {
+fn runtime_info(key: String, reply: &ShowReply) -> RuntimeModelInfo {
     let max_tokens = reply.context_length;
     RuntimeModelInfo {
         key,
         litellm_provider: PROVIDER.to_owned(),
         mode: MODE.to_owned(),
-        supports_function_calling: Some(
-            reply
-                .template
-                .is_some_and(|template| template.to_lowercase().contains(TOOLS_MARKER)),
-        ),
+        supports_function_calling: Some(reply.template.to_lowercase().contains(TOOLS_MARKER)),
         input_cost_per_token: Decimal::ZERO,
         output_cost_per_token: Decimal::ZERO,
         max_tokens,
