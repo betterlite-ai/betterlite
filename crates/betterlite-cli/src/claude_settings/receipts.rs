@@ -5,5 +5,6 @@ mod lookup;
 pub mod preflight;
 pub mod read;
 pub mod record;
+mod tests;
 pub mod unconfigure;
 pub mod value;
