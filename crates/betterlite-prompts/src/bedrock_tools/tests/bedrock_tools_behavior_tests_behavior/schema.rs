@@ -1,7 +1,8 @@
 use crate::arguments::json::{Json, Object};
 use crate::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
 use crate::bedrock_tools::error::BedrockToolError;
-use crate::bedrock_tools::schema::parameter_schema;
+use crate::bedrock_tools::schema::{ExpansionBudget, parameter_schema};
+use crate::definitions::legacy::DEFS_MAX_INLINED_BYTES;
 
 use super::prelude::json;
 
@@ -165,7 +166,8 @@ fn bedrock_tools_behavior_tests_behavior(#[case] scenario: Scenario) {
         cache_points: CachePointSupport::Unsupported,
         supports_strict_tools,
     };
-    let result = parameter_schema(&parameters, capabilities);
+    let mut budget = ExpansionBudget::new(DEFS_MAX_INLINED_BYTES);
+    let result = parameter_schema(&parameters, capabilities, &mut budget);
     match expected {
         Expected::Schema(raw) => assert_eq!(result.unwrap(), json(raw)),
         Expected::WrongType(field) => assert!(matches!(

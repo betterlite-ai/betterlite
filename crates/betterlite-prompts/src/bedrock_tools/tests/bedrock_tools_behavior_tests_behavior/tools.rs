@@ -1,4 +1,4 @@
-use crate::arguments::json::Json;
+use crate::arguments::json::{Json, Object};
 use crate::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
 use crate::bedrock_tools::error::BedrockToolError;
 use crate::bedrock_tools::name::ToolNameMap;
@@ -27,6 +27,7 @@ enum Scenario {
         tools: &'static str,
         expected: Failure,
     },
+    SharedBudget,
 }
 
 #[rstest::rstest]
@@ -166,6 +167,7 @@ enum Scenario {
     tools: r#"[{"type":"function","function":{"parameters":{"required":[1]}}}]"#,
     expected: Failure::WrongType("required"),
 })]
+#[case::shares_one_expansion_budget_across_the_tool_list(Scenario::SharedBudget)]
 fn bedrock_tools_behavior_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
         Scenario::Success {
@@ -189,6 +191,16 @@ fn bedrock_tools_behavior_tests_behavior(#[case] scenario: Scenario) {
                 serde_json::from_str::<ToolNameMap>(reverse).unwrap()
             );
         }
+        Scenario::SharedBudget => {
+            let result = bedrock_tools(
+                &large_tool_list(),
+                BedrockToolCapabilities {
+                    cache_points: UNSUPPORTED,
+                    supports_strict_tools: false,
+                },
+            );
+            assert!(matches!(result, Err(BedrockToolError::SchemaBudget { .. })));
+        }
         Scenario::Failure { tools, expected } => {
             let result = bedrock_tools(
                 &json_list(tools),
@@ -209,4 +221,30 @@ fn bedrock_tools_behavior_tests_behavior(#[case] scenario: Scenario) {
             }
         }
     }
+}
+
+fn large_tool_list() -> Vec<Json> {
+    let mut tools = Vec::with_capacity(3);
+    for index in 0_usize..3_usize {
+        let property = Json::Object(Object::from_iter([
+            ("type".to_owned(), Json::Text("string".to_owned())),
+            ("description".to_owned(), Json::Text("x".repeat(4_000_000))),
+        ]));
+        let schema = Json::Object(Object::from_iter([
+            ("type".to_owned(), Json::Text("object".to_owned())),
+            (
+                "properties".to_owned(),
+                Json::Object(Object::from_iter([("body".to_owned(), property)])),
+            ),
+        ]));
+        let function = Json::Object(Object::from_iter([
+            ("name".to_owned(), Json::Text(format!("tool_{index}"))),
+            ("parameters".to_owned(), schema),
+        ]));
+        tools.push(Json::Object(Object::from_iter([
+            ("type".to_owned(), Json::Text("function".to_owned())),
+            ("function".to_owned(), function),
+        ])));
+    }
+    tools
 }

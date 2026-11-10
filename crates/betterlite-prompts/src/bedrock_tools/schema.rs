@@ -1,25 +1,51 @@
 use crate::arguments::json::{Json, Object};
 use crate::bedrock_tools::capabilities::BedrockToolCapabilities;
 use crate::bedrock_tools::error::BedrockToolError;
+use crate::definitions::estimate::estimate_json_bytes;
 use crate::definitions::expand::unpack_defs;
-use crate::definitions::legacy::DEFS_MAX_INLINED_BYTES;
 
 const VALID_ROOT_TYPES: [&str; 7] = [
     "array", "boolean", "integer", "null", "number", "object", "string",
 ];
 const CUSTOM_TYPE_NESTING: usize = 1024;
 
+// One budget covers the whole tools list, so a long list cannot multiply the per-schema limit.
+pub struct ExpansionBudget {
+    limit: usize,
+    remaining: usize,
+}
+
+impl ExpansionBudget {
+    #[must_use]
+    pub const fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            remaining: limit,
+        }
+    }
+
+    fn charge(&mut self, schema: &Json) -> Result<(), BedrockToolError> {
+        let spent = estimate_json_bytes(schema);
+        self.remaining = self
+            .remaining
+            .checked_sub(spent)
+            .ok_or(BedrockToolError::SchemaBudget { limit: self.limit })?;
+        Ok(())
+    }
+}
+
 // Bedrock keeps only these four schema keys, so everything else a client sent is dropped before the request.
 pub fn parameter_schema(
     parameters: &Json,
     capabilities: BedrockToolCapabilities,
+    budget: &mut ExpansionBudget,
 ) -> Result<Json, BedrockToolError> {
     let Json::Object(object) = parameters else {
         return Err(BedrockToolError::WrongType {
             field: "parameters",
         });
     };
-    let expanded = expand_parameters(object)?;
+    let expanded = expand_parameters(object, budget)?;
     let mut schema = Object::new();
     schema.insert("type".to_owned(), root_type(&expanded)?);
     schema.insert(
@@ -47,10 +73,15 @@ pub fn parameter_schema(
     {
         schema.insert("additionalProperties".to_owned(), additional.clone());
     }
-    Ok(Json::Object(schema))
+    let projected = Json::Object(schema);
+    budget.charge(&projected)?;
+    Ok(projected)
 }
 
-fn expand_parameters(object: &Object) -> Result<Object, BedrockToolError> {
+fn expand_parameters(
+    object: &Object,
+    budget: &ExpansionBudget,
+) -> Result<Object, BedrockToolError> {
     let mut fields = object.clone();
     let defs = match fields.shift_remove("$defs") {
         None | Some(Json::Null) => Object::new(),
@@ -59,7 +90,7 @@ fn expand_parameters(object: &Object) -> Result<Object, BedrockToolError> {
             return Err(BedrockToolError::WrongType { field: "$defs" });
         }
     };
-    let mut expanded = unpack_defs(fields, &defs, Some(DEFS_MAX_INLINED_BYTES))
+    let mut expanded = unpack_defs(fields, &defs, Some(budget.remaining))
         .map_err(|source| BedrockToolError::Schema { source })?;
     normalize_custom_types(&mut expanded, 0);
     Ok(expanded)

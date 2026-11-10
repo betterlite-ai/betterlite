@@ -11,6 +11,8 @@ pub enum BedrockToolError {
         #[source]
         source: DefinitionsError,
     },
+    #[error("tool parameter schemas exceed the {limit}-byte expansion budget")]
+    SchemaBudget { limit: usize },
     #[error("tool list is not valid JSON: {source}")]
     Json {
         #[source]

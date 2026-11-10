@@ -4,7 +4,8 @@ use crate::bedrock_tools::capabilities::BedrockToolCapabilities;
 use crate::bedrock_tools::error::BedrockToolError;
 use crate::bedrock_tools::name::{ToolNameMap, make_valid_bedrock_tool_name};
 use crate::bedrock_tools::native::is_bedrock_tool_block;
-use crate::bedrock_tools::schema::parameter_schema;
+use crate::bedrock_tools::schema::{ExpansionBudget, parameter_schema};
+use crate::definitions::legacy::DEFS_MAX_INLINED_BYTES;
 
 const FUNCTION: &str = "function";
 const INPUT_SCHEMA: &str = "input_schema";
@@ -28,6 +29,7 @@ pub fn bedrock_tools(
     capabilities: BedrockToolCapabilities,
 ) -> Result<BedrockTools, BedrockToolError> {
     let mut names = ToolNameMap::new();
+    let mut budget = ExpansionBudget::new(DEFS_MAX_INLINED_BYTES);
     let mut blocks = Vec::with_capacity(tools.len());
     for (index, tool) in tools.iter().enumerate() {
         if is_bedrock_tool_block(tool) {
@@ -40,7 +42,13 @@ pub fn bedrock_tools(
         let Some(source) = tool_source(fields)? else {
             continue;
         };
-        blocks.push(tool_spec(index, &source, capabilities, &mut names)?);
+        blocks.push(tool_spec(
+            index,
+            &source,
+            capabilities,
+            &mut names,
+            &mut budget,
+        )?);
         if let Some(block) = add_cache_point_tool_block(fields, capabilities.cache_points)? {
             blocks.push(block);
         }
@@ -92,6 +100,7 @@ fn tool_spec(
     source: &ToolSource<'_>,
     capabilities: BedrockToolCapabilities,
     names: &mut ToolNameMap,
+    budget: &mut ExpansionBudget,
 ) -> Result<Json, BedrockToolError> {
     let raw_name = if source.raw_name.trim().is_empty() {
         format!("{UNNAMED_PREFIX}{index}")
@@ -110,7 +119,7 @@ fn tool_spec(
         ])),
         Some(value) => value.clone(),
     };
-    let schema = parameter_schema(&parameters, capabilities)?;
+    let schema = parameter_schema(&parameters, capabilities, budget)?;
     let strict = match source.strict {
         None | Some(Json::Null | Json::Bool(false)) => false,
         Some(Json::Bool(true)) => true,
