@@ -50,6 +50,14 @@ pub struct Settings {
     pub pool_timeout_seconds: u32,
 }
 
+struct Connection {
+    url: Option<SecretString>,
+    host: Option<String>,
+    port: Option<i64>,
+    password: Option<SecretString>,
+    kwargs: RawKwargs,
+}
+
 impl Section for Raw {
     type Settings = Settings;
 
@@ -57,56 +65,38 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let raw = self.router_settings;
-        let (url, host) = connection_target(raw.host, raw.url, lookup)?;
-        let (port, password) = connection_auth(raw.port, raw.password, lookup)?;
+        let connection = connection(self.router_settings, lookup)?;
         Ok(Settings {
-            redis_url: url,
-            redis_host: host,
-            redis_port: port,
-            redis_password: password,
+            redis_url: connection.url,
+            redis_host: connection.host,
+            redis_port: connection.port,
+            redis_password: connection.password,
             namespace: optional_text(
-                raw.kwargs.namespace,
+                connection.kwargs.namespace,
                 "router_settings.redis_kwargs.namespace",
                 lookup,
             )?,
-            socket_timeout: socket_timeout(raw.kwargs.socket_timeout, lookup)?,
+            socket_timeout: socket_timeout(connection.kwargs.socket_timeout, lookup)?,
             pool_timeout_seconds: number::<u32, _>(lookup, "REDIS_CONNECTION_POOL_TIMEOUT")?
                 .unwrap_or(DEFAULT_POOL_TIMEOUT),
         })
     }
 }
 
-fn connection_target<L>(
-    explicit_host: Option<String>,
-    explicit_url: Option<String>,
-    lookup: &L,
-) -> Result<(Option<SecretString>, Option<String>), ConfigError>
+fn connection<L>(raw: RawRouterSettings, lookup: &L) -> Result<Connection, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let host = optional_text(explicit_host, "router_settings.redis_host", lookup)?
-        .or_else(|| lookup.lookup("REDIS_HOST"));
-    let url = resolve_secret(explicit_url, "router_settings.redis_url", lookup)?.or_else(|| {
-        if host.is_some() {
-            None
-        } else {
-            lookup.lookup("REDIS_URL").map(SecretString::from)
-        }
-    });
-    Ok((url, host))
-}
-
-fn connection_auth<L>(
-    explicit_port: Option<RawNumber>,
-    explicit_password: Option<SecretString>,
-    lookup: &L,
-) -> Result<(Option<i64>, Option<SecretString>), ConfigError>
-where
-    L: EnvironmentLookup,
-{
+    let host = optional_text(raw.host, "router_settings.redis_host", lookup)?
+        .map_or_else(|| lookup.lookup("REDIS_HOST"), Some);
+    let explicit = resolve_secret(raw.url, "router_settings.redis_url", lookup)?;
+    let url = match (explicit, host.as_ref()) {
+        (Some(url), _) => Some(url),
+        (None, None) => lookup.lookup("REDIS_URL").map(SecretString::from),
+        (None, Some(_)) => None,
+    };
     let port = match resolve_number::<i64, _>(
-        explicit_port,
+        raw.port,
         "router_settings.redis_port",
         lookup,
         parse_i64,
@@ -114,27 +104,33 @@ where
         Some(port) => Some(port),
         None => number::<i64, _>(lookup, "REDIS_PORT")?,
     };
-    let password = resolve_secret(explicit_password, "router_settings.redis_password", lookup)?
+    let password = resolve_secret(raw.password, "router_settings.redis_password", lookup)?
         .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
-    Ok((port, password))
+    Ok(Connection {
+        url,
+        host,
+        port,
+        password,
+        kwargs: raw.kwargs,
+    })
 }
 
 fn socket_timeout<L>(raw: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    match raw {
-        Some(value) => Ok(resolve_number::<f64, _>(
-            Some(value),
-            "router_settings.redis_kwargs.socket_timeout",
-            lookup,
-            parse_float,
-        )?
-        .unwrap_or(DEFAULT_SOCKET_TIMEOUT)),
-        None => {
-            Ok(number::<f64, _>(lookup, "REDIS_SOCKET_TIMEOUT")?.unwrap_or(DEFAULT_SOCKET_TIMEOUT))
-        }
-    }
+    let Some(value) = raw else {
+        return Ok(
+            number::<f64, _>(lookup, "REDIS_SOCKET_TIMEOUT")?.unwrap_or(DEFAULT_SOCKET_TIMEOUT)
+        );
+    };
+    let seconds = resolve_number::<f64, _>(
+        Some(value),
+        "router_settings.redis_kwargs.socket_timeout",
+        lookup,
+        parse_float,
+    )?;
+    Ok(seconds.unwrap_or(DEFAULT_SOCKET_TIMEOUT))
 }
 
 fn optional_text<L>(

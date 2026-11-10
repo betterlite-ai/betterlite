@@ -40,40 +40,28 @@ pub(crate) fn breaker(threshold: u32, recovery_millis: u64) -> BreakerSettings {
     }
 }
 
-pub(crate) fn redis_settings(server: &FakeRedis, namespace: Option<&str>) -> RedisSettings {
-    RedisSettings {
-        url: None,
-        host: Some("127.0.0.1".to_owned()),
-        port: Some(i64::from(server.port())),
-        password: None,
-        namespace: namespace.map(str::to_owned),
-        socket_timeout: Some(1.0_f64),
-        pool_timeout_seconds: 5,
-    }
-}
-
 pub(crate) fn settings(
     server: &FakeRedis,
     namespace: Option<&str>,
     breaker_settings: BreakerSettings,
 ) -> Settings {
     Settings {
-        redis: redis_settings(server, namespace),
+        redis: RedisSettings {
+            url: None,
+            host: Some("127.0.0.1".to_owned()),
+            port: Some(i64::from(server.port())),
+            password: None,
+            namespace: namespace.map(str::to_owned),
+            socket_timeout: Some(1.0_f64),
+            pool_timeout_seconds: 5,
+        },
         breaker: breaker_settings,
     }
 }
 
-pub(crate) fn store(
-    server: &FakeRedis,
-    namespace: Option<&str>,
-    breaker_settings: BreakerSettings,
-    clock: &TestClock,
-) -> RoutingStateStore {
-    RoutingStateStore::new(
-        &settings(server, namespace, breaker_settings),
-        clock.breaker_clock(),
-    )
-    .unwrap()
+#[rustfmt::skip]
+pub(crate) fn store(server: &FakeRedis, namespace: Option<&str>, breaker_settings: BreakerSettings, clock: &TestClock) -> RoutingStateStore {
+    RoutingStateStore::new(&settings(server, namespace, breaker_settings), clock.breaker_clock()).unwrap()
 }
 
 pub(crate) fn seed(server: &FakeRedis, key: &str, value: &RouteValue, ttl: i64) {

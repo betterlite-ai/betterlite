@@ -12,9 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::routing_state_store as config;
-use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use betterlite_redis::cache_primitives::protocol::AsyncRedisCommands as _;
-use redis::cmd;
 use secrecy::SecretString;
 
 use self::error::{Observed, StateStoreError};
@@ -23,6 +21,7 @@ use crate::redis_failure_policy;
 use crate::routing_value_store::{CompareOutcome, RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 pub type BreakerClock = Arc<dyn Fn() -> Duration + Send + Sync>;
+pub type StoreResult<T> = Result<Observed<T>, StateStoreError>;
 
 #[derive(Debug, Clone)]
 pub struct RedisSettings {
@@ -71,184 +70,79 @@ impl RoutingStateStore {
         })
     }
 
-    pub async fn get(&self, key: &RouteKey) -> Result<Observed<StoreRead>, StateStoreError> {
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(
-            &self.redis,
-            "async_get_cache",
-            Some(StoreRead::Missing),
-            move || async move {
-                let client = self.redis.transport.async_client().await?;
-                let mut command = cmd("GET");
-                command.arg(&namespaced);
-                let reply: Option<Vec<u8>> =
-                    client
-                        .query(&command)
-                        .await
-                        .map_err(|source| StateStoreError::Redis {
-                            operation: "async_get_cache",
-                            source,
-                        })?;
-                redis_state::codec::decode(reply)
-            },
-        )
-        .await
+    #[rustfmt::skip]
+    pub async fn get(&self, key: &RouteKey) -> StoreResult<StoreRead> {
+        let state = &self.redis;
+        let name = redis_state::namespaced(state, key);
+        let read = move || async move { redis_state::typed::read_one(state, &name).await };
+        redis_state::run_observed(state, "async_get_cache", Some(StoreRead::Missing), read).await
     }
 
-    pub async fn batch_get(
-        &self,
-        keys: &[RouteKey],
-    ) -> Result<Observed<Vec<StoreRead>>, StateStoreError> {
-        let namespaced: Vec<String> = keys
-            .iter()
-            .map(|key| redis_state::namespaced(&self.redis, key))
-            .collect();
+    #[rustfmt::skip]
+    pub async fn batch_get(&self, keys: &[RouteKey]) -> StoreResult<Vec<StoreRead>> {
+        let state = &self.redis;
+        let names: Vec<String> = keys.iter().map(|key| redis_state::namespaced(state, key)).collect();
         let fallback = vec![StoreRead::Missing; keys.len()];
-        redis_state::run_observed(
-            &self.redis,
-            "async_batch_get_cache",
-            Some(fallback),
-            move || async move {
-                let replies = self.redis.transport.async_mget(&namespaced).await?;
-                let mut values = Vec::with_capacity(replies.len());
-                for reply in replies {
-                    let raw = redis_state::codec::reply_bytes("async_batch_get_cache", reply)?;
-                    values.push(redis_state::codec::decode(raw)?);
-                }
-                Ok(values)
-            },
-        )
-        .await
+        let read = move || async move { redis_state::typed::read_batch(state, &names).await };
+        redis_state::run_observed(state, "async_batch_get_cache", Some(fallback), read).await
     }
 
-    pub async fn increment(
-        &self,
-        key: &RouteKey,
-        by: &RouteIncrement,
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<RouteValue>, StateStoreError> {
-        let ttl = redis_state::typed_ttl(&self.redis, ttl_seconds)?;
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        let key_name = key.as_ref().to_owned();
-        redis_state::run_observed(&self.redis, "async_increment", None, move || async move {
-            redis_state::typed::increment_until_written(&self.redis, &namespaced, by, ttl, key_name)
-                .await
-        })
-        .await
+    #[rustfmt::skip]
+    pub async fn increment(&self, key: &RouteKey, by: &RouteIncrement, ttl_seconds: Option<f64>) -> StoreResult<RouteValue> {
+        let state = &self.redis;
+        let ttl = redis_state::typed_ttl(state, ttl_seconds)?;
+        let name = redis_state::namespaced(state, key);
+        let write = move || async move { redis_state::typed::increment_until_written(state, &name, by, ttl, key).await };
+        redis_state::run_observed(state, "async_increment", None, write).await
     }
 
-    pub async fn compare_and_set(
-        &self,
-        key: &RouteKey,
-        expected: &StoreRead,
-        value: &RouteValue,
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<CompareOutcome>, StateStoreError> {
-        let ttl = redis_state::typed_ttl(&self.redis, ttl_seconds)?;
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(&self.redis, "compare_and_set", None, move || async move {
-            redis_state::cas::compare_and_set(&self.redis, &namespaced, expected, value, ttl).await
-        })
-        .await
+    #[rustfmt::skip]
+    pub async fn compare_and_set(&self, key: &RouteKey, expected: &StoreRead, value: &RouteValue, ttl_seconds: Option<f64>) -> StoreResult<CompareOutcome> {
+        let state = &self.redis;
+        let ttl = redis_state::typed_ttl(state, ttl_seconds)?;
+        let name = redis_state::namespaced(state, key);
+        let swap = redis_state::cas::compare_and_set(state, &name, expected, value, ttl);
+        redis_state::run_observed(state, "compare_and_set", None, move || swap).await
     }
 
-    pub async fn increment_float(
-        &self,
-        key: &RouteKey,
-        value: f64,
-        ttl_seconds: Option<f64>,
-        refresh_ttl: bool,
-    ) -> Result<Observed<f64>, StateStoreError> {
-        let ttl = redis_state::resolve_float_ttl(&self.redis, ttl_seconds);
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(&self.redis, "async_increment", None, move || async move {
-            self.redis
-                .counters
-                .incr_by_float_with_ttl(&namespaced, value, Some(ttl), refresh_ttl)
-                .await
-                .map_err(|source| StateStoreError::Counters {
-                    operation: "async_increment",
-                    source,
-                })
-        })
-        .await
+    #[rustfmt::skip]
+    pub async fn increment_float(&self, key: &RouteKey, value: f64, ttl_seconds: Option<f64>, refresh_ttl: bool) -> StoreResult<f64> {
+        let state = &self.redis;
+        let ttl = redis_state::resolve_float_ttl(state, ttl_seconds);
+        let name = redis_state::namespaced(state, key);
+        let add = move || async move { redis_state::typed::increment_float(state, &name, value, ttl, refresh_ttl).await };
+        redis_state::run_observed(state, "async_increment", None, add).await
     }
 
-    pub async fn increment_float_pipeline(
-        &self,
-        entries: &[(RouteKey, f64, Option<f64>)],
-    ) -> Result<Observed<Option<Vec<f64>>>, StateStoreError> {
+    #[rustfmt::skip]
+    pub async fn increment_float_pipeline(&self, entries: &[(RouteKey, f64, Option<f64>)]) -> StoreResult<Option<Vec<f64>>> {
         if entries.is_empty() {
-            return Ok(Observed {
-                value: None,
-                warning: None,
-            });
+            return Ok(Observed { value: None, warning: None });
         }
-        let mut operations = Vec::with_capacity(entries.len());
-        for (key, value, ttl_seconds) in entries {
-            let ttl = match ttl_seconds {
-                None => None,
-                Some(seconds) => Some(
-                    redis_state::truncate_seconds(*seconds)
-                        .ok_or(StateStoreError::InvalidTtl { seconds: *seconds })?,
-                ),
-            };
-            operations.push(IncrementOperation {
-                key: redis_state::namespaced(&self.redis, key),
-                increment_value: *value,
-                ttl,
-            });
-        }
-        redis_state::run_observed(
-            &self.redis,
-            "async_increment_pipeline",
-            None,
-            move || async move {
-                self.redis
-                    .counters
-                    .pipeline_increment(&operations)
-                    .await
-                    .map(Some)
-                    .map_err(|source| StateStoreError::Counters {
-                        operation: "async_increment_pipeline",
-                        source,
-                    })
-            },
-        )
-        .await
+        let state = &self.redis;
+        let operations = redis_state::typed::pipeline_operations(state, entries)?;
+        let write = move || async move { redis_state::typed::increment_pipeline(state, &operations).await };
+        let observed = redis_state::run_observed(state, "async_increment_pipeline", None, write).await?;
+        Ok(Observed { value: Some(observed.value), warning: observed.warning })
     }
 
-    pub async fn get_ttl(&self, key: &RouteKey) -> Result<Observed<Option<i64>>, StateStoreError> {
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(
-            &self.redis,
-            "async_get_ttl",
-            Some(None),
-            move || async move {
-                let ttl = redis_state::typed::read_ttl(&self.redis, &namespaced).await?;
-                Ok((ttl > -1).then_some(ttl))
-            },
-        )
-        .await
+    #[rustfmt::skip]
+    pub async fn get_ttl(&self, key: &RouteKey) -> StoreResult<Option<i64>> {
+        let state = &self.redis;
+        let name = redis_state::namespaced(state, key);
+        let read = move || async move { redis_state::typed::read_ttl(state, &name).await.map(|ttl| (ttl > -1).then_some(ttl)) };
+        redis_state::run_observed(state, "async_get_ttl", Some(None), read).await
     }
 
-    pub async fn refresh_ttl(
-        &self,
-        key: &RouteKey,
-        ttl_seconds: Option<f64>,
-    ) -> Result<Observed<bool>, StateStoreError> {
-        let ttl = redis_state::resolve_float_ttl(&self.redis, ttl_seconds);
-        let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(&self.redis, "async_refresh_ttl", None, move || async move {
-            let client = self.redis.transport.async_client().await?;
-            client
-                .expire(&namespaced, ttl)
-                .await
-                .map_err(|source| StateStoreError::Redis {
-                    operation: "async_refresh_ttl",
-                    source,
-                })
-        })
-        .await
+    #[rustfmt::skip]
+    pub async fn refresh_ttl(&self, key: &RouteKey, ttl_seconds: Option<f64>) -> StoreResult<bool> {
+        let state = &self.redis;
+        let name = redis_state::namespaced(state, key);
+        let ttl = redis_state::resolve_float_ttl(state, ttl_seconds);
+        let expire = move || async move {
+            let client = state.transport.async_client().await?;
+            client.expire(&name, ttl).await.map_err(|source| StateStoreError::Redis { operation: "async_refresh_ttl", source })
+        };
+        redis_state::run_observed(state, "async_refresh_ttl", None, expire).await
     }
 }

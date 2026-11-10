@@ -264,7 +264,16 @@ fn get(inner: &Inner, key: &str) -> Option<Vec<u8>> {
 }
 
 fn set(inner: &mut Inner, command: &Command) -> Vec<u8> {
+    let (ttl, only_missing) = set_options(command);
     let key = arg(command, 1);
+    if only_missing && inner.entries.contains_key(key) {
+        return bulk(None);
+    }
+    put(inner, key, arg(command, 2).as_bytes().to_vec(), ttl);
+    simple("OK")
+}
+
+fn set_options(command: &Command) -> (i64, bool) {
     let mut ttl = -1;
     let mut only_missing = false;
     let mut index = 3;
@@ -285,18 +294,12 @@ fn set(inner: &mut Inner, command: &Command) -> Vec<u8> {
             _ => index = index.saturating_add(1),
         }
     }
-    if only_missing && inner.entries.contains_key(key) {
-        return bulk(None);
-    }
-    inner.entries.insert(
-        key.to_owned(),
-        Entry {
-            value: arg(command, 2).as_bytes().to_vec(),
-            ttl,
-        },
-    );
+    (ttl, only_missing)
+}
+
+fn put(inner: &mut Inner, key: &str, value: Vec<u8>, ttl: i64) {
+    inner.entries.insert(key.to_owned(), Entry { value, ttl });
     touch(inner, key);
-    simple("OK")
 }
 
 fn delete(inner: &mut Inner, command: &Command) -> Vec<u8> {
@@ -332,22 +335,18 @@ fn expire(inner: &mut Inner, command: &Command) -> i64 {
 fn increment(inner: &mut Inner, command: &Command) -> Vec<u8> {
     let key = arg(command, 1);
     let amount = Decimal::from_str(arg(command, 2)).unwrap_or_default();
-    let current = get(inner, key)
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(|text| Decimal::from_str(&text).ok())
-        .unwrap_or_default();
-    let updated = current.checked_add(amount).unwrap_or_default();
+    let updated = decimal(inner, key).checked_add(amount).unwrap_or_default();
     let ttl = inner.entries.get(key).map_or(-1, |entry| entry.ttl);
     let text = updated.normalize().to_string();
-    inner.entries.insert(
-        key.to_owned(),
-        Entry {
-            value: text.clone().into_bytes(),
-            ttl,
-        },
-    );
-    touch(inner, key);
+    put(inner, key, text.clone().into_bytes(), ttl);
     bulk(Some(text.as_bytes()))
+}
+
+fn decimal(inner: &Inner, key: &str) -> Decimal {
+    get(inner, key)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| Decimal::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 fn simple(text: &str) -> Vec<u8> {

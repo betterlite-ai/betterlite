@@ -7,11 +7,11 @@ use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-use super::error::StateStoreError;
+use super::error::{Observed, StateStoreError};
 use super::test_support::FakeRedis;
 use super::{BreakerClock, RedisSettings, RoutingStateStore, Settings};
 use crate::redis_failure_policy::Settings as BreakerSettings;
-use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
+use crate::routing_value_store::{CompareOutcome, RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 const WORKERS: usize = 2;
 
@@ -144,71 +144,61 @@ async fn apply(
     }
 }
 
-async fn increment(
-    step: &ScenarioStep,
-    stores: &[RoutingStateStore],
-) -> Result<ScenarioStepOutput, String> {
-    let store = store_at(stores, step)?;
-    let key = route_key(step)?;
-    let by = step
-        .by
-        .as_ref()
-        .ok_or_else(|| "the increment needs an amount".to_owned())?;
-    let output = match store.increment(&key, by, None).await {
+#[rustfmt::skip]
+async fn increment(step: &ScenarioStep, stores: &[RoutingStateStore]) -> Result<ScenarioStepOutput, String> {
+    let (store, key) = request(step, stores)?;
+    let by = step.by.as_ref().ok_or_else(|| "the increment needs an amount".to_owned())?;
+    let observed = store.increment(&key, by, None).await;
+    Ok(route_output(step, observed))
+}
+
+#[rustfmt::skip]
+fn route_output(step: &ScenarioStep, result: Result<Observed<RouteValue>, StateStoreError>) -> ScenarioStepOutput {
+    match result {
         Ok(observed) => output(step, Some(ScenarioValue::Route(observed.value)), None),
         Err(error) => output(step, None, Some(label(&error))),
-    };
-    Ok(output)
+    }
 }
 
-async fn claim(
-    step: &ScenarioStep,
-    stores: &[RoutingStateStore],
-) -> Result<ScenarioStepOutput, String> {
-    let store = store_at(stores, step)?;
-    let key = route_key(step)?;
-    let requested = step
-        .value
-        .as_ref()
-        .ok_or_else(|| "the claim needs a value".to_owned())?;
-    let ttl = step
-        .ttl_seconds
-        .and_then(|seconds| Decimal::from(seconds).to_f64());
-    let output = match store
-        .compare_and_set(&key, &StoreRead::Missing, requested, ttl)
-        .await
-    {
-        Ok(observed) => output(
-            step,
-            Some(ScenarioValue::Claim {
-                claimed: observed.value.swapped,
-                current: match observed.value.current {
-                    StoreRead::Missing => None,
-                    StoreRead::Value(value) => Some(value),
-                },
-            }),
-            None,
-        ),
+#[rustfmt::skip]
+async fn claim(step: &ScenarioStep, stores: &[RoutingStateStore]) -> Result<ScenarioStepOutput, String> {
+    let (store, key) = request(step, stores)?;
+    let requested = step.value.as_ref().ok_or_else(|| "the claim needs a value".to_owned())?;
+    let ttl = step.ttl_seconds.and_then(|seconds| Decimal::from(seconds).to_f64());
+    let outcome = store.compare_and_set(&key, &StoreRead::Missing, requested, ttl).await;
+    Ok(claim_output(step, outcome))
+}
+
+#[rustfmt::skip]
+fn claim_output(step: &ScenarioStep, outcome: Result<Observed<CompareOutcome>, StateStoreError>) -> ScenarioStepOutput {
+    match outcome {
+        Ok(observed) => output(step, Some(ScenarioValue::Claim { claimed: observed.value.swapped, current: current(observed.value.current) }), None),
         Err(error) => output(step, None, Some(label(&error))),
-    };
-    Ok(output)
+    }
 }
 
-async fn leak(
-    step: &ScenarioStep,
-    stores: &[RoutingStateStore],
-    input: &ScenarioInput,
-) -> Result<ScenarioStepOutput, String> {
-    let store = store_at(stores, step)?;
-    let key = route_key(step)?;
-    let failure = store
-        .increment(&key, &RouteIncrement::Counter(1), None)
-        .await;
-    let leaked = match (failure, input.settings.password.as_deref()) {
+fn current(read: StoreRead) -> Option<RouteValue> {
+    match read {
+        StoreRead::Missing => None,
+        StoreRead::Value(value) => Some(value),
+    }
+}
+
+#[rustfmt::skip]
+async fn leak(step: &ScenarioStep, stores: &[RoutingStateStore], input: &ScenarioInput) -> Result<ScenarioStepOutput, String> {
+    let (store, key) = request(step, stores)?;
+    let failure = store.increment(&key, &RouteIncrement::Counter(1), None).await;
+    Ok(output(step, Some(ScenarioValue::Flag(leaked(failure, input.settings.password.as_deref()))), None))
+}
+
+fn leaked(
+    failure: Result<Observed<RouteValue>, StateStoreError>,
+    configured: Option<&str>,
+) -> bool {
+    match (failure, configured) {
         (Err(error), Some(password)) => format!("{error} {error:?}").contains(password),
         (Ok(_), _) | (Err(_), None) => false,
-    };
-    Ok(output(step, Some(ScenarioValue::Flag(leaked)), None))
+    }
 }
 
 fn output(
@@ -223,21 +213,11 @@ fn output(
     }
 }
 
-fn store_at<'stores>(
-    stores: &'stores [RoutingStateStore],
-    step: &ScenarioStep,
-) -> Result<&'stores RoutingStateStore, String> {
-    stores
-        .get(step.worker)
-        .ok_or_else(|| format!("unknown worker {}", step.worker))
-}
-
-fn route_key(step: &ScenarioStep) -> Result<RouteKey, String> {
-    let raw = step
-        .key
-        .as_deref()
-        .ok_or_else(|| "the step needs a key".to_owned())?;
-    RouteKey::parse(raw).map_err(|error| error.to_string())
+#[rustfmt::skip]
+fn request<'stores>(step: &ScenarioStep, stores: &'stores [RoutingStateStore]) -> Result<(&'stores RoutingStateStore, RouteKey), String> {
+    let store = stores.get(step.worker).ok_or_else(|| format!("unknown worker {}", step.worker))?;
+    let raw = step.key.as_deref().ok_or_else(|| "the step needs a key".to_owned())?;
+    Ok((store, RouteKey::parse(raw).map_err(|error| error.to_string())?))
 }
 
 fn label(error: &StateStoreError) -> String {

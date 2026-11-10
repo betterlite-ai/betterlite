@@ -1,14 +1,18 @@
+use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use betterlite_redis::cache_primitives::protocol::AsyncRedisCommands as _;
 use redis::cmd;
 
 use super::super::error::StateStoreError;
 use super::RedisState;
-use super::codec::{decode, encode, incremented};
-use crate::routing_value_store::{RouteIncrement, RouteValue, StoreRead};
+use super::codec::{decode, encode, incremented, reply_bytes};
+use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 const UPDATE_ATTEMPTS: usize = 8;
 
-async fn read_one(state: &RedisState, namespaced: &str) -> Result<StoreRead, StateStoreError> {
+pub(crate) async fn read_one(
+    state: &RedisState,
+    namespaced: &str,
+) -> Result<StoreRead, StateStoreError> {
     let client = state.transport.async_client().await?;
     let mut command = cmd("GET");
     command.arg(namespaced);
@@ -39,7 +43,7 @@ pub(crate) async fn increment_until_written(
     namespaced: &str,
     by: &RouteIncrement,
     ttl: i64,
-    key_name: String,
+    key: &RouteKey,
 ) -> Result<RouteValue, StateStoreError> {
     for _attempt in 0..UPDATE_ATTEMPTS {
         let current = read_one(state, namespaced).await?;
@@ -55,5 +59,72 @@ pub(crate) async fn increment_until_written(
             return Ok(next);
         }
     }
-    Err(StateStoreError::Conflict { key: key_name })
+    Err(StateStoreError::Conflict {
+        key: key.as_ref().to_owned(),
+    })
+}
+
+pub(crate) async fn read_batch(
+    state: &RedisState,
+    namespaced: &[String],
+) -> Result<Vec<StoreRead>, StateStoreError> {
+    let replies = state.transport.async_mget(namespaced).await?;
+    let mut values = Vec::with_capacity(replies.len());
+    for reply in replies {
+        values.push(decode(reply_bytes("async_batch_get_cache", reply)?)?);
+    }
+    Ok(values)
+}
+
+pub(crate) async fn increment_float(
+    state: &RedisState,
+    namespaced: &str,
+    value: f64,
+    ttl: i64,
+    refresh: bool,
+) -> Result<f64, StateStoreError> {
+    state
+        .counters
+        .incr_by_float_with_ttl(namespaced, value, Some(ttl), refresh)
+        .await
+        .map_err(|source| StateStoreError::Counters {
+            operation: "async_increment",
+            source,
+        })
+}
+
+pub(crate) fn pipeline_operations(
+    state: &RedisState,
+    entries: &[(RouteKey, f64, Option<f64>)],
+) -> Result<Vec<IncrementOperation>, StateStoreError> {
+    let mut operations = Vec::with_capacity(entries.len());
+    for (key, value, ttl_seconds) in entries {
+        let ttl = match ttl_seconds {
+            None => None,
+            Some(seconds) => Some(
+                super::truncate_seconds(*seconds)
+                    .ok_or(StateStoreError::InvalidTtl { seconds: *seconds })?,
+            ),
+        };
+        operations.push(IncrementOperation {
+            key: super::namespaced(state, key),
+            increment_value: *value,
+            ttl,
+        });
+    }
+    Ok(operations)
+}
+
+pub(crate) async fn increment_pipeline(
+    state: &RedisState,
+    operations: &[IncrementOperation],
+) -> Result<Vec<f64>, StateStoreError> {
+    state
+        .counters
+        .pipeline_increment(operations)
+        .await
+        .map_err(|source| StateStoreError::Counters {
+            operation: "async_increment_pipeline",
+            source,
+        })
 }

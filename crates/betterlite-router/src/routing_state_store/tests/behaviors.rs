@@ -6,9 +6,7 @@ use betterlite_config::sections::routing_state_store::Settings as ConfigSettings
 
 use super::super::error::{StateStoreError, StoreWarning};
 use super::super::{RedisSettings, RoutingStateStore, Settings};
-use super::support::{
-    TestClock, breaker, redis_settings, route_key, same_f64, secret, seed, store,
-};
+use super::support::{TestClock, breaker, route_key, same_f64, secret, seed, settings, store};
 use crate::redis_failure_policy::BreakerEvent;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{
@@ -46,18 +44,31 @@ async fn read_and_write_cases(name: &str) -> bool {
 }
 
 async fn failure_cases(name: &str) -> bool {
-    match name {
-        "transport_failure_falls_back_for_reads" => transport_failure_falls_back_for_reads().await,
-        "transport_failure_fails_increments" => transport_failure_fails_increments().await,
-        "breaker_rejects_after_a_swallowed_failure" => {
-            breaker_rejects_after_a_swallowed_failure().await;
-        }
-        "breaker_recovers_after_the_timeout" => breaker_recovers_after_the_timeout().await,
-        "config_mapping_defaults" => config_mapping_defaults(),
-        "credentials_stay_out_of_errors" => credentials_stay_out_of_errors().await,
-        _ => return false,
+    if name == "transport_failure_falls_back_for_reads" {
+        transport_failure_falls_back_for_reads().await;
+        return true;
     }
-    true
+    if name == "transport_failure_fails_increments" {
+        transport_failure_fails_increments().await;
+        return true;
+    }
+    if name == "breaker_rejects_after_a_swallowed_failure" {
+        breaker_rejects_after_a_swallowed_failure().await;
+        return true;
+    }
+    if name == "breaker_recovers_after_the_timeout" {
+        breaker_recovers_after_the_timeout().await;
+        return true;
+    }
+    if name == "config_mapping_defaults" {
+        config_mapping_defaults();
+        return true;
+    }
+    if name == "credentials_stay_out_of_errors" {
+        credentials_stay_out_of_errors().await;
+        return true;
+    }
+    false
 }
 
 async fn typed_values_round_trip() {
@@ -426,7 +437,7 @@ async fn credentials_stay_out_of_errors() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let password = "super-secret-redis-password";
-    let mut redis = redis_settings(&server, None);
+    let mut redis = settings(&server, None, breaker(5, 60_000)).redis;
     redis.password = Some(secret(password));
     let settings = Settings {
         redis,

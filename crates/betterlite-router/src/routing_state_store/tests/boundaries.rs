@@ -11,70 +11,90 @@ use crate::routing_value_store::{
 };
 
 pub(crate) async fn run(name: &str) {
-    if ttl_and_size_cases(name).await {
+    if read_cases(name).await {
         return;
     }
-    if decode_and_overflow_cases(name).await {
+    if write_cases(name).await {
         return;
     }
-    if expiry_and_float_cases(name).await {
+    if expiry_cases(name).await {
+        return;
+    }
+    if pipeline_cases(name).await {
         return;
     }
     panic!("unknown case {name}");
 }
 
-async fn ttl_and_size_cases(name: &str) -> bool {
+#[rustfmt::skip]
+async fn read_cases(name: &str) -> bool {
     match name {
         "ttl_zero_is_rejected" => ttl_is_rejected(0.0_f64).await,
         "ttl_negative_is_rejected" => ttl_is_rejected(-1.0_f64).await,
         "ttl_infinite_is_rejected" => ttl_is_rejected(f64::INFINITY).await,
-        "ttl_nan_is_rejected" => ttl_nan_is_rejected().await,
+        "ttl_nan_is_rejected" => ttl_is_rejected(f64::NAN).await,
         "fractional_ttl_truncates" => fractional_ttl_truncates().await,
-        "oversized_compare_and_set_does_not_write" => {
-            oversized_compare_and_set_does_not_write().await;
-        }
+        "oversized_compare_and_set_does_not_write" => oversized_compare_and_set_does_not_write().await,
         "route_key_length_boundary" => route_key_length_boundary().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn decode_and_overflow_cases(name: &str) -> bool {
-    match name {
         "invalid_stored_value_reads_as_missing" => invalid_stored_value_reads_as_missing().await,
-        "invalid_stored_value_fails_an_increment" => {
-            invalid_stored_value_fails_an_increment().await;
-        }
+        "invalid_stored_value_fails_an_increment" => invalid_stored_value_fails_an_increment().await,
         "batch_decode_failure_misses_every_key" => batch_decode_failure_misses_every_key().await,
-        "counter_overflow_is_reported" => counter_overflow_is_reported().await,
-        "spend_overflow_is_reported" => spend_overflow_is_reported().await,
-        "increment_mismatched_kind_is_not_incrementable" => {
-            increment_mismatched_kind_is_not_incrementable().await;
-        }
         _ => return false,
     }
     true
 }
 
-async fn expiry_and_float_cases(name: &str) -> bool {
-    match name {
-        "increment_keeps_a_live_expiry" => increment_keeps_a_live_expiry().await,
-        "increment_adds_expiry_when_none" => increment_adds_expiry_when_none().await,
-        "increment_without_ttl_uses_the_default" => increment_without_ttl_uses_the_default().await,
-        "get_ttl_maps_absent_and_unexpiring_to_none" => {
-            get_ttl_maps_absent_and_unexpiring_to_none().await;
-        }
-        "float_increment_invalid_ttl_uses_the_default" => {
-            float_increment_invalid_ttl_uses_the_default().await;
-        }
-        "float_pipeline_invalid_ttl_is_an_error" => float_pipeline_invalid_ttl_is_an_error().await,
-        "float_pipeline_zero_ttl_is_sent" => float_pipeline_zero_ttl_is_sent().await,
-        "cancelled_compare_and_set_leaves_the_connection_usable" => {
-            cancelled_compare_and_set_leaves_the_connection_usable().await;
-        }
-        _ => return false,
+async fn write_cases(name: &str) -> bool {
+    if name == "counter_overflow_is_reported" {
+        overflow_is_reported(
+            RouteValue::Counter(i64::MAX),
+            RouteIncrement::Counter(1),
+            by_counter,
+        )
+        .await;
+        return true;
     }
-    true
+    if name == "spend_overflow_is_reported" {
+        overflow_is_reported(
+            RouteValue::Spend(Decimal::MAX),
+            RouteIncrement::Spend(Decimal::ONE),
+            by_spend,
+        )
+        .await;
+        return true;
+    }
+    if name == "increment_mismatched_kind_is_not_incrementable" {
+        increment_mismatched_kind_is_not_incrementable().await;
+        return true;
+    }
+    if name == "increment_keeps_a_live_expiry" {
+        increment_ttl_case(30, Some(100.0_f64), 30).await;
+        return true;
+    }
+    if name == "increment_adds_expiry_when_none" {
+        increment_ttl_case(-1, Some(100.0_f64), 100).await;
+        return true;
+    }
+    if name == "increment_without_ttl_uses_the_default" {
+        increment_ttl_case(-1, None, 60).await;
+        return true;
+    }
+    false
+}
+
+#[rustfmt::skip]
+async fn expiry_cases(name: &str) -> bool {
+    if name == "get_ttl_maps_absent_and_unexpiring_to_none" { get_ttl_maps_absent_and_unexpiring_to_none().await; return true; }
+    if name == "float_increment_invalid_ttl_uses_the_default" { float_increment_invalid_ttl_uses_the_default().await; return true; }
+    false
+}
+
+#[rustfmt::skip]
+async fn pipeline_cases(name: &str) -> bool {
+    if name == "float_pipeline_invalid_ttl_is_an_error" { float_pipeline_invalid_ttl_is_an_error().await; return true; }
+    if name == "float_pipeline_zero_ttl_is_sent" { float_pipeline_zero_ttl_is_sent().await; return true; }
+    if name == "cancelled_compare_and_set_leaves_the_connection_usable" { cancelled_compare_and_set_leaves_the_connection_usable().await; return true; }
+    false
 }
 
 async fn ttl_is_rejected(seconds: f64) {
@@ -89,29 +109,13 @@ async fn ttl_is_rejected(seconds: f64) {
         )
         .await
         .unwrap_err();
-    assert!(matches!(
+    let rejected = matches!(
         error,
-        StateStoreError::InvalidTtl { seconds: reported } if same_f64(reported, seconds)
-    ));
+        StateStoreError::InvalidTtl { seconds: reported }
+            if same_f64(reported, seconds) || (reported.is_nan() && seconds.is_nan())
+    );
+    assert!(rejected);
     assert!(server.raw("counter").is_none());
-}
-
-async fn ttl_nan_is_rejected() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    let error = store
-        .increment(
-            &route_key("counter"),
-            &RouteIncrement::Counter(1),
-            Some(f64::NAN),
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        StateStoreError::InvalidTtl { seconds } if seconds.is_nan()
-    ));
 }
 
 async fn fractional_ttl_truncates() {
@@ -224,44 +228,38 @@ async fn batch_decode_failure_misses_every_key() {
     ));
 }
 
-async fn counter_overflow_is_reported() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    seed(&server, "overflow", &RouteValue::Counter(i64::MAX), -1);
-    let error = store
-        .increment(&route_key("overflow"), &RouteIncrement::Counter(1), None)
-        .await
-        .unwrap_err();
-    assert!(matches!(
+fn by_counter(error: &StateStoreError) -> bool {
+    matches!(
         error,
-        StateStoreError::Store(StoreError::CounterOverflow { key: reported })
-            if reported == "overflow"
-    ));
-    assert_eq!(
-        server.raw("overflow").map(|entry| entry.0),
-        Some(serde_json::to_vec(&RouteValue::Counter(i64::MAX)).unwrap())
-    );
+        StateStoreError::Store(StoreError::CounterOverflow { key }) if key.as_str() == "overflow"
+    )
 }
 
-async fn spend_overflow_is_reported() {
+fn by_spend(error: &StateStoreError) -> bool {
+    matches!(
+        error,
+        StateStoreError::Store(StoreError::SpendOverflow { key }) if key.as_str() == "overflow"
+    )
+}
+
+async fn overflow_is_reported(
+    seeded: RouteValue,
+    by: RouteIncrement,
+    check: fn(&StateStoreError) -> bool,
+) {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    seed(&server, "overflow", &RouteValue::Spend(Decimal::MAX), -1);
+    seed(&server, "overflow", &seeded, -1);
     let error = store
-        .increment(
-            &route_key("overflow"),
-            &RouteIncrement::Spend(Decimal::ONE),
-            None,
-        )
+        .increment(&route_key("overflow"), &by, None)
         .await
         .unwrap_err();
-    assert!(matches!(
-        error,
-        StateStoreError::Store(StoreError::SpendOverflow { key: reported })
-            if reported == "overflow"
-    ));
+    assert!(check(&error));
+    assert_eq!(
+        server.raw("overflow").map(|entry| entry.0),
+        Some(serde_json::to_vec(&seeded).unwrap())
+    );
 }
 
 async fn increment_mismatched_kind_is_not_incrementable() {
@@ -287,48 +285,20 @@ async fn increment_mismatched_kind_is_not_incrementable() {
     ));
 }
 
-async fn increment_keeps_a_live_expiry() {
+async fn increment_ttl_case(seeded: i64, requested: Option<f64>, expected: i64) {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    seed(&server, "counter", &RouteValue::Counter(1), 30);
+    seed(&server, "counter", &RouteValue::Counter(1), seeded);
     store
         .increment(
             &route_key("counter"),
             &RouteIncrement::Counter(1),
-            Some(100.0_f64),
+            requested,
         )
         .await
         .unwrap();
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(30));
-}
-
-async fn increment_adds_expiry_when_none() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    seed(&server, "counter", &RouteValue::Counter(1), -1);
-    store
-        .increment(
-            &route_key("counter"),
-            &RouteIncrement::Counter(1),
-            Some(100.0_f64),
-        )
-        .await
-        .unwrap();
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(100));
-}
-
-async fn increment_without_ttl_uses_the_default() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let store = store(&server, None, breaker(5, 60_000), &clock);
-    seed(&server, "counter", &RouteValue::Counter(1), -1);
-    store
-        .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
-        .await
-        .unwrap();
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(60));
+    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(expected));
 }
 
 async fn get_ttl_maps_absent_and_unexpiring_to_none() {
