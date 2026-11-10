@@ -80,10 +80,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/coordinator/)' -E 'test(/cache_coordination/)'
     - id: disk-cache-behavior
       why: a disk cache oracle case fails or does not match LiteLLM
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/disk_cache)" && cargo gate run B4291 --only oracle
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/disk_cache)"
+        && cargo build --locked --quiet -p betterlite
+        && cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/disk_cache
     - id: coordinator-behavior
       why: a coordinator oracle case fails or does not match LiteLLM
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_coordination)" && cargo gate run B4291 --only oracle
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_coordination)"
+        && cargo build --locked --quiet -p betterlite
+        && cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/cache_coordination
 
 oracle_cases:
   - tools/oracle/cases/disk_cache/set-and-get.yaml
