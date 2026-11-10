@@ -78,6 +78,13 @@ enum Scenario {
     ]"#,
     reverse: "{}",
 })]
+#[case::uses_the_function_of_a_tool_that_also_has_an_input_schema(Scenario::Success {
+    tools: r#"[{"type":"function","function":{"name":"openai"},"input_schema":{"type":"object","properties":{"x":{"type":"string"}}}}]"#,
+    cache_points: UNSUPPORTED,
+    supports_strict_tools: false,
+    expected: r#"[{"toolSpec":{"inputSchema":{"json":{"type":"object","properties":{},"required":[]}},"name":"openai","description":"openai"}}]"#,
+    reverse: "{}",
+})]
 #[case::keeps_the_last_name_for_a_duplicate(Scenario::Success {
     tools: r#"[
         {"type":"function","function":{"name":"dup name"}},
