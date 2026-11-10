@@ -694,7 +694,7 @@ fn response_an_error_key_is_a_500() {
 
 #[test]
 fn response_decoding_rejects_an_oversized_body() {
-    let bytes = vec![b' '; 0x10_0001];
+    let bytes = vec![b' '; 0x400_0001];
     let error = decode_embedding_response(&bytes).unwrap_err();
     assert!(matches!(
         error,
@@ -704,9 +704,9 @@ fn response_decoding_rejects_an_oversized_body() {
 
 #[test]
 fn response_decoding_accepts_a_body_of_exactly_the_limit() {
-    let mut bytes = vec![b' '; 0x10_0000];
+    let mut bytes = vec![b' '; 0x400_0000];
     bytes[0] = b'[';
-    bytes[0x0F_FFFF] = b']';
+    bytes[0x3FF_FFFF] = b']';
     assert!(matches!(
         decode_embedding_response(&bytes).unwrap(),
         EmbeddingReply::Items(items) if items.is_empty()

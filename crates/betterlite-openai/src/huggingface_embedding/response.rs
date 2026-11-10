@@ -5,7 +5,7 @@ use crate::huggingface_chat::error::get_error_class;
 use crate::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use crate::openai_base_config::Headers;
 
-pub const MAX_RESPONSE_BYTES: usize = 0x10_0000;
+pub const MAX_RESPONSE_BYTES: usize = 0x400_0000;
 
 // Items comes first so a one-element list is never read as the single-field structs below
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
