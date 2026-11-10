@@ -1,26 +1,22 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::fmt::Display;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_azure::image_transport::ImageResponse;
 use betterlite_azure::image_transport::error::{FailureMessage, ImageTransportError};
 use betterlite_azure::image_transport::json::{JsonMap, JsonValue};
 use betterlite_azure::image_transport::request::{
-    Call, CallStyle, Connection, ImageClientConstructor, PollingSettings, TimeoutPhases, execute,
-};
-use betterlite_azure::image_transport::{
-    ImageClock, ImageReply, ImageRequest, ImageResponse, ImageTransport,
+    Call, CallStyle, Connection, PollingSettings, execute,
 };
 use betterlite_config::loader::ConfigLoader;
-use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
-use std::fmt::Display;
-use std::future::{Future, ready};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::{Input, Reply, Step};
+use super::fixture::{Constructor, Fixture, FixtureClock, FixtureTransport};
+use super::input::{Input, Step};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -108,129 +104,6 @@ fn failure(message: &dyn Display) -> Box<HelperError> {
     })
 }
 
-struct Fixture {
-    replies: Mutex<VecDeque<Reply>>,
-    calls: Mutex<Vec<RecordedCall>>,
-    constructed: Mutex<Vec<TimeoutPhases>>,
-    clock: Arc<FixtureClock>,
-}
-
-struct RecordedCall {
-    method: String,
-    url: String,
-    headers: BTreeMap<String, String>,
-    body: Option<Value>,
-}
-
-#[derive(Clone)]
-struct FixtureTransport {
-    state: Arc<Fixture>,
-}
-
-impl ImageTransport for FixtureTransport {
-    fn send(
-        &self,
-        request: ImageRequest,
-    ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
-        let body = (!request.body.is_empty())
-            .then(|| serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null));
-        self.state
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedCall {
-                method: request.method.to_string(),
-                url: request.url.clone(),
-                headers: request
-                    .headers
-                    .iter()
-                    .map(|(name, value)| {
-                        (
-                            name.as_str().to_owned(),
-                            value.to_str().unwrap_or_default().to_owned(),
-                        )
-                    })
-                    .collect(),
-                body,
-            });
-        let Some(reply) = self
-            .state
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        else {
-            return ready(Err(TransportError::Closed));
-        };
-        if reply.delay > 0 {
-            self.state
-                .clock
-                .elapsed
-                .fetch_add(reply.delay, Ordering::SeqCst);
-        }
-        ready(Ok(ImageReply {
-            status: reply.status,
-            headers: reply_headers(&reply.headers),
-            body: reply.body.into_bytes(),
-        }))
-    }
-}
-
-fn reply_headers(headers: &BTreeMap<String, String>) -> HeaderMap {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        if let (Ok(header), Ok(parsed)) = (
-            HeaderName::from_bytes(name.as_bytes()),
-            HeaderValue::from_str(value),
-        ) {
-            map.insert(header, parsed);
-        }
-    }
-    map
-}
-
-#[derive(Default)]
-struct FixtureClock {
-    elapsed: AtomicU64,
-    sleeps: Mutex<Vec<i64>>,
-}
-
-impl ImageClock for FixtureClock {
-    fn now(&self) -> Duration {
-        Duration::from_secs(self.elapsed.load(Ordering::SeqCst))
-    }
-
-    fn pause(&self, seconds: i64) -> impl Future<Output = ()> + Send {
-        self.sleeps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(seconds);
-        if let Ok(positive) = u64::try_from(seconds) {
-            self.elapsed.fetch_add(positive, Ordering::SeqCst);
-        }
-        ready(())
-    }
-}
-
-struct Constructor {
-    state: Arc<Fixture>,
-}
-
-impl ImageClientConstructor for Constructor {
-    type Client = FixtureTransport;
-
-    fn construct(&self, timeout: TimeoutPhases) -> FixtureTransport {
-        self.state
-            .constructed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(timeout);
-        FixtureTransport {
-            state: Arc::clone(&self.state),
-        }
-    }
-}
-
 fn step_value(
     state: &Fixture,
     clock: &FixtureClock,
@@ -255,6 +128,35 @@ fn step_value(
             failure_kind(error),
         ),
     };
+    let calls: Vec<Value> = state
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|call| {
+            json!({
+                "method": call.method,
+                "url": call.url,
+                "headers": call.headers,
+                "body": call.body,
+                "timeout": Value::Null,
+            })
+        })
+        .collect();
+    let constructed: Vec<Value> = state
+        .constructed
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|phases| {
+            json!({
+                "connect": phases.connect,
+                "read": phases.read,
+                "write": phases.write,
+                "pool": phases.pool,
+            })
+        })
+        .collect();
     let sleeps = clock
         .sleeps
         .lock()
@@ -268,9 +170,9 @@ fn step_value(
         "request": request,
         "message_kind": message_kind,
         "data": serde_json::to_value(data).unwrap_or(Value::Null),
-        "calls": calls_value(state),
+        "calls": calls,
         "sleeps": sleeps,
-        "constructed": constructed_value(state),
+        "constructed": constructed,
     })
 }
 
@@ -322,43 +224,4 @@ fn body_value(body: &[u8]) -> Value {
     serde_json::from_slice(body).unwrap_or_else(|_| {
         std::str::from_utf8(body).map_or(Value::Null, |text| Value::String(text.to_owned()))
     })
-}
-
-fn calls_value(state: &Fixture) -> Value {
-    Value::Array(
-        state
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|call| {
-                json!({
-                    "method": call.method,
-                    "url": call.url,
-                    "headers": call.headers,
-                    "body": call.body,
-                    "timeout": Value::Null,
-                })
-            })
-            .collect(),
-    )
-}
-
-fn constructed_value(state: &Fixture) -> Value {
-    Value::Array(
-        state
-            .constructed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|phases| {
-                json!({
-                    "connect": phases.connect,
-                    "read": phases.read,
-                    "write": phases.write,
-                    "pool": phases.pool,
-                })
-            })
-            .collect(),
-    )
 }

@@ -5,18 +5,19 @@ use http::Method;
 use http::header::HeaderMap;
 
 use crate::image_transport::body;
-use crate::image_transport::decode::{ImageOperation, decode_image_operation};
+use crate::image_transport::decode::ImageOperation;
 use crate::image_transport::error::ImageTransportError;
 use crate::image_transport::json::{JsonMap, JsonValue};
+use crate::image_transport::request::poll::Poller;
 use crate::image_transport::{
     ImageClock, ImageReply, ImageRequest, ImageResponse, ImageTransport, RequestMetadata,
 };
 
+mod poll;
+
 const SUBMIT_PATH: &str = "/openai/images/generations:submit";
 const SYNTHETIC_REQUEST_URL: &str = "https://api.openai.com/v1";
 const OPERATION_LOCATION: &str = "operation-location";
-const RETRY_AFTER: &str = "retry-after";
-const DEFAULT_RETRY_AFTER_SECONDS: i64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimeoutPhases {
@@ -167,58 +168,7 @@ where
     finish(reply, operation)
 }
 
-struct Poller<'call, T, K> {
-    client: &'call T,
-    clock: &'call K,
-    settings: PollingSettings,
-    location: &'call str,
-    headers: &'call HeaderMap,
-}
-
-impl<T, K> Poller<'_, T, K>
-where
-    T: ImageTransport,
-    K: ImageClock,
-{
-    async fn run(
-        &self,
-        first: ImageReply,
-        started: Duration,
-    ) -> Result<(ImageReply, ImageOperation), ImageTransportError> {
-        let mut reply = first;
-        let mut operation = decode_image_operation(&reply.body)
-            .map_err(|source| ImageTransportError::Decode { source })?;
-        let mut status = operation
-            .status
-            .clone()
-            .ok_or(ImageTransportError::MissingStatusInitial)?;
-        while !matches!(&status, JsonValue::String(value) if value.as_str() == "succeeded" || value.as_str() == "failed")
-        {
-            if self.clock.now().saturating_sub(started) > self.settings.timeout {
-                return Err(ImageTransportError::PollingTimeout);
-            }
-            let seconds = retry_after(&reply.headers)?;
-            sleep(self.clock, seconds, self.settings.style).await?;
-            reply = send(
-                self.client,
-                Method::GET,
-                self.location,
-                self.headers,
-                Vec::new(),
-            )
-            .await?;
-            operation = decode_image_operation(&reply.body)
-                .map_err(|source| ImageTransportError::Decode { source })?;
-            status = operation
-                .status
-                .clone()
-                .ok_or(ImageTransportError::MissingStatus)?;
-        }
-        Ok((reply, operation))
-    }
-}
-
-async fn send<T>(
+pub(super) async fn send<T>(
     client: &T,
     method: Method,
     url: &str,
@@ -273,31 +223,4 @@ fn response_text(body: &[u8]) -> String {
         let length = error.as_bytes().len();
         format!("{length} bytes that are not UTF-8")
     })
-}
-
-fn retry_after(headers: &HeaderMap) -> Result<i64, ImageTransportError> {
-    let value = headers
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    if value.is_empty() {
-        return Ok(DEFAULT_RETRY_AFTER_SECONDS);
-    }
-    value
-        .trim()
-        .parse::<i64>()
-        .map_err(|_source| ImageTransportError::RetryAfter {
-            value: value.to_owned(),
-        })
-}
-
-async fn sleep<K>(clock: &K, seconds: i64, style: CallStyle) -> Result<(), ImageTransportError>
-where
-    K: ImageClock,
-{
-    if style == CallStyle::Sync && seconds < 0 {
-        return Err(ImageTransportError::NegativeSleep { seconds });
-    }
-    clock.pause(seconds).await;
-    Ok(())
 }

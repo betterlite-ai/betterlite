@@ -62,20 +62,6 @@ pub(super) fn reply(
     }
 }
 
-pub(super) fn delayed_reply(
-    status: u16,
-    headers: Vec<(&'static str, &'static str)>,
-    body: &'static str,
-    delay: u64,
-) -> Reply {
-    Reply {
-        status,
-        headers,
-        body,
-        delay,
-    }
-}
-
 #[derive(Clone)]
 pub(super) struct Reply {
     pub status: u16,
@@ -167,7 +153,20 @@ pub(super) struct Outcome {
 }
 
 pub(super) fn run(step: Step) -> Outcome {
-    let harness = Harness::new(step.replies);
+    let clock = Arc::new(FixtureClock {
+        elapsed: AtomicU64::new(0),
+        sleeps: Mutex::default(),
+    });
+    let harness = Harness {
+        state: Arc::new(FixtureState {
+            replies: Mutex::new(VecDeque::from(step.replies)),
+            calls: Mutex::default(),
+            debug: Mutex::default(),
+            clock: Arc::clone(&clock),
+        }),
+        constructed: Arc::default(),
+        clock,
+    };
     let mut data: JsonMap = serde_json::from_str(step.data).unwrap();
     let connection = Connection {
         client: step.supplied_client.then(|| harness.transport()),
@@ -210,23 +209,6 @@ pub(super) struct Harness {
 }
 
 impl Harness {
-    pub(super) fn new(replies: Vec<Reply>) -> Self {
-        let clock = Arc::new(FixtureClock {
-            elapsed: AtomicU64::new(0),
-            sleeps: Mutex::default(),
-        });
-        Self {
-            state: Arc::new(FixtureState {
-                replies: Mutex::new(VecDeque::from(replies)),
-                calls: Mutex::default(),
-                debug: Mutex::default(),
-                clock: Arc::clone(&clock),
-            }),
-            constructed: Arc::default(),
-            clock,
-        }
-    }
-
     pub(super) fn transport(&self) -> FixtureTransport {
         FixtureTransport {
             state: Arc::clone(&self.state),
@@ -407,27 +389,9 @@ pub(super) fn request_metadata(response: &ImageResponse) -> (String, String) {
     )
 }
 
-pub(super) fn failed_body(error: &ImageTransportError) -> JsonValue {
+pub(super) fn operation_error(error: &ImageTransportError) -> (&JsonValue, &str) {
     match error {
-        ImageTransportError::OperationFailed { body, .. } => body.clone(),
-        ImageTransportError::RejectedPollingUrl { .. }
-        | ImageTransportError::MissingOperationLocation { .. }
-        | ImageTransportError::MissingStatusInitial
-        | ImageTransportError::PollingTimeout
-        | ImageTransportError::Decode { .. }
-        | ImageTransportError::MissingStatus
-        | ImageTransportError::MissingResult
-        | ImageTransportError::RetryAfter { .. }
-        | ImageTransportError::NegativeSleep { .. }
-        | ImageTransportError::Url { .. }
-        | ImageTransportError::Encode { .. }
-        | ImageTransportError::Transport(_) => panic!("expected an operation failure"),
-    }
-}
-
-pub(super) fn failed_message(error: &ImageTransportError) -> String {
-    match error {
-        ImageTransportError::OperationFailed { message, .. } => message.clone(),
+        ImageTransportError::OperationFailed { message, body } => (body, message),
         ImageTransportError::RejectedPollingUrl { .. }
         | ImageTransportError::MissingOperationLocation { .. }
         | ImageTransportError::MissingStatusInitial

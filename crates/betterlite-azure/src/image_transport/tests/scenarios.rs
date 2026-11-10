@@ -6,8 +6,8 @@ use crate::image_transport::request::TimeoutPhases;
 use super::support::{
     API_KEY, DEFAULT_TIMEOUT, DEPLOYMENT_BASE, OPERATION, PREVIEW_QUERY_BASE, PREVIEW_VERSION,
     PROVIDER_BASE, Reply, SUBMIT_QUERY_URL, SUBMIT_URL, SYNTHETIC_URL, Step, V1_BASE, data_json,
-    delayed_reply, failed_body, failed_message, failure_of, json, parsed, polling_timeout, reply,
-    request_metadata, run, success, text,
+    failure_of, json, operation_error, parsed, polling_timeout, reply, request_metadata, run,
+    success, text,
 };
 
 const RUNNING: &str = r#"{"status":"running"}"#;
@@ -24,14 +24,7 @@ const DEFAULT_TIMEOUT_PHASES: TimeoutPhases = TimeoutPhases {
 };
 
 fn submitted() -> Vec<Reply> {
-    vec![
-        reply(
-            202,
-            vec![("operation-location", OPERATION)],
-            r#"{"id":"op-1"}"#,
-        ),
-        reply(200, vec![], SUCCEEDED),
-    ]
+    vec![submit_reply(), reply(200, vec![], SUCCEEDED)]
 }
 
 fn submit_reply() -> Reply {
@@ -72,23 +65,7 @@ pub(super) fn image_immediate_result() {
 }
 
 pub(super) fn operation_location_poll() {
-    poll_first_get_before_clock();
-    poll_success_response();
-}
-
-fn poll_first_get_before_clock() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        delayed_reply(200, vec![("retry-after", "0")], RUNNING, 5),
-        reply(200, vec![], SUCCEEDED),
-    ])
-    .with_timeout("0"));
-    assert_eq!(success(&outcome).status, 200);
-    assert_eq!(outcome.harness.sleeps(), vec![0]);
-    assert_eq!(outcome.harness.calls().len(), 3);
-}
-
-fn poll_success_response() {
+    timeout_terminal_after_deadline();
     let outcome = run(Step::preview(vec![
         submit_reply(),
         reply(200, vec![("retry-after", "0")], RUNNING),
@@ -248,12 +225,17 @@ fn timeout_strictly_greater() {
 fn timeout_terminal_after_deadline() {
     let outcome = run(Step::preview(vec![
         submit_reply(),
-        delayed_reply(200, vec![("retry-after", "0")], RUNNING, 5),
+        Reply {
+            delay: 5,
+            ..reply(200, vec![("retry-after", "0")], RUNNING)
+        },
         reply(200, vec![], SUCCEEDED),
     ])
     .with_timeout("0"));
     assert_eq!(success(&outcome).status, 200);
     assert_eq!(outcome.harness.elapsed_seconds(), 5);
+    assert_eq!(outcome.harness.sleeps(), vec![0]);
+    assert_eq!(outcome.harness.calls().len(), 3);
 }
 
 pub(super) fn failed_operation_400() {
@@ -278,9 +260,10 @@ fn failed_with_message() {
         ImageTransportError::OperationFailed { .. }
     ));
     assert_eq!(failure.status_code(), Some(400));
-    assert_eq!(failed_message(failure), "content policy");
+    let (body, message) = operation_error(failure);
+    assert_eq!(message, "content policy");
     assert_eq!(
-        failed_body(failure),
+        *body,
         json(
             r#"{"status":"failed","error":{"message":"content policy","code":"content_policy_violation"}}"#
         )
@@ -292,10 +275,8 @@ fn failed_without_message() {
         submit_reply(),
         reply(200, vec![], r#"{"status":"failed","error":{"code":"x"}}"#),
     ]));
-    assert_eq!(
-        failed_message(failure_of(&outcome)),
-        "Image generation failed"
-    );
+    let (_, message) = operation_error(failure_of(&outcome));
+    assert_eq!(message, "Image generation failed");
 }
 
 fn failed_with_text_error() {
@@ -303,10 +284,9 @@ fn failed_with_text_error() {
         submit_reply(),
         reply(200, vec![], r#"{"status":"failed","error":"boom"}"#),
     ]));
-    assert_eq!(
-        failed_message(failure_of(&outcome)),
-        r#"{"status":"failed","error":"boom"}"#
-    );
+    let (body, message) = operation_error(failure_of(&outcome));
+    assert_eq!(message, r#"{"status":"failed","error":"boom"}"#);
+    assert_eq!(*body, json(r#"{"status":"failed","error":"boom"}"#));
 }
 
 fn failed_without_error_key() {
@@ -314,12 +294,9 @@ fn failed_without_error_key() {
         submit_reply(),
         reply(200, vec![], r#"{"status":"failed","code":"y"}"#),
     ]));
-    let failure = failure_of(&outcome);
-    assert_eq!(failed_message(failure), "Image generation failed");
-    assert_eq!(
-        failed_body(failure),
-        json(r#"{"status":"failed","code":"y"}"#)
-    );
+    let (body, message) = operation_error(failure_of(&outcome));
+    assert_eq!(message, "Image generation failed");
+    assert_eq!(*body, json(r#"{"status":"failed","code":"y"}"#));
 }
 
 pub(super) fn retry_after_not_integer() {
