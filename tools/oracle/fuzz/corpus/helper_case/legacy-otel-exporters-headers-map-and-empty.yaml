@@ -1,0 +1,8 @@
+kind: helper
+name: headers-map-and-empty
+call:
+  b3855:
+    function: headers_dictionary
+    headers: {}
+env: {}
+compare: {ignore: []}

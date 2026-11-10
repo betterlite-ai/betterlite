@@ -1,0 +1,16 @@
+kind: helper
+name: bytez-record-reply
+call:
+  bytez_record:
+    function: reply
+    requests:
+      - body: '{"output":{"role":"assistant","content":[{"type":"text","text":"one two"}]}}'
+        status: 200
+        model: org/model
+        created: 1700000000
+        messages:
+          - role: user
+            content: "hello  world"
+        headers: {ratelimit-limit: "10", x-request-id: abc}
+compare: {ignore: []}
+env: {}

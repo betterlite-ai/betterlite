@@ -1,14 +1,14 @@
 id: B588
 milestone: M3 providers
 title: Anthropic native file lifecycle
-status: todo
+status: done
 depends_on: [B567, B235, B171, B173]
 file: tasks/B588-anthropic-files.yaml
 covers:
   - "litellm/llms/anthropic/files/transformation.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1128

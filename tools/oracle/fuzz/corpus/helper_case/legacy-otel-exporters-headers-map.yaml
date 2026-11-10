@@ -1,0 +1,10 @@
+kind: helper
+name: headers-map
+call:
+  b3855:
+    function: headers_dictionary
+    headers:
+      x-api-key: secret
+      X-Other: "1"
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B3571
 milestone: M5 api families
 title: Passthrough header query and timeout policies
-status: todo
+status: done
 depends_on: [B002, B305]
 file: tasks/B3571-passthrough-request-policies.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/passthrough/timeout_utils.py"
 parent: B101
 split_from: B101
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1132
