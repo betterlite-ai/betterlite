@@ -24,12 +24,13 @@ use crate::langfuse_exporter::endpoint::endpoint;
 use crate::langfuse_exporter::error::LangfuseExporterError;
 use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
 use crate::langfuse_exporter::http_transport::HttpTransport;
-use crate::langfuse_exporter::sleep::TokioSleep;
+use crate::langfuse_exporter::sleep::Sleep;
 
 use super::server::{reply, scripted};
 use super::support::{
-    CLOUD_ENDPOINT, DecodedSpan, ScriptedTransport, Step, UNENCODABLE_KEY, attribute, captured,
-    exporter_with, header, options_for, rejecting_exporter_with, span, spans_of,
+    CLOUD_ENDPOINT, DecodedSpan, RecordingSleep, ScriptedTransport, Step, UNENCODABLE_KEY,
+    attribute, captured, exporter_with, header, options_for, rejecting_exporter_with, span,
+    spans_of,
 };
 
 const INPUT: &str = "langfuse.observation.input";
@@ -245,6 +246,13 @@ fn halves_a_batch_that_is_too_large() {
 }
 
 #[test]
+fn an_empty_batch_answered_with_413_settles_after_one_request() {
+    let fixture = exporter_with(vec![Step::Status(413)], &[]);
+    assert!(export(&fixture.exporter, Vec::new()));
+    assert_eq!(fixture.transport.seen().len(), 1);
+}
+
+#[test]
 fn a_rejected_half_keeps_the_export_failed_after_a_later_round_delivers() {
     let fixture = exporter_with(
         vec![
@@ -313,6 +321,8 @@ fn truncates_the_larger_group_first(
     assert!(export(&fixture.exporter, batch));
     let requests = spans_of(&fixture.transport.seen());
     assert_eq!(attribute(&requests[1][0], marked), Some(TRUNCATION_MARKER));
+    assert_eq!(attribute(&requests[1][0], "langfuse.trace.input"), None);
+    assert_eq!(attribute(&requests[1][0], "langfuse.trace.output"), None);
 }
 
 #[test]
@@ -471,7 +481,7 @@ async fn follows_a_308_with_the_same_body_and_headers(
         reply(final_status, None),
     ])
     .await;
-    let exporter = http_exporter(&server.base);
+    let (exporter, _sleep) = http_exporter(&server.base);
     let result = exporter
         .export(vec![span("one", &[(INPUT, "hello")])])
         .await;
@@ -489,26 +499,39 @@ async fn follows_a_308_with_the_same_body_and_headers(
     );
 }
 
-fn http_exporter(base_url: &str) -> LangfuseSpanExporter<HttpTransport> {
+fn http_exporter(base_url: &str) -> (LangfuseSpanExporter<HttpTransport>, Arc<RecordingSleep>) {
     let mut options = options_for(&[]).unwrap();
     options.base_url = base_url.to_owned();
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let transport = HttpTransport {
         client: ProxiedClient::outbound(&policy).unwrap(),
     };
-    LangfuseSpanExporter::new(
+    let sleep = Arc::new(RecordingSleep::default());
+    let recording = Arc::clone(&sleep);
+    let sleep_dependency: Arc<dyn Sleep> = recording;
+    let exporter = LangfuseSpanExporter::new(
         &options,
         transport,
         Arc::new(OtlpSpanEncoder),
-        Arc::new(TokioSleep),
+        sleep_dependency,
     )
-    .unwrap()
+    .unwrap();
+    (exporter, sleep)
 }
 
 #[tokio::test]
 async fn a_redirect_loop_is_one_failed_attempt_and_is_not_retried() {
     let server = scripted(vec![reply(308, Some("/loop")); 11]).await;
-    let exporter = http_exporter(&server.base);
+    let (exporter, sleep) = http_exporter(&server.base);
     assert!(exporter.export(vec![span("one", &[])]).await.is_err());
     assert_eq!(server.seen.lock().unwrap().len(), 11);
+    assert!(sleep.seconds().is_empty());
+}
+
+#[tokio::test]
+async fn a_connection_closed_without_a_reply_is_retried_with_the_backoff() {
+    let server = scripted(Vec::new()).await;
+    let (exporter, sleep) = http_exporter(&server.base);
+    assert!(exporter.export(vec![span("one", &[])]).await.is_err());
+    assert_eq!(sleep.seconds(), vec![1, 2, 4]);
 }

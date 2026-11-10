@@ -127,7 +127,8 @@ where
         while !pending.is_empty() {
             let (next, round_delivered) = self.settle_round(pending).await;
             delivered &= round_delivered;
-            pending = next;
+            // Halving an empty batch cannot shrink a body, so empty halves are never sent
+            pending = next.into_iter().filter(|half| !half.is_empty()).collect();
         }
         delivered
     }
@@ -259,7 +260,6 @@ fn status_outcome(status: u16) -> Option<DeliveryOutcome> {
 
 fn smaller(batch: &[SpanData]) -> Vec<Vec<SpanData>> {
     match batch {
-        [] => Vec::new(),
         [only] => truncated(only).map_or_else(Vec::new, |span| vec![vec![span]]),
         _ => batch
             .split_at_checked(batch.len().div_euclid(2))
