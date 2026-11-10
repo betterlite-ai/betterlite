@@ -219,7 +219,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count)"
       && grep -q 'decode_foundry_count_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_anthropic_count.rs
-      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_anthropic_count_corpus$/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_anthropic_count_corpus(::|$)/)'
   - id: case-count-failure-error-result
     why: 'Handler validates and transforms via B585, posts JSON with explicit timeout even zero or litellm.request_timeout
       otherwise; only status 200 succeeds. Preserve raw non-200 status/text and HTTPStatusError status/text as AnthropicError;
