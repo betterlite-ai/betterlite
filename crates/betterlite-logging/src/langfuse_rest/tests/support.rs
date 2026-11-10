@@ -242,7 +242,7 @@ pub(crate) fn proxied() -> ProxiedClient {
     ProxiedClient::outbound(&Arc::new(policy)).expect("the client builds")
 }
 
-pub(crate) struct Setup<'settings> {
+pub(crate) struct ClientSetup<'settings> {
     pub base_url: String,
     pub public_key: Option<&'settings str>,
     pub secret_key: Option<&'settings str>,
@@ -259,7 +259,7 @@ pub(crate) fn client_for(
     clock: &FakeClock,
     tasks: &TaskTracker,
 ) -> LangfuseApiClient {
-    client(Setup {
+    client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
         secret_key: Some(SECRET_KEY),
@@ -271,7 +271,7 @@ pub(crate) fn client_for(
     })
 }
 
-pub(crate) fn client(setup: Setup<'_>) -> LangfuseApiClient {
+pub(crate) fn client_from(setup: ClientSetup<'_>) -> LangfuseApiClient {
     build_langfuse_client(
         LangfuseClientConfig {
             public_key: setup.public_key.map(str::to_owned),

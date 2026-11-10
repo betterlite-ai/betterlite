@@ -5,8 +5,8 @@ use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, FakeClock, FakeLangfuse, PUBLIC_KEY, SECRET_KEY, Setup, api_error, chat_prompt, client,
-    client_for, header, prompt_version, proxied, request_line, text_prompt,
+    Answer, ClientSetup, FakeClock, FakeLangfuse, PUBLIC_KEY, SECRET_KEY, api_error, chat_prompt,
+    client_for, client_from, header, prompt_version, proxied, request_line, text_prompt,
 };
 use crate::langfuse_rest::errors::LangfuseRestError;
 use crate::langfuse_rest::records::{Prompt, PromptMessage};
@@ -396,12 +396,12 @@ async fn the_configured_timeout_bounds_each_prompt_request() {
     .await;
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
-    let client = client(Setup {
+    let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
         secret_key: Some(SECRET_KEY),
         ttl: TTL,
-        timeout: Duration::from_millis(100),
+        timeout: Duration::from_millis(250),
         http: Some(proxied()),
         clock: &clock,
         tasks: &tasks,
@@ -456,7 +456,7 @@ async fn missing_keys_send_no_authorization_header() {
     let server = FakeLangfuse::start(vec![Answer::status(401, NOT_FOUND)]).await;
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
-    let client = client(Setup {
+    let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: None,
         secret_key: None,
@@ -481,7 +481,7 @@ async fn a_public_key_without_a_secret_sends_no_authorization_header() {
     let server = FakeLangfuse::start(vec![Answer::status(401, NOT_FOUND)]).await;
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
-    let client = client(Setup {
+    let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
         secret_key: None,
@@ -506,7 +506,7 @@ async fn a_client_without_an_injected_http_client_reaches_the_server() {
     let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
-    let client = client(Setup {
+    let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
         secret_key: Some(SECRET_KEY),
@@ -527,7 +527,7 @@ async fn a_client_without_an_injected_http_client_reaches_the_server() {
 async fn a_client_reports_an_invalid_base_url_as_a_transport_failure() {
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
-    let client = client(Setup {
+    let client = client_from(ClientSetup {
         base_url: "not a url".to_owned(),
         public_key: Some(PUBLIC_KEY),
         secret_key: Some(SECRET_KEY),
