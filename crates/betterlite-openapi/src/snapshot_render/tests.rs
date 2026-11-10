@@ -60,7 +60,7 @@ fn strings_are_escaped_as_json_and_non_ascii_stays_utf8() {
         JsonTree::Text("a\"b\\c\nd\te\u{08}\u{0C}\u{0D}\u{0}g\u{2014}".to_owned()),
     );
     let rendered = render_snapshot(&openapi);
-    let expected = "{\n  \"text\": \"a\\\"b\\\\c\\nd\\te\\bf\\f\\r\\u0000g\u{2014}\"\n}\n";
+    let expected = "{\n  \"text\": \"a\\\"b\\\\c\\nd\\te\\b\\f\\r\\u0000g\u{2014}\"\n}\n";
     assert_eq!(rendered, expected);
 }
 
