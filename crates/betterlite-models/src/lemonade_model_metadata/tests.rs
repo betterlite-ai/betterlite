@@ -213,6 +213,21 @@ fn ambient_key_precedence() {
         },
     );
     assert_eq!(empty.api_key.expose_secret(), "global-key");
+    let empty_global = credentials(None, Some("env-key"), Some(""));
+    let env_fallback = resolve_origin(&empty_global, DeploymentCredentials::default());
+    assert_eq!(env_fallback.api_key.expose_secret(), "env-key");
+    let empty_env_key = credentials(None, Some(""), None);
+    assert_eq!(
+        resolve_origin(&empty_env_key, DeploymentCredentials::default())
+            .api_key
+            .expose_secret(),
+        DEFAULT_API_KEY
+    );
+    let empty_env_base = credentials(Some(""), None, None);
+    assert_eq!(
+        resolve_origin(&empty_env_base, DeploymentCredentials::default()).api_base,
+        DEFAULT_API_BASE
+    );
 }
 
 fn auth_headers_by_key() {

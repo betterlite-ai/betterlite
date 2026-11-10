@@ -150,27 +150,22 @@ pub fn positive_int(value: &Json) -> Option<u64> {
 fn int_from_text(text: &str) -> Option<u64> {
     let trimmed = text.trim();
     let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
-    if unsigned.starts_with('-') {
-        return None;
-    }
     // Python's int() accepts one underscore between digits, such as "1_000"
-    let mut digits = String::with_capacity(unsigned.len());
+    let mut value: u64 = 0;
+    let mut saw_digit = false;
     let mut after_underscore = true;
     for character in unsigned.chars() {
-        match character {
-            '_' if after_underscore => return None,
-            '_' => after_underscore = true,
-            _ if character.is_ascii_digit() => {
-                digits.push(character);
-                after_underscore = false;
-            }
-            _ => return None,
+        if let Some(digit) = character.to_digit(10) {
+            value = value.checked_mul(10)?.checked_add(u64::from(digit))?;
+            saw_digit = true;
+            after_underscore = false;
+        } else if character == '_' && !after_underscore {
+            after_underscore = true;
+        } else {
+            return None;
         }
     }
-    if after_underscore {
-        return None;
-    }
-    digits.parse::<u64>().ok()
+    (saw_digit && !after_underscore).then_some(value)
 }
 
 const fn object(value: &Json) -> Option<&IndexMap<String, Json>> {
