@@ -62,7 +62,7 @@ impl Assertions {
         Ok(signed)
     }
 
-    fn sign(&self, audience: &str, now: i64) -> Result<SecretString, CertificateError> {
+    fn header(&self) -> Header {
         let mut header = Header::new(Algorithm::RS256);
         header.x5t = Some(URL_SAFE.encode(self.material.thumbprint));
         if self.send_chain {
@@ -74,6 +74,10 @@ impl Assertions {
                     .collect(),
             );
         }
+        header
+    }
+
+    fn sign(&self, audience: &str, now: i64) -> Result<SecretString, CertificateError> {
         let jti = self.ids.next_id();
         let claims = Claims {
             aud: audience,
@@ -84,7 +88,7 @@ impl Assertions {
             jti: &jti,
         };
         let key = EncodingKey::from_rsa_der(self.material.key.expose_secret());
-        jsonwebtoken::encode(&header, &claims, &key)
+        jsonwebtoken::encode(&self.header(), &claims, &key)
             .map(SecretString::from)
             .map_err(|source| CertificateError::Sign { source })
     }

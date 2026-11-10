@@ -56,6 +56,30 @@ fn rsa_from_pkcs8(der: &[u8]) -> Result<Rsa, CertificateError> {
         .then(|| SecretSlice::from(info.private_key.as_bytes().to_vec())))
 }
 
+fn pem_key(block: &pem::Pem, password: Option<&str>) -> Result<Rsa, CertificateError> {
+    let der = block.contents();
+    let legacy_encrypted = block.headers().get("Proc-Type").is_some();
+    match (block.tag(), password, legacy_encrypted) {
+        ("ENCRYPTED PRIVATE KEY", None, _) | ("RSA PRIVATE KEY", None, true) => {
+            Err(CertificateError::PasswordRequired)
+        }
+        ("ENCRYPTED PRIVATE KEY", Some(secret), _) => {
+            let info = EncryptedPrivateKeyInfoRef::try_from(der)
+                .map_err(|_error| CertificateError::KeyData)?;
+            let plain = info
+                .decrypt(secret)
+                .map_err(|_error| CertificateError::BadPassword)?;
+            rsa_from_pkcs8(plain.as_bytes())
+        }
+        ("RSA PRIVATE KEY", Some(_), true) => Err(CertificateError::LegacyEncryptedPem),
+        (_, Some(_), _) => Err(CertificateError::PasswordUnexpected),
+        ("PRIVATE KEY", None, _) => rsa_from_pkcs8(der),
+        ("RSA PRIVATE KEY", None, false) => Ok(Some(SecretSlice::from(der.to_vec()))),
+        ("EC PRIVATE KEY" | "DSA PRIVATE KEY", None, _) => Ok(None),
+        _ => Err(CertificateError::KeyData),
+    }
+}
+
 fn pem_parts(data: &[u8], password: Option<&str>) -> Result<(Rsa, Vec<Vec<u8>>), CertificateError> {
     let blocks = pem::parse_many(data)
         .ok()
@@ -65,27 +89,10 @@ fn pem_parts(data: &[u8], password: Option<&str>) -> Result<(Rsa, Vec<Vec<u8>>),
         .iter()
         .find(|block| block.tag().ends_with("PRIVATE KEY"))
         .ok_or(CertificateError::NoPrivateKeyBlock)?;
-    let der = block.contents();
-    let legacy_encrypted = block.headers().get("Proc-Type").is_some();
-    let rsa = match (block.tag(), password, legacy_encrypted) {
-        ("ENCRYPTED PRIVATE KEY", None, _) | ("RSA PRIVATE KEY", None, true) => {
-            return Err(CertificateError::PasswordRequired);
-        }
-        ("ENCRYPTED PRIVATE KEY", Some(secret), _) => {
-            let info = EncryptedPrivateKeyInfoRef::try_from(der)
-                .map_err(|_error| CertificateError::KeyData)?;
-            let plain = info
-                .decrypt(secret)
-                .map_err(|_error| CertificateError::BadPassword)?;
-            rsa_from_pkcs8(plain.as_bytes())?
-        }
-        ("RSA PRIVATE KEY", Some(_), true) => return Err(CertificateError::LegacyEncryptedPem),
-        (_, Some(_), _) => return Err(CertificateError::PasswordUnexpected),
-        ("PRIVATE KEY", None, _) => rsa_from_pkcs8(der)?,
-        ("RSA PRIVATE KEY", None, false) => Some(SecretSlice::from(der.to_vec())),
-        ("EC PRIVATE KEY" | "DSA PRIVATE KEY", None, _) => None,
-        _ => return Err(CertificateError::KeyData),
-    };
+    Ok((pem_key(block, password)?, pem_chain(&blocks)?))
+}
+
+fn pem_chain(blocks: &[pem::Pem]) -> Result<Vec<Vec<u8>>, CertificateError> {
     let chain: Vec<Vec<u8>> = blocks
         .iter()
         .filter(|candidate| candidate.tag() == "CERTIFICATE")
@@ -94,7 +101,7 @@ fn pem_parts(data: &[u8], password: Option<&str>) -> Result<(Rsa, Vec<Vec<u8>>),
     if chain.is_empty() {
         return Err(CertificateError::NoCertificateBlock);
     }
-    Ok((rsa, chain))
+    Ok(chain)
 }
 
 fn pkcs12_parts(
