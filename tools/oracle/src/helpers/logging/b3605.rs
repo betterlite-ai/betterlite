@@ -80,13 +80,12 @@ pub(crate) struct StateInput {
 impl StateInput {
     fn to_call_state(&self) -> PassThroughCallState {
         PassThroughCallState {
-            upstream_reported_usage: self
-                .upstream_reported_usage
-                .as_ref()
-                .map(|reported| UpstreamReportedUsage {
+            upstream_reported_usage: self.upstream_reported_usage.as_ref().map(|reported| {
+                UpstreamReportedUsage {
                     response_cost: reported.response_cost,
                     total_tokens: reported.total_tokens,
-                }),
+                }
+            }),
             response_cost: self.response_cost,
             combined_usage_total_tokens: self.combined_usage_total_tokens,
         }
