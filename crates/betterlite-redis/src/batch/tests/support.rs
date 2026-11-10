@@ -2,24 +2,22 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
-use crate::cache_primitives::version::RedisVersionValue;
-use crate::list_operations::{RedisListOperations, RedisListOperationsSettings};
 use crate::redis_cache::RedisCache;
-use crate::redis_cache_admin::RedisCacheAdmin;
-use crate::redis_cache_values::{RedisCacheValues, RedisCacheValuesSettings};
+use crate::redis_cache::connect::{RedisCacheOptions, connect};
 use crate::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use crate::redis_client_reuse::breaker_gate::BreakerGate;
 use crate::redis_client_reuse::service_event::ServiceEvent;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::store::RedisClientStore;
-use crate::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
-use crate::redis_connection_settings::model::nodes::ClusterNodeConfig;
-use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
-use crate::redis_counters::RedisCounters;
+use crate::redis_client_reuse::transport::RedisCacheFamily;
+use crate::redis_connection_settings::model::nodes::ClusterNodeInput;
+use crate::redis_connection_settings::model::scalars::{FloatOrText, IntOrText, Scalar};
+use crate::redis_connection_settings::model::settings::RedisOverrides;
 use crate::redis_live_client::LiveClientFactory;
 use crate::redis_live_client::tests::fake_server::{ClusterSlots, FakeServer};
 
 pub(crate) const DEFAULT_TTL: i64 = 60;
+const SOCKET_TIMEOUT_SECONDS: f64 = 1.0;
 
 #[derive(Clone, Default)]
 pub(crate) struct Log {
@@ -95,8 +93,8 @@ pub(crate) struct Harness {
     pub(crate) gate: Log,
 }
 
-fn blank_settings() -> RedisConnectionSettings {
-    RedisConnectionSettings {
+fn blank_overrides() -> RedisOverrides {
+    RedisOverrides {
         host: None,
         port: None,
         db: None,
@@ -110,63 +108,83 @@ fn blank_settings() -> RedisConnectionSettings {
         max_connections: None,
         health_check_interval: None,
         credential_provider: false,
-        credential_provider_settings: None,
         startup_nodes: None,
         sentinel_nodes: None,
         sentinel_password: None,
         service_name: None,
         ssl_password: None,
+        gcp_service_account: None,
+        gcp_ssl_ca_certs: None,
+        azure_redis_ad_token: None,
+        azure_client_id: None,
+        azure_tenant_id: None,
+        azure_client_secret: None,
+        aws_iam_auth: None,
+        aws_iam_user_name: None,
+        aws_iam_cache_name: None,
+        aws_iam_region: None,
+        aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
     }
 }
 
-fn settings(server: &FakeServer, family: RedisCacheFamily) -> RedisConnectionSettings {
-    let mut settings = blank_settings();
-    match family {
-        RedisCacheFamily::Standalone => {
-            settings.host = Some(server.host());
-            settings.port = Some(i64::from(server.port()));
-        }
-        RedisCacheFamily::Cluster => {
-            settings.startup_nodes = Some(vec![ClusterNodeConfig {
-                host: server.host(),
-                port: i64::from(server.port()),
-            }]);
-        }
+fn direct_overrides(host: &str, port: u16) -> RedisOverrides {
+    RedisOverrides {
+        host: Some(host.to_owned()),
+        port: Some(IntOrText::Value(i64::from(port))),
+        socket_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        socket_connect_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        ..blank_overrides()
     }
-    settings
+}
+
+fn cluster_overrides(server: &FakeServer) -> RedisOverrides {
+    let node = ClusterNodeInput {
+        host: server.host(),
+        port: IntOrText::Value(i64::from(server.port())),
+    };
+    RedisOverrides {
+        socket_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        socket_connect_timeout: Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS)),
+        startup_nodes: Some(Scalar::Value(vec![node])),
+        ..blank_overrides()
+    }
 }
 
 fn topology(server: &FakeServer) -> ClusterSlots {
     vec![(0, 16383, vec![(server.host(), server.port())])]
 }
 
-pub(crate) fn harness(server: &FakeServer, namespace: Option<&str>) -> Harness {
-    make_harness(
-        settings(server, RedisCacheFamily::Standalone),
+pub(crate) async fn harness(server: &FakeServer, namespace: Option<&str>) -> Harness {
+    connect_harness(
+        direct_overrides(&server.host(), server.port()),
         RedisCacheFamily::Standalone,
         namespace,
     )
+    .await
 }
 
-pub(crate) fn cluster_harness(server: &FakeServer, namespace: Option<&str>) -> Harness {
+pub(crate) async fn cluster_harness(server: &FakeServer, namespace: Option<&str>) -> Harness {
     server.set_cluster_slots(topology(server));
-    make_harness(
-        settings(server, RedisCacheFamily::Cluster),
+    connect_harness(
+        cluster_overrides(server),
         RedisCacheFamily::Cluster,
         namespace,
     )
+    .await
 }
 
-pub(crate) fn unreachable_harness() -> Harness {
-    let mut settings = blank_settings();
-    settings.host = Some("127.0.0.1".to_owned());
-    settings.port = Some(1);
-    make_harness(settings, RedisCacheFamily::Standalone, Some("ns"))
+pub(crate) async fn unreachable_harness() -> Harness {
+    connect_harness(
+        direct_overrides("127.0.0.1", 1),
+        RedisCacheFamily::Standalone,
+        Some("ns"),
+    )
+    .await
 }
 
-fn make_harness(
-    settings: RedisConnectionSettings,
+async fn connect_harness(
+    overrides: RedisOverrides,
     family: RedisCacheFamily,
     namespace: Option<&str>,
 ) -> Harness {
@@ -174,120 +192,23 @@ fn make_harness(
     let gate = Log::default();
     let service_hooks: Arc<dyn ServiceHooks> = Arc::new(TestHooks { log: hooks.clone() });
     let breaker_gate: Arc<dyn BreakerGate> = Arc::new(TestGate { log: gate.clone() });
-    let transport = Arc::new(
-        RedisTransport::new(
-            settings,
-            family,
-            Arc::new(LiveClientFactory::new(None)),
-            Arc::new(RedisClientStore::new()),
-            None,
-        )
-        .expect("a redis transport"),
-    );
-    let cache = assemble(transport, namespace, service_hooks, breaker_gate);
+    let options = RedisCacheOptions {
+        overrides,
+        family,
+        namespace: namespace.map(str::to_owned),
+        default_ttl: DEFAULT_TTL,
+        redis_flush_size: None,
+        default_major_version: 7,
+        factory: Arc::new(LiveClientFactory::new(None)),
+        store: Arc::new(RedisClientStore::new()),
+        hooks: service_hooks,
+        gate: breaker_gate,
+    };
+    let env = BTreeMap::<String, String>::new();
+    let cache = connect(options, &env).await.expect("a connected cache");
     Harness {
         cache: Arc::new(cache),
         hooks,
         gate,
     }
-}
-
-fn assemble(
-    transport: Arc<RedisTransport>,
-    namespace: Option<&str>,
-    hooks: Arc<dyn ServiceHooks>,
-    gate: Arc<dyn BreakerGate>,
-) -> RedisCache {
-    let namespace_value = namespace.map(str::to_owned);
-    let values = values_slice(
-        Arc::clone(&transport),
-        namespace,
-        Arc::clone(&hooks),
-        Arc::clone(&gate),
-    );
-    let counters = counters_slice(&transport, namespace, Arc::clone(&hooks), Arc::clone(&gate));
-    let admin = admin_slice(
-        Arc::clone(&transport),
-        namespace,
-        Arc::clone(&hooks),
-        Arc::clone(&gate),
-    );
-    let lists = lists_slice(&transport, namespace, Arc::clone(&hooks), Arc::clone(&gate));
-    RedisCache {
-        transport,
-        values,
-        counters,
-        admin,
-        lists,
-        namespace: namespace_value,
-        default_ttl: DEFAULT_TTL,
-        redis_major_version: 7,
-        hooks,
-        gate,
-    }
-}
-
-fn values_slice(
-    transport: Arc<RedisTransport>,
-    namespace: Option<&str>,
-    hooks: Arc<dyn ServiceHooks>,
-    gate: Arc<dyn BreakerGate>,
-) -> RedisCacheValues {
-    RedisCacheValues::new(
-        RedisCacheValuesSettings {
-            namespace: namespace.map(str::to_owned),
-            default_ttl: Some(DEFAULT_TTL),
-            redis_flush_size: None,
-        },
-        transport,
-        hooks,
-        gate,
-    )
-}
-
-fn counters_slice(
-    transport: &Arc<RedisTransport>,
-    namespace: Option<&str>,
-    hooks: Arc<dyn ServiceHooks>,
-    gate: Arc<dyn BreakerGate>,
-) -> RedisCounters {
-    RedisCounters::new(
-        Arc::clone(transport),
-        namespace.map(str::to_owned),
-        DEFAULT_TTL,
-        hooks,
-        gate,
-    )
-}
-
-fn admin_slice(
-    transport: Arc<RedisTransport>,
-    namespace: Option<&str>,
-    hooks: Arc<dyn ServiceHooks>,
-    gate: Arc<dyn BreakerGate>,
-) -> Arc<RedisCacheAdmin> {
-    Arc::new(RedisCacheAdmin::new(
-        transport,
-        namespace.map(str::to_owned),
-        hooks,
-        gate,
-    ))
-}
-
-fn lists_slice(
-    transport: &Arc<RedisTransport>,
-    namespace: Option<&str>,
-    hooks: Arc<dyn ServiceHooks>,
-    gate: Arc<dyn BreakerGate>,
-) -> RedisListOperations {
-    RedisListOperations::new(
-        RedisListOperationsSettings {
-            namespace: namespace.map(str::to_owned),
-            redis_version: RedisVersionValue::Text("7.0.0".to_owned()),
-            default_major_version: 7,
-        },
-        Arc::clone(transport),
-        hooks,
-        gate,
-    )
 }

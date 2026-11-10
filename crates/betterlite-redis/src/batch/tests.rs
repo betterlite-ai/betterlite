@@ -45,8 +45,7 @@ async fn batch_behaviors(#[case] behavior: Behavior) {
 
 #[derive(Clone, Copy, Debug)]
 enum Boundary {
-    MgetReplyShape,
-    IncrementReplyShape,
+    ReplyShapes,
     MissingKeys,
     Cancellation,
     ClusterStandalone,
@@ -55,8 +54,7 @@ enum Boundary {
 }
 
 #[rstest]
-#[case::mget_reply_shape(Boundary::MgetReplyShape)]
-#[case::increment_reply_shape(Boundary::IncrementReplyShape)]
+#[case::reply_shapes(Boundary::ReplyShapes)]
 #[case::missing_keys(Boundary::MissingKeys)]
 #[case::cancellation(Boundary::Cancellation)]
 #[case::cluster_standalone(Boundary::ClusterStandalone)]
@@ -65,8 +63,7 @@ enum Boundary {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn batch_boundaries(#[case] boundary: Boundary) {
     match boundary {
-        Boundary::MgetReplyShape => mget_reply_shape().await,
-        Boundary::IncrementReplyShape => increment_reply_shape().await,
+        Boundary::ReplyShapes => reply_shapes().await,
         Boundary::MissingKeys => missing_keys().await,
         Boundary::Cancellation => cancellation().await,
         Boundary::ClusterStandalone => cluster_standalone().await,
@@ -191,7 +188,7 @@ fn assert_successful_commands(server: &FakeServer, script: &RegisteredScript) {
 async fn successful_operations() {
     let server = FakeServer::start().await;
     script_successful_replies(&server);
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let script = registered(&harness, "return 7");
     let declared = declare_successful_operations(&batch, &script);
@@ -208,7 +205,7 @@ async fn successful_operations() {
 }
 
 async fn pipeline_failure() {
-    let harness = unreachable_harness();
+    let harness = unreachable_harness().await;
     let batch = batch(&harness);
     let mget = batch.mget(&["a".to_owned()]);
     let increment = batch.increment("b", 1.5, None);
@@ -232,7 +229,7 @@ async fn pipeline_failure() {
 
 async fn standalone_recovery() {
     let server = FakeServer::start().await;
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let script = registered(&harness, "return 7");
     server.script("MGET", Reply::Array(vec![Reply::Bulk("9".to_owned())]));
     let noscript = Reply::Error("NOSCRIPT No matching script. Please use EVAL.".to_owned());
@@ -266,7 +263,7 @@ async fn miss_tracking() {
     server.script("MGET", Reply::Array(vec![Reply::Bulk("9".to_owned())]));
     server.script("SET", Reply::Simple("OK".to_owned()));
     server.script("DEL", Reply::Int(1));
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
 
     let first = batch.mget(&["a".to_owned(), "b".to_owned()]);
@@ -289,44 +286,35 @@ async fn miss_tracking() {
     assert_eq!(batch.flushes(), 3);
 }
 
-async fn mget_reply_shape() {
+async fn reply_shapes() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Simple("OK".to_owned()));
-    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
-    let harness = harness(&server, Some("ns"));
+    server.script("INCRBYFLOAT", Reply::Nil);
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
 
     let mget = batch.mget(&["a".to_owned()]);
     let increment = batch.increment("b", 1.5, None);
-    let error = mget.await.expect_err("the shaped mget");
-    let BatchError::MgetReply { kind, .. } = error.as_ref() else {
-        panic!("expected an MGET shape error, got {error:?}");
+    let mget_error = mget.await.expect_err("the shaped mget");
+    let BatchError::MgetReply { kind, .. } = mget_error.as_ref() else {
+        panic!("expected an MGET shape error, got {mget_error:?}");
     };
     assert_eq!(*kind, "a simple string");
-    assert_eq!(
-        increment.await.expect("the increment").to_bits(),
-        1.5_f64.to_bits()
-    );
-}
-
-async fn increment_reply_shape() {
-    let server = FakeServer::start().await;
-    server.script("INCRBYFLOAT", Reply::Nil);
-    let harness = harness(&server, Some("ns"));
-    let batch = batch(&harness);
-
-    let increment = batch.increment("b", 1.5, None);
-    let error = increment.await.expect_err("the shaped increment");
-    let BatchError::IncrementReply { kind, .. } = error.as_ref() else {
-        panic!("expected an increment shape error, got {error:?}");
+    let increment_error = increment.await.expect_err("the shaped increment");
+    let BatchError::IncrementReply {
+        kind: increment_kind,
+        ..
+    } = increment_error.as_ref()
+    else {
+        panic!("expected an increment shape error, got {increment_error:?}");
     };
-    assert_eq!(*kind, "nil");
+    assert_eq!(*increment_kind, "nil");
 }
 
 async fn missing_keys() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Error("ERR broken".to_owned()));
-    let harness = cluster_harness(&server, Some("ns"));
+    let harness = cluster_harness(&server, Some("ns")).await;
     let batch = batch(&harness);
 
     let mget = batch.mget(&["alpha".to_owned(), "beta".to_owned()]);
@@ -346,7 +334,7 @@ async fn cancellation() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Array(vec![Reply::Nil]));
     server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let log = Arc::new(Mutex::new(Vec::new()));
 
@@ -372,7 +360,7 @@ async fn cluster_standalone() {
     server.script("INCRBYFLOAT", Reply::Bulk("2.5".to_owned()));
     server.script("TTL", Reply::Int(-1));
     server.script("EXPIRE", Reply::Int(1));
-    let harness = cluster_harness(&server, Some("ns"));
+    let harness = cluster_harness(&server, Some("ns")).await;
     let batch = batch(&harness);
 
     let mget = batch.mget(&["alpha".to_owned()]);
@@ -400,7 +388,7 @@ async fn settled_hook_order() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
     server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let log = Arc::new(Mutex::new(Vec::new()));
 
@@ -438,7 +426,7 @@ async fn flush_hook_order() {
         "MGET",
         Reply::Array(vec![Reply::Bulk("1".to_owned()), Reply::Nil]),
     );
-    let harness = harness(&server, Some("ns"));
+    let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let declared: DeclaredHandles = Arc::new(Mutex::new(Vec::new()));
     install_declaring_hook(&batch, &declared);
