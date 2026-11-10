@@ -3,16 +3,23 @@ use betterlite_logging::worker::{Admission, Callback as _, LoggingWorker, Reject
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, base_hit, cached, hit_kwargs, params, recorded_state, success_request, text,
-    worker_settings,
+    Fixture, base_hit, cached, hit_kwargs, logging_state, params, recorded_state, success_request,
+    text, worker_settings,
 };
 use crate::caching::hit_callbacks::context::CacheHitError;
-use crate::caching::hit_callbacks::job::{log_cache_hit_on_callbacks, run_cache_hit_success};
+use crate::caching::hit_callbacks::job::{
+    CacheHitSuccessJob, log_cache_hit_on_callbacks, run_cache_hit_success,
+};
 
 #[test]
 fn a_cache_hit_job_names_the_cache_hit_success_event() {
     let fixture = Fixture::new(false);
-    let job = fixture.job(&cached());
+    let job = CacheHitSuccessJob {
+        handler: fixture.owned_handler(),
+        state: logging_state(None),
+        correlation: CorrelationContext::default(),
+        request: success_request(&cached()),
+    };
     assert_eq!(job.name(), "cache_hit_success");
 }
 

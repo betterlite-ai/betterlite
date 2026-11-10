@@ -33,9 +33,7 @@ use indexmap::IndexMap;
 use crate::caching::hit_callbacks::context::{
     CACHING_DETAILS, CacheHitContext, record_cache_hit_context,
 };
-use crate::caching::hit_callbacks::job::{
-    CacheHitCallbacks, CacheHitSuccessJob, OwnedSuccessHandler,
-};
+use crate::caching::hit_callbacks::job::{CacheHitCallbacks, OwnedSuccessHandler};
 
 pub(super) const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -344,15 +342,6 @@ impl Fixture {
             result: SuccessResult::Chat(result.clone()),
             start_time: Some(time("2024-01-01T00:00:00+00:00")),
             end_time: Some(time("2024-01-01T00:00:02+00:00")),
-        }
-    }
-
-    pub(super) fn job(&self, result: &Json) -> CacheHitSuccessJob {
-        CacheHitSuccessJob {
-            handler: self.owned_handler(),
-            state: logging_state(None),
-            correlation: CorrelationContext::default(),
-            request: success_request(result),
         }
     }
 }
