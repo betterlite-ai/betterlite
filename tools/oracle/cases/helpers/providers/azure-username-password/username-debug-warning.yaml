@@ -1,0 +1,18 @@
+kind: helper
+name: username-debug-warning
+call:
+  azure_username_password:
+    action: username_debug_warning
+    steps:
+      - environment: {}
+        client_id: client
+        username: alice@example.com
+        password: hunter2-fixture-value
+        replies: []
+      - environment: {}
+        client_id: client
+        username: ''
+        password: ''
+        replies: []
+env: {}
+compare: {ignore: []}

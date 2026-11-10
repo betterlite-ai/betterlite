@@ -1176,6 +1176,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
