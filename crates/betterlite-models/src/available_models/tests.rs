@@ -233,6 +233,26 @@ fn parameter_creation_and_explicit_mutation() {
 }
 
 #[test]
+fn supplied_parameters_change_the_cache_key() {
+    let environment = snapshot(&[]);
+    let provider_list = [ProviderId::Openai];
+    let catalog = catalog(&[]);
+    let mut listing = ListingScript::default();
+    listing.answer("OpenAIGPTConfig", models(&["listed"]));
+    let mut cache = cache();
+    let mut absent = request(&provider_list, &catalog, &environment);
+    absent.custom_llm_provider = Some("openai");
+    absent.global_check_provider_endpoint = true;
+    drop(get_valid_models(&absent, &mut cache, &listing));
+    let mut supplied = request(&provider_list, &catalog, &environment);
+    supplied.custom_llm_provider = Some("openai");
+    supplied.global_check_provider_endpoint = true;
+    supplied.parameters = Some(params("supplied-model", None, None));
+    drop(get_valid_models(&supplied, &mut cache, &listing));
+    assert_eq!(listing.take_calls().len(), 2);
+}
+
+#[test]
 fn provider_key_names_presence_and_order() {
     let environment = snapshot(&[
         ("OPENAI_API_KEY", ""),
@@ -772,4 +792,87 @@ fn cache_reads_until_the_expiry_is_past() {
             .unwrap(),
         None
     );
+    assert!(cache.ttl_entries().is_empty());
+}
+
+#[test]
+fn fresh_expiries_start_at_the_read_clock() {
+    let environment = snapshot(&[]);
+    let (state, clock) = switchable_clock();
+    let parameters = params("m", None, None);
+    let mut cache = AvailableModelsCache::with_clock(clock);
+    state.lock().unwrap().now = 500.0_f64;
+    cache
+        .set(ProviderId::Openai, Some(&parameters), &models(&["v"]))
+        .unwrap();
+    state.lock().unwrap().now = 1400.0_f64;
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), Some(&parameters), &environment)
+            .unwrap(),
+        Some(models(&["v"]))
+    );
+    state.lock().unwrap().now = 1501.0_f64;
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), Some(&parameters), &environment)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn cache_evicts_the_earliest_expiry_at_capacity() {
+    let environment = snapshot(&[]);
+    let mut cache = cache();
+    (0..300_usize).for_each(|index| {
+        let parameters = params(&format!("model-{index}"), None, None);
+        cache
+            .set(ProviderId::Openai, Some(&parameters), &models(&["value"]))
+            .unwrap();
+    });
+    assert_eq!(cache.ttl_entries().len(), 300_usize);
+    let extra = params("model-extra", None, None);
+    cache
+        .set(ProviderId::Openai, Some(&extra), &models(&["extra"]))
+        .unwrap();
+    assert_eq!(cache.ttl_entries().len(), 300_usize);
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), Some(&extra), &environment)
+            .unwrap(),
+        Some(models(&["extra"]))
+    );
+}
+
+#[test]
+fn expiry_pruning_bounds_the_expiry_map() {
+    let (state, clock) = switchable_clock();
+    let mut cache = AvailableModelsCache::with_clock(clock);
+    (0..3_usize).for_each(|index| {
+        let parameters = params(&format!("model-{index}"), None, None);
+        cache
+            .set(ProviderId::Openai, Some(&parameters), &models(&["v"]))
+            .unwrap();
+    });
+    assert_eq!(cache.ttl_entries().len(), 3_usize);
+    state.lock().unwrap().now = 1000.0_f64;
+    let fresh = params("model-fresh", None, None);
+    cache
+        .set(ProviderId::Openai, Some(&fresh), &models(&["v"]))
+        .unwrap();
+    assert_eq!(cache.ttl_entries().len(), 1_usize);
+    (3..6_usize).for_each(|index| {
+        let parameters = params(&format!("model-{index}"), None, None);
+        cache
+            .set(ProviderId::Openai, Some(&parameters), &models(&["v"]))
+            .unwrap();
+    });
+    assert_eq!(cache.ttl_entries().len(), 4_usize);
+    state.lock().unwrap().now = 5000.0_f64;
+    let later = params("model-later", None, None);
+    cache
+        .set(ProviderId::Openai, Some(&later), &models(&["v"]))
+        .unwrap();
+    assert_eq!(cache.ttl_entries().len(), 1_usize);
 }

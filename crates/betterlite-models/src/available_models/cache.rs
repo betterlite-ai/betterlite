@@ -121,6 +121,15 @@ impl AvailableModelsCache {
         Ok(())
     }
 
+    // every stored absolute expiry, including keys an environment clear dropped the value of
+    #[must_use]
+    pub fn ttl_entries(&self) -> Vec<(String, f64)> {
+        self.expiries
+            .iter()
+            .map(|(key, expiry)| (key.clone(), *expiry))
+            .collect()
+    }
+
     fn read_clock(&self) -> Result<f64, CacheError> {
         let now = (self.clock)();
         if now.is_finite() {

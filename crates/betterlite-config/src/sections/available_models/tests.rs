@@ -47,10 +47,9 @@ fn endpoint_checks_read_the_environment(#[case] value: &str, #[case] expected: b
 fn endpoint_checks_reject_an_unreadable_value() {
     let source =
         "litellm_settings:\n  check_provider_endpoint: os.environ/CHECK_PROVIDER_ENDPOINT\n";
-    assert!(matches!(
-        load(source, &[("CHECK_PROVIDER_ENDPOINT", "sometimes")]),
-        Err(ConfigError::Environment { .. })
-    ));
+    let environment = load(source, &[("CHECK_PROVIDER_ENDPOINT", "sometimes")]).unwrap_err();
+    assert!(matches!(environment, ConfigError::Environment { .. }));
+    assert!(environment.to_string().contains("CHECK_PROVIDER_ENDPOINT"));
     assert!(matches!(
         load(source, &[]),
         Err(ConfigError::MissingEnvironment { .. })
@@ -59,6 +58,17 @@ fn endpoint_checks_reject_an_unreadable_value() {
         load("litellm_settings:\n  check_provider_endpoint: 1\n", &[]),
         Err(ConfigError::Yaml { .. })
     ));
+    let inline = load(
+        "litellm_settings:\n  check_provider_endpoint: sometimes\n",
+        &[],
+    )
+    .unwrap_err();
+    assert!(matches!(inline, ConfigError::Environment { .. }));
+    assert!(
+        inline
+            .to_string()
+            .contains("litellm_settings.check_provider_endpoint")
+    );
 }
 
 #[rstest]
