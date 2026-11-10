@@ -1,8 +1,13 @@
 use std::time::{Duration, TryFromFloatSecsError};
 
-use betterlite_config::types::ModelDeployment;
+use betterlite_config::types::{LiteLlmParams, ModelDeployment};
 use betterlite_http::url_policy::base::ConfiguredBase;
 use betterlite_http::url_policy::error::UrlPolicyError;
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::resolution::{
+    ProviderIdentity, ResolutionContext, ResolutionRequest, resolve as resolve_model,
+};
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -73,14 +78,26 @@ pub struct ChatDeployment {
 }
 
 impl ChatDeployment {
+    // A caller with no catalog or policy state resolves only the deployment's own declaration.
     pub fn resolve(
         deployment: &ModelDeployment,
         defaults: &OpenAiDefaults,
     ) -> Result<Self, DeploymentError> {
+        let catalog = ModelCatalog::default();
+        let context = ResolutionContext::minimal(&catalog);
+        Self::resolve_with(deployment, defaults, None, &context)
+    }
+
+    pub fn resolve_with(
+        deployment: &ModelDeployment,
+        defaults: &OpenAiDefaults,
+        custom_llm_provider: Option<&str>,
+        context: &ResolutionContext<'_>,
+    ) -> Result<Self, DeploymentError> {
         let params = &deployment.litellm_params;
         let model_name = &deployment.model_name;
         let litellm_model = params.model.clone().unwrap_or_default();
-        let provider = provider_of(&litellm_model);
+        let provider = resolved_provider(&litellm_model, custom_llm_provider, params, context);
         let api_base = params
             .api_base
             .iter()
@@ -143,15 +160,32 @@ impl ChatDeployment {
     }
 }
 
-fn provider_of(litellm_model: &str) -> Provider {
-    litellm_model.strip_prefix("openai/").map_or_else(
-        || Provider::Unsupported {
-            model: litellm_model.to_owned(),
-        },
-        |model| Provider::OpenAi {
-            model: model.to_owned(),
-        },
-    )
+// Only the OpenAI adapter is built, so every other resolved identity stays a clear refusal.
+fn resolved_provider(
+    litellm_model: &str,
+    custom_llm_provider: Option<&str>,
+    params: &LiteLlmParams,
+    context: &ResolutionContext<'_>,
+) -> Provider {
+    let request = ResolutionRequest {
+        model: litellm_model,
+        custom_llm_provider,
+        api_base: params.api_base.as_deref(),
+        api_key: params.api_key.as_ref(),
+    };
+    if let Ok(resolved) = resolve_model(&request, context)
+        && matches!(
+            resolved.provider,
+            ProviderIdentity::Known(ProviderId::Openai)
+        )
+    {
+        return Provider::OpenAi {
+            model: resolved.model,
+        };
+    }
+    Provider::Unsupported {
+        model: litellm_model.to_owned(),
+    }
 }
 
 // the base as written without its query, or rebuilt from the parsed URL when userinfo had to come out

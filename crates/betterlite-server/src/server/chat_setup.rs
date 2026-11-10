@@ -8,6 +8,11 @@ use betterlite_core::mock::embedding::response as mock_embedding;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::{ClientChoice, ClientPool, PoolError};
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -63,29 +68,19 @@ pub fn chat_executor(
     random: StdRng,
 ) -> Result<ChatExecutor, ChatSetupError> {
     reject_other_strategies(config)?;
-    let sdk = &config.sections.resource_sdk_settings;
-    let defaults = OpenAiDefaults {
-        request_timeout: config.litellm_settings.request_timeout,
-        api_bases: [&sdk.api_base, &sdk.openai_base_url, &sdk.openai_api_base]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect(),
-        api_keys: [&sdk.api_key, &sdk.openai_key, &sdk.openai_api_key]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect(),
-        organization: sdk
-            .organization
-            .clone()
-            .or_else(|| sdk.openai_organization.clone()),
-    };
-    let mut deployments = config
-        .model_list
-        .iter()
-        .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
-        .collect::<Result<Vec<_>, _>>()?;
+    let defaults = openai_defaults(config);
+    // the bundled model cost map lets a deployment without a provider prefix resolve like LiteLLM's
+    let catalog = BundledCatalog::default().get();
+    let known_names = BTreeSet::new();
+    let custom_providers = BTreeSet::new();
+    let resolution = resolution_context(
+        config,
+        &catalog,
+        environment,
+        &known_names,
+        &custom_providers,
+    );
+    let mut deployments = chat_deployments(config, &defaults, &resolution)?;
     let mock = mock_settings(config, &mut deployments);
     Ok(ChatExecutor {
         client: outbound_client(config, environment, &deployments)?,
@@ -103,6 +98,72 @@ pub fn chat_executor(
         mock_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
     })
+}
+
+fn openai_defaults(config: &Config) -> OpenAiDefaults {
+    let sdk = &config.sections.resource_sdk_settings;
+    OpenAiDefaults {
+        request_timeout: config.litellm_settings.request_timeout,
+        api_bases: [&sdk.api_base, &sdk.openai_base_url, &sdk.openai_api_base]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect(),
+        api_keys: [&sdk.api_key, &sdk.openai_key, &sdk.openai_api_key]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect(),
+        organization: sdk
+            .organization
+            .clone()
+            .or_else(|| sdk.openai_organization.clone()),
+    }
+}
+
+fn resolution_context<'context>(
+    config: &Config,
+    catalog: &'context ModelCatalog,
+    environment: &'context BTreeMap<String, String>,
+    known_names: &'context BTreeSet<String>,
+    custom_providers: &'context BTreeSet<String>,
+) -> ResolutionContext<'context> {
+    let sdk = &config.sections.resource_sdk_settings;
+    ResolutionContext {
+        catalog,
+        known_model_names: known_names,
+        custom_providers,
+        environment,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials {
+            api_key: sdk.api_key.clone(),
+            api_base: sdk.api_base.clone(),
+            xai_key: None,
+            inception_key: None,
+            lemonade_key: None,
+        },
+    }
+}
+
+// get_llm_provider runs once per deployment, with the custom_llm_provider its config entry declares
+fn chat_deployments(
+    config: &Config,
+    defaults: &OpenAiDefaults,
+    resolution: &ResolutionContext<'_>,
+) -> Result<Vec<ChatDeployment>, ChatSetupError> {
+    let identity = &config.sections.provider_resolution;
+    let resolved = config
+        .model_list
+        .iter()
+        .enumerate()
+        .map(|(index, deployment)| {
+            let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
+            ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)
+        });
+    resolved
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ChatSetupError::from)
 }
 
 fn unix_seconds() -> u64 {

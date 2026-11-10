@@ -1,0 +1,24 @@
+task: B174
+deviations:
+  - what: >-
+      An api_base that matches an entry of LiteLLM's openai_compatible_endpoints but reaches no
+      provider branch and no JSON-registered provider raises a BadRequestError naming the endpoint
+      and the base. LiteLLM instead returns from the endpoint loop with custom_llm_provider still
+      None, a value its declared tuple type does not allow.
+    why: >-
+      No working setup can rely on a provider of None, since the call fails later with no usable
+      provider, while the early return also skips model inference that would otherwise name a
+      provider. The typed resolver refuses the base at the point it cannot resolve it.
+      provider_resolution_tests_behavior::the_endpoint_loop_runs_before_model_inference and
+      ::an_endpoint_with_no_provider_branch_is_unresolved pin the refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L401-L409
+  - what: >-
+      Resolving github_copilot or chatgpt returns the declared provider and the caller's base and
+      key without starting LiteLLM's OAuth device flow; the flow belongs to the provider tasks.
+    why: >-
+      get_llm_provider runs a device login for PROVIDERS_THAT_AUTHENTICATE_ON_PROVIDER_INFO, which
+      blocks on a human. B209 exposes that declaration separately as authenticating_provider, and
+      the provider tasks own the login, so the resolver keeps the declaration only.
+      provider_resolution_tests_behavior covers the declaration through B209's helper in
+      resolution::inferred::tests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L134-L143
