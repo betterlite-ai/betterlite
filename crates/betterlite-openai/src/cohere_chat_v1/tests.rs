@@ -313,7 +313,7 @@ fn tool_calls_replace_the_content_and_carry_python_arguments() {
     let decoded = reply(
         r#"{"text":"dropped","tool_calls":[
             {"name":"lookup","generation_id":"gen-1","parameters":{
-                "city": "Paris", "days": [1, 2], "note": "caf\u00e9", "ratio": 1.5, "ok": true,
+                "city": "Paris", "days": [1, 2], "note": "\u00e9", "ratio": 1.5, "ok": true,
                 "none": null}},
             {"parameters":{}},
             {"name":null,"generation_id":null,"parameters":null}
@@ -327,7 +327,7 @@ fn tool_calls_replace_the_content_and_carry_python_arguments() {
     assert_eq!(calls[0].function.name.as_deref(), Some("lookup"));
     assert_eq!(
         calls[0].function.arguments,
-        r#"{"city": "Paris", "days": [1, 2], "note": "caf\u00e9", "ratio": 1.5, "ok": true, "none": null}"#
+        r#"{"city": "Paris", "days": [1, 2], "note": "\u00e9", "ratio": 1.5, "ok": true, "none": null}"#
     );
     assert_eq!(calls[1].id, "call_");
     assert_eq!(calls[1].function.name.as_deref(), Some(""));
