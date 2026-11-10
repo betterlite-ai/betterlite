@@ -1,14 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_logging::batch::logger::BatchSettings;
 use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::newrelic_metrics::flush::{async_send_batch, flush_queue};
-use betterlite_logging::newrelic_metrics::logger::{
-    MAX_BATCH_SIZE, MAX_RETRY_QUEUE, NewRelicDeps, NewRelicMetricsLogger,
-};
+use betterlite_logging::newrelic_metrics::logger::{NewRelicDeps, NewRelicMetricsLogger};
 use betterlite_logging::newrelic_metrics::queue::push_record;
 use betterlite_logging::newrelic_metrics::records::NewRelicMetricRecord;
 use betterlite_models::decisions::Json;
@@ -17,6 +14,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::runtime::Builder;
+use tokio_util::task::TaskTracker;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -45,8 +43,6 @@ pub(crate) struct Input {
     api_key: String,
     #[serde(default)]
     region: Option<String>,
-    #[serde(default)]
-    max_queue_size: Option<usize>,
     #[serde(default)]
     records: Vec<RecordInput>,
     #[serde(default)]
@@ -162,14 +158,6 @@ impl Helper for Op {
     }
 }
 
-fn settings(input: &Input) -> BatchSettings {
-    BatchSettings {
-        batch_size: MAX_BATCH_SIZE,
-        flush_interval: Duration::from_secs(FLUSH_INTERVAL_SECONDS),
-        max_queue_size: input.max_queue_size.unwrap_or(MAX_RETRY_QUEUE),
-    }
-}
-
 fn seed_queue(logger: &NewRelicMetricsLogger, records: &[RecordInput]) {
     for record in records {
         for _copy in 0..record.repeat {
@@ -183,6 +171,7 @@ async fn run_scenario(input: &Input) -> HelperResult {
     let transport = Arc::new(ScriptedTransport::new(&input.replies, during));
     let clock = Arc::new(ScriptedClock::new(&input.clock)?);
     let sleeps = Arc::new(ScriptedSleeps::default());
+    let tasks = TaskTracker::new();
     let logger = NewRelicMetricsLogger::new(
         SecretString::from(input.api_key.clone()),
         input.region.as_deref(),
@@ -190,19 +179,21 @@ async fn run_scenario(input: &Input) -> HelperResult {
             transport: Arc::<ScriptedTransport>::clone(&transport),
             clock: clock.handle(),
             sleeper: Arc::<ScriptedSleeps>::clone(&sleeps),
-            settings: settings(input),
+            flush_interval: Duration::from_secs(FLUSH_INTERVAL_SECONDS),
+            tasks: tasks.clone(),
         },
     )
     .map_err(failure)?;
     transport.attach(&logger);
     seed_queue(&logger, &input.records);
-    let (scheduled, delivered) = perform(input, &logger).await?;
+    let (scheduled, delivered) = perform(input, &logger, &tasks).await?;
     report::scenario(&logger, &transport, &sleeps, scheduled, delivered)
 }
 
 async fn perform(
     input: &Input,
     logger: &Arc<NewRelicMetricsLogger>,
+    tasks: &TaskTracker,
 ) -> Result<(Option<bool>, Option<bool>), Box<HelperError>> {
     match input.operation {
         Operation::SendBatch => Ok((None, Some(async_send_batch(logger).await))),
@@ -212,12 +203,14 @@ async fn perform(
         }
         Operation::Drain => {
             let scheduled = logger.stop();
-            logger.wait_for_final_drains().await;
+            tasks.close();
+            tasks.wait().await;
             Ok((Some(scheduled), None))
         }
         Operation::PostStop => {
             let scheduled = logger.stop();
-            logger.wait_for_final_drains().await;
+            tasks.close();
+            tasks.wait().await;
             deliver_event(input, logger).await?;
             Ok((Some(scheduled), None))
         }

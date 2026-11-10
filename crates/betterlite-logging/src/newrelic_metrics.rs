@@ -2,7 +2,6 @@ use std::io::Error as IoError;
 use std::num::TryFromIntError;
 
 use http::header::InvalidHeaderValue;
-use tokio::runtime::TryCurrentError;
 
 pub mod aggregation;
 pub mod clock;
@@ -34,10 +33,6 @@ pub enum NewRelicMetricsError {
         "newrelic_api_key is required for NewRelicMetricsLogger; team-scoped metrics never fall back to environment credentials"
     )]
     MissingApiKey,
-    #[error("the New Relic metric batch size must be greater than zero")]
-    ZeroBatchSize,
-    #[error("the New Relic metrics logger must be created inside a tokio runtime")]
-    NoRuntime(#[source] TryCurrentError),
     #[error("the Metric API payload could not be written as JSON")]
     Encode(#[source] serde_json::Error),
     #[error("the Metric API payload could not be gzipped")]

@@ -21,15 +21,16 @@ async fn requeue_and_overflow_prepends_the_retried_batch_in_order() {
 
 #[tokio::test]
 async fn requeue_and_overflow_drops_the_oldest_records_first() {
-    let mut fixture = Fixture::new_with_replies(&[Reply::Status(500)]);
-    fixture.max_queue_size = 3;
-    fixture.transport.push_during_send(record_at(10));
+    let fixture = Fixture::new_with_replies(&[Reply::Status(500)]);
+    fixture.transport.push_during_send(record_at(10_000));
     let logger = fixture.build();
-    (0_usize..3).for_each(|index| push_record(&logger, record_at(index)));
+    (0_usize..10_000).for_each(|index| push_record(&logger, record_at(index)));
 
     assert!(!async_send_batch(&logger).await);
-    assert_eq!(queue_length(&logger), 3);
-    assert_eq!(models(&logger), ["gpt-1", "gpt-2", "gpt-10"]);
+    let models = models(&logger);
+    assert_eq!(models.len(), 10_000);
+    assert_eq!(models.first().map(String::as_str), Some("gpt-1"));
+    assert_eq!(models.last().map(String::as_str), Some("gpt-10000"));
 }
 
 #[tokio::test]
@@ -48,13 +49,13 @@ async fn requeue_and_overflow_caps_at_ten_thousand_records() {
 #[tokio::test]
 async fn requeue_and_overflow_warns_when_it_drops_records() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::new_with_replies(&[Reply::Status(500)]);
-    fixture.max_queue_size = 1;
+    let fixture = Fixture::new_with_replies(&[Reply::Status(500)]);
+    fixture.transport.push_during_send(record_at(10_000));
     let logger = fixture.build();
-    push_record(&logger, record_at(0));
-    push_record(&logger, record_at(1));
+    (0_usize..10_000).for_each(|index| push_record(&logger, record_at(index)));
     assert!(!async_send_batch(&logger).await);
     assert!(logs.text().contains("retry queue exceeded max_queue_size"));
+    assert!(logs.text().contains("dropped=1"));
 }
 
 fn models(logger: &NewRelicMetricsLogger) -> Vec<String> {

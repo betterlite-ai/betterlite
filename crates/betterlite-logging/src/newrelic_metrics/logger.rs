@@ -1,15 +1,13 @@
 use std::collections::VecDeque;
-use std::mem::take;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError, Weak};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Handle;
-use tokio::sync::Mutex as AsyncMutex;
-use tokio::task::JoinHandle;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
+use tokio_util::task::TaskTracker;
 
 use crate::batch::logger::BatchSettings;
 use crate::callback_logger::CallbackLogger;
@@ -34,7 +32,8 @@ pub struct NewRelicDeps {
     pub transport: Arc<dyn NewRelicTransport>,
     pub clock: Clock,
     pub sleeper: Arc<dyn RetrySleeper>,
-    pub settings: BatchSettings,
+    pub flush_interval: Duration,
+    pub tasks: TaskTracker,
 }
 
 pub struct NewRelicMetricsLogger {
@@ -50,8 +49,8 @@ pub struct NewRelicMetricsLogger {
     pub(super) drain_lock: AsyncMutex<()>,
     pub(super) last_flush_time: Mutex<Duration>,
     pub(super) stopped: AtomicBool,
-    pub(super) flush_task: Mutex<Option<JoinHandle<()>>>,
-    pub(super) drains: Mutex<Vec<JoinHandle<()>>>,
+    pub(super) stop_signal: Notify,
+    pub(super) tasks: TaskTracker,
 }
 
 fn build_logger(
@@ -62,9 +61,6 @@ fn build_logger(
     if api_key.expose_secret().is_empty() {
         return Err(NewRelicMetricsError::MissingApiKey);
     }
-    if deps.settings.batch_size == 0 {
-        return Err(NewRelicMetricsError::ZeroBatchSize);
-    }
     let last_flush_time = (deps.clock)();
     Ok(NewRelicMetricsLogger {
         api_key,
@@ -72,32 +68,21 @@ fn build_logger(
         transport: deps.transport,
         clock: deps.clock,
         sleeper: deps.sleeper,
-        settings: deps.settings,
+        // LiteLLM fixes both sizes in __init__; only the flush interval follows the batch settings
+        settings: BatchSettings {
+            batch_size: MAX_BATCH_SIZE,
+            flush_interval: deps.flush_interval,
+            max_queue_size: MAX_RETRY_QUEUE,
+        },
         queue: Mutex::new(VecDeque::new()),
         next_id: AtomicU64::new(0),
         flush_lock: AsyncMutex::new(()),
         drain_lock: AsyncMutex::new(()),
         last_flush_time: Mutex::new(last_flush_time),
         stopped: AtomicBool::new(false),
-        flush_task: Mutex::new(None),
-        drains: Mutex::new(Vec::new()),
+        stop_signal: Notify::new(),
+        tasks: deps.tasks,
     })
-}
-
-fn spawn_periodic_flush(owner: &Arc<NewRelicMetricsLogger>) -> Result<(), NewRelicMetricsError> {
-    let handle = Handle::try_current().map_err(NewRelicMetricsError::NoRuntime)?;
-    let weak = Arc::downgrade(owner);
-    let task = handle.spawn(async move {
-        let Some(logger) = Weak::upgrade(&weak) else {
-            return;
-        };
-        periodic_flush(logger).await;
-    });
-    *owner
-        .flush_task
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(task);
-    Ok(())
 }
 
 impl NewRelicMetricsLogger {
@@ -107,40 +92,27 @@ impl NewRelicMetricsLogger {
         deps: NewRelicDeps,
     ) -> Result<Arc<Self>, NewRelicMetricsError> {
         let logger = Arc::new(build_logger(api_key, region, deps)?);
-        spawn_periodic_flush(&logger)?;
+        let periodic = Arc::clone(&logger);
+        logger.tasks.spawn(periodic_flush(periodic));
         Ok(logger)
     }
 
     // LiteLLM cannot schedule the final drain when no event loop runs, so stop reports that it could not
     pub fn stop(self: &Arc<Self>) -> bool {
         self.stopped.store(true, Ordering::SeqCst);
+        self.stop_signal.notify_one();
         let Ok(handle) = Handle::try_current() else {
             tracing::debug!("New Relic Metrics: could not schedule final drain on stop()");
             return false;
         };
         let logger = Arc::clone(self);
-        let scheduled = catch_unwind(AssertUnwindSafe(|| {
-            handle.spawn(async move {
+        self.tasks.spawn_on(
+            async move {
                 drain_with_retry(&logger).await;
-            })
-        }));
-        let Ok(task) = scheduled else {
-            tracing::debug!("New Relic Metrics: could not schedule final drain on stop()");
-            return false;
-        };
-        self.drains
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(task);
+            },
+            &handle,
+        );
         true
-    }
-
-    pub async fn wait_for_final_drains(&self) {
-        let tasks: Vec<JoinHandle<()>> =
-            take(&mut *self.drains.lock().unwrap_or_else(PoisonError::into_inner));
-        for task in tasks {
-            let _outcome = task.await;
-        }
     }
 
     pub async fn record_event(&self, payload: &StandardLoggingPayload) {

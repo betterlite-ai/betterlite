@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::support::Fixture;
 use crate::newrelic_metrics::NewRelicMetricsError;
 use crate::newrelic_metrics::region::{EU_METRIC_ENDPOINT, US_METRIC_ENDPOINT};
@@ -21,13 +23,11 @@ async fn init_validation_accepts_a_whitespace_only_api_key() {
 }
 
 #[tokio::test]
-async fn init_validation_rejects_a_zero_batch_size() {
-    let mut fixture = Fixture::new();
-    fixture.batch_size = 0;
-    let Err(error) = fixture.build_result() else {
-        panic!("a zero batch size must fail");
-    };
-    assert!(matches!(error, NewRelicMetricsError::ZeroBatchSize));
+async fn init_validation_fixes_the_batch_and_queue_sizes() {
+    let logger = Fixture::new().build();
+    assert_eq!(logger.settings.batch_size, 200);
+    assert_eq!(logger.settings.max_queue_size, 10_000);
+    assert_eq!(logger.settings.flush_interval, Duration::from_secs(5));
 }
 
 #[tokio::test]

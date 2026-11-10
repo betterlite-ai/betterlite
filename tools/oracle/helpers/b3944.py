@@ -255,9 +255,6 @@ async def _run(input_value: Fields) -> Json:
         client.attach(logger)
         queued = cast("list[NewRelicMetricRecord]", logger.log_queue)
         queued.extend(_records(input_value.get("records")))
-        max_queue_size = input_value.get("max_queue_size")
-        if max_queue_size is not None:
-            logger.max_queue_size = _integer(max_queue_size, "max_queue_size")
         scheduled: bool | None = None
         delivered: bool | None = None
         match operation:

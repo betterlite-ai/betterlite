@@ -13,20 +13,18 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
+use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::batch::logger::BatchSettings;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::generic_api_logger::generic_logger::retry::RetrySleeper;
 use crate::newrelic_metrics::NewRelicMetricsError;
 use crate::newrelic_metrics::aggregation::build_metric_payload;
 use crate::newrelic_metrics::clock::Clock;
-use crate::newrelic_metrics::logger::{
-    MAX_BATCH_SIZE, MAX_RETRY_QUEUE, NewRelicDeps, NewRelicMetricsLogger,
-};
+use crate::newrelic_metrics::logger::{NewRelicDeps, NewRelicMetricsLogger};
 use crate::newrelic_metrics::queue::push_record;
 use crate::newrelic_metrics::records::NewRelicMetricRecord;
 use crate::newrelic_metrics::transport::{NewRelicPost, NewRelicSendError, NewRelicTransport};
@@ -351,9 +349,7 @@ pub(super) struct Fixture {
     pub(super) transport: Arc<FakeTransport>,
     pub(super) clock: ScriptedClock,
     pub(super) sleeper: Arc<RecordingSleeper>,
-    pub(super) batch_size: usize,
-    pub(super) max_queue_size: usize,
-    pub(super) flush_interval: Duration,
+    pub(super) tasks: TaskTracker,
     pub(super) api_key: String,
     pub(super) region: Option<String>,
 }
@@ -373,9 +369,7 @@ impl Fixture {
             }),
             clock: ScriptedClock::new(&[1_000.0_f64]),
             sleeper: Arc::new(RecordingSleeper::default()),
-            batch_size: MAX_BATCH_SIZE,
-            max_queue_size: MAX_RETRY_QUEUE,
-            flush_interval: Duration::from_secs(5),
+            tasks: TaskTracker::new(),
             api_key: "team-key".to_owned(),
             region: None,
         }
@@ -398,11 +392,8 @@ impl Fixture {
             transport: Arc::<FakeTransport>::clone(&self.transport),
             clock: self.clock.handle(),
             sleeper: Arc::<RecordingSleeper>::clone(&self.sleeper),
-            settings: BatchSettings {
-                batch_size: self.batch_size,
-                flush_interval: self.flush_interval,
-                max_queue_size: self.max_queue_size,
-            },
+            flush_interval: Duration::from_secs(5),
+            tasks: self.tasks.clone(),
         };
         let built = NewRelicMetricsLogger::new(
             SecretString::from(self.api_key.clone()),
@@ -413,6 +404,11 @@ impl Fixture {
             self.transport.attach(logger);
         }
         built
+    }
+
+    pub(super) async fn wait_for_tasks(&self) {
+        self.tasks.close();
+        self.tasks.wait().await;
     }
 
     pub(super) fn build(&self) -> Arc<NewRelicMetricsLogger> {

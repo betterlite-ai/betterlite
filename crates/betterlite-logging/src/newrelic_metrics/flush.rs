@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
-use tokio::time::sleep;
+use tokio::time::timeout;
 
 use super::delivery::classify_and_send;
 use super::drain::drain_with_retry;
@@ -57,8 +57,13 @@ async fn send_batch_at(logger: &NewRelicMetricsLogger, window_start: Duration) -
 }
 
 pub(super) async fn periodic_flush(logger: Arc<NewRelicMetricsLogger>) {
-    while !logger.stopped.load(Ordering::SeqCst) {
-        sleep(logger.settings.flush_interval).await;
+    while !logger.stopped.load(Ordering::SeqCst) && !logger.tasks.is_closed() {
+        // A timeout is the normal wake-up; stop() wakes the loop early through the signal
+        let _woken = timeout(
+            logger.settings.flush_interval,
+            logger.stop_signal.notified(),
+        )
+        .await;
         if logger.stopped.load(Ordering::SeqCst) {
             break;
         }
