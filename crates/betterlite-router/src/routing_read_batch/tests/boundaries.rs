@@ -10,6 +10,7 @@ use crate::routing_read_batch::{RequestReads, RoutingPrefetch, RoutingReadBatch}
 pub(crate) async fn run(name: &str) {
     match name {
         "reservation_is_due_at_the_exact_expiry" => reservation_is_due_at_the_exact_expiry(),
+        "reservation_age_is_the_elapsed_time" => reservation_age_is_the_elapsed_time(),
         "default_read_expiry_is_ten_seconds" => default_read_expiry_is_ten_seconds(),
         "take_requires_every_needed_key" => take_requires_every_needed_key(),
         "take_releases_a_short_prefetch" => take_releases_a_short_prefetch(),
@@ -54,6 +55,35 @@ fn reservation_is_due_at_the_exact_expiry() {
     assert_eq!(
         cooldown.prepare(slice::from_ref(&first)).reservation.due,
         vec![first]
+    );
+}
+
+fn reservation_age_is_the_elapsed_time() {
+    let clock = TestClock::new();
+    let first = key("a");
+    let cooldown = tier(&clock, None, 10.0);
+    cooldown
+        .state
+        .lock()
+        .unwrap()
+        .last_reads
+        .insert(first.clone(), 100.0_f64);
+    clock.set(105.0_f64);
+    assert!(
+        cooldown
+            .prepare(slice::from_ref(&first))
+            .reservation
+            .due
+            .is_empty()
+    );
+    clock.set(110.0_f64);
+    assert_eq!(
+        cooldown
+            .prepare(slice::from_ref(&first))
+            .reservation
+            .due
+            .len(),
+        1
     );
 }
 

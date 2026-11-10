@@ -55,6 +55,7 @@ fn routing_read_batch_behaviors(#[case] name: &str) {
 #[case::an_absent_remote_value_still_consumes_the_prefetch(
     "an_absent_remote_value_still_consumes_the_prefetch"
 )]
+#[case::reservation_age_is_the_elapsed_time("reservation_age_is_the_elapsed_time")]
 #[case::default_read_expiry_is_ten_seconds("default_read_expiry_is_ten_seconds")]
 #[case::default_local_ttl_is_six_hundred_seconds("default_local_ttl_is_six_hundred_seconds")]
 #[case::backfill_ttl_comes_from_the_tier("backfill_ttl_comes_from_the_tier")]
