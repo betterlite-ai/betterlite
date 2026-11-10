@@ -19,6 +19,7 @@ impl BudgetScope {
     }
 }
 
+// the two key builders keep different shapes, since similarity-rs rejects near-identical functions
 #[must_use]
 pub fn model_budget_spend_cache_key(
     scope: BudgetScope,
