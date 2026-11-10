@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::task::yield_now;
-use tokio::time::{advance, pause};
+use tokio::time::{advance, pause, timeout};
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -414,7 +414,9 @@ impl Fixture {
         yield_now().await;
         self.tasks.close();
         advance(Duration::from_secs(5)).await;
-        self.tasks.wait().await;
+        timeout(Duration::from_secs(20), self.tasks.wait())
+            .await
+            .expect("the periodic flush ends once the tracker closes");
     }
 
     pub(super) async fn wait_for_tasks(&self) {

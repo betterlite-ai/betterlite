@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import gzip
 import json
 import time
@@ -246,8 +247,11 @@ async def _run(input_value: Fields) -> Json:
         newrelic_api_key=_string(input_value.get("api_key", SCRIPTED_KEY), "api_key"),
         newrelic_region=_optional_string(input_value.get("region"), "region"),
     )
+    # gzip.compress reads time.time() without an mtime, which would eat a scripted clock value
+    compress = functools.partial(gzip.compress, mtime=0)
     with (
         patch.object(time, "time", clock),
+        patch.object(gzip, "compress", compress),
         patch.object(asyncio, "sleep", sleeps),
     ):
         logger.last_flush_time = clock()
