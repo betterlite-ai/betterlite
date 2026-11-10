@@ -15,6 +15,10 @@ pub struct HttpTransport {
 impl Transport for HttpTransport {
     type Error = TransportError;
 
+    fn retryable(error: &TransportError) -> bool {
+        !matches!(error, TransportError::TooManyRedirects { .. })
+    }
+
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
         let outbound = OutboundRequest {
             method: Method::POST,

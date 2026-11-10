@@ -27,4 +27,9 @@ pub trait Transport: Send + Sync + Debug {
         &self,
         request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, Self::Error>> + Send;
+
+    // LiteLLM retries only httpx.TransportError and timeouts, so a transport names the errors that end the attempt
+    fn retryable(_error: &Self::Error) -> bool {
+        true
+    }
 }

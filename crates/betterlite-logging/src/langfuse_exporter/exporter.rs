@@ -208,9 +208,13 @@ where
         };
         match self.transport.send(request).await {
             Ok(response) => status_outcome(response.status),
-            Err(error) => {
+            Err(error) if T::retryable(&error) => {
                 tracing::warn!(%error, "langfuse export failed in the transport");
                 None
+            }
+            Err(error) => {
+                tracing::error!(%error, "langfuse export failed in the transport and is not retried");
+                Some(DeliveryOutcome::Rejected)
             }
         }
     }
