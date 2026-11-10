@@ -629,6 +629,26 @@ fn an_evicted_headers_provider_never_shuts_the_shared_exporter_down() {
 }
 
 #[test]
+fn a_cache_key_debug_never_prints_header_values() {
+    let key = CacheKey::Headers(map(&[("authorization", "Bearer secret")]));
+    let text = format!("{key:?}");
+    assert!(text.contains("authorization"));
+    assert!(!text.contains("Bearer secret"));
+}
+
+#[test]
+fn a_config_cache_key_debug_never_prints_header_values() {
+    let key = CacheKey::Config {
+        exporter: "otlp_http".to_owned(),
+        endpoint: Some("http://collector:4318".to_owned()),
+        headers: Some("authorization=Bearer secret".to_owned()),
+    };
+    let text = format!("{key:?}");
+    assert!(text.contains("otlp_http"));
+    assert!(!text.contains("Bearer secret"));
+}
+
+#[test]
 fn a_cached_tracer_keeps_the_configured_instrumentation_scope() {
     let shared = InMemorySpanExporter::default();
     let cache = DynamicTracerCache::new(

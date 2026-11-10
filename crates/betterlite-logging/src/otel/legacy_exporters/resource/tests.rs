@@ -71,7 +71,7 @@ fn model_id_falls_back_to_the_service_name() {
 
 #[rstest]
 #[case::empty_service_name("", "staging", "gpt-4o", &["deployment.environment", "model_id"])]
-#[case::empty_environment("checkout", "", "gpt-4o", &["service.name", "model_id"])]
+#[case::empty_environment("checkout", "", "gpt-4o", &["model_id", "service.name"])]
 #[case::empty_everything("", "", "", &[])]
 fn empty_config_values_are_not_written(
     #[case] service_name: &str,
