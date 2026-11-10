@@ -570,6 +570,28 @@ async fn lpop_pipeline_below_redis_seven_uses_one_pop_for_a_missing_count() {
 }
 
 #[tokio::test]
+async fn lpop_pipeline_below_redis_seven_pops_nothing_for_a_negative_count() {
+    let server = FakeServer::start().await;
+    server.script("LPOP", Reply::Bulk("b1".to_owned()));
+    let harness = harness(&server, None, "6.2.0");
+    let entries = harness
+        .lists
+        .async_lpop_pipeline(&[pop("a", Some(-1)), pop("b", Some(1))])
+        .await
+        .expect("a pipeline");
+    assert_eq!(
+        entries,
+        vec![
+            LpopPipelineEntry::Missing,
+            LpopPipelineEntry::Items(vec!["b1".to_owned()]),
+        ]
+    );
+    let pops = server.commands_named("LPOP");
+    assert_eq!(pops.len(), 1);
+    assert_eq!(pops[0].args, vec!["b".to_owned()]);
+}
+
+#[tokio::test]
 async fn lpop_pipeline_regroups_a_partly_empty_group() {
     let server = FakeServer::start().await;
     server.script("LPOP", Reply::Bulk("a1".to_owned()));
