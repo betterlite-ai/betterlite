@@ -120,7 +120,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-batch-logging)" &&
         grep -rlE '^[[:space:]]+b3641:' tools/oracle/cases/helpers/vertex-batch-logging &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/vertex-batch-logging
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/vertex-batch-logging
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-logging/create-collection-route-pending.yaml
   - tools/oracle/cases/helpers/vertex-batch-logging/create-id-scoped-route-pending.yaml

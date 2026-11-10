@@ -244,7 +244,7 @@ checks:
       why: the helper cases for the pure functions are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/transcribe-media)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/transcribe-media
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/transcribe-media
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-

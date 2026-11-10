@@ -110,7 +110,7 @@ checks:
       run: grep -rlq 'bedrock_decisions:' tools/oracle/fuzz/corpus/helper_case/bedrock-decisions-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: bedrock-decisions-oracle
       why: Oracle cases exercising decision classification, status mapping and exception construction are missing or fail
-      run: test -d tools/oracle/cases/helpers/bedrock-decisions && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/bedrock-decisions)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/bedrock-decisions
+      run: test -d tools/oracle/cases/helpers/bedrock-decisions && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/bedrock-decisions)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/bedrock-decisions
 oracle_cases:
   - tools/oracle/cases/helpers/bedrock-decisions/blocked-action-raises-exception.yaml
   - tools/oracle/cases/helpers/bedrock-decisions/anonymized-action-does-not-raise.yaml
