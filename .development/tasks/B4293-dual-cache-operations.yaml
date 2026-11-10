@@ -194,7 +194,7 @@ out_of_scope:
   - 'active_request_redis_batch and request-scoped batch management (RequestRedisBatches context variable): owned by B4331.'
   - 'Batch operation result protocols (BatchResult, on_settled callbacks): owned by B4330.'
   - 'Memory-cache primitives (get, set, delete, increment): owned by B2226 and B390, composed only.'
-  - 'Redis constructor and non-batched fallback operations: owned by B5630, composed only.'
+  - 'Redis constructor and non-batched fallback operations: owned by B5640 (RedisCache), composed only.'
   - 'Cache key derivation and semantic-cache logic: owned by B4296.'
   - 'Cache configuration and backend construction: owned by B4299.'
 
