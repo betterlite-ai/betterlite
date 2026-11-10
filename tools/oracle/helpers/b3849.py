@@ -146,6 +146,9 @@ def record_json(span: object) -> Json:
 
 
 def run(input_value: dict[str, Json]) -> Json:
+    unknown = set(input_value) - {"function", "span", "endpoint", "headers"}
+    if unknown:
+        raise ValueError(f"unknown input fields {sorted(unknown)}")
     return {"result": dispatch(input_value)}
 
 
