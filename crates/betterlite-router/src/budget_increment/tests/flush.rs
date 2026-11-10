@@ -87,6 +87,35 @@ async fn increments_that_arrive_during_a_failed_flush_merge_before_the_retry() {
 }
 
 #[tokio::test]
+async fn concurrent_flushes_serialize_on_the_flush_lock() {
+    let fixture = Fixture::new(1_030.0_f64);
+    fixture.redis().seed_start("start:a", 1_000.0_f64);
+    fixture
+        .increment
+        .increment_spend_for_key(&budget(60), "spend:a", "start:a", cost(25))
+        .await
+        .unwrap();
+    fixture.redis().block(true);
+    let tasks = TaskTracker::new();
+    let first = fixture.increment.flush_increments(&tasks);
+    let second = fixture.increment.flush_increments(&tasks);
+    tokio::join!(
+        async {
+            assert!(first.await);
+        },
+        async {
+            assert!(second.await);
+        },
+        async {
+            fixture.redis().entered().notified().await;
+            fixture.redis().block(false);
+            fixture.redis().release();
+        }
+    );
+    assert_eq!(fixture.redis().batches().len(), 1);
+}
+
+#[tokio::test]
 async fn a_flush_without_redis_returns_true() {
     let fixture = Fixture::memory_only(1_030.0_f64);
     fixture
@@ -96,23 +125,6 @@ async fn a_flush_without_redis_returns_true() {
         .unwrap();
     assert!(flush(&fixture).await);
     assert!(flush(&fixture).await);
-}
-
-#[tokio::test]
-async fn a_closed_tracker_returns_false_without_writing() {
-    let fixture = Fixture::new(1_030.0_f64);
-    fixture.redis().seed_start("start:a", 1_000.0_f64);
-    fixture
-        .increment
-        .increment_spend_for_key(&budget(60), "spend:a", "start:a", cost(25))
-        .await
-        .unwrap();
-    let closed = TaskTracker::new();
-    closed.close();
-    assert!(!fixture.increment.flush_increments(&closed).await);
-    let open = TaskTracker::new();
-    assert!(fixture.increment.flush_increments(&open).await);
-    assert_eq!(fixture.redis().batches().len(), 1);
 }
 
 #[tokio::test]
@@ -132,9 +144,12 @@ async fn a_dropped_caller_leaves_the_flush_running() {
     callers.spawn(async move { caller.flush_increments(&tracker).await });
     fixture.redis().entered().notified().await;
     callers.abort_all();
-    let _aborted = callers.join_all().await;
+    while let Some(result) = callers.join_next().await {
+        assert!(result.unwrap_err().is_cancelled());
+    }
     fixture.redis().block(false);
     fixture.redis().release();
+    tasks.close();
     tasks.wait().await;
     assert_eq!(
         fixture.redis().batches(),

@@ -91,9 +91,6 @@ impl<C: WindowCache + 'static> BudgetIncrement<C> {
     }
 
     pub async fn flush_increments(&self, tasks: &TaskTracker) -> bool {
-        if tasks.is_closed() {
-            return false;
-        }
         let cache = Arc::clone(&self.cache);
         let queue = Arc::clone(&self.queue);
         let flush_lock = Arc::clone(&self.flush_lock);

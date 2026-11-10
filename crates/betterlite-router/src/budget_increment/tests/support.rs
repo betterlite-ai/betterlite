@@ -86,7 +86,7 @@ impl FakeRedis {
     }
 
     pub(super) fn release(&self) {
-        self.release.notify_one();
+        self.release.notify_waiters();
     }
 }
 
