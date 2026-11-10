@@ -276,6 +276,25 @@ fn the_analyze_url_carries_pages_then_features() {
 }
 
 #[test]
+fn a_blank_base_falls_back_to_the_endpoint_secret() {
+    let mut request = prepared_request(
+        connection(
+            None,
+            None,
+            Vec::new(),
+            OcrInputSource::Deployment,
+            secrets_with(AZURE_DI_ENDPOINT_ENV, "https://env.example"),
+        ),
+        Object::new(),
+    );
+    request.connection.api_base = Some("   ".to_owned());
+    assert_eq!(
+        analyzed_url(&request),
+        "https://env.example/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30"
+    );
+}
+
+#[test]
 fn the_endpoint_secret_completes_the_url_when_no_base_is_set() {
     let request = prepared_request(
         connection(
@@ -738,6 +757,34 @@ fn a_missing_page_number_and_unit_use_the_defaults() {
 fn lax_page_numbers_follow_the_declared_types(#[case] page: &str) {
     let body = format!(r#"{{"status":"succeeded","analyzeResult":{{"pages":[{page}]}}}}"#);
     assert_eq!(first_page(&body).index, 1, "{page}");
+}
+
+#[rstest]
+#[case::plus_sign("+2", Some(2))]
+#[case::trailing_dot("2.", Some(2))]
+#[case::zero_fraction("2.0", Some(2))]
+#[case::underscores("1_000", Some(1000))]
+#[case::empty("", None)]
+#[case::double_underscore("1__0", None)]
+#[case::leading_underscore("_1", None)]
+#[case::trailing_underscore("1_", None)]
+#[case::letters("12a", None)]
+#[case::fraction("2.5", None)]
+fn page_number_strings_follow_the_declared_type(#[case] page: &str, #[case] expected: Option<i64>) {
+    let body = format!(
+        r#"{{"status":"succeeded","analyzeResult":{{"pages":[{{"pageNumber":"{page}"}}]}}}}"#
+    );
+    match expected {
+        Some(number) => assert_eq!(
+            first_page(&body).index,
+            number.checked_sub(1).unwrap(),
+            "{page}"
+        ),
+        None => assert!(
+            matches!(normalized(&body), Err(OcrError::ResponseField { .. })),
+            "{page}"
+        ),
+    }
 }
 
 #[rstest]

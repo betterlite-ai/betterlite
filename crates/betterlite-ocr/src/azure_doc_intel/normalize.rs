@@ -1,4 +1,4 @@
-use std::ops::{Mul as _, Neg as _};
+use std::ops::Mul as _;
 
 use crate::json::Object;
 use crate::ocr_error::OcrError;
@@ -95,13 +95,8 @@ fn convert_dimensions(
 }
 
 fn pixel_dimension(value: f64, scale: f64, field: &'static str) -> Result<i64, OcrError> {
-    let upper = 2.0_f64.powi(63_i32);
-    let scaled = value.mul(scale);
-    if !scaled.is_finite() || scaled < upper.neg() || scaled >= upper {
-        return Err(OcrError::NumericRange(field));
-    }
-    // truncating toward zero keeps LiteLLM's cast result without an as cast
-    format!("{:.0}", scaled.trunc())
+    // truncating toward zero keeps LiteLLM's cast result and an out-of-range value fails the parse
+    format!("{:.0}", value.mul(scale).trunc())
         .parse::<i64>()
         .map_err(|_source| OcrError::NumericRange(field))
 }

@@ -2,7 +2,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
-use std::ops::Neg as _;
 
 use crate::json::{Json, Object};
 use crate::ocr_config::OCR_INLINE_MAX_BYTES;
@@ -170,11 +169,10 @@ fn integer_number(number: &Number) -> Option<i64> {
 }
 
 fn integral_in_range(value: f64) -> Option<i64> {
-    let upper = 2.0_f64.powi(63_i32);
-    if !value.is_finite() || value.fract() != 0.0_f64 || value < upper.neg() || value >= upper {
+    if !value.is_finite() || value.fract() != 0.0_f64 {
         return None;
     }
-    // Rust has no checked float-to-integer conversion and an as cast is forbidden
+    // Rust has no checked float-to-integer conversion, and an out-of-range value fails the parse
     format!("{value:.0}").parse().ok()
 }
 
