@@ -34,11 +34,8 @@ pub enum WebIdentityError {
         #[source]
         source: FromUtf8Error,
     },
-    #[error("the STS {call} response has no {field}")]
-    MissingField {
-        call: &'static str,
-        field: &'static str,
-    },
+    #[error("{0}")]
+    MissingField(&'static str),
     #[error("the STS web identity call failed")]
     WebIdentity {
         #[source]

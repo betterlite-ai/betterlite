@@ -24,10 +24,7 @@ pub(super) fn cross_account_irsa(case: &Case) -> HelperResult {
             "the cross-account case needs a token file and two credentials replies".to_owned(),
         ));
     };
-    let files = [(
-        token_file.path.clone(),
-        token_file.content.as_bytes().to_vec(),
-    )];
+    let files = [(token_file.path.as_str(), token_file.content.as_str())];
     let (native, record, kwargs, runtime) = fixture(case, &files, answers(reply, irsa_reply))?;
     let tags = tags_of(&case.tags);
     let input = CrossAccountIrsa {

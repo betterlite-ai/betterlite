@@ -15,7 +15,7 @@ use betterlite_bedrock::aws_endpoints::sts::{StsClientKwargs, StsSettings, sts_c
 use betterlite_bedrock::aws_settings::sources::NativeSources;
 use betterlite_config::tls::Verification;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, UNIX_EPOCH};
@@ -36,11 +36,7 @@ impl Record {
             .clone()
     }
 }
-#[derive(Clone, Debug)]
-pub(super) struct Answer {
-    pub(super) status: u16,
-    pub(super) body: String,
-}
+pub(super) type Answer = (u16, String);
 #[derive(Clone, Debug)]
 pub(super) struct Transport {
     pub(super) answers: BTreeMap<String, Answer>,
@@ -77,28 +73,23 @@ impl HttpConnector for Transport {
         else {
             return refused("the fixture has no answer for this action");
         };
-        let Ok(status) = StatusCode::try_from(answer.status) else {
+        let Ok(status) = StatusCode::try_from(answer.0) else {
             return refused("the fixture answer status is invalid");
         };
         HttpConnectorFuture::ready(Ok(HttpResponse::new(
             status,
-            SdkBody::from(answer.body.clone()),
+            SdkBody::from(answer.1.clone()),
         )))
     }
 }
 pub(super) fn sources(
     environment: &BTreeMap<String, String>,
-    files: &[(String, Vec<u8>)],
+    files: &[(&str, &str)],
     transport: Transport,
 ) -> NativeSources {
     NativeSources {
         environment: environment.clone(),
-        filesystem: Fs::from_map(
-            files
-                .iter()
-                .map(|(path, bytes)| (path.clone(), bytes.clone()))
-                .collect::<HashMap<_, _>>(),
-        ),
+        filesystem: Fs::from_slice(files),
         client: http_client_fn(move |_, _| SharedHttpConnector::new(transport.clone())),
         clock: SharedTimeSource::new(StaticTimeSource::new(UNIX_EPOCH)),
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
@@ -133,41 +124,40 @@ fn error_xml(code: &str, message: &str) -> String {
     )
 }
 pub(super) fn denied_identity() -> Answer {
-    Answer {
-        status: 403,
-        body: error_xml("AccessDenied", "the fixture identity call is denied"),
-    }
+    (
+        403,
+        error_xml("AccessDenied", "the fixture identity call is denied"),
+    )
 }
 pub(super) fn web_identity_answer(reply: &WebIdentityReply) -> Answer {
     match reply {
-        WebIdentityReply::Credentials(credentials) => Answer {
-            status: 200,
-            body: format!(
+        WebIdentityReply::Credentials(credentials) => (
+            200,
+            format!(
                 "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
                 credentials_xml(credentials),
                 packed_xml(credentials.packed_policy_size)
             ),
-        },
-        WebIdentityReply::MissingPackedPolicySize(credentials) => Answer {
-            status: 200,
-            body: format!(
+        ),
+        WebIdentityReply::MissingPackedPolicySize(credentials) => (
+            200,
+            format!(
                 "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
                 credentials_xml(credentials)
             ),
-        },
-        WebIdentityReply::InvalidIdentityToken { message } => Answer {
-            status: 400,
-            body: error_xml("InvalidIdentityToken", message),
-        },
+        ),
+        WebIdentityReply::InvalidIdentityToken { message } => {
+            (400, error_xml("InvalidIdentityToken", message))
+        }
     }
 }
 pub(super) fn assume_role_answer(credentials: &ReplyCredentials) -> Answer {
-    Answer {
-        status: 200,
-        body: format!(
+    (
+        200,
+        format!(
             "<AssumeRoleResponse><AssumeRoleResult>{}{}</AssumeRoleResult></AssumeRoleResponse>",
             credentials_xml(credentials),
             packed_xml(credentials.packed_policy_size)
         ),
-    }
+    )
 }

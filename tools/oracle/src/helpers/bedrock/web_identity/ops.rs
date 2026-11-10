@@ -21,7 +21,7 @@ const DEFAULT_MAX_POLICY_SIZE: i64 = 75;
 pub(super) type Fixture = (NativeSources, Record, StsClientKwargs, Runtime);
 pub(super) fn fixture(
     case: &Case,
-    files: &[(String, Vec<u8>)],
+    files: &[(&str, &str)],
     answers: BTreeMap<String, Answer>,
 ) -> Result<Fixture, Box<HelperError>> {
     let transport = Transport {
@@ -64,7 +64,7 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         | WebIdentityError::Endpoint(_)
         | WebIdentityError::TokenFile { .. }
         | WebIdentityError::TokenFileEncoding { .. }
-        | WebIdentityError::MissingField { .. }
+        | WebIdentityError::MissingField(_)
         | WebIdentityError::WebIdentity { .. }
         | WebIdentityError::AssumeRole { .. }
         | WebIdentityError::SecretType { .. }

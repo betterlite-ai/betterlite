@@ -87,16 +87,14 @@ async fn send(
         .await
         .map_err(|error| rejected(error, token.expose_secret()))?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField {
-            call: "web identity",
-            field: "Credentials",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS web identity response has no Credentials",
+        ));
     };
     let Some(packed_policy_size) = response.packed_policy_size() else {
-        return Err(WebIdentityError::MissingField {
-            call: "web identity",
-            field: "PackedPolicySize",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS web identity response has no PackedPolicySize",
+        ));
     };
     Ok((credentials.clone(), packed_policy_size))
 }
@@ -130,11 +128,9 @@ fn rejected(error: SdkError<AssumeRoleWithWebIdentityError>, token: &str) -> Web
     ) {
         let detail = decode_web_identity_claims(token)
             .map_or_else(String::new, |claims| format!(" Token {claims}"));
+        let message = format!("AWS STS rejected the web identity token: {error}.{detail}");
         return WebIdentityError::RejectedToken {
-            error: Box::new(auth_error(
-                401,
-                format!("AWS STS rejected the web identity token: {error}.{detail}"),
-            )),
+            error: Box::new(auth_error(401, message)),
             source: Box::new(error),
         };
     }

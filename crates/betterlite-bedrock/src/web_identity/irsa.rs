@@ -72,10 +72,9 @@ async fn assume_role_response(
 ) -> Result<StsResponse, WebIdentityError> {
     let response = send_assume_role(client, input).await?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField {
-            call: "assume role",
-            field: "Credentials",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS assume role response has no Credentials",
+        ));
     };
     sts_response(credentials)
 }
@@ -102,10 +101,9 @@ async fn assume_irsa_role(
             source: Box::new(source),
         })?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField {
-            call: "web identity",
-            field: "Credentials",
-        });
+        return Err(WebIdentityError::MissingField(
+            "the STS web identity response has no Credentials",
+        ));
     };
     Ok(credentials.clone())
 }

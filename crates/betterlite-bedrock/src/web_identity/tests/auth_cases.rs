@@ -235,10 +235,7 @@ pub(super) fn sts_credentials_missing() {
     );
     assert!(matches!(
         outcome.result.unwrap_err(),
-        WebIdentityError::MissingField {
-            field: "Credentials",
-            ..
-        }
+        WebIdentityError::MissingField("the STS web identity response has no Credentials")
     ));
     assert_missing_packed_policy_size();
     assert_propagated_failures();
@@ -253,10 +250,7 @@ fn assert_missing_packed_policy_size() {
     );
     assert!(matches!(
         outcome.result.unwrap_err(),
-        WebIdentityError::MissingField {
-            field: "PackedPolicySize",
-            ..
-        }
+        WebIdentityError::MissingField("the STS web identity response has no PackedPolicySize")
     ));
 }
 
