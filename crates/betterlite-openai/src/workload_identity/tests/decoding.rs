@@ -47,8 +47,7 @@ fn decoded(bytes: &[u8]) -> Decoded {
 
 pub(super) fn exchange_json_fields() {
     accepted_replies();
-    rejected_token();
-    rejected_expiry();
+    rejected_fields();
     rejected_documents();
     request_fields();
 }
@@ -81,37 +80,27 @@ fn accepted_replies() {
     }
 }
 
-fn rejected_token() {
+fn rejected_fields() {
     let table = [
-        r#"{"expires_in":3600}"#,
-        r#"{"access_token":"","expires_in":3600}"#,
-        r#"{"access_token":null,"expires_in":3600}"#,
-        r#"{"access_token":7,"expires_in":3600}"#,
-        r#"{"access_token":["abc"],"expires_in":3600}"#,
-        "{}",
+        (r#"{"expires_in":3600}"#, "access_token"),
+        (r#"{"access_token":"","expires_in":3600}"#, "access_token"),
+        (r#"{"access_token":null,"expires_in":3600}"#, "access_token"),
+        (r#"{"access_token":7,"expires_in":3600}"#, "access_token"),
+        (
+            r#"{"access_token":["abc"],"expires_in":3600}"#,
+            "access_token",
+        ),
+        ("{}", "access_token"),
+        (r#"{"access_token":"abc"}"#, "expires_in"),
+        (r#"{"access_token":"abc","expires_in":null}"#, "expires_in"),
+        (
+            r#"{"access_token":"abc","expires_in":"3600"}"#,
+            "expires_in",
+        ),
+        (r#"{"access_token":"abc","expires_in":true}"#, "expires_in"),
     ];
-    for body in table {
-        assert_eq!(
-            decoded(body.as_bytes()),
-            Decoded::Invalid("access_token"),
-            "{body}"
-        );
-    }
-}
-
-fn rejected_expiry() {
-    let table = [
-        r#"{"access_token":"abc"}"#,
-        r#"{"access_token":"abc","expires_in":null}"#,
-        r#"{"access_token":"abc","expires_in":"3600"}"#,
-        r#"{"access_token":"abc","expires_in":true}"#,
-    ];
-    for body in table {
-        assert_eq!(
-            decoded(body.as_bytes()),
-            Decoded::Invalid("expires_in"),
-            "{body}"
-        );
+    for (body, field) in table {
+        assert_eq!(decoded(body.as_bytes()), Decoded::Invalid(field), "{body}");
     }
 }
 
