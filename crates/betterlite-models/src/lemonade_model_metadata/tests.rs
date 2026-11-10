@@ -234,8 +234,10 @@ fn positive_token_limits() {
 
 fn positive_int_values() {
     let values: &[(&str, Option<u64>)] = &[
+        ("1", Some(1)),
         ("7", Some(7)),
         ("0", None),
+        ("18446744073709551616", None),
         ("-1", None),
         ("3.0", None),
         ("true", None),
@@ -243,8 +245,10 @@ fn positive_int_values() {
         ("null", None),
         ("[]", None),
         ("{}", None),
+        (r#""1""#, Some(1)),
         (r#""7""#, Some(7)),
         (r#""  +42  ""#, Some(42)),
+        (r#""18446744073709551616""#, None),
         (r#""007""#, Some(7)),
         (r#""1_000""#, Some(1000)),
         (r#""-5""#, None),
