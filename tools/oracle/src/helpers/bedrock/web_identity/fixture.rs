@@ -19,7 +19,7 @@ use betterlite_bedrock::aws_endpoints::sts::{StsClientKwargs, StsSettings, sts_c
 use betterlite_bedrock::aws_settings::sources::NativeSources;
 use betterlite_config::tls::Verification;
 use serde_json::{Value, json};
-use url::{Url, form_urlencoded};
+use url::form_urlencoded;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct Record(Arc<Mutex<Vec<Value>>>);
@@ -59,6 +59,12 @@ fn refused(message: &'static str) -> HttpConnectorFuture {
     )))
 }
 
+fn access_key(request: &HttpRequest) -> Option<String> {
+    let authorization = request.headers().get("authorization")?;
+    let credential = authorization.split("Credential=").nth(1)?;
+    credential.split('/').next().map(str::to_owned)
+}
+
 fn form_fields(request: &HttpRequest) -> BTreeMap<String, String> {
     let body = request.body().bytes().unwrap_or_default();
     form_urlencoded::parse(body)
@@ -66,39 +72,18 @@ fn form_fields(request: &HttpRequest) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn credential_scope(request: &HttpRequest) -> Vec<String> {
-    let authorization = request.headers().get("authorization").unwrap_or_default();
-    authorization
-        .split("Credential=")
-        .nth(1)
-        .and_then(|credential| credential.split(',').next())
-        .map(|credential| credential.split('/').map(str::to_owned).collect())
-        .unwrap_or_default()
-}
-
-fn tags_json(fields: &BTreeMap<String, String>) -> Value {
-    let mut tags = Vec::new();
-    let mut position = 1_usize;
-    loop {
-        let key = fields.get(&format!("Tags.member.{position}.Key"));
-        let value = fields.get(&format!("Tags.member.{position}.Value"));
-        let (Some(found_key), Some(found_value)) = (key, value) else {
-            break;
-        };
-        tags.push(json!([found_key, found_value]));
-        position = position.saturating_add(1);
-    }
-    if tags.is_empty() {
-        Value::Null
-    } else {
-        json!(tags)
-    }
-}
-
 impl HttpConnector for Transport {
     fn call(&self, request: HttpRequest) -> HttpConnectorFuture {
-        let action = self.record_call(&request);
-        let Some(answer) = self.answers.get(&action) else {
+        let fields = form_fields(&request);
+        self.record.add(json!({
+            "form": fields,
+            "access_key_id": access_key(&request),
+            "session_token": request.headers().get("x-amz-security-token"),
+        }));
+        let Some(answer) = fields
+            .get("Action")
+            .and_then(|action| self.answers.get(action))
+        else {
             return refused("the fixture has no answer for this action");
         };
         let Ok(status) = StatusCode::try_from(answer.status) else {
@@ -108,33 +93,6 @@ impl HttpConnector for Transport {
             status,
             SdkBody::from(answer.body.clone()),
         )))
-    }
-}
-
-impl Transport {
-    fn record_call(&self, request: &HttpRequest) -> String {
-        let fields = form_fields(request);
-        let scope = credential_scope(request);
-        let action = fields.get("Action").cloned().unwrap_or_default();
-        let endpoint = Url::parse(request.uri())
-            .ok()
-            .and_then(|parsed| parsed.host_str().map(str::to_owned));
-        let text = |name: &str| fields.get(name).map_or(Value::Null, |value| json!(value));
-        self.record.add(json!({
-            "action": action,
-            "access_key_id": scope.first().map_or(Value::Null, |value| json!(value)),
-            "session_token": request.headers().get("x-amz-security-token").map_or(Value::Null, |value| json!(value)),
-            "region": scope.get(2).map_or(Value::Null, |value| json!(value)),
-            "endpoint": endpoint.map_or(Value::Null, |value| json!(value)),
-            "role_arn": text("RoleArn"),
-            "session_name": text("RoleSessionName"),
-            "web_identity_token": text("WebIdentityToken"),
-            "duration_seconds": fields.get("DurationSeconds").and_then(|value| value.parse::<i64>().ok()).map_or(Value::Null, |value| json!(value)),
-            "policy": text("Policy"),
-            "external_id": text("ExternalId"),
-            "tags": tags_json(&fields),
-        }));
-        action
     }
 }
 

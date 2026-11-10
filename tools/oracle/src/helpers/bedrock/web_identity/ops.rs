@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
+use betterlite_bedrock::aws_settings::AwsSessionTag;
 use betterlite_bedrock::web_identity::auth::{WebIdentityAuth, auth_with_web_identity_token};
 use betterlite_bedrock::web_identity::claims::decode_web_identity_claims;
 use betterlite_bedrock::web_identity::error::WebIdentityError;
@@ -10,11 +11,9 @@ use betterlite_bedrock::web_identity::irsa::{
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-use super::answers::{
-    assume_role_answer, credentials_xml, identity_answer, tags_of, web_identity_answer,
-};
+use super::answers::{assume_role_answer, credentials_xml, denied_identity, web_identity_answer};
 use super::fixture::{self, Answer, Record, Transport};
-use super::input::{CrossAccountCase, Input, SameAccountCase, WebIdentityCase, WebIdentityReply};
+use super::input::{CrossAccountCase, Input, ReplyTag, SameAccountCase, WebIdentityCase};
 use super::ports;
 use crate::helpers::{HelperError, HelperResult};
 
@@ -98,19 +97,29 @@ const fn expiration_epoch(response: &StsResponse) -> i64 {
     }
 }
 
-fn web_identity_transport(reply: &WebIdentityReply) -> Transport {
-    Transport {
-        answers: BTreeMap::from([(
-            "AssumeRoleWithWebIdentity".to_owned(),
-            web_identity_answer(reply),
-        )]),
+fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
+    tags.iter()
+        .map(|tag| AwsSessionTag {
+            key: tag.key.clone(),
+            value: tag.value.clone(),
+        })
+        .collect()
+}
+
+fn transport_of(answers: BTreeMap<String, Answer>) -> (Transport, Record) {
+    let transport = Transport {
+        answers,
         record: Record::default(),
-    }
+    };
+    let record = transport.record.clone();
+    (transport, record)
 }
 
 fn web_identity(case: &WebIdentityCase) -> HelperResult {
-    let transport = web_identity_transport(&case.reply);
-    let record = transport.record.clone();
+    let (transport, record) = transport_of(BTreeMap::from([(
+        "AssumeRoleWithWebIdentity".to_owned(),
+        web_identity_answer(&case.reply),
+    )]));
     let native = fixture::sources(&case.environment, &[], transport);
     let secrets = ports::secrets(case.resolved_token.as_deref());
     let kwargs = fixture::kwargs(
@@ -147,11 +156,10 @@ fn web_identity(case: &WebIdentityCase) -> HelperResult {
 }
 
 fn same_account_irsa(case: &SameAccountCase) -> HelperResult {
-    let transport = Transport {
-        answers: same_account_answers(case),
-        record: Record::default(),
-    };
-    let record = transport.record.clone();
+    let (transport, record) = transport_of(BTreeMap::from([
+        ("GetCallerIdentity".to_owned(), denied_identity()),
+        ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
+    ]));
     let native = fixture::sources(&case.environment, &[], transport);
     let kwargs = fixture::kwargs(
         &case.environment,
@@ -178,22 +186,25 @@ fn same_account_irsa(case: &SameAccountCase) -> HelperResult {
     }))
 }
 
-fn same_account_answers(case: &SameAccountCase) -> BTreeMap<String, Answer> {
+fn cross_answers(case: &CrossAccountCase) -> BTreeMap<String, Answer> {
     BTreeMap::from([
         (
-            "GetCallerIdentity".to_owned(),
-            identity_answer(&case.identity),
+            "AssumeRoleWithWebIdentity".to_owned(),
+            Answer {
+                status: 200,
+                body: format!(
+                    "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
+                    credentials_xml(&case.irsa_reply)
+                ),
+            },
         ),
+        ("GetCallerIdentity".to_owned(), denied_identity()),
         ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
     ])
 }
 
 fn cross_account_irsa(case: &CrossAccountCase) -> HelperResult {
-    let transport = Transport {
-        answers: cross_account_answers(case),
-        record: Record::default(),
-    };
-    let record = transport.record.clone();
+    let (transport, record) = transport_of(cross_answers(case));
     let files = [(
         case.token_file.path.clone(),
         case.token_file.content.as_bytes().to_vec(),
@@ -224,24 +235,4 @@ fn cross_account_irsa(case: &CrossAccountCase) -> HelperResult {
         "credentials": credentials_json(&response),
         "expiration": expiration_epoch(&response),
     }))
-}
-
-fn cross_account_answers(case: &CrossAccountCase) -> BTreeMap<String, Answer> {
-    BTreeMap::from([
-        (
-            "AssumeRoleWithWebIdentity".to_owned(),
-            Answer {
-                status: 200,
-                body: format!(
-                    "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
-                    credentials_xml(&case.irsa_reply)
-                ),
-            },
-        ),
-        (
-            "GetCallerIdentity".to_owned(),
-            identity_answer(&case.identity),
-        ),
-        ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
-    ])
 }

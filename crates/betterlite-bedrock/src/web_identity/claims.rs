@@ -1,7 +1,15 @@
+use base64::alphabet;
+use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::{DecodePaddingMode, Engine as _};
 use serde::Deserialize;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const ENGINE: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_allow_trailing_bits(true)
+        .with_decode_padding_mode(DecodePaddingMode::RequireCanonical),
+);
 
 #[derive(Debug, Deserialize)]
 struct Claims {
@@ -50,7 +58,7 @@ fn audience_repr(value: &Audience) -> String {
     }
 }
 
-// Python's repr picks the quote from the content and escapes what str.isprintable rejects
+// the aud/iss diagnostic prints Python's repr, so the quote and escapes follow str repr
 fn claim_repr(text: &str) -> String {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -102,37 +110,41 @@ fn hex_escape(character: char) -> String {
 
 // Python's non-strict urlsafe_b64decode drops non-alphabet chars and starts padding from the raw length
 pub(super) fn decode_base64(payload: &str) -> Option<Vec<u8>> {
-    let symbols = base64_symbols(payload)?;
+    let mut symbols = base64_symbols(payload)?;
     let remainder = symbols.len().checked_rem(4).unwrap_or(0);
-    let needed = match remainder {
-        2 => 2_usize,
-        3 => 1_usize,
-        _ => 0_usize,
-    };
-    let added = match remainder {
+    let (needed, added) = match remainder {
         1 => return None,
-        2 => 2_usize,
-        3 => 1_usize,
-        _ => 0_usize,
+        2 => (2_usize, added_padding(payload.len())),
+        3 => (1_usize, added_padding(payload.len())),
+        _ => (0_usize, added_padding(payload.len())),
     };
     if padding_tail(payload).saturating_add(added) < needed {
         return None;
     }
-    base64_bytes(&symbols)
+    while symbols.len().checked_rem(4).unwrap_or(0) != 0 {
+        symbols.push('=');
+    }
+    ENGINE.decode(symbols).ok()
 }
 
-fn base64_symbols(payload: &str) -> Option<Vec<u8>> {
-    let mut symbols = Vec::new();
+const fn added_padding(payload_len: usize) -> usize {
+    match payload_len.checked_rem(4) {
+        Some(1) => 3,
+        Some(2) => 2,
+        Some(3) => 1,
+        _ => 0,
+    }
+}
+
+fn base64_symbols(payload: &str) -> Option<String> {
+    let mut symbols = String::new();
     for character in payload.chars() {
-        let mapped = match character {
-            '-' => '+',
-            '_' => '/',
-            '\u{0}'..='\u{7f}' => character,
+        match character {
+            '-' => symbols.push('+'),
+            '_' => symbols.push('/'),
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '+' | '/' => symbols.push(character),
+            '\u{0}'..='\u{7f}' => {}
             _ => return None,
-        };
-        let byte = u8::try_from(u32::from(mapped)).ok()?;
-        if let Some(index) = ALPHABET.iter().position(|candidate| *candidate == byte) {
-            symbols.push(u8::try_from(index).ok()?);
         }
     }
     Some(symbols)
@@ -150,26 +162,4 @@ fn padding_tail(payload: &str) -> usize {
         }
     }
     pads
-}
-
-fn base64_bytes(symbols: &[u8]) -> Option<Vec<u8>> {
-    let capacity = symbols
-        .len()
-        .checked_div(4)
-        .unwrap_or(0)
-        .saturating_mul(3)
-        .saturating_add(3);
-    let mut bytes = Vec::with_capacity(capacity);
-    let mut bits = 0_u32;
-    let mut count = 0_u32;
-    for symbol in symbols {
-        bits = bits.checked_shl(6).unwrap_or(0) | u32::from(*symbol);
-        count = count.saturating_add(6);
-        if count >= 8 {
-            count = count.saturating_sub(8);
-            let shifted = bits.checked_shr(count).unwrap_or(0) & 0xff_u32;
-            bytes.push(u8::try_from(shifted).ok()?);
-        }
-    }
-    Some(bytes)
 }
