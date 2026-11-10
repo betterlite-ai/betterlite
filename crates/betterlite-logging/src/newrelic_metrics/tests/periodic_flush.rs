@@ -11,6 +11,7 @@ async fn periodic_flush_sends_a_batch_every_flush_interval() {
     pause();
     let fixture = Fixture::new_with_replies(&[Reply::Status(202), Reply::Status(202)]);
     let logger = fixture.build();
+    yield_now().await;
     push_record(&logger, record_at(0));
     advance(Duration::from_secs(5)).await;
     yield_now().await;

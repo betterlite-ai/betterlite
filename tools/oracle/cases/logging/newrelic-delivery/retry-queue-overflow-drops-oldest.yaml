@@ -6,19 +6,19 @@ call:
     replies: [{status: 408}]
     clock: [1700000000.0, 1700000000.5]
     during_send:
-      - team_id: team-1
-        team_alias: Team One
-        model_group: production
-        model: gpt-10
-        custom_llm_provider: openai
-        status: success
-        response_cost: 0.5
-        prompt_tokens: 2
-        completion_tokens: 3
-        total_tokens: 5
-        duration_ms: 500.0
-        team_max_budget: null
-        team_spend: null
+      team_id: team-1
+      team_alias: Team One
+      model_group: production
+      model: gpt-10
+      custom_llm_provider: openai
+      status: success
+      response_cost: 0.5
+      prompt_tokens: 2
+      completion_tokens: 3
+      total_tokens: 5
+      duration_ms: 500.0
+      team_max_budget: null
+      team_spend: null
     records:
       - team_id: team-1
         team_alias: Team One
