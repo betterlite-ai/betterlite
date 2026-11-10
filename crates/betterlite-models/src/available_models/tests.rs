@@ -233,7 +233,7 @@ fn parameter_creation_and_explicit_mutation() {
 }
 
 #[test]
-fn provider_key_names_presence_including_empty() {
+fn provider_key_names_presence_and_order() {
     let environment = snapshot(&[
         ("OPENAI_API_KEY", ""),
         ("ANTHROPIC_API_KEY", "sk-anthropic"),
@@ -267,6 +267,26 @@ fn provider_key_names_presence_including_empty() {
         outcome.models,
         models(&["o1", "o2", "a1", "t1", "j1", AZURE_MODEL, "o1", "o2"])
     );
+}
+
+#[test]
+fn provider_key_presence_including_empty() {
+    let empty = snapshot(&[("OPENAI_API_KEY", "")]);
+    let absent = snapshot(&[("COHERE_API_KEY", "sk-cohere")]);
+    let provider_list = [ProviderId::Openai, ProviderId::Cohere];
+    let catalog = catalog(&[(ProviderId::Openai, &["o1"]), (ProviderId::Cohere, &["c1"])]);
+    let with_empty = get_valid_models(
+        &request(&provider_list, &catalog, &empty),
+        &mut cache(),
+        &ListingScript::default(),
+    );
+    assert_eq!(with_empty.models, models(&["o1"]));
+    let without_key = get_valid_models(
+        &request(&provider_list, &catalog, &absent),
+        &mut cache(),
+        &ListingScript::default(),
+    );
+    assert_eq!(without_key.models, models(&["c1"]));
 }
 
 #[test]
@@ -342,7 +362,11 @@ fn unsupported_provider_outer_warn_drops_all(#[case] name: &str) {
 
 #[test]
 fn endpoint_error_warn_keeps_later_providers() {
-    let environment = snapshot(&[("OPENAI_API_KEY", "sk"), ("ANTHROPIC_API_KEY", "sk-a")]);
+    let environment = snapshot(&[
+        ("OPENAI_API_KEY", "sk"),
+        ("ANTHROPIC_API_KEY", "sk-a"),
+        ("COHERE_API_KEY", "sk-c"),
+    ]);
     let provider_list = [
         ProviderId::Openai,
         ProviderId::Anthropic,
@@ -445,7 +469,7 @@ fn cache_copy_on_read_write() {
 #[case::different_key("m", Some("key-two"), None, None)]
 #[case::different_base("m", Some("key-one"), Some("https://base"), None)]
 #[case::different_api_version("m", Some("key-one"), None, Some("2024-01-01"))]
-fn full_params_cache_isolation(
+fn full_params_provider_cache_isolation(
     #[case] model: &str,
     #[case] key: Option<&str>,
     #[case] base: Option<&str>,
