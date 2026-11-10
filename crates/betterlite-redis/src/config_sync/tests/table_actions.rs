@@ -6,9 +6,7 @@ use super::support::{
     Journal, RecordingTable, failing_publisher, recording_publisher, redis_cache,
 };
 use crate::config_sync::publish::redis_config_change_publisher;
-use crate::config_sync::table_actions::{
-    SyncedActions, TableActions as _, wrap_table_actions_for_config_sync,
-};
+use crate::config_sync::table_actions::{TableActions as _, wrap_table_actions_for_config_sync};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
 #[tokio::test]
@@ -177,7 +175,7 @@ async fn every_synced_table_publishes_its_own_name(#[case] table_name: &'static 
     let actions = RecordingTable::recording(&journal);
     let wrapped =
         wrap_table_actions_for_config_sync(actions, table_name, recording_publisher(&journal));
-    assert!(matches!(wrapped, SyncedActions::Wrapped(_)));
+    assert!(wrapped.sync.is_some());
     assert_eq!(wrapped.create("row").await, Ok(1));
     let publish = format!("publish:{table_name}");
     assert_eq!(journal.entries(), ["create:row", publish.as_str()]);
@@ -189,12 +187,12 @@ async fn every_synced_table_publishes_its_own_name(#[case] table_name: &'static 
 #[case::config("litellm_config")]
 #[case::uppercase("LITELLM_PROXYMODELTABLE")]
 #[tokio::test]
-async fn a_table_outside_the_allowlist_is_returned_unwrapped(#[case] table_name: &'static str) {
+async fn a_table_outside_the_allowlist_has_no_publish_target(#[case] table_name: &'static str) {
     let journal = Journal::default();
     let actions = RecordingTable::recording(&journal);
     let wrapped =
         wrap_table_actions_for_config_sync(actions, table_name, recording_publisher(&journal));
-    assert!(matches!(wrapped, SyncedActions::Unwrapped(_)));
+    assert!(wrapped.sync.is_none());
     assert_eq!(wrapped.create("row").await, Ok(1));
     assert_eq!(journal.entries(), ["create:row"]);
 }

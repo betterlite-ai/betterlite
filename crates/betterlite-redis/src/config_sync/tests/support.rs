@@ -265,6 +265,11 @@ impl RecordingTable {
         }
         Ok(value)
     }
+
+    fn record_and<T>(&self, entry: &str, value: T) -> Result<T, &'static str> {
+        self.journal.record(entry);
+        self.outcome(value)
+    }
 }
 
 impl TableActions for RecordingTable {
@@ -278,16 +283,14 @@ impl TableActions for RecordingTable {
         &self,
         data: Self::CreateData,
     ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        self.journal.record(&format!("create:{data}"));
-        ready(self.outcome(1))
+        ready(self.record_and(&format!("create:{data}"), 1))
     }
 
     fn create_many(
         &self,
         data: Vec<Self::CreateData>,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        self.journal.record(&format!("create_many:{}", data.len()));
-        ready(self.outcome(data.len()))
+        ready(self.record_and(&format!("create_many:{}", data.len()), data.len()))
     }
 
     fn update(
@@ -295,8 +298,7 @@ impl TableActions for RecordingTable {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        self.journal.record(&format!("update:{data}:{filter}"));
-        ready(self.outcome(Some(2)))
+        ready(self.record_and(&format!("update:{data}:{filter}"), Some(2)))
     }
 
     fn update_many(
@@ -304,8 +306,7 @@ impl TableActions for RecordingTable {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        self.journal.record(&format!("update_many:{data}:{filter}"));
-        ready(self.outcome(0))
+        ready(self.record_and(&format!("update_many:{data}:{filter}"), 0))
     }
 
     fn upsert(
@@ -313,24 +314,21 @@ impl TableActions for RecordingTable {
         filter: Self::Filter,
         data: Self::CreateData,
     ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        self.journal.record(&format!("upsert:{filter}:{data}"));
-        ready(self.outcome(3))
+        ready(self.record_and(&format!("upsert:{filter}:{data}"), 3))
     }
 
     fn delete(
         &self,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        self.journal.record(&format!("delete:{filter}"));
-        ready(self.outcome(None))
+        ready(self.record_and(&format!("delete:{filter}"), None))
     }
 
     fn delete_many(
         &self,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        self.journal.record(&format!("delete_many:{filter}"));
-        ready(self.outcome(0))
+        ready(self.record_and(&format!("delete_many:{filter}"), 0))
     }
 }
 

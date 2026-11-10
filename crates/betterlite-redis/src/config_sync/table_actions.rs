@@ -49,16 +49,37 @@ pub trait TableActions: Send + Sync {
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send;
 }
 
-pub struct WrappedTableActions<A>
+pub struct ConfigSyncTarget<F> {
+    pub object_type: &'static str,
+    pub publish: PublishChange<F>,
+}
+
+pub struct ConfigSyncTableActions<A>
 where
     A: TableActions,
 {
     pub actions: A,
-    pub object_type: &'static str,
-    pub publish: PublishChange<A::Failure>,
+    pub sync: Option<ConfigSyncTarget<A::Failure>>,
 }
 
-impl<A> TableActions for WrappedTableActions<A>
+impl<A> ConfigSyncTableActions<A>
+where
+    A: TableActions,
+{
+    async fn finish<T, F>(&self, action: F) -> Result<T, A::Failure>
+    where
+        T: Send,
+        F: Future<Output = Result<T, A::Failure>> + Send,
+    {
+        let value = action.await?;
+        if let Some(sync) = &self.sync {
+            (sync.publish)(sync.object_type).await?;
+        }
+        Ok(value)
+    }
+}
+
+impl<A> TableActions for ConfigSyncTableActions<A>
 where
     A: TableActions,
 {
@@ -69,15 +90,11 @@ where
     type Failure = A::Failure;
 
     async fn create(&self, data: Self::CreateData) -> Result<Self::Row, Self::Failure> {
-        let row = self.actions.create(data).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(row)
+        self.finish(self.actions.create(data)).await
     }
 
     async fn create_many(&self, data: Vec<Self::CreateData>) -> Result<usize, Self::Failure> {
-        let written = self.actions.create_many(data).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(written)
+        self.finish(self.actions.create_many(data)).await
     }
 
     async fn update(
@@ -85,9 +102,7 @@ where
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<Option<Self::Row>, Self::Failure> {
-        let row = self.actions.update(data, filter).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(row)
+        self.finish(self.actions.update(data, filter)).await
     }
 
     async fn update_many(
@@ -95,9 +110,7 @@ where
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<usize, Self::Failure> {
-        let written = self.actions.update_many(data, filter).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(written)
+        self.finish(self.actions.update_many(data, filter)).await
     }
 
     async fn upsert(
@@ -105,113 +118,24 @@ where
         filter: Self::Filter,
         data: Self::CreateData,
     ) -> Result<Self::Row, Self::Failure> {
-        let row = self.actions.upsert(filter, data).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(row)
+        self.finish(self.actions.upsert(filter, data)).await
     }
 
     async fn delete(&self, filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
-        let row = self.actions.delete(filter).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(row)
+        self.finish(self.actions.delete(filter)).await
     }
 
     async fn delete_many(&self, filter: Self::Filter) -> Result<usize, Self::Failure> {
-        let written = self.actions.delete_many(filter).await?;
-        (self.publish)(self.object_type).await?;
-        Ok(written)
+        self.finish(self.actions.delete_many(filter)).await
     }
 }
 
-pub enum SyncedActions<A>
-where
-    A: TableActions,
-{
-    Unwrapped(A),
-    Wrapped(WrappedTableActions<A>),
-}
-
-impl<A> TableActions for SyncedActions<A>
-where
-    A: TableActions,
-{
-    type Row = A::Row;
-    type Filter = A::Filter;
-    type CreateData = A::CreateData;
-    type UpdateData = A::UpdateData;
-    type Failure = A::Failure;
-
-    async fn create(&self, data: Self::CreateData) -> Result<Self::Row, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.create(data).await,
-            Self::Wrapped(wrapped) => wrapped.create(data).await,
-        }
-    }
-
-    async fn create_many(&self, data: Vec<Self::CreateData>) -> Result<usize, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.create_many(data).await,
-            Self::Wrapped(wrapped) => wrapped.create_many(data).await,
-        }
-    }
-
-    async fn update(
-        &self,
-        data: Self::UpdateData,
-        filter: Self::Filter,
-    ) -> Result<Option<Self::Row>, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.update(data, filter).await,
-            Self::Wrapped(wrapped) => wrapped.update(data, filter).await,
-        }
-    }
-
-    async fn update_many(
-        &self,
-        data: Self::UpdateData,
-        filter: Self::Filter,
-    ) -> Result<usize, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.update_many(data, filter).await,
-            Self::Wrapped(wrapped) => wrapped.update_many(data, filter).await,
-        }
-    }
-
-    async fn upsert(
-        &self,
-        filter: Self::Filter,
-        data: Self::CreateData,
-    ) -> Result<Self::Row, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.upsert(filter, data).await,
-            Self::Wrapped(wrapped) => wrapped.upsert(filter, data).await,
-        }
-    }
-
-    async fn delete(&self, filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.delete(filter).await,
-            Self::Wrapped(wrapped) => wrapped.delete(filter).await,
-        }
-    }
-
-    async fn delete_many(&self, filter: Self::Filter) -> Result<usize, Self::Failure> {
-        match self {
-            Self::Unwrapped(actions) => actions.delete_many(filter).await,
-            Self::Wrapped(wrapped) => wrapped.delete_many(filter).await,
-        }
-    }
-}
-
-impl<A> AsRef<A> for SyncedActions<A>
+impl<A> AsRef<A> for ConfigSyncTableActions<A>
 where
     A: TableActions,
 {
     fn as_ref(&self) -> &A {
-        match self {
-            Self::Unwrapped(actions) => actions,
-            Self::Wrapped(wrapped) => &wrapped.actions,
-        }
+        &self.actions
     }
 }
 
@@ -221,19 +145,16 @@ pub fn wrap_table_actions_for_config_sync<A>(
     actions: A,
     table_name: &str,
     publish: PublishChange<A::Failure>,
-) -> SyncedActions<A>
+) -> ConfigSyncTableActions<A>
 where
     A: TableActions,
 {
-    let synced = SyncedTable::ALL
+    let sync = SyncedTable::ALL
         .iter()
-        .find(|table| table.name() == table_name);
-    match synced {
-        Some(table) => SyncedActions::Wrapped(WrappedTableActions {
-            actions,
+        .find(|table| table.name() == table_name)
+        .map(|table| ConfigSyncTarget {
             object_type: table.name(),
             publish,
-        }),
-        None => SyncedActions::Unwrapped(actions),
-    }
+        });
+    ConfigSyncTableActions { actions, sync }
 }

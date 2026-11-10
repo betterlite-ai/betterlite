@@ -9,13 +9,14 @@ deviations:
       the wiring task passes the same coordination RedisCache LiteLLM reads from the global.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-L122
   - what: >-
-      The write wrapper is a typed trait over the seven write methods instead of a dynamic
+      The write wrapper is a typed adapter over the seven write methods instead of a dynamic
       attribute proxy, and a repository reaches reads and every other method through
-      `AsRef<A>` on the returned actions. A table outside the allowlist returns the original
-      actions in the unwrapped variant.
+      `AsRef<A>` on the adapter. A table outside the allowlist gets an adapter whose
+      publication target is absent, so its writes take no publish step and never reach
+      Redis, rather than the original actions object LiteLLM returns.
     why: >-
       Rust has no attribute proxy over typed methods; the trait keeps every intercepted write
-      checked at compile time, and reads never cross the wrapper.
+      checked at compile time, and reads never cross the adapter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L125-L160
   - what: >-
       betterlite skips parsing and validation of the published pubsub message body, matching
