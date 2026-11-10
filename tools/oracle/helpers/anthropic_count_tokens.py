@@ -72,7 +72,7 @@ class Provider:
         body: Json = None if not content else cast(Json, json.loads(content))
         self.calls.append(
             {
-                "url": str(request.url),
+                "url": f"{request.url.scheme}://{request.url.netloc.decode()}{request.url.raw_path.decode()}",
                 "timeout": float(timeout["read"]),
                 "headers": {name.lower(): value for name, value in request.headers.items()},
                 "body": body,

@@ -152,7 +152,7 @@ async fn verbatim_endpoint() {
     )
     .await;
     custom_outcome.unwrap();
-    assert_eq!(custom.url, "http://custom.example");
+    assert_eq!(custom.url, "http://custom.example/");
 }
 
 async fn explicit_timeouts() {
