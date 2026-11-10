@@ -98,33 +98,36 @@ fn registry_projection(registry: &EndpointRegistry) -> Value {
 
 fn model_infos(input: &Input) -> HelperResult {
     let catalog = BundledCatalog::default().get();
-    let mut results = Vec::with_capacity(input.queries.len());
-    for query in &input.queries {
-        let typed = ModelQuery {
-            model: &query.model,
-            provider: query.provider.as_deref(),
-        };
-        let resolved = find_info(&catalog, &BEDROCK_NAMES, &typed)
-            .map_err(|error| helper_error(error.to_string()))?
-            .ok_or_else(|| helper_error(ModelInfoError::unmapped(&typed).to_string()))?;
-        let capabilities = resolved.capabilities;
-        results.push(json!({
-            "key": resolved.key,
-            "provider": resolved.provider,
-            "mode": resolved.mode,
-            "max_tokens": resolved.limits.max_tokens,
-            "max_input_tokens": resolved.limits.max_input_tokens,
-            "max_output_tokens": resolved.limits.max_output_tokens,
-            "supports_vision": capabilities.supports_vision,
-            "supports_function_calling": capabilities.supports_function_calling,
-            "supports_tool_choice": capabilities.supports_tool_choice,
-            "supports_response_schema": capabilities.supports_response_schema,
-            "supports_prompt_caching": capabilities.supports_prompt_caching,
-            "supports_reasoning": capabilities.supports_reasoning,
-            "supports_web_search": capabilities.supports_web_search,
-            "supports_pdf_input": capabilities.supports_pdf_input,
-        }));
-    }
+    let results = input
+        .queries
+        .iter()
+        .map(|query| {
+            let typed = ModelQuery {
+                model: &query.model,
+                provider: query.provider.as_deref(),
+            };
+            let resolved = find_info(&catalog, &BEDROCK_NAMES, &typed)
+                .map_err(|error| helper_error(error.to_string()))?
+                .ok_or_else(|| helper_error(ModelInfoError::unmapped(&typed).to_string()))?;
+            let capabilities = resolved.capabilities;
+            Ok(json!({
+                "key": resolved.key,
+                "provider": resolved.provider,
+                "mode": resolved.mode,
+                "max_tokens": resolved.limits.max_tokens,
+                "max_input_tokens": resolved.limits.max_input_tokens,
+                "max_output_tokens": resolved.limits.max_output_tokens,
+                "supports_vision": capabilities.supports_vision,
+                "supports_function_calling": capabilities.supports_function_calling,
+                "supports_tool_choice": capabilities.supports_tool_choice,
+                "supports_response_schema": capabilities.supports_response_schema,
+                "supports_prompt_caching": capabilities.supports_prompt_caching,
+                "supports_reasoning": capabilities.supports_reasoning,
+                "supports_web_search": capabilities.supports_web_search,
+                "supports_pdf_input": capabilities.supports_pdf_input,
+            }))
+        })
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(json!({"results": results}))
 }
 
