@@ -1,8 +1,6 @@
-use betterlite_models::decisions::Json;
-
 use super::support::as_object_mut;
 use crate::spend_sanitize::REDACTED_BY_LITELM;
-
+use betterlite_models::decisions::Json;
 pub fn redact_vector_store(requests: &mut [Json], store_bodies: bool) {
     if store_bodies {
         return;
@@ -11,7 +9,6 @@ pub fn redact_vector_store(requests: &mut [Json], store_bodies: bool) {
         redact_request(request);
     }
 }
-
 fn redact_request(request: &mut Json) {
     let Some(stored_request) = as_object_mut(request) else {
         return;
@@ -29,7 +26,6 @@ fn redact_request(request: &mut Json) {
         redact_response_item(response_item);
     }
 }
-
 fn redact_response_item(response_item: &mut Json) {
     let Some(stored_item) = as_object_mut(response_item) else {
         return;

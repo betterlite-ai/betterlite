@@ -1,9 +1,7 @@
-use betterlite_models::decisions::Json;
-
 use super::support::{Fields, as_object};
 use crate::spend_sanitize::UNKNOWN_MODEL;
 use crate::spend_sanitize::raw_model::scrub_raw_model_text;
-
+use betterlite_models::decisions::Json;
 #[must_use]
 pub fn placeholder_request_body(litellm_params: &Json, model_group: &str, raw_model: &str) -> Json {
     let Some(params) = as_object(litellm_params) else {
@@ -30,7 +28,6 @@ pub fn placeholder_request_body(litellm_params: &Json, model_group: &str, raw_mo
     );
     Json::Object(stored_params)
 }
-
 #[must_use]
 pub fn placeholder_request_metadata(
     request_body: &Json,
@@ -50,7 +47,6 @@ pub fn placeholder_request_metadata(
     }
     request_body.clone()
 }
-
 fn replaced_metadata(metadata: &Fields, model_group: &str, raw_model: &str) -> Json {
     let mut entries = metadata.clone();
     if entries.contains_key("model_group") {
@@ -64,7 +60,6 @@ fn replaced_metadata(metadata: &Fields, model_group: &str, raw_model: &str) -> J
     }
     Json::Object(entries)
 }
-
 fn scrub_error_information(information: &Fields, raw_model: &str) -> Fields {
     let mut entries = Fields::with_capacity(information.len());
     for (key, value) in information {

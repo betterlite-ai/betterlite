@@ -1,18 +1,14 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-
 use super::support::Fields;
 use crate::spend_sanitize::value::SpendValue;
-
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 pub const CLASSIFIER_AUDIT_FIELDS: [&str; 2] = ["classifier_input", "originating_request_masked"];
-
 #[derive(Clone, Copy)]
 pub enum SnapshotValue<'data> {
     Text(&'data str),
     Bytes(&'data [u8]),
     Value(&'data SpendValue),
 }
-
 #[must_use]
 pub fn classifier_input_snapshot(value: SnapshotValue<'_>, openai_sdk: bool) -> Option<Json> {
     match value {
@@ -30,7 +26,6 @@ pub fn classifier_input_snapshot(value: SnapshotValue<'_>, openai_sdk: bool) -> 
         },
     }
 }
-
 #[must_use]
 pub fn decode_classifier_snapshot(bytes: &[u8]) -> Option<Json> {
     let parsed: Json = serde_json::from_slice(bytes).ok()?;
@@ -39,7 +34,6 @@ pub fn decode_classifier_snapshot(bytes: &[u8]) -> Option<Json> {
     }
     None
 }
-
 fn json_object(bytes: &[u8]) -> Option<Json> {
     let parsed: Json = serde_json::from_slice(bytes).ok()?;
     if matches!(parsed, Json::Object(_)) {
@@ -47,7 +41,6 @@ fn json_object(bytes: &[u8]) -> Option<Json> {
     }
     None
 }
-
 fn value_object(value: &SpendValue, openai_sdk: bool) -> Option<Json> {
     let SpendValue::Mapping(mapping) = value else {
         return None;
@@ -68,7 +61,6 @@ fn value_object(value: &SpendValue, openai_sdk: bool) -> Option<Json> {
     }
     mapping_object(&body)
 }
-
 // pydantic's dict[str, JsonValue] rebuilds containers and rejects a value that is not JSON-native
 fn mapping_object(entries: &IndexMap<String, SpendValue>) -> Option<Json> {
     let mut rebuilt = IndexMap::with_capacity(entries.len());
@@ -77,7 +69,6 @@ fn mapping_object(entries: &IndexMap<String, SpendValue>) -> Option<Json> {
     }
     Some(Json::Object(rebuilt))
 }
-
 fn json_compatible(value: &SpendValue) -> Option<Json> {
     match value {
         SpendValue::Null => Some(Json::Null),
@@ -95,7 +86,6 @@ fn json_compatible(value: &SpendValue) -> Option<Json> {
         SpendValue::Model(_) | SpendValue::Object(_) => None,
     }
 }
-
 #[must_use]
 pub fn classifier_audit_fields(payload: &Fields) -> Fields {
     let mut audit = Fields::new();
@@ -110,7 +100,6 @@ pub fn classifier_audit_fields(payload: &Fields) -> Fields {
     }
     audit
 }
-
 // a JSON value is already JSON-native, so only a string must parse and only an object is accepted
 fn json_snapshot(value: &Json) -> Option<Json> {
     match value {
@@ -119,7 +108,6 @@ fn json_snapshot(value: &Json) -> Option<Json> {
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     }
 }
-
 #[must_use]
 pub fn without_classifier_audit(payload: &Fields) -> Fields {
     payload

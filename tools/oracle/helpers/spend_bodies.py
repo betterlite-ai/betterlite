@@ -15,7 +15,6 @@ from litellm.proxy.spend_tracking import spend_tracking_utils
 
 if TYPE_CHECKING:
     from litellm.types.utils import StandardLoggingPayload, StandardLoggingVectorStoreRequest
-
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 MICROS_PER_DAY = 86_400_000_000
@@ -65,39 +64,37 @@ def required(input_value: dict[str, Json], name: str) -> Json:
     return value
 
 
-def required_object(input_value: dict[str, Json], name: str) -> dict[str, Json]:
+def object_field(input_value: dict[str, Json], name: str) -> dict[str, Json]:
     return object_value(required(input_value, name), name)
 
 
-def required_list(input_value: dict[str, Json], name: str) -> list[Json]:
+def list_field(input_value: dict[str, Json], name: str) -> list[Json]:
     return list_value(required(input_value, name), name)
 
 
-def required_string(input_value: dict[str, Json], name: str) -> str:
+def string_field(input_value: dict[str, Json], name: str) -> str:
     return string_value(required(input_value, name), name)
 
 
-def required_int(input_value: dict[str, Json], name: str) -> int:
+def integer_field(input_value: dict[str, Json], name: str) -> int:
     return int_value(required(input_value, name), name)
 
 
-def required_bool(input_value: dict[str, Json], name: str) -> bool:
+def boolean_field(input_value: dict[str, Json], name: str) -> bool:
     return bool_value(required(input_value, name), name)
 
 
-def configure(
-    *, store_bodies: bool, max_string_length: int, turn_off_message_logging: bool
-) -> None:
+def configure(*, store_bodies: bool, max_string_length: int, turn_off: bool) -> None:
     proxy_server.general_settings["store_prompts_in_spend_logs"] = store_bodies  # pyright: ignore[reportUnknownMemberType]
-    litellm.turn_off_message_logging = turn_off_message_logging  # pyright: ignore[reportAttributeAccessIssue]
+    litellm.turn_off_message_logging = turn_off  # pyright: ignore[reportAttributeAccessIssue]
     os.environ[MAX_PROMPT_LENGTH_ENV] = str(max_string_length)
 
 
 def configure_body(input_value: dict[str, Json]) -> None:
     configure(
-        store_bodies=required_bool(input_value, "store_bodies"),
-        max_string_length=required_int(input_value, "max_string_length"),
-        turn_off_message_logging=required_bool(input_value, "turn_off_message_logging"),
+        store_bodies=boolean_field(input_value, "store_bodies"),
+        max_string_length=integer_field(input_value, "max_string_length"),
+        turn_off=boolean_field(input_value, "turn_off_message_logging"),
     )
 
 
@@ -134,12 +131,10 @@ def epoch_micros(moment: datetime) -> int:
 def storage_policy(input_value: dict[str, Json]) -> Json:
     config_value = input_value.get("config_value")
     env_value = nullable_string(input_value.get("env_value"), "env_value")
-    initial = nullable_string(
-        input_value.get("initial_max_string_length"), "initial_max_string_length"
-    )
+    initial = nullable_string(input_value.get("initial_max_string_length"), "initial")
     runtime_values = [
         nullable_string(item, "runtime_max_string_length")
-        for item in required_list(input_value, "runtime_max_string_lengths")
+        for item in list_field(input_value, "runtime_max_string_lengths")
     ]
     proxy_server.general_settings["store_prompts_in_spend_logs"] = config_value  # pyright: ignore[reportUnknownMemberType]
     if env_value is None:
@@ -162,7 +157,7 @@ def storage_policy(input_value: dict[str, Json]) -> Json:
 
 def body_storage(input_value: dict[str, Json]) -> Json:
     configure_body(input_value)
-    litellm_params = required_object(input_value, "litellm_params")
+    litellm_params = object_field(input_value, "litellm_params")
     response = spend_tracking_utils._get_response_for_spend_logs_payload(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
         payload=cast("StandardLoggingPayload", {"response": required(input_value, "response")}),
         kwargs=call_kwargs(input_value, litellm_params),
@@ -187,16 +182,20 @@ def body_storage(input_value: dict[str, Json]) -> Json:
 
 def classifier(input_value: dict[str, Json]) -> Json:
     configure_body(input_value)
-    litellm_params = required_object(input_value, "litellm_params")
+    litellm_params = object_field(input_value, "litellm_params")
     standard = input_value.get("standard_logging_object")
     snapshots: list[Json] = []
-    for spec in required_list(input_value, "snapshots"):
+    for spec in list_field(input_value, "snapshots"):
         spec_object = object_value(spec, "snapshot")
-        snapshot = classifier_logging.classifier_input_snapshot(
-            spec_object.get("value"),
-            openai_sdk=required_bool(spec_object, "openai_sdk"),
+        snapshots.append(
+            cast(
+                Json,
+                classifier_logging.classifier_input_snapshot(
+                    spec_object.get("value"),
+                    openai_sdk=boolean_field(spec_object, "openai_sdk"),
+                ),
+            )
         )
-        snapshots.append(cast(Json, snapshot))
     audit: Json = None
     without: Json = None
     if standard is not None:
@@ -216,11 +215,11 @@ def classifier(input_value: dict[str, Json]) -> Json:
 
 def vector_and_placeholder(input_value: dict[str, Json]) -> Json:
     configure(
-        store_bodies=required_bool(input_value, "store_bodies"),
+        store_bodies=boolean_field(input_value, "store_bodies"),
         max_string_length=2048,
-        turn_off_message_logging=False,
+        turn_off=False,
     )
-    litellm_params = required_object(input_value, "litellm_params")
+    litellm_params = object_field(input_value, "litellm_params")
     vector_store = input_value.get("vector_store")
     requests = (
         None
@@ -235,8 +234,8 @@ def vector_and_placeholder(input_value: dict[str, Json]) -> Json:
     )
     placeholder = spend_tracking_utils._placeholder_stored_request_body(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         litellm_params,
-        required_string(input_value, "model_group"),
-        required_string(input_value, "raw_model"),
+        string_field(input_value, "model_group"),
+        string_field(input_value, "raw_model"),
     )
     return cast(Json, {"vector_store": plain(redacted), "placeholder": plain(placeholder)})
 
@@ -244,11 +243,10 @@ def vector_and_placeholder(input_value: dict[str, Json]) -> Json:
 def session_value(case: dict[str, Json]) -> Json:
     metadata = case.get("metadata")
     metadata_object = None if metadata is None else object_value(metadata, "metadata")
-    configured_omit = required_bool(case, "configured_omit")
+    configured_omit = boolean_field(case, "configured_omit")
     proxy_server.general_settings["missing_session_id"] = "omit" if configured_omit else None  # pyright: ignore[reportUnknownMemberType]
     trace_id = case.get("trace_id")
     litellm_trace_id = case.get("litellm_trace_id")
-    injected_uuid = required_string(case, "injected_uuid")
     omit = spend_tracking_utils._omits_session_id_when_missing(metadata_object)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     batch = spend_tracking_utils._get_batch_trace_session_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         nullable_string(case.get("call_type"), "call_type"),
@@ -262,7 +260,7 @@ def session_value(case: dict[str, Json]) -> Json:
         if trace_id is None
         else cast("StandardLoggingPayload", {"trace_id": trace_id})
     )
-    fixed = SimpleNamespace(uuid4=lambda: uuid.UUID(injected_uuid))
+    fixed = SimpleNamespace(uuid4=lambda: uuid.UUID(string_field(case, "injected_uuid")))
     with patch.object(litellm_uuid, "uuid", fixed):
         value = spend_tracking_utils._get_session_id_for_spend_log(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
             kwargs=kwargs,
@@ -275,19 +273,19 @@ def session_value(case: dict[str, Json]) -> Json:
 
 
 def session(input_value: dict[str, Json]) -> Json:
-    cases = required_list(input_value, "sessions")
+    cases = list_field(input_value, "sessions")
     values = [session_value(object_value(case, "session")) for case in cases]
     durations: list[int | None] = []
-    for entry in required_list(input_value, "durations"):
+    for entry in list_field(input_value, "durations"):
         duration = object_value(entry, "duration")
         durations.append(
             spend_tracking_utils._get_request_duration_ms(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                datetime.fromisoformat(required_string(duration, "start")),
-                datetime.fromisoformat(required_string(duration, "end")),
+                datetime.fromisoformat(string_field(duration, "start")),
+                datetime.fromisoformat(string_field(duration, "end")),
             )
         )
     timestamps: list[int | None] = []
-    for item in required_list(input_value, "timestamps"):
+    for item in list_field(input_value, "timestamps"):
         moment = datetime.fromisoformat(string_value(item, "timestamp"))
         timestamps.append(
             epoch_micros(

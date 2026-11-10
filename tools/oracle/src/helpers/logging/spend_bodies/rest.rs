@@ -1,3 +1,5 @@
+use super::support::{decode, decode_optional, invalid, required};
+use super::{Input, SessionCase, SnapshotSpec, policy_of, request_text};
 use betterlite_logging::spend_bodies::classifier::{
     SnapshotValue, classifier_audit_fields, classifier_input_snapshot, without_classifier_audit,
 };
@@ -12,10 +14,6 @@ use betterlite_logging::spend_sanitize::value::SpendValue;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use serde_json::{Value, json};
-
-use super::support::{decode, decode_optional, invalid, required};
-use super::{Input, SessionCase, SnapshotSpec, policy_of, request_text};
-
 pub(super) fn classifier(input: &Input) -> crate::helpers::HelperResult {
     let standard = decode_optional(input.standard_logging_object.as_ref())?;
     let (audit, without) = audit_json(standard.as_ref())?;
@@ -38,7 +36,6 @@ pub(super) fn classifier(input: &Input) -> crate::helpers::HelperResult {
         "request": request,
     }))
 }
-
 fn audit_json(standard: Option<&Json>) -> Result<(Value, Value), Box<crate::helpers::HelperError>> {
     let Some(payload) = standard else {
         return Ok((Value::Null, Value::Null));
@@ -51,7 +48,6 @@ fn audit_json(standard: Option<&Json>) -> Result<(Value, Value), Box<crate::help
             .map_err(|error| invalid(&error.to_string()))?,
     ))
 }
-
 fn snapshots(specs: &[SnapshotSpec]) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
     let mut values = Vec::with_capacity(specs.len());
     for spec in specs {
@@ -69,14 +65,12 @@ fn snapshots(specs: &[SnapshotSpec]) -> Result<Vec<Value>, Box<crate::helpers::H
     }
     Ok(values)
 }
-
 fn fields_of(value: &Json) -> Result<&Fields, Box<crate::helpers::HelperError>> {
     let Json::Object(fields) = value else {
         return Err(invalid("the payload must be an object"));
     };
     Ok(fields)
 }
-
 pub(super) fn vector_and_placeholder(input: &Input) -> crate::helpers::HelperResult {
     let store_bodies = required(input.store_bodies, "store_bodies")?;
     let params = decode(required(input.litellm_params.as_ref(), "litellm_params")?)?;
@@ -97,7 +91,6 @@ pub(super) fn vector_and_placeholder(input: &Input) -> crate::helpers::HelperRes
         "placeholder": placeholder_request_body(&params, model_group, raw_model),
     }))
 }
-
 pub(super) fn session(input: &Input) -> crate::helpers::HelperResult {
     let cases = required(input.sessions.as_ref(), "sessions")?;
     let mut values = Vec::with_capacity(cases.len());
@@ -124,7 +117,6 @@ pub(super) fn session(input: &Input) -> crate::helpers::HelperResult {
         "timestamps": instants,
     }))
 }
-
 fn session_value(case: &SessionCase) -> Result<Option<String>, Box<crate::helpers::HelperError>> {
     let metadata = decode_optional(case.metadata.as_ref())?;
     let trace = decode_optional(case.trace_id.as_ref())?;
@@ -140,7 +132,6 @@ fn session_value(case: &SessionCase) -> Result<Option<String>, Box<crate::helper
         injected_uuid: &case.injected_uuid,
     }))
 }
-
 fn timestamp(text: &str) -> Result<SpendTimestamp, Box<crate::helpers::HelperError>> {
     if let Ok(aware) = DateTime::<FixedOffset>::parse_from_rfc3339(text) {
         return Ok(SpendTimestamp::Aware(aware));

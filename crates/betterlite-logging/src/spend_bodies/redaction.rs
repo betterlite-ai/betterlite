@@ -1,9 +1,7 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-
 use super::support::{Fields, as_object};
 use crate::logging_privacy::request::Flag;
-
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 const REDACTED_BY_LITELLM: &str = "redacted-by-litellm";
 const DISABLE_HEADER: &str = "litellm-disable-message-redaction";
 const VERTEX_METADATA_FIELDS: [&str; 5] = [
@@ -13,7 +11,6 @@ const VERTEX_METADATA_FIELDS: [&str; 5] = [
     "vertex_ai_safety_results",
     "vertex_ai_citation_metadata",
 ];
-
 #[must_use]
 pub fn should_redact_message_logging(
     litellm_params: Option<&Fields>,
@@ -36,7 +33,6 @@ pub fn should_redact_message_logging(
     }
     global
 }
-
 fn request_metadata(litellm_params: Option<&Fields>) -> Option<&Fields> {
     let params = litellm_params?;
     let field = if params.contains_key("litellm_metadata") {
@@ -49,7 +45,6 @@ fn request_metadata(litellm_params: Option<&Fields>) -> Option<&Fields> {
         .and_then(as_object)
         .or_else(|| params.get("metadata").and_then(as_object))
 }
-
 fn header_flag(metadata: Option<&Fields>, name: &str) -> bool {
     metadata
         .and_then(|bucket| bucket.get("headers"))
@@ -57,7 +52,6 @@ fn header_flag(metadata: Option<&Fields>, name: &str) -> bool {
         .and_then(|headers| headers.get(name).and_then(flag_value))
         .unwrap_or(false)
 }
-
 // B188's typed flag reader: a string must spell true or false, unlike Python truthiness
 fn flag_value(value: &Json) -> Option<bool> {
     match value {
@@ -66,7 +60,6 @@ fn flag_value(value: &Json) -> Option<bool> {
         Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
-
 pub fn redact_request_body(body: &mut Json) {
     let Json::Object(fields) = body else {
         return;
@@ -100,7 +93,6 @@ pub fn redact_request_body(body: &mut Json) {
         }
     }
 }
-
 #[must_use]
 pub fn redact_response(mut response: Json) -> Json {
     let Json::Object(fields) = &mut response else {
@@ -135,7 +127,6 @@ pub fn redact_response(mut response: Json) -> Json {
     }
     text_object()
 }
-
 fn text_object() -> Json {
     let mut fields = IndexMap::new();
     fields.insert(
@@ -144,7 +135,6 @@ fn text_object() -> Json {
     );
     Json::Object(fields)
 }
-
 fn redact_choices(choices: &mut [Json]) {
     for choice in choices {
         let Json::Object(choice_fields) = choice else {
@@ -153,7 +143,6 @@ fn redact_choices(choices: &mut [Json]) {
         redact_choice(choice_fields);
     }
 }
-
 fn redact_choice(fields: &mut Fields) {
     for role in ["message", "delta"] {
         if let Some(Json::Object(message)) = fields.get_mut(role) {
@@ -163,7 +152,6 @@ fn redact_choice(fields: &mut Fields) {
     }
     redact_present_text(fields, "text");
 }
-
 fn redact_message(message: &mut Fields) {
     for field in ["content", "reasoning_content"] {
         redact_present_text(message, field);
@@ -194,7 +182,6 @@ fn redact_message(message: &mut Fields) {
         );
     }
 }
-
 fn redact_output_item(fields: &mut Fields) {
     redact_present_text(fields, "text");
     if let Some(Json::List(content)) = fields.get_mut("content") {
@@ -233,7 +220,6 @@ fn redact_output_item(fields: &mut Fields) {
         );
     }
 }
-
 fn redact_present_text(fields: &mut Fields, name: &str) {
     if let Some(value) = fields.get_mut(name)
         && !matches!(value, Json::Null)

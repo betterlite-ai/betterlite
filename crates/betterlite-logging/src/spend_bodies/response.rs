@@ -1,17 +1,14 @@
-use betterlite_models::decisions::Json;
-
 use super::SpendStoragePolicy;
 use super::redaction::{redact_response, should_redact_message_logging};
 use super::support::{Fields, as_object, counts_as_present, safe_structure, sanitize_fields};
 use crate::python_json;
 use crate::spend_sanitize::truncate::{TRUNCATED_PAYLOAD_FIELD, TRUNCATION_DB_SAFEGUARD_NOTE};
-
+use betterlite_models::decisions::Json;
 pub struct ResponseKwargs<'data> {
     pub realtime_tool_calls: Option<&'data Json>,
     pub litellm_params: Option<&'data Json>,
     pub dynamic_params: Option<&'data Json>,
 }
-
 #[must_use]
 pub fn storage_response(
     payload: Option<&Json>,
@@ -56,7 +53,6 @@ pub fn storage_response(
     }
     text
 }
-
 fn prepared_response(
     original: &Json,
     kwargs: Option<&ResponseKwargs<'_>>,

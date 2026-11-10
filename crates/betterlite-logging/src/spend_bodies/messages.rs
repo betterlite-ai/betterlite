@@ -1,10 +1,7 @@
-use betterlite_models::decisions::Json;
-
 use super::support::{as_object, safe_structure};
 use crate::python_json;
-
+use betterlite_models::decisions::Json;
 const REALTIME_CALL_TYPE: &str = "_arealtime";
-
 #[must_use]
 pub fn storage_messages(payload: Option<&Json>, store_bodies: bool) -> String {
     if !store_bodies {

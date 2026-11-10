@@ -1,8 +1,5 @@
 mod rest;
 mod support;
-
-use std::collections::BTreeMap;
-
 use betterlite_config::spend_storage::{load_spend_storage_policy, runtime_max_prompt_length};
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::messages::storage_messages;
@@ -12,8 +9,8 @@ use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use support::{decode, decode_optional, invalid, required};
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -40,21 +37,18 @@ pub(crate) struct Input {
     pub(super) durations: Option<Vec<DurationSpec>>,
     pub(super) timestamps: Option<Vec<String>>,
 }
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SnapshotSpec {
     pub(super) value: Value,
     pub(super) openai_sdk: bool,
 }
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DurationSpec {
     pub(super) start: String,
     pub(super) end: String,
 }
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SessionCase {
@@ -66,12 +60,9 @@ pub(crate) struct SessionCase {
     pub(super) litellm_trace_id: Option<Value>,
     pub(super) injected_uuid: String,
 }
-
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.function.as_str() {
             "storage_policy" => storage_policy(input),
@@ -83,7 +74,6 @@ impl crate::helpers::Helper for Op {
         }
     }
 }
-
 fn storage_policy(input: &Input) -> crate::helpers::HelperResult {
     let mut environment = BTreeMap::new();
     if let Some(configured_env) = &input.env_value {
@@ -115,7 +105,6 @@ fn storage_policy(input: &Input) -> crate::helpers::HelperResult {
         "max_string_lengths": lengths,
     }))
 }
-
 fn body_storage(input: &Input) -> crate::helpers::HelperResult {
     let policy = policy_of(input)?;
     let params = decode(required(input.litellm_params.as_ref(), "litellm_params")?)?;
@@ -137,7 +126,6 @@ fn body_storage(input: &Input) -> crate::helpers::HelperResult {
         "messages": storage_messages(messages.as_ref(), policy.sanitize.store_bodies),
     }))
 }
-
 pub(super) fn request_text(
     params: &Json,
     standard: Option<&Json>,
@@ -152,7 +140,6 @@ pub(super) fn request_text(
     };
     storage_request_body(params, Some(&kwargs), policy)
 }
-
 pub(super) fn policy_of(
     input: &Input,
 ) -> Result<SpendStoragePolicy, Box<crate::helpers::HelperError>> {

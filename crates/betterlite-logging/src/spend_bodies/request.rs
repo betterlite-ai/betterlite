@@ -1,18 +1,15 @@
-use betterlite_models::decisions::Json;
-
 use super::SpendStoragePolicy;
 use super::classifier::classifier_audit_fields;
 use super::redaction::{redact_request_body, should_redact_message_logging};
 use super::support::{Fields, as_object, counts_as_present, safe_structure, sanitize_fields};
 use crate::python_json;
 use crate::spend_sanitize::truncate::{TRUNCATED_PAYLOAD_FIELD, TRUNCATION_DB_SAFEGUARD_NOTE};
-
+use betterlite_models::decisions::Json;
 pub struct RequestKwargs<'data> {
     pub standard_logging_object: Option<&'data Json>,
     pub realtime_tools: Option<&'data Json>,
     pub dynamic_params: Option<&'data Json>,
 }
-
 #[must_use]
 pub fn storage_request_body(
     litellm_params: &Json,
@@ -56,7 +53,6 @@ pub fn storage_request_body(
     }
     text
 }
-
 fn body_fields(params: &Fields, kwargs: Option<&RequestKwargs<'_>>) -> Option<Fields> {
     let proxy = params.get("proxy_server_request").and_then(as_object)?;
     let mut body = match proxy.get("body").and_then(as_object) {
