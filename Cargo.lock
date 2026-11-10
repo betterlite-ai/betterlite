@@ -1818,6 +1818,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "parquet-format-safe",
