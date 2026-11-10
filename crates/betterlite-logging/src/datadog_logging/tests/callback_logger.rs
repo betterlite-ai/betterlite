@@ -1,6 +1,9 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::callback_logger::CallbackLogger;
+use crate::datadog_logging::clock::{Clock as _, SystemClock};
+use crate::datadog_logging::logger::uuid_id;
 use crate::datadog_logging::settings::{DatadogInit, DatadogInitParams};
 use crate::datadog_logging::tests::support;
 
@@ -51,4 +54,34 @@ fn callback_logger_reports_its_name_and_options() {
         support::build(&quiet_init, &support::Environment::new(), Vec::new());
     let quiet_callback: &dyn CallbackLogger = quiet_logger.as_ref();
     assert!(quiet_callback.turn_off_message_logging());
+}
+
+#[test]
+fn callback_logger_reports_message_logging_from_its_options() {
+    let (mut logger, _transport) = support::build(
+        &support::agent_init(),
+        &support::Environment::new(),
+        Vec::new(),
+    );
+    Arc::get_mut(&mut logger)
+        .expect("the logger has no other owner")
+        .settings
+        .options
+        .message_logging = false;
+    let callback: &dyn CallbackLogger = logger.as_ref();
+    assert!(!callback.message_logging());
+}
+
+#[test]
+fn uuid_id_returns_a_fresh_uuid_each_time() {
+    let first = uuid_id();
+    let second = uuid_id();
+    assert!(uuid::Uuid::parse_str(&first).is_ok(), "{first}");
+    assert!(uuid::Uuid::parse_str(&second).is_ok(), "{second}");
+    assert_ne!(first, second);
+}
+
+#[test]
+fn the_system_clock_reports_the_time_since_the_epoch() {
+    assert!(SystemClock.now_unix() > Duration::from_secs(1_700_000_000));
 }
