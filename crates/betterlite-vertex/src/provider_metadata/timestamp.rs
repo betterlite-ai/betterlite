@@ -6,6 +6,10 @@ use thiserror::Error;
 
 const MAX_TIMESTAMP_BYTES: usize = 64;
 const NANOS_PER_SECOND: i128 = 1_000_000_000;
+// CPython's mktime treats the naive value as a UTC epoch and probes localtime() around it
+const MIN_YEAR_SECONDS: i128 = -62_135_596_800;
+const MAX_YEAR_SECONDS: i128 = 253_402_300_799;
+const FOLD_PROBE_SECONDS: i128 = 86_400;
 
 #[derive(Clone, Debug)]
 pub struct LocalTimeContext {
@@ -57,18 +61,39 @@ pub fn decode_vertex_timestamp(
         AmbiguousOffset::Gap { before, .. } | AmbiguousOffset::Fold { before, .. } => before,
     };
     // jiff's Timestamp stops before the last hour of year 9999, but civil arithmetic covers it; dividing truncates toward zero like int()
-    let offset_nanos = i128::from(offset.seconds())
+    let civil_nanos = civil.duration_since(epoch).as_nanos();
+    let offset_seconds = i128::from(offset.seconds());
+    check_year_range(civil_nanos, offset_seconds)?;
+    let offset_nanos = offset_seconds
         .checked_mul(NANOS_PER_SECOND)
         .ok_or(VertexTimestampError::OutOfRange)?;
-    let instant_nanos = civil
-        .duration_since(epoch)
-        .as_nanos()
+    let instant_nanos = civil_nanos
         .checked_sub(offset_nanos)
         .ok_or(VertexTimestampError::OutOfRange)?;
     let seconds = instant_nanos
         .checked_div(NANOS_PER_SECOND)
         .ok_or(VertexTimestampError::OutOfRange)?;
     i64::try_from(seconds).map_err(|_error| VertexTimestampError::OutOfRange)
+}
+
+// CPython's timestamp() reads localtime() of the civil value taken as UTC and of one day before it, so either probe can name a year outside 1..9999
+fn check_year_range(civil_nanos: i128, offset_seconds: i128) -> Result<(), VertexTimestampError> {
+    let civil_seconds = civil_nanos
+        .checked_div_euclid(NANOS_PER_SECOND)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    let local_seconds = civil_seconds
+        .checked_add(offset_seconds)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    if !(MIN_YEAR_SECONDS..=MAX_YEAR_SECONDS).contains(&local_seconds) {
+        return Err(VertexTimestampError::OutOfRange);
+    }
+    let fold_probe_seconds = civil_seconds
+        .checked_sub(FOLD_PROBE_SECONDS)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    if fold_probe_seconds < MIN_YEAR_SECONDS {
+        return Err(VertexTimestampError::OutOfRange);
+    }
+    Ok(())
 }
 
 fn split_timestamp(text: &str) -> Result<TimestampParts<'_>, VertexTimestampError> {
