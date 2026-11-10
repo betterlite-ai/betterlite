@@ -1,0 +1,18 @@
+kind: helper
+name: numeric-psc
+call:
+  vertex_model_policy:
+    route:
+      cases:
+        - {model: '1234567890', api_base: 'http://10.96.32.8'}
+        - {model: '1234567890'}
+        - {model: '1234567890', api_base: ''}
+        - {model: '1234567890', api_base: null}
+        - {model: '1234567890', base_model: 'not-gemini', api_base: 'https://host'}
+        - {model: '0042', api_base: 'https://host/v1'}
+        - {model: 'ten', api_base: 'https://host'}
+        - {model: '', api_base: 'https://host'}
+        - {model: 'bge/123', api_base: 'https://host'}
+        - {model: 'gemini/123', api_base: 'https://host'}
+env: {}
+compare: {ignore: []}

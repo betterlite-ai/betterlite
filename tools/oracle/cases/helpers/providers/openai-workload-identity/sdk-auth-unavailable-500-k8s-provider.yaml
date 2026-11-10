@@ -1,0 +1,14 @@
+kind: helper
+name: openai-workload-identity-sdk-auth-unavailable-500-k8s-provider
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      sdk: no_k8s_provider
+      files:
+        x: "subject"
+      replies: []
+      steps:
+        - {op: auth, identity: {name: x}, label: x}
+        - {op: token, identity: {name: x}}
