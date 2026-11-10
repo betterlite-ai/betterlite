@@ -149,8 +149,8 @@ fn assert_web_identity_call(exchange: &Exchange) {
     assert_eq!(form(exchange, "Policy"), Some(EXPECTED_POLICY));
     assert_eq!(form(exchange, "ExternalId"), None);
     assert!(exchange.form.keys().all(|name| !name.starts_with("Tags")));
-    assert_eq!(exchange.access_key.as_deref(), Some("AKIAAMBIENT"));
-    assert_eq!(exchange.session_token.as_deref(), Some("ambient-session"));
+    assert!(exchange.access_key.is_none());
+    assert!(exchange.session_token.is_none());
     assert_eq!(exchange.region.as_deref(), Some(REGION));
     assert_eq!(
         exchange.host.as_deref(),

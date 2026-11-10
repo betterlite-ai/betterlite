@@ -25,7 +25,7 @@ fn replays_the_bedrock_web_identity_corpus() {
                     let claims = decode_web_identity_claims(token);
                     assert_eq!(claims.is_some(), name.starts_with("claims-"), "{name}");
                 }
-                Err(_) => assert!(name.ends_with("-malformed"), "{name} is not UTF-8"),
+                Err(_) => assert!(name.starts_with("malformed-"), "{name} is not UTF-8"),
             }
             Ok::<(), io::Error>(())
         })

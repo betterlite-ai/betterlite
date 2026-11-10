@@ -346,7 +346,7 @@ fn assert_irsa_assumption(irsa: &Exchange) {
     assert_eq!(form(irsa, "Policy"), None);
     assert_eq!(form(irsa, "ExternalId"), None);
     assert!(irsa.form.keys().all(|name| !name.starts_with("Tags")));
-    assert_eq!(irsa.access_key.as_deref(), Some("AKIAAMBIENT"));
+    assert!(irsa.access_key.is_none());
 }
 
 fn assert_identity_probe(identity: &Exchange) {

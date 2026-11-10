@@ -66,12 +66,13 @@ class FakeSts:
                         form[f"{name}.member.{index}.{field}"] = item
             else:
                 form[name] = str(value)
+        unsigned = action == "AssumeRoleWithWebIdentity"
         call = cast(
             Json,
             {
                 "form": form,
-                "access_key_id": self.access_key_id,
-                "session_token": self.session_token,
+                "access_key_id": None if unsigned else self.access_key_id,
+                "session_token": None if unsigned else self.session_token,
             },
         )
         self.calls.append(call)
