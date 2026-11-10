@@ -38,8 +38,8 @@ deviations:
       ApiError body.
     why: >-
       rules.yaml refuses to mangle bytes that are not UTF-8, and a body outside UTF-8 cannot be the JSON
-      LiteLLM's pydantic models declare. The retry classification still follows the status code, so a 5xx
-      with such a body is still retried once like LiteLLM's.
+      LiteLLM's pydantic models declare. LiteLLM's own json() raises UnicodeDecodeError for such a body,
+      which escapes _request_prompt without a retry, so refusing it without a retry keeps the request count.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L1079-L1087
   - what: >-
       build_langfuse_client with httpx_client=None builds a pooled betterlite client from an empty proxy

@@ -52,49 +52,6 @@ pub(crate) enum Answer {
     Stall(Duration),
 }
 
-impl Answer {
-    pub(crate) fn ok(body: &str) -> Self {
-        Self::Respond {
-            status: 200,
-            body: body.to_owned(),
-        }
-    }
-
-    pub(crate) fn status(status: u16, body: &str) -> Self {
-        Self::Respond {
-            status,
-            body: body.to_owned(),
-        }
-    }
-
-    pub(crate) fn with_headers(
-        status: u16,
-        body: &str,
-        headers: Vec<(&'static str, String)>,
-    ) -> Self {
-        Self::RespondWith {
-            status,
-            body: body.to_owned(),
-            headers,
-        }
-    }
-
-    pub(crate) fn hold(release: oneshot::Receiver<()>, status: u16, body: &str) -> Self {
-        Self::Hold {
-            release,
-            status,
-            body: body.to_owned(),
-        }
-    }
-
-    pub(crate) fn raw(status: u16, body: &[u8]) -> Self {
-        Self::Raw {
-            status,
-            body: body.to_vec(),
-        }
-    }
-}
-
 pub(crate) struct FakeLangfuse {
     pub(crate) base_url: String,
     requests: Arc<Mutex<Vec<String>>>,
@@ -228,13 +185,9 @@ async fn respond(
 }
 
 #[derive(Clone)]
-pub(crate) struct FakeClock(Arc<Mutex<Instant>>);
+pub(crate) struct FakeClock(pub(crate) Arc<Mutex<Instant>>);
 
 impl FakeClock {
-    pub(crate) fn new() -> Self {
-        Self(Arc::new(Mutex::new(Instant::now())))
-    }
-
     pub(crate) fn advance(&self, duration: Duration) {
         let mut now = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let advanced = now
@@ -333,10 +286,6 @@ pub(crate) fn prompt_version(prompt: &Prompt) -> i64 {
         Prompt::Chat(chat) => chat.meta.version,
         Prompt::Text(text) => text.meta.version,
     }
-}
-
-pub(crate) fn request_line(head: &str) -> &str {
-    head.lines().next().expect("a request line")
 }
 
 pub(crate) fn header(head: &str, wanted: &str) -> Option<String> {

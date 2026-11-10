@@ -1,3 +1,5 @@
+use std::iter::repeat_with;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use betterlite_models::decisions::Json;
@@ -6,7 +8,7 @@ use tokio_util::task::TaskTracker;
 
 use super::support::{
     Answer, ClientSetup, FakeClock, FakeLangfuse, PUBLIC_KEY, SECRET_KEY, api_error, chat_prompt,
-    client_for, client_from, header, prompt_version, proxied, request_line, text_prompt,
+    client_for, client_from, header, prompt_version, proxied, text_prompt,
 };
 use crate::langfuse_rest::errors::LangfuseRestError;
 use crate::langfuse_rest::records::{Prompt, PromptMessage};
@@ -18,9 +20,13 @@ const NOT_FOUND: &str = r#"{"message":"prompt not found"}"#;
 #[tokio::test]
 async fn a_prompt_is_fetched_with_its_version_and_label() {
     let body = text_prompt("greeting", 3);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", Some("production"), Some(3))
@@ -28,7 +34,7 @@ async fn a_prompt_is_fetched_with_its_version_and_label() {
         .expect("the prompt");
     assert_eq!(prompt_version(&prompt), 3);
     assert_eq!(
-        request_line(&server.requests()[0]),
+        server.requests()[0].lines().next().expect("a request line"),
         "GET /api/public/v2/prompts/greeting?version=3&label=production HTTP/1.1"
     );
 }
@@ -36,16 +42,20 @@ async fn a_prompt_is_fetched_with_its_version_and_label() {
 #[tokio::test]
 async fn a_prompt_without_a_label_or_version_sends_no_query() {
     let body = text_prompt("greeting", 1);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let _prompt = client
         .get_prompt("greeting", None, None)
         .await
         .expect("the prompt");
     assert_eq!(
-        request_line(&server.requests()[0]),
+        server.requests()[0].lines().next().expect("a request line"),
         "GET /api/public/v2/prompts/greeting HTTP/1.1"
     );
 }
@@ -54,16 +64,20 @@ async fn a_prompt_without_a_label_or_version_sends_no_query() {
 async fn the_prompt_name_is_percent_encoded_in_the_path() {
     let name = "folder/greeting \u{fc}";
     let body = text_prompt(name, 1);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let _prompt = client
         .get_prompt(name, None, None)
         .await
         .expect("the prompt");
     assert_eq!(
-        request_line(&server.requests()[0]),
+        server.requests()[0].lines().next().expect("a request line"),
         "GET /api/public/v2/prompts/folder%2Fgreeting%20%C3%BC HTTP/1.1"
     );
 }
@@ -72,16 +86,20 @@ async fn the_prompt_name_is_percent_encoded_in_the_path() {
 async fn unreserved_prompt_name_characters_stay_literal() {
     let name = "azAZ09-._~";
     let body = text_prompt(name, 1);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let _prompt = client
         .get_prompt(name, None, None)
         .await
         .expect("the prompt");
     assert_eq!(
-        request_line(&server.requests()[0]),
+        server.requests()[0].lines().next().expect("a request line"),
         "GET /api/public/v2/prompts/azAZ09-._~ HTTP/1.1"
     );
 }
@@ -90,12 +108,18 @@ async fn unreserved_prompt_name_characters_stay_literal() {
 async fn a_server_error_is_retried_once() {
     let body = text_prompt("greeting", 2);
     let server = FakeLangfuse::start(vec![
-        Answer::status(500, r#"{"message":"boom"}"#),
-        Answer::ok(&body),
+        Answer::Respond {
+            status: 500,
+            body: r#"{"message":"boom"}"#.to_owned(),
+        },
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", None, None)
@@ -108,9 +132,16 @@ async fn a_server_error_is_retried_once() {
 #[tokio::test]
 async fn a_transport_error_is_retried_once() {
     let body = text_prompt("greeting", 2);
-    let server = FakeLangfuse::start(vec![Answer::Close, Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![
+        Answer::Close,
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
+    ])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", None, None)
@@ -123,12 +154,18 @@ async fn a_transport_error_is_retried_once() {
 #[tokio::test]
 async fn two_server_errors_raise_the_last_status() {
     let server = FakeLangfuse::start(vec![
-        Answer::status(500, r#"{"message":"first"}"#),
-        Answer::status(503, r#"{"message":"second"}"#),
+        Answer::Respond {
+            status: 500,
+            body: r#"{"message":"first"}"#.to_owned(),
+        },
+        Answer::Respond {
+            status: 503,
+            body: r#"{"message":"second"}"#.to_owned(),
+        },
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = api_error(
         client
@@ -144,7 +181,7 @@ async fn two_server_errors_raise_the_last_status() {
 async fn two_transport_errors_keep_the_transport_failure() {
     let server = FakeLangfuse::start(vec![Answer::Close, Answer::Close]).await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = client
         .get_prompt("greeting", None, None)
@@ -162,9 +199,13 @@ async fn two_transport_errors_keep_the_transport_failure() {
 
 #[tokio::test]
 async fn a_client_error_is_not_retried() {
-    let server = FakeLangfuse::start(vec![Answer::status(400, r#"{"message":"bad"}"#)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 400,
+        body: r#"{"message":"bad"}"#.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = api_error(
         client
@@ -178,9 +219,13 @@ async fn a_client_error_is_not_retried() {
 
 #[tokio::test]
 async fn a_rate_limit_is_not_retried() {
-    let server = FakeLangfuse::start(vec![Answer::status(429, r#"{"message":"slow down"}"#)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 429,
+        body: r#"{"message":"slow down"}"#.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = api_error(
         client
@@ -203,12 +248,18 @@ async fn the_retry_boundary_is_a_server_error(
 ) {
     let body = text_prompt("greeting", 2);
     let server = FakeLangfuse::start(vec![
-        Answer::status(status, r#"{"message":"nope"}"#),
-        Answer::ok(&body),
+        Answer::Respond {
+            status,
+            body: r#"{"message":"nope"}"#.to_owned(),
+        },
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let outcome = client.get_prompt("greeting", None, None).await;
     assert_eq!(outcome.is_ok(), succeeds);
@@ -218,12 +269,18 @@ async fn the_retry_boundary_is_a_server_error(
 #[tokio::test]
 async fn a_server_error_is_retried_without_delay() {
     let server = FakeLangfuse::start(vec![
-        Answer::status(500, r#"{"message":"first"}"#),
-        Answer::status(500, r#"{"message":"second"}"#),
+        Answer::Respond {
+            status: 500,
+            body: r#"{"message":"first"}"#.to_owned(),
+        },
+        Answer::Respond {
+            status: 500,
+            body: r#"{"message":"second"}"#.to_owned(),
+        },
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let started = Instant::now();
     let _error = client
@@ -231,7 +288,7 @@ async fn a_server_error_is_retried_without_delay() {
         .await
         .expect_err("the prompt fails");
     assert!(
-        started.elapsed() < Duration::from_secs(1),
+        started.elapsed() < Duration::from_millis(200),
         "the retry slept instead of running at once"
     );
     assert_eq!(server.request_count(), 2);
@@ -239,9 +296,13 @@ async fn a_server_error_is_retried_without_delay() {
 
 #[tokio::test]
 async fn an_api_error_carries_the_status_and_body() {
-    let server = FakeLangfuse::start(vec![Answer::status(404, NOT_FOUND)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 404,
+        body: NOT_FOUND.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = api_error(
         client
@@ -256,14 +317,14 @@ async fn an_api_error_carries_the_status_and_body() {
 
 #[tokio::test]
 async fn an_api_error_never_carries_response_headers() {
-    let server = FakeLangfuse::start(vec![Answer::with_headers(
-        404,
-        NOT_FOUND,
-        vec![("x-langfuse-secret", "leaky-value".to_owned())],
-    )])
+    let server = FakeLangfuse::start(vec![Answer::RespondWith {
+        status: 404,
+        body: NOT_FOUND.to_owned(),
+        headers: vec![("x-langfuse-secret", "leaky-value".to_owned())],
+    }])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = client
         .get_prompt("greeting", None, None)
@@ -278,9 +339,13 @@ async fn an_api_error_never_carries_response_headers() {
 
 #[tokio::test]
 async fn a_success_status_with_an_unreadable_body_is_an_api_error() {
-    let server = FakeLangfuse::start(vec![Answer::ok("not json")]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: "not json".to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = api_error(
         client
@@ -293,14 +358,14 @@ async fn a_success_status_with_an_unreadable_body_is_an_api_error() {
 }
 
 #[tokio::test]
-async fn a_server_error_with_a_body_that_is_not_utf8_is_retried_once() {
-    let server = FakeLangfuse::start(vec![
-        Answer::raw(500, &[0xff, 0xfe]),
-        Answer::raw(500, &[0xff, 0xfe]),
-    ])
+async fn a_body_that_is_not_utf8_is_not_retried() {
+    let server = FakeLangfuse::start(vec![Answer::Raw {
+        status: 500,
+        body: vec![0xff, 0xfe],
+    }])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = client
         .get_prompt("greeting", None, None)
@@ -310,14 +375,18 @@ async fn a_server_error_with_a_body_that_is_not_utf8_is_retried_once() {
         panic!("expected a body failure, got {error:?}")
     };
     assert_eq!(*status, 500);
-    assert_eq!(server.request_count(), 2);
+    assert_eq!(server.request_count(), 1);
 }
 
 #[tokio::test]
 async fn a_response_that_is_not_the_declared_prompt_shape_is_a_decode_error() {
-    let server = FakeLangfuse::start(vec![Answer::ok(r#"{"type":"text"}"#)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: r#"{"type":"text"}"#.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let error = client
         .get_prompt("greeting", None, None)
@@ -329,9 +398,13 @@ async fn a_response_that_is_not_the_declared_prompt_shape_is_a_decode_error() {
 #[tokio::test]
 async fn a_text_prompt_keeps_its_template_and_metadata() {
     let body = text_prompt("greeting", 7);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", None, None)
@@ -354,9 +427,13 @@ async fn a_text_prompt_keeps_its_template_and_metadata() {
 #[tokio::test]
 async fn a_chat_prompt_keeps_its_messages_and_metadata() {
     let body = chat_prompt("greeting", 4);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", None, None)
@@ -389,16 +466,19 @@ async fn a_chat_prompt_keeps_its_messages_and_metadata() {
 async fn a_redirected_prompt_request_follows_to_the_target() {
     let body = text_prompt("greeting", 1);
     let server = FakeLangfuse::start(vec![
-        Answer::with_headers(
-            302,
-            "",
-            vec![("location", "/api/public/v2/prompts/greeting".to_owned())],
-        ),
-        Answer::ok(&body),
+        Answer::RespondWith {
+            status: 302,
+            body: String::new(),
+            headers: vec![("location", "/api/public/v2/prompts/greeting".to_owned())],
+        },
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let prompt = client
         .get_prompt("greeting", None, None)
@@ -409,6 +489,32 @@ async fn a_redirected_prompt_request_follows_to_the_target() {
 }
 
 #[tokio::test]
+async fn a_redirect_loop_is_not_retried() {
+    let redirect = || Answer::RespondWith {
+        status: 302,
+        body: String::new(),
+        headers: vec![("location", "/api/public/v2/prompts/greeting".to_owned())],
+    };
+    let script = repeat_with(redirect).take(22).collect();
+    let server = FakeLangfuse::start(script).await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
+    let client = client_for(&server, TTL, &clock, &tasks);
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the redirect loop fails");
+    assert!(
+        matches!(
+            &error,
+            LangfuseRestError::Request(RequestFailure::Transport(_))
+        ),
+        "{error:?}"
+    );
+    assert_eq!(server.request_count(), 11);
+}
+
+#[tokio::test]
 async fn the_configured_timeout_bounds_each_prompt_request() {
     let server = FakeLangfuse::start(vec![
         Answer::Stall(Duration::from_secs(10)),
@@ -416,7 +522,7 @@ async fn the_configured_timeout_bounds_each_prompt_request() {
     ])
     .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
@@ -443,9 +549,13 @@ async fn the_configured_timeout_bounds_each_prompt_request() {
 #[tokio::test]
 async fn the_rest_client_sends_basic_authorization_and_identity_headers() {
     let body = text_prompt("greeting", 1);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_for(&server, TTL, &clock, &tasks);
     let _prompt = client
         .get_prompt("greeting", None, None)
@@ -474,9 +584,13 @@ async fn the_rest_client_sends_basic_authorization_and_identity_headers() {
 
 #[tokio::test]
 async fn missing_keys_send_no_authorization_header() {
-    let server = FakeLangfuse::start(vec![Answer::status(401, NOT_FOUND)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 401,
+        body: NOT_FOUND.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: None,
@@ -499,9 +613,13 @@ async fn missing_keys_send_no_authorization_header() {
 
 #[tokio::test]
 async fn a_public_key_without_a_secret_sends_no_authorization_header() {
-    let server = FakeLangfuse::start(vec![Answer::status(401, NOT_FOUND)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 401,
+        body: NOT_FOUND.to_owned(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
@@ -524,9 +642,13 @@ async fn a_public_key_without_a_secret_sends_no_authorization_header() {
 #[tokio::test]
 async fn a_client_without_an_injected_http_client_reaches_the_server() {
     let body = text_prompt("greeting", 1);
-    let server = FakeLangfuse::start(vec![Answer::ok(&body)]).await;
+    let server = FakeLangfuse::start(vec![Answer::Respond {
+        status: 200,
+        body: body.clone(),
+    }])
+    .await;
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_from(ClientSetup {
         base_url: server.base_url.clone(),
         public_key: Some(PUBLIC_KEY),
@@ -547,7 +669,7 @@ async fn a_client_without_an_injected_http_client_reaches_the_server() {
 #[tokio::test]
 async fn a_client_reports_an_invalid_base_url_as_a_transport_failure() {
     let tasks = TaskTracker::new();
-    let clock = FakeClock::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
     let client = client_from(ClientSetup {
         base_url: "not a url".to_owned(),
         public_key: Some(PUBLIC_KEY),

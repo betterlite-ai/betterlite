@@ -7,6 +7,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::transport_error::TransportError;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
@@ -14,7 +15,7 @@ use tokio_util::task::TaskTracker;
 use super::cache::{CachedLookup, CachedPrompt, Clock, PromptCache, PromptKey};
 use super::errors::{AuthCheckFailure, LangfuseRestError, auth_check_failure, decode_response};
 use super::records::{Projects, Prompt};
-use super::transport::{HeaderError, LangfuseHttp, headers_for};
+use super::transport::{HeaderError, LangfuseHttp, RequestFailure, headers_for};
 
 const PROJECTS_PATH: &str = "api/public/projects";
 const PROMPTS_PATH: &str = "api/public/v2/prompts";
@@ -233,11 +234,46 @@ fn prompt_query(key: &PromptKey) -> Vec<(String, String)> {
     query
 }
 
-const fn is_retryable(error: &LangfuseRestError) -> bool {
+fn is_retryable(error: &LangfuseRestError) -> bool {
     match error {
         LangfuseRestError::Api(api) => api.status_code >= 500,
-        LangfuseRestError::Body { status, .. } => *status >= 500,
-        LangfuseRestError::Request(_) => true,
-        LangfuseRestError::Decode { .. } => false,
+        LangfuseRestError::Request(failure) => request_is_retryable(failure),
+        LangfuseRestError::Decode { .. } | LangfuseRestError::Body { .. } => false,
+    }
+}
+
+fn request_is_retryable(failure: &RequestFailure) -> bool {
+    match failure {
+        RequestFailure::Url { .. } => false,
+        RequestFailure::Transport(error) => transport_is_retryable(error),
+    }
+}
+
+// httpx counts these as TransportError; TooManyRedirects, InvalidURL and DecodingError are RequestErrors
+fn transport_is_retryable(error: &TransportError) -> bool {
+    match error {
+        TransportError::Connect(_)
+        | TransportError::ConnectTimeout(_)
+        | TransportError::Deadline(_)
+        | TransportError::Request(_)
+        | TransportError::RedirectScheme { .. } => true,
+        TransportError::Body(source) => !source.is_decode(),
+        TransportError::Rejected(_)
+        | TransportError::Build(_)
+        | TransportError::HeadersTooLarge { .. }
+        | TransportError::BodyTooLarge { .. }
+        | TransportError::InvalidHeader { .. }
+        | TransportError::MultipartContentType { .. }
+        | TransportError::MultipartBoundaryHeader { .. }
+        | TransportError::MultipartBoundary { .. }
+        | TransportError::Mock(_)
+        | TransportError::Closed
+        | TransportError::DrainTimeout { .. }
+        | TransportError::TooManyRedirects { .. }
+        | TransportError::RedirectTarget { .. }
+        | TransportError::RedirectUrl { .. }
+        | TransportError::RedirectUserinfo
+        | TransportError::InsecureRedirect
+        | TransportError::RedirectBody => false,
     }
 }
