@@ -98,20 +98,17 @@ type Attempts = (Arc<FixtureTransport>, Vec<Option<AccessToken>>);
 fn attempts(step: &Step) -> Result<Attempts, Box<HelperError>> {
     let (transport, clock, mut cache) = step_cache(step, load_settings(&step.environment)?);
     let resolver = FixtureResolver::from(step);
-    let Ok(provider) = provider_for(
-        &mut cache,
-        &input_of(step),
-        &resolver,
-        step.authority_host.as_deref(),
-    ) else {
-        return Ok((transport, vec![None]));
-    };
-    let mut tokens = vec![provider.token().ok()];
-    if let Some(advance) = step.advance {
-        clock
-            .now
-            .store(NOW.saturating_add(advance), Ordering::SeqCst);
+    let host = step.authority_host.as_deref();
+    let mut tokens = Vec::new();
+    if let Ok(provider) = provider_for(&mut cache, &input_of(step), &resolver, host) {
         tokens.push(provider.token().ok());
+        if let Some(advance) = step.advance {
+            let later = NOW.saturating_add(advance);
+            clock.now.store(later, Ordering::SeqCst);
+            tokens.push(provider.token().ok());
+        }
+    } else {
+        tokens.push(None);
     }
     Ok((transport, tokens))
 }
