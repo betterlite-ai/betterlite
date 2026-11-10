@@ -267,6 +267,10 @@ fn resolution_failure_skips_the_provider_defaults() {
     "unknown-provider/claude-x",
     "claude:us-central1:proj:unknown-provider/claude-x:false"
 )]
+#[case::builds_the_vertex_string_from_the_unresolved_model(
+    "unknown-provider/gemini-pro",
+    "us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/unknown-provider/gemini-pro:generateContent"
+)]
 #[case::still_returns_a_later_dynamic_base("perplexity/claude-x", "https://api.perplexity.ai")]
 fn resolution_failure_and_the_vertex_branch(#[case] model: &str, #[case] expected: &str) {
     let params = ApiBaseParams {
