@@ -122,8 +122,8 @@ pub(crate) async fn run(
         Operation::Rpush => {
             let key = required_key(call)?;
             let values: Vec<RedisScalar> = call.values.iter().map(ListValue::scalar).collect();
-            let length = lists.async_rpush(key, &values).await;
-            length.map(|length| json!(length)).map_err(redis)
+            let reply = lists.async_rpush(key, &values).await;
+            reply.map(|length| json!(length)).map_err(redis)
         }
         Operation::RpushAndTrim => {
             let key = required_key(call)?;
@@ -131,25 +131,25 @@ pub(crate) async fn run(
                 .max_len
                 .ok_or_else(|| helper_error("InvalidInput", "rpush_and_trim needs max_len"))?;
             let values: Vec<RedisScalar> = call.values.iter().map(ListValue::scalar).collect();
-            let length = lists.async_rpush_and_trim(key, &values, max_len).await;
-            length.map(|length| json!(length)).map_err(redis)
+            let reply = lists.async_rpush_and_trim(key, &values, max_len).await;
+            reply.map(|length| json!(length)).map_err(redis)
         }
         Operation::RpushPipeline => {
             let operations: Vec<RedisPipelineRpushOperation> =
                 call.operations.iter().map(rpush_operation).collect();
-            let lengths = lists.async_rpush_pipeline(&operations).await;
-            lengths.map(|lengths| json!(lengths)).map_err(redis)
+            let reply = lists.async_rpush_pipeline(&operations).await;
+            reply.map(|lengths| json!(lengths)).map_err(redis)
         }
         Operation::Lpop => {
             let key = required_key(call)?;
-            let result = lists.async_lpop(key, call.count).await;
-            result.map(|result| lpop_result(&result)).map_err(redis)
+            let reply = lists.async_lpop(key, call.count).await;
+            reply.map(|result| lpop_result(&result)).map_err(redis)
         }
         Operation::LpopPipeline => {
             let operations: Vec<RedisPipelineLpopOperation> =
                 call.operations.iter().map(lpop_operation).collect();
-            let entries = lists.async_lpop_pipeline(&operations).await;
-            let listed = entries.map(|entries| entries.iter().map(lpop_entry).collect());
+            let reply = lists.async_lpop_pipeline(&operations).await;
+            let listed = reply.map(|entries| entries.iter().map(lpop_entry).collect());
             listed.map(Value::Array).map_err(redis)
         }
     }
