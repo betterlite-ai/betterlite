@@ -18,7 +18,7 @@ use betterlite_models::token_rates::{BatchCostRates, ModelInfo, Usage};
 
 use error::BatchCostError;
 use legacy::legacy_prompt_cost;
-use prompt::batch_prompt_cost;
+use prompt::{PromptCacheRates, batch_prompt_cost};
 
 // Only these four fields prove a supplied record holds prices; modality or cache prices alone do not.
 const PRIMARY_RATE_KEYS: [&str; 4] = [
@@ -92,8 +92,18 @@ fn prompt_side_cost(
     model_info: &ModelInfo,
     rates: BatchCostRates,
 ) -> Result<Decimal, BatchCostError> {
-    if rates.input.is_some() {
-        return batch_prompt_cost(request.usage, request.prompt_extras, model_info, rates);
+    if let Some(input_rate) = rates.input {
+        let cache_rates = PromptCacheRates {
+            read: rates.cache_read,
+            creation: rates.cache_creation,
+        };
+        return batch_prompt_cost(
+            request.usage,
+            request.prompt_extras,
+            model_info,
+            input_rate,
+            cache_rates,
+        );
     }
     let input_rate = calculate_cost_component(model_info, INPUT_RATE_KEY, Some(Decimal::ONE))?;
     if input_rate.is_zero() {

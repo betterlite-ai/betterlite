@@ -15,12 +15,11 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{ResolutionContext, ResolutionError};
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
-use betterlite_models::token_rates::{BatchCostRates, ModelInfo, TokenRateError};
+use betterlite_models::token_rates::{ModelInfo, TokenRateError};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::error::BatchCostError;
-use super::prompt::batch_prompt_cost;
 use super::{BatchCostRequest, BatchCostResult, batch_cost_per_token};
 
 fn dec(text: &str) -> Decimal {
@@ -612,18 +611,4 @@ fn the_lookup_sees_the_original_model_and_the_resolved_provider() {
         lookup.calls(),
         vec![("xai/grok-2".to_owned(), Some("xai".to_owned()))]
     );
-}
-
-#[test]
-fn the_direct_prompt_path_requires_an_input_batch_rate() {
-    let fixture = new_fixture();
-    let (usage, extras) = fixture.billing();
-    let rates = BatchCostRates {
-        input: None,
-        output: None,
-        cache_read: None,
-        cache_creation: None,
-    };
-    let error = batch_prompt_cost(&usage, &extras, &model_info("{}"), rates).unwrap_err();
-    assert!(matches!(error, BatchCostError::MissingInputRate));
 }

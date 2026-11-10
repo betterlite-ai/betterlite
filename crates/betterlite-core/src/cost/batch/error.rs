@@ -15,6 +15,4 @@ pub enum BatchCostError {
     Modality(#[from] ModalityCostError),
     #[error("batch cost arithmetic overflowed")]
     Overflow,
-    #[error("the explicit batch prompt path needs a nonnull input batch rate")]
-    MissingInputRate,
 }

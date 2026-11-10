@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_core::cost::batch::error::BatchCostError;
-use betterlite_core::cost::batch::prompt::batch_prompt_cost;
+use betterlite_core::cost::batch::prompt::{PromptCacheRates, batch_prompt_cost};
 use betterlite_core::cost::batch::{BatchCostRequest, batch_cost_per_token};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::cost_usage::modality_projection::{
@@ -14,7 +14,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
-use betterlite_models::token_rates::{BatchCostRates, ModelInfo};
+use betterlite_models::token_rates::ModelInfo;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
@@ -230,12 +230,16 @@ fn run_prompt(input: &PromptInput) -> Result<serde_json::Value, BatchCostError> 
         .prompt_extras
         .as_ref()
         .map_or_else(PromptExtras::default, PromptExtras::from);
-    let rates = BatchCostRates {
-        input: Some(input.input_rate),
-        output: None,
-        cache_read: input.cache_read_rate,
-        cache_creation: input.cache_creation_rate,
+    let cache_rates = PromptCacheRates {
+        read: input.cache_read_rate,
+        creation: input.cache_creation_rate,
     };
-    let cost = batch_prompt_cost(&usage, &extras, &input.model_info, rates)?;
+    let cost = batch_prompt_cost(
+        &usage,
+        &extras,
+        &input.model_info,
+        input.input_rate,
+        cache_rates,
+    )?;
     Ok(json!({ "prompt_cost": cost.normalize().to_string() }))
 }

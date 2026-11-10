@@ -7,10 +7,17 @@ use betterlite_models::modality_cost::prompt::{
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_rates::component::calculate_cost_component;
-use betterlite_models::token_rates::{BatchCostRates, ModelInfo, TokenRateError};
+use betterlite_models::token_rates::{ModelInfo, TokenRateError};
 
 use super::error::BatchCostError;
 use super::prompt_modality_usage;
+
+// The two cache categories a batch record can price independently of its input tokens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptCacheRates {
+    pub read: Option<Decimal>,
+    pub creation: Option<Decimal>,
+}
 
 const AUDIO_RATE_KEY: &str = "input_cost_per_audio_token_batches";
 const IMAGE_RATE_KEY: &str = "input_cost_per_image_token_batches";
@@ -59,16 +66,16 @@ pub fn batch_prompt_cost(
     usage: &CostUsage,
     extras: &PromptExtras,
     model_info: &ModelInfo,
-    rates: BatchCostRates,
+    input_rate: Decimal,
+    cache_rates: PromptCacheRates,
 ) -> Result<Decimal, BatchCostError> {
-    let input_rate = rates.input.ok_or(BatchCostError::MissingInputRate)?;
     let details = parse_prompt_tokens_details(&prompt_modality_usage(usage, extras))?;
-    let cached_tokens = if rates.cache_read.is_some() {
+    let cached_tokens = if cache_rates.read.is_some() {
         details.cache_hit_tokens
     } else {
         0
     };
-    let written_tokens = if rates.cache_creation.is_some() {
+    let written_tokens = if cache_rates.creation.is_some() {
         details.cache_creation_tokens
     } else {
         0
@@ -94,11 +101,11 @@ pub fn batch_prompt_cost(
     total = add_product(
         total,
         cached_tokens,
-        rates.cache_read.unwrap_or(Decimal::ZERO),
+        cache_rates.read.unwrap_or(Decimal::ZERO),
     )?;
     add_product(
         total,
         written_tokens,
-        rates.cache_creation.unwrap_or(Decimal::ZERO),
+        cache_rates.creation.unwrap_or(Decimal::ZERO),
     )
 }
