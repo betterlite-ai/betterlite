@@ -51,7 +51,7 @@ checks:
     - id: behavior-tests
       why: new behavior tests are missing or fail
       run: >-
-        cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^semantic_embeddings::tests::/)' --no-tests=warn
+        cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^semantic_embeddings::tests::/)'
     - id: helper-python
       why: strict adapters fail
       run: >-
