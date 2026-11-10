@@ -7,6 +7,7 @@ use crate::newrelic_metrics::queue::{
 
 #[tokio::test]
 async fn requeue_and_overflow_prepends_the_retried_batch_in_order() {
+    let (logs, _guard) = capture_logs();
     let fixture = Fixture::new_with_replies(&[Reply::Status(408)]);
     fixture.transport.push_during_send(record_at(10));
     let logger = fixture.build();
@@ -15,6 +16,7 @@ async fn requeue_and_overflow_prepends_the_retried_batch_in_order() {
     assert!(!async_send_batch(&logger).await);
     let models = models(&logger);
     assert_eq!(models, ["gpt-0", "gpt-1", "gpt-2", "gpt-10"]);
+    assert!(!logs.text().contains("retry queue exceeded max_queue_size"));
 }
 
 #[tokio::test]

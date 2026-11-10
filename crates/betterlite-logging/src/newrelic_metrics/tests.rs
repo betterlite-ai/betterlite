@@ -15,6 +15,7 @@ mod init_validation;
 mod interval_ms;
 mod metric_record;
 mod periodic_flush;
+mod pooled_transport;
 mod post_stop_callback;
 mod region_resolution;
 mod requeue_and_overflow;

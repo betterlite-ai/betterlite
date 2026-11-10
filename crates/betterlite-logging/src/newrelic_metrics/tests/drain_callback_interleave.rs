@@ -31,6 +31,23 @@ async fn drain_callback_interleave_reports_only_the_attempted_record_as_dropped(
 }
 
 #[tokio::test]
+async fn drain_callback_interleave_does_not_warn_when_nothing_was_dropped() {
+    let (logs, _guard) = super::support::capture_logs();
+    let fixture =
+        Fixture::new_with_replies(&[Reply::Status(202), Reply::Status(500), Reply::Status(500)]);
+    fixture.transport.push_during_send(record_at(10));
+    let logger = fixture.build();
+    push_record(&logger, record_at(0));
+    drain_with_retry(&logger).await;
+    assert_eq!(queue_snapshot(&logger).len(), 1);
+    assert!(
+        !logs
+            .text()
+            .contains("dropping records after the drain passes")
+    );
+}
+
+#[tokio::test]
 async fn drain_callback_interleave_delivers_an_appended_record_in_the_same_drain() {
     let fixture = Fixture::new_with_replies(&[Reply::Status(202), Reply::Status(202)]);
     fixture.transport.push_during_send(record_at(10));
