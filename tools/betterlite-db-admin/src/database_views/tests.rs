@@ -2,12 +2,13 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::future::pending;
+use std::future::{Future, pending};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_db::database_views::contracts::{
-    ExecuteFuture, QueryFuture, RawRow, SupportsExecuteRaw, SupportsRawQueries,
+    ExecuteFuture, QueryFuture, SupportsExecuteRaw, SupportsRawQueries,
 };
 use betterlite_db::database_views::definitions::{
     OFFLINE_VERIFICATION_VIEW_SQL, OFFLINE_VIEWS, VERIFICATION_TOKEN_VIEW,
@@ -24,6 +25,12 @@ use super::{OFFLINE_TIMEOUT, offline_views};
 
 const PERMISSION_DENIED: &str = "permission denied for table LiteLLM_VerificationToken";
 const FAST: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy)]
+enum Call {
+    Probe,
+    Create,
+}
 
 #[derive(Default)]
 struct Scripted {
@@ -47,8 +54,38 @@ impl Scripted {
         }
     }
 
-    fn record(&self, call: String) {
-        self.calls.lock().expect("calls").push(call);
+    fn answer<'database, Value>(
+        &'database self,
+        call: Call,
+        query: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send + 'database>>
+    where
+        Value: Default + Send + 'database,
+    {
+        let (label, hang, failure) = match call {
+            Call::Probe => {
+                let probe = |name: &&str| query == format!("SELECT 1 FROM \"{name}\" LIMIT 1");
+                let exists = self.existing.iter().any(probe);
+                let failure = (!exists).then(|| self.probe_error.to_owned());
+                ("probe", self.hang_probe, failure)
+            }
+            Call::Create => {
+                let view = OFFLINE_VIEWS.iter().find(|view| view.ddl == query);
+                let message = view.and_then(|found| self.create_errors.get(found.name));
+                let failure = message.map(|text| (*text).to_owned());
+                ("create", self.hang_create, failure)
+            }
+        };
+        self.calls
+            .lock()
+            .expect("calls")
+            .push(format!("{label}|{query}"));
+        Box::pin(async move {
+            if hang {
+                pending::<()>().await;
+            }
+            failure.map_or_else(|| Ok(Value::default()), Err)
+        })
     }
 
     fn calls(&self) -> Vec<String> {
@@ -63,15 +100,7 @@ impl SupportsExecuteRaw for Scripted {
         &'database self,
         query: &'database str,
     ) -> ExecuteFuture<'database, String> {
-        self.record(format!("create|{query}"));
-        let view = OFFLINE_VIEWS.iter().find(|view| view.ddl == query);
-        let failure = view.and_then(|found| self.create_errors.get(found.name));
-        Box::pin(async move {
-            if self.hang_create {
-                pending::<()>().await;
-            }
-            failure.map_or(Ok(()), |message| Err((*message).to_owned()))
-        })
+        self.answer(Call::Create, query)
     }
 }
 
@@ -80,21 +109,7 @@ impl SupportsRawQueries for Scripted {
         &'database self,
         query: &'database str,
     ) -> QueryFuture<'database, String> {
-        self.record(format!("probe|{query}"));
-        let exists = self
-            .existing
-            .iter()
-            .any(|name| query == format!("SELECT 1 FROM \"{name}\" LIMIT 1"));
-        Box::pin(async move {
-            if self.hang_probe {
-                pending::<()>().await;
-            }
-            if exists {
-                Ok(Vec::<RawRow>::new())
-            } else {
-                Err(self.probe_error.to_owned())
-            }
-        })
+        self.answer(Call::Probe, query)
     }
 }
 
