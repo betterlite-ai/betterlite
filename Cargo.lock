@@ -1131,14 +1131,21 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-openai",
+ "hex",
  "indexmap 2.14.2",
+ "lru",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "sha2 0.11.1",
  "thiserror",
+ "tracing",
+ "url",
 ]
 
 [[package]]
