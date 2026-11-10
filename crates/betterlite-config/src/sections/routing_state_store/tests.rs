@@ -209,8 +209,10 @@ fn routing_state_store_config(#[case] name: &str) {
             ));
             let settings = load("", &[("REDIS_PORT", "many")]).unwrap();
             assert_eq!(settings.redis_port, None);
-            let port = settings.redis_environment.get("REDIS_PORT").unwrap();
-            assert_eq!(port.expose_secret(), "many");
+            assert_eq!(
+                settings.redis_environment["REDIS_PORT"].expose_secret(),
+                "many"
+            );
         }
         "unknown_nested_key_is_reported" => {
             let error = load(
