@@ -147,10 +147,8 @@ impl Fixture {
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
         let document = PrivateDocument::json(data).map_err(failure)?;
-        self.files
-            .write_private(&link.join(name), document)
-            .await
-            .map_err(failure)?;
+        let written = self.files.write_private(&link.join(name), document).await;
+        written.map_err(failure)?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
             .file_type()

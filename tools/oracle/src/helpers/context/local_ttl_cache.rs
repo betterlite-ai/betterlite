@@ -5,7 +5,7 @@ use std::sync::{
 #[path = "local_ttl_cache/dual.rs"]
 mod dual;
 
-use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
+use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -23,78 +23,62 @@ pub(crate) enum Input {
     DualLocalDefaultsErrors,
 }
 
+type CacheResult = Result<serde_json::Value, CacheError>;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input {
+        let value = match input {
             Input::CacheDefaults => defaults(),
             Input::ExpiryAndOverwrite => expiry(),
             Input::NonrefreshingTtl => nonrefreshing(),
-            Input::ValueSizePolicy => {
-                let mut cache = LocalTtlCache::with_clock(
-                    Some(2),
-                    Some(600.0_f64),
-                    Some(1),
-                    1024,
-                    Arc::new(|| 0.0_f64),
-                )
-                .map_err(cache_helper_error)?;
-                cache
-                    .set("small", CacheValue::Text("ok".to_owned()), None)
-                    .map_err(cache_helper_error)?;
-                cache
-                    .set("large", CacheValue::Text("x".repeat(2000)), None)
-                    .map_err(cache_helper_error)?;
-                Ok(json!({
-                    "small": cache.get("small").map_err(cache_helper_error)?,
-                    "large": cache.get("large").map_err(cache_helper_error)?,
-                }))
-            }
+            Input::ValueSizePolicy => value_size_policy(),
             Input::CachedJsonProjection { value } => projection(value),
-            Input::DualLocalDefaultsErrors => dual::run(),
-        }
+            Input::DualLocalDefaultsErrors => return dual::run(),
+        };
+        value.map_err(cache_helper_error)
     }
 }
 
-fn defaults() -> crate::helpers::HelperResult {
-    let cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))
-        .map_err(cache_helper_error)?;
-    let zero = LocalTtlCache::with_clock(None, Some(0.0_f64), Some(0), 1024, Arc::new(|| 0.0_f64))
-        .map_err(cache_helper_error)?;
+fn value_size_policy() -> CacheResult {
+    let mut cache = LocalTtlCache::with_clock(
+        Some(2),
+        Some(600.0_f64),
+        Some(1),
+        1024,
+        Arc::new(|| 0.0_f64),
+    )?;
+    cache.set("small", CacheValue::Text("ok".to_owned()), None)?;
+    cache.set("large", CacheValue::Text("x".repeat(2000)), None)?;
+    Ok(json!({"small": cache.get("small")?, "large": cache.get("large")?}))
+}
+
+fn defaults() -> CacheResult {
+    let cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))?;
+    let zero = LocalTtlCache::with_clock(None, Some(0.0_f64), Some(0), 1024, Arc::new(|| 0.0_f64))?;
     Ok(
         json!({"capacity": cache.as_ref().capacity, "ttl": cache.as_ref().default_ttl, "item_kib": cache.as_ref().max_size_per_item, "zero_ttl": zero.as_ref().default_ttl, "zero_item_kib": zero.as_ref().max_size_per_item}),
     )
 }
 
-fn expiry() -> crate::helpers::HelperResult {
+fn expiry() -> CacheResult {
     let mut cache = LocalTtlCache::with_clock(
         Some(2),
         Some(600.0_f64),
         Some(1024),
         1024,
         Arc::new(|| 10.0_f64),
-    )
-    .map_err(cache_helper_error)?;
-    cache
-        .set("b", CacheValue::Integer(2), Some(5.0_f64))
-        .map_err(cache_helper_error)?;
-    cache
-        .set("a", CacheValue::Integer(1), Some(5.0_f64))
-        .map_err(cache_helper_error)?;
-    cache
-        .set("c", CacheValue::Integer(3), Some(5.0_f64))
-        .map_err(cache_helper_error)?;
-    Ok(json!({
-        "a": cache.get("a").map_err(cache_helper_error)?,
-        "b": cache.get("b").map_err(cache_helper_error)?,
-        "c": cache.get("c").map_err(cache_helper_error)?,
-    }))
+    )?;
+    cache.set("b", CacheValue::Integer(2), Some(5.0_f64))?;
+    cache.set("a", CacheValue::Integer(1), Some(5.0_f64))?;
+    cache.set("c", CacheValue::Integer(3), Some(5.0_f64))?;
+    Ok(json!({"a": cache.get("a")?, "b": cache.get("b")?, "c": cache.get("c")?}))
 }
 
-fn nonrefreshing() -> crate::helpers::HelperResult {
+fn nonrefreshing() -> CacheResult {
     let clock = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
     let source = Arc::clone(&clock);
     let mut cache = LocalTtlCache::with_clock(
@@ -103,42 +87,25 @@ fn nonrefreshing() -> crate::helpers::HelperResult {
         None,
         1024,
         Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed))),
-    )
-    .map_err(cache_helper_error)?;
-    cache
-        .set("key", CacheValue::Integer(1), Some(10.0_f64))
-        .map_err(cache_helper_error)?;
-    cache
-        .set("key", CacheValue::Integer(2), Some(100.0_f64))
-        .map_err(cache_helper_error)?;
+    )?;
+    cache.set("key", CacheValue::Integer(1), Some(10.0_f64))?;
+    cache.set("key", CacheValue::Integer(2), Some(100.0_f64))?;
     clock.store(10.0_f64.to_bits(), Ordering::Relaxed);
-    let boundary = cache.get("key").map_err(cache_helper_error)?;
+    let boundary = cache.get("key")?;
     clock.store(11.0_f64.to_bits(), Ordering::Relaxed);
-    let expired = cache.get("key").map_err(cache_helper_error)?;
-    cache
-        .set("deleted", CacheValue::Integer(3), None)
-        .map_err(cache_helper_error)?;
+    let expired = cache.get("key")?;
+    cache.set("deleted", CacheValue::Integer(3), None)?;
     cache.delete("deleted");
-    Ok(json!({
-        "boundary": boundary,
-        "expired": expired,
-        "deleted": cache.get("deleted").map_err(cache_helper_error)?,
-    }))
+    Ok(json!({"boundary": boundary, "expired": expired, "deleted": cache.get("deleted")?}))
 }
 
-fn projection(value: &str) -> crate::helpers::HelperResult {
-    let mut cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))
-        .map_err(cache_helper_error)?;
-    cache
-        .set("value", CacheValue::Text(value.to_owned()), None)
-        .map_err(cache_helper_error)?;
-    Ok(json!({"value": cache.get("value").map_err(cache_helper_error)?}))
+fn projection(value: &str) -> CacheResult {
+    let mut cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))?;
+    cache.set("value", CacheValue::Text(value.to_owned()), None)?;
+    Ok(json!({"value": cache.get("value")?}))
 }
 
-fn cache_helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
-where
-    E: std::fmt::Display,
-{
+fn cache_helper_error(error: CacheError) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,

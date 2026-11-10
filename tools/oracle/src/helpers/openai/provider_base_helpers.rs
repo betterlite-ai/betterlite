@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::LiteLlmSettings;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HiddenCarrier, HistoryMessage, ImageEditBase, ResponseKind, ResponsesBase,
     add_thinking_max_tokens, append_tools, assistant_has_thinking, has_tool_calls, hidden_params,
@@ -107,7 +108,7 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
             provider_config(&members.values).map_err(openai)?,
         )),
         BaseCall::Thinking(params) => serde_json::to_value(thinking_request(&params)),
-        BaseCall::ThinkingMaxTokens(input) => return input.run(),
+        BaseCall::ThinkingMaxTokens(input) => return input.run().map(Value::Object),
         BaseCall::AppendTools(mut input) => {
             append_tools(&mut input.options, input.tools).map_err(openai)?;
             Ok(Value::Object(input.options))
@@ -143,17 +144,12 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
 }
 
 impl TokensCall {
-    fn run(mut self) -> Outcome {
-        let default_max_tokens = ConfigLoader {
-            lookup: self.environment,
-        }
-        .load("")
-        .map_err(config_helper_error)?
-        .litellm_settings
-        .default_max_tokens;
-        add_thinking_max_tokens(&self.requested, &mut self.options, default_max_tokens)
+    fn run(self) -> Result<Object, Box<HelperError>> {
+        let default_max_tokens = load_settings(self.environment, "")?.default_max_tokens;
+        let mut options = self.options;
+        add_thinking_max_tokens(&self.requested, &mut options, default_max_tokens)
             .map_err(|error| openai_helper_error(&error))?;
-        Ok(Value::Object(self.options))
+        Ok(options)
     }
 }
 
@@ -179,14 +175,21 @@ impl ModifyCall {
             Some(true) => "litellm_settings: {modify_params: true}",
             Some(false) => "litellm_settings: {modify_params: false}",
         };
-        let settings = ConfigLoader {
-            lookup: self.environment,
-        }
-        .load(source)
-        .map_err(config_helper_error)?
-        .litellm_settings;
-        Ok(Value::Bool(settings.modify_params))
+        Ok(Value::Bool(
+            load_settings(self.environment, source)?.modify_params,
+        ))
     }
+}
+
+fn load_settings(
+    environment: Environment,
+    source: &str,
+) -> Result<LiteLlmSettings, Box<HelperError>> {
+    let loaded = ConfigLoader {
+        lookup: environment,
+    }
+    .load(source);
+    Ok(loaded.map_err(config_helper_error)?.litellm_settings)
 }
 
 fn openai_helper_error(error: &OpenAiError) -> Box<HelperError> {
