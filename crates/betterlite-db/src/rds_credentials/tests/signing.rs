@@ -8,8 +8,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::fixture::{
-    BotocoreFixture, Clock, Preset, RecordingSecrets, Reply, SIGNER_CREDENTIALS, TokenVector,
-    aws_sources, botocore_fixture, endpoint, environment, preset_inputs, secret,
+    BotocoreFixture, Clock, Preset, RecordingSecrets, Reply, SECRET_KEY, SIGNER_CREDENTIALS,
+    TokenVector, aws_sources, botocore_fixture, endpoint, environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{
@@ -91,6 +91,19 @@ async fn fixed_clock_botocore_signature() {
     assert_vector(&pinned, "default_https_port").await;
     assert_vector(&pinned, "temporary_web_identity").await;
     assert_vector(&pinned, "temporary_assume_role").await;
+}
+
+#[tokio::test]
+async fn signer_debug_hides_the_credentials() {
+    let secrets = RecordingSecrets::new(&[]);
+    let environment = environment(&[]);
+    let clock = Clock::at(1_794_225_600);
+    let (sources, _recorder) = aws_sources(&secrets, &environment, &[], &clock, Reply::WebIdentity);
+    let signer = RdsSigner::init(preset_inputs(Preset::Direct), sources)
+        .await
+        .unwrap();
+    assert_eq!(format!("{signer:?}"), "RdsSigner");
+    assert!(!format!("{signer:?}").contains(SECRET_KEY));
 }
 
 #[test]
