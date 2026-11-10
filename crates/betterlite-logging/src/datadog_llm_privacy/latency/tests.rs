@@ -4,14 +4,20 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use crate::datadog_llm_privacy::latency::{
-    latency_metrics, metrics_object, time_to_first_token_seconds,
-};
+use crate::datadog_llm_privacy::latency::{latency_metrics, time_to_first_token_seconds};
+use crate::datadog_llm_privacy::record_object;
 use crate::datadog_llm_privacy::tests::support;
+use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::payload::records::{DecimalValue, GuardrailInformation};
 
 fn guardrail(duration: &str) -> GuardrailInformation {
     serde_json::from_str(&format!(r#"{{"duration": {duration}}}"#)).expect("the record parses")
+}
+
+fn metrics(payload: &StandardLoggingPayload) -> Json {
+    let object =
+        record_object("latency_metrics", &latency_metrics(payload)).expect("the metrics encode");
+    Json::Object(object)
 }
 
 #[rstest]
@@ -39,9 +45,9 @@ fn latency_metrics_cover_token_time_overhead_and_guardrails() {
     payload.end_time = Decimal::new(1_704_067_202, 0);
     payload.hidden_params.litellm_overhead_time_ms = Some(DecimalValue(Decimal::new(125, 1)));
     payload.guardrail_information = Some(vec![guardrail("0.25"), guardrail("0.5")]);
-    let object = metrics_object(&latency_metrics(&payload));
+    let object = metrics(&payload);
     assert_eq!(
-        Json::Object(object),
+        object,
         support::json(
             r#"{"time_to_first_token_ms": 250.0, "litellm_overhead_time_ms": 12.5, "guardrail_overhead_time_ms": 750.0}"#
         )
@@ -54,8 +60,8 @@ fn latency_metrics_omit_a_zero_token_time_and_a_negative_total() {
     payload.completion_start_time = payload.start_time;
     payload.hidden_params.litellm_overhead_time_ms = None;
     payload.guardrail_information = Some(vec![guardrail("0"), guardrail("-0.5")]);
-    let object = metrics_object(&latency_metrics(&payload));
-    assert_eq!(Json::Object(object), support::json("{}"));
+    let object = metrics(&payload);
+    assert_eq!(object, support::json("{}"));
 }
 
 #[test]
@@ -63,17 +69,17 @@ fn latency_metrics_omit_a_zero_guardrail_total() {
     let mut payload = support::payload();
     payload.completion_start_time = payload.start_time;
     payload.guardrail_information = Some(vec![guardrail("0.5"), guardrail("-0.5")]);
-    let object = metrics_object(&latency_metrics(&payload));
-    assert_eq!(Json::Object(object), support::json("{}"));
+    let object = metrics(&payload);
+    assert_eq!(object, support::json("{}"));
 }
 
 #[test]
 fn latency_metrics_keep_a_zero_overhead_the_payload_carries() {
     let mut payload = support::payload();
     payload.hidden_params.litellm_overhead_time_ms = Some(DecimalValue(Decimal::ZERO));
-    let object = metrics_object(&latency_metrics(&payload));
+    let object = metrics(&payload);
     assert_eq!(
-        Json::Object(object),
+        object,
         support::json(r#"{"litellm_overhead_time_ms": 0.0}"#)
     );
 }

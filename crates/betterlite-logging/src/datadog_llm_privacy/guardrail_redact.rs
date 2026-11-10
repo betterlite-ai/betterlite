@@ -7,12 +7,16 @@ use crate::spend_sanitize::REDACTED_BY_LITELM;
 
 use super::{RecordEncodingError, record_object};
 
-// LiteLLM keeps the audit fields and marks the prompt-carrying ones; a key in neither set is dropped
+// LiteLLM reads one record or a list of them, keeps the audit fields and marks the prompt-carrying ones
 #[must_use]
 pub fn redact_guardrails(value: Option<&Json>) -> Option<Vec<Object>> {
     let records = value?;
-    let redacted: Vec<Object> = entries(records).into_iter().map(redacted_record).collect();
-    Some(redacted)
+    let grouped = match records {
+        Json::Object(fields) => vec![fields],
+        Json::List(items) => items.iter().filter_map(as_object).collect(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Vec::new(),
+    };
+    Some(grouped.into_iter().map(redacted_record).collect())
 }
 
 pub fn redacted_records(
@@ -26,27 +30,15 @@ pub fn redacted_records(
     Ok(redacted)
 }
 
-fn entries(value: &Json) -> Vec<&Object> {
-    match value {
-        Json::Object(fields) => vec![fields],
-        Json::List(items) => items.iter().filter_map(as_object).collect(),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Vec::new(),
-    }
-}
-
 fn redacted_record(record: &Object) -> Object {
     record
         .iter()
-        .filter(|(field, _value)| classified(field))
+        .filter(|(field, _value)| {
+            GUARDRAIL_PROMPT_FIELDS.contains(&field.as_str())
+                || AUDIT_GUARDRAIL_FIELDS.contains(&field.as_str())
+        })
         .map(|(field, value)| (field.clone(), classified_value(field, value)))
         .collect()
-}
-
-fn classified(field: &str) -> bool {
-    if GUARDRAIL_PROMPT_FIELDS.contains(&field) {
-        return true;
-    }
-    AUDIT_GUARDRAIL_FIELDS.contains(&field)
 }
 
 fn classified_value(field: &str, value: &Json) -> Json {

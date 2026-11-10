@@ -2,8 +2,8 @@ use betterlite_models::decisions::Json;
 
 use super::guardrail_redact::redacted_records;
 use super::json_number::number as json_number;
-use super::latency::{latency_metrics, metrics_object as latency_object};
-use super::spend::{metrics_object as spend_object, spend_metrics};
+use super::latency::latency_metrics;
+use super::spend::spend_metrics;
 use super::stream::is_streamed_request;
 use super::{RecordEncodingError, record_object};
 use crate::datadog_llm_obs::constants::METADATA_PROMPT_FIELDS;
@@ -62,16 +62,10 @@ fn fixed_fields(
     metadata.insert("guardrail_information".to_owned(), guardrails);
     let streamed = Json::Bool(is_streamed_request(payload));
     metadata.insert("is_streamed_request".to_owned(), streamed);
-    let latency = latency_metrics(payload);
-    metadata.insert(
-        "latency_metrics".to_owned(),
-        Json::Object(latency_object(&latency)),
-    );
-    let spend = spend_metrics(payload);
-    metadata.insert(
-        "spend_metrics".to_owned(),
-        Json::Object(spend_object(&spend)),
-    );
+    let latency = record_object("latency_metrics", &latency_metrics(payload))?;
+    metadata.insert("latency_metrics".to_owned(), Json::Object(latency));
+    let spend = record_object("spend_metrics", &spend_metrics(payload))?;
+    metadata.insert("spend_metrics".to_owned(), Json::Object(spend));
     Ok(metadata)
 }
 

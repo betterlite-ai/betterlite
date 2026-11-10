@@ -1,10 +1,6 @@
 use std::ops::{Add as _, Mul as _, Sub as _};
 
-use betterlite_models::decisions::Json;
-use serde_json::Number;
-
 use crate::datadog_llm_obs::span_records::DDLLMObsLatencyMetrics;
-use crate::datadog_llm_obs::values::Object;
 use crate::fields::payload::StandardLoggingPayload;
 
 const MILLIS_PER_SECOND: f64 = 1000.0;
@@ -52,27 +48,6 @@ pub fn latency_metrics(payload: &StandardLoggingPayload) -> DDLLMObsLatencyMetri
         metrics.guardrail_overhead_time_ms = Some(total.mul(MILLIS_PER_SECOND));
     }
     metrics
-}
-
-#[must_use]
-pub fn metrics_object(metrics: &DDLLMObsLatencyMetrics) -> Object {
-    let mut object = Object::new();
-    let fields = [
-        ("time_to_first_token_ms", metrics.time_to_first_token_ms),
-        ("litellm_overhead_time_ms", metrics.litellm_overhead_time_ms),
-        (
-            "guardrail_overhead_time_ms",
-            metrics.guardrail_overhead_time_ms,
-        ),
-    ];
-    for (name, value) in fields {
-        if let Some(seconds) = value
-            && let Some(number) = Number::from_f64(seconds)
-        {
-            object.insert(name.to_owned(), Json::Number(number));
-        }
-    }
-    object
 }
 
 mod tests;

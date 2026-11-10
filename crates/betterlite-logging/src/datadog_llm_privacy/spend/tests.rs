@@ -1,11 +1,19 @@
 #![cfg(test)]
 
-use crate::datadog_llm_privacy::tests::support;
-
+use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
-use crate::datadog_llm_privacy::spend::{metrics_object, spend_metrics};
+use crate::datadog_llm_privacy::record_object;
+use crate::datadog_llm_privacy::spend::spend_metrics;
+use crate::datadog_llm_privacy::tests::support;
+use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::payload::records::DecimalValue;
+
+fn metrics_object(payload: &StandardLoggingPayload) -> Json {
+    let object =
+        record_object("spend_metrics", &spend_metrics(payload)).expect("the metrics encode");
+    Json::Object(object)
+}
 
 #[test]
 fn spend_metrics_carry_the_cost_budgets_and_the_reset_in_utc() {
@@ -46,7 +54,10 @@ fn spend_metrics_object_writes_every_present_field() {
     payload.metadata.user_api_key_max_budget = Some(DecimalValue(Decimal::new(225, 2)));
     payload.metadata.user_api_key_spend = Some(DecimalValue(Decimal::new(5, 1)));
     payload.metadata.user_api_key_budget_reset_at = Some("2026-01-01T00:00:00Z".to_owned());
-    let object = metrics_object(&spend_metrics(&payload));
+    let metrics = metrics_object(&payload);
+    let Json::Object(object) = metrics else {
+        panic!("the metrics are an object");
+    };
     assert_eq!(object.get("response_cost"), Some(&support::json("0.5")));
     assert_eq!(
         object.get("user_api_key_spend"),

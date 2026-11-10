@@ -1,20 +1,18 @@
 use betterlite_logging::datadog_llm_obs::messages::to_dd_messages;
+use betterlite_logging::datadog_llm_privacy::RecordEncodingError;
 use betterlite_logging::datadog_llm_privacy::cost_dimension::{
     cost_dimension_tags, declared_cost_tags,
 };
 use betterlite_logging::datadog_llm_privacy::guardrail_redact::redact_guardrails;
 use betterlite_logging::datadog_llm_privacy::latency::{
-    latency_metrics, metrics_object as latency_object, time_to_first_token_seconds,
+    latency_metrics, time_to_first_token_seconds,
 };
 use betterlite_logging::datadog_llm_privacy::message_redact::redact_messages;
 use betterlite_logging::datadog_llm_privacy::metadata::span_metadata;
-use betterlite_logging::datadog_llm_privacy::redaction_decision::{
-    LoggingFlags, payload_logging_is_off,
-};
+use betterlite_logging::datadog_llm_privacy::record_object;
+use betterlite_logging::datadog_llm_privacy::redaction_decision::LoggingFlags;
 use betterlite_logging::datadog_llm_privacy::router_span::router_span_fields;
-use betterlite_logging::datadog_llm_privacy::spend::{
-    metrics_object as spend_object, spend_metrics,
-};
+use betterlite_logging::datadog_llm_privacy::spend::spend_metrics;
 use betterlite_logging::datadog_llm_privacy::stream::is_streamed_request;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
@@ -100,15 +98,22 @@ struct CostOutput {
     declared: Vec<String>,
 }
 
+impl From<RecordEncodingError> for Box<crate::helpers::HelperError> {
+    fn from(error: RecordEncodingError) -> Self {
+        value_error(error)
+    }
+}
+
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::RedactionDecision(decision) => encode(payload_logging_is_off(
-                decision.flags,
-                decision.request_redacts,
-            )),
+            Input::RedactionDecision(decision) => encode(
+                decision.flags.turn_off_message_logging
+                    || !decision.flags.message_logging
+                    || decision.request_redacts,
+            ),
             Input::MessageRedaction(redaction) => encode(redact_messages(&to_dd_messages(
                 redaction.messages.as_ref(),
             ))),
@@ -125,11 +130,15 @@ impl crate::helpers::Helper for Op {
                 timing.completion_start,
                 timing.end,
             )),
-            Input::LatencyMetrics(latency) => {
-                encode(latency_object(&latency_metrics(&latency.payload)))
-            }
+            Input::LatencyMetrics(latency) => encode(record_object(
+                "latency_metrics",
+                &latency_metrics(&latency.payload),
+            )?),
             Input::StreamDetection(stream) => encode(is_streamed_request(&stream.payload)),
-            Input::SpendMetrics(spend) => encode(spend_object(&spend_metrics(&spend.payload))),
+            Input::SpendMetrics(spend) => encode(record_object(
+                "spend_metrics",
+                &spend_metrics(&spend.payload),
+            )?),
             Input::Metadata(metadata) => metadata_output(metadata),
         }
     }
@@ -154,15 +163,13 @@ fn metadata_output(input: &MetadataInput) -> crate::helpers::HelperResult {
     let mut all_tags = input.span_tags.clone();
     all_tags.extend(cost_dimension_tags(&input.payload, &router));
     let cost_tags = declared_cost_tags(&all_tags);
-    match span_metadata(
+    let metadata = span_metadata(
         &input.payload,
         &router,
         &cost_tags,
         input.redact_prompt_text,
-    ) {
-        Ok(metadata) => encode(metadata),
-        Err(error) => Err(value_error(error)),
-    }
+    )?;
+    encode(metadata)
 }
 
 fn encode<T>(value: T) -> crate::helpers::HelperResult
