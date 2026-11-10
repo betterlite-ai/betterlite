@@ -1,0 +1,16 @@
+kind: helper
+name: media-tokens-default-on-error
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        default_token_count: 777
+        content:
+          - hello world
+          - type: image_url
+            image_url:
+              url: "data:image/png;base64,iVBORw0KGgo="
+              detail: high
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: semantic-similarity-metadata-update
+call:
+  b4297:
+    get_cache:
+      request:
+        cache_key: key-1
+        key:
+          params:
+            - {name: model, value: gpt-4}
+            - {name: messages, value: [{role: user, content: hi}]}
+            - {name: temperature, value: 0.7}
+          metadata:
+            user_api_key: key-hash
+      stamp: 0.42
+env: {}
+compare:
+  ignore: []

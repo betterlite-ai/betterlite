@@ -17,6 +17,13 @@ jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "cache_page"
+path = "fuzz_targets/cache_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
 test = false

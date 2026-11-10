@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-ttl-reply-corpus-seed
+call:
+  b5640:
+    function: ttl_reply
+    namespace: seeded
+    key: seeded
+    reply: -1
+env: {}
+compare: {ignore: []}
