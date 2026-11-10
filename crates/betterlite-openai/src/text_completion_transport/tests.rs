@@ -108,7 +108,8 @@ fn stream_chunks(transport: &Transport, request: TextCompletionRequest) -> Vec<V
     let TextCompletionOutcome::Stream(stream) = outcome else {
         panic!("the streaming path answered buffered");
     };
-    let items: Vec<Result<StreamChunk, TextCompletionError>> = run(stream.collect());
+    // The bound keeps a stream that never closes from filling memory
+    let items: Vec<Result<StreamChunk, TextCompletionError>> = run(stream.take(16).collect());
     items
         .into_iter()
         .map(|item| match item {
@@ -492,6 +493,7 @@ fn stream_boundaries() {
     hidden_model_id();
     stream_options_reach_the_wrapper();
     closing_chunk_carries_the_finish_reason();
+    totals_ride_on_the_closing_chunks();
 }
 
 fn streamed_chunks_are_yielded(acompletion: bool) {
@@ -644,6 +646,43 @@ fn stream_options_reach_the_wrapper() {
     assert!(chunks[1]["hidden_params"].get("usage").is_none());
     assert!(chunks[2]["usage"].is_object());
     assert_eq!(chunks[2]["choices"][0]["finish_reason"], Value::Null);
+}
+
+fn counted_chunk(text: &str) -> Value {
+    let mut chunk = support::chunk(text, None);
+    chunk["usage"] = support::object(vec![
+        ("prompt_tokens", Value::from(3_i64)),
+        ("completion_tokens", Value::from(2_i64)),
+        ("total_tokens", Value::from(5_i64)),
+    ]);
+    chunk
+}
+
+// A text chunk keeps its content and loses its usage; the totals go out once, where litellm puts them
+fn totals_ride_on_the_closing_chunks() {
+    let answer = || Answer::stream(vec![counted_chunk("hi"), support::chunk("", Some("stop"))]);
+    let (transport, _constructor) = support::transport(answer());
+    let plain = stream_chunks(
+        &transport,
+        text_request(vec![("stream", Value::Bool(true))]),
+    );
+    assert_eq!(plain.len(), 2);
+    assert_eq!(plain[0]["choices"][0]["delta"]["content"], "hi");
+    assert_eq!(plain[0]["usage"], Value::Null);
+    let hidden_total = &plain[1]["hidden_params"]["usage"]["total_tokens"];
+    assert_eq!(*hidden_total, Value::from(5_i64));
+    let (options_transport, _options_constructor) = support::transport(answer());
+    let options = support::object(vec![("include_usage", Value::Bool(true))]);
+    let counted = stream_chunks(
+        &options_transport,
+        text_request(vec![
+            ("stream", Value::Bool(true)),
+            ("stream_options", options),
+        ]),
+    );
+    assert_eq!(counted.len(), 3);
+    assert!(counted[1]["hidden_params"].get("usage").is_none());
+    assert_eq!(counted[2]["usage"]["total_tokens"], Value::from(5_i64));
 }
 
 // The finish reason that rode on a text chunk goes out in a closing chunk that also carries the totals
