@@ -172,37 +172,26 @@ fn cache_detail_mismatches() {
 }
 
 fn additional_thinking_tokens() {
-    for (field, expected) in [
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": 4}}}"#),
-            Some(4),
-        ),
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": true}}}"#),
-            Some(1),
-        ),
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": "4"}}}"#),
-            None,
-        ),
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": -3}}}"#),
-            Some(-3),
-        ),
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": 2.5}}}"#),
-            None,
-        ),
-        (
-            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": null}}}"#),
-            None,
-        ),
-        (json(r#"{"usage": {"output_tokens_details": {}}}"#), None),
-        (json(r#"{"usage": {"output_tokens_details": 5}}"#), None),
-        (json(r#"{"usage": {"output_tokens": 5}}"#), None),
-        (json(r#"{"usage": 5}"#), None),
+    for (count, expected) in [
+        ("4", Some(4)),
+        ("true", Some(1)),
+        ("-3", Some(-3)),
+        ("\"4\"", None),
+        ("2.5", None),
+        ("null", None),
     ] {
+        let field = json(&format!(
+            r#"{{"usage": {{"output_tokens_details": {{"thinking_tokens": {count}}}}}}}"#
+        ));
         assert_eq!(thinking_tokens_from_fields(&field), expected);
+    }
+    for field in [
+        r#"{"usage": {"output_tokens_details": {}}}"#,
+        r#"{"usage": {"output_tokens_details": 5}}"#,
+        r#"{"usage": {"output_tokens": 5}}"#,
+        r#"{"usage": 5}"#,
+    ] {
+        assert_eq!(thinking_tokens_from_fields(&json(field)), None);
     }
     let estimate = estimated(USAGE, "hello world", 2);
     assert_eq!(reasoning_tokens(&estimate), &json("2"));
