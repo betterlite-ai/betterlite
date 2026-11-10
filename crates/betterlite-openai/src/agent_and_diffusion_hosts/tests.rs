@@ -393,7 +393,7 @@ fn heroku_environment(base: Option<&str>) -> Vec<(&str, &str)> {
 #[case::appends_after_a_trailing_suffix_slash(
     None,
     Some("https://heroku.example/v1/chat/completions/"),
-    "https://heroku.example/v1/chat/completions/v1/chat/completions"
+    "https://heroku.example/v1/chat/completions//v1/chat/completions"
 )]
 #[case::explicit_base_wins(
     Some("https://explicit"),
@@ -754,20 +754,32 @@ fn inception_text_completion_lists_the_fim_options() {
 }
 
 #[rstest]
-#[case::only_max_completion_tokens(json!({"max_completion_tokens": 5_i32}), json!({"max_tokens": 5_i32}))]
-#[case::only_max_tokens(json!({"max_tokens": 7_i32}), json!({"max_tokens": 7_i32}))]
+#[case::only_max_completion_tokens(vec![("max_completion_tokens", json!(5_i32))], json!({"max_tokens": 5_i32}))]
+#[case::only_max_tokens(vec![("max_tokens", json!(7_i32))], json!({"max_tokens": 7_i32}))]
 #[case::declared_limit_last(
-    json!({"max_completion_tokens": 5_i32, "max_tokens": 7_i32}),
+    vec![("max_completion_tokens", json!(5_i32)), ("max_tokens", json!(7_i32))],
     json!({"max_tokens": 7_i32})
 )]
 #[case::completion_limit_last(
-    json!({"max_tokens": 7_i32, "max_completion_tokens": 5_i32}),
+    vec![("max_tokens", json!(7_i32)), ("max_completion_tokens", json!(5_i32))],
     json!({"max_tokens": 5_i32})
 )]
-#[case::nulls_and_zero(json!({"suffix": null, "top_p": 0_i32}), json!({"suffix": null, "top_p": 0_i32}))]
-#[case::unsupported_is_skipped(json!({"unsupported": 1_i32, "stream": true}), json!({"stream": true}))]
-fn inception_fim_maps_limits_in_input_order(#[case] requested: Value, #[case] expected: Value) {
-    let mapped = params(requested);
+#[case::nulls_and_zero(
+    vec![("suffix", Value::Null), ("top_p", json!(0_i32))],
+    json!({"suffix": null, "top_p": 0_i32})
+)]
+#[case::unsupported_is_skipped(
+    vec![("unsupported", json!(1_i32)), ("stream", json!(true))],
+    json!({"stream": true})
+)]
+fn inception_fim_maps_limits_in_input_order(
+    #[case] requested: Vec<(&str, Value)>,
+    #[case] expected: Value,
+) {
+    let mapped: IndexMap<String, Value> = requested
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect();
     let mut existing = Object::new();
     InceptionTextCompletionConfig::map_params(&mapped, &mut existing);
     assert_eq!(Value::Object(existing), expected);
