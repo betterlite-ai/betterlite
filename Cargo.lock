@@ -2821,9 +2821,11 @@ name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
  "betterlite-error",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "http 1.5.0",
  "jiff",
  "regex",
  "rstest",
@@ -2833,6 +2835,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror",
+ "tokio",
  "tracing",
  "url",
 ]

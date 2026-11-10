@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-cache-lookup-custom-version-root
+call:
+  vertex_cache_lookup:
+    targets:
+      - {provider: vertex_ai, api_base: "https://proxy.example.com/v1", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai_beta, api_base: "https://proxy.example.com/v1beta1", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai, api_base: "https://proxy.example.com", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai, api_base: "https://proxy.example.com/custom", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}
