@@ -61,11 +61,9 @@ pub struct HostReply<'request> {
     pub body: &'request str,
     pub status_code: u16,
     pub headers: &'request Headers,
-    pub request_model: &'request str,
     pub messages: &'request Json,
     pub api_key: Option<&'request SecretString>,
     pub request_data: &'request Object,
-    pub json_mode: bool,
     pub source: ReplySource,
 }
 
@@ -150,19 +148,6 @@ fn convert_single_tool_calls(reply: &mut Value) -> Option<()> {
     Some(())
 }
 
-pub fn process_clarifai_response(
-    reply: HostReply<'_>,
-    logger: &mut dyn PostCallLogger,
-) -> Result<ChatResponse, HostModelIdentityError> {
-    log_reply(&reply, logger);
-    let mode = HostReplyMode::Clarifai {
-        request_model: reply.request_model,
-    };
-    decode_host_named_reply(reply.body.as_bytes(), mode, &reply.source)
-        .map_err(|error| wrap_json_failure(error, reply.status_code, reply.headers.clone()))
-}
-
-// both pinned transforms log the raw text, the messages, the key and the request body before parsing
 fn log_reply(reply: &HostReply<'_>, logger: &mut dyn PostCallLogger) {
     logger.post_call(PostCall {
         input: reply.messages,
@@ -193,15 +178,17 @@ fn wrap_json_failure(
     }
 }
 
-// CompactifAIConfig.transform_response logs the raw text, then lets a json failure propagate unchanged
-pub fn process_compactifai_response(
+// both pinned transforms log the raw text before parsing; only Clarifai wraps a json failure
+pub fn process_host_response(
+    mode: HostReplyMode<'_>,
     reply: HostReply<'_>,
     logger: &mut dyn PostCallLogger,
 ) -> Result<ChatResponse, HostModelIdentityError> {
     log_reply(&reply, logger);
-    let mode = HostReplyMode::Compactifai {
-        request_model: reply.request_model,
-        json_mode: reply.json_mode,
-    };
-    decode_host_named_reply(reply.body.as_bytes(), mode, &reply.source)
+    let decoded = decode_host_named_reply(reply.body.as_bytes(), mode, &reply.source);
+    match mode {
+        HostReplyMode::Clarifai { .. } => decoded
+            .map_err(|error| wrap_json_failure(error, reply.status_code, reply.headers.clone())),
+        HostReplyMode::Compactifai { .. } => decoded,
+    }
 }

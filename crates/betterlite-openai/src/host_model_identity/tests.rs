@@ -15,7 +15,7 @@ use super::identity::{
 };
 use super::{
     HostReply, HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, ReplySource,
-    decode_host_named_reply, process_clarifai_response, process_compactifai_response,
+    decode_host_named_reply, process_host_response,
 };
 use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::openai_base_config::{Headers, Object};
@@ -353,21 +353,16 @@ fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
     let request_data =
         Object::from_iter([(String::from("model"), Value::String(String::from("m")))]);
     let mut recorder = Recorder::default();
-    let error = process_clarifai_response(
-        HostReply {
-            body,
-            status_code: 400,
-            headers: &supplied,
-            request_model: "user.app.model",
-            messages: &input,
-            api_key: Some(&key),
-            request_data: &request_data,
-            json_mode: false,
-            source: source(),
-        },
-        &mut recorder,
-    )
-    .unwrap_err();
+    let reply = HostReply {
+        body,
+        status_code: 400,
+        headers: &supplied,
+        messages: &input,
+        api_key: Some(&key),
+        request_data: &request_data,
+        source: source(),
+    };
+    let error = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap_err();
     (recorder, supplied, error)
 }
 
@@ -408,21 +403,16 @@ fn compactifai_logs_the_raw_reply_before_its_json_failure() {
     let key = secret("request-key");
     let input = messages(value("[]"));
     let mut recorder = Recorder::default();
-    let error = process_compactifai_response(
-        HostReply {
-            body,
-            status_code: 200,
-            headers: &Headers::new(),
-            request_model: "user.app.model",
-            messages: &input,
-            api_key: Some(&key),
-            request_data: &Object::new(),
-            json_mode: false,
-            source: source(),
-        },
-        &mut recorder,
-    )
-    .unwrap_err();
+    let reply = HostReply {
+        body,
+        status_code: 200,
+        headers: &Headers::new(),
+        messages: &input,
+        api_key: Some(&key),
+        request_data: &Object::new(),
+        source: source(),
+    };
+    let error = process_host_response(compactifai_mode(false), reply, &mut recorder).unwrap_err();
     assert_eq!(recorder.0.len(), 1);
     assert_eq!(recorder.0[0]["original_response"], body);
     assert!(matches!(error, HostModelIdentityError::Json { .. }));
@@ -434,21 +424,16 @@ fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
     let key = secret("request-key");
     let input = messages(value(r#"[{"role":"user","content":"hello"}]"#));
     let mut recorder = Recorder::default();
-    let response = process_clarifai_response(
-        HostReply {
-            body: &body,
-            status_code: 200,
-            headers: &Headers::new(),
-            request_model: "user.app.model",
-            messages: &input,
-            api_key: Some(&key),
-            request_data: &Object::new(),
-            json_mode: false,
-            source: source(),
-        },
-        &mut recorder,
-    )
-    .unwrap();
+    let reply = HostReply {
+        body: &body,
+        status_code: 200,
+        headers: &Headers::new(),
+        messages: &input,
+        api_key: Some(&key),
+        request_data: &Object::new(),
+        source: source(),
+    };
+    let response = process_host_response(clarifai_mode(), reply, &mut recorder).unwrap();
     assert_eq!(recorder.0.len(), 1);
     assert_eq!(recorder.0[0]["original_response"], body);
     assert_eq!(response.model, "clarifai/user.app.model");

@@ -8,8 +8,7 @@ use betterlite_openai::host_model_identity::identity::{
     SUPPORTED_OPENAI_PARAMS, clarifai_base_model, clarifai_request_model, datarobot_api_base,
 };
 use betterlite_openai::host_model_identity::{
-    HostReply, PostCall, PostCallLogger, ReplySource, process_clarifai_response,
-    process_compactifai_response,
+    HostReply, HostReplyMode, PostCall, PostCallLogger, ReplySource, process_host_response,
 };
 use betterlite_openai::openai_base_config::Object;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -189,21 +188,25 @@ fn dispatch_reply(
         body: &step.body,
         status_code: step.status,
         headers: &step.headers,
-        request_model: &step.model,
         messages,
         api_key,
         request_data: &step.request_data,
-        json_mode: step.json_mode,
         source: ReplySource {
             identifier: Uuid::nil,
             clock: || 1_700_000_000,
         },
     };
-    match step.host {
-        Host::Clarifai => process_clarifai_response(reply, recorder),
-        Host::Compactifai => process_compactifai_response(reply, recorder),
-        Host::Datarobot => Err(HostModelIdentityError::Malformed { host: "datarobot" }),
-    }
+    let mode = match step.host {
+        Host::Clarifai => HostReplyMode::Clarifai {
+            request_model: &step.model,
+        },
+        Host::Compactifai => HostReplyMode::Compactifai {
+            request_model: &step.model,
+            json_mode: step.json_mode,
+        },
+        Host::Datarobot => return Err(HostModelIdentityError::Malformed { host: "datarobot" }),
+    };
+    process_host_response(mode, reply, recorder)
 }
 
 fn host_name(host: Host) -> &'static str {
