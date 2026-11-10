@@ -3,7 +3,15 @@ use serde::Deserialize;
 pub(crate) type Pair = (String, String);
 
 #[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Operation {
+    Run,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
+    pub operation: Operation,
     #[serde(default)]
     pub debug: Vec<DebugScenario>,
     #[serde(default)]

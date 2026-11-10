@@ -35,6 +35,18 @@ fn helper_seeds_select_b8194(#[files("fuzz/corpus/helper_case/mcp-debug-*.yaml")
 }
 
 #[test]
+fn an_unknown_operation_is_not_a_b8194_input() {
+    let input = json!({ "operation": "nope" });
+    assert!(Op::check(&input).is_err());
+}
+
+#[test]
+fn an_unknown_top_level_key_is_not_a_b8194_input() {
+    let input = json!({ "operation": "run", "bodys": [{ "body": "x" }] });
+    assert!(Op::check(&input).is_err());
+}
+
+#[test]
 fn a_wrongly_typed_section_is_not_a_b8194_input() {
     let input = json!({ "operation": "run", "bodies": "nope" });
     assert!(Op::check(&input).is_err());

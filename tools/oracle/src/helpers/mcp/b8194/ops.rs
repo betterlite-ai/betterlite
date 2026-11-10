@@ -15,9 +15,13 @@ use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::{BodyScenario, DebugScenario, DiagnosticScenario, Input, Pair};
+use super::input::{BodyScenario, DebugScenario, DiagnosticScenario, Input, Operation, Pair};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
+    let Input {
+        operation: Operation::Run,
+        ..
+    } = input;
     let redactor = redactor()?;
     let mut debug: Vec<Value> = Vec::with_capacity(input.debug.len());
     for scenario in &input.debug {
