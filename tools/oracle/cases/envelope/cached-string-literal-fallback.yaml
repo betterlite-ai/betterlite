@@ -1,0 +1,12 @@
+kind: helper
+name: cached-string-literal-fallback
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        timestamp: 9999999999
+        response: "{'choices': [], 'usage': None}"
+      max_age: 60
+env: {}
+compare:
+  ignore: []
