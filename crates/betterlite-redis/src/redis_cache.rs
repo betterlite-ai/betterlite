@@ -95,7 +95,12 @@ impl RedisCache {
                 Err(RedisCacheError::from(source)),
             );
         }
-        let outcome = increment::pipeline(self, increment_list).await;
+        // pipeline_increment namespaces its own keys, so it gets them as the caller wrote them
+        let outcome = self
+            .counters
+            .pipeline_increment(increment_list)
+            .await
+            .map_err(RedisCacheError::from);
         let event = ServiceEvent {
             call_type: "async_increment_pipeline",
             duration: started.elapsed(),
