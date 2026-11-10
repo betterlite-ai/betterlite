@@ -276,6 +276,12 @@ async fn a_successful_subscribe_resets_the_backoff_to_five_seconds() {
             Duration::from_secs(5),
         ]
     );
+    let closes = journal
+        .entries()
+        .iter()
+        .filter(|entry| entry.as_str() == "close")
+        .count();
+    assert_eq!(closes, 2);
 }
 
 #[tokio::test]
