@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-files-created-at-seed
+call:
+  anthropic_files:
+    created_at_timezone:
+      now: 1700000000
+      values:
+        - "2025-01-01T00:00:00Z"
+        - null
+env: {}
+compare: {ignore: []}

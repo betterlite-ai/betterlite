@@ -1,0 +1,31 @@
+kind: helper
+name: anthropic-files-file-beta-header
+call:
+  anthropic_files:
+    file_beta_header:
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fixture-key}
+          url_bases: [null, "", "https://api.anthropic.com", "https://custom.example/v1/files/"]
+          caller_headers: [[anthropic-version, old], [anthropic-beta, caller-beta], [x-keep, keep], [content-type, application/json]]
+          error: {status: 429, message: slow down, headers: [[X-Request-Id, req-1]]}
+        - environment: {ANTHROPIC_AUTH_TOKEN: fixture-token}
+          caller_headers: [[x-keep, keep]]
+          error: {status: 500, message: broken, headers: []}
+        - environment: {ANTHROPIC_API_KEY: sk-ant-oat-fixture}
+          error: {status: 401, message: denied, headers: []}
+        - environment: {}
+          error: {status: 400, message: bad, headers: []}
+        - environment: {}
+          api_key: sk-explicit
+          params_api_base: "https://params.example"
+          url_bases: [null]
+          caller_headers: [[anthropic-beta, ""]]
+          error: {status: 403, message: forbidden, headers: []}
+        - environment: {ANTHROPIC_API_KEY: sk-env-api-base, ANTHROPIC_API_BASE: "https://env-base.example/"}
+          url_bases: [null, ""]
+          error: {status: 400, message: bad, headers: []}
+        - environment: {ANTHROPIC_API_KEY: sk-env-base-url, ANTHROPIC_BASE_URL: "https://url-base.example/"}
+          url_bases: [null]
+          error: {status: 400, message: bad, headers: []}
+env: {}
+compare: {ignore: []}
