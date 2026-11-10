@@ -1,0 +1,11 @@
+kind: helper
+name: weave-empty-response
+call:
+  b3861:
+    function: set_weave_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+    response: {}
+env: {}
+compare: {ignore: []}
