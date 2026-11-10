@@ -272,7 +272,7 @@ async fn acquire_lock(opened: io::Result<File>, clock: &dyn Clock) -> SetupResul
             Ok(()) => return Ok(file),
             Err(fs::TryLockError::WouldBlock) => {
                 let now = clock.now();
-                let elapsed = now.checked_duration_since(started).unwrap_or_default();
+                let elapsed = now.saturating_duration_since(started);
                 if elapsed >= Duration::from_secs(10) {
                     return Err(Error::Locked);
                 }
