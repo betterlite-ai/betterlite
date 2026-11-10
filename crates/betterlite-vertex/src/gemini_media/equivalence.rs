@@ -23,12 +23,16 @@ pub fn part_exists(parts: &[Object], part: &Object, excluded_keys: &[&str]) -> b
     })
 }
 fn snake_to_camel(text: &str) -> String {
-    let mut components = text.split('_');
-    let mut converted = components.next().unwrap_or_default().to_owned();
-    for component in components {
-        converted.push_str(&capitalize(component));
-    }
-    converted
+    text.split('_')
+        .enumerate()
+        .map(|(index, component)| {
+            if index == 0 {
+                component.to_owned()
+            } else {
+                capitalize(component)
+            }
+        })
+        .collect()
 }
 fn capitalize(component: &str) -> String {
     let mut characters = component.chars();
