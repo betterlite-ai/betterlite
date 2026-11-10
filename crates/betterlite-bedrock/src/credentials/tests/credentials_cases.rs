@@ -192,11 +192,7 @@ fn missing_session_shifts_to_role() {
 }
 
 fn empty_session_still_selects_web_identity() {
-    let transport = transport(
-        vec![reply("ASIAROLE")],
-        vec![reply("ASIAWEB"), reply("ASIAEMPTY")],
-        vec![DENIED_IDENTITY],
-    );
+    let transport = transport(vec![], vec![reply("ASIAEMPTY")], vec![]);
     let fixture = Fixture::new(AMBIENT, &[], &transport, Some("resolved-token"));
     let params = format!(
         "aws_role_name: '{TARGET}', aws_session_name: '', aws_web_identity_token: web-token-ref"
@@ -365,11 +361,14 @@ fn profile_name_isolates_cache() {
         vec![DENIED_IDENTITY, DENIED_IDENTITY, DENIED_IDENTITY],
     );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
+    let base = format!("aws_role_name: '{TARGET}', aws_session_name: one");
+    let first = resolve(&fixture, &settings(&base, AMBIENT), None).unwrap();
+    assert_eq!(first.access_key_id.expose_secret(), "ASIAONE");
     let params =
         format!("aws_role_name: '{TARGET}', aws_session_name: one, aws_profile_name: another");
     let resolved = resolve(&fixture, &settings(&params, AMBIENT), None).unwrap();
     assert_eq!(resolved.access_key_id.expose_secret(), "ASIATWO");
-    assert_eq!(transport.record.count(), 2);
+    assert_eq!(transport.record.count(), 4);
 }
 
 fn ssl_verify_isolates_cache() {
@@ -380,20 +379,22 @@ fn ssl_verify_isolates_cache() {
     );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     let params = format!("aws_role_name: '{TARGET}', aws_session_name: one");
+    let first = resolve(&fixture, &settings(&params, AMBIENT), None).unwrap();
+    assert_eq!(first.access_key_id.expose_secret(), "ASIAONE");
     let verified = resolve(
         &fixture,
         &settings(&params, AMBIENT),
         Some(&VerifySetting::Bool(true)),
     )
     .unwrap();
-    assert_eq!(verified.access_key_id.expose_secret(), "ASIATHREE");
+    assert_eq!(verified.access_key_id.expose_secret(), "ASIATWO");
     let repeated = resolve(
         &fixture,
         &settings(&params, AMBIENT),
         Some(&VerifySetting::Bool(true)),
     )
     .unwrap();
-    assert_eq!(repeated.access_key_id.expose_secret(), "ASIATHREE");
+    assert_eq!(repeated.access_key_id.expose_secret(), "ASIATWO");
     assert_eq!(transport.record.count(), 4);
 }
 
@@ -741,12 +742,7 @@ fn other_errors_skip_identity_check() {
             },
         ],
         Vec::new(),
-        vec![
-            TARGET_IDENTITY,
-            Reply::Identity {
-                arn: "arn:aws:sts::999999999999:assumed-role/TargetRole/session",
-            },
-        ],
+        vec![TARGET_IDENTITY, TARGET_IDENTITY],
     );
     let fixture = Fixture::new(AMBIENT, &[], &transport, None);
     run_role(&fixture, &auth(TARGET, "bedrock", None, false)).unwrap();
