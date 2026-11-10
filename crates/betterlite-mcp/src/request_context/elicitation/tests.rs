@@ -77,36 +77,25 @@ impl FakeSession {
 impl DownstreamElicitSession for FakeSession {
     type Error = RelayFailure;
 
-    fn elicit_url(
+    fn elicit(
         &self,
-        message: &str,
-        url: &str,
-        elicitation_id: &str,
+        params: &ElicitRequestParams,
     ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
+        let recorded = match params {
+            ElicitRequestParams::Url(url) => Call::Url {
+                message: url.message.clone(),
+                url: url.url.clone(),
+                elicitation_id: url.elicitation_id.clone(),
+            },
+            ElicitRequestParams::Form(form) => Call::Form {
+                message: form.message.clone(),
+                requested_schema: form.requested_schema.clone(),
+            },
+        };
         self.calls
             .lock()
             .expect("the calls lock should not be poisoned")
-            .push(Call::Url {
-                message: message.to_owned(),
-                url: url.to_owned(),
-                elicitation_id: elicitation_id.to_owned(),
-            });
-        let outcome = self.outcome();
-        async move { outcome }
-    }
-
-    fn elicit_form(
-        &self,
-        message: &str,
-        requested_schema: &Object,
-    ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
-        self.calls
-            .lock()
-            .expect("the calls lock should not be poisoned")
-            .push(Call::Form {
-                message: message.to_owned(),
-                requested_schema: requested_schema.clone(),
-            });
+            .push(recorded);
         let outcome = self.outcome();
         async move { outcome }
     }

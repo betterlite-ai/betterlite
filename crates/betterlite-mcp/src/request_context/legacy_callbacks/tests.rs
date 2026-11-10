@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Mutex;
 
-use betterlite_prompts::arguments::json::Object;
 use thiserror::Error;
 
 use super::{
@@ -208,37 +207,25 @@ impl FakeSession {
 impl DownstreamElicitSession for FakeSession {
     type Error = RelayFailure;
 
-    fn elicit_url(
+    fn elicit(
         &self,
-        _message: &str,
-        _url: &str,
-        _elicitation_id: &str,
+        params: &ElicitRequestParams,
     ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
+        let method = match params {
+            ElicitRequestParams::Url(_) => "elicit_url",
+            ElicitRequestParams::Form(_) => "elicit_form",
+        };
         self.calls
             .lock()
             .expect("the calls lock should not be poisoned")
-            .push("elicit_url".to_owned());
-        let outcome = Ok(ElicitResult {
-            action: self.action,
-            content: None,
-        });
-        async move { outcome }
-    }
-
-    fn elicit_form(
-        &self,
-        _message: &str,
-        _requested_schema: &Object,
-    ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
-        self.calls
-            .lock()
-            .expect("the calls lock should not be poisoned")
-            .push("elicit_form".to_owned());
-        let outcome = Ok(ElicitResult {
-            action: self.action,
-            content: None,
-        });
-        async move { outcome }
+            .push(method.to_owned());
+        let action = self.action;
+        async move {
+            Ok(ElicitResult {
+                action,
+                content: None,
+            })
+        }
     }
 }
 

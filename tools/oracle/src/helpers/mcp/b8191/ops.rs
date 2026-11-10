@@ -6,9 +6,8 @@ use betterlite_mcp::request_context::allowlist::{
     check_mcp_client_allowed, load_mcp_client_allowlist,
 };
 use betterlite_mcp::request_context::elicitation::{
-    DownstreamElicitSession, ElicitResult, handle_elicitation_request,
+    DownstreamElicitSession, ElicitRequestParams, ElicitResult, handle_elicitation_request,
 };
-use betterlite_prompts::arguments::json::Object;
 use http::HeaderMap;
 use http::HeaderName;
 use http::header::HeaderValue;
@@ -18,14 +17,16 @@ use thiserror::Error;
 use crate::helpers::{HelperError, HelperResult};
 
 use super::input::{
-    AllowlistCheckInput, AllowlistLoadInput, CheckScenario, ElicitationInput, ElicitationScenario,
-    Input, SessionBehaviour,
+    AllowlistLoadInput, CheckScenario, ElicitationInput, ElicitationScenario, Input,
+    SessionBehaviour,
 };
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
         Input::AllowlistLoad(load) => Ok(allowlist_load_value(load)),
-        Input::AllowlistCheck(check) => Ok(allowlist_check_value(check)),
+        Input::AllowlistCheck(check) => Ok(json!({
+            "results": check.scenarios.iter().map(check_value).collect::<Vec<_>>(),
+        })),
         Input::Elicitation(elicitation) => elicitation_value(elicitation),
     }
 }
@@ -40,11 +41,6 @@ fn allowlist_load_value(input: &AllowlistLoadInput) -> Value {
             "header": allowlist.header,
         }),
     }
-}
-
-fn allowlist_check_value(input: &AllowlistCheckInput) -> Value {
-    let results = input.scenarios.iter().map(check_value).collect::<Vec<_>>();
-    json!({ "results": results })
 }
 
 fn check_value(scenario: &CheckScenario) -> Value {
@@ -142,23 +138,11 @@ struct RecordingSession {
 }
 
 impl RecordingSession {
-    fn record(&self, call: Value) {
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.push(call);
-    }
-
     fn recorded(&self) -> Vec<Value> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    fn outcome(&self) -> Result<ElicitResult, RelayFailure> {
-        match &self.behaviour {
-            SessionBehaviour::Result { result } => Ok(result.clone()),
-            SessionBehaviour::Error { error } => Err(RelayFailure(error.clone())),
-        }
     }
 }
 
@@ -169,33 +153,33 @@ struct RelayFailure(String);
 impl DownstreamElicitSession for RecordingSession {
     type Error = RelayFailure;
 
-    fn elicit_url(
+    fn elicit(
         &self,
-        message: &str,
-        url: &str,
-        elicitation_id: &str,
+        params: &ElicitRequestParams,
     ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
-        self.record(json!({
-            "method": "elicit_url",
-            "message": message,
-            "url": url,
-            "elicitation_id": elicitation_id,
-        }));
-        let outcome = self.outcome();
-        async move { outcome }
-    }
-
-    fn elicit_form(
-        &self,
-        message: &str,
-        requested_schema: &Object,
-    ) -> impl Future<Output = Result<ElicitResult, RelayFailure>> + Send {
-        self.record(json!({
-            "method": "elicit_form",
-            "message": message,
-            "requested_schema": requested_schema,
-        }));
-        let outcome = self.outcome();
-        async move { outcome }
+        let recorded = match params {
+            ElicitRequestParams::Url(url) => json!({
+                "method": "elicit_url",
+                "message": url.message,
+                "url": url.url,
+                "elicitation_id": url.elicitation_id,
+            }),
+            ElicitRequestParams::Form(form) => json!({
+                "method": "elicit_form",
+                "message": form.message,
+                "requested_schema": form.requested_schema,
+            }),
+        };
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded);
+        let behaviour = self.behaviour.clone();
+        async move {
+            match behaviour {
+                SessionBehaviour::Result { result } => Ok(result),
+                SessionBehaviour::Error { error } => Err(RelayFailure(error)),
+            }
+        }
     }
 }

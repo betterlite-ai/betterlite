@@ -78,17 +78,9 @@ pub enum ElicitRequestParams {
 pub trait DownstreamElicitSession {
     type Error: Error + Send + Sync + 'static;
 
-    fn elicit_url(
+    fn elicit(
         &self,
-        message: &str,
-        url: &str,
-        elicitation_id: &str,
-    ) -> impl Future<Output = Result<ElicitResult, Self::Error>> + Send;
-
-    fn elicit_form(
-        &self,
-        message: &str,
-        requested_schema: &Object,
+        params: &ElicitRequestParams,
     ) -> impl Future<Output = Result<ElicitResult, Self::Error>> + Send;
 }
 
@@ -144,21 +136,15 @@ async fn relay_to_downstream<Session>(
 where
     Session: DownstreamElicitSession + Sync,
 {
-    let relayed = match params {
-        ElicitRequestParams::Url(url) => {
+    match params {
+        ElicitRequestParams::Url(_) => {
             info!("MCP elicitation: relaying URL mode to downstream");
-            session
-                .elicit_url(&url.message, &url.url, &url.elicitation_id)
-                .await
         }
-        ElicitRequestParams::Form(form) => {
+        ElicitRequestParams::Form(_) => {
             info!("MCP elicitation: relaying form mode to downstream");
-            session
-                .elicit_form(&form.message, &form.requested_schema)
-                .await
         }
-    };
-    match relayed {
+    }
+    match session.elicit(params).await {
         Ok(result) => result,
         Err(error) => {
             warn!(%error, "MCP elicitation: failed to relay to downstream");
