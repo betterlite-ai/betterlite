@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-processor-tool-blocks
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - {role: user, content: "weather?"}
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call_1
+            type: function
+            function: {name: get_weather, arguments: '{"city":"Paris"}'}
+      - {role: tool, tool_call_id: call_1, content: sunny}
+      - role: tool
+        tool_call_id: call_2
+        content:
+          - {type: text, text: windy}
+          - {type: image_url, image_url: {url: "data:image/png;base64,CCCC"}}
+      - {role: tool, tool_call_id: call_3, content: cached, cache_control: {type: ephemeral}}
+    modify_params: false
+env: {}
+compare: {ignore: []}
