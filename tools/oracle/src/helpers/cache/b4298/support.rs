@@ -36,6 +36,13 @@ impl RecordingBackend {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, key: &str, value: CacheValue, ttl: Ttl) {
+        self.sets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((key.to_owned(), value, ttl));
+    }
 }
 
 #[async_trait]
@@ -48,10 +55,7 @@ impl CacheBackend for RecordingBackend {
         if self.failure {
             return Err(BackendError::Unsupported("async_set_cache"));
         }
-        self.sets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), value, ttl));
+        self.record(key, value, ttl);
         Ok(())
     }
 }
@@ -81,10 +85,9 @@ impl CacheBackend for RecordingStore {
         cache_list: Vec<(String, CacheValue)>,
         ttl: Ttl,
     ) -> CacheResult<()> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((cache_list, ttl));
+        let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
+        writes.push((cache_list, ttl));
+        drop(writes);
         Ok(())
     }
 }
