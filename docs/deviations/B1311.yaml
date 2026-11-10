@@ -1,0 +1,11 @@
+task: B1311
+deviations:
+  - what: "Media that would make the gateway fetch a URL or read GCS object metadata returns HTTP 400 with type invalid_request_error, param naming the media field and code unsupported_remote_media; this covers an http:// reference, an https:// reference with no explicit or inferable MIME, and an extensionless gs:// reference without an explicit format, while inline data, Gemini Files API URIs, https references with a MIME and gs:// references with an explicit format or accepted extension still work."
+    why: "Request URL downloads remain undecided; the current boundary never fetches a request URL and never builds credentialed GCS metadata probing, so both paths fail before any network or credential call."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L587
+  - what: "A media reference that fits no branch and an inline data string without a data: prefix or with more than one ;base64, marker return HTTP 400 with type invalid_request_error, where LiteLLM raises a bare Exception on the image_url path and answers HTTP 500. A gs:// extension the file-type registry does not know keeps LiteLLM's BadRequest shape of type null, param null and code 400, but answers 400 where the image_url path answers 500."
+    why: "A 500 is the wrong answer for input the caller sent wrong; the same input on the file path is already a 400 BadRequestError in LiteLLM, so the image_url path is fixed to match it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L583-L583
+  - what: "A video_metadata object with a key other than fps, start_offset or end_offset is rejected as a parse error naming the unknown field, where LiteLLM reads those three keys and silently drops any other key the caller supplied."
+    why: "The no-silent-drops rule makes a request field betterlite does not handle an error that names it, where LiteLLM would forward a request missing the data the caller sent."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L201-L207
