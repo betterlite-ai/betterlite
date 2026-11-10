@@ -17,6 +17,7 @@ scope:
   - crates/betterlite-a2a/src/logging_context/**
   - crates/betterlite-a2a/src/streaming_iterator.rs
   - crates/betterlite-a2a/src/streaming_iterator/**
+  - crates/betterlite-core/src/agents/provider/a2a.rs
   - tools/oracle/cases/helpers/a2a-stream-accounting/**
   - "tools/oracle/fuzz/corpus/helper_case/b4810-*"
   - tools/oracle/helpers/b4810.py
