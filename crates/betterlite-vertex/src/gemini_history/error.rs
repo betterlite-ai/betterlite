@@ -20,8 +20,10 @@ pub enum HistoryError {
     ToolInvoke(#[from] GeminiToolInvokesError),
     #[error("{0}")]
     ToolResult(#[from] GeminiToolResultsError),
-    #[error("{0}")]
-    FileMedia(String),
+    #[error(
+        "Unable to determine mime type for file: {named}, set this explicitly using file.format (or file.mime_type/content_type). Original error: {source}"
+    )]
+    FileMedia { named: String, source: MediaError },
     #[error("a content part cannot be encoded")]
     Encode(#[source] serde_json::Error),
 }

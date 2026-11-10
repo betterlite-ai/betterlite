@@ -59,17 +59,18 @@ pub fn push_source(
         field,
     };
     push_media(parts, &request).map_err(|error| {
+        let HistoryError::Media(source) = error else {
+            return error;
+        };
         let unusable = matches!(
-            error,
-            HistoryError::Media(MediaError::InvalidMedia(_) | MediaError::InvalidInlineData(_))
+            source,
+            MediaError::InvalidMedia(_) | MediaError::InvalidInlineData(_)
         );
         if !unusable || field != MediaField::File {
-            return error;
+            return HistoryError::Media(source);
         }
         let named = text_of(fields, FILE_ID).unwrap_or_else(|| "provided data".to_owned());
-        HistoryError::FileMedia(format!(
-            "Unable to determine mime type for file: {named}, set this explicitly using file.format (or file.mime_type/content_type). Original error: {error}"
-        ))
+        HistoryError::FileMedia { named, source }
     })
 }
 

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::fs;
 use std::future::{Future, ready};
 use std::iter::repeat_n;
@@ -616,7 +617,14 @@ fn caps_the_history_at_the_message_limit() {
 fn reports_unusable_file_media_as_a_bodyless_bad_request(#[case] file: &str, #[case] named: &str) {
     let source = format!(r#"[{{"role":"user","content":[{{"type":"file","file":{file}}}]}}]"#);
     let error = error_of(&source, None);
-    assert!(matches!(error, HistoryError::FileMedia(_)));
+    assert!(matches!(
+        &error,
+        HistoryError::FileMedia {
+            source: MediaError::InvalidMedia(_) | MediaError::InvalidInlineData(_),
+            ..
+        }
+    ));
+    assert!(error.source().is_some());
     assert_field_error(
         &error,
         &format!("Unable to determine mime type for file: {named}, set this explicitly"),
