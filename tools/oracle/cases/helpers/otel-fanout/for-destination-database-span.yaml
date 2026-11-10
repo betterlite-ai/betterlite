@@ -1,0 +1,17 @@
+kind: helper
+name: for-destination-database-span
+call:
+  b3849:
+    function: for_destination
+    endpoint: http://collector:4318
+    span:
+      name: postgres query
+      attributes:
+        db.system.name: postgresql
+        server.address: db.internal
+        server.port: 5432
+        db.namespace: litellm
+        db.operation.name: SELECT
+        error.message: password authentication failed
+env: {}
+compare: {ignore: []}
