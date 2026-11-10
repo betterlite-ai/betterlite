@@ -64,6 +64,7 @@ description: >-
   deleted and no operation is renamed.
 scope:
   paths:
+  - "tools/oracle/src/helpers/tests.rs"
   - "tools/oracle/src/helpers/openai/workload_identity.rs"
   - "tools/oracle/src/helpers/openai/credentials.rs"
   - "tools/oracle/src/helpers/mcp/b4654.rs"
