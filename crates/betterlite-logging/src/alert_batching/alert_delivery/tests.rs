@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::task::{Id, yield_now};
-use tokio::time::advance;
+use tokio::time::{advance, timeout};
 use tokio_util::task::TaskTracker;
 
 use super::super::tests::{FakeDelivery, Reply, TextPayload, alert, capture_logs};
@@ -137,6 +137,15 @@ fn task_id(delivery: &AlertDelivery<FakeDelivery>) -> Id {
         .id()
 }
 
+// A task that ignores the close must fail here instead of hanging until the mutants timeout
+async fn stop(tasks: &TaskTracker) {
+    tasks.close();
+    advance(Duration::from_secs(5)).await;
+    timeout(Duration::from_secs(15), tasks.wait())
+        .await
+        .expect("the flush task stops after the tracker closes");
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_periodic_flush_task_starts_only_when_ensure_started_is_called() {
     let fixture = fixture(&[], []);
@@ -153,9 +162,7 @@ async fn the_periodic_flush_task_starts_only_when_ensure_started_is_called() {
             .as_ref()
             .is_some_and(|handle| !handle.is_finished())
     );
-    tasks.close();
-    advance(Duration::from_secs(5)).await;
-    tasks.wait().await;
+    stop(&tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -166,9 +173,7 @@ async fn ensure_started_is_idempotent_while_the_task_runs() {
     let first = task_id(&fixture.delivery);
     fixture.delivery.ensure_started(&tasks);
     assert_eq!(task_id(&fixture.delivery), first);
-    tasks.close();
-    advance(Duration::from_secs(5)).await;
-    tasks.wait().await;
+    stop(&tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -177,15 +182,11 @@ async fn ensure_started_replaces_a_finished_task() {
     let first_tasks = TaskTracker::new();
     fixture.delivery.ensure_started(&first_tasks);
     let first = task_id(&fixture.delivery);
-    first_tasks.close();
-    advance(Duration::from_secs(5)).await;
-    first_tasks.wait().await;
+    stop(&first_tasks).await;
     let second_tasks = TaskTracker::new();
     fixture.delivery.ensure_started(&second_tasks);
     assert_ne!(task_id(&fixture.delivery), first);
-    second_tasks.close();
-    advance(Duration::from_secs(5)).await;
-    second_tasks.wait().await;
+    stop(&second_tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -224,9 +225,7 @@ async fn periodic_flush_drains_expired_digests_before_flushing_the_queue() {
     assert!(digest_text.contains("Alert type: `budget_alerts` (Digest)"));
     assert!(digest_text.contains("Message: digested alert"));
     assert!(digest_text.contains("Proxy URL: `https://proxy.example`"));
-    tasks.close();
-    advance(Duration::from_secs(5)).await;
-    tasks.wait().await;
+    stop(&tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -253,9 +252,7 @@ async fn periodic_flush_keeps_running_on_the_configured_interval() {
     advance(Duration::from_secs(5)).await;
     settle(&fixture.delivery, 1).await;
     assert_eq!(fixture.delivery.delivery.take_requests().len(), 1);
-    tasks.close();
-    advance(Duration::from_secs(5)).await;
-    tasks.wait().await;
+    stop(&tasks).await;
 }
 
 #[tokio::test]
