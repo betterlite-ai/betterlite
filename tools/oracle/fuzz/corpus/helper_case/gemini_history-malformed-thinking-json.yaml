@@ -1,0 +1,40 @@
+kind: helper
+name: gemini-history-malformed-thinking-json
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            thinking_blocks:
+              - {type: thinking, thinking: "not json", signature: "sig"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            thinking_blocks:
+              - {type: thinking, thinking: '["a"]', signature: "sig"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            thinking_blocks:
+              - {type: thinking, thinking: '{"thoughtSignature": "x", "text": "t"}', signature: "sig"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            thinking_blocks:
+              - {type: thinking, thinking: '{"text": "reason", "thought": true}', signature: "sig"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            thinking_blocks:
+              - {type: thinking, thinking: "{}"}
+              - {type: redacted_thinking, data: "x"}
+              - {type: thinking, thinking: null, signature: "sig"}
+env: {}
+compare:
+  ignore: []

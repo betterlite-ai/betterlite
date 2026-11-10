@@ -1,0 +1,19 @@
+kind: helper
+name: passthrough-redacted-writes-nothing
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      additional_args:
+        complete_input_dict:
+          messages:
+            - {role: user, content: secret prompt}
+      original_response:
+        choices:
+          - message: {role: assistant, content: secret answer}
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response: null
+    redact_messages: true
+env: {}
+compare: {ignore: []}
