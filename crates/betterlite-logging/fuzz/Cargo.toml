@@ -93,3 +93,10 @@ path = "fuzz_targets/zerobus_token_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "classifier_snapshot"
+path = "fuzz_targets/classifier_snapshot.rs"
+test = false
+doc = false
+bench = false

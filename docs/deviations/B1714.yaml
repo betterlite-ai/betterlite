@@ -1,0 +1,14 @@
+task: B1714
+deviations:
+  - what: Request duration milliseconds come from exact integer microseconds, so a duration whose Python float product lands just below a whole millisecond (23 ms is 22.999999999999996 after multiplying) reports one millisecond more than LiteLLM.
+    why: The workspace forbids floating-point arithmetic, so the duration is divided as checked integer microseconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L914-L920
+  - what: A naive timestamp that falls inside a local-time DST gap converts to no UTC instant instead of Python's mktime normalization; an ambiguous repeated hour takes its first offset.
+    why: chrono's local timezone lookup reports a gap as no instant, while Python's astimezone normalizes nonexistent wall times.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L922-L925
+  - what: MAX_STRING_LENGTH_PROMPT_IN_DB is parsed by the shared integer parser, which rejects Python int() spellings such as digit-group underscores and magnitudes outside i64; an initial value of that shape fails loading instead of being accepted.
+    why: Environment integers go through betterlite-env, the project's single parser for environment text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L75-L86
+  - what: STORE_PROMPTS_IN_SPEND_LOGS is read from the configured environment through B8500's boolean text parser; a value held only by a configured secret manager is not consulted while the config loads.
+    why: secret-manager state is wired at runtime by the server, and the config crate has no manager handle to pass to get_secret_bool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1701-L1717
