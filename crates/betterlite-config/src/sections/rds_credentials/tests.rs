@@ -5,18 +5,20 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::Settings;
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Settings {
+    load_result(source, environment).expect("the config loads")
+}
+
+fn load_result(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect::<BTreeMap<_, _>>();
     ConfigLoader { lookup }
         .load(source)
-        .expect("the config loads")
-        .sections
-        .rds_credentials
+        .map(|config| config.sections.rds_credentials)
 }
 
 #[test]
@@ -130,18 +132,28 @@ fn aws_secret_reference_resolution() {
 }
 
 #[test]
-fn unset_secret_reference_falls_back_to_the_environment_name() {
+fn unset_secret_reference_is_a_missing_environment_error() {
     let source = "general_settings:\n  aws_access_key_id: os.environ/MISSING_REF\n  aws_region_name: us-east-2\n";
-    let settings = load(source, &[("AWS_ACCESS_KEY_ID", "AK-ENV")]);
-    let credentials = settings.credentials;
+    let error = load_result(source, &[("AWS_ACCESS_KEY_ID", "AK-ENV")])
+        .expect_err("an unset reference fails instead of taking the environment");
+    let ConfigError::MissingEnvironment { variable, path } = error else {
+        panic!("expected a missing environment error, got {error}");
+    };
+    assert_eq!(variable, "MISSING_REF");
+    assert_eq!(path, "general_settings.aws_access_key_id");
+}
+
+#[test]
+fn absent_keys_fall_back_to_the_environment_names() {
+    let settings = load("{}", &[("AWS_ACCESS_KEY_ID", "AK-ENV")]);
     assert_eq!(
-        credentials
+        settings
+            .credentials
             .access_key_id
             .as_ref()
             .map(secrecy::ExposeSecret::expose_secret),
         Some("AK-ENV")
     );
-    assert_eq!(credentials.region_name.as_deref(), Some("us-east-2"));
 }
 
 #[test]

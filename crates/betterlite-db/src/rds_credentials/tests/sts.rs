@@ -305,6 +305,36 @@ async fn web_identity_failure_keeps_the_web_identity_error() {
 }
 
 #[tokio::test]
+async fn missing_profile_does_not_fall_through_to_ambient() {
+    let mut inputs = preset_inputs(Preset::Direct);
+    inputs.access_key_id = None;
+    inputs.secret_access_key = None;
+    inputs.profile_name = Some("missing".to_owned());
+    let (signer, calls, _) = run(
+        inputs,
+        &[],
+        &[
+            (
+                "/credentials",
+                "[other]\naws_access_key_id = other\naws_secret_access_key = private\n",
+            ),
+            ("/token", "oidc-token-value"),
+        ],
+        &[
+            ("AWS_SHARED_CREDENTIALS_FILE", "/credentials"),
+            ("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/pod"),
+            ("AWS_WEB_IDENTITY_TOKEN_FILE", "/token"),
+        ],
+        Reply::WebIdentity,
+    )
+    .await;
+    let error = signer.expect_err("a missing profile fails even when the pod identity could sign");
+    assert!(matches!(error, RdsCredentialsError::MissingProfile { .. }));
+    assert!(error.to_string().contains("missing"));
+    assert!(calls.is_empty());
+}
+
+#[tokio::test]
 async fn role_without_credentials_uses_the_ambient_chain() {
     let (signer, calls, _) = run(
         preset_inputs(Preset::AssumeRole),

@@ -3,6 +3,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod tests;
@@ -46,64 +47,72 @@ impl Section for Raw {
     {
         let configured = self.general_settings;
         let credentials = RdsCredentialInputs {
-            access_key_id: resolve_secret_field(
-                configured.access_key_id.as_ref(),
+            access_key_id: resolve_field(
+                configured
+                    .access_key_id
+                    .map(|secret| secret.expose_secret().to_owned()),
+                "access_key_id",
                 lookup,
-                "AWS_ACCESS_KEY_ID",
-            ),
-            secret_access_key: resolve_secret_field(
-                configured.secret_access_key.as_ref(),
+                &[],
+            )?
+            .map(SecretString::from),
+            secret_access_key: resolve_field(
+                configured
+                    .secret_access_key
+                    .map(|secret| secret.expose_secret().to_owned()),
+                "secret_access_key",
                 lookup,
-                "AWS_SECRET_ACCESS_KEY",
-            ),
-            region_name: resolve_text(configured.region_name, lookup)
-                .or_else(|| lookup.lookup("AWS_REGION_NAME")),
-            session_name: resolve_text(configured.session_name, lookup)
-                .or_else(|| lookup.lookup("AWS_SESSION_NAME")),
-            profile_name: resolve_text(configured.profile_name, lookup)
-                .or_else(|| lookup.lookup("AWS_PROFILE_NAME")),
-            role_name: resolve_text(configured.role_name, lookup)
-                .or_else(|| lookup.lookup("AWS_ROLE_NAME"))
-                .or_else(|| lookup.lookup("AWS_ROLE_ARN")),
-            web_identity_token: resolve_secret_field(
-                configured.web_identity_token.as_ref(),
+                &[],
+            )?
+            .map(SecretString::from),
+            region_name: resolve_field(configured.region_name, "region_name", lookup, &[])?,
+            session_name: resolve_field(configured.session_name, "session_name", lookup, &[])?,
+            profile_name: resolve_field(configured.profile_name, "profile_name", lookup, &[])?,
+            role_name: resolve_field(configured.role_name, "role_name", lookup, &["AWS_ROLE_ARN"])?,
+            web_identity_token: resolve_field(
+                configured
+                    .web_identity_token
+                    .map(|secret| secret.expose_secret().to_owned()),
+                "web_identity_token",
                 lookup,
-                "AWS_WEB_IDENTITY_TOKEN",
-            )
-            .or_else(|| {
-                lookup
-                    .lookup("AWS_WEB_IDENTITY_TOKEN_FILE")
-                    .map(SecretString::from)
-            }),
+                &["AWS_WEB_IDENTITY_TOKEN_FILE"],
+            )?
+            .map(SecretString::from),
             timeout: RdsTimeout::SdkDefaults,
         };
         Ok(Settings { credentials })
     }
 }
 
-fn resolve_secret_field<L>(
-    configured: Option<&SecretString>,
+// an unset os.environ/ reference is a load error, so the environment only fills absent keys
+fn resolve_field<L>(
+    configured: Option<String>,
+    field: &str,
     lookup: &L,
-    variable: &str,
-) -> Option<SecretString>
+    aliases: &[&str],
+) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    resolve_text(
-        configured.map(|secret| secret.expose_secret().to_owned()),
-        lookup,
-    )
-    .map(SecretString::from)
-    .or_else(|| lookup.lookup(variable).map(SecretString::from))
+    let path = format!("general_settings.aws_{field}");
+    if let Some(text) = configured {
+        return resolve_string(text, &path, lookup).map(Some);
+    }
+    Ok(first_environment(lookup, field, aliases))
 }
 
-fn resolve_text<L>(value: Option<String>, lookup: &L) -> Option<String>
+fn first_environment<L>(lookup: &L, field: &str, aliases: &[&str]) -> Option<String>
 where
     L: EnvironmentLookup,
 {
-    let text = value?;
-    let Some(name) = text.strip_prefix("os.environ/") else {
-        return Some(text);
-    };
-    lookup.lookup(name)
+    let variable = format!("AWS_{}", field.to_ascii_uppercase());
+    if let Some(value) = lookup.lookup(&variable) {
+        return Some(value);
+    }
+    for alias in aliases {
+        if let Some(value) = lookup.lookup(alias) {
+            return Some(value);
+        }
+    }
+    None
 }

@@ -1,5 +1,6 @@
 use std::time::{SystemTimeError, TryFromFloatSecsError};
 
+use aws_config::profile::ProfileFileLoadError;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_sts::error::SdkError;
 use aws_sdk_sts::operation::assume_role::AssumeRoleError;
@@ -38,6 +39,14 @@ pub enum RdsCredentialsError {
         #[source]
         source: CredentialsError,
     },
+    #[error("the AWS profile files could not be read for {profile}")]
+    ProfileFile {
+        profile: String,
+        #[source]
+        source: ProfileFileLoadError,
+    },
+    #[error("the AWS profile {profile} was not found")]
+    MissingProfile { profile: String },
     #[error("STS AssumeRoleWithWebIdentity failed")]
     AssumeRoleWithWebIdentity {
         #[source]

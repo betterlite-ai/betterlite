@@ -1,11 +1,14 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use aws_config::profile::load as load_profiles;
 use aws_config::timeout::TimeoutConfig;
 use aws_config::{BehaviorVersion, ConfigLoader};
 use aws_credential_types::Credentials;
 use aws_credential_types::provider::ProvideCredentials as _;
 use aws_credential_types::provider::error::CredentialsError;
+use aws_runtime::env_config::file::EnvConfigFiles;
 use aws_sdk_sts::Client;
 use aws_sdk_sts::types::Credentials as StsCredentials;
 use aws_types::os_shim_internal::Env;
@@ -130,14 +133,15 @@ pub(super) async fn provider_credentials(
     sources: &RdsSources<'_>,
 ) -> Result<Credentials, RdsCredentialsError> {
     let mut environment = environment_map(sources);
-    if profile.is_some() {
-        // boto3 reads a named profile only, so the env pair never outranks the profile file
-        for name in [
+    if let Some(name) = profile {
+        // boto3 raises ProfileNotFound and never lets the ambient chain sign for a typo
+        verify_profile(name, &environment, sources).await?;
+        for variable in [
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "AWS_SESSION_TOKEN",
         ] {
-            environment.remove(name);
+            environment.remove(variable);
         }
     }
     let mut loader = sources.loader(environment, region, None);
@@ -162,4 +166,28 @@ pub(super) async fn provider_credentials(
             RdsCredentialsError::Provider { source: error }
         }
     })
+}
+
+async fn verify_profile(
+    name: &str,
+    environment: &HashMap<String, String>,
+    sources: &RdsSources<'_>,
+) -> Result<(), RdsCredentialsError> {
+    let profiles = load_profiles(
+        &sources.filesystem,
+        &Env::from(environment.clone()),
+        &EnvConfigFiles::default(),
+        Some(Cow::Owned(name.to_owned())),
+    )
+    .await
+    .map_err(|source| RdsCredentialsError::ProfileFile {
+        profile: name.to_owned(),
+        source,
+    })?;
+    if profiles.get_profile(name).is_none() {
+        return Err(RdsCredentialsError::MissingProfile {
+            profile: name.to_owned(),
+        });
+    }
+    Ok(())
 }
