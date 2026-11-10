@@ -13,12 +13,20 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-openai = { path = ".." }
+http = "1.5.0"
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
 name = "auth_record"
 path = "fuzz_targets/auth_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bytez_reply"
+path = "fuzz_targets/bytez_reply.rs"
 test = false
 doc = false
 bench = false

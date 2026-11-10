@@ -1994,6 +1994,7 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "http 1.5.0",
  "libfuzzer-sys",
  "serde_json",
 ]
@@ -2264,11 +2265,14 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
