@@ -1,0 +1,14 @@
+kind: helper
+name: passthrough-wrapper-response-object
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response:
+      response:
+        choices:
+          - message: {role: assistant, content: wrapped object}
+env: {}
+compare: {ignore: []}
