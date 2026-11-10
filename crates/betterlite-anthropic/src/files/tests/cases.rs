@@ -498,6 +498,7 @@ async fn file_content_bytes() {
 
 async fn content_result() {
     let fixture = Fixture::answering_with(
+        200,
         &[("content-type", "application/octet-stream")],
         &[0, 255, 10, 128],
     );
@@ -571,6 +572,7 @@ async fn content_redirect() {
 
 async fn content_error() {
     let fixture = Fixture::answering_with(
+        404,
         &[("content-type", "text/plain"), ("x-request-id", "req-err")],
         b"denied",
     );

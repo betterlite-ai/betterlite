@@ -38,8 +38,12 @@ impl Fixture {
         }
     }
 
-    pub(super) fn answering_with(headers: &[(&'static str, &'static str)], body: &[u8]) -> Self {
-        let mut fixture = Self::answering(200, body);
+    pub(super) fn answering_with(
+        status: u16,
+        headers: &[(&'static str, &'static str)],
+        body: &[u8],
+    ) -> Self {
+        let mut fixture = Self::answering(status, body);
         fixture.headers = headers.to_vec();
         fixture
     }
