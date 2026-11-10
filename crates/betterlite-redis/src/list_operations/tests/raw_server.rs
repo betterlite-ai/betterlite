@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{self, BufRead as _, BufReader, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::str;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -92,8 +93,14 @@ fn serve(stream: TcpStream, replies: &Mutex<VecDeque<Vec<u8>>>) {
     let mut reader = BufReader::new(cloned);
     let mut writer = stream;
     loop {
-        if !matches!(read_command(&mut reader), Ok(Some(()))) {
+        let Ok(Some(name)) = read_command(&mut reader) else {
             return;
+        };
+        if name != "LPOP" {
+            if writer.write_all(b"+OK\r\n").is_err() {
+                return;
+            }
+            continue;
         }
         let next = match replies.lock() {
             Ok(mut queued) => queued.pop_front(),
@@ -108,7 +115,7 @@ fn serve(stream: TcpStream, replies: &Mutex<VecDeque<Vec<u8>>>) {
     }
 }
 
-fn read_command(reader: &mut BufReader<TcpStream>) -> io::Result<Option<()>> {
+fn read_command(reader: &mut BufReader<TcpStream>) -> io::Result<Option<String>> {
     let mut header = String::new();
     if reader.read_line(&mut header)? == 0 {
         return Ok(None);
@@ -119,7 +126,8 @@ fn read_command(reader: &mut BufReader<TcpStream>) -> io::Result<Option<()>> {
     let count: usize = count_text
         .parse()
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    for _ in 0..count {
+    let mut name = String::new();
+    for index in 0..count {
         let mut length_line = String::new();
         if reader.read_line(&mut length_line)? == 0 {
             return Ok(None);
@@ -132,6 +140,13 @@ fn read_command(reader: &mut BufReader<TcpStream>) -> io::Result<Option<()>> {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let mut buffer = vec![0_u8; length.saturating_add(2)];
         reader.read_exact(&mut buffer)?;
+        if index == 0 {
+            buffer.truncate(length);
+            let Ok(text) = str::from_utf8(&buffer) else {
+                return Ok(None);
+            };
+            name = text.to_ascii_uppercase();
+        }
     }
-    Ok(Some(()))
+    Ok(Some(name))
 }
