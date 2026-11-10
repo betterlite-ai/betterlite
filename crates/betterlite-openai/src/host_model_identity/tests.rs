@@ -322,6 +322,23 @@ fn a_missing_or_null_choices_list_becomes_one_default_choice(#[case] choices_val
     assert_eq!(delivered[0].message.content, None);
 }
 
+#[rstest]
+#[case::absent_index_and_role(r#"{"choices":[{"message":{"content":"hi"}}]}"#, 0)]
+#[case::null_index_and_role(
+    r#"{"choices":[{"index":null,"message":{"role":null,"content":"hi"}}]}"#,
+    0
+)]
+#[case::explicit_index(r#"{"choices":[{"index":3,"message":{"role":"","content":"hi"}}]}"#, 3)]
+fn an_absent_or_null_choice_index_and_role_take_the_default(
+    #[case] body: &str,
+    #[case] index: u32,
+) {
+    let response = decode(body.as_bytes(), clarifai_mode()).unwrap();
+    assert_eq!(response.choices[0].index, index);
+    assert_eq!(response.choices[0].message.role, "assistant");
+    assert_eq!(response.choices[0].message.content.as_deref(), Some("hi"));
+}
+
 #[test]
 fn a_mapped_finish_reason_keeps_the_native_value() {
     let body = r#"{"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"max_tokens"}]}"#;

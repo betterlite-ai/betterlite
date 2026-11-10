@@ -24,7 +24,7 @@ struct ReplyWire {
 
 #[derive(Deserialize)]
 struct ChoiceWire {
-    index: u32,
+    index: Option<u32>,
     message: Option<MessageWire>,
     finish_reason: Option<String>,
     logprobs: Option<Value>,
@@ -32,7 +32,7 @@ struct ChoiceWire {
 
 #[derive(Deserialize, Default)]
 struct MessageWire {
-    role: String,
+    role: Option<String>,
     content: Option<String>,
     tool_calls: Option<Vec<ToolCall>>,
     annotations: Option<Vec<Value>>,
@@ -97,7 +97,7 @@ pub(super) fn response_from_wire(
 
 fn choice_from_wire(choice: ChoiceWire) -> ChatChoice {
     ChatChoice {
-        index: choice.index,
+        index: choice.index.unwrap_or_default(),
         message: message_from_wire(choice.message.unwrap_or_default()),
         finish_reason: Some(choice_finish_reason(choice.finish_reason.as_deref()).0),
         logprobs: choice.logprobs,
@@ -107,11 +107,10 @@ fn choice_from_wire(choice: ChoiceWire) -> ChatChoice {
 
 fn message_from_wire(message: MessageWire) -> AssistantMessage {
     AssistantMessage {
-        role: if message.role.is_empty() {
-            String::from("assistant")
-        } else {
-            message.role
-        },
+        role: message
+            .role
+            .filter(|role| !role.is_empty())
+            .unwrap_or_else(|| String::from("assistant")),
         content: message.content,
         tool_calls: message.tool_calls.filter(|calls| !calls.is_empty()),
         annotations: message.annotations,
