@@ -118,6 +118,17 @@ fn project(scenario: &Scenario) -> Json {
     },
     parsed("null")
 )]
+#[case::identity_ignores_non_object_metadata(
+    Scenario::Identity(r#"{"metadata":5,"litellm_metadata":"text"}"#),
+    parsed("null")
+)]
+#[case::opaque_ignores_non_object_metadata(
+    Scenario::Opaque {
+        request: r#"{"metadata":[]}"#,
+        defaults: r#"{"tenant":"acme"}"#,
+    },
+    parsed(r#"{"tenant":"acme"}"#)
+)]
 fn straiker_webhook_context_tests_behavior(#[case] scenario: Scenario, #[case] expected: Json) {
     assert_eq!(project(&scenario), expected);
 }
