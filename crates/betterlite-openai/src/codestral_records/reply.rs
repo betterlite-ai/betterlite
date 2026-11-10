@@ -86,7 +86,7 @@ pub fn decode_codestral_reply(
     let native = |code| {
         TextCompletionCodestralError::Native(Box::new(NativeError::new(
             code,
-            text.to_owned(),
+            text.clone(),
             None,
             None,
         )))
@@ -94,7 +94,7 @@ pub fn decode_codestral_reply(
     if status_code != 200 {
         return Err(native(status_code));
     }
-    let wire: ReplyWire = serde_json::from_str(text).map_err(|_invalid| native(422))?;
+    let wire: ReplyWire = serde_json::from_str(&text).map_err(|_invalid| native(422))?;
     Ok(CodestralReply {
         id: wire.id.unwrap_or_else(|| format!("chatcmpl-{}", source.id)),
         // TextCompletionResponse.__init__ overwrites whatever object the provider sent

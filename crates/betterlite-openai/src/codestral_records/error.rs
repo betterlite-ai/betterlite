@@ -1,5 +1,3 @@
-use std::str::Utf8Error;
-
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,8 +52,6 @@ pub enum TextCompletionCodestralError {
     Native(Box<NativeError>),
     #[error("the codestral record is {size} bytes, over the {limit} byte limit")]
     TooLarge { size: usize, limit: usize },
-    #[error("the codestral record is not valid UTF-8")]
-    BodyNotUtf8(#[source] Utf8Error),
     #[error("the codestral stream chunk is not a stream chunk object")]
     Stream(#[source] serde_json::Error),
 }

@@ -24,7 +24,9 @@ pub fn decode_codestral_chunk(
     source: &RecordSource,
 ) -> Result<CodestralChunk, TextCompletionCodestralError> {
     let line = record_text(body)?;
-    let payload = strip_sse_data_from_chunk(Some(line)).unwrap_or(line).trim();
+    let payload = strip_sse_data_from_chunk(Some(&line))
+        .unwrap_or(&line)
+        .trim();
     let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
         return Ok(CodestralChunk::default());
     };

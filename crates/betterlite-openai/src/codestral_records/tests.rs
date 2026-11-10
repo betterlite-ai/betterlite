@@ -329,13 +329,17 @@ fn reply_rejects_a_body_over_the_byte_limit() {
     ));
 }
 
-#[test]
-fn reply_rejects_a_body_that_is_not_utf8() {
-    let error = decode_codestral_reply(200, &[0xff, 0xfe], &source()).expect_err("an error");
-    assert!(matches!(
-        error,
-        TextCompletionCodestralError::BodyNotUtf8(_)
-    ));
+#[rstest]
+#[case::ok_status(200, 422)]
+#[case::gateway(502, 502)]
+fn reply_decodes_a_body_that_is_not_utf8_lossily(#[case] status: u16, #[case] expected: u16) {
+    let error =
+        decode_codestral_reply(status, b"\xff\xfe bad gateway", &source()).expect_err("an error");
+    let TextCompletionCodestralError::Native(native) = error else {
+        panic!("a native error");
+    };
+    assert_eq!(native.status_code, expected);
+    assert_eq!(native.message, "\u{fffd}\u{fffd} bad gateway");
 }
 
 #[test]
@@ -405,7 +409,7 @@ fn chunk_malformed_lines_are_empty_and_unfinished(#[case] line: &str) {
 
 #[test]
 fn chunk_projects_only_the_first_choice_delta() {
-    let line = r#"{"id":"c1","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null},{"index":1,"delta":{"content":"ignored"},"finish_reason":"stop"}]}"#;
+    let line = r#"{"id":"c1","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null,"logprobs":{"content":[]}},{"index":1,"delta":{"content":"ignored"},"finish_reason":"stop"}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
     let content = chunk;
     assert_eq!(content.text, "hi");
@@ -528,12 +532,13 @@ fn chunk_rejects_a_body_over_the_byte_limit() {
 }
 
 #[test]
-fn chunk_rejects_a_body_that_is_not_utf8() {
-    let error = decode_codestral_chunk(&[0xff, 0xfe], &source()).expect_err("an error");
-    assert!(matches!(
-        error,
-        TextCompletionCodestralError::BodyNotUtf8(_)
-    ));
+fn chunk_decodes_a_body_that_is_not_utf8_lossily() {
+    let empty = decode_codestral_chunk(&[0xff, 0xfe], &source()).expect("an empty chunk");
+    assert_eq!(empty, CodestralChunk::default());
+    let line =
+        b"{\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\xff\"},\"finish_reason\":null}]}";
+    let chunk = decode_codestral_chunk(line, &source()).expect("a content chunk");
+    assert_eq!(chunk.text, "a\u{fffd}");
 }
 
 #[rstest]

@@ -3,8 +3,6 @@ pub mod error;
 pub mod options;
 pub mod reply;
 
-use std::str;
-
 use betterlite_http::proxy::limits::TransportLimits;
 use uuid::Uuid;
 
@@ -20,12 +18,20 @@ pub struct RecordSource {
     pub created: i64,
 }
 
-pub fn record_text(body: &[u8]) -> Result<&str, TextCompletionCodestralError> {
+// httpx hands LiteLLM a lossy decode of the bytes, so bad UTF-8 never fails here
+pub fn record_text(body: &[u8]) -> Result<String, TextCompletionCodestralError> {
     if body.len() > MAX_RECORD_BYTES {
         return Err(TextCompletionCodestralError::TooLarge {
             size: body.len(),
             limit: MAX_RECORD_BYTES,
         });
     }
-    str::from_utf8(body).map_err(TextCompletionCodestralError::BodyNotUtf8)
+    let mut text = String::with_capacity(body.len());
+    for part in body.utf8_chunks() {
+        text.push_str(part.valid());
+        if !part.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    Ok(text)
 }
