@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass, field
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Annotated, Final, Literal, Protocol, Self, cast
@@ -68,15 +69,11 @@ class Cache(Protocol):
     async def async_get_cache(self, key: str | None) -> JsonValue | None: ...
 
 
+@dataclass
 class FakeStore:
-    values: dict[str, str]
-    ttls: dict[str, int]
-    down: bool
-
-    def __init__(self) -> None:
-        self.values = {}
-        self.ttls = {}
-        self.down = False
+    values: dict[str, str] = field(default_factory=dict)
+    ttls: dict[str, int] = field(default_factory=dict)
+    down: bool = False
 
 
 def stored_ttl(store: FakeStore, name: str) -> int:
@@ -91,13 +88,10 @@ def add(store: FakeStore, name: str, amount: float) -> float:
     return float(total)
 
 
+@dataclass
 class FakePipeline:
     store: FakeStore
-    results: list[float | int]
-
-    def __init__(self, store: FakeStore) -> None:
-        self.store = store
-        self.results = []
+    results: list[float | int] = field(default_factory=list)
 
     async def __aenter__(self) -> Self:
         return self
@@ -115,11 +109,9 @@ class FakePipeline:
         return self.results
 
 
+@dataclass
 class FakeClient:
     store: FakeStore
-
-    def __init__(self, store: FakeStore) -> None:
-        self.store = store
 
     def check(self) -> None:
         if self.store.down:
@@ -130,9 +122,7 @@ class FakeClient:
         value = self.store.values.get(name)
         return None if value is None else value.encode()
 
-    async def set(
-        self, name: str, value: str, *, nx: bool = False, ex: int | None = None
-    ) -> bool | None:
+    async def set(self, name: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool | None:
         self.check()
         if nx and name in self.store.values:
             return None
@@ -183,10 +173,6 @@ def cache_at(caches: list[Cache], worker: int) -> Cache:
     return caches[worker]
 
 
-def canonical(value: float) -> str:
-    return str(Decimal(str(value)).normalize())
-
-
 def increment_amount(step: Step) -> float:
     match step.by:
         case CounterIncrement(counter=count):
@@ -200,14 +186,9 @@ def increment_amount(step: Step) -> float:
 async def increment(step: Step, caches: list[Cache]) -> StepOutput:
     cache = cache_at(caches, step.worker)
     amount = increment_amount(step)
-    try:
-        result = await cache.async_increment(step.key, amount, ttl=None)
-    except RedisCircuitBreakerOpenError:
-        return StepOutput(kind=step.kind, value=None, error="circuit_open")
-    except RedisConnectionError:
-        return StepOutput(kind=step.kind, value=None, error="unavailable")
+    result = await cache.async_increment(step.key, amount, ttl=None)
     if isinstance(step.by, SpendIncrement):
-        rendered = canonical(result)
+        rendered = str(Decimal(str(result)).normalize())
         return StepOutput(kind=step.kind, value=cast("JsonValue", {"Spend": rendered}), error=None)
     return StepOutput(kind=step.kind, value=cast("JsonValue", {"Counter": int(result)}), error=None)
 
@@ -216,15 +197,8 @@ async def claim(step: Step, caches: list[Cache]) -> StepOutput:
     cache = cache_at(caches, step.worker)
     if step.value is None:
         raise ProbeError("invalid_request", "the claim needs a value")
-    try:
-        stored = await cache.async_set_cache(
-            step.key, step.value, ttl=step.ttl_seconds, nx=True
-        )
-        current = await cache.async_get_cache(step.key)
-    except RedisCircuitBreakerOpenError:
-        return StepOutput(kind=step.kind, value=None, error="circuit_open")
-    except RedisConnectionError:
-        return StepOutput(kind=step.kind, value=None, error="unavailable")
+    stored = await cache.async_set_cache(step.key, step.value, ttl=step.ttl_seconds, nx=True)
+    current = await cache.async_get_cache(step.key)
     claimed = bool(stored)
     return StepOutput(
         kind=step.kind,
@@ -244,22 +218,22 @@ async def leak(step: Step, caches: list[Cache], settings: Settings) -> StepOutpu
     return StepOutput(kind=step.kind, value=False, error=None)
 
 
-async def apply(
-    step: Step, caches: list[Cache], store: FakeStore, settings: Settings
-) -> StepOutput:
-    match step.kind:
-        case "increment":
-            return await increment(step, caches)
-        case "claim":
-            return await claim(step, caches)
-        case "fail":
-            store.down = True
-            return StepOutput(kind=step.kind, value=None, error=None)
-        case "recover":
-            store.down = False
-            return StepOutput(kind=step.kind, value=None, error=None)
-        case "leak":
-            return await leak(step, caches, settings)
+async def apply(step: Step, caches: list[Cache], store: FakeStore, settings: Settings) -> StepOutput:
+    try:
+        match step.kind:
+            case "increment":
+                return await increment(step, caches)
+            case "claim":
+                return await claim(step, caches)
+            case "fail" | "recover":
+                store.down = step.kind == "fail"
+                return StepOutput(kind=step.kind, value=None, error=None)
+            case "leak":
+                return await leak(step, caches, settings)
+    except RedisCircuitBreakerOpenError:
+        return StepOutput(kind=step.kind, value=None, error="circuit_open")
+    except RedisConnectionError:
+        return StepOutput(kind=step.kind, value=None, error="unavailable")
 
 
 async def run_scenario(settings: Settings, steps: list[Step]) -> Output:

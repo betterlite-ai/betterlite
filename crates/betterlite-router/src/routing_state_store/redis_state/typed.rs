@@ -14,11 +14,9 @@ pub(crate) async fn read_one(
     namespaced: &str,
 ) -> Result<StoreRead, StateStoreError> {
     let client = state.transport.async_client().await?;
-    let mut command = cmd("GET");
-    command.arg(namespaced);
     let reply: Option<Vec<u8>> =
         client
-            .query(&command)
+            .query(cmd("GET").arg(namespaced))
             .await
             .map_err(|source| StateStoreError::Redis {
                 operation: "async_increment",
@@ -106,13 +104,11 @@ pub(crate) fn pipeline_operations(
 ) -> Result<Vec<IncrementOperation>, StateStoreError> {
     let mut operations = Vec::with_capacity(entries.len());
     for (key, value, ttl_seconds) in entries {
-        let ttl = match ttl_seconds {
-            None => None,
-            Some(seconds) => Some(
-                super::truncate_seconds(*seconds)
-                    .ok_or(StateStoreError::InvalidTtl { seconds: *seconds })?,
-            ),
-        };
+        let ttl = ttl_seconds
+            .map(|seconds| {
+                super::truncate_seconds(seconds).ok_or(StateStoreError::InvalidTtl { seconds })
+            })
+            .transpose()?;
         operations.push(IncrementOperation {
             key: super::namespaced(state, key),
             increment_value: *value,

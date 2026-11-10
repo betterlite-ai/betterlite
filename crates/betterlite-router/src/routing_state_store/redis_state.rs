@@ -217,13 +217,9 @@ pub(crate) fn typed_ttl(
     let Some(seconds) = ttl_seconds else {
         return Ok(state.default_ttl);
     };
-    let Some(whole) = truncate_seconds(seconds) else {
-        return Err(StateStoreError::InvalidTtl { seconds });
-    };
-    if whole <= 0 {
-        return Err(StateStoreError::InvalidTtl { seconds });
-    }
-    Ok(whole)
+    truncate_seconds(seconds)
+        .filter(|whole| *whole > 0)
+        .ok_or(StateStoreError::InvalidTtl { seconds })
 }
 
 pub(crate) fn resolve_float_ttl(state: &RedisState, ttl_seconds: Option<f64>) -> i64 {

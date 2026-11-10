@@ -27,20 +27,19 @@ pub struct Raw {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct RawRouterSettings {
-    #[serde(default, rename = "redis_url")]
+    #[serde(rename = "redis_url")]
     url: Option<String>,
-    #[serde(default, rename = "redis_host")]
+    #[serde(rename = "redis_host")]
     host: Option<String>,
-    #[serde(default, rename = "redis_port")]
+    #[serde(rename = "redis_port")]
     port: Option<RawNumber>,
-    #[serde(default, rename = "redis_password")]
+    #[serde(rename = "redis_password")]
     password: Option<SecretString>,
-    #[serde(default, rename = "redis_db")]
+    #[serde(rename = "redis_db")]
     db: Option<RawNumber>,
-    #[serde(default)]
     cache_kwargs: RawKwargs,
-    #[serde(default)]
     redis_kwargs: RawKwargs,
 }
 

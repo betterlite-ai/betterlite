@@ -39,14 +39,12 @@ async fn compare_on(
     expiry: Expiry,
 ) -> Result<CompareOutcome, StateStoreError> {
     let current = watched_read(connection, key).await?;
-    if current != *expected {
-        unwatch(connection).await?;
-        return Ok(CompareOutcome {
-            swapped: false,
-            current,
-        });
-    }
-    let Some(bytes) = encode(value)? else {
+    let encoded = if current == *expected {
+        encode(value)?
+    } else {
+        None
+    };
+    let Some(bytes) = encoded else {
         unwatch(connection).await?;
         return Ok(CompareOutcome {
             swapped: false,

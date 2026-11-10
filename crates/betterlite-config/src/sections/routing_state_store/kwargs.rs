@@ -1,29 +1,22 @@
 use serde::Deserialize;
 
 use super::connection::Connection;
+use super::optional_text;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number, resolve_string};
+use crate::resolve::{parse_float, resolve_number};
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub(super) struct RawKwargs {
-    #[serde(default)]
     namespace: Option<String>,
-    #[serde(default)]
     socket_timeout: Presence<RawNumber>,
-    #[serde(default)]
     db: Option<RawNumber>,
-    #[serde(default)]
     username: Option<String>,
-    #[serde(default)]
     ssl: Option<bool>,
-    #[serde(default)]
     socket_connect_timeout: Option<RawNumber>,
-    #[serde(default)]
     socket_keepalive: Option<bool>,
-    #[serde(default)]
     max_connections: Option<RawNumber>,
-    #[serde(default)]
     health_check_interval: Option<RawNumber>,
 }
 
@@ -60,10 +53,7 @@ where
     let socket_timeout = resolve_timeout(raw.socket_timeout, &path("socket_timeout"), lookup)?;
     let connection = Connection {
         db: resolve_number(raw.db, &path("db"), lookup, parse_i64)?,
-        username: raw
-            .username
-            .map(|text| resolve_string(text, &path("username"), lookup))
-            .transpose()?,
+        username: optional_text(raw.username, &path("username"), lookup)?,
         ssl: raw.ssl,
         socket_connect_timeout: resolve_number(
             raw.socket_connect_timeout,
@@ -86,10 +76,7 @@ where
         )?,
     };
     Ok(Kwargs {
-        namespace: raw
-            .namespace
-            .map(|text| resolve_string(text, &path("namespace"), lookup))
-            .transpose()?,
+        namespace: optional_text(raw.namespace, &path("namespace"), lookup)?,
         socket_timeout,
         connection,
     })
