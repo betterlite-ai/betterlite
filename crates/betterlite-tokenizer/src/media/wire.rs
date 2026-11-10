@@ -138,5 +138,5 @@ pub(crate) enum Source {
 #[serde(untagged)]
 pub(crate) enum NestedContent {
     Text(String),
-    Items(Vec<ContentItem>),
+    Items(Vec<Box<RawValue>>),
 }

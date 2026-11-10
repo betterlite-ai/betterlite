@@ -302,6 +302,17 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::fallback_discards_earlier_blocks(plain(&format!(r#""hello world",{{"type":"image_url","image_url":{{"url":"{TRUNCATED}","detail":"high"}}}}"#)), FALLBACK, fallback_tokens(777))]
 #[case::fallback_inside_document(document(&format!(r#"{{"type":"content","content":[{{"type":"image_url","image_url":{{"url":"{TRUNCATED}","detail":"high"}}}}]}}"#), "hello"), FALLBACK, fallback_tokens(778))]
 #[case::fallback_inside_tool_result(plain(&format!(r#"{{"type":"tool_result","tool_use_id":"toolu_1","content":[{{"type":"image_url","image_url":{{"url":"{TRUNCATED}","detail":"high"}}}}]}}"#)), FALLBACK, fallback_tokens(777))]
+#[case::nested_parse_error_keeps_siblings_in_tool_result(plain(r#""hello world",{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"image_url","image_url":{"url":"x","detail":"medium"}}]}"#), FALLBACK, fallback_tokens(779))]
+#[case::nested_parse_error_keeps_siblings_in_document(
+    document(r#"{"type":"content","content":[{"type":"image_url"}]}"#, "hello"),
+    FALLBACK,
+    fallback_tokens(778)
+)]
+#[case::nested_parse_error_without_fallback_fails(
+    plain(r#"{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"image_url"}]}"#),
+    EXACT,
+    Expected::Invalid
+)]
 #[case::depth_at_limit(support::nested_documents(31), EXACT, tokens(1))]
 #[case::depth_past_limit(
     support::nested_documents(32),

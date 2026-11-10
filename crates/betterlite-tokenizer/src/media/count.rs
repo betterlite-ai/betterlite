@@ -30,19 +30,14 @@ pub async fn count_token_media(
     settings: &Settings,
 ) -> Result<Counted, MediaError> {
     let mut warnings = Vec::new();
-    let parsed: Result<Vec<ContentItem>, MediaError> =
-        media.content.iter().map(|item| parse_item(item)).collect();
-    let tokens = match parsed {
-        Ok(items) => count_items(texter, items, settings, ROOT_DEPTH, &mut warnings).await?,
-        Err(error) => apply_fallback(error, settings, &mut warnings)?,
-    };
+    let tokens = count_items(texter, &media.content, settings, ROOT_DEPTH, &mut warnings).await?;
     Ok(Counted { tokens, warnings })
 }
 
-fn parse_item(item: &RawValue) -> Result<ContentItem, MediaError> {
+fn parse_item(item: &RawValue, depth: usize) -> Result<ContentItem, MediaError> {
     let parsed: ContentItem =
         serde_json::from_str(item.get()).map_err(|source| MediaError::Json { source })?;
-    if matches!(parsed, ContentItem::Block(Block::Unsupported)) {
+    if depth == ROOT_DEPTH && matches!(parsed, ContentItem::Block(Block::Unsupported)) {
         let named: BlockKind =
             serde_json::from_str(item.get()).map_err(|source| MediaError::Json { source })?;
         return Err(MediaError::UnsupportedBlock { kind: named.kind });
@@ -52,7 +47,7 @@ fn parse_item(item: &RawValue) -> Result<ContentItem, MediaError> {
 
 pub(crate) async fn count_items(
     texter: &Texter<'_>,
-    items: Vec<ContentItem>,
+    items: &[Box<RawValue>],
     settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
@@ -64,8 +59,8 @@ pub(crate) async fn count_items(
     }
     let counted: Result<u64, MediaError> = async {
         let mut total = 0_u64;
-        for item in items {
-            let tokens = match item {
+        for raw in items {
+            let tokens = match parse_item(raw, depth)? {
                 ContentItem::Text(text) => count_text(texter, &text).await?,
                 ContentItem::Block(block) => {
                     count_block(texter, block, settings, depth, warnings).await?

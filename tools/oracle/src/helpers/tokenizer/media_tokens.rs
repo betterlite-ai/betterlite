@@ -1,8 +1,6 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use serde_json::value::RawValue;
-
 use async_trait::async_trait;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_tokenizer::count::messages;
@@ -23,6 +21,7 @@ use betterlite_tokenizer::media::settings::{ImageCounting, Settings as MediaSett
 use betterlite_tokenizer::media::wire::TokenMedia;
 use betterlite_tokenizer::selection::openai_tokenizer_encoding_name;
 use serde::Deserialize;
+use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -43,7 +42,7 @@ pub(crate) struct Input {
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 enum Call {
     CountContent {
-        content: Vec<Box<RawValue>>,
+        content: Vec<Value>,
         #[serde(default)]
         use_default_image_token_count: bool,
         #[serde(default)]
@@ -142,7 +141,7 @@ async fn run_calls(input: &Input) -> HelperResult {
 }
 
 struct CountCall<'call> {
-    content: &'call [Box<RawValue>],
+    content: &'call [Value],
     uses_default: bool,
     default_token_count: Option<u64>,
 }
@@ -204,9 +203,13 @@ async fn count_call(
 ) -> HelperResult {
     let encoding = openai_tokenizer_encoding_name(model, catalog);
     let fixture = fixture(encoding)?;
-    let media = TokenMedia {
-        content: request.content.to_vec(),
-    };
+    let content = request
+        .content
+        .iter()
+        .map(to_raw_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| failure(error.to_string()))?;
+    let media = TokenMedia { content };
     let settings = MediaSettings {
         image: *image,
         fallback_token_count: request.default_token_count,

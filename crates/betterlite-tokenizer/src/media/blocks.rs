@@ -137,7 +137,7 @@ async fn count_nested(
         NestedContent::Text(text) => count_text(texter, &text).await,
         NestedContent::Items(items) => {
             let next = depth.saturating_add(1);
-            Box::pin(count_items(texter, items, settings, next, warnings)).await
+            Box::pin(count_items(texter, &items, settings, next, warnings)).await
         }
     }
 }

@@ -33,3 +33,12 @@ deviations:
       or near 2^64.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L131
+  - what: >-
+      A huggingface base_model missing from the catalog keeps the caller's max_tokens with the
+      UnknownMaxOutputTokens warning, where LiteLLM fetches the repo's config.json and clamps max_tokens
+      to its max_position_embeddings.
+    why: >-
+      Bounded-inputs forbids fetching a URL built from a request-supplied hf_model_name, so betterlite
+      never calls Hugging Face.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5484-L5486
