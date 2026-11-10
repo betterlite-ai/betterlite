@@ -1,0 +1,585 @@
+#![cfg(test)]
+
+use std::collections::BTreeSet;
+use std::env;
+use std::fs;
+use std::io::Write as _;
+
+use rstest::rstest;
+use tokio::task::JoinSet;
+use url::Url;
+
+use super::options::native_connection_options;
+use super::translation::{
+    TranslateError, libpq_tls_params, strip_prisma_query_params, translate_libpq_ssl_params,
+};
+
+mod certificates;
+mod front;
+mod server;
+
+use front::{Front, Mode};
+
+fn write_file(contents: &str) -> tempfile::NamedTempFile {
+    let mut file = tempfile::NamedTempFile::new().expect("a temporary file");
+    file.write_all(contents.as_bytes()).expect("file contents");
+    file
+}
+
+fn path_of(file: &tempfile::NamedTempFile) -> &str {
+    file.path().to_str().expect("a UTF-8 path")
+}
+
+fn translate(url: &str) -> (String, Vec<(String, String, u16)>) {
+    let mut calls = Vec::new();
+    let translated = translate_libpq_ssl_params(url, |path, host, port| {
+        calls.push((path.to_owned(), host.to_owned(), port));
+        path.to_owned()
+    })
+    .expect("the URL translates");
+    (translated, calls)
+}
+
+fn client_url(server: &server::Server, host: &str, port: u16, params: &[(&str, &str)]) -> String {
+    let parsed = Url::parse(&server.url).expect("the upstream URL");
+    let pairs: Vec<(String, String)> = params
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect();
+    let query = super::url_query::encode_pairs(&pairs, false);
+    format!(
+        "postgresql://{}:{}@{host}:{port}{}?{query}",
+        parsed.username(),
+        parsed.password().unwrap_or_default(),
+        parsed.path()
+    )
+}
+
+async fn connect_and_query(url: &str) {
+    let options = native_connection_options(url).expect("connection options");
+    let (client, connection) = options
+        .config
+        .connect(options.tls)
+        .await
+        .expect("a database connection");
+    let mut drivers = JoinSet::new();
+    drivers.spawn(connection);
+    let row = client.query_one("SELECT 1", &[]).await.expect("a query");
+    assert_eq!(row.get::<_, i32>(0), 1_i32);
+    drop(client);
+    drivers.shutdown().await;
+}
+
+async fn rejected(url: &str) {
+    let options = native_connection_options(url).expect("connection options");
+    assert!(
+        options.config.connect(options.tls).await.is_err(),
+        "the connection must be rejected"
+    );
+}
+
+#[rstest]
+#[case::sslmode_require("postgresql://u:p@h:5432/db?sslmode=require&application_name=app")]
+#[case::no_query("postgresql://u@h/db")]
+#[case::sslmode_prefer("postgresql://u@h/db?sslmode=prefer")]
+fn untouched_tls_url(#[case] url: &str) {
+    let (translated, calls) = translate(url);
+    assert_eq!(translated, url);
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn verify_modes_rewritten() {
+    let (translated, _) =
+        translate("postgresql://u:p@host:6543/db?sslmode=verify-ca&application_name=app");
+    assert_eq!(
+        translated,
+        "postgresql://u:p@host:6543/db?sslmode=require&application_name=app&sslaccept=strict"
+    );
+    let (duplicated, _) = translate("postgresql://h/db?sslmode=require&sslmode=verify-full");
+    assert_eq!(
+        duplicated,
+        "postgresql://h/db?sslmode=require&sslmode=require&sslaccept=strict"
+    );
+}
+
+#[test]
+fn blank_pinned_tls_values() {
+    let (pinned_accept, _) = translate("postgresql://h/db?sslmode=verify-full&sslaccept=");
+    assert_eq!(
+        pinned_accept,
+        "postgresql://h/db?sslmode=require&sslaccept="
+    );
+    let (blank_root, root_calls) = translate("postgresql://h/db?sslrootcert=&sslmode=verify-full");
+    assert_eq!(
+        blank_root,
+        "postgresql://h/db?sslmode=require&sslcert=&sslaccept=strict"
+    );
+    assert_eq!(root_calls, vec![(String::new(), "h".to_owned(), 5432)]);
+    let (blank_cert, cert_calls) = translate("postgresql://h/db?sslcert=&sslrootcert=ca.pem");
+    assert_eq!(blank_cert, "postgresql://h/db?sslcert=&sslaccept=strict");
+    assert!(cert_calls.is_empty());
+}
+
+#[test]
+fn duplicate_root_pairs() {
+    let (translated, calls) = translate(
+        "postgresql://h/db?sslmode=verify-full&sslrootcert=a.pem&sslrootcert=b.pem&application_name=a&application_name=b",
+    );
+    assert_eq!(
+        translated,
+        "postgresql://h/db?sslmode=require&application_name=a&application_name=b&sslcert=a.pem&sslcert=b.pem&sslaccept=strict"
+    );
+    assert_eq!(
+        calls,
+        vec![
+            ("a.pem".to_owned(), "h".to_owned(), 5432),
+            ("b.pem".to_owned(), "h".to_owned(), 5432),
+        ]
+    );
+}
+
+#[test]
+fn root_without_mode() {
+    let (translated, calls) = translate("postgresql://u@host/db?sslrootcert=ca.pem");
+    assert_eq!(
+        translated,
+        "postgresql://u@host/db?sslcert=ca.pem&sslaccept=strict"
+    );
+    assert_eq!(calls, vec![("ca.pem".to_owned(), "host".to_owned(), 5432)]);
+}
+
+#[test]
+fn explicit_cert_precedence() {
+    let (translated, calls) = translate(
+        "postgresql://u@host/db?sslrootcert=root.pem&sslcert=pinned.pem&sslmode=verify-full",
+    );
+    assert_eq!(
+        translated,
+        "postgresql://u@host/db?sslcert=pinned.pem&sslmode=require&sslaccept=strict"
+    );
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn resolver_host_port_arguments() {
+    let (translated, upper_calls) =
+        translate("postgresql://user@DB.Example:6543/db?sslrootcert=/ca.pem");
+    assert_eq!(
+        translated,
+        "postgresql://user@DB.Example:6543/db?sslcert=%2Fca.pem&sslaccept=strict"
+    );
+    assert_eq!(
+        upper_calls,
+        vec![("/ca.pem".to_owned(), "db.example".to_owned(), 6543)]
+    );
+    let (without_netloc, netloc_calls) = translate("postgresql:///db?sslrootcert=ca");
+    assert_eq!(without_netloc, "postgresql:/db?sslcert=ca&sslaccept=strict");
+    assert_eq!(netloc_calls, vec![("ca".to_owned(), String::new(), 5432)]);
+    let (zero_port, zero_calls) = translate("postgresql://h:0/db?sslrootcert=ca");
+    assert_eq!(zero_calls, vec![("ca".to_owned(), "h".to_owned(), 5432)]);
+    let (empty_port, empty_calls) = translate("postgresql://h:/db?sslrootcert=ca");
+    assert_eq!(empty_calls, vec![("ca".to_owned(), "h".to_owned(), 5432)]);
+    assert!(zero_port.contains(":0/"));
+    assert!(empty_port.contains(":/"));
+}
+
+#[test]
+fn malformed_port_error() {
+    let malformed = translate_libpq_ssl_params(
+        "postgresql://host:notaport/db?sslrootcert=ca.pem",
+        |path, _, _| path.to_owned(),
+    )
+    .expect_err("a malformed port must fail");
+    assert!(
+        matches!(malformed, TranslateError::MalformedPort { .. }),
+        "{malformed:?}"
+    );
+    let out_of_range = translate_libpq_ssl_params(
+        "postgresql://host:99999/db?sslrootcert=ca.pem",
+        |path, _, _| path.to_owned(),
+    )
+    .expect_err("an out-of-range port must fail");
+    assert!(
+        matches!(out_of_range, TranslateError::PortOutOfRange { .. }),
+        "{out_of_range:?}"
+    );
+    let (translated, calls) = translate("postgresql://host:notaport/db?sslmode=verify-full");
+    assert_eq!(
+        translated,
+        "postgresql://host:notaport/db?sslmode=require&sslaccept=strict"
+    );
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn strip_exact_libpq_allowlist() {
+    let url = "postgresql://u@h/db?connection_limit=10&pool_timeout=60&socket_timeout=5&max_idle_connection_lifetime=60&schema=tenant&pgbouncer=true&sslmode=require&sslmode=prefer&application_name=app&connect_timeout=5&client_encoding=UTF8&options=-c%20x%3D1&service=svc&gssencmode=disable&krbsrvname=postgres&target_session_attrs=any&sslaccept=accept_invalid_certs";
+    assert_eq!(
+        strip_prisma_query_params(url),
+        "postgresql://u@h/db?sslmode=require&sslmode=prefer&application_name=app&connect_timeout=5&client_encoding=UTF8&options=-c%20x%3D1&service=svc&gssencmode=disable&krbsrvname=postgres&target_session_attrs=any"
+    );
+}
+
+#[test]
+fn strip_blank_pairs_and_percent_spaces() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?application_name=my%20app&connect_timeout=&schema=tenant&sslaccept="
+        ),
+        "postgresql://u@h/db?application_name=my%20app"
+    );
+    assert_eq!(
+        strip_prisma_query_params("postgresql://u@h/db?application_name=my+app"),
+        "postgresql://u@h/db?application_name=my%20app"
+    );
+    assert_eq!(
+        strip_prisma_query_params("postgresql://u@h/db"),
+        "postgresql://u@h/db"
+    );
+    assert_eq!(
+        strip_prisma_query_params("postgresql://u@h/db?"),
+        "postgresql://u@h/db?"
+    );
+    assert_eq!(
+        strip_prisma_query_params("postgresql:///db?schema=tenant"),
+        "postgresql:/db"
+    );
+}
+
+#[test]
+fn sslkey_client_cert_bypass() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=client.pem&sslkey=client.key&sslmode=verify-full&sslaccept=strict"
+        ),
+        "postgresql://u@h/db?sslcert=client.pem&sslkey=client.key&sslmode=verify-full"
+    );
+    let pairs = vec![
+        ("sslcert".to_owned(), "client.pem".to_owned()),
+        ("sslkey".to_owned(), "client.key".to_owned()),
+    ];
+    assert_eq!(libpq_tls_params(&pairs, Some("strict")), pairs);
+}
+
+#[test]
+fn absent_sslaccept_drops_ca() {
+    assert_eq!(
+        strip_prisma_query_params("postgresql://u@h/db?sslcert=ca.pem&sslmode=require"),
+        "postgresql://u@h/db?sslmode=require"
+    );
+    let pairs = vec![("sslcert".to_owned(), "ca.pem".to_owned())];
+    assert!(libpq_tls_params(&pairs, None).is_empty());
+}
+
+#[test]
+fn accept_invalid_certs_drops_ca() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=ca.pem&sslmode=require&sslaccept=accept_invalid_certs"
+        ),
+        "postgresql://u@h/db?sslmode=require"
+    );
+}
+
+#[test]
+fn disable_drops_prisma_ca() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=ca.pem&sslmode=disable&sslaccept=strict"
+        ),
+        "postgresql://u@h/db?sslmode=disable"
+    );
+    let pairs = vec![
+        ("sslcert".to_owned(), "ca.pem".to_owned()),
+        ("sslmode".to_owned(), "disable".to_owned()),
+    ];
+    assert_eq!(
+        libpq_tls_params(&pairs, Some("strict")),
+        vec![("sslmode".to_owned(), "disable".to_owned())]
+    );
+}
+
+#[test]
+fn strict_forces_verify_full() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=ca.pem&sslmode=prefer&sslaccept=strict&application_name=app"
+        ),
+        "postgresql://u@h/db?application_name=app&sslrootcert=ca.pem&sslmode=verify-full"
+    );
+}
+
+#[test]
+fn existing_root_wins() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=prisma-ca.pem&sslrootcert=explicit.pem&sslmode=require&sslaccept=strict"
+        ),
+        "postgresql://u@h/db?sslrootcert=explicit.pem&sslmode=verify-full"
+    );
+}
+
+#[test]
+fn first_sslmode_and_sslaccept() {
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslmode=require&sslmode=disable&sslcert=ca.pem&sslaccept=strict&sslaccept=accept_invalid_certs"
+        ),
+        "postgresql://u@h/db?sslrootcert=ca.pem&sslmode=verify-full"
+    );
+    assert_eq!(
+        strip_prisma_query_params(
+            "postgresql://u@h/db?sslcert=ca&sslaccept=&sslaccept=accept_invalid_certs"
+        ),
+        "postgresql://u@h/db"
+    );
+    let pairs = vec![
+        ("sslmode".to_owned(), "require".to_owned()),
+        ("sslmode".to_owned(), "disable".to_owned()),
+        ("sslcert".to_owned(), "ca".to_owned()),
+    ];
+    assert_eq!(
+        libpq_tls_params(&pairs, Some("strict")),
+        vec![
+            ("sslrootcert".to_owned(), "ca".to_owned()),
+            ("sslmode".to_owned(), "verify-full".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn external_pooler_disables_prepared_statements() {
+    let external =
+        native_connection_options("postgresql://u:p@h:5432/db?sslmode=require&pgbouncer=true")
+            .expect("connection options");
+    assert!(external.disable_prepared_statements);
+    let direct = native_connection_options("postgresql://u:p@h:5432/db?sslmode=disable")
+        .expect("connection options");
+    assert!(!direct.disable_prepared_statements);
+    let error = native_connection_options("postgresql://u:p@h/db?pgbouncer=yes")
+        .expect_err("an invalid pgbouncer flag must fail");
+    assert!(error.to_string().contains("pgbouncer"));
+}
+
+#[test]
+fn native_rejects_prisma_pkcs12_client_identity() {
+    let identity = native_connection_options("postgresql://u@h/db?sslidentity=client.p12")
+        .expect_err("sslidentity is not supported");
+    assert!(identity.to_string().contains("sslidentity"), "{identity}");
+    let key_only = native_connection_options("postgresql://u@h/db?sslkey=client.key")
+        .expect_err("a key without a certificate is an error");
+    assert!(key_only.to_string().contains("sslkey"), "{key_only}");
+}
+
+#[test]
+fn native_rejects_unknown_sslmode() {
+    let unsupported = native_connection_options("postgresql://u@h/db?sslmode=allow")
+        .expect_err("allow is not supported");
+    assert!(unsupported.to_string().contains("allow"), "{unsupported}");
+}
+
+#[tokio::test]
+async fn tls_valid_chain() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "localhost",
+        front.port,
+        &[("sslmode", "verify-full"), ("sslrootcert", path_of(&ca))],
+    );
+    connect_and_query(&url).await;
+    assert!(front.handshakes() > 0);
+}
+
+#[tokio::test]
+async fn tls_hostname_mismatch() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[("sslmode", "verify-full"), ("sslrootcert", path_of(&ca))],
+    );
+    rejected(&url).await;
+    assert!(front.handshakes() > 0);
+}
+
+#[tokio::test]
+async fn tls_unknown_root() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let unrelated = write_file(&certificates::unrelated_ca_pem());
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "localhost",
+        front.port,
+        &[
+            ("sslmode", "verify-full"),
+            ("sslrootcert", path_of(&unrelated)),
+        ],
+    );
+    rejected(&url).await;
+    assert!(front.handshakes() > 0);
+}
+
+fn query_url(params: &[(&str, &str)]) -> String {
+    let pairs: Vec<(String, String)> = params
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect();
+    format!(
+        "postgresql://u@h:5432/db?{}",
+        super::url_query::encode_pairs(&pairs, false)
+    )
+}
+
+#[test]
+fn tls_unreadable_root() {
+    let missing = tempfile::TempDir::new().expect("a temporary directory");
+    let missing_path = missing.path().join("missing-ca.pem");
+    let missing_text = missing_path.to_str().expect("a UTF-8 path");
+    let url = query_url(&[("sslmode", "verify-full"), ("sslrootcert", missing_text)]);
+    let error = native_connection_options(&url).expect_err("an unreadable root must fail");
+    assert!(error.to_string().contains("missing-ca.pem"), "{error}");
+}
+
+#[test]
+fn tls_malformed_root() {
+    let malformed = write_file("this is not a certificate");
+    let url = query_url(&[
+        ("sslmode", "verify-full"),
+        ("sslrootcert", path_of(&malformed)),
+    ]);
+    let error = native_connection_options(&url).expect_err("a malformed root must fail");
+    assert!(error.to_string().contains("CA certificate"), "{error}");
+}
+
+#[tokio::test]
+async fn tls_verify_ca_checks_hostname() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let ca = write_file(&authority.certificate_pem);
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let source = client_url(
+        &server,
+        "127.0.0.1",
+        front.port,
+        &[("sslmode", "verify-ca"), ("sslrootcert", path_of(&ca))],
+    );
+    let (translated, calls) = translate(&source);
+    assert!(!calls.is_empty());
+    assert!(translated.contains("sslaccept=strict"), "{translated}");
+    rejected(&translated).await;
+    assert!(front.handshakes() > 0);
+}
+
+#[tokio::test]
+async fn tls_require_without_strict() {
+    let server = server::start().await;
+    let authority = certificates::self_signed();
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(&server, "localhost", front.port, &[("sslmode", "require")]);
+    connect_and_query(&url).await;
+    assert!(front.handshakes() > 0);
+}
+
+#[tokio::test]
+async fn tls_prefer_plaintext_fallback() {
+    let server = server::start().await;
+    let front = Front::start(&server.url, Mode::Plaintext).await;
+    let url = client_url(&server, "127.0.0.1", front.port, &[("sslmode", "prefer")]);
+    connect_and_query(&url).await;
+    assert_eq!(front.handshakes(), 0);
+}
+
+#[tokio::test]
+async fn tls_require_refuses_plaintext_server() {
+    let server = server::start().await;
+    let front = Front::start(&server.url, Mode::Plaintext).await;
+    let url = client_url(&server, "127.0.0.1", front.port, &[("sslmode", "require")]);
+    rejected(&url).await;
+}
+
+fn litellm_probe_files() -> BTreeSet<String> {
+    fs::read_dir(env::temp_dir())
+        .expect("the temporary directory")
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .filter(|name| name.starts_with("litellm-sslcert-"))
+        .collect()
+}
+
+#[tokio::test]
+async fn native_full_ca_bundle_no_probe_file() {
+    let server = server::start().await;
+    let authority = certificates::authority();
+    let bundle = format!(
+        "{}\n{}",
+        certificates::unrelated_ca_pem(),
+        authority.certificate_pem
+    );
+    let bundle_file = write_file(&bundle);
+    let before = litellm_probe_files();
+    let front = Front::start(
+        &server.url,
+        Mode::Tls {
+            leaf: authority.leaf.clone(),
+            key: authority.key.clone_key(),
+        },
+    )
+    .await;
+    let url = client_url(
+        &server,
+        "localhost",
+        front.port,
+        &[
+            ("sslmode", "verify-full"),
+            ("sslrootcert", path_of(&bundle_file)),
+        ],
+    );
+    connect_and_query(&url).await;
+    assert_eq!(litellm_probe_files(), before);
+}

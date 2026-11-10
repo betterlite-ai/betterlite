@@ -28,6 +28,8 @@ hex.workspace = true
 percent-encoding.workspace = true
 regex.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres", "serde-with-float"] }
+rustls = { workspace = true, features = ["std", "tls12"] }
+rustls-native-certs.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.145", features = ["raw_value"] }
@@ -37,6 +39,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4", "with-serde_json-1"] }
+tokio-postgres-rustls-improved.workspace = true
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 uuid.workspace = true
@@ -45,7 +48,12 @@ uuid.workspace = true
 aws-smithy-types = "=1.9.1"
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 serde_json = { version = "1.0.145", features = ["raw_value"] }
+tempfile = "3.27.0"
+testcontainers.workspace = true
 tokio.workspace = true
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true
+url = "2.5.8"
