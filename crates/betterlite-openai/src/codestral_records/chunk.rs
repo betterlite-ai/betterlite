@@ -9,7 +9,6 @@ use crate::codestral_records::error::TextCompletionCodestralError;
 use crate::codestral_records::{RecordSource, record_text};
 use crate::text_completion_policy::reply::mapped_finish_reason;
 
-// original_chunk is set on nonempty results only
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CodestralChunk {
     pub text: String,
@@ -38,11 +37,7 @@ pub fn decode_codestral_chunk(
     let text = first.delta.content.clone().unwrap_or_default();
     // A None check, not truthiness: an empty-string finish reason still finishes the answer
     let finish_reason = first.finish_reason.clone();
-    let logprobs = if finish_reason.is_some() {
-        first.logprobs.clone()
-    } else {
-        None
-    };
+    let logprobs = first.logprobs.clone().filter(|_| finish_reason.is_some());
     Ok(CodestralChunk {
         text,
         is_finished: finish_reason.is_some(),

@@ -14,7 +14,6 @@ mod tests;
 
 pub const MAX_RECORD_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
 
-// The fresh id and clock a response record uses when the provider left them out
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordSource {
     pub id: Uuid,
