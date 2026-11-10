@@ -1550,6 +1550,17 @@ dependencies = [
 [[package]]
 name = "betterlite-foundry"
 version = "0.1.0"
+dependencies = [
+ "betterlite-context",
+ "betterlite-models",
+ "chrono",
+ "jiff",
+ "rstest",
+ "rust_decimal",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "betterlite-fuzz"
@@ -2050,6 +2061,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-guardrails",
  "betterlite-harness",
  "betterlite-http",
