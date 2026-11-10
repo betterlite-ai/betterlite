@@ -21,7 +21,7 @@ use crate::gdc_auth::authenticator::{GdcAuth, GdcAuthParts, GdcValidation};
 use crate::gdc_auth::cache::TokenCache;
 use crate::gdc_auth::credential::{FixtureCredentials, GdchCredentialFactory, PemCredentials};
 use crate::gdc_auth::headers::Headers;
-use crate::gdc_auth::key::GdchDescriptor;
+use crate::gdc_auth::key::{GdcKey, GdchDescriptor, decode_gdc_key};
 use crate::gdc_auth::transport::{
     CaCertificates, CaError, GdcClock, GdcJitter, GdcSleeper, TokenExchangeRequest,
     TokenExchangeResponse, TokenTransport, TokenTrust, TransportFailure,
@@ -384,7 +384,7 @@ struct DescriptorJson<'value> {
     #[serde(skip_serializing_if = "Option::is_none")] ca_cert_path: Option<&'value str>,
 }
 
-pub(super) fn descriptor_json(project: &str, pem: &str) -> String {
+fn descriptor_text(project: &str, pem: &str, ca_cert_path: Option<&str>) -> String {
     serde_json::to_string(&DescriptorJson {
         kind: "gdch_service_account",
         format_version: "1",
@@ -393,33 +393,23 @@ pub(super) fn descriptor_json(project: &str, pem: &str) -> String {
         name: "service-identity",
         project,
         token_uri: TOKEN_URI,
-        ca_cert_path: None,
+        ca_cert_path,
     })
     .expect("a fixture descriptor")
+}
+
+pub(super) fn descriptor_json(project: &str, pem: &str) -> String {
+    descriptor_text(project, pem, None)
 }
 
 pub(super) fn descriptor_with_ca(project: &str, pem: &str, ca_cert_path: &str) -> String {
-    serde_json::to_string(&DescriptorJson {
-        kind: "gdch_service_account",
-        format_version: "1",
-        private_key_id: "key-id",
-        private_key: pem,
-        name: "service-identity",
-        project,
-        token_uri: TOKEN_URI,
-        ca_cert_path: Some(ca_cert_path),
-    })
-    .expect("a fixture descriptor")
+    descriptor_text(project, pem, Some(ca_cert_path))
 }
 
 pub(super) fn descriptor(project: &str, pem: &str) -> GdchDescriptor {
-    GdchDescriptor {
-        private_key_id: "key-id".to_owned(),
-        private_key: SecretString::from(pem.to_owned()),
-        name: "service-identity".to_owned(),
-        project: project.to_owned(),
-        token_uri: TOKEN_URI.to_owned(),
-        ca_cert_path: None,
+    match decode_gdc_key(descriptor_json(project, pem).as_bytes(), "gdc/fixture") {
+        Ok(GdcKey::ServiceAccount(descriptor)) => descriptor,
+        Ok(GdcKey::Bearer(_)) | Err(_) => panic!("a fixture descriptor"),
     }
 }
 

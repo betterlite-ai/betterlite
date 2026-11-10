@@ -39,30 +39,28 @@ impl Fixture {
         }
     }
 
-    async fn reply(&self, deadline_millis: u64) -> TokenExchangeResponse {
+    async fn exchange(&self, deadline_millis: u64) -> Result<TokenExchangeResponse, ExchangeError> {
         let exchange = Exchange {
             transport: &*self.transport,
             sleeper: &*self.sleeper,
             jitter: &*self.jitter,
             clock: &*self.clock,
         };
-        match exchange.run(request(), deadline_millis).await {
-            Ok(response) => response,
-            Err(error) => panic!("expected a token reply, got {error}"),
-        }
+        exchange.run(request(), deadline_millis).await
     }
+}
 
-    async fn failure(&self, deadline_millis: u64) -> ExchangeError {
-        let exchange = Exchange {
-            transport: &*self.transport,
-            sleeper: &*self.sleeper,
-            jitter: &*self.jitter,
-            clock: &*self.clock,
-        };
-        match exchange.run(request(), deadline_millis).await {
-            Ok(_response) => panic!("expected an exchange failure"),
-            Err(error) => error,
-        }
+async fn reply(fixture: &Fixture, deadline_millis: u64) -> TokenExchangeResponse {
+    match fixture.exchange(deadline_millis).await {
+        Ok(response) => response,
+        Err(error) => panic!("expected a token reply, got {error}"),
+    }
+}
+
+async fn failure(fixture: &Fixture, deadline_millis: u64) -> ExchangeError {
+    match fixture.exchange(deadline_millis).await {
+        Ok(_response) => panic!("expected an exchange failure"),
+        Err(error) => error,
     }
 }
 
@@ -73,7 +71,7 @@ async fn retryable_statuses_use_three_attempts_with_one_then_two_second_jitter()
         answer(503, b""),
         answer(200, b"{\"access_token\":\"t\"}"),
     ]);
-    let response = fixture.reply(60_000).await;
+    let response = reply(&fixture, 60_000).await;
     assert_eq!(response.status, 200);
     assert_eq!(fixture.transport.count(), 3);
     assert_eq!(fixture.sleeper.waits(), vec![900, 1_800]);
@@ -91,7 +89,7 @@ async fn each_retryable_error_description_is_retried(#[case] description: &str) 
         answer(400, &body),
         answer(200, b"{\"access_token\":\"t\"}"),
     ]);
-    let response = fixture.reply(60_000).await;
+    let response = reply(&fixture, 60_000).await;
     assert_eq!(response.status, 200);
     assert_eq!(fixture.transport.count(), 2);
 }
@@ -102,7 +100,7 @@ async fn a_retryable_error_description_in_the_error_description_field_is_retried
         answer(400, b"{\"error_description\":\"server_error\"}"),
         answer(200, b"{}"),
     ]);
-    let response = fixture.reply(60_000).await;
+    let response = reply(&fixture, 60_000).await;
     assert_eq!(response.status, 200);
     assert_eq!(fixture.transport.count(), 2);
 }
@@ -110,7 +108,7 @@ async fn a_retryable_error_description_in_the_error_description_field_is_retried
 #[tokio::test]
 async fn other_failures_stop_immediately() {
     let fixture = Fixture::new(vec![answer(400, b"{\"error\":\"invalid_grant\"}")]);
-    let error = fixture.failure(60_000).await;
+    let error = failure(&fixture, 60_000).await;
     assert!(matches!(error, ExchangeError::Rejected { status: 400 }));
     assert_eq!(fixture.transport.count(), 1);
     assert!(fixture.sleeper.waits().is_empty());
@@ -123,7 +121,7 @@ async fn a_retryable_status_with_an_unreadable_body_still_retries() {
         answer(500, b"oops"),
         answer(500, b"oops"),
     ]);
-    let error = fixture.failure(60_000).await;
+    let error = failure(&fixture, 60_000).await;
     assert!(matches!(error, ExchangeError::Rejected { status: 500 }));
     assert_eq!(fixture.transport.count(), 3);
 }
@@ -131,7 +129,7 @@ async fn a_retryable_status_with_an_unreadable_body_still_retries() {
 #[tokio::test]
 async fn a_body_that_is_not_an_object_is_not_retryable() {
     let fixture = Fixture::new(vec![answer(400, b"[]")]);
-    let error = fixture.failure(60_000).await;
+    let error = failure(&fixture, 60_000).await;
     assert!(matches!(error, ExchangeError::Rejected { status: 400 }));
     assert_eq!(fixture.transport.count(), 1);
 }
@@ -139,7 +137,7 @@ async fn a_body_that_is_not_an_object_is_not_retryable() {
 #[tokio::test]
 async fn a_transport_failure_stops_without_another_attempt() {
     let fixture = Fixture::new(vec![Reply::Failure, answer(200, b"{}")]);
-    let error = fixture.failure(60_000).await;
+    let error = failure(&fixture, 60_000).await;
     assert!(matches!(error, ExchangeError::Transport { .. }));
     assert_eq!(fixture.transport.count(), 1);
 }
@@ -147,7 +145,7 @@ async fn a_transport_failure_stops_without_another_attempt() {
 #[tokio::test]
 async fn only_status_200_is_a_successful_reply() {
     let fixture = Fixture::new(vec![answer(204, b"")]);
-    let error = fixture.failure(60_000).await;
+    let error = failure(&fixture, 60_000).await;
     assert!(matches!(error, ExchangeError::Rejected { status: 204 }));
     assert_eq!(fixture.transport.count(), 1);
 }
@@ -155,7 +153,7 @@ async fn only_status_200_is_a_successful_reply() {
 #[tokio::test]
 async fn the_deadline_bounds_the_wait_between_attempts() {
     let fixture = Fixture::new(vec![answer(500, b""), answer(500, b"")]);
-    let error = fixture.failure(1_000).await;
+    let error = failure(&fixture, 1_000).await;
     assert!(matches!(error, ExchangeError::Deadline));
     assert_eq!(fixture.transport.count(), 2);
     assert_eq!(fixture.sleeper.waits(), vec![900, 100]);
@@ -164,7 +162,7 @@ async fn the_deadline_bounds_the_wait_between_attempts() {
 #[tokio::test]
 async fn a_zero_deadline_never_sends_a_request() {
     let fixture = Fixture::new(vec![answer(200, b"{}")]);
-    let error = fixture.failure(0).await;
+    let error = failure(&fixture, 0).await;
     assert!(matches!(error, ExchangeError::Deadline));
     assert_eq!(fixture.transport.count(), 0);
 }
@@ -172,7 +170,7 @@ async fn a_zero_deadline_never_sends_a_request() {
 #[tokio::test]
 async fn each_attempt_carries_the_remaining_deadline_and_the_same_body() {
     let fixture = Fixture::new(vec![answer(500, b""), answer(200, b"{}")]);
-    let response = fixture.reply(60_000).await;
+    let response = reply(&fixture, 60_000).await;
     assert_eq!(response.status, 200);
     let records = fixture.transport.records();
     assert_eq!(records.len(), 2);

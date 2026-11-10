@@ -17,22 +17,26 @@ fn run_case(file: &str) -> Value {
     super::Op::decode_and_run(&case.call.input).unwrap()
 }
 
-fn identities(output: &Value, scenario: usize, validation: usize) -> Vec<String> {
+fn cache_column(output: &Value, scenario: usize, validation: usize, column: usize) -> Vec<String> {
     output["scenarios"][scenario]["validations"][validation]["cache"]
         .as_array()
         .expect("a cache list")
         .iter()
-        .map(|entry| entry[1].as_str().expect("an identity").to_owned())
+        .map(|entry| {
+            entry[column]
+                .as_str()
+                .expect("a cache key field")
+                .to_owned()
+        })
         .collect()
 }
 
+fn identities(output: &Value, scenario: usize, validation: usize) -> Vec<String> {
+    cache_column(output, scenario, validation, 1)
+}
+
 fn audiences(output: &Value, scenario: usize, validation: usize) -> Vec<String> {
-    output["scenarios"][scenario]["validations"][validation]["cache"]
-        .as_array()
-        .expect("a cache list")
-        .iter()
-        .map(|entry| entry[0].as_str().expect("an audience").to_owned())
-        .collect()
+    cache_column(output, scenario, validation, 0)
 }
 
 fn project_of(identity: &str) -> String {
