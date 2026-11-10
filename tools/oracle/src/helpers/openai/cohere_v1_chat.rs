@@ -3,7 +3,7 @@ use betterlite_openai::cohere_chat_v1::reply::{CohereV1Reply, ReplyInput, decode
 use betterlite_openai::cohere_chat_v1::{
     CohereV1ChatConfig, RequestInput, SUPPORTED_OPENAI_PARAMS, map_openai_params, request_options,
 };
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
