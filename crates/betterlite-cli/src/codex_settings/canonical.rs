@@ -6,30 +6,23 @@ use serde_json::Number;
 use toml_edit::{Item, Value};
 
 pub(crate) fn to_json(item: &Item) -> Json {
-    match item {
-        Item::Value(value) => value_to_json(value),
-        Item::ArrayOfTables(tables) => Json::List(
-            tables
-                .iter()
-                .map(|table| sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))))
-                .collect(),
-        ),
-        Item::Table(table) => sorted_object(table.iter().map(|(key, child)| (key, to_json(child)))),
-        Item::None => Json::Null,
-    }
+    // into_value recurses through nested tables, turning every item into a plain value or into none
+    item.clone()
+        .into_value()
+        .map_or(Json::Null, |value| value_to_json(&value))
 }
 
 fn value_to_json(value: &Value) -> Json {
     match value {
-        Value::Boolean(flag) => Json::Bool(*flag.value()),
         Value::String(text) => Json::Text(text.value().clone()),
-        Value::Datetime(moment) => Json::Text(moment.value().to_string()),
         Value::Integer(number) => Json::Number(Number::from(*number.value())),
+        Value::Float(number) => float_to_json(*number.value()),
+        Value::Boolean(flag) => Json::Bool(*flag.value()),
+        Value::Datetime(moment) => Json::Text(moment.value().to_string()),
+        Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
         Value::InlineTable(table) => {
             sorted_object(table.iter().map(|(key, child)| (key, value_to_json(child))))
         }
-        Value::Float(number) => float_to_json(*number.value()),
-        Value::Array(array) => Json::List(array.iter().map(value_to_json).collect()),
     }
 }
 
