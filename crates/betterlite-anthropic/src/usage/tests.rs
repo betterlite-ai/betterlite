@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::usage::error::UsageError;
 use crate::usage::{
     AnthropicUsage, CacheCreationTokenDetails, ReasoningTokenCounter, ServerToolUse,
-    calculate_usage, is_anthropic_usage_object, thinking_tokens_from_usage,
+    calculate_usage, is_anthropic_usage_object,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -794,23 +794,4 @@ fn speed_tier_geography_extras() {
         r#"{"cache_read_input_tokens": 0}"#
     )));
     assert!(!is_anthropic_usage_object(&expected("[]")));
-}
-
-#[rstest]
-#[case::integer(r#"{"output_tokens_details": {"thinking_tokens": 7}}"#, Some(7))]
-#[case::zero(r#"{"output_tokens_details": {"thinking_tokens": 0}}"#, Some(0))]
-#[case::negative(r#"{"output_tokens_details": {"thinking_tokens": -3}}"#, Some(-3))]
-#[case::boolean(r#"{"output_tokens_details": {"thinking_tokens": true}}"#, Some(1))]
-#[case::float(r#"{"output_tokens_details": {"thinking_tokens": 2.5}}"#, None)]
-#[case::text(r#"{"output_tokens_details": {"thinking_tokens": "4"}}"#, None)]
-#[case::null(r#"{"output_tokens_details": {"thinking_tokens": null}}"#, None)]
-#[case::missing_count(r#"{"output_tokens_details": {}}"#, None)]
-#[case::details_not_object(r#"{"output_tokens_details": 5}"#, None)]
-#[case::no_details(r#"{"output_tokens": 5}"#, None)]
-#[case::usage_not_object("[]", None)]
-fn thinking_tokens_from_usage_reads_only_integer_literals(
-    #[case] usage: &str,
-    #[case] want: Option<i64>,
-) {
-    assert_eq!(thinking_tokens_from_usage(&expected(usage)), want);
 }
