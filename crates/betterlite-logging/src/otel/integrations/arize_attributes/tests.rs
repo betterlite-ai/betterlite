@@ -27,6 +27,13 @@ fn value(text: &str) -> OtelModelValue {
     serde_json::from_str(text).expect("value")
 }
 
+fn attr<'source>(attributes: &'source BTreeMap<String, Value>, key: &str) -> Option<&'source str> {
+    match attributes.get(key) {
+        Some(Value::String(text)) => Some(text.as_str()),
+        Some(_) | None => None,
+    }
+}
+
 fn record<F>(record: F) -> Recorded
 where
     F: FnOnce(&mut SdkSpan),
@@ -91,15 +98,9 @@ fn attributes_chat_request_writes_request_attributes() {
         r#"{"model":"gpt-4o","optional_params":{"max_tokens":100,"temperature":0.5,"top_p":0.9,"stream":true,"user":"user-1"},"litellm_params":{"custom_llm_provider":"openai"},"standard_logging_object":{"call_type":"acompletion"}}"#,
         "null",
     );
-    assert_eq!(
-        attributes.get("llm.model_name"),
-        Some(&Value::from("gpt-4o"))
-    );
+    assert_eq!(attr(&attributes, "llm.model_name"), Some("gpt-4o"));
     assert_eq!(attributes.get("llm.provider"), Some(&Value::from("openai")));
-    assert_eq!(
-        attributes.get("llm.request.type"),
-        Some(&Value::from("acompletion"))
-    );
+    assert_eq!(attr(&attributes, "llm.request.type"), Some("acompletion"));
     assert_eq!(
         attributes.get("llm.request.max_tokens"),
         Some(&Value::I64(100))
@@ -110,10 +111,7 @@ fn attributes_chat_request_writes_request_attributes() {
     );
     assert_eq!(attributes.get("llm.request.top_p"), Some(&Value::F64(0.9)));
     assert_eq!(attributes.get("llm.user"), Some(&Value::from("user-1")));
-    assert_eq!(
-        attributes.get("openinference.span.kind"),
-        Some(&Value::from("LLM"))
-    );
+    assert_eq!(attr(&attributes, "openinference.span.kind"), Some("LLM"));
 }
 
 #[test]
@@ -152,19 +150,13 @@ fn attributes_streaming_flag_is_python_bool_text(
         r#"{{"optional_params":{optional_params},"standard_logging_object":{{"call_type":"acompletion"}}}}"#
     );
     let attributes = attributes_of(&kwargs, "null");
-    assert_eq!(
-        attributes.get("llm.is_streaming"),
-        Some(&Value::from(text.to_owned()))
-    );
+    assert_eq!(attr(&attributes, "llm.is_streaming"), Some(text));
 }
 
 #[test]
 fn attributes_provider_defaults_to_unknown_when_absent() {
     let attributes = attributes_of(&with_payload(r#"{"call_type":"acompletion"}"#), "null");
-    assert_eq!(
-        attributes.get("llm.provider"),
-        Some(&Value::from("Unknown"))
-    );
+    assert_eq!(attr(&attributes, "llm.provider"), Some("Unknown"));
 }
 
 #[test]
@@ -181,8 +173,8 @@ fn attributes_request_type_is_empty_when_call_type_is_absent() {
     let attributes = attributes_of(&with_payload("{}"), "null");
     assert_eq!(attributes.get("llm.request.type"), Some(&Value::from("")));
     assert_eq!(
-        attributes.get("openinference.span.kind"),
-        Some(&Value::from("UNKNOWN"))
+        attr(&attributes, "openinference.span.kind"),
+        Some("UNKNOWN")
     );
 }
 
@@ -193,10 +185,7 @@ fn attributes_request_type_is_empty_when_call_type_is_absent() {
 #[case::missing_call_type("{}", "UNKNOWN")]
 fn attributes_span_kind_follows_call_type(#[case] payload: &str, #[case] kind: &str) {
     let attributes = attributes_of(&with_payload(payload), "null");
-    assert_eq!(
-        attributes.get("openinference.span.kind"),
-        Some(&Value::from(kind.to_owned()))
-    );
+    assert_eq!(attr(&attributes, "openinference.span.kind"), Some(kind));
 }
 
 #[test]
@@ -206,8 +195,8 @@ fn attributes_metadata_is_written_as_json_text() {
         "null",
     );
     assert_eq!(
-        attributes.get("metadata"),
-        Some(&Value::from(r#"{"trace_name":"demo"}"#))
+        attr(&attributes, "metadata"),
+        Some(r#"{"trace_name":"demo"}"#)
     );
 }
 
@@ -228,32 +217,23 @@ fn attributes_messages_and_response_use_the_shared_writers() {
     );
     assert_eq!(attributes.get("input.value"), Some(&Value::from("hello")));
     assert_eq!(
-        attributes.get("llm.input_messages.0.message.role"),
-        Some(&Value::from("system"))
+        attr(&attributes, "llm.input_messages.0.message.role"),
+        Some("system")
     );
     assert_eq!(
-        attributes.get("llm.input_messages.1.message.content"),
-        Some(&Value::from("hello"))
+        attr(&attributes, "llm.input_messages.1.message.content"),
+        Some("hello")
+    );
+    assert_eq!(attr(&attributes, "llm.response.id"), Some("chatcmpl-1"));
+    assert_eq!(attr(&attributes, "llm.response.model"), Some("gpt-4o"));
+    assert_eq!(attr(&attributes, "output.value"), Some("hello there"));
+    assert_eq!(
+        attr(&attributes, "llm.output_messages.0.message.role"),
+        Some("assistant")
     );
     assert_eq!(
-        attributes.get("llm.response.id"),
-        Some(&Value::from("chatcmpl-1"))
-    );
-    assert_eq!(
-        attributes.get("llm.response.model"),
-        Some(&Value::from("gpt-4o"))
-    );
-    assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("hello there"))
-    );
-    assert_eq!(
-        attributes.get("llm.output_messages.0.message.role"),
-        Some(&Value::from("assistant"))
-    );
-    assert_eq!(
-        attributes.get("llm.output_messages.0.message.content"),
-        Some(&Value::from("hello there"))
+        attr(&attributes, "llm.output_messages.0.message.content"),
+        Some("hello there")
     );
 }
 
@@ -263,25 +243,22 @@ fn attributes_tools_from_optional_params_and_metadata() {
         r#"{"optional_params":{"tools":[{"type":"function","function":{"name":"get_weather","description":"Weather","parameters":{"type":"object"}}}]},"standard_logging_object":{"call_type":"acompletion","metadata":{"llm":{"tools":[{"name":"meta_tool","description":"Meta"}]}}}}"#,
         "null",
     );
+    assert_eq!(attr(&attributes, "llm.tools.0.name"), Some("get_weather"));
     assert_eq!(
-        attributes.get("llm.tools.0.name"),
-        Some(&Value::from("get_weather"))
+        attr(&attributes, "llm.tools.0.description"),
+        Some("Weather")
     );
     assert_eq!(
-        attributes.get("llm.tools.0.description"),
-        Some(&Value::from("Weather"))
+        attr(&attributes, "llm.tools.0.parameters"),
+        Some(r#"{"type":"object"}"#)
     );
     assert_eq!(
-        attributes.get("llm.tools.0.parameters"),
-        Some(&Value::from(r#"{"type":"object"}"#))
+        attr(&attributes, "llm.invocation_parameters.tools.0.name"),
+        Some("meta_tool")
     );
     assert_eq!(
-        attributes.get("llm.invocation_parameters.tools.0.name"),
-        Some(&Value::from("meta_tool"))
-    );
-    assert_eq!(
-        attributes.get("llm.invocation_parameters.tools.0.description"),
-        Some(&Value::from("Meta"))
+        attr(&attributes, "llm.invocation_parameters.tools.0.description"),
+        Some("Meta")
     );
 }
 
@@ -294,8 +271,8 @@ fn attributes_model_parameters_json_and_user_are_written() {
         "null",
     );
     assert_eq!(
-        attributes.get("llm.invocation_parameters"),
-        Some(&Value::from(r#"{"temperature":0.2,"user":"model-user"}"#))
+        attr(&attributes, "llm.invocation_parameters"),
+        Some(r#"{"temperature":0.2,"user":"model-user"}"#)
     );
     assert_eq!(attributes.get("user.id"), Some(&Value::from("model-user")));
 }
@@ -373,27 +350,12 @@ fn session_end_user_team_and_key_alias_are_written() {
     let attributes = session_attributes(
         r#"{"optional_params":{"user":"request-user"},"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":{"user_api_key_end_user_id":"end-user-1","user_api_key_user_id":"key-user-1","user_api_key_team_id":"team-1","user_api_key_team_alias":"Team One","user_api_key_alias":"key-alias-1"}}}"#,
     );
-    assert_eq!(
-        attributes.get("session.id"),
-        Some(&Value::from("end-user-1"))
-    );
-    assert_eq!(
-        attributes.get("litellm.trace_id"),
-        Some(&Value::from("trace-1"))
-    );
+    assert_eq!(attr(&attributes, "session.id"), Some("end-user-1"));
+    assert_eq!(attr(&attributes, "litellm.trace_id"), Some("trace-1"));
     assert_eq!(attributes.get("user.id"), None);
-    assert_eq!(
-        attributes.get("litellm.team_id"),
-        Some(&Value::from("team-1"))
-    );
-    assert_eq!(
-        attributes.get("litellm.team_alias"),
-        Some(&Value::from("Team One"))
-    );
-    assert_eq!(
-        attributes.get("litellm.key_alias"),
-        Some(&Value::from("key-alias-1"))
-    );
+    assert_eq!(attr(&attributes, "litellm.team_id"), Some("team-1"));
+    assert_eq!(attr(&attributes, "litellm.team_alias"), Some("Team One"));
+    assert_eq!(attr(&attributes, "litellm.key_alias"), Some("key-alias-1"));
 }
 
 #[test]
@@ -449,10 +411,7 @@ fn session_null_metadata_still_writes_trace_id() {
     let attributes = session_attributes(
         r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":null}}"#,
     );
-    assert_eq!(
-        attributes.get("litellm.trace_id"),
-        Some(&Value::from("trace-1"))
-    );
+    assert_eq!(attr(&attributes, "litellm.trace_id"), Some("trace-1"));
 }
 
 #[test]
@@ -547,16 +506,16 @@ fn passthrough_input_uses_the_last_message_text() {
     );
     assert_eq!(attributes.get("input.value"), Some(&Value::from("third")));
     assert_eq!(
-        attributes.get("llm.input_messages.0.message.role"),
-        Some(&Value::from("user"))
+        attr(&attributes, "llm.input_messages.0.message.role"),
+        Some("user")
     );
     assert_eq!(
-        attributes.get("llm.input_messages.1.message.content"),
-        Some(&Value::from("second"))
+        attr(&attributes, "llm.input_messages.1.message.content"),
+        Some("second")
     );
     assert_eq!(
-        attributes.get("llm.input_messages.2.message.role"),
-        Some(&Value::from("user"))
+        attr(&attributes, "llm.input_messages.2.message.role"),
+        Some("user")
     );
 }
 
@@ -570,8 +529,8 @@ fn passthrough_input_skips_non_object_messages() {
     assert_eq!(attributes.get("input.value"), Some(&Value::from("hello")));
     assert_eq!(attributes.get("llm.input_messages.0.message.role"), None);
     assert_eq!(
-        attributes.get("llm.input_messages.1.message.role"),
-        Some(&Value::from("user"))
+        attr(&attributes, "llm.input_messages.1.message.role"),
+        Some("user")
     );
 }
 
@@ -585,12 +544,12 @@ fn passthrough_input_writes_empty_content_and_skips_falsy_role() {
     assert!(!attributes.contains_key("input.value"));
     assert!(!attributes.contains_key("llm.input_messages.0.message.role"));
     assert_eq!(
-        attributes.get("llm.input_messages.0.message.content"),
-        Some(&Value::from(""))
+        attr(&attributes, "llm.input_messages.0.message.content"),
+        Some("")
     );
     assert_eq!(
-        attributes.get("llm.input_messages.1.message.role"),
-        Some(&Value::from("user"))
+        attr(&attributes, "llm.input_messages.1.message.role"),
+        Some("user")
     );
     assert!(!attributes.contains_key("llm.input_messages.1.message.content"));
 }
@@ -612,17 +571,14 @@ fn passthrough_output_joins_content_parts_with_two_newlines() {
         r#"{"role":"assistant","content":[{"type":"text","text":"one"},{"type":"text","text":"two"},{"type":"text","text":""}]}"#,
         false,
     );
+    assert_eq!(attr(&attributes, "output.value"), Some("one\n\ntwo"));
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("one\n\ntwo"))
+        attr(&attributes, "llm.output_messages.0.message.role"),
+        Some("assistant")
     );
     assert_eq!(
-        attributes.get("llm.output_messages.0.message.role"),
-        Some(&Value::from("assistant"))
-    );
-    assert_eq!(
-        attributes.get("llm.output_messages.0.message.content"),
-        Some(&Value::from("one\n\ntwo"))
+        attr(&attributes, "llm.output_messages.0.message.content"),
+        Some("one\n\ntwo")
     );
 }
 
@@ -634,8 +590,8 @@ fn passthrough_output_role_defaults_to_assistant() {
         false,
     );
     assert_eq!(
-        attributes.get("llm.output_messages.0.message.role"),
-        Some(&Value::from("assistant"))
+        attr(&attributes, "llm.output_messages.0.message.role"),
+        Some("assistant")
     );
 }
 
@@ -646,13 +602,10 @@ fn passthrough_output_choices_message_is_projected() {
         r#"{"choices":[{"message":{"role":"assistant","content":"choice text"}}]}"#,
         false,
     );
+    assert_eq!(attr(&attributes, "output.value"), Some("choice text"));
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("choice text"))
-    );
-    assert_eq!(
-        attributes.get("llm.output_messages.0.message.content"),
-        Some(&Value::from("choice text"))
+        attr(&attributes, "llm.output_messages.0.message.content"),
+        Some("choice text")
     );
 }
 
@@ -663,24 +616,35 @@ fn passthrough_choices_override_the_content_output() {
         r#"{"content":[{"type":"text","text":"anthropic text"}],"choices":[{"message":{"role":"assistant","content":"openai text"}}]}"#,
         false,
     );
+    assert_eq!(attr(&attributes, "output.value"), Some("openai text"));
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("openai text"))
-    );
-    assert_eq!(
-        attributes.get("llm.output_messages.0.message.content"),
-        Some(&Value::from("openai text"))
+        attr(&attributes, "llm.output_messages.0.message.content"),
+        Some("openai text")
     );
 }
 
-#[test]
-fn passthrough_output_without_text_writes_nothing() {
+#[rstest::rstest]
+#[case::parts_without_text(
+    r#"{"content":[{"type":"image","data":"abc"}],"choices":[{"message":{"content":null}}]}"#
+)]
+#[case::choices_with_empty_content(r#"{"choices":[{"message":{"content":""}}]}"#)]
+fn passthrough_output_without_text_writes_nothing(#[case] response: &str) {
     let attributes = passthrough_attributes(
         r#"{"standard_logging_object":{"call_type":"llm_passthrough_route"}}"#,
-        r#"{"content":[{"type":"image","data":"abc"}],"choices":[{"message":{"content":null}}]}"#,
+        response,
         false,
     );
     assert!(attributes.is_empty());
+}
+
+#[test]
+fn passthrough_response_with_a_choices_key_is_the_answer() {
+    let attributes = passthrough_attributes(
+        r#"{"standard_logging_object":{"call_type":"llm_passthrough_route"}}"#,
+        r#"{"response":"ignored","choices":[{"message":{"role":"assistant","content":"direct choice"}}]}"#,
+        false,
+    );
+    assert_eq!(attr(&attributes, "output.value"), Some("direct choice"));
 }
 
 #[rstest::rstest]
@@ -698,10 +662,7 @@ fn passthrough_wrapper_response_is_unwrapped(#[case] response: &str, #[case] tex
         response,
         false,
     );
-    assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from(text.to_owned()))
-    );
+    assert_eq!(attr(&attributes, "output.value"), Some(text));
 }
 
 #[test]
@@ -711,10 +672,7 @@ fn passthrough_unparsable_wrapper_falls_back_to_original_response() {
         r#"{"response":"not json"}"#,
         false,
     );
-    assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("fallback"))
-    );
+    assert_eq!(attr(&attributes, "output.value"), Some("fallback"));
 }
 
 #[test]
@@ -724,10 +682,7 @@ fn passthrough_original_response_string_is_parsed() {
         "null",
         false,
     );
-    assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("parsed fallback"))
-    );
+    assert_eq!(attr(&attributes, "output.value"), Some("parsed fallback"));
 }
 
 #[test]
@@ -788,23 +743,17 @@ fn mcp_tool_name_and_arguments_are_written() {
         r#"{"content":[{"type":"text","text":"sunny"}]}"#,
         false,
     );
+    assert_eq!(attr(&attributes, "tool.name"), Some("get_weather"));
     assert_eq!(
-        attributes.get("tool.name"),
-        Some(&Value::from("get_weather"))
+        attr(&attributes, "input.value"),
+        Some(r#"{"city":"Paris"}"#)
     );
     assert_eq!(
-        attributes.get("input.value"),
-        Some(&Value::from(r#"{"city":"Paris"}"#))
-    );
-    assert_eq!(
-        attributes.get("input.mime_type"),
-        Some(&Value::from("application/json"))
+        attr(&attributes, "input.mime_type"),
+        Some("application/json")
     );
     assert_eq!(attributes.get("output.value"), Some(&Value::from("sunny")));
-    assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("text/plain"))
-    );
+    assert_eq!(attr(&attributes, "output.mime_type"), Some("text/plain"));
 }
 
 #[test]
@@ -814,10 +763,7 @@ fn mcp_namespaced_tool_name_is_the_fallback() {
         "null",
         false,
     );
-    assert_eq!(
-        attributes.get("tool.name"),
-        Some(&Value::from("server/weather"))
-    );
+    assert_eq!(attr(&attributes, "tool.name"), Some("server/weather"));
 }
 
 #[test]
@@ -827,10 +773,7 @@ fn mcp_redaction_keeps_tool_name_and_drops_input_and_output() {
         r#"{"content":[{"type":"text","text":"sunny"}]}"#,
         true,
     );
-    assert_eq!(
-        attributes.get("tool.name"),
-        Some(&Value::from("get_weather"))
-    );
+    assert_eq!(attr(&attributes, "tool.name"), Some("get_weather"));
     assert!(!attributes.contains_key("input.value"));
     assert!(!attributes.contains_key("output.value"));
 }
@@ -842,14 +785,8 @@ fn mcp_text_only_parts_are_joined_as_plain_text() {
         r#"{"content":[{"type":"text","text":"one"},{"type":"text","text":"two"}]}"#,
         false,
     );
-    assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from("one\ntwo"))
-    );
-    assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("text/plain"))
-    );
+    assert_eq!(attr(&attributes, "output.value"), Some("one\ntwo"));
+    assert_eq!(attr(&attributes, "output.mime_type"), Some("text/plain"));
 }
 
 #[test]
@@ -860,14 +797,12 @@ fn mcp_mixed_parts_are_written_as_json() {
         false,
     );
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from(
-            r#"[{"text":"one","type":"text"},{"data":"abc","type":"image"}]"#
-        ))
+        attr(&attributes, "output.value"),
+        Some(r#"[{"text":"one","type":"text"},{"data":"abc","type":"image"}]"#)
     );
     assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("application/json"))
+        attr(&attributes, "output.mime_type"),
+        Some("application/json")
     );
 }
 
@@ -879,12 +814,12 @@ fn mcp_part_with_empty_text_makes_the_parts_json() {
         false,
     );
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from(r#"[{"text":"","type":"text"}]"#))
+        attr(&attributes, "output.value"),
+        Some(r#"[{"text":"","type":"text"}]"#)
     );
     assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("application/json"))
+        attr(&attributes, "output.mime_type"),
+        Some("application/json")
     );
 }
 
@@ -896,12 +831,12 @@ fn mcp_structured_content_is_written_as_json() {
         false,
     );
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from(r#"{"temperature":72}"#))
+        attr(&attributes, "output.value"),
+        Some(r#"{"temperature":72}"#)
     );
     assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("application/json"))
+        attr(&attributes, "output.mime_type"),
+        Some("application/json")
     );
 }
 
@@ -913,8 +848,8 @@ fn mcp_camel_case_structured_content_is_used_when_snake_is_absent() {
         false,
     );
     assert_eq!(
-        attributes.get("output.value"),
-        Some(&Value::from(r#"{"temperature":72}"#))
+        attr(&attributes, "output.value"),
+        Some(r#"{"temperature":72}"#)
     );
 }
 
@@ -937,20 +872,61 @@ fn mcp_empty_content_array_is_written_as_json() {
     );
     assert_eq!(attributes.get("output.value"), Some(&Value::from("[]")));
     assert_eq!(
-        attributes.get("output.mime_type"),
-        Some(&Value::from("application/json"))
+        attr(&attributes, "output.mime_type"),
+        Some("application/json")
     );
 }
 
-#[test]
-fn mcp_without_content_or_structured_payload_writes_no_output() {
+#[rstest::rstest]
+#[case::empty_object("{}")]
+#[case::null_content(r#"{"content":null}"#)]
+fn mcp_without_content_or_structured_payload_writes_no_output(#[case] response: &str) {
     let attributes = mcp_attributes(
         r#"{"standard_logging_object":{"call_type":"call_mcp_tool","metadata":{"mcp_tool_call_metadata":{"name":"tool"}}}}"#,
-        "{}",
+        response,
         false,
     );
     assert!(!attributes.contains_key("output.value"));
     assert!(!attributes.contains_key("output.mime_type"));
+}
+
+#[test]
+fn mcp_empty_text_content_writes_the_json_string() {
+    let attributes = mcp_attributes(
+        r#"{"standard_logging_object":{"call_type":"call_mcp_tool","metadata":{"mcp_tool_call_metadata":{"name":"tool"}}}}"#,
+        r#"{"content":""}"#,
+        false,
+    );
+    assert_eq!(attributes.get("output.value"), Some(&Value::from(r#""""#)));
+    assert_eq!(
+        attr(&attributes, "output.mime_type"),
+        Some("application/json")
+    );
+}
+
+#[rstest::rstest]
+#[case::truthy_content(
+    r#"{"content":[{"type":"text","text":"one"}],"structured_content":{"temperature":72}}"#,
+    "one",
+    "text/plain"
+)]
+#[case::empty_content_array(
+    r#"{"content":[],"structured_content":{"temperature":72}}"#,
+    r#"{"temperature":72}"#,
+    "application/json"
+)]
+fn mcp_payload_prefers_truthy_content_then_structured(
+    #[case] response: &str,
+    #[case] value: &str,
+    #[case] mime_type: &str,
+) {
+    let attributes = mcp_attributes(
+        r#"{"standard_logging_object":{"call_type":"call_mcp_tool","metadata":{"mcp_tool_call_metadata":{"name":"tool"}}}}"#,
+        response,
+        false,
+    );
+    assert_eq!(attr(&attributes, "output.value"), Some(value));
+    assert_eq!(attr(&attributes, "output.mime_type"), Some(mime_type));
 }
 
 #[test]

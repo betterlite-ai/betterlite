@@ -72,9 +72,7 @@ pub(super) fn set_response_cost_attr<S>(span: &mut S, standard_logging_object: O
 where
     S: Span,
 {
-    let Some(cost) = standard_logging_object
-        .and_then(|payload| payload.get("response_cost"))
-        .filter(|value| !matches!(value, OtelModelValue::Null(())))
+    let Some(cost) = standard_logging_object.and_then(|payload| payload.get("response_cost"))
     else {
         return;
     };
@@ -100,8 +98,6 @@ fn cost_value(cost: &OtelModelValue) -> Option<OtelModelValue> {
             return None;
         }
     };
-    if !parsed.is_finite() {
-        return None;
-    }
+    // a non-finite float has no serde_json number, so from_f64 refuses it
     serde_json::Number::from_f64(parsed).map(OtelModelValue::Number)
 }
