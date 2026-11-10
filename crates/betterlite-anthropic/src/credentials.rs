@@ -1,15 +1,16 @@
 use std::collections::BTreeSet;
 
-use betterlite_openai::error::{ProviderError, ProviderErrorParts};
+use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
+use betterlite_http::proxy::transport_error::TransportError;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use thiserror::Error;
 
+pub mod models;
 mod tests;
 
-pub const DEFAULT_API_BASE: &str = "https://api.anthropic.com";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 pub const OAUTH_TOKEN_PREFIX: &str = "sk-ant-oat";
 pub const OAUTH_BETA_HEADER: &str = "oauth-2025-04-20";
@@ -20,7 +21,7 @@ pub const BROWSER_ACCESS_HEADER: &str = "anthropic-dangerous-direct-browser-acce
 pub struct AnthropicSettings {
     pub api_key: Option<SecretString>,
     pub auth_token: Option<SecretString>,
-    pub api_base: Option<String>,
+    pub api_base: String,
     pub use_bearer_for_custom_base: bool,
     pub anthropic_version: String,
 }
@@ -30,7 +31,7 @@ impl Default for AnthropicSettings {
         Self {
             api_key: None,
             auth_token: None,
-            api_base: None,
+            api_base: DEFAULT_API_BASE.to_owned(),
             use_bearer_for_custom_base: false,
             anthropic_version: ANTHROPIC_VERSION.to_owned(),
         }
@@ -41,12 +42,6 @@ impl Default for AnthropicSettings {
 pub struct AuthHeader {
     pub name: &'static str,
     pub value: SecretString,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModelsRequest {
-    pub url: String,
-    pub headers: IndexMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -75,6 +70,20 @@ pub enum CredentialsError {
     ModelsJson {
         #[source]
         source: serde_json::Error,
+    },
+    #[error("Anthropic models response is larger than {limit} bytes")]
+    ResponseTooLarge { limit: usize },
+    #[error("invalid Anthropic models url: {source}")]
+    InvalidUrl {
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the {name} header value is not a valid HTTP header value")]
+    InvalidHeader { name: &'static str },
+    #[error("Anthropic models request failed: {source}")]
+    Transport {
+        #[source]
+        source: TransportError,
     },
 }
 
@@ -182,14 +191,6 @@ pub fn make_api_key_auth_header(
 }
 
 #[must_use]
-pub fn get_api_base(api_base: Option<&str>, settings: &AnthropicSettings) -> String {
-    api_base
-        .map(str::to_owned)
-        .or_else(|| settings.api_base.clone())
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
-}
-
-#[must_use]
 pub fn get_auth_header(
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
@@ -221,72 +222,4 @@ pub fn get_base_model(model: Option<&str>) -> Option<String> {
     model
         .filter(|name| !name.is_empty())
         .map(|name| name.replace("anthropic/", ""))
-}
-
-pub fn models_request(
-    api_key: Option<&SecretString>,
-    api_base: Option<&str>,
-    settings: &AnthropicSettings,
-) -> Result<ModelsRequest, CredentialsError> {
-    let base = get_api_base(api_base, settings);
-    let auth_header = get_auth_header(api_key, Some(&base), false, settings)
-        .ok_or(CredentialsError::MissingCredential)?;
-    let mut headers = IndexMap::new();
-    headers.insert(
-        "anthropic-version".to_owned(),
-        settings.anthropic_version.clone(),
-    );
-    headers.insert(
-        auth_header.name.to_owned(),
-        auth_header.value.expose_secret().to_owned(),
-    );
-    Ok(ModelsRequest {
-        url: format!("{base}/v1/models"),
-        headers,
-    })
-}
-
-pub fn decode_anthropic_models(status: u16, bytes: &[u8]) -> Result<Vec<String>, CredentialsError> {
-    if !(200..300).contains(&status) {
-        let length = bytes.len();
-        let response = str::from_utf8(bytes).map_or_else(
-            |_| format!("{length} bytes that are not UTF-8"),
-            str::to_owned,
-        );
-        return Err(CredentialsError::ModelsStatus { status, response });
-    }
-    let list: ModelList =
-        serde_json::from_slice(bytes).map_err(|source| CredentialsError::ModelsJson { source })?;
-    Ok(list
-        .data
-        .into_iter()
-        .map(|model| format!("anthropic/{}", model.id))
-        .collect())
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelList {
-    data: Vec<ModelEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelEntry {
-    id: String,
-}
-
-#[must_use]
-pub fn anthropic_error(
-    status_code: u16,
-    message: String,
-    headers: Option<Vec<(String, String)>>,
-) -> ProviderError {
-    ProviderError::from(ProviderErrorParts {
-        status_code,
-        message,
-        headers,
-        request: None,
-        response: None,
-        body: None,
-        status_code_is_synthesized: false,
-    })
 }

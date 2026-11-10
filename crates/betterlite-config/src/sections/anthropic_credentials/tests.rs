@@ -56,11 +56,11 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
         }
         2 => {
             assert_eq!(DEFAULT_API_BASE, "https://api.anthropic.com");
-            assert!(load("", &[]).unwrap().api_base.is_none());
+            assert_eq!(load("", &[]).unwrap().api_base, DEFAULT_API_BASE);
             let from_api_base = load("", &[("ANTHROPIC_API_BASE", "https://api-base.example")])
                 .unwrap()
                 .api_base;
-            assert_eq!(from_api_base.as_deref(), Some("https://api-base.example"));
+            assert_eq!(from_api_base, "https://api-base.example");
             let precedence = load(
                 "",
                 &[
@@ -70,7 +70,7 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
             )
             .unwrap()
             .api_base;
-            assert_eq!(precedence.as_deref(), Some("https://api-base.example"));
+            assert_eq!(precedence, "https://api-base.example");
             let empty_falls_through = load(
                 "",
                 &[
@@ -80,23 +80,20 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
             )
             .unwrap()
             .api_base;
-            assert_eq!(
-                empty_falls_through.as_deref(),
-                Some("https://base-url.example")
-            );
+            assert_eq!(empty_falls_through, "https://base-url.example");
         }
         3 => {
             let from_base_url = load("", &[("ANTHROPIC_BASE_URL", "https://base-url.example")])
                 .unwrap()
                 .api_base;
-            assert_eq!(from_base_url.as_deref(), Some("https://base-url.example"));
+            assert_eq!(from_base_url, "https://base-url.example");
             let empty = load("", &[("ANTHROPIC_BASE_URL", "")]).unwrap().api_base;
-            assert!(empty.is_none());
+            assert_eq!(empty, DEFAULT_API_BASE);
         }
         4 => {
             let default = load("", &[]).unwrap();
             assert!(!default.use_bearer_for_custom_base);
-            assert!(default.deployments.is_empty());
+            assert!(default.deployment_bearer_opt_ins.is_empty());
             let module = load(
                 "litellm_settings:\n  use_bearer_for_custom_base: true\n",
                 &[],
@@ -104,7 +101,10 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
             .unwrap();
             assert!(module.use_bearer_for_custom_base);
             let enabled = "model_list:\n  - model_name: claude\n    litellm_params:\n      model: anthropic/claude-sonnet-4\n      use_bearer_for_custom_base: true\n";
-            assert_eq!(load(enabled, &[]).unwrap().deployments, vec![true]);
+            assert_eq!(
+                load(enabled, &[]).unwrap().deployment_bearer_opt_ins,
+                vec![true]
+            );
             let disabled = "model_list:\n  - model_name: claude\n    litellm_params:\n      model: anthropic/claude-sonnet-4\n      use_bearer_for_custom_base: false\n";
             assert_eq!(
                 load(
@@ -112,7 +112,7 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
                     &[]
                 )
                 .unwrap()
-                .deployments,
+                .deployment_bearer_opt_ins,
                 Vec::<bool>::new()
             );
             let inherited = load(
@@ -120,15 +120,15 @@ fn anthropic_credentials_config_cases(#[case] case: u8) {
                 &[],
             )
             .unwrap();
-            assert_eq!(inherited.deployments, vec![true, true]);
+            assert_eq!(inherited.deployment_bearer_opt_ins, vec![true, true]);
             let overridden = load(
                 "litellm_settings:\n  use_bearer_for_custom_base: true\nmodel_list:\n  - model_name: first\n    litellm_params:\n      use_bearer_for_custom_base: false\n  - model_name: second\n",
                 &[],
             )
             .unwrap();
-            assert_eq!(overridden.deployments, vec![false, true]);
+            assert_eq!(overridden.deployment_bearer_opt_ins, vec![false, true]);
             assert_eq!(
-                load(disabled, &[]).unwrap().deployments,
+                load(disabled, &[]).unwrap().deployment_bearer_opt_ins,
                 vec![false],
                 "an explicit deployment value stays false"
             );

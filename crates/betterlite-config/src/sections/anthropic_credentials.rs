@@ -27,14 +27,27 @@ struct Deployment {
     litellm_params: Params,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Settings {
     pub api_key: Option<SecretString>,
     pub auth_token: Option<SecretString>,
-    pub api_base: Option<String>,
+    pub api_base: String,
     pub use_bearer_for_custom_base: bool,
-    pub deployments: Vec<bool>,
+    pub deployment_bearer_opt_ins: Vec<bool>,
     pub disable_url_suffix: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            auth_token: None,
+            api_base: DEFAULT_API_BASE.to_owned(),
+            use_bearer_for_custom_base: false,
+            deployment_bearer_opt_ins: Vec::new(),
+            disable_url_suffix: false,
+        }
+    }
 }
 
 impl Settings {
@@ -43,7 +56,8 @@ impl Settings {
         L: EnvironmentLookup,
     {
         let api_base = non_empty(lookup.lookup("ANTHROPIC_API_BASE"))
-            .or_else(|| non_empty(lookup.lookup("ANTHROPIC_BASE_URL")));
+            .or_else(|| non_empty(lookup.lookup("ANTHROPIC_BASE_URL")))
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let disable_url_suffix = lookup
             .lookup("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
             .map(|text| betterlite_env::flag("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", &text))
@@ -58,7 +72,7 @@ impl Settings {
                 .map(SecretString::from),
             api_base,
             use_bearer_for_custom_base: false,
-            deployments: Vec::new(),
+            deployment_bearer_opt_ins: Vec::new(),
             disable_url_suffix,
         })
     }
@@ -76,7 +90,7 @@ impl Section for Raw {
             .litellm_settings
             .use_bearer_for_custom_base
             .unwrap_or(false);
-        let deployments = self
+        let deployment_bearer_opt_ins = self
             .model_list
             .into_iter()
             .map(|deployment| {
@@ -87,7 +101,7 @@ impl Section for Raw {
             })
             .collect();
         settings.use_bearer_for_custom_base = module_bearer;
-        settings.deployments = deployments;
+        settings.deployment_bearer_opt_ins = deployment_bearer_opt_ins;
         Ok(settings)
     }
 }

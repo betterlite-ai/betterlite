@@ -1,11 +1,19 @@
 use std::collections::BTreeMap;
+use std::future::ready;
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
+use betterlite_anthropic::credentials::models::{ModelsTransport, get_models};
 use betterlite_anthropic::credentials::{
-    ANTHROPIC_VERSION, AnthropicSettings, AuthHeader, OauthTokenClaim, decode_anthropic_models,
-    get_api_base, get_auth_header, get_base_model, handle_anthropic_oauth, is_anthropic_oauth_key,
-    make_api_key_auth_header, models_request, resolve_oauth_token_claim,
+    ANTHROPIC_VERSION, AnthropicSettings, AuthHeader, OauthTokenClaim, get_auth_header,
+    get_base_model, handle_anthropic_oauth, is_anthropic_oauth_key, make_api_key_auth_header,
+    resolve_oauth_token_claim,
 };
 use betterlite_config::sections::anthropic_credentials::Settings as ConfigSettings;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::transport_error::TransportError;
+use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -87,7 +95,7 @@ impl Helper for Op {
                 Ok(json!({ "header": header_object(header) }))
             }
             Function::ApiBase => Ok(json!({
-                "api_base": get_api_base(input.api_base.as_deref(), &settings),
+                "api_base": input.api_base.as_deref().unwrap_or(&settings.api_base),
             })),
             Function::OauthKey => Ok(json!({
                 "oauth": is_anthropic_oauth_key(input.value.as_deref()),
@@ -145,18 +153,70 @@ fn handle_oauth(input: &Input) -> Value {
     })
 }
 
+struct Fixture<'reply> {
+    reply: Option<&'reply Reply>,
+    seen: Mutex<Option<(String, Map<String, Value>)>>,
+}
+
+impl ModelsTransport for Fixture<'_> {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        let headers = request
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.to_string(),
+                    Value::String(String::from_utf8_lossy(value.as_bytes()).into_owned()),
+                )
+            })
+            .collect();
+        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((request.url.to_string(), headers));
+        ready(
+            self.reply
+                .ok_or(TransportError::Closed)
+                .map(|reply| UpstreamResponse {
+                    status: reply.status,
+                    headers: HeaderMap::new(),
+                    body: reply.body.clone().into_bytes(),
+                }),
+        )
+    }
+}
+
 fn models(input: &Input, settings: &AnthropicSettings) -> HelperResult {
     let api_key = input.api_key.clone().map(SecretString::from);
-    let request =
-        models_request(api_key.as_ref(), input.api_base.as_deref(), settings).map_err(failure)?;
-    let Some(reply) = &input.reply else {
-        return Err(failure("the models case needs a fixture reply"));
+    let transport = Fixture {
+        reply: input.reply.as_ref(),
+        seen: Mutex::new(None),
     };
-    let models = decode_anthropic_models(reply.status, reply.body.as_bytes()).map_err(failure)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(failure)?;
+    let names = runtime
+        .block_on(get_models(
+            &transport,
+            api_key.as_ref(),
+            input.api_base.as_deref(),
+            settings,
+            Duration::from_secs(30),
+        ))
+        .map_err(failure)?;
+    let seen = transport
+        .seen
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some((url, headers)) = seen else {
+        return Err(failure("the models fetch sent no request"));
+    };
     Ok(json!({
-        "url": request.url,
-        "headers": request.headers,
-        "models": models,
+        "url": url,
+        "headers": headers,
+        "models": names,
     }))
 }
 

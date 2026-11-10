@@ -1,19 +1,102 @@
 #![cfg(test)]
 
 use std::fs;
+use std::future::ready;
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::Duration;
 
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::error::{ProviderError, ProviderErrorParts};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 use serde::de::IgnoredAny;
 
+use super::models::{
+    MODEL_LIST_LIMIT, ModelsTransport, decode_anthropic_models, get_models, models_request,
+};
 use super::{
     ANTHROPIC_VERSION, AnthropicSettings, BROWSER_ACCESS_HEADER, CredentialsError,
-    DEFAULT_API_BASE, OAUTH_BETA_HEADER, OAUTH_BETA_HEADER_NAME, OauthTokenClaim, anthropic_error,
-    decode_anthropic_models, get_api_base, get_auth_header, get_base_model, handle_anthropic_oauth,
-    is_anthropic_oauth_key, make_api_key_auth_header, models_request, resolve_oauth_token_claim,
+    DEFAULT_API_BASE, OAUTH_BETA_HEADER, OAUTH_BETA_HEADER_NAME, OauthTokenClaim, get_auth_header,
+    get_base_model, handle_anthropic_oauth, is_anthropic_oauth_key, make_api_key_auth_header,
+    resolve_oauth_token_claim,
 };
+
+const DEADLINE: Duration = Duration::from_secs(5);
+
+#[derive(Clone)]
+struct Sent {
+    method: Method,
+    url: String,
+    headers: Vec<(String, String)>,
+    sensitive: Vec<String>,
+}
+
+struct Script {
+    reply: Option<(u16, Vec<u8>)>,
+    sent: Mutex<Vec<Sent>>,
+}
+
+impl Script {
+    fn replying(status: u16, body: &[u8]) -> Self {
+        Self {
+            reply: Some((status, body.to_vec())),
+            sent: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing() -> Self {
+        Self {
+            reply: None,
+            sent: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn requests(&self) -> Vec<Sent> {
+        self.sent.lock().unwrap().clone()
+    }
+}
+
+impl ModelsTransport for Script {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        let mut headers: Vec<(String, String)> = request
+            .headers
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_str().unwrap().to_owned()))
+            .collect();
+        headers.sort();
+        let mut sensitive: Vec<String> = request
+            .headers
+            .iter()
+            .filter(|(_, value)| value.is_sensitive())
+            .map(|(name, _)| name.to_string())
+            .collect();
+        sensitive.sort();
+        self.sent.lock().unwrap().push(Sent {
+            method: request.method,
+            url: request.url.to_string(),
+            headers,
+            sensitive,
+        });
+        ready(
+            self.reply
+                .clone()
+                .ok_or(TransportError::Closed)
+                .map(|(status, body)| UpstreamResponse {
+                    status,
+                    headers: HeaderMap::new(),
+                    body,
+                }),
+        )
+    }
+}
 
 fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
@@ -31,7 +114,7 @@ fn configured(
     AnthropicSettings {
         api_key: api_key.map(secret),
         auth_token: auth_token.map(secret),
-        api_base: api_base.map(str::to_owned),
+        api_base: api_base.map_or_else(|| DEFAULT_API_BASE.to_owned(), str::to_owned),
         use_bearer_for_custom_base: false,
         anthropic_version: ANTHROPIC_VERSION.to_owned(),
     }
@@ -54,7 +137,9 @@ fn header_pairs(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 #[case::models_http_fetch(6)]
 #[case::models_non_2xx(7)]
 #[case::oauth_direct_key_headers(8)]
-fn credentials_cases(#[case] case: u8) {
+#[case::models_response_limit(9)]
+#[tokio::test]
+async fn credentials_cases(#[case] case: u8) {
     match case {
         0 => key_before_auth_token_case(),
         1 => base_env_precedence_case(),
@@ -70,17 +155,19 @@ fn credentials_cases(#[case] case: u8) {
             custom_base_bearer_default();
             custom_base_bearer_lookalikes();
         }
-        5 => missing_credential_case(),
-        6 => models_http_fetch_case(),
+        5 => missing_credential_case().await,
+        6 => models_http_fetch_case().await,
         7 => {
-            models_status_errors();
-            models_json_errors();
-            anthropic_error_projection();
+            models_status_errors().await;
+            models_json_errors().await;
+            models_transport_failure().await;
+            anthropic_error_literal();
         }
-        _ => {
+        8 => {
             oauth_direct_key_rewrites_headers();
             oauth_direct_key_ignores_prefixed_and_plain();
         }
+        _ => models_response_limit_case().await,
     }
 }
 
@@ -124,15 +211,22 @@ fn key_before_auth_token_case() {
 }
 
 fn base_env_precedence_case() {
-    let environment = configured(None, None, Some("https://env.example"));
-    assert_eq!(get_api_base(None, &environment), "https://env.example");
+    let environment = configured(Some("key"), None, Some("https://env.example"));
     assert_eq!(
-        get_api_base(Some("https://explicit.example"), &environment),
-        "https://explicit.example"
+        models_request(None, None, &environment).unwrap().url,
+        "https://env.example/v1/models"
     );
     assert_eq!(
-        get_api_base(None, &AnthropicSettings::default()),
-        DEFAULT_API_BASE
+        models_request(None, Some("https://explicit.example"), &environment)
+            .unwrap()
+            .url,
+        "https://explicit.example/v1/models"
+    );
+    assert_eq!(
+        models_request(None, None, &configured(Some("key"), None, None))
+            .unwrap()
+            .url,
+        "https://api.anthropic.com/v1/models"
     );
     assert_eq!(
         get_base_model(Some("anthropic/anthropic/claude-x")),
@@ -289,80 +383,121 @@ fn custom_base_bearer_lookalikes() {
     assert_eq!(official.name, "x-api-key");
 }
 
-fn missing_credential_case() {
-    let error = models_request(None, None, &AnthropicSettings::default()).unwrap_err();
+async fn missing_credential_case() {
+    let script = Script::replying(200, b"{}");
+    let error = get_models(&script, None, None, &AnthropicSettings::default(), DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CredentialsError::MissingCredential));
     let message = error.to_string();
     assert!(message.contains(
         "ANTHROPIC_API_BASE/ANTHROPIC_BASE_URL or ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN is not set"
     ));
     assert!(message.contains("to query Anthropic's `/models` endpoint."));
+    assert!(script.requests().is_empty());
 
     let empty_key = configured(Some(""), None, None);
     let request = models_request(None, None, &empty_key).unwrap();
-    assert_eq!(
-        request.headers.get("x-api-key").map(String::as_str),
-        Some("")
-    );
-    assert_eq!(
-        request.headers.get("anthropic-version").map(String::as_str),
-        Some(ANTHROPIC_VERSION)
-    );
+    assert_eq!(request.auth.name, "x-api-key");
+    assert_eq!(request.auth.value.expose_secret(), "");
+    assert_eq!(request.anthropic_version, ANTHROPIC_VERSION);
 }
 
-fn models_http_fetch_case() {
+async fn models_http_fetch_case() {
+    models_http_fetch_custom_base().await;
+    models_http_fetch_oauth_and_explicit().await;
+}
+
+async fn models_http_fetch_custom_base() {
     let custom = configured(Some("api-key"), None, Some("https://custom.example/"));
-    let custom_request = models_request(None, None, &custom).unwrap();
-    assert_eq!(custom_request.url, "https://custom.example//v1/models");
-    assert_eq!(
-        custom_request
-            .headers
-            .get("anthropic-version")
-            .map(String::as_str),
-        Some("2023-06-01")
-    );
-    assert_eq!(
-        custom_request.headers.get("x-api-key").map(String::as_str),
-        Some("api-key")
-    );
-    assert!(!custom_request.headers.contains_key(OAUTH_BETA_HEADER_NAME));
-    assert!(!custom_request.headers.contains_key(BROWSER_ACCESS_HEADER));
-
-    let oauth = configured(Some("sk-ant-oat-model"), None, None);
-    let oauth_request = models_request(None, None, &oauth).unwrap();
-    assert_eq!(oauth_request.url, "https://api.anthropic.com/v1/models");
-    assert_eq!(
-        oauth_request
-            .headers
-            .get("authorization")
-            .map(String::as_str),
-        Some("Bearer sk-ant-oat-model")
-    );
-
-    let decoded = decode_anthropic_models(
+    let script = Script::replying(
         200,
         br#"{"data":[{"id":"claude-x"},{"id":"anthropic/claude-y"}],"has_more":false}"#,
-    )
-    .unwrap();
+    );
+    let models = get_models(&script, None, None, &custom, DEADLINE)
+        .await
+        .unwrap();
     assert_eq!(
-        decoded,
+        models,
         vec![
             "anthropic/claude-x".to_owned(),
             "anthropic/anthropic/claude-y".to_owned()
         ]
     );
-    let boundary = decode_anthropic_models(299, br#"{"data":[{"id":""}]}"#).unwrap();
-    assert_eq!(boundary, vec!["anthropic/".to_owned()]);
+    let sent = script.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].method, Method::GET);
+    assert_eq!(sent[0].url, "https://custom.example//v1/models");
+    assert_eq!(
+        sent[0].headers,
+        vec![
+            ("anthropic-version".to_owned(), "2023-06-01".to_owned()),
+            ("x-api-key".to_owned(), "api-key".to_owned())
+        ]
+    );
+    assert_eq!(sent[0].sensitive, vec!["x-api-key".to_owned()]);
 }
 
-fn models_status_errors() {
-    let status_error = decode_anthropic_models(429, b"slow down").unwrap_err();
+async fn models_http_fetch_oauth_and_explicit() {
+    let custom = configured(Some("api-key"), None, Some("https://custom.example/"));
+    let oauth = configured(Some("sk-ant-oat-model"), None, None);
+    let oauth_script = Script::replying(299, br#"{"data":[{"id":""}]}"#);
+    let boundary = get_models(&oauth_script, None, None, &oauth, DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(boundary, vec!["anthropic/".to_owned()]);
+    let oauth_sent = oauth_script.requests();
+    assert_eq!(oauth_sent[0].url, "https://api.anthropic.com/v1/models");
+    assert_eq!(
+        oauth_sent[0].headers,
+        vec![
+            ("anthropic-version".to_owned(), "2023-06-01".to_owned()),
+            (
+                "authorization".to_owned(),
+                "Bearer sk-ant-oat-model".to_owned()
+            )
+        ]
+    );
+    assert_eq!(oauth_sent[0].sensitive, vec!["authorization".to_owned()]);
+
+    let explicit = Script::replying(200, br#"{"data":[]}"#);
+    let empty = get_models(
+        &explicit,
+        Some(&secret("explicit-key")),
+        Some("https://explicit.example"),
+        &custom,
+        DEADLINE,
+    )
+    .await
+    .unwrap();
+    assert!(empty.is_empty());
+    let explicit_sent = explicit.requests();
+    assert_eq!(explicit_sent[0].url, "https://explicit.example/v1/models");
+    assert_eq!(
+        explicit_sent[0].headers[1],
+        ("x-api-key".to_owned(), "explicit-key".to_owned())
+    );
+}
+
+async fn models_status_errors() {
+    let settings = configured(Some("api-key"), None, None);
+    let slow = Script::replying(429, b"slow down");
+    let status_error = get_models(&slow, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
     assert_eq!(
         status_error.to_string(),
         "Failed to fetch models from Anthropic. Status code: 429, Response: slow down"
     );
-    let redirect_error = decode_anthropic_models(300, b"redirect").unwrap_err();
+    let redirect = Script::replying(300, b"redirect");
+    let redirect_error = get_models(&redirect, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
     assert!(redirect_error.to_string().contains("Status code: 300"));
-    let binary_error = decode_anthropic_models(400, &[0xff, 0xfe]).unwrap_err();
+    let binary = Script::replying(400, &[0xff, 0xfe]);
+    let binary_error = get_models(&binary, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
     assert!(
         binary_error
             .to_string()
@@ -370,23 +505,107 @@ fn models_status_errors() {
     );
 }
 
-fn models_json_errors() {
-    let malformed = decode_anthropic_models(200, b"{\"data\": [").unwrap_err();
-    assert!(matches!(malformed, CredentialsError::ModelsJson { .. }));
-    let missing_id = decode_anthropic_models(200, br#"{"data":[{"other":"x"}]}"#).unwrap_err();
-    assert!(matches!(missing_id, CredentialsError::ModelsJson { .. }));
-    let missing_data = decode_anthropic_models(200, b"{}").unwrap_err();
-    assert!(matches!(missing_data, CredentialsError::ModelsJson { .. }));
-    let empty_body = decode_anthropic_models(204, b"").unwrap_err();
-    assert!(matches!(empty_body, CredentialsError::ModelsJson { .. }));
+async fn assert_models_json_error(status: u16, body: &[u8]) {
+    let settings = configured(Some("api-key"), None, None);
+    let script = Script::replying(status, body);
+    let error = get_models(&script, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, CredentialsError::ModelsJson { .. }),
+        "{status} {body:?}"
+    );
 }
 
-fn anthropic_error_projection() {
-    let projected = anthropic_error(
-        429,
-        "slow".to_owned(),
-        Some(vec![("retry-after".to_owned(), "2".to_owned())]),
+async fn models_json_errors() {
+    assert_models_json_error(200, b"{\"data\": [").await;
+    assert_models_json_error(200, br#"{"data":[{"other":"x"}]}"#).await;
+    assert_models_json_error(200, b"{}").await;
+    assert_models_json_error(204, b"").await;
+}
+
+async fn models_transport_failure() {
+    let settings = configured(Some("api-key"), None, None);
+    let script = Script::failing();
+    let error = get_models(&script, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CredentialsError::Transport {
+            source: TransportError::Closed
+        }
+    ));
+    assert_eq!(script.requests().len(), 1);
+
+    let invalid_key = configured(Some("line\nbreak"), None, None);
+    let unsent = Script::replying(200, b"{}");
+    let invalid = get_models(&unsent, None, None, &invalid_key, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid,
+        CredentialsError::InvalidHeader { name: "x-api-key" }
+    ));
+
+    let bad_base = configured(Some("api-key"), None, Some("not a url"));
+    let bad = get_models(&unsent, None, None, &bad_base, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(bad, CredentialsError::InvalidUrl { .. }));
+    assert!(unsent.requests().is_empty());
+}
+
+fn padded_model_list(total: usize) -> Vec<u8> {
+    let mut body = br#"{"data":[]}"#.to_vec();
+    body.resize(total, b' ');
+    body
+}
+
+async fn models_response_limit_case() {
+    let at_limit = padded_model_list(MODEL_LIST_LIMIT);
+    assert!(decode_anthropic_models(200, &at_limit).unwrap().is_empty());
+    let over_limit = padded_model_list(MODEL_LIST_LIMIT + 1);
+    let too_large = decode_anthropic_models(200, &over_limit).unwrap_err();
+    assert!(matches!(
+        too_large,
+        CredentialsError::ResponseTooLarge {
+            limit: MODEL_LIST_LIMIT
+        }
+    ));
+    assert_eq!(
+        too_large.to_string(),
+        format!("Anthropic models response is larger than {MODEL_LIST_LIMIT} bytes")
     );
+    let failure_over_limit = decode_anthropic_models(500, &over_limit).unwrap_err();
+    assert!(matches!(
+        failure_over_limit,
+        CredentialsError::ResponseTooLarge { .. }
+    ));
+    let at_limit_failure = decode_anthropic_models(500, &at_limit).unwrap_err();
+    assert!(matches!(
+        at_limit_failure,
+        CredentialsError::ModelsStatus { status: 500, .. }
+    ));
+
+    let settings = configured(Some("api-key"), None, None);
+    let script = Script::replying(200, &over_limit);
+    let fetched = get_models(&script, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(fetched, CredentialsError::ResponseTooLarge { .. }));
+}
+
+fn anthropic_error_literal() {
+    let projected = ProviderError::from(ProviderErrorParts {
+        status_code: 429,
+        message: "slow".to_owned(),
+        headers: Some(vec![("retry-after".to_owned(), "2".to_owned())]),
+        request: None,
+        response: None,
+        body: None,
+        status_code_is_synthesized: false,
+    });
     assert_eq!(projected.status_code, 429);
     assert_eq!(projected.message, "slow");
     assert_eq!(
@@ -484,8 +703,8 @@ fn anthropic_credentials_credential_identity_isolation() {
     );
 }
 
-#[test]
-fn anthropic_credentials_secret_safe_failure() {
+#[tokio::test]
+async fn anthropic_credentials_secret_safe_failure() {
     let settings = configured(
         Some("sk-secret-fixture-key"),
         Some("secret-fixture-token"),
@@ -500,12 +719,31 @@ fn anthropic_credentials_secret_safe_failure() {
     let oauth_header = make_api_key_auth_header(&secret("sk-ant-oat-secret-fixture"), None, false);
     assert!(!format!("{oauth_header:?}").contains("sk-ant-oat-secret-fixture"));
 
-    let error = models_request(None, None, &AnthropicSettings::default()).unwrap_err();
-    assert!(!format!("{error:?}").contains("sk-secret-fixture"));
-    assert!(!error.to_string().contains("sk-secret-fixture"));
+    let request = models_request(None, None, &settings).unwrap();
+    let request_debug = format!("{request:?}");
+    assert!(request_debug.contains("https://secret.example/v1/models"));
+    assert!(!request_debug.contains("sk-secret-fixture-key"));
+    let outbound = request.into_outbound(DEADLINE).unwrap();
+    assert!(!format!("{outbound:?}").contains("sk-secret-fixture-key"));
 
-    let projected = anthropic_error(401, "denied".to_owned(), None);
-    assert!(!format!("{projected:?}").contains("sk-secret-fixture"));
+    let script = Script::replying(401, b"denied");
+    let error = get_models(&script, None, None, &settings, DEADLINE)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CredentialsError::ModelsStatus { status: 401, .. }
+    ));
+    assert!(!format!("{error:?}").contains("sk-secret-fixture-key"));
+    assert!(!error.to_string().contains("sk-secret-fixture-key"));
+    assert_eq!(
+        script.requests()[0].headers[1],
+        ("x-api-key".to_owned(), "sk-secret-fixture-key".to_owned())
+    );
+
+    let missing = models_request(None, None, &AnthropicSettings::default()).unwrap_err();
+    assert!(!format!("{missing:?}").contains("sk-secret-fixture"));
+    assert!(!missing.to_string().contains("sk-secret-fixture"));
 }
 
 #[test]
@@ -524,20 +762,18 @@ fn replays_the_anthropic_credentials_corpus() {
         })
         .collect::<Vec<_>>();
     assert!(sources.len() >= 4);
-    assert!(sources.iter().any(|(name, bytes)| {
-        name == "valid.json" && decode_anthropic_models(200, bytes).is_ok()
-    }));
-    assert!(sources.iter().any(|(name, bytes)| {
-        name == "boundary.json" && decode_anthropic_models(200, bytes).is_ok()
-    }));
-    assert!(sources.iter().any(|(name, bytes)| {
-        name == "malformed.json" && decode_anthropic_models(200, bytes).is_err()
-    }));
-    assert!(sources.iter().any(|(name, bytes)| {
-        name == "truncated.json" && decode_anthropic_models(200, bytes).is_err()
-    }));
-    assert!(sources.iter().any(|(name, bytes)| {
-        name == "valid.json" && decode_anthropic_models(500, bytes).is_err()
+    assert!(sources.iter().all(|(name, bytes)| {
+        let failed = matches!(
+            decode_anthropic_models(500, bytes),
+            Err(CredentialsError::ModelsStatus { status: 500, .. })
+        );
+        let success = decode_anthropic_models(200, bytes);
+        let expected = match name.as_str() {
+            "valid.json" | "boundary.json" => success.is_ok(),
+            "malformed.json" | "truncated.json" => success.is_err(),
+            _ => true,
+        };
+        failed && expected
     }));
     let (_, valid) = sources
         .iter()

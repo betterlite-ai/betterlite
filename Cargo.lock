@@ -1062,12 +1062,15 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
  "rstest",
@@ -1076,6 +1079,8 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
