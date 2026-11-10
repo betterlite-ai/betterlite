@@ -1,361 +1,28 @@
 #![cfg(test)]
 
-use std::sync::{Arc, Mutex, PoisonError};
+#[path = "tests/support.rs"]
+mod support;
 
-use async_trait::async_trait;
-use betterlite_context::local_ttl_cache::CacheValue;
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
-use betterlite_models::decisions::{Extra, Json};
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_redact::structured::Payload;
+use std::sync::{Arc, Mutex};
+
 use rstest::rstest;
-use serde_json::Number;
 
-use crate::backend::{BackendError, CacheBackend, CacheResult, Ttl};
+use betterlite_models::decisions::{Extra, Json};
+
+use crate::backend::CacheBackend;
 use crate::cache_key::derive::get_cache_key;
-use crate::cache_key::request::{CacheKeyRequest, KeyParam, RequestCacheControl};
-use crate::cache_key::settings::CacheKeySettings;
-use crate::cache_key::value::KeyValue;
-use crate::codec::CacheCodec;
-use crate::embedding::embedding_cache::pipeline::{
-    NativeCacheRequest, NativeEmbeddingStore, async_add_cache_pipeline,
-};
+use crate::cache_key::request::RequestCacheControl;
+use crate::embedding::embedding_cache::pipeline::async_add_cache_pipeline;
 use crate::embedding::embedding_cache::{
-    EmbeddingCacheEntry, EmbeddingCacheError, add_embedding_entry_to_cache,
-    convert_to_cached_embedding, tokens,
+    EmbeddingCacheError, add_embedding_entry_to_cache, convert_to_cached_embedding, tokens,
 };
-use crate::embedding::response::{EmbeddingRecord, EmbeddingResponse, EmbeddingUsage};
-use crate::envelope::backend::StoredBackend;
-use crate::envelope::facade::{EnvelopeSettings, ResponseCache};
-use crate::envelope::request::EnvelopeRequest;
-use crate::envelope::{RESPONSE_FIELD, TIMESTAMP_FIELD};
-use crate::types::cache_type::{CacheMode, LiteLlmCacheType};
-use crate::types::control::DynamicCacheControl;
+use crate::embedding::response::EmbeddingRecord;
+use crate::types::cache_type::CacheMode;
 use crate::types::embedding::{CachedEmbedding, EMBEDDING_CACHE_FORMAT_VERSION, EmbeddingPayload};
-use crate::types::semantic::SemanticCacheScope;
-
-const NOW: f64 = 1_700_000_000.0;
-
-type Stored = (String, CacheValue, Ttl);
-type PipelineWrite = (Vec<(String, CacheValue)>, Ttl);
-
-#[derive(Default)]
-struct RecordingLogger {
-    records: Mutex<Vec<(String, String)>>,
-}
-
-impl RecordingLogger {
-    fn matching(&self, level: &str, needle: &str) -> usize {
-        let records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
-        records
-            .iter()
-            .filter(|(recorded, text)| recorded == level && text.contains(needle))
-            .count()
-    }
-}
-
-impl LoggerSink for RecordingLogger {
-    fn debug(&self, payload: &Payload) -> bool {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(("DEBUG".to_owned(), payload_text(payload)));
-        true
-    }
-
-    fn info(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn error(&self, payload: &Payload) -> bool {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(("ERROR".to_owned(), payload_text(payload)));
-        true
-    }
-
-    fn debug_enabled(&self) -> bool {
-        true
-    }
-}
-
-#[derive(Default)]
-struct RecordingConsole;
-
-impl ConsoleSink for RecordingConsole {
-    fn print(&self, _payload: &Payload) -> bool {
-        false
-    }
-}
-
-fn payload_text(payload: &Payload) -> String {
-    match payload {
-        Payload::String(text) => text.clone(),
-        Payload::Null
-        | Payload::Bool(_)
-        | Payload::Number(_)
-        | Payload::Array(_)
-        | Payload::Object(_) => String::new(),
-    }
-}
-
-type Hooks = VerboseHooks<RecordingLogger, RecordingConsole>;
-
-fn hooks() -> Hooks {
-    VerboseHooks {
-        logger: RecordingLogger::default(),
-        console: RecordingConsole,
-        set_verbose: Payload::Bool(false),
-        redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor")),
-    }
-}
-
-#[derive(Default)]
-struct RecordingCache {
-    failure: bool,
-    sets: Mutex<Vec<Stored>>,
-}
-
-impl RecordingCache {
-    fn sets(&self) -> Vec<Stored> {
-        self.sets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl CacheBackend for RecordingCache {
-    fn default_ttl(&self) -> i64 {
-        60
-    }
-
-    async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        if self.failure {
-            return Err(BackendError::Unsupported("async_set_cache"));
-        }
-        self.sets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), value, ttl));
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct RecordingStore {
-    failure: bool,
-    writes: Mutex<Vec<PipelineWrite>>,
-}
-
-impl RecordingStore {
-    fn writes(&self) -> Vec<PipelineWrite> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl CacheBackend for RecordingStore {
-    fn default_ttl(&self) -> i64 {
-        120
-    }
-
-    async fn async_set_cache_pipeline(
-        &self,
-        cache_list: Vec<(String, CacheValue)>,
-        ttl: Ttl,
-    ) -> CacheResult<()> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((cache_list, ttl));
-        if self.failure {
-            return Err(BackendError::Unsupported("async_set_cache_pipeline"));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct RecordingNative {
-    failure: bool,
-    skip_last: bool,
-    calls: Mutex<usize>,
-    requests: Mutex<Vec<NativeCacheRequest>>,
-    responses: Mutex<Vec<CacheValue>>,
-}
-
-impl RecordingNative {
-    fn requests(&self) -> Vec<NativeCacheRequest> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn responses(&self) -> Vec<CacheValue> {
-        self.responses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl NativeEmbeddingStore for RecordingNative {
-    fn request(&self, cache_key: &str, _request: &EnvelopeRequest) -> Option<NativeCacheRequest> {
-        let skip = {
-            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            *calls = calls.saturating_add(1);
-            self.skip_last && *calls > 1
-        };
-        if skip {
-            return None;
-        }
-        Some(NativeCacheRequest {
-            cache_key: cache_key.to_owned(),
-        })
-    }
-
-    async fn async_store_batch(
-        &self,
-        requests: Vec<NativeCacheRequest>,
-        responses: Vec<CacheValue>,
-    ) -> CacheResult<()> {
-        if self.failure {
-            return Err(BackendError::Unsupported("async_store_batch"));
-        }
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend(requests);
-        self.responses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend(responses);
-        Ok(())
-    }
-}
-
-fn key_settings(mode: CacheMode) -> CacheKeySettings {
-    CacheKeySettings {
-        cache_type: LiteLlmCacheType::Local,
-        mode,
-        namespace: None,
-        semantic_cache_scope: SemanticCacheScope::Key,
-        include_provider_params: false,
-    }
-}
-
-fn settings(ttl: Option<f64>) -> EnvelopeSettings {
-    EnvelopeSettings {
-        ttl,
-        redis_flush_size: None,
-    }
-}
-
-fn cache(
-    backend: Arc<RecordingCache>,
-    mode: CacheMode,
-    settings: EnvelopeSettings,
-) -> ResponseCache<RecordingLogger, RecordingConsole> {
-    ResponseCache {
-        backend: Arc::new(StoredBackend { backend }),
-        key_settings: key_settings(mode),
-        settings,
-        hooks: hooks(),
-        clock: Arc::new(|| NOW),
-    }
-}
-
-fn request(params: Vec<KeyParam>) -> EnvelopeRequest {
-    EnvelopeRequest {
-        cache_key: None,
-        key: CacheKeyRequest {
-            params,
-            metadata: None,
-            litellm_metadata: None,
-            litellm_params: None,
-            cache_control: None,
-        },
-        control: DynamicCacheControl::default(),
-    }
-}
-
-fn param(name: &str, value: KeyValue) -> KeyParam {
-    KeyParam {
-        name: name.to_owned(),
-        value,
-    }
-}
-
-fn text(value: &str) -> KeyValue {
-    KeyValue::String(value.to_owned())
-}
-
-fn inputs(values: &[&str]) -> KeyValue {
-    KeyValue::Array(values.iter().map(|value| text(value)).collect())
-}
-
-fn response(count: usize, prompt_tokens: Option<i64>, details: Option<Extra>) -> EmbeddingResponse {
-    EmbeddingResponse {
-        model: Some("text-embedding-3-small".to_owned()),
-        data: (0..count)
-            .map(|index| EmbeddingRecord {
-                embedding: Some(EmbeddingPayload::Vector(vec![Number::from(
-                    u64::try_from(index).expect("a small index"),
-                )])),
-                index: Some(i64::try_from(index).expect("a small index")),
-                object: Some("embedding".to_owned()),
-            })
-            .collect(),
-        usage: Some(EmbeddingUsage {
-            prompt_tokens,
-            prompt_tokens_details: details,
-        }),
-    }
-}
-
-fn integer(value: i64) -> Json {
-    Json::Number(Number::from(value))
-}
-
-fn decimal(value: f64) -> Json {
-    Json::Number(Number::from_f64(value).expect("a finite fixture"))
-}
-
-fn details(pairs: &[(&str, Json)]) -> Extra {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), value.clone()))
-        .collect()
-}
-
-fn cached(entry: &EmbeddingCacheEntry) -> CachedEmbedding {
-    CacheCodec::decode(Some(&entry.cached_embedding)).expect("the entry encodes a cached embedding")
-}
-
-fn assert_envelope(entry: &EmbeddingCacheEntry) {
-    match &entry.cached_data {
-        CacheValue::Object(fields) => {
-            assert_eq!(fields.get(TIMESTAMP_FIELD), Some(&CacheValue::Float(NOW)));
-            assert_eq!(fields.get(RESPONSE_FIELD), Some(&entry.cached_embedding));
-        }
-        CacheValue::Credential(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Null
-        | CacheValue::Boolean(_)
-        | CacheValue::Integer(_)
-        | CacheValue::Float(_)
-        | CacheValue::Text(_)
-        | CacheValue::Array(_) => panic!("the entry is not an envelope"),
-    }
-}
+use support::{
+    RecordingCache, RecordingNative, RecordingStore, assert_envelope, cache, cached, decimal,
+    details, inputs, integer, param, request, response, settings, text,
+};
 
 #[test]
 fn convert_to_cached_embedding_builds_version_two_record() {
@@ -981,5 +648,141 @@ async fn pipeline_missing_input_is_logged() {
             .logger
             .matching("ERROR", "exception in add_cache"),
         1
+    );
+}
+
+#[test]
+fn per_item_details_splits_by_declared_field_type() {
+    let result = response(
+        3,
+        Some(10),
+        Some(details(&[
+            ("video_length_seconds", integer(10)),
+            ("cache_creation_tokens", integer(5)),
+        ])),
+    );
+    let first = tokens::per_item_prompt_tokens_details(&result, 0).expect("the details split");
+    assert_eq!(
+        first.get("video_length_seconds"),
+        Some(&decimal(3.333_333_333_333_333_5_f64))
+    );
+    assert_eq!(first.get("cache_write_tokens"), Some(&integer(2)));
+    assert_eq!(first.get("cache_creation_tokens"), Some(&integer(2)));
+    let last = tokens::per_item_prompt_tokens_details(&result, 2).expect("the details split");
+    assert_eq!(last.get("cache_write_tokens"), Some(&integer(1)));
+    assert_eq!(
+        last.get("video_length_seconds"),
+        Some(&decimal(3.333_333_333_333_333_5_f64))
+    );
+}
+
+#[test]
+fn per_item_details_coerces_an_integral_float_for_an_int_field() {
+    let result = response(
+        2,
+        Some(10),
+        Some(details(&[("cached_tokens", decimal(4.0))])),
+    );
+    assert_eq!(
+        tokens::per_item_prompt_tokens_details(&result, 0),
+        Some(details(&[("cached_tokens", integer(2))]))
+    );
+    assert_eq!(
+        tokens::per_item_prompt_tokens_details(&result, 1),
+        Some(details(&[("cached_tokens", integer(2))]))
+    );
+}
+
+#[test]
+fn per_item_details_mirrors_the_cache_token_keys() {
+    let write_only = response(
+        1,
+        Some(10),
+        Some(details(&[("cache_write_tokens", integer(3))])),
+    );
+    let write_mirrored =
+        tokens::per_item_prompt_tokens_details(&write_only, 0).expect("the details");
+    assert_eq!(write_mirrored.get("cache_write_tokens"), Some(&integer(3)));
+    assert_eq!(
+        write_mirrored.get("cache_creation_tokens"),
+        Some(&integer(3))
+    );
+    let creation_only = response(
+        1,
+        Some(10),
+        Some(details(&[("cache_creation_tokens", integer(5))])),
+    );
+    let creation_mirrored =
+        tokens::per_item_prompt_tokens_details(&creation_only, 0).expect("the details");
+    assert_eq!(
+        creation_mirrored.get("cache_write_tokens"),
+        Some(&integer(5))
+    );
+    assert_eq!(
+        creation_mirrored.get("cache_creation_tokens"),
+        Some(&integer(5))
+    );
+}
+
+#[test]
+fn per_item_details_write_tokens_win_the_mirror() {
+    let both = response(
+        1,
+        Some(10),
+        Some(details(&[
+            ("cache_write_tokens", integer(3)),
+            ("cache_creation_tokens", integer(5)),
+        ])),
+    );
+    let both_mirrored = tokens::per_item_prompt_tokens_details(&both, 0).expect("the details");
+    assert_eq!(both_mirrored.get("cache_write_tokens"), Some(&integer(3)));
+    assert_eq!(
+        both_mirrored.get("cache_creation_tokens"),
+        Some(&integer(3))
+    );
+}
+
+#[test]
+fn per_item_details_mirrors_cache_creation_input_tokens() {
+    let nested = response(
+        1,
+        Some(10),
+        Some(details(&[("cache_creation_input_tokens", integer(9))])),
+    );
+    let nested_mirrored = tokens::per_item_prompt_tokens_details(&nested, 0).expect("the details");
+    assert_eq!(nested_mirrored.get("cache_write_tokens"), Some(&integer(9)));
+    assert_eq!(
+        nested_mirrored.get("cache_creation_tokens"),
+        Some(&integer(9))
+    );
+    assert_eq!(
+        nested_mirrored.get("cache_creation_input_tokens"),
+        Some(&integer(9))
+    );
+}
+
+#[test]
+fn per_item_details_audio_length_uses_true_division() {
+    let result = response(
+        2,
+        Some(10),
+        Some(details(&[("audio_length_seconds", integer(5))])),
+    );
+    assert_eq!(
+        tokens::per_item_prompt_tokens_details(&result, 0),
+        Some(details(&[("audio_length_seconds", decimal(2.5))]))
+    );
+}
+
+#[test]
+fn per_item_details_extra_integer_value_divides() {
+    let result = response(2, Some(10), Some(details(&[("ratio_count", integer(5))])));
+    assert_eq!(
+        tokens::per_item_prompt_tokens_details(&result, 0),
+        Some(details(&[("ratio_count", integer(3))]))
+    );
+    assert_eq!(
+        tokens::per_item_prompt_tokens_details(&result, 1),
+        Some(details(&[("ratio_count", integer(2))]))
     );
 }

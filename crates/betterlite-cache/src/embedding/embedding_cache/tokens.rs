@@ -5,6 +5,34 @@ use serde_json::Number;
 
 use crate::embedding::response::EmbeddingResponse;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DetailKind {
+    Integer,
+    Float,
+    Value,
+}
+
+// PromptTokensDetailsWrapper declares these fields, so the split follows the field type pydantic coerced the value to.
+fn declared_kind(name: &str) -> DetailKind {
+    match name {
+        "audio_tokens"
+        | "cached_tokens"
+        | "text_tokens"
+        | "image_tokens"
+        | "video_tokens"
+        | "web_search_requests"
+        | "google_maps_grounding_requests"
+        | "tool_use_tokens"
+        | "character_count"
+        | "image_count"
+        | "query_count"
+        | "cache_write_tokens"
+        | "cache_creation_tokens" => DetailKind::Integer,
+        "video_length_seconds" | "audio_length_seconds" => DetailKind::Float,
+        _ => DetailKind::Value,
+    }
+}
+
 // LiteLLM's _get_per_item_prompt_tokens: a single item keeps the total, a batch splits it with the remainder on the earliest indices.
 #[must_use]
 pub fn per_item_prompt_tokens(result: &EmbeddingResponse, idx: usize) -> Option<i64> {
@@ -26,7 +54,7 @@ pub fn per_item_prompt_tokens(result: &EmbeddingResponse, idx: usize) -> Option<
     i64::try_from(share).ok()
 }
 
-// LiteLLM's _get_per_item_prompt_tokens_details: null fields are dropped, and a batch splits every integer field with the earliest indices taking the remainder.
+// LiteLLM's _get_per_item_prompt_tokens_details: null fields are dropped, and a batch splits each field the way its declared type divides.
 #[must_use]
 pub fn per_item_prompt_tokens_details(result: &EmbeddingResponse, idx: usize) -> Option<Extra> {
     let details = result.usage.as_ref()?.prompt_tokens_details.as_ref()?;
@@ -38,32 +66,103 @@ pub fn per_item_prompt_tokens_details(result: &EmbeddingResponse, idx: usize) ->
     if present.is_empty() {
         return None;
     }
+    let mirrored = mirror_cache_tokens(present);
     if result.data.len() <= 1 {
-        return Some(present);
+        return Some(mirrored);
     }
     let items = i128::try_from(result.data.len()).ok()?;
     let index = i128::try_from(idx).ok()?;
-    let per_item = present
+    let per_item = mirrored
         .into_iter()
-        .map(|(name, value)| Some((name, distributed_value(value, items, index)?)))
+        .map(|(name, value)| {
+            let kind = declared_kind(&name);
+            Some((name, distributed_detail(kind, value, items, index)?))
+        })
         .collect::<Option<Extra>>()?;
     Some(per_item)
 }
 
-// Python's divmod on the one side and true division on the other; any other json value passes through unchanged.
+// PromptTokensDetailsWrapper keeps cache_write_tokens and cache_creation_tokens in sync, and cache_write_tokens wins when both arrive.
+fn mirror_cache_tokens(mut details: Extra) -> Extra {
+    let write = details.get("cache_write_tokens").cloned();
+    let creation = details.get("cache_creation_tokens").cloned();
+    let nested = details
+        .get("cache_creation_input_tokens")
+        .filter(|value| matches!(value, Json::Number(number) if number.as_i128().is_some()))
+        .cloned();
+    let Some(mirrored) = write.or(creation).or(nested) else {
+        return details;
+    };
+    details.insert("cache_write_tokens".to_owned(), mirrored.clone());
+    details.insert("cache_creation_tokens".to_owned(), mirrored);
+    details
+}
+
+fn distributed_detail(kind: DetailKind, value: Json, items: i128, index: i128) -> Option<Json> {
+    match kind {
+        DetailKind::Integer => Some(distributed_integer(value, items, index)),
+        DetailKind::Float => Some(distributed_float(value, items)),
+        DetailKind::Value => distributed_value(value, items, index),
+    }
+}
+
+// pydantic accepts an integral float for a declared int field and turns it into an int before the split.
+fn exact_integer(number: &Number) -> Option<i128> {
+    if let Some(value) = number.as_i128() {
+        return Some(value);
+    }
+    let value = number.as_f64()?;
+    if !value.is_finite() || value.trunc().to_bits() != value.to_bits() {
+        return None;
+    }
+    value.to_string().parse::<i128>().ok()
+}
+
+fn distributed_integer(value: Json, items: i128, index: i128) -> Json {
+    let Json::Number(number) = &value else {
+        return value;
+    };
+    let Some(total) = exact_integer(number) else {
+        return value;
+    };
+    let Some(share) = integer_share(total, items, index) else {
+        return value;
+    };
+    Number::from_i128(share).map_or(value, Json::Number)
+}
+
+fn integer_share(total: i128, items: i128, index: i128) -> Option<i128> {
+    let quotient = total.checked_div_euclid(items)?;
+    let remainder = total.checked_rem_euclid(items)?;
+    if index < remainder {
+        quotient.checked_add(1)
+    } else {
+        Some(quotient)
+    }
+}
+
+fn distributed_float(value: Json, items: i128) -> Json {
+    let Json::Number(number) = &value else {
+        return value;
+    };
+    let Some(total) = number.as_f64() else {
+        return value;
+    };
+    let Ok(count) = u32::try_from(items) else {
+        return value;
+    };
+    Number::from_f64(Div::div(total, f64::from(count))).map_or(value, Json::Number)
+}
+
+// Fields outside the wrapper's declarations keep their json type, so an extra int divides and an extra float scales.
 fn distributed_value(value: Json, items: i128, index: i128) -> Option<Json> {
     let Json::Number(number) = value else {
         return Some(value);
     };
     if let Some(total) = number.as_i128() {
-        let quotient = total.checked_div_euclid(items)?;
-        let remainder = total.checked_rem_euclid(items)?;
-        let share = if index < remainder {
-            quotient.checked_add(1)?
-        } else {
-            quotient
-        };
-        return Number::from_i128(share).map(Json::Number);
+        return integer_share(total, items, index)
+            .and_then(Number::from_i128)
+            .map(Json::Number);
     }
     let total = number.as_f64()?;
     let divisor = f64::from(u32::try_from(items).ok()?);
