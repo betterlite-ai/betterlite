@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-processor-mixed-media
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - role: user
+        content:
+          - {type: image_url, image_url: {url: "data:image/png;base64,RERFRA=="}}
+          - {type: file, file: {file_data: "data:application/pdf;base64,JVBERi0=", format: application/pdf}}
+          - type: document
+            source: {type: base64, media_type: application/pdf, data: "JVBERi0xLjQ="}
+      - role: user
+        content:
+          - type: document
+            source: {type: base64, media_type: application/pdf, data: "JVBERi0xLjQ="}
+          - {type: text, text: explain}
+    modify_params: false
+env: {}
+compare: {ignore: []}

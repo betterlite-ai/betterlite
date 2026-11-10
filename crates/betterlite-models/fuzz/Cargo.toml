@@ -101,6 +101,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "provider_capabilities"
+path = "fuzz_targets/provider_capabilities.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "judge_verdict_parser"
 path = "fuzz_targets/judge_verdict_parser.rs"
 test = false
