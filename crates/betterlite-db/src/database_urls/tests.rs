@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::cli_url::construct_cli_database_url;
 use super::error::DatabaseUrlError;
 use super::password::{apply_writer_url_to_env, build_reader_url, build_writer_url};
-use super::scheme::validate_component_schemes;
+use super::scheme::{validate_cli_urls, validate_component_schemes};
 use super::settings::{
     AuthMode, DEFAULT_POSTGRES_PORT, DatabaseUrlSettings, SettingsError, from_env,
     idle_lifetime_params,
@@ -400,6 +400,35 @@ fn falsey_component_urls_skipped() {
     settings.direct_url = Some(SecretString::from(String::new()));
     settings.database_url_read_replica = Some(SecretString::from(String::new()));
     validate_component_schemes(&settings).unwrap();
+}
+
+#[test]
+fn cli_url_scheme_validation() {
+    let empty_url = environment_map(&[("DATABASE_URL", "")]);
+    let empty_error = validate_cli_urls(&empty_url).unwrap_err();
+    assert!(
+        empty_error
+            .to_string()
+            .starts_with("DATABASE_URL uses unsupported scheme '<missing scheme>'")
+    );
+    let direct_bad = environment_map(&[
+        ("DATABASE_URL", "postgresql://writer/db"),
+        ("DIRECT_URL", "sqlite://direct/db"),
+    ]);
+    let direct_error = validate_cli_urls(&direct_bad).unwrap_err();
+    assert!(
+        direct_error
+            .to_string()
+            .starts_with("DIRECT_URL uses unsupported scheme 'sqlite'")
+    );
+    let valid = environment_map(&[
+        ("DATABASE_URL", "postgresql://writer/db"),
+        ("DIRECT_URL", "postgres://direct/db"),
+    ]);
+    validate_cli_urls(&valid).unwrap();
+    validate_cli_urls(&BTreeMap::new()).unwrap();
+    let lowercase = environment_map(&[("database_url", "sqlite://writer/db")]);
+    validate_cli_urls(&lowercase).unwrap();
 }
 
 #[test]
