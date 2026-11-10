@@ -12,8 +12,8 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use http::HeaderMap;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
+use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -40,6 +40,7 @@ enum Reply {
 
 #[derive(Clone)]
 struct Recorded {
+    method: Method,
     url: String,
     headers: HeaderMap,
 }
@@ -86,10 +87,11 @@ impl CacheTransport for Pages {
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let url = request.url.to_string();
         let headers = request.headers;
-        self.requests
-            .lock()
-            .unwrap()
-            .push(Recorded { url, headers });
+        self.requests.lock().unwrap().push(Recorded {
+            method: request.method,
+            url,
+            headers,
+        });
         let reply = self
             .replies
             .lock()
@@ -515,7 +517,9 @@ async fn list_request_carries_auth_and_extras() {
         .await
         .unwrap();
     assert!(found.is_none());
-    let headers = &pages.requests()[0].headers;
+    let request = &pages.requests()[0];
+    assert_eq!(request.method, Method::GET);
+    let headers = &request.headers;
     assert_eq!(headers.get(CONTENT_TYPE).unwrap(), "application/json");
     assert_eq!(
         headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),
