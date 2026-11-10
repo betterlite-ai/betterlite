@@ -21,8 +21,22 @@ fn failure_classification_limits_read_model_group_windows() {
     );
     let request = get.requests().pop().unwrap();
     assert_eq!(request.url, "https://proxy.test/model_group/info");
-    assert_eq!(request.api_key, API_KEY);
+    assert_eq!(request.authorization, format!("Bearer {API_KEY}"));
     assert_eq!(request.timeout, FETCH_TIMEOUT);
+}
+
+#[test]
+fn failure_classification_limits_strip_trailing_slashes() {
+    let get = ScriptedGet::new(vec![body(
+        200,
+        r#"{"data":[{"model_group":"a","max_input_tokens":1}]}"#,
+    )]);
+    let limits = fetch_model_limits("https://proxy.test/litellm/", &api_key(), &get);
+    assert_eq!(limits.len(), 1);
+    assert_eq!(
+        get.urls(),
+        vec!["https://proxy.test/litellm/model_group/info".to_owned()]
+    );
 }
 
 #[test]

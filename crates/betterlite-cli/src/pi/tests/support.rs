@@ -31,7 +31,7 @@ pub(super) fn body(status: u16, body: &str) -> GetAnswer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecordedRequest {
     pub(super) url: String,
-    pub(super) api_key: String,
+    pub(super) authorization: String,
     pub(super) timeout: Duration,
 }
 
@@ -76,12 +76,12 @@ impl ProxyGet for ScriptedGet {
     fn get(
         &self,
         url: &str,
-        api_key: &SecretString,
+        authorization: &SecretString,
         timeout: Duration,
     ) -> Result<ProxyResponse, io::Error> {
         self.record(RecordedRequest {
             url: url.to_owned(),
-            api_key: api_key.expose_secret().to_owned(),
+            authorization: authorization.expose_secret().to_owned(),
             timeout,
         });
         match self.next_answer() {
@@ -135,6 +135,8 @@ impl EnvironmentLookup for FakeEnvironment {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FileFault {
     None,
+    CreateParents,
+    CreateStaged,
     Write,
     Replace,
 }
@@ -179,6 +181,9 @@ impl ScriptedFiles {
 impl FileAccess for ScriptedFiles {
     fn create_parents(&self, directory: &Path) -> io::Result<()> {
         self.record(FileCall::CreateParents(directory.to_owned()));
+        if self.fault == FileFault::CreateParents {
+            return Err(io::Error::other("scripted directory failure"));
+        }
         LocalFiles.create_parents(directory)
     }
 
@@ -199,6 +204,9 @@ impl FileAccess for ScriptedFiles {
             directory: directory.to_owned(),
             suffix: suffix.map(str::to_owned),
         });
+        if self.fault == FileFault::CreateStaged {
+            return Err(io::Error::other("scripted staging failure"));
+        }
         LocalFiles.create_staged(directory, suffix)
     }
 

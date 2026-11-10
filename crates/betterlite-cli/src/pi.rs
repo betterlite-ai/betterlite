@@ -47,7 +47,7 @@ pub trait ProxyGet {
     fn get(
         &self,
         url: &str,
-        api_key: &SecretString,
+        authorization: &SecretString,
         timeout: Duration,
     ) -> Result<ProxyResponse, io::Error>;
 }

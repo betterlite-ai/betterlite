@@ -9,6 +9,23 @@ fn json_path_uses_the_pi_coding_agent_dir() {
 }
 
 #[test]
+fn json_path_prefers_pi_coding_agent_dir_over_the_home_directory() {
+    let directory = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment {
+        variables: BTreeMap::from([(
+            PI_CONFIG_DIR_ENV.to_owned(),
+            directory.path().to_str().unwrap().to_owned(),
+        )]),
+        home: Some(home.path().to_owned()),
+    };
+    assert_eq!(
+        models_json_path(&environment),
+        Some(directory.path().join("models.json"))
+    );
+}
+
+#[test]
 fn json_path_ignores_an_empty_pi_coding_agent_dir() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment {
@@ -42,8 +59,20 @@ fn json_path_sync_rejects_a_providers_value_that_is_not_an_object() {
     let path = directory.path().join("models.json");
     fs::write(&path, r#"{"providers":[]}"#).unwrap();
     let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &LocalFiles).unwrap_err();
+    assert_eq!(error.kind(), None);
+    assert_eq!(error.status(), None);
     assert!(matches!(error, PiSyncError::ParseModels { .. }));
     assert_eq!(fs::read_to_string(&path).unwrap(), r#"{"providers":[]}"#);
+}
+
+#[test]
+fn json_path_sync_rejects_a_non_utf8_file() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("models.json");
+    fs::write(&path, [0xff_u8, 0xfe]).unwrap();
+    let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &LocalFiles).unwrap_err();
+    assert!(matches!(error, PiSyncError::ParseModels { .. }));
+    assert_eq!(fs::read(&path).unwrap(), vec![0xff, 0xfe]);
 }
 
 #[rstest]
@@ -61,6 +90,7 @@ fn json_path_sync_rejects_an_invalid_models_file(#[case] text: &str) {
     let path = directory.path().join("models.json");
     fs::write(&path, text).unwrap();
     let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &LocalFiles).unwrap_err();
+    assert_eq!(error.kind(), None);
     assert!(matches!(error, PiSyncError::ParseModels { .. }));
     assert_eq!(fs::read_to_string(&path).unwrap(), text);
 }
@@ -122,10 +152,10 @@ fn provider_block_serializes_with_pi_field_names() {
         "a".to_owned(),
         ModelLimits {
             context_window: Some(128_000),
-            max_tokens: None,
+            max_tokens: Some(4096),
         },
     )]);
-    let block = provider_block(BASE_URL, &["a".to_owned()], &limits);
+    let block = provider_block(BASE_URL, &["a".to_owned(), "b".to_owned()], &limits);
     let value = serde_json::to_value(&block).unwrap();
     assert_eq!(
         value.pointer("/baseUrl").unwrap().as_str(),
@@ -144,8 +174,14 @@ fn provider_block_serializes_with_pi_field_names() {
         value.pointer("/models/0/contextWindow").unwrap().as_i64(),
         Some(128_000)
     );
-    let entry = value.pointer("/models/0").unwrap();
-    assert!(entry.get("maxTokens").is_none());
+    assert_eq!(
+        value.pointer("/models/0/maxTokens").unwrap().as_i64(),
+        Some(4096)
+    );
+    assert_eq!(value.pointer("/models/1/id").unwrap().as_str(), Some("b"));
+    let bare_entry = value.pointer("/models/1").unwrap();
+    assert!(bare_entry.get("contextWindow").is_none());
+    assert!(bare_entry.get("maxTokens").is_none());
 }
 
 #[test]
@@ -287,6 +323,36 @@ fn atomic_write_stages_in_the_target_directory_and_renames() {
 }
 
 #[test]
+fn atomic_write_reports_a_failed_directory_creation() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("models.json");
+    let files = ScriptedFiles::new(FileFault::CreateParents);
+    let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &files).unwrap_err();
+    assert!(matches!(error, PiSyncError::WriteModels { .. }));
+    assert_eq!(
+        files.calls(),
+        vec![FileCall::CreateParents(directory.path().to_owned())]
+    );
+    assert!(!path.exists());
+}
+
+#[test]
+fn atomic_write_reports_a_failed_stage_creation() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("models.json");
+    let files = ScriptedFiles::new(FileFault::CreateStaged);
+    let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &files).unwrap_err();
+    assert!(matches!(error, PiSyncError::WriteModels { .. }));
+    assert!(
+        !files
+            .calls()
+            .iter()
+            .any(|call| matches!(call, FileCall::Remove(_)))
+    );
+    assert!(!path.exists());
+}
+
+#[test]
 fn atomic_write_removes_the_staged_file_when_the_write_fails() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("models.json");
@@ -322,6 +388,7 @@ fn atomic_write_leaves_a_directory_alone_when_reading_fails() {
     fs::create_dir_all(&path).unwrap();
     let files = ScriptedFiles::new(FileFault::None);
     let error = sync_models_json(&path, BASE_URL, &[], &BTreeMap::new(), &files).unwrap_err();
+    assert_eq!(error.kind(), None);
     assert!(matches!(error, PiSyncError::ReadModels { .. }));
     assert!(path.is_dir());
     assert!(files.calls().is_empty());

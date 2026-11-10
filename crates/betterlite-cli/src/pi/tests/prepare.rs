@@ -125,6 +125,7 @@ fn prepare_pi_reports_a_failed_models_write() {
     let files = ScriptedFiles::new(FileFault::Write);
     let mut notice = Vec::new();
     let error = prepare(&environment, &get, &files, &mut notice).unwrap_err();
+    assert_eq!(error.kind(), None);
     assert!(matches!(error, PiSyncError::WriteModels { .. }));
     assert!(notice.is_empty());
 }
@@ -136,6 +137,7 @@ fn prepare_pi_requires_a_models_file_location() {
     let files = ScriptedFiles::new(FileFault::None);
     let mut notice = Vec::new();
     let error = prepare(&environment, &get, &files, &mut notice).unwrap_err();
+    assert_eq!(error.kind(), None);
     assert!(matches!(error, PiSyncError::NoHome));
     assert_eq!(get.urls().len(), 2);
 }

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::{FETCH_TIMEOUT, ListedModel, ListingViolation, PiSyncError, ProxyGet};
@@ -16,8 +16,9 @@ pub fn fetch_model_listing(
     get: &dyn ProxyGet,
 ) -> Result<Vec<ListedModel>, PiSyncError> {
     let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let authorization = SecretString::from(format!("Bearer {}", api_key.expose_secret()));
     let response = get
-        .get(&url, api_key, FETCH_TIMEOUT)
+        .get(&url, &authorization, FETCH_TIMEOUT)
         .map_err(|source| PiSyncError::Unreachable { source })?;
     if response.status != 200 {
         return Err(PiSyncError::ListingStatus {

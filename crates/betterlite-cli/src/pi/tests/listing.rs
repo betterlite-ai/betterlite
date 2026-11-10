@@ -20,7 +20,7 @@ fn fetch_listing_reads_models_with_the_bearer_key() {
     );
     let request = get.requests().pop().unwrap();
     assert_eq!(request.url, "https://proxy.test/v1/models");
-    assert_eq!(request.api_key, API_KEY);
+    assert_eq!(request.authorization, format!("Bearer {API_KEY}"));
     assert_eq!(request.timeout, FETCH_TIMEOUT);
 }
 
@@ -144,6 +144,14 @@ fn failure_classification_unreachable_has_no_status() {
 #[test]
 fn failure_classification_bad_body_wins_over_the_status() {
     let get = ScriptedGet::new(vec![body(200, "not json")]);
+    let error = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap_err();
+    assert_eq!(error.kind(), Some(ListingFailure::BadBody));
+    assert!(matches!(error, PiSyncError::ListingJson { .. }));
+}
+
+#[test]
+fn failure_classification_bad_body_for_a_non_utf8_body() {
+    let get = ScriptedGet::new(vec![GetAnswer::Response(200, vec![0xff, 0xfe])]);
     let error = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap_err();
     assert_eq!(error.kind(), Some(ListingFailure::BadBody));
     assert!(matches!(error, PiSyncError::ListingJson { .. }));
