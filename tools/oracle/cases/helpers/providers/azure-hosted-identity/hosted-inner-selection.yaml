@@ -1,0 +1,16 @@
+kind: helper
+name: hosted-inner-selection
+call: {azure_hosted_identity: {steps: [
+  {action: select, environment: {IDENTITY_ENDPOINT: "https://sf.test/token", IDENTITY_HEADER: "header-secret", IDENTITY_SERVER_THUMBPRINT: "00112233445566778899aabbccddeeff00112233"}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://app.test/token", IDENTITY_HEADER: "header-secret"}},
+  {action: select, environment: {MSI_ENDPOINT: "http://ml.test/token", MSI_SECRET: "ml-secret"}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://arc.test/token", IMDS_ENDPOINT: "http://arc.test/imds"}},
+  {action: select, environment: {}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IDENTITY_HEADER: "", IDENTITY_SERVER_THUMBPRINT: ""}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IDENTITY_HEADER: ""}},
+  {action: select, environment: {MSI_ENDPOINT: "", MSI_SECRET: ""}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IMDS_ENDPOINT: "http://arc.test/imds"}},
+  {action: select, environment: {}, files: {"/opt/azcmagent/bin/himds": ""}}
+]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: log-before-json-failure
+call:
+  host_model_identity:
+    calls:
+      - kind: reply
+        host: clarifai
+        status: 400
+        body: not json at all
+        headers: {x-request-id: req-1, x-trace: trace-1}
+        model: user.app.model
+        messages: [{role: user, content: hello}]
+        request_data: {model: user.app.model, messages: []}
+      - kind: reply
+        host: compactifai
+        status: 502
+        body: '{"choices": [}'
+        model: user.app.model
+        messages: [{role: user, content: hello}]
+        request_data: {model: user.app.model}
+compare: {ignore: []}
+env: {}

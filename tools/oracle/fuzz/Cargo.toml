@@ -124,6 +124,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "datadog_budget_reset_decoder"
+path = "fuzz_targets/datadog_budget_reset_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "http_scenarios"
 path = "fuzz_targets/http_scenarios.rs"
 test = false
