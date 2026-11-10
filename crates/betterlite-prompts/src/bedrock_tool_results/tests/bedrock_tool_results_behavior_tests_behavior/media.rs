@@ -90,6 +90,29 @@ async fn bedrock_tool_results_behavior_tests_behavior_a_file_id_is_read_as_the_m
 }
 
 #[tokio::test]
+async fn bedrock_tool_results_behavior_tests_behavior_a_file_format_override_replaces_the_data_url_type()
+ {
+    assert_eq!(
+        convert(
+            r#"{"type":"file","file":{"file_data":"data:image/png;base64,QUJD","format":"image/webp"}}"#
+        )
+        .await,
+        result_with(&[r#"{"image":{"format":"webp","source":{"bytes":"QUJD"}}}"#])
+    );
+}
+
+#[tokio::test]
+async fn bedrock_tool_results_behavior_tests_behavior_a_file_format_override_can_make_a_document() {
+    assert_eq!(
+        convert(
+            r#"{"type":"file","file":{"file_data":"data:image/png;base64,QUJD","format":"application/pdf"}}"#
+        )
+        .await,
+        result_with(&[&document_block()])
+    );
+}
+
+#[tokio::test]
 async fn bedrock_tool_results_behavior_tests_behavior_a_file_id_wins_over_the_file_data() {
     assert_eq!(
         convert(

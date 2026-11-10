@@ -9,6 +9,7 @@ call:
       content:
         - {type: file, file: {file_data: "data:application/pdf;base64,QUJD"}}
         - {type: file, file: {file_id: "data:image/png;base64,QUJD", format: "image/png"}}
+        - {type: file, file: {file_data: "data:image/png;base64,QUJD", format: "image/webp"}}
     id: unused-fixed-id
 env: {}
 compare:
