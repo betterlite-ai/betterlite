@@ -4,6 +4,7 @@ use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 use url::ParseError;
 
+use crate::aleph_alpha::error::AlephAlphaError;
 use crate::codestral_records::error::TextCompletionCodestralError;
 use crate::error::OpenAiError;
 
@@ -47,6 +48,11 @@ pub enum CodestralCallError {
     },
     #[error("a streamed line is longer than {limit} bytes")]
     LineTooLong { limit: usize },
+    #[error("the Codestral line stream could not be read")]
+    Lines {
+        #[source]
+        source: AlephAlphaError,
+    },
 }
 
 impl CodestralCallError {
@@ -65,7 +71,8 @@ impl CodestralCallError {
             | Self::HeaderValue { .. }
             | Self::Endpoint(_)
             | Self::Encode { .. }
-            | Self::LineTooLong { .. } => None,
+            | Self::LineTooLong { .. }
+            | Self::Lines { .. } => None,
         }
     }
 }

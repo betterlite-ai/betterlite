@@ -67,11 +67,6 @@ pub struct Plan {
     pub api_key: SecretString,
 }
 
-struct Schedule {
-    wrapper: Option<Wrapper>,
-    timeout: Option<Duration>,
-}
-
 // LiteLLM rejects only a None key, so an empty key still builds a bearer header
 pub fn validate_environment(
     api_key: Option<&SecretString>,
@@ -104,14 +99,22 @@ pub async fn prepare(
     let url = resolve_url(&mut options, request.api_base)?;
     let prompt = build_prompt(request, prompts, now).await?;
     let (body, streaming) = build_body(request, &options, &prompt)?;
-    let schedule = execution_schedule(request.mode, streaming, request.timeout);
+    let wrapper = streaming.then_some(match request.mode {
+        Mode::Sync => Wrapper::Codestral,
+        Mode::Async => Wrapper::TextCompletionCodestral,
+    });
+    // async_streaming never uses the timeout it is handed: make_call posts through the shared async client
+    let timeout = match (request.mode, streaming) {
+        (Mode::Async, false) => Some(request.timeout),
+        (Mode::Sync, _) | (Mode::Async, true) => None,
+    };
     let mut plan = Plan {
         mode: request.mode,
         headers,
         url,
         body,
-        wrapper: schedule.wrapper,
-        timeout: schedule.timeout,
+        wrapper,
+        timeout,
         prompt,
         messages: serialized_messages(request.messages)?,
         api_key,
@@ -178,19 +181,6 @@ fn build_body(
     body.insert("prompt".to_owned(), Value::String(prompt.to_owned()));
     body.extend(merged);
     Ok((body, streaming))
-}
-
-fn execution_schedule(mode: Mode, streaming: bool, supplied: Duration) -> Schedule {
-    let wrapper = streaming.then_some(match mode {
-        Mode::Sync => Wrapper::Codestral,
-        Mode::Async => Wrapper::TextCompletionCodestral,
-    });
-    // async_streaming never uses the timeout it is handed: make_call posts through the shared async client
-    let timeout = match (mode, streaming) {
-        (Mode::Async, false) => Some(supplied),
-        (Mode::Sync, _) | (Mode::Async, true) => None,
-    };
-    Schedule { wrapper, timeout }
 }
 
 fn serialized_messages(messages: &[Message]) -> Result<Vec<Value>, CodestralCallError> {

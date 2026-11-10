@@ -1,6 +1,7 @@
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use futures_util::Stream;
+use futures_util::stream::{TryStreamExt as _, once};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
@@ -52,13 +53,14 @@ impl CodestralCall {
         CodestralCallError,
     > {
         let request = outbound(&plan, &self.client)?;
-        Ok(stream::open(
+        let chunks = once(stream::make_call(
             self.client.clone(),
             request,
             plan,
             source,
             log,
-        ))
+        ));
+        Ok(chunks.try_flatten())
     }
 }
 
