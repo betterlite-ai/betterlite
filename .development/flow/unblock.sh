@@ -82,9 +82,6 @@ case "$reason" in
     exit 0 ;;
 esac
 
-# dependency policy and the expect budget stay with a person
-grep -q -E 'deny\.toml|max_new_expects' <<< "$reason" && exit 1
-
 # a reason that only mentions the budget, with no count over it, goes on to the scope rule
 need=$(grep -o -E '[0-9]+ (changed|counted) lines' <<< "$reason" | head -n 1 | cut -d' ' -f1)
 old=$(grep -o -E 'max_changed_lines: [0-9]+' "$task" | head -n 1 | cut -d' ' -f2)
@@ -100,6 +97,9 @@ if [ -n "$need" ] && [ -n "$old" ] && [ "$need" -gt "$old" ]; then
   echo "Your line budget is now $new (commit on this branch). Keep your work and finish the task."
   exit 0
 fi
+
+# dependency policy and the expect budget stay with a person; checked after the line budget, since a blocker may quote the whole budget line
+grep -q -E 'deny\.toml|max_new_expects' <<< "$reason" && exit 1
 
 if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']+ ){0,3}scope" <<< "$reason"; then
   [ "$(grep -c "^docs(tasks): $id scope " <<< "$commits")" -lt 3 ] || exit 1

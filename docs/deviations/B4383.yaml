@@ -1,0 +1,23 @@
+task: B4383
+deviations:
+  - what: An os.environ/ reference whose variable is unset fails the constructor with the variable name and the field path; LiteLLM resolves it to None and falls through to the QDRANT_* variables.
+    why: B002's config resolution reports a missing environment variable as a load error, so a typo in a reference cannot silently point the cache at another Qdrant server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L330-L345
+  - what: The cached response payload is standard JSON text from serde_json; LiteLLM writes Python str(value), which is not JSON.
+    why: The shared decode_cached_response reads JSON, as the task requires; a payload written by betterlite round-trips through it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L300-L320
+  - what: Qdrant HTTP calls go through the pooled betterlite-http client supplied at construction instead of LiteLLM's per-call httpx sync and async clients.
+    why: The server owns one pooled client per transport policy; the async and sync cache methods share it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L115-L118
+  - what: Point ids come from an injected UUID source instead of uuid.uuid4.
+    why: An injected source lets the cache be tested with fixed ids and keeps generation out of the module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L291-L300
+  - what: The synchronous set_cache and get_cache block the supplied runtime on the asynchronous operations, so their embedding call is the asynchronous one; LiteLLM's sync methods call its sync embedding client, which skips the wait_for timeout.
+    why: betterlite has one pooled HTTP client and an async-first cache; the sync entry points exist for callers outside a runtime, and the async embedding path is the only one the injected embedder offers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L220-L252
+  - what: A search hit whose payload lacks text is an error naming the field instead of LiteLLM's KeyError, and a missing result key is a parse error instead of a KeyError.
+    why: Both are malformed Qdrant responses that LiteLLM already fails; betterlite names the field and the endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L370-L380
+  - what: A point write with a status outside 2xx fails with a named error carrying the status and body, following AsyncHTTPHandler.put's raise_for_status; LiteLLM's sync put returns the response without checking it, so its sync set_cache never failed there.
+    why: The sync entry points block on the async path, and a silently dropped cache write would hide a wrong vector size or a deleted collection from the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L872-L904
