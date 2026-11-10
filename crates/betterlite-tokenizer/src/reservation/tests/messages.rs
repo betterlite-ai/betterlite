@@ -53,6 +53,35 @@ async fn a_failure_that_is_not_a_value_error_leaves_the_model_out(#[case] source
     );
 }
 
+#[rstest]
+#[case::content_text_block(
+    r#"{"messages": [{"role": "user", "content": [{"type": "text", "text": "hello world"}]}]}"#
+)]
+#[case::tool_call_arguments(
+    r#"{"messages": [{"role": "user", "tool_calls": [{"function": {"arguments": "hello world"}}]}]}"#
+)]
+#[case::function_call_arguments(
+    r#"{"messages": [{"role": "user", "function_call": {"arguments": "hello world"}}]}"#
+)]
+#[tokio::test]
+async fn message_parts_and_call_arguments_are_counted(#[case] source: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let counter = support::bundled_counter(directory.path());
+    let body = support::body(source);
+    let expected: usize = [
+        3,
+        3,
+        support::text_tokens(&counter, MODEL, "user").await,
+        support::text_tokens(&counter, MODEL, "hello world").await,
+    ]
+    .into_iter()
+    .sum();
+    assert_eq!(
+        count_input_tokens_for_model(&counter, &body, MODEL).await,
+        Some(expected)
+    );
+}
+
 #[tokio::test]
 async fn tools_and_tool_choice_reach_the_message_counter() {
     let directory = tempfile::tempdir().unwrap();
