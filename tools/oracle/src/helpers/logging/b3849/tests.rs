@@ -57,7 +57,7 @@ fn sink_key_records_the_account(#[case] endpoint: &str, #[case] normalized: &str
 
 #[rstest]
 fn replays_the_otel_fanout_helper_corpus(
-    #[files("fuzz/corpus/helper_case/otel-fanout/*.yaml")] path: PathBuf,
+    #[files("fuzz/corpus/helper_case/otel-fanout*")] path: PathBuf,
 ) {
     let case: HelperCase =
         serde_saphyr::from_str(&fs::read_to_string(&path).expect("a corpus case"))
