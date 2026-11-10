@@ -19,7 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::commands::{Cli, DbAdminCommand, DbAdminError, DbAdminOutcome, Operation};
 
-const EMPTY_CONFIG: &str = "{}";
+const EMPTY_CONFIG: &str = "";
 
 pub struct AdminEnvironment {
     pub variables: BTreeMap<String, String>,
