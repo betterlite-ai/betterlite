@@ -140,7 +140,7 @@ fn skills_wire_types_skill_rejects_wrong_types(#[case] body: &str) {
 #[test]
 fn skills_wire_types_list_response_defaults_next_page_and_has_more() {
     let list = serde_json::from_slice::<ListSkillsResponse>(
-        format!(r#"{{"data":[{MINIMAL_SKILL}]}}"#).as_bytes(),
+        br#"{"data":[{"id":"skill_1","created_at":"2026-01-01T00:00:00Z","source":"custom","updated_at":"2026-01-02T00:00:00Z"}]}"#,
     )
     .unwrap();
     assert_eq!(list.data.len(), 1);
@@ -200,7 +200,9 @@ fn skills_wire_types_response_transforms_map_each_reply() {
         )
         .unwrap();
     let list = config
-        .transform_list_skills_response(format!(r#"{{"data":[{MINIMAL_SKILL}]}}"#).as_bytes())
+        .transform_list_skills_response(
+            br#"{"data":[{"id":"skill_1","created_at":"2026-01-01T00:00:00Z","source":"custom","updated_at":"2026-01-02T00:00:00Z"}]}"#,
+        )
         .unwrap();
     let deleted = config
         .transform_delete_skill_response(br#"{"id":"s3"}"#)
