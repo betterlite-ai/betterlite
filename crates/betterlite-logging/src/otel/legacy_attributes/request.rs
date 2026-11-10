@@ -50,9 +50,11 @@ fn write_metadata<S>(span: &mut S, payload: &MetadataMap)
 where
     S: Span,
 {
-    let Some(metadata) = payload.get("metadata").and_then(OtelModelValue::as_object) else {
-        return;
-    };
+    let metadata = payload
+        .get("metadata")
+        .and_then(OtelModelValue::as_object)
+        .into_iter()
+        .flatten();
     for (key, value) in metadata {
         span.safe_set_attribute(&format!("{}{key}", keys::METADATA_PREFIX), value);
     }
@@ -62,13 +64,12 @@ fn write_hidden_params<S>(span: &mut S, payload: &MetadataMap)
 where
     S: Span,
 {
-    let Some(hidden) = payload
+    let hidden = payload
         .get("hidden_params")
-        .filter(|value| truthiness(value))
-    else {
-        return;
-    };
-    if let Ok(text) = safe_dumps(hidden, DEFAULT_MAX_RECURSE_DEPTH, None) {
+        .filter(|value| truthiness(value));
+    if let Some(found) = hidden
+        && let Ok(text) = safe_dumps(found, DEFAULT_MAX_RECURSE_DEPTH, None)
+    {
         span.safe_set_attribute(keys::HIDDEN_PARAMS, &OtelModelValue::String(text));
     }
 }
@@ -102,26 +103,20 @@ where
             .get("call_type")
             .unwrap_or(&OtelModelValue::Null(())),
     );
-    write_provider(span, config, call.litellm_params);
-    write_sampling_parameters(span, call.optional_params);
-    write_stream_or_semconv(span, config, call);
-    write_present(span, keys::USER, call.optional_params.get("user"));
-}
-
-fn write_provider<S>(span: &mut S, config: &OpenTelemetryConfig, litellm_params: &MetadataMap)
-where
-    S: Span,
-{
-    let provider = litellm_params
+    let provider = call
+        .litellm_params
         .get("custom_llm_provider")
         .cloned()
         .unwrap_or_else(|| OtelModelValue::String(UNKNOWN_PROVIDER.to_owned()));
-    let attribute = if semconv_latest_experimental(config) {
+    let provider_attribute = if semconv_latest_experimental(config) {
         gen_ai::PROVIDER_NAME
     } else {
         gen_ai::SYSTEM
     };
-    span.safe_set_attribute(attribute, &provider);
+    span.safe_set_attribute(provider_attribute, &provider);
+    write_sampling_parameters(span, call.optional_params);
+    write_stream_or_semconv(span, config, call);
+    write_present(span, keys::USER, call.optional_params.get("user"));
 }
 
 fn write_sampling_parameters<S>(span: &mut S, optional_params: &MetadataMap)
