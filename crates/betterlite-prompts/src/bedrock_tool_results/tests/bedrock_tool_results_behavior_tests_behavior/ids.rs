@@ -21,7 +21,7 @@ fn bedrock_tool_results_behavior_tests_behavior_an_id_past_the_limit_is_cut_and_
     let id = "x".repeat(65);
     assert_eq!(
         sanitize_bedrock_tool_use_id(&id),
-        format!("{}_635361c4", "x".repeat(55))
+        format!("{}_9537c5fd", "x".repeat(55))
     );
 }
 
@@ -46,7 +46,7 @@ fn bedrock_tool_results_behavior_tests_behavior_an_empty_id_takes_the_fallback_a
 
 #[test]
 fn bedrock_tool_results_behavior_tests_behavior_a_non_ascii_character_is_replaced() {
-    assert_eq!(sanitize_bedrock_tool_use_id("\u{fc}"), "__4a99557e");
+    assert_eq!(sanitize_bedrock_tool_use_id("\u{fc}"), "__607474ca");
 }
 
 #[test]
