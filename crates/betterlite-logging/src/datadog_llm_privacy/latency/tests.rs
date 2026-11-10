@@ -49,11 +49,20 @@ fn latency_metrics_cover_token_time_overhead_and_guardrails() {
 }
 
 #[test]
-fn latency_metrics_omit_a_zero_token_time_and_a_non_positive_total() {
+fn latency_metrics_omit_a_zero_token_time_and_a_negative_total() {
     let mut payload = support::payload();
     payload.completion_start_time = payload.start_time;
     payload.hidden_params.litellm_overhead_time_ms = None;
     payload.guardrail_information = Some(vec![guardrail("0"), guardrail("-0.5")]);
+    let object = metrics_object(&latency_metrics(&payload));
+    assert_eq!(Json::Object(object), support::json("{}"));
+}
+
+#[test]
+fn latency_metrics_omit_a_zero_guardrail_total() {
+    let mut payload = support::payload();
+    payload.completion_start_time = payload.start_time;
+    payload.guardrail_information = Some(vec![guardrail("0.5"), guardrail("-0.5")]);
     let object = metrics_object(&latency_metrics(&payload));
     assert_eq!(Json::Object(object), support::json("{}"));
 }

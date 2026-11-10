@@ -35,11 +35,23 @@ fn cost_dimension_tags_omit_an_absent_value_and_one_that_normalizes_away() {
 }
 
 #[test]
+fn cost_dimension_tags_read_a_number_and_skip_a_container() {
+    let mut payload = support::payload();
+    payload.model_group = None;
+    let router = object(r#"{"router_tier": 5, "router_cause": ["a"], "routed_model": {}}"#);
+    assert_eq!(
+        cost_dimension_tags(&payload, &router),
+        vec!["router_tier:5"]
+    );
+}
+
+#[test]
 fn declared_cost_tags_list_only_the_dimensions_the_span_carries() {
     let tags = vec![
         "env:prod".to_owned(),
         "team:engineering".to_owned(),
         "user:alice".to_owned(),
+        "key_alias:".to_owned(),
         "empty:".to_owned(),
         "no_value_part".to_owned(),
         "router_tier:low".to_owned(),

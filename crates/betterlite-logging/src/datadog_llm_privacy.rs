@@ -36,9 +36,9 @@ pub fn record_object<Record>(
 where
     Record: serde::Serialize,
 {
-    let encoded = serde_json::to_value(value)
+    let encoded = serde_json::to_string(value)
         .map_err(|source| RecordEncodingError::Encode { record, source })?;
-    match serde_json::from_value::<Json>(encoded) {
+    match serde_json::from_str::<Json>(&encoded) {
         Ok(Json::Object(fields)) => Ok(fields),
         Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(RecordEncodingError::Shape { record })

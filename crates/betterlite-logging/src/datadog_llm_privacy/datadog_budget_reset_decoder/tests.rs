@@ -29,6 +29,7 @@ fn decodes_iso_timestamps_the_way_python_writes_them(#[case] text: &str, #[case]
 #[case::month_thirteen("2026-13-01T00:00:00")]
 #[case::no_seconds("2026-01-01T00:00")]
 #[case::basic_format("20260101T000000")]
+#[case::double_zulu("2026-01-01T00:00:00ZZ")]
 #[case::trailing_text("2026-01-01T00:00:00+00:00 and more")]
 fn rejects_a_value_that_is_not_an_iso_datetime(#[case] text: &str) {
     assert_eq!(decode_budget_reset(text), Err(BudgetResetError::Invalid));
