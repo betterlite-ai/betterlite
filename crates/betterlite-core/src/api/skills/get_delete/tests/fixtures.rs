@@ -21,6 +21,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::super::call::{SkillCall, SkillRequest, SkillsCallParams};
+use super::super::error::SkillsCallError;
 use super::super::handler::{SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler};
 use super::super::hosted::{HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers};
 use super::super::service::SkillsService;
@@ -29,7 +30,7 @@ pub(super) const SKILL_ID: &str = "skill_1";
 pub(super) const API_BASE: &str = "https://api.anthropic.com";
 pub(super) const CALL_ID: &str = "call-1";
 
-fn redactor() -> Redactor {
+pub(super) fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles")
 }
 
@@ -196,6 +197,10 @@ fn handler_error(status_code: u16) -> SkillsHandlerError {
         body_code: None,
         body_message: None,
     }
+}
+
+pub(super) fn call_error(status_code: u16) -> SkillsCallError {
+    SkillsCallError::Handler(handler_error(status_code))
 }
 
 pub(super) struct FakeHttp {

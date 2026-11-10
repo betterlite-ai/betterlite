@@ -12,12 +12,12 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use self::fixtures::{
-    API_BASE, CALL_ID, Fixture, SKILL_ID, call, call_with, extra_headers, header_values,
-    hosted_params, kwargs, logging, metadata_with, object, sample_deleted, sample_skill,
-    skill_request, text,
+    API_BASE, CALL_ID, Fixture, SKILL_ID, call, call_error, call_with, extra_headers,
+    header_values, hosted_params, kwargs, logging, metadata_with, object, redactor, sample_deleted,
+    sample_skill, skill_request, text,
 };
 use super::call::SkillsCallParams;
-use super::error::{SkillAction, SkillsCallError};
+use super::error::{SkillAction, SkillsCallError, failure};
 use super::principal::user_api_key_auth_from_kwargs;
 
 mod fixtures;
@@ -684,9 +684,8 @@ async fn exception_type_uses_anthropic_mapping() {
     assert!(matches!(failure.class, ErrorClass::PermissionDenied(_)));
 }
 
-#[tokio::test]
-async fn exception_type_uses_the_openai_family_mapping() {
-    let fixture = Fixture::failing(403);
+#[test]
+fn exception_type_uses_the_litellm_proxy_family_mapping() {
     let values = kwargs();
     let params = SkillsCallParams {
         api_key: None,
@@ -694,15 +693,19 @@ async fn exception_type_uses_the_openai_family_mapping() {
         extra_headers: HeaderMap::new(),
         extra_query: None,
         timeout: None,
-        custom_llm_provider: Some("openai".to_owned()),
+        custom_llm_provider: Some("litellm_proxy".to_owned()),
     };
-    let request = call_with(params, SKILL_ID, &values);
-    let failure = fixture
-        .service()
-        .get_skill(skill_request(&request, &mut logging()))
-        .await
-        .expect_err("the unsupported provider fails the call");
-    assert!(matches!(failure.class, ErrorClass::Api(_)));
+    let call = call_with(params, SKILL_ID, &values);
+    let mapped = failure(call_error(403), &call, &redactor());
+    assert!(matches!(mapped.class, ErrorClass::Api(_)));
+}
+
+#[test]
+fn exception_type_uses_the_anthropic_class_for_the_same_status() {
+    let values = kwargs();
+    let call = call(SKILL_ID, &values);
+    let mapped = failure(call_error(403), &call, &redactor());
+    assert!(matches!(mapped.class, ErrorClass::PermissionDenied(_)));
 }
 
 // unsupported provider
@@ -836,10 +839,12 @@ async fn extra_query_is_not_forwarded_to_the_hosted_handler() {
 #[tokio::test]
 async fn async_context_concurrent_calls_keep_their_own_metadata() {
     let fixture = Fixture::new();
+    let first_metadata = object(&[("user", text("first"))]);
+    let second_metadata = object(&[("user", text("second"))]);
     let mut first_values = kwargs();
-    first_values.insert("request".to_owned(), text("first"));
+    first_values.insert("metadata".to_owned(), first_metadata.clone());
     let mut second_values = kwargs();
-    second_values.insert("request".to_owned(), text("second"));
+    second_values.insert("metadata".to_owned(), second_metadata.clone());
     let first_call = call(SKILL_ID, &first_values);
     let second_call = call(SKILL_ID, &second_values);
     let service = fixture.service();
@@ -853,12 +858,12 @@ async fn async_context_concurrent_calls_keep_their_own_metadata() {
     first.expect("the first call succeeds");
     second.expect("the second call succeeds");
     assert_eq!(
-        first_state.model_call_details.get("request"),
-        Some(&text("first"))
+        first_state.litellm_params.get("metadata"),
+        Some(&first_metadata)
     );
     assert_eq!(
-        second_state.model_call_details.get("request"),
-        Some(&text("second"))
+        second_state.litellm_params.get("metadata"),
+        Some(&second_metadata)
     );
 }
 
