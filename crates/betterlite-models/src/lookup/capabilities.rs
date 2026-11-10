@@ -42,6 +42,27 @@ impl CapabilityView {
         }
     }
 
+    // Flags the entry leaves absent take the fill value, as the fill-missing backfill does.
+    #[must_use]
+    pub fn or(self, fill: Self) -> Self {
+        Self {
+            supports_vision: self.supports_vision.or(fill.supports_vision),
+            supports_function_calling: self
+                .supports_function_calling
+                .or(fill.supports_function_calling),
+            supports_tool_choice: self.supports_tool_choice.or(fill.supports_tool_choice),
+            supports_response_schema: self
+                .supports_response_schema
+                .or(fill.supports_response_schema),
+            supports_prompt_caching: self
+                .supports_prompt_caching
+                .or(fill.supports_prompt_caching),
+            supports_reasoning: self.supports_reasoning.or(fill.supports_reasoning),
+            supports_web_search: self.supports_web_search.or(fill.supports_web_search),
+            supports_pdf_input: self.supports_pdf_input.or(fill.supports_pdf_input),
+        }
+    }
+
     #[must_use]
     pub const fn get(self, flag: CapabilityFlag) -> Option<bool> {
         match flag {
