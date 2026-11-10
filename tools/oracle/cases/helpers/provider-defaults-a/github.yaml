@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-github
+call:
+  provider_defaults_a:
+    provider: github
+    model: gpt-4o
+    environment:
+      GITHUB_API_KEY: github-key
+env: {}
+compare: {ignore: []}

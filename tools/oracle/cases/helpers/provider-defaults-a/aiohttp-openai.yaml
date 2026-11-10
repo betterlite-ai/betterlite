@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-aiohttp-openai
+call:
+  provider_defaults_a:
+    provider: aiohttp_openai
+    model: any-model
+    api_base: https://base.example
+    api_key: explicit-key
+env: {}
+compare: {ignore: []}

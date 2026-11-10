@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-codestral
+call:
+  provider_defaults_a:
+    provider: codestral
+    model: codestral-latest
+    environment:
+      CODESTRAL_API_KEY: codestral-key
+env: {}
+compare: {ignore: []}
