@@ -30,7 +30,9 @@ pub fn failure_handler(
     loggers: &FailureCallbacks<'_>,
     dependencies: &FailureDeps<'_>,
 ) {
-    failure_handler_body(log, failure, loggers, dependencies);
+    if prepare_failure(log, failure, dependencies, LoggingEvent::SyncFailure) {
+        deliver_sync_loggers(log, loggers, dependencies);
+    }
     restore_correlation_context(log.state, log.context);
 }
 
@@ -49,18 +51,6 @@ fn prepare_failure(
     }
     has_run_logging(call.state, event);
     true
-}
-
-pub fn failure_handler_body(
-    call: &mut FailureCall<'_>,
-    report: &FailureReport,
-    callbacks: &FailureCallbacks<'_>,
-    deps: &FailureDeps<'_>,
-) {
-    if !prepare_failure(call, report, deps, LoggingEvent::SyncFailure) {
-        return;
-    }
-    deliver_sync_loggers(call, callbacks, deps);
 }
 
 fn deliver_sync_loggers(
@@ -87,35 +77,25 @@ pub async fn async_failure_handler(
     callbacks: &FailureCallbacks<'_>,
     deps: &FailureDeps<'_>,
 ) {
-    async_failure_handler_body(call, report, callbacks, deps).await;
-    restore_correlation_context(call.state, call.context);
-}
-
-pub async fn async_failure_handler_body(
-    call: &mut FailureCall<'_>,
-    report: &FailureReport,
-    callbacks: &FailureCallbacks<'_>,
-    deps: &FailureDeps<'_>,
-) {
     if let Some(baseline) = deps.baseline
         && let Err(error) = baseline.invalidate_baseline(FAILED_REQUEST_REASON).await
     {
         tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
     }
     special_failure_handlers(call.state, report, deps.special_listeners).await;
-    if !prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
-        return;
-    }
-    if let Some(delivery) = deliverable(call, deps) {
-        for logger in callbacks.async_loggers() {
-            deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+    if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
+        if let Some(delivery) = deliverable(call, deps) {
+            for logger in callbacks.async_loggers() {
+                deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+            }
+        }
+        if let Some(flush) = deps.flush
+            && let Err(error) = flush.flush_post_call().await
+        {
+            tracing::warn!(%error, "the post-call redis batches could not be flushed");
         }
     }
-    if let Some(flush) = deps.flush
-        && let Err(error) = flush.flush_post_call().await
-    {
-        tracing::warn!(%error, "the post-call redis batches could not be flushed");
-    }
+    restore_correlation_context(call.state, call.context);
 }
 
 pub async fn dispatch_failure_handlers(
