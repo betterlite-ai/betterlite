@@ -1,0 +1,69 @@
+kind: helper
+name: bedrock-tools-native-tool
+call:
+  bedrock_tools:
+    call: tools
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    capability:
+      cache_points: extended_ttl
+      supports_strict_tools: true
+    tools:
+      - toolSpec:
+          name: native
+          description: kept
+          inputSchema:
+            json:
+              type: object
+      - systemTool:
+          name: nova_grounding
+      - cachePoint:
+          type: default
+          ttl: 1h
+      - type: web_search
+      - type: function
+        function:
+          name: get_weather
+          description: Get the current weather
+          parameters:
+            type: object
+            title: dropped by the projection
+            properties:
+              city:
+                type: string
+            required:
+              - city
+            additionalProperties: false
+          strict: true
+        cache_control:
+          type: ephemeral
+          ttl: 1h
+      - type: function
+        function:
+          name: ref_tool
+          parameters:
+            type: object
+            properties:
+              x:
+                $ref: "#/$defs/Count"
+            $defs:
+              Count:
+                type: integer
+      - name: claude_tool
+        description: ""
+        input_schema:
+          type: object
+          properties:
+            q:
+              type: custom
+      - type: function
+        function: {}
+      - type: function
+        function:
+          name: "   "
+      - type: function
+        function:
+          name: empty_desc
+          description: ""
+env: {}
+compare:
+  ignore: []
