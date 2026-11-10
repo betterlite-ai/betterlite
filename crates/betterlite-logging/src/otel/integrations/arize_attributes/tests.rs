@@ -443,7 +443,7 @@ fn cost_bool_becomes_one_or_zero(#[case] raw: &str, #[case] expected: f64) {
 }
 
 #[rstest::rstest]
-#[case::invalid_string("not-a-number")]
+#[case::invalid_string(r#""not-a-number""#)]
 #[case::nan(r#""nan""#)]
 #[case::infinity(r#""inf""#)]
 #[case::array("[]")]
