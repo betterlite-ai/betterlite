@@ -30,15 +30,12 @@ fn step_output(
     environment: &EnvironmentSnapshot,
 ) -> Result<Value, Box<HelperError>> {
     match step.op {
-        CacheOp::Config => {
-            let limits = cache.as_ref();
-            Ok(json!({
-                "config": {
-                    "capacity": limits.capacity,
-                    "default_ttl": limits.default_ttl,
-                }
-            }))
-        }
+        CacheOp::Config => Ok(json!({
+            "config": {
+                "capacity": cache.limits.capacity,
+                "default_ttl": cache.limits.default_ttl,
+            }
+        })),
         CacheOp::Get => Ok(read_step(cache, step, environment, false)),
         CacheOp::GetMutate => Ok(read_step(cache, step, environment, true)),
         CacheOp::Set | CacheOp::SetMutate => write_step(cache, step),

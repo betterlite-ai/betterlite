@@ -10,7 +10,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::identity::provider_id::ProviderId;
 use crate::provider_metadata_factory::selection::ProviderModelMetadata;
 
-use super::cache::{AvailableModelsCache, CacheLimits};
+use super::cache::AvailableModelsCache;
 use super::environment::EnvironmentSnapshot;
 use super::listing::{ListingCredentials, ModelListing};
 use super::parameters::LiteLlmParams;
@@ -77,10 +77,10 @@ fn request<'fixture>(
     environment: &'fixture EnvironmentSnapshot,
 ) -> EnumerationRequest<'fixture> {
     EnumerationRequest {
-        check_provider_endpoint: None,
+        check_provider_endpoint: false,
         global_check_provider_endpoint: false,
         custom_llm_provider: None,
-        parameters: None,
+        parameters: LiteLlmParams::default(),
         api_key: None,
         api_base: None,
         provider_list,
@@ -147,13 +147,12 @@ impl ModelListing for ListingScript {
 }
 
 #[rstest]
-#[case::argument_absent_global_false(None, false, false)]
-#[case::argument_false_global_false(Some(false), false, false)]
-#[case::argument_true_global_false(Some(true), false, true)]
-#[case::argument_absent_global_true(None, true, true)]
-#[case::argument_true_global_true(Some(true), true, true)]
+#[case::argument_false_global_false(false, false, false)]
+#[case::argument_true_global_false(true, false, true)]
+#[case::argument_false_global_true(false, true, true)]
+#[case::argument_true_global_true(true, true, true)]
 fn endpoint_argument_or_global(
-    #[case] argument: Option<bool>,
+    #[case] argument: bool,
     #[case] global: bool,
     #[case] checked: bool,
 ) {
@@ -184,7 +183,7 @@ fn explicit_false_does_not_disable_global_true() {
     listing.answer("OpenAIGPTConfig", models(&["listed-model"]));
     let mut call = request(&provider_list, &catalog, &environment);
     call.custom_llm_provider = Some("openai");
-    call.check_provider_endpoint = Some(false);
+    call.check_provider_endpoint = false;
     call.global_check_provider_endpoint = true;
     let outcome = get_valid_models(&call, &mut cache(), &listing);
     assert_eq!(outcome.models, models(&["listed-model"]));
@@ -210,7 +209,7 @@ fn parameter_creation_and_explicit_mutation() {
     let mut explicit = request(&provider_list, &catalog, &environment);
     explicit.custom_llm_provider = Some("openai");
     explicit.global_check_provider_endpoint = true;
-    explicit.parameters = Some(params("", Some("k1"), None));
+    explicit.parameters = params("", Some("k1"), None);
     assert_eq!(
         get_valid_models(&explicit, &mut cache, &listing).models,
         models(&["listed"])
@@ -219,7 +218,7 @@ fn parameter_creation_and_explicit_mutation() {
     let mut empty = request(&provider_list, &catalog, &environment);
     empty.custom_llm_provider = Some("openai");
     empty.global_check_provider_endpoint = true;
-    empty.parameters = Some(params("", Some("supplied"), Some("https://supplied")));
+    empty.parameters = params("", Some("supplied"), Some("https://supplied"));
     empty.api_key = Some(SecretString::from(""));
     empty.api_base = Some(String::new());
     assert_eq!(
@@ -247,7 +246,7 @@ fn supplied_parameters_change_the_cache_key() {
     let mut supplied = request(&provider_list, &catalog, &environment);
     supplied.custom_llm_provider = Some("openai");
     supplied.global_check_provider_endpoint = true;
-    supplied.parameters = Some(params("supplied-model", None, None));
+    supplied.parameters = params("supplied-model", None, None);
     drop(get_valid_models(&supplied, &mut cache, &listing));
     assert_eq!(listing.take_calls().len(), 2);
 }
@@ -341,7 +340,7 @@ fn azure_literal() {
     let provider_list = [ProviderId::Azure, ProviderId::Azure];
     let catalog = catalog(&[(ProviderId::Azure, &["az-catalog"])]);
     let mut call = request(&provider_list, &catalog, &environment);
-    call.check_provider_endpoint = Some(true);
+    call.check_provider_endpoint = true;
     call.global_check_provider_endpoint = true;
     let listing = ListingScript::default();
     let outcome = get_valid_models(&call, &mut cache(), &listing);
@@ -442,7 +441,7 @@ fn get_models_only_receives_key_and_base(
     let mut call = request(&provider_list, &catalog, &environment);
     call.custom_llm_provider = Some("openai");
     call.global_check_provider_endpoint = true;
-    call.parameters = Some(params("m", supplied_key, supplied_base));
+    call.parameters = params("m", supplied_key, supplied_base);
     call.api_key = request_key.map(SecretString::from);
     call.api_base = request_base.map(ToOwned::to_owned);
     drop(get_valid_models(&call, &mut cache(), &listing));
@@ -456,9 +455,8 @@ fn get_models_only_receives_key_and_base(
 #[test]
 fn cache_capacity300_ttl1000() {
     let cache = cache();
-    let limits: &CacheLimits = cache.as_ref();
-    assert_eq!(limits.capacity, 300);
-    assert_eq!(limits.default_ttl.to_bits(), 1000.0_f64.to_bits());
+    assert_eq!(cache.limits.capacity, 300_usize);
+    assert_eq!(cache.limits.default_ttl.to_bits(), 1000.0_f64.to_bits());
 }
 
 #[test]

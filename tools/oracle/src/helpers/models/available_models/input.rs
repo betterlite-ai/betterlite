@@ -29,13 +29,13 @@ pub(crate) struct EnumerateInput {
 #[serde(deny_unknown_fields)]
 pub(crate) struct CallInput {
     #[serde(default)]
-    pub check_provider_endpoint: Option<bool>,
+    pub check_provider_endpoint: bool,
     #[serde(default)]
     pub global_check_provider_endpoint: Option<bool>,
     #[serde(default)]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
-    pub litellm_params: Option<LiteLlmParams>,
+    pub litellm_params: LiteLlmParams,
     #[serde(default)]
     pub api_key: Option<String>,
     #[serde(default)]

@@ -31,10 +31,10 @@ pub struct Enumeration {
 }
 
 pub struct EnumerationRequest<'request> {
-    pub check_provider_endpoint: Option<bool>,
+    pub check_provider_endpoint: bool,
     pub global_check_provider_endpoint: bool,
     pub custom_llm_provider: Option<&'request str>,
-    pub parameters: Option<LiteLlmParams>,
+    pub parameters: LiteLlmParams,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub provider_list: &'request [ProviderId],
@@ -109,8 +109,7 @@ where
         };
     };
     let effective = effective_parameters(request);
-    let check =
-        request.check_provider_endpoint == Some(true) || request.global_check_provider_endpoint;
+    let check = request.check_provider_endpoint || request.global_check_provider_endpoint;
     let mut access = ProviderAccess {
         cache,
         models_by_provider: request.models_by_provider,
@@ -143,7 +142,7 @@ where
 }
 
 fn effective_parameters(request: &EnumerationRequest<'_>) -> LiteLlmParams {
-    let mut effective = request.parameters.clone().unwrap_or_default();
+    let mut effective = request.parameters.clone();
     if let Some(api_key) = &request.api_key {
         effective.api_key = Some(api_key.clone());
     }

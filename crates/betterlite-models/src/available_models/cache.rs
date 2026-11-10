@@ -26,12 +26,17 @@ pub struct CacheLimits {
     pub default_ttl: f64,
 }
 
-pub struct AvailableModelsCache {
-    limits: CacheLimits,
+// every field of a public struct must be public, so the mutable internals stay private in this type
+pub struct CacheState {
     values: BTreeMap<String, Vec<String>>,
     expiries: BTreeMap<String, f64>,
     environment_fingerprint: Option<u64>,
     clock: Arc<dyn Fn() -> f64 + Send + Sync>,
+}
+
+pub struct AvailableModelsCache {
+    pub limits: CacheLimits,
+    pub state: CacheState,
 }
 
 // The key never leaves the process, so the secret text is exposed only to the hash below.
@@ -63,10 +68,12 @@ impl AvailableModelsCache {
                 capacity: CACHE_CAPACITY,
                 default_ttl: CACHE_TTL_SECONDS,
             },
-            values: BTreeMap::new(),
-            expiries: BTreeMap::new(),
-            environment_fingerprint: None,
-            clock,
+            state: CacheState {
+                values: BTreeMap::new(),
+                expiries: BTreeMap::new(),
+                environment_fingerprint: None,
+                clock,
+            },
         }
     }
 
@@ -78,26 +85,33 @@ impl AvailableModelsCache {
     ) -> Result<Option<Vec<String>>, CacheError> {
         if parameters.is_none() {
             let changed = self
+                .state
                 .environment_fingerprint
                 .is_none_or(|stored| stored != environment.fingerprint);
-            self.environment_fingerprint
+            self.state
+                .environment_fingerprint
                 .get_or_insert(environment.fingerprint);
             if changed {
-                self.values.clear();
+                self.state.values.clear();
                 return Ok(None);
             }
         }
         let key = cache_key(provider, parameters);
-        if !self.values.contains_key(&key) {
+        if !self.state.values.contains_key(&key) {
             return Ok(None);
         }
         let now = self.read_clock()?;
-        if self.expiries.get(&key).is_some_and(|expiry| now > *expiry) {
-            self.values.remove(&key);
-            self.expiries.remove(&key);
+        if self
+            .state
+            .expiries
+            .get(&key)
+            .is_some_and(|expiry| now > *expiry)
+        {
+            self.state.values.remove(&key);
+            self.state.expiries.remove(&key);
             return Ok(None);
         }
-        Ok(self.values.get(&key).cloned())
+        Ok(self.state.values.get(&key).cloned())
     }
 
     pub fn set(
@@ -108,15 +122,19 @@ impl AvailableModelsCache {
     ) -> Result<(), CacheError> {
         let now = self.read_clock()?;
         self.prune_expired(now);
-        while self.values.len() >= self.limits.capacity {
+        while self.state.values.len() >= self.limits.capacity {
             self.evict_earliest()?;
         }
         let key = cache_key(Some(provider), parameters);
-        let refreshed = self.expiries.get(&key).is_none_or(|expiry| *expiry < now);
-        self.values.insert(key.clone(), models.to_vec());
+        let refreshed = self
+            .state
+            .expiries
+            .get(&key)
+            .is_none_or(|expiry| *expiry < now);
+        self.state.values.insert(key.clone(), models.to_vec());
         if refreshed {
             let expiry = now.mul_add(1.0_f64, self.limits.default_ttl);
-            self.expiries.insert(key, expiry);
+            self.state.expiries.insert(key, expiry);
         }
         Ok(())
     }
@@ -124,14 +142,15 @@ impl AvailableModelsCache {
     // every stored absolute expiry, including keys an environment clear dropped the value of
     #[must_use]
     pub fn ttl_entries(&self) -> Vec<(String, f64)> {
-        self.expiries
+        self.state
+            .expiries
             .iter()
             .map(|(key, expiry)| (key.clone(), *expiry))
             .collect()
     }
 
     fn read_clock(&self) -> Result<f64, CacheError> {
-        let now = (self.clock)();
+        let now = (self.state.clock)();
         if now.is_finite() {
             Ok(now)
         } else {
@@ -141,26 +160,28 @@ impl AvailableModelsCache {
 
     fn prune_expired(&mut self, now: f64) {
         let expired: Vec<String> = self
+            .state
             .expiries
             .iter()
             .filter(|(_key, expiry)| **expiry <= now)
             .map(|(key, _expiry)| key.clone())
             .collect();
         for key in expired {
-            self.values.remove(&key);
-            self.expiries.remove(&key);
+            self.state.values.remove(&key);
+            self.state.expiries.remove(&key);
         }
     }
 
     fn evict_earliest(&mut self) -> Result<(), CacheError> {
         let earliest = self
+            .state
             .expiries
             .iter()
             .min_by(|left, right| left.1.total_cmp(right.1).then_with(|| left.0.cmp(right.0)))
             .map(|(key, _expiry)| key.clone())
             .ok_or(CacheError::MissingExpiry)?;
-        self.values.remove(&earliest);
-        self.expiries.remove(&earliest);
+        self.state.values.remove(&earliest);
+        self.state.expiries.remove(&earliest);
         Ok(())
     }
 }
@@ -177,10 +198,4 @@ fn cache_key(provider: Option<ProviderId>, parameters: Option<&LiteLlmParams>) -
     let mut hasher = Sha1::new();
     hasher.update(prefixed.as_bytes());
     hex::encode(hasher.finalize())
-}
-
-impl AsRef<CacheLimits> for AvailableModelsCache {
-    fn as_ref(&self) -> &CacheLimits {
-        &self.limits
-    }
 }
