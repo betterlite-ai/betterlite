@@ -41,7 +41,11 @@ const UNSUPPORTED_CONTENT: [&str; 2] = ["document", "file"];
 pub fn normalize_messages(
     messages: &[RawMessage],
 ) -> Result<Vec<NormalizedMessage>, BytezConfigError> {
-    messages.iter().map(normalize_message).collect()
+    let mut normalized: Vec<NormalizedMessage> = Vec::with_capacity(messages.len());
+    for message in messages {
+        normalized.push(normalize_message(message)?);
+    }
+    Ok(normalized)
 }
 
 fn normalize_message(message: &RawMessage) -> Result<NormalizedMessage, BytezConfigError> {

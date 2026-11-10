@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::bytez_wire::environment::{complete_url, validate_environment};
 use betterlite_openai::bytez_wire::messages::{
-    RawMessage, normalize_messages, get_tokens_from_messages,
+    RawMessage, get_tokens_from_messages, normalize_messages,
 };
 use betterlite_openai::bytez_wire::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use betterlite_openai::bytez_wire::reply::{ReplyInput, decode_bytez_reply};
