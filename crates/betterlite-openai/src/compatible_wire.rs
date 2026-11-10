@@ -208,7 +208,7 @@ fn fill_response_defaults(reply: &mut Value, identifier: fn() -> Uuid, clock: fn
     let Some(fields) = reply.as_object_mut() else {
         return;
     };
-    // ModelResponse fills an absent id, created and object, and B004's response has plain values for them
+    // ModelResponse fills an absent id and created and always writes its own object, as B004's response has plain values
     if fields.get("model").is_none_or(Value::is_null) {
         fields.insert("model".to_owned(), Value::String(String::new()));
     }
@@ -219,12 +219,10 @@ fn fill_response_defaults(reply: &mut Value, identifier: fn() -> Uuid, clock: fn
     if fields.get("created").is_none_or(Value::is_null) {
         fields.insert("created".to_owned(), Value::from(clock()));
     }
-    if fields.get("object").is_none_or(Value::is_null) {
-        fields.insert(
-            "object".to_owned(),
-            Value::String("chat.completion".to_owned()),
-        );
-    }
+    fields.insert(
+        "object".to_owned(),
+        Value::String("chat.completion".to_owned()),
+    );
 }
 
 fn single_tool_call_to_content(message: &mut Object) {

@@ -444,6 +444,18 @@ fn null_id_created_and_object_get_the_same_defaults() {
     assert_eq!(reply.response.object, "chat.completion");
 }
 
+#[test]
+fn a_given_id_created_and_object_keep_only_the_written_object() {
+    let reply = decode_compatible_chat_reply(
+        br#"{"id":"given","object":"custom","created":7,"model":"m","choices":[]}"#,
+        &options(false, None, None),
+    )
+    .unwrap();
+    assert_eq!(reply.response.id, "given");
+    assert_eq!(reply.response.created, 7);
+    assert_eq!(reply.response.object, "chat.completion");
+}
+
 #[rstest]
 #[case::not_json(b"{", true)]
 #[case::missing_choices(
