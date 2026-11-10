@@ -5,9 +5,7 @@ use serde_json::{Value, json};
 use super::{Call, Failure, Function, failure};
 
 mod breakdown;
-mod deployment;
 mod identity;
-mod ocr;
 mod response_time;
 
 pub(super) fn run_call(call: &Call) -> Value {
@@ -21,8 +19,6 @@ fn execute(call: &Call) -> Result<Value, Failure> {
     match call.function {
         Function::Identity => identity::identity(call),
         Function::ResponseTime => response_time::response_time(call),
-        Function::Deployment => deployment::deployment(call),
-        Function::Ocr => ocr::ocr(call),
         Function::Breakdown => breakdown::breakdown(call),
     }
 }

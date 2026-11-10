@@ -3,16 +3,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 from decimal import Decimal
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TypeAlias, cast
 
 import litellm
 from litellm import cost_calculator
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.llm_cost_calc.utils import BilledTokenRates
 from pydantic import BaseModel, ConfigDict, PrivateAttr
-
-if TYPE_CHECKING:
-    from litellm.types.utils import ModelInfo
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -68,20 +65,6 @@ def _decimal_str(value: float) -> str:
 
 def _optional_decimal_str(value: float | None) -> Json:
     return None if value is None else _decimal_str(value)
-
-
-def _scalar(value: object) -> Json:
-    if value is None or isinstance(value, str):
-        return value
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return format(Decimal(value).normalize(), "f")
-    if isinstance(value, float):
-        return _decimal_str(value)
-    if isinstance(value, list):
-        return "array"
-    return "object"
 
 
 def _apply_catalog(value: Json) -> None:
@@ -156,63 +139,6 @@ def _response_time(call: dict[str, Json]) -> Json:
         _optional_number(spec.get("total_time"), "total_time"),
     )
     return _decimal_str(float(observed))
-
-
-def _pricing_object(spec: dict[str, Json]) -> Logging | None:
-    params = spec.get("litellm_params")
-    if params is None:
-        return None
-    logging_object = object.__new__(Logging)
-    logging_object.litellm_params = _object(params, "litellm_params")
-    return logging_object
-
-
-def _deployment_value(info: ModelInfo | None) -> Json:
-    if info is None:
-        return None
-    return {"fields": {key: _scalar(item) for key, item in info.items()}}
-
-
-def _deployment(call: dict[str, Json]) -> Json:
-    spec = _object(call.get("pricing"), "pricing")
-    _apply_catalog(call.get("catalog"))
-    info = cost_calculator._deployment_model_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        _pricing_object(spec),
-        _optional_bool(spec.get("custom_pricing"), "custom_pricing"),
-        _optional_string(spec.get("router_model_id"), "router_model_id"),
-    )
-    return _deployment_value(info)
-
-
-def _optional_float(value: object) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
-
-
-def _ocr(call: dict[str, Json]) -> Json:
-    spec = _object(call.get("pricing"), "pricing")
-    _apply_catalog(call.get("catalog"))
-    pricing = cost_calculator._ocr_model_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        _pricing_object(spec),
-        _optional_bool(spec.get("custom_pricing"), "custom_pricing"),
-        _optional_string(spec.get("router_model_id"), "router_model_id"),
-    )
-    if pricing is None:
-        return None
-    return {
-        "ocr_cost_per_page": _optional_decimal_str(
-            _optional_float(pricing.get("ocr_cost_per_page"))
-        ),
-        "ocr_cost_per_credit": _optional_decimal_str(
-            _optional_float(pricing.get("ocr_cost_per_credit"))
-        ),
-        "annotation_cost_per_page": _optional_decimal_str(
-            _optional_float(pricing.get("annotation_cost_per_page"))
-        ),
-    }
 
 
 def _rates(spec: dict[str, Json]) -> BilledTokenRates:
@@ -327,10 +253,6 @@ def _execute(function: str, call: dict[str, Json]) -> Json:
             return _identity(call)
         case "response_time":
             return _response_time(call)
-        case "deployment":
-            return _deployment(call)
-        case "ocr":
-            return _ocr(call)
         case "breakdown":
             return _breakdown(call)
         case _:
