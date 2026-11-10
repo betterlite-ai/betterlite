@@ -26,13 +26,19 @@ fn snake_to_camel(text: &str) -> String {
     let mut components = text.split('_');
     let mut converted = components.next().unwrap_or_default().to_owned();
     for component in components {
-        let mut characters = component.chars();
-        if let Some(first) = characters.next() {
-            converted.extend(first.to_uppercase());
-            converted.push_str(&characters.as_str().to_lowercase());
-        }
+        converted.push_str(&capitalize(component));
     }
     converted
+}
+fn capitalize(component: &str) -> String {
+    let mut characters = component.chars();
+    let Some(first) = characters.next() else {
+        return String::new();
+    };
+    first
+        .to_uppercase()
+        .chain(characters.as_str().to_lowercase().chars())
+        .collect()
 }
 fn camel_to_snake(text: &str) -> String {
     let mut segments: Vec<String> = Vec::new();
