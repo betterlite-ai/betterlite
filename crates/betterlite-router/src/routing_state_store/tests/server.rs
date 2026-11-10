@@ -54,7 +54,7 @@ async fn run_script(server: &FakeRedis, script: &[(&[&str], &str)]) {
 
 async fn serves_commands() {
     let server = FakeRedis::start().await;
-    let script: [(&[&str], &str); 25] = [
+    let script: [(&[&str], &str); 26] = [
         (&["PING"], "PONG"),
         (&["SET", "k", "v", "EX", "100"], "OK"),
         (&["TTL", "k"], "100"),
@@ -80,6 +80,7 @@ async fn serves_commands() {
         (&["INCRBYFLOAT", "n", "1.5"], "1.5"),
         (&["INCRBYFLOAT", "n", "2"], "3.5"),
         (&["GET", "n"], "3.5"),
+        (&["TTL", "n"], "-1"),
     ];
     run_script(&server, &script).await;
 }
