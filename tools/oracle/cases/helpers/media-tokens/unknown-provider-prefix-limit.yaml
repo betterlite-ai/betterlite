@@ -1,0 +1,17 @@
+kind: helper
+name: media-tokens-unknown-provider-prefix-limit
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: foo/gpt-3.5-turbo
+        base_model: foo/gpt-3.5-turbo
+        messages: []
+        user_max_tokens: 5000
+      - function: modified_max_tokens
+        model: a/b/gpt-3.5-turbo
+        base_model: a/b/gpt-3.5-turbo
+        messages: []
+        user_max_tokens: 5000
+env: {}
+compare: {ignore: []}

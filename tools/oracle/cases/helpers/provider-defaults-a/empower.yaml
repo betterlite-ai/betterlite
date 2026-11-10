@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-empower
+call:
+  provider_defaults_a:
+    provider: empower
+    model: any-model
+env: {}
+compare: {ignore: []}

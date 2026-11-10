@@ -1,0 +1,12 @@
+kind: helper
+name: media-tokens-unknown-model-limit
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: not-a-model
+        base_model: not-a-model
+        messages: []
+        user_max_tokens: 500
+env: {}
+compare: {ignore: []}
