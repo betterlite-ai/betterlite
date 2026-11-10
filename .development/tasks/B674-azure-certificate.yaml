@@ -98,6 +98,7 @@ description: >-
   SDK protocol that LiteLLM delegates.
 scope:
   paths:
+  - deny.toml
   - crates/betterlite-azure/Cargo.toml
   - Cargo.toml
   - crates/betterlite-azure/src/azure_certificate.rs

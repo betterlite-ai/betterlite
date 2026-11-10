@@ -1,0 +1,9 @@
+kind: helper
+name: provider-resolution-openrouter-auto
+call:
+  provider_resolution:
+    model: openrouter/auto
+    custom_llm_provider: openrouter
+    api_key: sk-config
+env: {}
+compare: {ignore: []}
