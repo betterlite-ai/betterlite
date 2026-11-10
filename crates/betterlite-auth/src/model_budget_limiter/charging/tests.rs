@@ -11,7 +11,7 @@ use super::log_success_event;
 use crate::model_budget_limiter::charging::{ChargeMetadata, PayloadIdentity, SuccessEvent};
 use crate::model_budget_limiter::error::ChargeError;
 use crate::model_budget_limiter::tests::support::{
-    DAY, FailsAfterFirstCall, FakeCache, amount, budgets, limiter, limiter_with,
+    DAY, FailsAfterTwoCalls, FakeCache, amount, budgets, limiter, limiter_with,
 };
 
 const KEY_SPEND: &str = "virtual_key_spend:key-1:gpt-4o:1d";
@@ -374,7 +374,7 @@ async fn the_batch_marker_lives_for_the_budget_window() {
 async fn an_unreadable_charge_duration_is_an_error() {
     let subject = limiter_with(
         FakeCache::new(),
-        Box::new(FailsAfterFirstCall {
+        Box::new(FailsAfterTwoCalls {
             calls: AtomicUsize::new(0),
         }),
     );

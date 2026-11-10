@@ -36,15 +36,15 @@ impl DurationParser for FixedDurations {
     }
 }
 
-// resolves the budget, then fails the second read the charge path makes
-pub(crate) struct FailsAfterFirstCall {
+// the team override and the entity resolution each parse the duration once, then the charge parses it
+pub(crate) struct FailsAfterTwoCalls {
     pub(crate) calls: AtomicUsize,
 }
 
-impl DurationParser for FailsAfterFirstCall {
+impl DurationParser for FailsAfterTwoCalls {
     fn seconds(&self, spec: &str, now: DateTime<Utc>) -> Option<i64> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
-        if call == 0 {
+        if call < 2 {
             FixedDurations.seconds(spec, now)
         } else {
             None

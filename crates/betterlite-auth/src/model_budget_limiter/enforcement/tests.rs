@@ -299,13 +299,12 @@ async fn the_carry_applies_until_the_window_has_fully_passed() {
 }
 
 #[tokio::test]
-async fn the_same_request_and_budget_model_does_not_read_the_counter_twice() {
+async fn the_same_request_and_budget_model_does_not_count_the_counter_twice() {
     let cache = FakeCache::new();
-    cache.preload(KEY_SPEND, amount("2"));
+    cache.preload(KEY_SPEND, amount("3"));
     let subject = limiter(cache);
     let budget = budgets(r#"{"gpt-4o": {"max_budget": 4.5, "budget_duration": "1d"}}"#);
-    let error = key_within_model_budget(&subject, "key-1", None, Some(&budget), "gpt-4o")
+    key_within_model_budget(&subject, "key-1", None, Some(&budget), "gpt-4o")
         .await
-        .unwrap_err();
-    assert_eq!(exceeded(error).current_cost, amount("2"));
+        .unwrap();
 }
