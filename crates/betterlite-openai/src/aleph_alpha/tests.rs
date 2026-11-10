@@ -250,7 +250,12 @@ fn multiple_choices() {
     401,
     Some("invalid token")
 )]
-#[case::object_error(r#"{"error":{"message":"bad","code":500}}"#, 500, None)]
+#[case::object_error(
+    r#"{"error":{"message":"bad","code":500}}"#,
+    500,
+    Some(r#"{"message":"bad","code":500}"#)
+)]
+#[case::null_error(r#"{"error":null}"#, 200, Some("null"))]
 #[case::missing_completions(r#"{"completions":7}"#, 200, None)]
 #[case::missing_finish_reason(r#"{"completions":[{"completion":"x"}]}"#, 200, None)]
 #[case::not_json("not a reply", 502, None)]

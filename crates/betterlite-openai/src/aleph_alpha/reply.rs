@@ -3,6 +3,7 @@ use std::str;
 
 use betterlite_tokenizer::engine::Engine;
 use serde_json::Value;
+use serde_json::value::RawValue;
 
 use crate::aleph_alpha::error::AlephAlphaError;
 use crate::chat::choice_finish_reason;
@@ -12,21 +13,23 @@ pub fn decode_aleph_reply(
     status_code: u16,
     body: &[u8],
 ) -> Result<Vec<ChatChoice>, AlephAlphaError> {
-    let parsed: Value = match serde_json::from_slice(body) {
-        Ok(value) => value,
-        // LiteLLM's response.json() raises here; betterlite keeps the typed error and the reply status
-        Err(_source) => return Err(provider_error(status_code, body)),
-    };
-    let Value::Object(fields) = parsed else {
+    // LiteLLM's response.json() raises on anything but a JSON object; betterlite keeps the typed error and the reply status
+    let Ok(fields) = serde_json::from_slice::<BTreeMap<String, &RawValue>>(body) else {
         return Err(provider_error(status_code, body));
     };
     if let Some(error) = fields.get("error") {
+        // a string error gives its own text, any other value the exact bytes of the reply
+        let message = serde_json::from_str::<String>(error.get())
+            .unwrap_or_else(|_source| error.get().to_owned());
         return Err(AlephAlphaError::Provider {
             status_code,
-            message: error_text(error),
+            message,
         });
     }
-    let Some(Value::Array(completions)) = fields.get("completions") else {
+    let Some(Value::Array(completions)) = fields
+        .get("completions")
+        .and_then(|raw| serde_json::from_str(raw.get()).ok())
+    else {
         return Err(provider_error(status_code, body));
     };
     let mut choices = Vec::with_capacity(completions.len());
@@ -117,15 +120,6 @@ fn mapped_finish_reason(
         Value::Array(_) | Value::Object(_) => return Err(provider_error(status_code, body)),
     };
     Ok(choice_finish_reason(raw))
-}
-
-fn error_text(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
-            serde_json::to_string(value).unwrap_or_default()
-        }
-    }
 }
 
 fn provider_error(status_code: u16, body: &[u8]) -> AlephAlphaError {
