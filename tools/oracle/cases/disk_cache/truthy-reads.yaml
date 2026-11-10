@@ -1,0 +1,23 @@
+kind: helper
+name: disk-truthy-reads
+call:
+  b4291:
+    disk_truthy_reads:
+      values:
+        - 0
+        - false
+        - ""
+        - []
+        - {}
+        - null
+        - 1
+        - -1
+        - 12.5
+        - 0.0
+        - cached-text
+        - true
+        - - 0
+        - model: gpt-4o
+env: {}
+compare:
+  ignore: []
