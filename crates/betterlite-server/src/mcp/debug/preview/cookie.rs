@@ -11,19 +11,18 @@ const FLAG_ATTRIBUTES: [&str; 2] = ["httponly", "secure"];
 // None means the whole header string is not a valid cookie list, so only the raw value stays a secret
 pub(super) fn cookie_values(value: &str) -> Option<Vec<SecretString>> {
     let pattern = Regex::new(COOKIE_PATTERN).ok()?;
-    let mut index = 0_usize;
+    let mut remaining = value;
     let mut morsel_seen = false;
     let mut pairs: Vec<(String, String)> = Vec::new();
-    while index < value.len() {
-        let rest = value.get(index..)?;
-        let Some(captures) = pattern.captures(rest) else {
+    while !remaining.is_empty() {
+        let Some(captures) = pattern.captures(remaining) else {
             break;
         };
-        let whole = captures.get(0)?;
+        let consumed = captures.get(0)?.end();
         let key = captures.name("key")?.as_str();
         let lowered = key.to_lowercase();
         let raw_value = captures.name("val").map(|matched| matched.as_str());
-        index = index.saturating_add(whole.end());
+        remaining = remaining.get(consumed..)?;
         if key.starts_with('$') {
             continue;
         }

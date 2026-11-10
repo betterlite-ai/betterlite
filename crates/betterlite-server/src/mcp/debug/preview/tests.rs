@@ -1,10 +1,15 @@
 #![cfg(test)]
 
 use std::io;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use futures_util::Stream;
 use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rstest::rstest;
@@ -138,6 +143,7 @@ fn sensitive_field_names(#[case] key: &str, #[case] expected: bool) {
 #[rstest]
 #[case::empty(b"", "application/json", "(empty)")]
 #[case::unstructured(b"plain text", "text/plain", UNSTRUCTURED_BODY)]
+#[case::plain_equals(b"a=1", "text/plain", UNSTRUCTURED_BODY)]
 #[case::scalar(b"123", "application/json", UNSTRUCTURED_BODY)]
 #[case::bare_string(b"\"text\"", "application/json", UNSTRUCTURED_BODY)]
 fn previews_without_structure(
@@ -304,6 +310,8 @@ fn a_tilde_secret_in_a_form_field_is_masked() {
 #[case::leading_digit_out_of_range(r#"token="a\477b""#, vec!["a477b"])]
 #[case::non_octal_digit(r#"token="a\108b""#, vec!["a108b"])]
 #[case::two_digits_are_not_an_escape(r#"token="a\12""#, vec!["a12"])]
+#[case::attribute_before_a_morsel("Path=/", vec![])]
+#[case::flag_attribute("a=1; Secure", vec!["1"])]
 fn cookie_headers_yield_their_morsels(#[case] value: &str, #[case] expected: Vec<&str>) {
     let mut secrets = header_secret_values("cookie", value);
     assert_eq!(
@@ -354,6 +362,7 @@ fn request_secrets_come_from_the_body_url_and_headers() {
 #[case::dot_is_safe("a%2Eb", "a.b", "a%2Eb")]
 #[case::dash_is_safe("a%2Db", "a-b", "a%2Db")]
 #[case::tilde_is_safe("a%7Eb", "a~b", "a%7Eb")]
+#[case::json_escaped(r#"say \"hi\""#, r#"say "hi""#, "REDACTED")]
 fn every_quoted_form_of_a_known_secret_is_masked(
     #[case] text: &str,
     #[case] secret: &str,
@@ -380,6 +389,63 @@ fn a_root_json_string_is_a_secret_leaf() {
     ))
     .expect("known body");
     assert_eq!(exposed(&secrets), vec!["scalar-secret"]);
+}
+
+#[test]
+fn a_form_body_yields_its_sensitive_values() {
+    let secrets = request_secret_values(&request(
+        "POST",
+        "https://mcp.example.com/mcp",
+        &[
+            ("host", "mcp.example.com"),
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("content-length", "33"),
+        ],
+        BodyState::Read(b"code=form-secret&plain=visible".to_vec()),
+    ))
+    .expect("known body");
+    assert_eq!(exposed(&secrets), vec!["form-secret"]);
+}
+
+#[test]
+fn a_body_of_exactly_the_capture_limit_is_still_scanned() {
+    let mut body = String::from("code=");
+    body.push_str(&"x".repeat(0x4000 - 5));
+    assert_eq!(body.len(), 0x4000);
+    let secrets = request_secret_values(&request(
+        "POST",
+        "https://mcp.example.com/mcp",
+        &[
+            ("host", "mcp.example.com"),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        BodyState::Read(body.into_bytes()),
+    ))
+    .expect("exactly the limit is readable");
+    assert_eq!(exposed(&secrets).len(), 1);
+    assert!(
+        exposed(&secrets)
+            .first()
+            .is_some_and(|text| text.starts_with('x'))
+    );
+}
+
+#[test]
+fn a_basic_password_is_unescaped_as_a_form_component() {
+    let secrets = request_secret_values(&request(
+        "POST",
+        "https://mcp.example.com/mcp",
+        &[
+            ("host", "mcp.example.com"),
+            ("authorization", "Basic dXNlcjpwYStzcw=="),
+            ("content-length", "0"),
+        ],
+        BodyState::Read(Vec::new()),
+    ))
+    .expect("empty body is readable");
+    let exposed = exposed(&secrets);
+    assert!(exposed.contains(&"pa+ss"));
+    assert!(exposed.contains(&"pa ss"));
 }
 
 #[test]
@@ -485,6 +551,35 @@ fn the_description_names_every_part_of_the_failed_call() {
 }
 
 #[test]
+fn debug_output_names_the_snapshot_without_its_values() {
+    let state = format!("{:?}", BodyState::Read(vec![1, 2, 3]));
+    assert!(state.contains("Read"));
+    assert!(state.contains('3'));
+    assert_eq!(format!("{:?}", BodyState::NotRead), "NotRead");
+    let source = request(
+        "POST",
+        "https://user:secret@mcp.example.com/mcp",
+        &[("authorization", "Bearer sk-secret-value")],
+        BodyState::Read(vec![1, 2, 3]),
+    );
+    let described = format!("{source:?}");
+    assert!(described.contains("POST"));
+    assert!(described.contains("authorization"));
+    assert!(!described.contains("sk-secret-value"));
+    assert!(!described.contains("secret@"));
+    let reply = response(
+        400,
+        &[("x-mcp-debug", "present")],
+        BodyState::NotRead,
+        Some(source),
+    );
+    let reply_text = format!("{reply:?}");
+    assert!(reply_text.contains("400"));
+    assert!(reply_text.contains("x-mcp-debug"));
+    assert!(reply_text.contains("NotRead"));
+}
+
+#[test]
 fn a_response_without_its_request_says_so() {
     let reply = response(502, &[], BodyState::Read(b"bad gateway".to_vec()), None);
     assert_eq!(
@@ -583,6 +678,48 @@ async fn a_capture_without_a_request_keeps_the_preview_unavailable() {
     capture_error_response(&mut reply, stream::iter(chunks), &redactor).await;
     assert_eq!(reply.body, BodyState::Read(b"body".to_vec()));
     assert_eq!(reply.captured.as_deref(), Some(CREDENTIALS_UNAVAILABLE));
+}
+
+struct ProbeStream {
+    chunks: Vec<Vec<u8>>,
+    position: usize,
+    polled_past_end: Arc<AtomicBool>,
+}
+
+impl Stream for ProbeStream {
+    type Item = Result<Vec<u8>, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.as_mut().get_mut();
+        if let Some(chunk) = this.chunks.get(this.position) {
+            this.position = this.position.saturating_add(1);
+            return Poll::Ready(Some(Ok(chunk.clone())));
+        }
+        this.polled_past_end.store(true, Ordering::SeqCst);
+        Poll::Ready(None)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_capture_stops_polling_once_the_limit_is_reached() {
+    let redactor = redactor();
+    let mut reply = response(
+        500,
+        &[("content-type", "text/plain")],
+        BodyState::NotRead,
+        None,
+    );
+    let polled = Arc::new(AtomicBool::new(false));
+    let stream = ProbeStream {
+        chunks: vec![vec![b'z'; 0x4000], vec![b'y'; 1]],
+        position: 0,
+        polled_past_end: Arc::clone(&polled),
+    };
+    capture_error_response(&mut reply, stream, &redactor).await;
+    let mut expected = vec![b'z'; 0x4000];
+    expected.push(b'y');
+    assert_eq!(reply.body, BodyState::Read(expected));
+    assert!(!polled.load(Ordering::SeqCst));
 }
 
 #[tokio::test(start_paused = true)]
