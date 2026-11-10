@@ -50,6 +50,15 @@ const MISTRAL_PASSTHROUGH_BODY: &[u8] = br#"{
     "model": "mistral-document-ai-2512",
     "usage_info": {"pages_processed": 2}
 }"#;
+const COHERE_PASSTHROUGH_BODY: &[u8] =
+    br#"{"id": "parse-1", "pages": [], "meta": {"billed_units": {"pages": 3}}}"#;
+const DOCUMENT_INTELLIGENCE_PASSTHROUGH_BODY: &[u8] = br#"{
+    "status": "succeeded",
+    "analyzeResult": {
+        "content": "line one",
+        "pages": [{"pageNumber": 1, "unit": "inch", "width": 8.5, "height": 11, "lines": [{"content": "line one"}]}]
+    }
+}"#;
 const MISTRAL_WIRE_BODY: &[u8] =
     br#"{"pages":[{"index":0,"markdown":"hello"}],"model":"served-model"}"#;
 const SECRET_OPTION_NAMES: [&str; 8] = [
@@ -574,6 +583,12 @@ fn forward_resolve_connection_params_prefers_dynamic_values(#[case] kind: OcrCon
     "azure_ai/doc-intelligence/prebuilt-layout",
     "documentintelligence/documentModels/prebuilt-layout:analyze"
 )]
+#[case::bare_mistral("mistral-document-ai-2512", "providers/mistral/azure/ocr")]
+#[case::bare_cohere("Cohere-parse-v5", "providers/cohere/v2/parse")]
+#[case::bare_document_intelligence(
+    "doc-intelligence/prebuilt-layout",
+    "documentintelligence/documentModels/prebuilt-layout:analyze"
+)]
 fn passthrough_recognizes_the_resolved_config_ocr_route(
     #[case] model: &str,
     #[case] endpoint: &str,
@@ -592,6 +607,7 @@ fn passthrough_recognizes_the_resolved_config_ocr_route(
     "documentintelligence/documentModels/prebuilt-read:analyze"
 )]
 #[case::empty_endpoint("azure_ai/mistral-document-ai-2512", "")]
+#[case::bare_mistral_other_route("mistral-document-ai-2512", "models/info")]
 fn passthrough_skips_other_routes(#[case] model: &str, #[case] endpoint: &str) {
     assert!(
         passthrough_response(model, endpoint, b"not json")
@@ -616,13 +632,49 @@ fn passthrough_normalizes_the_mistral_body() {
     assert_eq!(json["model"], "mistral-document-ai-2512");
 }
 
+#[rstest]
+#[case::mistral(
+    "mistral-document-ai-2512",
+    "providers/mistral/azure/ocr",
+    MISTRAL_PASSTHROUGH_BODY,
+    2_i32,
+    "mistral-document-ai-2512"
+)]
+#[case::cohere(
+    "Cohere-parse-v5",
+    "providers/cohere/v2/parse",
+    COHERE_PASSTHROUGH_BODY,
+    3_i32,
+    "Cohere-parse-v5"
+)]
+#[case::document_intelligence(
+    "doc-intelligence/prebuilt-layout",
+    "documentintelligence/documentModels/prebuilt-layout:analyze",
+    DOCUMENT_INTELLIGENCE_PASSTHROUGH_BODY,
+    1_i32,
+    "doc-intelligence/prebuilt-layout"
+)]
+fn passthrough_resolves_a_bare_model_as_azure_ai(
+    #[case] model: &str,
+    #[case] endpoint: &str,
+    #[case] body: &[u8],
+    #[case] expected_pages: i32,
+    #[case] expected_model: &str,
+) {
+    let response = passthrough_response(model, endpoint, body)
+        .expect("the projector resolves a bare model")
+        .expect("the route is an OCR route");
+    let json = serde_json::to_value(&response).expect("the response serializes");
+    assert_eq!(json["usage_info"]["pages_processed"], expected_pages);
+    assert_eq!(json["model"], expected_model);
+}
+
 #[test]
 fn passthrough_normalizes_the_cohere_body() {
-    let body = br#"{"id": "parse-1", "pages": [], "meta": {"billed_units": {"pages": 3}}}"#;
     let response = passthrough_response(
         "azure_ai/Cohere-parse-v5",
         "providers/cohere/v2/parse",
-        body,
+        COHERE_PASSTHROUGH_BODY,
     )
     .expect("the route resolves")
     .expect("the route is an OCR route");
@@ -633,17 +685,10 @@ fn passthrough_normalizes_the_cohere_body() {
 
 #[test]
 fn passthrough_normalizes_the_document_intelligence_body() {
-    let body = br#"{
-        "status": "succeeded",
-        "analyzeResult": {
-            "content": "line one",
-            "pages": [{"pageNumber": 1, "unit": "inch", "width": 8.5, "height": 11, "lines": [{"content": "line one"}]}]
-        }
-    }"#;
     let response = passthrough_response(
         "azure_ai/doc-intelligence/prebuilt-layout",
         "documentintelligence/documentModels/prebuilt-layout:analyze",
-        body,
+        DOCUMENT_INTELLIGENCE_PASSTHROUGH_BODY,
     )
     .expect("the route resolves")
     .expect("the route is an OCR route");

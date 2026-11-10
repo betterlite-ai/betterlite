@@ -1,10 +1,12 @@
 use crate::ocr_error::OcrError;
 use crate::ocr_provider::OcrConfigKind;
 use crate::textract_ocr::TextractOperation;
+use strum::{EnumString, IntoStaticStr};
 
 const DEFAULT_PROVIDER: &str = "mistral";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumString, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 enum Provider {
     Anthropic,
     AwsTextract,
@@ -16,39 +18,6 @@ enum Provider {
     OpenaiLike,
     Reducto,
     VertexAi,
-}
-
-impl Provider {
-    fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "anthropic" => Some(Self::Anthropic),
-            "aws_textract" => Some(Self::AwsTextract),
-            "azure_ai" => Some(Self::AzureAi),
-            "bedrock" => Some(Self::Bedrock),
-            "cohere" => Some(Self::Cohere),
-            "mistral" => Some(Self::Mistral),
-            "openai" => Some(Self::Openai),
-            "openai_like" => Some(Self::OpenaiLike),
-            "reducto" => Some(Self::Reducto),
-            "vertex_ai" => Some(Self::VertexAi),
-            _ => None,
-        }
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Anthropic => "anthropic",
-            Self::AwsTextract => "aws_textract",
-            Self::AzureAi => "azure_ai",
-            Self::Bedrock => "bedrock",
-            Self::Cohere => "cohere",
-            Self::Mistral => "mistral",
-            Self::Openai => "openai",
-            Self::OpenaiLike => "openai_like",
-            Self::Reducto => "reducto",
-            Self::VertexAi => "vertex_ai",
-        }
-    }
 }
 
 struct CustomProvider<'model> {
@@ -64,10 +33,10 @@ pub(crate) fn resolve_provider_config(
         model,
         provider: DEFAULT_PROVIDER,
     });
-    let Some(provider) = Provider::from_name(resolved.provider) else {
+    let Ok(provider) = resolved.provider.parse::<Provider>() else {
         return Err(OcrError::InvalidProvider(resolved.provider.to_owned()));
     };
-    let kind = kind_for(provider, resolved.model)?;
+    let kind = kind_for(provider, resolved.model, resolved.provider)?;
     Ok((resolved.model.to_owned(), kind))
 }
 
@@ -98,7 +67,11 @@ fn strip_provider_prefix<'model>(model: &'model str, provider: &str) -> &'model 
         .unwrap_or(model)
 }
 
-fn kind_for(provider: Provider, model: &str) -> Result<OcrConfigKind, OcrError> {
+fn kind_for(
+    provider: Provider,
+    model: &str,
+    provider_name: &str,
+) -> Result<OcrConfigKind, OcrError> {
     Ok(match provider {
         Provider::AwsTextract => textract_kind(model)?,
         Provider::Cohere => OcrConfigKind::Cohere,
@@ -113,7 +86,7 @@ fn kind_for(provider: Provider, model: &str) -> Result<OcrConfigKind, OcrError> 
         }
         Provider::VertexAi => OcrConfigKind::VertexAi,
         Provider::Anthropic | Provider::Bedrock | Provider::Openai | Provider::OpenaiLike => {
-            return Err(OcrError::InvalidProvider(provider.name().to_owned()));
+            return Err(OcrError::InvalidProvider(provider_name.to_owned()));
         }
     })
 }
