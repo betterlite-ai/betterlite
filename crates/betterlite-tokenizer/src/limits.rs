@@ -137,10 +137,10 @@ fn catalog_entry<'catalog>(
             configured_model_names: &configured_model_names,
             catalog,
         });
-        match classification {
-            PrefixClassification::ExplicitProvider { model, .. } => lookup(catalog, &model),
-            _ => None,
-        }
+        let PrefixClassification::ExplicitProvider { model, .. } = classification else {
+            return None;
+        };
+        lookup(catalog, &model)
     })
 }
 
