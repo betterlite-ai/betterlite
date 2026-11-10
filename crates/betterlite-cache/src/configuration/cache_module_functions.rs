@@ -15,6 +15,19 @@ pub struct CacheSwitches<L: LoggerSink, C: ConsoleSink> {
     pub hooks: VerboseHooks<L, C>,
 }
 
+// The three arguments enable_cache and update_cache build a cache from
+pub struct CacheSetup<'setup> {
+    pub settings: CacheSettings,
+    pub environment: &'setup (dyn EnvironmentLookup + Sync),
+    pub dependencies: &'setup CacheDependencies,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CacheSwitch {
+    Enable,
+    Update,
+}
+
 impl<L, C> CacheSwitches<L, C>
 where
     L: LoggerSink + Send + Sync,
@@ -22,35 +35,17 @@ where
 {
     pub async fn enable_cache(
         &mut self,
-        settings: CacheSettings,
-        environment: &(dyn EnvironmentLookup + Sync),
-        dependencies: &CacheDependencies,
+        setup: CacheSetup<'_>,
     ) -> Result<(), BackendConstructionError> {
-        let _printed = self
-            .hooks
-            .main_print_verbose(Payload::String("LiteLLM: Enabling Cache".to_owned()));
-        self.callbacks.register_cache();
-        if self.cache.is_none() {
-            let cache =
-                Cache::open(settings, &mut self.callbacks, environment, dependencies).await?;
-            self.cache = Some(cache);
-        }
-        self.announce("LiteLLM: Cache enabled");
+        self.switch_cache(CacheSwitch::Enable, setup).await?;
         Ok(())
     }
 
     pub async fn update_cache(
         &mut self,
-        settings: CacheSettings,
-        environment: &(dyn EnvironmentLookup + Sync),
-        dependencies: &CacheDependencies,
+        setup: CacheSetup<'_>,
     ) -> Result<(), BackendConstructionError> {
-        let _printed = self
-            .hooks
-            .main_print_verbose(Payload::String("LiteLLM: Updating Cache".to_owned()));
-        let cache = Cache::open(settings, &mut self.callbacks, environment, dependencies).await?;
-        self.cache = Some(cache);
-        self.announce("LiteLLM: Cache Updated");
+        self.switch_cache(CacheSwitch::Update, setup).await?;
         Ok(())
     }
 
@@ -63,6 +58,35 @@ where
         let _disabled = self
             .hooks
             .main_print_verbose(Payload::String("LiteLLM: Cache disabled".to_owned()));
+    }
+
+    async fn switch_cache(
+        &mut self,
+        switch: CacheSwitch,
+        setup: CacheSetup<'_>,
+    ) -> Result<(), BackendConstructionError> {
+        let (starting, finished) = match switch {
+            CacheSwitch::Enable => ("LiteLLM: Enabling Cache", "LiteLLM: Cache enabled"),
+            CacheSwitch::Update => ("LiteLLM: Updating Cache", "LiteLLM: Cache Updated"),
+        };
+        let _printed = self
+            .hooks
+            .main_print_verbose(Payload::String(starting.to_owned()));
+        if switch == CacheSwitch::Enable {
+            self.callbacks.register_cache();
+        }
+        if switch == CacheSwitch::Update || self.cache.is_none() {
+            let cache = Cache::open(
+                setup.settings,
+                &mut self.callbacks,
+                setup.environment,
+                setup.dependencies,
+            )
+            .await?;
+            self.cache = Some(cache);
+        }
+        self.announce(finished);
+        Ok(())
     }
 
     fn announce(&self, status: &str) {

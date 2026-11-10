@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::support::{
-    FakeRedis, dependencies, environment, messages, redis_settings, settings, switches,
+    FakeRedis, dependencies, environment, messages, redis_settings, settings, setup, switches,
 };
 use crate::configuration::cache::{Backend, Cache};
 use crate::configuration::callback_registration::{CACHE_CALLBACK, CacheCallbacks};
@@ -11,11 +11,11 @@ use crate::types::cache_type::LiteLlmCacheType;
 async fn enable_cache_builds_a_cache_and_registers_callbacks() {
     let mut module = switches();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache is enabled");
     let cache = module.cache.as_ref().expect("an enabled cache");
@@ -56,11 +56,11 @@ async fn enable_cache_registers_callbacks_for_an_existing_cache() {
     module.cache = Some(existing);
     module.callbacks = CacheCallbacks::default();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache stays enabled");
     assert_eq!(
@@ -73,18 +73,18 @@ async fn enable_cache_registers_callbacks_for_an_existing_cache() {
 async fn enable_cache_keeps_an_existing_cache() {
     let mut module = switches();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache is enabled");
     let directory = tempfile::tempdir().expect("a temp dir");
     let mut disk = settings(LiteLlmCacheType::Disk);
     disk.disk_cache_dir = Some(directory.path().to_owned());
     module
-        .enable_cache(disk, &environment(), &dependencies())
+        .enable_cache(setup(disk, &environment(), &dependencies()))
         .await
         .expect("the cache stays enabled");
     let cache = module.cache.as_ref().expect("an enabled cache");
@@ -100,18 +100,18 @@ async fn enable_cache_keeps_an_existing_cache() {
 async fn update_cache_replaces_the_cache_and_registers_callbacks() {
     let mut module = switches();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache is enabled");
     let directory = tempfile::tempdir().expect("a temp dir");
     let mut disk = settings(LiteLlmCacheType::Disk);
     disk.disk_cache_dir = Some(directory.path().to_owned());
     module
-        .update_cache(disk, &environment(), &dependencies())
+        .update_cache(setup(disk, &environment(), &dependencies()))
         .await
         .expect("the cache is updated");
     let cache = module.cache.as_ref().expect("an updated cache");
@@ -138,19 +138,19 @@ async fn update_cache_replaces_the_cache_and_registers_callbacks() {
 async fn update_cache_keeps_the_previous_cache_when_construction_fails() {
     let mut module = switches();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache is enabled");
     let result = module
-        .update_cache(
+        .update_cache(setup(
             settings(LiteLlmCacheType::S3),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await;
     assert!(result.is_err());
     let cache = module.cache.as_ref().expect("the previous cache");
@@ -161,11 +161,11 @@ async fn update_cache_keeps_the_previous_cache_when_construction_fails() {
 async fn disable_cache_clears_the_cache_and_callbacks() {
     let mut module = switches();
     module
-        .enable_cache(
+        .enable_cache(setup(
             settings(LiteLlmCacheType::Local),
             &environment(),
             &dependencies(),
-        )
+        ))
         .await
         .expect("the cache is enabled");
     module.disable_cache();
@@ -205,7 +205,11 @@ async fn enable_cache_logs_the_redis_type() {
     let server = FakeRedis::start().await;
     let mut module = switches();
     module
-        .enable_cache(redis_settings(&server), &environment(), &dependencies())
+        .enable_cache(setup(
+            redis_settings(&server),
+            &environment(),
+            &dependencies(),
+        ))
         .await
         .expect("the cache is enabled");
     assert_eq!(

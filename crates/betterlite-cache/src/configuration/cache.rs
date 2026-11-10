@@ -90,26 +90,33 @@ impl Cache {
     }
 
     pub async fn ping(&self) -> Result<Option<bool>, CacheLifecycleError> {
-        match &self.backend {
-            Backend::Redis(cache) => cache
-                .admin
-                .ping(None)
-                .await
-                .map(Some)
-                .map_err(|source| CacheLifecycleError::Ping { source }),
-            Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => Ok(None),
-        }
+        let Some(cache) = self.redis_cache() else {
+            return Ok(None);
+        };
+        cache
+            .admin
+            .ping(None)
+            .await
+            .map(Some)
+            .map_err(|source| CacheLifecycleError::Ping { source })
     }
 
     pub async fn delete_cache_keys(&self, keys: &[String]) -> Result<(), CacheLifecycleError> {
+        // only RedisCache declares the operation; LiteLLM's getattr path skips every other backend
+        let Some(cache) = self.redis_cache() else {
+            return Ok(());
+        };
+        cache
+            .admin
+            .delete_cache_keys(keys)
+            .await
+            .map_err(|source| CacheLifecycleError::DeleteKeys { source })
+    }
+
+    fn redis_cache(&self) -> Option<&RedisCache> {
         match &self.backend {
-            Backend::Redis(cache) => cache
-                .admin
-                .delete_cache_keys(keys)
-                .await
-                .map_err(|source| CacheLifecycleError::DeleteKeys { source }),
-            // only RedisCache declares the operation; LiteLLM's getattr path skips every other backend
-            Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => Ok(()),
+            Backend::Redis(cache) => Some(cache),
+            Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => None,
         }
     }
 

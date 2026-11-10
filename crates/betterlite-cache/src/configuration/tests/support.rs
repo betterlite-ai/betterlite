@@ -26,12 +26,11 @@ use tokio::task::JoinSet;
 
 use crate::backend::{CacheBackend, CacheResult};
 use crate::configuration::backend_construction::{ClosedBreakerGate, SilentServiceHooks};
-use crate::configuration::cache_module_functions::CacheSwitches;
+use crate::configuration::cache_module_functions::{CacheSetup, CacheSwitches};
 use crate::configuration::callback_registration::CacheCallbacks;
 use crate::configuration::settings::{
     CacheDependencies, CacheSettings, DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
 };
-use crate::disk::Clock;
 use crate::types::cache_type::{CacheMode, LiteLlmCacheType};
 use crate::types::call_type::SUPPORTED_CALL_TYPES;
 use crate::types::semantic::SemanticCacheScope;
@@ -156,28 +155,34 @@ pub(crate) fn environment() -> BTreeMap<String, String> {
     BTreeMap::new()
 }
 
-pub(crate) fn dependencies() -> CacheDependencies {
-    CacheDependencies {
-        clock: clock(NOW),
-        redis_factory: Arc::new(LiveClientFactory::new(None)),
-        redis_store: Arc::new(RedisClientStore::new()),
-        redis_hooks: Arc::new(SilentServiceHooks),
-        redis_gate: Arc::new(ClosedBreakerGate),
+pub(crate) fn setup<'setup>(
+    settings: CacheSettings,
+    environment: &'setup BTreeMap<String, String>,
+    dependencies: &'setup CacheDependencies,
+) -> CacheSetup<'setup> {
+    CacheSetup {
+        settings,
+        environment,
+        dependencies,
     }
+}
+
+pub(crate) fn dependencies() -> CacheDependencies {
+    dependencies_with_gate(Arc::new(ClosedBreakerGate))
 }
 
 pub(crate) fn rejecting_dependencies() -> CacheDependencies {
+    dependencies_with_gate(Arc::new(RejectingGate))
+}
+
+fn dependencies_with_gate(redis_gate: Arc<dyn BreakerGate>) -> CacheDependencies {
     CacheDependencies {
-        clock: clock(NOW),
+        clock: Arc::new(move || NOW),
         redis_factory: Arc::new(LiveClientFactory::new(None)),
         redis_store: Arc::new(RedisClientStore::new()),
         redis_hooks: Arc::new(SilentServiceHooks),
-        redis_gate: Arc::new(RejectingGate),
+        redis_gate,
     }
-}
-
-fn clock(now: f64) -> Clock {
-    Arc::new(move || now)
 }
 
 pub(crate) struct RejectingGate;
@@ -313,24 +318,23 @@ async fn serve_listener(
     let mut serving = JoinSet::new();
     let mut pending = 0_usize;
     loop {
-        if pending == 0 {
-            let Ok((stream, _peer)) = listener.accept().await else {
-                return;
-            };
-            accept_connection(stream, &commands, &connections, &mut serving);
-            pending = pending.saturating_add(1);
-            continue;
-        }
-        let accepting = Box::pin(listener.accept());
-        let joined = Box::pin(serving.join_next());
-        let accepted_connection = match select(accepting, joined).await {
-            Either::Left((connection, _pending_join)) => connection,
-            Either::Right((_completed, _pending_accept)) => {
-                pending = pending.saturating_sub(1);
-                continue;
+        let accepted_connection = if pending == 0 {
+            Some(listener.accept().await)
+        } else {
+            let accepting = Box::pin(listener.accept());
+            let joined = Box::pin(serving.join_next());
+            match select(accepting, joined).await {
+                Either::Left((connection, _pending_join)) => Some(connection),
+                Either::Right((_completed, _pending_accept)) => {
+                    pending = pending.saturating_sub(1);
+                    None
+                }
             }
         };
-        let Ok((stream, _peer)) = accepted_connection else {
+        let Some(next_connection) = accepted_connection else {
+            continue;
+        };
+        let Ok((stream, _peer)) = next_connection else {
             return;
         };
         accept_connection(stream, &commands, &connections, &mut serving);
