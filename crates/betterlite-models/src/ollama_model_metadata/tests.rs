@@ -575,6 +575,20 @@ fn field_cases() {
     }
 }
 
+const DECODE_FAILURES: [&str; 11] = [
+    "",
+    "{\"model_info\":",
+    "{\"template\":\"tools\",\"model_info\":{\"llama.context_length\":819",
+    "[]",
+    "\"text\"",
+    "null",
+    "{\"model_info\":null}",
+    "{\"model_info\":[]}",
+    "{\"template\":5}",
+    "{\"model_info\":{\"llama.context_length\":\"8192\"}}",
+    "{\"model_info\":{\"llama.context_length\":8192.5}}",
+];
+
 fn field_decode_failures() {
     let empty_settings = settings(None, None);
     let nothing = globals(None, None, None);
@@ -607,9 +621,25 @@ fn field_decode_failures() {
     ));
 }
 
+fn reply_size_limit() {
+    const LIMIT: usize = 16 * 1024 * 1024;
+    assert_eq!(MAX_REPLY_BYTES, LIMIT);
+    let at_limit = vec![b' '; LIMIT];
+    assert!(matches!(
+        decode_ollama_model_reply(&at_limit),
+        Err(OllamaMetadataError::Reply { .. })
+    ));
+    let over_limit = vec![b' '; LIMIT + 1];
+    assert!(matches!(
+        decode_ollama_model_reply(&over_limit),
+        Err(OllamaMetadataError::ReplyTooLarge { .. })
+    ));
+}
+
 fn runtime_model_fields() {
     field_cases();
     field_decode_failures();
+    reply_size_limit();
 }
 
 fn stripped_prefixes() {
