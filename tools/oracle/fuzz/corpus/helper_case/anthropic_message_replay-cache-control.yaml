@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-message-replay-cache-control
+call:
+  anthropic_message_replay:
+    function: cache_control
+    payload:
+      model: claude
+      cache_control: {type: ephemeral, ttl: 1h}
+      messages: [ {role: user, content: hello, cache_control: {type: ephemeral, ttl: 1h}} ]
+env: {}
+compare: {ignore: []}
