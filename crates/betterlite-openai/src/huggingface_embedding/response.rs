@@ -5,7 +5,7 @@ use crate::huggingface_chat::error::get_error_class;
 use crate::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use crate::openai_base_config::Headers;
 
-pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+pub const MAX_RESPONSE_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
