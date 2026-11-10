@@ -1,0 +1,53 @@
+kind: helper
+name: lyria-runtime-fallback
+call:
+  vertex_model_policy:
+    lyria:
+      cases:
+        - {model: lyria-002}
+        - {model: vertex_ai/lyria-002}
+        - {model: lyria-3-clip-preview}
+        - {model: lyria-3-pro-preview}
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_unknown
+            supported_audio_formats: [wav]
+            output_cost_per_image: 9.5
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_interactions
+            supported_audio_formats: [mp3, wav]
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: [wav]
+            output_cost_per_image: 1.5
+        - model: custom-lyria
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: [wav]
+        - model: custom-lyria
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: [ogg]
+        - {model: custom-lyria}
+        - {model: vertex_ai_beta/lyria-002}
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: [wav]
+            output_cost_per_image: '0.5'
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: [wav]
+            output_cost_per_image: true
+        - model: lyria-002
+          runtime:
+            vertex_ai_audio_api: lyria_predict
+            supported_audio_formats: []
+            extra: 1
+        - model: lyria-002
+          runtime: null
+env: {}
+compare: {ignore: []}

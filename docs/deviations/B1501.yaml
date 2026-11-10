@@ -1,0 +1,11 @@
+task: B1501
+deviations:
+  - what: An empty first completion counts zero completion tokens; LiteLLM passes the null content to the tokenizer and fails.
+    why: tiktoken raises on None, so an Aleph Alpha reply whose first completion is empty becomes an unhandled error in LiteLLM; a working setup cannot rely on that failure, and betterlite returns the reply with completion_tokens zero.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deprecated_providers/aleph_alpha.py#L280
+  - what: A reply body that is not JSON becomes AlephAlphaError carrying the reply's HTTP status; LiteLLM lets the JSONDecodeError escape.
+    why: An unhandled decoder error is a bug no working setup relies on, and the typed error keeps the same classification path as every other Aleph Alpha failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deprecated_providers/aleph_alpha.py#L251
+  - what: A reply with an empty completions list answers AlephAlphaError instead of indexing choices[0].
+    why: LiteLLM raises IndexError while reading the usage count; a typed error keeps the cause without a panic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deprecated_providers/aleph_alpha.py#L279-L280

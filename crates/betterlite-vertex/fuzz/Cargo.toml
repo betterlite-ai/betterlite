@@ -13,11 +13,19 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-vertex = { path = ".." }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_timestamp"
+path = "fuzz_targets/vertex_timestamp.rs"
 test = false
 doc = false
 bench = false

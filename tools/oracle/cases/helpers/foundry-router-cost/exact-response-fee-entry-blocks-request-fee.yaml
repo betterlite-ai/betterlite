@@ -1,0 +1,22 @@
+kind: helper
+name: exact-response-fee-entry-blocks-request-fee
+call:
+  foundry_router_cost:
+    operation: cost
+    catalog:
+      azure_ai/model_router:
+        input_cost_per_token: 0.5
+        output_cost_per_token: 0.25
+        litellm_provider: azure_ai
+      model_router/azure-gpt-4o:
+        input_cost_per_token: 0.25
+        output_cost_per_token: 0.125
+        input_cost_per_token_flex: 0.125
+        output_cost_per_token_flex: 0.0625
+        litellm_provider: azure_ai
+    calls:
+      - {model: model_router, request_model: model-router, prompt_tokens: 8, completion_tokens: 4}
+      - {model: model_router/azure-gpt-4o, request_model: azure_ai/model-router, prompt_tokens: 8, completion_tokens: 4}
+      - {model: model_router/azure-gpt-4o, request_model: azure_ai/model-router, prompt_tokens: 8, completion_tokens: 4, service_tier: flex}
+env: {}
+compare: {ignore: []}

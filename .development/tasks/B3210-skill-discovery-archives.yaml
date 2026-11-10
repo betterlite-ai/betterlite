@@ -102,17 +102,17 @@ checks:
       run: >-
         test -d tools/oracle/cases/helpers/skill-archive &&
         grep -rlq 'path.*normaliz\|backslash\|drive' tools/oracle/cases/helpers/skill-archive &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/skill-archive
     - id: archive-manifest-parsing-oracle
       why: frontmatter parsing cases are missing, malformed or fail
       run: >-
         grep -rlq 'frontmatter\|manifest\|yaml' tools/oracle/cases/helpers/skill-archive &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/skill-archive
     - id: archive-digest-reproducibility
       why: digest format case is missing, does not assert "sha256:" prefix, or archive bytes diverge from LiteLLM
       run: >-
         grep -rlq 'sha256:' tools/oracle/cases/helpers/skill-archive &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/skill-archive
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/skill-archive
     - id: archive-zip-corpus
       why: the ZIP fuzz target or nonempty committed corpus is missing, or corpus replay fails
       run: >-

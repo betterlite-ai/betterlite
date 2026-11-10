@@ -13,8 +13,24 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-openai = { path = ".." }
+betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+uuid = { version = "1.28.0", default-features = false }
+
+[[bin]]
+name = "aleph_lines"
+path = "fuzz_targets/aleph_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aleph_reply"
+path = "fuzz_targets/aleph_reply.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "auth_record"
@@ -33,6 +49,13 @@ bench = false
 [[bin]]
 name = "cloudflare_decisions_reply"
 path = "fuzz_targets/cloudflare_decisions_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codestral_record"
+path = "fuzz_targets/codestral_record.rs"
 test = false
 doc = false
 bench = false
@@ -89,6 +112,20 @@ bench = false
 [[bin]]
 name = "responses_objects"
 path = "fuzz_targets/responses_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "infinity_embedding"
+path = "fuzz_targets/infinity_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_embeddings"
+path = "fuzz_targets/cohere_embeddings.rs"
 test = false
 doc = false
 bench = false
@@ -285,6 +322,20 @@ bench = false
 [[bin]]
 name = "mongodb_vector_store"
 path = "fuzz_targets/mongodb_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_workload_identity"
+path = "fuzz_targets/openai_workload_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huggingface_embedding_response"
+path = "fuzz_targets/huggingface_embedding_response.rs"
 test = false
 doc = false
 bench = false
