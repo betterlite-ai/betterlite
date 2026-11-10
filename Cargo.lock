@@ -1964,6 +1964,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
