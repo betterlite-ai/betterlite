@@ -26,7 +26,10 @@ fn value(source: &str) -> Json {
 #[case::infinite(r#"{"v": [1e400, -1e400]}"#, r#"{"v": [Infinity, -Infinity]}"#)]
 #[case::empty_containers(r#"{"v": {"a": [], "b": {}}}"#, r#"{"v": {"a": [], "b": {}}}"#)]
 fn json_dumps_matches_python(#[case] source: &str, #[case] expected: &str) {
-    assert_eq!(render(&value(source), Style::Json), expected);
+    assert_eq!(
+        render(&Json::Object(support::body(source)), Style::Json),
+        expected
+    );
 }
 
 #[rstest]
@@ -43,7 +46,10 @@ fn json_dumps_matches_python(#[case] source: &str, #[case] expected: &str) {
 #[case::infinite(r#"{"v": [1e400, -1e400]}"#, "{'v': [inf, -inf]}")]
 #[case::floats(r#"{"v": [1e16, 1e-5, 100.0]}"#, "{'v': [1e+16, 1e-05, 100.0]}")]
 fn repr_matches_python(#[case] source: &str, #[case] expected: &str) {
-    assert_eq!(render(&value(source), Style::Python), expected);
+    assert_eq!(
+        render(&Json::Object(support::body(source)), Style::Python),
+        expected
+    );
 }
 
 #[test]
