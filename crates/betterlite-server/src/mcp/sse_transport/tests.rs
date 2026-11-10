@@ -330,7 +330,7 @@ async fn rejects_an_undecodable_message_and_keeps_the_session(#[case] body: &str
 #[tokio::test]
 async fn takes_the_last_session_id_when_the_query_repeats_it() {
     let (_, router) = app();
-    let (_, uri) = open_stream(&router).await;
+    let (_stream, uri) = open_stream(&router).await;
     let id = session_id_of(&uri);
     let accepted_target = format!("/mcp/sse/messages?session_id=bad&session_id={id}");
     let accepted = send(
@@ -382,7 +382,7 @@ async fn matches_the_session_id_in_any_standard_uuid_spelling() {
 #[tokio::test]
 async fn rejects_a_body_over_the_request_limit() {
     let (_, router) = app();
-    let (_, uri) = open_stream(&router).await;
+    let (_stream, uri) = open_stream(&router).await;
     let body = "x".repeat(OVERSIZED_BYTES);
     let refused = send(&router, message_request(&uri, DEFAULT_OWNER, &body)).await;
     assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -392,7 +392,7 @@ async fn rejects_a_body_over_the_request_limit() {
 #[tokio::test]
 async fn reads_a_body_at_the_request_limit() {
     let (_, router) = app();
-    let (_, uri) = open_stream(&router).await;
+    let (_stream, uri) = open_stream(&router).await;
     let body = "x".repeat(super::MAX_REQUEST_BYTES);
     let refused = send(&router, message_request(&uri, DEFAULT_OWNER, &body)).await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
