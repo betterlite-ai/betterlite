@@ -13,7 +13,7 @@ use super::reply::{
     CodestralReply, CodestralUsage, PostCall, PostCallLogger, decode_codestral_reply,
     process_response,
 };
-use super::{MAX_RECORD_BYTES, RecordKind, RecordSource};
+use super::{MAX_RECORD_BYTES, RecordSource};
 use crate::base_helpers::provider_config;
 
 fn source() -> RecordSource {
@@ -536,14 +536,6 @@ fn chunk_rejects_a_body_that_is_not_utf8() {
 }
 
 #[rstest]
-#[case::reply(b'R', Some(RecordKind::Reply))]
-#[case::chunk(b'C', Some(RecordKind::Chunk))]
-#[case::unknown(b'X', None)]
-fn record_tags(#[case] tag: u8, #[case] expected: Option<RecordKind>) {
-    assert_eq!(RecordKind::from_tag(tag), expected);
-}
-
-#[rstest]
 fn replays_codestral_record_corpus(#[files("fuzz/corpus/codestral_record/*")] path: PathBuf) {
     let bytes = fs::read(&path).expect("a corpus file");
     let (&tag, body) = bytes.split_first().expect("a tag byte");
@@ -555,9 +547,10 @@ fn replays_codestral_record_corpus(#[files("fuzz/corpus/codestral_record/*")] pa
         id: Uuid::nil(),
         created: 0,
     };
-    let accepted = match RecordKind::from_tag(tag).expect("a known tag") {
-        RecordKind::Reply => decode_codestral_reply(200, body, &source).is_ok(),
-        RecordKind::Chunk => decode_codestral_chunk(body, &source).is_ok(),
+    let accepted = match tag {
+        b'R' => decode_codestral_reply(200, body, &source).is_ok(),
+        b'C' => decode_codestral_chunk(body, &source).is_ok(),
+        other => panic!("unknown corpus tag {other}"),
     };
     assert_eq!(accepted, name.starts_with("ok-"), "{name}");
 }
