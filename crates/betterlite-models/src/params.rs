@@ -1,1 +1,256 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "The parameter mapping carries caller-supplied passthrough values, which no typed model covers."
+)]
 
+pub mod capabilities;
+pub mod classification;
+mod tests;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use serde_with::skip_serializing_none;
+use thiserror::Error;
+
+use crate::params::capabilities::{CapabilityQuery, ParameterCapabilities};
+use crate::params::classification::{ParameterClass, classify_parameter};
+
+// The names the chat request models as typed fields; every one is a standard name LiteLLM validates.
+pub const TYPED_PARAMETER_NAMES: &[&str] = &[
+    "temperature",
+    "top_p",
+    "presence_penalty",
+    "frequency_penalty",
+    "n",
+    "max_tokens",
+    "max_completion_tokens",
+    "seed",
+    "stop",
+    "logprobs",
+    "top_logprobs",
+    "user",
+    "service_tier",
+    "stream",
+    "thinking",
+];
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallType {
+    #[default]
+    ChatCompletion,
+    Embeddings,
+    Transcription,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ChatParameters {
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub temperature: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub top_p: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub presence_penalty: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub frequency_penalty: Option<Decimal>,
+    #[serde(rename = "n")]
+    pub choice_count: Option<u64>,
+    pub max_tokens: Option<u64>,
+    pub max_completion_tokens: Option<u64>,
+    pub seed: Option<i64>,
+    pub stop: Option<Stop>,
+    pub logprobs: Option<bool>,
+    pub top_logprobs: Option<u64>,
+    pub user: Option<String>,
+    pub service_tier: Option<String>,
+    pub stream: Option<bool>,
+    pub thinking: Option<Thinking>,
+    // every other request name travels here and classification.rs decides what it is
+    #[serde(flatten, skip_serializing)]
+    pub passthrough: IndexMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Stop {
+    One(String),
+    Many(Vec<String>),
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Thinking {
+    #[serde(rename = "type")]
+    pub kind: ThinkingType,
+    pub budget_tokens: Option<i64>,
+    pub display: Option<ThinkingDisplay>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingType {
+    Enabled,
+    Adaptive,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingDisplay {
+    Summarized,
+    Omitted,
+    Updates,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ParameterPolicy {
+    pub drop_params: bool,
+    pub additional_drop_params: Vec<String>,
+    pub allowed_openai_params: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ParameterMapping {
+    pub standard: BTreeMap<String, Value>,
+    pub provider_fields: BTreeMap<String, Value>,
+    pub dropped_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ParameterRequest<'request> {
+    pub capabilities: CapabilityQuery<'request>,
+    pub parameters: &'request ChatParameters,
+    pub policy: &'request ParameterPolicy,
+}
+
+#[derive(Debug, Error)]
+pub enum ParameterError {
+    #[error("{model} does not support the parameters {names:?}")]
+    Unsupported { model: String, names: Vec<String> },
+    #[error("{name} is a control or content field and cannot pass through to a provider")]
+    ReservedParameter { name: String },
+    #[error("the supported parameters of {model} are unknown")]
+    CapabilitiesAbsent { model: String },
+    #[error("the request parameters could not be encoded: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the encoded request parameters are not an object")]
+    NotAnObject,
+}
+
+pub fn map_parameters(request: &ParameterRequest<'_>) -> Result<ParameterMapping, ParameterError> {
+    let model = request.capabilities.model.model;
+    let ParameterCapabilities::Listed(supported) =
+        capabilities::supported_parameters(&request.capabilities)
+    else {
+        return Err(ParameterError::CapabilitiesAbsent {
+            model: model.to_owned(),
+        });
+    };
+    let mut state = MappingState::new(&supported, request.policy);
+    for (name, value) in typed_parameters(request.parameters)? {
+        state.standard(name, value);
+    }
+    for (name, value) in &request.parameters.passthrough {
+        match classify_parameter(name, request.capabilities.call_type) {
+            ParameterClass::Reserved => {
+                return Err(ParameterError::ReservedParameter { name: name.clone() });
+            }
+            ParameterClass::Standard => state.standard(name.clone(), value.clone()),
+            ParameterClass::ProviderPassthrough => state.provider(name, value),
+        }
+    }
+    state.finish(model)
+}
+
+struct MappingState<'request> {
+    allowed: BTreeSet<&'request str>,
+    policy: &'request ParameterPolicy,
+    mapping: ParameterMapping,
+    unsupported: Vec<String>,
+}
+
+impl<'request> MappingState<'request> {
+    fn new(supported: &[&'static str], policy: &'request ParameterPolicy) -> Self {
+        let mut allowed: BTreeSet<&'request str> = supported.iter().copied().collect();
+        allowed.extend(policy.allowed_openai_params.iter().map(String::as_str));
+        Self {
+            allowed,
+            policy,
+            mapping: ParameterMapping::default(),
+            unsupported: Vec::new(),
+        }
+    }
+
+    fn standard(&mut self, name: String, value: Value) {
+        if value.is_null() {
+            return;
+        }
+        if self
+            .policy
+            .additional_drop_params
+            .iter()
+            .any(|dropped| dropped == &name)
+        {
+            self.mapping.dropped_fields.push(name);
+        } else if self.allowed.contains(name.as_str()) {
+            self.mapping.standard.insert(name, value);
+        } else if self.policy.drop_params {
+            self.mapping.dropped_fields.push(name);
+        } else {
+            self.unsupported.push(name);
+        }
+    }
+
+    fn provider(&mut self, name: &str, value: &Value) {
+        if value.is_null() {
+            return;
+        }
+        if self
+            .policy
+            .additional_drop_params
+            .iter()
+            .any(|dropped| dropped == name)
+        {
+            self.mapping.dropped_fields.push(name.to_owned());
+        } else {
+            self.mapping
+                .provider_fields
+                .insert(name.to_owned(), value.clone());
+        }
+    }
+
+    fn finish(self, model: &str) -> Result<ParameterMapping, ParameterError> {
+        if !self.unsupported.is_empty() {
+            return Err(ParameterError::Unsupported {
+                model: model.to_owned(),
+                names: self.unsupported,
+            });
+        }
+        let mut mapping = self.mapping;
+        mapping.dropped_fields.sort();
+        mapping.dropped_fields.dedup();
+        Ok(mapping)
+    }
+}
+
+fn typed_parameters(
+    parameters: &ChatParameters,
+) -> Result<BTreeMap<String, Value>, ParameterError> {
+    let encoded =
+        serde_json::to_value(parameters).map_err(|source| ParameterError::Encode { source })?;
+    let Value::Object(fields) = encoded else {
+        return Err(ParameterError::NotAnObject);
+    };
+    Ok(fields.into_iter().collect())
+}
