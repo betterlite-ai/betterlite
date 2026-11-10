@@ -1164,6 +1164,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
@@ -1183,6 +1184,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "mime",
+ "num-traits",
  "percent-encoding",
  "rstest",
  "secrecy",
@@ -2025,6 +2027,7 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "betterlite-tokenizer",
  "libfuzzer-sys",
  "serde_json",
  "uuid",
