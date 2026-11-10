@@ -185,6 +185,21 @@ fn additional_thinking_tokens() {
             json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": "4"}}}"#),
             None,
         ),
+        (
+            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": -3}}}"#),
+            Some(-3),
+        ),
+        (
+            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": 2.5}}}"#),
+            None,
+        ),
+        (
+            json(r#"{"usage": {"output_tokens_details": {"thinking_tokens": null}}}"#),
+            None,
+        ),
+        (json(r#"{"usage": {"output_tokens_details": {}}}"#), None),
+        (json(r#"{"usage": {"output_tokens_details": 5}}"#), None),
+        (json(r#"{"usage": {"output_tokens": 5}}"#), None),
         (json(r#"{"usage": 5}"#), None),
     ] {
         assert_eq!(thinking_tokens_from_fields(&field), expected);
