@@ -188,7 +188,18 @@ impl AzureOidcExchange {
             .map_err(|source| OidcExchangeError::Cache { source })?;
         Ok(match cached {
             Some(CacheValue::Credential(handle)) => Some(handle.0.token.clone()),
-            _ => None,
+            // any other variant would mean a writer other than this module filled the cache
+            Some(
+                CacheValue::Bytes(_)
+                | CacheValue::Null
+                | CacheValue::Boolean(_)
+                | CacheValue::Integer(_)
+                | CacheValue::Float(_)
+                | CacheValue::Text(_)
+                | CacheValue::Array(_)
+                | CacheValue::Object(_),
+            )
+            | None => None,
         })
     }
 

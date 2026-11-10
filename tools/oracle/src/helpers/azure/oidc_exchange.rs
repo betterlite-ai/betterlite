@@ -79,13 +79,6 @@ struct FixtureTransport {
 }
 
 impl FixtureTransport {
-    fn new(replies: Vec<Reply>) -> Self {
-        Self {
-            replies: Mutex::new(VecDeque::from(replies)),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-
     fn report(&self) -> Vec<RequestReport> {
         self.requests
             .lock()
@@ -127,14 +120,6 @@ impl Transport for FixtureTransport {
 
 struct FixtureClock {
     now: Mutex<f64>,
-}
-
-impl FixtureClock {
-    const fn new() -> Self {
-        Self {
-            now: Mutex::new(FIXTURE_NOW),
-        }
-    }
 }
 
 impl Clock for FixtureClock {
@@ -190,8 +175,13 @@ fn run_step(step: &Step) -> HelperResult {
     }
     .load("")
     .map_err(|error| failure("ConfigError", error.to_string()))?;
-    let transport = Arc::new(FixtureTransport::new(step.replies.clone()));
-    let clock = Arc::new(FixtureClock::new());
+    let transport = Arc::new(FixtureTransport {
+        replies: Mutex::new(VecDeque::from(step.replies.clone())),
+        requests: Mutex::new(Vec::new()),
+    });
+    let clock = Arc::new(FixtureClock {
+        now: Mutex::new(FIXTURE_NOW),
+    });
     let pool = Arc::clone(&transport);
     let ticking = Arc::clone(&clock);
     let exchange = AzureOidcExchange::new(
