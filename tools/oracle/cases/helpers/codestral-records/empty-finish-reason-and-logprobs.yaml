@@ -1,0 +1,9 @@
+kind: helper
+name: empty-finish-reason-and-logprobs
+call:
+  codestral_records:
+    steps:
+      - kind: chunk
+        line: '{"id":"c2","created":2,"choices":[{"index":0,"delta":{"content":""},"finish_reason":"","logprobs":{"text_offset":[0],"token_logprobs":[null],"tokens":["a"],"top_logprobs":[null]}}]}'
+env: {}
+compare: {ignore: []}

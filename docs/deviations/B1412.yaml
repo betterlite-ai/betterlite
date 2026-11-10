@@ -1,0 +1,5 @@
+task: B1412
+deviations:
+  - what: A reply body that is valid JSON but not the declared completion object returns TextCompletionCodestralError with status 422 instead of LiteLLM's uncaught AttributeError.
+    why: LiteLLM fails such a reply with an exception the completion call turns into a 500, and betterlite rejects the undeclared shape as an unparsable provider answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L191-L196

@@ -1,0 +1,31 @@
+kind: helper
+name: min-tokens-and-seed
+call:
+  codestral_records:
+    settings: {max_tokens: 4, min_tokens: 2, stream: true, top_p: 0.9}
+    steps:
+      - {kind: config}
+      - {kind: supported_params, model: codestral-latest}
+      - kind: map_params
+        model: codestral-latest
+        params:
+          - [min_tokens, 3]
+          - [seed, 11]
+          - [max_tokens, 5]
+          - [max_completion_tokens, 7]
+          - [suffix, "}"]
+          - [stop, ["END"]]
+          - [stream, true]
+          - [bogus, 1]
+      - kind: map_params
+        model: codestral-latest
+        params:
+          - [max_completion_tokens, 7]
+          - [max_tokens, 5]
+        optional_params: {n: 2}
+      - kind: map_params
+        model: codestral-latest
+        params:
+          - [stream, false]
+env: {}
+compare: {ignore: []}

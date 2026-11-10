@@ -1961,6 +1961,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -1997,6 +1998,7 @@ dependencies = [
  "betterlite-openai",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
