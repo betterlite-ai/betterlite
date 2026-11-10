@@ -143,7 +143,7 @@ class _ScriptedSleeps:
         if delay >= FLUSH_INTERVAL_SECONDS:
             await self._real(delay)
             return
-        self.recorded.append(delay)
+        self.recorded.append(float(delay))
 
 
 class _LoopProxy:
@@ -242,14 +242,15 @@ async def _run(input_value: Fields) -> Json:
     sleeps = _ScriptedSleeps()
     client = _Client(replies, during_record)
     clock = _ScriptedClock(_clock_values(input_value.get("clock")))
+    logger = NewRelicMetricsLogger(
+        newrelic_api_key=_string(input_value.get("api_key", SCRIPTED_KEY), "api_key"),
+        newrelic_region=_optional_string(input_value.get("region"), "region"),
+    )
     with (
         patch.object(time, "time", clock),
         patch.object(asyncio, "sleep", sleeps),
     ):
-        logger = NewRelicMetricsLogger(
-            newrelic_api_key=_string(input_value.get("api_key", SCRIPTED_KEY), "api_key"),
-            newrelic_region=_optional_string(input_value.get("region"), "region"),
-        )
+        logger.last_flush_time = clock()
         logger.flush_interval = FLUSH_INTERVAL_SECONDS
         logger.async_client = cast(AsyncHTTPHandler, client)
         client.attach(logger)
