@@ -129,6 +129,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cohere_chat_v1"
+path = "fuzz_targets/cohere_chat_v1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cohere_line"
 path = "fuzz_targets/cohere_line.rs"
 test = false
@@ -278,6 +285,13 @@ bench = false
 [[bin]]
 name = "mongodb_vector_store"
 path = "fuzz_targets/mongodb_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_workload_identity"
+path = "fuzz_targets/openai_workload_identity.rs"
 test = false
 doc = false
 bench = false

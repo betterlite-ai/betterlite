@@ -1,0 +1,16 @@
+kind: helper
+name: lemonade-model-metadata-seed-origin
+call:
+  lemonade_model_metadata:
+    operation: origin
+    queries:
+      - {}
+      - api_base: "http://explicit:9000/api/v1/"
+        api_key: explicit-key
+      - environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+        global_keys:
+          lemonade_key: global-key
+env: {}
+compare: {ignore: []}
