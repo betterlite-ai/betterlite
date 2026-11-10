@@ -73,7 +73,18 @@ fn converted(source: &str, model: Option<&str>) -> History {
 
 fn assert_parts(source: &str, model: Option<&str>, expected: &str) {
     let history = converted(source, model);
-    assert_eq!(encode(&history.contents), parse_json(expected));
+    let resolved = expected.replace("SIGNATURE", DUMMY_THOUGHT_SIGNATURE);
+    assert_eq!(encode(&history.contents), parse_json(&resolved));
+}
+
+fn assert_model_turn(assistant: &str, expected_parts: &str) {
+    assert_parts(
+        &format!(r#"[{{"role":"user","content":"q"}},{assistant}]"#),
+        None,
+        &format!(
+            r#"[{{"role":"user","parts":[{{"text":"q"}}]}},{{"role":"model","parts":{expected_parts}}}]"#
+        ),
+    );
 }
 
 fn error_for(messages: &[Message], model: Option<&str>) -> HistoryError {
@@ -213,11 +224,10 @@ fn forwards_tool_call_ids_only_for_newer_models(
     #[case] model: Option<&str>,
     #[case] expected: &str,
 ) {
-    let resolved = expected.replace("SIGNATURE", DUMMY_THOUGHT_SIGNATURE);
     assert_parts(
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c1","content":"res"}]"#,
         model,
-        &resolved,
+        expected,
     );
 }
 
@@ -225,15 +235,9 @@ fn forwards_tool_call_ids_only_for_newer_models(
 #[case::empty("", r#"[{"thought":true,"text":""}]"#)]
 #[case::text("why", r#"[{"thought":true,"text":"why"}]"#)]
 fn replays_reasoning_content_as_a_thought_part(#[case] reasoning: &str, #[case] expected: &str) {
-    let source = format!(
-        r#"[{{"role":"user","content":"q"}},{{"role":"assistant","content":null,"reasoning_content":"{reasoning}"}}]"#
-    );
-    let history = converted(&source, None);
-    assert_eq!(
-        encode(&history.contents),
-        parse_json(&format!(
-            r#"[{{"role":"user","parts":[{{"text":"q"}}]}},{{"role":"model","parts":{expected}}}]"#
-        ))
+    assert_model_turn(
+        &format!(r#"{{"role":"assistant","content":null,"reasoning_content":"{reasoning}"}}"#),
+        expected,
     );
 }
 
@@ -395,15 +399,11 @@ fn skips_a_generated_image_whose_image_url_is_a_string() {
     r#"[{"toolCall":{"toolType":"","id":"s1","args":null}},{"toolResponse":{"id":"s1","response":{},"toolType":""}}]"#
 )]
 fn replays_server_side_tool_invocations(#[case] invocation: &str, #[case] expected: &str) {
-    let source = format!(
-        r#"[{{"role":"user","content":"q"}},{{"role":"assistant","content":"a","provider_specific_fields":{{"server_side_tool_invocations":[{invocation}]}}}}]"#
-    );
-    let history = converted(&source, None);
-    assert_eq!(
-        encode(&history.contents),
-        parse_json(&format!(
-            r#"[{{"role":"user","parts":[{{"text":"q"}}]}},{{"role":"model","parts":[{{"text":"a"}},{expected}]}}]"#
-        ))
+    assert_model_turn(
+        &format!(
+            r#"{{"role":"assistant","content":"a","provider_specific_fields":{{"server_side_tool_invocations":[{invocation}]}}}}"#
+        ),
+        &format!(r#"[{{"text":"a"}},{expected}]"#),
     );
 }
 
@@ -486,11 +486,10 @@ fn does_not_repeat_a_tool_call_a_thinking_block_already_carries(
     #[case] model: Option<&str>,
     #[case] expected: &str,
 ) {
-    let resolved = expected.replace("SIGNATURE", DUMMY_THOUGHT_SIGNATURE);
     assert_parts(
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":"calling","thinking_blocks":[{"type":"thinking","thinking":"{\"functionCall\": {\"name\": \"f\", \"args\": {\"a\": 1}}}","signature":"sig"}],"tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}]}]"#,
         model,
-        &resolved,
+        expected,
     );
 }
 

@@ -83,7 +83,7 @@ struct Walker<'walk, Source> {
     index: usize,
 }
 
-impl<Source> Walker<'_, Source>
+impl<'walk, Source> Walker<'walk, Source>
 where
     Source: RemoteMediaFetcher + Sync,
 {
@@ -109,14 +109,20 @@ where
         Ok(())
     }
 
+    fn take_run(&mut self, roles: &[&str]) -> &'walk [Message] {
+        let rest = self.messages.get(self.index..).unwrap_or_default();
+        let length = rest
+            .iter()
+            .take_while(|current| roles.contains(&current.role.as_str()))
+            .count();
+        self.index = self.index.saturating_add(length);
+        rest.get(..length).unwrap_or_default()
+    }
+
     fn user_turn(&mut self) -> Result<(), HistoryError> {
         let mut parts = Vec::new();
-        while let Some(current) = self.messages.get(self.index) {
-            if !matches!(current.role.as_str(), USER | SYSTEM) {
-                break;
-            }
+        for current in self.take_run(&[USER, SYSTEM]) {
             append_user_parts(current, self.model, &mut parts)?;
-            self.index = self.index.saturating_add(1);
         }
         if parts.is_empty() {
             return Ok(());
@@ -135,12 +141,8 @@ where
 
     fn assistant_turn(&mut self) -> Result<(), HistoryError> {
         let mut parts = Vec::new();
-        while let Some(current) = self.messages.get(self.index) {
-            if current.role != ASSISTANT {
-                break;
-            }
+        for current in self.take_run(&[ASSISTANT]) {
             append_assistant_parts(current, self.options, &mut parts, &mut self.last_tool_calls)?;
-            self.index = self.index.saturating_add(1);
         }
         if !parts.is_empty() {
             self.history.contents.push(Content {

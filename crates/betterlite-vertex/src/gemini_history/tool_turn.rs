@@ -126,11 +126,7 @@ fn call_part(invocation: &Object) -> Object {
         ID => invocation.get(ID).cloned().unwrap_or(Json::Null),
         ARGS => invocation.get(ARGS).cloned().unwrap_or(Json::Null),
     );
-    let mut part = object!("toolCall" => Json::Object(call));
-    if let Some(signature) = invocation.get(THOUGHT_SIGNATURE) {
-        part.insert("thoughtSignature".to_owned(), signature.clone());
-    }
-    part
+    signed_part("toolCall", call, invocation.get(THOUGHT_SIGNATURE))
 }
 
 fn response_part(invocation: &Object) -> Option<Object> {
@@ -145,9 +141,17 @@ fn response_part(invocation: &Object) -> Option<Object> {
     {
         fields.insert("toolType".to_owned(), tool_type.clone());
     }
-    let mut part = object!("toolResponse" => Json::Object(fields));
-    if let Some(signature) = invocation.get(RESPONSE_THOUGHT_SIGNATURE) {
+    Some(signed_part(
+        "toolResponse",
+        fields,
+        invocation.get(RESPONSE_THOUGHT_SIGNATURE),
+    ))
+}
+
+fn signed_part(key: &str, body: Object, carried: Option<&Json>) -> Object {
+    let mut part = object!(key => Json::Object(body));
+    if let Some(signature) = carried {
         part.insert("thoughtSignature".to_owned(), signature.clone());
     }
-    Some(part)
+    part
 }

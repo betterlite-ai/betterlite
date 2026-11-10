@@ -56,19 +56,18 @@ pub fn append_user_parts(
     model: Option<&str>,
     parts: &mut Vec<Object>,
 ) -> Result<(), HistoryError> {
-    match &message.content {
-        None => Ok(()),
+    let items = match &message.content {
+        None => return Ok(()),
         Some(Content::Text(text)) => {
             parts.push(object!(TEXT => Json::Text(text.clone())));
-            Ok(())
+            return Ok(());
         }
-        Some(Content::Parts(items)) => {
-            for item in items {
-                append_user_part(item, model, parts)?;
-            }
-            Ok(())
-        }
+        Some(Content::Parts(items)) => items,
+    };
+    for item in items {
+        append_user_part(item, model, parts)?;
     }
+    Ok(())
 }
 
 fn append_user_part(
@@ -93,18 +92,31 @@ fn append_user_part(
     }
 }
 
+fn push_url(
+    parts: &mut Vec<Object>,
+    url: &str,
+    fields: &Object,
+    video: Option<&VideoMetadata>,
+    target: (Option<&str>, MediaField),
+) -> Result<(), HistoryError> {
+    let resolution = text_of(fields, DETAIL).as_deref().and_then(convert_detail);
+    let (model, field) = target;
+    let request = media_request!(url, &hints_of(fields), resolution, video, model, field);
+    push_media(parts, &request)
+}
+
 fn append_image(
     fields: &Object,
     model: Option<&str>,
     parts: &mut Vec<Object>,
 ) -> Result<(), HistoryError> {
-    let (url, hints, resolution) = match fields.get(IMAGE_URL) {
-        Some(Json::Text(url)) => (url.clone(), MimeHints::default(), None),
+    let plain = Object::default();
+    let (url, image) = match fields.get(IMAGE_URL) {
+        Some(Json::Text(url)) => (url.clone(), &plain),
         Some(Json::Object(image)) => {
             let url = text_of(image, URL)
                 .ok_or_else(|| HistoryError::Invalid("image_url.url is missing".to_owned()))?;
-            let resolution = text_of(image, DETAIL).as_deref().and_then(convert_detail);
-            (url, hints_of(image), resolution)
+            (url, image)
         }
         None | Some(Json::Null) => {
             return Err(HistoryError::Invalid("image_url is missing".to_owned()));
@@ -115,8 +127,7 @@ fn append_image(
             ));
         }
     };
-    let request = media_request!(&url, &hints, resolution, None, model, MediaField::ImageUrl);
-    push_media(parts, &request)
+    push_url(parts, &url, image, None, (model, MediaField::ImageUrl))
 }
 
 fn append_audio(
@@ -136,13 +147,8 @@ fn append_audio(
         format!("audio/{format}")
     };
     let url = format!("data:{media_type};base64,{data}");
-    let hints = MimeHints {
-        format: Some(media_type),
-        mime_type: None,
-        content_type: None,
-    };
-    let request = media_request!(&url, &hints, None, None, model, MediaField::ImageUrl);
-    push_media(parts, &request)
+    let hints = object!(FORMAT => Json::Text(media_type));
+    push_url(parts, &url, &hints, None, (model, MediaField::ImageUrl))
 }
 
 fn append_file(
@@ -156,18 +162,8 @@ fn append_file(
     let url = text_of(file, FILE_ID)
         .or_else(|| text_of(file, FILE_DATA))
         .ok_or_else(|| HistoryError::Invalid("file needs a file_id or file_data".to_owned()))?;
-    let hints = hints_of(file);
-    let resolution = text_of(file, DETAIL).as_deref().and_then(convert_detail);
-    let video_metadata = decode_video_metadata(file)?;
-    let request = media_request!(
-        &url,
-        &hints,
-        resolution,
-        video_metadata.as_ref(),
-        model,
-        MediaField::File
-    );
-    push_media(parts, &request)
+    let video = decode_video_metadata(file)?;
+    push_url(parts, &url, file, video.as_ref(), (model, MediaField::File))
 }
 
 fn decode_video_metadata(fields: &Object) -> Result<Option<VideoMetadata>, HistoryError> {
@@ -271,10 +267,7 @@ fn append_images(
         let Some(url) = text_of(image, URL).filter(|url| !url.is_empty()) else {
             continue;
         };
-        let hints = hints_of(image);
-        let resolution = text_of(image, DETAIL).as_deref().and_then(convert_detail);
-        let request = media_request!(&url, &hints, resolution, None, model, MediaField::ImageUrl);
-        push_media(parts, &request)?;
+        push_url(parts, &url, image, None, (model, MediaField::ImageUrl))?;
     }
     Ok(())
 }
