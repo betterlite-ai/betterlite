@@ -19,6 +19,17 @@ deviations:
     cannot hold with an error that names the field.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms-types/src/formats/ocr.rs#L62-L95
 - what: >-
+    A DeepSeek page index decodes as a JSON integer, and an absent or null index is 0. LiteLLM
+    decodes the same field through LaxI64, which also accepts a numeric string, an integral float
+    and a boolean.
+  why: >-
+    The two existing lax decoders sit in private modules of other provider tasks that this task's
+    scope cannot open (crates/betterlite-ocr/src/cohere_ocr/lax.rs and reducto_ocr/numbers.rs), and
+    a third hand-written copy only duplicates them; the shared OCRPage.index already decodes
+    strictly for every other provider, and docs/compatibility.md turns a wrong-typed value into an
+    error that names the field.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms-types/src/formats/ocr.rs#L85-L95
+- what: >-
     A Vertex OCR call with no project in vertex_project, VERTEXAI_PROJECT, the settings or the
     access token fails with InvalidConfiguration naming vertex_project. LiteLLM asks its credential
     provider for the project and returns whichever authentication error that provider raises.
