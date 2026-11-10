@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-text-embeddings-title-preserved
+call:
+  vertex_text_embeddings:
+    requests:
+      - model: text-embedding-005
+        input: hello
+        optional: {task_type: CLASSIFICATION, title: doc}
+      - model: bge-small
+        input: hello
+        optional: {task_type: SEMANTIC_SIMILARITY, title: doc}
+      - model: text-embedding-005
+        input: hello
+        optional: {title: null}
+compare: {ignore: []}
+env: {}
