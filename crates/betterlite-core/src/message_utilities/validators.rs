@@ -85,24 +85,16 @@ pub enum StopSequences {
     Many(Vec<String>),
 }
 
-pub fn convert_to_dict(message: &Json) -> Result<&IndexMap<String, Json>, ValidationError> {
-    match json::object(message) {
-        Some(fields) => Ok(fields),
-        None => Err(ValidationError::NotAnObject),
-    }
-}
-
 pub fn convert_list_message_to_dict(messages: &[Json]) -> Result<Vec<Json>, ValidationError> {
     let mut converted = Vec::with_capacity(messages.len());
     for message in messages {
-        convert_to_dict(message)?;
         converted.push(cleanup_none_field_in_message(message)?);
     }
     Ok(converted)
 }
 
 pub fn cleanup_none_field_in_message(message: &Json) -> Result<Json, ValidationError> {
-    let fields = convert_to_dict(message)?;
+    let fields = json::object(message).ok_or(ValidationError::NotAnObject)?;
     let cleaned: IndexMap<String, Json> = fields
         .iter()
         .filter(|(_key, value)| !matches!(value, Json::Null))
@@ -114,15 +106,16 @@ pub fn cleanup_none_field_in_message(message: &Json) -> Result<Json, ValidationE
 pub fn fix_openai_messages(messages: &[Json]) -> Result<Vec<Json>, ValidationError> {
     let mut new_messages = Vec::with_capacity(messages.len());
     for message in messages {
-        let mut fields = convert_to_dict(message)?.clone();
+        let found = json::object(message).ok_or(ValidationError::NotAnObject)?;
+        let mut fields = found.clone();
         if !fields.get("role").is_some_and(json::counts_as_present) {
             fields.insert(String::from("role"), Json::Text(String::from("assistant")));
         }
-        if let Some(found) = fields
+        if let Some(calls_value) = fields
             .get("tool_calls")
             .filter(|value| json::counts_as_present(value))
         {
-            let calls = tool_calls_as_list(found)?;
+            let calls = tool_calls_as_list(calls_value)?;
             fields.insert(String::from("tool_calls"), Json::List(calls));
         }
         new_messages.push(cleanup_none_field_in_message(&Json::Object(fields))?);

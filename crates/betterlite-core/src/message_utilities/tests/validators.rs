@@ -3,7 +3,7 @@ use rstest::rstest;
 use super::support;
 use crate::message_utilities::validators::{
     StopSequences, ValidationError, cleanup_none_field_in_message, convert_list_message_to_dict,
-    convert_to_dict, fix_openai_messages, fix_thinking_param, validate_and_fix_openai_tools,
+    fix_openai_messages, fix_thinking_param, validate_and_fix_openai_tools,
     validate_openai_user_messages, validate_optional_params, validate_tool_choice,
 };
 
@@ -104,9 +104,9 @@ async fn validate_and_fix_messages_rejects_a_non_object_message() {
 }
 
 #[tokio::test]
-async fn convert_to_dict_rejects_a_non_object() {
+async fn convert_list_messages_rejects_a_non_object() {
     assert_eq!(
-        convert_to_dict(&support::value("\"hi\"")),
+        convert_list_message_to_dict(&support::values(r#"["hi"]"#)),
         Err(ValidationError::NotAnObject)
     );
     assert_eq!(
