@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_load_configured","call":{"b8191":{"operation":"allowlist_load","settings":{"mcp_allowed_clients":[{"alias":"app one","value":"client-1"},{"alias":"app two","value":"client-2"}],"mcp_client_id_header":"X-Client-Id","litellm_jwtauth":{"mcp_client_id_jwt_field":"azp"}}}},"env":{},"compare":{"ignore":[]}}

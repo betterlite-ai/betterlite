@@ -114,7 +114,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-passthrough-logging)" &&
         grep -rlE '^[[:space:]]+b3634:' tools/oracle/cases/helpers/anthropic-passthrough-logging &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/anthropic-passthrough-logging
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/anthropic-passthrough-logging
 oracle_cases:
   - tools/oracle/cases/helpers/anthropic-passthrough-logging/batch-create-200-collection-route.yaml
   - tools/oracle/cases/helpers/anthropic-passthrough-logging/batch-route-400-takes-normal-path.yaml

@@ -1,0 +1,5 @@
+task: B710
+deviations:
+  - what: DatabaseURLSettings takes its DATABASE_* values through the config loader, which matches the canonical upper-case and all-lower-case spellings only, so a mixed-case name such as Database_Url is not read. The CLI's own DATABASE_* reads use exact names like LiteLLM's os.getenv calls and are unaffected.
+    why: betterlite resolves the process environment through the config loader's exact-name lookup and does not enumerate the environment outside the config crate; the helm chart and LiteLLM's documentation spell every DATABASE_* name in upper case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L320

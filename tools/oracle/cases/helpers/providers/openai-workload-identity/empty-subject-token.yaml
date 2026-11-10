@@ -1,0 +1,19 @@
+kind: helper
+name: openai-workload-identity-empty-subject-token
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        blank: "   \n\t"
+        empty: ""
+        crlf: "\r\n"
+        filled: "subject"
+      replies:
+        - {status: 200, body: '{"access_token":"after-blank","expires_in":3600}'}
+      steps:
+        - {op: token, identity: {name: blank}}
+        - {op: token, identity: {name: empty}}
+        - {op: token, identity: {name: crlf}}
+        - {op: token, identity: {name: filled}}

@@ -171,7 +171,7 @@ checks:
       why: the registered collector listing differs from LiteLLM's for some settings
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-exporter)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/prometheus-exporter
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/prometheus-exporter
 
 oracle_cases:
   - tools/oracle/cases/helpers/prometheus-exporter/defaults.yaml
