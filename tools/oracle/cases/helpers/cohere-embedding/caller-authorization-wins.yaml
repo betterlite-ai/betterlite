@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-caller-authorization-wins
+call:
+  cohere_embedding: {function: request, model: embed-english-v3.0, options: {}, api_key: sk-test, headers: {Authorization: Bearer caller}, inputs: [[hello]]}
+compare: {ignore: []}
+env: {}
