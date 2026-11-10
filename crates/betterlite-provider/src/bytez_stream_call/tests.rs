@@ -150,6 +150,7 @@ impl BytezStreamTransport for FakeTransport {
         }
         let receiver = self.receiver.lock().unwrap().take().expect("receiver");
         let guard = DropFlag(Arc::clone(&self.dropped));
+        // unfold panics when polled again after it returned None, so a second read of a closed body fails the test
         let chunks = stream::unfold((receiver, guard), |(mut inbox, flag)| async move {
             inbox.recv().await.map(|item| (item, (inbox, flag)))
         });
