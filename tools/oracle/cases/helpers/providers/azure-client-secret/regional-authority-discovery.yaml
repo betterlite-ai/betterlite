@@ -1,0 +1,41 @@
+kind: helper
+name: regional-authority-discovery
+call:
+  azure_client_secret:
+    action: regional_authority_discovery
+    steps:
+      - environment:
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: format=text, status: 200, body: "  westus2 \n"}
+          - {url_contains: api-version=2021-02-01, status: 200, body: '{"location":"westus2"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment: {}
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: '169.254.169.254', status: 500, body: '', error: connection reset}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: format=text, status: 500, body: westus2}
+          - {url_contains: api-version=2021-02-01, status: 500, body: '{"location":"westus2"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+env: {}
+compare: {ignore: []}

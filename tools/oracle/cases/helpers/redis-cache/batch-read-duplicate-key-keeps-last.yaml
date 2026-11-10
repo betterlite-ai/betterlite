@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-batch-read-duplicate-key-keeps-last
+call:
+  b5640:
+    function: batch_read
+    namespace: ns
+    keys: [alpha, alpha]
+    replies: ["1", "2"]
+env: {}
+compare: {ignore: []}

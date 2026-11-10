@@ -1,0 +1,12 @@
+kind: helper
+name: bytez-record-usage-rejects-empty-content
+call:
+  bytez_record:
+    function: usage
+    messages:
+      - role: user
+        content: "ok"
+      - role: user
+        content: ""
+compare: {ignore: []}
+env: {}
