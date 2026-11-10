@@ -281,6 +281,7 @@ fn positive_int_values() {
         (r#""300.0""#, None),
         (r#""1_""#, None),
         (r#""_1""#, None),
+        ("\"\u{664}\u{662}\"", None),
     ];
     for (source, expected) in values {
         assert_eq!(positive_int(&json(source)), *expected, "{source}");
