@@ -60,36 +60,31 @@ impl Helper for Op {
             },
             mantle: mantle_endpoint(input, provider, api_key.as_ref())?,
         };
-        let request = ProviderDefaultsRequest {
-            provider,
-            model: input.model.clone(),
-            api_base: input.api_base.clone(),
-            api_key,
-        };
-        let registry = JSONProviderRegistry::load();
-        let resolved = resolve_provider_defaults(request, &input.environment, &registry, &policies)
-            .map_err(|error| {
-                let class = match &error {
-                    ProviderDefaultsError::UnknownProvider { .. } => "UnknownProvider",
-                    ProviderDefaultsError::MissingMantleEndpoint => "MissingMantleEndpoint",
-                    ProviderDefaultsError::InvalidApiBase { .. } => "ValueError",
-                };
-                Box::new(HelperError {
-                    class: class.to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
-        Ok(json!({
-            "provider": resolved.provider.slug(),
-            "model": resolved.model,
-            "api_base": resolved.api_base,
-            "api_key": resolved.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-        }))
+        resolve(input, provider, api_key, &policies)
     }
+}
+
+fn resolve(
+    input: &Input,
+    provider: DefaultsProvider,
+    api_key: Option<SecretString>,
+    policies: &ProviderPolicies,
+) -> HelperResult {
+    let request = ProviderDefaultsRequest {
+        provider,
+        model: input.model.clone(),
+        api_base: input.api_base.clone(),
+        api_key,
+    };
+    let registry = JSONProviderRegistry::load();
+    let resolved = resolve_provider_defaults(request, &input.environment, &registry, policies)
+        .map_err(|error| Box::new(resolver_error(&error)))?;
+    Ok(json!({
+        "provider": resolved.provider.slug(),
+        "model": resolved.model,
+        "api_base": resolved.api_base,
+        "api_key": resolved.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+    }))
 }
 
 fn provider_from_slug(slug: &str) -> Result<DefaultsProvider, Box<HelperError>> {
@@ -99,14 +94,10 @@ fn provider_from_slug(slug: &str) -> Result<DefaultsProvider, Box<HelperError>> 
     slug.parse::<ProviderId>()
         .map(DefaultsProvider::Known)
         .map_err(|error| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: format!("unknown provider slug: {error}"),
-            })
+            Box::new(helper_error(
+                "InvalidInput",
+                format!("unknown provider slug: {error}"),
+            ))
         })
 }
 
@@ -118,44 +109,38 @@ fn mantle_endpoint(
     if provider != DefaultsProvider::Known(ProviderId::BedrockMantle) {
         return Ok(None);
     }
-    let globals = MantleGlobals {
-        mantle_api_key: input
-            .environment
-            .get("BEDROCK_MANTLE_API_KEY")
-            .cloned()
-            .map(SecretString::from),
-        mantle_api_base: input.environment.get("BEDROCK_MANTLE_API_BASE").cloned(),
-        mantle_region: input.environment.get("BEDROCK_MANTLE_REGION").cloned(),
-        aws_bearer_token: input
-            .environment
-            .get("AWS_BEARER_TOKEN_BEDROCK")
-            .cloned()
-            .map(SecretString::from),
-        aws_region_name: input.environment.get("AWS_REGION_NAME").cloned(),
-        aws_region: input.environment.get("AWS_REGION").cloned(),
-    };
     let params = ChatEndpointParams {
         model: Some(&input.model),
         api_base: input.api_base.as_deref(),
         api_key,
         aws_region_name: None,
     };
-    let endpoint = chat_endpoint_inputs(params, &globals, &model_cost(input)).map_err(|error| {
-        Box::new(HelperError {
-            class: "MantleInputError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
+    let endpoint = chat_endpoint_inputs(params, &mantle_globals(input), &model_cost(input))
+        .map_err(|error| Box::new(helper_error("MantleInputError", error.to_string())))?;
     let (_, base_model) = split_region_prefix(&input.model);
     Ok(Some(MantleEndpoint {
         api_base: endpoint.api_base,
         api_key: endpoint.api_key,
         base_model: base_model.to_owned(),
     }))
+}
+
+fn mantle_globals(input: &Input) -> MantleGlobals {
+    let environment = &input.environment;
+    MantleGlobals {
+        mantle_api_key: environment
+            .get("BEDROCK_MANTLE_API_KEY")
+            .cloned()
+            .map(SecretString::from),
+        mantle_api_base: environment.get("BEDROCK_MANTLE_API_BASE").cloned(),
+        mantle_region: environment.get("BEDROCK_MANTLE_REGION").cloned(),
+        aws_bearer_token: environment
+            .get("AWS_BEARER_TOKEN_BEDROCK")
+            .cloned()
+            .map(SecretString::from),
+        aws_region_name: environment.get("AWS_REGION_NAME").cloned(),
+        aws_region: environment.get("AWS_REGION").cloned(),
+    }
 }
 
 fn model_cost(input: &Input) -> ParamMap {
@@ -172,4 +157,24 @@ fn model_cost(input: &Input) -> ParamMap {
         );
     }
     model_cost
+}
+
+fn resolver_error(error: &ProviderDefaultsError) -> HelperError {
+    let class = match error {
+        ProviderDefaultsError::UnknownProvider { .. } => "UnknownProvider",
+        ProviderDefaultsError::MissingMantleEndpoint => "MissingMantleEndpoint",
+        ProviderDefaultsError::InvalidApiBase { .. } => "ValueError",
+    };
+    helper_error(class, error.to_string())
+}
+
+fn helper_error(class: &str, message: String) -> HelperError {
+    HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    }
 }
