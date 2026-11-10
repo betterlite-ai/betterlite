@@ -1,25 +1,20 @@
-use std::collections::BTreeMap;
-use std::future::Future;
-
-use betterlite_config::sections::bedrock_settings::AwsSettings;
-use secrecy::SecretString;
-use serde_json::value::RawValue;
-
+use super::error::SigningError;
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
 use crate::aws_settings::sources::Credentials;
 use crate::aws_settings::{AuthParams, pop_aws_auth_params};
 use crate::credentials::error::CredentialError;
-
-use super::error::SigningError;
-
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use secrecy::SecretString;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
+use std::future::Future;
 #[derive(Debug)]
 pub struct RequestTarget {
     pub region: String,
     pub endpoint: Option<String>,
     pub credentials: Option<Credentials>,
 }
-
 #[derive(Debug)]
 pub struct TargetRequest<'source> {
     pub optional_params: &'source mut BTreeMap<String, Box<RawValue>>,
@@ -27,14 +22,12 @@ pub struct TargetRequest<'source> {
     pub region_inputs: RegionInputs<'source>,
     pub bearer_token: Option<&'source SecretString>,
 }
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RegionInputs<'source> {
     pub environment_region_name: Option<&'source str>,
     pub environment_region: Option<&'source str>,
     pub session_region: Option<&'source str>,
 }
-
 pub async fn request_target<F, Fut>(
     request: TargetRequest<'_>,
     resolve_credentials: F,
@@ -68,7 +61,6 @@ where
         credentials: Some(credentials),
     })
 }
-
 pub(crate) fn resolve_region(
     parameters: &BTreeMap<String, Box<RawValue>>,
     model: Option<&str>,
@@ -85,7 +77,6 @@ pub(crate) fn resolve_region(
     })
     .map_err(SigningError::Endpoint)
 }
-
 pub(crate) fn auth_settings(auth: AuthParams, region: &str) -> AwsSettings {
     AwsSettings {
         access_key_id: auth.aws_access_key_id,
@@ -104,7 +95,10 @@ pub(crate) fn auth_settings(auth: AuthParams, region: &str) -> AwsSettings {
         bearer_token: None,
     }
 }
-
+fn parse_string(raw: &RawValue, field: &'static str) -> Result<Option<String>, SigningError> {
+    serde_json::from_str::<Option<String>>(raw.get())
+        .map_err(|source| SigningError::Endpoint(AwsEndpointError::Field { field, source }))
+}
 fn read_string(
     parameters: &BTreeMap<String, Box<RawValue>>,
     field: &'static str,
@@ -112,19 +106,13 @@ fn read_string(
     let Some(raw) = parameters.get(field) else {
         return Ok(None);
     };
-    serde_json::from_str::<Option<String>>(raw.get())
-        .map_err(|source| SigningError::Endpoint(AwsEndpointError::Field { field, source }))
+    parse_string(raw, field)
 }
-
 fn take_string(
     parameters: &mut BTreeMap<String, Box<RawValue>>,
     field: &'static str,
 ) -> Result<Option<String>, SigningError> {
-    parameters.remove(field).map_or_else(
-        || Ok(None),
-        |raw| {
-            serde_json::from_str::<Option<String>>(raw.get())
-                .map_err(|source| SigningError::Endpoint(AwsEndpointError::Field { field, source }))
-        },
-    )
+    parameters
+        .remove(field)
+        .map_or_else(|| Ok(None), |raw| parse_string(&raw, field))
 }

@@ -1,23 +1,3 @@
-pub const SIGNATURE_HEADERS: [&str; 10] = [
-    "host",
-    "content-type",
-    "date",
-    "x-amz-date",
-    "x-amz-security-token",
-    "x-amz-content-sha256",
-    "x-amz-algorithm",
-    "x-amz-credential",
-    "x-amz-signedheaders",
-    "x-amz-signature",
-];
-
-pub const COMPUTED_HEADERS: [&str; 4] = [
-    "authorization",
-    "x-amz-date",
-    "x-amz-security-token",
-    "date",
-];
-
 #[must_use]
 pub fn filter_for_signature(headers: &[(String, Option<String>)]) -> Vec<(String, String)> {
     headers
@@ -25,41 +5,56 @@ pub fn filter_for_signature(headers: &[(String, Option<String>)]) -> Vec<(String
         .filter_map(|(name, value)| {
             let present = value.as_ref()?;
             let lower = name.to_ascii_lowercase();
-            let signed = SIGNATURE_HEADERS.contains(&lower.as_str())
-                || lower.starts_with("x-amz-")
+            let signed = matches!(
+                lower.as_str(),
+                "host"
+                    | "content-type"
+                    | "date"
+                    | "x-amz-date"
+                    | "x-amz-security-token"
+                    | "x-amz-content-sha256"
+                    | "x-amz-algorithm"
+                    | "x-amz-credential"
+                    | "x-amz-signedheaders"
+                    | "x-amz-signature"
+            ) || lower.starts_with("x-amz-")
                 || lower.starts_with("x-amzn-");
             signed.then_some((name.clone(), present.clone()))
         })
         .collect()
 }
-
-pub fn reattach(original: &[(String, Option<String>)], signed: &mut Vec<(String, String)>) {
+pub fn reattach(
+    original: &[(String, Option<String>)],
+    signed: &mut Vec<(String, String)>,
+    has_token: bool,
+) {
     for (name, value) in original {
         let Some(present) = value else {
             continue;
         };
-        let computed = COMPUTED_HEADERS
-            .iter()
-            .any(|header| name.eq_ignore_ascii_case(header));
-        if computed {
+        if computed(name, has_token) {
             continue;
         }
         signed.push((name.clone(), present.clone()));
     }
 }
-
+// botocore only replaces a stale x-amz-security-token when the credentials carry one
+const fn computed(name: &str, has_token: bool) -> bool {
+    if name.eq_ignore_ascii_case("authorization")
+        || name.eq_ignore_ascii_case("x-amz-date")
+        || name.eq_ignore_ascii_case("date")
+    {
+        return true;
+    }
+    has_token && name.eq_ignore_ascii_case("x-amz-security-token")
+}
 #[must_use]
 pub fn resolved(headers: &[(String, Option<String>)]) -> Vec<(String, String)> {
     headers
         .iter()
-        .filter_map(|(name, value)| {
-            value
-                .as_ref()
-                .map(|present| (name.clone(), present.clone()))
-        })
+        .filter_map(|(name, value)| Some((name.clone(), value.as_ref()?.clone())))
         .collect()
 }
-
 #[must_use]
 pub fn find_value<'source>(
     headers: &'source [(String, Option<String>)],
@@ -70,14 +65,12 @@ pub fn find_value<'source>(
         .filter(|(header, _)| header.eq_ignore_ascii_case(name))
         .find_map(|(_, value)| value.as_deref())
 }
-
 pub fn set_exact(headers: &mut Vec<(String, Option<String>)>, name: &str, value: String) {
     match headers.iter_mut().find(|(existing, _)| existing == name) {
         Some((_, stored)) => *stored = Some(value),
         None => headers.push((name.to_owned(), Some(value))),
     }
 }
-
 pub fn replace(headers: &mut Vec<(String, String)>, name: String, value: String) {
     match headers
         .iter_mut()
@@ -87,19 +80,16 @@ pub fn replace(headers: &mut Vec<(String, String)>, name: String, value: String)
         None => headers.push((name, value)),
     }
 }
-
 #[must_use]
-pub fn without_computed(headers: Vec<(String, String)>) -> Vec<(String, String)> {
-    headers
-        .into_iter()
-        .filter(|(name, _)| {
-            !COMPUTED_HEADERS
-                .iter()
-                .any(|header| name.eq_ignore_ascii_case(header))
-        })
-        .collect()
+pub fn without_computed(headers: Vec<(String, String)>, has_token: bool) -> Vec<(String, String)> {
+    let mut kept = Vec::with_capacity(headers.len());
+    for (name, value) in headers {
+        if !computed(&name, has_token) {
+            kept.push((name, value));
+        }
+    }
+    kept
 }
-
 #[must_use]
 pub fn merge_computed(
     mut headers: Vec<(String, String)>,
@@ -110,7 +100,6 @@ pub fn merge_computed(
     }
     headers
 }
-
 #[must_use]
 pub fn prepare(
     headers: Vec<(String, String)>,

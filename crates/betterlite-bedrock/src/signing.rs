@@ -9,5 +9,4 @@ pub mod request;
 pub mod service;
 pub mod sigv4;
 pub mod target;
-
 mod tests;

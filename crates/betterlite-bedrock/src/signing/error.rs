@@ -1,11 +1,9 @@
-use aws_sigv4::http_request::SigningError as SigV4Error;
-use aws_sigv4::sign::v4::signing_params::BuildError;
-use tokio::task::JoinError;
-
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_settings::AuthError;
 use crate::credentials::error::CredentialError;
-
+use aws_sigv4::http_request::SigningError as SigV4Error;
+use aws_sigv4::sign::v4::signing_params::BuildError;
+use tokio::task::JoinError;
 #[derive(Debug, thiserror::Error)]
 pub enum SigningError {
     // botocore's own message, which callers of get_request_headers can see

@@ -46,7 +46,6 @@ fn helper_seeds_select_bedrock_signing() {
 fn variant(call: &Call) -> &'static str {
     match call {
         Call::RequestHeaders(_) => "request_headers",
-        Call::FilterHeaders(_) => "filter_headers",
         Call::ServiceRequest(_) => "service_request",
         Call::JsonPost(_) => "json_post",
         Call::RequestTarget(_) => "request_target",

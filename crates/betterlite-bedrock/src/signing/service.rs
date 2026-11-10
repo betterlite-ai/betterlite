@@ -1,20 +1,3 @@
-use std::collections::BTreeMap;
-use std::future::Future;
-use std::time::SystemTime;
-
-use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_logging::python_json::dumps_object;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
-use serde_json::value::RawValue;
-
-use crate::aws_settings::bedrock_bearer_token;
-use crate::aws_settings::pop_aws_auth_params;
-use crate::aws_settings::sources::Credentials;
-use crate::credentials::error::CredentialError;
-
 use super::error::SigningError;
 use super::headers::{
     filter_for_signature, find_value, reattach, replace, resolved, set_exact, without_computed,
@@ -22,7 +5,20 @@ use super::headers::{
 use super::request::AwsSignedRequest;
 use super::sigv4::{Signable, sign_request};
 use super::target::{RegionInputs, auth_settings, resolve_region};
-
+use crate::aws_settings::bedrock_bearer_token;
+use crate::aws_settings::pop_aws_auth_params;
+use crate::aws_settings::sources::Credentials;
+use crate::credentials::error::CredentialError;
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_logging::python_json::dumps_object;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::time::SystemTime;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServiceName {
@@ -32,7 +28,6 @@ pub enum ServiceName {
     S3vectors,
     AwsExternalAnthropic,
 }
-
 impl ServiceName {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -45,7 +40,6 @@ impl ServiceName {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct ServiceRequest<'source> {
     pub service: ServiceName,
@@ -59,7 +53,6 @@ pub struct ServiceRequest<'source> {
     pub region_inputs: RegionInputs<'source>,
     pub now: SystemTime,
 }
-
 pub async fn sign_service_request<F, Fut>(
     request: ServiceRequest<'_>,
     resolve_credentials: F,
@@ -84,7 +77,6 @@ where
         .map_err(|source| SigningError::Credential { source })?;
     sigv4_signed(request, &credentials, &region)
 }
-
 fn bearer_signed(request: ServiceRequest<'_>, token: &SecretString) -> AwsSignedRequest {
     let mut headers = request.headers.to_vec();
     set_exact(&mut headers, "Content-Type", "application/json".to_owned());
@@ -100,7 +92,6 @@ fn bearer_signed(request: ServiceRequest<'_>, token: &SecretString) -> AwsSigned
         body: dumps_object(request.request_data).into_bytes(),
     }
 }
-
 fn sigv4_signed(
     request: ServiceRequest<'_>,
     credentials: &Credentials,
@@ -119,7 +110,8 @@ fn sigv4_signed(
             ),
         );
     }
-    let signature = without_computed(filter_for_signature(&headers));
+    let has_token = credentials.session_token.is_some();
+    let signature = without_computed(filter_for_signature(&headers), has_token);
     let body = dumps_object(request.request_data).into_bytes();
     let mut signed = sign_request(&Signable {
         method: "POST",
@@ -131,7 +123,7 @@ fn sigv4_signed(
         credentials,
         now: request.now,
     })?;
-    reattach(&headers, &mut signed);
+    reattach(&headers, &mut signed, has_token);
     if let Some(value) = find_value(&headers, "authorization")
         && !value.starts_with("AWS4-HMAC-SHA256")
     {

@@ -1,29 +1,24 @@
-use std::collections::BTreeMap;
-use std::future::Future;
-use std::time::SystemTime;
-
-use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_logging::python_json::dumps_object;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use serde_json::value::RawValue;
-
-use crate::aws_settings::pop_aws_auth_params;
-use crate::aws_settings::sources::Credentials;
-use crate::credentials::error::CredentialError;
-
 use super::error::SigningError;
 use super::headers::{merge_computed, prepare, without_computed};
 use super::request::AwsSignedRequest;
 use super::sigv4::{Signable, sign_request};
 use super::target::{RegionInputs, auth_settings, resolve_region};
-
+use crate::aws_settings::pop_aws_auth_params;
+use crate::aws_settings::sources::Credentials;
+use crate::credentials::error::CredentialError;
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_logging::python_json::dumps_object;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::time::SystemTime;
 #[derive(Debug, Clone, Copy)]
 pub enum BatchData<'source> {
     Json(&'source IndexMap<String, Json>),
     Text(&'source str),
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct BatchRequest<'source> {
     pub service_name: &'source str,
@@ -34,7 +29,6 @@ pub struct BatchRequest<'source> {
     pub region_inputs: RegionInputs<'source>,
     pub now: SystemTime,
 }
-
 pub async fn sign_batch_request<F, Fut>(
     request: BatchRequest<'_>,
     resolve_credentials: F,
@@ -63,7 +57,7 @@ where
             vec![("Content-Type".to_owned(), "application/json".to_owned())],
         )
     };
-    let supplied = without_computed(initial_headers);
+    let supplied = without_computed(initial_headers, credentials.session_token.is_some());
     let computed = sign_request(&Signable {
         method: &method,
         url: request.endpoint,

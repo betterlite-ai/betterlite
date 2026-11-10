@@ -1,17 +1,12 @@
+use super::error::SigningError;
 use std::sync::Arc;
-
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-
-use super::error::SigningError;
-
 pub const AWS_SIGNING_MAX_THREADS: usize = 16;
-
 #[derive(Debug, Clone)]
 pub struct AwsSigningExecutor {
     permits: Arc<Semaphore>,
 }
-
 impl Default for AwsSigningExecutor {
     fn default() -> Self {
         Self {
@@ -19,7 +14,6 @@ impl Default for AwsSigningExecutor {
         }
     }
 }
-
 impl AwsSigningExecutor {
     pub async fn run<T, F>(&self, sign: F) -> Result<T, SigningError>
     where
@@ -43,7 +37,6 @@ impl AwsSigningExecutor {
             .map_err(|source| SigningError::Join { source })
     }
 }
-
 pub async fn sign_request_off_loop_if_aws<T, F>(
     executor: &AwsSigningExecutor,
     signs_with_aws: bool,

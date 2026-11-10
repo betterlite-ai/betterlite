@@ -1,29 +1,24 @@
-use std::collections::BTreeMap;
-
 use betterlite_bedrock::signing::service::ServiceName;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::value::RawValue;
-
+use std::collections::BTreeMap;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) calls: Vec<Call>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Call {
     RequestHeaders(RequestHeaders),
-    FilterHeaders(FilterHeaders),
     ServiceRequest(ServiceRequest),
     JsonPost(JsonPost),
     RequestTarget(RequestTarget),
     BatchRequest(BatchRequest),
     OffLoop(OffLoop),
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CredentialInput {
@@ -31,14 +26,12 @@ pub(crate) struct CredentialInput {
     pub(crate) secret_access_key: String,
     pub(crate) session_token: Option<String>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DataInput {
     Text(String),
     Base64(String),
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RequestHeaders {
@@ -54,13 +47,6 @@ pub(crate) struct RequestHeaders {
     pub(crate) supports_bearer_token: bool,
     pub(crate) now: i64,
 }
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FilterHeaders {
-    pub(crate) headers: BTreeMap<String, Option<String>>,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ServiceRequest {
@@ -72,12 +58,9 @@ pub(crate) struct ServiceRequest {
     pub(crate) model: Option<String>,
     pub(crate) api_key: Option<String>,
     pub(crate) configured_bearer_token: Option<String>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
     pub(crate) now: i64,
     pub(crate) credentials: CredentialInput,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonPost {
@@ -89,18 +72,14 @@ pub(crate) struct JsonPost {
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) now: i64,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RequestTarget {
     pub(crate) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(crate) model: Option<String>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
     pub(crate) bearer_token: Option<String>,
     pub(crate) credentials: CredentialInput,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BatchRequest {
@@ -109,19 +88,15 @@ pub(crate) struct BatchRequest {
     pub(crate) endpoint_url: String,
     pub(crate) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(crate) method: Option<String>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
     pub(crate) now: i64,
     pub(crate) credentials: CredentialInput,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum BatchDataInput {
     Json(IndexMap<String, Json>),
     Text(String),
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OffLoop {
@@ -129,7 +104,6 @@ pub(crate) struct OffLoop {
     pub(crate) value: String,
     pub(crate) failure: String,
 }
-
 const fn default_supports_bearer_token() -> bool {
     true
 }

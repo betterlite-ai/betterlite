@@ -1,10 +1,3 @@
-use std::time::SystemTime;
-
-use secrecy::{ExposeSecret as _, SecretString};
-
-use crate::aws_settings::bedrock_bearer_token;
-use crate::aws_settings::sources::Credentials;
-
 use super::body::Body;
 use super::error::SigningError;
 use super::headers::{
@@ -12,7 +5,10 @@ use super::headers::{
 };
 use super::request::AwsSignedRequest;
 use super::sigv4::{Signable, sign_request};
-
+use crate::aws_settings::bedrock_bearer_token;
+use crate::aws_settings::sources::Credentials;
+use secrecy::{ExposeSecret as _, SecretString};
+use std::time::SystemTime;
 #[derive(Debug, Clone, Copy)]
 pub struct RequestHeaders<'source> {
     pub credentials: Option<&'source Credentials>,
@@ -26,7 +22,6 @@ pub struct RequestHeaders<'source> {
     pub supports_bearer_token: bool,
     pub now: SystemTime,
 }
-
 pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, SigningError> {
     let bearer = if request.supports_bearer_token {
         bedrock_bearer_token(request.api_key, request.configured_bearer)
@@ -39,7 +34,8 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
     let Some(credentials) = request.credentials else {
         return Err(SigningError::NoCredentials);
     };
-    let signature = without_computed(filter_for_signature(request.headers));
+    let has_token = credentials.session_token.is_some();
+    let signature = without_computed(filter_for_signature(request.headers), has_token);
     let computed = sign_request(&Signable {
         method: "POST",
         url: request.endpoint,
@@ -51,7 +47,7 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
         now: request.now,
     })?;
     let mut headers = computed;
-    reattach(request.headers, &mut headers);
+    reattach(request.headers, &mut headers, has_token);
     if let Some(value) = extra_authorization(request.extra_headers) {
         replace(&mut headers, "Authorization".to_owned(), value.to_owned());
     }
@@ -62,7 +58,6 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
         body: request.data.bytes().to_vec(),
     })
 }
-
 fn bearer_signed(request: RequestHeaders<'_>, token: &SecretString) -> AwsSignedRequest {
     let mut headers = request.headers.to_vec();
     set_exact(
@@ -77,7 +72,6 @@ fn bearer_signed(request: RequestHeaders<'_>, token: &SecretString) -> AwsSigned
         body: request.data.bytes().to_vec(),
     }
 }
-
 fn extra_authorization(extra: &[(String, String)]) -> Option<&str> {
     let (_, value) = extra.iter().find(|(name, _)| name == "Authorization")?;
     if value.starts_with("AWS4-HMAC-SHA256") {

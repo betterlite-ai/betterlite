@@ -1,12 +1,10 @@
 use std::fmt::{self, Debug, Formatter};
-
 pub struct AwsSignedRequest {
     pub method: String,
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
-
 impl Debug for AwsSignedRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let headers: Vec<String> = self
