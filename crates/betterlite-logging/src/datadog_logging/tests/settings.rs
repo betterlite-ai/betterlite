@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -221,4 +223,25 @@ fn datadog_endpoint_configuration_takes_the_environment_site() {
         settings.intake_url,
         "https://http-intake.logs.eu.datadoghq.com/api/v2/logs"
     );
+}
+
+#[rstest]
+#[case::absent(&[], Some(Duration::from_secs(5)))]
+#[case::configured(&[("DEFAULT_FLUSH_INTERVAL_SECONDS", "30")], Some(Duration::from_secs(30)))]
+#[case::zero_is_used_as_given(&[("DEFAULT_FLUSH_INTERVAL_SECONDS", "0")], Some(Duration::ZERO))]
+#[case::empty_counts_as_unset(&[("DEFAULT_FLUSH_INTERVAL_SECONDS", "")], Some(Duration::from_secs(5)))]
+#[case::not_a_number(&[("DEFAULT_FLUSH_INTERVAL_SECONDS", "soon")], None)]
+fn datadog_flush_interval_resolution_behavior(
+    #[case] environment: &[(&str, &str)],
+    #[case] expected: Option<Duration>,
+) {
+    let resolved = DatadogSettings::resolve(
+        &init(Some("key-1"), Some("us5.datadoghq.com"), true),
+        &support::environment(environment),
+    );
+    match (resolved, expected) {
+        (Ok(settings), Some(interval)) => assert_eq!(settings.batch.flush_interval, interval),
+        (Err(DatadogError::Environment(_)), None) => {}
+        (outcome, wanted) => panic!("unexpected {outcome:?} for {wanted:?}"),
+    }
 }

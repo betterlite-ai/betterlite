@@ -5,7 +5,9 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_with::{As, DefaultOnNull};
 
-use crate::batch::logger::{BatchSettings, DEFAULT_FLUSH_INTERVAL_SECONDS, DEFAULT_MAX_QUEUE_SIZE};
+use crate::batch::logger::{
+    BatchSettings, DEFAULT_FLUSH_INTERVAL_SECONDS, DEFAULT_MAX_QUEUE_SIZE, FLUSH_INTERVAL_VARIABLE,
+};
 use crate::datadog::tagging::Environment;
 use crate::exporter_options::options::CustomLoggerOptions;
 
@@ -71,6 +73,12 @@ impl DatadogSettings {
     ) -> Result<Self, DatadogError> {
         let tags = Environment::from_lookup(environment)?;
         let (endpoint_url, api_key) = endpoint(init, environment)?;
+        let flush_seconds = environment
+            .lookup(FLUSH_INTERVAL_VARIABLE)
+            .map(|text| betterlite_env::number::<u64>(FLUSH_INTERVAL_VARIABLE, &text))
+            .transpose()?
+            .flatten()
+            .unwrap_or(DEFAULT_FLUSH_INTERVAL_SECONDS);
         let intake_url = tags
             .base_url
             .as_deref()
@@ -81,7 +89,7 @@ impl DatadogSettings {
             api_key,
             batch: BatchSettings {
                 batch_size: resolve_batch_size(environment),
-                flush_interval: Duration::from_secs(DEFAULT_FLUSH_INTERVAL_SECONDS),
+                flush_interval: Duration::from_secs(flush_seconds),
                 max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
             },
             options: CustomLoggerOptions {
