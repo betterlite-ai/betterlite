@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::helpers::{HelperError, HelperResult};
 
@@ -90,10 +91,13 @@ fn validate(call: &Validate) -> Value {
 }
 
 fn transform(call: &Transform) -> Result<Value, Box<HelperError>> {
+    // a helper reads no wall clock or random source, and the projection never shows either filled value
     let options = ReplyOptions {
         json_mode: call.json_mode,
         provider: call.provider.as_deref(),
         base_model: call.base_model.as_deref(),
+        identifier: Uuid::nil,
+        clock: i64::default,
     };
     let reply = decode_compatible_chat_reply(call.reply.to_string().as_bytes(), &options).map_err(
         |error| {

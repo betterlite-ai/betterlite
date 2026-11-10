@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use url::Url;
 
-use crate::compatible_wire::{EndpointType, header_map, logged_args, validate_environment};
+use crate::compatible_wire::{EndpointType, header_map, validate_environment};
 use crate::embedding::EmbeddingResponse;
 use crate::openai_base_config::Headers;
 use error::EmbeddingError;
@@ -100,7 +100,14 @@ pub fn plan_embedding(
     let logged = PreCall {
         input: call.input.clone(),
         model: None,
-        additional_args: logged_args(Some(url.clone()), Some(RawBody::Object(data.clone()))),
+        additional_args: AdditionalArgs {
+            api_base: Some(url.clone()),
+            headers: None,
+            complete_input_dict: Some(RawBody::Object(data.clone())),
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::new(),
+        },
     };
     pre_call(state, &logged, env).map_err(EmbeddingError::PreCall)?;
     Ok(EmbeddingPlan {
@@ -163,7 +170,14 @@ fn log_post_call(
     let call = PostCall {
         original_response,
         input: plan.input.clone(),
-        additional_args: logged_args(None, with_data.then(|| RawBody::Object(plan.data.clone()))),
+        additional_args: AdditionalArgs {
+            api_base: None,
+            headers: None,
+            complete_input_dict: with_data.then(|| RawBody::Object(plan.data.clone())),
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::new(),
+        },
     };
     post_call(state, &call, env);
 }

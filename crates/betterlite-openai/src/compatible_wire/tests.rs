@@ -22,6 +22,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
+use uuid::Uuid;
 
 use super::error::{CompatibleWireError, OpenAiLikeError};
 use super::{
@@ -110,6 +111,14 @@ const NULL_TOOLS: &str = r#"{"role":"assistant","content":"kept","tool_calls":nu
 const EMPTY_ARGUMENTS: &str = r#"{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"json_tool_call","arguments":""}}]}"#;
 const NULL_ARGUMENTS: &str = r#"{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":null}}]}"#;
 
+fn fixed_id() -> Uuid {
+    Uuid::nil()
+}
+
+fn fixed_clock() -> i64 {
+    1_700_000_000
+}
+
 fn options<'call>(
     json_mode: bool,
     provider: Option<&'call str>,
@@ -119,6 +128,8 @@ fn options<'call>(
         json_mode,
         provider,
         base_model,
+        identifier: fixed_id,
+        clock: fixed_clock,
     }
 }
 
@@ -250,6 +261,26 @@ fn header_names_and_values_must_be_valid() {
     assert_eq!(map.get("x-a").unwrap(), "1");
     header_map(&headers(&[("bad name", "1")])).unwrap_err();
     header_map(&headers(&[("X-A", "line\nbreak")])).unwrap_err();
+}
+
+#[test]
+fn headers_that_differ_only_in_case_both_reach_the_request() {
+    let key = secret("k");
+    let (_, sent) = validate_environment(
+        Some(&key),
+        Some("https://h"),
+        EndpointType::ChatCompletions,
+        Some(headers(&[("authorization", "mine")])),
+        false,
+    )
+    .unwrap();
+    let map = header_map(&sent).unwrap();
+    let values = map
+        .get_all("authorization")
+        .iter()
+        .map(|value| value.to_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(values, ["Bearer k", "mine"]);
 }
 
 fn map_chat(replace_max_completion_tokens: bool, requested: &str) -> Value {
@@ -387,10 +418,36 @@ fn the_hidden_model_comes_from_a_given_base_model(
     assert_eq!(reply.response.model, "m");
 }
 
+const XID: &str = "chatcmpl-00000000-0000-0000-0000-000000000000";
+
+#[test]
+fn a_reply_without_id_created_or_object_gets_the_model_response_defaults() {
+    let reply = decode_compatible_chat_reply(
+        br#"{"model":"m","choices":[]}"#,
+        &options(false, None, None),
+    )
+    .unwrap();
+    assert_eq!(reply.response.id, XID);
+    assert_eq!(reply.response.created, 1_700_000_000);
+    assert_eq!(reply.response.object, "chat.completion");
+}
+
+#[test]
+fn null_id_created_and_object_get_the_same_defaults() {
+    let reply = decode_compatible_chat_reply(
+        br#"{"id":null,"object":null,"created":null,"model":"m","choices":[]}"#,
+        &options(false, None, None),
+    )
+    .unwrap();
+    assert_eq!(reply.response.id, XID);
+    assert_eq!(reply.response.created, 1_700_000_000);
+    assert_eq!(reply.response.object, "chat.completion");
+}
+
 #[rstest]
 #[case::not_json(b"{", true)]
-#[case::missing_id(
-    br#"{"object":"chat.completion","created":1,"model":"m","choices":[]}"#,
+#[case::missing_choices(
+    br#"{"id":"c","object":"chat.completion","created":1,"model":"m"}"#,
     false
 )]
 #[case::not_an_object(b"[]", false)]
