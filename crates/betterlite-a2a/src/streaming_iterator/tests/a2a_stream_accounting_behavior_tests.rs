@@ -25,6 +25,7 @@ use serde_json::Number;
 
 use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
 
+use super::support::counter;
 use crate::client::records::compat::SendMessageRequest;
 use crate::streaming_iterator::{
     A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
@@ -722,4 +723,12 @@ fn integer_request_ids_keep_their_json_form() {
         json_rpc_id_json(&numeric_id).expect("the id converts"),
         number(12)
     );
+}
+
+#[tokio::test]
+async fn the_counter_adapter_counts_the_default_encoding_tokens() {
+    let counter = counter();
+
+    assert_eq!(counter.count_tokens("hello world").await, 2);
+    assert_eq!(counter.count_tokens("").await, 0);
 }
