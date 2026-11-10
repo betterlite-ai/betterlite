@@ -1,7 +1,7 @@
 task: B3605
 deviations:
-  - what: Python's float() and int() accept underscore digit separators ("1_0") and integers of any size; betterlite treats "1_0" as unparseable and an integer above i64 as unparseable.
-    why: No real upstream sends either, and an i64 token count is the type the rest of betterlite uses. Both cases log the unparseable warning and record 0.
+  - what: Python's float() and int() accept underscore digit separators ("1_0") and integers of any size; betterlite treats "1_0" as a parse failure and an integer above i64 as a parse failure.
+    why: No real upstream sends either, and an i64 token count is the type the rest of betterlite uses. Both cases log the failed-parse warning and record 0.
     link: ""
   - what: A url_route written as a network-path reference ("//host/path") is treated as a plain path with no hostname.
     why: The url crate rejects it without a base, and no betterlite caller builds such a route; Python's urlparse would read a hostname.

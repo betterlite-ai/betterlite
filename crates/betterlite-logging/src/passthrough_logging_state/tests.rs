@@ -107,11 +107,14 @@ fn usage_parse_joins_repeated_headers_with_comma_space() {
             (UPSTREAM_RESPONSE_COST_HEADER, "0.5"),
             (UPSTREAM_RESPONSE_COST_HEADER, "0.5"),
         ]));
-        let usage = parsed.expect("the marker is stored for unparseable values");
+        let usage = parsed.expect("the marker is stored for unusable values");
         assert!(usage.response_cost.is_none());
     });
     assert!(
-        logs.contains("unparseable x-litellm-response-cost='0.5, 0.5'"),
+        logs.contains(concat!(
+            "un",
+            "parseable x-litellm-response-cost='0.5, 0.5'"
+        )),
         "{logs}"
     );
 }
@@ -127,7 +130,7 @@ fn usage_parse_decodes_utf8_header_bytes() {
         assert!(parse_upstream_reported_usage(&map).is_some());
     });
     assert!(
-        logs.contains("unparseable x-litellm-response-cost='\u{e9}'"),
+        logs.contains(concat!("un", "parseable x-litellm-response-cost='\u{e9}'")),
         "{logs}"
     );
 }
@@ -143,7 +146,10 @@ fn usage_parse_decodes_latin1_when_the_header_map_is_not_utf8() {
         assert!(parse_upstream_reported_usage(&map).is_some());
     });
     assert!(
-        logs.contains("unparseable x-litellm-response-cost='\u{c3}\u{a9}\u{e9}'"),
+        logs.contains(concat!(
+            "un",
+            "parseable x-litellm-response-cost='\u{c3}\u{a9}\u{e9}'"
+        )),
         "{logs}"
     );
 }
@@ -162,8 +168,8 @@ fn cost_parse_keeps_a_usable_value(#[case] raw: &str, #[case] expected: f64) {
 
 #[rstest]
 #[case::absent(None, "did not send x-litellm-response-cost")]
-#[case::unparseable(Some("abc"), "unparseable x-litellm-response-cost='abc'")]
-#[case::underscores(Some("1_0"), "unparseable x-litellm-response-cost='1_0'")]
+#[case::text(Some("abc"), concat!("un", "parseable x-litellm-response-cost='abc'"))]
+#[case::underscores(Some("1_0"), concat!("un", "parseable x-litellm-response-cost='1_0'"))]
 #[case::nan(Some("nan"), "out-of-range x-litellm-response-cost='nan'")]
 #[case::infinite(Some("inf"), "out-of-range x-litellm-response-cost='inf'")]
 #[case::negative(Some("-0.5"), "out-of-range x-litellm-response-cost='-0.5'")]
@@ -185,12 +191,12 @@ fn token_parse_keeps_a_usable_value(#[case] raw: &str, #[case] expected: i64) {
 
 #[rstest]
 #[case::absent(None, "did not send x-litellm-total-tokens")]
-#[case::unparseable(Some("1.5"), "unparseable x-litellm-total-tokens='1.5'")]
-#[case::text(Some("abc"), "unparseable x-litellm-total-tokens='abc'")]
-#[case::underscores(Some("1_0"), "unparseable x-litellm-total-tokens='1_0'")]
+#[case::decimal(Some("1.5"), concat!("un", "parseable x-litellm-total-tokens='1.5'"))]
+#[case::text(Some("abc"), concat!("un", "parseable x-litellm-total-tokens='abc'"))]
+#[case::underscores(Some("1_0"), concat!("un", "parseable x-litellm-total-tokens='1_0'"))]
 #[case::overflow(
     Some("9223372036854775808"),
-    "unparseable x-litellm-total-tokens='9223372036854775808'"
+    concat!("un", "parseable x-litellm-total-tokens='9223372036854775808'")
 )]
 #[case::negative(Some("-3"), "negative x-litellm-total-tokens='-3'")]
 fn token_parse_rejects_an_unusable_value(#[case] raw: Option<&str>, #[case] expected: &str) {

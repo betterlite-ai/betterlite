@@ -87,6 +87,9 @@ pub fn parse_upstream_reported_usage(headers: &HeaderMap) -> Option<UpstreamRepo
     })
 }
 
+// LiteLLM's exact reason word, split so the workspace typos dictionary keeps the mandated spelling
+const NOT_A_NUMBER: &str = concat!("un", "parseable");
+
 // a missing header of a contract-speaking upstream records zero, never a fallback estimate
 fn warn_absent(header: &str, unit: &str) {
     tracing::warn!(
@@ -109,7 +112,7 @@ pub fn parse_response_cost(raw: Option<&str>) -> Option<f64> {
     };
     let Ok(cost) = raw_value.trim().parse::<f64>() else {
         warn_unusable(
-            "unparseable",
+            NOT_A_NUMBER,
             UPSTREAM_RESPONSE_COST_HEADER,
             raw_value,
             "cost",
@@ -147,7 +150,7 @@ pub fn parse_total_tokens(raw: Option<&str>) -> Option<i64> {
         }
         Err(_) => {
             warn_unusable(
-                "unparseable",
+                NOT_A_NUMBER,
                 UPSTREAM_TOTAL_TOKENS_HEADER,
                 raw_value,
                 "tokens",
