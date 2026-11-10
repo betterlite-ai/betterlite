@@ -420,7 +420,7 @@ async fn dispatch_default_ignores_the_callers_cache_hit() {
     let mut dispatch_call = call(&handler, &mut logged_state, &mut correlation);
     dispatch_call.cache_hit = true;
     dispatch_call.response = Some(chat_response());
-    handle_logging(dispatch_call).await.expect("dispatch");
+    handle_logging(dispatch_call).await;
     assert_eq!(
         logged_state.model_call_details.get("cache_hit"),
         Some(&Json::Bool(false))
@@ -439,7 +439,7 @@ async fn dispatch_default_prefers_async_handlers() {
     let mut logged_state = logging_state("completion", &mut correlation);
     let mut dispatch_call = call(&handler, &mut logged_state, &mut correlation);
     dispatch_call.response = Some(chat_response());
-    handle_logging(dispatch_call).await.expect("dispatch");
+    handle_logging(dispatch_call).await;
     assert_eq!(
         fixture.calls.names(),
         vec!["async_log_success_event".to_owned()]
@@ -454,7 +454,7 @@ async fn dispatch_default_passes_the_response_and_the_same_times() {
     let mut logged_state = logging_state("pass_through_endpoint", &mut correlation);
     let mut dispatch_call = call(&handler, &mut logged_state, &mut correlation);
     dispatch_call.response = Some(chat_response());
-    handle_logging(dispatch_call).await.expect("dispatch");
+    handle_logging(dispatch_call).await;
     assert_eq!(
         logged_state
             .model_call_details
@@ -483,11 +483,7 @@ async fn dispatch_default_is_used_when_nothing_is_injected() {
     let mut logged_state = logging_state("pass_through_endpoint", &mut correlation);
     let mut dispatch_call = call(&handler, &mut logged_state, &mut correlation);
     dispatch_call.response = Some(chat_response());
-    logger
-        .log_dispatch()
-        .dispatch(dispatch_call)
-        .await
-        .expect("dispatch");
+    logger.log_dispatch().dispatch(dispatch_call).await;
     assert_eq!(
         logged_state.model_call_details.get("cache_hit"),
         Some(&Json::Bool(false))
@@ -517,11 +513,7 @@ async fn dispatch_injected_dispatcher_replaces_the_default() {
         .kwargs
         .entries
         .insert("marker".to_owned(), Json::Bool(true));
-    logger
-        .log_dispatch()
-        .dispatch(dispatch_call)
-        .await
-        .expect("dispatch");
+    logger.log_dispatch().dispatch(dispatch_call).await;
     let dispatched = recorder.recorded();
     assert_eq!(dispatched.len(), 1);
     assert_eq!(dispatched[0].start_time, time("2024-01-01T00:00:00+00:00"));
@@ -552,7 +544,7 @@ async fn dispatch_default_forwards_the_standard_logging_object_kwarg() {
         .kwargs
         .entries
         .insert(STANDARD_LOGGING_OBJECT.to_owned(), value);
-    handle_logging(dispatch_call).await.expect("dispatch");
+    handle_logging(dispatch_call).await;
     let stored = standard_logging_object(&logged_state)
         .expect("payload readable")
         .expect("payload stored");

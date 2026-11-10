@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
-use thiserror::Error;
 
 use super::response::PassThroughResponse;
 use crate::fields::payload::StandardLoggingPayload;
@@ -31,19 +30,13 @@ pub struct PassThroughLogCall<'call> {
     pub kwargs: PassThroughLoggingKwargs,
 }
 
-#[derive(Debug, Error)]
-pub enum PassThroughLogError {
-    #[error("the pass-through log dispatcher failed: {message}")]
-    Dispatcher { message: String },
-}
-
 #[async_trait]
 pub trait PassThroughLogDispatch: Send + Sync {
-    async fn dispatch(&self, call: PassThroughLogCall<'_>) -> Result<(), PassThroughLogError>;
+    async fn dispatch(&self, call: PassThroughLogCall<'_>);
 }
 
 // LiteLLM's _handle_logging: the caller's result string and cache_hit never reach the dispatch
-pub async fn handle_logging(call: PassThroughLogCall<'_>) -> Result<(), PassThroughLogError> {
+pub async fn handle_logging(call: PassThroughLogCall<'_>) {
     let PassThroughLogCall {
         handler,
         state,
@@ -65,7 +58,6 @@ pub async fn handle_logging(call: PassThroughLogCall<'_>) -> Result<(), PassThro
         guardrail_snapshot: None,
     };
     dispatch_success_handlers(handler, state, correlation, &request).await;
-    Ok(())
 }
 
 fn standard_logging_object_kwarg(

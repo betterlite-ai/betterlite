@@ -26,7 +26,7 @@ impl crate::helpers::Helper for Op {
                 kwargs_response_cost,
                 cost_per_request,
             } => set_cost(state, *kwargs_response_cost, *cost_per_request)?,
-            Input::Route { routes } => route(routes),
+            Input::Route { routes } => Value::Array(routes.iter().map(route_json).collect()),
         };
         Ok(result)
     }
@@ -146,11 +146,6 @@ fn set_cost(
         "kwargs_response_cost": kwargs_cost,
         "state_response_cost": call_state.response_cost,
     }))
-}
-
-fn route(routes: &[RouteInput]) -> Value {
-    // one result object per route, in the order the case lists them
-    Value::Array(routes.iter().map(route_json).collect())
 }
 
 fn route_json(route: &RouteInput) -> Value {

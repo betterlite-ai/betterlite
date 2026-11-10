@@ -3,9 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use url::Url;
 
-use super::dispatch::{
-    PassThroughLogCall, PassThroughLogDispatch, PassThroughLogError, handle_logging,
-};
+use super::dispatch::{PassThroughLogCall, PassThroughLogDispatch, handle_logging};
 
 pub struct PassThroughEndpointLogging {
     pub injected_log_dispatch: Option<Arc<dyn PassThroughLogDispatch>>,
@@ -58,8 +56,10 @@ impl PassThroughEndpointLogging {
 
     #[must_use]
     pub fn log_dispatch(&self) -> &dyn PassThroughLogDispatch {
-        // an injected dispatcher replaces this logger's own one, never both
-        self.injected_log_dispatch.as_deref().unwrap_or(self)
+        match &self.injected_log_dispatch {
+            Some(dispatch) => dispatch.as_ref(),
+            None => self,
+        }
     }
 
     #[must_use]
@@ -80,33 +80,42 @@ impl PassThroughEndpointLogging {
     #[must_use]
     pub fn is_assemblyai_route(url_route: &str) -> bool {
         let parsed = parse_route(url_route);
-        // LiteLLM accepts the API host by name or any path holding "/transcript"
-        parsed.hostname.as_deref() == Some("api.assemblyai.com")
-            || parsed.path.contains("/transcript")
+        if parsed.hostname.as_deref() == Some("api.assemblyai.com") {
+            return true;
+        }
+        parsed.path.contains("/transcript")
     }
 
     #[must_use]
     pub fn is_comprehend_medical_route(custom_llm_provider: Option<&str>) -> bool {
-        // LiteLLM routes Comprehend Medical by provider name alone
-        custom_llm_provider == Some("comprehendmedical")
+        let Some(provider) = custom_llm_provider else {
+            return false;
+        };
+        provider == "comprehendmedical"
     }
 
     #[must_use]
     pub fn is_azure_speech_route(custom_llm_provider: Option<&str>) -> bool {
-        // LiteLLM routes Azure Speech by provider name alone
-        custom_llm_provider == Some("azure_speech")
+        let Some(provider) = custom_llm_provider else {
+            return false;
+        };
+        provider == "azure_speech"
     }
 
     #[must_use]
     pub fn is_transcribe_route(custom_llm_provider: Option<&str>) -> bool {
-        // LiteLLM routes Transcribe by provider name alone
-        custom_llm_provider == Some("transcribe")
+        let Some(provider) = custom_llm_provider else {
+            return false;
+        };
+        provider == "transcribe"
     }
 
     #[must_use]
     pub fn is_typesafe_route(custom_llm_provider: Option<&str>) -> bool {
-        // LiteLLM routes Typesafe by provider name alone
-        custom_llm_provider == Some("typesafe")
+        let Some(provider) = custom_llm_provider else {
+            return false;
+        };
+        provider == "typesafe"
     }
 
     #[must_use]
@@ -160,7 +169,7 @@ impl PassThroughEndpointLogging {
 
 #[async_trait]
 impl PassThroughLogDispatch for PassThroughEndpointLogging {
-    async fn dispatch(&self, call: PassThroughLogCall<'_>) -> Result<(), PassThroughLogError> {
-        handle_logging(call).await
+    async fn dispatch(&self, call: PassThroughLogCall<'_>) {
+        handle_logging(call).await;
     }
 }

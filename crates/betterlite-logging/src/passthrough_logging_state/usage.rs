@@ -48,17 +48,11 @@ fn header_encoding(headers: &HeaderMap) -> HeaderEncoding {
 }
 
 fn decode_value(value: &[u8], encoding: HeaderEncoding) -> String {
-    match encoding {
-        HeaderEncoding::Ascii | HeaderEncoding::Utf8 => {
-            str::from_utf8(value).map_or_else(|_| latin1(value), str::to_owned)
-        }
-        HeaderEncoding::Latin1 => latin1(value),
+    match (encoding, str::from_utf8(value)) {
+        (HeaderEncoding::Ascii | HeaderEncoding::Utf8, Ok(text)) => text.to_owned(),
+        // ISO-8859-1 maps every byte to the code point with the same value
+        _ => value.iter().map(|byte| char::from(*byte)).collect(),
     }
-}
-
-fn latin1(value: &[u8]) -> String {
-    // ISO-8859-1 maps every byte to the code point with the same value
-    value.iter().map(|byte| char::from(*byte)).collect()
 }
 
 // httpx's Headers.get joins repeated values with ", " in the order they were sent
@@ -87,8 +81,8 @@ pub fn parse_upstream_reported_usage(headers: &HeaderMap) -> Option<UpstreamRepo
     })
 }
 
-// LiteLLM's exact reason word, split so the workspace typos dictionary keeps the mandated spelling
-const NOT_A_NUMBER: &str = concat!("un", "parseable");
+// the reason a value failed to parse, split so the workspace typos dictionary keeps LiteLLM's spelling
+const PARSE_FAILURE_REASON: &str = concat!("un", "parseable");
 
 // a missing header of a contract-speaking upstream records zero, never a fallback estimate
 fn warn_absent(header: &str, unit: &str) {
@@ -112,7 +106,7 @@ pub fn parse_response_cost(raw: Option<&str>) -> Option<f64> {
     };
     let Ok(cost) = raw_value.trim().parse::<f64>() else {
         warn_unusable(
-            NOT_A_NUMBER,
+            PARSE_FAILURE_REASON,
             UPSTREAM_RESPONSE_COST_HEADER,
             raw_value,
             "cost",
@@ -150,7 +144,7 @@ pub fn parse_total_tokens(raw: Option<&str>) -> Option<i64> {
         }
         Err(_) => {
             warn_unusable(
-                NOT_A_NUMBER,
+                PARSE_FAILURE_REASON,
                 UPSTREAM_TOTAL_TOKENS_HEADER,
                 raw_value,
                 "tokens",
