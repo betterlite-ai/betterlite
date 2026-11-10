@@ -154,12 +154,17 @@ async fn run_call(limiter: &ModelBudgetLimiter<OracleCache>, call: &Call) -> Val
 }
 
 async fn team_call(limiter: &ModelBudgetLimiter<OracleCache>, check: &TeamCall) -> Value {
-    let subject = BudgetSubject::Team {
-        team_id: &check.team_id,
-        key_model_max_budget: check.key_budget.as_ref(),
-    };
     check_outcome(
-        subject_within_model_budget(limiter, &subject, check.budget.as_ref(), &check.model).await,
+        subject_within_model_budget(
+            limiter,
+            &BudgetSubject::Team {
+                team_id: &check.team_id,
+                key_model_max_budget: check.key_budget.as_ref(),
+            },
+            check.budget.as_ref(),
+            &check.model,
+        )
+        .await,
     )
 }
 
@@ -183,21 +188,18 @@ fn exceeded_outcome(details: &BudgetExceededDetails) -> Value {
     })
 }
 
-fn fallback_query(check: &FallbackCall) -> FallbackQuery<'_> {
-    FallbackQuery {
+async fn fallback_outcome(
+    limiter: &ModelBudgetLimiter<OracleCache>,
+    check: &FallbackCall,
+) -> Value {
+    let query = FallbackQuery {
         entity_id: &check.entity_id,
         key_alias: check.key_alias.as_deref(),
         model_max_budget: check.budget.as_ref(),
         budget_fallbacks: check.fallbacks.as_ref(),
         model: &check.model,
-    }
-}
-
-async fn fallback_outcome(
-    limiter: &ModelBudgetLimiter<OracleCache>,
-    check: &FallbackCall,
-) -> Value {
-    let chosen = fallback_model_within_budget(limiter, fallback_query(check)).await;
+    };
+    let chosen = fallback_model_within_budget(limiter, query).await;
     json!({
         "outcome": "fallback",
         "model": chosen,
