@@ -6,6 +6,7 @@ use crate::huggingface_embedding::task::{PipelineTagSource, resolve_task};
 use crate::openai_base_config::{Headers, Object};
 
 const SENTENCE_TRANSFORMERS: &str = "sentence-transformers";
+const SENTENCE_KEYS: (&str, &str) = ("source_sentence", "sentences");
 const OPTION_PARAMS: [&str; 2] = ["use_cache", "wait_for_model"];
 const PARAMETER_PARAMS: [&str; 7] = [
     "min_length",
@@ -32,7 +33,8 @@ pub fn transform_input(
             )));
         };
         let sentences = input.get(1..).unwrap_or_default();
-        let data = Object::from_iter([("inputs".to_owned(), sentence_pair(first, sentences))]);
+        let data =
+            Object::from_iter([("inputs".to_owned(), pair(SENTENCE_KEYS, first, sentences))]);
         return process_optional_params(data, optional_params);
     }
     let mut params = optional_params.clone();
@@ -47,8 +49,12 @@ pub fn input_for_tag(
     pipeline_tag: Option<&str>,
 ) -> Result<Object, HuggingfaceEmbeddingError> {
     let inputs = match pipeline_tag {
-        Some("sentence-similarity" | "similarity") => sentence_inputs(input)?,
-        Some("rerank") => rerank_inputs(input)?,
+        Some("sentence-similarity" | "similarity") => pair_inputs(
+            input,
+            SENTENCE_KEYS,
+            "sentence-similarity requires 2+ sentences",
+        )?,
+        Some("rerank") => pair_inputs(input, ("query", "texts"), "reranker requires 2+ sentences")?,
         None | Some(_) => Value::Array(
             input
                 .iter()
@@ -59,37 +65,19 @@ pub fn input_for_tag(
     Ok(Object::from_iter([("inputs".to_owned(), inputs)]))
 }
 
-fn sentence_inputs(input: &[String]) -> Result<Value, HuggingfaceEmbeddingError> {
-    let Some((first, sentences)) = input.split_first().filter(|(_, rest)| !rest.is_empty()) else {
+fn pair_inputs(
+    input: &[String],
+    keys: (&str, &str),
+    message: &str,
+) -> Result<Value, HuggingfaceEmbeddingError> {
+    let Some((first, rest)) = input.split_first().filter(|(_, rest)| !rest.is_empty()) else {
         return Err(HuggingfaceEmbeddingError::Huggingface(get_error_class(
-            "sentence-similarity requires 2+ sentences",
+            message,
             400,
             &Headers::new(),
         )));
     };
-    Ok(sentence_pair(first, sentences))
-}
-
-fn rerank_inputs(input: &[String]) -> Result<Value, HuggingfaceEmbeddingError> {
-    let Some((first, texts)) = input.split_first().filter(|(_, rest)| !rest.is_empty()) else {
-        return Err(HuggingfaceEmbeddingError::Huggingface(get_error_class(
-            "reranker requires 2+ sentences",
-            400,
-            &Headers::new(),
-        )));
-    };
-    Ok(Value::Object(Object::from_iter([
-        ("query".to_owned(), Value::String(first.clone())),
-        (
-            "texts".to_owned(),
-            Value::Array(
-                texts
-                    .iter()
-                    .map(|text| Value::String(text.clone()))
-                    .collect(),
-            ),
-        ),
-    ])))
+    Ok(pair(keys, first, rest))
 }
 
 pub fn process_optional_params(
@@ -108,17 +96,13 @@ pub fn process_optional_params(
     Ok(data)
 }
 
-fn sentence_pair(first: &str, sentences: &[String]) -> Value {
+fn pair(keys: (&str, &str), first: &str, rest: &[String]) -> Value {
     Value::Object(Object::from_iter([
+        (keys.0.to_owned(), Value::String(first.to_owned())),
         (
-            "source_sentence".to_owned(),
-            Value::String(first.to_owned()),
-        ),
-        (
-            "sentences".to_owned(),
+            keys.1.to_owned(),
             Value::Array(
-                sentences
-                    .iter()
+                rest.iter()
                     .map(|text| Value::String(text.clone()))
                     .collect(),
             ),
