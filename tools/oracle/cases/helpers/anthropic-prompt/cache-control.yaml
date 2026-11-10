@@ -1,0 +1,20 @@
+kind: helper
+name: anthropic-prompt-cache-control
+call:
+  anthropic_prompt:
+    messages:
+      - role: user
+        content:
+          - type: text
+            text: hi
+            cache_control: {type: ephemeral}
+        cache_control: {type: ephemeral, ttl: 1h}
+      - role: assistant
+        content: hello
+        cache_control: {type: ephemeral, ttl: 1h}
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+env: {}
+compare:
+  ignore: []
