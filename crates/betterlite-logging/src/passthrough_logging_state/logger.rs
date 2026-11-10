@@ -71,16 +71,10 @@ impl PassThroughEndpointLogging {
 
     #[must_use]
     pub fn is_cohere_route(url_route: &str) -> bool {
-        for route in Self::TRACKED_COHERE_ROUTES {
-            if !url_route.contains(route) {
-                continue;
-            }
-            if route == "/v1/embed" && url_route.contains("/v1/embeddings") {
-                continue;
-            }
-            return true;
-        }
-        false
+        // "/v1/embeddings" also contains "/v1/embed", so only the embeddings route is skipped
+        let [chat, embed] = Self::TRACKED_COHERE_ROUTES;
+        url_route.contains(chat)
+            || (url_route.contains(embed) && !url_route.contains("/v1/embeddings"))
     }
 
     #[must_use]

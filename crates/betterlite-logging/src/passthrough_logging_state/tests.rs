@@ -628,22 +628,31 @@ fn route_vertex_ai_live_checks_the_whole_route(#[case] route: &str, #[case] expe
 }
 
 #[rstest]
-#[case::api_host("https://api.cursor.com/v0/agents", None, true)]
-#[case::lookalike_host("https://api.cursor.com.evil/x", None, true)]
-#[case::provider_with_path("https://example.com/v0/agents", Some("cursor"), true)]
-#[case::provider_without_path("https://example.com/v0/other", Some("cursor"), true)]
-#[case::other_provider_with_path("https://example.com/v0/agents", Some("other"), false)]
-#[case::plain_path("/v0/agents", Some("cursor"), true)]
-#[case::plain_path_without_provider("/v0/agents", None, false)]
-fn route_cursor_matches_host_or_provider(
-    #[case] route: &str,
-    #[case] provider: Option<&str>,
-    #[case] expected: bool,
-) {
+#[case::api_host("https://api.cursor.com/v0/agents", true)]
+#[case::lookalike_host("https://api.cursor.com.evil/x", true)]
+#[case::other_host("https://example.com/v0/agents", false)]
+fn route_cursor_matches_hosts_holding_the_cursor_api(#[case] route: &str, #[case] expected: bool) {
     assert_eq!(
-        PassThroughEndpointLogging::is_cursor_route(route, provider),
+        PassThroughEndpointLogging::is_cursor_route(route, None),
         expected
     );
+}
+
+#[test]
+fn route_cursor_provider_shortcut_ignores_the_path() {
+    let matches =
+        PassThroughEndpointLogging::is_cursor_route("https://example.com/other", Some("cursor"));
+    assert!(matches);
+}
+
+#[test]
+fn route_cursor_tracked_path_needs_the_cursor_provider() {
+    let without = PassThroughEndpointLogging::is_cursor_route("/v0/agents", None);
+    assert!(!without);
+    let with = PassThroughEndpointLogging::is_cursor_route("/v0/agents", Some("cursor"));
+    assert!(with);
+    let other = PassThroughEndpointLogging::is_cursor_route("/v0/agents", Some("other"));
+    assert!(!other);
 }
 
 #[test]

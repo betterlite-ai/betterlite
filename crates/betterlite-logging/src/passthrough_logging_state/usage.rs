@@ -87,25 +87,41 @@ pub fn parse_upstream_reported_usage(headers: &HeaderMap) -> Option<UpstreamRepo
     })
 }
 
+// a missing header of a contract-speaking upstream records zero, never a fallback estimate
+fn warn_absent(header: &str, unit: &str) {
+    tracing::warn!(
+        "pass_through_endpoint: upstream did not send {header}; recording 0 {unit} for this request"
+    );
+}
+
+fn warn_unusable(reason: &str, header: &str, raw: &str, unit: &str) {
+    tracing::warn!(
+        "pass_through_endpoint: upstream sent {reason} {header}={}; recording 0 {unit} for this request",
+        quoted_value(raw)
+    );
+}
+
 #[must_use]
 pub fn parse_response_cost(raw: Option<&str>) -> Option<f64> {
     let Some(raw_value) = raw else {
-        tracing::warn!(
-            "pass_through_endpoint: upstream did not send {UPSTREAM_RESPONSE_COST_HEADER}; recording 0 cost for this request"
-        );
+        warn_absent(UPSTREAM_RESPONSE_COST_HEADER, "cost");
         return None;
     };
     let Ok(cost) = raw_value.trim().parse::<f64>() else {
-        let shown = quoted_value(raw_value);
-        tracing::warn!(
-            "pass_through_endpoint: upstream sent unparseable {UPSTREAM_RESPONSE_COST_HEADER}={shown}; recording 0 cost for this request"
+        warn_unusable(
+            "unparseable",
+            UPSTREAM_RESPONSE_COST_HEADER,
+            raw_value,
+            "cost",
         );
         return None;
     };
     if !cost.is_finite() || cost < 0.0_f64 {
-        let shown = quoted_value(raw_value);
-        tracing::warn!(
-            "pass_through_endpoint: upstream sent out-of-range {UPSTREAM_RESPONSE_COST_HEADER}={shown}; recording 0 cost for this request"
+        warn_unusable(
+            "out-of-range",
+            UPSTREAM_RESPONSE_COST_HEADER,
+            raw_value,
+            "cost",
         );
         return None;
     }
@@ -115,26 +131,30 @@ pub fn parse_response_cost(raw: Option<&str>) -> Option<f64> {
 #[must_use]
 pub fn parse_total_tokens(raw: Option<&str>) -> Option<i64> {
     let Some(raw_value) = raw else {
-        tracing::warn!(
-            "pass_through_endpoint: upstream did not send {UPSTREAM_TOTAL_TOKENS_HEADER}; recording 0 tokens for this request"
-        );
+        warn_absent(UPSTREAM_TOTAL_TOKENS_HEADER, "tokens");
         return None;
     };
-    let Ok(tokens) = raw_value.trim().parse::<i64>() else {
-        let shown = quoted_value(raw_value);
-        tracing::warn!(
-            "pass_through_endpoint: upstream sent unparseable {UPSTREAM_TOTAL_TOKENS_HEADER}={shown}; recording 0 tokens for this request"
-        );
-        return None;
-    };
-    if tokens < 0 {
-        let shown = quoted_value(raw_value);
-        tracing::warn!(
-            "pass_through_endpoint: upstream sent negative {UPSTREAM_TOTAL_TOKENS_HEADER}={shown}; recording 0 tokens for this request"
-        );
-        return None;
+    match raw_value.trim().parse::<i64>() {
+        Ok(tokens) if tokens >= 0 => Some(tokens),
+        Ok(_) => {
+            warn_unusable(
+                "negative",
+                UPSTREAM_TOTAL_TOKENS_HEADER,
+                raw_value,
+                "tokens",
+            );
+            None
+        }
+        Err(_) => {
+            warn_unusable(
+                "unparseable",
+                UPSTREAM_TOTAL_TOKENS_HEADER,
+                raw_value,
+                "tokens",
+            );
+            None
+        }
     }
-    Some(tokens)
 }
 
 pub fn apply_upstream_reported_usage(
