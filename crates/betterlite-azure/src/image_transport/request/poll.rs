@@ -32,8 +32,7 @@ where
         started: Duration,
     ) -> Result<(ImageReply, ImageOperation), ImageTransportError> {
         let mut reply = first;
-        let mut operation = decode_image_operation(&reply.body)
-            .map_err(|source| ImageTransportError::Decode { source })?;
+        let mut operation = decode_image_operation(&reply.body)?;
         let mut status = operation
             .status
             .clone()
@@ -54,8 +53,7 @@ where
                 Vec::new(),
             )
             .await?;
-            operation = decode_image_operation(&reply.body)
-                .map_err(|source| ImageTransportError::Decode { source })?;
+            operation = decode_image_operation(&reply.body)?;
             status = operation
                 .status
                 .clone()

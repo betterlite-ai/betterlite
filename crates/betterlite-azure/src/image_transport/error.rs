@@ -21,10 +21,7 @@ pub enum ImageTransportError {
     #[error("{message}")]
     OperationFailed { message: String, body: JsonValue },
     #[error("the image operation response is not JSON")]
-    Decode {
-        #[source]
-        source: ImageDecodeError,
-    },
+    Decode(#[from] ImageDecodeError),
     #[error("the polling response has no status")]
     MissingStatus,
     #[error("the succeeded operation has no result")]
@@ -34,15 +31,9 @@ pub enum ImageTransportError {
     #[error("sleep length must be non-negative: {seconds}")]
     NegativeSleep { seconds: i64 },
     #[error("the image request URL is not valid")]
-    Url {
-        #[source]
-        source: url::ParseError,
-    },
+    Url(#[from] url::ParseError),
     #[error("the image request body cannot be encoded as JSON")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
+    Encode(#[from] serde_json::Error),
     #[error(transparent)]
     Transport(#[from] TransportError),
 }
@@ -55,20 +46,19 @@ impl ImageTransportError {
             Self::MissingOperationLocation { .. } => Some(500),
             Self::PollingTimeout => Some(408),
             Self::OperationFailed { .. } => Some(400),
-            Self::Decode { .. }
+            Self::Decode(_)
             | Self::MissingStatus
             | Self::MissingResult
             | Self::RetryAfter { .. }
             | Self::NegativeSleep { .. }
-            | Self::Url { .. }
-            | Self::Encode { .. }
+            | Self::Url(_)
+            | Self::Encode(_)
             | Self::Transport(_) => None,
         }
     }
 
     pub(crate) fn operation_failed(operation: ImageOperation) -> Self {
-        let kind = FailureMessage::of(&operation.json);
-        let message = kind.render(&operation.json);
+        let message = FailureMessage::of(&operation.json).render(&operation.json);
         Self::OperationFailed {
             message,
             body: operation.json,

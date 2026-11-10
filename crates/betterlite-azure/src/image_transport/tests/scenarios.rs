@@ -213,7 +213,7 @@ pub(super) fn missing_status_502() {
 
     let invalid = polled(vec![reply(200, vec![], "not json")]);
     let third = failure_of(&invalid);
-    assert!(matches!(third, ImageTransportError::Decode { .. }));
+    assert!(matches!(third, ImageTransportError::Decode(_)));
     assert_eq!(third.status_code(), None);
 }
 

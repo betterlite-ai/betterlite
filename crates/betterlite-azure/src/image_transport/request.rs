@@ -117,8 +117,7 @@ where
         ..
     } = call;
     let body = body::image_generation_body(api_base, data, deployment_name);
-    let payload =
-        serde_json::to_vec(&body).map_err(|source| ImageTransportError::Encode { source })?;
+    let payload = serde_json::to_vec(&body)?;
     let reply = send(client, Method::POST, api_base, &headers, payload).await?;
     Ok(ImageResponse {
         status: reply.status,
@@ -147,11 +146,9 @@ where
         headers,
         ..
     } = call;
-    let submit_url = body::modify_url(api_base, SUBMIT_PATH)
-        .map_err(|source| ImageTransportError::Url { source })?;
+    let submit_url = body::modify_url(api_base, SUBMIT_PATH)?;
     data.shift_remove("model");
-    let payload =
-        serde_json::to_vec(&*data).map_err(|source| ImageTransportError::Encode { source })?;
+    let payload = serde_json::to_vec(&*data)?;
     let submitted = send(client, Method::POST, &submit_url, &headers, payload).await?;
     let location = operation_location(&submitted)?;
     assert_same_origin(&location, &submit_url)
@@ -194,8 +191,7 @@ fn finish(
         return Err(ImageTransportError::operation_failed(operation));
     }
     let result = operation.result.ok_or(ImageTransportError::MissingResult)?;
-    let body =
-        serde_json::to_vec(&result).map_err(|source| ImageTransportError::Encode { source })?;
+    let body = serde_json::to_vec(&result)?;
     Ok(ImageResponse {
         status: 200,
         headers: reply.headers,

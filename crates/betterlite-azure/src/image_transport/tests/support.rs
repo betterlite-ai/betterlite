@@ -389,13 +389,13 @@ pub(super) fn operation_error(error: &ImageTransportError) -> (&JsonValue, &str)
         | ImageTransportError::MissingOperationLocation { .. }
         | ImageTransportError::MissingStatusInitial
         | ImageTransportError::PollingTimeout
-        | ImageTransportError::Decode { .. }
+        | ImageTransportError::Decode(_)
         | ImageTransportError::MissingStatus
         | ImageTransportError::MissingResult
         | ImageTransportError::RetryAfter { .. }
         | ImageTransportError::NegativeSleep { .. }
-        | ImageTransportError::Url { .. }
-        | ImageTransportError::Encode { .. }
+        | ImageTransportError::Url(_)
+        | ImageTransportError::Encode(_)
         | ImageTransportError::Transport(_) => panic!("expected an operation failure"),
     }
 }
