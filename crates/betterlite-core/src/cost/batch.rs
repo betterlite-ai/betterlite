@@ -14,7 +14,7 @@ use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_cost::regional::regional_uplift_multiplier;
 use betterlite_models::token_rates::batch::get_batch_cost_rates;
 use betterlite_models::token_rates::component::calculate_cost_component;
-use betterlite_models::token_rates::{BatchCostRates, ModelInfo, Usage};
+use betterlite_models::token_rates::{BatchCostRates, ModelInfo, TokenRateError, Usage};
 
 use error::BatchCostError;
 use legacy::legacy_prompt_cost;
@@ -76,7 +76,12 @@ pub fn batch_cost_per_token(
         Some(provider),
     )?;
     let prompt_cost = prompt_side_cost(request, &model_info, rates)?;
-    let completion_cost = completion_side_cost(request.usage, &model_info, rates)?;
+    let completion_cost = match rates.output {
+        Some(output_rate) => Decimal::from(request.usage.completion_tokens)
+            .checked_mul(output_rate)
+            .ok_or(BatchCostError::Overflow)?,
+        None => ordinary_completion_cost(request.usage, &model_info)?,
+    };
     apply_uplift(
         request.data_residency,
         &model_info,
@@ -92,44 +97,50 @@ fn prompt_side_cost(
     model_info: &ModelInfo,
     rates: BatchCostRates,
 ) -> Result<Decimal, BatchCostError> {
-    if let Some(input_rate) = rates.input {
-        let cache_rates = PromptCacheRates {
-            read: rates.cache_read,
-            creation: rates.cache_creation,
+    let Some(input_rate) = rates.input else {
+        let Some(ordinary_rate) = present_rate(model_info, INPUT_RATE_KEY)? else {
+            return Ok(Decimal::ZERO);
         };
-        return batch_prompt_cost(
+        return legacy_prompt_cost(
             request.usage,
             request.prompt_extras,
             model_info,
-            input_rate,
-            cache_rates,
+            ordinary_rate,
         );
-    }
-    let input_rate = calculate_cost_component(model_info, INPUT_RATE_KEY, Some(Decimal::ONE))?;
-    if input_rate.is_zero() {
-        return Ok(Decimal::ZERO);
-    }
-    legacy_prompt_cost(request.usage, request.prompt_extras, model_info, input_rate)
+    };
+    let cache_rates = PromptCacheRates {
+        read: rates.cache_read,
+        creation: rates.cache_creation,
+    };
+    batch_prompt_cost(
+        request.usage,
+        request.prompt_extras,
+        model_info,
+        input_rate,
+        cache_rates,
+    )
 }
 
-fn completion_side_cost(
+fn ordinary_completion_cost(
     usage: &CostUsage,
     model_info: &ModelInfo,
-    rates: BatchCostRates,
 ) -> Result<Decimal, BatchCostError> {
-    if let Some(output_rate) = rates.output {
-        return Decimal::from(usage.completion_tokens)
-            .checked_mul(output_rate)
-            .ok_or(BatchCostError::Overflow);
-    }
-    let output_rate = calculate_cost_component(model_info, OUTPUT_RATE_KEY, Some(Decimal::ONE))?;
-    if output_rate.is_zero() {
+    let Some(output_rate) = present_rate(model_info, OUTPUT_RATE_KEY)? else {
         return Ok(Decimal::ZERO);
-    }
+    };
     Decimal::from(usage.completion_tokens)
         .checked_mul(output_rate)
         .and_then(|cost| cost.checked_div(Decimal::TWO))
         .ok_or(BatchCostError::Overflow)
+}
+
+// A zero or absent ordinary rate is no price, so only a truthy one selects a legacy half-rate charge.
+fn present_rate(model_info: &ModelInfo, key: &str) -> Result<Option<Decimal>, TokenRateError> {
+    let rate = calculate_cost_component(model_info, key, Some(Decimal::ONE))?;
+    if rate.is_zero() {
+        return Ok(None);
+    }
+    Ok(Some(rate))
 }
 
 fn apply_uplift(
