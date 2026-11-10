@@ -1,0 +1,111 @@
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::sync::{Mutex, PoisonError};
+
+use secrecy::{ExposeSecret as _, SecretString};
+use thiserror::Error;
+use tokio::sync::{Semaphore, SemaphorePermit};
+
+pub const REFRESH_THRESHOLD_SECONDS: i64 = 225;
+
+#[rustfmt::skip]
+#[derive(Debug, Error)]
+pub enum CacheError { #[error("the GDC Gemini token cache lease is closed")] Closed }
+
+#[rustfmt::skip]
+#[derive(Debug, Clone)]
+pub enum CredentialIdentity { ApiKey(SecretString), SourceHandle(String) }
+
+#[rustfmt::skip]
+#[derive(Debug, Clone)]
+pub struct CacheKey { pub audience: String, pub identity: CredentialIdentity }
+
+#[rustfmt::skip]
+fn identity_order(identity: &CredentialIdentity) -> (u8, &str) {
+    match identity {
+        CredentialIdentity::ApiKey(key) => (0, key.expose_secret()),
+        CredentialIdentity::SourceHandle(handle) => (1, handle),
+    }
+}
+
+#[rustfmt::skip]
+impl PartialEq for CacheKey { fn eq(&self, other: &Self) -> bool { self.cmp(other).is_eq() } }
+impl Eq for CacheKey {}
+
+#[rustfmt::skip]
+impl PartialOrd for CacheKey { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) } }
+
+#[rustfmt::skip]
+impl Ord for CacheKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.audience.cmp(&other.audience).then_with(|| identity_order(&self.identity).cmp(&identity_order(&other.identity)))
+    }
+}
+
+#[rustfmt::skip]
+#[derive(Default)]
+struct BoundHandle { token: Option<SecretString>, expires_at: Option<i64> }
+
+#[rustfmt::skip]
+#[derive(Debug)]
+pub struct HandleState { pub token: Option<SecretString>, pub expires_at: Option<i64> }
+
+pub struct TokenCache {
+    entries: Mutex<BTreeMap<CacheKey, BoundHandle>>,
+    lease: Semaphore,
+}
+
+impl TokenCache {
+    pub async fn acquire(&self) -> Result<SemaphorePermit<'_>, CacheError> {
+        self.lease
+            .acquire()
+            .await
+            .map_err(|_error| CacheError::Closed)
+    }
+    // The bound handle enters the cache before its first refresh and stays there when that refresh fails
+    pub fn state(&self, key: &CacheKey) -> HandleState {
+        let (token, expires_at) = {
+            let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+            let handle = entries.entry(key.clone()).or_default();
+            let state = (handle.token.clone(), handle.expires_at);
+            drop(entries);
+            state
+        };
+        HandleState { token, expires_at }
+    }
+    pub fn store(&self, key: &CacheKey, token: SecretString, expires_at: Option<i64>) {
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(handle) = entries.get_mut(key) {
+            handle.token = Some(token);
+            handle.expires_at = expires_at;
+        }
+    }
+    #[must_use]
+    pub fn cache_keys(&self) -> Vec<(String, String)> {
+        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        entries
+            .keys()
+            .map(|key| {
+                (
+                    key.audience.clone(),
+                    identity_order(&key.identity).1.to_owned(),
+                )
+            })
+            .collect()
+    }
+}
+
+#[rustfmt::skip]
+impl Default for TokenCache {
+    fn default() -> Self { Self { entries: Mutex::new(BTreeMap::new()), lease: Semaphore::const_new(1) } }
+}
+
+// The SDK considers a token stale 225 seconds before its expiry, and a truthy token is one that exists
+#[must_use]
+#[rustfmt::skip]
+pub fn is_valid(token: Option<&SecretString>, expires_at: Option<i64>, now: i64) -> bool {
+    let Some(present) = token else {
+        return false;
+    };
+    !present.expose_secret().is_empty() && expires_at.is_none_or(|expiry| now < expiry.saturating_sub(REFRESH_THRESHOLD_SECONDS))
+}

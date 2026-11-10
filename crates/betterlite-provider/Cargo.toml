@@ -25,8 +25,11 @@ futures-util = { version = "0.3.34", default-features = false, features = ["asyn
 hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 pem = "4.0.0"
+pkcs8 = { version = "0.11.0", default-features = false, features = ["alloc"] }
 rust_decimal.workspace = true
+sec1 = { version = "0.8.1", default-features = false, features = ["der"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
@@ -37,6 +40,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
+zeroize = "1.9.1"
 
 [dev-dependencies]
 mutants = "0.0.4"
