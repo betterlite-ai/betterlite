@@ -236,7 +236,8 @@ fn prompt_query(key: &PromptKey) -> Vec<(String, String)> {
 const fn is_retryable(error: &LangfuseRestError) -> bool {
     match error {
         LangfuseRestError::Api(api) => api.status_code >= 500,
+        LangfuseRestError::Body { status, .. } => *status >= 500,
         LangfuseRestError::Request(_) => true,
-        LangfuseRestError::Decode { .. } | LangfuseRestError::Body { .. } => false,
+        LangfuseRestError::Decode { .. } => false,
     }
 }

@@ -45,6 +45,10 @@ pub(crate) enum Answer {
         status: u16,
         body: String,
     },
+    Raw {
+        status: u16,
+        body: Vec<u8>,
+    },
     Stall(Duration),
 }
 
@@ -80,6 +84,13 @@ impl Answer {
             release,
             status,
             body: body.to_owned(),
+        }
+    }
+
+    pub(crate) fn raw(status: u16, body: &[u8]) -> Self {
+        Self::Raw {
+            status,
+            body: body.to_vec(),
         }
     }
 }
@@ -156,12 +167,14 @@ async fn serve(
         return;
     };
     match answer {
-        Answer::Respond { status, body } => respond(&mut stream, status, &body, &[]).await,
+        Answer::Respond { status, body } => {
+            respond(&mut stream, status, body.as_bytes(), &[]).await;
+        }
         Answer::RespondWith {
             status,
             body,
             headers,
-        } => respond(&mut stream, status, &body, &headers).await,
+        } => respond(&mut stream, status, body.as_bytes(), &headers).await,
         Answer::Close => drop(stream),
         Answer::Hold {
             release,
@@ -169,11 +182,12 @@ async fn serve(
             body,
         } => {
             let _released = release.await;
-            respond(&mut stream, status, &body, &[]).await;
+            respond(&mut stream, status, body.as_bytes(), &[]).await;
         }
+        Answer::Raw { status, body } => respond(&mut stream, status, &body, &[]).await,
         Answer::Stall(delay) => {
             sleep(delay).await;
-            respond(&mut stream, 200, "", &[]).await;
+            respond(&mut stream, 200, b"", &[]).await;
         }
     }
 }
@@ -193,7 +207,7 @@ async fn read_head(stream: &mut TcpStream) -> String {
 async fn respond(
     stream: &mut TcpStream,
     status: u16,
-    body: &str,
+    body: &[u8],
     headers: &[(&'static str, String)],
 ) {
     let reason = http::StatusCode::from_u16(status)
@@ -209,7 +223,7 @@ async fn respond(
     }
     head.push_str("\r\n");
     let _head_written = stream.write_all(head.as_bytes()).await;
-    let _body_written = stream.write_all(body.as_bytes()).await;
+    let _body_written = stream.write_all(body).await;
     let _closed = stream.shutdown().await;
 }
 
@@ -308,7 +322,9 @@ pub(crate) fn api_error(error: LangfuseRestError) -> LangfusePromptError {
         LangfuseRestError::Decode { source } => {
             panic!("expected an api error, got {source:?}")
         }
-        LangfuseRestError::Body { source } => panic!("expected an api error, got {source:?}"),
+        LangfuseRestError::Body { status, source } => {
+            panic!("expected an api error, got status {status}: {source:?}")
+        }
     }
 }
 

@@ -26,7 +26,8 @@ pub enum LangfuseRestError {
     },
     #[error("the Langfuse response body is not UTF-8")]
     Body {
-        #[from]
+        status: u16,
+        #[source]
         source: Utf8Error,
     },
 }
@@ -46,18 +47,22 @@ where
     T: DeserializeOwned,
 {
     if !(200..300).contains(&response.status) {
-        return Err(LangfuseRestError::Api(LangfusePromptError {
-            status_code: response.status,
-            body: response.json()?,
-        }));
+        return Err(api_failure(response.status, response));
     }
     match serde_json::from_slice(&response.body) {
         Ok(value) => Ok(value),
         Err(source) if source.is_data() => Err(LangfuseRestError::Decode { source }),
-        Err(_) => Err(LangfuseRestError::Api(LangfusePromptError {
-            status_code: response.status,
-            body: response.json()?,
-        })),
+        Err(_) => Err(api_failure(response.status, response)),
+    }
+}
+
+fn api_failure(status: u16, response: &HttpResponse) -> LangfuseRestError {
+    match response.json() {
+        Ok(body) => LangfuseRestError::Api(LangfusePromptError {
+            status_code: status,
+            body,
+        }),
+        Err(source) => LangfuseRestError::Body { status, source },
     }
 }
 

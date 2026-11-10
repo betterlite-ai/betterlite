@@ -293,6 +293,27 @@ async fn a_success_status_with_an_unreadable_body_is_an_api_error() {
 }
 
 #[tokio::test]
+async fn a_server_error_with_a_body_that_is_not_utf8_is_retried_once() {
+    let server = FakeLangfuse::start(vec![
+        Answer::raw(500, &[0xff, 0xfe]),
+        Answer::raw(500, &[0xff, 0xfe]),
+    ])
+    .await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock::new();
+    let client = client_for(&server, TTL, &clock, &tasks);
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the prompt fails");
+    let LangfuseRestError::Body { status, .. } = &error else {
+        panic!("expected a body failure, got {error:?}")
+    };
+    assert_eq!(*status, 500);
+    assert_eq!(server.request_count(), 2);
+}
+
+#[tokio::test]
 async fn a_response_that_is_not_the_declared_prompt_shape_is_a_decode_error() {
     let server = FakeLangfuse::start(vec![Answer::ok(r#"{"type":"text"}"#)]).await;
     let tasks = TaskTracker::new();
