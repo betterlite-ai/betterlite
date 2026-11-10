@@ -1,5 +1,4 @@
 use betterlite_logging::datadog_llm_obs::messages::to_dd_messages;
-use betterlite_logging::datadog_llm_obs::values::Object;
 use betterlite_logging::datadog_llm_privacy::cost_dimension::{
     cost_dimension_tags, declared_cost_tags,
 };
@@ -24,48 +23,75 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    RedactionDecision {
-        turn_off_message_logging: bool,
-        message_logging: bool,
-        request_redacts: bool,
-    },
-    MessageRedaction {
-        messages: Option<Json>,
-    },
-    GuardrailRedaction {
-        guardrail_information: Option<Json>,
-    },
-    RouterSpanFields {
-        routing_decision: Option<Json>,
-        redact_prompt_text: bool,
-    },
-    CostDimensionTags {
-        payload: Box<StandardLoggingPayload>,
-        #[serde(default)]
-        span_tags: Vec<String>,
-    },
-    TimeToFirstToken {
-        start_time: Option<f64>,
-        completion_start_time: Option<f64>,
-        end_time: Option<f64>,
-    },
-    LatencyMetrics {
-        payload: Box<StandardLoggingPayload>,
-    },
-    StreamDetection {
-        payload: Box<StandardLoggingPayload>,
-    },
-    SpendMetrics {
-        payload: Box<StandardLoggingPayload>,
-    },
-    Metadata {
-        payload: Box<StandardLoggingPayload>,
-        redact_prompt_text: bool,
-        #[serde(default)]
-        span_tags: Vec<String>,
-    },
+    RedactionDecision(DecisionInput),
+    MessageRedaction(MessagesInput),
+    GuardrailRedaction(GuardrailsInput),
+    RouterSpanFields(RouterInput),
+    CostDimensionTags(CostInput),
+    TimeToFirstToken(TimingInput),
+    LatencyMetrics(PayloadInput),
+    StreamDetection(PayloadInput),
+    SpendMetrics(PayloadInput),
+    Metadata(MetadataInput),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecisionInput {
+    flags: LoggingFlags,
+    request_redacts: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MessagesInput {
+    messages: Option<Json>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuardrailsInput {
+    guardrail_information: Option<Json>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RouterInput {
+    routing_decision: Option<Json>,
+    redact_prompt_text: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CostInput {
+    payload: Box<StandardLoggingPayload>,
+    #[serde(default)]
+    span_tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TimingInput {
+    start: Option<f64>,
+    completion_start: Option<f64>,
+    end: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PayloadInput {
+    payload: Box<StandardLoggingPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MetadataInput {
+    payload: Box<StandardLoggingPayload>,
+    redact_prompt_text: bool,
+    #[serde(default)]
+    span_tags: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -79,58 +105,40 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::RedactionDecision {
-                turn_off_message_logging,
-                message_logging,
-                request_redacts,
-            } => {
-                let flags = LoggingFlags {
-                    turn_off_message_logging: *turn_off_message_logging,
-                    message_logging: *message_logging,
-                };
-                encode(payload_logging_is_off(flags, *request_redacts))
-            }
-            Input::MessageRedaction { messages } => {
-                encode(redact_messages(&to_dd_messages(messages.as_ref())))
-            }
-            Input::GuardrailRedaction {
-                guardrail_information,
-            } => encode(redact_guardrails(guardrail_information.as_ref())),
-            Input::RouterSpanFields {
-                routing_decision,
-                redact_prompt_text,
-            } => encode(router_span_fields(
-                routing_decision.as_ref(),
-                *redact_prompt_text,
+            Input::RedactionDecision(decision) => encode(payload_logging_is_off(
+                decision.flags,
+                decision.request_redacts,
             )),
-            Input::CostDimensionTags { payload, span_tags } => {
-                encode(cost_output(payload, span_tags))
+            Input::MessageRedaction(redaction) => encode(redact_messages(&to_dd_messages(
+                redaction.messages.as_ref(),
+            ))),
+            Input::GuardrailRedaction(redaction) => {
+                encode(redact_guardrails(redaction.guardrail_information.as_ref()))
             }
-            Input::TimeToFirstToken {
-                start_time,
-                completion_start_time,
-                end_time,
-            } => encode(time_to_first_token_seconds(
-                *start_time,
-                *completion_start_time,
-                *end_time,
+            Input::RouterSpanFields(fields) => encode(router_span_fields(
+                fields.routing_decision.as_ref(),
+                fields.redact_prompt_text,
             )),
-            Input::LatencyMetrics { payload } => encode(latency_object(&latency_metrics(payload))),
-            Input::StreamDetection { payload } => encode(is_streamed_request(payload)),
-            Input::SpendMetrics { payload } => encode(spend_object(&spend_metrics(payload))),
-            Input::Metadata {
-                payload,
-                redact_prompt_text,
-                span_tags,
-            } => encode(metadata_output(payload, *redact_prompt_text, span_tags)),
+            Input::CostDimensionTags(cost) => encode(cost_output(cost)),
+            Input::TimeToFirstToken(timing) => encode(time_to_first_token_seconds(
+                timing.start,
+                timing.completion_start,
+                timing.end,
+            )),
+            Input::LatencyMetrics(latency) => {
+                encode(latency_object(&latency_metrics(&latency.payload)))
+            }
+            Input::StreamDetection(stream) => encode(is_streamed_request(&stream.payload)),
+            Input::SpendMetrics(spend) => encode(spend_object(&spend_metrics(&spend.payload))),
+            Input::Metadata(metadata) => metadata_output(metadata),
         }
     }
 }
 
-fn cost_output(payload: &StandardLoggingPayload, span_tags: &[String]) -> CostOutput {
-    let router = router_span_fields(payload.metadata.routing_decision.as_ref(), false);
-    let tags = cost_dimension_tags(payload, &router);
-    let mut all_tags = span_tags.to_vec();
+fn cost_output(input: &CostInput) -> CostOutput {
+    let router = router_span_fields(input.payload.metadata.routing_decision.as_ref(), false);
+    let tags = cost_dimension_tags(&input.payload, &router);
+    let mut all_tags = input.span_tags.clone();
     all_tags.extend_from_slice(&tags);
     CostOutput {
         declared: declared_cost_tags(&all_tags),
@@ -138,19 +146,23 @@ fn cost_output(payload: &StandardLoggingPayload, span_tags: &[String]) -> CostOu
     }
 }
 
-fn metadata_output(
-    payload: &StandardLoggingPayload,
-    redact_prompt_text: bool,
-    span_tags: &[String],
-) -> Object {
+fn metadata_output(input: &MetadataInput) -> crate::helpers::HelperResult {
     let router = router_span_fields(
-        payload.metadata.routing_decision.as_ref(),
-        redact_prompt_text,
+        input.payload.metadata.routing_decision.as_ref(),
+        input.redact_prompt_text,
     );
-    let mut all_tags = span_tags.to_vec();
-    all_tags.extend(cost_dimension_tags(payload, &router));
+    let mut all_tags = input.span_tags.clone();
+    all_tags.extend(cost_dimension_tags(&input.payload, &router));
     let cost_tags = declared_cost_tags(&all_tags);
-    span_metadata(payload, &router, &cost_tags, redact_prompt_text)
+    match span_metadata(
+        &input.payload,
+        &router,
+        &cost_tags,
+        input.redact_prompt_text,
+    ) {
+        Ok(metadata) => encode(metadata),
+        Err(error) => Err(value_error(error)),
+    }
 }
 
 fn encode<T>(value: T) -> crate::helpers::HelperResult

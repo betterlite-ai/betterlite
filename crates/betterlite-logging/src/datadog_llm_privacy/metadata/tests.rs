@@ -79,7 +79,8 @@ fn populated() -> StandardLoggingPayload {
 #[test]
 fn metadata_projection_carries_the_fixed_span_fields() {
     let payload = support::payload();
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{
@@ -102,7 +103,8 @@ fn metadata_projection_carries_the_fixed_span_fields() {
 #[test]
 fn metadata_projection_carries_the_key_and_budget_fields() {
     let payload = populated();
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{
@@ -132,7 +134,8 @@ fn metadata_projection_carries_the_key_and_budget_fields() {
 #[test]
 fn metadata_projection_carries_the_request_payload_fields() {
     let payload = populated();
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{
@@ -160,7 +163,8 @@ fn metadata_projection_carries_the_request_payload_fields() {
 fn metadata_redaction_drops_the_prompt_carrying_keys_and_the_router_signals() {
     let payload = populated();
     let router = router_span_fields(payload.metadata.routing_decision.as_ref(), true);
-    let metadata = span_metadata(&payload, &router, &["user:alice".to_owned()], true);
+    let metadata = span_metadata(&payload, &router, &["user:alice".to_owned()], true)
+        .expect("the span metadata encodes");
     assert_eq!(metadata.get("routing_decision"), None);
     assert_eq!(metadata.get("requester_metadata"), None);
     assert_eq!(metadata.get("prompt_management_metadata"), None);
@@ -185,7 +189,7 @@ fn metadata_carries_the_router_fields_the_caller_computed() {
     payload.metadata.routing_decision =
         Some(support::json(r#"{"tier": "low", "signals": ["quote"]}"#));
     let router = router_span_fields(payload.metadata.routing_decision.as_ref(), false);
-    let metadata = span_metadata(&payload, &router, &[], false);
+    let metadata = span_metadata(&payload, &router, &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{
@@ -204,12 +208,14 @@ fn metadata_redacts_a_guardrail_record_only_when_redacting() {
         serde_json::from_str(r#"{"guardrail_name": "pii", "guardrail_request": {"prompt": "s"}}"#)
             .expect("the record parses"),
     ]);
-    let plain = span_metadata(&payload, &Object::new(), &[], false);
+    let plain =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &plain,
         r#"{"guardrail_information": [{"guardrail_name": "pii", "guardrail_request": {"prompt": "s"}}]}"#,
     );
-    let redacted = span_metadata(&payload, &Object::new(), &[], true);
+    let redacted =
+        span_metadata(&payload, &Object::new(), &[], true).expect("the span metadata encodes");
     support::assert_fields(
         &redacted,
         r#"{"guardrail_information": [{"guardrail_name": "pii", "guardrail_request": "REDACTED_BY_LITELM"}]}"#,
@@ -219,7 +225,8 @@ fn metadata_redacts_a_guardrail_record_only_when_redacting() {
 #[test]
 fn metadata_carries_the_latency_and_spend_metrics_of_the_payload() {
     let payload = populated();
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{
@@ -240,7 +247,8 @@ fn metadata_keeps_a_cache_hit_and_a_cache_key_the_payload_carries() {
     payload.cache_hit = Some(false);
     payload.cache_key = Some("cache-1".to_owned());
     payload.custom_llm_provider = Some("openai".to_owned());
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     support::assert_fields(
         &metadata,
         r#"{"cache_hit": false, "cache_key": "cache-1", "model_provider": "openai"}"#,
@@ -253,6 +261,7 @@ fn metadata_marks_a_streamed_request_from_the_request_parameters() {
     payload
         .model_parameters
         .insert("stream".to_owned(), Json::Bool(true));
-    let metadata = span_metadata(&payload, &Object::new(), &[], false);
+    let metadata =
+        span_metadata(&payload, &Object::new(), &[], false).expect("the span metadata encodes");
     assert_eq!(metadata.get("is_streamed_request"), Some(&Json::Bool(true)));
 }

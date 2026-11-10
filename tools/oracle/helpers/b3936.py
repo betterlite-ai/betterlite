@@ -43,10 +43,11 @@ def payload_function(function: Json, input_value: dict[str, Json]) -> Json:
 
 def redaction_decision(input_value: dict[str, Json]) -> Json:
     litellm.turn_off_message_logging = False
+    flags = object_value(input_value.get("flags"), "flags")
     _LOGGER.turn_off_message_logging = bool_value(
-        input_value.get("turn_off_message_logging"), "turn_off_message_logging"
+        flags.get("turn_off_message_logging"), "turn_off_message_logging"
     )
-    _LOGGER.message_logging = bool_value(input_value.get("message_logging"), "message_logging")
+    _LOGGER.message_logging = bool_value(flags.get("message_logging"), "message_logging")
     request_redacts = bool_value(input_value.get("request_redacts"), "request_redacts")
     kwargs: dict[str, object] = {}
     if request_redacts:
@@ -79,11 +80,11 @@ def time_to_first_token(input_value: dict[str, Json]) -> Json:
     payload = cast(
         "StandardLoggingPayload",
         {
-            "startTime": optional_float(input_value.get("start_time"), "start_time"),
+            "startTime": optional_float(input_value.get("start"), "start"),
             "completionStartTime": optional_float(
-                input_value.get("completion_start_time"), "completion_start_time"
+                input_value.get("completion_start"), "completion_start"
             ),
-            "endTime": optional_float(input_value.get("end_time"), "end_time"),
+            "endTime": optional_float(input_value.get("end"), "end"),
         },
     )
     return _LOGGER._get_time_to_first_token_seconds(payload)  # pyright: ignore[reportPrivateUsage]

@@ -2,9 +2,7 @@
 
 use betterlite_models::decisions::Json;
 
-use crate::datadog_llm_privacy::guardrail_redact::{
-    guardrail_record, redact_guardrails, redacted_records,
-};
+use crate::datadog_llm_privacy::guardrail_redact::{redact_guardrails, redacted_records};
 use crate::fields::payload::records::GuardrailInformation;
 
 const REDACTED: &str = "REDACTED_BY_LITELM";
@@ -96,17 +94,9 @@ fn guardrail_redaction_reports_no_records_for_null_or_a_scalar() {
 }
 
 #[test]
-fn the_guardrail_record_projection_matches_the_serialized_record() {
-    let projected = Json::Object(guardrail_record(&record()));
-    let encoded: Json =
-        serde_json::from_str(RECORD_JSON).expect("the fixture parses back as a generic object");
-    assert_eq!(projected, encoded);
-}
-
-#[test]
-fn redacting_a_typed_record_marks_the_prompt_fields() {
+fn redacting_a_typed_record_keeps_the_audit_fields_and_marks_the_prompt_ones() {
     let records = [record()];
-    let redacted = redacted_records(&records);
+    let redacted = redacted_records(&records).expect("the record encodes");
     assert_eq!(
         redacted[0].get("guardrail_request"),
         Some(&json("\"REDACTED_BY_LITELM\""))

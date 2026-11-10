@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::Deserialize;
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub struct LoggingFlags {
     pub turn_off_message_logging: bool,
     pub message_logging: bool,
