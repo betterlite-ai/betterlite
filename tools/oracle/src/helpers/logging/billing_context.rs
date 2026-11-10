@@ -30,8 +30,6 @@ pub(crate) struct Call {
     #[serde(default)]
     response_time: Option<ResponseTimeInput>,
     #[serde(default)]
-    pricing: Option<PricingInput>,
-    #[serde(default)]
     breakdowns: Vec<BreakdownInput>,
 }
 
@@ -40,8 +38,6 @@ pub(crate) struct Call {
 pub(crate) enum Function {
     Identity,
     ResponseTime,
-    Deployment,
-    Ocr,
     Breakdown,
 }
 
@@ -104,17 +100,6 @@ pub(crate) struct TimingInput {
     start_time: String,
     end_time: String,
     now: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PricingInput {
-    #[serde(default)]
-    custom_pricing: Option<bool>,
-    #[serde(default)]
-    router_model_id: Option<String>,
-    #[serde(default)]
-    litellm_params: Option<IndexMap<String, Json>>,
 }
 
 #[derive(Deserialize)]
