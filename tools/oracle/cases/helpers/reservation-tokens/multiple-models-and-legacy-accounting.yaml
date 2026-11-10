@@ -1,0 +1,18 @@
+kind: helper
+name: reservation-tokens-multiple-models-and-legacy-accounting
+call:
+  reservation_tokens:
+    calls:
+      - function: aggregate
+        models:
+          - gpt-3.5-turbo
+          - gpt-3.5-turbo-0301
+          - gpt-4o
+          - gpt-3.5-turbo
+        request:
+          messages:
+            - role: user
+              content: hello world
+              name: bob
+env: {}
+compare: {ignore: []}
