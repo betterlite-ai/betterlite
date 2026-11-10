@@ -15,7 +15,7 @@ mod gateway;
     clippy::map_err_ignore,
     reason = "The bounded helper process runner owns these CLI and pipe operations."
 )]
-mod helpers;
+pub mod helpers;
 pub mod http;
 pub mod http_scenarios;
 pub mod mock;

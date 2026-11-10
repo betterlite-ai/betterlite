@@ -1,0 +1,6 @@
+model_list: []
+general_settings:
+  database_url: os.environ/DATABASE_URL
+  database_connection_pool_limit: 20
+# LITELLM_PGBOUNCER_ENABLED, LITELLM_PGBOUNCER_PORT, LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS,
+# LITELLM_PGBOUNCER_MAX_CLIENT_CONN and LITELLM_PGBOUNCER_BINARY are read from the environment

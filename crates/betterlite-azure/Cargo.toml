@@ -10,6 +10,8 @@ base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-openai = { path = "../betterlite-openai" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
@@ -24,7 +26,6 @@ tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
-betterlite-openai = { path = "../betterlite-openai" }
 rstest = "=0.27.0"
 tracing-subscriber.workspace = true
 

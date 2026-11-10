@@ -1,0 +1,12 @@
+task: B4563
+deviations:
+  - what: >-
+      A receipt whose previous or endpoints maps lack a path betterlite needs is read as an absent value;
+      LiteLLM indexes those maps directly and raises an unhandled KeyError when a hand-edited receipt is
+      missing the entry.
+    why: >-
+      Pydantic accepts a receipt whose previous or endpoints object omits a path, and LiteLLM then fails
+      with a traceback inside UnpinModel and unconfigure instead of an error the user can act on. betterlite
+      treats the missing entry as absent: it removes or restores what the receipt still records, and it
+      withholds a credential whose captured endpoint is unknown rather than sending it to a guessed server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L606-L613

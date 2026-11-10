@@ -1,0 +1,9 @@
+kind: helper
+name: sink-key-alias-seed
+call:
+  b3849:
+    function: sink_key
+    endpoint: http://collector:4318
+    headers: {Arize-Space-Id: space}
+env: {}
+compare: {ignore: []}

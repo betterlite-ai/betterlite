@@ -46,6 +46,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "langfuse_response"
+path = "fuzz_targets/langfuse_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "s3_v2"
 path = "fuzz_targets/s3_v2.rs"
 test = false

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-resolution-openrouter-nested
+call:
+  provider_resolution:
+    model: openrouter/anthropic/claude-3.5-sonnet
+    custom_llm_provider: openrouter
+env: {}
+compare: {ignore: []}
