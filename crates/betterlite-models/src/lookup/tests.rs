@@ -208,6 +208,7 @@ const SYNTHETIC: &[u8] = br#"{
   "zed-other": {"litellm_provider": "other", "mode": "chat"},
   "zed-own": {"litellm_provider": "acme", "mode": "chat", "max_input_tokens": 5, "supports_reasoning": false},
   "bare-model": {"mode": "chat"},
+  "fw-own": {"mode": "chat", "supports_function_calling": false},
   "fallback_generalizations": {"rules": [
     {"name": "fill", "pattern": "zed", "fill_missing_for_providers": ["acme"], "model_info": {"supports_reasoning": true, "max_input_tokens": 999}},
     {"name": "cap", "pattern": "cap-", "model_info": {"mode": "chat", "max_output_tokens": 7, "supports_vision": true}}
@@ -690,4 +691,7 @@ fn provider_overlay_lays_over_entry() {
     let kimi = fireworks("kimi-k2p6").capabilities;
     assert_eq!(kimi.supports_reasoning, Some(true));
     assert_eq!(kimi.supports_vision, Some(true));
+    let own = synthetic();
+    let keyed = resolve(&own, &IDENTITY, "fw-own", Some("fireworks_ai")).unwrap();
+    assert_eq!(keyed.capabilities.supports_function_calling, Some(false));
 }

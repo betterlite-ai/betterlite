@@ -7,8 +7,8 @@ use rstest::rstest;
 
 use super::projection::{clean_display_name, project};
 use super::{
-    EndpointSupport, MAX_REGISTRY_BYTES, MAX_REGISTRY_ENDPOINTS, MAX_REGISTRY_PROVIDERS,
-    PACKAGED_ASSET, ROOT_ASSET, RUNTIME_ASSET, RegistryAsset, RegistryError, parse, support,
+    EndpointSupport, MAX_REGISTRY_ENDPOINTS, MAX_REGISTRY_PROVIDERS, PACKAGED_ASSET, ROOT_ASSET,
+    RUNTIME_ASSET, RegistryAsset, RegistryError, parse, support,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -168,7 +168,7 @@ fn display_name() {
 
 #[test]
 fn parse_accepts_the_size_limit() {
-    let mut bytes = vec![b' '; MAX_REGISTRY_BYTES - 2];
+    let mut bytes = vec![b' '; 0x003F_FFFE];
     bytes.extend_from_slice(b"{}");
     let registry = parse(&bytes, RegistryAsset::Packaged).unwrap();
     assert!(registry.providers.is_empty());
@@ -176,7 +176,7 @@ fn parse_accepts_the_size_limit() {
 
 #[test]
 fn parse_rejects_an_oversized_registry() {
-    let bytes = vec![b' '; MAX_REGISTRY_BYTES + 1];
+    let bytes = vec![b' '; 0x0040_0001];
     assert!(matches!(
         parse(&bytes, RegistryAsset::Packaged),
         Err(RegistryError::TooLarge { .. })
