@@ -2032,6 +2032,7 @@ dependencies = [
  "unicode-general-category",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2891,6 +2892,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",

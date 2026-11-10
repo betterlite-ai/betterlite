@@ -1,0 +1,15 @@
+kind: helper
+name: unique-ids-suffix-counter
+call:
+  b123:
+    op: ensure_unique_operation_ids
+    document:
+      paths:
+        /a: {get: {operationId: dup_get}}
+        /b: {get: {operationId: dup}}
+        /c: {get: {operationId: dup}}
+        /d: {get: {operationId: dup}}
+    reserved: null
+env: {}
+compare:
+  ignore: []
