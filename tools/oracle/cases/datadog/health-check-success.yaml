@@ -27,6 +27,11 @@
   },
   "env": {},
   "compare": {
-    "ignore": []
+    "ignore": [
+      {
+        "pointer": "/value/scenarios/0/calls/0/body/0/message",
+        "why": "the dummy payload content belongs to the payload builders"
+      }
+    ]
   }
 }
