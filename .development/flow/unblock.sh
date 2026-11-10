@@ -116,8 +116,11 @@ if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']
   for path in $added; do
     sed -i "0,/^  paths:\$/s||  paths:\n$indent- \"$path\"|" "$task"
   done
-  git add "$task"
-  git commit -q -m "docs(tasks): $id scope$added" -m "Inside a crate this task already touches, so a block rule added it." -- "$task" || exit 1
+  backlog=.development/backlog/$id.yaml
+  # a todo task may not cover a crate root
+  tr ' ' '\n' <<< "$added" | grep -q -E '^crates/[^/]+/(src/(lib|main)\.rs|src/\*\*|\*\*)$' && sed -i 's/^status: todo$/status: in-progress/' "$backlog"
+  git add "$task" "$backlog"
+  git commit -q -m "docs(tasks): $id scope$added" -m "Inside a crate this task already touches, so a block rule added it." -- "$task" "$backlog" || exit 1
   echo "These paths are now in your scope (commit on this branch):$added. Keep your work and finish the task."
   exit 0
 fi
