@@ -9,6 +9,7 @@ use betterlite_core::mock::stream::{self, StreamSpec};
 use betterlite_core::mock::timeout::{self, TimeoutValue};
 use betterlite_openai::chat::provider_error::ProviderFailure;
 use betterlite_openai::chat::{client_mock, mock_failure};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -18,12 +19,22 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: String::from("Redaction"),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         let outcome = if input.mode == "embedding" {
             embedding_outcome(input)
         } else {
             chat_outcome(input)
         };
-        Ok(outcome.unwrap_or_else(|failure| error_value(&failure)))
+        Ok(outcome.unwrap_or_else(|failure| error_value(&failure, &redactor)))
     }
 }
 #[derive(Debug, Error)]
@@ -35,9 +46,9 @@ enum Failure {
 }
 
 // the error travels as data, because a raised exception reaches the oracle with only its status
-fn error_value(failure: &Failure) -> Value {
+fn error_value(failure: &Failure, redactor: &Redactor) -> Value {
     let facts = match failure {
-        Failure::Mock(error) => mock_failure(*error).failure(),
+        Failure::Mock(error) => mock_failure(*error).failure(redactor),
         Failure::Json(_) => ProviderFailure {
             status: 500,
             error_type: String::from("internal_server_error"),

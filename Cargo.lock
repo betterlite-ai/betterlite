@@ -987,6 +987,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-server",
  "chrono",
  "clap",
@@ -998,6 +999,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -1229,6 +1231,8 @@ dependencies = [
  "azure_core",
  "azure_storage_blob",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-models",
  "futures-util",
  "rstest",
  "secrecy",
@@ -1375,6 +1379,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
@@ -1386,6 +1391,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
+ "betterlite-redact",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1841,6 +1847,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
  "chrono",
@@ -1850,11 +1857,13 @@ dependencies = [
  "pem",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "scrypt",
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "subtle",
@@ -1947,9 +1956,11 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",
+ "betterlite-redact",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -2017,6 +2028,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -2099,6 +2111,7 @@ dependencies = [
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-logging",
  "betterlite-oracle",
  "chrono",
  "libfuzzer-sys",
@@ -2228,6 +2241,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2250,13 +2264,19 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-env",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
+ "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
+ "mutants",
  "pem",
  "rstest",
  "rust_decimal",
@@ -2277,6 +2297,7 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
 ]
@@ -2316,7 +2337,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redis",
- "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
@@ -2365,6 +2385,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "num-traits",
+ "percent-encoding",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2522,6 +2543,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2588,10 +2610,12 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-guardrails",
  "betterlite-http",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
@@ -8289,7 +8313,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

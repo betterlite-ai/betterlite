@@ -1,0 +1,12 @@
+kind: helper
+name: oci-chat-wire-generic-stream-seed
+call:
+  b5942:
+    function: generic_stream
+    chunks:
+      - message:
+          toolCalls:
+            - name: lookup
+              arguments: "{}"
+env: {}
+compare: {ignore: []}

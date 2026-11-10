@@ -24,6 +24,7 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreEmbeddingError,
 };
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde::Serialize;
@@ -70,7 +71,7 @@ pub(crate) async fn send(
     let catalog = BundledCatalog::default().get();
     // the direct side serves no deployment: its key and base come from the configuration and the env
     let direct = DirectEmbeddingExecutor {
-        executor: chat_executor(&client, Vec::new()),
+        executor: chat_executor(&client, Vec::new())?,
         deployments: Vec::new(),
         defaults: defaults.clone(),
         catalog: Arc::clone(&catalog),
@@ -78,7 +79,7 @@ pub(crate) async fn send(
     let outcomes = if call.router.is_some() {
         let handle = FakeRouter {
             direct: DirectEmbeddingExecutor {
-                executor: chat_executor(&client, router_deployments.clone()),
+                executor: chat_executor(&client, router_deployments.clone())?,
                 deployments: router_deployments,
                 defaults,
                 catalog,
@@ -175,8 +176,11 @@ fn deployments(
     Ok((config.model_list, resolved, defaults))
 }
 
-fn chat_executor(client: &ProxiedClient, deployments: Vec<ChatDeployment>) -> ChatExecutor {
-    ChatExecutor {
+fn chat_executor(
+    client: &ProxiedClient,
+    deployments: Vec<ChatDeployment>,
+) -> Result<ChatExecutor, SdkHttpError> {
+    Ok(ChatExecutor {
         client: client.clone(),
         deployments,
         catalog: CatalogCapabilities {
@@ -189,7 +193,9 @@ fn chat_executor(client: &ProxiedClient, deployments: Vec<ChatDeployment>) -> Ch
         mock: MockSettings::default(),
         mock_chat,
         mock_embedding,
-    }
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
+    })
 }
 
 // the injected router view: the case's model list answers both resolution and execution
