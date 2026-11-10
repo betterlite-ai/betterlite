@@ -104,10 +104,10 @@ impl<C: WindowCache + 'static> BudgetIncrement<C> {
 
 // a start cached ahead of this clock extends the first window, as LiteLLM's float subtraction does
 fn remaining_ttl(now: Duration, start: Duration, duration: Duration) -> Duration {
-    let remaining = match start.checked_sub(now) {
-        Some(ahead) => duration.saturating_add(ahead),
-        None => duration.saturating_sub(now.saturating_sub(start)),
-    };
+    let remaining = start.checked_sub(now).map_or_else(
+        || duration.saturating_sub(now.saturating_sub(start)),
+        |ahead| duration.saturating_add(ahead),
+    );
     // LiteLLM's int(remaining_time) truncates the floating-point seconds
     Duration::from_secs(remaining.as_secs())
 }
