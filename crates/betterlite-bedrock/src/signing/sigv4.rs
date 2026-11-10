@@ -1,0 +1,110 @@
+use std::time::SystemTime;
+
+use aws_credential_types::Credentials as SigV4Credentials;
+use aws_sigv4::http_request::{
+    SignableBody, SignableRequest, SigningParams, SigningSettings, sign,
+};
+use aws_sigv4::sign::v4;
+use aws_smithy_runtime_api::client::identity::Identity;
+use secrecy::ExposeSecret as _;
+
+use crate::aws_settings::sources::Credentials;
+
+use super::error::SigningError;
+
+const PROVIDER_NAME: &str = "betterlite-bedrock";
+
+// botocore never signs these headers
+const UNSIGNED_HEADERS: [&str; 14] = [
+    "baggage",
+    "connection",
+    "expect",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "traceparent",
+    "tracestate",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+    "x-amzn-trace-id",
+];
+
+#[derive(Debug, Clone, Copy)]
+pub struct Signable<'source> {
+    pub method: &'source str,
+    pub url: &'source str,
+    pub headers: &'source [(String, String)],
+    pub body: &'source [u8],
+    pub service: &'source str,
+    pub region: &'source str,
+    pub credentials: &'source Credentials,
+    pub now: SystemTime,
+}
+
+pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, SigningError> {
+    let identity = identity(request.credentials);
+    let parameters = v4::SigningParams::builder()
+        .identity(&identity)
+        .region(request.region)
+        .name(request.service)
+        .time(request.now)
+        .settings(SigningSettings::default())
+        .build()
+        .map_err(|source| SigningError::Parameters { source })?;
+    let signed = request.headers.iter().filter(|(name, _)| {
+        !UNSIGNED_HEADERS
+            .iter()
+            .any(|unsigned| name.eq_ignore_ascii_case(unsigned))
+    });
+    let signable = SignableRequest::new(
+        request.method,
+        request.url,
+        signed.map(|(name, value)| (name.as_str(), value.as_str())),
+        payload(request.headers, request.body),
+    )
+    .map_err(|source| SigningError::Signable { source })?;
+    let output = sign(signable, &SigningParams::from(parameters))
+        .map_err(|source| SigningError::Signable { source })?;
+    let (instructions, _signature) = output.into_parts();
+    let (headers, _query) = instructions.into_parts();
+    Ok(headers
+        .into_iter()
+        .map(|header| (botocore_name(header.name()), header.value().to_owned()))
+        .collect())
+}
+
+fn identity(credentials: &Credentials) -> Identity {
+    Identity::from(SigV4Credentials::new(
+        credentials.access_key_id.expose_secret(),
+        credentials.secret_access_key.expose_secret(),
+        credentials
+            .session_token
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
+        None,
+        PROVIDER_NAME,
+    ))
+}
+
+// botocore signs with a caller-supplied X-Amz-Content-SHA256 instead of hashing the body
+fn payload<'body>(headers: &[(String, String)], body: &'body [u8]) -> SignableBody<'body> {
+    match headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("x-amz-content-sha256"))
+    {
+        Some((_, value)) => SignableBody::Precomputed(value.clone()),
+        None => SignableBody::Bytes(body),
+    }
+}
+
+fn botocore_name(name: &str) -> String {
+    match name {
+        "authorization" => "Authorization".to_owned(),
+        "x-amz-date" => "X-Amz-Date".to_owned(),
+        "x-amz-security-token" => "X-Amz-Security-Token".to_owned(),
+        other => other.to_owned(),
+    }
+}
