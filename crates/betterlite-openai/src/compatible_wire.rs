@@ -155,6 +155,10 @@ pub fn decode_compatible_chat_reply(
                 *tokens = Value::from(0_u64);
             }
         }
+        // LiteLLM's Usage fills an absent count with zero, and B004's response cannot hold an absent one
+        for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+            usage.entry(name.to_owned()).or_insert(Value::from(0_u64));
+        }
     }
     if options.json_mode
         && let Some(choices) = reply.get_mut("choices").and_then(Value::as_array_mut)

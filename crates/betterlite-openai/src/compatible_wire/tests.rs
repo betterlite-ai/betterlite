@@ -309,6 +309,22 @@ fn a_null_usage_is_read_as_the_default_usage() {
     assert_eq!(response.usage, ChatUsage::default());
 }
 
+#[test]
+fn an_absent_usage_count_is_read_as_zero() {
+    let response = decode(
+        &chat_reply("\"m\"", r#"{"completion_tokens":5}"#, PLAIN),
+        false,
+    );
+    let expected = ChatUsage {
+        prompt_tokens: 0,
+        completion_tokens: 5,
+        total_tokens: 0,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+    };
+    assert_eq!(response.usage, expected);
+}
+
 #[rstest]
 #[case::one_call_becomes_content(ONE_TOOL, true, Some("{\"a\":1}"), false)]
 #[case::empty_arguments_stay_empty(EMPTY_ARGUMENTS, true, Some(""), false)]

@@ -70,6 +70,7 @@ fn null_tokens_become_zero_and_only_one_tool_call_converts() {
         transformed[5]["choices"][0],
         json!({"content": null, "tool_calls": 1_i32})
     );
+    assert_eq!(transformed[6]["usage"], json!([0_i32, 5_i32, 0_i32]));
 }
 
 #[test]
