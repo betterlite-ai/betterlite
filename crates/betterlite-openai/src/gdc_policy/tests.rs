@@ -546,6 +546,9 @@ fn audience_is_the_scheme_and_netloc_of_the_original_base(
 #[case::data_before_the_bracket("https://a[::1]/x")]
 #[case::bracketed_host_is_not_an_address("https://[notip]/x")]
 #[case::suffix_after_the_bracket("https://[::1]x/path")]
+#[case::empty_ipv_future_version("https://[v.foo]/x")]
+#[case::non_hex_ipv_future_version("https://[vzz.foo]/x")]
+#[case::empty_ipv_future_address("https://[v1.]/x")]
 fn audience_rejects_what_urlsplit_rejects(#[case] base: &str) {
     let error = audience(base).unwrap_err();
     assert!(matches!(&error, GdcPolicyError::InvalidBase));
