@@ -1,22 +1,22 @@
-use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::catalog::{CatalogEntry, ModelCatalog};
 use rust_decimal::prelude::ToPrimitive as _;
 
 mod tests;
 
-pub const DEFAULT_BUFFER_PERC: f64 = 0.1;
-pub const DEFAULT_BUFFER_NUM: f64 = 10.0;
+pub const DEFAULT_BUFFER_FRACTION: f64 = 0.1;
+pub const DEFAULT_BUFFER_MINIMUM_TOKENS: f64 = 10.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
-    pub buffer_perc: f64,
-    pub buffer_num: f64,
+    pub buffer_fraction: f64,
+    pub buffer_minimum_tokens: f64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            buffer_perc: DEFAULT_BUFFER_PERC,
-            buffer_num: DEFAULT_BUFFER_NUM,
+            buffer_fraction: DEFAULT_BUFFER_FRACTION,
+            buffer_minimum_tokens: DEFAULT_BUFFER_MINIMUM_TOKENS,
         }
     }
 }
@@ -41,6 +41,8 @@ pub enum Warning {
     UnknownMaxOutputTokens { base_model: String },
     // Python's int() of a non-finite buffer raised, so the caller's limit stands
     BufferNotFinite,
+    // LiteLLM's token_counter raised on missing messages, so the caller's limit stands
+    InputNotCounted,
     // betterlite's widened integer could not hold the value Python's int would
     Overflow,
 }
@@ -55,7 +57,7 @@ pub fn get_modified_max_tokens(
     catalog: &ModelCatalog,
     models: Models<'_>,
     user_max_tokens: Option<i64>,
-    input_tokens: usize,
+    input_tokens: Option<usize>,
     settings: &Settings,
 ) -> Modified {
     let Some(user) = user_max_tokens else {
@@ -66,32 +68,43 @@ pub fn get_modified_max_tokens(
     };
     let limits = match model_limits(catalog, models) {
         Ok(limits) => limits,
-        Err(warning) => return fallback(user, warning),
+        Err(warning) => {
+            return Modified {
+                max_tokens: Some(user),
+                warnings: vec![warning],
+            };
+        }
     };
-    let Some(buffer) = token_buffer(input_tokens, settings) else {
-        return fallback(user, Warning::BufferNotFinite);
+    let Some(counted) = input_tokens else {
+        return Modified {
+            max_tokens: Some(user),
+            warnings: vec![Warning::InputNotCounted],
+        };
     };
-    let Some(input) = input_tokens.to_i128() else {
-        return fallback(user, Warning::Overflow);
+    let Some(buffer) = token_buffer(counted, settings) else {
+        return Modified {
+            max_tokens: Some(user),
+            warnings: vec![Warning::BufferNotFinite],
+        };
+    };
+    let Some(input) = counted.to_i128() else {
+        return Modified {
+            max_tokens: Some(user),
+            warnings: vec![Warning::Overflow],
+        };
     };
     adjusted(user, input, buffer, &limits)
 }
 
 fn model_limits(catalog: &ModelCatalog, models: Models<'_>) -> Result<ModelLimits, Warning> {
-    let entry = catalog
-        .lookup
-        .get(models.model)
-        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
-        .ok_or_else(|| Warning::UnknownModel {
-            model: models.model.to_owned(),
-        })?;
-    let base = catalog
-        .lookup
-        .get(models.base_model)
-        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
-        .ok_or_else(|| Warning::UnknownMaxOutputTokens {
+    let entry = catalog_entry(catalog, models.model).ok_or_else(|| Warning::UnknownModel {
+        model: models.model.to_owned(),
+    })?;
+    let base = catalog_entry(catalog, models.base_model).ok_or_else(|| {
+        Warning::UnknownMaxOutputTokens {
             base_model: models.base_model.to_owned(),
-        })?;
+        }
+    })?;
     let max_output_tokens = base
         .fields
         .metadata
@@ -106,6 +119,23 @@ fn model_limits(catalog: &ModelCatalog, models: Models<'_>) -> Result<ModelLimit
     })
 }
 
+// LiteLLM's get_model_info and get_max_tokens retry a provider-prefixed name without its first segment
+fn catalog_entry<'catalog>(
+    catalog: &'catalog ModelCatalog,
+    name: &str,
+) -> Option<&'catalog CatalogEntry> {
+    lookup(catalog, name).or_else(|| {
+        let (_, stripped) = name.split_once('/')?;
+        lookup(catalog, stripped)
+    })
+}
+
+fn lookup<'catalog>(catalog: &'catalog ModelCatalog, name: &str) -> Option<&'catalog CatalogEntry> {
+    let canonical = catalog.lookup.get(name)?;
+    let entry = catalog.entries.get(canonical.as_ref())?;
+    Some(entry)
+}
+
 fn adjusted(user: i64, input: i128, buffer: i128, limits: &ModelLimits) -> Modified {
     let limit = i128::from(limits.max_output_tokens);
     let buffered = input.saturating_add(buffer);
@@ -113,47 +143,45 @@ fn adjusted(user: i64, input: i128, buffer: i128, limits: &ModelLimits) -> Modif
     let shared = limits.max_input_tokens.map(i128::from) == Some(limit);
     if shared && buffered > limit {
         // LiteLLM lets the call fail normally rather than set a negative max_tokens
-        return resolved(user);
+        return Modified {
+            max_tokens: Some(user),
+            warnings: Vec::new(),
+        };
     }
     let room = if shared {
         let Some(room) = limit.checked_sub(buffered) else {
-            return fallback(user, Warning::Overflow);
+            return Modified {
+                max_tokens: Some(user),
+                warnings: vec![Warning::Overflow],
+            };
         };
         room
     } else {
         limit
     };
     let Some(max_tokens) = i64::try_from(user_wide.min(room)).ok() else {
-        return fallback(user, Warning::Overflow);
+        return Modified {
+            max_tokens: Some(user),
+            warnings: vec![Warning::Overflow],
+        };
     };
-    resolved(max_tokens)
-}
-
-fn token_buffer(input_tokens: usize, settings: &Settings) -> Option<i128> {
-    let tokens = input_tokens.to_f64()?;
-    let product = tokens.mul_add(settings.buffer_perc, 0.0_f64);
-    // Rust's f64::max ignores a NaN operand, so a NaN product stays NaN as Python's max keeps the first
-    let buffer = if product.is_nan() {
-        product
-    } else {
-        product.max(settings.buffer_num)
-    };
-    if !buffer.is_finite() {
-        return None;
-    }
-    Some(buffer.trunc().to_i128().unwrap_or(i128::MAX))
-}
-
-const fn resolved(max_tokens: i64) -> Modified {
     Modified {
         max_tokens: Some(max_tokens),
         warnings: Vec::new(),
     }
 }
 
-fn fallback(user_max_tokens: i64, warning: Warning) -> Modified {
-    Modified {
-        max_tokens: Some(user_max_tokens),
-        warnings: vec![warning],
+fn token_buffer(input_tokens: usize, settings: &Settings) -> Option<i128> {
+    let tokens = input_tokens.to_f64()?;
+    let product = tokens.mul_add(settings.buffer_fraction, 0.0_f64);
+    // Rust's f64::max ignores a NaN operand, so a NaN product stays NaN as Python's max keeps the first
+    let buffer = if product.is_nan() {
+        product
+    } else {
+        product.max(settings.buffer_minimum_tokens)
+    };
+    if !buffer.is_finite() {
+        return None;
     }
+    Some(buffer.trunc().to_i128().unwrap_or(i128::MAX))
 }

@@ -1,6 +1,8 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use serde_json::value::RawValue;
+
 use async_trait::async_trait;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_tokenizer::count::messages;
@@ -18,7 +20,7 @@ use betterlite_tokenizer::image::settings::Settings as ImageSettings;
 use betterlite_tokenizer::limits::{self, Models, Settings as LimitSettings};
 use betterlite_tokenizer::media::count::count_token_media;
 use betterlite_tokenizer::media::settings::{ImageCounting, Settings as MediaSettings};
-use betterlite_tokenizer::media::wire::{ContentItem, TokenMedia};
+use betterlite_tokenizer::media::wire::TokenMedia;
 use betterlite_tokenizer::selection::openai_tokenizer_encoding_name;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -41,7 +43,7 @@ pub(crate) struct Input {
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 enum Call {
     CountContent {
-        content: Vec<ContentItem>,
+        content: Vec<Box<RawValue>>,
         #[serde(default)]
         use_default_image_token_count: bool,
         #[serde(default)]
@@ -140,7 +142,7 @@ async fn run_calls(input: &Input) -> HelperResult {
 }
 
 struct CountCall<'call> {
-    content: &'call [ContentItem],
+    content: &'call [Box<RawValue>],
     uses_default: bool,
     default_token_count: Option<u64>,
 }
@@ -223,11 +225,19 @@ async fn count_call(
 async fn modified_call(request: ModifiedCall<'_>, catalog: &ModelCatalog) -> HelperResult {
     let encoding = openai_tokenizer_encoding_name(request.base_model, catalog);
     let fixture = fixture(encoding)?;
-    let messages = request.messages.unwrap_or_default();
-    let input_tokens = input_tokens(&fixture, request.base_model, catalog, messages).await?;
+    let input_tokens = match request.messages {
+        Some(messages) => input_tokens(&fixture, request.base_model, catalog, messages)
+            .await
+            .ok(),
+        None => None,
+    };
     let settings = LimitSettings {
-        buffer_perc: request.buffer_perc.unwrap_or(limits::DEFAULT_BUFFER_PERC),
-        buffer_num: request.buffer_num.unwrap_or(limits::DEFAULT_BUFFER_NUM),
+        buffer_fraction: request
+            .buffer_perc
+            .unwrap_or(limits::DEFAULT_BUFFER_FRACTION),
+        buffer_minimum_tokens: request
+            .buffer_num
+            .unwrap_or(limits::DEFAULT_BUFFER_MINIMUM_TOKENS),
     };
     let modified = limits::get_modified_max_tokens(
         catalog,
