@@ -17,4 +17,6 @@ pub enum ModelInfoError {
     Status { status: u16 },
     #[error("the model list is not valid: {0}")]
     Decode(#[source] serde_json::Error),
+    #[error("the model list is not a JSON object")]
+    NotAnObject,
 }

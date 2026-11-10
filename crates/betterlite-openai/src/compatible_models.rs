@@ -98,9 +98,21 @@ impl ModelCard {
 }
 
 pub fn decode_compatible_model_list(bytes: &[u8]) -> Result<ModelList, ModelInfoError> {
-    match serde_json::from_slice(bytes) {
-        Ok(list) => Ok(list),
-        Err(error) => Err(ModelInfoError::Decode(error)),
+    let value: Value = serde_json::from_slice(bytes).map_err(ModelInfoError::Decode)?;
+    // pydantic reads one object whose cards are objects, while serde would also take a struct from a sequence
+    if !is_model_object(&value) {
+        return Err(ModelInfoError::NotAnObject);
+    }
+    serde_json::from_value(value).map_err(ModelInfoError::Decode)
+}
+
+fn is_model_object(value: &Value) -> bool {
+    let Some(fields) = value.as_object() else {
+        return false;
+    };
+    match fields.get("data") {
+        Some(Value::Array(cards)) => cards.iter().all(Value::is_object),
+        Some(_) | None => true,
     }
 }
 

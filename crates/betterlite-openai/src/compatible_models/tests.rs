@@ -235,6 +235,7 @@ fn token_limits_take_positive_integers_and_clamp_to_the_context(
 #[case::null_data(r#"{"data":null}"#, false)]
 #[case::card_without_an_id(r#"{"data":[{"max_model_len":5}]}"#, false)]
 #[case::not_an_object("[]", false)]
+#[case::card_is_a_sequence(r#"{"data":[["m"]]}"#, false)]
 #[case::truncated(r#"{"data":"#, false)]
 fn a_model_list_decodes_only_when_every_card_does(#[case] body: &str, #[case] decoded: bool) {
     assert_eq!(

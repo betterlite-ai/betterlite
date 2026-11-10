@@ -27,7 +27,8 @@ use uuid::Uuid;
 use super::error::{CompatibleWireError, OpenAiLikeError};
 use super::{
     ChatParams, EndpointType, LogInput, MISSING_BASE, MISSING_KEY, ReplyOptions,
-    decode_compatible_chat_reply, header_map, transform_response, validate_environment,
+    decode_compatible_chat_reply, header_map, system_clock, transform_response,
+    validate_environment,
 };
 use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::compatible_models::decode_compatible_model_list;
@@ -393,6 +394,11 @@ fn the_model_takes_the_provider_prefix_when_one_is_given(
     )
     .unwrap();
     assert_eq!(reply.response.model, expected);
+}
+
+#[test]
+fn the_system_clock_returns_unix_seconds() {
+    assert!(system_clock() > 1_700_000_000);
 }
 
 #[test]
