@@ -9,14 +9,10 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::chat_content::{ChatContent, RefuseDownloads};
-use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings,
-};
+use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
 use rstest::rstest;
 use thiserror::Error;
-
-use crate::model_policy::UNSUPPORTED_DEPLOYED_PARAMS;
 
 use super::config::VertexGemmaConfig;
 use super::container::{
@@ -36,17 +32,6 @@ const REQUEST_FORMAT: &str = "@requestFormat";
 
 fn payload(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
-}
-
-fn config() -> VertexGemmaConfig {
-    VertexGemmaConfig {
-        base: OpenAiConfig {
-            family: ConfigFamily::OpenAi,
-            api_key: None,
-            headers: BTreeMap::new(),
-            settings: OpenAiSettings::default(),
-        },
-    }
 }
 
 fn catalog() -> CatalogCapabilities {
@@ -135,22 +120,33 @@ fn projection_drops_context_management() {
 }
 
 #[test]
-fn projection_supported_params_exclude_deployed_fields() {
-    let config = config();
-    let catalog = catalog();
-    let supported = config.supported_params(MODEL, &catalog);
-    let expected: Vec<&str> = config
-        .base
-        .supported_params(MODEL, &catalog)
-        .into_iter()
-        .filter(|param| !UNSUPPORTED_DEPLOYED_PARAMS.contains(param))
-        .collect();
-    assert_eq!(supported, expected);
-    assert!(supported.contains(&"temperature"));
-    assert!(
-        UNSUPPORTED_DEPLOYED_PARAMS
-            .iter()
-            .all(|param| !supported.contains(param))
+fn projection_supported_params_match_litellm() {
+    let supported = VertexGemmaConfig.supported_params(MODEL, &catalog());
+    assert_eq!(
+        supported,
+        [
+            "frequency_penalty",
+            "logit_bias",
+            "logprobs",
+            "top_logprobs",
+            "max_tokens",
+            "max_completion_tokens",
+            "n",
+            "presence_penalty",
+            "seed",
+            "stop",
+            "stream",
+            "stream_options",
+            "temperature",
+            "top_p",
+            "tools",
+            "tool_choice",
+            "function_call",
+            "functions",
+            "extra_headers",
+            "parallel_tool_calls",
+            "response_format",
+        ]
     );
 }
 
