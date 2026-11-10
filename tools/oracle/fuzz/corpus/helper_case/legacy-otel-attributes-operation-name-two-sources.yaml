@@ -1,0 +1,13 @@
+kind: helper
+name: operation-name-two-sources
+call:
+  b3856:
+    function: set_attributes
+    semconv: true
+    kwargs:
+      call_type: aembedding
+      standard_logging_object:
+        call_type: completion
+        metadata: {}
+env: {}
+compare: {ignore: []}
