@@ -1,0 +1,19 @@
+kind: helper
+name: aleph-alpha-server-error-with-completions
+call:
+  aleph_alpha:
+    model: luminous-base
+    messages:
+      - role: user
+        content: Hi
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: sk-aleph
+    optional_params: {}
+    defaults: {}
+    max_tokens: 4096
+    created: 1700000007
+    reply:
+      status: 500
+      body: '{"completions":[{"completion":"hello","finish_reason":"stop"}]}'
+env: {}
+compare: {ignore: []}

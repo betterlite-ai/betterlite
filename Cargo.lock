@@ -1977,6 +1977,8 @@ dependencies = [
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-streaming",
+ "betterlite-tokenizer",
+ "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
