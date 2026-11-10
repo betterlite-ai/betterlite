@@ -1,0 +1,9 @@
+model_list:
+  - model_name: azure-oidc
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: https://example.openai.azure.com
+environment_variables:
+  AZURE_AUTHORITY_HOST: https://login.contoso.test
+  AZURE_CLIENT_ID: oidc-client
+  AZURE_TENANT_ID: oidc-tenant

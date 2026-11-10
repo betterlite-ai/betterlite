@@ -1155,6 +1155,7 @@ name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
  "hex",
@@ -1275,6 +1276,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-redis",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
@@ -2489,6 +2491,7 @@ dependencies = [
  "percent-encoding",
  "prometheus-client",
  "py_literal",
+ "rand 0.10.3",
  "rcgen",
  "redis",
  "rstest",
