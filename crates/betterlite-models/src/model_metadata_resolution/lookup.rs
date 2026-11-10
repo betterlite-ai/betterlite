@@ -44,18 +44,28 @@ pub(super) fn exact_entry(
     keys: &mut ModelCostKeys,
 ) -> Result<Option<MatchedEntry>, StaticFailure> {
     for candidate in candidates(lookup.model, lookup.names) {
-        let Some(key) = keys.get_model_cost_key(lookup.model_cost, candidate) else {
-            continue;
-        };
-        let raw = get_model_info_from_model_cost(lookup.model_cost, &key)?;
-        let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(raw.get())?;
-        if !check_provider_match(entry_provider(&fields), lookup.provider)? {
-            continue;
+        if let Some(matched) = exact_candidate(lookup, candidate, keys)? {
+            return Ok(Some(matched));
         }
-        let entry = backfill(&fields, &key, lookup.generalizations)?;
-        return Ok(Some(MatchedEntry { key, entry }));
     }
     Ok(None)
+}
+
+fn exact_candidate(
+    lookup: &Lookup<'_>,
+    candidate: &str,
+    keys: &mut ModelCostKeys,
+) -> Result<Option<MatchedEntry>, StaticFailure> {
+    let Some(key) = keys.get_model_cost_key(lookup.model_cost, candidate) else {
+        return Ok(None);
+    };
+    let raw = get_model_info_from_model_cost(lookup.model_cost, &key)?;
+    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(raw.get())?;
+    if !check_provider_match(entry_provider(&fields), lookup.provider)? {
+        return Ok(None);
+    }
+    let entry = backfill(&fields, &key, lookup.generalizations)?;
+    Ok(Some(MatchedEntry { key, entry }))
 }
 
 fn entry_provider(fields: &BTreeMap<String, Box<RawValue>>) -> EntryProvider<'_> {
@@ -109,25 +119,29 @@ pub(super) fn generalization(
     keys: &mut ModelCostKeys,
 ) -> Result<Option<MatchedEntry>, StaticFailure> {
     let candidates = candidates(lookup.model, lookup.names);
+    // A known name, even for another provider, is not unmapped: rules must not shadow a cost entry.
     if candidates.iter().any(|candidate| {
         keys.get_model_cost_key(lookup.model_cost, candidate)
             .is_some()
     }) {
         return Ok(None);
     }
-    for candidate in candidates {
-        let Some(mut info) = lookup.generalizations.match_capabilities(candidate) else {
-            continue;
-        };
-        if let Some(provider) = lookup.provider {
-            info.insert(PROVIDER_KEY.to_owned(), to_raw_value(provider)?);
-        }
-        return Ok(Some(MatchedEntry {
-            key: candidate.to_owned(),
-            entry: to_raw_value(&info)?,
-        }));
+    let matched = candidates.iter().find_map(|candidate| {
+        lookup
+            .generalizations
+            .match_capabilities(candidate)
+            .map(|info| (candidate, info))
+    });
+    let Some((candidate, mut info)) = matched else {
+        return Ok(None);
+    };
+    if let Some(provider) = lookup.provider {
+        info.insert(PROVIDER_KEY.to_owned(), to_raw_value(provider)?);
     }
-    Ok(None)
+    Ok(Some(MatchedEntry {
+        key: (*candidate).to_owned(),
+        entry: to_raw_value(&info)?,
+    }))
 }
 
 pub(super) fn project_entry(

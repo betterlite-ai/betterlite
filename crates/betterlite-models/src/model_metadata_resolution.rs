@@ -127,3 +127,5 @@ fn resolve_static(
     }
     Err(StaticError::NotMapped)
 }
+
+mod tests;

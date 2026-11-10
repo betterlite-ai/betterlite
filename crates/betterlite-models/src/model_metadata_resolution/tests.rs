@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::convert::Infallible;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::io;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -10,7 +10,6 @@ use std::time::Duration;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
-use serde_json::{Value, json};
 
 use super::dynamic::DynamicMetadataSource;
 use super::error::ModelMetadataError;
@@ -31,6 +30,8 @@ use crate::provider_defaults_b::globals::GlobalCredentials;
 use crate::provider_metadata_factory::adapters::DynamicModelInfo;
 use crate::resolution::ResolutionContext;
 
+type Fields = BTreeMap<String, Box<RawValue>>;
+
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: test_bedrock_base_model,
     bedrock_routing_prefix: test_bedrock_routing_prefix,
@@ -44,10 +45,9 @@ fn test_bedrock_base_model(model: &str) -> String {
 }
 
 fn test_bedrock_routing_prefix(model: &str) -> String {
-    match model.strip_prefix("converse/") {
-        Some(rest) => rest.to_owned(),
-        None => model.to_owned(),
-    }
+    model
+        .strip_prefix("converse/")
+        .map_or_else(|| model.to_owned(), str::to_owned)
 }
 
 fn test_mantle_region_split(model: &str) -> (Option<&str>, &str) {
@@ -55,6 +55,37 @@ fn test_mantle_region_split(model: &str) -> (Option<&str>, &str) {
         Some((head, rest)) if head == "us-east-1" => (Some(head), rest),
         _ => (None, model),
     }
+}
+
+fn raw(text: &str) -> Box<RawValue> {
+    RawValue::from_string(text.to_owned()).expect("raw JSON")
+}
+
+fn fields(raw: &RawValue) -> Fields {
+    serde_json::from_str(raw.get()).expect("JSON object")
+}
+
+fn string_field(fields: &Fields, name: &str) -> String {
+    let value = fields.get(name).expect(name);
+    serde_json::from_str(value.get()).expect(name)
+}
+
+fn number_field(fields: &Fields, name: &str) -> Option<i64> {
+    let value = fields.get(name)?;
+    serde_json::from_str(value.get()).ok()
+}
+
+fn bool_field(fields: &Fields, name: &str) -> Option<bool> {
+    let value = fields.get(name)?;
+    serde_json::from_str(value.get()).ok()
+}
+
+fn raw_field(fields: &Fields, name: &str) -> String {
+    fields
+        .get(name)
+        .map(|value| value.get())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 struct Fixture {
@@ -78,7 +109,7 @@ impl Fixture {
     fn raw(source: &str) -> Self {
         let map = ModelCostMap::parse(source.as_bytes()).expect("model cost map");
         let catalog = ModelCatalog::parse(b"{}", UnknownFields::Reject).expect("empty catalog");
-        Fixture {
+        Self {
             map,
             catalog,
             environment: BTreeMap::new(),
@@ -88,9 +119,9 @@ impl Fixture {
         }
     }
 
-    fn with_rules(raw: &str, catalog: &str, rules: &str) -> Self {
+    fn with_rules(raw_map: &str, catalog: &str, rules: &str) -> Self {
         let mut fixture = Self::new(catalog);
-        fixture.map = ModelCostMap::parse(raw.as_bytes()).expect("model cost map");
+        fixture.map = ModelCostMap::parse(raw_map.as_bytes()).expect("model cost map");
         fixture.rules = serde_json::from_str(rules).expect("generalization rules");
         fixture
     }
@@ -122,7 +153,7 @@ struct Environment<'fixture> {
 
 impl<'fixture> Environment<'fixture> {
     fn new(fixture: &'fixture Fixture) -> Self {
-        Environment {
+        Self {
             fixture,
             resolution: fixture.resolution(),
             generalizations: fixture.generalizations(),
@@ -162,24 +193,27 @@ fn request<'request>(
     }
 }
 
-async fn resolve<Source: DynamicMetadataSource>(
+async fn resolve<Source>(
     fixture: &Fixture,
     model: &str,
     provider: Option<&str>,
     dynamic: &Source,
-) -> Result<Value, ModelMetadataError> {
+) -> Result<Fields, ModelMetadataError>
+where
+    Source: DynamicMetadataSource,
+{
     let environment = Environment::new(fixture);
     let hf = HfConfigClient::unreachable();
     let mut keys = ModelCostKeys::default();
-    get_model_info_helper(
+    let answer = get_model_info_helper(
         &request(model, provider),
         &environment.metadata(),
         &mut keys,
         dynamic,
         &hf,
     )
-    .await
-    .map(|raw| serde_json::from_str(raw.get()).expect("projected JSON"))
+    .await;
+    answer.map(|raw| fields(&raw))
 }
 
 #[derive(Default)]
@@ -195,7 +229,7 @@ impl DynamicMetadataSource for NeverDynamic {
         _api_base: Option<&str>,
         _api_key: Option<&SecretString>,
     ) -> impl Future<Output = Result<Option<Box<RawValue>>, Infallible>> + Send {
-        std::future::ready(Ok(None))
+        ready(Ok(None))
     }
 }
 
@@ -209,7 +243,7 @@ struct DynamicCall {
 
 #[derive(Clone, Debug)]
 enum Reply {
-    Value(Value),
+    Value(Box<RawValue>),
     None,
     Error,
 }
@@ -221,7 +255,7 @@ struct ScriptedDynamic {
 
 impl ScriptedDynamic {
     fn new(replies: Vec<Reply>) -> Self {
-        ScriptedDynamic {
+        Self {
             replies: Mutex::new(VecDeque::from(replies)),
             calls: Mutex::new(Vec::new()),
         }
@@ -260,8 +294,8 @@ impl DynamicMetadataSource for ScriptedDynamic {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(Reply::None);
-        std::future::ready(match reply {
-            Reply::Value(value) => Ok(Some(serde_json::value::to_raw_value(&value).expect("raw"))),
+        ready(match reply {
+            Reply::Value(value) => Ok(Some(value)),
             Reply::None => Ok(None),
             Reply::Error => Err(io::Error::other("dynamic metadata failed")),
         })
@@ -272,7 +306,6 @@ impl DynamicMetadataSource for ScriptedDynamic {
 enum HttpReply {
     Status { status: u16, body: String },
     Failure,
-    Slow,
 }
 
 #[derive(Default)]
@@ -283,7 +316,7 @@ struct ScriptedTransport {
 
 impl ScriptedTransport {
     fn new(replies: Vec<HttpReply>) -> Self {
-        ScriptedTransport {
+        Self {
             replies: Mutex::new(VecDeque::from(replies)),
             seen: Mutex::new(Vec::new()),
         }
@@ -314,18 +347,12 @@ impl ModelInfoClient for &ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(HttpReply::Failure);
-        async move {
-            match reply {
-                HttpReply::Status { status, body } => {
-                    Ok(FetchResponse::new(status, Vec::new(), body.into_bytes()))
-                }
-                HttpReply::Failure => Err(io::Error::other("config fetch failed")),
-                HttpReply::Slow => {
-                    tokio::time::sleep(Duration::from_secs(30)).await;
-                    Ok(FetchResponse::new(200, Vec::new(), b"{}".to_vec()))
-                }
+        ready(match reply {
+            HttpReply::Status { status, body } => {
+                Ok(FetchResponse::new(status, Vec::new(), body.into_bytes()))
             }
-        }
+            HttpReply::Failure => Err(io::Error::other("config fetch failed")),
+        })
     }
 }
 
@@ -353,7 +380,10 @@ enum Scenario {
 #[tokio::test]
 async fn model_metadata_resolution_cases(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::PotentialNames => potential_names_case().await,
+        Scenario::PotentialNames => {
+            potential_names_case();
+            explicit_potential_names_case();
+        }
         Scenario::ProviderAliases => provider_aliases_case().await,
         Scenario::DynamicProviderMetadata => dynamic_provider_metadata_case().await,
         Scenario::OrderedExactLookup => ordered_exact_lookup_case().await,
@@ -364,7 +394,7 @@ async fn model_metadata_resolution_cases(#[case] scenario: Scenario) {
     }
 }
 
-async fn potential_names_case() {
+fn potential_names_case() {
     let fixture = Fixture::new(
         r#"{
             "gpt-4o": {"litellm_provider": "openai", "mode": "chat"},
@@ -385,10 +415,15 @@ async fn potential_names_case() {
     assert_eq!(unknown.combined_model_name, "not-anywhere-xyz");
     assert_eq!(unknown.provider_prefixed_model_name, "not-anywhere-xyz");
 
+    let vertex = names(&fixture, "vertex-model", None);
+    assert_eq!(vertex.custom_llm_provider.as_deref(), Some("vertex_ai"));
+}
+
+fn explicit_potential_names_case() {
+    let fixture = Fixture::new("{}");
     let prefixed = names(&fixture, "groq/llama3-8b", Some("groq"));
     assert_eq!(prefixed.split_model, "llama3-8b");
     assert_eq!(prefixed.combined_model_name, "groq/llama3-8b");
-    assert_eq!(prefixed.stripped_model_name, "llama3-8b");
     assert_eq!(prefixed.combined_stripped_model_name, "groq/llama3-8b");
     assert_eq!(prefixed.provider_prefixed_model_name, "groq/groq/llama3-8b");
 
@@ -401,14 +436,18 @@ async fn potential_names_case() {
         dated.provider_prefixed_model_name,
         "groq/llama3-8b-2024-01-01"
     );
+}
 
+#[test]
+fn bedrock_and_mantle_names_follow_the_source() {
+    let fixture = Fixture::new("{}");
     let bedrock = names(&fixture, "converse/anthropic.claude-3", Some("bedrock"));
     assert_eq!(bedrock.split_model, "anthropic.claude-3");
+    assert_eq!(bedrock.stripped_model_name, "anthropic.claude-3");
     assert_eq!(
         bedrock.combined_model_name,
         "bedrock/converse/anthropic.claude-3"
     );
-    assert_eq!(bedrock.stripped_model_name, "anthropic.claude-3");
     assert_eq!(
         bedrock.combined_stripped_model_name,
         "bedrock/anthropic.claude-3"
@@ -438,22 +477,34 @@ async fn potential_names_case() {
 }
 
 async fn provider_aliases_case() {
+    azure_alias_case().await;
+    vertex_alias_case().await;
+    declared_provider_case().await;
+}
+
+async fn azure_alias_case() {
     let fixture = Fixture::new(
         r#"{
             "azure/gpt-35-turbo": {"litellm_provider": "azure", "mode": "chat", "input_cost_per_token": 1},
-            "azure/ada": {"litellm_provider": "azure", "mode": "embedding", "input_cost_per_token": 2},
-            "vertex_ai/meta/llama3-8b-instruct-maas": {"litellm_provider": "vertex_ai-llama_models", "mode": "chat", "input_cost_per_token": 3},
-            "vertex_ai/codestral@latest": {"litellm_provider": "vertex_ai-mistral_models", "mode": "chat", "input_cost_per_token": 4},
-            "vertex_ai/jamba-1.5@latest": {"litellm_provider": "vertex_ai-ai21_models", "mode": "chat", "input_cost_per_token": 5},
-            "github_copilot/gpt-4": {"litellm_provider": "github_copilot", "mode": "chat", "input_cost_per_token": 6}
+            "azure/ada": {"litellm_provider": "azure", "mode": "embedding", "input_cost_per_token": 2}
         }"#,
     );
     let azure = resolve(&fixture, "gpt-35-turbo", None, &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(azure["key"], "azure/gpt-35-turbo");
+    assert_eq!(string_field(&azure, "key"), "azure/gpt-35-turbo");
     let embedding = resolve(&fixture, "ada", None, &NeverDynamic).await.unwrap();
-    assert_eq!(embedding["key"], "azure/ada");
+    assert_eq!(string_field(&embedding, "key"), "azure/ada");
+}
+
+async fn vertex_alias_case() {
+    let fixture = Fixture::new(
+        r#"{
+            "vertex_ai/meta/llama3-8b-instruct-maas": {"litellm_provider": "vertex_ai-llama_models", "mode": "chat", "input_cost_per_token": 3},
+            "vertex_ai/codestral@latest": {"litellm_provider": "vertex_ai-mistral_models", "mode": "chat", "input_cost_per_token": 4},
+            "vertex_ai/jamba-1.5@latest": {"litellm_provider": "vertex_ai-ai21_models", "mode": "chat", "input_cost_per_token": 5}
+        }"#,
+    );
     let beta = resolve(
         &fixture,
         "llama3-8b-instruct-maas",
@@ -462,35 +513,53 @@ async fn provider_aliases_case() {
     )
     .await
     .unwrap();
-    assert_eq!(beta["key"], "vertex_ai/meta/llama3-8b-instruct-maas");
+    assert_eq!(
+        string_field(&beta, "key"),
+        "vertex_ai/meta/llama3-8b-instruct-maas"
+    );
     let mistral = resolve(&fixture, "codestral", Some("vertex_ai"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(mistral["key"], "vertex_ai/codestral@latest");
+    assert_eq!(string_field(&mistral, "key"), "vertex_ai/codestral@latest");
     let ai21 = resolve(&fixture, "jamba-1.5", Some("vertex_ai"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(ai21["key"], "vertex_ai/jamba-1.5@latest");
+    assert_eq!(string_field(&ai21, "key"), "vertex_ai/jamba-1.5@latest");
+}
+
+async fn declared_provider_case() {
+    let fixture = Fixture::new(
+        r#"{"github_copilot/gpt-4": {"litellm_provider": "github_copilot", "mode": "chat", "input_cost_per_token": 6}}"#,
+    );
     let declared = resolve(&fixture, "github_copilot/gpt-4", None, &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(declared["key"], "github_copilot/gpt-4");
+    assert_eq!(string_field(&declared, "key"), "github_copilot/gpt-4");
 }
 
 async fn dynamic_provider_metadata_case() {
-    let fixture = Fixture::new(
+    let fixture = dynamic_fixture();
+    authoritative_dynamic_case(&fixture).await;
+    dynamic_fallback_case(&fixture).await;
+}
+
+fn dynamic_fixture() -> Fixture {
+    Fixture::new(
         r#"{
             "ollama/llama3.2": {"litellm_provider": "ollama", "mode": "chat", "input_cost_per_token": 9},
             "openai/gpt-4o": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 7}
         }"#,
-    );
-    let dynamic = ScriptedDynamic::new(vec![Reply::Value(
-        json!({"key": "runtime", "max_tokens": 32}),
-    )]);
-    let value = resolve(&fixture, "llama3.2", Some("ollama"), &dynamic)
+    )
+}
+
+async fn authoritative_dynamic_case(fixture: &Fixture) {
+    let dynamic = ScriptedDynamic::new(vec![Reply::Value(raw(
+        r#"{"key": "runtime", "max_tokens": 32}"#,
+    ))]);
+    let value = resolve(fixture, "llama3.2", Some("ollama"), &dynamic)
         .await
         .unwrap();
-    assert_eq!(value["key"], "runtime");
+    assert_eq!(string_field(&value, "key"), "runtime");
     assert_eq!(
         dynamic.calls(),
         vec![DynamicCall {
@@ -501,208 +570,253 @@ async fn dynamic_provider_metadata_case() {
         }]
     );
 
-    let alias = ScriptedDynamic::new(vec![Reply::Value(json!({"key": "rewritten"}))]);
-    let rewritten = resolve(&fixture, "ada", Some("ollama"), &alias)
+    let alias = ScriptedDynamic::new(vec![Reply::Value(raw(r#"{"key": "rewritten"}"#))]);
+    let rewritten = resolve(fixture, "ada", Some("ollama"), &alias)
         .await
         .unwrap();
-    assert_eq!(rewritten["key"], "rewritten");
+    assert_eq!(string_field(&rewritten, "key"), "rewritten");
     assert_eq!(alias.calls()[0].model, "azure/ada");
+}
 
+async fn dynamic_fallback_case(fixture: &Fixture) {
     let falling_back = ScriptedDynamic::new(vec![Reply::Error]);
-    let fallback = resolve(&fixture, "llama3.2", Some("ollama"), &falling_back)
+    let fallback = resolve(fixture, "llama3.2", Some("ollama"), &falling_back)
         .await
         .unwrap();
-    assert_eq!(fallback["key"], "ollama/llama3.2");
+    assert_eq!(string_field(&fallback, "key"), "ollama/llama3.2");
 
     let none = ScriptedDynamic::new(vec![Reply::None]);
-    let static_entry = resolve(&fixture, "llama3.2", Some("ollama"), &none)
+    let static_entry = resolve(fixture, "llama3.2", Some("ollama"), &none)
         .await
         .unwrap();
-    assert_eq!(static_entry["key"], "ollama/llama3.2");
+    assert_eq!(string_field(&static_entry, "key"), "ollama/llama3.2");
 
-    let unused = ScriptedDynamic::new(vec![Reply::Value(json!({"key": "ignored"}))]);
-    let selected = resolve(&fixture, "openai/gpt-4o", Some("openai"), &unused)
+    let unused = ScriptedDynamic::new(vec![Reply::Value(raw(r#"{"key": "ignored"}"#))]);
+    let selected = resolve(fixture, "openai/gpt-4o", Some("openai"), &unused)
         .await
         .unwrap();
-    assert_eq!(selected["key"], "openai/gpt-4o");
+    assert_eq!(string_field(&selected, "key"), "openai/gpt-4o");
     assert!(unused.calls().is_empty());
 }
 
 async fn ordered_exact_lookup_case() {
-    let fixture = Fixture::new(
+    let fixture = ordered_fixture();
+    candidate_order_case(&fixture).await;
+    provider_match_case(&fixture).await;
+    exact_before_generalization_case().await;
+}
+
+fn ordered_fixture() -> Fixture {
+    Fixture::new(
         r#"{
             "groq/llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1},
             "groq/llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 2},
             "llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 3},
             "llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 4},
-            "groq/groq/llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 5}
+            "groq/groq/llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 5},
+            "plain-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 6},
+            "split-only-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 7},
+            "groq/dated-only": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 8},
+            "solo": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 9},
+            "groq/groq/groq-target": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 10},
+            "groq/mismatch-model": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 11},
+            "mismatch-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 12},
+            "Groq/MiXeD-Case": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 14}
         }"#,
-    );
-    let combined = resolve(
-        &fixture,
-        "groq/llama3-8b-2024-01-01",
-        Some("groq"),
-        &NeverDynamic,
     )
-    .await
-    .unwrap();
-    assert_eq!(combined["key"], "groq/llama3-8b-2024-01-01");
-    assert_eq!(combined["input_cost_per_token"], 1);
+}
 
-    let mismatched = Fixture::new(
-        r#"{
-            "groq/llama3-8b": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1},
-            "llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 2}
-        }"#,
+async fn candidate_order_case(fixture: &Fixture) {
+    let combined = lookup(fixture, "groq/llama3-8b-2024-01-01").await;
+    assert_eq!(string_field(&combined, "key"), "groq/llama3-8b-2024-01-01");
+    assert_eq!(number_field(&combined, "input_cost_per_token"), Some(1));
+
+    let plain = lookup(fixture, "plain-model").await;
+    assert_eq!(string_field(&plain, "key"), "plain-model");
+    let split = lookup(fixture, "groq/split-only-model").await;
+    assert_eq!(string_field(&split, "key"), "split-only-model");
+    let stripped_combination = lookup(fixture, "groq/dated-only-2024-02-02").await;
+    assert_eq!(
+        string_field(&stripped_combination, "key"),
+        "groq/dated-only"
     );
-    let continued = resolve(&mismatched, "llama3-8b", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(continued["key"], "llama3-8b");
-    assert_eq!(continued["input_cost_per_token"], 2);
+    let stripped = lookup(fixture, "solo-2024-04-04").await;
+    assert_eq!(string_field(&stripped, "key"), "solo");
+    let prefixed = lookup(fixture, "groq/groq-target").await;
+    assert_eq!(string_field(&prefixed, "key"), "groq/groq/groq-target");
+}
 
-    let casefolded = Fixture::new(
-        r#"{"GROQ/Llama3-8B": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 6}}"#,
-    );
-    let folded = resolve(&casefolded, "groq/llama3-8b", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(folded["key"], "GROQ/Llama3-8B");
-    assert_eq!(folded["input_cost_per_token"], 6);
+async fn provider_match_case(fixture: &Fixture) {
+    let mismatch = lookup(fixture, "mismatch-model").await;
+    assert_eq!(string_field(&mismatch, "key"), "mismatch-model");
+    let casefolded = lookup(fixture, "groq/mixed-case").await;
+    assert_eq!(string_field(&casefolded, "key"), "Groq/MiXeD-Case");
+}
 
+async fn exact_before_generalization_case() {
     let rules = r#"[{"pattern": "^groq/", "model_info": {"input_cost_per_token": 99}}]"#;
-    let ordered = Fixture::with_rules(
-        r#"{"llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 9}}"#,
-        r#"{"llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 9}}"#,
+    let fixture = Fixture::with_rules(
+        r#"{"exact-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 13}}"#,
+        "{}",
         rules,
     );
-    let exact = resolve(&ordered, "llama3-8b", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(exact["key"], "llama3-8b");
-    assert_eq!(exact["input_cost_per_token"], 9);
+    let exact = lookup(&fixture, "exact-model").await;
+    assert_eq!(number_field(&exact, "input_cost_per_token"), Some(13));
+}
 
-    let split_only = Fixture::new(
-        r#"{"llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 10}}"#,
-    );
-    let split = resolve(&split_only, "groq/llama3-8b", Some("groq"), &NeverDynamic)
+async fn lookup(fixture: &Fixture, model: &str) -> Fields {
+    resolve(fixture, model, Some("groq"), &NeverDynamic)
         .await
-        .unwrap();
-    assert_eq!(split["key"], "llama3-8b");
+        .unwrap()
 }
 
 async fn fill_missing_exact_entry_case() {
+    let fixture = fill_fixture();
+    fill_modes_case(&fixture).await;
+    fill_preserves_explicit_case(&fixture).await;
+    fill_uses_entry_provider_case().await;
+}
+
+fn fill_fixture() -> Fixture {
     let rules = r#"[{
         "pattern": "^groq/",
         "fill_missing_for_providers": ["groq"],
         "model_info": {"max_tokens": 100, "supports_vision": true, "input_cost_per_token": 99, "mode": "completion"}
     }]"#;
-    let fixture = Fixture::with_rules(
-        r#"{
-            "groq/model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1},
-            "groq/absent-mode": {"litellm_provider": "groq", "input_cost_per_token": 1},
-            "groq/responses": {"litellm_provider": "groq", "mode": "responses", "input_cost_per_token": 1},
-            "groq/completion": {"litellm_provider": "groq", "mode": "completion", "input_cost_per_token": 1},
-            "groq/null-mode": {"litellm_provider": "groq", "mode": null, "input_cost_per_token": 1},
-            "groq/explicit": {"litellm_provider": "groq", "mode": "chat", "max_tokens": null, "supports_vision": false, "rpm": 0, "input_cost_per_token": 1}
-        }"#,
-        r#"{
-            "groq/model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1},
-            "groq/absent-mode": {"litellm_provider": "groq", "input_cost_per_token": 1},
-            "groq/responses": {"litellm_provider": "groq", "mode": "responses", "input_cost_per_token": 1},
-            "groq/completion": {"litellm_provider": "groq", "mode": "completion", "input_cost_per_token": 1},
-            "groq/null-mode": {"litellm_provider": "groq", "mode": null, "input_cost_per_token": 1},
-            "groq/explicit": {"litellm_provider": "groq", "mode": "chat", "max_tokens": null, "supports_vision": false, "rpm": 0, "input_cost_per_token": 1}
-        }"#,
-        rules,
-    );
-    let chat = resolve(&fixture, "model", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(chat["key"], "groq/model");
-    assert_eq!(chat["max_tokens"], 100);
-    assert_eq!(chat["supports_vision"], true);
-    assert_eq!(chat["input_cost_per_token"], 1);
-    assert_eq!(chat["mode"], "chat");
+    let entries = r#"{
+        "groq/model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1},
+        "groq/absent-mode": {"litellm_provider": "groq", "input_cost_per_token": 1},
+        "groq/responses": {"litellm_provider": "groq", "mode": "responses", "input_cost_per_token": 1},
+        "groq/completion": {"litellm_provider": "groq", "mode": "completion", "input_cost_per_token": 1},
+        "groq/null-mode": {"litellm_provider": "groq", "mode": null, "input_cost_per_token": 1},
+        "groq/explicit": {"litellm_provider": "groq", "mode": "chat", "max_tokens": null, "supports_vision": false, "rpm": 0, "input_cost_per_token": 1}
+    }"#;
+    Fixture::with_rules(entries, entries, rules)
+}
 
-    let absent = resolve(&fixture, "absent-mode", Some("groq"), &NeverDynamic)
+async fn fill_modes_case(fixture: &Fixture) {
+    let chat = resolve(fixture, "model", Some("groq"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(absent["max_tokens"], 100);
-    let responses = resolve(&fixture, "responses", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(responses["max_tokens"], 100);
-    let completion = resolve(&fixture, "completion", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(completion["max_tokens"], Value::Null);
-    let null_mode = resolve(&fixture, "null-mode", Some("groq"), &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(null_mode["max_tokens"], Value::Null);
+    assert_eq!(number_field(&chat, "max_tokens"), Some(100));
+    assert_eq!(bool_field(&chat, "supports_vision"), Some(true));
+    assert_eq!(number_field(&chat, "input_cost_per_token"), Some(1));
+    assert_eq!(string_field(&chat, "mode"), "chat");
 
-    let explicit = resolve(&fixture, "explicit", Some("groq"), &NeverDynamic)
+    let absent_mode = resolve(fixture, "absent-mode", Some("groq"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(explicit["max_tokens"], Value::Null);
-    assert_eq!(explicit["supports_vision"], false);
-    assert_eq!(explicit["rpm"], 0);
+    assert_eq!(number_field(&absent_mode, "max_tokens"), Some(100));
+    let responses = resolve(fixture, "responses", Some("groq"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(number_field(&responses, "max_tokens"), Some(100));
+    let completion = resolve(fixture, "completion", Some("groq"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&completion, "max_tokens"), "null");
+    let null_mode = resolve(fixture, "null-mode", Some("groq"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&null_mode, "max_tokens"), "null");
+}
+
+async fn fill_preserves_explicit_case(fixture: &Fixture) {
+    let explicit = resolve(fixture, "explicit", Some("groq"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&explicit, "max_tokens"), "null");
+    assert_eq!(bool_field(&explicit, "supports_vision"), Some(false));
+    assert_eq!(number_field(&explicit, "rpm"), Some(0));
     assert_eq!(
         fixture.map.entries["groq/model"].get(),
         r#"{"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1}"#
     );
 }
 
+async fn fill_uses_entry_provider_case() {
+    let rules = r#"[{
+        "pattern": "^other/",
+        "fill_missing_for_providers": ["groq"],
+        "model_info": {"max_tokens": 5}
+    },
+    {
+        "pattern": "^bare-",
+        "fill_missing_for_providers": ["groq"],
+        "model_info": {"max_tokens": 5}
+    }]"#;
+    let entries = r#"{
+        "other/model": {"litellm_provider": "other", "mode": "chat"},
+        "bare-model": {"mode": "chat"}
+    }"#;
+    let fixture = Fixture::with_rules(entries, entries, rules);
+    let other = resolve(&fixture, "other/model", Some("other"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&other, "max_tokens"), "null");
+    let bare = resolve(&fixture, "bare-model", Some("groq"), &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&bare, "max_tokens"), "null");
+}
+
 async fn generalization_only_unknown_case() {
+    let fixture = generalization_fixture();
+    generalization_rules_case(&fixture).await;
+    generalization_blocked_case(&fixture).await;
+}
+
+fn generalization_fixture() -> Fixture {
     let rules = r#"[
         {"pattern": "^anthropic/claude-future$", "model_info": {"max_tokens": 4096, "litellm_provider": "anthropic"}},
         {"pattern": "^mystery-model$", "model_info": {"max_tokens": 7, "litellm_provider": "acme"}},
         {"pattern": "^empty-rule$", "model_info": {}},
         {"pattern": "^anthropic/blocked", "model_info": {"max_tokens": 11}}
     ]"#;
-    let fixture = Fixture::with_rules(
+    Fixture::with_rules(
         r#"{"anthropic/blocked-prefix": {"litellm_provider": "openai", "mode": "chat"}}"#,
         r#"{"anthropic/blocked-prefix": {"litellm_provider": "openai", "mode": "chat"}}"#,
         rules,
-    );
-    let projected = resolve(&fixture, "claude-future", Some("anthropic"), &NeverDynamic)
+    )
+}
+
+async fn generalization_rules_case(fixture: &Fixture) {
+    let projected = resolve(fixture, "claude-future", Some("anthropic"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(projected["key"], "anthropic/claude-future");
-    assert_eq!(projected["max_tokens"], 4096);
-    assert_eq!(projected["litellm_provider"], "anthropic");
+    assert_eq!(string_field(&projected, "key"), "anthropic/claude-future");
+    assert_eq!(number_field(&projected, "max_tokens"), Some(4096));
+    assert_eq!(string_field(&projected, "litellm_provider"), "anthropic");
 
-    let retained = resolve(&fixture, "mystery-model-2024-01-01", None, &NeverDynamic)
+    let retained = resolve(fixture, "mystery-model-2024-01-01", None, &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(retained["key"], "mystery-model");
-    assert_eq!(retained["max_tokens"], 7);
-    assert_eq!(retained["litellm_provider"], "acme");
+    assert_eq!(string_field(&retained, "key"), "mystery-model");
+    assert_eq!(number_field(&retained, "max_tokens"), Some(7));
+    assert_eq!(string_field(&retained, "litellm_provider"), "acme");
 
-    let empty = resolve(&fixture, "empty-rule", Some("acme"), &NeverDynamic)
+    let empty = resolve(fixture, "empty-rule", Some("acme"), &NeverDynamic)
         .await
         .unwrap();
-    assert_eq!(empty["key"], "empty-rule");
-    assert_eq!(empty["litellm_provider"], "acme");
-    assert_eq!(empty["max_tokens"], Value::Null);
+    assert_eq!(string_field(&empty, "litellm_provider"), "acme");
+    assert_eq!(raw_field(&empty, "max_tokens"), "null");
+}
 
-    let blocked = resolve(&fixture, "blocked-prefix", Some("anthropic"), &NeverDynamic).await;
+async fn generalization_blocked_case(fixture: &Fixture) {
+    let blocked = resolve(fixture, "blocked-prefix", Some("anthropic"), &NeverDynamic).await;
     assert!(matches!(blocked, Err(ModelMetadataError::NotMapped { .. })));
 }
 
 async fn unmapped_error_boundary_case() {
     let fixture = Fixture::new(r#"{"azure/gpt-35-turbo": {"litellm_provider": "azure"}}"#);
     let missing = resolve(&fixture, "nowhere-model", Some("groq"), &NeverDynamic).await;
-    match missing {
-        Err(error @ ModelMetadataError::NotMapped { .. }) => {
-            assert_eq!(
-                error.to_string(),
-                "This model isn't mapped yet. model=nowhere-model, custom_llm_provider=groq. Add it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json."
-            );
-        }
-        other => panic!("expected a not-mapped error, got {other:?}"),
-    }
+    let Err(error @ ModelMetadataError::NotMapped { .. }) = missing else {
+        panic!("expected a not-mapped error");
+    };
+    assert_eq!(
+        error.to_string(),
+        "This model isn't mapped yet. model=nowhere-model, custom_llm_provider=groq. Add it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json."
+    );
 
     // LiteLLM's dict keeps an entry the typed catalog rejects, and its prefix branch raises on a non-text provider
     let malformed =
@@ -714,19 +828,63 @@ async fn unmapped_error_boundary_case() {
         &NeverDynamic,
     )
     .await;
-    match failure {
-        Err(error @ ModelMetadataError::Failed { .. }) => {
-            assert_eq!(
-                error.to_string(),
-                "This model isn't mapped yet. model=vertex_ai/bad-model, custom_llm_provider=vertex_ai. Add it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json."
-            );
-        }
-        other => panic!("expected a generic failure, got {other:?}"),
-    }
+    let Err(raised @ ModelMetadataError::Failed { .. }) = failure else {
+        panic!("expected a generic failure");
+    };
+    assert_eq!(
+        raised.to_string(),
+        "This model isn't mapped yet. model=vertex_ai/bad-model, custom_llm_provider=vertex_ai. Add it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json."
+    );
 }
 
 async fn huggingface_config_metadata_case() {
-    let fixture = Fixture::new(r#"{}"#);
+    huggingface_fixed_fields_case().await;
+    huggingface_fetch_outcomes_case().await;
+}
+
+async fn huggingface_fixed_fields_case() {
+    let fixture = Fixture::new("{}");
+    let transport = ScriptedTransport::new(vec![HttpReply::Status {
+        status: 200,
+        body: r#"{"max_position_embeddings": 4096}"#.to_owned(),
+    }]);
+    let hf = HfConfigClient {
+        client: &transport,
+        base_url: "https://huggingface.co".to_owned(),
+    };
+    let value = huggingface_answer(&fixture, &hf).await;
+    assert_eq!(string_field(&value, "key"), "org/model");
+    assert_eq!(string_field(&value, "litellm_provider"), "huggingface");
+    assert_eq!(string_field(&value, "mode"), "chat");
+    assert_eq!(number_field(&value, "input_cost_per_token"), Some(0));
+    assert_eq!(number_field(&value, "output_cost_per_token"), Some(0));
+    assert_eq!(number_field(&value, "max_tokens"), Some(4096));
+    for name in [
+        "max_input_tokens",
+        "max_output_tokens",
+        "supports_system_messages",
+        "supports_response_schema",
+        "supports_function_calling",
+        "supports_tool_choice",
+        "supports_assistant_prefill",
+        "supports_prompt_caching",
+        "supports_prompt_cache_breakpoint",
+        "supports_thinking_cache_preservation",
+        "supports_computer_use",
+        "supports_pdf_input",
+    ] {
+        assert_eq!(raw_field(&value, name), "null", "{name}");
+    }
+    let request = transport.seen().into_iter().next().expect("request");
+    assert_eq!(
+        request.url,
+        "https://huggingface.co/org/model/raw/main/config.json"
+    );
+    assert_eq!(request.timeout, Duration::from_secs(10));
+}
+
+async fn huggingface_fetch_outcomes_case() {
+    let fixture = Fixture::new("{}");
     let transport = ScriptedTransport::new(vec![
         HttpReply::Status {
             status: 200,
@@ -734,7 +892,7 @@ async fn huggingface_config_metadata_case() {
         },
         HttpReply::Status {
             status: 200,
-            body: r#"{}"#.to_owned(),
+            body: String::from("{}"),
         },
         HttpReply::Status {
             status: 404,
@@ -751,55 +909,34 @@ async fn huggingface_config_metadata_case() {
         base_url: "https://huggingface.co".to_owned(),
     };
     for expected in [Some(4096), None, None, None, None] {
-        let environment = Environment::new(&fixture);
-        let mut keys = ModelCostKeys::default();
-        let value = get_model_info_helper(
-            &request("org/model", Some("huggingface")),
-            &environment.metadata(),
-            &mut keys,
-            &NeverDynamic,
-            &hf,
-        )
-        .await
-        .unwrap();
-        let value: Value = serde_json::from_str(value.get()).unwrap();
-        assert_eq!(value["key"], "org/model");
-        assert_eq!(value["litellm_provider"], "huggingface");
-        assert_eq!(value["mode"], "chat");
-        assert_eq!(value["input_cost_per_token"], 0);
-        assert_eq!(value["output_cost_per_token"], 0);
-        assert_eq!(
-            value["max_tokens"],
-            expected.map_or(Value::Null, Value::from)
-        );
-        for name in [
-            "max_input_tokens",
-            "max_output_tokens",
-            "supports_system_messages",
-            "supports_response_schema",
-            "supports_function_calling",
-            "supports_tool_choice",
-            "supports_assistant_prefill",
-            "supports_prompt_caching",
-            "supports_prompt_cache_breakpoint",
-            "supports_thinking_cache_preservation",
-            "supports_computer_use",
-            "supports_pdf_input",
-        ] {
-            assert_eq!(value[name], Value::Null, "{name}");
-        }
+        let value = huggingface_answer(&fixture, &hf).await;
+        assert_eq!(number_field(&value, "max_tokens"), expected);
+        assert_eq!(string_field(&value, "litellm_provider"), "huggingface");
     }
     assert_eq!(transport.seen().len(), 5);
-    assert_eq!(
-        transport.seen()[0].url,
-        "https://huggingface.co/org/model/raw/main/config.json"
-    );
-    assert_eq!(transport.seen()[0].timeout, Duration::from_secs_f64(10.0));
+}
+
+async fn huggingface_answer<Transport>(fixture: &Fixture, hf: &HfConfigClient<Transport>) -> Fields
+where
+    Transport: ModelInfoClient,
+{
+    let environment = Environment::new(fixture);
+    let mut keys = ModelCostKeys::default();
+    get_model_info_helper(
+        &request("org/model", Some("huggingface")),
+        &environment.metadata(),
+        &mut keys,
+        &NeverDynamic,
+        hf,
+    )
+    .await
+    .map(|raw| fields(&raw))
+    .unwrap()
 }
 
 #[test]
 fn cost_map_limits_and_vertex_membership_follow_the_source() {
-    assert!(ModelCostMap::parse(b"[]").is_err());
+    assert!(ModelCostMap::parse(b"[]").err().is_some());
     let oversized = vec![b' '; 16 * 1024 * 1024 + 1];
     assert!(matches!(
         ModelCostMap::parse(&oversized),
@@ -824,18 +961,30 @@ fn cost_map_limits_and_vertex_membership_follow_the_source() {
 #[test]
 fn decode_rejects_wrong_shaped_configs() {
     assert_eq!(
-        decode_hf_model_config(br#"{"max_position_embeddings": 8}"#).unwrap(),
+        decode_hf_model_config(br#"{"max_position_embeddings": 8}"#)
+            .ok()
+            .flatten(),
         Some(8)
     );
-    assert_eq!(decode_hf_model_config(br#"{}"#).unwrap(), None);
+    assert_eq!(decode_hf_model_config(b"{}").ok().flatten(), None);
     assert_eq!(
-        decode_hf_model_config(br#"{"max_position_embeddings": null}"#).unwrap(),
+        decode_hf_model_config(br#"{"max_position_embeddings": null}"#)
+            .ok()
+            .flatten(),
         None
     );
-    assert!(decode_hf_model_config(br#"{"max_position_embeddings": "8"}"#).is_err());
-    assert!(decode_hf_model_config(br#"{"max_position_embeddings": 8.5}"#).is_err());
-    assert!(decode_hf_model_config(b"[]").is_err());
-    assert!(decode_hf_model_config(b"").is_err());
+    assert!(
+        decode_hf_model_config(br#"{"max_position_embeddings": "8"}"#)
+            .err()
+            .is_some()
+    );
+    assert!(
+        decode_hf_model_config(br#"{"max_position_embeddings": 8.5}"#)
+            .err()
+            .is_some()
+    );
+    assert!(decode_hf_model_config(b"[]").err().is_some());
+    assert!(decode_hf_model_config(b"").err().is_some());
 }
 
 #[test]
