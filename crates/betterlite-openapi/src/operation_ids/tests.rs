@@ -137,7 +137,9 @@ fn only_a_trailing_known_method_is_stripped_before_the_new_suffix() {
             "/a": {"get": {"operationId": "foo_GET"}},
             "/b": {"get": {"operationId": "foo_GET"}},
             "/c": {"post": {"operationId": "foo_bar"}},
-            "/d": {"post": {"operationId": "foo_bar"}}
+            "/d": {"post": {"operationId": "foo_bar"}},
+            "/e": {"get": {"operationId": "foo_post"}},
+            "/f": {"get": {"operationId": "foo_post"}}
         }}"#,
     );
     ensure_unique_operation_ids(&mut openapi, None);
@@ -148,7 +150,9 @@ fn only_a_trailing_known_method_is_stripped_before_the_new_suffix() {
                 "/a": {"get": {"operationId": "foo_GET_get"}},
                 "/b": {"get": {"operationId": "foo_GET_get_2"}},
                 "/c": {"post": {"operationId": "foo_bar_post"}},
-                "/d": {"post": {"operationId": "foo_bar_post_2"}}
+                "/d": {"post": {"operationId": "foo_bar_post_2"}},
+                "/e": {"get": {"operationId": "foo_get"}},
+                "/f": {"get": {"operationId": "foo_get_2"}}
             }}"#
         )
     );
