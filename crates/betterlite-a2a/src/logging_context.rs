@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
+use betterlite_core::agents::provider::a2a::{IntegerId, JsonRpcId};
 use betterlite_logging::logging_state::correlation::CorrelationSetup;
 use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, Messages, RequestLoggingFlags,
@@ -147,20 +148,30 @@ fn card_name(agent_card: &AgentCard) -> Option<&str> {
     }
 }
 
-// The wire id of a typed A2A request is always a string or an integer number
-pub(crate) fn json_rpc_id_value(id: &AgentJson) -> (String, Json) {
+pub(crate) fn json_rpc_id_text(id: &JsonRpcId) -> String {
     match id {
-        AgentJson::String(text) => (text.clone(), Json::Text(text.clone())),
-        AgentJson::Number(number) => (number.to_string(), Json::Number(number.clone())),
-        other @ (AgentJson::Null
-        | AgentJson::Bool(_)
-        | AgentJson::Array(_)
-        | AgentJson::Object(_)) => (other.to_string(), Json::Text(other.to_string())),
+        JsonRpcId::String(text) => text.clone(),
+        JsonRpcId::Integer(number_id) => integer_id_number(number_id).to_string(),
     }
 }
 
+pub(crate) fn json_rpc_id_json(id: &JsonRpcId) -> Json {
+    match id {
+        JsonRpcId::String(text) => Json::Text(text.clone()),
+        JsonRpcId::Integer(number_id) => Json::Number(integer_id_number(number_id)),
+    }
+}
+
+// IntegerId exposes no reader for its Number, so the declared integer form is read through its derived Serialize impl
+fn integer_id_number(id: &IntegerId) -> Number {
+    serde_json::to_value(id)
+        .ok()
+        .and_then(|value| value.as_number().cloned())
+        .unwrap_or_else(|| Number::from(0_u64))
+}
+
 pub struct StreamingLoggingRequest<'request> {
-    pub request_id: &'request AgentJson,
+    pub request_id: &'request JsonRpcId,
     pub agent_name: &'request str,
     pub agent_id: Option<&'request str>,
     pub litellm_params: Option<&'request IndexMap<String, Json>>,
@@ -184,7 +195,7 @@ where
     Clock: FnMut() -> Duration,
 {
     let generated_trace_id = deps.generated_trace_id;
-    let (request_id, _) = json_rpc_id_value(request.request_id);
+    let request_id = json_rpc_id_text(request.request_id);
     let model = format!("a2a_agent/{}", request.agent_name);
     let init = streaming_logging_init(&request_id, &model, deps.start_time);
     let mut logging = LoggingState::new(

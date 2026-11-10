@@ -20,7 +20,7 @@ use crate::a2a_text::{A2aResponse, A2aTextError};
 use crate::client::records::compat::{Message, Part, SendMessageRequest};
 use crate::client::records::response::SendMessageResponse;
 use crate::cost_calculator::{CostCalculatorError, a2a_call_cost};
-use crate::logging_context::{LoggingContextError, json_rpc_id_value, usage_json};
+use crate::logging_context::{LoggingContextError, json_rpc_id_json, usage_json};
 
 mod tests;
 
@@ -85,7 +85,6 @@ pub enum StreamCompletionError {
 pub struct A2AStreamingIterator<'counter, Chunk, Source, Dispatch, Clock> {
     pub stream: Source,
     pub request: SendMessageRequest,
-    pub request_id: AgentJson,
     pub logging: LoggingState,
     pub counter: &'counter dyn TokenCounter,
     pub dispatch: Dispatch,
@@ -107,7 +106,6 @@ where
     pub fn new(
         stream: Source,
         request: SendMessageRequest,
-        request_id: AgentJson,
         logging: LoggingState,
         mut setup: StreamSetup<'counter, Dispatch, Clock>,
     ) -> Self {
@@ -115,7 +113,6 @@ where
         Self {
             stream,
             request,
-            request_id,
             logging,
             counter: setup.counter,
             dispatch: setup.dispatch,
@@ -217,8 +214,7 @@ where
 
     fn build_logging_result(&self, usage: &Json) -> Json {
         let mut result = IndexMap::new();
-        let (_, id) = json_rpc_id_value(&self.request_id);
-        result.insert("id".to_owned(), id);
+        result.insert("id".to_owned(), json_rpc_id_json(&self.request.id));
         result.insert("jsonrpc".to_owned(), Json::Text("2.0".to_owned()));
         result.insert("usage".to_owned(), usage.clone());
         // LiteLLM drops the final result when the chunk cannot be dumped, and still dispatches
