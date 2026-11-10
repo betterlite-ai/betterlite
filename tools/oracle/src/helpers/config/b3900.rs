@@ -173,7 +173,8 @@ fn load_settings(environment: &BTreeMap<String, String>) -> Result<Settings, Box
     Ok(ConfigLoader {
         lookup: environment.clone(),
     }
-    .load("")?
+    .load("")
+    .map_err(crate::helpers::config_helper_error)?
     .sections
     .langfuse_settings)
 }

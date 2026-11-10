@@ -103,7 +103,8 @@ fn probe(fields: &Probe) -> Result<Value, Box<HelperError>> {
     let config = ConfigLoader {
         lookup: fields.env.clone(),
     }
-    .load("")?;
+    .load("")
+    .map_err(crate::helpers::config_helper_error)?;
     let api_key = fields.api_key.clone().map(SecretString::from);
     let found = resolve_config(
         api_key.as_ref(),

@@ -70,7 +70,8 @@ fn load_config(env: &BTreeMap<String, String>) -> Result<Config, Box<HelperError
     Ok(ConfigLoader {
         lookup: env.clone(),
     }
-    .load("")?)
+    .load("")
+    .map_err(crate::helpers::config_helper_error)?)
 }
 
 fn credentials(fields: &CredentialFields) -> HelperResult {

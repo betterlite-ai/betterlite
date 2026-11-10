@@ -58,7 +58,8 @@ impl<'fixture> Host<'fixture> {
         let config = ConfigLoader {
             lookup: fixture.environment.clone(),
         }
-        .load("")?;
+        .load("")
+        .map_err(crate::helpers::config_helper_error)?;
         Ok(Self {
             fixture,
             settings: config.sections.azure_arc_identity,

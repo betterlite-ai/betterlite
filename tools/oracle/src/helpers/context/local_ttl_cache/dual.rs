@@ -13,13 +13,16 @@ use std::sync::{
 pub(super) fn run() -> crate::helpers::HelperResult {
     let clock = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
     let source = Arc::clone(&clock);
-    let memory = Arc::new(Mutex::new(LocalTtlCache::with_clock(
-        Some(2),
-        None,
-        None,
-        1024,
-        Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed))),
-    )?));
+    let memory = Arc::new(Mutex::new(
+        LocalTtlCache::with_clock(
+            Some(2),
+            None,
+            None,
+            1024,
+            Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed))),
+        )
+        .map_err(super::cache_helper_error)?,
+    ));
     let events = Arc::new(Mutex::new(Vec::<CacheEvent>::new()));
     let dual = DualLocalCache::new(
         Some(Arc::clone(&memory)),
@@ -40,7 +43,9 @@ pub(super) fn run() -> crate::helpers::HelperResult {
         Ttl::Absent,
     );
     let failure = dual.get("failure");
-    let captured = events.lock().map_err(|_poisoned| CacheError::Unavailable)?;
+    let captured = events
+        .lock()
+        .map_err(|_poisoned| super::cache_helper_error(CacheError::Unavailable))?;
     Ok(json!({"expired": expired, "zero": zero, "failure": failure,
         "set_event": captured.iter().any(|event| event.message.starts_with("set cache:")),
         "get_event": captured.iter().any(|event| event.kind == EventKind::Error)}))
