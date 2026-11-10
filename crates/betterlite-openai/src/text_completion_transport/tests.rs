@@ -262,7 +262,7 @@ fn dispatch_kinds() {
     let cases = [
         (false, false, "sync", "client_session"),
         (true, false, "async", "async_http_client"),
-        (true, true, "async", "aclient_session"),
+        (true, true, "async", "a_client_session"),
         (false, true, "sync", "client_session"),
     ];
     for (acompletion, stream, kind, http_client) in cases {
@@ -491,6 +491,7 @@ fn stream_boundaries() {
     iteration_boundaries();
     hidden_model_id();
     stream_options_reach_the_wrapper();
+    closing_chunk_carries_the_finish_reason();
 }
 
 fn streamed_chunks_are_yielded(acompletion: bool) {
@@ -638,7 +639,29 @@ fn stream_options_reach_the_wrapper() {
         ),
     ]);
     let chunks = stream_chunks(&transport, options_request);
-    assert!(chunks.iter().any(|chunk| chunk.get("usage").is_some()));
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks[1]["choices"][0]["finish_reason"], "stop");
+    assert!(chunks[1]["hidden_params"].get("usage").is_none());
+    assert!(chunks[2]["usage"].is_object());
+    assert_eq!(chunks[2]["choices"][0]["finish_reason"], Value::Null);
+}
+
+// The finish reason that rode on a text chunk goes out in a closing chunk that also carries the totals
+fn closing_chunk_carries_the_finish_reason() {
+    let (transport, _constructor) =
+        support::transport(Answer::stream(vec![support::chunk("hi", Some("stop"))]));
+    let chunks = stream_chunks(
+        &transport,
+        text_request(vec![("stream", Value::Bool(true))]),
+    );
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0]["choices"][0]["finish_reason"], Value::Null);
+    assert!(chunks[0]["hidden_params"].get("usage").is_none());
+    assert_eq!(chunks[1]["choices"][0]["finish_reason"], "stop");
+    assert_eq!(
+        chunks[1]["hidden_params"]["usage"]["total_tokens"],
+        Value::from(0_i64)
+    );
 }
 
 #[test]

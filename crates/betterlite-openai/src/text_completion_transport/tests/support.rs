@@ -169,9 +169,9 @@ fn sse(events: &[String], failure: Option<&Failure>) -> ByteStream {
         .iter()
         .map(|event| Ok(format!("data: {event}\n\n").into_bytes()))
         .collect();
-    items.push(Ok(b"data: [DONE]\n\n".to_vec()));
-    if let Some(error) = failure {
-        items.push(Err(error.error()));
+    match failure {
+        Some(error) => items.push(Err(error.error())),
+        None => items.push(Ok(b"data: [DONE]\n\n".to_vec())),
     }
     Box::pin(stream::iter(items))
 }

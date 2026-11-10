@@ -59,7 +59,7 @@ struct Raised {
 #[derive(Serialize, Default)]
 struct Output {
     result: Option<Value>,
-    hidden_original_response: Option<String>,
+    hidden_original_response: Option<Value>,
     chunks: Option<Vec<Value>>,
     raised: Option<Raised>,
     pre_call: Vec<Value>,
@@ -143,7 +143,11 @@ async fn flow(
     match transport.finish(&begun, sent, logger)? {
         TextCompletionOutcome::Buffered(reply) => {
             output.result = Some(reply.response);
-            output.hidden_original_response = reply.hidden_original_response;
+            output.hidden_original_response = reply
+                .hidden_original_response
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()?;
         }
         TextCompletionOutcome::Stream(mut chunks) => {
             let mut seen = Vec::new();

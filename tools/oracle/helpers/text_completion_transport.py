@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import ExitStack
 from typing import TypeAlias, cast
@@ -216,7 +217,9 @@ def collect(outcome: object, output: Object) -> None:
     if isinstance(outcome, BaseModel):
         output["result"] = cast(Json, outcome.model_dump())
         hidden = cast(object, getattr(outcome, "_hidden_params"))  # noqa: B009
-        output["hidden_original_response"] = cast(Json, getattr(hidden, "original_response", None))
+        original = cast(str | None, getattr(hidden, "original_response", None))
+        # json.dumps spacing and key order are Python habits, so the oracle compares the parsed text
+        output["hidden_original_response"] = None if original is None else json.loads(original)
         return
     output["chunks"] = chunks
     if inspect.isasyncgen(outcome):
