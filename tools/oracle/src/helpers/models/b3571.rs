@@ -57,15 +57,16 @@ fn sdk_output(input: &Input) -> crate::helpers::HelperResult {
     let request = request_timeouts(input.request.as_ref());
     let deployment = deployment_timeouts(input.deployment.as_ref());
     let router = router_timeouts(input.router.as_ref());
-    let seconds = resolve_sdk_timeout(
+    match resolve_sdk_timeout(
         &request,
         &deployment,
         &router,
         input.configured_timeout,
         input.settings_timeout,
-    )
-    .map_err(|error| helper_error("InvalidSeconds", error))?;
-    Ok(json!(seconds))
+    ) {
+        Ok(seconds) => Ok(json!(seconds)),
+        Err(error) => Err(helper_error("InvalidSeconds", error)),
+    }
 }
 
 fn request_timeouts(fields: Option<&RequestFields>) -> RequestTimeouts {
