@@ -3,7 +3,7 @@ name: azure-tool-choice-without-tools
 call:
   azure_chat_base_policy:
     action: azure_tool_choice_without_tools
-    settings: {}
+    settings: {openai_system_messages_first: true}
     steps:
       - messages: []
         optional: {tool_choice: auto}

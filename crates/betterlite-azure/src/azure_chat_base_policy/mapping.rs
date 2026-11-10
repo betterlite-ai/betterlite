@@ -72,41 +72,37 @@ fn api_version_number(text: &str, field: &'static str) -> Result<i64, PolicyErro
         || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
         |rest| (true, rest),
     );
-    if digits.is_empty() || !decimal_digits(digits) {
-        return Err(PolicyError::ApiVersionNumber {
-            field,
-            value: text.to_owned(),
-        });
+    let invalid = || PolicyError::ApiVersionNumber {
+        field,
+        value: text.to_owned(),
+    };
+    let mut magnitude = 0_i64;
+    let mut saw_digit = false;
+    for character in digits.chars() {
+        if character == '_' {
+            if !saw_digit {
+                return Err(invalid());
+            }
+            saw_digit = false;
+            continue;
+        }
+        let Some(digit) = character.to_digit(10) else {
+            return Err(invalid());
+        };
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(i64::from(digit)))
+            .ok_or_else(invalid)?;
+        saw_digit = true;
     }
-    let cleaned: String = digits
-        .chars()
-        .filter(|character| *character != '_')
-        .collect();
-    let magnitude = cleaned
-        .parse::<i64>()
-        .map_err(|_source| PolicyError::ApiVersionNumber {
-            field,
-            value: text.to_owned(),
-        })?;
+    if !saw_digit {
+        return Err(invalid());
+    }
     if negative {
-        magnitude
-            .checked_neg()
-            .ok_or_else(|| PolicyError::ApiVersionNumber {
-                field,
-                value: text.to_owned(),
-            })
+        magnitude.checked_neg().ok_or_else(invalid)
     } else {
         Ok(magnitude)
     }
-}
-
-fn decimal_digits(digits: &str) -> bool {
-    if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
-        return false;
-    }
-    digits
-        .chars()
-        .all(|character| character.is_ascii_digit() || character == '_')
 }
 
 fn date_components(api_version: &str) -> Option<(&str, &str, &str)> {

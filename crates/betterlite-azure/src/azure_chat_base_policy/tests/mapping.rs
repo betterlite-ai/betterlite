@@ -50,11 +50,12 @@ fn assert_unsupported(error: &PolicyError, message: &str) {
     assert_eq!(metadata.code, "400");
 }
 
-const SUPPORTED_MODELS: [(&str, bool); 8] = [
+const SUPPORTED_MODELS: [(&str, bool); 9] = [
     ("gpt-4o", true),
     ("gpt-4.1", true),
     ("gpt-4-1", true),
     ("azure/gpt-4-1", true),
+    ("gpt-3x5", true),
     ("gpt-3.5-turbo", false),
     ("gpt-3-5-turbo", false),
     ("gpt-35-turbo", false),
@@ -178,13 +179,14 @@ const PARAM_CASES: [(&str, &str); 3] = [
 
 const REJECTED_DATES: [&str; 4] = ["2023-11-30", "2023-12-00", "2022-12-31", "0000-01-01"];
 
-const ALLOWED_DATES: [&str; 10] = [
+const ALLOWED_DATES: [&str; 11] = [
     "2023-12-01",
     "2023-12-02",
     "2023-12-1",
     "2023-2-01",
     "2023-13-01",
     "2024-01-01",
+    "2024-12-00",
     "2023-11",
     "",
     "abc",
@@ -234,8 +236,17 @@ fn assert_version_error(year: &str, month: &str, field: &'static str) {
 }
 
 fn response_format_invalid_versions() {
-    assert_version_error("2024", "x", "month");
-    assert_version_error("x", "8", "year");
+    for (year, month, field) in [
+        ("2024", "x", "month"),
+        ("x", "8", "year"),
+        ("", "8", "year"),
+        ("_12", "8", "year"),
+        ("1__2", "8", "year"),
+        ("1_", "8", "year"),
+        ("2024", "", "month"),
+    ] {
+        assert_version_error(year, month, field);
+    }
 }
 
 fn response_format_mapping() {
