@@ -163,6 +163,7 @@ fn cost_parse_keeps_a_usable_value(#[case] raw: &str, #[case] expected: f64) {
 #[rstest]
 #[case::absent(None, "did not send x-litellm-response-cost")]
 #[case::unparseable(Some("abc"), "unparseable x-litellm-response-cost='abc'")]
+#[case::underscores(Some("1_0"), "unparseable x-litellm-response-cost='1_0'")]
 #[case::nan(Some("nan"), "out-of-range x-litellm-response-cost='nan'")]
 #[case::infinite(Some("inf"), "out-of-range x-litellm-response-cost='inf'")]
 #[case::negative(Some("-0.5"), "out-of-range x-litellm-response-cost='-0.5'")]
@@ -186,6 +187,11 @@ fn token_parse_keeps_a_usable_value(#[case] raw: &str, #[case] expected: i64) {
 #[case::absent(None, "did not send x-litellm-total-tokens")]
 #[case::unparseable(Some("1.5"), "unparseable x-litellm-total-tokens='1.5'")]
 #[case::text(Some("abc"), "unparseable x-litellm-total-tokens='abc'")]
+#[case::underscores(Some("1_0"), "unparseable x-litellm-total-tokens='1_0'")]
+#[case::overflow(
+    Some("9223372036854775808"),
+    "unparseable x-litellm-total-tokens='9223372036854775808'"
+)]
 #[case::negative(Some("-3"), "negative x-litellm-total-tokens='-3'")]
 fn token_parse_rejects_an_unusable_value(#[case] raw: Option<&str>, #[case] expected: &str) {
     let (logs, _guard) = capture_logs();
