@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-tools-duplicate-name
+call:
+  bedrock_tools:
+    call: tools
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    capability:
+      cache_points: extended_ttl
+      supports_strict_tools: true
+    tools:
+      - type: function
+        function:
+          name: dup name
+      - type: function
+        function:
+          name: dup_name
+      - type: function
+        function:
+          name: dup~name
+      - type: function
+        function:
+          name: other
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: passthrough-ordinary-call-type-skipped
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      additional_args:
+        complete_input_dict:
+          messages:
+            - {role: user, content: not projected}
+      standard_logging_object:
+        call_type: acompletion
+    response:
+      content:
+        - {type: text, text: not projected either}
+env: {}
+compare: {ignore: []}

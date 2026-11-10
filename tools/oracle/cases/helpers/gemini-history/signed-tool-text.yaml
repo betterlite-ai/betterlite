@@ -1,0 +1,81 @@
+kind: helper
+name: gemini-history-signed-tool-text
+call:
+  gemini_history:
+    cases:
+      - model: "gemini-3-pro-preview"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: ["sig-text"]}
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+      - model: "gemini-3-pro-preview"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: ["sig-tool"]}
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+                provider_specific_fields: {thought_signature: "sig-tool"}
+      - model: "gemini-2.5-flash"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: ["sig-id"]}
+            tool_calls:
+              - id: "c1__thought__sig-id"
+                type: function
+                function: {name: "f", arguments: "{}"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              thought_signatures: ["sig-server"]
+              server_side_tool_invocations:
+                - {id: "s1", thought_signature: "sig-server"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: [null, "second"]}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: ["first", "second"]}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {thought_signatures: ["none"]}
+            tool_calls: []
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "calling"
+            function_call:
+              name: "f"
+              arguments: "{}"
+              provider_specific_fields: {thought_signature: "s"}
+            provider_specific_fields: {thought_signatures: ["s"]}
+          - {role: function, name: "f", content: "r"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              thought_signatures: ["sig-resp"]
+              server_side_tool_invocations:
+                - {id: "s1", response: {}, response_thought_signature: "sig-resp"}
+env: {}
+compare:
+  ignore: []
