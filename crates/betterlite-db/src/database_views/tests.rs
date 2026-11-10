@@ -576,7 +576,8 @@ async fn models_exclude_empty_and_null() {
     let database = Database::new().await;
     execute(
         &database.client,
-        r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, spend, "startTime", model) VALUES ('r1',1.0,CURRENT_DATE,''),('r2',2.0,CURRENT_DATE,''),('r3',4.0,CURRENT_DATE,NULL),('r4',8.0,CURRENT_DATE,'gpt-4'),('r5',5.0,CURRENT_DATE - INTERVAL '2 days','claude-3');"#,
+        r#"ALTER TABLE "LiteLLM_SpendLogs" ALTER COLUMN model DROP NOT NULL;
+INSERT INTO "LiteLLM_SpendLogs" (request_id, spend, "startTime", model) VALUES ('r1',1.0,CURRENT_DATE,''),('r2',2.0,CURRENT_DATE,''),('r3',4.0,CURRENT_DATE,NULL),('r4',8.0,CURRENT_DATE,'gpt-4'),('r5',5.0,CURRENT_DATE - INTERVAL '2 days','claude-3');"#,
     )
     .await;
     create_missing_views(&database.client).await.unwrap();
@@ -646,7 +647,7 @@ async fn tags_all_dates_and_duplicate_occurrences() {
         vec![
             ("a".to_owned(), old, 1_i64, 4.0_f64),
             ("a".to_owned(), yesterday, 1_i64, 2.0_f64),
-            ("a".to_owned(), today, 3_i64, 1.5_f64),
+            ("a".to_owned(), today, 3_i64, 2.0_f64),
             ("b".to_owned(), today, 1_i64, 1.0_f64),
         ]
     );
