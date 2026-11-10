@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use super::contracts::{SupportsExecuteRaw, SupportsRawQueries};
 use super::definitions::{RUNTIME_VIEWS, ViewDefinition};
 pub const VIEW_NOT_FOUND_MARKERS: [&str; 3] =
@@ -29,7 +31,7 @@ where
             Ok(true)
         }
         Err(error) => {
-            let message = error.to_string().to_lowercase();
+            let message = lowercase_chain(&error);
             if VIEW_NOT_FOUND_MARKERS
                 .iter()
                 .any(|marker| message.contains(marker))
@@ -55,7 +57,7 @@ where
         }
         Err(error) => error,
     };
-    let message = failure.to_string().to_lowercase();
+    let message = lowercase_chain(&failure);
     if !VIEW_ALREADY_EXISTS_MARKERS
         .iter()
         .any(|marker| message.contains(marker))
@@ -64,4 +66,15 @@ where
     }
     tracing::debug!("{view_name} already created by a concurrent replica");
     Ok(())
+}
+// tokio-postgres displays only "db error"; the server message sits in the source chain
+fn lowercase_chain(error: &(dyn Error + 'static)) -> String {
+    let mut text = error.to_string();
+    let mut cause = error.source();
+    while let Some(inner) = cause {
+        text.push_str(": ");
+        text.push_str(&inner.to_string());
+        cause = inner.source();
+    }
+    text.to_lowercase()
 }

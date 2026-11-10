@@ -1539,6 +1539,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-db",
+ "betterlite-postgres-fixture",
  "clap",
  "rstest",
  "secrecy",

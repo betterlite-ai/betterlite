@@ -665,7 +665,7 @@ async fn assert_daily_tags_reject(client: &Client, request_tags: &str, message: 
         .query(r#"SELECT individual_request_tag FROM "DailyTagSpend""#, &[])
         .await
         .unwrap_err();
-    assert!(error.to_string().contains(message));
+    assert!(error.as_db_error().unwrap().message().contains(message));
 }
 #[tokio::test]
 async fn tags_empty_null_and_scalar() {
@@ -835,7 +835,7 @@ async fn postgres_failed_create_preserves_previous_views() {
     )
     .await;
     let error = create_missing_views(&database.client).await.unwrap_err();
-    assert!(error.to_string().contains("spend"));
+    assert!(error.as_db_error().unwrap().message().contains("spend"));
     assert_eq!(
         created_view_names(&database.client).await,
         vec![VERIFICATION_TOKEN_VIEW.to_owned()]

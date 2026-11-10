@@ -9,7 +9,7 @@ use betterlite_db_admin::command_shell::{
 use betterlite_db_admin::commands::Operation;
 use tokio::runtime::Builder;
 
-use crate::database_views::DatabaseViewsService;
+use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
 
 mod database_repair;
 mod database_startup;
@@ -17,11 +17,19 @@ mod database_views;
 mod spend_backfills;
 mod spend_partitions;
 
-fn main() -> ExitCode {
+fn backend() -> DbAdminBackend {
     let mut backend = DbAdminBackend::default();
+    let views = DatabaseViewsService {
+        deadline: OFFLINE_TIMEOUT,
+    };
     backend
         .services
-        .insert(Operation::DatabaseViews, Arc::new(DatabaseViewsService));
+        .insert(Operation::DatabaseViews, Arc::new(views));
+    backend
+}
+
+fn main() -> ExitCode {
+    let backend = backend();
     let mut output = io::stdout();
     let mut errors = io::stderr();
     let mut streams = Streams {

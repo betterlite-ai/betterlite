@@ -12,14 +12,17 @@ use tokio_postgres::{Client, Config, NoTls};
 // db_scripts/create_views.py passes http timeout 60000 to Prisma, whose unit is seconds (60000 s)
 pub(crate) const OFFLINE_TIMEOUT: Duration = Duration::from_mins(1000);
 
-pub(crate) struct DatabaseViewsService;
+pub(crate) struct DatabaseViewsService {
+    pub(crate) deadline: Duration,
+}
 
 impl DbAdminService for DatabaseViewsService {
     fn run(&self, _command: DbAdminCommand, config: ResolvedConfig) -> DbAdminFuture<'_> {
         Box::pin(async move {
             let mut connections = JoinSet::new();
-            match connect(config.database_url.expose_secret(), &mut connections).await {
-                Ok(client) => offline_views(&client, OFFLINE_TIMEOUT).await,
+            let url = config.database_url.expose_secret();
+            match connect(url, self.deadline, &mut connections).await {
+                Ok(client) => offline_views(&client, self.deadline).await,
                 Err(source) => Err(DbAdminError::Views {
                     lines: Vec::new(),
                     source,
@@ -31,13 +34,14 @@ impl DbAdminService for DatabaseViewsService {
 
 async fn connect(
     url: &str,
+    deadline: Duration,
     connections: &mut JoinSet<Result<(), tokio_postgres::Error>>,
 ) -> Result<Client, ViewsError> {
     let config: Config = url.parse().map_err(|source| ViewsError::Url { source })?;
-    let (client, connection) = timeout(OFFLINE_TIMEOUT, config.connect(NoTls))
+    let (client, connection) = timeout(deadline, config.connect(NoTls))
         .await
         .map_err(|_elapsed| ViewsError::Timeout {
-            seconds: OFFLINE_TIMEOUT.as_secs(),
+            seconds: deadline.as_secs(),
         })?
         .map_err(|source| ViewsError::Connect { source })?;
     connections.spawn(connection);
@@ -50,7 +54,7 @@ pub(crate) async fn offline_views<Database>(
     deadline: Duration,
 ) -> Result<DbAdminOutcome, DbAdminError>
 where
-    Database: SupportsRawQueries + Sync,
+    Database: SupportsRawQueries<Error = tokio_postgres::Error> + Sync,
 {
     let mut lines = Vec::new();
     for view in OFFLINE_VIEWS {
@@ -65,8 +69,7 @@ where
         match timeout(deadline, database.execute_raw(view.ddl)).await {
             Ok(Ok(())) => lines.push(format!("{} Created!", view.name)),
             Ok(Err(error)) => {
-                let message = error.to_string();
-                let source = ViewsError::Database { message };
+                let source = ViewsError::Statement { source: error };
                 return Err(DbAdminError::Views { lines, source });
             }
             Err(_elapsed) => {

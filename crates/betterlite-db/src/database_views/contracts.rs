@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::error::Error as StdError;
 use std::future::Future;
 use std::pin::Pin;
 use tokio_postgres::Client;
@@ -12,7 +12,7 @@ pub struct RawRow {
     pub columns: BTreeMap<String, Option<i64>>,
 }
 pub trait SupportsExecuteRaw {
-    type Error: Display;
+    type Error: StdError + Send + Sync + 'static;
     fn execute_raw<'database>(
         &'database self,
         query: &'database str,

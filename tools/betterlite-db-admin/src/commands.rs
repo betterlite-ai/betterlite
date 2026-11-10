@@ -118,8 +118,11 @@ pub enum ViewsError {
     },
     #[error("the database did not answer within {seconds} seconds")]
     Timeout { seconds: u64 },
-    #[error("{message}")]
-    Database { message: String },
+    #[error("a view statement failed: {source}{}", .source.as_db_error().map_or_else(String::new, |server| format!(": {server}")))]
+    Statement {
+        #[source]
+        source: tokio_postgres::Error,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
