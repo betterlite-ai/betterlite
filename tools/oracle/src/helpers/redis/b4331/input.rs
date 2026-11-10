@@ -24,9 +24,6 @@ pub(crate) struct CacheSpec {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Reply {
     Bulk(String),
-    Simple(String),
-    Int(i64),
-    Error(String),
     Nil,
     Array(Vec<Self>),
 }
@@ -48,13 +45,11 @@ pub(crate) enum Step {
     PostCallOn { request: usize, call: PostCall },
     Await { handle: usize },
     FlushPostCall,
-    FlushAll,
     Sleep { millis: u64 },
     Nested { cache: usize },
     Drain,
     CreateRequest,
     PrefetchArm { slot: String, value: String },
     PrefetchTake { slot: String },
-    PrefetchArmed { slot: String },
     Snapshot,
 }

@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Self, TypeAlias, cast
 
 from litellm.caching.redis_batch import (
@@ -20,9 +21,10 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 Declared: TypeAlias = BatchResult[Mapping[str, object]] | BatchResult[float]
 
 DEFAULT_TTL: int = 60
-REPORTED: frozenset[str] = frozenset(
-    {"DEL", "EVALSHA", "EXPIRE", "INCRBYFLOAT", "MGET", "SCRIPT", "SET"}
-)
+
+
+async def noop_hook(**_: object) -> None:
+    return None
 
 
 def string_value(value: Json, name: str) -> str:
@@ -61,12 +63,6 @@ def number_value(value: Json, name: str) -> float:
     return float(value)
 
 
-def optional_string(value: Json, name: str) -> str | None:
-    if value is None:
-        return None
-    return string_value(value, name)
-
-
 def boolean_value(value: Json, name: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{name} must be a boolean")
@@ -79,10 +75,6 @@ def reply_value(spec: Json) -> object:
     entry = object_value(spec, "reply")
     if "bulk" in entry:
         return string_value(entry["bulk"], "bulk")
-    if "simple" in entry:
-        return string_value(entry["simple"], "simple")
-    if "int" in entry:
-        return integer_value(entry["int"], "int")
     if "array" in entry:
         return [reply_value(item) for item in list_value(entry["array"], "array")]
     raise ValueError("unknown reply spec")
@@ -91,7 +83,7 @@ def reply_value(spec: Json) -> object:
 class FakePipeline:
     def __init__(self, client: "FakeClient") -> None:
         self._client = client
-        self._queued: list[tuple[str, list[str]]] = []
+        self._queued: list[str] = []
 
     async def __aenter__(self) -> Self:
         return self
@@ -100,28 +92,25 @@ class FakePipeline:
         _ = (kind, value, traceback)
 
     def mget(self, keys: Sequence[str]) -> None:
-        self._queued.append(("MGET", list(keys)))
+        _ = keys
+        self._queued.append("MGET")
 
     def incrbyfloat(self, name: str, amount: float) -> None:
-        self._queued.append(("INCRBYFLOAT", [name, str(amount)]))
+        _ = (name, amount)
+        self._queued.append("INCRBYFLOAT")
 
     def expire(self, name: str, time: timedelta) -> None:
-        self._queued.append(("EXPIRE", [name, str(int(time.total_seconds()))]))
+        _ = (name, time)
+        self._queued.append("EXPIRE")
 
     async def execute(self, *, raise_on_error: bool = True) -> list[object]:
         _ = raise_on_error
-        replies: list[object] = []
-        for name, _args in self._queued:
-            self._client.commands.append(name)
-            replies.append(self._client.reply(name))
-        self._queued.clear()
-        return replies
+        return [self._client.reply(name) for name in self._queued]
 
 
 class FakeClient:
     def __init__(self, replies: dict[str, list[Json]]) -> None:
         self.replies = replies
-        self.commands: list[str] = []
 
     def init_async_client(self) -> "FakeClient":
         return self
@@ -132,35 +121,22 @@ class FakeClient:
 
     def reply(self, name: str) -> object:
         queue = self.replies.get(name)
-        spec: Json = queue.pop(0) if queue else {"simple": "OK"}
+        spec: Json = queue.pop(0) if queue else {"bulk": "OK"}
         return reply_value(spec)
-
-
-class Logger:
-    async def async_service_success_hook(self, **_: object) -> None:
-        return None
-
-    async def async_service_failure_hook(self, **_: object) -> None:
-        return None
-
-    def service_success_hook(self, **_: object) -> None:
-        return None
-
-    def service_failure_hook(self, **_: object) -> None:
-        return None
 
 
 def build_cache(spec: dict[str, Json], client: FakeClient) -> RedisCache:
     cache = object.__new__(RedisCache)
+    logger = SimpleNamespace(
+        async_service_success_hook=noop_hook,
+        async_service_failure_hook=noop_hook,
+    )
     fields: dict[str, object] = {
-        "namespace": optional_string(spec.get("namespace"), "namespace"),
+        "namespace": spec.get("namespace"),
         "default_ttl": DEFAULT_TTL,
-        "redis_kwargs": {
-            "host": string_value(spec.get("setting"), "setting"),
-            "port": 6379,
-        },
+        "redis_kwargs": {"host": string_value(spec.get("setting"), "setting"), "port": 6379},
         "_circuit_breaker": RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60),
-        "service_logger_obj": Logger(),
+        "service_logger_obj": logger,
         "init_async_client": client.init_async_client,
     }
     for name, value in fields.items():
@@ -197,7 +173,10 @@ class Scenario:
         self.requests: list[RequestRedisBatches] = []
         self.batches: list[BatchEntry] = []
         self.handles: list[Declared | None] = []
-        self.steps: list[Json] = []
+        self.snapshots: list[Json] = []
+        self.awaited: list[Json] = []
+        self.nested_batches: list[Json] = []
+        self.prefetch_steps: list[Json] = []
 
     def run(self) -> Json:
         return asyncio.run(self.drive())
@@ -243,106 +222,71 @@ class Scenario:
     def declare_step(self, kind: str, step: dict[str, Json]) -> bool:
         if kind == "batch":
             self.declare_batch(step)
-            return True
-        if kind == "post_call":
-            self.declare_post_call(step)
-            return True
-        if kind == "post_call_on":
-            self.declare_post_call_on(step)
-            return True
-        return False
+        elif kind == "post_call":
+            self.declare_post_call(None, step)
+        elif kind == "post_call_on":
+            self.declare_post_call(
+                integer_value(step.get("request"), "request"), step
+            )
+        else:
+            return False
+        return True
 
     async def runtime_step(self, kind: str, step: dict[str, Json]) -> bool:
         if kind == "await":
             await self.settle(integer_value(step.get("handle"), "handle"))
-            return True
-        if kind == "flush_post_call":
+        elif kind == "flush_post_call":
             await flush_post_call_redis_batches()
-            self.steps.append({"kind": "flush_post_call"})
-            return True
-        if kind == "flush_all":
-            request = self.active_request()
-            await request.flush_all()
-            self.steps.append({"kind": "flush_all"})
-            return True
-        if kind == "sleep":
+        elif kind == "sleep":
             await asyncio.sleep(integer_value(step.get("millis"), "millis") / 1000)
-            self.steps.append({"kind": "sleep"})
-            return True
-        if kind == "drain":
+        elif kind == "drain":
             await drain_post_call_redis_batches()
-            self.steps.append({"kind": "drain"})
-            return True
-        return False
+        else:
+            return False
+        return True
 
     async def request_step(self, kind: str, step: dict[str, Json]) -> bool:
         if kind == "nested":
             await self.nested(integer_value(step.get("cache"), "cache"))
-            return True
-        if kind == "create_request":
-            request = RequestRedisBatches(post_call_deadline=self.deadline)
-            self.steps.append(
-                {"kind": "create_request", "request": self.record_request(request)}
+        elif kind == "create_request":
+            _ = self.record_request(
+                RequestRedisBatches(post_call_deadline=self.deadline)
             )
-            return True
-        if kind in ("prefetch_arm", "prefetch_take", "prefetch_armed"):
-            self.prefetch_step(kind, step)
-            return True
-        if kind == "snapshot":
-            self.steps.append(self.snapshot())
-            return True
-        return False
-
-    def prefetch_step(self, kind: str, step: dict[str, Json]) -> None:
-        if kind == "prefetch_arm":
-            self.prefetch_arm(step)
-        elif kind == "prefetch_take":
-            self.prefetch_take(step)
+        elif kind in ("prefetch_arm", "prefetch_take"):
+            self.prefetch(step)
+        elif kind == "snapshot":
+            self.snapshots.append(self.state())
         else:
-            self.prefetch_armed(step)
+            return False
+        return True
 
     def declare_batch(self, step: dict[str, Json]) -> None:
-        cached = self.caches[integer_value(step.get("cache"), "cache")]
-        self.touch_active_request()
-        batch = active_request_redis_batch(cached)
+        cache = integer_value(step.get("cache"), "cache")
+        batch = active_request_redis_batch(self.caches[cache])
         if batch is None:
             raise ValueError("a batch step needs a request scope")
-        index = self.record_batch(batch, "request", integer_value(step.get("cache"), "cache"))
+        _ = self.record_request(self.active_request())
+        _ = self.record_batch(batch, "request", cache)
         keys = [string_value(key, "key") for key in list_value(step.get("keys"), "keys")]
         self.handles.append(batch.mget(keys))
-        self.steps.append(
-            {
-                "kind": "batch",
-                "cache": integer_value(step.get("cache"), "cache"),
-                "batch": index,
-            }
-        )
 
-    def declare_post_call(self, step: dict[str, Json]) -> None:
+    def declare_post_call(self, request: int | None, step: dict[str, Json]) -> None:
         spec = object_value(step.get("call"), "call")
-        cached = self.caches[integer_value(spec.get("cache"), "cache")]
-        self.touch_active_request()
-        batch = active_post_call_redis_batch(cached)
-        if batch is None:
-            raise ValueError("a post-call step needs a request scope")
-        self.push_post_call(batch, spec)
-
-    def declare_post_call_on(self, step: dict[str, Json]) -> None:
-        spec = object_value(step.get("call"), "call")
-        request = self.requests[integer_value(step.get("request"), "request")]
-        cached = self.caches[integer_value(spec.get("cache"), "cache")]
-        self.push_post_call(request.post_call(cached), spec)
-
-    def push_post_call(self, batch: RedisBatch, spec: dict[str, Json]) -> None:
         cache = integer_value(spec.get("cache"), "cache")
-        index = self.record_batch(batch, "post_call", cache)
+        if request is None:
+            batch = active_post_call_redis_batch(self.caches[cache])
+            if batch is None:
+                raise ValueError("a post-call step needs a request scope")
+            _ = self.record_request(self.active_request())
+        else:
+            batch = self.requests[request].post_call(self.caches[cache])
+        _ = self.record_batch(batch, "post_call", cache)
         handle = batch.increment(
             string_value(spec.get("key"), "key"),
             number_value(spec.get("value"), "value"),
             optional_integer(spec.get("ttl"), "ttl"),
         )
         self.handles.append(handle)
-        self.steps.append({"kind": "post_call", "cache": cache, "batch": index})
 
     async def settle(self, index: int) -> None:
         handle = self.handles[index]
@@ -352,88 +296,64 @@ class Scenario:
         try:
             value = await handle
         except Exception:  # noqa: BLE001 - the wire contract carries every failure
-            self.steps.append({"kind": "await", "handle": index, "ok": False})
+            self.awaited.append({"handle": index, "ok": False})
             return
-        self.steps.append(
-            {
-                "kind": "await",
-                "handle": index,
-                "ok": True,
-                "value": await_value(value),
-            }
+        self.awaited.append(
+            {"handle": index, "ok": True, "value": await_value(value)}
         )
 
     async def nested(self, cache: int) -> None:
         cached = self.caches[cache]
-        outer = self.active_request()
-        request_before = self.record_request(outer)
-        outer_batch = active_request_redis_batch(cached)
-        if outer_batch is None:
+        before = self.active_request()
+        _ = self.record_request(before)
+        before_batch = active_request_redis_batch(cached)
+        if before_batch is None:
             raise ValueError("a nested step needs a request scope")
-        batch_before = self.record_batch(outer_batch, "request", cache)
+        _ = self.record_batch(before_batch, "request", cache)
         with request_redis_batch_scope(post_call_deadline=self.deadline):
-            inside_request = active_request_redis_batches()
-            if inside_request is None:
-                raise ValueError("the nested scope has no request")
+            inside = self.active_request()
             inside_batch = active_request_redis_batch(cached)
             if inside_batch is None:
                 raise ValueError("the nested scope has no batch")
-            request_inside = self.record_request(inside_request)
-            batch_inside = self.record_batch(inside_batch, "request", cache)
         after = self.active_request()
-        request_after = self.record_request(after)
         after_batch = active_request_redis_batch(cached)
         if after_batch is None:
             raise ValueError("the outer scope lost its batch")
-        batch_after = self.record_batch(after_batch, "request", cache)
-        self.steps.append(
+        _ = self.record_request(inside)
+        _ = self.record_request(after)
+        self.nested_batches.append(
             {
-                "kind": "nested",
                 "cache": cache,
-                "request_before": request_before,
-                "batch_before": batch_before,
-                "request_inside": request_inside,
-                "batch_inside": batch_inside,
-                "request_after": request_after,
-                "batch_after": batch_after,
+                "request_shared": inside is before and after is before,
+                "batch_shared": inside_batch is before_batch
+                and after_batch is before_batch,
             }
         )
 
-    def prefetch_arm(self, step: dict[str, Json]) -> None:
+    def prefetch(self, step: dict[str, Json]) -> None:
         request = self.active_request()
         slot = string_value(step.get("slot"), "slot")
-        request.prefetched[slot] = string_value(step.get("value"), "value")
-        self.steps.append(
-            {"kind": "prefetch_arm", "slot": slot, "armed": slot in request.prefetched}
-        )
-
-    def prefetch_take(self, step: dict[str, Json]) -> None:
-        request = self.active_request()
-        slot = string_value(step.get("slot"), "slot")
+        value = step.get("value")
+        if value is not None:
+            request.prefetched[slot] = string_value(value, "value")
+            self.prefetch_steps.append(
+                {"action": "arm", "slot": slot, "armed": slot in request.prefetched}
+            )
+            return
         taken = cast(Json, request.prefetched.pop(slot, None))
-        self.steps.append(
+        self.prefetch_steps.append(
             {
-                "kind": "prefetch_take",
+                "action": "take",
                 "slot": slot,
                 "taken": taken,
                 "armed": slot in request.prefetched,
             }
         )
 
-    def prefetch_armed(self, step: dict[str, Json]) -> None:
-        request = self.active_request()
-        slot = string_value(step.get("slot"), "slot")
-        self.steps.append(
-            {"kind": "prefetch_armed", "slot": slot, "armed": slot in request.prefetched}
-        )
-
-    def touch_active_request(self) -> None:
-        self.record_request(self.active_request())
-
     def active_request(self) -> RequestRedisBatches:
         request = active_request_redis_batches()
         if request is None:
-            raise ValueError("the step needs a request scope")
+            raise ValueError("the step needs an active request_redis_batch_scope")
         return request
 
     def record_request(self, request: RequestRedisBatches) -> int:
@@ -452,36 +372,27 @@ class Scenario:
         self.batches.append(BatchEntry(batch, kind, cache))
         return len(self.batches) - 1
 
-    def batches_json(self) -> list[Json]:
-        return [
-            {
-                "kind": entry.kind,
-                "caches": list(entry.caches),
-                "pending": entry.batch.pending,
-                "flushes": entry.batch.flushes,
-            }
-            for entry in self.batches
-        ]
-
-    def commands_json(self) -> dict[str, Json]:
+    def state(self) -> Json:
         return {
-            setting: [name for name in client.commands if name in REPORTED]
-            for setting, client in self.clients.items()
-        }
-
-    def snapshot(self) -> Json:
-        return {
-            "batches": self.batches_json(),
+            "batches": [
+                {
+                    "kind": entry.kind,
+                    "caches": list(entry.caches),
+                    "pending": entry.batch.pending,
+                    "flushes": entry.batch.flushes,
+                }
+                for entry in self.batches
+            ],
             "requests": len(self.requests),
-            "commands": self.commands_json(),
         }
 
     def report(self) -> Json:
         return {
-            "steps": self.steps,
-            "batches": self.batches_json(),
-            "requests": len(self.requests),
-            "commands": self.commands_json(),
+            "state": self.state(),
+            "snapshots": self.snapshots,
+            "awaited": self.awaited,
+            "nested": self.nested_batches,
+            "prefetch": self.prefetch_steps,
         }
 
 

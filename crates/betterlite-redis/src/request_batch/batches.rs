@@ -10,9 +10,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::backend_key::{BackendKey, backend_key};
 use super::prefetch::PrefetchSlot;
-use super::{lock, registry};
+use super::{BackendKey, lock, registry};
 use crate::batch::RedisBatch;
 use crate::redis_cache::RedisCache;
 
@@ -58,7 +57,10 @@ impl RequestRedisBatches {
         name: &'static str,
         follow_ups: &TaskTracker,
     ) -> Arc<RedisBatch> {
-        let key = backend_key(redis_cache);
+        let key = (
+            redis_cache.transport.cache_key.clone(),
+            redis_cache.namespace.clone(),
+        );
         let mut open = lock(slots);
         match open.entry(key) {
             Entry::Occupied(entry) => Arc::clone(entry.get()),

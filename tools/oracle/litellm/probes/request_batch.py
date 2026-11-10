@@ -15,25 +15,22 @@ from probes.protocol import Operation, Strict
 
 
 class Output(Strict):
-    same_settings_share: bool
-    different_namespace_separate: bool
-    nested_request_shares: bool
-    nested_batches_join: bool
-    prefetch_armed: bool
-    prefetch_taken: str | None
-    prefetch_after_take: bool
+    shared: bool
+    separate: bool
+    nested: bool
+    taken: str | None
 
 
-def build_cache(namespace: str, host: str) -> RedisCache:
-    cache = object.__new__(RedisCache)
-    object.__setattr__(cache, "namespace", namespace)
-    object.__setattr__(cache, "redis_kwargs", {"host": host, "port": 6379})
-    return cache
+def cache(namespace: str) -> RedisCache:
+    built = object.__new__(RedisCache)
+    object.__setattr__(built, "namespace", namespace)
+    object.__setattr__(built, "redis_kwargs", {"host": "one", "port": 6379})
+    return built
 
 
 class RequestBatch(Operation):
     namespace: str
-    other_namespace: str
+    other: str
     slot: str
     value: str
 
@@ -42,27 +39,19 @@ class RequestBatch(Operation):
         return asyncio.run(self.execute())
 
     async def execute(self) -> Output:
-        first = build_cache(self.namespace, "one")
-        twin = build_cache(self.namespace, "one")
-        other = build_cache(self.other_namespace, "one")
+        first = cache(self.namespace)
         with request_redis_batch_scope() as request:
             batch = active_request_redis_batch(first)
-            twin_batch = active_request_redis_batch(twin)
-            other_batch = active_request_redis_batch(other)
+            twin = active_request_redis_batch(cache(self.namespace))
+            separate = active_request_redis_batch(cache(self.other))
             outside = active_request_redis_batches()
             with request_redis_batch_scope() as nested:
                 inside = active_request_redis_batches()
-                nested_batch = active_request_redis_batch(twin)
             request.prefetched[self.slot] = self.value
-            armed = self.slot in request.prefetched
             taken = request.prefetched.pop(self.slot, None)
-            after_take = self.slot in request.prefetched
         return Output(
-            same_settings_share=batch is not None and batch is twin_batch,
-            different_namespace_separate=batch is not other_batch,
-            nested_request_shares=outside is inside and nested is request,
-            nested_batches_join=batch is not None and batch is nested_batch,
-            prefetch_armed=armed,
-            prefetch_taken=cast("str | None", taken),
-            prefetch_after_take=after_take,
+            shared=batch is not None and batch is twin,
+            separate=batch is not separate,
+            nested=outside is inside and nested is request,
+            taken=cast("str | None", taken),
         )

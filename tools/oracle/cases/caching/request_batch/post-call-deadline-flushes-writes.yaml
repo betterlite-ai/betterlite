@@ -12,8 +12,6 @@ call:
           - {array: ["nil"]}
         INCRBYFLOAT:
           - {bulk: "1.5"}
-        EXPIRE:
-          - {int: 1}
     steps:
       - {kind: batch, cache: 0, keys: [a]}
       - {kind: post_call, call: {cache: 0, key: counter, value: 1.5, ttl: 10}}

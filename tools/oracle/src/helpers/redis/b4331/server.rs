@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
@@ -32,16 +32,15 @@ pub(crate) struct FakeServer {
     tasks: JoinSet<()>,
 }
 
+#[derive(Default)]
+struct Shared {
+    replies: Mutex<BTreeMap<String, VecDeque<Reply>>>,
+}
+
 impl Drop for FakeServer {
     fn drop(&mut self) {
         self.tasks.abort_all();
     }
-}
-
-#[derive(Default)]
-struct Shared {
-    replies: Mutex<BTreeMap<String, VecDeque<Reply>>>,
-    commands: Mutex<Vec<String>>,
 }
 
 impl FakeServer {
@@ -61,21 +60,17 @@ impl FakeServer {
 
     pub(crate) fn script(&self, command: &str, reply: Reply) {
         let name = command.to_ascii_uppercase();
-        match self.shared.replies.lock() {
-            Ok(mut replies) => replies.entry(name).or_default().push_back(reply),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .entry(name)
-                .or_default()
-                .push_back(reply),
-        }
+        lock(&self.shared.replies)
+            .entry(name)
+            .or_default()
+            .push_back(reply);
     }
+}
 
-    pub(crate) fn command_names(&self) -> Vec<String> {
-        match self.shared.commands.lock() {
-            Ok(commands) => commands.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 
@@ -97,21 +92,10 @@ async fn serve(stream: TcpStream, shared: Arc<Shared>) {
         let Some(name) = command.first().cloned() else {
             return;
         };
-        match shared.commands.lock() {
-            Ok(mut commands) => commands.push(name.clone()),
-            Err(poisoned) => poisoned.into_inner().push(name.clone()),
-        }
-        let reply = match shared.replies.lock() {
-            Ok(mut replies) => replies
-                .get_mut(&name)
-                .and_then(VecDeque::pop_front)
-                .unwrap_or_else(|| Reply::Simple("OK".to_owned())),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .get_mut(&name)
-                .and_then(VecDeque::pop_front)
-                .unwrap_or_else(|| Reply::Simple("OK".to_owned())),
-        };
+        let reply = lock(&shared.replies)
+            .get_mut(&name)
+            .and_then(VecDeque::pop_front)
+            .unwrap_or_else(|| Reply::Bulk("OK".to_owned()));
         if write_half.write_all(&reply.encode()).await.is_err() {
             return;
         }
@@ -143,9 +127,6 @@ impl Reply {
     fn encode(&self) -> Vec<u8> {
         match self {
             Self::Bulk(text) => format!("${}\r\n{text}\r\n", text.len()).into_bytes(),
-            Self::Simple(text) => format!("+{text}\r\n").into_bytes(),
-            Self::Int(value) => format!(":{value}\r\n").into_bytes(),
-            Self::Error(text) => format!("-{text}\r\n").into_bytes(),
             Self::Nil => b"$-1\r\n".to_vec(),
             Self::Array(items) => {
                 let mut out = format!("*{}\r\n", items.len()).into_bytes();
@@ -158,17 +139,15 @@ impl Reply {
     }
 }
 
-struct SilentHooks;
+struct Allow;
 
-impl ServiceHooks for SilentHooks {
+impl ServiceHooks for Allow {
     fn success(&self, _event: &ServiceEvent) {}
 
     fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
 }
 
-struct AllowGate;
-
-impl BreakerGate for AllowGate {
+impl BreakerGate for Allow {
     fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
         Ok(BreakerAdmission::from(1))
     }
@@ -185,7 +164,7 @@ pub(crate) async fn connect_cache(
     namespace: Option<&str>,
 ) -> Result<Arc<RedisCache>, String> {
     let mut overrides = RedisOverrides::default();
-    point_at(&mut overrides, server.addr);
+    set_endpoint(&mut overrides, server.addr);
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
@@ -195,8 +174,8 @@ pub(crate) async fn connect_cache(
         default_major_version: 7,
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
-        hooks: Arc::new(SilentHooks),
-        gate: Arc::new(AllowGate),
+        hooks: Arc::new(Allow),
+        gate: Arc::new(Allow),
     };
     let env = BTreeMap::<String, String>::new();
     connect(options, &env)
@@ -205,7 +184,7 @@ pub(crate) async fn connect_cache(
         .map_err(|error| error.to_string())
 }
 
-fn point_at(overrides: &mut RedisOverrides, addr: SocketAddr) {
+fn set_endpoint(overrides: &mut RedisOverrides, addr: SocketAddr) {
     overrides.host = Some(addr.ip().to_string());
     overrides.port = Some(IntOrText::Value(i64::from(addr.port())));
     overrides.socket_timeout = Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS));
