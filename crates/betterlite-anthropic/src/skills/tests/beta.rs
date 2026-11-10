@@ -81,10 +81,27 @@ fn skills_beta_merge_tests_a_list_by_exact_membership() {
 }
 
 #[test]
+fn skills_beta_merge_appends_to_an_empty_caller_string() {
+    let headers = validated(beta_headers(&[""]));
+    assert_eq!(
+        header_values(&headers, "anthropic-beta"),
+        ["", "skills-2025-10-02"]
+    );
+}
+
+#[test]
 fn skills_beta_merge_preserves_the_caller_headers() {
     let mut caller = HeaderMap::new();
     caller.insert("anthropic-beta", HeaderValue::from_static("caller-beta"));
+    caller.insert("anthropic-version", HeaderValue::from_static("old-version"));
+    caller.insert("x-api-key", HeaderValue::from_static("old-key"));
     caller.insert("x-keep", HeaderValue::from_static("keep"));
     let headers = validated(caller);
     assert_eq!(header_values(&headers, "x-keep"), ["keep"]);
+    assert_eq!(header_values(&headers, "anthropic-version"), ["2023-06-01"]);
+    assert_eq!(header_values(&headers, "x-api-key"), ["sk-ant-key"]);
+    assert_eq!(
+        header_values(&headers, "anthropic-beta"),
+        ["caller-beta", "skills-2025-10-02"]
+    );
 }

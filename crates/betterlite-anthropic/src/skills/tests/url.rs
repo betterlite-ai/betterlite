@@ -165,6 +165,18 @@ fn skills_anthropic_url_keeps_a_plain_key_on_a_custom_base_in_the_api_key_header
 }
 
 #[test]
+fn skills_anthropic_url_ignores_the_bearer_for_custom_base_setting() {
+    let mut config = anthropic_config(Some("plain-key"), None, DEFAULT_BASE);
+    config.settings.use_bearer_for_custom_base = true;
+    let mut headers = HeaderMap::new();
+    config
+        .validate_environment(&mut headers, None, Some("https://gateway.example"))
+        .unwrap();
+    assert_eq!(header_values(&headers, "x-api-key"), ["plain-key"]);
+    assert!(header_values(&headers, "authorization").is_empty());
+}
+
+#[test]
 fn skills_anthropic_url_requires_credentials() {
     let config = anthropic_config(None, None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();

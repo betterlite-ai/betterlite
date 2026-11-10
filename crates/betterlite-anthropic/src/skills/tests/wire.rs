@@ -107,9 +107,9 @@ fn skills_wire_types_skill_serializes_every_declared_field() {
 }
 
 #[test]
-fn skills_wire_types_skill_null_type_takes_the_default() {
+fn skills_wire_types_skill_null_type_takes_the_default_and_ignores_unknown_fields() {
     let skill = serde_json::from_slice::<Skill>(
-        br#"{"id":"skill_1","created_at":"a","source":"custom","updated_at":"b","type":null,"display_title":null}"#,
+        br#"{"id":"skill_1","created_at":"a","source":"custom","updated_at":"b","type":null,"display_title":null,"unknown":1}"#,
     )
     .unwrap();
     assert_eq!(skill.r#type, "skill");
@@ -148,7 +148,7 @@ fn skills_wire_types_list_response_defaults_next_page_and_has_more() {
     assert_eq!(list.next_page, None);
     assert!(!list.has_more);
     let full = serde_json::from_slice::<ListSkillsResponse>(
-        br#"{"data":[],"next_page":"p2","has_more":true}"#,
+        br#"{"data":[],"next_page":"p2","has_more":true,"unknown":1}"#,
     )
     .unwrap();
     assert_eq!(full.next_page.as_deref(), Some("p2"));
