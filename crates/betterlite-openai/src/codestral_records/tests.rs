@@ -478,14 +478,15 @@ fn chunk_generates_the_missing_stream_identity() {
 #[test]
 fn chunk_empty_finish_reason_finishes_and_carries_logprobs() {
     let line = r#"{"id":"c2","created":2,"choices":[{"index":0,"delta":{"content":""},"finish_reason":"","logprobs":{"tokens":["a"],"token_logprobs":[null]}}]}"#;
-    let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let content = chunk;
+    let content = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
     assert!(content.is_finished);
     assert_eq!(content.finish_reason.as_deref(), Some(""));
     assert_eq!(
         serde_json::to_value(&content.logprobs).expect("serializable logprobs"),
         value(r#"{"tokens":["a"],"token_logprobs":[null]}"#)
     );
+    let original = content.original_chunk.as_ref().expect("an original chunk");
+    assert_eq!(original.choices[0].finish_reason, None);
 }
 
 #[test]
@@ -553,4 +554,13 @@ fn replays_codestral_record_corpus(#[files("fuzz/corpus/codestral_record/*")] pa
         other => panic!("unknown corpus tag {other}"),
     };
     assert_eq!(accepted, name.starts_with("ok-"), "{name}");
+}
+
+#[test]
+fn a_body_of_exactly_the_byte_limit_is_decoded() {
+    let body = vec![b' '; MAX_RECORD_BYTES];
+    let chunk = decode_codestral_chunk(&body, &source()).expect("a decoded chunk");
+    assert_eq!(chunk, CodestralChunk::default());
+    let error = decode_codestral_reply(200, &body, &source()).expect_err("an error");
+    assert!(matches!(error, TextCompletionCodestralError::Native(_)));
 }
