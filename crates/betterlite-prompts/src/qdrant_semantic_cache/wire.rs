@@ -118,6 +118,8 @@ pub(crate) struct CreateCollectionResponse {
 
 #[derive(Deserialize)]
 pub(crate) struct SearchResponse {
+    // A null result is a miss, but a reply without the key is an error like LiteLLM's KeyError
+    #[serde(deserialize_with = "Option::deserialize")]
     pub(crate) result: Option<Vec<SearchHit>>,
 }
 

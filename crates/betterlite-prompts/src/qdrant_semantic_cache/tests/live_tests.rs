@@ -68,8 +68,9 @@ fn live_transport_adds_the_api_key_header() {
     assert!(header.is_sensitive());
     assert_eq!(
         request.url.as_str(),
-        "http://qdrant.test/collections/semantic-cache/points?wait=true"
+        "http://qdrant.test/collections/semantic-cache/points"
     );
+    assert_eq!(request.query, vec![("wait".to_owned(), "true".to_owned())]);
 }
 
 #[test]

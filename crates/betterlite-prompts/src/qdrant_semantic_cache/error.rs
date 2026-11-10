@@ -41,7 +41,7 @@ pub enum QdrantSemanticError {
     },
     #[error("the Qdrant request body could not be serialized")]
     Encode(#[source] serde_json::Error),
-    #[error("the Qdrant {endpoint} response is not valid JSON")]
+    #[error("the Qdrant {endpoint} response is not valid JSON: {source}")]
     Response {
         endpoint: &'static str,
         #[source]

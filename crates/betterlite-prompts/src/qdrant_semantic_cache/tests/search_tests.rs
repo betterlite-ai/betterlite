@@ -150,6 +150,20 @@ async fn response_parse_error_names_the_missing_result() {
 }
 
 #[tokio::test]
+async fn search_error_response_is_an_error_not_a_miss() {
+    let body = r#"{"status":{"error":"Not found: Collection `semantic-cache` does not exist!"}}"#;
+    let (cache, _transport) = search_cache(answer(404, body));
+    let mut found = metadata();
+    let error = cache
+        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
+        .await
+        .expect_err("a Qdrant error reply must fail the read");
+    assert!(error.to_string().contains("points search"));
+    assert!(error.to_string().contains("result"));
+    assert_eq!(similarity_of(&found), None);
+}
+
+#[tokio::test]
 async fn search_hit_without_text_errors() {
     let body =
         r#"{"result":[{"score":0.99,"payload":{"litellm_cache_key":"scope-1","response":"{}"}}]}"#;

@@ -498,7 +498,8 @@ async fn init_parses_the_exists_response() {
 }
 
 #[tokio::test]
-async fn index_creation_failure_does_not_stop_initialization() {
+async fn index_creation_failure_warns_and_does_not_stop_initialization() {
+    let (captured, _guard) = capture();
     let (cache, transport) = initialized(
         options(),
         &default_env(),
@@ -509,4 +510,9 @@ async fn index_creation_failure_does_not_stop_initialization() {
         .await
         .expect("an index failure does not stop initialization");
     assert_eq!(transport.requests().len(), 3);
+    assert!(
+        captured
+            .text()
+            .contains("could not create cache-key payload index")
+    );
 }

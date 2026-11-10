@@ -29,8 +29,8 @@ pub struct QdrantSemanticOptions {
     pub embedding_timeout: Option<f64>,
 }
 
-// The values the config loader resolved from QDRANT_* before the cache is built.
-#[derive(Debug, Default)]
+// No Debug: values can hold QDRANT_API_KEY in plain text until resolve_key wraps it in a secret.
+#[derive(Default)]
 pub struct QdrantEnv {
     pub values: BTreeMap<String, String>,
     pub vector_size: Option<u32>,
