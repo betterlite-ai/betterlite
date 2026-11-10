@@ -1163,6 +1163,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
  "lru",
