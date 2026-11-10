@@ -47,6 +47,12 @@ pub enum QdrantSemanticError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("Qdrant rejected the point write to {path} with status {status}: {body}")]
+    PointWriteRejected {
+        path: String,
+        status: u16,
+        body: String,
+    },
     #[error("the Qdrant search hit payload is missing {field}")]
     MissingPayloadField { field: &'static str },
     #[error("the similarity {similarity} cannot be written as a JSON number")]

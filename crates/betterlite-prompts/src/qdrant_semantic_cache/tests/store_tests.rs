@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::fixtures::{
     ConstantEmbedder, FIXED_ID, FakeQdrant, Reply, answer, body_of, cache_from, cache_with, field,
-    json, kwargs, metadata, similarity_of,
+    json, kwargs, metadata, similarity_of, user_message,
 };
 use crate::arguments::json::Json;
 use crate::qdrant_semantic_cache::error::QdrantSemanticError;
@@ -71,23 +71,29 @@ async fn qdrant_semantic_cache_async_roundtrip() {
     let backend: Arc<dyn QdrantTransport> = concrete;
     let cache = cache_from(backend, Arc::clone(&embedder));
     let value = json(VALUE);
+    let embed_metadata = metadata();
+    let call_kwargs = QdrantCacheKwargs {
+        messages: Some(vec![user_message("what is cached")]),
+        metadata: Some(embed_metadata.clone()),
+    };
     cache
-        .async_set_cache("scope-1", &value, &kwargs())
+        .async_set_cache("scope-1", &value, &call_kwargs)
         .await
         .expect("the asynchronous write");
     let mut found = metadata();
     let cached = cache
-        .async_get_cache("scope-1", &kwargs(), Some(&mut found))
+        .async_get_cache("scope-1", &call_kwargs, Some(&mut found))
         .await
         .expect("the asynchronous read");
     assert_eq!(cached, Some(value));
     assert_eq!(similarity_of(&found), Some(0.9_f64));
-    assert_eq!(embedder.calls().len(), 2);
+    let calls = embedder.calls();
+    assert_eq!(calls.len(), 2);
     assert!(
-        embedder
-            .calls()
+        calls
             .iter()
-            .all(|(prompt, _metadata)| prompt == "what is cached")
+            .all(|(prompt, recorded)| prompt == "what is cached"
+                && recorded.as_ref() == Some(&embed_metadata))
     );
 }
 
@@ -121,7 +127,7 @@ async fn uuid_provider_generates_point_ids() {
 }
 
 #[tokio::test]
-async fn store_sends_the_wait_query() {
+async fn store_sends_the_wait_query_and_the_embedding() {
     let (transport, cache) = memory_cache(0.9);
     cache
         .async_set_cache("scope-1", &json("{}"), &kwargs())
@@ -131,6 +137,44 @@ async fn store_sends_the_wait_query() {
     assert_eq!(request.method, Method::PUT);
     assert_eq!(request.path, "/collections/semantic-cache/points");
     assert_eq!(request.query, vec![("wait".to_owned(), "true".to_owned())]);
+    let body = body_of(request);
+    let Json::List(points) = field(&body, "points") else {
+        panic!("a points request carries a list");
+    };
+    assert_eq!(field(&points[0], "vector"), &json("[0.25,0.5,0.75]"));
+}
+
+#[tokio::test]
+async fn store_rejects_a_rejected_point_write() {
+    let transport = Arc::new(FakeQdrant::new(
+        0.9_f64,
+        vec![answer(400, r#"{"status":{"error":"wrong vector size"}}"#)],
+    ));
+    let cache = cache_with(Arc::clone(&transport), Arc::new(ConstantEmbedder::new()));
+    let error = cache
+        .async_set_cache("scope-1", &json("{}"), &kwargs())
+        .await
+        .expect_err("a rejected point write must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("/collections/semantic-cache/points")
+    );
+    assert!(error.to_string().contains("400"));
+    assert!(error.to_string().contains("wrong vector size"));
+}
+
+#[tokio::test]
+async fn batch_write_propagates_a_rejected_point() {
+    let transport = Arc::new(FakeQdrant::new(0.9_f64, vec![answer(500, "boom")]));
+    let cache = cache_with(Arc::clone(&transport), Arc::new(ConstantEmbedder::new()));
+    let entries = vec![("a".to_owned(), json("{}"))];
+    let error = cache
+        .async_set_cache_pipeline(&entries, &kwargs())
+        .await
+        .expect_err("a rejected point inside the batch must fail the pipeline");
+    assert!(error.to_string().contains("500"));
+    assert!(error.to_string().contains("boom"));
 }
 
 #[tokio::test]

@@ -25,14 +25,22 @@ pub(crate) async fn write_point(
             payload,
         }],
     };
-    cache
+    let path = format!("/collections/{}/points", cache.collection_name);
+    let reply = cache
         .http_client
         .send(QdrantRequest {
             method: Method::PUT,
-            path: format!("/collections/{}/points", cache.collection_name),
+            path: path.clone(),
             query: vec![("wait".to_owned(), "true".to_owned())],
             body: Some(serde_json::to_vec(&body).map_err(QdrantSemanticError::Encode)?),
         })
         .await?;
-    Ok(())
+    if (200..300).contains(&reply.status) {
+        return Ok(());
+    }
+    Err(QdrantSemanticError::PointWriteRejected {
+        path,
+        status: reply.status,
+        body: String::from_utf8(reply.body).unwrap_or_default(),
+    })
 }

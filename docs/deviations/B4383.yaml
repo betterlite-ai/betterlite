@@ -18,3 +18,6 @@ deviations:
   - what: A search hit whose payload lacks text is an error naming the field instead of LiteLLM's KeyError, and a missing result key is a parse error instead of a KeyError.
     why: Both are malformed Qdrant responses that LiteLLM already fails; betterlite names the field and the endpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L370-L380
+  - what: A point write with a status outside 2xx fails with a named error carrying the status and body, following AsyncHTTPHandler.put's raise_for_status; LiteLLM's sync put returns the response without checking it, so its sync set_cache never failed there.
+    why: The sync entry points block on the async path, and a silently dropped cache write would hide a wrong vector size or a deleted collection from the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L872-L904

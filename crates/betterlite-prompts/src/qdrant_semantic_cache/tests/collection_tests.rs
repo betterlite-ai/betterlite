@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use http::Method;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -267,8 +268,33 @@ fn vector_size_of(body: &Json) -> &Json {
 async fn quantization_binary_is_the_default() {
     let body = create_body(options(), &default_env()).await;
     assert_eq!(
-        field(&body, "quantization_config"),
-        &json(r#"{"binary":{"always_ram":false}}"#)
+        body,
+        json(
+            r#"{"vectors":{"size":1536,"distance":"Cosine"},"quantization_config":{"binary":{"always_ram":false}}}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn init_creation_sends_the_full_request_sequence() {
+    let requests = initialize_requests(
+        options(),
+        &default_env(),
+        vec![exists(false), created(true), details(), index_created()],
+    )
+    .await;
+    let sent: Vec<(Method, &str)> = requests
+        .iter()
+        .map(|request| (request.method.clone(), request.path.as_str()))
+        .collect();
+    assert_eq!(
+        sent,
+        [
+            (Method::GET, "/collections/semantic-cache/exists"),
+            (Method::PUT, "/collections/semantic-cache"),
+            (Method::GET, "/collections/semantic-cache"),
+            (Method::PUT, "/collections/semantic-cache/index"),
+        ]
     );
 }
 
