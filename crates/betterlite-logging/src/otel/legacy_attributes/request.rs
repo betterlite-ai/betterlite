@@ -14,7 +14,7 @@ use crate::otel::span_attributes::SafeSetAttribute as _;
 use crate::otel::vocabulary::constants::attribute_keys::{gen_ai, litellm};
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
-use super::context::{AttributeContext, InferenceCall, truthiness};
+use super::context::{AttributeContext, InferenceCall, truthiness, write_present};
 
 mod tests;
 
@@ -40,15 +40,8 @@ pub fn set_request_attributes<S>(
         &context.config.baggage_metadata_keys,
     );
     write_cost_breakdown(span, call.payload);
-    write_model(span, call.kwargs);
-    write_request_type(span, call.payload);
-    write_provider(span, context.config, call.litellm_params);
-    write_sampling_parameters(span, call.optional_params);
-    write_stream_or_semconv(span, context.config, call);
-    write_user(span, call.optional_params);
-    write_response_id(span, call.payload, call.response);
-    write_call_id(span, call.payload);
-    write_response_model(span, call.response);
+    write_request_identity(span, context.config, call);
+    write_response_identity(span, call.payload, call.response);
     set_service_tier_attributes(span, call.payload);
     write_usage(span, call.kwargs, call.litellm_params, call.response);
 }
@@ -98,24 +91,21 @@ where
     }
 }
 
-fn write_model<S>(span: &mut S, kwargs: &MetadataMap)
+fn write_request_identity<S>(span: &mut S, config: &OpenTelemetryConfig, call: &InferenceCall<'_>)
 where
     S: Span,
 {
-    if let Some(model) = kwargs.get("model").filter(|value| truthiness(value)) {
-        span.safe_set_attribute(gen_ai::REQUEST_MODEL, model);
-    }
-}
-
-fn write_request_type<S>(span: &mut S, payload: &MetadataMap)
-where
-    S: Span,
-{
-    let call_type = payload
-        .get("call_type")
-        .cloned()
-        .unwrap_or(OtelModelValue::Null(()));
-    span.safe_set_attribute(keys::REQUEST_TYPE, &call_type);
+    write_present(span, gen_ai::REQUEST_MODEL, call.kwargs.get("model"));
+    span.safe_set_attribute(
+        keys::REQUEST_TYPE,
+        call.payload
+            .get("call_type")
+            .unwrap_or(&OtelModelValue::Null(())),
+    );
+    write_provider(span, config, call.litellm_params);
+    write_sampling_parameters(span, call.optional_params);
+    write_stream_or_semconv(span, config, call);
+    write_present(span, keys::USER, call.optional_params.get("user"));
 }
 
 fn write_provider<S>(span: &mut S, config: &OpenTelemetryConfig, litellm_params: &MetadataMap)
@@ -143,12 +133,7 @@ where
         (gen_ai::REQUEST_TEMPERATURE, "temperature"),
         (gen_ai::REQUEST_TOP_P, "top_p"),
     ] {
-        if let Some(value) = optional_params
-            .get(source)
-            .filter(|value| truthiness(value))
-        {
-            span.safe_set_attribute(attribute, value);
-        }
+        write_present(span, attribute, optional_params.get(source));
     }
 }
 
@@ -172,57 +157,34 @@ where
     );
 }
 
-fn write_user<S>(span: &mut S, optional_params: &MetadataMap)
-where
+fn write_response_identity<S>(
+    span: &mut S,
+    payload: &MetadataMap,
+    response: Option<&OtelModelValue>,
+) where
     S: Span,
 {
-    if let Some(user) = optional_params
-        .get("user")
-        .filter(|value| truthiness(value))
-    {
-        span.safe_set_attribute(keys::USER, user);
-    }
+    let identifier = response_field(response, "id")
+        .or_else(|| payload.get("id").filter(|value| truthiness(value)));
+    write_present(span, gen_ai::RESPONSE_ID, identifier);
+    write_present(span, litellm::CALL_ID, payload.get("litellm_call_id"));
+    write_present(
+        span,
+        gen_ai::RESPONSE_MODEL,
+        response_field(response, "model"),
+    );
 }
 
-fn write_response_id<S>(span: &mut S, payload: &MetadataMap, response: Option<&OtelModelValue>)
-where
-    S: Span,
-{
-    let from_response = response
+// a truthy field of the returned object; a missing or falsy response reads as absent
+fn response_field<'source>(
+    response: Option<&'source OtelModelValue>,
+    key: &str,
+) -> Option<&'source OtelModelValue> {
+    response
         .filter(|value| truthiness(value))
         .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("id"))
-        .filter(|value| truthiness(value));
-    let identifier = from_response.or_else(|| payload.get("id").filter(|value| truthiness(value)));
-    if let Some(found) = identifier {
-        span.safe_set_attribute(gen_ai::RESPONSE_ID, found);
-    }
-}
-
-fn write_call_id<S>(span: &mut S, payload: &MetadataMap)
-where
-    S: Span,
-{
-    if let Some(call_id) = payload
-        .get("litellm_call_id")
+        .and_then(|fields| fields.get(key))
         .filter(|value| truthiness(value))
-    {
-        span.safe_set_attribute(litellm::CALL_ID, call_id);
-    }
-}
-
-fn write_response_model<S>(span: &mut S, response: Option<&OtelModelValue>)
-where
-    S: Span,
-{
-    let model = response
-        .filter(|value| truthiness(value))
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("model"))
-        .filter(|value| truthiness(value));
-    if let Some(found) = model {
-        span.safe_set_attribute(gen_ai::RESPONSE_MODEL, found);
-    }
 }
 
 fn write_usage<S>(

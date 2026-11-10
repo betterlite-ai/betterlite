@@ -1,7 +1,10 @@
+use opentelemetry::trace::Span;
+
 use crate::otel::legacy_policy::capture::CaptureMode;
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::span_attributes::SafeSetAttribute as _;
 
 mod tests;
 
@@ -30,5 +33,14 @@ pub fn truthiness(value: &OtelModelValue) -> bool {
         OtelModelValue::String(text) => !text.is_empty(),
         OtelModelValue::Array(items) => !items.is_empty(),
         OtelModelValue::Object(fields) => !fields.is_empty(),
+    }
+}
+
+pub(super) fn write_present<S>(span: &mut S, key: &str, source: Option<&OtelModelValue>)
+where
+    S: Span,
+{
+    if let Some(value) = source.filter(|value| truthiness(value)) {
+        span.safe_set_attribute(key, value);
     }
 }
