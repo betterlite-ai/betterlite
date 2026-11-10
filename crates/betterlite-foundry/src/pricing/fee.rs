@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use super::AZURE_AI_PROVIDER;
 use super::error::PricingError;
-use super::names::{is_azure_model_router, router_fee_entry_name};
+use super::names::classify_router_name;
 
 // A name that is not router-shaped charges nothing and never reaches the cost map.
 pub fn router_flat_cost(
@@ -12,10 +12,11 @@ pub fn router_flat_cost(
     prompt_tokens: i64,
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, PricingError> {
-    if !is_azure_model_router(model) {
+    let name = classify_router_name(model);
+    if !name.is_router_shaped() {
         return Ok(Decimal::ZERO);
     }
-    let entry = router_fee_entry_name(model);
+    let entry = name.fee_lookup_name();
     let record = lookup
         .effective_model_info(entry, Some(AZURE_AI_PROVIDER))
         .ok_or(PricingError::MissingFeeEntry { entry })?;

@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_foundry::pricing::error::PricingError;
 use betterlite_foundry::pricing::fee::router_flat_cost;
-use betterlite_foundry::pricing::names::{
-    is_azure_model_router, is_router_fee_entry, router_fee_entry_name, router_fee_name,
-};
+use betterlite_foundry::pricing::names::{classify_router_name, router_fee_name};
 use betterlite_foundry::pricing::response::{ResponseCostRequest, cost_per_token};
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
@@ -89,10 +87,11 @@ fn classify(calls: &[ClassifyCall]) -> Value {
     let reports: Vec<Value> = calls
         .iter()
         .map(|call| {
+            let name = classify_router_name(&call.model);
             json!({
-                "is_router": is_azure_model_router(&call.model),
-                "is_fee_entry": is_router_fee_entry(&call.model),
-                "fee_entry_name": router_fee_entry_name(&call.model),
+                "is_router": name.is_router_shaped(),
+                "is_fee_entry": name.fee_entry_spelling().is_some(),
+                "fee_entry_name": name.fee_lookup_name(),
                 "fee_name": router_fee_name(&call.model, call.request_model.as_deref()),
             })
         })

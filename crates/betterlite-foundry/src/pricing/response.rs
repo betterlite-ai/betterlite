@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use super::AZURE_AI_PROVIDER;
 use super::error::PricingError;
 use super::fee::router_flat_cost;
-use super::names::{is_azure_model_router, router_fee_name};
+use super::names::{classify_router_name, router_fee_name};
 
 pub struct ResponseCostRequest<'request> {
     pub model: &'request str,
@@ -72,7 +72,7 @@ fn router_pricing_fallback(
     model: &str,
     error: TokenCostError,
 ) -> Result<GenericCostResult, PricingError> {
-    if !is_azure_model_router(model) {
+    if !classify_router_name(model).is_router_shaped() {
         return Err(PricingError::TokenCost(error));
     }
     tracing::debug!(

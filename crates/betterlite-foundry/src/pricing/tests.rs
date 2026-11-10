@@ -16,9 +16,7 @@ use rust_decimal::Decimal;
 use super::additional::{additional_costs, router_additional_costs};
 use super::error::PricingError;
 use super::fee::router_flat_cost;
-use super::names::{
-    is_azure_model_router, is_router_fee_entry, router_fee_entry_name, router_fee_name,
-};
+use super::names::{classify_router_name, router_fee_name};
 use super::response::{ResponseCostRequest, cost_per_token};
 
 struct CatalogLookup {
@@ -145,7 +143,7 @@ fn response_cost(
 #[case::plain("gpt-4o", false)]
 #[case::empty("", false)]
 fn router_shaped_names_accept_either_spelling(#[case] model: &str, #[case] expected: bool) {
-    assert_eq!(is_azure_model_router(model), expected);
+    assert_eq!(classify_router_name(model).is_router_shaped(), expected);
 }
 
 #[rstest]
@@ -163,7 +161,10 @@ fn fee_entries_require_the_exact_name_after_one_prefix_strip(
     #[case] model: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(is_router_fee_entry(model), expected);
+    assert_eq!(
+        classify_router_name(model).fee_entry_spelling().is_some(),
+        expected
+    );
 }
 
 #[rstest]
@@ -178,7 +179,7 @@ fn fee_entry_names_keep_the_recognized_spelling_or_fall_back(
     #[case] model: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(router_fee_entry_name(model), expected);
+    assert_eq!(classify_router_name(model).fee_lookup_name(), expected);
 }
 
 #[rstest]

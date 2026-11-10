@@ -1,32 +1,56 @@
-const FEE_ENTRY_NAMES: [&str; 2] = ["model-router", "model_router"];
 const FEE_LOOKUP_FALLBACK: &str = "model_router";
 const PROVIDER_PREFIX: &str = "azure_ai/";
 
-// Any position counts here, which is why a deployment named after the router is not a fee entry.
-#[must_use]
-pub fn is_azure_model_router(model: &str) -> bool {
-    let lowered = model.to_lowercase();
-    let hyphenated = lowered.contains("model-router");
-    let underscored = lowered.contains("model_router");
-    hyphenated || underscored
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouterName {
+    Plain,
+    RouterShaped,
+    HyphenatedEntry,
+    UnderscoredEntry,
 }
 
-// removeprefix drops exactly one prefix, so a doubled azure_ai/ leaves a name that is no entry.
-#[must_use]
-pub fn is_router_fee_entry(model: &str) -> bool {
-    let lowered = model.to_lowercase();
-    let entry = lowered.strip_prefix(PROVIDER_PREFIX).unwrap_or(&lowered);
-    FEE_ENTRY_NAMES.contains(&entry)
+impl RouterName {
+    #[must_use]
+    pub const fn is_router_shaped(self) -> bool {
+        match self {
+            Self::Plain => false,
+            Self::RouterShaped | Self::HyphenatedEntry | Self::UnderscoredEntry => true,
+        }
+    }
+
+    #[must_use]
+    pub const fn fee_entry_spelling(self) -> Option<&'static str> {
+        match self {
+            Self::HyphenatedEntry => Some("model-router"),
+            Self::UnderscoredEntry => Some("model_router"),
+            Self::Plain | Self::RouterShaped => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn fee_lookup_name(self) -> &'static str {
+        match self {
+            Self::HyphenatedEntry => "model-router",
+            Self::Plain | Self::RouterShaped | Self::UnderscoredEntry => FEE_LOOKUP_FALLBACK,
+        }
+    }
 }
 
+// Any position counts as router-shaped, but only the exact name after one azure_ai/ strip is a fee entry.
 #[must_use]
-pub fn router_fee_entry_name(model: &str) -> &'static str {
+pub fn classify_router_name(model: &str) -> RouterName {
     let lowered = model.to_lowercase();
     let entry = lowered.strip_prefix(PROVIDER_PREFIX).unwrap_or(&lowered);
     if entry == "model-router" {
-        return "model-router";
+        return RouterName::HyphenatedEntry;
     }
-    FEE_LOOKUP_FALLBACK
+    if entry == "model_router" {
+        return RouterName::UnderscoredEntry;
+    }
+    if lowered.contains("model-router") || lowered.contains("model_router") {
+        return RouterName::RouterShaped;
+    }
+    RouterName::Plain
 }
 
 // The response name is the model whose tokens were priced, so it outranks the requested router.
@@ -35,11 +59,12 @@ pub fn router_fee_name<'request>(
     model: &'request str,
     request_model: Option<&'request str>,
 ) -> Option<&'request str> {
-    if is_router_fee_entry(model) {
+    let name = classify_router_name(model);
+    if name.fee_entry_spelling().is_some() {
         return None;
     }
-    if is_azure_model_router(model) {
+    if name.is_router_shaped() {
         return Some(model);
     }
-    request_model.filter(|candidate| is_azure_model_router(candidate))
+    request_model.filter(|candidate| classify_router_name(candidate).is_router_shaped())
 }
