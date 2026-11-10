@@ -121,7 +121,7 @@ pub fn body_secret_values(request: &UpstreamRequest) -> Option<Vec<String>> {
     if content_type_base(&content_type(&request.headers)) == FORM_URLENCODED {
         let text = UTF_8.decode_without_bom_handling(raw).0;
         return Some(
-            parse_qsl(&text, false)
+            parse_qsl(&text)
                 .into_iter()
                 .filter(|(key, _value)| sensitive_field(key))
                 .map(|(_key, value)| value)
@@ -193,7 +193,7 @@ fn url_password(url: &HttpxUrl) -> String {
 
 fn query_values(url: &HttpxUrl) -> Vec<String> {
     url.query.as_deref().map_or_else(Vec::new, |query| {
-        parse_qsl(query, true)
+        parse_qsl(query)
             .into_iter()
             .map(|(_name, value)| value)
             .collect()
@@ -265,20 +265,13 @@ fn unquote_plus(text: &str) -> String {
         .into_owned()
 }
 
-pub(super) fn parse_qsl(text: &str, keep_blank_values: bool) -> Vec<(String, String)> {
+pub(super) fn parse_qsl(text: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     for field in text.split('&') {
         if field.is_empty() {
             continue;
         }
-        let split = field.split_once('=');
-        if split.is_none() && !keep_blank_values {
-            continue;
-        }
-        let (name, value) = split.unwrap_or((field, ""));
-        if value.is_empty() && !keep_blank_values {
-            continue;
-        }
+        let (name, value) = field.split_once('=').unwrap_or((field, ""));
         pairs.push((unquote_plus(name), unquote_plus(value)));
     }
     pairs

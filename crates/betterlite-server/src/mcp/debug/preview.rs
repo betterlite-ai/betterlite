@@ -89,7 +89,7 @@ fn structured_form(text: &str, content_type: &str) -> bool {
 }
 
 fn encoded_fields(text: &str) -> String {
-    secrets::parse_qsl(text, true)
+    secrets::parse_qsl(text)
         .into_iter()
         .map(|(key, value)| {
             let redacted = if sensitive_field(&key) {

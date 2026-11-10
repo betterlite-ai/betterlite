@@ -1,14 +1,16 @@
 #![cfg(test)]
 
 use std::io;
+use std::time::Duration;
 
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rstest::rstest;
+use tokio::time::Instant;
 
-use super::secrets::{request_secret_values, sensitive_field};
+use super::secrets::{header_secret_values, request_secret_values, sensitive_field};
 use super::text::{safe_text, safe_upstream_url};
 use super::upstream::{
     BodyState, UpstreamFailure, UpstreamRequest, UpstreamResponse, capture_error_response,
@@ -85,6 +87,7 @@ fn json_request() -> UpstreamRequest {
 #[case::newline("a\nb\tc", "a\\nb\\tc")]
 #[case::controls("\u{0}\u{1}\u{1f}\u{7f}", "\\u0000\\u0001\\u001f\\u007f")]
 #[case::plain("plain", "plain")]
+#[case::space("a b", "a b")]
 fn escaping_control_characters(#[case] text: &str, #[case] expected: &str) {
     assert_eq!(safe_text(text), expected);
 }
@@ -142,6 +145,10 @@ fn a_body_past_the_capture_limit_is_omitted() {
     assert_eq!(
         preview(&vec![b'x'; 0x4001], "application/json", &[], &redactor()),
         "(omitted: body exceeds capture limit)"
+    );
+    assert_eq!(
+        preview(&vec![b'x'; 0x4000], "application/json", &[], &redactor()),
+        UNSTRUCTURED_BODY
     );
 }
 
@@ -218,13 +225,40 @@ fn form_bodies_keep_their_shape_and_redact_sensitive_fields() {
         ),
         "not+json+a=b"
     );
+    assert_eq!(
+        preview(
+            b"a=1&flag",
+            "APPLICATION/X-WWW-FORM-URLENCODED",
+            &[],
+            &redactor()
+        ),
+        "a=1&flag="
+    );
+}
+
+#[rstest]
+#[case::valid("session=abc; flag=", vec!["abc", ""])]
+#[case::invalid_key("bad", vec![])]
+#[case::missing_value_after_a_pair("a=1; b", vec![])]
+#[case::octal_escape(r#"token="a\101b""#, vec!["aAb"])]
+#[case::escaped_quote(r#"token="a\"b""#, vec!["a\"b"])]
+#[case::attribute("a=1; Path=/", vec!["1"])]
+#[case::repeated_key("a=1; a=2", vec!["2"])]
+#[case::dollar_attribute("$Version=1; a=b", vec!["b"])]
+#[case::quoted_value(r#"other="quoted value""#, vec!["quoted value"])]
+#[case::comma_inside_a_value("a=1, b=2", vec!["1,", "2"])]
+fn cookie_headers_yield_their_morsels(#[case] value: &str, #[case] expected: Vec<&str>) {
+    let mut secrets = header_secret_values("cookie", value);
+    assert_eq!(secrets.first().map(String::as_str), Some(value));
+    secrets.remove(0);
+    assert_eq!(secrets, expected);
 }
 
 #[test]
 fn request_secrets_come_from_the_body_url_and_headers() {
     let secrets = request_secret_values(&request(
         "POST",
-        "https://user:secret@mcp.example.com:8443/mcp?api_key=qsecret&x=1",
+        "https://user:secret@mcp.example.com:8443/mcp?api_key=qsecret&x=1&blank=",
         &[
             ("host", "mcp.example.com"),
             ("authorization", "Bearer sk-abcdefghijklmnop"),
@@ -463,12 +497,14 @@ async fn a_capture_without_a_request_keeps_the_preview_unavailable() {
 async fn the_capture_gives_up_after_one_second() {
     let redactor = redactor();
     let mut reply = response(500, &[], BodyState::NotRead, None);
+    let started = Instant::now();
     capture_error_response(
         &mut reply,
         stream::pending::<Result<Vec<u8>, io::Error>>(),
         &redactor,
     )
     .await;
+    assert_eq!(started.elapsed(), Duration::from_secs(1));
     assert_eq!(reply.body, BodyState::Read(Vec::new()));
     assert_eq!(reply.captured.as_deref(), Some(CAPTURE_FAILED));
 }
