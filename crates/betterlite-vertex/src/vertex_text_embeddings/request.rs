@@ -23,10 +23,8 @@ pub fn map_openai_params(
     mut optional_params: Extra,
     mut kwargs: Extra,
 ) -> (Extra, Extra) {
-    for (name, value) in non_default_params {
-        if name == "dimensions" {
-            optional_params.insert(String::from("outputDimensionality"), value.clone());
-        }
+    if let Some(dimensions) = non_default_params.get("dimensions") {
+        optional_params.insert(String::from("outputDimensionality"), dimensions.clone());
     }
     if let Some(input_type) = kwargs.shift_remove("input_type") {
         optional_params.insert(String::from("task_type"), input_type);
@@ -36,11 +34,9 @@ pub fn map_openai_params(
 
 #[must_use]
 pub fn map_special_auth_params(non_default_params: &Extra, mut optional_params: Extra) -> Extra {
-    for (name, value) in non_default_params {
-        for (source, target) in MAPPED_SPECIAL_AUTH_PARAMS {
-            if name == source {
-                optional_params.insert(String::from(target), value.clone());
-            }
+    for (source, target) in MAPPED_SPECIAL_AUTH_PARAMS {
+        if let Some(value) = non_default_params.get(source) {
+            optional_params.insert(String::from(target), value.clone());
         }
     }
     optional_params
@@ -58,23 +54,15 @@ pub fn transform_request(
         return Err(VertexTextEmbeddingError::OptionalParams);
     };
     let texts = texts(input)?;
-    let instances = match family_of(model) {
+    let family = family_of(model);
+    let (task_type, title) = instance_fields(&parameters, family)?;
+    let instances = match family {
         Family::Numeric => {
             parameters.shift_remove("shared_session");
             records(texts, "inputs", None, None)
         }
-        Family::Bge => records(
-            texts,
-            "prompt",
-            task_type_value(&parameters)?,
-            title_value(&parameters)?,
-        ),
-        Family::Standard => records(
-            texts,
-            "content",
-            task_type_value(&parameters)?,
-            title_value(&parameters)?,
-        ),
+        Family::Bge => records(texts, "prompt", task_type, title),
+        Family::Standard => records(texts, "content", task_type, title),
     };
     let mut request = Extra::new();
     request.insert(String::from("instances"), instances);
@@ -115,29 +103,40 @@ fn records(texts: &[String], key: &str, task_type: Option<&str>, title: Option<&
     Json::List(list)
 }
 
-fn task_type_value(parameters: &Extra) -> Result<Option<&'static str>, VertexTextEmbeddingError> {
-    let Some(value) = present(parameters, "task_type") else {
-        return Ok(None);
+fn instance_fields(
+    parameters: &Extra,
+    family: Family,
+) -> Result<(Option<&'static str>, Option<&str>), VertexTextEmbeddingError> {
+    if matches!(family, Family::Numeric) {
+        return Ok((None, None));
+    }
+    let task_type = match text_parameter(parameters, "task_type")? {
+        Some(text) => Some(parse_task_type(text)?),
+        None => None,
     };
-    let Json::Text(text) = value else {
-        return Err(VertexTextEmbeddingError::NotText { field: "task_type" });
-    };
-    let Some(task_type) = TaskType::parse(text) else {
-        return Err(VertexTextEmbeddingError::TaskType {
-            value: text.clone(),
-        });
-    };
-    Ok(Some(task_type.as_str()))
+    Ok((task_type, text_parameter(parameters, "title")?))
 }
 
-fn title_value(parameters: &Extra) -> Result<Option<&str>, VertexTextEmbeddingError> {
-    let Some(value) = present(parameters, "title") else {
+fn text_parameter<'params>(
+    parameters: &'params Extra,
+    name: &'static str,
+) -> Result<Option<&'params str>, VertexTextEmbeddingError> {
+    let Some(value) = present(parameters, name) else {
         return Ok(None);
     };
     let Json::Text(text) = value else {
-        return Err(VertexTextEmbeddingError::NotText { field: "title" });
+        return Err(VertexTextEmbeddingError::NotText { field: name });
     };
     Ok(Some(text))
+}
+
+fn parse_task_type(value: &str) -> Result<&'static str, VertexTextEmbeddingError> {
+    let Some(task_type) = TaskType::parse(value) else {
+        return Err(VertexTextEmbeddingError::TaskType {
+            value: value.to_owned(),
+        });
+    };
+    Ok(task_type.as_str())
 }
 
 fn present<'params>(parameters: &'params Extra, name: &str) -> Option<&'params Json> {

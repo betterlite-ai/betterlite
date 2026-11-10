@@ -13,11 +13,7 @@ pub fn transform_response(
     response: &Json,
     model: &str,
 ) -> Result<EmbeddingResponse, VertexTextEmbeddingError> {
-    let (data, tokens) = match family_of(model) {
-        Family::Numeric => tuned_records(response)?,
-        Family::Bge => bge_records(response)?,
-        Family::Standard => standard_records(response)?,
-    };
+    let (data, tokens) = records(response, family_of(model))?;
     Ok(EmbeddingResponse {
         object: String::from("list"),
         data,
@@ -32,62 +28,45 @@ pub fn transform_response(
     })
 }
 
-fn standard_records(
+fn records(
     response: &Json,
+    family: Family,
 ) -> Result<(Vec<EmbeddingRecord>, u32), VertexTextEmbeddingError> {
     let predictions = predictions(response)?;
     let mut data = Vec::with_capacity(predictions.len());
     let mut tokens = 0_u32;
     for (index, prediction) in predictions.iter().enumerate() {
-        let embeddings = field(prediction, "embeddings")?;
-        let values = numbers(field(embeddings, "values")?, "values")?;
-        let statistics = field(embeddings, "statistics")?;
-        let count = token_count(field(statistics, "token_count")?)?;
+        let (vector, name) = match family {
+            Family::Numeric => (nested_vector(prediction, index)?, "embedding"),
+            Family::Bge => (prediction, "embedding"),
+            Family::Standard => {
+                let embeddings = field(prediction, "embeddings")?;
+                let values = field(embeddings, "values")?;
+                let statistics = field(embeddings, "statistics")?;
+                let count = token_count(field(statistics, "token_count")?)?;
+                tokens = tokens
+                    .checked_add(count)
+                    .ok_or(VertexTextEmbeddingError::TokenOverflow)?;
+                (values, "values")
+            }
+        };
         data.push(EmbeddingRecord {
             object: String::from("embedding"),
-            embedding: EmbeddingVector::Floats(values),
+            embedding: EmbeddingVector::Floats(numbers(vector, name)?),
             index: u32::try_from(index)
                 .map_err(|_source| VertexTextEmbeddingError::IndexOverflow)?,
         });
-        tokens = tokens
-            .checked_add(count)
-            .ok_or(VertexTextEmbeddingError::TokenOverflow)?;
     }
     Ok((data, tokens))
 }
 
-fn tuned_records(response: &Json) -> Result<(Vec<EmbeddingRecord>, u32), VertexTextEmbeddingError> {
-    let predictions = predictions(response)?;
-    let mut data = Vec::with_capacity(predictions.len());
-    for (index, prediction) in predictions.iter().enumerate() {
-        let Json::List(nested) = prediction else {
-            return Err(VertexTextEmbeddingError::PredictionNotList { index });
-        };
-        let Some(vector) = nested.first() else {
-            return Err(VertexTextEmbeddingError::MissingVector { index });
-        };
-        data.push(EmbeddingRecord {
-            object: String::from("embedding"),
-            embedding: EmbeddingVector::Floats(numbers(vector, "embedding")?),
-            index: u32::try_from(index)
-                .map_err(|_source| VertexTextEmbeddingError::IndexOverflow)?,
-        });
-    }
-    Ok((data, 0))
-}
-
-fn bge_records(response: &Json) -> Result<(Vec<EmbeddingRecord>, u32), VertexTextEmbeddingError> {
-    let predictions = predictions(response)?;
-    let mut data = Vec::with_capacity(predictions.len());
-    for (index, prediction) in predictions.iter().enumerate() {
-        data.push(EmbeddingRecord {
-            object: String::from("embedding"),
-            embedding: EmbeddingVector::Floats(numbers(prediction, "embedding")?),
-            index: u32::try_from(index)
-                .map_err(|_source| VertexTextEmbeddingError::IndexOverflow)?,
-        });
-    }
-    Ok((data, 0))
+fn nested_vector(prediction: &Json, index: usize) -> Result<&Json, VertexTextEmbeddingError> {
+    let Json::List(nested) = prediction else {
+        return Err(VertexTextEmbeddingError::PredictionNotList { index });
+    };
+    nested
+        .first()
+        .ok_or(VertexTextEmbeddingError::MissingVector { index })
 }
 
 fn predictions(response: &Json) -> Result<&[Json], VertexTextEmbeddingError> {

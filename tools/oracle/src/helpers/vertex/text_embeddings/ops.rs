@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Extra;
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_vertex::vertex_text_embeddings::request::map_openai_params;
 use betterlite_vertex::vertex_text_embeddings::request::map_special_auth_params;
 use betterlite_vertex::vertex_text_embeddings::request::transform_request;
@@ -49,64 +50,61 @@ struct Reply {
 
 pub(super) fn run(input: &Input) -> Value {
     json!({
-        "mappings": mappings(&input.mappings),
-        "requests": requests(&input.requests),
-        "replies": replies(&input.replies),
+        "mappings": entries(&input.mappings, mapping),
+        "requests": fallible_entries(&input.requests, request),
+        "replies": fallible_entries(&input.replies, reply),
     })
 }
 
-fn mappings(calls: &[Mapping]) -> Vec<Value> {
+fn entries<Call>(calls: &[Call], convert: fn(&Call) -> Value) -> Vec<Value> {
+    let mut values = Vec::with_capacity(calls.len());
+    for call in calls {
+        values.push(convert(call));
+    }
+    values
+}
+
+fn fallible_entries<Call>(calls: &[Call], convert: fn(&Call) -> Option<Value>) -> Vec<Value> {
     calls
         .iter()
-        .map(|call| {
-            let (optional, kwargs) =
-                map_openai_params(&call.options, call.optional.clone(), call.kwargs.clone());
-            // LiteLLM maps the auth aliases on the dict the OpenAI mapping already changed
-            let auth = map_special_auth_params(&call.options, optional.clone());
-            json!({
-                "optional": optional,
-                "kwargs": kwargs,
-                "auth": auth,
-            })
-        })
+        .map(|call| convert(call).unwrap_or_else(|| json!({"error": true})))
         .collect()
 }
 
-fn requests(calls: &[Request]) -> Vec<Value> {
-    calls
-        .iter()
-        .map(|call| {
-            let built = transform_request(
-                &call.input,
-                &call.optional,
-                &call.model,
-                call.litellm_params.as_ref(),
-            );
-            match built {
-                Ok(request) => json!(request),
-                Err(_error) => json!({"error": true}),
-            }
-        })
-        .collect()
+fn mapping(call: &Mapping) -> Value {
+    let (optional, kwargs) =
+        map_openai_params(&call.options, call.optional.clone(), call.kwargs.clone());
+    // LiteLLM maps the auth aliases on the dict the OpenAI mapping already changed
+    let auth = map_special_auth_params(&call.options, optional.clone());
+    json!({"optional": optional, "kwargs": kwargs, "auth": auth})
 }
 
-fn replies(calls: &[Reply]) -> Vec<Value> {
-    calls
-        .iter()
-        .map(
-            |call| match transform_response(&call.response, &call.model) {
-                Ok(answer) => json!({
-                    "model": answer.model,
-                    "object": answer.object,
-                    "data": answer.data,
-                    "usage": {
-                        "prompt_tokens": answer.usage.prompt_tokens,
-                        "completion_tokens": answer.usage.completion_tokens,
-                        "total_tokens": answer.usage.total_tokens,
-                    },
-                }),
-                Err(_error) => json!({"error": true}),
-            },
-        )
-        .collect()
+fn request(call: &Request) -> Option<Value> {
+    transform_request(
+        &call.input,
+        &call.optional,
+        &call.model,
+        call.litellm_params.as_ref(),
+    )
+    .ok()
+    .map(|request| json!(request))
+}
+
+fn reply(call: &Reply) -> Option<Value> {
+    transform_response(&call.response, &call.model)
+        .ok()
+        .map(|answer| embedding_value(&answer))
+}
+
+fn embedding_value(answer: &EmbeddingResponse) -> Value {
+    json!({
+        "model": answer.model,
+        "object": answer.object,
+        "data": answer.data,
+        "usage": {
+            "prompt_tokens": answer.usage.prompt_tokens,
+            "completion_tokens": answer.usage.completion_tokens,
+            "total_tokens": answer.usage.total_tokens,
+        },
+    })
 }
