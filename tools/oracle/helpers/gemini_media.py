@@ -28,85 +28,47 @@ def _blocked_metadata(**_kwargs: object) -> str | None:
     raise RuntimeError("gemini_media cases must not read GCS metadata")
 
 
-def _object(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
-
-
-def _list(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return value
-
-
-def _string(params: Params, name: str) -> str:
-    value = params.get(name)
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def _optional_string(params: Params, name: str) -> str | None:
-    value = params.get(name)
-    return value if isinstance(value, str) else None
-
-
 def _mime_alias(params: Params) -> Json:
-    values = [cast(str, item) for item in _list(params["values"], "values")]
+    values = cast("list[str]", params["values"])
     return {"values": [_apply_gemini_mime_type_aliases(value) for value in values]}
 
 
 def _media_parts(params: Params) -> Json:
-    return {"parts": [_media_part(case) for case in _list(params["cases"], "cases")]}
+    return {"parts": [_media_part(case) for case in cast("list[Json]", params["cases"])]}
 
 
 def _media_part(case: Json) -> Json:
-    fields = _object(case, "case")
-    hints_value = fields.get("hints")
-    hints = {} if hints_value is None else _object(hints_value, "hints")
-    metadata_value = fields.get("video_metadata")
-    metadata = (
-        None if metadata_value is None else _object(metadata_value, "video_metadata")
-    )
+    fields = cast("dict[str, Json]", case)
+    hints = cast("dict[str, Json]", fields.get("hints") or {})
     with patch.object(transformation, "_get_gcs_object_content_type", _blocked_metadata):
         part = _process_gemini_media(
-            image_url=_string(fields, "url"),
+            image_url=cast(str, fields["url"]),
             format=_explicit_mime_type(hints),
             media_resolution_enum=_convert_detail_to_media_resolution_enum(
-                _optional_string(fields, "detail")
+                cast("str | None", fields.get("detail"))
             ),
-            model=_optional_string(fields, "model"),
-            video_metadata=metadata,
+            model=cast("str | None", fields.get("model")),
+            video_metadata=cast("dict[str, Json] | None", fields.get("video_metadata")),
         )
     return cast(Json, part)
 
 
 def _resolution_maximum(params: Params) -> Json:
-    messages = _list(params["messages"], "messages")
-    maximum = _extract_max_media_resolution_from_messages(
-        cast("list[AllMessageValues]", messages)
-    )
-    return {"maximum": maximum}
+    messages = cast("list[AllMessageValues]", params["messages"])
+    return {"maximum": _extract_max_media_resolution_from_messages(messages)}
 
 
 def _part_key_equivalence(params: Params) -> Json:
     results: list[Json] = []
-    for case in _list(params["cases"], "cases"):
-        fields = _object(case, "case")
-        parts = [
-            cast(PartType, _object(item, "part"))
-            for item in _list(fields["parts"], "parts")
-        ]
-        part = cast(PartType, _object(fields["part"], "part"))
-        excluded: list[str] = []
-        excluded_value = fields.get("excluded_keys")
-        if excluded_value is not None:
-            excluded = [
-                cast(str, item)
-                for item in _list(excluded_value, "excluded_keys")
-            ]
-        results.append(check_if_part_exists_in_parts(parts, part, excluded_keys=excluded))
+    for case in cast("list[Json]", params["cases"]):
+        fields = cast("dict[str, Json]", case)
+        results.append(
+            check_if_part_exists_in_parts(
+                cast("list[PartType]", fields["parts"]),
+                cast(PartType, fields["part"]),
+                excluded_keys=cast("list[str]", fields.get("excluded_keys") or []),
+            )
+        )
     return {"matches": results}
 
 
@@ -122,8 +84,7 @@ HANDLERS: dict[str, Handler] = {
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    operation = _string(input_value, "call")
-    handler = HANDLERS.get(operation)
+    handler = HANDLERS.get(cast(str, input_value["call"]))
     if handler is None:
-        raise ValueError(f"unknown operation: {operation}")
+        raise ValueError(f"unknown operation: {input_value['call']}")
     return handler(input_value)

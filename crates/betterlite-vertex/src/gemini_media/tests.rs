@@ -6,7 +6,7 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use crate::gemini_media::equivalence::{equivalent_key, part_exists};
-use crate::gemini_media::error::MediaError;
+use crate::gemini_media::error::{MediaError, MediaField};
 use crate::gemini_media::mime::{MimeHints, apply_mime_alias};
 use crate::gemini_media::part::{MediaResolution, MediaResolutionLevel, VideoMetadata};
 use crate::gemini_media::policy::{GoogleProvider, inlines_remote};
@@ -34,7 +34,7 @@ fn media_request<'media>(
         resolution: detail.and_then(convert_detail),
         video_metadata,
         model,
-        field: "image_url",
+        field: MediaField::ImageUrl,
     }
 }
 
@@ -101,6 +101,7 @@ struct PartCase {
 #[case::metadata_offsets(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-2.5-flash", "video_metadata": {"fps": 1, "start_offset": "1s", "end_offset": "2.5s"}, "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}, "video_metadata": {"fps": 1, "startOffset": "1s", "endOffset": "2.5s"}}}"#)]
 #[case::metadata_fps_only(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-2.5-flash", "video_metadata": {"fps": 2}, "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}, "video_metadata": {"fps": 2}}}"#)]
 #[case::metadata_empty(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-2.5-flash", "video_metadata": {}, "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}}}"#)]
+#[case::metadata_null_value(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-2.5-flash", "video_metadata": {"fps": null}, "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}, "video_metadata": {"fps": null}}}"#)]
 #[case::metadata_gemini2_ignores_detail(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-2.5-flash", "detail": "high", "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}}}"#)]
 #[case::metadata_gemini3_takes_detail(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-3-pro-preview", "detail": "ultra_high", "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}, "media_resolution": {"level": "MEDIA_RESOLUTION_ULTRA_HIGH"}}}"#)]
 #[case::metadata_unknown_detail_ignored(r#"{"url": "gs://bucket/clip.mp4", "model": "gemini-3-pro-preview", "detail": "bogus", "expected": {"file_data": {"mime_type": "video/mp4", "file_uri": "gs://bucket/clip.mp4"}}}"#)]
@@ -137,15 +138,22 @@ fn media_cases_mime_alias(#[case] input: &str, #[case] alias: &str) {
 #[case::csv_is_not_accepted("gs://bucket/report.csv", "text/csv")]
 fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
     let hints = MimeHints::default();
+    let error = media_error(url, &hints);
     assert_eq!(
-        media_error(url, &hints),
+        error,
         MediaError::UnsupportedMediaType(subject.to_owned(), None)
     );
+    assert_eq!(error.status(), 400);
+    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.param(), None);
+    assert_eq!(error.code(), None);
 }
 
 #[rstest]
 #[case::extensionless("gs://bucket/photo", None)]
 #[case::dotfile("gs://bucket/.photo", None)]
+#[case::dotdot_prefix("gs://bucket/..png", None)]
+#[case::triple_dot_prefix("gs://bucket/...jpg", None)]
 #[case::bare_scheme("gs://", None)]
 #[case::trailing_dot("gs://bucket/photo.", None)]
 #[case::http_with_extension("http://example.com/cat.png", None)]
@@ -155,7 +163,11 @@ fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
 #[case::files_prefix_not_at_start("https://example.com/v1beta/files/abc", None)]
 fn media_cases_remote_media_required(#[case] url: &str, #[case] format: Option<&str>) {
     let error = media_error(url, &hints(format, None, None));
-    assert_eq!(error, MediaError::RemoteMediaRequired("image_url"));
+    assert_eq!(error, MediaError::RemoteMediaRequired(MediaField::ImageUrl));
+    assert_eq!(error.status(), 400);
+    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.param(), Some("image_url"));
+    assert_eq!(error.code(), Some("unsupported_remote_media"));
 }
 
 #[rstest]
@@ -172,6 +184,10 @@ fn media_cases_invalid_reference(#[case] url: &str, #[case] inline: bool) {
         MediaError::InvalidMedia(url.to_owned())
     };
     assert_eq!(media_error(url, &hints), error);
+    assert_eq!(error.status(), 400);
+    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.param(), None);
+    assert_eq!(error.code(), None);
 }
 
 #[rstest]
@@ -310,17 +326,16 @@ fn media_cases_field_names() {
         resolution: None,
         video_metadata: None,
         model: None,
-        field: "file",
+        field: MediaField::File,
     };
-    assert_eq!(
-        process_media(&request).unwrap_err(),
-        MediaError::RemoteMediaRequired("file")
-    );
+    let error = process_media(&request).unwrap_err();
+    assert_eq!(error, MediaError::RemoteMediaRequired(MediaField::File));
+    assert_eq!(error.param(), Some("file"));
 }
 
 fn assert_remote_media_required(hints: &MimeHints, url: &str) {
     let error = process_media(&media_request(url, hints, None, None, None)).unwrap_err();
-    assert_eq!(error, MediaError::RemoteMediaRequired("image_url"));
+    assert_eq!(error, MediaError::RemoteMediaRequired(MediaField::ImageUrl));
 }
 
 #[test]

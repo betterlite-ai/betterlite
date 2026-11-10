@@ -21,6 +21,10 @@ call:
           fps: 2
       - url: "gs://bucket/clip.mp4"
         model: "gemini-2.5-flash"
+        video_metadata:
+          fps: null
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
         video_metadata: {}
       - url: "gs://bucket/clip.mp4"
         model: "gemini-3-pro-preview"

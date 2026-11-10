@@ -38,19 +38,25 @@ pub enum MediaResolutionLevel {
     #[serde(rename = "MEDIA_RESOLUTION_ULTRA_HIGH")]
     UltraHigh,
 }
+// The outer Option is an absent key, the inner one is an explicit null LiteLLM forwards
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VideoMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fps: Option<Json>,
+    #[serde(
+        with = "serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fps: Option<Option<Json>>,
     #[serde(
         rename(serialize = "startOffset", deserialize = "start_offset"),
+        with = "serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub start_offset: Option<Json>,
+    pub start_offset: Option<Option<Json>>,
     #[serde(
         rename(serialize = "endOffset", deserialize = "end_offset"),
+        with = "serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub end_offset: Option<Json>,
+    pub end_offset: Option<Option<Json>>,
 }

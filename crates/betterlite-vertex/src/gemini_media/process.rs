@@ -1,5 +1,5 @@
 use crate::gemini_media::GEMINI_FILES_API_URI_PREFIX;
-use crate::gemini_media::error::MediaError;
+use crate::gemini_media::error::{MediaError, MediaField};
 use crate::gemini_media::mime::{MimeHints, apply_mime_alias, normalize_mime_type};
 use crate::gemini_media::part::{Blob, FileData, MediaPart, MediaResolution, VideoMetadata};
 use crate::model_urls::model_name::is_gemini_3_or_newer;
@@ -17,7 +17,7 @@ pub struct MediaRequest<'request> {
     pub resolution: Option<MediaResolution>,
     pub video_metadata: Option<&'request VideoMetadata>,
     pub model: Option<&'request str>,
-    pub field: &'static str,
+    pub field: MediaField,
 }
 pub fn process_media(request: &MediaRequest<'_>) -> Result<MediaPart, MediaError> {
     let mut part = payload_for(request)?;
@@ -82,7 +82,7 @@ fn gcs_payload(request: &MediaRequest<'_>) -> Result<MediaPart, MediaError> {
         ..EMPTY_PART
     })
 }
-fn inferred_gcs_mime(url: &str, field: &'static str) -> Result<String, MediaError> {
+fn inferred_gcs_mime(url: &str, field: MediaField) -> Result<String, MediaError> {
     let extension = splitext_extension(url);
     if extension.is_empty() {
         return Err(MediaError::RemoteMediaRequired(field));
@@ -98,14 +98,18 @@ fn inferred_gcs_mime(url: &str, field: &'static str) -> Result<String, MediaErro
     }
     normalize_mime_type(mime_from_type(file_type))
 }
-// os.path.splitext: the last path segment decides, and an extension never starts at the segment's first byte
+// os.path.splitext: a dot only starts an extension when some non-dot byte precedes it in the segment
 fn splitext_extension(url: &str) -> &str {
     let segment_start = url.rfind('/').map_or(0, |slash| slash.saturating_add(1));
     let segment = url.get(segment_start..).unwrap_or_default();
-    match segment.rfind('.') {
-        Some(dot) if dot > 0 => segment.get(dot.saturating_add(1)..).unwrap_or_default(),
-        _ => "",
+    let Some(dot) = segment.rfind('.') else {
+        return "";
+    };
+    let prefix = segment.get(..dot).unwrap_or_default();
+    if prefix.is_empty() || prefix.bytes().all(|byte| byte == b'.') {
+        return "";
     }
+    segment.get(dot.saturating_add(1)..).unwrap_or_default()
 }
 fn inline_payload(url: &str, format: Option<&str>) -> Result<(String, String), MediaError> {
     let Some(after_data) = url.split("data:").nth(1) else {
