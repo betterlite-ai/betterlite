@@ -32,6 +32,8 @@ call:
       - {role: user, content: plain string}
       - {content: {type: web_search_tool_result, tool_use_id: e5, content: []}}
       - {content: []}
+      - {role: assistant}
+      - {content: null}
       - content:
           - type: web_search_tool_result
             tool_use_id: e6
