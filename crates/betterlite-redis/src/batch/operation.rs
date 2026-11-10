@@ -7,7 +7,7 @@ use super::error::{BatchError, PipelineFailure};
 use super::increment::IncrementOperation;
 use super::mget::MgetOperation;
 use super::replies::settle_pipeline;
-use super::result::{SettledHook, SettledStatus};
+use super::result::SettledFollowUp;
 use super::script::ScriptOperation;
 use super::set::SetOperation;
 use crate::redis_cache::RedisCache;
@@ -76,30 +76,23 @@ impl Operation {
         }
     }
 
-    fn hooks(&self) -> (Vec<SettledHook>, SettledStatus) {
-        match self {
-            Self::Mget(op) => (op.slot.take_hooks(), op.slot.status()),
-            Self::Script(op) => (op.slot.take_hooks(), op.slot.status()),
-            Self::Increment(op) => (op.slot.take_hooks(), op.slot.status()),
-            Self::Set(op) => (op.slot.take_hooks(), op.slot.status()),
-            Self::Delete(op) => (op.slot.take_hooks(), op.slot.status()),
-        }
-    }
-
     pub(crate) async fn run_hooks(&self) {
-        let (hooks, status) = self.hooks();
-        for hook in hooks {
-            if let Some(follow_up) = hook(status) {
-                follow_up.await;
-            }
+        match self {
+            Self::Mget(op) => op.slot.run_hooks().await,
+            Self::Script(op) => op.slot.run_hooks().await,
+            Self::Increment(op) => op.slot.run_hooks().await,
+            Self::Set(op) => op.slot.run_hooks().await,
+            Self::Delete(op) => op.slot.run_hooks().await,
         }
     }
 
-    pub(crate) fn run_hooks_now(&self) {
-        let (hooks, status) = self.hooks();
-        for hook in hooks {
-            // a cancelled flush cannot await a follow-up; the hook ran and its future is dropped
-            let _pending = hook(status);
+    pub(crate) fn run_hooks_now(&self) -> Vec<SettledFollowUp> {
+        match self {
+            Self::Mget(op) => op.slot.run_hooks_now(),
+            Self::Script(op) => op.slot.run_hooks_now(),
+            Self::Increment(op) => op.slot.run_hooks_now(),
+            Self::Set(op) => op.slot.run_hooks_now(),
+            Self::Delete(op) => op.slot.run_hooks_now(),
         }
     }
 }

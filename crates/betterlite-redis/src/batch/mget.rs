@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use redis::Value;
 
+use super::MgetValues;
 use super::error::BatchError;
 use super::operation::Settlement;
 use super::replies::{kind, namespaced, ordered, settle_pipeline};
@@ -14,7 +15,7 @@ use crate::redis_live_client::LiveClientError;
 pub(crate) struct MgetOperation {
     pub(crate) keys: Vec<String>,
     pub(crate) misses: Arc<Mutex<BTreeSet<String>>>,
-    pub(crate) slot: Arc<Slot<BTreeMap<String, Option<CachedValue>>>>,
+    pub(crate) slot: Arc<Slot<MgetValues>>,
 }
 
 impl MgetOperation {
@@ -93,6 +94,6 @@ impl MgetOperation {
                     .map(|(key, _value)| key.clone()),
             );
         }
-        self.slot.complete(result);
+        self.slot.complete(result.map(Arc::new));
     }
 }

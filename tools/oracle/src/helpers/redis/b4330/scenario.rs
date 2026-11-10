@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use betterlite_redis::batch::RedisBatch;
 use betterlite_redis::batch::error::{BatchError, PipelineFailure};
-use betterlite_redis::batch::result::{BatchResult, SettledHook, SettledStatus};
+use betterlite_redis::batch::result::{BatchResult, Settled, SettledHook};
+use betterlite_redis::batch::{MgetValues, RedisBatch};
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_cache::RedisCache;
@@ -27,7 +27,7 @@ const REPORTED: [&str; 8] = [
 ];
 
 enum Handle {
-    Mget(BatchResult<BTreeMap<String, Option<CachedValue>>>),
+    Mget(BatchResult<MgetValues>),
     Increment(BatchResult<f64>),
     Set(BatchResult<()>),
     Script(BatchResult<Value>),
@@ -152,44 +152,43 @@ fn declare(
     index: usize,
     log: Arc<Mutex<Vec<Json>>>,
 ) -> Handle {
-    let hook = settled_hook(index, log);
     match operation {
         Operation::Mget { keys } => {
             let result = batch.mget(keys);
-            result.on_settled(hook);
+            result.on_settled(settled_hook(index, log));
             Handle::Mget(result)
         }
         Operation::Increment { key, value, ttl } => {
             let result = batch.increment(key, *value, *ttl);
-            result.on_settled(hook);
+            result.on_settled(settled_hook(index, log));
             Handle::Increment(result)
         }
         Operation::Set { key, value, ttl } => {
             let result = batch.set(key, value, *ttl);
-            result.on_settled(hook);
+            result.on_settled(settled_hook(index, log));
             Handle::Set(result)
         }
         Operation::Delete { key } => {
             let result = batch.delete(key);
-            result.on_settled(hook);
+            result.on_settled(settled_hook(index, log));
             Handle::Set(result)
         }
         Operation::Script { source, keys, args } => {
             let script = Arc::new(cache.counters.async_register_script(source));
             let scalars: Vec<RedisScalar> = args.iter().map(scalar).collect();
             let result = batch.script(&script, keys, &scalars);
-            result.on_settled(hook);
+            result.on_settled(settled_hook(index, log));
             Handle::Script(result)
         }
     }
 }
 
-fn settled_hook(index: usize, log: Arc<Mutex<Vec<Json>>>) -> SettledHook {
-    Arc::new(move |status: SettledStatus| {
-        let text = match status {
-            SettledStatus::Completed => "completed",
-            SettledStatus::Failed => "failed",
-            SettledStatus::Cancelled => "cancelled",
+fn settled_hook<T: 'static>(index: usize, log: Arc<Mutex<Vec<Json>>>) -> SettledHook<T> {
+    Arc::new(move |settled: &Settled<T>| {
+        let text = match settled {
+            Ok(_) => "completed",
+            Err(error) if matches!(**error, BatchError::Cancelled) => "cancelled",
+            Err(_) => "failed",
         };
         let entry = json!({"handle": index, "status": text});
         match log.lock() {

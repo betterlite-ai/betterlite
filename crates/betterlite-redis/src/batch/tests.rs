@@ -3,23 +3,23 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use redis::Value;
 use rstest::rstest;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use self::support::{Harness, cluster_harness, harness, unreachable_harness};
-use super::RedisBatch;
 use super::error::{BatchError, PipelineFailure};
-use super::result::{BatchResult, SettledHook, SettledStatus};
+use super::result::{BatchResult, Settled, SettledHook};
+use super::{MgetValues, RedisBatch};
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_counters::scripts::RegisteredScript;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
-type MgetValues = BTreeMap<String, Option<CachedValue>>;
 type MgetHandle = BatchResult<MgetValues>;
 type DeclaredHandles = Arc<Mutex<Vec<MgetHandle>>>;
 
@@ -120,18 +120,48 @@ fn log_entries(log: &Mutex<Vec<String>>) -> Vec<String> {
     }
 }
 
-fn recording_hook(name: &'static str, log: Arc<Mutex<Vec<String>>>) -> SettledHook {
-    Arc::new(move |status: SettledStatus| {
-        let text = match status {
-            SettledStatus::Completed => "completed",
-            SettledStatus::Failed => "failed",
-            SettledStatus::Cancelled => "cancelled",
+fn push_entry(log: &Mutex<Vec<String>>, entry: String) {
+    match log.lock() {
+        Ok(mut entries) => entries.push(entry),
+        Err(poisoned) => poisoned.into_inner().push(entry),
+    }
+}
+
+fn recording_hook<T>(name: &'static str, log: Arc<Mutex<Vec<String>>>) -> SettledHook<T>
+where
+    T: 'static,
+{
+    Arc::new(move |settled: &Settled<T>| {
+        let text = match settled {
+            Ok(_) => "completed",
+            Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => "cancelled",
+            Err(_) => "failed",
         };
-        match log.lock() {
-            Ok(mut entries) => entries.push(format!("{name}:{text}")),
-            Err(poisoned) => poisoned.into_inner().push(format!("{name}:{text}")),
-        }
+        push_entry(&log, format!("{name}:{text}"));
         None
+    })
+}
+
+fn outcome_hook<T>(name: &'static str, log: Arc<Mutex<Vec<String>>>) -> SettledHook<T>
+where
+    T: Debug + 'static,
+{
+    Arc::new(move |settled: &Settled<T>| {
+        let text = match settled {
+            Ok(value) => format!("{name}:ok:{value:?}"),
+            Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => {
+                format!("{name}:err:cancelled")
+            }
+            Err(error) if matches!(error.as_ref(), BatchError::Reply(_)) => {
+                format!("{name}:err:reply")
+            }
+            Err(_) => format!("{name}:err:other"),
+        };
+        push_entry(&log, text);
+        let later = Arc::clone(&log);
+        Some(Box::pin(async move {
+            push_entry(&later, format!("{name}:follow-up"));
+        }))
     })
 }
 
@@ -457,12 +487,23 @@ async fn cluster_standalone() {
     );
 }
 
-async fn settled_hook_order() {
-    let server = FakeServer::start().await;
+fn script_ordered_replies(server: &FakeServer) {
     server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
     let noscript = "NOSCRIPT No matching script. Please use EVAL.";
     server.script("EVALSHA", Reply::Error(noscript.to_owned()));
     server.script("EVALSHA", Reply::Error(noscript.to_owned()));
+    server.script("INCRBYFLOAT", Reply::Bulk("2.5".to_owned()));
+    server.script(
+        "INCRBYFLOAT",
+        Reply::Error("ERR value is not a valid float".to_owned()),
+    );
+    server.script("EXPIRE", Reply::Int(1));
+    server.script("EXPIRE", Reply::Int(1));
+}
+
+async fn settled_hook_order() {
+    let server = FakeServer::start().await;
+    script_ordered_replies(&server);
     let harness = harness(&server, Some("ns")).await;
     let script = registered(&harness, "return 7");
     server.script("SCRIPT", Reply::Bulk(script.sha1.clone()));
@@ -474,10 +515,29 @@ async fn settled_hook_order() {
     scripted.on_settled(recording_hook("script", Arc::clone(&log)));
     let mget = batch.mget(&["a".to_owned()]);
     mget.on_settled(recording_hook("mget", Arc::clone(&log)));
+    let grown = batch.increment("c", 2.5, None);
+    grown.on_settled(outcome_hook("grown", Arc::clone(&log)));
+    let broken = batch.increment("d", 1.5, None);
+    broken.on_settled(outcome_hook("broken", Arc::clone(&log)));
 
     assert_eq!(scripted.await.expect("the script"), Value::Int(7));
     mget.await.expect("the mget");
-    assert_eq!(log_entries(&log), ["script:completed", "mget:completed"]);
+    assert_eq!(
+        grown.await.expect("the increment").to_bits(),
+        2.5_f64.to_bits()
+    );
+    broken.await.expect_err("the failed increment");
+    assert_eq!(
+        log_entries(&log),
+        [
+            "script:completed",
+            "mget:completed",
+            "grown:ok:2.5",
+            "grown:follow-up",
+            "broken:err:reply",
+            "broken:follow-up",
+        ]
+    );
 }
 
 async fn dropped_flush() {
@@ -488,7 +548,7 @@ async fn dropped_flush() {
     let log = Arc::new(Mutex::new(Vec::new()));
 
     let mget = batch.mget(&["a".to_owned()]);
-    mget.on_settled(recording_hook("mget", Arc::clone(&log)));
+    mget.on_settled(outcome_hook("mget", Arc::clone(&log)));
     let sibling = batch.increment("b", 1.5, None);
     let mut tasks = JoinSet::new();
     let flushing = tasks.spawn(async move { mget.await });
@@ -505,7 +565,14 @@ async fn dropped_flush() {
 
     let cancelled = sibling.await.expect_err("the cancelled sibling");
     assert!(matches!(cancelled.as_ref(), BatchError::Cancelled));
-    assert_eq!(log_entries(&log), ["mget:cancelled"]);
+    timeout(Duration::from_secs(5), async {
+        while log_entries(&log).len() < 2 {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the follow-up of the dropped flush ran");
+    assert_eq!(log_entries(&log), ["mget:err:cancelled", "mget:follow-up"]);
 }
 
 fn install_declaring_hook(batch: &Arc<RedisBatch>, declared: &DeclaredHandles) {
@@ -525,10 +592,8 @@ fn install_declaring_hook(batch: &Arc<RedisBatch>, declared: &DeclaredHandles) {
 
 async fn flush_hook_order() {
     let server = FakeServer::start().await;
-    server.script(
-        "MGET",
-        Reply::Array(vec![Reply::Bulk("1".to_owned()), Reply::Nil]),
-    );
+    server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
+    server.script("MGET", Reply::Array(vec![Reply::Nil]));
     let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let declared: DeclaredHandles = Arc::new(Mutex::new(Vec::new()));
@@ -541,8 +606,9 @@ async fn flush_hook_order() {
     assert_eq!(batch.pending(), 0);
     assert_eq!(batch.flushes(), 1);
     let mgets = server.commands_named("MGET");
-    assert_eq!(mgets.len(), 1);
-    assert_eq!(mgets[0].args, ["MGET", "ns:direct", "ns:hook"]);
+    assert_eq!(mgets.len(), 2);
+    assert_eq!(mgets[0].args, ["MGET", "ns:direct"]);
+    assert_eq!(mgets[1].args, ["MGET", "ns:hook"]);
 
     let hook_result = match declared.lock() {
         Ok(mut results) => results.pop(),

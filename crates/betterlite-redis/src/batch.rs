@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use redis::Value;
 use serde::Serialize;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::task::JoinSet;
 
 use self::delete::DeleteOperation;
 use self::increment::IncrementOperation;
@@ -32,6 +33,8 @@ use crate::cache_primitives::protocol::RedisScalar;
 use crate::redis_cache::RedisCache;
 use crate::redis_counters::scripts::RegisteredScript;
 
+pub type MgetValues = Arc<BTreeMap<String, Option<CachedValue>>>;
+
 pub struct RedisBatch {
     redis_cache: Arc<RedisCache>,
     name: &'static str,
@@ -39,6 +42,7 @@ pub struct RedisBatch {
     pending: Mutex<Vec<Operation>>,
     flush_hooks: Mutex<Vec<Arc<dyn Fn() + Send + Sync>>>,
     misses: Arc<Mutex<BTreeSet<String>>>,
+    follow_ups: Mutex<JoinSet<()>>,
     lock: AsyncMutex<()>,
 }
 
@@ -52,14 +56,12 @@ impl RedisBatch {
             pending: Mutex::new(Vec::new()),
             flush_hooks: Mutex::new(Vec::new()),
             misses: Arc::new(Mutex::new(BTreeSet::new())),
+            follow_ups: Mutex::new(JoinSet::new()),
             lock: AsyncMutex::new(()),
         }
     }
 
-    pub fn mget(
-        self: &Arc<Self>,
-        keys: &[String],
-    ) -> BatchResult<BTreeMap<String, Option<CachedValue>>> {
+    pub fn mget(self: &Arc<Self>, keys: &[String]) -> BatchResult<MgetValues> {
         let (slot, receiver) = Slot::channel();
         let operation = MgetOperation {
             keys: deduplicated(keys),

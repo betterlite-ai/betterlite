@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use redis::Value;
+use tokio::runtime::Handle;
 
 use super::RedisBatch;
 use super::error::{BatchError, PipelineFailure};
@@ -29,6 +30,7 @@ pub(crate) async fn flush(batch: &RedisBatch) {
     }
     count_flush(batch);
     let mut draining = Draining {
+        batch,
         ops: pending,
         done: false,
     };
@@ -138,12 +140,13 @@ async fn settle_replies(
     }
 }
 
-struct Draining {
+struct Draining<'batch> {
+    batch: &'batch RedisBatch,
     ops: Vec<Operation>,
     done: bool,
 }
 
-impl Draining {
+impl Draining<'_> {
     async fn finish(mut self) {
         for op in &self.ops {
             op.settle_unresolved(None);
@@ -155,7 +158,7 @@ impl Draining {
     }
 }
 
-impl Drop for Draining {
+impl Drop for Draining<'_> {
     fn drop(&mut self) {
         if self.done {
             return;
@@ -163,8 +166,20 @@ impl Drop for Draining {
         for op in &self.ops {
             op.settle_unresolved(None);
         }
+        let mut follow_ups = Vec::new();
         for op in &self.ops {
-            op.run_hooks_now();
+            follow_ups.extend(op.run_hooks_now());
+        }
+        let Ok(runtime) = Handle::try_current() else {
+            return;
+        };
+        let mut tasks = match self.batch.follow_ups.lock() {
+            Ok(tasks) => tasks,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        while tasks.try_join_next().is_some() {}
+        for follow_up in follow_ups {
+            tasks.spawn_on(follow_up, &runtime);
         }
     }
 }
