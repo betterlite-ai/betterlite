@@ -1,0 +1,10 @@
+kind: helper
+name: codestral-records-seed-chatml-markers-retained
+call:
+  codestral_records:
+    steps:
+      - kind: reply
+        status: 200
+        body: '{"id":"cmpl-3","created":1700000002,"choices":[{"index":0,"message":{"content":"<|assistant|><|system|><|user|><s>keep</s>"},"finish_reason":""}]}'
+env: {}
+compare: {ignore: []}

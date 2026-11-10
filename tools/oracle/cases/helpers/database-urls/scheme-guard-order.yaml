@@ -1,0 +1,48 @@
+kind: helper
+name: database-urls-scheme-guard-order
+call:
+  database_urls:
+    function: batch
+    calls:
+      - function: validate_schemes
+        settings:
+          database_url: mysql://writer/db
+          direct_url: sqlite://direct/db
+          database_url_read_replica: postgres://reader/db
+      - function: validate_schemes
+        settings:
+          database_url: postgresql://writer/db
+          direct_url: sqlite://direct/db
+          database_url_read_replica: postgres://reader/db
+      - function: validate_schemes
+        settings:
+          database_url: postgresql://writer/db
+          direct_url: postgres://direct/db
+          database_url_read_replica: mysql://reader/db
+      - function: validate_schemes
+        settings:
+          database_url: postgresql://writer/db
+          direct_url: postgres://direct/db
+          database_url_read_replica: postgresql://reader/db
+      - function: validate_schemes
+        settings:
+          database_url: ""
+          direct_url: ""
+          database_url_read_replica: ""
+      - function: validate_schemes
+        settings:
+          database_url: user:pass@host/db
+      - function: validate_cli_urls
+        environment:
+          DATABASE_URL: ""
+      - function: validate_cli_urls
+        environment:
+          DATABASE_URL: postgresql://writer/db
+          DIRECT_URL: sqlite://direct/db
+      - function: validate_cli_urls
+        environment:
+          DATABASE_URL: postgresql://writer/db
+      - function: validate_cli_urls
+        environment: {}
+env: {}
+compare: {ignore: []}
