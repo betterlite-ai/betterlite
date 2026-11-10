@@ -25,6 +25,7 @@ sha2.workspace = true
 socket2 = "0.6.5"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"
 
