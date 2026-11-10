@@ -8,5 +8,4 @@ pub mod request;
 
 mod tests;
 
-// LiteLLM strips this prefix from the model name it sends, wherever the name carries it
 pub const MODEL_PREFIX: &str = "gigachat/";

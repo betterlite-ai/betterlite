@@ -68,7 +68,6 @@ pub fn map_openai_params(
     mut optional_params: Object,
 ) -> Result<Object, GigaChatError> {
     for name in LITELLM_ORDER {
-        // the project reads a null parameter as an absent one
         let Some(value) = non_default_params
             .get(name)
             .filter(|value| !value.is_null())
@@ -95,7 +94,6 @@ pub fn map_openai_params(
                 }
             }
             "response_format" => apply_response_format(value, &mut optional_params)?,
-            // LiteLLM accepts "stop" and sends nothing, and drops every option GigaChat does not take
             _ => {}
         }
     }

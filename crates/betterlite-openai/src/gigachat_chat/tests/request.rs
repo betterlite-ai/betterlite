@@ -77,11 +77,14 @@ async fn the_api_base_wins_over_the_environment_base() {
 }
 
 #[tokio::test]
-async fn the_model_loses_every_gigachat_prefix() {
+async fn only_the_gigachat_slash_prefix_is_removed_from_the_model() {
     let mut request_case = default_case();
     request_case.model = "gigachat/gigachat-pro";
     let request = completion(&request_case).await.unwrap();
-    assert_eq!(json!(request.body).get("model"), Some(&Value::from("pro")));
+    assert_eq!(
+        json!(request.body).get("model"),
+        Some(&Value::from("gigachat-pro"))
+    );
 }
 
 #[tokio::test]

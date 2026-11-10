@@ -10,7 +10,6 @@ pub const TOOL_CALL_ID_PREFIX: &str = "call_";
 pub const TOOL_CALL_ID_CHARS: usize = 24;
 pub const CHAT_COMPLETION_ID_CHARS: usize = 12;
 
-// LiteLLM builds every generated id from uuid4, so the source is injected and tests fix it
 pub trait IdSource: Send + Sync {
     fn new_uuid(&self) -> Uuid;
 }

@@ -58,7 +58,8 @@ pub fn chunk_parser(event: &[u8], ids: &dyn IdSource) -> Result<StreamEvent, Str
     }
     // LiteLLM reads a line that is not JSON as an empty chunk and a JSON line of the wrong shape as a failure
     let raw = match serde_json::from_str::<Value>(payload) {
-        Ok(value) => serde_json::from_value::<RawChunk>(value)
+        Ok(value) => serde_json::from_value::<Object>(value)
+            .and_then(|fields| serde_json::from_value::<RawChunk>(Value::Object(fields)))
             .map_err(|source| StreamError::Chunk { source })?,
         Err(_) => RawChunk::default(),
     };

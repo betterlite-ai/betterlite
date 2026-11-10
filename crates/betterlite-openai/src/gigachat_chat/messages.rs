@@ -61,7 +61,6 @@ pub async fn transform_messages(
 ) -> Result<Vec<GigachatMessage>, GigaChatError> {
     let mut transformed = Vec::with_capacity(messages.len());
     for (index, message) in messages.iter().enumerate() {
-        // GigaChat takes a system message only at the first position, a developer role at none, and a tool role not at all
         let role = match message.role {
             Role::Developer => Role::System,
             Role::System if index > 0 => Role::User,

@@ -15,6 +15,7 @@ use crate::gigachat_utils::{
     CHAT_COMPLETION_ID_CHARS, IdSource, TOOL_CALL_ID_CHARS, TOOL_CALL_ID_PREFIX, TokenUsage,
     arguments_text, convert_usage, generated_id,
 };
+use crate::openai_base_config::Object;
 
 pub struct ReplyInput<'body> {
     pub status_code: u16,
@@ -54,16 +55,18 @@ pub fn transform_response(
     ids: &dyn IdSource,
     input: &ReplyInput<'_>,
 ) -> Result<ChatResponse, GigaChatError> {
-    let reply = serde_json::from_slice::<RawReply>(input.body).map_err(|source| GigaChatError {
-        status_code: if matches!(source.classify(), Category::Syntax | Category::Eof) {
-            input.status_code
-        } else {
-            500
-        },
-        message: format!("the GigaChat reply cannot be read: {source}"),
-        headers: None,
-        source: Some(source),
-    })?;
+    let reply = serde_json::from_slice::<Object>(input.body)
+        .and_then(|fields| serde_json::from_value::<RawReply>(Value::Object(fields)))
+        .map_err(|source| GigaChatError {
+            status_code: if matches!(source.classify(), Category::Syntax | Category::Eof) {
+                input.status_code
+            } else {
+                500
+            },
+            message: format!("the GigaChat reply cannot be read: {source}"),
+            headers: None,
+            source: Some(source),
+        })?;
     Ok(ChatResponse {
         id: reply.id.unwrap_or_else(|| {
             generated_id(ids, CHAT_COMPLETION_ID_PREFIX, CHAT_COMPLETION_ID_CHARS)

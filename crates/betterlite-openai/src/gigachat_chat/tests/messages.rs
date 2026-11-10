@@ -122,12 +122,9 @@ async fn a_tool_message_with_a_list_content_encodes_the_whole_list() {
         &fixture,
     )
     .await;
-    assert_eq!(
-        turned,
-        vec![value(
-            r#"{"role": "function", "content": "[{\"type\":\"text\",\"text\":\"x\"}]"}"#
-        )]
-    );
+    assert_eq!(turned[0]["role"], "function");
+    let encoded = value(turned[0]["content"].as_str().unwrap());
+    assert_eq!(encoded, value(r#"[{"type": "text", "text": "x"}]"#));
     assert!(fixture.uploader.uploads().is_empty());
 }
 

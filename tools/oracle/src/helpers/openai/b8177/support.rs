@@ -14,7 +14,6 @@ use uuid::Uuid;
 
 use crate::helpers::HelperError;
 
-// LiteLLM derives every id from uuid4, so both sides pin the same one
 pub(crate) const FIXED_UUID: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
 
 pub(crate) struct FixedIds;
