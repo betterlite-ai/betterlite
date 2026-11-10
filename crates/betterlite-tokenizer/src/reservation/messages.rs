@@ -13,6 +13,7 @@ use crate::count::request::{
 
 use super::RequestBody;
 use super::ReservationError;
+use super::python_text;
 use super::text;
 
 // token_counter reports a content-list or tool-call shape problem as ValueError, which counts the original value as text
@@ -133,6 +134,10 @@ fn parse_parts(items: &[Json]) -> Result<Vec<Part>, MessageFailure> {
                 let Some(Json::Text(kind)) = fields.get("type") else {
                     return Err(MessageFailure::ValueError);
                 };
+                if let Some(text) = thinking_or_reference_text(kind, fields) {
+                    parts.push(Part::Text(text));
+                    continue;
+                }
                 let rest = fields
                     .iter()
                     .filter(|(key, _)| key.as_str() != "type")
@@ -149,6 +154,24 @@ fn parse_parts(items: &[Json]) -> Result<Vec<Part>, MessageFailure> {
         }
     }
     Ok(parts)
+}
+
+// token_counter counts a thinking block's text and a tool_reference's tool_name, and skips the opaque signature blobs
+fn thinking_or_reference_text(kind: &str, fields: &IndexMap<String, Json>) -> Option<String> {
+    match kind {
+        "thinking" | "redacted_thinking" => Some(
+            fields
+                .get("thinking")
+                .map_or_else(String::new, python_text::str_of),
+        ),
+        "tool_reference" => Some(
+            fields
+                .get("tool_name")
+                .filter(|name| !is_falsey(name))
+                .map_or_else(String::new, python_text::str_of),
+        ),
+        _ => None,
+    }
 }
 
 fn parse_tool_calls(value: Option<&Json>) -> Result<Option<Vec<ToolCall>>, MessageFailure> {

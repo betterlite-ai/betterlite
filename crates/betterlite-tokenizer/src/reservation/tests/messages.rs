@@ -25,6 +25,40 @@ async fn a_value_error_counts_the_original_messages_as_text() {
     assert_eq!(tokens, Some(expected));
 }
 
+#[rstest]
+#[case::thinking_text_only(
+    r#"{"type": "thinking", "thinking": "plan the answer", "signature": "c2lnbmF0dXJl"}"#,
+    "plan the answer"
+)]
+#[case::redacted_thinking_without_text(r#"{"type": "redacted_thinking", "data": "opaque"}"#, "")]
+#[case::tool_reference_name(
+    r#"{"type": "tool_reference", "tool_name": "get_weather"}"#,
+    "get_weather"
+)]
+#[case::tool_reference_empty_name(r#"{"type": "tool_reference", "tool_name": ""}"#, "")]
+#[tokio::test]
+async fn thinking_and_tool_reference_blocks_count_their_text_not_the_fallback(
+    #[case] block: &str,
+    #[case] counted: &str,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let counter = support::bundled_counter(directory.path());
+    let with_block = format!(r#"{{"messages": [{{"role": "assistant", "content": [{block}]}}]}}"#);
+    let with_text = if counted.is_empty() {
+        r#"{"messages": [{"role": "assistant", "content": []}]}"#.to_owned()
+    } else {
+        format!(
+            r#"{{"messages": [{{"role": "assistant", "content": [{{"type": "text", "text": "{counted}"}}]}}]}}"#
+        )
+    };
+    let block_tokens =
+        count_input_tokens_for_model(&counter, &support::body(&with_block), MODEL).await;
+    let text_tokens =
+        count_input_tokens_for_model(&counter, &support::body(&with_text), MODEL).await;
+    assert!(block_tokens.is_some());
+    assert_eq!(block_tokens, text_tokens);
+}
+
 #[tokio::test]
 async fn a_bad_tool_calls_shape_counts_the_original_messages_as_text() {
     let directory = tempfile::tempdir().unwrap();
