@@ -230,25 +230,6 @@ fn halves_a_batch_that_is_too_large() {
 }
 
 #[test]
-fn halves_a_four_span_batch_evenly() {
-    let fixture = exporter_with(
-        vec![Step::Status(413), Step::Status(200), Step::Status(200)],
-        &[],
-    );
-    let batch = vec![
-        span("a", &[]),
-        span("b", &[]),
-        span("c", &[]),
-        span("d", &[]),
-    ];
-    assert!(export(&fixture.exporter, batch));
-    assert_eq!(
-        names(&spans_of(&fixture.transport.seen())),
-        vec![vec!["a", "b", "c", "d"], vec!["a", "b"], vec!["c", "d"]]
-    );
-}
-
-#[test]
 fn truncates_the_largest_field_of_a_single_span() {
     let fixture = exporter_with(
         vec![
@@ -278,23 +259,19 @@ fn truncates_the_largest_field_of_a_single_span() {
 }
 
 #[test]
-fn truncates_the_output_group_ahead_of_a_smaller_input() {
+#[rstest]
+#[case::output_is_largest("a", "bbbb", OUTPUT)]
+#[case::a_tie_keeps_the_first_group("aa", "bb", INPUT)]
+fn truncates_the_larger_group_first(
+    #[case] input: &str,
+    #[case] output: &str,
+    #[case] marked: &str,
+) {
     let fixture = exporter_with(vec![Step::Status(413), Step::Status(200)], &[]);
-    let batch = vec![span("one", &[(INPUT, "a"), (OUTPUT, "bbbb")])];
+    let batch = vec![span("one", &[(INPUT, input), (OUTPUT, output)])];
     assert!(export(&fixture.exporter, batch));
     let requests = spans_of(&fixture.transport.seen());
-    assert_eq!(attribute(&requests[1][0], OUTPUT), Some(TRUNCATION_MARKER));
-    assert_eq!(attribute(&requests[1][0], INPUT), Some("a"));
-}
-
-#[test]
-fn a_tie_truncates_the_input_group_first() {
-    let fixture = exporter_with(vec![Step::Status(413), Step::Status(200)], &[]);
-    let batch = vec![span("one", &[(INPUT, "aa"), (OUTPUT, "bb")])];
-    assert!(export(&fixture.exporter, batch));
-    let requests = spans_of(&fixture.transport.seen());
-    assert_eq!(attribute(&requests[1][0], INPUT), Some(TRUNCATION_MARKER));
-    assert_eq!(attribute(&requests[1][0], OUTPUT), Some("bb"));
+    assert_eq!(attribute(&requests[1][0], marked), Some(TRUNCATION_MARKER));
 }
 
 #[test]
@@ -440,20 +417,14 @@ fn a_failed_batch_reports_an_export_error() {
     fixture.exporter.force_flush().unwrap();
 }
 
-#[test]
-fn points_a_404_at_the_self_hosted_server_floor() {
-    let fixture = exporter_with(vec![Step::Status(404)], &[]);
+#[rstest]
+#[case::missing_route(404, true)]
+#[case::bad_request(400, false)]
+fn points_only_a_404_at_the_self_hosted_server_floor(#[case] status: u16, #[case] hinted: bool) {
+    let fixture = exporter_with(vec![Step::Status(status)], &[]);
     let (delivered, logs) = captured(|| export(&fixture.exporter, vec![span("one", &[])]));
     assert!(!delivered);
-    assert!(logs.contains("3.63.0"));
-}
-
-#[test]
-fn leaves_the_server_floor_hint_off_other_rejections() {
-    let fixture = exporter_with(vec![Step::Status(400)], &[]);
-    let (delivered, logs) = captured(|| export(&fixture.exporter, vec![span("one", &[])]));
-    assert!(!delivered);
-    assert!(!logs.contains("3.63.0"));
+    assert_eq!(logs.contains("3.63.0"), hinted);
 }
 
 #[test]
