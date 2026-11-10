@@ -4,9 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::RdsCredentialsError;
 use super::secrets::RdsSecrets;
-use super::sts::{
-    ambient_credentials, assume_role, assume_role_with_web_identity, profile_credentials,
-};
+use super::sts::{self, StsRequest};
 use super::{CREDENTIAL_PROVIDER, RdsCredentialInputs, RdsSources, RdsTimeout};
 
 pub(super) struct Selection {
@@ -42,23 +40,8 @@ pub(super) async fn select(
 ) -> Result<Credentials, RdsCredentialsError> {
     let inputs = &selection.inputs;
     let region = selection.region.as_str();
-    if let (Some(token), Some(role), Some(session)) = (
-        &inputs.web_identity_token,
-        &inputs.role_name,
-        &inputs.session_name,
-    ) {
-        let oidc_token = read_oidc_token(token, sources).await?;
-        return assume_role_with_web_identity(role, session, &oidc_token, region, sources).await;
-    }
-    if let (Some(role), Some(session)) = (&inputs.role_name, &inputs.session_name) {
-        return assume_role(
-            role,
-            session,
-            explicit_credentials(inputs)?,
-            region,
-            sources,
-        )
-        .await;
+    if let Some(credentials) = sts_credentials(inputs, region, sources).await? {
+        return Ok(credentials);
     }
     if let Some(access) = &inputs.access_key_id {
         let secret =
@@ -77,9 +60,39 @@ pub(super) async fn select(
         ));
     }
     if let Some(profile) = &inputs.profile_name {
-        return profile_credentials(profile, region, sources).await;
+        return sts::provider_credentials(Some(profile), region, sources).await;
     }
-    ambient_credentials(region, sources).await
+    sts::provider_credentials(None, region, sources).await
+}
+
+async fn sts_credentials(
+    inputs: &RdsCredentialInputs,
+    region: &str,
+    sources: &RdsSources<'_>,
+) -> Result<Option<Credentials>, RdsCredentialsError> {
+    if let (Some(token), Some(role), Some(session)) = (
+        &inputs.web_identity_token,
+        &inputs.role_name,
+        &inputs.session_name,
+    ) {
+        let oidc_token = read_oidc_token(token, sources).await?;
+        let request = StsRequest::WebIdentity {
+            role,
+            session,
+            token: &oidc_token,
+        };
+        return Ok(Some(
+            sts::assume_role(request, None, region, sources).await?,
+        ));
+    }
+    if let (Some(role), Some(session)) = (&inputs.role_name, &inputs.session_name) {
+        let request = StsRequest::Role { role, session };
+        let credentials = explicit_credentials(inputs)?;
+        return Ok(Some(
+            sts::assume_role(request, credentials, region, sources).await?,
+        ));
+    }
+    Ok(None)
 }
 
 fn resolve_references(
@@ -87,31 +100,36 @@ fn resolve_references(
     secrets: &dyn RdsSecrets,
 ) -> Result<RdsCredentialInputs, RdsCredentialsError> {
     Ok(RdsCredentialInputs {
-        access_key_id: resolve_secret_reference(inputs.access_key_id, secrets)?,
-        secret_access_key: resolve_secret_reference(inputs.secret_access_key, secrets)?,
+        access_key_id: resolve_text_reference(
+            inputs
+                .access_key_id
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            secrets,
+        )?
+        .map(SecretString::from),
+        secret_access_key: resolve_text_reference(
+            inputs
+                .secret_access_key
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            secrets,
+        )?
+        .map(SecretString::from),
         region_name: resolve_text_reference(inputs.region_name, secrets)?,
         session_name: resolve_text_reference(inputs.session_name, secrets)?,
         profile_name: resolve_text_reference(inputs.profile_name, secrets)?,
         role_name: resolve_text_reference(inputs.role_name, secrets)?,
-        web_identity_token: resolve_secret_reference(inputs.web_identity_token, secrets)?,
+        web_identity_token: resolve_text_reference(
+            inputs
+                .web_identity_token
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            secrets,
+        )?
+        .map(SecretString::from),
         timeout: inputs.timeout,
     })
-}
-
-fn resolve_secret_reference(
-    value: Option<SecretString>,
-    secrets: &dyn RdsSecrets,
-) -> Result<Option<SecretString>, RdsCredentialsError> {
-    let Some(text) = value else {
-        return Ok(None);
-    };
-    let Some(name) = text.expose_secret().strip_prefix("os.environ/") else {
-        return Ok(Some(text));
-    };
-    let resolved = secrets
-        .get_secret(name)
-        .map_err(|source| RdsCredentialsError::Secret { source })?;
-    Ok(secret_text(resolved)?.map(SecretString::from))
 }
 
 fn resolve_text_reference(

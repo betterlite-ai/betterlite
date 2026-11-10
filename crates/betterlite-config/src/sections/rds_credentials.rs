@@ -46,14 +46,15 @@ impl Section for Raw {
     {
         let configured = self.general_settings;
         let credentials = RdsCredentialInputs {
-            access_key_id: resolve_reference(configured.access_key_id, lookup)
-                .or_else(|| lookup.lookup("AWS_ACCESS_KEY_ID").map(SecretString::from)),
-            secret_access_key: resolve_reference(configured.secret_access_key, lookup).or_else(
-                || {
-                    lookup
-                        .lookup("AWS_SECRET_ACCESS_KEY")
-                        .map(SecretString::from)
-                },
+            access_key_id: resolve_secret_field(
+                configured.access_key_id.as_ref(),
+                lookup,
+                "AWS_ACCESS_KEY_ID",
+            ),
+            secret_access_key: resolve_secret_field(
+                configured.secret_access_key.as_ref(),
+                lookup,
+                "AWS_SECRET_ACCESS_KEY",
             ),
             region_name: resolve_text(configured.region_name, lookup)
                 .or_else(|| lookup.lookup("AWS_REGION_NAME")),
@@ -64,33 +65,36 @@ impl Section for Raw {
             role_name: resolve_text(configured.role_name, lookup)
                 .or_else(|| lookup.lookup("AWS_ROLE_NAME"))
                 .or_else(|| lookup.lookup("AWS_ROLE_ARN")),
-            web_identity_token: resolve_reference(configured.web_identity_token, lookup)
-                .or_else(|| {
-                    lookup
-                        .lookup("AWS_WEB_IDENTITY_TOKEN")
-                        .map(SecretString::from)
-                })
-                .or_else(|| {
-                    lookup
-                        .lookup("AWS_WEB_IDENTITY_TOKEN_FILE")
-                        .map(SecretString::from)
-                }),
+            web_identity_token: resolve_secret_field(
+                configured.web_identity_token.as_ref(),
+                lookup,
+                "AWS_WEB_IDENTITY_TOKEN",
+            )
+            .or_else(|| {
+                lookup
+                    .lookup("AWS_WEB_IDENTITY_TOKEN_FILE")
+                    .map(SecretString::from)
+            }),
             timeout: RdsTimeout::SdkDefaults,
         };
         Ok(Settings { credentials })
     }
 }
 
-// get_secret resolves an os.environ/ reference to nothing when the variable is unset
-fn resolve_reference<L>(value: Option<SecretString>, lookup: &L) -> Option<SecretString>
+fn resolve_secret_field<L>(
+    configured: Option<&SecretString>,
+    lookup: &L,
+    variable: &str,
+) -> Option<SecretString>
 where
     L: EnvironmentLookup,
 {
-    let text = value?;
-    let Some(name) = text.expose_secret().strip_prefix("os.environ/") else {
-        return Some(text);
-    };
-    lookup.lookup(name).map(SecretString::from)
+    resolve_text(
+        configured.map(|secret| secret.expose_secret().to_owned()),
+        lookup,
+    )
+    .map(SecretString::from)
+    .or_else(|| lookup.lookup(variable).map(SecretString::from))
 }
 
 fn resolve_text<L>(value: Option<String>, lookup: &L) -> Option<String>

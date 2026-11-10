@@ -8,8 +8,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::fixture::{
-    BotocoreFixture, Clock, RecordingSecrets, Reply, TokenVector, aws_sources, botocore_fixture,
-    direct_inputs, endpoint, environment, role_inputs, secret, web_identity_inputs,
+    BotocoreFixture, Clock, Preset, RecordingSecrets, Reply, TokenVector, aws_sources,
+    botocore_fixture, endpoint, environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{
@@ -38,8 +38,8 @@ fn vector_reply(vector: &TokenVector) -> Reply {
 
 fn vector_source_inputs(vector: &TokenVector) -> RdsCredentialInputs {
     match vector.source.as_str() {
-        "web_identity" => web_identity_inputs(),
-        "assume_role" => role_inputs(),
+        "web_identity" => preset_inputs(Preset::WebIdentity),
+        "assume_role" => preset_inputs(Preset::AssumeRole),
         _ => vector_inputs(vector),
     }
 }
@@ -110,7 +110,9 @@ async fn signer_receives_original_endpoint() {
     let environment = environment(&[]);
     let clock = Clock::at(1_794_225_600);
     let (sources, _recorder) = aws_sources(&secrets, &environment, &[], &clock, Reply::WebIdentity);
-    let signer = RdsSigner::init(direct_inputs(), sources).await.unwrap();
+    let signer = RdsSigner::init(preset_inputs(Preset::Direct), sources)
+        .await
+        .unwrap();
     let special = signer
         .db_auth_token(&endpoint(
             "db.example.com",
@@ -145,15 +147,21 @@ async fn whole_token_percent_encoding() {
     let environment = environment(&[]);
     let clock = Clock::at(1_794_225_600);
     let (sources, _recorder) = aws_sources(&secrets, &environment, &[], &clock, Reply::WebIdentity);
-    let signer = RdsSigner::init(direct_inputs(), sources).await.unwrap();
+    let signer = RdsSigner::init(preset_inputs(Preset::Direct), sources)
+        .await
+        .unwrap();
     let endpoint = endpoint("db.example.com", "5432", "user@example.com/weird +name");
     let raw = signer.db_auth_token(&endpoint).unwrap();
     let (mint_sources, _mint_recorder) =
         aws_sources(&secrets, &environment, &[], &clock, Reply::WebIdentity);
-    let password =
-        generate_iam_auth_token(&endpoint, Some(&signer), &direct_inputs(), mint_sources)
-            .await
-            .unwrap();
+    let password = generate_iam_auth_token(
+        &endpoint,
+        Some(&signer),
+        &preset_inputs(Preset::Direct),
+        mint_sources,
+    )
+    .await
+    .unwrap();
     assert!(password.expose_secret().contains("%3F"));
     assert!(password.expose_secret().contains("%26"));
     assert!(password.expose_secret().contains("%3D"));

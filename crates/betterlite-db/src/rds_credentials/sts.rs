@@ -18,6 +18,18 @@ use super::{CREDENTIAL_PROVIDER, RdsSources, WEB_IDENTITY_DURATION_SECONDS};
 // botocore's default connect and read timeout is 60 s, and the configured RDS timeout never reaches STS
 const STS_TIMEOUT: Duration = Duration::from_secs(60);
 
+pub(super) enum StsRequest<'request> {
+    Role {
+        role: &'request str,
+        session: &'request str,
+    },
+    WebIdentity {
+        role: &'request str,
+        session: &'request str,
+        token: &'request SecretString,
+    },
+}
+
 impl RdsSources<'_> {
     pub(super) fn loader(
         &self,
@@ -53,117 +65,101 @@ pub(super) fn environment_map(sources: &RdsSources<'_>) -> HashMap<String, Strin
     environment
 }
 
-pub(super) async fn assume_role_with_web_identity(
-    role: &str,
-    session: &str,
-    oidc_token: &SecretString,
-    region: &str,
-    sources: &RdsSources<'_>,
-) -> Result<Credentials, RdsCredentialsError> {
-    let config = sources
-        .loader(environment_map(sources), region, None)
-        .load()
-        .await;
-    let response = Client::new(&config)
-        .assume_role_with_web_identity()
-        .role_arn(role)
-        .role_session_name(session)
-        .web_identity_token(oidc_token.expose_secret())
-        .duration_seconds(WEB_IDENTITY_DURATION_SECONDS)
-        .send()
-        .await
-        .map_err(|source| RdsCredentialsError::AssumeRoleWithWebIdentity {
-            source: Box::new(source),
-        })?;
-    let temporary = response
-        .credentials()
-        .ok_or(RdsCredentialsError::StsWithoutCredentials)?;
-    Ok(temporary_credentials(temporary))
-}
-
 pub(super) async fn assume_role(
-    role: &str,
-    session: &str,
-    credentials: Option<Credentials>,
+    request: StsRequest<'_>,
+    explicit: Option<Credentials>,
     region: &str,
     sources: &RdsSources<'_>,
 ) -> Result<Credentials, RdsCredentialsError> {
     let config = sources
-        .loader(environment_map(sources), region, credentials)
+        .loader(environment_map(sources), region, explicit)
         .load()
         .await;
-    let response = Client::new(&config)
-        .assume_role()
-        .role_arn(role)
-        .role_session_name(session)
-        .send()
-        .await
-        .map_err(|source| RdsCredentialsError::AssumeRole {
-            source: Box::new(source),
-        })?;
-    let temporary = response
-        .credentials()
+    let returned = send_sts_request(&Client::new(&config), request).await?;
+    let temporary = returned
+        .as_ref()
         .ok_or(RdsCredentialsError::StsWithoutCredentials)?;
-    Ok(temporary_credentials(temporary))
-}
-
-pub(super) async fn ambient_credentials(
-    region: &str,
-    sources: &RdsSources<'_>,
-) -> Result<Credentials, RdsCredentialsError> {
-    let config = sources
-        .loader(environment_map(sources), region, None)
-        .load()
-        .await;
-    let provider = config
-        .credentials_provider()
-        .ok_or(RdsCredentialsError::NoCredentials)?;
-    provider.provide_credentials().await.map_err(|source| {
-        if matches!(source, CredentialsError::CredentialsNotLoaded(_)) {
-            RdsCredentialsError::NoCredentials
-        } else {
-            RdsCredentialsError::Provider { source }
-        }
-    })
-}
-
-pub(super) async fn profile_credentials(
-    profile: &str,
-    region: &str,
-    sources: &RdsSources<'_>,
-) -> Result<Credentials, RdsCredentialsError> {
-    let mut environment = environment_map(sources);
-    // boto3 reads a named profile only, so the env pair never outranks the profile file
-    for name in [
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-    ] {
-        environment.remove(name);
-    }
-    let config = sources
-        .loader(environment, region, None)
-        .profile_name(profile.to_owned())
-        .load()
-        .await;
-    let provider = config
-        .credentials_provider()
-        .ok_or(RdsCredentialsError::NoCredentials)?;
-    provider
-        .provide_credentials()
-        .await
-        .map_err(|source| RdsCredentialsError::Profile {
-            profile: profile.to_owned(),
-            source,
-        })
-}
-
-fn temporary_credentials(temporary: &StsCredentials) -> Credentials {
-    Credentials::new(
+    Ok(Credentials::new(
         temporary.access_key_id(),
         temporary.secret_access_key(),
         Some(temporary.session_token().to_owned()),
         None,
         CREDENTIAL_PROVIDER,
-    )
+    ))
+}
+
+async fn send_sts_request(
+    client: &Client,
+    request: StsRequest<'_>,
+) -> Result<Option<StsCredentials>, RdsCredentialsError> {
+    match request {
+        StsRequest::Role { role, session } => Ok(client
+            .assume_role()
+            .role_arn(role)
+            .role_session_name(session)
+            .send()
+            .await
+            .map_err(|source| RdsCredentialsError::AssumeRole {
+                source: Box::new(source),
+            })?
+            .credentials()
+            .cloned()),
+        StsRequest::WebIdentity {
+            role,
+            session,
+            token,
+        } => Ok(client
+            .assume_role_with_web_identity()
+            .role_arn(role)
+            .role_session_name(session)
+            .web_identity_token(token.expose_secret())
+            .duration_seconds(WEB_IDENTITY_DURATION_SECONDS)
+            .send()
+            .await
+            .map_err(|source| RdsCredentialsError::AssumeRoleWithWebIdentity {
+                source: Box::new(source),
+            })?
+            .credentials()
+            .cloned()),
+    }
+}
+
+pub(super) async fn provider_credentials(
+    profile: Option<&str>,
+    region: &str,
+    sources: &RdsSources<'_>,
+) -> Result<Credentials, RdsCredentialsError> {
+    let mut environment = environment_map(sources);
+    if profile.is_some() {
+        // boto3 reads a named profile only, so the env pair never outranks the profile file
+        for name in [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+        ] {
+            environment.remove(name);
+        }
+    }
+    let mut loader = sources.loader(environment, region, None);
+    if let Some(name) = profile {
+        loader = loader.profile_name(name.to_owned());
+    }
+    let config = loader.load().await;
+    let provider = config
+        .credentials_provider()
+        .ok_or(RdsCredentialsError::NoCredentials)?;
+    let resolved = provider.provide_credentials().await;
+    if let Some(name) = profile {
+        return resolved.map_err(|error| RdsCredentialsError::Profile {
+            profile: name.to_owned(),
+            source: error,
+        });
+    }
+    resolved.map_err(|error| {
+        if matches!(error, CredentialsError::CredentialsNotLoaded(_)) {
+            RdsCredentialsError::NoCredentials
+        } else {
+            RdsCredentialsError::Provider { source: error }
+        }
+    })
 }

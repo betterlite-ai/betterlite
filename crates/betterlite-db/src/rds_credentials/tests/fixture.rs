@@ -311,42 +311,45 @@ pub(super) fn aws_sources<'source>(
     (sources, recorder)
 }
 
-pub(super) fn direct_inputs() -> RdsCredentialInputs {
-    RdsCredentialInputs {
-        access_key_id: Some(secret(ACCESS_KEY)),
-        secret_access_key: Some(secret(SECRET_KEY)),
-        region_name: Some("us-east-1".to_owned()),
-        session_name: None,
-        profile_name: None,
-        role_name: None,
-        web_identity_token: None,
-        timeout: RdsTimeout::SdkDefaults,
-    }
+#[derive(Clone, Copy)]
+pub(super) enum Preset {
+    Direct,
+    WebIdentity,
+    AssumeRole,
 }
 
-pub(super) fn web_identity_inputs() -> RdsCredentialInputs {
-    RdsCredentialInputs {
-        access_key_id: None,
-        secret_access_key: None,
-        region_name: Some("us-east-1".to_owned()),
-        session_name: Some("session-name".to_owned()),
-        profile_name: None,
-        role_name: Some("arn:aws:iam::123456789012:role/oidc".to_owned()),
-        web_identity_token: Some(secret("/token")),
-        timeout: RdsTimeout::SdkDefaults,
-    }
-}
-
-pub(super) fn role_inputs() -> RdsCredentialInputs {
-    RdsCredentialInputs {
-        access_key_id: None,
-        secret_access_key: None,
-        region_name: Some("us-east-1".to_owned()),
-        session_name: Some("db-session".to_owned()),
-        profile_name: None,
-        role_name: Some("arn:aws:iam::123456789012:role/db".to_owned()),
-        web_identity_token: None,
-        timeout: RdsTimeout::SdkDefaults,
+pub(super) fn preset_inputs(preset: Preset) -> RdsCredentialInputs {
+    match preset {
+        Preset::Direct => RdsCredentialInputs {
+            access_key_id: Some(secret(ACCESS_KEY)),
+            secret_access_key: Some(secret(SECRET_KEY)),
+            region_name: Some("us-east-1".to_owned()),
+            session_name: None,
+            profile_name: None,
+            role_name: None,
+            web_identity_token: None,
+            timeout: RdsTimeout::SdkDefaults,
+        },
+        Preset::WebIdentity => RdsCredentialInputs {
+            access_key_id: None,
+            secret_access_key: None,
+            region_name: Some("us-east-1".to_owned()),
+            session_name: Some("session-name".to_owned()),
+            profile_name: None,
+            role_name: Some("arn:aws:iam::123456789012:role/oidc".to_owned()),
+            web_identity_token: Some(secret("/token")),
+            timeout: RdsTimeout::SdkDefaults,
+        },
+        Preset::AssumeRole => RdsCredentialInputs {
+            access_key_id: None,
+            secret_access_key: None,
+            region_name: Some("us-east-1".to_owned()),
+            session_name: Some("db-session".to_owned()),
+            profile_name: None,
+            role_name: Some("arn:aws:iam::123456789012:role/db".to_owned()),
+            web_identity_token: None,
+            timeout: RdsTimeout::SdkDefaults,
+        },
     }
 }
 

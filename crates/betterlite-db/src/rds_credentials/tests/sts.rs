@@ -5,8 +5,8 @@ use std::error::Error as _;
 use secrecy::ExposeSecret as _;
 
 use super::fixture::{
-    Call, Clock, RecordingSecrets, Reply, aws_sources, botocore_fixture, endpoint, environment,
-    role_inputs, secret, web_identity_inputs,
+    Call, Clock, Preset, RecordingSecrets, Reply, aws_sources, botocore_fixture, endpoint,
+    environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{RdsCredentialInputs, RdsSigner};
@@ -36,7 +36,7 @@ async fn run(
 
 #[tokio::test]
 async fn web_identity_before_role_and_keys() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.access_key_id = Some(secret("AKIDDIRECT"));
     inputs.secret_access_key = Some(secret("directsecret"));
     let (signer, calls, _) = run(
@@ -55,7 +55,7 @@ async fn web_identity_before_role_and_keys() {
 
 #[tokio::test]
 async fn web_identity_file_before_secret() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.web_identity_token = Some(secret("/token"));
     let (signer, calls, secret_calls) = run(
         inputs,
@@ -73,7 +73,7 @@ async fn web_identity_file_before_secret() {
 
 #[tokio::test]
 async fn file_failure_secret_fallback() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.web_identity_token = Some(secret("/missing-token"));
     let (signer, calls, _) = run(
         inputs,
@@ -89,7 +89,7 @@ async fn file_failure_secret_fallback() {
 
 #[tokio::test]
 async fn missing_oidc_exact_error() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.web_identity_token = Some(secret("/missing-token"));
     let (signer, calls, _) = run(inputs, &[], &[], &[], Reply::WebIdentity).await;
     let error = signer.expect_err("a missing OIDC token stops the signer");
@@ -102,7 +102,7 @@ async fn missing_oidc_exact_error() {
 
 #[tokio::test]
 async fn empty_oidc_reaches_sts() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.web_identity_token = Some(secret("/token"));
     let (signer, calls, _) = run(
         inputs,
@@ -124,7 +124,7 @@ async fn empty_oidc_reaches_sts() {
 async fn web_identity_duration_3600() {
     let pinned = botocore_fixture();
     let request = &pinned.sts.assume_role_with_web_identity;
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.role_name = Some(request.role_arn.clone());
     inputs.session_name = Some(request.role_session_name.clone());
     inputs.web_identity_token = Some(secret("/token"));
@@ -146,7 +146,7 @@ async fn web_identity_duration_3600() {
 
 #[tokio::test]
 async fn web_identity_sts_uses_ambient_credentials() {
-    let mut inputs = web_identity_inputs();
+    let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.access_key_id = Some(secret("AKIDPARAM"));
     inputs.secret_access_key = Some(secret("paramsecret"));
     let (signer, calls, _) = run(
@@ -167,7 +167,7 @@ async fn web_identity_sts_uses_ambient_credentials() {
 
 #[tokio::test]
 async fn role_sts_uses_explicit_credentials() {
-    let mut inputs = role_inputs();
+    let mut inputs = preset_inputs(Preset::AssumeRole);
     inputs.access_key_id = Some(secret("AKIDEXPLICIT"));
     inputs.secret_access_key = Some(secret("explicitsecret"));
     let (signer, calls, _) = run(
@@ -192,7 +192,7 @@ async fn role_sts_uses_explicit_credentials() {
 async fn role_request_has_no_duration_override() {
     let pinned = botocore_fixture();
     let request = &pinned.sts.assume_role;
-    let mut inputs = role_inputs();
+    let mut inputs = preset_inputs(Preset::AssumeRole);
     inputs.role_name = Some(request.role_arn.clone());
     inputs.session_name = Some(request.role_session_name.clone());
     let (signer, calls, _) = run(inputs, &[], &[], &[], Reply::AssumeRole).await;
@@ -205,7 +205,7 @@ async fn role_request_has_no_duration_override() {
 #[tokio::test]
 async fn temporary_session_token_reaches_rds() {
     let (web_identity, _, _) = run(
-        web_identity_inputs(),
+        preset_inputs(Preset::WebIdentity),
         &[],
         &[("/token", "oidc-token-value")],
         &[],
@@ -221,7 +221,14 @@ async fn temporary_session_token_reaches_rds() {
             .expose_secret()
             .contains("X-Amz-Security-Token=webtoken")
     );
-    let (assumed, _, _) = run(role_inputs(), &[], &[], &[], Reply::AssumeRole).await;
+    let (assumed, _, _) = run(
+        preset_inputs(Preset::AssumeRole),
+        &[],
+        &[],
+        &[],
+        Reply::AssumeRole,
+    )
+    .await;
     let role_token = assumed
         .expect("the assume role signer builds")
         .db_auth_token(&endpoint("db.example.com", "5432", "admin"))
@@ -235,7 +242,7 @@ async fn temporary_session_token_reaches_rds() {
 
 #[tokio::test]
 async fn upstream_failure_no_strategy_fallback() {
-    let mut inputs = role_inputs();
+    let mut inputs = preset_inputs(Preset::AssumeRole);
     inputs.access_key_id = Some(secret("AKIDEXPLICIT"));
     inputs.secret_access_key = Some(secret("explicitsecret"));
     let (signer, calls, _) = run(inputs, &[], &[], &[], Reply::Status(403, ACCESS_DENIED)).await;
@@ -247,14 +254,28 @@ async fn upstream_failure_no_strategy_fallback() {
 
 #[tokio::test]
 async fn missing_sts_response_field_fails() {
-    let (missing, _, _) = run(role_inputs(), &[], &[], &[], Reply::MissingSessionToken).await;
+    let (missing, _, _) = run(
+        preset_inputs(Preset::AssumeRole),
+        &[],
+        &[],
+        &[],
+        Reply::MissingSessionToken,
+    )
+    .await;
     let missing_error = missing.expect_err("a response without a session token fails");
     assert!(matches!(
         missing_error,
         RdsCredentialsError::AssumeRole { .. }
     ));
     assert!(missing_error.source().is_some());
-    let (empty, _, _) = run(role_inputs(), &[], &[], &[], Reply::WithoutCredentials).await;
+    let (empty, _, _) = run(
+        preset_inputs(Preset::AssumeRole),
+        &[],
+        &[],
+        &[],
+        Reply::WithoutCredentials,
+    )
+    .await;
     let empty_error = empty.expect_err("a response without credentials fails");
     assert!(matches!(
         empty_error,
@@ -265,7 +286,7 @@ async fn missing_sts_response_field_fails() {
 #[tokio::test]
 async fn web_identity_failure_keeps_the_web_identity_error() {
     let (signer, calls, _) = run(
-        web_identity_inputs(),
+        preset_inputs(Preset::WebIdentity),
         &[],
         &[("/token", "oidc-token-value")],
         &[],
@@ -283,7 +304,7 @@ async fn web_identity_failure_keeps_the_web_identity_error() {
 #[tokio::test]
 async fn role_without_credentials_uses_the_ambient_chain() {
     let (signer, calls, _) = run(
-        role_inputs(),
+        preset_inputs(Preset::AssumeRole),
         &[],
         &[],
         &[
@@ -299,7 +320,7 @@ async fn role_without_credentials_uses_the_ambient_chain() {
 
 #[tokio::test]
 async fn partial_role_credentials_fail_before_the_call() {
-    let mut inputs = role_inputs();
+    let mut inputs = preset_inputs(Preset::AssumeRole);
     inputs.access_key_id = Some(secret("AKIDONLY"));
     let (signer, calls, _) = run(inputs, &[], &[], &[], Reply::AssumeRole).await;
     let error = signer.expect_err("a key without its secret fails");
