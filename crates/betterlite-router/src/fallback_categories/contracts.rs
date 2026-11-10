@@ -1,4 +1,4 @@
-use crate::weighted_failover::FailoverInputs;
+use crate::weighted_failover::{FailoverEntry, FailoverInputs};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FallbackFailure {
@@ -22,6 +22,16 @@ pub struct FallbackTarget {
     pub model: String,
     pub target_order: Option<i64>,
     pub excluded_deployment_ids: Vec<String>,
+}
+
+impl From<FailoverEntry> for FallbackTarget {
+    fn from(entry: FailoverEntry) -> Self {
+        Self {
+            model: entry.model,
+            target_order: None,
+            excluded_deployment_ids: entry.excluded_deployment_ids,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -98,11 +98,7 @@ fn failover_successor(request: &SuccessorRequest<'_>) -> Option<FallbackSuccesso
     let entry = plan_failover(&request.weighted_failover)?;
     Some(FallbackSuccessor::RunTargets {
         source: TargetSource::WeightedFailover,
-        targets: vec![FallbackTarget {
-            model: entry.model,
-            target_order: None,
-            excluded_deployment_ids: entry.excluded_deployment_ids,
-        }],
+        targets: vec![FallbackTarget::from(entry)],
     })
 }
 
