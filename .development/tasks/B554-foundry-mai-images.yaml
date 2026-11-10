@@ -242,7 +242,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_mai_images)"
       && grep -q 'decode_mai_image_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_mai_images.rs && cargo
-      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_mai_images_corpus$/)'
+      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_mai_images_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-mai-images/mai-generation-edit-url.yaml
 - tools/oracle/cases/helpers/providers/foundry-mai-images/default-dimensions.yaml

@@ -321,7 +321,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_vector_stores)"
       && grep -q 'decode_knowledge_base_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_vector_stores.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_vector_stores_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_vector_stores_corpus(::|$)/)'
   - id: case-option-mapping
     why: Supported list filters,max_num_results,ranking_options. map_openai_params maps max_num_results to numberOfResults
       evenNone; filters=None does not alter existing filters. Non-None nondict filters writes filters=None; dict

@@ -1,0 +1,23 @@
+task: B5942
+deviations:
+  - what: The error text for a body or chunk that does not fit its type differs from LiteLLM, which appends the pydantic validation message. The status codes and the fixed prefix text are the same.
+    why: The pydantic message has no Rust equivalent.
+    link: ""
+  - what: handle_generic_response accepts timeCreated only as RFC 3339 (for example 2025-01-01T00:00:00.000Z); Python fromisoformat also takes forms such as a date without a time. Anything else is OciError with the HTTP status.
+    why: chrono parses RFC 3339 and a wider hand-written parser is not worth carrying for OCI's fixed format.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L325-L326
+  - what: Response token counts are read as u64 and a stream chunk index as u32, so a negative or oversized value fails the body or chunk parse with the fixed prefix; LiteLLM's int accepts any size and forwards it.
+    why: The shared ChatUsage and Chunk types hold unsigned counts and a u32 choice index, and a negative token count or chunk index is not a value a client can act on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L124-L135
+  - what: A Cohere chat history entry in a stream chunk or response whose role is not USER, CHATBOT, SYSTEM or TOOL fails the parse; LiteLLM's base CohereMessage accepts any string role.
+    why: The four roles are the ones the Cohere protocol defines and betterlite reads only whether a history is present, so its type states the closed set the adapters build.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L221-L227
+  - what: An assistant tool call whose function object has no arguments fails the request parse, where LiteLLM sends arguments "{}" to OCI GENERIC. The declared ChatCompletionToolCallFunctionChunk allows the key to be absent.
+    why: betterlite-openai's shared FunctionCall, which this module and every provider adapter read, requires arguments; the default belongs in that shared type, not in this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L135
+  - what: The same assistant tool call without arguments fails the request parse where LiteLLM gives the OCI COHERE tool call empty parameters.
+    why: The shared FunctionCall requires arguments before the Cohere adapter runs; the empty-map default belongs in that shared type, not in this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/cohere.py#L97-L100
+  - what: A stream chunk with an image part and one with another unknown part type fail with a different 500 message than LiteLLM's; both still fail with status 500.
+    why: The content parts are a closed enum, so an unknown type fails the typed chunk parse, and the image message uses a comma where LiteLLM uses an em dash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L389-L398
