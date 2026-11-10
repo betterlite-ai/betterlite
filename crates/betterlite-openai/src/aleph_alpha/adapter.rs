@@ -63,14 +63,7 @@ impl AlephAlphaAdapter {
         let limit = self.client.limits.body_bytes;
         // HTTPHandler.post raises on any non-2xx status before the stream check or any parsing
         if !response.response.status().is_success() {
-            let failed = response
-                .buffered(limit)
-                .await
-                .map_err(|source| AlephAlphaError::Transport { source })?;
-            return Err(AlephAlphaError::Provider {
-                status_code: failed.status,
-                message: mask_sensitive_info(&decode_text(&failed.body)),
-            });
+            return Err(status_error(response, limit).await);
         }
         if request.stream {
             return Ok(CompletionOutcome::Stream(decode_lines(response, limit)));
@@ -111,6 +104,16 @@ impl AlephAlphaAdapter {
             .send(outbound)
             .await
             .map_err(|source| AlephAlphaError::Transport { source })
+    }
+}
+
+async fn status_error(response: StreamResponse, limit: usize) -> AlephAlphaError {
+    match response.buffered(limit).await {
+        Ok(failed) => AlephAlphaError::Provider {
+            status_code: failed.status,
+            message: mask_sensitive_info(&decode_text(&failed.body)),
+        },
+        Err(source) => AlephAlphaError::Transport { source },
     }
 }
 

@@ -25,6 +25,7 @@ pub fn decode_lines(response: StreamResponse, line_limit: usize) -> LineStream {
             body: response.body_stream(),
             pending: VecDeque::new(),
             decoder: LineDecoder::new(line_limit),
+            oversized: None,
             finished: false,
         },
         next_line,
@@ -65,6 +66,7 @@ struct LineState {
     body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     pending: VecDeque<String>,
     decoder: LineDecoder,
+    oversized: Option<AlephAlphaError>,
     finished: bool,
 }
 
@@ -73,15 +75,17 @@ async fn next_line(mut state: LineState) -> Option<(Result<String, AlephAlphaErr
         if let Some(line) = state.pending.pop_front() {
             return Some((Ok(line), state));
         }
+        if let Some(failure) = state.oversized.take() {
+            state.finished = true;
+            return Some((Err(failure), state));
+        }
         if state.finished {
             return None;
         }
         match state.body.next().await {
             Some(Ok(chunk)) => {
-                if let Err(failure) = state.decoder.push(&chunk, &mut state.pending) {
-                    state.finished = true;
-                    return Some((Err(failure), state));
-                }
+                // the lines the chunk completed come out before the error for the line it left open
+                state.oversized = state.decoder.push(&chunk, &mut state.pending).err();
             }
             Some(Err(error)) => {
                 state.finished = true;

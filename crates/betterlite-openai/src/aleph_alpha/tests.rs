@@ -428,13 +428,13 @@ type Call = (
     Vec<&'static str>,
 );
 
-async fn call_with(status: u16, answer: &[u8], optional: &str, limit: Option<usize>) -> Call {
+async fn call_with(status: u16, answer: &[u8], options: &str, limit: Option<usize>) -> Call {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let base = format!("http://{address}/complete");
     let messages = [message(Role::User, "Hi")];
     let config = aleph_config(4096, "{}");
-    let optional = params(optional);
+    let optional = params(options);
     let mut adapter = adapter(cl100k());
     if let Some(bytes) = limit {
         adapter.client.limits.body_bytes = bytes;
@@ -560,7 +560,7 @@ async fn completion_counts_the_prompt_and_the_first_choice() {
 fn replays_aleph_lines(#[files("fuzz/corpus/aleph_lines/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     let (cut, body) = bytes.split_first().unwrap();
-    let (head, tail) = body.split_at(usize::from(*cut) % (body.len() + 1));
+    let (head, tail) = body.split_at(usize::from(*cut).min(body.len()));
     let mut whole = LineDecoder::new(usize::MAX);
     let mut whole_lines = VecDeque::new();
     whole.push(body, &mut whole_lines).unwrap();
@@ -574,11 +574,11 @@ fn replays_aleph_lines(#[files("fuzz/corpus/aleph_lines/*")] path: PathBuf) {
 }
 
 #[rstest]
-#[case::cr_then_lf_across_chunks(&[b"a\r", b"\nb"], &["a", "b"])]
-#[case::cut_multibyte_across_chunks(&[b"\xe2\x82", b"\xac\n"], &["\u{20ac}"])]
-#[case::cut_sequence_never_finished(&[b"a\xe2\x82"], &["a\u{fffd}"])]
-#[case::lone_cr_flushes_an_empty_line(&[b"\r"], &[""])]
-#[case::unicode_separator(&[b"a\xe2\x80\xa8b\n"], &["a", "b"])]
+#[case::cr_then_lf_across_chunks(&[b"a\r".as_slice(), b"\nb".as_slice()], &["a", "b"])]
+#[case::cut_multibyte_across_chunks(&[b"\xe2\x82".as_slice(), b"\xac\n".as_slice()], &["\u{20ac}"])]
+#[case::cut_sequence_never_finished(&[b"a\xe2\x82".as_slice()], &["a\u{fffd}"])]
+#[case::lone_cr_flushes_an_empty_line(&[b"\r".as_slice()], &[""])]
+#[case::unicode_separator(&[b"a\xe2\x80\xa8b\n".as_slice()], &["a", "b"])]
 fn line_decoder_follows_httpx(#[case] chunks: &[&[u8]], #[case] expected: &[&str]) {
     let mut decoder = LineDecoder::new(usize::MAX);
     let mut lines = VecDeque::new();

@@ -6,10 +6,10 @@ use betterlite_openai::aleph_alpha::lines::LineDecoder;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
-    let Some((&cut, body)) = bytes.split_first() else {
+    let Some((&first, body)) = bytes.split_first() else {
         return;
     };
-    let cut = usize::from(cut) % (body.len() + 1);
+    let cut = usize::from(first).min(body.len());
     let (head, tail) = body.split_at(cut);
     let mut whole = LineDecoder::new(usize::MAX);
     let mut whole_lines = VecDeque::new();
