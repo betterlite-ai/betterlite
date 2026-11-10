@@ -18,6 +18,7 @@ use crate::logging_failure::{
     FAILED_REQUEST_REASON, FailureCall, FailureDeps, FailureReport, PASS_THROUGH_CALL_TYPE,
     SyncAdmission,
 };
+use crate::logging_state::LoggingState;
 use crate::logging_state::callbacks::{CallbackKind, should_run_callback};
 use crate::logging_state::correlation::restore_correlation_context;
 use crate::logging_state::events::{
@@ -67,8 +68,19 @@ fn deliver_sync_loggers(
         return;
     }
     for logger in callbacks.sync_loggers() {
-        delivery.deliver_sync(logger.as_ref());
+        if logger_may_run(call.state, logger.as_ref()) {
+            delivery.deliver_sync(logger.as_ref());
+        }
     }
+}
+
+fn logger_may_run(state: &LoggingState, logger: &dyn CallbackLogger) -> bool {
+    let kind = if logger.callback_name().contains("_PROXY_") {
+        CallbackKind::ProxyInternal
+    } else {
+        CallbackKind::External
+    };
+    should_run_callback(state, kind, &state.litellm_params)
 }
 
 pub async fn async_failure_handler(
@@ -86,7 +98,9 @@ pub async fn async_failure_handler(
     if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
         if let Some(delivery) = deliverable(call, deps) {
             for logger in callbacks.async_loggers() {
-                deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+                if logger_may_run(call.state, logger.as_ref()) {
+                    deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+                }
             }
         }
         if let Some(flush) = deps.flush
@@ -131,13 +145,6 @@ fn deliverable<'call>(
     call: &'call FailureCall<'_>,
     deps: &'call FailureDeps<'_>,
 ) -> Option<FailureDelivery<'call>> {
-    if !should_run_callback(
-        call.state,
-        CallbackKind::External,
-        &call.state.litellm_params,
-    ) {
-        return None;
-    }
     let Some(payload) = call.record.payload.as_ref() else {
         tracing::warn!(
             "the failure callbacks were skipped: the standard logging payload could not be built"
@@ -195,7 +202,6 @@ pub struct SyncFailureJob {
     pub dynamic_params: Arc<StandardCallbackDynamicParams>,
     pub loggers: Vec<Arc<dyn CallbackLogger>>,
     pub payload: Option<Arc<StandardLoggingPayload>>,
-    pub callbacks_allowed: bool,
     pub excluded_fields: Vec<String>,
     pub stamp: ResponseStamp,
     pub request_redaction: RequestRedaction,
@@ -208,18 +214,15 @@ impl SyncFailureJob {
         callbacks: &FailureCallbacks<'_>,
         deps: &FailureDeps<'_>,
     ) -> Self {
+        let mut loggers = callbacks.sync_loggers();
+        loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
         Self {
             litellm_params: call.state.litellm_params.clone(),
             call_type: call.state.call_type.clone(),
             stream: call.state.stream == Some(true),
             dynamic_params: Arc::new(Json::Object(call.state.callback_dynamic_params.clone())),
-            loggers: callbacks.sync_loggers(),
+            loggers,
             payload: call.record.payload.as_ref().map(Arc::clone),
-            callbacks_allowed: should_run_callback(
-                call.state,
-                CallbackKind::External,
-                &call.state.litellm_params,
-            ),
             excluded_fields: deps.excluded_fields.to_vec(),
             stamp: deps.stamp.clone(),
             request_redaction: request_redacts_messages(call.state, deps.privacy),
@@ -228,10 +231,7 @@ impl SyncFailureJob {
 }
 
 pub fn run_sync_failure(job: SyncFailureJob) {
-    if !job.callbacks_allowed
-        || !is_sync_litellm_request(&job.litellm_params)
-        || job.call_type == PASS_THROUGH_CALL_TYPE
-    {
+    if !is_sync_litellm_request(&job.litellm_params) || job.call_type == PASS_THROUGH_CALL_TYPE {
         return;
     }
     let Some(payload) = job.payload else {

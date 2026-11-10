@@ -81,6 +81,22 @@ fn no_log_requests_skip_the_callback_but_take_the_claim() {
 }
 
 #[test]
+fn a_proxy_logger_still_runs_on_a_no_log_request() {
+    let ordinary = Arc::new(FakeLogger::new("first"));
+    let proxy = Arc::new(FakeLogger::new("_PROXY_MaxParallelRequestsHandler_v3"));
+    let registry = registry(&[Arc::clone(&ordinary), Arc::clone(&proxy)]);
+    let harness = Harness::new();
+    let mut logging_init = init();
+    logging_init.litellm_params = params(&[("no-log", Json::Bool(true))]);
+    let mut state = build(logging_init);
+    let mut record = FailureRecord::default();
+    let mut context = CorrelationContext::default();
+    run_sync_handler(&mut state, &mut record, &mut context, &registry, &harness);
+    assert!(ordinary.calls().is_empty());
+    assert_eq!(proxy.calls(), ["sync"]);
+}
+
+#[test]
 fn global_disable_no_log_wins() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -402,6 +418,9 @@ fn placeholder_messages() -> Json {
 #[case::passthrough_requests_skip_the_sync_callback(passthrough_requests_skip_the_sync_callback)]
 #[case::no_log_requests_skip_the_callback_but_take_the_claim(
     no_log_requests_skip_the_callback_but_take_the_claim
+)]
+#[case::a_proxy_logger_still_runs_on_a_no_log_request(
+    a_proxy_logger_still_runs_on_a_no_log_request
 )]
 #[case::global_disable_no_log_wins(global_disable_no_log_wins)]
 #[case::the_first_failure_is_logged_once(the_first_failure_is_logged_once)]

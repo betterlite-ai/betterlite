@@ -96,7 +96,11 @@ async def _run_instance(
     recorders = Recorders()
     logging_obj = _build(init, settings)
     specs = list_value(value.get("loggers"))
-    probes = [Probe(object_value(spec), recorders.calls) for spec in specs]
+    probes: list[Probe] = []
+    for spec in specs:
+        fields = object_value(spec)
+        named = cast("type[Probe]", type(string_value(fields.get("name")), (Probe,), {}))
+        probes.append(named(fields, recorders.calls))
     for probe in probes:
         probe.stream_flag = cast("bool | None", logging_obj.stream) is True
     litellm.callbacks = []

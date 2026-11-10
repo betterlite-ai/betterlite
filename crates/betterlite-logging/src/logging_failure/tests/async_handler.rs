@@ -267,6 +267,24 @@ fn test_no_log_requests_skip_the_callback_but_still_flush()
     })
 }
 
+fn test_a_proxy_logger_still_runs_on_a_no_log_request() -> Pin<Box<dyn Future<Output = ()> + Send>>
+{
+    Box::pin(async {
+        let ordinary = Arc::new(FakeLogger::new("first"));
+        let proxy = Arc::new(FakeLogger::new("_PROXY_MaxParallelRequestsHandler_v3"));
+        let registry = registry(&[Arc::clone(&ordinary), Arc::clone(&proxy)]);
+        let harness = Harness::new();
+        let mut logging_init = init();
+        logging_init.litellm_params = params(&[("no-log", Json::Bool(true))]);
+        let mut state = build(logging_init);
+        let mut record = FailureRecord::default();
+        let mut context = CorrelationContext::default();
+        run_async_handler(&mut state, &mut record, &mut context, &registry, &harness).await;
+        assert!(ordinary.calls().is_empty());
+        assert_eq!(proxy.calls(), ["async"]);
+    })
+}
+
 fn test_single_deployment_metadata_notifies_the_listener()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
@@ -384,6 +402,9 @@ fn test_a_disabled_no_log_policy_still_logs() -> Pin<Box<dyn Future<Output = ()>
 #[case::a_preparation_error_stops_before_the_flush(test_a_preparation_error_stops_before_the_flush)]
 #[case::no_log_requests_skip_the_callback_but_still_flush(
     test_no_log_requests_skip_the_callback_but_still_flush
+)]
+#[case::a_proxy_logger_still_runs_on_a_no_log_request(
+    test_a_proxy_logger_still_runs_on_a_no_log_request
 )]
 #[case::single_deployment_metadata_notifies_the_listener(
     test_single_deployment_metadata_notifies_the_listener

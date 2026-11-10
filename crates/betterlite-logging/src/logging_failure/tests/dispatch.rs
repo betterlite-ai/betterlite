@@ -232,15 +232,41 @@ fn test_a_queued_job_for_an_async_sdk_request_calls_nothing()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
-        let registry = registry(&[Arc::clone(&logger)]);
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
         let harness = Harness::new();
-        let mut state = build(async_init());
-        let mut record = FailureRecord::default();
-        let mut context = CorrelationContext::default();
-        let failure_call = call(&mut state, &mut record, &mut context);
-        let job = SyncFailureJob::prepare(&failure_call, &callbacks(&registry), &harness.deps());
-        run_sync_failure(job);
-        assert!(logger.calls().is_empty());
+        dispatch_setup(async_init(), &registry, &harness, false).await;
+        assert_eq!(harness.executor.jobs(), 1);
+        assert_eq!(logger.calls(), ["async"]);
+    })
+}
+
+fn test_a_queued_job_for_a_passthrough_request_calls_nothing()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let logger = Arc::new(FakeLogger::new("first"));
+        let registry = registry_with_channel(&[Arc::clone(&logger)]);
+        let harness = Harness::new();
+        let mut logging_init = init();
+        logging_init.call_type = "pass_through_endpoint".to_owned();
+        dispatch_setup(logging_init, &registry, &harness, false).await;
+        assert_eq!(harness.executor.jobs(), 1);
+        assert_eq!(logger.calls(), ["async"]);
+    })
+}
+
+fn test_a_queued_job_runs_only_the_proxy_logger_on_a_no_log_request()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        let ordinary = Arc::new(FakeLogger::new("first"));
+        let proxy = Arc::new(FakeLogger::new("_PROXY_MaxParallelRequestsHandler_v3"));
+        let registry = registry_with_channel(&[Arc::clone(&ordinary), Arc::clone(&proxy)]);
+        let harness = Harness::new();
+        let mut logging_init = init();
+        logging_init.litellm_params = params(&[("no-log", Json::Bool(true))]);
+        dispatch_setup(logging_init, &registry, &harness, true).await;
+        assert_eq!(harness.executor.jobs(), 1);
+        assert!(ordinary.calls().is_empty());
+        assert_eq!(proxy.calls(), ["async", "sync"]);
     })
 }
 
@@ -259,7 +285,6 @@ fn test_a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Out
             dynamic_params: Arc::new(Json::Null),
             loggers: vec![Arc::<FakeLogger>::clone(&logger)],
             payload: None,
-            callbacks_allowed: true,
             excluded_fields: Vec::new(),
             stamp: stamp(),
             request_redaction: RequestRedaction::LoggerDecides,
@@ -267,31 +292,6 @@ fn test_a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Out
         run_sync_failure(job);
         assert!(logger.calls().is_empty());
         assert_eq!(harness.executor.jobs(), 0);
-    })
-}
-
-fn test_a_queued_job_with_callbacks_not_allowed_calls_nothing()
--> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let logger = Arc::new(FakeLogger::new("first"));
-        let mut state = build(init());
-        let mut record = FailureRecord::default();
-        let mut context = CorrelationContext::default();
-        let failure_call = call(&mut state, &mut record, &mut context);
-        let job = SyncFailureJob {
-            litellm_params: failure_call.state.litellm_params.clone(),
-            call_type: failure_call.state.call_type.clone(),
-            stream: false,
-            dynamic_params: Arc::new(Json::Null),
-            loggers: vec![Arc::<FakeLogger>::clone(&logger)],
-            payload: Some(Arc::new(payload())),
-            callbacks_allowed: false,
-            excluded_fields: Vec::new(),
-            stamp: stamp(),
-            request_redaction: RequestRedaction::LoggerDecides,
-        };
-        run_sync_failure(job);
-        assert!(logger.calls().is_empty());
     })
 }
 
@@ -326,8 +326,11 @@ fn test_a_queued_job_with_callbacks_not_allowed_calls_nothing()
 #[case::a_queued_job_without_a_payload_calls_nothing(
     test_a_queued_job_without_a_payload_calls_nothing
 )]
-#[case::a_queued_job_with_callbacks_not_allowed_calls_nothing(
-    test_a_queued_job_with_callbacks_not_allowed_calls_nothing
+#[case::a_queued_job_for_a_passthrough_request_calls_nothing(
+    test_a_queued_job_for_a_passthrough_request_calls_nothing
+)]
+#[case::a_queued_job_runs_only_the_proxy_logger_on_a_no_log_request(
+    test_a_queued_job_runs_only_the_proxy_logger_on_a_no_log_request
 )]
 #[tokio::test]
 async fn logging_failure_behavior_tests_behavior(#[case] behavior: Behavior) {
