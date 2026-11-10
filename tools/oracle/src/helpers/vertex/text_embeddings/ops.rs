@@ -74,9 +74,10 @@ fn fallible_entries<Call>(calls: &[Call], convert: fn(&Call) -> Option<Value>) -
 fn mapping(call: &Mapping) -> Value {
     let (optional, kwargs) =
         map_openai_params(&call.options, call.optional.clone(), call.kwargs.clone());
-    // LiteLLM maps the auth aliases on the dict the OpenAI mapping already changed
-    let auth = map_special_auth_params(&call.options, optional.clone());
-    json!({"optional": optional, "kwargs": kwargs, "auth": auth})
+    // LiteLLM maps the auth aliases onto the same dict it returns as the OpenAI mapping
+    let mapped = map_special_auth_params(&call.options, optional);
+    let auth = mapped.clone();
+    json!({"optional": mapped, "kwargs": kwargs, "auth": auth})
 }
 
 fn request(call: &Request) -> Option<Value> {
