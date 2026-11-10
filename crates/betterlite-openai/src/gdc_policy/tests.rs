@@ -94,117 +94,117 @@ fn a_catalog_model_adds_user_after_the_parent_list() {
     assert_eq!(supported.last(), Some(&"user"));
 }
 
-#[rstest]
-#[case::call_project(
-    Some("call"),
-    Some("call-alias"),
-    Some("global"),
-    parsed(r#"{"vertex_project": "optional", "vertex_ai_project": "optional-alias"}"#),
-    Some("call")
-)]
-#[case::call_alias(
-    None,
-    Some("call-alias"),
-    Some("global"),
-    parsed(r#"{"vertex_project": "optional"}"#),
-    Some("call-alias")
-)]
-#[case::global_project(
-    None,
-    None,
-    Some("global"),
-    parsed(r#"{"vertex_project": "optional"}"#),
-    Some("global")
-)]
-#[case::optional_project(
-    None,
-    None,
-    None,
-    parsed(r#"{"vertex_project": "optional", "vertex_ai_project": "optional-alias"}"#),
-    Some("optional")
-)]
-#[case::optional_alias(
-    None,
-    None,
-    None,
-    parsed(r#"{"vertex_ai_project": "optional-alias"}"#),
-    Some("optional-alias")
-)]
-#[case::empty_values_are_skipped(
-    Some(""),
-    None,
-    Some(""),
-    parsed(r#"{"vertex_project": "optional"}"#),
-    Some("optional")
-)]
-#[case::nothing_anywhere(None, None, None, parsed("{}"), None)]
-fn resolves_project_through_the_litellm_order(
-    #[case] call_project: Option<&str>,
-    #[case] call_alias: Option<&str>,
-    #[case] global_project: Option<&str>,
-    #[case] request: Value,
-    #[case] expected: Option<&str>,
-) {
-    let mut call = call();
-    call.vertex_project = call_project.map(str::to_owned);
-    call.vertex_ai_project = call_alias.map(str::to_owned);
-    let mut global = global();
-    global.vertex_project = global_project.map(str::to_owned);
-    assert_eq!(
-        resolve_project(&call, &global, &optional(request))
-            .unwrap()
-            .as_deref(),
-        expected
-    );
+struct VertexRow {
+    call_project: Option<&'static str>,
+    call_alias: Option<&'static str>,
+    call_location: Option<&'static str>,
+    call_location_alias: Option<&'static str>,
+    global_project: Option<&'static str>,
+    global_location: Option<&'static str>,
+    request: Value,
+    project: Option<&'static str>,
+    location: Option<&'static str>,
 }
 
 #[rstest]
-#[case::call_location(
-    Some("call"),
-    Some("call-alias"),
-    Some("global"),
-    parsed(r#"{"vertex_location": "optional"}"#),
-    Some("call")
-)]
-#[case::global_location(
-    None,
-    None,
-    Some("global"),
-    parsed(r#"{"vertex_location": "optional"}"#),
-    Some("global")
-)]
-#[case::optional_location(
-    None,
-    None,
-    None,
-    parsed(r#"{"vertex_location": "optional"}"#),
-    Some("optional")
-)]
-#[case::optional_alias(
-    None,
-    None,
-    None,
-    parsed(r#"{"vertex_ai_location": "optional-alias"}"#),
-    Some("optional-alias")
-)]
-#[case::nothing_anywhere(None, None, None, parsed("{}"), None)]
-fn resolves_location_through_the_litellm_order(
-    #[case] call_location: Option<&str>,
-    #[case] call_alias: Option<&str>,
-    #[case] global_location: Option<&str>,
-    #[case] request: Value,
-    #[case] expected: Option<&str>,
-) {
+#[case::call_values(VertexRow {
+    call_project: Some("call"),
+    call_alias: Some("call-alias"),
+    call_location: Some("call-location"),
+    call_location_alias: Some("call-alias-location"),
+    global_project: Some("global"),
+    global_location: Some("global-location"),
+    request: parsed(r#"{"vertex_project": "optional", "vertex_ai_project": "optional-alias", "vertex_location": "optional-location", "vertex_ai_location": "optional-alias-location"}"#),
+    project: Some("call"),
+    location: Some("call-location"),
+})]
+#[case::call_aliases(VertexRow {
+    call_project: None,
+    call_alias: Some("call-alias"),
+    call_location: None,
+    call_location_alias: Some("call-alias-location"),
+    global_project: Some("global"),
+    global_location: Some("global-location"),
+    request: parsed(r#"{"vertex_project": "optional"}"#),
+    project: Some("call-alias"),
+    location: Some("call-alias-location"),
+})]
+#[case::globals(VertexRow {
+    call_project: None,
+    call_alias: None,
+    call_location: None,
+    call_location_alias: None,
+    global_project: Some("global"),
+    global_location: Some("global-location"),
+    request: parsed(r#"{"vertex_project": "optional", "vertex_location": "optional-location"}"#),
+    project: Some("global"),
+    location: Some("global-location"),
+})]
+#[case::optional_values(VertexRow {
+    call_project: None,
+    call_alias: None,
+    call_location: None,
+    call_location_alias: None,
+    global_project: None,
+    global_location: None,
+    request: parsed(r#"{"vertex_project": "optional", "vertex_ai_project": "optional-alias", "vertex_location": "optional-location", "vertex_ai_location": "optional-alias-location"}"#),
+    project: Some("optional"),
+    location: Some("optional-location"),
+})]
+#[case::optional_aliases(VertexRow {
+    call_project: None,
+    call_alias: None,
+    call_location: None,
+    call_location_alias: None,
+    global_project: None,
+    global_location: None,
+    request: parsed(r#"{"vertex_ai_project": "optional-alias", "vertex_ai_location": "optional-alias-location"}"#),
+    project: Some("optional-alias"),
+    location: Some("optional-alias-location"),
+})]
+#[case::empty_values_are_skipped(VertexRow {
+    call_project: Some(""),
+    call_alias: None,
+    call_location: Some(""),
+    call_location_alias: None,
+    global_project: Some(""),
+    global_location: Some(""),
+    request: parsed(r#"{"vertex_project": "optional", "vertex_location": "optional-location"}"#),
+    project: Some("optional"),
+    location: Some("optional-location"),
+})]
+#[case::nothing_anywhere(VertexRow {
+    call_project: None,
+    call_alias: None,
+    call_location: None,
+    call_location_alias: None,
+    global_project: None,
+    global_location: None,
+    request: parsed("{}"),
+    project: None,
+    location: None,
+})]
+fn resolves_vertex_values_through_the_litellm_order(#[case] row: VertexRow) {
     let mut call = call();
-    call.vertex_location = call_location.map(str::to_owned);
-    call.vertex_ai_location = call_alias.map(str::to_owned);
+    call.vertex_project = row.call_project.map(str::to_owned);
+    call.vertex_ai_project = row.call_alias.map(str::to_owned);
+    call.vertex_location = row.call_location.map(str::to_owned);
+    call.vertex_ai_location = row.call_location_alias.map(str::to_owned);
     let mut global = global();
-    global.vertex_location = global_location.map(str::to_owned);
+    global.vertex_project = row.global_project.map(str::to_owned);
+    global.vertex_location = row.global_location.map(str::to_owned);
+    let request = optional(row.request);
     assert_eq!(
-        resolve_location(&call, &global, &optional(request))
+        resolve_project(&call, &global, &request)
             .unwrap()
             .as_deref(),
-        expected
+        row.project
+    );
+    assert_eq!(
+        resolve_location(&call, &global, &request)
+            .unwrap()
+            .as_deref(),
+        row.location
     );
 }
 
