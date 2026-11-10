@@ -12,8 +12,8 @@ fn environment(value: Option<&str>) -> BTreeMap<String, String> {
         ("LITELLM_MASTER_KEY".to_owned(), "sk-test".to_owned()),
         ("PATH".to_owned(), "/usr/local/bin".to_owned()),
     ]);
-    if let Some(value) = value {
-        environment.insert(PTU_COST_ATTRIBUTION_ENV_VAR.to_owned(), value.to_owned());
+    if let Some(text) = value {
+        environment.insert(PTU_COST_ATTRIBUTION_ENV_VAR.to_owned(), text.to_owned());
     }
     environment
 }
