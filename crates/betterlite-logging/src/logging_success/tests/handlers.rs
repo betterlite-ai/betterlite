@@ -11,7 +11,7 @@ use super::support::{
 #[case::sync_twice("sync", false, "", false, 1)]
 #[case::sync_stream_twice("sync", true, "", false, 1)]
 #[case::async_twice("async", false, "", false, 1)]
-#[case::async_stream_twice("async", true, "", false, 2)]
+#[case::async_stream_twice("async", true, "", false, 1)]
 #[case::sync_on_async_call("sync", false, "acompletion", false, 0)]
 #[case::sync_pass_through("sync", false, "pass_through", false, 0)]
 #[case::sync_no_log("sync", false, "no-log", false, 0)]
