@@ -108,8 +108,16 @@ pub(super) fn web_identity_assume_role() {
     assert_credentials(&credentials);
     assert_eq!(outcome.exchanges.len(), 1_usize);
     assert_web_identity_call(&outcome.exchanges[0]);
+    assert_empty_token_forwarded();
     assert_external_id_rejected();
     assert_token_rejections();
+}
+
+fn assert_empty_token_forwarded() {
+    let outcome = run(TOKEN_REFERENCE, Some(""), 75_i64, ok_answer(Some(1_i32)));
+    outcome.result.unwrap();
+    assert_eq!(outcome.exchanges.len(), 1_usize);
+    assert_eq!(form(&outcome.exchanges[0], "WebIdentityToken"), Some(""));
 }
 
 fn assert_credentials(credentials: &WebIdentityCredentials) {
