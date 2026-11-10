@@ -1,0 +1,5 @@
+task: B8192
+deviations:
+  - what: Priority-based model selection runs on the cost, speed and intelligence priorities betterlite reads from ModelPreferences.
+    why: LiteLLM reads camelCase attribute names that its own pydantic ModelPreferences does not expose, so its priority branch never triggers; betterlite reads the declared snake_case fields and scores as documented, since no working LiteLLM setup can rely on selection that never happens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L166-L171

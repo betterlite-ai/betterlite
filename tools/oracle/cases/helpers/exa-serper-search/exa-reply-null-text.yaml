@@ -1,0 +1,28 @@
+kind: helper
+name: exa_reply_null_text
+call:
+  b8020:
+    environment: {}
+    calls:
+      - provider: exa_ai
+        call:
+          kind: reply
+          body: '{"results": [{"title": "t", "url": "u", "text": null}]}'
+      - provider: exa_ai
+        call:
+          kind: reply
+          body: '{"results": [{"title": "t", "url": "u"}]}'
+      - provider: exa_ai
+        call: {kind: reply, body: "{}"}
+      - provider: exa_ai
+        call:
+          kind: reply
+          body: '{"results": [{"title": "t", "url": "u", "text": "body", "publishedDate": "2024-01-02"}]}'
+      - provider: exa_ai
+        call: {kind: reply, body: '{"results": null}'}
+      - provider: exa_ai
+        call: {kind: reply, body: '{"results": [null]}'}
+      - provider: exa_ai
+        call: {kind: reply, body: "not json"}
+env: {}
+compare: {ignore: []}

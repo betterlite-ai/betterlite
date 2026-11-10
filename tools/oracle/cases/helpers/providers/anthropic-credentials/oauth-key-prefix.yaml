@@ -1,0 +1,5 @@
+kind: helper
+name: oauth-key-prefix
+call: {anthropic_credentials: {function: oauth_key, value: "Bearer sk-ant-oat-token"}}
+env: {}
+compare: {ignore: []}

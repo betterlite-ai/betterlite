@@ -1,0 +1,12 @@
+kind: helper
+name: oci-chat-wire-generic-message-validation-errors
+call:
+  b5942:
+    function: generic_messages
+    messages:
+      - role: user
+        content:
+          - type: audio
+            text: "x"
+env: {}
+compare: {ignore: []}
