@@ -2,7 +2,12 @@
 
 use rstest::rstest;
 
+use std::time::Duration;
+
+use tokio::time::Instant;
+
 use super::scenarios;
+use crate::image_transport::{ImageClock as _, SystemClock};
 
 #[rstest]
 #[case::image_immediate_result(scenarios::image_immediate_result)]
@@ -24,4 +29,17 @@ use super::scenarios;
 #[case::http_timeout_defaults(scenarios::http_timeout_defaults)]
 fn image_transport_cases(#[case] scenario: fn()) {
     scenario();
+}
+
+#[tokio::test]
+async fn system_clock_measures_and_pauses() {
+    let clock = SystemClock {
+        origin: Instant::now(),
+    };
+    let before = clock.now();
+    clock.pause(1).await;
+    assert!(clock.now().saturating_sub(before) >= Duration::from_secs(1));
+    let negative = clock.now();
+    clock.pause(-3).await;
+    assert!(clock.now().saturating_sub(negative) < Duration::from_secs(1));
 }

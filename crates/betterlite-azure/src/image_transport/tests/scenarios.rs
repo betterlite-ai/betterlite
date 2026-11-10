@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::image_transport::error::ImageTransportError;
+use crate::image_transport::error::{FailureMessage, ImageTransportError};
 use crate::image_transport::request::TimeoutPhases;
 
 use super::support::{
@@ -292,21 +292,25 @@ pub(super) fn failed_operation_400() {
         (
             r#"{"status":"failed","error":{"code":"x"}}"#,
             "Image generation failed",
+            "image_generation_failed",
         ),
         (
             r#"{"status":"failed","error":"boom"}"#,
             r#"{"status":"failed","error":"boom"}"#,
+            "operation_json",
         ),
         (
             r#"{"status":"failed","code":"y"}"#,
             "Image generation failed",
+            "image_generation_failed",
         ),
     ];
-    for (operation, expected) in cases {
+    for (operation, expected, kind) in cases {
         let outcome = polled(vec![reply(200, vec![], operation)]);
         let (body, message) = operation_error(failure_of(&outcome));
         assert_eq!(message, expected);
         assert_eq!(*body, json(operation));
+        assert_eq!(FailureMessage::of(body).as_str(), kind);
     }
 }
 
@@ -327,6 +331,7 @@ fn failed_with_message() {
     assert_eq!(failure.status_code(), Some(400));
     let (body, message) = operation_error(failure);
     assert_eq!(message, "content policy");
+    assert_eq!(FailureMessage::of(body).as_str(), "error_message");
     assert_eq!(
         *body,
         json(
@@ -366,6 +371,14 @@ fn retry_after_empty_and_negative() {
 }
 
 fn retry_after_negative_sync() {
+    let zero = run(Step::preview(vec![
+        submit_reply(),
+        reply(200, vec![("retry-after", "0")], RUNNING),
+        reply(200, vec![], SUCCEEDED),
+    ])
+    .sync());
+    assert_eq!(success(&zero).status, 200);
+    assert_eq!(zero.harness.sleeps(), vec![0]);
     let outcome = run(Step::preview(vec![
         submit_reply(),
         reply(200, vec![("retry-after", "-5")], RUNNING),
