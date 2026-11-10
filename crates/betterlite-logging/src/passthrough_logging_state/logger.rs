@@ -55,11 +55,9 @@ impl PassThroughEndpointLogging {
     pub const TRACKED_VERTEX_AI_LIVE_ROUTES: [&str; 1] = ["/vertex_ai/live"];
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn log_dispatch(&self) -> &dyn PassThroughLogDispatch {
-        match &self.injected_log_dispatch {
-            Some(dispatch) => dispatch.as_ref(),
-            None => self,
-        }
+        self.injected_log_dispatch.as_deref().unwrap_or(self)
     }
 
     #[must_use]
@@ -87,35 +85,27 @@ impl PassThroughEndpointLogging {
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn is_comprehend_medical_route(custom_llm_provider: Option<&str>) -> bool {
-        let Some(provider) = custom_llm_provider else {
-            return false;
-        };
-        provider == "comprehendmedical"
+        custom_llm_provider == Some("comprehendmedical")
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn is_azure_speech_route(custom_llm_provider: Option<&str>) -> bool {
-        let Some(provider) = custom_llm_provider else {
-            return false;
-        };
-        provider == "azure_speech"
+        custom_llm_provider == Some("azure_speech")
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn is_transcribe_route(custom_llm_provider: Option<&str>) -> bool {
-        let Some(provider) = custom_llm_provider else {
-            return false;
-        };
-        provider == "transcribe"
+        custom_llm_provider == Some("transcribe")
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn is_typesafe_route(custom_llm_provider: Option<&str>) -> bool {
-        let Some(provider) = custom_llm_provider else {
-            return false;
-        };
-        provider == "typesafe"
+        custom_llm_provider == Some("typesafe")
     }
 
     #[must_use]
