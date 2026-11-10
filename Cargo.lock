@@ -1158,6 +1158,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",

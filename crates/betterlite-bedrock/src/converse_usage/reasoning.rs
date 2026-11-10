@@ -1,7 +1,7 @@
+use betterlite_anthropic::usage::thinking_tokens_from_usage;
 use betterlite_models::decisions::Json;
 use serde::Serialize;
 
-use crate::converse_usage::counts::thinking_number;
 use crate::converse_usage::error::ConverseUsageError;
 use crate::converse_usage::wire::decode_block;
 
@@ -62,8 +62,5 @@ pub fn thinking_tokens_from_fields(additional_fields: &Json) -> Option<i64> {
     let Some(Json::Object(usage)) = fields.get("usage") else {
         return None;
     };
-    let Some(Json::Object(details)) = usage.get("output_tokens_details") else {
-        return None;
-    };
-    thinking_number(details.get("thinking_tokens"))
+    thinking_tokens_from_usage(&Json::Object(usage.clone()))
 }

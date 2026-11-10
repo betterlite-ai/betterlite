@@ -63,20 +63,3 @@ pub(super) fn number_value(number: &Number, field: &'static str, truncate: bool)
     }
     Err(ConverseUsageError::FieldType { field })
 }
-
-// The provider thinking count is an int | None field, so only an integer literal or a boolean reads; every other shape is None.
-pub(super) fn thinking_number(value: Option<&Json>) -> Option<i64> {
-    match value {
-        Some(Json::Number(number)) => integer_literal(number),
-        Some(Json::Bool(flag)) => Some(i64::from(*flag)),
-        None | Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) => None,
-    }
-}
-
-fn integer_literal(number: &Number) -> Option<i64> {
-    if let Some(count) = number.as_i64() {
-        return Some(count);
-    }
-    let count = number.as_u64()?;
-    i64::try_from(count).ok()
-}
