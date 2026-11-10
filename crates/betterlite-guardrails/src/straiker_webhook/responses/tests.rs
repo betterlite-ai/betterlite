@@ -77,6 +77,10 @@ fn project(scenario: &Scenario) -> Json {
     Scenario::Usage(r#"{"usage":{"prompt_tokens":true,"input_tokens":7,"output_tokens":false}}"#),
     parsed(r#"{"input_tokens":7}"#)
 )]
+#[case::usage_count_outside_i64_falls_back(
+    Scenario::Usage(r#"{"usage":{"prompt_tokens":9223372036854775808,"input_tokens":3}}"#),
+    parsed(r#"{"input_tokens":3}"#)
+)]
 #[case::usage_without_counts_is_absent(Scenario::Usage(r#"{"usage":{}}"#), parsed("null"))]
 #[case::usage_null_is_absent(Scenario::Usage(r#"{"usage":null}"#), parsed("null"))]
 #[case::usage_absent_is_absent(Scenario::Usage("{}"), parsed("null"))]

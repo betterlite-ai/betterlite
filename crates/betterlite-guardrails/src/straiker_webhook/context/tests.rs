@@ -1,10 +1,14 @@
 #![cfg(test)]
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde::Serialize;
 
-use super::{ProviderNames, call_surface, destination_host, model_provider};
+use super::{CatalogProviderNames, ProviderNames, call_surface, destination_host, model_provider};
 
 struct Fixed {
     provider: Option<&'static str>,
@@ -35,6 +39,10 @@ enum Scenario {
     Surface {
         logging: Option<&'static str>,
         request: &'static str,
+    },
+    Catalog {
+        model: &'static str,
+        api_base: Option<&'static str>,
     },
 }
 
@@ -68,6 +76,21 @@ fn project(scenario: &Scenario) -> Json {
         Scenario::Destination(request) => as_json(&destination_host(&object(request))),
         Scenario::Surface { logging, request } => {
             as_json(&call_surface(*logging, &object(request)))
+        }
+        Scenario::Catalog { model, api_base } => {
+            let catalog = ModelCatalog::default();
+            let known_model_names = BTreeSet::new();
+            let custom_providers = BTreeSet::new();
+            let environment = BTreeMap::new();
+            let registry = JSONProviderRegistry::load();
+            let names = CatalogProviderNames {
+                catalog: &catalog,
+                known_model_names: &known_model_names,
+                custom_providers: &custom_providers,
+                environment: &environment,
+                registry: &registry,
+            };
+            as_json(&names.provider_for(model, *api_base, None))
         }
     }
 }
@@ -123,6 +146,19 @@ fn project(scenario: &Scenario) -> Json {
             provider: Some("openai"),
             model: "openai/gpt-4o",
             api_base: Some("https://request.example/v1"),
+            api_key: None,
+        },
+    },
+    parsed(r#""openai""#)
+)]
+#[case::provider_ignores_a_non_string_declaration(
+    Scenario::Provider {
+        request: r#"{"custom_llm_provider":5,"model":"openai/gpt-4o"}"#,
+        model: Some("openai/gpt-4o"),
+        fixed: Fixed {
+            provider: Some("openai"),
+            model: "openai/gpt-4o",
+            api_base: None,
             api_key: None,
         },
     },
@@ -196,6 +232,27 @@ fn project(scenario: &Scenario) -> Json {
         request: "{}",
     },
     parsed(r#""unknown""#)
+)]
+#[case::catalog_resolves_a_prefixed_model(
+    Scenario::Catalog {
+        model: "openai/gpt-4o",
+        api_base: None,
+    },
+    parsed(r#""openai""#)
+)]
+#[case::catalog_uses_the_api_base(
+    Scenario::Catalog {
+        model: "llama3-8b-8192",
+        api_base: Some("https://api.groq.com/openai/v1"),
+    },
+    parsed(r#""groq""#)
+)]
+#[case::catalog_unknown_model_is_absent(
+    Scenario::Catalog {
+        model: "unknown-model-xyz",
+        api_base: None,
+    },
+    parsed("null")
 )]
 fn straiker_webhook_context_tests_behavior(#[case] scenario: Scenario, #[case] expected: Json) {
     assert_eq!(project(&scenario), expected);

@@ -15,6 +15,7 @@ enum Item {
 enum Scenario {
     Single(Item),
     List(&'static [Item]),
+    Opaque(&'static str),
 }
 
 fn parsed(source: &str) -> Json {
@@ -54,6 +55,7 @@ fn project(scenario: &Scenario) -> Json {
                 .collect();
             as_json(&opaque_dict_list(&Json::List(entries)))
         }
+        Scenario::Opaque(source) => as_json(&opaque_dict_list(&parsed(source))),
     }
 }
 
@@ -83,6 +85,7 @@ fn project(scenario: &Scenario) -> Json {
     parsed("null")
 )]
 #[case::empty_list_is_absent(Scenario::List(&[]), parsed("null"))]
+#[case::opaque_non_list_is_absent(Scenario::Opaque(r#"{"a":1}"#), parsed("null"))]
 fn straiker_webhook_context_tests_behavior(#[case] scenario: Scenario, #[case] expected: Json) {
     assert_eq!(project(&scenario), expected);
 }

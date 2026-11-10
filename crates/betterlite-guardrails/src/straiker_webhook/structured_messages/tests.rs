@@ -65,7 +65,7 @@ fn routed() -> Vec<Message> {
 }
 
 fn project(scenario: &Scenario) -> Json {
-    let routes = Routes(&[(ROUTE, &[CALL_TYPE])]);
+    let routes = Routes(&[(ROUTE, &[CALL_TYPE]), ("", &[CALL_TYPE])]);
     match scenario {
         Scenario::Plain(source) => as_json(&request_structured_messages(
             &object(source),
@@ -102,8 +102,8 @@ fn project(scenario: &Scenario) -> Json {
     Scenario::Plain(r#"{"litellm_metadata":{"user_api_key_request_route":"/v1/unmapped"}}"#),
     parsed("null")
 )]
-#[case::empty_route(
-    Scenario::Plain(r#"{"litellm_metadata":{"user_api_key_request_route":""}}"#),
+#[case::empty_route_never_translates(
+    Scenario::Mapped(r#"{"litellm_metadata":{"user_api_key_request_route":""}}"#),
     parsed("null")
 )]
 #[case::route_with_translation_resolves(

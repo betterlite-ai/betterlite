@@ -1,0 +1,15 @@
+task: B3795
+deviations:
+  - what: >-
+      A custom_llm_provider that is not a string is ignored and the provider is resolved from the model instead.
+    why: >-
+      LiteLLM returns the raw value from _resolve_provider and StraikerWebhookContext then rejects it, so the
+      guardrail fails closed on input outside its declared type. betterlite reads only string provider names and
+      keeps model_provider a string; no working LiteLLM setup sends a non-string provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L222-L237
+  - what: >-
+      A usage token count outside the i64 range is not read as a count, so the Anthropic key is used instead.
+    why: >-
+      _as_optional_int accepts any Python int, while betterlite token counts are i64, the type the rest of the crate
+      uses. No provider reports a token count near 2^63, and the fallback key still projects a usage record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L352-L370
