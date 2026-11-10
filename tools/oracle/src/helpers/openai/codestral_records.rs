@@ -1,6 +1,6 @@
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::codestral_records::RecordSource;
-use betterlite_openai::codestral_records::chunk::decode_codestral_chunk;
+use betterlite_openai::codestral_records::chunk::{CodestralChunk, decode_codestral_chunk};
 use betterlite_openai::codestral_records::error::TextCompletionCodestralError;
 use betterlite_openai::codestral_records::options::{
     CodestralSettings, SUPPORTED_PARAMS, map_params,
@@ -25,11 +25,8 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
-    Config,
-    SupportedParams {
+    Options {
         model: String,
-    },
-    MapParams {
         params: Vec<(String, Value)>,
         #[serde(default)]
         optional_params: Map<String, Value>,
@@ -117,7 +114,21 @@ fn chunk(line: &str) -> Result<Value, Box<crate::helpers::HelperError>> {
     };
     let decoded = decode_codestral_chunk(line.as_bytes(), &source)
         .map_err(|error| invalid(error.to_string()))?;
-    serde_json::to_value(decoded).map_err(|error| invalid(error.to_string()))
+    let (text, is_finished, finish_reason, logprobs) = match decoded {
+        CodestralChunk::Empty(empty) => (empty.text, empty.is_finished, empty.finish_reason, None),
+        CodestralChunk::Content(content) => (
+            content.text,
+            content.is_finished,
+            content.finish_reason,
+            content.logprobs,
+        ),
+    };
+    Ok(json!({
+        "text": text,
+        "is_finished": is_finished,
+        "finish_reason": finish_reason,
+        "logprobs": logprobs,
+    }))
 }
 
 fn execute(
@@ -125,18 +136,19 @@ fn execute(
     config: &Map<String, Value>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     match step {
-        Step::Config => Ok(Value::Object(config.clone())),
-        Step::SupportedParams { model } => Ok(json!({
-            "model": model,
-            "supported": SUPPORTED_PARAMS,
-        })),
-        Step::MapParams {
+        Step::Options {
+            model,
             params,
             optional_params,
         } => {
             let mut optional = optional_params.clone();
             map_params(params, &mut optional);
-            Ok(Value::Object(optional))
+            Ok(json!({
+                "model": model,
+                "config": config,
+                "supported": SUPPORTED_PARAMS,
+                "mapped": optional,
+            }))
         }
         Step::Reply {
             status,

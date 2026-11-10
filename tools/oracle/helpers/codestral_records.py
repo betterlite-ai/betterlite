@@ -4,7 +4,7 @@ from typing import Protocol, TypeAlias, cast
 
 import litellm
 from litellm.llms.codestral.completion.handler import TextCompletionCodestralError
-from litellm.types.utils import Logprobs, ModelResponseStream, TextCompletionResponse
+from litellm.types.utils import Logprobs, TextCompletionResponse
 
 # ruff: noqa: SLF001
 # pyright: reportPrivateUsage=false
@@ -14,28 +14,6 @@ Object: TypeAlias = dict[str, Json]
 PAIR_LENGTH = 2
 
 
-class Choice(Protocol):
-    index: int
-    text: str | None
-    finish_reason: str | None
-    logprobs: object
-
-
-class Usage(Protocol):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class Reply(Protocol):
-    id: str
-    object: str
-    created: int
-    model: str | None
-    choices: list[Choice]
-    usage: Usage
-
-
 class Config(Protocol):
     get_config: Callable[[], Object]
     get_supported_openai_params: Callable[[str], list[str]]
@@ -43,8 +21,12 @@ class Config(Protocol):
     _chunk_parser: Callable[[str], Object]
 
 
+class Dumpable(Protocol):
+    def model_dump(self) -> Json: ...
+
+
 class Handler(Protocol):
-    process_text_completion_response: Callable[..., Reply]
+    process_text_completion_response: Callable[..., Dumpable]
 
 
 class Request(Protocol):
@@ -89,8 +71,8 @@ class FixtureLogger:
         })
 
 
-CONFIG_FACTORY = cast("Callable[..., Config]", litellm.CodestralTextCompletionConfig)
-HANDLER_FACTORY = cast("Callable[..., object]", litellm.CodestralTextCompletion)
+CONFIG = cast("Callable[..., Config]", litellm.CodestralTextCompletionConfig)
+HANDLER = cast("Callable[..., Handler]", litellm.CodestralTextCompletion)
 
 
 def expect_object(value: Json) -> Object:
@@ -121,10 +103,6 @@ def text_field(fields: Object, name: str) -> str:
     return expect_text(fields.get(name))
 
 
-def integer_field(fields: Object, name: str) -> int:
-    return expect_integer(fields.get(name))
-
-
 def pairs(value: Json) -> dict[str, Json]:
     result: dict[str, Json] = {}
     for entry in expect_list(value):
@@ -135,156 +113,103 @@ def pairs(value: Json) -> dict[str, Json]:
     return result
 
 
-def make_config(settings: Object) -> Config:
-    return CONFIG_FACTORY(**settings)
-
-
 def ignore_verbose(*_args: Json, **_kwargs: Json) -> None:
     pass
 
 
 def logprobs_value(value: object) -> Json:
-    if value is None:
-        return None
     if isinstance(value, Logprobs):
         return cast(Json, value.model_dump())
     return cast(Json, value)
 
 
-def project_reply(reply: Reply) -> Json:
+def project_reply(result: Dumpable) -> Json:
+    dumped = expect_object(result.model_dump())
+    choices: list[Json] = [
+        {
+            "index": choice.get("index"),
+            "text": choice.get("text"),
+            "finish_reason": choice.get("finish_reason"),
+            "logprobs": logprobs_value(choice.get("logprobs")),
+        }
+        for choice in map(expect_object, expect_list(dumped.get("choices")))
+    ]
+    usage = expect_object(dumped.get("usage"))
     return {
-        "id": reply.id,
-        "object": reply.object,
-        "created": reply.created,
-        "model": reply.model,
+        "id": dumped.get("id"),
+        "object": dumped.get("object"),
+        "created": dumped.get("created"),
+        "model": dumped.get("model"),
         "usage": {
-            "prompt_tokens": reply.usage.prompt_tokens,
-            "completion_tokens": reply.usage.completion_tokens,
-            "total_tokens": reply.usage.total_tokens,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
         },
-        "choices": [
-            {
-                "index": choice.index,
-                "text": choice.text,
-                "finish_reason": choice.finish_reason,
-                "logprobs": logprobs_value(choice.logprobs),
-            }
-            for choice in reply.choices
-        ],
-    }
-
-
-def error_value(error: NativeError) -> Json:
-    return {
-        "kind": "error",
-        "status_code": error.status_code,
-        "request": {"method": error.request.method, "url": str(error.request.url)},
-        "response_status": error.response.status_code,
+        "choices": choices,
     }
 
 
 def reply_step(step: Object) -> Json:
     body = text_field(step, "body")
     api_key_value = step.get("api_key")
+    messages_value = step.get("messages")
     logger = FixtureLogger()
-    handler = cast(Handler, HANDLER_FACTORY())
     try:
-        result = handler.process_text_completion_response(
+        result = HANDLER().process_text_completion_response(
             model="codestral-latest",
-            response=FixtureResponse(integer_field(step, "status"), body),
+            response=FixtureResponse(expect_integer(step.get("status")), body),
             model_response=TextCompletionResponse(),
             stream=False,
             logging_obj=logger,
             optional_params={},
             api_key="" if api_key_value is None else expect_text(api_key_value),
             data=step.get("request_data"),
-            messages=expect_list(step.get("messages", [])),
+            messages=[] if messages_value is None else expect_list(messages_value),
             print_verbose=ignore_verbose,
             encoding=None,
         )
     except TextCompletionCodestralError as error:
-        return {"events": logger.events, "outcome": error_value(cast(NativeError, error))}
+        native = cast(NativeError, error)
+        outcome: Json = {
+            "kind": "error",
+            "status_code": native.status_code,
+            "request": {"method": native.request.method, "url": str(native.request.url)},
+            "response_status": native.response.status_code,
+        }
+        return {"events": logger.events, "outcome": outcome}
     return {"events": logger.events, "outcome": {"kind": "reply", "reply": project_reply(result)}}
 
 
-def project_stream(dumped: Object) -> Json:
-    projected: list[Json] = []
-    for raw_choice in expect_list(dumped.get("choices", [])):
-        choice = expect_object(raw_choice)
-        delta = expect_object(choice.get("delta", {}))
-        projected.append({
-            "index": choice.get("index"),
-            "finish_reason": choice.get("finish_reason"),
-            "logprobs": logprobs_value(choice.get("logprobs")),
-            "delta": {
-                "content": delta.get("content"),
-                "role": delta.get("role"),
-                "function_call": delta.get("function_call"),
-                "tool_calls": delta.get("tool_calls"),
-                "audio": delta.get("audio"),
-            },
-        })
-    value: Object = {
-        "id": dumped.get("id"),
-        "created": dumped.get("created"),
-        "object": dumped.get("object"),
-        "model": dumped.get("model"),
-        "system_fingerprint": dumped.get("system_fingerprint"),
-        "provider_specific_fields": dumped.get("provider_specific_fields"),
-        "choices": projected,
-    }
-    usage = dumped.get("usage")
-    if usage is not None:
-        counters = expect_object(usage)
-        value["usage"] = {
-            "prompt_tokens": counters.get("prompt_tokens"),
-            "completion_tokens": counters.get("completion_tokens"),
-            "total_tokens": counters.get("total_tokens"),
-        }
-    return value
-
-
-def project_chunk(result: Object) -> Json:
-    value: Object = {
-        "text": result.get("text"),
-        "is_finished": result.get("is_finished"),
-        "finish_reason": result.get("finish_reason"),
-    }
-    original = result.get("original_chunk")
-    if original is None:
-        return value
-    dumped = cast(
-        Object,
-        cast(ModelResponseStream, original).model_dump(),  # pyright: ignore[reportUnknownMemberType]
-    )
-    value["logprobs"] = result.get("logprobs")
-    value["original_chunk"] = project_stream(dumped)
-    return value
-
-
 def chunk_step(step: Object) -> Json:
-    config = make_config({})
-    return project_chunk(config._chunk_parser(text_field(step, "line")))
+    parsed = CONFIG()._chunk_parser(text_field(step, "line"))
+    return {
+        "text": parsed.get("text"),
+        "is_finished": parsed.get("is_finished"),
+        "finish_reason": parsed.get("finish_reason"),
+        "logprobs": parsed.get("logprobs"),
+    }
+
+
+def options_value(fields: Object, config: Config) -> Json:
+    optional = expect_object(fields.get("optional_params", {}))
+    model = text_field(fields, "model")
+    return {
+        "model": model,
+        "config": config.get_config(),
+        "supported": cast(Json, config.get_supported_openai_params(model)),
+        "mapped": config.map_openai_params(
+            pairs(fields.get("params", [])),
+            optional,
+            model,
+            drop_params=False,
+        ),
+    }
 
 
 def execute_step(step: Object, config: Config) -> Json:
     kind = text_field(step, "kind")
-    if kind == "config":
-        return config.get_config()
-    if kind == "supported_params":
-        model = text_field(step, "model")
-        return {
-            "model": model,
-            "supported": cast(Json, config.get_supported_openai_params(model)),
-        }
-    if kind == "map_params":
-        optional = expect_object(step.get("optional_params", {}))
-        return config.map_openai_params(
-            pairs(step.get("params", [])),
-            optional,
-            text_field(step, "model"),
-            drop_params=False,
-        )
+    if kind == "options":
+        return options_value(step, config)
     if kind == "reply":
         return reply_step(step)
     if kind == "chunk":
@@ -296,7 +221,7 @@ def run(argument: Json) -> Json:
     fields = expect_object(argument)
     settings_value = fields.get("settings")
     settings = {} if settings_value is None else expect_object(settings_value)
-    config = make_config(settings)
+    config = CONFIG(**settings)
     return [
         execute_step(expect_object(step), config)
         for step in expect_list(fields.get("steps"))
