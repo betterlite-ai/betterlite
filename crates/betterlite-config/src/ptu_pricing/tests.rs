@@ -31,6 +31,10 @@ fn environment(value: Option<&str>) -> BTreeMap<String, String> {
 #[case::on(Some("on"), false)]
 #[case::other(Some("enabled"), false)]
 fn loads_ptu_cost_flag(#[case] value: Option<&str>, #[case] expected: bool) {
+    assert_eq!(
+        PTU_COST_ATTRIBUTION_ENV_VAR,
+        "LITELLM_ENABLE_PTU_COST_ATTRIBUTION"
+    );
     assert_eq!(load_ptu_cost_flag(&environment(value)), expected);
 }
 
