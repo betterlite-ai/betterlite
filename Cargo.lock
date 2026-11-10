@@ -2004,6 +2004,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",

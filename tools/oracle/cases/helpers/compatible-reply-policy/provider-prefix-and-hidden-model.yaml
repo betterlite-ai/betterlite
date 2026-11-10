@@ -1,0 +1,15 @@
+kind: helper
+name: compatible-reply-policy-provider-prefix-and-hidden-model
+call:
+  compatible_reply_policy:
+    transform:
+      - provider: acme
+        reply: {id: c1, object: chat.completion, created: 1, model: m, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - provider: ""
+        base_model: base
+        reply: {id: c2, object: chat.completion, created: 1, model: m, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - base_model: ""
+        reply: {id: c3, object: chat.completion, created: 1, model: m, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - reply: {id: c4, object: chat.completion, created: 1, model: m, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+env: {}
+compare: {ignore: []}
