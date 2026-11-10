@@ -51,6 +51,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "azure_image_transport"
+path = "fuzz_targets/azure_image_transport.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "azure_hosted_identity"
 path = "fuzz_targets/azure_hosted_identity.rs"
 test = false
