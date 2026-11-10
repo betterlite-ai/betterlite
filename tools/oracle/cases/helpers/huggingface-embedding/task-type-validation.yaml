@@ -1,0 +1,39 @@
+kind: helper
+name: task-type-validation
+call:
+  b5991:
+    steps:
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], optional_params: {input_type: "sentence-similarity"}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: "feature-extraction"}}
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], optional_params: {input_type: "rerank"}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: "embed"}}
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], optional_params: {input_type: "similarity"}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: "text-generation"}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: 5}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: true}}
+      - {kind: transform_input, model: "org/model", input: ["first"], optional_params: {input_type: null}, pipeline_tag: "embed"}
+      - {kind: transform_input, model: "org/sentence-transformers-model", input: ["first"], optional_params: {input_type: "text-generation"}}
+      - kind: prepare
+        model: "org/model"
+        input: ["first", "second"]
+        optional_params: {input_type: "embed"}
+        pipeline_tag: "rerank"
+      - kind: prepare
+        model: "org/model"
+        input: ["first", "second"]
+        optional_params: {input_type: "rerank"}
+        pipeline_tag: "feature-extraction"
+      - kind: prepare
+        model: "org/model"
+        input: ["first"]
+        optional_params: {input_type: "bogus"}
+      - kind: prepare
+        model: "org/model"
+        input: ["first", "second"]
+        pipeline_tag: "embed"
+      - kind: prepare
+        model: "sentence-transformers/all-MiniLM-L6-v2"
+        input: ["first", "second"]
+        optional_params: {input_type: "query"}
+env: {}
+compare: {ignore: []}

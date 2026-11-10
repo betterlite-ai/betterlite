@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-endpoint-header-override-seed
+call:
+  vertex_endpoint:
+    header_override:
+      headers:
+        - {auth: tok, extras: {Authorization: "Custom x", X-Extra: "1"}}
+        - {auth: null, extras: {}}
+env: {}
+compare: {ignore: []}

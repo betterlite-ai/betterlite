@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-message-replay-strip-encrypted
+call:
+  anthropic_message_replay:
+    function: strip_encrypted
+    messages:
+    - {role: assistant, content: [ {type: thinking, thinking: x, signature: "litellm_encrypted_reasoning:abc"}, {type: text, text: kept} ]}
+    - role: assistant
+      content: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: embedding-host-plan-jina-input-overlay-and-hook
+call:
+  embedding_host_plan:
+    jina:
+      model: jina-clip-v2
+      input: plain
+      options: {dimensions: 64, user: u, encoding_format: float}
+      optional: {input: shadow, model: other}
+      base: "https://jina.test/v1"
+      api_key: secret
+      reply: {status: 200, body: '{"model":"jina-clip-v2","object":"list","data":[{"object":"embedding","embedding":[0.5,1.5],"index":0}],"usage":{"prompt_tokens":2,"total_tokens":3}}'}
+    infinity:
+      model: bge
+      input: plain
+      options: {dimensions: 64, user: u, encoding_format: float, modality: text}
+      optional: {input: shadow, model: other}
+      base: "https://infinity.test"
+env: {}
+compare: {ignore: []}
