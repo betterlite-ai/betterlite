@@ -35,17 +35,15 @@ pub enum SendError {
     Build(#[from] DatadogError),
 }
 
-pub(crate) async fn async_send_compressed_data(
+async fn post(
     logger: &DatadogLogger,
-    data: &[DatadogPayload],
+    body: Vec<u8>,
+    compressed: bool,
 ) -> Result<TransportResponse, SendError> {
-    let encoded =
-        safe_dumps(&data.to_vec(), DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
-    let compressed = gzip(encoded.as_bytes())?;
     let request = PostRequest {
         url: logger.settings.intake_url.clone(),
-        headers: headers(logger, true)?,
-        body: compressed,
+        headers: headers(logger, compressed)?,
+        body,
         timeout: LOGGING_TIMEOUT,
     };
     let response = logger.transport.post(request).await?;
@@ -58,19 +56,22 @@ pub(crate) async fn async_send_compressed_data(
     Ok(response)
 }
 
+pub(crate) async fn async_send_compressed_data(
+    logger: &DatadogLogger,
+    data: &[DatadogPayload],
+) -> Result<TransportResponse, SendError> {
+    let encoded =
+        safe_dumps(&data.to_vec(), DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
+    post(logger, gzip(encoded.as_bytes())?, true).await
+}
+
 pub(crate) async fn send_plain(
     logger: &DatadogLogger,
     payload: &DatadogPayload,
 ) -> Result<(), SendError> {
     let encoded =
         safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
-    let request = PostRequest {
-        url: logger.settings.intake_url.clone(),
-        headers: headers(logger, false)?,
-        body: encoded.into_bytes(),
-        timeout: LOGGING_TIMEOUT,
-    };
-    let response = logger.transport.post(request).await?;
+    let response = post(logger, encoded.into_bytes(), false).await?;
     if response.status == 202 {
         return Ok(());
     }

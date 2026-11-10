@@ -54,11 +54,12 @@ async fn datadog_batch_queueing_updates_last_flush_time_on_success() {
         Duration::from_secs(10),
         Duration::from_secs(20),
     ]));
-    let (logger, _transport) = support::build_with_clock(
+    let (logger, _transport) = support::build_with(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
         vec![support::Reply::accepted()],
         clock,
+        None,
     );
     assert_eq!(support::last_flush_time(&logger), Duration::from_secs(10));
     queue_two(&logger).await;
@@ -72,11 +73,12 @@ async fn datadog_batch_queueing_keeps_last_flush_time_on_failure() {
         Duration::from_secs(10),
         Duration::from_secs(20),
     ]));
-    let (logger, _transport) = support::build_with_clock(
+    let (logger, _transport) = support::build_with(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
         vec![support::Reply::status(500)],
         clock,
+        None,
     );
     queue_two(&logger).await;
     batch::flush_queue(&logger).await;
@@ -87,11 +89,12 @@ async fn datadog_batch_queueing_keeps_last_flush_time_on_failure() {
 #[tokio::test(start_paused = true)]
 async fn periodic_flush_sends_queued_events_after_the_interval() {
     let tasks = TaskTracker::new();
-    let (logger, transport) = support::build_with_tasks(
+    let (logger, transport) = support::build_with(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
         vec![support::Reply::accepted(), support::Reply::accepted()],
-        tasks.clone(),
+        Arc::new(support::FixedClock(Duration::from_secs(1))),
+        Some(tasks.clone()),
     );
     logger
         .async_log_success_event(support::event(support::standard_payload("one", false)))
@@ -113,11 +116,12 @@ async fn periodic_flush_sends_queued_events_after_the_interval() {
 #[tokio::test(start_paused = true)]
 async fn closing_the_tracker_stops_the_periodic_flush() {
     let tasks = TaskTracker::new();
-    let (logger, transport) = support::build_with_tasks(
+    let (logger, transport) = support::build_with(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
         vec![support::Reply::accepted()],
-        tasks.clone(),
+        Arc::new(support::FixedClock(Duration::from_secs(1))),
+        Some(tasks.clone()),
     );
     logger
         .async_log_success_event(support::event(support::standard_payload("one", false)))
@@ -134,11 +138,12 @@ async fn closing_the_tracker_stops_the_periodic_flush() {
 #[tokio::test]
 async fn stop_flushes_the_pending_queue() {
     let tasks = TaskTracker::new();
-    let (logger, transport) = support::build_with_tasks(
+    let (logger, transport) = support::build_with(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
         vec![support::Reply::accepted()],
-        tasks.clone(),
+        Arc::new(support::FixedClock(Duration::from_secs(1))),
+        Some(tasks.clone()),
     );
     queue_two(&logger).await;
     assert_eq!(transport.call_count(), 0);

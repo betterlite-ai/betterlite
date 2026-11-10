@@ -299,19 +299,21 @@ pub(super) fn build(
     environment: &Environment,
     replies: Vec<Reply>,
 ) -> (Arc<DatadogLogger>, Arc<ScriptedTransport>) {
-    build_with_clock(
+    build_with(
         init,
         environment,
         replies,
         Arc::new(FixedClock(Duration::from_secs(1))),
+        None,
     )
 }
 
-pub(super) fn build_with_clock(
+pub(super) fn build_with(
     init: &DatadogInit,
     environment: &Environment,
     replies: Vec<Reply>,
     clock: Arc<dyn Clock>,
+    tasks: Option<TaskTracker>,
 ) -> (Arc<DatadogLogger>, Arc<ScriptedTransport>) {
     let transport = ScriptedTransport::new(replies);
     let concrete_transport = Arc::clone(&transport);
@@ -323,30 +325,7 @@ pub(super) fn build_with_clock(
             transport: dyn_transport,
             clock,
             ids: generated_id,
-            tasks: None,
-        },
-    )
-    .expect("the logger initializes");
-    (logger, transport)
-}
-
-pub(super) fn build_with_tasks(
-    init: &DatadogInit,
-    environment: &Environment,
-    replies: Vec<Reply>,
-    tasks: TaskTracker,
-) -> (Arc<DatadogLogger>, Arc<ScriptedTransport>) {
-    let transport = ScriptedTransport::new(replies);
-    let concrete_transport = Arc::clone(&transport);
-    let dyn_transport: Arc<dyn Transport> = concrete_transport;
-    let logger = DatadogLogger::new(
-        init,
-        environment,
-        DatadogDeps {
-            transport: dyn_transport,
-            clock: Arc::new(FixedClock(Duration::from_secs(1))),
-            ids: generated_id,
-            tasks: Some(tasks),
+            tasks,
         },
     )
     .expect("the logger initializes");
