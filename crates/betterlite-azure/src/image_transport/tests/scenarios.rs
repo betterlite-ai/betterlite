@@ -306,9 +306,10 @@ pub(super) fn retry_after_not_integer() {
 }
 
 fn retry_after_non_integer() {
-    for header in ["soon", "\u{e9}"] {
-        let outcome = polled(vec![reply(200, vec![("retry-after", header)], RUNNING)]);
-        let failure = failure_of(&outcome);
+    let outcomes = ["soon", "\u{e9}"]
+        .map(|header| polled(vec![reply(200, vec![("retry-after", header)], RUNNING)]));
+    for outcome in &outcomes {
+        let failure = failure_of(outcome);
         assert!(matches!(failure, ImageTransportError::RetryAfter { .. }));
         assert_eq!(failure.status_code(), None);
         assert_eq!(outcome.harness.calls().len(), 2);
