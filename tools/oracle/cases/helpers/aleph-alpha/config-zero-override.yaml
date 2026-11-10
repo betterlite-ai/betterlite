@@ -1,0 +1,23 @@
+kind: helper
+name: aleph-alpha-config-zero-override
+call:
+  aleph_alpha:
+    model: luminous-base
+    messages:
+      - role: user
+        content: Hi
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: null
+    optional_params:
+      maximum_tokens: 0
+      temperature: 0
+      echo: false
+    defaults:
+      temperature: 7
+    max_tokens: 1234
+    created: 1700000001
+    reply:
+      status: 200
+      body: '{"completions":[{"completion":"x","finish_reason":"length"}]}'
+env: {}
+compare: {ignore: []}

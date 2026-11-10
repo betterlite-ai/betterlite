@@ -1,0 +1,8 @@
+kind: helper
+name: embedding-host-plan-endpoint-suffix-differences
+call:
+  embedding_host_plan:
+    jina: {model: jina-v3, input: [hello], base: "https://x.test/v1/embeddings"}
+    infinity: {model: bge, input: [hello], base: "https://x.test/v1/embeddings//"}
+env: {}
+compare: {ignore: []}
