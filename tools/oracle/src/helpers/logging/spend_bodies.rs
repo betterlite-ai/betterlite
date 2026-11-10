@@ -20,6 +20,7 @@ pub(crate) enum Input {
     Session(SessionCall),
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoragePolicyInput {
     config_value: Json,
     env_value: Option<String>,
@@ -27,6 +28,7 @@ pub(crate) struct StoragePolicyInput {
     runtime_max_string_lengths: Vec<Option<String>>,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct BodyStorageInput {
     store_bodies: bool,
     max_string_length: i64,
@@ -40,6 +42,7 @@ pub(crate) struct BodyStorageInput {
     messages_payload: Option<Json>,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ClassifierInput {
     store_bodies: bool,
     max_string_length: i64,
@@ -51,6 +54,7 @@ pub(crate) struct ClassifierInput {
     snapshots: Vec<SnapshotSpec>,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct VectorInput {
     store_bodies: bool,
     litellm_params: Json,
@@ -59,22 +63,26 @@ pub(crate) struct VectorInput {
     vector_store: Option<Json>,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SessionCall {
     sessions: Vec<SessionCase>,
     durations: Vec<DurationSpec>,
     timestamps: Vec<String>,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SnapshotSpec {
     value: Json,
     openai_sdk: bool,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DurationSpec {
     start: String,
     end: String,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SessionCase {
     metadata: Option<Json>,
     configured_omit: bool,

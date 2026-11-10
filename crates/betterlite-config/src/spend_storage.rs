@@ -109,23 +109,17 @@ pub fn runtime_max_prompt_length(initial: i64, snapshot: Option<&str>) -> i64 {
     })
 }
 fn missing_session_id(value: &JsonValue) -> Result<Option<MissingSessionId>, ConfigError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::String(text) => match text.as_str() {
-            "generate" => Ok(Some(MissingSessionId::Generate)),
-            "reject" => Ok(Some(MissingSessionId::Reject)),
-            "omit" => Ok(Some(MissingSessionId::Omit)),
-            _ => Err(invalid_missing_session_id()),
-        },
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(invalid_missing_session_id())
-        }
+    if value.is_null() {
+        return Ok(None);
     }
-}
-fn invalid_missing_session_id() -> ConfigError {
-    ConfigError::InvalidScalar {
-        path: MISSING_SESSION_ID_PATH.to_owned(),
-        value: false,
+    match value.as_str() {
+        Some("generate") => Ok(Some(MissingSessionId::Generate)),
+        Some("reject") => Ok(Some(MissingSessionId::Reject)),
+        Some("omit") => Ok(Some(MissingSessionId::Omit)),
+        Some(_) | None => Err(ConfigError::InvalidScalar {
+            path: MISSING_SESSION_ID_PATH.to_owned(),
+            value: false,
+        }),
     }
 }
 const fn spend_updates(value: &JsonValue) -> SpendUpdates {
