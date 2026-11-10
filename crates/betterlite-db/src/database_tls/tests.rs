@@ -4,9 +4,11 @@ use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io::Write as _;
+use std::time::Duration;
 
 use rstest::rstest;
 use tokio::task::JoinSet;
+use tokio_postgres::config::SslMode;
 use url::Url;
 
 use super::options::native_connection_options;
@@ -360,6 +362,66 @@ fn external_pooler_disables_prepared_statements() {
     let error = native_connection_options("postgresql://u:p@h/db?pgbouncer=yes")
         .expect_err("an invalid pgbouncer flag must fail");
     assert!(error.to_string().contains("pgbouncer"));
+}
+
+#[test]
+fn native_connection_options_keep_connection_params() {
+    let options = native_connection_options(
+        "postgresql://u:p@h:5432/db?application_name=app&connect_timeout=5&sslmode=disable",
+    )
+    .expect("connection options");
+    assert_eq!(options.config.get_application_name(), Some("app"));
+    assert_eq!(
+        options.config.get_connect_timeout(),
+        Some(&Duration::from_secs(5))
+    );
+}
+
+#[test]
+fn native_connection_options_debug_redacts_password() {
+    let options = native_connection_options("postgresql://u:secret@h/db?sslmode=disable")
+        .expect("connection options");
+    let shown = format!("{options:?}");
+    assert!(shown.contains("NativeConnectionOptions"), "{shown}");
+    assert!(!shown.contains("secret"), "{shown}");
+}
+
+#[test]
+fn tls_disabled_ignores_verification_settings() {
+    let missing = tempfile::TempDir::new().expect("a temporary directory");
+    let missing_path = missing.path().join("missing-ca.pem");
+    let url = query_url(&[
+        ("sslmode", "disable"),
+        ("sslaccept", "strict"),
+        ("sslrootcert", missing_path.to_str().expect("a UTF-8 path")),
+    ]);
+    let options = native_connection_options(&url).expect("disabled TLS loads no roots");
+    assert_eq!(options.config.get_ssl_mode(), SslMode::Disable);
+}
+
+#[test]
+fn prisma_ca_cert_is_loaded() {
+    let missing = tempfile::TempDir::new().expect("a temporary directory");
+    let missing_path = missing.path().join("missing-ca.pem");
+    let url = query_url(&[
+        ("sslmode", "verify-full"),
+        ("sslcert", missing_path.to_str().expect("a UTF-8 path")),
+    ]);
+    let error = native_connection_options(&url).expect_err("the Prisma CA must be read");
+    assert!(error.to_string().contains("missing-ca.pem"), "{error}");
+}
+
+#[test]
+fn tls_client_identity_is_loaded() {
+    let authority = certificates::authority();
+    let certificate = write_file(&authority.leaf_pem);
+    let key = write_file(&authority.key_pem);
+    let url = query_url(&[
+        ("sslmode", "require"),
+        ("sslcert", path_of(&certificate)),
+        ("sslkey", path_of(&key)),
+    ]);
+    native_connection_options(&url).expect("a PEM client identity");
 }
 
 #[test]

@@ -6,6 +6,8 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 pub(super) struct Authority {
     pub(super) certificate_pem: String,
+    pub(super) leaf_pem: String,
+    pub(super) key_pem: String,
     pub(super) leaf: CertificateDer<'static>,
     pub(super) key: PrivateKeyDer<'static>,
 }
@@ -27,6 +29,8 @@ pub(super) fn authority() -> Authority {
         .expect("a leaf certificate");
     Authority {
         certificate_pem: ca_certificate.pem(),
+        leaf_pem: leaf_certificate.pem(),
+        key_pem: key.serialize_pem(),
         leaf: leaf_certificate.der().clone(),
         key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
     }
@@ -47,6 +51,8 @@ pub(super) fn self_signed() -> Authority {
     let certificate = params.self_signed(&key).expect("a self-signed certificate");
     Authority {
         certificate_pem: certificate.pem(),
+        leaf_pem: certificate.pem(),
+        key_pem: key.serialize_pem(),
         leaf: certificate.der().clone(),
         key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
     }
