@@ -60,9 +60,9 @@ pub(crate) async fn async_send_compressed_data(
     logger: &DatadogLogger,
     data: &[DatadogPayload],
 ) -> Result<TransportResponse, SendError> {
-    let encoded =
-        safe_dumps(&data.to_vec(), DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
-    post(logger, gzip(encoded.as_bytes())?, true).await
+    let encoded = safe_dumps(&data, DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
+    let compressed = gzip(encoded.as_bytes())?;
+    post(logger, compressed, true).await
 }
 
 pub(crate) async fn send_plain(
@@ -114,7 +114,7 @@ pub fn exceeds_intake_limits(batch: &[DatadogPayload]) -> Result<bool, DatadogEr
         return Ok(true);
     }
     let encoded =
-        safe_dumps(&batch.to_vec(), DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
+        safe_dumps(&batch, DEFAULT_MAX_RECURSE_DEPTH, None).map_err(DatadogError::Json)?;
     Ok(encoded.len() > DD_MAX_PAYLOAD_SIZE_BYTES)
 }
 

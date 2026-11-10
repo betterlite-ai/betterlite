@@ -76,7 +76,8 @@ class Script:
         return self
 
     async def post(self, url: str, data: bytes, headers: Mapping[str, str]) -> httpx.Response:
-        gzipped = headers.get("content-encoding", "").lower() == "gzip"
+        lowered = {name.lower(): value for name, value in headers.items()}
+        gzipped = lowered.get("content-encoding", "").lower() == "gzip"
         raw = gzip.decompress(data) if gzipped else data
         return self.respond(url, headers, cast(Json, json.loads(raw)))
 
@@ -89,7 +90,7 @@ class SyncScript:
         return self
 
     def post(self, url: str, json: Json, headers: Mapping[str, str]) -> httpx.Response:
-        return self.script.respond(url, headers, json)
+        return self.script.respond(url, {"Content-Type": "application/json", **headers}, json)
 
 
 async def disable_periodic_flush(logger: DataDogLogger) -> None:

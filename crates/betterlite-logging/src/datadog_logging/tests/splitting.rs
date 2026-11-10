@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::batch::delivery::BatchDelivery as _;
 use crate::callback_logger::CallbackLogger as _;
+use crate::datadog::payloads::constants::DATADOG_413_ERROR;
 use crate::datadog::payloads::types::DatadogPayload;
 use crate::datadog_logging::batch;
 use crate::datadog_logging::logger::DatadogLogger;
@@ -56,6 +57,7 @@ async fn datadog_413_splitting_behavior() {
     assert_eq!(sizes(&transport), vec![4, 2, 2]);
     assert_eq!(logger.queue.pending().len(), 0);
 
+    let (_guard, logs) = support::capture_logs();
     let (second_logger, second_transport) = support::build(
         &direct(),
         &support::Environment::new(),
@@ -69,6 +71,7 @@ async fn datadog_413_splitting_behavior() {
     batch::flush_queue(&second_logger).await;
     assert_eq!(sizes(&second_transport), vec![2, 1, 1]);
     assert_eq!(second_logger.queue.pending().len(), 0);
+    assert_eq!(logs.count_containing(DATADOG_413_ERROR), 1);
 }
 
 #[tokio::test]

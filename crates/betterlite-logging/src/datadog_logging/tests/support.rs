@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::with_default;
+use tracing::subscriber::{DefaultGuard, set_default, with_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
@@ -408,7 +408,7 @@ pub(super) fn simple_payload() -> DatadogPayload {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct CapturedWarnings(Arc<Mutex<Vec<String>>>);
+pub(super) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
 
 #[derive(Default)]
 struct Message(String);
@@ -421,7 +421,7 @@ impl Visit for Message {
     }
 }
 
-impl CapturedWarnings {
+impl CapturedLogs {
     pub(super) fn count_containing(&self, needle: &str) -> usize {
         self.0
             .lock()
@@ -432,9 +432,9 @@ impl CapturedWarnings {
     }
 }
 
-impl<Inner: Subscriber> Layer<Inner> for CapturedWarnings {
+impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        if *event.metadata().level() != Level::WARN {
+        if *event.metadata().level() > Level::WARN {
             return;
         }
         let mut message = Message::default();
@@ -446,12 +446,18 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedWarnings {
     }
 }
 
-pub(super) fn capture<Action, Output>(action: Action) -> (Output, CapturedWarnings)
+pub(super) fn capture<Action, Output>(action: Action) -> (Output, CapturedLogs)
 where
     Action: FnOnce() -> Output,
 {
-    let warnings = CapturedWarnings::default();
+    let warnings = CapturedLogs::default();
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
     let output = with_default(subscriber, action);
     (output, warnings)
+}
+
+pub(super) fn capture_logs() -> (DefaultGuard, CapturedLogs) {
+    let logs = CapturedLogs::default();
+    let guard = set_default(tracing_subscriber::registry().with(logs.clone()));
+    (guard, logs)
 }

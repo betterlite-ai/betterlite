@@ -96,6 +96,7 @@ async fn datadog_delivery_async_failure_carries_the_error_status() {
 
 #[tokio::test]
 async fn datadog_delivery_sync_extra_status_is_an_error() {
+    let (_guard, logs) = support::capture_logs();
     let (logger, transport) = support::build(
         &support::direct_init("key-1", "us5.datadoghq.com"),
         &support::Environment::new(),
@@ -111,6 +112,7 @@ async fn datadog_delivery_sync_extra_status_is_an_error() {
     sync::log_success_event(&logger, &call).await;
     assert_eq!(transport.call_count(), 1);
     assert_eq!(logger.queue.pending().len(), 0);
+    assert_eq!(logs.count_containing("Datadog Layer Error"), 1);
 }
 
 #[tokio::test]
