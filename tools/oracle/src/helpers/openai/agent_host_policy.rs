@@ -94,7 +94,7 @@ impl Helper for Op {
         for scenario in &input.scenarios {
             scenarios.push(scenario_value(scenario)?);
         }
-        Ok(json!({ "scenarios": scenarios }))
+        Ok(json!(scenarios))
     }
 }
 
