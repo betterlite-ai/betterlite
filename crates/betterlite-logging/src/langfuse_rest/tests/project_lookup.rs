@@ -4,8 +4,7 @@ use betterlite_models::decisions::Json;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, FakeClock, FakeLangfuse, NO_PROJECTS, PROJECTS, api_error, client_for,
-    in_service_failure, request_line,
+    Answer, FakeClock, FakeLangfuse, NO_PROJECTS, PROJECTS, api_error, client_for, request_line,
 };
 use crate::langfuse_rest::errors::LangfuseRestError;
 use crate::langfuse_rest::transport::RequestFailure;
@@ -56,8 +55,14 @@ async fn project_id_propagates_a_transport_error() {
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
     let client = client_for(&server, TTL, &clock, &tasks);
-    let failure = in_service_failure(client.project_id().await.expect_err("a transport error"));
-    assert!(matches!(failure, RequestFailure::Transport(_)));
+    let error = client.project_id().await.expect_err("a transport error");
+    assert!(
+        matches!(
+            &error,
+            LangfuseRestError::Request(RequestFailure::Transport(_))
+        ),
+        "{error:?}"
+    );
 }
 
 #[tokio::test]

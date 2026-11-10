@@ -1,9 +1,10 @@
 use std::str::Utf8Error;
 
 use betterlite_models::decisions::Json;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use super::transport::RequestFailure;
+use super::transport::{HttpResponse, RequestFailure};
 
 #[derive(Debug, Error)]
 #[error("status_code: {status_code}, body: {}", body_text(body))]
@@ -38,6 +39,26 @@ pub struct AuthCheckFailure {
 pub fn auth_check_failure(reason: String) -> AuthCheckFailure {
     tracing::warn!("Langfuse auth check failed: {reason}");
     AuthCheckFailure { reason }
+}
+
+pub fn decode_response<T>(response: &HttpResponse) -> Result<T, LangfuseRestError>
+where
+    T: DeserializeOwned,
+{
+    if !(200..300).contains(&response.status) {
+        return Err(LangfuseRestError::Api(LangfusePromptError {
+            status_code: response.status,
+            body: response.json()?,
+        }));
+    }
+    match serde_json::from_slice(&response.body) {
+        Ok(value) => Ok(value),
+        Err(source) if source.is_data() => Err(LangfuseRestError::Decode { source }),
+        Err(_) => Err(LangfuseRestError::Api(LangfusePromptError {
+            status_code: response.status,
+            body: response.json()?,
+        })),
+    }
 }
 
 fn body_text(body: &Json) -> String {

@@ -8,7 +8,7 @@ use tokio_util::task::TaskTracker;
 
 use super::support::{
     Answer, FakeClock, FakeLangfuse, PUBLIC_KEY, SECRET_KEY, Setup, api_error, chat_prompt, client,
-    client_for, header, in_service_failure, prompt_version, proxied, request_line, text_prompt,
+    client_for, header, prompt_version, proxied, request_line, text_prompt,
 };
 use crate::langfuse_rest::errors::LangfuseRestError;
 use crate::langfuse_rest::records::{Prompt, PromptMessage};
@@ -148,13 +148,17 @@ async fn two_transport_errors_keep_the_transport_failure() {
     let tasks = TaskTracker::new();
     let clock = FakeClock::new();
     let client = client_for(&server, TTL, &clock, &tasks);
-    let failure = in_service_failure(
-        client
-            .get_prompt("greeting", None, None)
-            .await
-            .expect_err("the prompt fails"),
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the prompt fails");
+    assert!(
+        matches!(
+            &error,
+            LangfuseRestError::Request(RequestFailure::Transport(_))
+        ),
+        "{error:?}"
     );
-    assert!(matches!(failure, RequestFailure::Transport(_)));
     assert_eq!(server.request_count(), 2);
 }
 
@@ -538,11 +542,15 @@ async fn a_client_reports_an_invalid_base_url_as_a_transport_failure() {
         clock: &clock,
         tasks: &tasks,
     });
-    let failure = in_service_failure(
-        client
-            .get_prompt("greeting", None, None)
-            .await
-            .expect_err("the prompt fails"),
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the prompt fails");
+    assert!(
+        matches!(
+            &error,
+            LangfuseRestError::Request(RequestFailure::Url { .. })
+        ),
+        "{error:?}"
     );
-    assert!(matches!(failure, RequestFailure::Url { .. }));
 }

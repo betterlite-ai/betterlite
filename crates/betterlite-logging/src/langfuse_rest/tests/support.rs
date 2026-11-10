@@ -23,7 +23,6 @@ use crate::langfuse_rest::client::{
 };
 use crate::langfuse_rest::errors::{LangfusePromptError, LangfuseRestError};
 use crate::langfuse_rest::records::Prompt;
-use crate::langfuse_rest::transport::RequestFailure;
 
 pub(crate) const PUBLIC_KEY: &str = "pk-lf-test";
 pub(crate) const SECRET_KEY: &str = "sk-lf-test";
@@ -310,19 +309,6 @@ pub(crate) fn api_error(error: LangfuseRestError) -> LangfusePromptError {
             panic!("expected an api error, got {source:?}")
         }
         LangfuseRestError::Body { source } => panic!("expected an api error, got {source:?}"),
-    }
-}
-
-pub(crate) fn in_service_failure(error: LangfuseRestError) -> RequestFailure {
-    match error {
-        LangfuseRestError::Request(failure) => failure,
-        LangfuseRestError::Api(api) => panic!("expected a transport failure, got {api:?}"),
-        LangfuseRestError::Decode { source } => {
-            panic!("expected a transport failure, got {source:?}")
-        }
-        LangfuseRestError::Body { source } => {
-            panic!("expected a transport failure, got {source:?}")
-        }
     }
 }
 

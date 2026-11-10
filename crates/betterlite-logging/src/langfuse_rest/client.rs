@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 
 use super::cache::{CachedLookup, CachedPrompt, Clock, PromptCache, PromptKey};
-use super::errors::{AuthCheckFailure, LangfusePromptError, LangfuseRestError, auth_check_failure};
+use super::errors::{AuthCheckFailure, LangfuseRestError, auth_check_failure, decode_response};
 use super::records::{Projects, Prompt};
 use super::transport::{HeaderError, LangfuseHttp, headers_for};
 
@@ -98,7 +98,11 @@ fn default_client() -> Result<ProxiedClient, LangfuseClientError> {
 
 impl LangfuseApiClient {
     pub async fn auth_check(&self) -> Option<AuthCheckFailure> {
-        let projects = match self.state.projects().await {
+        let response = match self.state.http.get(PROJECTS_PATH, Vec::new()).await {
+            Ok(response) => response,
+            Err(failure) => return Some(auth_check_failure(failure.to_string())),
+        };
+        let projects: Projects = match decode_response(&response) {
             Ok(projects) => projects,
             Err(error) => return Some(auth_check_failure(error.to_string())),
         };
@@ -111,10 +115,9 @@ impl LangfuseApiClient {
     }
 
     pub async fn project_id(&self) -> Result<Option<String>, LangfuseRestError> {
-        self.state
-            .projects()
-            .await
-            .map(|projects| projects.data.into_iter().next().map(|project| project.id))
+        let response = self.state.http.get(PROJECTS_PATH, Vec::new()).await?;
+        let projects: Projects = decode_response(&response)?;
+        Ok(projects.data.into_iter().next().map(|project| project.id))
     }
 
     pub async fn get_prompt(
@@ -166,24 +169,6 @@ impl LangfuseApiClient {
 }
 
 impl ClientState {
-    async fn projects(&self) -> Result<Projects, LangfuseRestError> {
-        let response = self.http.get(PROJECTS_PATH, Vec::new()).await?;
-        if !(200..300).contains(&response.status) {
-            return Err(LangfuseRestError::Api(LangfusePromptError {
-                status_code: response.status,
-                body: response.json()?,
-            }));
-        }
-        match serde_json::from_slice(&response.body) {
-            Ok(projects) => Ok(projects),
-            Err(source) if source.is_data() => Err(LangfuseRestError::Decode { source }),
-            Err(_) => Err(LangfuseRestError::Api(LangfusePromptError {
-                status_code: response.status,
-                body: response.json()?,
-            })),
-        }
-    }
-
     async fn fetch(&self, key: &PromptKey) -> Result<Prompt, LangfuseRestError> {
         let prompt = self.request_prompt(key).await?;
         self.cache_prompt(key, prompt.clone());
@@ -210,20 +195,7 @@ impl ClientState {
             utf8_percent_encode(&key.name, PROMPT_NAME_SET)
         );
         let response = self.http.get(&path, prompt_query(key)).await?;
-        if !(200..300).contains(&response.status) {
-            return Err(LangfuseRestError::Api(LangfusePromptError {
-                status_code: response.status,
-                body: response.json()?,
-            }));
-        }
-        match serde_json::from_slice(&response.body) {
-            Ok(prompt) => Ok(prompt),
-            Err(source) if source.is_data() => Err(LangfuseRestError::Decode { source }),
-            Err(_) => Err(LangfuseRestError::Api(LangfusePromptError {
-                status_code: response.status,
-                body: response.json()?,
-            })),
-        }
+        decode_response(&response)
     }
 
     fn cache_prompt(&self, key: &PromptKey, prompt: Prompt) {
