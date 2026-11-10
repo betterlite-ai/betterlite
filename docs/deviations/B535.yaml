@@ -1,0 +1,5 @@
+task: B535
+deviations:
+  - what: A negative AZURE_OPERATION_POLLING_TIMEOUT becomes zero seconds; LiteLLM keeps the negative integer and every pending poll times out on its first check.
+    why: betterlite reads the environment string into a Duration, which cannot hold a negative value, and a negative polling timeout is outside the range a working Azure image setup configures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L505
