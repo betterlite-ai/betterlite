@@ -1,0 +1,43 @@
+kind: helper
+name: oci-chat-wire-generic-response-text-tools-usage
+call:
+  b5942:
+    function: generic_response
+    status: 200
+    body:
+      modelId: meta.llama
+      modelVersion: "1"
+      chatResponse:
+        apiFormat: GENERIC
+        timeCreated: "2025-01-01T00:00:00.000Z"
+        choices:
+          - index: 0
+            finishReason: TOOL_CALL
+            message:
+              role: ASSISTANT
+              content:
+                - type: TEXT
+                  text: "hi "
+                - type: TEXT
+                  text: "there"
+              toolCalls:
+                - id: call_given
+                  type: FUNCTION
+                  name: lookup
+                  arguments: '{"q": "x"}'
+                - type: FUNCTION
+                  name: other
+                  arguments: "{}"
+        usage:
+          promptTokens: 3
+          completionTokens: 5
+          totalTokens: 8
+          completionTokensDetails:
+            reasoningTokens: 2
+compare:
+  ignore:
+    - pointer: /value/choices/0/message/provider_specific_fields
+      why: "betterlite's shared AssistantMessage always serializes this object; LiteLLM's Message drops it when unset"
+    - pointer: /value/choices/0/provider_specific_fields
+      why: "betterlite's shared ChatChoice always serializes this object; LiteLLM's Choices drops it when unset"
+env: {}

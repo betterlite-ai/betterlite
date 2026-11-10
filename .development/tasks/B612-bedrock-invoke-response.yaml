@@ -166,7 +166,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_response)"
       && grep -q 'decode_invoke_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_response.rs &&
-      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_response_corpus$/)'
+      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_response_corpus(::|$)/)'
   - id: case-base-family-outputs
     why: Use B2205 provider selection. Cohere text key presence wins over generations and leaves finish_reason unchanged;
       otherwise use generations[0].text and B206 map_finish_reason on its required finish_reason. AI21 uses completions[0].data.text;

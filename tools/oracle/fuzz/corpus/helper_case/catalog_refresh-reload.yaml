@@ -1,0 +1,15 @@
+kind: helper
+name: catalog-refresh-corpus-reload
+call:
+  catalog_refresh:
+    operation: reload
+    environment:
+      LITELLM_LOCAL_MODEL_COST_MAP: "false"
+    replies:
+      - status: 404
+      - error: invalid_url
+    max_attempts: 2
+    jitter: ["0"]
+env: {}
+compare:
+  ignore: []

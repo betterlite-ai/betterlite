@@ -1,0 +1,43 @@
+kind: helper
+name: openai-workload-identity-refresh-half-life-boundary
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        half: "subject"
+      replies:
+        - {status: 200, body: '{"access_token":"token","expires_in":1000}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":1000}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":4000}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":4000}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":1}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":1}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":0.5}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":0}'}
+        - {status: 200, body: '{"access_token":"token","expires_in":-5}'}
+      steps:
+        - {op: advance, ms: 0}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 499999}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 1}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 2799000}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 2799000}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 1000}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 4000000}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 499}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 1}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 1000}
+        - {op: token, identity: {name: half}}
+        - {op: advance, ms: 1000}
+        - {op: token, identity: {name: half}}
+        - {op: token, identity: {name: half}}

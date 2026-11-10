@@ -1,0 +1,23 @@
+kind: helper
+name: datadog-llm-obs-openai-messages
+call:
+  b3935:
+    function: messages
+    messages:
+      - {role: system, content: "You are a helpful assistant."}
+      - role: user
+        content:
+          - {type: text, text: "Hello "}
+          - {type: text, text: "there"}
+      - {role: assistant, content: null, reasoning_content: "let me think"}
+      - role: user
+        content:
+          - {type: image_url, image_url: {url: "https://example.com/a.png"}}
+      - {role: user, content: []}
+      - {role: tool, content: "42", tool_call_id: "call-unlinked"}
+      - role: assistant
+        content: "answer"
+        reasoning_content: ""
+env: {}
+compare:
+  ignore: []

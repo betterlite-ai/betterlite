@@ -1,0 +1,30 @@
+kind: helper
+name: triton-provider-chunk-parser
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: stream_line
+    lines:
+      - 'data: {"text_output":"hi","stop_reason":"stop","is_finished":true,"index":2}'
+      - '{"text_output":"hi"}'
+      - 'data: {"text_output":"hi"}'
+      - 'data: {"stop_reason":"length","is_finished":true}'
+      - 'data: {}'
+      - "data: not json"
+      - ""
+      - "data: [DONE]"
+      - "[DONE]"
+      - 'data: {"index":3}'
+      - '{"text_output":"a[DONE]b"}'
+      - "data:5"
+      - 'data: ["hi"]'
+      - 'data: ["hi","stop",true,1]'
+      - "data: null"
+      - "data: 0"
+      - "data: []"
+      - 'data: ""'
+      - "data: true"
+      - "data: 0.0"
+      - "data: -0.0"
+      - "data: 1.5"

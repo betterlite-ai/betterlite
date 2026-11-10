@@ -18,6 +18,8 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-context/src/local_ttl_cache/**"
+    - "crates/betterlite-context/src/local_ttl_cache.rs"
     - crates/betterlite-cache/src/backend.rs
     - crates/betterlite-cache/src/backend/**
     - crates/betterlite-cache/src/types.rs
