@@ -66,19 +66,27 @@ pub struct OcrMachine {
 impl OcrMachine {
     pub async fn execute(self, hooks: &dyn OcrInterceptors) -> Result<OCRResponse, OcrError> {
         let Self { route, call, host } = self;
-        let provided: Option<Arc<dyn AzureAdTokenProvider>> = match (call.caller_token, host) {
-            (true, Some(token_host)) => Some(Arc::new(HostTokenProvider { host: token_host })),
-            (true, None) => {
-                return Err(OcrError::InvalidRequest(
-                    "a caller token call needs a host".to_owned(),
-                ));
-            }
-            (false, _) => None,
-        };
-        let mut request = call.request;
-        request.azure_ad_token_provider = provided.or(request.azure_ad_token_provider);
+        let request = install_caller_token(call, host)?;
         route.execute(request, hooks).await
     }
+}
+
+fn install_caller_token(
+    call: OcrCall,
+    host: Option<Arc<dyn OcrHost>>,
+) -> Result<LiteLLMOcrRequest<OcrDocumentInput>, OcrError> {
+    let provided: Option<Arc<dyn AzureAdTokenProvider>> = match (call.caller_token, host) {
+        (true, Some(token_host)) => Some(Arc::new(HostTokenProvider { host: token_host })),
+        (true, None) => {
+            return Err(OcrError::InvalidRequest(
+                "a caller token call needs a host".to_owned(),
+            ));
+        }
+        (false, _) => None,
+    };
+    let mut request = call.request;
+    request.azure_ad_token_provider = provided.or(request.azure_ad_token_provider);
+    Ok(request)
 }
 
 struct HostTokenProvider {

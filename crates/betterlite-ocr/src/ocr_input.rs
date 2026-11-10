@@ -12,6 +12,7 @@ use crate::ocr_provider::OcrConfigKind;
 use crate::ocr_provider::resolve::resolve_provider_config;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::mem;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -130,8 +131,14 @@ impl LiteLLMOcrRequest {
         connection: OcrConnectionInputs,
     ) -> Result<Self, OcrError> {
         let mut request = Self::new(model, document, custom_llm_provider, optional_params)?;
+        request.apply_connection(connection)?;
+        Ok(request)
+    }
+
+    fn apply_connection(&mut self, connection: OcrConnectionInputs) -> Result<(), OcrError> {
         let extra_headers = connection.header_pairs()?;
-        request.transport = request.transport.with_overrides(
+        let transport = mem::take(&mut self.transport);
+        self.transport = transport.with_overrides(
             extra_headers,
             connection
                 .input_sources
@@ -140,7 +147,7 @@ impl LiteLLMOcrRequest {
                 .unwrap_or_default(),
             connection.timeout,
         );
-        request.credentials = OcrCredentialInputs::new(
+        self.credentials = OcrCredentialInputs::new(
             connection.api_key,
             connection
                 .input_sources
@@ -154,8 +161,8 @@ impl LiteLLMOcrRequest {
                 .copied()
                 .unwrap_or_default(),
         );
-        request.input_sources = connection.input_sources;
-        Ok(request)
+        self.input_sources = connection.input_sources;
+        Ok(())
     }
 
     pub fn map_document<T, F>(self, map: F) -> Result<LiteLLMOcrRequest<T>, OcrError>
