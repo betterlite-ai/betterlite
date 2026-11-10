@@ -19,6 +19,8 @@ use crate::paths::unique_id;
 use crate::routing_mock_scripts::MockScript;
 use crate::runner::DatabaseEnvironment;
 
+#[path = "run/polling.rs"]
+mod polling;
 #[path = "run/redis.rs"]
 mod redis;
 #[path = "run/tests.rs"]
