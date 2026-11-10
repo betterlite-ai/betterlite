@@ -191,6 +191,63 @@ fn weave_otel_hands_the_span_to_the_weave_writer() {
     assert_no_generic_keys(&attributes);
 }
 
+fn exported_attributes(
+    context: &AttributeContext<'_>,
+    kwargs: &MetadataMap,
+    response: &OtelModelValue,
+) -> Vec<(String, Value)> {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let mut span = provider.tracer("b3856-dispatch-raw").start("case");
+    set_attributes(&mut span, context, kwargs, Some(response)).expect("attributes");
+    span.end();
+    let spans = exporter.get_finished_spans().expect("spans");
+    spans
+        .first()
+        .expect("one span")
+        .attributes
+        .iter()
+        .map(|pair| (pair.key.to_string(), pair.value.clone()))
+        .collect()
+}
+
+#[rstest]
+#[case::langtrace("langtrace")]
+#[case::langfuse_otel("langfuse_otel")]
+#[case::weave_otel("weave_otel")]
+fn a_vendor_callback_exports_each_attribute_key_once(#[case] callback_name: &str) {
+    let config = OpenTelemetryConfig::default();
+    let exported = exported_attributes(
+        &context(&config, Some(callback_name)),
+        &chat_kwargs(),
+        &chat_response(),
+    );
+    let mut names: Vec<&str> = exported.iter().map(|(key, _)| key.as_str()).collect();
+    let written = names.len();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), written);
+}
+
+#[test]
+fn a_repeated_vendor_key_keeps_the_last_value() {
+    let config = OpenTelemetryConfig::default();
+    let exported = exported_attributes(
+        &context(&config, Some("langfuse_otel")),
+        &chat_kwargs(),
+        &chat_response(),
+    );
+    let input = exported
+        .iter()
+        .find(|(key, _)| key == "langfuse.observation.input")
+        .map(|(_, value)| value.to_string())
+        .expect("observation input");
+    let parsed: OtelModelValue = serde_json::from_str(&input).expect("json text");
+    assert!(parsed.as_array().is_some());
+}
+
 #[rstest]
 #[case::base_otel_name(Some("otel"))]
 #[case::no_name(None)]

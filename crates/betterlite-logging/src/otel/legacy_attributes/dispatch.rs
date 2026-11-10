@@ -16,7 +16,9 @@ use super::context::{AttributeContext, InferenceCall};
 use super::error::LegacyAttributesError;
 use super::request::set_request_attributes;
 use super::response::set_response_attributes;
+use last_wins::LastWins;
 
+mod last_wins;
 mod tests;
 
 const VENDOR_NAMES: [&str; 3] = ["langtrace", "langfuse_otel", "weave_otel"];
@@ -34,7 +36,9 @@ where
         .callback_name
         .filter(|name| VENDOR_NAMES.contains(name));
     if let Some(name) = vendor {
-        write_vendor_attributes(span, name, kwargs, response);
+        LastWins::write(span, |buffered| {
+            write_vendor_attributes(buffered, name, kwargs, response);
+        });
         return Ok(());
     }
     let empty = MetadataMap::new();
