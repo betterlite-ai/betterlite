@@ -390,6 +390,7 @@ fn empty_catalog_returns_none_when_no_model_is_chat() {
 #[case::embedding(Some("embedding"), false)]
 #[case::image_generation(Some("image_generation"), false)]
 #[case::empty(Some(""), false)]
+#[case::capitalized(Some("Chat"), false)]
 fn chat_filter_keeps_only_chat_and_responses_modes(#[case] mode: Option<&str>, #[case] kept: bool) {
     let models = [
         listed("probe", mode, None),
