@@ -116,6 +116,10 @@ fn project(scenario: &Scenario) -> Json {
     ),
     parsed("null")
 )]
+#[case::untranslated_route_skips_the_handler(
+    Scenario::Mapped(r#"{"litellm_metadata":{"user_api_key_request_route":"/v1/unmapped"}}"#),
+    parsed("null")
+)]
 #[case::messages_skip_the_route_check(
     Scenario::Plain(
         r#"{"messages":[{"role":"user","content":"kept"}],"litellm_metadata":{"user_api_key_request_route":"/v1/unmapped"}}"#
