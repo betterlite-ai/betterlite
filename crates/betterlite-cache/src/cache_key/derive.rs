@@ -25,7 +25,9 @@ where
         .and_then(|params| params.preset_cache_key.clone())
     {
         let message = format!("returning preset cache key: {preset}");
-        let _printed = hooks.main_print_verbose(Payload::String(message));
+        // LiteLLM only debug-logs the derivation steps, so logger_only keeps set_verbose from adding console lines.
+        let _logged =
+            hooks.utils_print_verbose(Payload::String(message), "DEBUG", &Payload::Bool(true));
         return Ok(preset);
     }
     let semantic = settings
@@ -36,7 +38,8 @@ where
     let key = add_namespace(request, settings, hooks, hashed);
     let length = key_material.len();
     let message = format!("created cache key: {key} (source material length: {length})");
-    let _printed = hooks.main_print_verbose(Payload::String(message));
+    let _logged =
+        hooks.utils_print_verbose(Payload::String(message), "DEBUG", &Payload::Bool(true));
     if let Some(params) = request.litellm_params.as_mut() {
         params.preset_cache_key = Some(key.clone());
     }
@@ -61,7 +64,8 @@ where
 {
     let hashed = hex::encode(Sha256::digest(key_material.as_bytes()));
     let message = format!("hashed cache key (SHA-256): {hashed}");
-    let _printed = hooks.main_print_verbose(Payload::String(message));
+    let _logged =
+        hooks.utils_print_verbose(Payload::String(message), "DEBUG", &Payload::Bool(true));
     hashed
 }
 
@@ -90,6 +94,7 @@ where
         Some(_) | None => hashed,
     };
     let message = format!("final hashed key: {key}");
-    let _printed = hooks.main_print_verbose(Payload::String(message));
+    let _logged =
+        hooks.utils_print_verbose(Payload::String(message), "DEBUG", &Payload::Bool(true));
     key
 }

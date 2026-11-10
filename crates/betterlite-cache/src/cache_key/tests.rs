@@ -326,8 +326,9 @@ fn preset_key_bypasses_derivation() {
     let key = get_cache_key(&mut request, &settings, &hooks).expect("the preset key");
     assert_eq!(key, "given-key");
     assert_eq!(stored_preset(&request).as_deref(), Some("given-key"));
+    assert!(console(&hooks).is_empty());
     assert_eq!(
-        console(&hooks),
+        logged(&hooks),
         vec![Payload::String(
             "returning preset cache key: given-key".to_owned()
         )]
@@ -603,13 +604,14 @@ fn should_use_cache_follows_the_mode_and_the_opt_in(
 }
 
 #[test]
-fn print_verbose_prints_derivation_steps_only_when_verbose() {
+fn derivation_messages_stay_on_the_debug_log() {
     let mut request = with_params(vec![param("model", string("gpt-4"))]);
     let hooks = hooks(true);
     let key = get_cache_key(&mut request, &settings_for(LiteLlmCacheType::Local), &hooks)
         .expect("a cache key");
+    assert!(console(&hooks).is_empty());
     assert_eq!(
-        console(&hooks),
+        logged(&hooks),
         vec![
             Payload::String(format!("hashed cache key (SHA-256): {key}")),
             Payload::String(format!("final hashed key: {key}")),
@@ -618,11 +620,10 @@ fn print_verbose_prints_derivation_steps_only_when_verbose() {
             )),
         ]
     );
-    assert_eq!(logged(&hooks).len(), 3);
 }
 
 #[test]
-fn print_verbose_keeps_console_quiet_without_verbose() {
+fn derivation_messages_log_without_verbose() {
     let mut request = with_params(vec![param("model", string("gpt-4"))]);
     let hooks = hooks(false);
     let _key = get_cache_key(&mut request, &settings_for(LiteLlmCacheType::Local), &hooks)
