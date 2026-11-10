@@ -1,10 +1,18 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_client_secret::token::AccessToken;
+use crate::azure_client_secret::transport::Clock;
 
-use super::decode::{Expiry, HostedTokenReply, ReplyScalar};
+use super::decode::{Expiry, HostedTokenReply, ReplyScalar, decode_hosted_identity_token};
 use super::environment::{HostedEnvironment, REDACTED};
 use super::error::HostedIdentityError;
+use super::request::HostedResponse;
+
+const APP_SERVICE_PREFIX: &str =
+    "App Service managed identity configuration not found in environment. ";
+const AZURE_ML_PREFIX: &str = "Azure ML managed identity configuration not found in environment. ";
+const SERVICE_FABRIC_PREFIX: &str =
+    "Service Fabric managed identity configuration not found in environment. ";
 
 pub(crate) const REFRESH_THRESHOLD_SECONDS: i64 = 7200;
 pub(crate) const DEFAULT_TOKEN_TYPE: &str = "Bearer";
@@ -39,7 +47,31 @@ fn scalar_text(value: Option<&ReplyScalar>) -> String {
     }
 }
 
-pub fn msal_reply(
+pub fn msal_response(
+    kind: MsalKind,
+    response: &HostedResponse,
+    environment: &HostedEnvironment,
+    started: i64,
+    clock: &dyn Clock,
+) -> Result<AccessToken, HostedIdentityError> {
+    let response_time = clock.now_unix_seconds();
+    let raw = response.body.expose_secret();
+    let reply = decode_hosted_identity_token(raw.as_bytes())?.ok_or_else(|| {
+        HostedIdentityError::ReplyValue {
+            field: "$".to_owned(),
+        }
+    })?;
+    let normalized = msal_reply(kind, &reply, environment, response_time, raw)?;
+    let prefix = match kind {
+        MsalKind::AppService => APP_SERVICE_PREFIX,
+        MsalKind::AzureMl => AZURE_ML_PREFIX,
+        MsalKind::ServiceFabric => SERVICE_FABRIC_PREFIX,
+    };
+    // the SDK reads its own clock after MSAL normalized the reply, so a slow request shifts expires_on
+    complete_msal(normalized, prefix, started, clock.now_unix_seconds())
+}
+
+fn msal_reply(
     kind: MsalKind,
     reply: &HostedTokenReply,
     environment: &HostedEnvironment,
@@ -100,7 +132,7 @@ fn service_fabric_error(reply: &HostedTokenReply) -> &'static str {
     }
 }
 
-pub fn complete_msal(
+fn complete_msal(
     reply: MsalReply,
     prefix: &'static str,
     started: i64,

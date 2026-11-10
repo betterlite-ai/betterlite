@@ -7,16 +7,16 @@ use std::sync::Mutex;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_arc_identity::{ArcHost, ArcPlatform};
-use crate::azure_client_secret::token::AccessToken;
 use crate::azure_client_secret::transport::{Clock, HttpMethod};
 use crate::azure_hosted_identity::credential::{
     CloudShellCredential, HostedCredential, HostedIdentity,
 };
 use crate::azure_hosted_identity::environment::HostedEnvironment;
-use crate::azure_hosted_identity::error::HostedIdentityError;
 use crate::azure_hosted_identity::msal_reply::MsalKind;
 use crate::azure_hosted_identity::protocol::{HostedProtocol, select_hosted_protocol};
-use crate::azure_hosted_identity::request::{HostedRequest, HostedResponse, HostedTransport};
+use crate::azure_hosted_identity::request::{
+    HostedIo, HostedRequest, HostedResponse, HostedTransport, TokenResult,
+};
 
 pub(super) const RESOURCE: &str = "https://cognitiveservices.azure.com";
 pub(super) const NOW: i64 = 1_700_000_000;
@@ -65,6 +65,9 @@ impl Recorded {
             .map(|(_, value)| value.as_str())
     }
 }
+
+type Acquired = (TokenResult, FixtureTransport);
+type Replies = Vec<HostedResponse>;
 
 pub(super) struct FixtureTransport {
     replies: Mutex<VecDeque<HostedResponse>>,
@@ -206,21 +209,29 @@ impl Fixture {
         protocol: MsalKind,
         replies: Vec<HostedResponse>,
         clock: &FixtureClock,
-    ) -> (Result<AccessToken, HostedIdentityError>, FixtureTransport) {
-        let transport = FixtureTransport::new(replies);
-        let outcome = self.hosted().acquire(protocol, &transport, clock, RESOURCE);
-        (outcome, transport)
+    ) -> Acquired {
+        run(replies, clock, |io| {
+            self.hosted().acquire(protocol, io, RESOURCE)
+        })
     }
 
-    pub(super) fn acquire_cloud_shell(
-        &self,
-        replies: Vec<HostedResponse>,
-        clock: &FixtureClock,
-    ) -> (Result<AccessToken, HostedIdentityError>, FixtureTransport) {
-        let transport = FixtureTransport::new(replies);
-        let outcome = self.cloud_shell().acquire(&transport, clock, RESOURCE);
-        (outcome, transport)
+    pub(super) fn acquire_cloud_shell(&self, replies: Replies, clock: &FixtureClock) -> Acquired {
+        run(replies, clock, |io| {
+            self.cloud_shell().acquire(io, RESOURCE)
+        })
     }
+}
+
+fn run<Call>(replies: Replies, clock: &FixtureClock, call: Call) -> Acquired
+where
+    Call: FnOnce(&HostedIo<'_>) -> TokenResult,
+{
+    let transport = FixtureTransport::new(replies);
+    let outcome = call(&HostedIo {
+        transport: &transport,
+        clock,
+    });
+    (outcome, transport)
 }
 
 #[derive(Debug, Clone)]

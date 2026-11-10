@@ -1,25 +1,16 @@
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
-
-use crate::azure_client_secret::token::AccessToken;
-use crate::azure_client_secret::transport::Clock;
+use secrecy::SecretString;
 
 use super::cloud_shell_reply;
-use super::decode::decode_hosted_identity_token;
 use super::environment::HostedEnvironment;
 use super::error::HostedIdentityError;
 use super::msal_reply::{self, MsalKind};
 use super::request::{
-    APP_SERVICE_API_VERSION, AZURE_ML_API_VERSION, HostedRequest, HostedTransport,
-    SERVICE_FABRIC_API_VERSION, cloud_shell_request, token_request,
+    APP_SERVICE_API_VERSION, AZURE_ML_API_VERSION, HostedIo, HostedRequest,
+    SERVICE_FABRIC_API_VERSION, TokenResult, cloud_shell_request, token_request,
 };
 
-const APP_SERVICE_PREFIX: &str =
-    "App Service managed identity configuration not found in environment. ";
-const AZURE_ML_PREFIX: &str = "Azure ML managed identity configuration not found in environment. ";
-const SERVICE_FABRIC_PREFIX: &str =
-    "Service Fabric managed identity configuration not found in environment. ";
 const CLOUD_SHELL_IDENTITY_KEYS: [&str; 3] = ["object_id", "resource_id", "client_id"];
 
 #[derive(Debug, Clone, Default)]
@@ -51,37 +42,10 @@ impl HostedCredential {
         }
     }
 
-    pub fn acquire(
-        &self,
-        kind: MsalKind,
-        transport: &dyn HostedTransport,
-        clock: &dyn Clock,
-        resource: &str,
-    ) -> Result<AccessToken, HostedIdentityError> {
+    pub fn acquire(&self, kind: MsalKind, io: &HostedIo<'_>, resource: &str) -> TokenResult {
         let request = self.request(kind, resource)?;
-        let started = clock.now_unix_seconds();
-        let response = transport
-            .send(&request)
-            .map_err(HostedIdentityError::Transport)?;
-        let response_time = clock.now_unix_seconds();
-        let reply = decode_hosted_identity_token(response.body.expose_secret().as_bytes())?
-            .ok_or_else(|| HostedIdentityError::ReplyValue {
-                field: "$".to_owned(),
-            })?;
-        let normalized = msal_reply::msal_reply(
-            kind,
-            &reply,
-            &self.environment,
-            response_time,
-            response.body.expose_secret(),
-        )?;
-        let prefix = match kind {
-            MsalKind::AppService => APP_SERVICE_PREFIX,
-            MsalKind::AzureMl => AZURE_ML_PREFIX,
-            MsalKind::ServiceFabric => SERVICE_FABRIC_PREFIX,
-        };
-        // the SDK reads its own clock after MSAL normalized the reply, so a slow request shifts expires_on
-        msal_reply::complete_msal(normalized, prefix, started, clock.now_unix_seconds())
+        let (response, started) = io.exchange(&request)?;
+        msal_reply::msal_response(kind, &response, &self.environment, started, io.clock)
     }
 
     fn request(
@@ -153,50 +117,31 @@ impl CloudShellCredential {
         }
     }
 
-    pub fn acquire(
-        &self,
-        transport: &dyn HostedTransport,
-        clock: &dyn Clock,
-        resource: &str,
-    ) -> Result<AccessToken, HostedIdentityError> {
-        self.validate_identity()?;
+    pub fn acquire(&self, io: &HostedIo<'_>, resource: &str) -> TokenResult {
+        let request = self.request(resource)?;
+        let (response, request_time) = io.exchange(&request)?;
+        cloud_shell_reply::cloud_shell_response(&response, &self.environment, request_time)
+    }
+
+    fn request(&self, resource: &str) -> Result<HostedRequest, HostedIdentityError> {
+        if !self.within_default_credential {
+            self.reject_identity()?;
+        }
         let endpoint = self
             .environment
             .msi_endpoint
             .as_deref()
             .filter(|endpoint| !endpoint.is_empty())
             .ok_or(HostedIdentityError::CloudShellUnavailable)?;
-        let request = cloud_shell_request(
+        Ok(cloud_shell_request(
             endpoint,
             resource,
             &self.identity.identity_config,
             self.identity.user_client_id(),
-        );
-        let request_time = clock.now_unix_seconds();
-        let response = transport
-            .send(&request)
-            .map_err(HostedIdentityError::Transport)?;
-        let body = response.body.expose_secret();
-        if body.is_empty() {
-            return Err(HostedIdentityError::NoToken);
-        }
-        let reply = match decode_hosted_identity_token(body.as_bytes()) {
-            Ok(reply) => reply,
-            Err(HostedIdentityError::ReplyJson(source)) => {
-                return Err(cloud_shell_reply::json_reply_failure(
-                    response.content_type.as_deref(),
-                    source,
-                ));
-            }
-            Err(error) => return Err(error),
-        };
-        cloud_shell_reply::cloud_shell_token(reply.as_ref(), &self.environment, body, request_time)
+        ))
     }
 
-    fn validate_identity(&self) -> Result<(), HostedIdentityError> {
-        if self.within_default_credential {
-            return Ok(());
-        }
+    fn reject_identity(&self) -> Result<(), HostedIdentityError> {
         if self.identity.user_client_id().is_some() {
             return Err(HostedIdentityError::CloudShellClientId);
         }

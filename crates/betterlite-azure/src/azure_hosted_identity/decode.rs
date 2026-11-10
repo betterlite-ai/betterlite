@@ -14,27 +14,26 @@ pub enum Expiry {
 
 impl Expiry {
     pub fn seconds(&self, field: &'static str) -> Result<i64, HostedIdentityError> {
-        match self {
-            Self::Whole(seconds) => Ok(*seconds),
-            Self::Text(text) => {
-                text.trim()
-                    .parse::<i64>()
-                    .map_err(|_error| HostedIdentityError::ReplyValue {
-                        field: field.to_owned(),
-                    })
-            }
-        }
+        let parsed = match self {
+            Self::Whole(seconds) => Some(*seconds),
+            Self::Text(text) => text.trim().parse::<i64>().ok(),
+        };
+        parsed.ok_or_else(|| HostedIdentityError::ReplyValue {
+            field: field.to_owned(),
+        })
     }
 
     pub fn nonzero_seconds(
         slot: Option<&Self>,
         field: &'static str,
     ) -> Result<Option<i64>, HostedIdentityError> {
-        let live = slot.filter(|expiry| match expiry {
-            Self::Whole(seconds) => *seconds != 0,
-            Self::Text(text) => !text.is_empty(),
-        });
-        live.map(|expiry| expiry.seconds(field)).transpose()
+        let Some(expiry) = slot else {
+            return Ok(None);
+        };
+        if *expiry == Self::Whole(0) || *expiry == Self::Text(String::new()) {
+            return Ok(None);
+        }
+        expiry.seconds(field).map(Some)
     }
 }
 

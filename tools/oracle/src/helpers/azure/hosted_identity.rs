@@ -7,6 +7,7 @@ use betterlite_azure::azure_hosted_identity::environment::HostedEnvironment;
 use betterlite_azure::azure_hosted_identity::error::HostedIdentityError;
 use betterlite_azure::azure_hosted_identity::msal_reply::MsalKind;
 use betterlite_azure::azure_hosted_identity::protocol::select_hosted_protocol;
+use betterlite_azure::azure_hosted_identity::request::HostedIo;
 use betterlite_config::loader::ConfigLoader;
 use fixture::{FixedClock, Recording, Reply, Selection};
 use secrecy::ExposeSecret as _;
@@ -85,18 +86,18 @@ fn token_step(step: &TokenStep) -> serde_json::Value {
         client_id: step.client_id.clone(),
         identity_config: step.identity_config.clone(),
     };
+    let io = HostedIo {
+        transport: &transport,
+        clock: &clock,
+    };
     let hosted = HostedCredential::new(environment.clone(), identity.clone());
     let acquired = match step.protocol {
-        Protocol::AppService => {
-            hosted.acquire(MsalKind::AppService, &transport, &clock, &step.resource)
-        }
-        Protocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &transport, &clock, &step.resource),
-        Protocol::ServiceFabric => {
-            hosted.acquire(MsalKind::ServiceFabric, &transport, &clock, &step.resource)
-        }
+        Protocol::AppService => hosted.acquire(MsalKind::AppService, &io, &step.resource),
+        Protocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &io, &step.resource),
+        Protocol::ServiceFabric => hosted.acquire(MsalKind::ServiceFabric, &io, &step.resource),
         Protocol::CloudShell => {
             CloudShellCredential::new(environment, identity, step.within_default_credential)
-                .acquire(&transport, &clock, &step.resource)
+                .acquire(&io, &step.resource)
         }
     };
     let outcome = match acquired {

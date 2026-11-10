@@ -3,7 +3,10 @@ use std::io;
 
 use secrecy::SecretString;
 
-use crate::azure_client_secret::transport::HttpMethod;
+use crate::azure_client_secret::token::AccessToken;
+use crate::azure_client_secret::transport::{Clock, HttpMethod};
+
+use super::error::HostedIdentityError;
 
 pub const APP_SERVICE_API_VERSION: &str = "2019-08-01";
 pub const AZURE_ML_API_VERSION: &str = "2017-09-01";
@@ -27,6 +30,28 @@ pub struct HostedResponse {
 
 pub trait HostedTransport {
     fn send(&self, request: &HostedRequest) -> io::Result<HostedResponse>;
+}
+
+pub type TokenResult = Result<AccessToken, HostedIdentityError>;
+
+#[derive(Clone, Copy)]
+pub struct HostedIo<'io> {
+    pub transport: &'io dyn HostedTransport,
+    pub clock: &'io dyn Clock,
+}
+
+impl HostedIo<'_> {
+    pub fn exchange(
+        &self,
+        request: &HostedRequest,
+    ) -> Result<(HostedResponse, i64), HostedIdentityError> {
+        let started = self.clock.now_unix_seconds();
+        let response = self
+            .transport
+            .send(request)
+            .map_err(HostedIdentityError::Transport)?;
+        Ok((response, started))
+    }
 }
 
 #[must_use]

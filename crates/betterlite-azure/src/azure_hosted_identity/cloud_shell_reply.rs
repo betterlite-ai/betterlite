@@ -1,33 +1,39 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_client_secret::token::AccessToken;
 
-use super::decode::{Expiry, HostedTokenReply};
+use super::decode::{Expiry, HostedTokenReply, decode_hosted_identity_token};
 use super::environment::HostedEnvironment;
 use super::error::HostedIdentityError;
 use super::msal_reply::{DEFAULT_TOKEN_TYPE, REFRESH_THRESHOLD_SECONDS};
+use super::request::HostedResponse;
 
 const TOKEN_MASK: &str = "****";
 
-#[must_use]
-pub fn json_reply_failure(mime: Option<&str>, source: serde_json::Error) -> HostedIdentityError {
-    let content_type = mime.unwrap_or_default();
-    if content_type.starts_with("application/json") {
-        return HostedIdentityError::JsonContentType(source);
-    }
-    HostedIdentityError::UnsupportedContentType {
-        content_type: content_type.to_owned(),
-        source,
-    }
-}
-
-pub fn cloud_shell_token(
-    reply: Option<&HostedTokenReply>,
+pub fn cloud_shell_response(
+    response: &HostedResponse,
     environment: &HostedEnvironment,
-    raw: &str,
     request_time: i64,
 ) -> Result<AccessToken, HostedIdentityError> {
-    let Some(parsed) = reply.filter(|candidate| !candidate.is_empty()) else {
+    let raw = response.body.expose_secret();
+    if raw.is_empty() {
+        return Err(HostedIdentityError::NoToken);
+    }
+    let reply = match decode_hosted_identity_token(raw.as_bytes()) {
+        Ok(reply) => reply,
+        Err(HostedIdentityError::ReplyJson(source)) => {
+            let content_type = response.content_type.as_deref().unwrap_or_default();
+            if content_type.starts_with("application/json") {
+                return Err(HostedIdentityError::JsonContentType(source));
+            }
+            return Err(HostedIdentityError::UnsupportedContentType {
+                content_type: content_type.to_owned(),
+                source,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(parsed) = reply.as_ref().filter(|candidate| !candidate.is_empty()) else {
         return Err(HostedIdentityError::NoToken);
     };
     let Some(token) = parsed.access_token.as_deref() else {

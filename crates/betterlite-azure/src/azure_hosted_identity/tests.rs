@@ -58,6 +58,7 @@ fn hosted_protocols_need_their_own_environment_settings(
     assert!(transport.recorded().is_empty());
 }
 
+#[test]
 fn isolation_between_headers() {
     let clock = FixtureClock::fixed(NOW);
     let first = Fixture::new().with_environment(&[
@@ -86,6 +87,7 @@ fn isolation_between_headers() {
     assert_no_secret(&second_request, "first-header");
 }
 
+#[test]
 fn isolation_between_client_ids() {
     let clock = FixtureClock::fixed(NOW);
     let first = Fixture::new()
@@ -114,6 +116,7 @@ fn isolation_between_client_ids() {
     assert_no_secret(&second_request, "alpha");
 }
 
+#[test]
 fn isolation_between_identity_configs() {
     let clock = FixtureClock::fixed(NOW);
     let first = Fixture::new()

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::azure_client_secret::transport::HttpMethod;
@@ -39,6 +40,7 @@ pub(super) fn app_service_header() {
     app_service_clock_drift();
 }
 
+#[test]
 fn app_service_token() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new().with_environment(&APP_SERVICE_ENVIRONMENT).acquire(
@@ -67,6 +69,7 @@ fn app_service_token() {
     assert_eq!(token.refresh_on, None);
 }
 
+#[test]
 fn app_service_client_id() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -80,6 +83,7 @@ fn app_service_client_id() {
     );
 }
 
+#[test]
 fn app_service_empty_client_id() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -90,40 +94,38 @@ fn app_service_empty_client_id() {
     assert_eq!(only_request(&transport).query_value("client_id"), None);
 }
 
+#[test]
 fn app_service_rejections() {
-    let clock = FixtureClock::fixed(NOW);
     let fixture = Fixture::new().with_environment(&APP_SERVICE_ENVIRONMENT);
-    assert_app_service_rejection(
+    let kind = MsalKind::AppService;
+    assert_rejection(
         &fixture,
+        kind,
         r#"{"statusCode":400,"message":"no identity"}"#,
         "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) 400, no identity",
-        &clock,
     );
-    assert_app_service_rejection(
+    assert_rejection(
         &fixture,
+        kind,
         r#"{"access_token":"app-token","expires_on":0}"#,
         "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) None, None",
-        &clock,
     );
-    assert_app_service_rejection(
+    assert_rejection(
         &fixture,
+        kind,
         r#"{"access_token":"","expires_on":1700003600}"#,
         "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) None, None",
-        &clock,
     );
 }
 
-fn assert_app_service_rejection(
-    fixture: &Fixture,
-    body: &str,
-    expected: &str,
-    clock: &FixtureClock,
-) {
-    let (outcome, transport) = fixture.acquire(MsalKind::AppService, vec![response(body)], clock);
+fn assert_rejection(fixture: &Fixture, kind: MsalKind, body: &str, expected: &str) {
+    let (outcome, transport) =
+        fixture.acquire(kind, vec![response(body)], &FixtureClock::fixed(NOW));
     assert_eq!(outcome.unwrap_err().to_string(), expected);
     assert_eq!(transport.recorded().len(), 1);
 }
 
+#[test]
 fn app_service_refresh() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -138,6 +140,7 @@ fn app_service_refresh() {
     assert_eq!(outcome.unwrap().refresh_on, Some(NOW + 3_600));
 }
 
+#[test]
 fn app_service_clock_drift() {
     let clock = FixtureClock::scheduled(&[NOW, NOW + 2, NOW + 3], NOW);
     let (outcome, _) = Fixture::new()
@@ -162,6 +165,7 @@ pub(super) fn cloud_shell_no_client_id() {
     cloud_shell_empty_endpoint();
 }
 
+#[test]
 fn cloud_shell_client_id_guard() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -175,6 +179,7 @@ fn cloud_shell_client_id_guard() {
     assert!(transport.recorded().is_empty());
 }
 
+#[test]
 fn cloud_shell_identity_config_guard() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -188,6 +193,7 @@ fn cloud_shell_identity_config_guard() {
     assert!(transport.recorded().is_empty());
 }
 
+#[test]
 fn cloud_shell_in_default_credential() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -213,6 +219,7 @@ fn cloud_shell_in_default_credential() {
     );
 }
 
+#[test]
 fn cloud_shell_plain_request() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -226,6 +233,7 @@ fn cloud_shell_plain_request() {
     assert_pairs(&only_request(&transport).form, &[("resource", RESOURCE)]);
 }
 
+#[test]
 fn cloud_shell_unrelated_config() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -239,6 +247,7 @@ fn cloud_shell_unrelated_config() {
     );
 }
 
+#[test]
 fn cloud_shell_missing_endpoint() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().acquire_cloud_shell(vec![response(SHELL_TOKEN)], &clock);
@@ -248,6 +257,7 @@ fn cloud_shell_missing_endpoint() {
     );
 }
 
+#[test]
 fn cloud_shell_empty_endpoint() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -264,6 +274,7 @@ pub(super) fn service_fabric_thumbprint() {
     service_fabric_ignores_thumbprint();
 }
 
+#[test]
 fn service_fabric_request() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -284,6 +295,7 @@ fn service_fabric_request() {
     assert_eq!(token.token_type, "Bearer");
 }
 
+#[test]
 fn service_fabric_ignores_thumbprint() {
     let clock = FixtureClock::fixed(NOW);
     let (first_outcome, first_transport) = Fixture::new()
@@ -306,6 +318,7 @@ pub(super) fn service_fabric_client_id_rejected() {
     service_fabric_system_assigned();
 }
 
+#[test]
 fn service_fabric_client_id_guard() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -319,6 +332,7 @@ fn service_fabric_client_id_guard() {
     assert!(transport.recorded().is_empty());
 }
 
+#[test]
 fn service_fabric_identity_config_guard() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -332,6 +346,7 @@ fn service_fabric_identity_config_guard() {
     assert!(transport.recorded().is_empty());
 }
 
+#[test]
 fn service_fabric_empty_client_id() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -342,6 +357,7 @@ fn service_fabric_empty_client_id() {
     assert_eq!(transport.recorded().len(), 1);
 }
 
+#[test]
 fn service_fabric_system_assigned() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -364,6 +380,7 @@ pub(super) fn azure_ml_numeric_expiry() {
     azure_ml_zero_expiry();
 }
 
+#[test]
 fn azure_ml_request() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -387,6 +404,7 @@ fn azure_ml_request() {
     assert_eq!(token.token_type, "Bearer");
 }
 
+#[test]
 fn azure_ml_client_id() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, transport) = Fixture::new()
@@ -412,6 +430,7 @@ fn azure_ml_client_id() {
     assert_eq!(request.query_value("client_id"), None);
 }
 
+#[test]
 fn azure_ml_numeric_string() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -426,6 +445,7 @@ fn azure_ml_numeric_string() {
     assert_eq!(outcome.unwrap().expires_on, 1_700_003_600);
 }
 
+#[test]
 fn azure_ml_linux_date() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -443,6 +463,7 @@ fn azure_ml_linux_date() {
     ));
 }
 
+#[test]
 fn azure_ml_windows_date() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -460,6 +481,7 @@ fn azure_ml_windows_date() {
     ));
 }
 
+#[test]
 fn azure_ml_missing_fields() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -471,6 +493,7 @@ fn azure_ml_missing_fields() {
     );
 }
 
+#[test]
 fn azure_ml_zero_expiry() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -502,6 +525,7 @@ pub(super) fn cloud_shell_reply() {
     cloud_shell_numeric_string();
 }
 
+#[test]
 fn cloud_shell_empty_body() {
     let clock = FixtureClock::fixed(NOW);
     let fixture = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT);
@@ -511,6 +535,7 @@ fn cloud_shell_empty_body() {
     assert_eq!(mapping.unwrap_err().to_string(), "No token received.");
 }
 
+#[test]
 fn cloud_shell_missing_token() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -522,6 +547,7 @@ fn cloud_shell_missing_token() {
     );
 }
 
+#[test]
 fn cloud_shell_missing_expiry() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -533,6 +559,7 @@ fn cloud_shell_missing_expiry() {
     );
 }
 
+#[test]
 fn cloud_shell_missing_resource() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -549,6 +576,7 @@ fn cloud_shell_missing_resource() {
     );
 }
 
+#[test]
 fn cloud_shell_typed_json_failure() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -560,6 +588,7 @@ fn cloud_shell_typed_json_failure() {
     );
 }
 
+#[test]
 fn cloud_shell_untyped_json_failure() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -571,6 +600,7 @@ fn cloud_shell_untyped_json_failure() {
     );
 }
 
+#[test]
 fn cloud_shell_expires_on_wins() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -584,6 +614,7 @@ fn cloud_shell_expires_on_wins() {
     assert_eq!(token.refresh_on, None);
 }
 
+#[test]
 fn cloud_shell_zero_expires_on() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -595,6 +626,7 @@ fn cloud_shell_zero_expires_on() {
     assert_eq!(outcome.unwrap().expires_on, NOW + 100);
 }
 
+#[test]
 fn cloud_shell_refresh_threshold() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -608,6 +640,7 @@ fn cloud_shell_refresh_threshold() {
     assert_eq!(token.refresh_on, Some(NOW + 3_600));
 }
 
+#[test]
 fn cloud_shell_refresh_just_above() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -619,6 +652,7 @@ fn cloud_shell_refresh_just_above() {
     assert_eq!(outcome.unwrap().refresh_on, Some(NOW + 3_600));
 }
 
+#[test]
 fn cloud_shell_explicit_refresh() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -632,6 +666,7 @@ fn cloud_shell_explicit_refresh() {
     assert_eq!(token.refresh_on, Some(NOW + 600));
 }
 
+#[test]
 fn cloud_shell_explicit_refresh_above_threshold() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -643,6 +678,7 @@ fn cloud_shell_explicit_refresh_above_threshold() {
     assert_eq!(outcome.unwrap().refresh_on, Some(NOW + 1_200));
 }
 
+#[test]
 fn cloud_shell_numeric_string() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
@@ -661,9 +697,9 @@ pub(super) fn service_fabric_reply() {
     service_fabric_numeric_string();
     service_fabric_refresh_window();
     service_fabric_missing_token_type();
-    service_fabric_error_codes();
 }
 
+#[test]
 fn service_fabric_token() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -674,6 +710,7 @@ fn service_fabric_token() {
     assert_eq!(token.refresh_on, None);
 }
 
+#[test]
 fn service_fabric_numeric_string() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -688,6 +725,7 @@ fn service_fabric_numeric_string() {
     assert_eq!(outcome.unwrap().expires_on, 1_700_003_600);
 }
 
+#[test]
 fn service_fabric_refresh_window() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -702,6 +740,7 @@ fn service_fabric_refresh_window() {
     assert_eq!(outcome.unwrap().refresh_on, Some(NOW + 3_600));
 }
 
+#[test]
 fn service_fabric_missing_token_type() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -719,43 +758,21 @@ fn service_fabric_missing_token_type() {
     );
 }
 
-fn service_fabric_error_codes() {
-    let clock = FixtureClock::fixed(NOW);
+#[rstest]
+#[case::secret_header(r#"{"error":{"code":"SecretHeaderNotFound"}}"#, "unauthorized_client")]
+#[case::identity_not_found(r#"{"error":{"code":"ManagedIdentityNotFound"}}"#, "invalid_client")]
+#[case::argument_empty(r#"{"error":{"code":"ArgumentNullOrEmpty"}}"#, "invalid_scope")]
+#[case::other_code(r#"{"error":{"code":"SomethingElse"}}"#, "invalid_request")]
+#[case::no_code(r#"{"error":{}}"#, "invalid_request")]
+fn service_fabric_error_codes(#[case] body: &str, #[case] mapped: &str) {
     let fixture = Fixture::new().with_environment(&SERVICE_FABRIC_ENVIRONMENT);
-    assert_service_fabric_error(
+    assert_rejection(
         &fixture,
-        r#"{"error":{"code":"SecretHeaderNotFound"}}"#,
-        "unauthorized_client",
-        &clock,
-    );
-    assert_service_fabric_error(
-        &fixture,
-        r#"{"error":{"code":"ManagedIdentityNotFound"}}"#,
-        "invalid_client",
-        &clock,
-    );
-    assert_service_fabric_error(
-        &fixture,
-        r#"{"error":{"code":"ArgumentNullOrEmpty"}}"#,
-        "invalid_scope",
-        &clock,
-    );
-    assert_service_fabric_error(
-        &fixture,
-        r#"{"error":{"code":"SomethingElse"}}"#,
-        "invalid_request",
-        &clock,
-    );
-    assert_service_fabric_error(&fixture, r#"{"error":{}}"#, "invalid_request", &clock);
-}
-
-fn assert_service_fabric_error(fixture: &Fixture, body: &str, mapped: &str, clock: &FixtureClock) {
-    let (outcome, _) = fixture.acquire(MsalKind::ServiceFabric, vec![response(body)], clock);
-    assert_eq!(
-        outcome.unwrap_err().to_string(),
-        format!(
+        MsalKind::ServiceFabric,
+        body,
+        &format!(
             "Service Fabric managed identity configuration not found in environment. Token request error: ({mapped}) {body}"
-        )
+        ),
     );
 }
 
@@ -788,6 +805,7 @@ fn assert_malformed_json(fixture: &Fixture, protocol: MsalKind) {
     assert_eq!(transport.recorded().len(), 1);
 }
 
+#[test]
 fn hosted_app_service_error_record() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -803,6 +821,7 @@ fn hosted_app_service_error_record() {
     ));
 }
 
+#[test]
 fn hosted_service_fabric_error_record() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -818,6 +837,7 @@ fn hosted_service_fabric_error_record() {
     ));
 }
 
+#[test]
 fn hosted_service_fabric_rejection() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -830,6 +850,7 @@ fn hosted_service_fabric_rejection() {
     ));
 }
 
+#[test]
 fn hosted_service_fabric_bad_error() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -850,6 +871,7 @@ pub(super) fn hosted_inner_selection() {
     arc_selection();
 }
 
+#[test]
 fn presence_selection() {
     assert_eq!(
         ArcFixture::new()
@@ -881,6 +903,7 @@ fn presence_selection() {
     assert_eq!(ArcFixture::new().select(), HostedProtocol::Vm);
 }
 
+#[test]
 fn arc_selection() {
     assert_eq!(
         ArcFixture::new()
