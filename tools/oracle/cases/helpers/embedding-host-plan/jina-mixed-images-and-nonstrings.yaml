@@ -1,0 +1,8 @@
+kind: helper
+name: embedding-host-plan-jina-mixed-images-and-nonstrings
+call:
+  embedding_host_plan:
+    jina: {model: jina-clip-v2, input: ["before", "data:image/png;base64,aGVsbG8=", 5, null, "after", "data:image/png;base64,***"], base: "https://jina.test/v1", api_key: secret}
+    infinity: {model: bge, input: ["before", "data:image/png;base64,aGVsbG8="], base: "https://infinity.test"}
+env: {}
+compare: {ignore: []}

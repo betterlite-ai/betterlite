@@ -121,7 +121,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/interrupted-stream-usage)" &&
         grep -rlE '^[[:space:]]+b3632:' tools/oracle/cases/helpers/interrupted-stream-usage &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/interrupted-stream-usage
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/interrupted-stream-usage
 oracle_cases:
   - tools/oracle/cases/helpers/interrupted-stream-usage/tail-completed-message-delta.yaml
   - tools/oracle/cases/helpers/interrupted-stream-usage/tail-cut-mid-content-block-delta.yaml

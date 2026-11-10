@@ -195,7 +195,7 @@ checks:
       why: the oracle cases for key collection and the over-limit decision are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/windowed-admission)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/windowed-admission
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/windowed-admission
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-
