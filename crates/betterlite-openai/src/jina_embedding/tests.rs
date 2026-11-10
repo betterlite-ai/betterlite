@@ -42,37 +42,38 @@ fn settings(base: Option<&str>, key: Option<&str>) -> Settings {
 }
 
 #[rstest]
-#[case::explicit_wins(Some("https://explicit"), Some("https://env"), "https://explicit")]
-#[case::environment(None, Some("https://env"), "https://env")]
-#[case::empty_explicit_falls_through(Some(""), Some("https://env"), "https://env")]
-#[case::default(None, None, "https://api.jina.ai/v1")]
-#[case::empty_explicit_reaches_default(Some(""), None, "https://api.jina.ai/v1")]
-fn base_precedence_is_truthy(
-    #[case] explicit: Option<&str>,
-    #[case] environment: Option<&str>,
-    #[case] expected: &str,
+#[case::explicit_wins(
+    (Some("https://explicit"), Some("explicit")),
+    (Some("https://env"), Some("env")),
+    ("https://explicit", Some("explicit"))
+)]
+#[case::environment(
+    (None, None),
+    (Some("https://env"), Some("env")),
+    ("https://env", Some("env"))
+)]
+#[case::empty_explicit_falls_through(
+    (Some(""), Some("")),
+    (Some("https://env"), Some("env")),
+    ("https://env", Some("env"))
+)]
+#[case::unset((None, None), (None, None), ("https://api.jina.ai/v1", None))]
+#[case::empty_explicit_unset((Some(""), Some("")), (None, None), ("https://api.jina.ai/v1", None))]
+fn explicit_values_beat_the_environment_only_when_non_empty(
+    #[case] explicit: (Option<&str>, Option<&str>),
+    #[case] environment: (Option<&str>, Option<&str>),
+    #[case] expected: (&str, Option<&str>),
 ) {
-    let resolved = resolve_credentials(explicit, None, &settings(environment, None));
-    assert_eq!(resolved.api_base, expected);
-}
-
-#[rstest]
-#[case::explicit_wins(Some("explicit"), Some("env"), Some("explicit"))]
-#[case::environment(None, Some("env"), Some("env"))]
-#[case::empty_explicit_falls_through(Some(""), Some("env"), Some("env"))]
-#[case::unset(None, None, None)]
-#[case::empty_explicit_unset(Some(""), None, None)]
-fn key_precedence_is_truthy(
-    #[case] explicit: Option<&str>,
-    #[case] environment: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
-    let supplied = explicit.map(secret);
-    let resolved = resolve_credentials(None, supplied.as_ref(), &settings(None, environment));
+    let supplied = explicit.1.map(secret);
+    let resolved = resolve_credentials(
+        explicit.0,
+        supplied.as_ref(),
+        &settings(environment.0, environment.1),
+    );
     let key = resolved
         .api_key
         .map(|secret| secret.expose_secret().to_owned());
-    assert_eq!(key.as_deref(), expected);
+    assert_eq!((resolved.api_base.as_str(), key.as_deref()), expected);
 }
 
 #[rstest]

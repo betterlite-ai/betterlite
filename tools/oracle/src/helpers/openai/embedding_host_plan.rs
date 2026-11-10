@@ -77,38 +77,39 @@ fn settings(call: &Call) -> Result<Settings, Failed> {
         .map_err(|error| failure("ConfigError", None, error.to_string()))
 }
 
+fn project(model: &Value, object: &Value, data: &Value, prompt: u32, total: u32) -> Value {
+    json!({
+        "model": model, "object": object, "data": data,
+        "usage": {"prompt_tokens": prompt, "total_tokens": total},
+    })
+}
+
 fn jina_reply(
     call: &Call,
     key: Option<&SecretString>,
     request: &Object,
     hook: &mut Vec<Value>,
 ) -> Result<Option<Value>, Failed> {
-    call.reply
-        .as_ref()
-        .map(|reply| {
-            let response = jina_embedding::transform_embedding_response(
-                reply.body.as_bytes(),
-                key,
-                request,
-                |observed| {
-                    hook.push(json!({
-                        "input_is_builtin": observed.input == jina_embedding::BuiltinInput,
-                        "api_key": observed.api_key.map(|secret| secret.expose_secret().to_owned()),
-                        "complete_input_dict": observed.complete_input_dict,
-                        "original_response": observed.original_response,
-                    }));
-                },
-            )
-            .map_err(|error| failure("JSONDecodeError", None, error.to_string()))?;
-            Ok(json!({
-                "model": response.model, "object": response.object, "data": response.data,
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                },
-            }))
+    let Some(reply) = &call.reply else {
+        return Ok(None);
+    };
+    let response =
+        jina_embedding::transform_embedding_response(reply.body.as_bytes(), key, request, |seen| {
+            hook.push(json!({
+                "input_is_builtin": seen.input == jina_embedding::BuiltinInput,
+                "api_key": seen.api_key.map(|secret| secret.expose_secret().to_owned()),
+                "complete_input_dict": seen.complete_input_dict,
+                "original_response": seen.original_response,
+            }));
         })
-        .transpose()
+        .map_err(|error| failure("JSONDecodeError", None, error.to_string()))?;
+    Ok(Some(project(
+        &json!(response.model),
+        &json!(response.object),
+        &json!(response.data),
+        response.usage.prompt_tokens,
+        response.usage.total_tokens,
+    )))
 }
 
 fn jina(call: &Call) -> crate::helpers::HelperResult {
@@ -139,14 +140,14 @@ fn infinity_reply(call: &Call) -> Result<Option<Value>, Failed> {
         .map(|reply| decode_infinity_embedding(reply.body.as_bytes(), reply.status))
         .transpose();
     match decoded {
-        Ok(response) => Ok(response.map(|reply| {
-            json!({
-                "model": reply.model, "object": reply.object, "data": reply.data,
-                "usage": {
-                    "prompt_tokens": reply.usage.prompt_tokens,
-                    "total_tokens": reply.usage.total_tokens,
-                },
-            })
+        Ok(reply) => Ok(reply.map(|parsed| {
+            project(
+                &json!(parsed.model),
+                &json!(parsed.object),
+                &json!(parsed.data),
+                parsed.usage.prompt_tokens,
+                parsed.usage.total_tokens,
+            )
         })),
         Err(InfinityEmbeddingError::Json {
             status_code,
@@ -161,26 +162,30 @@ fn infinity_reply(call: &Call) -> Result<Option<Value>, Failed> {
     }
 }
 
-fn infinity(call: &Call) -> crate::helpers::HelperResult {
-    let key = call.api_key.clone().map(SecretString::from);
-    let url = infinity_embedding::get_complete_url(call.base.as_deref())
-        .map_err(|error| failure("ValueError", None, error.to_string()))?;
+fn infinity_request(call: &Call) -> Object {
     let mut optional = call.optional.clone();
     infinity_embedding::map_openai_params(&call.options, &mut optional);
-    let error = call.error.as_ref().map(|supplied| {
+    infinity_embedding::transform_embedding_request(&call.model, &call.input, &optional)
+}
+
+fn infinity(call: &Call) -> crate::helpers::HelperResult {
+    let key = call.api_key.clone().map(SecretString::from);
+    let headers =
+        infinity_embedding::validate_environment(&call.headers, key.as_ref(), &settings(call)?);
+    let carried = call.error.as_ref().map(|supplied| {
         json!({
             "status_code": supplied.status, "message": supplied.message,
             "headers": supplied.headers, "url": SYNTHETIC_REQUEST_URL,
         })
     });
+    let url = infinity_embedding::get_complete_url(call.base.as_deref())
+        .map_err(|error| failure("ValueError", None, error.to_string()))?;
     Ok(json!({
         "url": url,
-        "headers": infinity_embedding::validate_environment(
-            &call.headers, key.as_ref(), &settings(call)?),
-        "request": infinity_embedding::transform_embedding_request(
-            &call.model, &call.input, &optional),
+        "headers": headers,
+        "request": infinity_request(call),
         "response": infinity_reply(call)?,
-        "error": error,
+        "error": carried,
     }))
 }
 
