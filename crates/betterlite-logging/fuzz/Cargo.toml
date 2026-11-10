@@ -74,6 +74,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "legacy_headers_dictionary"
+path = "fuzz_targets/legacy_headers_dictionary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_error_text"
 path = "fuzz_targets/spend_error_text.rs"
 test = false

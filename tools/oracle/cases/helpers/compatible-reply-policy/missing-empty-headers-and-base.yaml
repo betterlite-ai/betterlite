@@ -1,0 +1,16 @@
+kind: helper
+name: compatible-reply-policy-missing-empty-headers-and-base
+call:
+  compatible_reply_policy:
+    validate:
+      - {api_key: null, api_base: "https://api.test", endpoint: chat_completions, headers: null}
+      - {api_key: null, api_base: null, endpoint: chat_completions, headers: null}
+      - {api_key: null, api_base: "https://api.test", endpoint: chat_completions, headers: {}}
+      - {api_key: "", api_base: "https://api.test", endpoint: embeddings, headers: null}
+      - {api_key: k, api_base: null, endpoint: chat_completions, headers: null}
+      - {api_key: k, api_base: "", endpoint: chat_completions, headers: null}
+      - {api_key: k, api_base: "https://api.test", endpoint: chat_completions, headers: {authorization: x}}
+      - {api_key: k, api_base: "https://api.test", endpoint: chat_completions, headers: {Authorization: mine}}
+      - {api_key: k, api_base: "https://api.test/custom", endpoint: embeddings, headers: null, custom_endpoint: true}
+env: {}
+compare: {ignore: []}
