@@ -1,0 +1,11 @@
+kind: helper
+name: stable-id-multi-method
+call:
+  b123:
+    op: stable_operation_id
+    name: chat_completion
+    path_format: /chat/completions
+    methods: [POST, GET]
+env: {}
+compare:
+  ignore: []

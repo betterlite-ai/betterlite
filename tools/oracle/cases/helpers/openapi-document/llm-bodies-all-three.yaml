@@ -1,0 +1,41 @@
+kind: helper
+name: llm-bodies-all-three
+call:
+  b123:
+    op: add_llm_request_bodies
+    document:
+      paths:
+        /v1/chat/completions: {post: {operationId: a}}
+        /chat/completions: {post: {operationId: b}}
+        "/engines/{model}/chat/completions": {post: {operationId: c}}
+        "/openai/deployments/{model}/chat/completions": {post: {operationId: d}}
+        /v1/embeddings: {post: {operationId: e}}
+        /embeddings: {post: {operationId: f}}
+        "/engines/{model}/embeddings": {post: {operationId: g}}
+        "/openai/deployments/{model}/embeddings": {post: {operationId: h}}
+        /v1/responses: {post: {operationId: i}}
+        /responses: {post: {operationId: j}}
+        /openai/v1/responses: {post: {operationId: k}}
+      components: {schemas: {}}
+    schemas:
+      chat_completion:
+        type: object
+        properties:
+          model: {type: string}
+          messages: {type: array, items: {type: object}}
+        required: [model, messages]
+      embedding:
+        type: object
+        properties:
+          model: {type: string}
+          input: {}
+        required: [model, input]
+      responses:
+        type: object
+        properties:
+          model: {type: string}
+          input: {type: string}
+        required: [model, input]
+env: {}
+compare:
+  ignore: []
