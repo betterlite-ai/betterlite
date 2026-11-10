@@ -1,0 +1,43 @@
+task: B180
+deviations:
+  - what: >-
+      The assistant assembly refuses a message whose thinking_blocks or compaction_blocks list holds
+      more than 1024 entries, or whose tool_calls list holds more than 1024 entries, with a typed
+      error before converting any block; LiteLLM walks whatever lists it is given.
+    why: >-
+      The bounded-inputs rule forbids work proportional to untrusted input without a cap. The
+      tool_calls ceiling is the MAX_TOOL_CALLS B223's conversion already enforces, and 1024 is the
+      ceiling B224's history sanitizer puts on a message's tool calls and results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2512-L2532
+  - what: >-
+      A message or provider block outside the types LiteLLM declares is refused with a typed error
+      that names the message index, block and field. This covers content, thinking_blocks,
+      tool_calls, function_call, provider_specific_fields, web_search_results and tool_results of
+      the wrong type, a non-object content or thinking block, a non-string block type, thinking or
+      text, and a system message whose content is not text. LiteLLM drops a non-object content
+      block silently and raises an unhandled AttributeError, KeyError or TypeError that surfaces as
+      a 500 for the other malformed shapes.
+    why: >-
+      Compatibility.md sends a value the declared type cannot hold to a 4xx that names the field;
+      these malformed shapes are Python runtime accidents no working setup sends, and a 500 hides
+      which message or block was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2555-L2717
+  - what: >-
+      A final assistant content block whose type is missing or whose text is not a string is
+      refused with a typed error naming the block and field; LiteLLM's final whitespace strip
+      raises KeyError or AttributeError on those blocks.
+    why: >-
+      The strip reads client-replayed provider blocks, so a 4xx that names the block belongs where
+      LiteLLM's 500 does not say which block failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2780-L2792
+  - what: >-
+      An inline redacted_thinking content block is kept in the assistant content, in its original
+      position, and sent to Anthropic as given. LiteLLM's sequential content loop has no
+      redacted_thinking branch and drops the block; its message-level thinking_blocks keep the
+      same block, which makes the loss a bug no working setup can rely on.
+    why: >-
+      A redacted_thinking block is signed provider state that has to be replayed byte for byte,
+      like the message-level thinking_blocks. Dropping it silently loses content the model
+      produced and changes the conversation Anthropic verifies; an inline redacted block still
+      suppresses the separate thinking_blocks, as before.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2664-L2711

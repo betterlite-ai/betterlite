@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_error_openapi_upstream_404","call":{"b8190":{"function":"openapi_upstream","status_code":404,"server_name":"other"}},"env":{},"compare":{"ignore":[]}}

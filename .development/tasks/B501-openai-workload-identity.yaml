@@ -279,7 +279,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_workload_identity)"
       && grep -q 'decode_token_exchange' crates/betterlite-openai/fuzz/fuzz_targets/openai_workload_identity.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_workload_identity_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_workload_identity_corpus(::|$)/)'
   - id: config-openai-identity-provider-id
     why: The OPENAI_IDENTITY_PROVIDER_ID setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_workload_identity_config_cases::case_[0-9]+_loads_openai_identity_provider_id$/)'
