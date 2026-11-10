@@ -6,7 +6,7 @@ use crate::workload_identity::exchange::decode_token_exchange;
 
 fn replays(path: &Path) -> bool {
     let bytes = fs::read(path).unwrap();
-    let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    let name = path.file_name().unwrap().to_str().unwrap();
     let decoded = decode_token_exchange(&bytes);
     match name.split('-').next().unwrap() {
         "valid" | "boundary" => decoded.is_ok(),
