@@ -1,0 +1,11 @@
+kind: helper
+name: spend-bodies-policy-seed
+call:
+  spend_bodies:
+    function: storage_policy
+    config_value: true
+    env_value: null
+    initial_max_string_length: null
+    runtime_max_string_lengths: [null, "1024"]
+env: {}
+compare: {ignore: []}

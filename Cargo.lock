@@ -1059,6 +1059,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-analytics"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "chrono",
+ "indexmap 2.14.2",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-analytics-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-analytics",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
@@ -1131,14 +1153,21 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-openai",
+ "hex",
  "indexmap 2.14.2",
+ "lru",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "sha2 0.11.1",
  "thiserror",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1164,6 +1193,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
@@ -1183,6 +1213,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "mime",
+ "num-traits",
  "percent-encoding",
  "rstest",
  "secrecy",
@@ -1503,6 +1534,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-db-admin"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-db",
+ "clap",
+ "rstest",
+ "secrecy",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
@@ -1569,6 +1614,17 @@ dependencies = [
 [[package]]
 name = "betterlite-foundry"
 version = "0.1.0"
+dependencies = [
+ "betterlite-context",
+ "betterlite-models",
+ "chrono",
+ "jiff",
+ "rstest",
+ "rust_decimal",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "betterlite-fuzz"
@@ -1943,6 +1999,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "unicode-normalization",
  "url",
 ]
 
@@ -1997,6 +2054,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2033,6 +2091,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-openai",
  "betterlite-tokenizer",
+ "http 1.5.0",
  "libfuzzer-sys",
  "serde_json",
  "uuid",
@@ -2075,6 +2134,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-guardrails",
  "betterlite-harness",
  "betterlite-http",
@@ -2116,6 +2176,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
  "quick-xml",
@@ -2304,11 +2365,14 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -2508,9 +2572,11 @@ dependencies = [
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
+ "redis",
  "regex",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
@@ -2771,6 +2837,7 @@ dependencies = [
  "kitoken",
  "lru",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -2790,8 +2857,10 @@ dependencies = [
 name = "betterlite-tokenizer-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "betterlite-tokenizer",
  "libfuzzer-sys",
+ "tokio",
 ]
 
 [[package]]
@@ -2842,10 +2911,13 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "http 1.5.0",
  "jiff",
  "regex",
  "rstest",
@@ -2855,6 +2927,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror",
+ "tokio",
  "tracing",
  "url",
 ]

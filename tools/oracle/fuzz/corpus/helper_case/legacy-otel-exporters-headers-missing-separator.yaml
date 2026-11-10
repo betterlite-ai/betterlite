@@ -1,0 +1,8 @@
+kind: helper
+name: headers-missing-separator
+call:
+  b3855:
+    function: headers_dictionary
+    headers: "authorization=Bearer secret,broken-entry"
+env: {}
+compare: {ignore: []}

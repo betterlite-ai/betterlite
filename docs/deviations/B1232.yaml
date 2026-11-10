@@ -1,0 +1,11 @@
+task: B1232
+deviations:
+  - what: betterlite-db-admin migrate is an explicit native command with a --config interface. It runs no prisma generate and logs neither generate stdout nor a nonzero-generate warning.
+    why: Native SQL execution needs no generated client; B051/B716/B873 verify database behavior, and native_omits_client_generation checks the process boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
+  - what: An unrecoverable migration error exits 2; migrations/run.py lets the exception escape and exits 1.
+    why: The native outcome keeps proxy_cli's skip-server mapping for unrecoverable migration errors, and unrecoverable_native_exit_two makes the difference explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
+  - what: With IAM_TOKEN_DB_AUTH or AZURE_POSTGRESQL_AUTH enabled, the admin preflight resolves the writer URL through B710's password-result branch and reports the missing-URL error unless DATABASE_URL is pinned; LiteLLM mints a token URL from the discrete fields.
+    why: B712 owns token strategy resolution and minting and is not a dependency of this task, so the shell never assembles a password URL for a token configuration and keeps an operator-pinned DATABASE_URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L408-L435
