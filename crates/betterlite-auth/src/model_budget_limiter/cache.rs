@@ -11,7 +11,6 @@ use crate::model_budget_values::spend_reads::CachedSpend;
 
 use super::ModelBudgetLimiter;
 
-// The cache tiers the limiter reads and writes, modelled on LiteLLM's DualCache.
 pub trait ModelBudgetCache: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 

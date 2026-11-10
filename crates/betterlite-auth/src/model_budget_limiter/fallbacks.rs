@@ -3,7 +3,6 @@ mod tests;
 use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_error::error::ErrorClass;
 
 use super::ModelBudgetLimiter;
 use super::cache::ModelBudgetCache;
@@ -17,20 +16,16 @@ pub struct FallbackQuery<'input> {
     pub model: &'input str,
 }
 
-// the first model in the key's chain that passes the key's own model budget, or None
 pub async fn fallback_model_within_budget<C>(
     limiter: &ModelBudgetLimiter<C>,
     query: FallbackQuery<'_>,
-) -> Result<Option<String>, ErrorClass>
+) -> Option<String>
 where
     C: ModelBudgetCache,
 {
-    let Some(candidates) = query
+    let candidates = query
         .budget_fallbacks
-        .and_then(|fallbacks| fallbacks.get(query.model))
-    else {
-        return Ok(None);
-    };
+        .and_then(|fallbacks| fallbacks.get(query.model))?;
     for candidate in candidates {
         let subject = BudgetSubject::Key {
             entity_id: query.entity_id,
@@ -38,11 +33,9 @@ where
         };
         let within =
             subject_within_model_budget(limiter, &subject, query.model_max_budget, candidate).await;
-        match within {
-            Ok(()) => return Ok(Some(candidate.clone())),
-            Err(ErrorClass::BudgetExceeded(_)) => {}
-            Err(error) => return Err(error),
+        if within.is_ok() {
+            return Some(candidate.clone());
         }
     }
-    Ok(None)
+    None
 }

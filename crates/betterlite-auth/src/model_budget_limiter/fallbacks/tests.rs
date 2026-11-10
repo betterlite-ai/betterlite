@@ -48,9 +48,7 @@ async fn the_first_fallback_within_budget_is_returned() {
     let subject = limiter(cache);
     let budget = budget_map();
     let fallbacks = chain(&["gpt-4o-mini", "gpt-4o-nano"]);
-    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o"))
-        .await
-        .unwrap();
+    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o")).await;
     assert_eq!(chosen.as_deref(), Some("gpt-4o-mini"));
 }
 
@@ -62,9 +60,7 @@ async fn a_fallback_over_budget_is_skipped_for_the_next_one() {
     let subject = limiter(cache);
     let budget = budget_map();
     let fallbacks = chain(&["gpt-4o-nano", "gpt-4o-mini"]);
-    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o"))
-        .await
-        .unwrap();
+    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o")).await;
     assert_eq!(chosen.as_deref(), Some("gpt-4o-mini"));
 }
 
@@ -76,9 +72,7 @@ async fn no_fallback_passing_returns_none() {
     let subject = limiter(cache);
     let budget = budget_map();
     let fallbacks = chain(&["gpt-4o-nano"]);
-    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o"))
-        .await
-        .unwrap();
+    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o")).await;
     assert_eq!(chosen, None);
 }
 
@@ -87,9 +81,8 @@ async fn a_model_without_a_chain_returns_none() {
     let subject = limiter(FakeCache::new());
     let budget = budget_map();
     let fallbacks = chain(&["gpt-4o-mini"]);
-    let chosen = fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o-mini"))
-        .await
-        .unwrap();
+    let chosen =
+        fallback_model_within_budget(&subject, query(&budget, &fallbacks, "gpt-4o-mini")).await;
     assert_eq!(chosen, None);
 }
 
@@ -104,8 +97,6 @@ async fn absent_fallbacks_return_none() {
         budget_fallbacks: None,
         model: "gpt-4o",
     };
-    let chosen = fallback_model_within_budget(&subject, request)
-        .await
-        .unwrap();
+    let chosen = fallback_model_within_budget(&subject, request).await;
     assert_eq!(chosen, None);
 }

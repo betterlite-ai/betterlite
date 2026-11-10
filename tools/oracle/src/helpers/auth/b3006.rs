@@ -187,7 +187,7 @@ async fn fallback_outcome(
     limiter: &ModelBudgetLimiter<OracleCache>,
     check: &FallbackCall,
 ) -> Value {
-    let result = fallback_model_within_budget(
+    let chosen = fallback_model_within_budget(
         limiter,
         FallbackQuery {
             entity_id: &check.entity_id,
@@ -198,9 +198,6 @@ async fn fallback_outcome(
         },
     )
     .await;
-    let Ok(chosen) = result else {
-        return json!({"outcome": "error"});
-    };
     json!({"outcome": "fallback", "model": chosen})
 }
 

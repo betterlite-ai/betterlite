@@ -190,7 +190,7 @@ where
         return current;
     };
     let legacy = cached_spend(limiter, &legacy_key).await;
-    current.checked_add(legacy).unwrap_or(Decimal::MAX)
+    current.saturating_add(legacy)
 }
 
 const fn entity_type_name(scope: BudgetScope) -> &'static str {
