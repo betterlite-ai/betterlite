@@ -16,7 +16,7 @@ use super::heroku::{HerokuChatConfig, HerokuError};
 use super::inception_fim::{self, InceptionTextCompletionConfig};
 use super::{AgentHost, HYPERBOLIC_PARAMS, INCEPTION_API_BASE, INCEPTION_PARAMS};
 use crate::chat::ChatMessage;
-use crate::chat_content::Mode;
+use crate::chat_content::{ChatContentError, MissingFileError, Mode};
 use crate::openai_base_config::{Headers, Object};
 
 fn settings(environment: &[(&str, &str)]) -> Settings {
@@ -434,6 +434,18 @@ fn heroku_complete_url_rejects_a_falsey_base(
             assert_eq!(error.status_code(), None);
         }
     }
+}
+
+#[test]
+fn heroku_content_failures_keep_the_chat_transform_status() {
+    let missing_file = HerokuError::Request(ChatContentError::MissingFile(MissingFileError {
+        provider: "heroku",
+        model: None,
+    }));
+    assert_eq!(missing_file.status_code(), Some(400));
+    let source = serde_json::from_str::<Value>("{").expect_err("invalid json");
+    let bad_shape = HerokuError::Request(ChatContentError::MessageShape { source });
+    assert_eq!(bad_shape.status_code(), Some(500));
 }
 
 fn chat_messages(value: Value) -> Vec<ChatMessage> {
