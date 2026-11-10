@@ -1,0 +1,12 @@
+task: B4566
+deviations:
+  - what: >-
+      fetch_model_listing skips a /v1/models response body larger than 8 MiB with the reason
+      "{url} returned more than 8388608 bytes" instead of parsing it, and carries the same cap to
+      the injected transport as ModelListingRequest::max_body_bytes so the transport stops reading.
+    why: >-
+      Rule bounded-inputs requires a size limit on every inbound body, and LiteLLM hands requests'
+      unbounded response content straight to the pydantic decoder. A proxy whose listing passes
+      8 MiB would sync its models in LiteLLM and be skipped here; no working setup serves a model
+      list that large, since a /v1/models row is a few hundred bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L307-L311
