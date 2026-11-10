@@ -149,15 +149,23 @@ fn explicit_origin() {
         Some("env-key"),
         Some("global-key"),
     );
-    let origin = resolve_origin(
+    let deployment = DeploymentCredentials {
+        api_base: Some("http://explicit:9000/api/v1/"),
+        api_key: None,
+    };
+    let origin = resolve_origin(&settings, deployment);
+    assert_eq!(origin.api_base, "http://explicit:9000/api/v1/");
+    assert_eq!(origin.api_key.expose_secret(), DEFAULT_API_KEY);
+    assert_eq!(auth_header(Some(&origin.api_key)), None);
+    let explicit_key = SecretString::from("explicit-key");
+    let keyed = resolve_origin(
         &settings,
         DeploymentCredentials {
             api_base: Some("http://explicit:9000/api/v1/"),
-            api_key: None,
+            api_key: Some(&explicit_key),
         },
     );
-    assert_eq!(origin.api_base, "http://explicit:9000/api/v1/");
-    assert_eq!(origin.api_key.expose_secret(), "global-key");
+    assert_eq!(keyed.api_key.expose_secret(), "explicit-key");
 }
 
 fn empty_base_suppresses_ambient_auth() {
