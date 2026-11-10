@@ -1952,6 +1952,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-prompts",
  "fancy-regex 0.19.2",
