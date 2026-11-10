@@ -11,7 +11,6 @@ use crate::logging_state::correlation::CorrelationContext;
 use crate::logging_state::events::is_sync_litellm_request;
 use crate::registry::CallbackRegistry;
 
-// LiteLLM's dispatch_success_handlers: the sync SDK shortcut, the async path and the sync-on-async tail
 pub async fn dispatch_success_handlers(
     handler: &SuccessHandler<'_>,
     state: &mut LoggingState,

@@ -78,12 +78,16 @@ fn assembled_probe(probe: &AssembledProbe) -> Result<bool, Box<HelperError>> {
 fn recognized(probes: &[RecognizedProbe]) -> Result<Value, Box<HelperError>> {
     let decisions = probes
         .iter()
-        .map(|probe| {
-            let result = scenario::result(&probe.result)?;
-            Ok(is_recognized_call_type(&result, &probe.call_type))
-        })
+        .map(recognized_probe)
         .collect::<Result<Vec<bool>, Box<HelperError>>>()?;
     Ok(json!({"operation": "recognized", "results": decisions}))
+}
+
+fn recognized_probe(probe: &RecognizedProbe) -> Result<bool, Box<HelperError>> {
+    Ok(is_recognized_call_type(
+        &scenario::result(&probe.result)?,
+        &probe.call_type,
+    ))
 }
 
 fn dispatch(probes: &[DispatchProbe]) -> Result<Value, Box<HelperError>> {

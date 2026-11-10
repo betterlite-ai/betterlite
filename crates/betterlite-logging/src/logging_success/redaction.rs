@@ -11,7 +11,6 @@ use crate::exporter_options::redaction::{
 };
 use crate::fields::payload::StandardLoggingPayload;
 
-// Applies B3931's per-callback redaction to the typed payload the logger receives
 pub(super) fn redacted_payload(
     payload: &StandardLoggingPayload,
     logger: &dyn CallbackLogger,

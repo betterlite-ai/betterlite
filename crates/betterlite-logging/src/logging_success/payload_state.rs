@@ -24,7 +24,6 @@ pub fn set_standard_logging_object(
     Ok(())
 }
 
-// A payload that another task stored as JSON is only readable if it is still the typed shape
 pub fn standard_logging_object(
     state: &LoggingState,
 ) -> Result<Option<StandardLoggingPayload>, SuccessError> {

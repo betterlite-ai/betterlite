@@ -165,7 +165,6 @@ async fn run_async_callbacks(
     }
 }
 
-// the async path hands each logger a payload redacted with that logger's own message flags
 fn callback_event(
     handler: &SuccessHandler<'_>,
     state: &LoggingState,

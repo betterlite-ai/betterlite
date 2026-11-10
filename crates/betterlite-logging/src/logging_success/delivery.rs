@@ -19,7 +19,6 @@ pub(super) fn global_loggers(registry: &CallbackRegistry) -> Vec<DynamicCallback
 
 const PROXY_CALLBACK_MARKER: &str = "_PROXY_";
 
-// should_run_callback keeps the proxy's own bookkeeping loggers running for a no-log request
 pub(super) fn may_run_callback(state: &LoggingState, logger: &dyn CallbackLogger) -> bool {
     let kind = if logger.callback_name().contains(PROXY_CALLBACK_MARKER) {
         CallbackKind::ProxyInternal

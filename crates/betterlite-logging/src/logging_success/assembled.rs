@@ -27,7 +27,6 @@ pub fn is_assembled_stream_success(state: &LoggingState, result: &SuccessResult)
     }
 }
 
-// Claims the one final stream export of a request; a second dispatch returns false
 pub fn claim_final_stream_dispatch(state: &mut LoggingState) -> bool {
     if state.model_call_details.get(FINAL_STREAM_DISPATCH_MARKER) == Some(&Json::Bool(true)) {
         return false;
