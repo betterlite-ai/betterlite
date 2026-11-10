@@ -235,6 +235,18 @@ async fn configured(content: Option<&str>) -> (Fixture, RecordingCommits) {
     OwnedValue { present: true, value: JsonValue::String("\u{1f600}".to_owned()) },
     "{\"present\": true, \"value\": \"\\ud83d\\ude00\"}"
 )]
+#[case::control_characters(
+    OwnedValue { present: true, value: JsonValue::String("\u{08}\u{0c}\r\t\\".to_owned()) },
+    "{\"present\": true, \"value\": \"\\b\\f\\r\\t\\\\\"}"
+)]
+#[case::object_value(
+    OwnedValue { present: true, value: serde_json::from_str(r#"{"b":1,"a":2}"#).unwrap() },
+    r#"{"present": true, "value": {"a": 2, "b": 1}}"#
+)]
+#[case::array_value(
+    OwnedValue { present: true, value: serde_json::from_str("[1,2]").unwrap() },
+    r#"{"present": true, "value": [1, 2]}"#
+)]
 fn configure_fingerprint_matches_the_canonical_json(
     #[case] value: OwnedValue,
     #[case] canonical: &str,
@@ -628,21 +640,17 @@ async fn unconfigure_restores_owned_paths_to_their_previous_values() {
     let (fixture, commits) = configured(Some(ORIGINAL)).await;
     let outcome = unconfigure(&fixture, &commits).await.unwrap();
     assert_eq!(fixture.read_settings(), settings(ORIGINAL));
-    assert!(outcome.restored.contains(&"statusLine".to_owned()));
-    assert!(
-        outcome
-            .restored
-            .contains(&"env.ANTHROPIC_AUTH_TOKEN".to_owned())
-    );
-    assert!(
-        outcome
-            .restored
-            .contains(&"env.ANTHROPIC_BASE_URL".to_owned())
-    );
-    assert!(
-        outcome
-            .restored
-            .contains(&"env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_owned())
+    assert_eq!(
+        outcome.restored,
+        [
+            "env.ENABLE_TOOL_SEARCH",
+            "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+            "env.ANTHROPIC_BASE_URL",
+            "env.ANTHROPIC_AUTH_TOKEN",
+            "env.ANTHROPIC_API_KEY",
+            "statusLine",
+        ]
+        .map(str::to_owned)
     );
     assert!(outcome.kept.is_empty());
     assert!(outcome.withheld.is_empty());
@@ -655,6 +663,11 @@ async fn unconfigure_restores_only_fingerprint_matches_and_reports_kept_edits() 
     let (fixture, commits) = configured(Some(USER_SETTINGS)).await;
     let mut edited = fixture.read_settings();
     set_env(&mut edited, ANTHROPIC_AUTH_TOKEN_KEY, "sk-edited");
+    set_env(
+        &mut edited,
+        ANTHROPIC_BASE_URL_KEY,
+        "https://other.example.com",
+    );
     fixture.write_document(&edited);
     let outcome = unconfigure(&fixture, &commits).await.unwrap();
     let restored = fixture.read_settings();
@@ -662,7 +675,11 @@ async fn unconfigure_restores_only_fingerprint_matches_and_reports_kept_edits() 
         env_text(&restored, ANTHROPIC_AUTH_TOKEN_KEY),
         Some("sk-edited")
     );
-    assert_eq!(env_text(&restored, ANTHROPIC_BASE_URL_KEY), Some(OLD_URL));
+    assert_eq!(
+        env_text(&restored, ANTHROPIC_BASE_URL_KEY),
+        Some("https://other.example.com")
+    );
+    assert!(outcome.withheld.is_empty());
     assert!(
         outcome
             .kept
@@ -673,6 +690,19 @@ async fn unconfigure_restores_only_fingerprint_matches_and_reports_kept_edits() 
             .restored
             .contains(&"env.ANTHROPIC_AUTH_TOKEN".to_owned())
     );
+}
+
+#[tokio::test]
+async fn unconfigure_restores_and_keeps_a_user_added_env() {
+    let (fixture, commits) = configured(Some(r#"{"env":null}"#)).await;
+    let mut edited = fixture.read_settings();
+    set_env(&mut edited, "OTHER", "kept");
+    fixture.write_document(&edited);
+    let outcome = unconfigure(&fixture, &commits).await.unwrap();
+    let restored = fixture.read_settings();
+    assert_eq!(env_text(&restored, "OTHER"), Some("kept"));
+    assert!(outcome.kept.is_empty());
+    assert!(!outcome.file_removed);
 }
 
 #[tokio::test]
