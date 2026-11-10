@@ -761,7 +761,6 @@ fn lax_page_numbers_follow_the_declared_types(#[case] page: &str) {
 
 #[rstest]
 #[case::plus_sign("+2", Some(2))]
-#[case::trailing_dot("2.", Some(2))]
 #[case::zero_fraction("2.0", Some(2))]
 #[case::underscores("1_000", Some(1000))]
 #[case::empty("", None)]
@@ -769,6 +768,7 @@ fn lax_page_numbers_follow_the_declared_types(#[case] page: &str) {
 #[case::leading_underscore("_1", None)]
 #[case::trailing_underscore("1_", None)]
 #[case::letters("12a", None)]
+#[case::trailing_dot("2.", None)]
 #[case::fraction("2.5", None)]
 fn page_number_strings_follow_the_declared_type(#[case] page: &str, #[case] expected: Option<i64>) {
     let body = format!(

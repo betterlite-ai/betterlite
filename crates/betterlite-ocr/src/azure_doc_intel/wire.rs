@@ -177,10 +177,15 @@ fn integral_in_range(value: f64) -> Option<i64> {
 }
 
 fn decimal_integer(text: &str) -> Option<i64> {
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    if !fraction.bytes().all(|byte| byte == b'0') {
-        return None;
-    }
+    let integer = match text.split_once('.') {
+        Some((integer, fraction)) => {
+            if fraction.is_empty() || !fraction.bytes().all(|byte| byte == b'0') {
+                return None;
+            }
+            integer
+        }
+        None => text,
+    };
     let digits = integer.strip_prefix(['+', '-']).unwrap_or(integer);
     let shaped = !integer.starts_with('_')
         && !integer.ends_with('_')
