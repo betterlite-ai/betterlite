@@ -65,7 +65,9 @@ impl DatadogLogger {
         match deps.tasks {
             Some(tasks) => {
                 let periodic = Arc::clone(&logger);
-                let _task = tasks.spawn(async move { batch::periodic_flush(&periodic).await });
+                let tracker = tasks.clone();
+                let _task =
+                    tasks.spawn(async move { batch::periodic_flush(&periodic, &tracker).await });
             }
             None => {
                 tracing::debug!("Datadog: no task tracker, the periodic flush did not start");

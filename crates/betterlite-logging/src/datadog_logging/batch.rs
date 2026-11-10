@@ -1,6 +1,7 @@
 use std::sync::{Arc, PoisonError};
 
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 
 use crate::batch::logger::FlushReport;
 use crate::callback_logger::event::LoggerEvent;
@@ -88,14 +89,14 @@ pub async fn stop(logger: &DatadogLogger) {
     flush_queue(logger).await;
 }
 
-pub(crate) async fn periodic_flush(logger: &Arc<DatadogLogger>) {
+pub(crate) async fn periodic_flush(logger: &Arc<DatadogLogger>, tasks: &TaskTracker) {
     loop {
         let shutdown = timeout(
             logger.settings.batch.flush_interval,
             logger.stopped.cancelled(),
         )
         .await;
-        if shutdown.is_ok() {
+        if shutdown.is_ok() || tasks.is_closed() {
             return;
         }
         tracing::debug!(

@@ -110,6 +110,27 @@ async fn periodic_flush_sends_queued_events_after_the_interval() {
     assert_eq!(transport.call_count(), 1);
 }
 
+#[tokio::test(start_paused = true)]
+async fn closing_the_tracker_stops_the_periodic_flush() {
+    let tasks = TaskTracker::new();
+    let (logger, transport) = support::build_with_tasks(
+        &support::direct_init("key-1", "us5.datadoghq.com"),
+        &support::Environment::new(),
+        vec![support::Reply::accepted()],
+        tasks.clone(),
+    );
+    logger
+        .async_log_success_event(support::event(support::standard_payload("one", false)))
+        .await
+        .expect("the async event is accepted");
+    tasks.close();
+    advance(Duration::from_secs(5)).await;
+    settle().await;
+    assert_eq!(transport.call_count(), 0);
+    batch::stop(&logger).await;
+    tasks.wait().await;
+}
+
 #[tokio::test]
 async fn stop_flushes_the_pending_queue() {
     let tasks = TaskTracker::new();
