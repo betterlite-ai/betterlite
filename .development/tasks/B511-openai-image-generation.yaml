@@ -212,7 +212,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_image_generation)"
       && grep -q 'decode_image_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_image_generation.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_image_generation_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_image_generation_corpus(::|$)/)'
   - id: case-unsupported-image-param
     why: For each image family keep an already-present optional_params key even when unsupported, copy a supported
       missing key, and otherwise drop only when drop_params is true or raise ValueError naming the parameter/model/supported

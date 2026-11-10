@@ -336,7 +336,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing)"
       && grep -q 'decode_upload_record' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_signing_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_signing_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_signing_credential_identity_isolation$/)'

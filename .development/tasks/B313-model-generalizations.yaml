@@ -97,7 +97,7 @@ checks:
       --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: Integration must use the existing B2229 production rule decoder.
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_model_generalization_rules_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_model_generalization_rules_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/routing/model-generalizations/provider-first-match.yaml
 - tools/oracle/cases/routing/model-generalizations/capabilities-last-match.yaml
