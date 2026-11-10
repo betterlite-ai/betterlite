@@ -1,0 +1,47 @@
+task: B4297
+deviations:
+  - what: >-
+      Native cache dispatch through ResponseCacheRuntime is not built, so get_cache, async_get_cache,
+      add_cache and async_add_cache always use the injected backend and never _native_cache.request,
+      lookup, lookup_semantic, store or async_store.
+    why: >-
+      The rust_bridge package is outside the repository inventory, and B4299 never sets _native_cache in
+      betterlite, so the native branch has no runtime path to exercise. The Python-backend behavior in the
+      same functions is built and tested.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L622-L630
+  - what: >-
+      _get_cache_logic decodes cached strings with a bounded parser: JSON first, then a Python literal
+      grammar that accepts dicts, lists, tuples, strings, numbers, True, False and None. Shapes outside
+      that grammar (NaN and Infinity JSON constants, sets, bytes literals, complex numbers, arbitrary
+      expressions) are a decode error instead of an ast.literal_eval result.
+    why: >-
+      Evaluating arbitrary cached text is unsafe, and cached responses written by betterlite or LiteLLM
+      are JSON or a literal of the bounded shapes above. A failed decode is logged and treated as a cache
+      miss, where LiteLLM would raise out of _get_cache_logic and let get_cache's catch return None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L562-L569
+  - what: >-
+      async_get_cache passes the same projected lookup (messages, input and a metadata copy) to the backend
+      that get_cache does, and copies a backend-stamped semantic-similarity back onto the request metadata.
+      LiteLLM's async path passes every request kwarg and relies on the backend mutating the caller's own
+      metadata dict in place.
+    why: >-
+      In-place changes to a caller's dict are not ported, per docs/compatibility.md. A backend that reads
+      messages, input or metadata sees the same values on both paths, and a semantic similarity still
+      reaches the caller's metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L672-L679
+  - what: >-
+      A cache read or write failure is logged through the injected verbose hooks and never returned to the
+      caller; get_cache returns None and add_cache returns without a write.
+    why: >-
+      LiteLLM treats the cache as best effort: get_cache prints an exception and returns None, and
+      add_cache logs through _log_add_cache_failure. betterlite logs the typed error through its own
+      injected logger so a deployment can see the failure, with the same non-blocking outcome.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L644-L646
+  - what: >-
+      A failed cache write always logs one error line through the verbose logger. For a Redis backend
+      LiteLLM routes the failure through log_redis_failure, which throttles timeout lines through the
+      Redis circuit breaker.
+    why: >-
+      The throttle and the circuit breaker live in betterlite-router, out of this crate's reach; B393 owns
+      log_redis_failure and a cache write there is a plain injected-logger error instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L738-L743
