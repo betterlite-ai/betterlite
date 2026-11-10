@@ -1,0 +1,3 @@
+environment_variables:
+  LITELLM_ENABLE_PTU_COST_ATTRIBUTION: "true"
+  LITELLM_MASTER_KEY: os.environ/LITELLM_MASTER_KEY

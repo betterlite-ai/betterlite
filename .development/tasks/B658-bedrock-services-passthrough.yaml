@@ -297,7 +297,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_passthrough)"
       && grep -q 'decode_passthrough_log_event' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_passthrough.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_passthrough_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_passthrough_corpus(::|$)/)'
   - id: case-plain-text-delta-rules
     why: Text-only requires usage isNone, falsey provider_specific_fields,exactly one choice, falsey finish_reason,logprobs
       isNone, and non-None delta fields subset of content/role. content must be str, including empty. Tool calls/refusal/reasoning

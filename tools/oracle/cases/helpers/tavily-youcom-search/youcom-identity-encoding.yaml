@@ -1,0 +1,33 @@
+kind: helper
+name: youcom-identity-encoding
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: validate_environment
+        headers:
+          X-Trace: "1"
+        api_key: null
+        api_base: null
+        environment: {}
+      - operation: validate_environment
+        headers:
+          Accept-Encoding: gzip
+        api_key: null
+        api_base: null
+        environment: {}
+      - operation: validate_environment
+        headers:
+          accept-encoding: gzip
+        api_key: null
+        api_base: null
+        environment: {}
+      - operation: validate_environment
+        headers:
+          Content-Type: text/plain
+        api_key: sk-caller
+        api_base: null
+        environment: {}
+env: {}
+compare:
+  ignore: []

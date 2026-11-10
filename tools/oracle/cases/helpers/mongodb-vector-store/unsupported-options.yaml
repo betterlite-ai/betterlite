@@ -1,0 +1,52 @@
+kind: helper
+name: unsupported-options
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {filters: {type: eq}}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {ranking_options: {ranker: auto}}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {rewrite_query: false}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {filters: {}, ranking_options: {}, rewrite_query: true}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {filters: null, max_num_results: null}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          extra_body: {override: true}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          extra_body: {}
+          query: q
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {filters: {type: eq}}
+          query: q
+          embedding: [[0.25]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+env: {}
+compare: {ignore: []}

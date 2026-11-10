@@ -1,0 +1,8 @@
+task: B3978
+deviations:
+  - what: The malformed-service log is emitted at tracing's error level with a severity="critical" field, because tracing has no critical level, while LiteLLM calls verbose_logger.critical.
+    why: Rust's tracing crate stops at ERROR, and the separate field keeps the misconfiguration signal distinguishable from a routine fail-open error for operators.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L366-L375
+  - what: When neither model_call_details nor request_data carries any data, betterlite posts an empty request object to the response endpoint; LiteLLM builds the same empty mapping but its JSON encoder cannot serialize the MappingProxyType, so its guardrail fails open before the POST.
+    why: A working LiteLLM setup always has model_call_details on the logging object, so no setup relies on the crash; sending the empty object is what the source intends and the envelope shape still matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L647-L682
