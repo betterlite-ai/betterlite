@@ -84,7 +84,11 @@ fn joins_the_base_url_and_the_export_path(
 #[rstest]
 #[case::unset(&[], CLOUD_ENDPOINT)]
 #[case::empty_counts_as_unset(&[("LANGFUSE_OTEL_TRACES_EXPORT_PATH", "")], CLOUD_ENDPOINT)]
-fn defaults_the_export_path_when_the_environment_has_none(
+#[case::custom(
+    &[("LANGFUSE_OTEL_TRACES_EXPORT_PATH", "/custom/otel/traces")],
+    "https://cloud.langfuse.com/custom/otel/traces"
+)]
+fn requests_the_export_path_the_environment_sets_or_the_default(
     #[case] environment: &[(&str, &str)],
     #[case] expected: &str,
 ) {
@@ -94,44 +98,31 @@ fn defaults_the_export_path_when_the_environment_has_none(
 }
 
 #[test]
-fn requests_the_export_path_from_the_environment() {
-    let fixture = exporter_with(
-        vec![Step::Status(200)],
-        &[("LANGFUSE_OTEL_TRACES_EXPORT_PATH", "/custom/otel/traces")],
-    );
-    assert!(export(&fixture.exporter, vec![span("one", &[])]));
-    let seen = fixture.transport.seen();
-    assert_eq!(seen[0].url, "https://cloud.langfuse.com/custom/otel/traces");
-}
-
-#[test]
 fn sends_the_basic_authorization_and_every_sdk_header() {
     let fixture = exporter_with(vec![Step::Status(200)], &[]);
     assert!(export(&fixture.exporter, vec![span("one", &[])]));
     let pairs = &fixture.transport.seen()[0].headers;
     let expected = format!("Basic {}", STANDARD.encode("pk-lf-test:sk-lf-test"));
     assert_eq!(pairs.len(), 6);
-    assert_eq!(header(pairs, "authorization"), Some(expected));
-    assert_eq!(
-        header(pairs, "content-type").as_deref(),
-        Some("application/x-protobuf")
-    );
-    assert_eq!(
-        header(pairs, "x-langfuse-sdk-name").as_deref(),
-        Some("python")
-    );
-    assert_eq!(
-        header(pairs, "x-langfuse-sdk-version").as_deref(),
-        Some("4.15.2")
-    );
-    assert_eq!(
-        header(pairs, "x-langfuse-public-key").as_deref(),
-        Some("pk-lf-test")
-    );
-    assert_eq!(
-        header(pairs, "x-langfuse-ingestion-version").as_deref(),
-        Some("4")
-    );
+    let sent = [
+        "authorization",
+        "content-type",
+        "x-langfuse-sdk-name",
+        "x-langfuse-sdk-version",
+        "x-langfuse-public-key",
+        "x-langfuse-ingestion-version",
+    ]
+    .map(|name| header(pairs, name));
+    let wanted = [
+        expected.as_str(),
+        "application/x-protobuf",
+        "python",
+        "4.15.2",
+        "pk-lf-test",
+        "4",
+    ]
+    .map(|value| Some(value.to_owned()));
+    assert_eq!(sent, wanted);
 }
 
 #[test]
@@ -413,26 +404,16 @@ fn encodes_the_resource_the_provider_set() {
 }
 
 fn attribute_resource(resource: &ProtoResource, name: &str) -> Option<String> {
-    resource
+    let found = resource
         .attributes
         .iter()
-        .find(|attribute| attribute.key == name)
-        .map(|attribute| {
-            attribute
-                .value
-                .as_ref()
-                .and_then(|value| value.value.as_ref())
-                .map_or_else(String::new, |value| match value {
-                    AnyValueKind::StringValue(text) => text.clone(),
-                    AnyValueKind::BoolValue(_)
-                    | AnyValueKind::IntValue(_)
-                    | AnyValueKind::DoubleValue(_)
-                    | AnyValueKind::ArrayValue(_)
-                    | AnyValueKind::KvlistValue(_)
-                    | AnyValueKind::BytesValue(_)
-                    | AnyValueKind::StringValueStrindex(_) => String::new(),
-                })
-        })
+        .find(|attribute| attribute.key == name);
+    let value = found?.value.as_ref()?.value.as_ref()?;
+    if let AnyValueKind::StringValue(text) = value {
+        Some(text.clone())
+    } else {
+        None
+    }
 }
 
 #[test]
