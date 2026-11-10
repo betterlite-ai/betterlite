@@ -1,0 +1,58 @@
+kind: helper
+name: regional-authority-host
+call:
+  azure_client_secret:
+    action: regional_authority_host
+    steps:
+      - environment:
+          AZURE_AUTHORITY_HOST: login.microsoft.com
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_AUTHORITY_HOST: https://login.windows.net
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus3
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.windows.net/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.windows.net/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus3.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus3.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_AUTHORITY_HOST: sts.windows.net
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://sts.windows.net/tenant/oauth2/v2.0/authorize","token_endpoint":"https://sts.windows.net/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.microsoft.com/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_AUTHORITY_HOST: login.contoso.test
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: /common/discovery/instance, status: 200, body: '{"tenant_discovery_endpoint":"https://login.contoso.test/tenant/v2.0/.well-known/openid-configuration"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://login.contoso.test/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.contoso.test/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: well-known, status: 200, body: '{"authorization_endpoint":"https://westus2.login.contoso.test/tenant/oauth2/v2.0/authorize","token_endpoint":"https://westus2.login.contoso.test/tenant/oauth2/v2.0/token"}'}
+          - {url_contains: /oauth2/v2.0/token, status: 200, body: '{"access_token":"tok","expires_in":3600}'}
+      - environment:
+          AZURE_AUTHORITY_HOST: http://login.contoso.test
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies: []
+      - environment:
+          AZURE_AUTHORITY_HOST: https://login.contoso.test
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: /common/discovery/instance, status: 200, body: '{"error":"invalid_instance"}'}
+      - environment:
+          AZURE_AUTHORITY_HOST: login.microsoftonline.com
+          AZURE_REGIONAL_AUTHORITY_NAME: 'true'
+          REGION_NAME: westus2
+        replies:
+          - {url_contains: well-known, status: 404, body: no tenant}
+env: {}
+compare: {ignore: []}

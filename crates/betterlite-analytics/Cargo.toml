@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-analytics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+betterlite-models = { path = "../betterlite-models" }
+chrono.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rstest = "=0.27.0"
+serde_json = "1.0.154"
+
+[lints]
+workspace = true

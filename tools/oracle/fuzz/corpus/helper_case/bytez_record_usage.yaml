@@ -1,0 +1,14 @@
+kind: helper
+name: bytez-record-usage
+call:
+  bytez_record:
+    function: usage
+    messages:
+      - role: user
+        content: "hello  world"
+      - role: user
+        content:
+          - type: image_url
+            url: https://img.test/a.png
+compare: {ignore: []}
+env: {}

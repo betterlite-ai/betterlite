@@ -1,0 +1,19 @@
+kind: probe
+name: redis-reconnect
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state_store:
+        settings:
+          namespace: null
+          password: null
+          failure_threshold: 2
+          recovery_timeout_millis: 30000
+        steps:
+          - {kind: fail, now_millis: 0}
+          - {kind: increment, now_millis: 1000, worker: 0, key: counter, by: {counter: 1}}
+          - {kind: increment, now_millis: 1000, worker: 0, key: counter, by: {counter: 1}}
+          - {kind: increment, now_millis: 1000, worker: 0, key: counter, by: {counter: 1}}
+          - {kind: recover, now_millis: 1000}
+          - {kind: increment, now_millis: 32000, worker: 0, key: counter, by: {counter: 1}}

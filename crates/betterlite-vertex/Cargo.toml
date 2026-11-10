@@ -26,7 +26,7 @@ url = "2.5.8"
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 
 [lints]
 workspace = true
