@@ -1156,6 +1156,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-redact",
  "hex",
  "indexmap 2.14.2",
  "lru",

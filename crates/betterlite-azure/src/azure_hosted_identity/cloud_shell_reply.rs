@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use crate::azure_client_secret::token::AccessToken;
 
@@ -36,7 +36,7 @@ pub fn cloud_shell_response(
     let Some(parsed) = reply.as_ref().filter(|candidate| !candidate.is_empty()) else {
         return Err(HostedIdentityError::NoToken);
     };
-    let Some(token) = parsed.access_token.as_deref() else {
+    let Some(token) = parsed.access_token.as_ref() else {
         return Err(unexpected(parsed, environment, raw));
     };
     if parsed.expires_in.is_none() && parsed.expires_on.is_none() {
@@ -47,7 +47,7 @@ pub fn cloud_shell_response(
         return Err(HostedIdentityError::MissingField { field: "resource" });
     }
     Ok(AccessToken {
-        token: SecretString::from(token),
+        token: token.clone(),
         expires_on,
         token_type: parsed
             .token_type
@@ -62,11 +62,19 @@ fn cloud_shell_times(
     request_time: i64,
 ) -> Result<(i64, Option<i64>), HostedIdentityError> {
     let overflow = || HostedIdentityError::ExpiryOverflow;
+    let window = parsed
+        .expires_in
+        .as_ref()
+        .map(|member| member.read("expires_in"))
+        .transpose()?;
+    let refresh_after = parsed
+        .refresh_in
+        .as_ref()
+        .map(|member| member.read("refresh_in"))
+        .transpose()?;
     let expires_on = match Expiry::nonzero_seconds(parsed.expires_on.as_ref(), "expires_on")? {
         Some(deadline) => deadline,
-        None => parsed
-            .expires_in
-            .as_ref()
+        None => window
             .ok_or(HostedIdentityError::MissingField {
                 field: "expires_in",
             })?
@@ -74,11 +82,11 @@ fn cloud_shell_times(
             .checked_add(request_time)
             .ok_or_else(overflow)?,
     };
-    let lifetime = match Expiry::nonzero_seconds(parsed.expires_in.as_ref(), "expires_in")? {
+    let lifetime = match Expiry::nonzero_seconds(window, "expires_in")? {
         Some(seconds) => seconds,
         None => expires_on.checked_sub(request_time).ok_or_else(overflow)?,
     };
-    let offset = match parsed.refresh_in.as_ref() {
+    let offset = match refresh_after {
         Some(explicit) => Some(explicit.seconds("refresh_in")?),
         None if lifetime >= REFRESH_THRESHOLD_SECONDS => Some(lifetime.div_euclid(2)),
         None => None,
@@ -98,12 +106,12 @@ fn unexpected(
         || raw.to_owned(),
         |token| {
             raw.replace(
-                &serde_json::to_string(token).unwrap_or_default(),
+                &serde_json::to_string(token.expose_secret()).unwrap_or_default(),
                 &format!("\"{TOKEN_MASK}\""),
             )
         },
     );
     HostedIdentityError::UnexpectedResponse {
-        content: environment.redact(&masked),
+        content: environment.redact_known(&masked),
     }
 }

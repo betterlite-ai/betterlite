@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::error::Category;
@@ -13,14 +14,18 @@ pub enum Expiry {
 }
 
 impl Expiry {
-    pub fn seconds(&self, field: &'static str) -> Result<i64, HostedIdentityError> {
-        let parsed = match self {
+    fn parsed(&self) -> Option<i64> {
+        match self {
             Self::Whole(seconds) => Some(*seconds),
             Self::Text(text) => text.trim().parse::<i64>().ok(),
-        };
-        parsed.ok_or_else(|| HostedIdentityError::ReplyValue {
-            field: field.to_owned(),
-        })
+        }
+    }
+
+    pub fn seconds(&self, field: &'static str) -> Result<i64, HostedIdentityError> {
+        self.parsed()
+            .ok_or_else(|| HostedIdentityError::ReplyValue {
+                field: field.to_owned(),
+            })
     }
 
     pub fn nonzero_seconds(
@@ -37,12 +42,31 @@ impl Expiry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum ReplyScalar {
     Text(String),
     Number(serde_json::Number),
     Bool(bool),
+    Nested(IgnoredAny),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Member<T> {
+    Read(T),
+    Skipped(IgnoredAny),
+}
+
+impl<T> Member<T> {
+    pub fn read(&self, field: &'static str) -> Result<&T, HostedIdentityError> {
+        let Self::Read(value) = self else {
+            return Err(HostedIdentityError::ReplyValue {
+                field: field.to_owned(),
+            });
+        };
+        Ok(value)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -56,33 +80,33 @@ pub struct ServiceFabricError {
 #[derive(Clone, Deserialize)]
 pub struct HostedTokenReply {
     #[serde(default)]
-    pub(crate) access_token: Option<String>,
+    pub(crate) access_token: Option<SecretString>,
     #[serde(default)]
     pub(crate) expires_on: Option<Expiry>,
     #[serde(default)]
-    pub(crate) expires_in: Option<Expiry>,
+    pub(crate) expires_in: Option<Member<Expiry>>,
     #[serde(default)]
-    pub(crate) refresh_in: Option<Expiry>,
+    pub(crate) refresh_in: Option<Member<Expiry>>,
     #[serde(default)]
     pub(crate) token_type: Option<String>,
     #[serde(default)]
-    pub(crate) resource: Option<String>,
+    pub(crate) resource: Option<IgnoredAny>,
     #[serde(default, rename = "statusCode")]
     pub(crate) status_code: Option<ReplyScalar>,
     #[serde(default)]
     pub(crate) message: Option<ReplyScalar>,
     #[serde(default)]
-    pub(crate) error: Option<ServiceFabricError>,
+    pub(crate) error: Option<Member<ServiceFabricError>>,
     #[serde(flatten)]
     pub(crate) extra: IndexMap<String, IgnoredAny>,
 }
 
 impl HostedTokenReply {
     #[must_use]
-    pub fn token(&self) -> Option<&str> {
+    pub fn token(&self) -> Option<&SecretString> {
         self.access_token
-            .as_deref()
-            .filter(|candidate| !candidate.is_empty())
+            .as_ref()
+            .filter(|candidate| !candidate.expose_secret().is_empty())
     }
 
     #[must_use]

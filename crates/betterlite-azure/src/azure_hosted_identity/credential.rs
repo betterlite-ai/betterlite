@@ -13,6 +13,32 @@ use super::request::{
 
 const CLOUD_SHELL_IDENTITY_KEYS: [&str; 3] = ["object_id", "resource_id", "client_id"];
 
+#[derive(Debug, Clone, Copy)]
+enum IdentityKind {
+    Client,
+    Resource,
+    Object,
+}
+
+// MSAL's get_managed_identity reads identity_config in this order, after the client_id argument
+const IDENTITY_CONFIG_KEYS: [(&str, IdentityKind); 3] = [
+    ("client_id", IdentityKind::Client),
+    ("resource_id", IdentityKind::Resource),
+    ("object_id", IdentityKind::Object),
+];
+
+impl IdentityKind {
+    const fn wire_name(self, protocol: MsalKind) -> &'static str {
+        match (protocol, self) {
+            (MsalKind::AzureMl, Self::Client) => "clientid",
+            (MsalKind::AzureMl, Self::Resource) => "msi_res_id",
+            (_, Self::Client) => "client_id",
+            (_, Self::Resource) => "mi_res_id",
+            (_, Self::Object) => "object_id",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HostedIdentity {
     pub client_id: Option<String>,
@@ -25,27 +51,31 @@ impl HostedIdentity {
             .as_deref()
             .filter(|client_id| !client_id.is_empty())
     }
+
+    fn user_assigned(&self) -> Option<(IdentityKind, &str)> {
+        if let Some(client_id) = self.user_client_id() {
+            return Some((IdentityKind::Client, client_id));
+        }
+        IDENTITY_CONFIG_KEYS.iter().find_map(|(key, kind)| {
+            self.identity_config
+                .get(*key)
+                .filter(|value| !value.is_empty())
+                .map(|value| (*kind, value.as_str()))
+        })
+    }
 }
 
 #[derive(Debug)]
 pub struct HostedCredential {
-    environment: HostedEnvironment,
-    identity: HostedIdentity,
+    pub environment: HostedEnvironment,
+    pub identity: HostedIdentity,
 }
 
 impl HostedCredential {
-    #[must_use]
-    pub const fn new(environment: HostedEnvironment, identity: HostedIdentity) -> Self {
-        Self {
-            environment,
-            identity,
-        }
-    }
-
     pub fn acquire(&self, kind: MsalKind, io: &HostedIo<'_>, resource: &str) -> TokenResult {
         let request = self.request(kind, resource)?;
         let (response, started) = io.exchange(&request)?;
-        msal_reply::msal_response(kind, &response, &self.environment, started, io.clock)
+        msal_reply::msal_response(kind, &response, &self.environment, started, io)
     }
 
     fn request(
@@ -73,15 +103,15 @@ impl HostedCredential {
         let (Some(url), Some(secret)) = (endpoint, header_secret) else {
             return Err(HostedIdentityError::MissingEnvironment { protocol: kind });
         };
-        let (version, header, client_param) = match kind {
-            MsalKind::AppService => (
-                APP_SERVICE_API_VERSION,
-                "X-IDENTITY-HEADER",
-                Some("client_id"),
-            ),
-            MsalKind::AzureMl => (AZURE_ML_API_VERSION, "secret", Some("clientid")),
-            MsalKind::ServiceFabric => (SERVICE_FABRIC_API_VERSION, "Secret", None),
+        let (version, header) = match kind {
+            MsalKind::AppService => (APP_SERVICE_API_VERSION, "X-IDENTITY-HEADER"),
+            MsalKind::AzureMl => (AZURE_ML_API_VERSION, "secret"),
+            MsalKind::ServiceFabric => (SERVICE_FABRIC_API_VERSION, "Secret"),
         };
+        let identity_param = self
+            .identity
+            .user_assigned()
+            .map(|(identity, value)| (identity.wire_name(kind), value));
         let mut headers = vec![(header, secret.clone())];
         if matches!(kind, MsalKind::AppService) {
             headers.push(("Metadata", SecretString::from("true")));
@@ -90,7 +120,7 @@ impl HostedCredential {
             url,
             version,
             resource,
-            client_param.zip(self.identity.user_client_id()),
+            identity_param,
             headers,
         ))
     }
@@ -98,25 +128,12 @@ impl HostedCredential {
 
 #[derive(Debug)]
 pub struct CloudShellCredential {
-    environment: HostedEnvironment,
-    identity: HostedIdentity,
-    within_default_credential: bool,
+    pub environment: HostedEnvironment,
+    pub identity: HostedIdentity,
+    pub within_default_credential: bool,
 }
 
 impl CloudShellCredential {
-    #[must_use]
-    pub const fn new(
-        environment: HostedEnvironment,
-        identity: HostedIdentity,
-        within_default_credential: bool,
-    ) -> Self {
-        Self {
-            environment,
-            identity,
-            within_default_credential,
-        }
-    }
-
     pub fn acquire(&self, io: &HostedIo<'_>, resource: &str) -> TokenResult {
         let request = self.request(resource)?;
         let (response, request_time) = io.exchange(&request)?;

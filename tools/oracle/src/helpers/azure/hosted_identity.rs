@@ -7,8 +7,9 @@ use betterlite_azure::azure_hosted_identity::environment::HostedEnvironment;
 use betterlite_azure::azure_hosted_identity::error::HostedIdentityError;
 use betterlite_azure::azure_hosted_identity::msal_reply::MsalKind;
 use betterlite_azure::azure_hosted_identity::protocol::select_hosted_protocol;
-use betterlite_azure::azure_hosted_identity::request::HostedIo;
+use betterlite_azure::azure_hosted_identity::request::{HostedIo, TokenResult};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use fixture::{FixedClock, Recording, Reply, Selection};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
@@ -78,29 +79,48 @@ fn category(error: &HostedIdentityError) -> String {
     }
 }
 
-fn token_step(step: &TokenStep) -> serde_json::Value {
-    let transport = Recording::new(&step.replies);
-    let clock = FixedClock { now: step.now };
+fn acquire(step: &TokenStep, io: &HostedIo<'_>) -> TokenResult {
     let environment = HostedEnvironment::from_environment(&step.environment);
     let identity = HostedIdentity {
         client_id: step.client_id.clone(),
         identity_config: step.identity_config.clone(),
     };
+    let hosted = HostedCredential {
+        environment: environment.clone(),
+        identity: identity.clone(),
+    };
+    match step.protocol {
+        Protocol::AppService => hosted.acquire(MsalKind::AppService, io, &step.resource),
+        Protocol::AzureMl => hosted.acquire(MsalKind::AzureMl, io, &step.resource),
+        Protocol::ServiceFabric => hosted.acquire(MsalKind::ServiceFabric, io, &step.resource),
+        Protocol::CloudShell => CloudShellCredential {
+            environment,
+            identity,
+            within_default_credential: step.within_default_credential,
+        }
+        .acquire(io, &step.resource),
+    }
+}
+
+fn token_step(step: &TokenStep) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+    let transport = Recording::new(&step.replies);
+    let clock = FixedClock { now: step.now };
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
+        Box::new(crate::helpers::HelperError {
+            class: "Redaction".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     let io = HostedIo {
         transport: &transport,
         clock: &clock,
+        redactor: &redactor,
     };
-    let hosted = HostedCredential::new(environment.clone(), identity.clone());
-    let acquired = match step.protocol {
-        Protocol::AppService => hosted.acquire(MsalKind::AppService, &io, &step.resource),
-        Protocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &io, &step.resource),
-        Protocol::ServiceFabric => hosted.acquire(MsalKind::ServiceFabric, &io, &step.resource),
-        Protocol::CloudShell => {
-            CloudShellCredential::new(environment, identity, step.within_default_credential)
-                .acquire(&io, &step.resource)
-        }
-    };
-    let outcome = match acquired {
+    let outcome = match acquire(step, &io) {
         Ok(token) => json!({
             "kind": "token",
             "token": token.token.expose_secret(),
@@ -115,7 +135,7 @@ fn token_step(step: &TokenStep) -> serde_json::Value {
         .requests
         .into_inner()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    json!({"requests": requests, "outcome": outcome})
+    Ok(json!({"requests": requests, "outcome": outcome}))
 }
 
 fn select_step(
@@ -149,7 +169,7 @@ impl crate::helpers::Helper for Op {
             .steps
             .iter()
             .map(|step| match step {
-                Step::Token(token) => Ok(token_step(token)),
+                Step::Token(token) => token_step(token),
                 Step::Select {
                     environment,
                     platform,

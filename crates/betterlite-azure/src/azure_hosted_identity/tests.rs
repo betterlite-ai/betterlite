@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -170,9 +171,17 @@ fn secret_safe_service_fabric() {
     let error = outcome.unwrap_err();
     let shown = format!("{error} {error:?}");
     assert!(shown.contains("[redacted]"));
+    assert!(shown.contains("REDACTED"));
     assert!(!shown.contains(secret));
     assert!(!shown.contains("fixture-access-token"));
     assert!(!format!("{:?}", fixture.hosted()).contains(secret));
+}
+
+#[test]
+fn redactor_alone_misses_opaque_identity_values() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let text = r#"{"echo":"fixture-identity-header-secret"}"#;
+    assert_eq!(redactor.redact_string(text), text);
 }
 
 fn secret_safe_token() {

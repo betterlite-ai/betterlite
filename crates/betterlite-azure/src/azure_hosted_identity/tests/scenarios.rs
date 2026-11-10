@@ -503,10 +503,13 @@ fn azure_ml_zero_expiry() {
             vec![response(r#"{"access_token":"ml-token","expires_on":0}"#)],
             &clock,
         );
-    assert_eq!(
-        outcome.unwrap_err().to_string(),
-        "Azure ML managed identity configuration not found in environment. Token request error: (invalid_scope) {\"access_token\":\"[redacted]\",\"expires_on\":0}"
-    );
+    let message = outcome.unwrap_err().to_string();
+    assert!(message.starts_with(
+        "Azure ML managed identity configuration not found in environment. Token request error: (invalid_scope) "
+    ));
+    assert!(message.contains("REDACTED"));
+    assert!(message.contains("\"expires_on\":0"));
+    assert!(!message.contains("ml-token"));
 }
 
 pub(super) fn cloud_shell_reply() {
@@ -819,6 +822,75 @@ pub(super) fn hosted_errors() {
     hosted_service_fabric_error_record();
     hosted_service_fabric_rejection();
     hosted_service_fabric_bad_error();
+    hosted_string_error_member();
+    hosted_cloud_shell_string_error_member();
+    hosted_unread_members_are_ignored();
+}
+
+const OAUTH_ERROR: &str = r#"{"error":"invalid_request","error_description":"bad"}"#;
+
+#[test]
+fn hosted_string_error_member() {
+    assert_rejection(
+        &Fixture::new().with_environment(&APP_SERVICE_ENVIRONMENT),
+        MsalKind::AppService,
+        OAUTH_ERROR,
+        "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) None, None",
+    );
+    assert_rejection(
+        &Fixture::new().with_environment(&AZURE_ML_ENVIRONMENT),
+        MsalKind::AzureMl,
+        OAUTH_ERROR,
+        &format!(
+            "Azure ML managed identity configuration not found in environment. Token request error: (invalid_scope) {OAUTH_ERROR}"
+        ),
+    );
+}
+
+#[test]
+fn hosted_empty_identity_header_leaves_description_alone() {
+    assert_rejection(
+        &Fixture::new().with_environment(&[
+            ("IDENTITY_ENDPOINT", "http://app.test/token"),
+            ("IDENTITY_HEADER", ""),
+        ]),
+        MsalKind::AppService,
+        r#"{"statusCode":400,"message":"no identity"}"#,
+        "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) 400, no identity",
+    );
+}
+
+#[test]
+fn hosted_cloud_shell_string_error_member() {
+    let (outcome, _) = Fixture::new()
+        .with_environment(&CLOUD_SHELL_ENVIRONMENT)
+        .acquire_cloud_shell(vec![response(OAUTH_ERROR)], &FixtureClock::fixed(NOW));
+    assert_eq!(
+        outcome.unwrap_err().to_string(),
+        format!("Unexpected response \"{OAUTH_ERROR}\"")
+    );
+}
+
+#[test]
+fn hosted_unread_members_are_ignored() {
+    assert_rejection(
+        &Fixture::new().with_environment(&APP_SERVICE_ENVIRONMENT),
+        MsalKind::AppService,
+        r#"{"statusCode":{"a":1},"message":["x"],"expires_in":{"b":2},"refresh_in":[1],"error":7}"#,
+        "App Service managed identity configuration not found in environment. Token request error: (invalid_scope) <nested>, <nested>",
+    );
+    let (outcome, _) = Fixture::new()
+        .with_environment(&CLOUD_SHELL_ENVIRONMENT)
+        .acquire_cloud_shell(
+            vec![response(
+                r#"{"access_token":"shell-token","expires_in":{"b":2},"resource":"r"}"#,
+            )],
+            &FixtureClock::fixed(NOW),
+        );
+    assert!(matches!(
+        outcome.unwrap_err(),
+        HostedIdentityError::ReplyValue { field } if field == "expires_in"
+    ));
 }
 
 fn assert_malformed_json(fixture: &Fixture, protocol: MsalKind) {
@@ -890,6 +962,65 @@ fn hosted_service_fabric_bad_error() {
         outcome.unwrap_err(),
         HostedIdentityError::ReplyValue { .. }
     ));
+}
+
+#[rstest]
+#[case::app_client(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("client_id", "cfg-client")], "client_id", "cfg-client")]
+#[case::app_resource(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("resource_id", "/subs/res")], "mi_res_id", "/subs/res")]
+#[case::app_object(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("object_id", "cfg-object")], "object_id", "cfg-object")]
+#[case::app_resource_before_object(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("object_id", "cfg-object"), ("resource_id", "/subs/res")], "mi_res_id", "/subs/res")]
+#[case::app_client_before_resource(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("resource_id", "/subs/res"), ("client_id", "cfg-client")], "client_id", "cfg-client")]
+#[case::app_empty_client_skipped(MsalKind::AppService, &APP_SERVICE_ENVIRONMENT, &[("client_id", ""), ("object_id", "cfg-object")], "object_id", "cfg-object")]
+#[case::ml_client(MsalKind::AzureMl, &AZURE_ML_ENVIRONMENT, &[("client_id", "cfg-client")], "clientid", "cfg-client")]
+#[case::ml_resource(MsalKind::AzureMl, &AZURE_ML_ENVIRONMENT, &[("resource_id", "/subs/res")], "msi_res_id", "/subs/res")]
+#[case::ml_object(MsalKind::AzureMl, &AZURE_ML_ENVIRONMENT, &[("object_id", "cfg-object")], "object_id", "cfg-object")]
+#[case::ml_resource_before_object(MsalKind::AzureMl, &AZURE_ML_ENVIRONMENT, &[("object_id", "cfg-object"), ("resource_id", "/subs/res")], "msi_res_id", "/subs/res")]
+fn identity_config_selects_user_assigned_identity(
+    #[case] kind: MsalKind,
+    #[case] environment: &[(&str, &str)],
+    #[case] identity_config: &[(&str, &str)],
+    #[case] name: &str,
+    #[case] value: &str,
+) {
+    let (outcome, transport) = Fixture::new()
+        .with_environment(environment)
+        .with_identity_config(identity_config)
+        .acquire(kind, vec![response(SF_TOKEN)], &FixtureClock::fixed(NOW));
+    outcome.unwrap();
+    let request = only_request(&transport);
+    assert_eq!(request.query.len(), 3);
+    assert_eq!(request.query_value(name), Some(value));
+}
+
+#[test]
+fn identity_config_yields_to_client_id() {
+    let (outcome, transport) = Fixture::new()
+        .with_environment(&APP_SERVICE_ENVIRONMENT)
+        .with_client_id("arg-client")
+        .with_identity_config(&[("client_id", "cfg-client"), ("object_id", "cfg-object")])
+        .acquire(
+            MsalKind::AppService,
+            vec![response(SF_TOKEN)],
+            &FixtureClock::fixed(NOW),
+        );
+    outcome.unwrap();
+    let request = only_request(&transport);
+    assert_eq!(request.query.len(), 3);
+    assert_eq!(request.query_value("client_id"), Some("arg-client"));
+}
+
+#[test]
+fn identity_config_unrelated_keys_stay_system_assigned() {
+    let (outcome, transport) = Fixture::new()
+        .with_environment(&AZURE_ML_ENVIRONMENT)
+        .with_identity_config(&[("tenant", "alpha")])
+        .acquire(
+            MsalKind::AzureMl,
+            vec![response(SF_TOKEN)],
+            &FixtureClock::fixed(NOW),
+        );
+    outcome.unwrap();
+    assert_eq!(only_request(&transport).query.len(), 2);
 }
 
 pub(super) fn hosted_inner_selection() {

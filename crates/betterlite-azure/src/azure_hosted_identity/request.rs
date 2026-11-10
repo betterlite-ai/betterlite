@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
 
+use betterlite_redact::secret::Redactor;
 use secrecy::SecretString;
 
 use crate::azure_client_secret::token::AccessToken;
@@ -38,6 +39,7 @@ pub type TokenResult = Result<AccessToken, HostedIdentityError>;
 pub struct HostedIo<'io> {
     pub transport: &'io dyn HostedTransport,
     pub clock: &'io dyn Clock,
+    pub redactor: &'io Redactor,
 }
 
 impl HostedIo<'_> {

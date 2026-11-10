@@ -232,8 +232,12 @@ def build_credential(step: TokenStep, transport: FixtureTransport) -> FixtureCre
     if protocol == "service_fabric":
         return ServiceFabricCredential(client_id=client_id, identity_config=identity_config)
     if protocol == "azure_ml":
-        return AzureMLCredential(client_id=client_id, transport=transport)
-    return AppServiceCredential(client_id=client_id, transport=transport)
+        return AzureMLCredential(
+            client_id=client_id, identity_config=identity_config, transport=transport
+        )
+    return AppServiceCredential(
+        client_id=client_id, identity_config=identity_config, transport=transport
+    )
 
 
 def litellm_bearer(credential: FixtureCredential, scope: str) -> str | None:

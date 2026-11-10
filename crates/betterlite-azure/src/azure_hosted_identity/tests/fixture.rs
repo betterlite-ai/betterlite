@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::sync::Mutex;
 
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_arc_identity::{ArcHost, ArcPlatform};
@@ -182,15 +183,18 @@ impl Fixture {
     }
 
     pub(super) fn hosted(&self) -> HostedCredential {
-        HostedCredential::new(self.environment(), self.identity())
+        HostedCredential {
+            environment: self.environment(),
+            identity: self.identity(),
+        }
     }
 
     pub(super) fn cloud_shell(&self) -> CloudShellCredential {
-        CloudShellCredential::new(
-            self.environment(),
-            self.identity(),
-            self.within_default_credential,
-        )
+        CloudShellCredential {
+            environment: self.environment(),
+            identity: self.identity(),
+            within_default_credential: self.within_default_credential,
+        }
     }
 
     fn environment(&self) -> HostedEnvironment {
@@ -227,9 +231,11 @@ where
     Call: FnOnce(&HostedIo<'_>) -> TokenResult,
 {
     let transport = FixtureTransport::new(replies);
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let outcome = call(&HostedIo {
         transport: &transport,
         clock,
+        redactor: &redactor,
     });
     (outcome, transport)
 }

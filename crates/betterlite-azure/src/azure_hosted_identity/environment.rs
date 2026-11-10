@@ -33,7 +33,7 @@ impl HostedEnvironment {
     }
 
     #[must_use]
-    pub fn redact(&self, text: &str) -> String {
+    pub fn redact_known(&self, text: &str) -> String {
         let mut output = text.to_owned();
         for secret in [self.identity_header.as_ref(), self.msi_secret.as_ref()]
             .into_iter()
