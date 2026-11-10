@@ -250,6 +250,30 @@ fn atomic_write_preserves_other_providers_and_settings() {
 }
 
 #[test]
+fn atomic_write_adds_providers_to_a_file_without_one() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("models.json");
+    fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+    sync_models_json(
+        &path,
+        BASE_URL,
+        &["a".to_owned()],
+        &BTreeMap::new(),
+        &LocalFiles,
+    )
+    .unwrap();
+    let document = read_json(&path);
+    assert_eq!(document.pointer("/theme").unwrap().as_str(), Some("dark"));
+    assert_eq!(
+        document
+            .pointer("/providers/litellm/baseUrl")
+            .unwrap()
+            .as_str(),
+        Some("https://proxy.test/v1")
+    );
+}
+
+#[test]
 fn atomic_write_replaces_an_existing_litellm_provider() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("models.json");
