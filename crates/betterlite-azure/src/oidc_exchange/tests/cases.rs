@@ -194,6 +194,11 @@ fn unresolved_oidc_token() {
         &plain_value,
         OidcExchangeError::UnresolvedOidcToken
     ));
+    let empty_reference = fixture.error_of(&input("", None, None, None));
+    assert!(matches!(
+        &empty_reference,
+        OidcExchangeError::UnresolvedOidcToken
+    ));
     assert!(fixture.requests().is_empty());
     empty_resolved_token_is_sent();
 }

@@ -11,6 +11,10 @@ call:
         calls:
           - azure_ad_token: plain-token
         replies: []
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant}
+        calls:
+          - azure_ad_token: ''
+        replies: []
       - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: ''}
         calls:
           - azure_ad_token: os.environ/OIDC_ASSERTION
