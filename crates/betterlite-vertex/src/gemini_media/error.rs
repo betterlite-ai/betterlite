@@ -35,14 +35,13 @@ impl MediaError {
             | Self::InvalidInlineData(..) => 400,
         }
     }
+    // a bodyless BadRequestError leaves type null, like betterlite-error's BadRequest shape
     #[must_use]
-    pub const fn error_type(&self) -> &'static str {
-        match self {
-            Self::UnsupportedMediaType(..)
-            | Self::RemoteMediaRequired(..)
-            | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => "invalid_request_error",
+    pub const fn error_type(&self) -> Option<&'static str> {
+        if let Self::UnsupportedMediaType(..) = self {
+            return None;
         }
+        Some("invalid_request_error")
     }
     #[must_use]
     pub const fn param(&self) -> Option<&'static str> {
@@ -53,9 +52,10 @@ impl MediaError {
     }
     #[must_use]
     pub const fn code(&self) -> Option<&'static str> {
-        if self.param().is_some() {
-            return Some("unsupported_remote_media");
+        match self {
+            Self::UnsupportedMediaType(..) => Some("400"),
+            Self::RemoteMediaRequired(..) => Some("unsupported_remote_media"),
+            Self::InvalidMedia(..) | Self::InvalidInlineData(..) => None,
         }
-        None
     }
 }

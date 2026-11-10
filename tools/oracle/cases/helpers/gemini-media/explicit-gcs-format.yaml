@@ -26,6 +26,7 @@ call:
       - url: "gs://bucket/photo.PNG"
       - url: "gs://bucket/clip.mp4"
       - url: "gs://bucket/doc.pdf"
+      - url: "gs://bucket/anim.gif"
       - url: "gs://bucket/photo.png"
         hints:
           format: ""

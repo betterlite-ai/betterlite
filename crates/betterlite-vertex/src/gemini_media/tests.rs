@@ -58,9 +58,14 @@ fn media_error(url: &str, hints: &MimeHints) -> MediaError {
     process_media(&media_request(url, hints, None, None, None)).unwrap_err()
 }
 
-fn assert_wire(error: &MediaError, param: Option<&str>, code: Option<&str>) {
+fn assert_wire(
+    error: &MediaError,
+    error_type: Option<&str>,
+    param: Option<&str>,
+    code: Option<&str>,
+) {
     assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.error_type(), error_type);
     assert_eq!(error.param(), param);
     assert_eq!(error.code(), code);
 }
@@ -149,7 +154,7 @@ fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
         error,
         MediaError::UnsupportedMediaType(subject.to_owned(), None)
     );
-    assert_wire(&error, None, None);
+    assert_wire(&error, None, None, Some("400"));
 }
 
 #[rstest]
@@ -167,7 +172,12 @@ fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
 fn media_cases_remote_media_required(#[case] url: &str, #[case] format: Option<&str>) {
     let error = media_error(url, &hints(format, None, None));
     assert_eq!(error, MediaError::RemoteMediaRequired(MediaField::ImageUrl));
-    assert_wire(&error, Some("image_url"), Some("unsupported_remote_media"));
+    assert_wire(
+        &error,
+        Some("invalid_request_error"),
+        Some("image_url"),
+        Some("unsupported_remote_media"),
+    );
 }
 
 #[rstest]
@@ -184,7 +194,7 @@ fn media_cases_invalid_reference(#[case] url: &str, #[case] inline: bool) {
         MediaError::InvalidMedia(url.to_owned())
     };
     assert_eq!(media_error(url, &hints), error);
-    assert_wire(&error, None, None);
+    assert_wire(&error, Some("invalid_request_error"), None, None);
 }
 
 #[rstest]

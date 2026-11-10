@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
+from litellm.exceptions import BadRequestError
 from litellm.llms.vertex_ai.gemini import transformation
 from litellm.llms.vertex_ai.gemini.transformation import (
     _apply_gemini_mime_type_aliases,  # pyright: ignore[reportPrivateUsage]
@@ -34,10 +35,13 @@ def _mime_alias(params: Params) -> Json:
 
 
 def _media_parts(params: Params) -> Json:
-    parts: list[Json] = []
-    for case in cast("list[Json]", params["cases"]):
-        fields = cast("dict[str, Json]", case)
-        hints = cast("dict[str, Json]", fields.get("hints") or {})
+    return {"parts": [_media_part(case) for case in cast("list[Json]", params["cases"])]}
+
+
+def _media_part(case: Json) -> Json:
+    fields = cast("dict[str, Json]", case)
+    hints = cast("dict[str, Json]", fields.get("hints") or {})
+    try:
         with patch.object(transformation, "_get_gcs_object_content_type", _blocked_metadata):
             part = _process_gemini_media(
                 image_url=cast(str, fields["url"]),
@@ -48,8 +52,10 @@ def _media_parts(params: Params) -> Json:
                 model=cast("str | None", fields.get("model")),
                 video_metadata=cast("dict[str, Json] | None", fields.get("video_metadata")),
             )
-        parts.append(cast(Json, part))
-    return {"parts": parts}
+    except BadRequestError as error:
+        status = error.status_code
+        return {"error": {"status": status, "type": None, "param": None, "code": str(status)}}
+    return cast(Json, part)
 
 
 def _resolution_maximum(params: Params) -> Json:

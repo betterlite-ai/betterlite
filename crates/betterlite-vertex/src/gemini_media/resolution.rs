@@ -43,8 +43,7 @@ fn detail_priority(detail: &str) -> u8 {
 }
 fn part_detail(part: &ContentPart) -> Option<&str> {
     let field = match part.kind.as_str() {
-        "image_url" => part.fields.get("image_url"),
-        "file" => part.fields.get("file"),
+        "image_url" | "file" => part.fields.get(part.kind.as_str()),
         _ => return None,
     };
     field

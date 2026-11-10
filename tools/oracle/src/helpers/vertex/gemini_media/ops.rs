@@ -1,5 +1,4 @@
-use crate::compare::helper::ErrorCode;
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_vertex::gemini_media::equivalence::part_exists;
@@ -61,7 +60,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Call::ResolutionMaximum => Ok(json!({
             "maximum": max_media_resolution(&input.messages),
         })),
-        Call::PartKeyEquivalence => Ok(json!({"matches": matches(&input.cases)})),
+        Call::PartKeyEquivalence => Ok(json!({
+            "matches": input.cases.iter().map(|case| {
+                let excluded: Vec<&str> = case.excluded_keys.iter().map(String::as_str).collect();
+                part_exists(&case.parts, &case.part, &excluded)
+            }).collect::<Vec<bool>>(),
+        })),
     }
 }
 fn parts(cases: &[Case]) -> HelperResult {
@@ -75,27 +79,16 @@ fn parts(cases: &[Case]) -> HelperResult {
             model: case.model.as_deref(),
             field: MediaField::ImageUrl,
         };
-        output.push(process_media(&request).map_err(|error| {
-            Box::new(HelperError {
-                class: "BadRequestError".to_owned(),
-                status: Some(error.status()),
-                error_type: Some(Some(error.error_type().to_owned())),
-                param: Some(error.param().map(str::to_owned)),
-                code: error
-                    .code()
-                    .map(|code| Some(ErrorCode::Text(code.to_owned()))),
-                message: error.to_string(),
-            })
-        })?);
+        let entry = match process_media(&request) {
+            Ok(part) => json!(part),
+            Err(error) => json!({"error": {
+                "status": error.status(),
+                "type": error.error_type(),
+                "param": error.param(),
+                "code": error.code(),
+            }}),
+        };
+        output.push(entry);
     }
     Ok(json!({"parts": output}))
-}
-fn matches(cases: &[Case]) -> Vec<bool> {
-    cases
-        .iter()
-        .map(|case| {
-            let excluded: Vec<&str> = case.excluded_keys.iter().map(String::as_str).collect();
-            part_exists(&case.parts, &case.part, &excluded)
-        })
-        .collect()
 }
