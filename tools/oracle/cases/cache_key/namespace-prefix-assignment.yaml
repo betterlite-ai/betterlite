@@ -1,0 +1,17 @@
+kind: helper
+name: namespace-prefix-assignment
+call:
+  b4296:
+    get_cache_key:
+      cache_type: redis
+      namespace: cache-ns
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+      metadata:
+        redis_namespace: metadata-ns
+      cache_control:
+        namespace: request-ns
+env: {}
+compare:
+  ignore: []

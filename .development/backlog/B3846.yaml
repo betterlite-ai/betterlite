@@ -1,7 +1,7 @@
 id: B3846
 milestone: M7 observability
 title: OTel vendor attribute mapping and tool roles
-status: todo
+status: done
 depends_on: [B3840, B3843, B3844, B3845]
 file: tasks/B3846-otel-vendor-mapping.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/integrations/arize/_utils.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1078
