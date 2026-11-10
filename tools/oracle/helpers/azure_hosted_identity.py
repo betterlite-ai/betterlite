@@ -11,11 +11,13 @@ from unittest import mock
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from azure.core.exceptions import ClientAuthenticationError, DecodeError
+from azure.core.rest import HttpRequest
 from azure.identity import CredentialUnavailableError
 from azure.identity._credentials.app_service import AppServiceCredential
 from azure.identity._credentials.azure_ml import AzureMLCredential
 from azure.identity._credentials.cloud_shell import CloudShellCredential
 from azure.identity._credentials.service_fabric import ServiceFabricCredential
+from azure.identity._internal import within_dac
 from litellm.secret_managers.get_azure_ad_token_provider import get_azure_ad_token_provider
 from litellm.types.secret_managers.get_azure_ad_token_provider import AzureCredentialType
 
@@ -63,25 +65,6 @@ FixtureCredential: TypeAlias = (
 )
 
 
-class HttpRequestLike(Protocol):
-    method: str
-    url: str
-    headers: Mapping[str, str]
-
-    @property
-    def content(self) -> dict[str, str] | None: ...
-
-
-class WithinDac(Protocol):
-    def set(self, value: object, /) -> object: ...
-
-    def reset(self, marker: object) -> None: ...
-
-
-class IdentityInternal(Protocol):
-    within_dac: WithinDac
-
-
 class MsalModule(Protocol):
     SERVICE_FABRIC: object
     APP_SERVICE: object
@@ -92,7 +75,6 @@ class MsalModule(Protocol):
     def get_managed_identity_source(self) -> object: ...
 
 
-identity_internal = cast(IdentityInternal, import_module("azure.identity._internal"))
 msal_managed_identity = cast(MsalModule, import_module("msal.managed_identity"))
 
 
@@ -151,14 +133,13 @@ class FixtureTransport:
         self.requests.append(recorded_request("GET", full_url, headers, None))
         return ServiceFabricResponse(self.replies.pop(0))
 
-    def send(self, request: object, **_kwargs: object) -> FixtureResponse:
-        http_request = cast(HttpRequestLike, request)
+    def send(self, request: HttpRequest, **_kwargs: object) -> FixtureResponse:
         self.requests.append(
             recorded_request(
-                http_request.method,
-                http_request.url,
-                http_request.headers,
-                http_request.content,
+                request.method,
+                request.url,
+                request.headers,
+                cast("Mapping[str, str] | None", request.content),
             )
         )
         return FixtureResponse(self.replies.pop(0))
@@ -252,11 +233,11 @@ def litellm_bearer(credential: FixtureCredential, scope: str) -> str | None:
 
 @contextmanager
 def default_credential_scope(*, enabled: bool) -> Generator[None]:
-    marker = identity_internal.within_dac.set(enabled)
+    marker = within_dac.set(enabled)
     try:
         yield
     finally:
-        identity_internal.within_dac.reset(marker)
+        within_dac.reset(marker)
 
 
 def credential_token(step: TokenStep, transport: FixtureTransport, scope: str) -> dict[str, Json]:
