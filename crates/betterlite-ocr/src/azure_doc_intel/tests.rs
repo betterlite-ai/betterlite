@@ -94,17 +94,18 @@ pub(super) fn prepared_request(connection: OcrConnection, options: Object) -> Pr
     }
 }
 
-pub(super) fn keyed_request(api_base: &str, options: Object) -> PreparedOcrRequest {
-    prepared_request(
-        connection(
-            Some(("request-key", OcrInputSource::Request)),
-            Some((api_base, OcrInputSource::Request)),
-            Vec::new(),
-            OcrInputSource::Deployment,
-            Secrets::new(),
-        ),
-        options,
+fn request_connection(api_base: &str, extra: Vec<(&str, &str)>) -> OcrConnection {
+    connection(
+        Some(("request-key", OcrInputSource::Request)),
+        Some((api_base, OcrInputSource::Request)),
+        extra,
+        OcrInputSource::Deployment,
+        Secrets::new(),
     )
+}
+
+pub(super) fn keyed_request(api_base: &str, options: Object) -> PreparedOcrRequest {
+    prepared_request(request_connection(api_base, Vec::new()), options)
 }
 
 pub(super) fn plain_client() -> OcrClient {

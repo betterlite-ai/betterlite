@@ -33,9 +33,9 @@ pub(crate) struct Input {
     #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
-    extra_headers: Object,
+    extra_headers: BTreeMap<String, String>,
     #[serde(default)]
-    environment: Object,
+    environment: BTreeMap<String, String>,
     analyze: ReplyInput,
     #[serde(default)]
     polls: Vec<ReplyInput>,
@@ -46,7 +46,7 @@ pub(crate) struct Input {
 struct ReplyInput {
     status: u16,
     #[serde(default)]
-    headers: Object,
+    headers: BTreeMap<String, String>,
     #[serde(default)]
     body: Option<Json>,
 }
@@ -67,7 +67,7 @@ impl Helper for Op {
 
 async fn execute(input: &Input) -> HelperResult {
     let server = Server::start(replies(input)?).await?;
-    let request = prepared_request(input, &server.base)?;
+    let request = prepared_request(input, &server.base);
     let response = ocr(
         &AzureDocIntelligenceOcrConfig,
         &client::ocr_client()?,
@@ -94,25 +94,22 @@ fn replies(input: &Input) -> Result<Vec<Reply>, Box<HelperError>> {
 }
 
 fn reply(spec: &ReplyInput) -> Result<Reply, Box<HelperError>> {
-    let mut headers = Vec::with_capacity(spec.headers.len());
-    for (name, value) in &spec.headers {
-        let Json::Text(text) = value else {
-            return Err(failure(&format!("the reply header {name} is not a string")));
-        };
-        headers.push((name.clone(), text.clone()));
-    }
     let body = match &spec.body {
         Some(body) => serde_json::to_vec(body).map_err(|error| failure(&error))?,
         None => Vec::new(),
     };
     Ok(Reply {
         status: spec.status,
-        headers,
+        headers: spec
+            .headers
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
         body,
     })
 }
 
-fn prepared_request(input: &Input, base: &str) -> Result<PreparedOcrRequest, Box<HelperError>> {
+fn prepared_request(input: &Input, base: &str) -> PreparedOcrRequest {
     let credentials = ResolvedOcrCredentials {
         api_key: input.api_key.as_ref().map(|key| OcrSourced {
             value: SecretString::from(key.as_str()),
@@ -124,21 +121,20 @@ fn prepared_request(input: &Input, base: &str) -> Result<PreparedOcrRequest, Box
         }),
     };
     let mut secrets = Secrets::new();
-    for (name, value) in &input.environment {
-        let Json::Text(secret) = value else {
-            return Err(failure(&format!(
-                "the environment value {name} is not a string"
-            )));
-        };
+    for (name, secret) in &input.environment {
         let _previous = secrets.insert(name.clone(), SecretString::from(secret.as_str()));
     }
     let transport = OcrTransportConfig {
-        extra_headers: header_pairs(&input.extra_headers)?,
+        extra_headers: input
+            .extra_headers
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
         extra_headers_source: OcrInputSource::Request,
         timeout: Some(Duration::from_secs(15)),
         max_response_bytes: OCR_RESPONSE_MAX_BYTES,
     };
-    Ok(PreparedOcrRequest {
+    PreparedOcrRequest {
         model: input.model.clone(),
         document: input.document.clone(),
         connection: OcrConnection::new(credentials, transport, OcrSettings::default(), secrets),
@@ -146,40 +142,27 @@ fn prepared_request(input: &Input, base: &str) -> Result<PreparedOcrRequest, Box
         optional_params: input.options.clone(),
         input_sources: BTreeMap::new(),
         azure_ad_token_provider: None,
-    })
-}
-
-fn header_pairs(headers: &Object) -> Result<Vec<(String, String)>, Box<HelperError>> {
-    let mut pairs = Vec::with_capacity(headers.len());
-    for (name, value) in headers {
-        let Json::Text(text) = value else {
-            return Err(failure(&format!("the header {name} is not a string")));
-        };
-        pairs.push((name.clone(), text.clone()));
     }
-    Ok(pairs)
 }
 
 fn requests_json(seen: &[Captured]) -> Result<Value, Box<HelperError>> {
     let mut listed = Vec::with_capacity(seen.len());
     for request in seen {
+        let body = if request.body.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&request.body).map_err(|error| failure(&error))?
+        };
         listed.push(json!({
             "method": request.method,
             "path": request.path,
             "authorization": request.headers.get("authorization"),
             "subscription_key": request.headers.get("ocp-apim-subscription-key"),
             "content_type": request.headers.get("content-type"),
-            "body": body_json(request)?,
+            "body": body,
         }));
     }
     Ok(Value::Array(listed))
-}
-
-fn body_json(request: &Captured) -> Result<Value, Box<HelperError>> {
-    if request.body.is_empty() {
-        return Ok(Value::Null);
-    }
-    serde_json::from_slice(&request.body).map_err(|error| failure(&error))
 }
 
 fn ocr_failure(error: &OcrError) -> Box<HelperError> {

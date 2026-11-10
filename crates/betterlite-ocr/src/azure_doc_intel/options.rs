@@ -90,9 +90,27 @@ fn valid_page_token(token: &str) -> bool {
 }
 
 fn normalize_features(value: Option<&Json>) -> Result<Option<String>, OcrError> {
-    let tokens: Vec<&str> = match value {
-        None | Some(Json::Null) => return Ok(None),
-        Some(Json::List(names)) => names
+    let Some(present) = value else {
+        return Ok(None);
+    };
+    joined_features(&feature_tokens(present)?)
+}
+
+fn joined_features(tokens: &[&str]) -> Result<Option<String>, OcrError> {
+    let normalized: Vec<&str> = tokens.iter().map(|token| token.trim()).collect();
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    if normalized.iter().any(|token| !valid_feature(token)) {
+        return Err(OcrError::Features);
+    }
+    Ok(Some(normalized.join(",")))
+}
+
+fn feature_tokens(value: &Json) -> Result<Vec<&str>, OcrError> {
+    match value {
+        Json::Null => Ok(Vec::new()),
+        Json::List(names) => names
             .iter()
             .map(|name| match name {
                 Json::Text(text) => Ok(text.as_str()),
@@ -100,18 +118,10 @@ fn normalize_features(value: Option<&Json>) -> Result<Option<String>, OcrError> 
                     Err(OcrError::Features)
                 }
             })
-            .collect::<Result<Vec<_>, _>>()?,
-        Some(Json::Text(names)) => names.split(',').collect(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => return Err(OcrError::Features),
-    };
-    if tokens.is_empty() {
-        return Ok(None);
+            .collect(),
+        Json::Text(names) => Ok(names.split(',').collect()),
+        Json::Bool(_) | Json::Number(_) | Json::Object(_) => Err(OcrError::Features),
     }
-    let normalized: Vec<&str> = tokens.iter().map(|token| token.trim()).collect();
-    if !normalized.iter().all(|token| valid_feature(token)) {
-        return Err(OcrError::Features);
-    }
-    Ok(Some(normalized.join(",")))
 }
 
 fn valid_feature(token: &str) -> bool {

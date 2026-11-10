@@ -10,7 +10,6 @@ use tokio::task::JoinSet;
 use super::failure;
 use crate::helpers::HelperError;
 
-#[derive(Clone, Debug)]
 pub(super) struct Reply {
     pub(super) status: u16,
     pub(super) headers: Vec<(String, String)>,
@@ -74,85 +73,14 @@ async fn serve(listener: TcpListener, replies: Vec<Reply>, captured: Arc<Mutex<V
 }
 
 async fn exchange(socket: &mut TcpStream, reply: &Reply) -> Result<Captured, String> {
-    let mut buffer = Vec::new();
-    loop {
-        if let Some(end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-            let length = content_length(buffer.get(..end).unwrap_or_default())?;
-            if buffer.len() >= end.saturating_add(4).saturating_add(length) {
-                break;
-            }
-        }
-        read_more(socket, &mut buffer).await?;
-    }
-    let end = buffer
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| "the request has no header end".to_owned())?;
-    let length = content_length(buffer.get(..end).unwrap_or_default())?;
-    let seen = parse(&buffer, end, length);
-    write_response(socket, reply, &seen).await?;
-    Ok(seen)
-}
-
-async fn read_more(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<(), String> {
-    let mut chunk = [0_u8; 2048];
-    let read = socket
-        .read(&mut chunk)
-        .await
-        .map_err(|error| error.to_string())?;
-    if read == 0 {
-        return Err("the request ended before its headers".to_owned());
-    }
-    buffer.extend_from_slice(chunk.get(..read).unwrap_or_default());
-    Ok(())
-}
-
-fn content_length(head: &[u8]) -> Result<usize, String> {
-    let text = str::from_utf8(head).map_err(|error| error.to_string())?;
-    Ok(text
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse::<usize>().ok())?
-        })
-        .unwrap_or(0))
-}
-
-fn parse(buffer: &[u8], end: usize, length: usize) -> Captured {
-    let head = str::from_utf8(buffer.get(..end).unwrap_or_default()).unwrap_or_default();
-    let mut lines = head.split("\r\n");
-    let mut request_line = lines.next().unwrap_or_default().split(' ');
-    let method = request_line.next().unwrap_or_default().to_owned();
-    let path = request_line.next().unwrap_or_default().to_owned();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
-        .collect();
-    let body_start = end.saturating_add(4);
-    let body = buffer
-        .get(body_start..body_start.saturating_add(length))
-        .unwrap_or_default()
-        .to_vec();
-    Captured {
-        method,
-        path,
-        headers,
-        body,
-    }
-}
-
-async fn write_response(
-    socket: &mut TcpStream,
-    reply: &Reply,
-    seen: &Captured,
-) -> Result<(), String> {
+    let (head, body) = read_request(socket).await?;
+    let seen = parse(&head, &body);
     let host = seen
         .headers
         .get("host")
         .ok_or_else(|| "the request has no host header".to_owned())?;
     let origin = format!("http://{host}");
-    let mut head = format!(
+    let mut rendered = format!(
         "HTTP/1.1 {} OK\r\nContent-Length: {}\r\nConnection: close\r\n",
         reply.status,
         reply.body.len()
@@ -163,14 +91,70 @@ async fn write_response(
         } else {
             value.clone()
         };
-        write!(head, "{name}: {resolved}\r\n").map_err(|error| error.to_string())?;
+        write!(rendered, "{name}: {resolved}\r\n").map_err(|error| error.to_string())?;
     }
-    head.push_str("\r\n");
-    let mut bytes = head.into_bytes();
+    rendered.push_str("\r\n");
+    let mut bytes = rendered.into_bytes();
     bytes.extend_from_slice(&reply.body);
     socket
         .write_all(&bytes)
         .await
         .map_err(|error| error.to_string())?;
-    socket.shutdown().await.map_err(|error| error.to_string())
+    socket.shutdown().await.map_err(|error| error.to_string())?;
+    Ok(seen)
+}
+
+async fn read_request(socket: &mut TcpStream) -> Result<(String, Vec<u8>), String> {
+    let mut buffer = Vec::new();
+    loop {
+        if let Some(end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            let head = str::from_utf8(buffer.get(..end).unwrap_or_default())
+                .map_err(|error| error.to_string())?;
+            let length = content_length(head);
+            let body_start = end.saturating_add(4);
+            if buffer.len() >= body_start.saturating_add(length) {
+                let body = buffer
+                    .get(body_start..body_start.saturating_add(length))
+                    .unwrap_or_default()
+                    .to_vec();
+                return Ok((head.to_owned(), body));
+            }
+        }
+        let mut chunk = [0_u8; 2048];
+        let read = socket
+            .read(&mut chunk)
+            .await
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            return Err("the request ended before its headers".to_owned());
+        }
+        buffer.extend_from_slice(chunk.get(..read).unwrap_or_default());
+    }
+}
+
+fn parse(head: &str, body: &[u8]) -> Captured {
+    let mut lines = head.split("\r\n");
+    let mut request_line = lines.next().unwrap_or_default().split(' ');
+    let method = request_line.next().unwrap_or_default().to_owned();
+    let path = request_line.next().unwrap_or_default().to_owned();
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    Captured {
+        method,
+        path,
+        headers,
+        body: body.to_vec(),
+    }
+}
+
+fn content_length(head: &str) -> usize {
+    head.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
+        })
+        .unwrap_or(0)
 }

@@ -85,31 +85,6 @@ def _string(input_value: dict[str, Json], name: str) -> str:
     return value
 
 
-def _object(input_value: dict[str, Json], name: str) -> dict[str, Json]:
-    value = input_value.get(name)
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
-
-
-def _optional_object(input_value: dict[str, Json], name: str) -> dict[str, Json] | None:
-    value = input_value.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object or null")
-    return value
-
-
-def _optional_string(input_value: dict[str, Json], name: str) -> str | None:
-    value = input_value.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string or null")
-    return value
-
-
 def _headers(value: Json) -> list[tuple[str, str]]:
     if value is None:
         return []
@@ -142,22 +117,17 @@ def _replies(value: Json) -> list[_Reply]:
     return [_reply(item) for item in value]
 
 
-def _start_server(replies: list[_Reply]) -> tuple[_Server, threading.Thread]:
-    server = _Server(replies)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server, thread
-
-
 def run(input_value: dict[str, Json]) -> Json:
     model = _string(input_value, "model")
-    document = _object(input_value, "document")
+    document = cast("dict[str, Json]", input_value.get("document"))
     analyze = _reply(input_value.get("analyze"))
     polls = _replies(input_value.get("polls"))
-    options = _optional_object(input_value, "options")
-    api_key = _optional_string(input_value, "api_key")
-    extra_headers = _optional_object(input_value, "extra_headers")
-    server, thread = _start_server([analyze, *polls])
+    options = cast("dict[str, Json]", input_value.get("options") or {})
+    api_key = cast("str | None", input_value.get("api_key"))
+    extra_headers = cast("dict[str, Json] | None", input_value.get("extra_headers"))
+    server = _Server([analyze, *polls])
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     try:
         answer = cast(
             OCRResponse,
@@ -167,7 +137,7 @@ def run(input_value: dict[str, Json]) -> Json:
                 api_key=api_key,
                 api_base=f"http://127.0.0.1:{server.port}",
                 extra_headers=extra_headers,
-                **(options or {}),
+                **options,
             ),
         )
     finally:

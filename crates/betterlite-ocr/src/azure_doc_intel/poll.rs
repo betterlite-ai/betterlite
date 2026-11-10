@@ -66,11 +66,6 @@ async fn read_operation(
     poll_operation(operation, native, context).await
 }
 
-enum PollOutcome {
-    Finished(Box<DecodedOcrResponse<AnalyzeOperation>>),
-    Wait(u64),
-}
-
 async fn poll_operation(
     url: Url,
     native: bool,
@@ -80,63 +75,19 @@ async fn poll_operation(
         .checked_add(context.connection.settings.poll_timeout)
         .ok_or(OcrError::PollTimeout)?;
     loop {
-        match poll_once(url.clone(), native, deadline, context).await? {
-            PollOutcome::Finished(decoded) => return Ok(*decoded),
-            PollOutcome::Wait(retry) => {
-                timeout_at(deadline, sleep(Duration::from_secs(retry)))
-                    .await
-                    .map_err(|_elapsed| OcrError::PollTimeout)?;
-            }
+        let (decoded, retry) = poll_round(url.clone(), native, deadline, context).await?;
+        if let Some(finished) = settle(decoded, retry, deadline, context).await? {
+            return Ok(finished);
         }
     }
 }
 
-async fn poll_once(
+async fn poll_round(
     url: Url,
     native: bool,
     deadline: Instant,
     context: OcrResponseContext<'_>,
-) -> Result<PollOutcome, OcrError> {
-    let response = poll_answer(url, deadline, context).await?;
-    let retry = response
-        .response
-        .headers()
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(OCR_POLL_RETRY_SECS)
-        .max(1);
-    let decoded = read_poll_answer(
-        response,
-        native,
-        deadline,
-        context.connection.max_response_bytes,
-    )
-    .await?;
-    match &decoded.data.status {
-        Some(OperationStatus::Known(KnownStatus::Succeeded)) => {
-            context
-                .hooks
-                .response_received(decoded.text.as_bytes())
-                .await?;
-            Ok(PollOutcome::Finished(Box::new(decoded)))
-        }
-        Some(OperationStatus::Known(KnownStatus::Running | KnownStatus::NotStarted)) => {
-            Ok(PollOutcome::Wait(retry))
-        }
-        status => Err(OcrError::OperationStatus(
-            status
-                .as_ref()
-                .map_or_else(|| "None".to_owned(), |state| state.text().to_owned()),
-        )),
-    }
-}
-
-async fn poll_answer(
-    url: Url,
-    deadline: Instant,
-    context: OcrResponseContext<'_>,
-) -> Result<StreamResponse, OcrError> {
+) -> Result<(DecodedOcrResponse<AnalyzeOperation>, u64), OcrError> {
     let remaining = deadline
         .checked_duration_since(Instant::now())
         .filter(|remaining| !remaining.is_zero())
@@ -146,24 +97,61 @@ async fn poll_answer(
         context.headers,
         remaining.min(context.connection.timeout),
     )?;
-    timeout_at(deadline, context.client.polling_http.send(request))
+    let response = timeout_at(deadline, context.client.polling_http.send(request))
         .await
         .map_err(|_elapsed| OcrError::PollTimeout)?
-        .map_err(transport_failure)
-}
-
-async fn read_poll_answer(
-    response: StreamResponse,
-    native: bool,
-    deadline: Instant,
-    limit: usize,
-) -> Result<DecodedOcrResponse<AnalyzeOperation>, OcrError> {
-    timeout_at(deadline, async {
-        let bytes = read_response_bytes(response, limit).await?;
+        .map_err(transport_failure)?;
+    let retry = response
+        .response
+        .headers()
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(OCR_POLL_RETRY_SECS)
+        .max(1);
+    let decoded = timeout_at(deadline, async {
+        let bytes = read_response_bytes(response, context.connection.max_response_bytes).await?;
         decode_response(&bytes, native)
     })
     .await
-    .map_err(|_elapsed| OcrError::PollTimeout)?
+    .map_err(|_elapsed| OcrError::PollTimeout)??;
+    Ok((decoded, retry))
+}
+
+async fn settle(
+    decoded: DecodedOcrResponse<AnalyzeOperation>,
+    retry: u64,
+    deadline: Instant,
+    context: OcrResponseContext<'_>,
+) -> Result<Option<DecodedOcrResponse<AnalyzeOperation>>, OcrError> {
+    if matches!(
+        decoded.data.status,
+        Some(OperationStatus::Known(KnownStatus::Succeeded))
+    ) {
+        context
+            .hooks
+            .response_received(decoded.text.as_bytes())
+            .await?;
+        return Ok(Some(decoded));
+    }
+    if matches!(
+        decoded.data.status,
+        Some(OperationStatus::Known(
+            KnownStatus::Running | KnownStatus::NotStarted
+        ))
+    ) {
+        timeout_at(deadline, sleep(Duration::from_secs(retry)))
+            .await
+            .map_err(|_elapsed| OcrError::PollTimeout)?;
+        return Ok(None);
+    }
+    Err(OcrError::OperationStatus(
+        decoded
+            .data
+            .status
+            .as_ref()
+            .map_or_else(|| "None".to_owned(), |state| state.text().to_owned()),
+    ))
 }
 
 fn polling_request(

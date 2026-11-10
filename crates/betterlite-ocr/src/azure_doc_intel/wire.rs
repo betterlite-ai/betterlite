@@ -1,6 +1,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use std::ops::Neg as _;
 
 use crate::json::{Json, Object};
@@ -99,14 +100,30 @@ impl TryFrom<Json> for LaxInteger {
 
 // LiteLLM's FiniteF64 takes a finite number, a numeric string or a bool
 #[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(try_from = "Json")]
+#[serde(try_from = "FiniteWire")]
 pub(crate) struct FiniteNumber(pub(crate) f64);
 
-impl TryFrom<Json> for FiniteNumber {
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum FiniteWire {
+    Number(Number),
+    Text(String),
+    Bool(bool),
+}
+
+impl TryFrom<FiniteWire> for FiniteNumber {
     type Error = PageFieldError;
 
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        finite_f64(&value).map(Self).ok_or(PageFieldError::Number)
+    fn try_from(value: FiniteWire) -> Result<Self, Self::Error> {
+        let parsed = match value {
+            FiniteWire::Number(number) => number.as_f64(),
+            FiniteWire::Text(text) => text.trim().parse::<f64>().ok(),
+            FiniteWire::Bool(flag) => Some(f64::from(flag)),
+        };
+        parsed
+            .filter(|float| float.is_finite())
+            .map(Self)
+            .ok_or(PageFieldError::Number)
     }
 }
 
@@ -137,14 +154,18 @@ pub(super) fn build_request(
 
 fn lax_i64(value: &Json) -> Option<i64> {
     match value {
-        Json::Number(number) => match (number.as_i64(), number.as_u64()) {
-            (Some(signed), _) => Some(signed),
-            (None, Some(unsigned)) => i64::try_from(unsigned).ok(),
-            (None, None) => integral_in_range(number.as_f64()?),
-        },
+        Json::Number(number) => integer_number(number),
         Json::Text(text) => decimal_integer(text.trim()),
         Json::Bool(flag) => Some(i64::from(*flag)),
         Json::Null | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+fn integer_number(number: &Number) -> Option<i64> {
+    match (number.as_i64(), number.as_u64()) {
+        (Some(signed), _) => Some(signed),
+        (None, Some(unsigned)) => i64::try_from(unsigned).ok(),
+        (None, None) => integral_in_range(number.as_f64()?),
     }
 }
 
@@ -158,33 +179,21 @@ fn integral_in_range(value: f64) -> Option<i64> {
 }
 
 fn decimal_integer(text: &str) -> Option<i64> {
-    let (integer, fraction) = match text.split_once('.') {
-        Some((integer, fraction)) => (integer, Some(fraction)),
-        None => (text, None),
-    };
-    let fraction_is_zero = fraction.is_none_or(|digits| digits.bytes().all(|byte| byte == b'0'));
-    let underscores_join_digits =
-        !integer.starts_with('_') && !integer.ends_with('_') && !integer.contains("__");
+    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
+    if !fraction.bytes().all(|byte| byte == b'0') {
+        return None;
+    }
     let digits = integer.strip_prefix(['+', '-']).unwrap_or(integer);
-    let digits_are_usable = !digits.is_empty()
+    let shaped = !integer.starts_with('_')
+        && !integer.ends_with('_')
+        && !integer.contains("__")
+        && !digits.is_empty()
         && !digits.starts_with('_')
         && digits
             .bytes()
             .all(|byte| byte.is_ascii_digit() || byte == b'_');
-    (fraction_is_zero && underscores_join_digits && digits_are_usable)
-        .then(|| integer.replace('_', "").parse().ok())
-        .flatten()
-}
-
-fn finite_f64(value: &Json) -> Option<f64> {
-    match value {
-        Json::Number(number) => number.as_f64().filter(|float| float.is_finite()),
-        Json::Text(text) => text
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|float| float.is_finite()),
-        Json::Bool(flag) => Some(f64::from(*flag)),
-        Json::Null | Json::List(_) | Json::Object(_) => None,
+    if !shaped {
+        return None;
     }
+    integer.replace('_', "").parse().ok()
 }
