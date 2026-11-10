@@ -1,0 +1,22 @@
+kind: helper
+name: media-tokens-nested-tool-content
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        content:
+          - type: tool_use
+            name: get_weather
+          - type: tool_result
+            tool_use_id: toolu_1
+            content:
+              - type: text
+                text: hello
+              - type: image
+                source:
+                  type: base64
+                  media_type: image/png
+                  data: iVBORw0KGgoAAAANSUhEUgAAAEAAAABA
+env: {}
+compare: {ignore: []}
