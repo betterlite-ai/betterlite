@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-batch-usage-shape
+call:
+  bedrock_converse_usage:
+    batch: {usage: {inputTokens: null, outputTokens: 3, totalTokens: 0, cacheReadInputTokens: 4, cacheWriteInputTokens: 5}}
+env: {}
+compare: {ignore: []}
