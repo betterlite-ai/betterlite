@@ -1,7 +1,6 @@
 use std::str::FromStr as _;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::ocr_pricing::{OcrPricing, layered_ocr_pricing};
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
 use betterlite_models::tiered_pricing::Scalar;
 use indexmap::IndexMap;
@@ -34,19 +33,27 @@ pub fn deployment_info(
     let Some(params) = query.logging_params else {
         return Ok(None);
     };
+    metadata_model_info(params)
+}
+
+// The first nonnull model_info under a nonempty metadata or litellm_metadata entry.
+fn metadata_model_info(
+    params: &IndexMap<String, Json>,
+) -> Result<Option<PriceRecord>, BillingContextError> {
     for key in ["metadata", "litellm_metadata"] {
         let Some(metadata) = params.get(key) else {
             continue;
         };
         let Json::Object(fields) = metadata else {
-            let present = match scalar(metadata) {
-                Scalar::Null | Scalar::Object(_) => false,
-                Scalar::Bool(flag) => flag,
-                Scalar::Number(number) => {
+            let present = match metadata {
+                Json::Null => false,
+                Json::Bool(flag) => *flag,
+                Json::Number(number) => {
                     Decimal::from_str(&number.to_string()).is_ok_and(|amount| !amount.is_zero())
                 }
-                Scalar::Text(text) => !text.is_empty(),
-                Scalar::Array(items) => !items.is_empty(),
+                Json::Text(text) => !text.is_empty(),
+                Json::List(items) => !items.is_empty(),
+                Json::Object(_) => true,
             };
             if present {
                 return Err(BillingContextError::MetadataShape { field: key });
@@ -63,29 +70,6 @@ pub fn deployment_info(
         }
     }
     Ok(None)
-}
-
-// Ports _ocr_model_info: top-level logging params overlay the extracted record, field by field, through B1678.
-pub fn ocr_info(
-    query: &PricingQuery<'_>,
-    lookup: &dyn PriceLookup,
-) -> Result<Option<OcrPricing>, BillingContextError> {
-    let deployment = deployment_info(query, lookup)?;
-    let overlay = query
-        .logging_params
-        .filter(|_| query.custom_pricing == Some(true));
-    match (overlay, deployment) {
-        (None, None) => Ok(None),
-        (None, Some(record)) => layered_ocr_pricing(&[Some(&record)])
-            .map(Some)
-            .map_err(BillingContextError::from),
-        (Some(params), extracted) => {
-            let record = price_record(params);
-            layered_ocr_pricing(&[Some(&record), extracted.as_ref()])
-                .map(Some)
-                .map_err(BillingContextError::from)
-        }
-    }
 }
 
 // Ports pricing_entry_for_cost_calc: the deployment entry first, then the first candidate a soft lookup resolves.
@@ -137,7 +121,7 @@ where
     Ok(None)
 }
 
-fn price_record(fields: &IndexMap<String, Json>) -> PriceRecord {
+pub(super) fn price_record(fields: &IndexMap<String, Json>) -> PriceRecord {
     fields
         .iter()
         .map(|(key, value)| (key.clone(), scalar(value)))

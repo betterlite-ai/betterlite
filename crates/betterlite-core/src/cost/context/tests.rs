@@ -16,7 +16,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::error::BillingContextError;
-use super::pricing::{PricingQuery, deployment_info, ocr_info, pricing_entry};
+use super::ocr::ocr_info;
+use super::pricing::{PricingQuery, deployment_info, pricing_entry};
 use super::response_time::{ResponseTiming, response_time_ms};
 use super::storage::store_cost_breakdown;
 use super::{CostResponse, IdentityRequest, ProviderInference, billing_model_name};
@@ -505,6 +506,20 @@ fn deployment_info_rejects_a_nonobject_metadata() {
         ),
         Err(BillingContextError::ModelInfoShape)
     ));
+    let listed = params(&[("metadata", Json::List(vec![Json::Bool(true)]))]);
+    assert!(matches!(
+        deployment_info(&query(Some(true), None, Some(&listed)), &Lookup::new(&[])),
+        Err(BillingContextError::MetadataShape { field: "metadata" })
+    ));
+    let empty_list = params(&[("metadata", Json::List(Vec::new()))]);
+    assert!(
+        deployment_info(
+            &query(Some(true), None, Some(&empty_list)),
+            &Lookup::new(&[])
+        )
+        .expect("the fixture is valid")
+        .is_none()
+    );
 }
 
 #[test]

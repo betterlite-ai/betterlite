@@ -8,6 +8,7 @@ use betterlite_models::tiered_pricing::Scalar;
 use indexmap::IndexMap;
 
 pub mod error;
+pub mod ocr;
 pub mod pricing;
 pub mod response_time;
 pub mod storage;
