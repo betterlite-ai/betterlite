@@ -163,7 +163,7 @@ fn bracketed_host_is_valid(host: &str) -> bool {
         let Some((version, address)) = future.split_once('.') else { return false };
         return !version.is_empty() && version.chars().all(|character| character.is_ascii_hexdigit()) && !address.is_empty();
     }
-    host.parse::<Ipv6Addr>().is_ok()
+    host.split_once('%').map_or_else(|| host.parse::<Ipv6Addr>().is_ok(), |(address, scope)| !scope.is_empty() && !scope.contains(['%', '/']) && address.parse::<Ipv6Addr>().is_ok())
 }
 
 #[must_use]
