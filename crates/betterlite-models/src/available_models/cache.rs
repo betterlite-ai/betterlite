@@ -122,17 +122,15 @@ impl AvailableModelsCache {
     ) -> Result<(), CacheError> {
         let now = self.read_clock()?;
         self.prune_expired(now);
-        while self.state.values.len() >= self.limits.capacity {
+        // a set inserts one entry, so the cache holds at most its capacity here
+        if self.state.values.len() == self.limits.capacity {
             self.evict_earliest()?;
         }
         let key = cache_key(Some(provider), parameters);
-        let refreshed = self
-            .state
-            .expiries
-            .get(&key)
-            .is_none_or(|expiry| *expiry < now);
+        // prune_expired dropped every expiry at or before now, so only an absent one needs a new expiry
+        let needs_expiry = !self.state.expiries.contains_key(&key);
         self.state.values.insert(key.clone(), models.to_vec());
-        if refreshed {
+        if needs_expiry {
             let expiry = now.mul_add(1.0_f64, self.limits.default_ttl);
             self.state.expiries.insert(key, expiry);
         }
