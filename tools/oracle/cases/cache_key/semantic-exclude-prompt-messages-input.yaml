@@ -1,0 +1,17 @@
+kind: helper
+name: semantic-exclude-prompt-messages-input
+call:
+  b4296:
+    get_cache_key:
+      cache_type: redis-semantic
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+        - {name: messages, value: [{role: user, content: hi}]}
+        - {name: prompt, value: a prompt}
+        - {name: input, value: an input}
+        - {name: system, value: be nice}
+        - {name: temperature, value: 0.7}
+env: {}
+compare:
+  ignore: []

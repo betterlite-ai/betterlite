@@ -1,0 +1,13 @@
+kind: helper
+name: chat-config-selection-seed-openai
+call:
+  chat_config_selection:
+    function: openai_family_selection
+    catalog:
+      chat_models: [o1, gpt-4o, gpt-5-chat-latest]
+      text_models: []
+    calls:
+      - {provider: openai, model: o1}
+      - {provider: openai, model: gpt-5-chat-latest}
+env: {}
+compare: {ignore: []}
