@@ -245,13 +245,12 @@ fn request_credentials_rejected() {
         (BUCKET_NAME_ENV, "env-bucket"),
         (OUTPUT_BUCKET_NAME_ENV, "env-output"),
     ]);
-    assert_trusted_snapshot_wins(&variables);
-    assert_request_fields_are_ignored(&variables);
+    assert_bucket_sources(&variables);
     assert_malformed_snapshot_is_rejected(&variables);
 }
 
-fn assert_trusted_snapshot_wins(variables: &BTreeMap<String, String>) {
-    let request = S3AccessParams {
+fn assert_bucket_sources(variables: &BTreeMap<String, String>) {
+    let trusted = S3AccessParams {
         trusted: Some(frozen_mapping(vec![
             (
                 "s3_bucket_name".to_owned(),
@@ -267,16 +266,14 @@ fn assert_trusted_snapshot_wins(variables: &BTreeMap<String, String>) {
         output_bucket_name: Some("request-output".to_owned()),
     };
     assert_eq!(
-        configured_bucket_name(&request, variables).expect("the trusted snapshot wins"),
+        configured_bucket_name(&trusted, variables).expect("the trusted snapshot wins"),
         "trusted"
     );
     assert_eq!(
-        configured_bucket_names(&request, variables).expect("the trusted snapshot wins"),
+        configured_bucket_names(&trusted, variables).expect("the trusted snapshot wins"),
         ["trusted", "env-output"]
     );
-}
 
-fn assert_request_fields_are_ignored(variables: &BTreeMap<String, String>) {
     let plain = S3AccessParams {
         trusted: None,
         bucket_name: Some("request-bucket".to_owned()),

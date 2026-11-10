@@ -94,37 +94,31 @@ fn bucket_results(params: &S3AccessParams, environment: &BTreeMap<String, String
 }
 
 fn configured_buckets(input: &Input) -> Value {
-    let params = access_params(
-        input.trusted.as_deref(),
-        input.request_bucket_name.as_deref(),
-        input.request_output_bucket_name.as_deref(),
-    );
+    let trusted = input.trusted.as_deref();
+    let request = input.request_bucket_name.as_deref();
+    let request_output = input.request_output_bucket_name.as_deref();
+    let params = access_params(trusted, request, request_output);
     bucket_results(&params, &input.environment)
 }
 
 fn prefix_boundary(input: &Input) -> Value {
-    validate_configured_file_id(
-        input.s3_uri.as_deref().unwrap_or_default(),
-        &input.buckets,
-        input.legacy,
-    )
-    .map_or_else(
-        |_error| json!({"failed": true}),
-        |(bucket, object)| json!({"bucket": bucket, "object": object}),
-    )
+    let uri = input.s3_uri.as_deref().unwrap_or_default();
+    match validate_configured_file_id(uri, &input.buckets, input.legacy) {
+        Ok((bucket, object)) => json!({"bucket": bucket, "object": object}),
+        Err(_error) => json!({"failed": true}),
+    }
 }
 
 fn foreign_bucket(input: &Input) -> Value {
     let params = access_params(input.trusted.as_deref(), None, None);
-    resolve_managed_s3_object(
+    match resolve_managed_s3_object(
         input.file_id.as_deref().unwrap_or_default(),
         &params,
         &input.environment,
-    )
-    .map_or_else(
-        |error| json!({"error": {"status": error.status_code()}}),
-        |(bucket, object)| json!({"bucket": bucket, "object": object}),
-    )
+    ) {
+        Ok((bucket, object)) => json!({"bucket": bucket, "object": object}),
+        Err(error) => json!({"error": {"status": error.status_code()}}),
+    }
 }
 
 fn legacy_id(input: &Input) -> Value {

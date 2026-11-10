@@ -125,39 +125,36 @@ fn bucket_or_environment(
     })
 }
 
+fn trusted_buckets(
+    params: &S3AccessParams,
+) -> Result<(Option<String>, Option<String>), S3AccessError> {
+    params
+        .trusted
+        .as_ref()
+        .map(TrustedModelCredentials::bucket_fields)
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
 pub fn configured_bucket_name(
     params: &S3AccessParams,
     environment: &BTreeMap<String, String>,
 ) -> Result<String, S3AccessError> {
-    let trusted = params
-        .trusted
-        .as_ref()
-        .map(TrustedModelCredentials::bucket_fields)
-        .transpose()?
-        .and_then(|(input, _output)| input);
-    bucket_or_environment(trusted, environment, BUCKET_NAME_ENV)
-        .ok_or(S3AccessError::BucketRequired)
+    let (input, _output) = trusted_buckets(params)?;
+    bucket_or_environment(input, environment, BUCKET_NAME_ENV).ok_or(S3AccessError::BucketRequired)
 }
 
 pub fn configured_bucket_names(
     params: &S3AccessParams,
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<String>, S3AccessError> {
-    let (input, output) = params
-        .trusted
-        .as_ref()
-        .map(TrustedModelCredentials::bucket_fields)
-        .transpose()?
-        .unwrap_or_default();
+    let (input, output) = trusted_buckets(params)?;
+    let candidates = [(input, BUCKET_NAME_ENV), (output, OUTPUT_BUCKET_NAME_ENV)];
     let mut buckets = Vec::new();
-    for bucket in [
-        bucket_or_environment(input, environment, BUCKET_NAME_ENV),
-        bucket_or_environment(output, environment, OUTPUT_BUCKET_NAME_ENV),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if !buckets.contains(&bucket) {
+    for (trusted, variable) in candidates {
+        if let Some(bucket) = bucket_or_environment(trusted, environment, variable)
+            && !buckets.contains(&bucket)
+        {
             buckets.push(bucket);
         }
     }

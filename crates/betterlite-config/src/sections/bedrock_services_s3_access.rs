@@ -53,11 +53,39 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut deployments = Vec::with_capacity(self.model_list.len());
-        for (index, deployment) in self.model_list.into_iter().enumerate() {
-            deployments.push(deployment.litellm_params.resolve(index, lookup)?);
-        }
+        let deployments = self
+            .model_list
+            .into_iter()
+            .enumerate()
+            .map(|(index, deployment)| deployment.litellm_params.resolve(index, lookup))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Settings { deployments })
+    }
+}
+
+struct Resolver<'lookup, L> {
+    index: usize,
+    lookup: &'lookup L,
+}
+
+impl<L> Resolver<'_, L>
+where
+    L: EnvironmentLookup,
+{
+    fn field(
+        &self,
+        value: Option<String>,
+        key: &str,
+        variable: &str,
+    ) -> Result<Option<String>, ConfigError> {
+        let Some(text) = value else {
+            return Ok(self
+                .lookup
+                .lookup(variable)
+                .filter(|found| !found.is_empty()));
+        };
+        let path = format!("model_list.{}.litellm_params.{key}", self.index);
+        resolve_string(text, &path, self.lookup).map(Some)
     }
 }
 
@@ -66,32 +94,20 @@ impl Params {
     where
         L: EnvironmentLookup,
     {
-        let field = |value: Option<String>, key: &str, variable: &str| {
-            value.map_or_else(
-                || Ok(lookup.lookup(variable).filter(|found| !found.is_empty())),
-                |text| {
-                    resolve_string(
-                        text,
-                        &format!("model_list.{index}.litellm_params.{key}"),
-                        lookup,
-                    )
-                    .map(Some)
-                },
-            )
-        };
+        let resolver = Resolver { index, lookup };
         Ok(S3Settings {
-            bucket_name: field(self.bucket_name, "s3_bucket_name", BUCKET_NAME_ENV)?,
-            output_bucket_name: field(
+            bucket_name: resolver.field(self.bucket_name, "s3_bucket_name", BUCKET_NAME_ENV)?,
+            output_bucket_name: resolver.field(
                 self.output_bucket_name,
                 "s3_output_bucket_name",
                 OUTPUT_BUCKET_NAME_ENV,
             )?,
-            encryption_key_id: field(
+            encryption_key_id: resolver.field(
                 self.encryption_key_id,
                 "s3_encryption_key_id",
                 ENCRYPTION_KEY_ID_ENV,
             )?,
-            bucket_owner: field(self.bucket_owner, "s3_bucket_owner", BUCKET_OWNER_ENV)?,
+            bucket_owner: resolver.field(self.bucket_owner, "s3_bucket_owner", BUCKET_OWNER_ENV)?,
         })
     }
 }

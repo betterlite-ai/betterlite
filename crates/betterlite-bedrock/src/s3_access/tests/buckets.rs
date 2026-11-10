@@ -34,99 +34,111 @@ fn trusted(bucket: Option<&str>, output: Option<&str>) -> TrustedModelCredential
     )
 }
 
-#[rstest]
-#[case::trusted_wins_over_environment(
-    Some("trusted-bucket"),
-    None,
-    &[(BUCKET_NAME_ENV, "env-bucket")],
-    Ok("trusted-bucket")
-)]
-#[case::environment_fills_a_missing_trusted_value(
-    None,
-    None,
-    &[(BUCKET_NAME_ENV, "env-bucket")],
-    Ok("env-bucket")
-)]
-#[case::empty_trusted_value_uses_the_environment(
-    Some(""),
-    None,
-    &[(BUCKET_NAME_ENV, "env-bucket")],
-    Ok("env-bucket")
-)]
-#[case::whitespace_is_a_real_bucket(Some(" "), None, &[(BUCKET_NAME_ENV, "env-bucket")], Ok(" "))]
-#[case::empty_environment_counts_as_unset(None, None, &[(BUCKET_NAME_ENV, "")], Err("bucket_required"))]
-#[case::nothing_configured(None, None, &[], Err("bucket_required"))]
-#[case::output_alone_is_not_enough(None, Some("trusted-output"), &[], Err("bucket_required"))]
-fn configured_bucket_name_cases(
-    #[case] bucket: Option<&str>,
-    #[case] output: Option<&str>,
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: Result<&str, &str>,
-) {
-    let result = configured_bucket_name(
-        &params(Some(trusted(bucket, output))),
-        &environment(variables),
-    )
-    .map_err(|error| store(&error));
-    assert_eq!(result.as_deref().map_err(|error| *error), expected);
+enum Expected {
+    Single(Result<&'static str, &'static str>),
+    Multiple(Result<&'static [&'static str], &'static str>),
 }
 
 #[rstest]
-#[case::trusted_input_and_output(
+#[case::single_trusted_wins_over_environment(
+    Some("trusted-bucket"),
+    None,
+    &[(BUCKET_NAME_ENV, "env-bucket")],
+    Expected::Single(Ok("trusted-bucket"))
+)]
+#[case::single_environment_fills_a_missing_trusted_value(
+    None,
+    None,
+    &[(BUCKET_NAME_ENV, "env-bucket")],
+    Expected::Single(Ok("env-bucket"))
+)]
+#[case::single_empty_trusted_value_uses_the_environment(
+    Some(""),
+    None,
+    &[(BUCKET_NAME_ENV, "env-bucket")],
+    Expected::Single(Ok("env-bucket"))
+)]
+#[case::single_whitespace_is_a_real_bucket(
+    Some(" "),
+    None,
+    &[(BUCKET_NAME_ENV, "env-bucket")],
+    Expected::Single(Ok(" "))
+)]
+#[case::single_empty_environment_counts_as_unset(
+    None,
+    None,
+    &[(BUCKET_NAME_ENV, "")],
+    Expected::Single(Err("bucket_required"))
+)]
+#[case::single_nothing_configured(None, None, &[], Expected::Single(Err("bucket_required")))]
+#[case::single_output_alone_is_not_enough(
+    None,
+    Some("trusted-output"),
+    &[],
+    Expected::Single(Err("bucket_required"))
+)]
+#[case::multiple_trusted_input_and_output(
     Some("trusted-in"),
     Some("trusted-out"),
     &[],
-    Ok(&["trusted-in", "trusted-out"][..])
+    Expected::Multiple(Ok(&["trusted-in", "trusted-out"][..]))
 )]
-#[case::input_and_output_from_the_environment(
+#[case::multiple_input_and_output_from_the_environment(
     None,
     None,
     &[(BUCKET_NAME_ENV, "env-in"), (OUTPUT_BUCKET_NAME_ENV, "env-out")],
-    Ok(&["env-in", "env-out"][..])
+    Expected::Multiple(Ok(&["env-in", "env-out"][..]))
 )]
-#[case::output_only_trusted_is_enough(
+#[case::multiple_output_only_trusted_is_enough(
     Some(""),
     Some("trusted-out"),
     &[(BUCKET_NAME_ENV, "env-in")],
-    Ok(&["env-in", "trusted-out"][..])
+    Expected::Multiple(Ok(&["env-in", "trusted-out"][..]))
 )]
-#[case::duplicates_collapse_in_input_order(
+#[case::multiple_duplicates_collapse_in_input_order(
     Some("same"),
     Some("same"),
     &[(BUCKET_NAME_ENV, "ignored"), (OUTPUT_BUCKET_NAME_ENV, "ignored")],
-    Ok(&["same"][..])
+    Expected::Multiple(Ok(&["same"][..]))
 )]
-#[case::environment_duplicates_collapse(
+#[case::multiple_environment_duplicates_collapse(
     None,
     None,
     &[(BUCKET_NAME_ENV, "same"), (OUTPUT_BUCKET_NAME_ENV, "same")],
-    Ok(&["same"][..])
+    Expected::Multiple(Ok(&["same"][..]))
 )]
-#[case::empty_environment_values_are_dropped(
+#[case::multiple_empty_environment_values_are_dropped(
     None,
     None,
     &[(BUCKET_NAME_ENV, ""), (OUTPUT_BUCKET_NAME_ENV, "")],
-    Err("bucket_required")
+    Expected::Multiple(Err("bucket_required"))
 )]
-#[case::nothing_configured(None, None, &[], Err("bucket_required"))]
-fn configured_bucket_names_cases(
+#[case::multiple_nothing_configured(None, None, &[], Expected::Multiple(Err("bucket_required")))]
+fn configured_bucket_cases(
     #[case] bucket: Option<&str>,
     #[case] output: Option<&str>,
     #[case] variables: &[(&str, &str)],
-    #[case] expected: Result<&[&str], &str>,
+    #[case] expected: Expected,
 ) {
-    let result = configured_bucket_names(
-        &params(Some(trusted(bucket, output))),
-        &environment(variables),
-    )
-    .map_err(|error| store(&error));
-    let wanted = expected.map(|entries| {
-        entries
-            .iter()
-            .map(|entry| (*entry).to_owned())
-            .collect::<Vec<String>>()
-    });
-    assert_eq!(result, wanted);
+    let configured = params(Some(trusted(bucket, output)));
+    let environment = environment(variables);
+    match expected {
+        Expected::Single(wanted) => {
+            let result = configured_bucket_name(&configured, &environment);
+            assert_eq!(result.as_deref().map_err(|error| store(error)), wanted);
+        }
+        Expected::Multiple(wanted) => {
+            let result =
+                configured_bucket_names(&configured, &environment).map_err(|error| store(&error));
+            let wanted_strings = wanted.map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| (*entry).to_owned())
+                    .collect::<Vec<String>>()
+            });
+            assert_eq!(result, wanted_strings);
+        }
+    }
 }
 
 #[test]
