@@ -1,0 +1,76 @@
+ARG LITELLM_BUILD_IMAGE=cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d
+ARG LITELLM_RUNTIME_IMAGE=cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d
+ARG UI_BUILD_IMAGE=node:24.19-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+ARG PGBOUNCER_VERSION=1.26.0
+ARG PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d
+
+FROM $LITELLM_BUILD_IMAGE AS pgbouncer-builder
+ARG PGBOUNCER_VERSION
+ARG PGBOUNCER_SHA256
+USER root
+RUN apk add --no-cache build-base pkgconf libevent-dev openssl-dev curl
+WORKDIR /build
+RUN curl -fsSL -o pgbouncer.tar.gz "https://www.pgbouncer.org/downloads/files/${PGBOUNCER_VERSION}/pgbouncer-${PGBOUNCER_VERSION}.tar.gz" && \
+    echo "${PGBOUNCER_SHA256}  pgbouncer.tar.gz" | sha256sum -c - && \
+    tar xzf pgbouncer.tar.gz --strip-components=1 && \
+    ./configure --prefix=/usr/local --with-openssl=/usr && \
+    make -j"$(nproc)" pgbouncer && \
+    install -m 0755 pgbouncer /usr/local/bin/pgbouncer
+
+FROM --platform=$BUILDPLATFORM $UI_BUILD_IMAGE AS ui-builder
+
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    npm_config_fund=false \
+    npm_config_audit=false
+
+WORKDIR /ui
+
+# The dashboard sources are not in the tree yet; until they land this stage ships an empty bundle so the image builds.
+RUN --mount=type=bind,target=/src \
+    if [ -f /src/ui/litellm-dashboard/package.json ]; then \
+        cp -a /src/ui/litellm-dashboard/. /ui/ && \
+        rm -rf /ui/out /ui/.next && \
+        npm ci --prefer-offline && \
+        npm run build; \
+    fi && \
+    mkdir -p /ui/out
+
+FROM rust:1.98.0-bookworm AS builder
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY .cargo/config.toml ./.cargo/config.toml
+COPY crates ./crates
+COPY tools ./tools
+
+RUN cargo build --release --locked -p betterlite -p betterlite-db-admin && \
+    install -m 0755 target/release/betterlite target/release/betterlite-db-admin /usr/local/bin/
+
+COPY packaging/docker/prod_entrypoint.sh packaging/docker/component_entrypoint.sh packaging/docker/entrypoint.sh packaging/docker/build_admin_ui.sh /app/docker/
+
+COPY --from=ui-builder /ui/out/. /app/ui/
+
+RUN sed -i 's/\r$//' /app/docker/*.sh && chmod +x /app/docker/*.sh && /app/docker/build_admin_ui.sh
+
+FROM $LITELLM_RUNTIME_IMAGE AS runtime
+
+USER root
+
+# The base image only configures Chainguard's authenticated apk repo; add the public Wolfi repo so apk add works for extra packages.
+RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories
+
+RUN apk add --no-cache bash openssl tzdata libevent
+COPY --from=pgbouncer-builder /usr/local/bin/pgbouncer /usr/local/bin/pgbouncer
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/bin/betterlite /usr/local/bin/betterlite
+COPY --from=builder /usr/local/bin/betterlite-db-admin /usr/local/bin/betterlite-db-admin
+COPY --from=builder /app/docker /app/docker
+COPY --from=builder /app/ui /usr/local/bin/ui
+
+EXPOSE 4000/tcp
+
+ENTRYPOINT ["/app/docker/prod_entrypoint.sh"]
+CMD ["--port", "4000"]

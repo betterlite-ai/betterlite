@@ -1,0 +1,20 @@
+task: B5071
+deviations:
+  - what: The native images omit the prisma generate build step. LiteLLM generates the Prisma client at build time; betterlite omits it since the native server does not use the generated client.
+    why: B051 and B1232 own the native migration command and omit client generation, so the Dockerfile matches that architecture.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L110-L112
+  - what: The native server does not support ddtrace instrumentation in production. USE_DDTRACE is parsed by the entrypoint script (B5070) but has no effect on the native binary.
+    why: Rust ddtrace integration is a future capability (M12). The entrypoint script supports the hook to avoid breaking container configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/prod_entrypoint.sh#L3-L10
+  - what: The images exclude enterprise COPY directives present in the LiteLLM Dockerfile (root lines 75, 150; database lines 73, 141).
+    why: betterlite has no enterprise directory or feature. The template does not reference enterprise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L75
+  - what: The builder compiles the Rust workspace with cargo in rust:1.98.0-bookworm and the runtime carries no venv, Python, uv, Node, Prisma binaries, schema.prisma, prisma_migration.py or /opt/prisma; LiteLLM syncs a uv venv and bakes the Prisma client into the image.
+    why: B003 builds betterlite and B1232 builds betterlite-db-admin as native binaries, and the server never loads a generated client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L48-L115
+  - what: The admin UI is served from the ui folder next to the betterlite executable, /usr/local/bin/ui, instead of litellm/proxy/_experimental/out inside the Python package.
+    why: The native server reads the packaged folder next to the running executable (B8680) or LITELLM_UI_PATH, not a site-packages path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2129-L2132
+  - what: The ui-builder builds ui/litellm-dashboard only when those sources exist and otherwise copies an empty bundle, so the images build before B144 adds the dashboard; LiteLLM always builds the committed dashboard source.
+    why: B144 owns the admin UI source and build and has not landed, and the image build must still succeed for this task's checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L30-L45
