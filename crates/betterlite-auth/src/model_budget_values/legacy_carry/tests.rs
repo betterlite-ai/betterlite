@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use super::LegacyCarry;
 use crate::model_budget_values::budget_config::BudgetConfig;
-use crate::model_budget_values::cache_keys::BudgetScope;
+use crate::model_budget_values::budget_scope::BudgetScope;
 use crate::model_budget_values::resolution::ResolvedModelBudget;
 use crate::model_budget_values::tests::support::{amount, runtime};
 

@@ -3,8 +3,9 @@ mod tests;
 use std::time::Duration;
 
 use super::budget_config::BudgetRuntime;
-use super::cache_keys::{BudgetScope, model_budget_spend_cache_key};
+use super::budget_scope::BudgetScope;
 use super::resolution::ResolvedModelBudget;
+use super::spend_keys::model_budget_spend_cache_key;
 
 #[derive(Clone, Copy)]
 pub struct LegacyCarry<'parser> {

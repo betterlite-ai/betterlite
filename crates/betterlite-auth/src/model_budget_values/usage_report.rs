@@ -7,7 +7,8 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 
 use super::budget_config::{BudgetConfig, BudgetRuntime};
-use super::cache_keys::{BudgetScope, model_budget_spend_cache_key};
+use super::budget_scope::BudgetScope;
+use super::spend_keys::model_budget_spend_cache_key;
 use super::spend_reads::error::SpendReadError;
 use super::spend_reads::{SpendCache, current_window_spends};
 

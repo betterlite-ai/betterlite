@@ -5,7 +5,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{ModelBudgetUsage, build_model_max_budget_usage};
-use crate::model_budget_values::cache_keys::BudgetScope;
+use crate::model_budget_values::budget_scope::BudgetScope;
 use crate::model_budget_values::spend_reads::CachedSpend;
 use crate::model_budget_values::spend_reads::error::SpendReadError;
 use crate::model_budget_values::tests::support::{

@@ -1,7 +1,7 @@
 #![cfg(test)]
 use std::collections::BTreeMap;
 
-use crate::model_budget_values::cache_keys::BudgetScope;
+use crate::model_budget_values::budget_scope::BudgetScope;
 use crate::model_budget_values::spend_reads::CachedSpend;
 use crate::model_budget_values::tests::support::{FakeCache, Warnings, amount, budgets, runtime};
 use crate::model_budget_values::usage_report::build_model_max_budget_usage;
