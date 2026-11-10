@@ -1,0 +1,15 @@
+kind: helper
+name: per-item-details-declared-types
+call:
+  b4298:
+    get_per_item_prompt_tokens_details:
+      usage:
+        prompt_tokens: 10
+        prompt_tokens_details:
+          video_length_seconds: 10
+          cache_creation_tokens: 5
+      data_count: 3
+      idx: 0
+env: {}
+compare:
+  ignore: []
