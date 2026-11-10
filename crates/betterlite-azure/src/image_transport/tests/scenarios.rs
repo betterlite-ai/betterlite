@@ -4,10 +4,10 @@ use crate::image_transport::error::ImageTransportError;
 use crate::image_transport::request::TimeoutPhases;
 
 use super::support::{
-    API_KEY, DEFAULT_TIMEOUT, DEPLOYMENT_BASE, OPERATION, PREVIEW_QUERY_BASE, PREVIEW_VERSION,
-    PROVIDER_BASE, Reply, SUBMIT_QUERY_URL, SUBMIT_URL, SYNTHETIC_URL, Step, V1_BASE, data_json,
-    failure_of, json, operation_error, parsed, polling_timeout, reply, request_metadata, run,
-    success, text,
+    API_KEY, DEFAULT_TIMEOUT, DEPLOYMENT_BASE, OPERATION, Outcome, PREVIEW_QUERY_BASE,
+    PREVIEW_VERSION, PROVIDER_BASE, Reply, SUBMIT_QUERY_URL, SUBMIT_URL, SYNTHETIC_URL, Step,
+    V1_BASE, data_json, failure_of, json, operation_error, parsed, polling_timeout, reply,
+    request_metadata, run, success, text,
 };
 
 const RUNNING: &str = r#"{"status":"running"}"#;
@@ -25,6 +25,30 @@ const DEFAULT_TIMEOUT_PHASES: TimeoutPhases = TimeoutPhases {
 
 fn submitted() -> Vec<Reply> {
     vec![submit_reply(), reply(200, vec![], SUCCEEDED)]
+}
+
+fn polled(mut replies: Vec<Reply>) -> Outcome {
+    replies.insert(0, submit_reply());
+    run(Step::preview(replies))
+}
+
+fn assert_single_post(step: Step, expected_body: &str) {
+    let api_base = step.api_base;
+    let outcome = run(step);
+    assert_eq!(success(&outcome).status, 200);
+    let calls = outcome.harness.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].url, api_base);
+    assert_eq!(calls[0].body, Some(json(expected_body)));
+    assert_eq!(data_json(&outcome.data), json(MODEL_BODY));
+}
+
+fn direct(api_base: &'static str, deployment_name: Option<&'static str>) -> Step {
+    Step::direct(
+        api_base,
+        deployment_name,
+        vec![reply(200, vec![], OPENAI_IMAGE)],
+    )
 }
 
 fn submit_reply() -> Reply {
@@ -94,15 +118,20 @@ pub(super) fn operation_location_poll() {
 }
 
 pub(super) fn retry_after_poll() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
+    let outcome = polled(vec![
         reply(200, vec![("retry-after", "2")], RUNNING),
         reply(200, vec![("retry-after", "3")], RUNNING),
         reply(200, vec![], SUCCEEDED),
-    ]));
+    ]);
     assert_eq!(success(&outcome).status, 200);
     assert_eq!(outcome.harness.sleeps(), vec![2, 3]);
-    assert_eq!(outcome.harness.calls().len(), 4);
+    let calls = outcome.harness.calls();
+    assert_eq!(calls.len(), 4);
+    assert!(
+        calls[1..]
+            .iter()
+            .all(|call| call.method == "GET" && call.url == OPERATION)
+    );
 }
 
 pub(super) fn poll_default_timeout_120() {
@@ -163,43 +192,26 @@ pub(super) fn missing_operation_location_500() {
 }
 
 pub(super) fn missing_status_502() {
-    missing_status_initial();
-    missing_status_later();
-    missing_status_invalid_json();
-}
+    let initial = polled(vec![reply(200, vec![], r#"{"result":{}}"#)]);
+    let first = failure_of(&initial);
+    assert!(matches!(first, ImageTransportError::MissingStatusInitial));
+    assert_eq!(first.status_code(), Some(502));
+    assert_eq!(initial.harness.calls().len(), 2);
 
-fn missing_status_initial() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![], r#"{"result":{}}"#),
-    ]));
-    let failure = failure_of(&outcome);
-    assert!(matches!(failure, ImageTransportError::MissingStatusInitial));
-    assert_eq!(failure.status_code(), Some(502));
-    assert_eq!(outcome.harness.calls().len(), 2);
-}
-
-fn missing_status_later() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
+    let later = polled(vec![
         reply(200, vec![], RUNNING),
         reply(200, vec![], r#"{"result":{}}"#),
-    ]));
-    let failure = failure_of(&outcome);
-    assert!(matches!(failure, ImageTransportError::MissingStatus));
-    assert_eq!(failure.status_code(), None);
-    assert_eq!(outcome.harness.calls().len(), 3);
-    assert_eq!(outcome.harness.sleeps(), vec![10]);
-}
+    ]);
+    let second = failure_of(&later);
+    assert!(matches!(second, ImageTransportError::MissingStatus));
+    assert_eq!(second.status_code(), None);
+    assert_eq!(later.harness.calls().len(), 3);
+    assert_eq!(later.harness.sleeps(), vec![10]);
 
-fn missing_status_invalid_json() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![], "not json"),
-    ]));
-    let failure = failure_of(&outcome);
-    assert!(matches!(failure, ImageTransportError::Decode { .. }));
-    assert_eq!(failure.status_code(), None);
+    let invalid = polled(vec![reply(200, vec![], "not json")]);
+    let third = failure_of(&invalid);
+    assert!(matches!(third, ImageTransportError::Decode { .. }));
+    assert_eq!(third.status_code(), None);
 }
 
 pub(super) fn polling_timeout_408() {
@@ -240,9 +252,26 @@ fn timeout_terminal_after_deadline() {
 
 pub(super) fn failed_operation_400() {
     failed_with_message();
-    failed_without_message();
-    failed_with_text_error();
-    failed_without_error_key();
+    let cases = [
+        (
+            r#"{"status":"failed","error":{"code":"x"}}"#,
+            "Image generation failed",
+        ),
+        (
+            r#"{"status":"failed","error":"boom"}"#,
+            r#"{"status":"failed","error":"boom"}"#,
+        ),
+        (
+            r#"{"status":"failed","code":"y"}"#,
+            "Image generation failed",
+        ),
+    ];
+    for (operation, expected) in cases {
+        let outcome = polled(vec![reply(200, vec![], operation)]);
+        let (body, message) = operation_error(failure_of(&outcome));
+        assert_eq!(message, expected);
+        assert_eq!(*body, json(operation));
+    }
 }
 
 fn failed_with_message() {
@@ -270,39 +299,9 @@ fn failed_with_message() {
     );
 }
 
-fn failed_without_message() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![], r#"{"status":"failed","error":{"code":"x"}}"#),
-    ]));
-    let (_, message) = operation_error(failure_of(&outcome));
-    assert_eq!(message, "Image generation failed");
-}
-
-fn failed_with_text_error() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![], r#"{"status":"failed","error":"boom"}"#),
-    ]));
-    let (body, message) = operation_error(failure_of(&outcome));
-    assert_eq!(message, r#"{"status":"failed","error":"boom"}"#);
-    assert_eq!(*body, json(r#"{"status":"failed","error":"boom"}"#));
-}
-
-fn failed_without_error_key() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![], r#"{"status":"failed","code":"y"}"#),
-    ]));
-    let (body, message) = operation_error(failure_of(&outcome));
-    assert_eq!(message, "Image generation failed");
-    assert_eq!(*body, json(r#"{"status":"failed","code":"y"}"#));
-}
-
 pub(super) fn retry_after_not_integer() {
     retry_after_non_integer();
-    retry_after_empty();
-    retry_after_negative_async();
+    retry_after_empty_and_negative();
     retry_after_negative_sync();
 }
 
@@ -317,25 +316,16 @@ fn retry_after_non_integer() {
     assert_eq!(outcome.harness.calls().len(), 2);
 }
 
-fn retry_after_empty() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![("retry-after", "")], RUNNING),
-        reply(200, vec![], SUCCEEDED),
-    ]));
-    assert_eq!(success(&outcome).status, 200);
-    assert_eq!(outcome.harness.sleeps(), vec![10]);
-}
-
-fn retry_after_negative_async() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![("retry-after", "-5")], RUNNING),
-        reply(200, vec![], SUCCEEDED),
-    ]));
-    assert_eq!(success(&outcome).status, 200);
-    assert_eq!(outcome.harness.sleeps(), vec![-5]);
-    assert_eq!(outcome.harness.elapsed_seconds(), 0);
+fn retry_after_empty_and_negative() {
+    for (header, slept, elapsed) in [("", 10, 10), ("-5", -5, 0)] {
+        let outcome = polled(vec![
+            reply(200, vec![("retry-after", header)], RUNNING),
+            reply(200, vec![], SUCCEEDED),
+        ]);
+        assert_eq!(success(&outcome).status, 200);
+        assert_eq!(outcome.harness.sleeps(), vec![slept]);
+        assert_eq!(outcome.harness.elapsed_seconds(), elapsed);
+    }
 }
 
 fn retry_after_negative_sync() {
@@ -355,8 +345,7 @@ fn retry_after_negative_sync() {
 
 pub(super) fn preview_submit_gate() {
     preview_gate_polls();
-    preview_gate_newer_version();
-    preview_gate_other_path();
+    preview_gate_direct();
 }
 
 fn preview_gate_polls() {
@@ -370,81 +359,32 @@ fn preview_gate_polls() {
     assert_eq!(data_json(&outcome.data), json(PROMPT_BODY));
 }
 
-fn preview_gate_newer_version() {
-    let outcome = run(Step::direct(
-        DEPLOYMENT_BASE,
-        Some("dall-e-2"),
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    ));
-    assert_eq!(success(&outcome).status, 200);
-    let calls = outcome.harness.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].url, DEPLOYMENT_BASE);
-    assert_eq!(calls[0].body, Some(json(PROMPT_BODY)));
-}
-
-fn preview_gate_other_path() {
-    let mut step = Step::direct(
-        "https://example.test/openai/v1/chat/completions",
-        None,
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    );
-    step.api_version = PREVIEW_VERSION;
-    let outcome = run(step);
-    assert_eq!(success(&outcome).status, 200);
-    let calls = outcome.harness.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].body, Some(json(MODEL_BODY)));
+fn preview_gate_direct() {
+    assert_single_post(direct(DEPLOYMENT_BASE, Some("dall-e-2")), PROMPT_BODY);
+    let mut newer = direct(DEPLOYMENT_BASE, Some("dall-e-2"));
+    newer.api_version = "2023-11-01-preview";
+    assert_single_post(newer, PROMPT_BODY);
+    let mut other = direct("https://example.test/openai/v1/chat/completions", None);
+    other.api_version = PREVIEW_VERSION;
+    assert_single_post(other, MODEL_BODY);
 }
 
 pub(super) fn deployment_body_model_drop() {
-    let outcome = run(Step::direct(
-        DEPLOYMENT_BASE,
-        Some("dall-e-2"),
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    ));
-    assert_eq!(success(&outcome).status, 200);
-    let calls = outcome.harness.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].url, DEPLOYMENT_BASE);
-    assert_eq!(calls[0].body, Some(json(PROMPT_BODY)));
-    assert_eq!(data_json(&outcome.data), json(MODEL_BODY));
+    assert_single_post(direct(DEPLOYMENT_BASE, Some("dall-e-2")), PROMPT_BODY);
+    assert_single_post(direct(DEPLOYMENT_BASE, None), PROMPT_BODY);
 }
 
 pub(super) fn v1_body_deployment_model() {
-    let named = run(Step::direct(
-        V1_BASE,
-        Some("dall-e-3"),
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    ));
-    assert_eq!(success(&named).status, 200);
-    assert_eq!(
-        named.harness.calls()[0].body,
-        Some(json(r#"{"model":"dall-e-3","prompt":"a cat","n":1}"#))
+    assert_single_post(
+        direct(V1_BASE, Some("dall-e-3")),
+        r#"{"model":"dall-e-3","prompt":"a cat","n":1}"#,
     );
-    assert_eq!(data_json(&named.data), json(MODEL_BODY));
-
-    let unnamed = run(Step::direct(
-        V1_BASE,
-        None,
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    ));
-    assert_eq!(success(&unnamed).status, 200);
-    assert_eq!(unnamed.harness.calls()[0].body, Some(json(MODEL_BODY)));
+    assert_single_post(direct(V1_BASE, None), MODEL_BODY);
 }
 
 pub(super) fn provider_body_unchanged() {
-    let outcome = run(Step::direct(
-        PROVIDER_BASE,
-        None,
-        vec![reply(200, vec![], OPENAI_IMAGE)],
-    ));
-    assert_eq!(success(&outcome).status, 200);
-    let calls = outcome.harness.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].url, PROVIDER_BASE);
-    assert_eq!(calls[0].body, Some(json(MODEL_BODY)));
-    assert_eq!(data_json(&outcome.data), json(MODEL_BODY));
+    assert_single_post(direct(PROVIDER_BASE, None), MODEL_BODY);
+    assert_single_post(direct(PROVIDER_BASE, Some("dall-e-3")), MODEL_BODY);
 }
 
 pub(super) fn http_timeout_defaults() {
