@@ -1,0 +1,8 @@
+task: B593
+deviations:
+  - what: Debug logs redact the web-identity token; callers do not see its raw value in logs.
+    why: The pinned _auth_with_web_identity_token debug statement prints the token; repository secret-handling rules prohibit that disclosure. Public aud/iss diagnostics remain as above.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1006-L1011
+  - what: A non-None aws_external_id on the web identity flow fails with a typed error naming the field instead of being forwarded to AssumeRoleWithWebIdentity.
+    why: AssumeRoleWithWebIdentity has no ExternalId member; botocore rejects the parameter LiteLLM adds with ParamValidationError before any call, so no working LiteLLM setup can use it. betterlite names the field rather than sending an undefined parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1057-L1059

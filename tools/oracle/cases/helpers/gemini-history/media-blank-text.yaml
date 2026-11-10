@@ -1,0 +1,39 @@
+kind: helper
+name: gemini-history-media-blank-text
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - role: user
+            content:
+              - type: image_url
+                image_url:
+                  url: "data:image/png;base64,YWJj"
+      - messages:
+          - role: user
+            content:
+              - type: input_audio
+                input_audio:
+                  data: "YWJj"
+                  format: "wav"
+      - messages:
+          - role: user
+            content:
+              - type: text
+                text: ""
+      - messages:
+          - role: user
+            content:
+              - type: image_url
+                image_url:
+                  url: "data:image/png;base64,YWJj"
+          - role: assistant
+            content: "ok"
+          - role: user
+            content:
+              - type: file
+                file:
+                  file_data: "data:image/webp;base64,YWJj"
+env: {}
+compare:
+  ignore: []

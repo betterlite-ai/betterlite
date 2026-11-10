@@ -1,0 +1,10 @@
+kind: helper
+name: log-plan-grpc-endpoint
+call:
+  b3855:
+    function: log_exporter_plan
+    config:
+      exporter: grpc
+      endpoint: http://collector:4318/v1/traces
+env: {}
+compare: {ignore: []}

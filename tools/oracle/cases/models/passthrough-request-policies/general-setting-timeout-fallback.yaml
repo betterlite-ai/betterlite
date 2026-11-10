@@ -1,0 +1,8 @@
+kind: helper
+name: general-setting-timeout-fallback
+call:
+  b3571:
+    operation: proxy_timeout
+    settings_timeout: 45
+compare: {ignore: []}
+env: {}
