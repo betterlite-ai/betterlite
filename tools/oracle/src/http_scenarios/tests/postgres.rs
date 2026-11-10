@@ -10,6 +10,7 @@ use betterlite_postgres_fixture::seed::{
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Builder;
+use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 
 use crate::runner::DatabaseEnvironment;
@@ -135,24 +136,25 @@ fn expected_seed_journal() -> Vec<SetupJournalEntry> {
 async fn seeded_state(
     options: &ConnectionOptions,
 ) -> Result<(Vec<i64>, String), tokio_postgres::Error> {
+    let mut drivers = JoinSet::new();
     let (client, connection) = tokio_postgres::connect(options.url.expose_secret(), NoTls).await?;
-    let queries = async {
-        let mut counts = Vec::new();
-        for table in SEEDED_TABLES {
-            let row = client
-                .query_one(&format!("SELECT count(*) FROM \"{table}\""), &[])
-                .await?;
-            counts.push(row.get::<_, i64>(0));
-        }
-        let role = client
-            .query_one(
-                "SELECT \"user_role\" FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = 'user-a'",
-                &[],
-            )
+    drivers.spawn(connection);
+    let mut counts = Vec::new();
+    for table in SEEDED_TABLES {
+        let row = client
+            .query_one(&format!("SELECT count(*) FROM \"{table}\""), &[])
             .await?;
-        Ok::<(Vec<i64>, String), tokio_postgres::Error>((counts, role.get(0)))
-    };
-    let (state, driver) = tokio::join!(queries, connection);
-    driver?;
-    state
+        counts.push(row.get::<_, i64>(0));
+    }
+    let role = client
+        .query_one(
+            "SELECT \"user_role\" FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = 'user-a'",
+            &[],
+        )
+        .await?;
+    drop(client);
+    while let Some(result) = drivers.join_next().await {
+        result.expect("the driver task joins")?;
+    }
+    Ok((counts, role.get(0)))
 }
