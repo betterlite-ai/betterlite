@@ -46,7 +46,7 @@ pub(crate) enum Input {
         environment: BTreeMap<String, String>,
     },
     Batch {
-        calls: Vec<Input>,
+        calls: Vec<Self>,
     },
 }
 
@@ -56,30 +56,30 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::BuildWriterUrl { settings, auth } => {
-                let url = build_writer_url(settings, *auth).map_err(helper_error)?;
+                let url = build_writer_url(settings, *auth).map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::BuildReaderUrl { settings, auth } => {
-                let url = build_reader_url(settings, *auth).map_err(helper_error)?;
+                let url = build_reader_url(settings, *auth).map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::TlsParams { settings } => Ok(tls_params_value(settings)),
             Input::FromEnv { environment } => {
                 let settings = from_env(environment)
-                    .map_err(|source| helper_error(DatabaseUrlError::Settings { source }))?;
+                    .map_err(|source| helper_error(&DatabaseUrlError::Settings { source }))?;
                 Ok(settings_value(&settings))
             }
             Input::ValidateSchemes { settings } => {
-                validate_component_schemes(settings).map_err(helper_error)?;
+                validate_component_schemes(settings).map_err(|error| helper_error(&error))?;
                 Ok(serde_json::Value::Null)
             }
             Input::ValidateCliUrls { environment } => {
-                validate_cli_urls(environment).map_err(helper_error)?;
+                validate_cli_urls(environment).map_err(|error| helper_error(&error))?;
                 Ok(serde_json::Value::Null)
             }
             Input::ApplyWriterUrl { settings } => writer_update_value(settings),
             Input::ConstructCliUrl { environment } => {
-                let url = construct_cli_database_url(environment).map_err(helper_error)?;
+                let url = construct_cli_database_url(environment).map_err(|error| helper_error(&error))?;
                 Ok(optional_string(url))
             }
             Input::Batch { calls } => Ok(serde_json::Value::Array(
@@ -146,7 +146,7 @@ fn settings_value(settings: &DatabaseUrlSettings) -> serde_json::Value {
 }
 
 fn writer_update_value(settings: &DatabaseUrlSettings) -> HelperResult {
-    let result = apply_writer_url_to_env(settings, AuthMode::Password).map_err(helper_error)?;
+    let result = apply_writer_url_to_env(settings, AuthMode::Password).map_err(|error| helper_error(&error))?;
     let updates: Vec<serde_json::Value> = result
         .updates
         .iter()
@@ -155,8 +155,8 @@ fn writer_update_value(settings: &DatabaseUrlSettings) -> HelperResult {
     Ok(serde_json::json!({"replaced": result.replaced, "updates": updates}))
 }
 
-fn helper_error(error: DatabaseUrlError) -> Box<HelperError> {
-    let class = match &error {
+fn helper_error(error: &DatabaseUrlError) -> Box<HelperError> {
+    let class = match error {
         DatabaseUrlError::Url { .. } => "ValueError",
         DatabaseUrlError::Settings { .. } => "ValidationError",
         DatabaseUrlError::UnsupportedScheme { .. } => "RuntimeError",
