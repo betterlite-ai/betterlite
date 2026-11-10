@@ -143,7 +143,9 @@ fn an_operator_exporter_narrowed_to_model_calls_gets_only_those() {
         .expect("built");
     let delivered = recorder.delivered();
     assert_eq!(delivered.len(), 1);
-    assert!(keys(&delivered[0]).contains("gen_ai.operation.name"));
+    let kept = keys(&delivered[0]);
+    assert!(kept.contains("http.route"));
+    assert!(!kept.contains("gen_ai.operation.name"));
 }
 
 #[test]

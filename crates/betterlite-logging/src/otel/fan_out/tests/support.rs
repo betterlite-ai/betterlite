@@ -236,7 +236,6 @@ impl DestinationProcessorFactory for RecordingFactory {
         resource: &Resource,
     ) -> Option<Arc<dyn SpanProcessor>> {
         let endpoint = destination.as_ref().endpoint.clone();
-        lock(&self.built).push((endpoint.clone(), resource.clone()));
         if self.unbuildable.contains(&endpoint) {
             return None;
         }
@@ -246,6 +245,7 @@ impl DestinationProcessorFactory for RecordingFactory {
             shutdowns: Mutex::new(0),
             flush_fails: self.flush_fails,
         });
+        lock(&self.built).push((endpoint, resource.clone()));
         lock(&self.recorders).push(Arc::clone(&recorder));
         Some(recorder)
     }

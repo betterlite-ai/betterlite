@@ -11,7 +11,7 @@ use crate::otel::config::destination::{DestinationFields, OtelDestination, SpanS
 use crate::otel::fan_out::attach::{SinkKey, sink_key};
 use crate::otel::fan_out::overridden::OverriddenBackendFilter;
 use crate::otel::fan_out::tests::support::{
-    FixedScope, Recorder, SharedRecorder, destination_with, root_span, span, string_attribute,
+    FixedScope, Recorder, SharedRecorder, destination_with, keys, root_span, span, string_attribute,
 };
 
 fn inner(recorder: &Arc<Recorder>) -> Box<dyn SpanProcessor> {
@@ -141,8 +141,14 @@ fn a_wider_sibling_destination_widens_the_account_scope() {
         request,
         &recorder,
     );
-    SpanProcessor::on_end(&filter, request_root());
-    assert_eq!(recorder.delivered().len(), 1);
+    SpanProcessor::on_end(&filter, model_call());
+    let delivered = recorder.delivered();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(
+        delivered[0].parent_span_id,
+        SpanId::from(0x0102_0304_0506_0708)
+    );
+    assert!(!keys(&delivered[0]).contains("langfuse.trace.name"));
 }
 
 #[test]
@@ -164,8 +170,11 @@ fn an_llm_only_sibling_does_not_widen_the_account_scope() {
         request,
         &recorder,
     );
-    SpanProcessor::on_end(&filter, request_root());
-    assert!(recorder.delivered().is_empty());
+    SpanProcessor::on_end(&filter, model_call());
+    let delivered = recorder.delivered();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].parent_span_id, SpanId::INVALID);
+    assert!(keys(&delivered[0]).contains("langfuse.trace.name"));
 }
 
 #[test]
