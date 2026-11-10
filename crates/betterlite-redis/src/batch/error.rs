@@ -70,6 +70,6 @@ pub enum PipelineFailure {
         #[source]
         source: serde_json::Error,
     },
-    #[error("a SET ttl is not a finite number of seconds: {seconds}")]
-    Ttl { seconds: f64 },
+    #[error(transparent)]
+    Ttl(#[from] RedisCountersError),
 }

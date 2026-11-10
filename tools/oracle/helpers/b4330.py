@@ -146,7 +146,7 @@ class FakePipeline:
         self._queued.append(("EXPIRE", [name, str(int(time.total_seconds()))]))
 
     def set(self, name: str, value: str, ex: timedelta | None = None) -> None:
-        command = ["SET", name, value]
+        command = [name, value]
         if ex is not None:
             command.extend(["EX", str(int(ex.total_seconds()))])
         self._queued.append(("SET", command))
@@ -247,8 +247,8 @@ def project(value: object) -> Json:
             return list(value)
     if isinstance(value, (list, tuple)):
         return project_list(cast("Sequence[object]", value))
-    if isinstance(value, dict):
-        return project_dict(cast("dict[object, object]", value))
+    if isinstance(value, Mapping):
+        return project_dict(cast("Mapping[object, object]", value))
     if value is None or isinstance(value, (bool, int, float, str)):
         return cast(Json, value)
     raise ValueError(f"unsupported value {type(value).__name__}")
@@ -258,7 +258,7 @@ def project_list(items: Sequence[object]) -> Json:
     return [project(item) for item in items]
 
 
-def project_dict(entries: dict[object, object]) -> Json:
+def project_dict(entries: Mapping[object, object]) -> Json:
     return {string_value(cast(Json, key), "key"): project(item) for key, item in entries.items()}
 
 

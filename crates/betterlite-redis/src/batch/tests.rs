@@ -4,9 +4,12 @@ mod support;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 
 use redis::Value;
 use rstest::rstest;
+use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use self::support::{Harness, cluster_harness, harness, unreachable_harness};
 use super::RedisBatch;
@@ -26,6 +29,8 @@ enum Behavior {
     PipelineFailure,
     StandaloneRecovery,
     MissTracking,
+    ReplyErrorIsolation,
+    SerializeFailure,
 }
 
 #[rstest]
@@ -33,6 +38,8 @@ enum Behavior {
 #[case::pipeline_failure(Behavior::PipelineFailure)]
 #[case::standalone_recovery(Behavior::StandaloneRecovery)]
 #[case::miss_tracking(Behavior::MissTracking)]
+#[case::reply_error_isolation(Behavior::ReplyErrorIsolation)]
+#[case::serialize_failure(Behavior::SerializeFailure)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn batch_behaviors(#[case] behavior: Behavior) {
     match behavior {
@@ -40,6 +47,8 @@ async fn batch_behaviors(#[case] behavior: Behavior) {
         Behavior::PipelineFailure => pipeline_failure().await,
         Behavior::StandaloneRecovery => standalone_recovery().await,
         Behavior::MissTracking => miss_tracking().await,
+        Behavior::ReplyErrorIsolation => reply_error_isolation().await,
+        Behavior::SerializeFailure => serialize_failure().await,
     }
 }
 
@@ -51,6 +60,7 @@ enum Boundary {
     ClusterStandalone,
     SettledHookOrder,
     FlushHookOrder,
+    DroppedFlush,
 }
 
 #[rstest]
@@ -60,6 +70,7 @@ enum Boundary {
 #[case::cluster_standalone(Boundary::ClusterStandalone)]
 #[case::settled_hook_order(Boundary::SettledHookOrder)]
 #[case::flush_hook_order(Boundary::FlushHookOrder)]
+#[case::dropped_flush(Boundary::DroppedFlush)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn batch_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -69,6 +80,7 @@ async fn batch_boundaries(#[case] boundary: Boundary) {
         Boundary::ClusterStandalone => cluster_standalone().await,
         Boundary::SettledHookOrder => settled_hook_order().await,
         Boundary::FlushHookOrder => flush_hook_order().await,
+        Boundary::DroppedFlush => dropped_flush().await,
     }
 }
 
@@ -88,8 +100,8 @@ fn registered(harness: &Harness, source: &str) -> Arc<RegisteredScript> {
     Arc::new(harness.cache.counters.async_register_script(source))
 }
 
-fn cached(value: &str) -> CachedValue {
-    CachedValue::Text(value.to_owned())
+fn cached(value: i64) -> CachedValue {
+    CachedValue::Number(serde_json::Number::from(value))
 }
 
 fn commands(server: &FakeServer, names: &[&str]) -> Vec<String> {
@@ -150,7 +162,7 @@ fn declare_successful_operations(
 
 async fn assert_successful_results(declared: Declared) {
     let values = declared.mget.await.expect("the mget");
-    assert_eq!(values.get("a"), Some(&Some(cached("1"))));
+    assert_eq!(values.get("a"), Some(&Some(cached(1))));
     assert_eq!(values.get("b"), Some(&None));
     assert_eq!(
         declared.increment.await.expect("the increment").to_bits(),
@@ -245,7 +257,7 @@ async fn standalone_recovery() {
     let mget = batch.mget(&["key".to_owned()]);
     let scripted = batch.script(&script, &["counter".to_owned()], &[]);
     let values = mget.await.expect("the mget");
-    assert_eq!(values.get("key"), Some(&Some(cached("9"))));
+    assert_eq!(values.get("key"), Some(&Some(cached(9))));
     assert_eq!(scripted.await.expect("the recovered script"), Value::Int(7));
     assert_eq!(
         commands(&server, &["MGET", "EVALSHA", "SCRIPT"]),
@@ -269,7 +281,7 @@ async fn miss_tracking() {
     let first = batch.mget(&["a".to_owned(), "b".to_owned()]);
     let values = first.await.expect("the mget");
     assert_eq!(values.get("a"), Some(&None));
-    assert_eq!(values.get("b"), Some(&Some(cached("2"))));
+    assert_eq!(values.get("b"), Some(&Some(cached(2))));
     assert!(batch.read_as_missing("a"));
     assert!(!batch.read_as_missing("b"));
 
@@ -282,13 +294,74 @@ async fn miss_tracking() {
 
     let second = batch.mget(&["a".to_owned()]);
     let rediscovered = second.await.expect("the rediscovered mget");
-    assert_eq!(rediscovered.get("a"), Some(&Some(cached("9"))));
+    assert_eq!(rediscovered.get("a"), Some(&Some(cached(9))));
     assert_eq!(batch.flushes(), 3);
+}
+
+async fn reply_error_isolation() {
+    let server = FakeServer::start().await;
+    server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
+    server.script(
+        "INCRBYFLOAT",
+        Reply::Error("ERR value is not a valid float".to_owned()),
+    );
+    let harness = harness(&server, Some("ns")).await;
+    let batch = batch(&harness);
+
+    let mget = batch.mget(&["a".to_owned()]);
+    let increment = batch.increment("b", 1.5, None);
+    let failed = increment.await.expect_err("the failed increment");
+    assert!(matches!(failed.as_ref(), BatchError::Reply(_)));
+    let values = mget.await.expect("the sibling mget");
+    assert_eq!(values.get("a"), Some(&Some(cached(1))));
+    assert_eq!(server.commands_named("INCRBYFLOAT").len(), 1);
+    assert!(server.commands_named("TTL").is_empty());
+    assert_eq!(batch.flushes(), 1);
+}
+
+async fn serialize_failure() {
+    cluster_serialize_failure().await;
+    pipeline_serialize_failure().await;
+}
+
+async fn cluster_serialize_failure() {
+    let unserializable = BTreeMap::from([((1_u8, 2_u8), 3_u8)]);
+    let server = FakeServer::start().await;
+    server.script("DEL", Reply::Int(1));
+    let harness = cluster_harness(&server, Some("ns")).await;
+    let batch = batch(&harness);
+
+    let set = batch.set("k", &unserializable, None);
+    let sibling = batch.delete("other");
+    let failed = set.await.expect_err("the cluster set");
+    assert!(matches!(failed.as_ref(), BatchError::Serialize { .. }));
+    sibling.await.expect("the sibling delete");
+    assert!(server.commands_named("SET").is_empty());
+    assert_eq!(server.commands_named("DEL").len(), 1);
+}
+
+async fn pipeline_serialize_failure() {
+    let unserializable = BTreeMap::from([((1_u8, 2_u8), 3_u8)]);
+    let server = FakeServer::start().await;
+    let harness = harness(&server, Some("ns")).await;
+    let batch = batch(&harness);
+
+    let set = batch.set("k", &unserializable, None);
+    let sibling = batch.mget(&["a".to_owned()]);
+    let first = set.await.expect_err("the pipelined set");
+    let second = sibling.await.expect_err("the sibling mget");
+    assert!(matches!(
+        first.as_ref(),
+        BatchError::Pipeline(PipelineFailure::Encode { .. })
+    ));
+    assert!(Arc::ptr_eq(&first, &second));
+    assert!(server.commands_named("SET").is_empty());
+    assert!(server.commands_named("MGET").is_empty());
 }
 
 async fn reply_shapes() {
     let server = FakeServer::start().await;
-    server.script("MGET", Reply::Simple("OK".to_owned()));
+    server.script("MGET", Reply::Simple("QUEUED".to_owned()));
     server.script("INCRBYFLOAT", Reply::Nil);
     let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
@@ -342,7 +415,7 @@ async fn cancellation() {
     mget.on_settled(recording_hook("mget", Arc::clone(&log)));
     let increment = batch.increment("b", 1.5, None);
     mget.cancel();
-    assert!(mget.done());
+    assert!(!mget.slot.is_pending());
 
     assert_eq!(
         increment.await.expect("the increment").to_bits(),
@@ -366,7 +439,7 @@ async fn cluster_standalone() {
     let mget = batch.mget(&["alpha".to_owned()]);
     let increment = batch.increment("beta", 2.5, None);
     let values = mget.await.expect("the cluster mget");
-    assert_eq!(values.get("alpha"), Some(&Some(cached("1"))));
+    assert_eq!(values.get("alpha"), Some(&Some(cached(1))));
     assert_eq!(
         increment.await.expect("the cluster increment").to_bits(),
         2.5_f64.to_bits()
@@ -387,22 +460,52 @@ async fn cluster_standalone() {
 async fn settled_hook_order() {
     let server = FakeServer::start().await;
     server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
-    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
+    let noscript = "NOSCRIPT No matching script. Please use EVAL.";
+    server.script("EVALSHA", Reply::Error(noscript.to_owned()));
+    server.script("EVALSHA", Reply::Error(noscript.to_owned()));
+    let harness = harness(&server, Some("ns")).await;
+    let script = registered(&harness, "return 7");
+    server.script("SCRIPT", Reply::Bulk(script.sha1.clone()));
+    server.script("EVALSHA", Reply::Int(7));
+    let batch = batch(&harness);
+    let log = Arc::new(Mutex::new(Vec::new()));
+
+    let scripted = batch.script(&script, &["f".to_owned()], &[]);
+    scripted.on_settled(recording_hook("script", Arc::clone(&log)));
+    let mget = batch.mget(&["a".to_owned()]);
+    mget.on_settled(recording_hook("mget", Arc::clone(&log)));
+
+    assert_eq!(scripted.await.expect("the script"), Value::Int(7));
+    mget.await.expect("the mget");
+    assert_eq!(log_entries(&log), ["script:completed", "mget:completed"]);
+}
+
+async fn dropped_flush() {
+    let server = FakeServer::start().await;
+    server.silence("MGET");
     let harness = harness(&server, Some("ns")).await;
     let batch = batch(&harness);
     let log = Arc::new(Mutex::new(Vec::new()));
 
     let mget = batch.mget(&["a".to_owned()]);
     mget.on_settled(recording_hook("mget", Arc::clone(&log)));
-    let increment = batch.increment("b", 1.5, None);
-    increment.on_settled(recording_hook("increment", Arc::clone(&log)));
+    let sibling = batch.increment("b", 1.5, None);
+    let mut tasks = JoinSet::new();
+    let flushing = tasks.spawn(async move { mget.await });
+    while server.commands_named("MGET").is_empty() {
+        sleep(Duration::from_millis(5)).await;
+    }
+    flushing.abort();
+    let joined = tasks
+        .join_next()
+        .await
+        .expect("the spawned flush")
+        .expect_err("the aborted flush");
+    assert!(joined.is_cancelled());
 
-    assert_eq!(
-        increment.await.expect("the increment").to_bits(),
-        1.5_f64.to_bits()
-    );
-    mget.await.expect("the mget");
-    assert_eq!(log_entries(&log), ["mget:completed", "increment:completed"]);
+    let cancelled = sibling.await.expect_err("the cancelled sibling");
+    assert!(matches!(cancelled.as_ref(), BatchError::Cancelled));
+    assert_eq!(log_entries(&log), ["mget:cancelled"]);
 }
 
 fn install_declaring_hook(batch: &Arc<RedisBatch>, declared: &DeclaredHandles) {
@@ -434,7 +537,7 @@ async fn flush_hook_order() {
     let direct = batch.mget(&["direct".to_owned()]);
     assert_eq!(batch.pending(), 1);
     let values = direct.await.expect("the direct mget");
-    assert_eq!(values.get("direct"), Some(&Some(cached("1"))));
+    assert_eq!(values.get("direct"), Some(&Some(cached(1))));
     assert_eq!(batch.pending(), 0);
     assert_eq!(batch.flushes(), 1);
     let mgets = server.commands_named("MGET");

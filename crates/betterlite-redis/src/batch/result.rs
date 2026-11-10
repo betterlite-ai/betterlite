@@ -26,14 +26,6 @@ pub struct BatchResult<T> {
 }
 
 impl<T> BatchResult<T> {
-    #[must_use]
-    pub fn done(&self) -> bool {
-        if self.slot.is_pending() {
-            return false;
-        }
-        true
-    }
-
     pub fn on_settled(&self, hook: SettledHook) {
         match self.slot.0.lock() {
             Ok(mut inner) => inner.hooks.push(hook),

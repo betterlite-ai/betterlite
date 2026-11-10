@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use num_traits::ToPrimitive as _;
+use serde::ser::Error as _;
 use serde_json::value::RawValue;
 
 use super::error::{BatchError, PipelineFailure};
 use super::replies::namespaced;
 use super::slot::Slot;
 use crate::redis_cache::RedisCache;
+use crate::redis_counters::increment::resolve_ttl;
 
 pub(crate) struct SetOperation {
     pub(crate) key: String,
@@ -25,14 +26,7 @@ impl SetOperation {
         if let Some(source) = self.encode_error.take() {
             return Err(PipelineFailure::Encode { source });
         }
-        let seconds = match self.ttl {
-            None => cache.default_ttl,
-            Some(seconds) if seconds.is_nan() => cache.default_ttl,
-            Some(seconds) => seconds
-                .trunc()
-                .to_i64()
-                .ok_or(PipelineFailure::Ttl { seconds })?,
-        };
+        let seconds = resolve_ttl(self.ttl, cache.default_ttl)?;
         let mut command = redis::cmd("SET");
         command
             .arg(namespaced(cache.namespace.as_deref(), &self.key))
@@ -44,6 +38,12 @@ impl SetOperation {
     }
 
     pub(crate) async fn settle_alone(&self, cache: &RedisCache) {
+        if let Some(failed) = &self.encode_error {
+            let source = serde_json::Error::custom(failed);
+            self.slot
+                .complete(Err(Arc::new(BatchError::Serialize { source })));
+            return;
+        }
         let result = match RawValue::from_string(self.value.clone()) {
             Ok(raw) => cache
                 .values

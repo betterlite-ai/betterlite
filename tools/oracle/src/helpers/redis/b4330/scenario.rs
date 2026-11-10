@@ -234,7 +234,7 @@ const fn taxonomy(error: &BatchError) -> &'static str {
         BatchError::Pipeline(failure) => match failure {
             PipelineFailure::Breaker(_) => "breaker",
             PipelineFailure::Client(_) | PipelineFailure::Live(_) => "connection",
-            PipelineFailure::Encode { .. } | PipelineFailure::Ttl { .. } => "pipeline",
+            PipelineFailure::Encode { .. } | PipelineFailure::Ttl(_) => "pipeline",
         },
         BatchError::Reply(_)
         | BatchError::MissingReply { .. }
