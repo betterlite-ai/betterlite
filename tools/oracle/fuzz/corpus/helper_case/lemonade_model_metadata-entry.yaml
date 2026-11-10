@@ -1,0 +1,11 @@
+kind: helper
+name: lemonade-model-metadata-seed-entry
+call:
+  lemonade_model_metadata:
+    operation: provider_entry
+    model_infos:
+      - provider_specific_entry: {kept: true}
+        context_window: 2
+      - {provider_specific_entry: text}
+env: {}
+compare: {ignore: []}

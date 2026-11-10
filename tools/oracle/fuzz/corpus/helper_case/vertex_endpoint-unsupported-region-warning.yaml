@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-endpoint-unsupported-region-warning-seed
+call:
+  vertex_endpoint:
+    unsupported_region_warning:
+      regions:
+        - {model: deepseek-ai/deepseek-v3.1-maas, region: europe-west1}
+        - {model: gemini-2.5-flash, region: null}
+      api_bases:
+        - {api_base: null, location: global}
+env: {}
+compare: {ignore: []}
