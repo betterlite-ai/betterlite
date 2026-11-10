@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 use uuid::Uuid;
 
 use super::{Event, Recorder};
-use crate::codestral_call::error::{CodestralCallError, TRANSPORT_STATUS};
+use crate::codestral_call::error::CodestralCallError;
 use crate::codestral_call::execute::CodestralCall;
 use crate::codestral_call::plan::{Mode, Plan, Wrapper};
 use crate::codestral_records::RecordSource;
@@ -31,6 +31,7 @@ const THREE_LINES: &[u8] = b"data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}
 struct Captured {
     request_line: String,
     headers: BTreeMap<String, String>,
+    header_lines: Vec<(String, String)>,
     body: Value,
 }
 
@@ -47,10 +48,11 @@ async fn read_request(stream: &mut TcpStream) -> Captured {
     let head = String::from_utf8(raw).unwrap();
     let mut lines = head.split("\r\n");
     let request_line = lines.next().unwrap_or_default().to_owned();
-    let headers: BTreeMap<String, String> = lines
+    let header_lines: Vec<(String, String)> = lines
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
+    let headers: BTreeMap<String, String> = header_lines.iter().cloned().collect();
     let length: usize = headers
         .get("content-length")
         .map_or(0, |value| value.parse().unwrap());
@@ -59,6 +61,7 @@ async fn read_request(stream: &mut TcpStream) -> Captured {
     Captured {
         request_line,
         headers,
+        header_lines,
         body: serde_json::from_slice(&body).unwrap(),
     }
 }
@@ -199,7 +202,36 @@ async fn complete_sends_the_planned_request_and_decodes_the_reply() {
 }
 
 #[tokio::test]
-async fn a_rejected_reply_keeps_its_status_after_the_post_call() {
+async fn a_case_different_caller_header_keeps_its_own_line() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let call = new_call();
+    let mut plan = plan_for(
+        &format!("http://{address}/fim"),
+        Mode::Async,
+        false,
+        Some(Duration::from_secs(5)),
+    );
+    plan.headers
+        .insert("Content-Type".to_owned(), "text/plain".to_owned());
+    let mut recorder = Recorder::default();
+    let (outcome, captured) = tokio::join!(
+        call.complete(&plan, source(), &mut recorder),
+        serve_once(listener, 200, REPLY)
+    );
+    outcome.unwrap();
+    let mut values: Vec<&str> = captured
+        .header_lines
+        .iter()
+        .filter(|(name, _)| name == "content-type")
+        .map(|(_, value)| value.as_str())
+        .collect();
+    values.sort_unstable();
+    assert_eq!(values, vec!["application/json", "text/plain"]);
+}
+
+#[tokio::test]
+async fn a_client_error_reply_fails_before_the_post_call() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let call = new_call();
@@ -215,10 +247,35 @@ async fn a_rejected_reply_keeps_its_status_after_the_post_call() {
         serve_once(listener, 400, b"bad request")
     );
     let error = outcome.unwrap_err();
+    assert_eq!(error.status_code(), Some(400));
     let CodestralCallError::Record(TextCompletionCodestralError::Native(native)) = &error else {
-        panic!("a non-200 reply keeps its native status")
+        panic!("a rejected reply keeps its native status")
     };
     assert_eq!(native.status_code, 400);
+    assert!(recorder.phases().is_empty());
+}
+
+#[tokio::test]
+async fn a_two_hundred_and_one_reply_logs_the_post_call_before_its_status() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let call = new_call();
+    let plan = plan_for(
+        &format!("http://{address}/fim"),
+        Mode::Async,
+        false,
+        Some(Duration::from_secs(5)),
+    );
+    let mut recorder = Recorder::default();
+    let (outcome, _captured) = tokio::join!(
+        call.complete(&plan, source(), &mut recorder),
+        serve_once(listener, 201, REPLY)
+    );
+    let error = outcome.unwrap_err();
+    let CodestralCallError::Record(TextCompletionCodestralError::Native(native)) = &error else {
+        panic!("a 201 reply keeps its native status")
+    };
+    assert_eq!(native.status_code, 201);
     assert_eq!(recorder.phases(), vec!["post_call"]);
 }
 
@@ -240,7 +297,7 @@ async fn a_transport_failure_maps_to_status_500() {
         .await
         .unwrap_err();
     assert!(matches!(error, CodestralCallError::Transport { .. }));
-    assert_eq!(TRANSPORT_STATUS, 500);
+    assert_eq!(error.status_code(), Some(500));
 }
 
 #[tokio::test]

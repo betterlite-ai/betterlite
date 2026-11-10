@@ -48,10 +48,12 @@ impl CallLogger for Recorder {
             "phase": "pre_call",
             "input": call.input,
             "api_key": call.api_key.map(|key| key.expose_secret().to_owned()),
-            "complete_input_dict": call.body,
-            "headers": call.headers,
-            "api_base": call.api_base,
-            "acompletion": call.acompletion,
+            "additional_args": {
+                "complete_input_dict": call.body,
+                "headers": call.headers,
+                "api_base": call.api_base,
+                "acompletion": call.acompletion,
+            },
         }));
     }
     fn stream_post_call(&mut self, _call: StreamPostCall<'_>) {}

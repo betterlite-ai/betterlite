@@ -1,14 +1,13 @@
 use super::error::CodestralCallError;
 use super::log::CallLogger;
 use super::plan::Plan;
-use super::stream;
+use super::stream::{self, ChunkStream};
 use crate::codestral_records::RecordSource;
-use crate::codestral_records::chunk::CodestralChunk;
 use crate::codestral_records::record_text;
 use crate::codestral_records::reply::{CodestralReply, PostCall, process_response};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use futures_util::Stream;
+use futures_util::StreamExt as _;
 use futures_util::stream::{TryStreamExt as _, once};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
@@ -28,6 +27,10 @@ impl CodestralCall {
         let request = outbound(plan, &self.client)?;
         let response = self.client.send_following(request).await?;
         let upstream = response.buffered(self.client.limits.body_bytes).await?;
+        // httpx's raise_for_status fails a 4xx or 5xx before process_text_completion_response logs post_call
+        if !(200..=299).contains(&upstream.status) {
+            return Err(stream::native_failure(upstream.status, &upstream.body)?);
+        }
         let text = record_text(&upstream.body)?;
         let request_data = Value::Object(plan.body.clone());
         let call = PostCall {
@@ -36,18 +39,14 @@ impl CodestralCall {
             original_response: &text,
             request_data: &request_data,
         };
-        let reply = process_response(upstream.status, call, log, &source)?;
-        Ok(reply)
+        process_response(upstream.status, call, log, &source).map_err(CodestralCallError::Record)
     }
     pub fn stream(
         &self,
         plan: Plan,
         source: RecordSource,
         log: Box<dyn CallLogger + Send>,
-    ) -> Result<
-        impl Stream<Item = Result<CodestralChunk, CodestralCallError>> + Send,
-        CodestralCallError,
-    > {
+    ) -> Result<ChunkStream, CodestralCallError> {
         let request = outbound(&plan, &self.client)?;
         let chunks = once(stream::make_call(
             self.client.clone(),
@@ -56,7 +55,7 @@ impl CodestralCall {
             source,
             log,
         ));
-        Ok(chunks.try_flatten())
+        Ok(chunks.try_flatten().boxed())
     }
 }
 pub(super) fn outbound(
@@ -78,7 +77,7 @@ pub(super) fn outbound(
                 source,
             }
         })?;
-        headers.insert(header_name, header_value);
+        headers.append(header_name, header_value);
     }
     let body =
         serde_json::to_vec(&plan.body).map_err(|source| CodestralCallError::Encode { source })?;

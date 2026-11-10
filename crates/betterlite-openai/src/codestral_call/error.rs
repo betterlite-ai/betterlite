@@ -6,7 +6,6 @@ use betterlite_prompts::error::FactoryError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 use url::ParseError;
-// LiteLLM wraps transport exceptions from the async call as TextCompletionCodestralError with status 500
 pub const TRANSPORT_STATUS: u16 = 500;
 #[derive(Debug, Error)]
 pub enum CodestralCallError {
@@ -49,4 +48,22 @@ pub enum CodestralCallError {
         #[source]
         source: AlephAlphaError,
     },
+}
+impl CodestralCallError {
+    #[must_use]
+    pub fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::Record(TextCompletionCodestralError::Native(native)) => Some(native.status_code),
+            Self::Record(_) | Self::Transport { .. } => Some(TRANSPORT_STATUS),
+            Self::MissingApiKey
+            | Self::Prompt(_)
+            | Self::PromptNotText
+            | Self::Settings(_)
+            | Self::HeaderName { .. }
+            | Self::HeaderValue { .. }
+            | Self::Endpoint(_)
+            | Self::Encode { .. }
+            | Self::Lines { .. } => None,
+        }
+    }
 }

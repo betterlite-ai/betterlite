@@ -38,16 +38,7 @@ class Logger:
         self.events: list[Object] = []
         self.model_call_details: Object = {}
     def pre_call(self, **params: object) -> None:
-        args = cast(Object, params.get("additional_args"))
-        self.events.append({
-            "phase": "pre_call",
-            "input": params.get("input"),
-            "api_key": params.get("api_key"),
-            "complete_input_dict": copy.deepcopy(args.get("complete_input_dict")),
-            "headers": args.get("headers"),
-            "api_base": args.get("api_base"),
-            "acompletion": args.get("acompletion"),
-        })
+        self.events.append({"phase": "pre_call", **copy.deepcopy(params)})
     def post_call(self, **params: object) -> None:
         del params
 def ignore_verbose(*_args: object) -> None:
@@ -76,18 +67,16 @@ def drive(call: Object, logger: Logger) -> object:
     if call["mode"] == "sync":
         return sync_call(call, logger)
     return asyncio.run(async_call(call, logger))
-def async_request(wrapper: CustomStreamWrapper) -> Object:
-    make_call = cast("functools.partial[object]", wrapper.make_call)
-    keywords = cast(Object, make_call.keywords)
-    url = cast(str | None, keywords["api_base"])
-    return request_facts(url, keywords["headers"], cast(str, keywords["data"]))
 def facts(call: Object, result: object, sync_client: SyncClient, logger: Logger) -> Object:
     provider: object = None
     request: Object | None = None
     if isinstance(result, CustomStreamWrapper):
         provider = result.custom_llm_provider
         if call["mode"] == "async":
-            request = async_request(result)
+            make_call = cast("functools.partial[object]", result.make_call)
+            keywords = cast(Object, make_call.keywords)
+            url = cast(str | None, keywords["api_base"])
+            request = request_facts(url, keywords["headers"], cast(str, keywords["data"]))
     if request is None and sync_client.calls:
         request = sync_client.calls[0]
     if request is None:

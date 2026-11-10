@@ -11,7 +11,6 @@ use super::{
     prepare_for, settings,
 };
 use crate::codestral_call::error::CodestralCallError;
-use crate::codestral_call::plan::DEFAULT_API_BASE;
 
 fn template(initial: &str, final_value: &str) -> CustomPromptTemplate {
     let roles = BTreeMap::from([
@@ -79,6 +78,23 @@ async fn caller_headers_replace_the_base_headers() {
     assert_eq!(plan.headers.get("X-Trace").map(String::as_str), Some("abc"));
 }
 
+#[tokio::test]
+async fn a_case_different_caller_header_survives_the_overlay() {
+    let mut fixture = base();
+    fixture
+        .headers
+        .insert("Content-Type".to_owned(), "text/plain".to_owned());
+    let plan = prepare_for(&fixture.request()).await.unwrap();
+    assert_eq!(
+        plan.headers.get("content-type").map(String::as_str),
+        Some("application/json")
+    );
+    assert_eq!(
+        plan.headers.get("Content-Type").map(String::as_str),
+        Some("text/plain")
+    );
+}
+
 #[rstest]
 #[case::custom_endpoint_uses_the_base(
     Some("https://custom.example/fim"),
@@ -90,8 +106,12 @@ async fn caller_headers_replace_the_base_headers() {
     None,
     "https://given.example/fim"
 )]
-#[case::no_base_uses_the_default(None, None, DEFAULT_API_BASE)]
-#[case::empty_base_uses_the_default(Some(""), None, DEFAULT_API_BASE)]
+#[case::no_base_uses_the_default(None, None, "https://codestral.mistral.ai/v1/fim/completions")]
+#[case::empty_base_uses_the_default(
+    Some(""),
+    None,
+    "https://codestral.mistral.ai/v1/fim/completions"
+)]
 #[case::null_flag_uses_the_base(
     Some("https://given.example/fim"),
     Some(r#"{"custom_endpoint": null}"#),

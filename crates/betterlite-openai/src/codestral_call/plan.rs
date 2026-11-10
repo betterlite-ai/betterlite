@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::time::Duration;
-pub const DEFAULT_API_BASE: &str = "https://codestral.mistral.ai/v1/fim/completions";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -43,7 +42,6 @@ pub struct Plan {
     pub url: String,
     pub body: Map<String, Value>,
     pub wrapper: Option<Wrapper>,
-    // None means the call uses the shared client's configured timeout rather than the supplied one
     pub timeout: Option<Duration>,
     pub prompt: String,
     pub messages: Vec<Value>,
@@ -80,14 +78,12 @@ pub async fn prepare(
     let url = resolve_url(&mut options, request.api_base);
     let prompt = build_prompt(request, prompts, now).await?;
     let (body, streaming) = build_body(request, &options, &prompt)?;
-    let wrapper = streaming.then_some(match request.mode {
-        Mode::Sync => Wrapper::Codestral,
-        Mode::Async => Wrapper::TextCompletionCodestral,
-    });
     // async_streaming never uses the timeout it is handed: make_call posts through the shared async client
-    let timeout = match (request.mode, streaming) {
-        (Mode::Async, false) => Some(request.timeout),
-        (Mode::Sync, _) | (Mode::Async, true) => None,
+    let (wrapper, timeout) = match (request.mode, streaming) {
+        (Mode::Sync, false) => (None, None),
+        (Mode::Sync, true) => (Some(Wrapper::Codestral), None),
+        (Mode::Async, true) => (Some(Wrapper::TextCompletionCodestral), None),
+        (Mode::Async, false) => (None, Some(request.timeout)),
     };
     let mut plan = Plan {
         mode: request.mode,
@@ -100,7 +96,7 @@ pub async fn prepare(
         messages: serialized_messages(request.messages)?,
         api_key,
     };
-    log_pre_call(&plan, request.api_key, request.mode == Mode::Async, log);
+    log_pre_call(&plan, request.api_key, log);
     if request.mode == Mode::Async && streaming {
         plan.body.insert("stream".to_owned(), Value::Bool(true));
     }
@@ -112,7 +108,7 @@ fn resolve_url(options: &mut Map<String, Value>, api_base: Option<&str>) -> Stri
     }
     api_base
         .filter(|base| !base.is_empty())
-        .unwrap_or(DEFAULT_API_BASE)
+        .unwrap_or("https://codestral.mistral.ai/v1/fim/completions")
         .to_owned()
 }
 async fn build_prompt(
@@ -158,18 +154,13 @@ fn serialized_messages(messages: &[Message]) -> Result<Vec<Value>, CodestralCall
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| CodestralCallError::Encode { source })
 }
-fn log_pre_call(
-    plan: &Plan,
-    api_key: Option<&SecretString>,
-    acompletion: bool,
-    log: &mut (dyn CallLogger + Send),
-) {
+fn log_pre_call(plan: &Plan, api_key: Option<&SecretString>, log: &mut (dyn CallLogger + Send)) {
     log.pre_call(PreCall {
         input: &plan.prompt,
         api_key,
         body: &plan.body,
         headers: &plan.headers,
         api_base: &plan.url,
-        acompletion,
+        acompletion: plan.mode == Mode::Async,
     });
 }
