@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::str::{Utf8Error, from_utf8};
 use std::time::Duration;
 
@@ -99,12 +100,26 @@ impl LangfuseHttp {
     }
 }
 
-// reqwest marks every response body error as a decode error; only a declared encoding makes it httpx's DecodingError
-const fn buffered_failure(error: TransportError, encoded: bool) -> RequestFailure {
-    if encoded && matches!(&error, TransportError::Body(_)) {
+fn buffered_failure(error: TransportError, encoded: bool) -> RequestFailure {
+    if encoded
+        && let TransportError::Body(source) = &error
+        && !contains_hyper_error(source)
+    {
         return RequestFailure::Decode(error);
     }
     RequestFailure::Transport(error)
+}
+
+// tower-http returns a dropped connection as the original hyper body error; only a decompressor failure has none
+fn contains_hyper_error(error: &(dyn StdError + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(source) = current {
+        if source.downcast_ref::<hyper::Error>().is_some() {
+            return true;
+        }
+        current = source.source();
+    }
+    false
 }
 
 fn decoded_encoding(headers: &HeaderMap) -> bool {

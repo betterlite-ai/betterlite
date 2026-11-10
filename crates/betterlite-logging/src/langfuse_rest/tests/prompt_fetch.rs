@@ -1,8 +1,11 @@
+use std::io::Write as _;
 use std::iter::repeat_with;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use betterlite_models::decisions::Json;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
@@ -156,7 +159,8 @@ async fn a_body_that_ends_early_is_retried_once() {
     let body = text_prompt("greeting", 2);
     let server = FakeLangfuse::start(vec![
         Answer::Truncated {
-            body: String::from("short"),
+            body: b"short".to_vec(),
+            headers: Vec::new(),
         },
         Answer::Respond {
             status: 200,
@@ -173,6 +177,39 @@ async fn a_body_that_ends_early_is_retried_once() {
         .expect("the prompt");
     assert_eq!(prompt_version(&prompt), 2);
     assert_eq!(server.request_count(), 2);
+}
+
+#[tokio::test]
+async fn a_gzipped_body_that_ends_early_is_retried_once() {
+    let body = text_prompt("greeting", 2);
+    let compressed = gzipped(&body);
+    let prefix = compressed.get(..10).expect("the gzip header");
+    let server = FakeLangfuse::start(vec![
+        Answer::Truncated {
+            body: prefix.to_vec(),
+            headers: vec![("content-encoding", "gzip".to_owned())],
+        },
+        Answer::Respond {
+            status: 200,
+            body: body.clone(),
+        },
+    ])
+    .await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
+    let client = client_for(&server, TTL, &clock, &tasks);
+    let prompt = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect("the prompt");
+    assert_eq!(prompt_version(&prompt), 2);
+    assert_eq!(server.request_count(), 2);
+}
+
+fn gzipped(text: &str) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(text.as_bytes()).expect("the gzip body");
+    encoder.finish().expect("the gzip body")
 }
 
 #[tokio::test]

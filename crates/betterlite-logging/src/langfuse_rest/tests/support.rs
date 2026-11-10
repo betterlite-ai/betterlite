@@ -50,7 +50,8 @@ pub(crate) enum Answer {
         body: Vec<u8>,
     },
     Truncated {
-        body: String,
+        body: Vec<u8>,
+        headers: Vec<(&'static str, String)>,
     },
     Stall(Duration),
 }
@@ -126,40 +127,56 @@ async fn serve(
     let Some(answer) = next else {
         return;
     };
+    answer_request(&mut stream, answer).await;
+}
+
+async fn answer_request(stream: &mut TcpStream, answer: Answer) {
     match answer {
         Answer::Respond { status, body } => {
-            respond(&mut stream, status, body.as_bytes(), &[]).await;
+            respond(stream, status, body.as_bytes(), &[]).await;
         }
         Answer::RespondWith {
             status,
             body,
             headers,
-        } => respond(&mut stream, status, body.as_bytes(), &headers).await,
-        Answer::Close => drop(stream),
+        } => respond(stream, status, body.as_bytes(), &headers).await,
+        Answer::Close => {
+            let _closed = stream.shutdown().await;
+        }
         Answer::Hold {
             release,
             status,
             body,
         } => {
             let _released = release.await;
-            respond(&mut stream, status, body.as_bytes(), &[]).await;
+            respond(stream, status, body.as_bytes(), &[]).await;
         }
-        Answer::Raw { status, body } => respond(&mut stream, status, &body, &[]).await,
-        Answer::Truncated { body } => respond_truncated(&mut stream, &body).await,
+        Answer::Raw { status, body } => respond(stream, status, &body, &[]).await,
+        Answer::Truncated { body, headers } => {
+            respond_truncated(stream, &body, &headers).await;
+        }
         Answer::Stall(delay) => {
             sleep(delay).await;
-            respond(&mut stream, 200, b"", &[]).await;
+            respond(stream, 200, b"", &[]).await;
         }
     }
 }
 
-async fn respond_truncated(stream: &mut TcpStream, body: &str) {
+async fn respond_truncated(
+    stream: &mut TcpStream,
+    body: &[u8],
+    headers: &[(&'static str, String)],
+) {
     let declared = body.len().saturating_add(16);
-    let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {declared}\r\nconnection: close\r\n\r\n"
+    let mut head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {declared}\r\nconnection: close\r\n"
     );
+    for (name, value) in headers {
+        let _formatted = write!(head, "{name}: {value}\r\n");
+    }
+    head.push_str("\r\n");
     let _head_written = stream.write_all(head.as_bytes()).await;
-    let _body_written = stream.write_all(body.as_bytes()).await;
+    let _body_written = stream.write_all(body).await;
     let _closed = stream.shutdown().await;
 }
 
