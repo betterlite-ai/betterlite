@@ -5,6 +5,8 @@ use secrecy::ExposeSecret as _;
 
 use crate::helpers::HelperError;
 
+use super::helper_error;
+
 #[derive(Clone, Debug)]
 pub(super) enum FixtureOutcome {
     Reply { status: u16, body: Vec<u8> },
@@ -13,9 +15,9 @@ pub(super) enum FixtureOutcome {
 
 #[derive(Clone, Debug)]
 pub(super) struct Recorded {
-    url: String,
-    authorization: Option<String>,
-    name: String,
+    pub(super) url: String,
+    pub(super) authorization: Option<String>,
+    pub(super) name: String,
 }
 
 pub(super) struct FixtureTransport {
@@ -81,9 +83,9 @@ impl OllamaTransport for FixtureTransport {
     }
 }
 
-pub(super) fn success_reply() -> FixtureTransport {
-    FixtureTransport::new(FixtureOutcome::Reply {
-        status: 200,
-        body: b"{}".to_vec(),
-    })
+pub(super) fn reply_outcome(status: u16, body: &str) -> FixtureOutcome {
+    FixtureOutcome::Reply {
+        status,
+        body: body.as_bytes().to_vec(),
+    }
 }

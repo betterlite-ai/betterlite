@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::catalog::ModelCatalog;
-use reply::{OllamaMetadataError, decode_ollama_model_reply};
+use reply::{OllamaMetadataError, ShowReply, decode_ollama_model_reply};
 
 pub mod reply;
 
@@ -129,22 +129,7 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
             }
         };
         let reply = decode_ollama_model_reply(&response.body)?;
-        let max_tokens = reply.context_length;
-        Ok(RuntimeModelInfo {
-            key: stripped,
-            litellm_provider: PROVIDER.to_owned(),
-            mode: MODE.to_owned(),
-            supports_function_calling: Some(
-                reply
-                    .template
-                    .is_some_and(|template| template.to_lowercase().contains(TOOLS_MARKER)),
-            ),
-            input_cost_per_token: Decimal::ZERO,
-            output_cost_per_token: Decimal::ZERO,
-            max_tokens,
-            max_input_tokens: max_tokens,
-            max_output_tokens: max_tokens,
-        })
+        Ok(runtime_info(stripped, reply))
     }
 
     fn show_request(
@@ -225,6 +210,25 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
         candidates
             .iter()
             .any(|candidate| keys.contains(&candidate.to_lowercase()))
+    }
+}
+
+fn runtime_info(key: String, reply: ShowReply) -> RuntimeModelInfo {
+    let max_tokens = reply.context_length;
+    RuntimeModelInfo {
+        key,
+        litellm_provider: PROVIDER.to_owned(),
+        mode: MODE.to_owned(),
+        supports_function_calling: Some(
+            reply
+                .template
+                .is_some_and(|template| template.to_lowercase().contains(TOOLS_MARKER)),
+        ),
+        input_cost_per_token: Decimal::ZERO,
+        output_cost_per_token: Decimal::ZERO,
+        max_tokens,
+        max_input_tokens: max_tokens,
+        max_output_tokens: max_tokens,
     }
 }
 

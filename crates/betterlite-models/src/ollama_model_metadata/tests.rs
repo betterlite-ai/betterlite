@@ -494,7 +494,58 @@ fn runtime_model_query() {
     query_success_boundary();
 }
 
-fn run_field_cases(cases: &[(&str, RuntimeModelInfo)]) {
+const FIELD_LIMIT_CASES: [(&str, Option<i64>, bool); 6] = [
+    (
+        "{\"template\":\"{{ .Tools }}\",\"model_info\":{\"z.context_length\":8192,\"a.context_length\":4096}}",
+        Some(8192),
+        true,
+    ),
+    (
+        "{\"model_info\":{\"llama.context_length\":4096}}",
+        Some(4096),
+        false,
+    ),
+    (
+        "{\"model_info\":{\"llama.context_length\":null,\"other.context_length\":7}}",
+        None,
+        false,
+    ),
+    (
+        "{\"model_info\":{\"llama.embedding_length\":4096}}",
+        None,
+        false,
+    ),
+    (
+        "{\"model_info\":{\"weird_context_length_extra\":12}}",
+        Some(12),
+        false,
+    ),
+    (
+        "{\"model_info\":{\"llama.context_length\":8192,\"extra\":\"x\"}}",
+        Some(8192),
+        false,
+    ),
+];
+
+const FIELD_TEMPLATE_CASES: [(&str, Option<i64>, bool); 7] = [
+    (
+        "{\"template\":\"TOOLS\",\"model_info\":{\"llama.context_length\":4096}}",
+        Some(4096),
+        true,
+    ),
+    (
+        "{\"template\":\"tool\",\"model_info\":{\"llama.context_length\":5}}",
+        Some(5),
+        false,
+    ),
+    ("{\"template\":\"no tools here\"}", None, true),
+    ("{\"model_info\":{}}", None, false),
+    ("{}", None, false),
+    ("{\"template\":null}", None, false),
+    ("{\"template\":\"\"}", None, false),
+];
+
+fn field_cases() {
     let empty_settings = settings(None, None);
     let nothing = globals(None, None, None);
     let empty_catalog = catalog(&[]);
@@ -503,7 +554,9 @@ fn run_field_cases(cases: &[(&str, RuntimeModelInfo)]) {
         globals: &nothing,
         catalog: &empty_catalog,
     };
-    for (body, expected) in cases {
+    for (body, max_tokens, supports_tools) in
+        FIELD_LIMIT_CASES.into_iter().chain(FIELD_TEMPLATE_CASES)
+    {
         let transport = FixtureTransport::replying(200, body);
         let resolver = OllamaModelInfo {
             settings: fixture.settings,
@@ -514,75 +567,13 @@ fn run_field_cases(cases: &[(&str, RuntimeModelInfo)]) {
         let info = resolver
             .get_runtime_model_info("ollama/qwen", None, None)
             .unwrap();
-        assert_eq!(&info, expected, "{body}");
+        assert_eq!(
+            info,
+            successful_info("qwen", max_tokens, supports_tools),
+            "{body}"
+        );
     }
 }
-
-fn field_limit_cases() {
-    let cases = [
-        (
-            "{\"template\":\"{{ .Tools }}\",\"model_info\":{\"z.context_length\":8192,\"a.context_length\":4096}}",
-            successful_info("qwen", Some(8192), true),
-        ),
-        (
-            "{\"model_info\":{\"llama.context_length\":4096}}",
-            successful_info("qwen", Some(4096), false),
-        ),
-        (
-            "{\"model_info\":{\"llama.context_length\":null,\"other.context_length\":7}}",
-            successful_info("qwen", None, false),
-        ),
-        (
-            "{\"model_info\":{\"llama.embedding_length\":4096}}",
-            successful_info("qwen", None, false),
-        ),
-        (
-            "{\"model_info\":{\"weird_context_length_extra\":12}}",
-            successful_info("qwen", Some(12), false),
-        ),
-        (
-            "{\"model_info\":{\"llama.context_length\":8192,\"extra\":\"x\"}}",
-            successful_info("qwen", Some(8192), false),
-        ),
-    ];
-    run_field_cases(&cases);
-}
-
-fn field_template_cases() {
-    let cases = [
-        (
-            "{\"template\":\"TOOLS\",\"model_info\":{\"llama.context_length\":4096}}",
-            successful_info("qwen", Some(4096), true),
-        ),
-        (
-            "{\"template\":\"tool\",\"model_info\":{\"llama.context_length\":5}}",
-            successful_info("qwen", Some(5), false),
-        ),
-        (
-            "{\"template\":\"no tools here\"}",
-            successful_info("qwen", None, true),
-        ),
-        ("{\"model_info\":{}}", successful_info("qwen", None, false)),
-        ("{}", successful_info("qwen", None, false)),
-        ("{\"template\":null}", successful_info("qwen", None, false)),
-        ("{\"template\":\"\"}", successful_info("qwen", None, false)),
-    ];
-    run_field_cases(&cases);
-}
-
-const DECODE_FAILURES: [&str; 11] = [
-    "",
-    "{\"model_info\":",
-    "{\"template\":\"tools\",\"model_info\":{\"llama.context_length\":819",
-    "[]",
-    "\"text\"",
-    "null",
-    "{\"model_info\":null}",
-    "{\"model_info\":[]}",
-    "{\"template\":5}",
-    "{\"model_info\":{\"llama.context_length\":\"8192\"}}",
-    "{\"model_info\":{\"llama.context_length\":8192.5}}",
-];
 
 fn field_decode_failures() {
     let empty_settings = settings(None, None);
@@ -617,8 +608,7 @@ fn field_decode_failures() {
 }
 
 fn runtime_model_fields() {
-    field_limit_cases();
-    field_template_cases();
+    field_cases();
     field_decode_failures();
 }
 

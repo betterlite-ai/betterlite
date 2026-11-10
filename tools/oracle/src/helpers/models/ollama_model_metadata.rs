@@ -2,14 +2,17 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
-use betterlite_models::ollama_model_metadata::{LiteLlmGlobals, OllamaModelInfo, OllamaSettings};
+use betterlite_models::ollama_model_metadata::reply::OllamaMetadataError;
+use betterlite_models::ollama_model_metadata::{
+    LiteLlmGlobals, OllamaModelInfo, OllamaSettings, RuntimeModelInfo,
+};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::{HelperError, HelperResult};
 
-use transport::{FixtureOutcome, FixtureTransport, success_reply};
+use transport::{FixtureOutcome, FixtureTransport, reply_outcome};
 
 mod tests;
 mod transport;
@@ -151,28 +154,66 @@ fn load_fixture(fixture: &Fixture) -> Result<LoadedFixture, Box<HelperError>> {
     })
 }
 
+struct Observation {
+    url: String,
+    authorization: Option<String>,
+    name: String,
+    info: Result<RuntimeModelInfo, OllamaMetadataError>,
+}
+
+fn observe(
+    fixture: &LoadedFixture,
+    model: &str,
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+    outcome: FixtureOutcome,
+) -> Result<Observation, Box<HelperError>> {
+    let transport = FixtureTransport::new(outcome);
+    let resolver = OllamaModelInfo {
+        settings: &fixture.settings,
+        globals: &fixture.globals,
+        catalog: &fixture.catalog,
+        transport: &transport,
+    };
+    let info = resolver.get_runtime_model_info(model, api_base, api_key);
+    let recorded = transport.only_request()?;
+    Ok(Observation {
+        url: recorded.url,
+        authorization: recorded.authorization,
+        name: recorded.name,
+        info,
+    })
+}
+
+fn scenario_outcome(scenario: &QueryScenario) -> FixtureOutcome {
+    match scenario {
+        QueryScenario::Success { body } => reply_outcome(200, body),
+        QueryScenario::Failure => FixtureOutcome::Failure,
+        QueryScenario::Status { status, body } => reply_outcome(*status, body),
+    }
+}
+
 fn origin_auth(input: &OriginAuth) -> HelperResult {
     let mut groups = Vec::new();
     for group in &input.groups {
         let fixture = load_fixture(&group.fixture)?;
         let mut observations = Vec::new();
         for query in &group.queries {
-            let transport = success_reply();
-            let resolver = OllamaModelInfo {
-                settings: &fixture.settings,
-                globals: &fixture.globals,
-                catalog: &fixture.catalog,
-                transport: &transport,
-            };
             let api_key = query.api_key.clone().map(SecretString::from);
-            resolver
-                .get_runtime_model_info(&input.model, query.api_base.as_deref(), api_key.as_ref())
+            let observation = observe(
+                &fixture,
+                &input.model,
+                query.api_base.as_deref(),
+                api_key.as_ref(),
+                reply_outcome(200, "{}"),
+            )?;
+            observation
+                .info
                 .map_err(|error| helper_error("OllamaMetadataError", error.to_string()))?;
-            let recorded = transport.only_request()?;
             observations.push(json!({
-                "url": recorded.url,
-                "authorization": recorded.authorization,
-                "name": recorded.name,
+                "url": observation.url,
+                "authorization": observation.authorization,
+                "name": observation.name,
             }));
         }
         groups.push(json!(observations));
@@ -184,7 +225,7 @@ fn static_catalog(input: &StaticCatalog) -> HelperResult {
     let fixture = load_fixture(&input.fixture)?;
     let mut observations = Vec::new();
     for model in &input.models {
-        let transport = success_reply();
+        let transport = FixtureTransport::new(reply_outcome(200, "{}"));
         let resolver = OllamaModelInfo {
             settings: &fixture.settings,
             globals: &fixture.globals,
@@ -207,32 +248,20 @@ fn model_query(input: &ModelQuery) -> HelperResult {
     let api_key = input.api_key.clone().map(SecretString::from);
     let mut observations = Vec::new();
     for scenario in &input.scenarios {
-        let outcome = match scenario {
-            QueryScenario::Success { body } => FixtureOutcome::Reply {
-                status: 200,
-                body: body.as_bytes().to_vec(),
-            },
-            QueryScenario::Failure => FixtureOutcome::Failure,
-            QueryScenario::Status { status, body } => FixtureOutcome::Reply {
-                status: *status,
-                body: body.as_bytes().to_vec(),
-            },
-        };
-        let transport = FixtureTransport::new(outcome);
-        let resolver = OllamaModelInfo {
-            settings: &fixture.settings,
-            globals: &fixture.globals,
-            catalog: &fixture.catalog,
-            transport: &transport,
-        };
-        let info = resolver
-            .get_runtime_model_info(&input.model, input.api_base.as_deref(), api_key.as_ref())
+        let observation = observe(
+            &fixture,
+            &input.model,
+            input.api_base.as_deref(),
+            api_key.as_ref(),
+            scenario_outcome(scenario),
+        )?;
+        let info = observation
+            .info
             .map_err(|error| helper_error("OllamaMetadataError", error.to_string()))?;
-        let recorded = transport.only_request()?;
         observations.push(json!({
-            "url": recorded.url,
-            "authorization": recorded.authorization,
-            "name": recorded.name,
+            "url": observation.url,
+            "authorization": observation.authorization,
+            "name": observation.name,
             "info": info,
         }));
     }
@@ -243,21 +272,8 @@ fn model_fields(input: &ModelFields) -> HelperResult {
     let fixture = load_fixture(&input.fixture)?;
     let mut observations = Vec::new();
     for body in &input.bodies {
-        let transport = FixtureTransport::new(FixtureOutcome::Reply {
-            status: 200,
-            body: body.as_bytes().to_vec(),
-        });
-        let resolver = OllamaModelInfo {
-            settings: &fixture.settings,
-            globals: &fixture.globals,
-            catalog: &fixture.catalog,
-            transport: &transport,
-        };
-        let info = match resolver.get_runtime_model_info(&input.model, None, None) {
-            Ok(info) => Some(info),
-            Err(_) => None,
-        };
-        observations.push(json!({ "info": info }));
+        let observation = observe(&fixture, &input.model, None, None, reply_outcome(200, body))?;
+        observations.push(json!({ "info": observation.info.ok() }));
     }
     Ok(json!(observations))
 }
