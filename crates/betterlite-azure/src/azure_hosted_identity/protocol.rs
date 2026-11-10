@@ -50,7 +50,6 @@ where
             HostedProtocol::Vm
         };
     }
-    // a present but empty endpoint above never reaches the himds file check, matching the MSAL selector
     if select_arc_endpoint(arc).is_some() {
         HostedProtocol::Arc
     } else {
