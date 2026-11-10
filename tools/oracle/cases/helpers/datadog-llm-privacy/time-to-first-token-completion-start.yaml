@@ -1,0 +1,10 @@
+kind: helper
+name: datadog-llm-privacy-time-to-first-token-completion-start
+call:
+  b3936:
+    function: time_to_first_token
+    start: 1704067200.0
+    completion_start: 1704067200.5
+    end: 1704067202.0
+env: {}
+compare: {ignore: []}

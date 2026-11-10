@@ -1,0 +1,16 @@
+kind: helper
+name: websocket-stub-existing-get
+call:
+  b123:
+    op: inject_websocket_stubs
+    document:
+      paths:
+        /v1/realtime:
+          get: {operationId: real, summary: Real}
+    routes:
+      - path: /v1/realtime
+        name: realtime
+        query_params: []
+env: {}
+compare:
+  ignore: []
