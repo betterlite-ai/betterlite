@@ -24,6 +24,14 @@ call:
           - {type: web_search_tool_result, tool_use_id: s4, content: {type: web_search_tool_result_error}}
           - {type: web_search_tool_result, tool_use_id: 5, content: []}
           - {type: web_search_tool_result, tool_use_id: s5, content: text}
+          - {type: {web_search_tool_result: null}, tool_use_id: s6, content: []}
+          - {type: web_search_tool_result, tool_use_id: s7, content: [[web_search_result]]}
+          - {type: web_search_tool_result, tool_use_id: s8, content: [{type: {web_search_result: null}}]}
+          - {type: web_search_tool_result, tool_use_id: s9, content: {type: {web_search_tool_result_error: null}}}
+          - [web_search_tool_result, s10, []]
+          - {type: web_search_tool_result, tool_use_id: s11, content: [{type: web_search_tool_result_error}]}
+          - {type: web_search_tool_result, tool_use_id: s12, content: {type: web_search_result}}
+          - {type: server_tool_use, tool_use_id: s13, content: []}
           - {type: web_search_tool_result, content: []}
           - {type: web_search_result, url: "https://c.example"}
           - {type: text, text: unchanged}

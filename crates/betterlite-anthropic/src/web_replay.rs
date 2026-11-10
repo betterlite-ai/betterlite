@@ -3,42 +3,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WebSearchResultKind {
-    WebSearchResult,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WebSearchToolResultErrorKind {
-    WebSearchToolResultError,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WebSearchToolResultKind {
-    WebSearchToolResult,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ServerToolUseKind {
-    ServerToolUse,
-}
+use serde::Serialize;
+use serde::de::{DeserializeOwned, IgnoredAny};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ReplayedSearchQuery {
     #[serde(default)]
     pub query: String,
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ReplayedWebSearchResult {
     #[serde(rename = "type")]
-    pub kind: WebSearchResultKind,
+    pub kind: String,
     #[serde(default)]
     pub url: String,
     #[serde(default)]
@@ -47,14 +26,18 @@ pub struct ReplayedWebSearchResult {
     pub snippet: String,
     #[serde(default)]
     pub encrypted_content: String,
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct WebSearchToolResultError {
     #[serde(rename = "type")]
-    pub kind: WebSearchToolResultErrorKind,
+    pub kind: String,
     #[serde(default)]
     pub error_code: String,
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,21 +50,57 @@ pub enum WebSearchContent {
 #[derive(Debug, Deserialize)]
 pub struct ReplayedWebSearchToolResult {
     #[serde(rename = "type")]
-    pub kind: WebSearchToolResultKind,
+    pub kind: String,
     pub tool_use_id: String,
     pub content: WebSearchContent,
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ReplayedServerToolUse {
     #[serde(rename = "type")]
-    pub kind: ServerToolUseKind,
+    pub kind: String,
     pub id: String,
     #[serde(default)]
     pub input: ReplayedSearchQuery,
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextKind {
+    Text,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TextBlock {
+    #[serde(rename = "type")]
+    pub kind: TextKind,
+    pub text: String,
+}
+
+impl From<TextBlock> for Json {
+    fn from(block: TextBlock) -> Self {
+        let TextKind::Text = block.kind;
+        Self::Object(IndexMap::from([
+            ("type".to_owned(), Self::Text("text".to_owned())),
+            ("text".to_owned(), Self::Text(block.text)),
+        ]))
+    }
 }
 
 impl WebSearchContent {
+    fn has_expected_types(&self) -> bool {
+        match self {
+            Self::Results(results) => results
+                .iter()
+                .all(|result| result.kind == "web_search_result"),
+            Self::Error(error) => error.kind == "web_search_tool_result_error",
+        }
+    }
+
     fn has_encrypted_result(&self) -> bool {
         match self {
             Self::Results(results) => results
@@ -137,7 +156,7 @@ fn flattenable_tool_use_ids(content: &[Json]) -> BTreeSet<String> {
 fn replayed_queries(content: &[Json]) -> BTreeMap<String, String> {
     let mut queries = BTreeMap::new();
     for block in content {
-        if let Some(parsed) = parse_block::<ReplayedServerToolUse>(block) {
+        if let Some(parsed) = replayed_server_tool_use(block) {
             queries.insert(parsed.id, parsed.input.query);
         }
     }
@@ -152,9 +171,12 @@ fn rewrite_replayed_block(
     if let Some(parsed) = flattenable_search_result(block) {
         let query = queries.get(&parsed.tool_use_id).map_or("", String::as_str);
         let text = render_web_search_results(query, &parsed.content);
-        return Some(text_block(text));
+        return Some(Json::from(TextBlock {
+            kind: TextKind::Text,
+            text,
+        }));
     }
-    let replayed = parse_block::<ReplayedServerToolUse>(block);
+    let replayed = replayed_server_tool_use(block);
     if replayed.is_some_and(|parsed| flattenable.contains(&parsed.id)) {
         return None;
     }
@@ -163,17 +185,31 @@ fn rewrite_replayed_block(
 
 fn flattenable_search_result(block: &Json) -> Option<ReplayedWebSearchToolResult> {
     let parsed: ReplayedWebSearchToolResult = parse_block(block)?;
+    if parsed.kind != "web_search_tool_result" || !parsed.content.has_expected_types() {
+        return None;
+    }
     if parsed.content.has_encrypted_result() {
         return None;
     }
     Some(parsed)
 }
 
-// pydantic validates these replayed models against Python dicts; the derives validate the same JSON block
+fn replayed_server_tool_use(block: &Json) -> Option<ReplayedServerToolUse> {
+    let parsed: ReplayedServerToolUse = parse_block(block)?;
+    if parsed.kind != "server_tool_use" {
+        return None;
+    }
+    Some(parsed)
+}
+
+// serde decodes a struct from a JSON array too, so a mapping guard checks the object shape first
 fn parse_block<Block>(block: &Json) -> Option<Block>
 where
     Block: DeserializeOwned,
 {
+    let Json::Object(_) = block else {
+        return None;
+    };
     let source = serde_json::to_string(block).ok()?;
     let parsed = serde_json::from_str(&source).ok()?;
     Some(parsed)
@@ -227,13 +263,6 @@ fn render_result(result: &ReplayedWebSearchResult) -> String {
         lines.push(format!("Snippet: {}", result.snippet));
     }
     lines.join("\n")
-}
-
-fn text_block(text: String) -> Json {
-    Json::Object(IndexMap::from([
-        ("type".to_owned(), Json::Text("text".to_owned())),
-        ("text".to_owned(), Json::Text(text)),
-    ]))
 }
 
 mod tests;

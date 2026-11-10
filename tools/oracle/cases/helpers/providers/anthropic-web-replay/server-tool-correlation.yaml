@@ -17,6 +17,10 @@ call:
           - {type: server_tool_use, input: {query: no-id}}
           - {type: server_tool_use, id: badinput, input: {query: 7}}
           - {type: server_tool_use, id: nullinput, input: null}
+          - {type: {server_tool_use: null}, id: dup, input: {query: map-type}}
+          - {type: server_tool_use, id: dup, input: []}
+          - [server_tool_use, dup, {query: array}]
+          - {type: web_search_tool_result, id: dup, input: {}}
       - role: assistant
         content:
           - {type: server_tool_use, id: later, input: {query: "later query"}}
