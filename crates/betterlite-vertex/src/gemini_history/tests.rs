@@ -278,6 +278,24 @@ fn keeps_file_format_before_mime_type_and_content_type() {
 }
 
 #[test]
+fn forwards_video_metadata_and_detail_from_a_file_block() {
+    assert_parts(
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"gs://bucket/clip.mp4","detail":"high","video_metadata":{"fps":2,"start_offset":"1s"}}}]}]"#,
+        Some("gemini-2.5-flash"),
+        r#"[{"role":"user","parts":[{"file_data":{"mime_type":"video/mp4","file_uri":"gs://bucket/clip.mp4"},"video_metadata":{"fps":2,"startOffset":"1s"}},{"text":" "}]}]"#,
+    );
+}
+
+#[test]
+fn takes_the_detail_of_an_image_url_object_for_newer_models() {
+    assert_parts(
+        r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"gs://bucket/pic.png","detail":"ultra_high","video_metadata":{"fps":2}}}]}]"#,
+        Some("gemini-3-pro-preview"),
+        r#"[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"gs://bucket/pic.png"},"media_resolution":{"level":"MEDIA_RESOLUTION_ULTRA_HIGH"}},{"text":" "}]}]"#,
+    );
+}
+
+#[test]
 fn converts_an_image_url_given_as_a_plain_string() {
     assert_parts(
         r#"[{"role":"user","content":[{"type":"image_url","image_url":"data:image/png;base64,YWJj"}]}]"#,
