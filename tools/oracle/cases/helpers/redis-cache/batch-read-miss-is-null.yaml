@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-batch-read-miss-is-null
+call:
+  b5640:
+    function: batch_read
+    namespace: ns
+    keys: [alpha, missing]
+    replies: ['{"answer": 1}', null]
+env: {}
+compare: {ignore: []}
