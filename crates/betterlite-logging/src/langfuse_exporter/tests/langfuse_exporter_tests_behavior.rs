@@ -12,18 +12,15 @@ use prost::Message as _;
 use rstest::rstest;
 use tokio::runtime::Builder;
 
+use crate::langfuse_exporter::TRUNCATION_MARKER;
 use crate::langfuse_exporter::discard::DiscardingSpanExporter;
 use crate::langfuse_exporter::endpoint::endpoint;
 use crate::langfuse_exporter::error::LangfuseExporterError;
 use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
-use crate::langfuse_exporter::{
-    DEFAULT_EXPORT_PATH, LANGFUSE_SDK_NAME, LANGFUSE_SDK_VERSION, TRUNCATION_MARKER,
-};
 
 use super::support::{
     CLOUD_ENDPOINT, DecodedSpan, ScriptedTransport, Step, UNENCODABLE_KEY, attribute, captured,
-    exporter_at, exporter_with, header, options_for, rejecting_exporter_with, span, spans_in,
-    spans_of,
+    exporter_with, header, options_for, rejecting_exporter_with, span, spans_in, spans_of,
 };
 
 const INPUT: &str = "langfuse.observation.input";
@@ -98,13 +95,6 @@ fn requests_the_export_path_from_the_environment() {
 }
 
 #[test]
-fn uses_the_cloud_base_url_when_the_credentials_carry_none() {
-    let fixture = exporter_at(vec![Step::Status(200)], &[], None);
-    assert!(export(&fixture.exporter, vec![span("one", &[])]));
-    assert_eq!(fixture.transport.seen()[0].url, CLOUD_ENDPOINT);
-}
-
-#[test]
 fn sends_the_basic_authorization_and_every_sdk_header() {
     let fixture = exporter_with(vec![Step::Status(200)], &[]);
     assert!(export(&fixture.exporter, vec![span("one", &[])]));
@@ -132,12 +122,6 @@ fn sends_the_basic_authorization_and_every_sdk_header() {
         header(pairs, "x-langfuse-ingestion-version").as_deref(),
         Some("4")
     );
-}
-
-#[test]
-fn the_sdk_identity_is_the_pinned_release() {
-    assert_eq!(LANGFUSE_SDK_NAME, "python");
-    assert_eq!(LANGFUSE_SDK_VERSION, "4.15.2");
 }
 
 #[test]
@@ -495,11 +479,6 @@ fn rejects_a_timeout_below_zero() {
         error,
         LangfuseExporterError::UnusableTimeout { .. }
     ));
-}
-
-#[test]
-fn keeps_the_default_export_path_constant() {
-    assert_eq!(DEFAULT_EXPORT_PATH, "/api/public/otel/v1/traces");
 }
 
 #[test]

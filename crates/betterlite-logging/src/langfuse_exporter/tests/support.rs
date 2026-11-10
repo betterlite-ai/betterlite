@@ -28,7 +28,8 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::langfuse_exporter::encoder::{OtlpSpanEncoder, SpanEncoder};
 use crate::langfuse_exporter::error::LangfuseExporterError;
-use crate::langfuse_exporter::exporter::{ExporterOptions, LangfuseSpanExporter, exporter_options};
+use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
+use crate::langfuse_exporter::options::{ExporterOptions, exporter_options};
 use crate::langfuse_exporter::sleep::Sleep;
 use crate::langfuse_exporter::transport::{HttpRequest, HttpResponse, Transport};
 use crate::langfuse_settings::Credentials;
@@ -192,13 +193,7 @@ pub(super) struct Fixture {
 }
 
 pub(super) fn exporter_with(steps: Vec<Step>, environment: &[(&str, &str)]) -> Fixture {
-    build(
-        steps,
-        environment,
-        Arc::new(OtlpSpanEncoder),
-        &credentials(),
-        None,
-    )
+    exporter_at(steps, environment, None)
 }
 
 pub(super) fn rejecting_exporter_with(steps: Vec<Step>) -> Fixture {

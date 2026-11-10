@@ -9,54 +9,18 @@ use http::{HeaderMap, HeaderName};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::trace::{SpanData, SpanExporter};
-use secrecy::SecretString;
 use url::Url;
 
+use crate::langfuse_exporter::SERVER_FLOOR_HINT;
 use crate::langfuse_exporter::encoder::{OtlpSpanEncoder, SpanEncoder};
 use crate::langfuse_exporter::endpoint::{endpoint, request_headers};
 use crate::langfuse_exporter::error::LangfuseExporterError;
+use crate::langfuse_exporter::options::{ExporterOptions, exporter_options};
 use crate::langfuse_exporter::retry::{DeliveryOutcome, retry_delays};
 use crate::langfuse_exporter::sleep::{Sleep, TokioSleep};
 use crate::langfuse_exporter::transport::{HttpRequest, Transport};
 use crate::langfuse_exporter::truncation::truncated;
-use crate::langfuse_exporter::{EXPORT_PATH_VARIABLE, SERVER_FLOOR_HINT};
 use crate::langfuse_settings::Credentials;
-use crate::langfuse_settings::export::{max_retries, timeout_seconds};
-
-// Everything the exporter needs from the logger's settings and resolved credentials, all read once here
-#[derive(Debug)]
-pub struct ExporterOptions {
-    pub public_key: Option<String>,
-    pub secret_key: Option<SecretString>,
-    pub base_url: Option<String>,
-    pub export_path: Option<String>,
-    pub timeout: Duration,
-    pub retries: u32,
-}
-
-pub fn exporter_options(
-    settings: &Settings,
-    environment: &dyn EnvironmentLookup,
-    credentials: &Credentials,
-) -> Result<ExporterOptions, LangfuseExporterError> {
-    let seconds = timeout_seconds(settings)?;
-    let timeout = Duration::try_from_secs_f64(seconds).map_err(|source| {
-        LangfuseExporterError::UnusableTimeout {
-            raw: settings.timeout.clone().unwrap_or_default(),
-            source,
-        }
-    })?;
-    Ok(ExporterOptions {
-        public_key: credentials.public_key.clone(),
-        secret_key: credentials.secret_key.clone(),
-        base_url: Some(credentials.host.clone()),
-        export_path: environment
-            .lookup(EXPORT_PATH_VARIABLE)
-            .filter(|value| !value.is_empty()),
-        timeout,
-        retries: max_retries(settings),
-    })
-}
 
 pub struct LangfuseSpanExporter<T> {
     endpoint: Url,
@@ -243,31 +207,7 @@ where
             timeout: self.timeout,
         };
         match self.transport.send(request).await {
-            Ok(response)
-                if matches!(response.status, 408 | 429)
-                    || (500..=599).contains(&response.status) =>
-            {
-                tracing::warn!(
-                    status = response.status,
-                    "langfuse export was answered with a status worth retrying"
-                );
-                None
-            }
-            Ok(response) if response.status == 413 => Some(DeliveryOutcome::TooLarge),
-            Ok(response) if response.status >= 400 => {
-                // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
-                let hint = if response.status == 404 {
-                    SERVER_FLOOR_HINT
-                } else {
-                    ""
-                };
-                tracing::error!(
-                    status = response.status,
-                    "langfuse rejected the export{hint}"
-                );
-                Some(DeliveryOutcome::Rejected)
-            }
-            Ok(_response) => Some(DeliveryOutcome::Delivered),
+            Ok(response) => status_outcome(response.status),
             Err(error) => {
                 tracing::warn!(%error, "langfuse export failed in the transport");
                 None
@@ -297,6 +237,27 @@ where
         }
         self.encoder.encode(&kept, &self.resource)
     }
+}
+
+// None means the request is worth sending again; 413 asks for a smaller body and every other 4xx is final
+fn status_outcome(status: u16) -> Option<DeliveryOutcome> {
+    if matches!(status, 408 | 429) || (500..=599).contains(&status) {
+        tracing::warn!(
+            status,
+            "langfuse export was answered with a status worth retrying"
+        );
+        return None;
+    }
+    if status == 413 {
+        return Some(DeliveryOutcome::TooLarge);
+    }
+    if status >= 400 {
+        // LiteLLM points a 404 at the self-hosted server floor the OTLP route needs
+        let hint = if status == 404 { SERVER_FLOOR_HINT } else { "" };
+        tracing::error!(status, "langfuse rejected the export{hint}");
+        return Some(DeliveryOutcome::Rejected);
+    }
+    Some(DeliveryOutcome::Delivered)
 }
 
 fn smaller(batch: &[SpanData]) -> Vec<Vec<SpanData>> {

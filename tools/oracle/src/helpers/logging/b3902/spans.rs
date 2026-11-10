@@ -136,20 +136,21 @@ pub(crate) fn span_json(span: &SpanData) -> Value {
     let attributes: Vec<Value> = span
         .attributes
         .iter()
-        .map(|attribute| json!([attribute.key.as_str(), value_json(&attribute.value)]))
+        .map(|attribute| {
+            let value = match &attribute.value {
+                OtelValue::Bool(flag) => json!(flag),
+                OtelValue::I64(number) => json!(number),
+                OtelValue::F64(number) => {
+                    Number::from_f64(*number).map_or(Value::Null, Value::Number)
+                }
+                OtelValue::String(text) => json!(text.as_str()),
+                OtelValue::Array(array) => array_json(array),
+                _ => Value::Null,
+            };
+            json!([attribute.key.as_str(), value])
+        })
         .collect();
     json!({"name": span.name.as_ref(), "attributes": attributes})
-}
-
-fn value_json(value: &OtelValue) -> Value {
-    match value {
-        OtelValue::Bool(flag) => json!(flag),
-        OtelValue::I64(number) => json!(number),
-        OtelValue::F64(number) => Number::from_f64(*number).map_or(Value::Null, Value::Number),
-        OtelValue::String(text) => json!(text.as_str()),
-        OtelValue::Array(array) => array_json(array),
-        _ => Value::Null,
-    }
 }
 
 fn array_json(array: &Array) -> Value {

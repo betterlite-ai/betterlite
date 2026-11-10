@@ -4,6 +4,7 @@ pub mod endpoint;
 pub mod error;
 pub mod exporter;
 pub mod http_transport;
+pub mod options;
 pub mod retry;
 pub mod sleep;
 pub mod transport;
