@@ -30,9 +30,13 @@ fn configured(source: &str) -> super::Settings {
 #[case::defaults_are_unset("defaults_are_unset")]
 #[case::explicit_values("explicit_values")]
 #[case::environment_fallbacks("environment_fallbacks")]
-#[case::explicit_host_suppresses_redis_url("explicit_host_suppresses_redis_url")]
 #[case::explicit_url_wins_over_the_environment("explicit_url_wins_over_the_environment")]
 #[case::socket_timeout_precedence("socket_timeout_precedence")]
+#[case::null_socket_timeout_uses_the_shared_client_default(
+    "null_socket_timeout_uses_the_shared_client_default"
+)]
+#[case::cache_kwargs_outrank_redis_kwargs("cache_kwargs_outrank_redis_kwargs")]
+#[case::redis_environment_overlay("redis_environment_overlay")]
 #[case::os_environ_references("os_environ_references")]
 #[case::missing_environment_names_the_variable("missing_environment_names_the_variable")]
 #[case::invalid_port_types("invalid_port_types")]
@@ -50,10 +54,11 @@ fn routing_state_store_config(#[case] name: &str) {
             assert!(settings.namespace.is_none());
             assert!(same(settings.socket_timeout, 5.0_f64));
             assert_eq!(settings.pool_timeout_seconds, 5);
+            assert!(settings.redis_environment.is_empty());
         }
         "explicit_values" => {
             let settings = configured(
-                "router_settings:\n  redis_url: redis://cache.internal:6380/2\n  redis_host: cache.internal\n  redis_port: 6380\n  redis_password: hunter2\n  redis_kwargs:\n    namespace: router\n    socket_timeout: 1.5\n",
+                "router_settings:\n  redis_url: redis://cache.internal:6380/2\n  redis_host: cache.internal\n  redis_port: 6380\n  redis_password: hunter2\n  cache_kwargs:\n    namespace: router\n    socket_timeout: 1.5\n",
             );
             assert_eq!(
                 settings.redis_url.unwrap().expose_secret(),
@@ -78,24 +83,12 @@ fn routing_state_store_config(#[case] name: &str) {
                 ],
             )
             .unwrap();
-            assert_eq!(
-                settings.redis_url.unwrap().expose_secret(),
-                "redis://fallback:6379"
-            );
-            assert_eq!(settings.redis_host.as_deref(), Some("fallback"));
-            assert_eq!(settings.redis_port, Some(6390));
-            assert_eq!(settings.redis_password.unwrap().expose_secret(), "from-env");
-            assert!(same(settings.socket_timeout, 0.1_f64));
-            assert_eq!(settings.pool_timeout_seconds, 9);
-        }
-        "explicit_host_suppresses_redis_url" => {
-            let settings = load(
-                "router_settings:\n  redis_host: explicit\n",
-                &[("REDIS_URL", "redis://fallback:6379")],
-            )
-            .unwrap();
             assert!(settings.redis_url.is_none());
-            assert_eq!(settings.redis_host.as_deref(), Some("explicit"));
+            assert!(settings.redis_host.is_none());
+            assert!(settings.redis_port.is_none());
+            assert!(settings.redis_password.is_none());
+            assert!(same(settings.socket_timeout, 5.0_f64));
+            assert_eq!(settings.pool_timeout_seconds, 9);
         }
         "explicit_url_wins_over_the_environment" => {
             let settings = load(
@@ -109,26 +102,75 @@ fn routing_state_store_config(#[case] name: &str) {
             );
         }
         "socket_timeout_precedence" => {
+            let timeout = |source: &str| load(source, &[("REDIS_SOCKET_TIMEOUT", "0.7")]).unwrap();
             assert!(same(
-                load(
-                    "router_settings:\n  redis_kwargs:\n    socket_timeout: 2.5\n",
-                    &[("REDIS_SOCKET_TIMEOUT", "0.1")]
-                )
-                .unwrap()
-                .socket_timeout,
+                timeout("router_settings:\n  cache_kwargs:\n    socket_timeout: 2.5\n")
+                    .socket_timeout,
                 2.5_f64
             ));
             assert!(same(
-                load("", &[("REDIS_SOCKET_TIMEOUT", "0.1")])
+                timeout("router_settings:\n  redis_kwargs:\n    socket_timeout: 3\n")
+                    .socket_timeout,
+                3.0_f64
+            ));
+            assert!(same(timeout("").socket_timeout, 5.0_f64));
+            assert!(same(configured("").socket_timeout, 5.0_f64));
+        }
+        "null_socket_timeout_uses_the_shared_client_default" => {
+            let source = "router_settings:\n  cache_kwargs:\n    socket_timeout: null\n";
+            assert!(same(
+                load(source, &[("REDIS_SOCKET_TIMEOUT", "0.7")])
+                    .unwrap()
+                    .socket_timeout,
+                0.7_f64
+            ));
+            assert!(same(configured(source).socket_timeout, 0.1_f64));
+            assert!(same(
+                load(source, &[("REDIS_SOCKET_TIMEOUT", "")])
                     .unwrap()
                     .socket_timeout,
                 0.1_f64
             ));
-            assert!(same(configured("").socket_timeout, 5.0_f64));
+        }
+        "cache_kwargs_outrank_redis_kwargs" => {
+            let settings = configured(
+                "router_settings:\n  cache_kwargs:\n    namespace: cache\n    socket_timeout: 1\n  redis_kwargs:\n    namespace: redis\n    socket_timeout: 2\n",
+            );
+            assert_eq!(settings.namespace.as_deref(), Some("cache"));
+            assert!(same(settings.socket_timeout, 1.0_f64));
+            let only_redis =
+                configured("router_settings:\n  redis_kwargs:\n    namespace: redis\n");
+            assert_eq!(only_redis.namespace.as_deref(), Some("redis"));
+        }
+        "redis_environment_overlay" => {
+            let settings = load(
+                "",
+                &[
+                    ("REDIS_USERNAME", "router"),
+                    ("REDIS_SSL", "true"),
+                    ("REDIS_DB", "3"),
+                    ("REDIS_ENCODING", ""),
+                    ("REDIS_NOT_A_KWARG", "x"),
+                ],
+            )
+            .unwrap();
+            let overlay: BTreeMap<_, _> = settings
+                .redis_environment
+                .iter()
+                .map(|(variable, value)| (variable.as_str(), value.expose_secret()))
+                .collect();
+            assert_eq!(
+                overlay,
+                BTreeMap::from([
+                    ("REDIS_DB", "3"),
+                    ("REDIS_SSL", "true"),
+                    ("REDIS_USERNAME", "router")
+                ])
+            );
         }
         "os_environ_references" => {
             let settings = load(
-                "router_settings:\n  redis_url: os.environ/CACHE_URL\n  redis_password: os.environ/CACHE_PASSWORD\n  redis_kwargs:\n    namespace: os.environ/CACHE_NAMESPACE\n",
+                "router_settings:\n  redis_url: os.environ/CACHE_URL\n  redis_password: os.environ/CACHE_PASSWORD\n  cache_kwargs:\n    namespace: os.environ/CACHE_NAMESPACE\n",
                 &[
                     ("CACHE_URL", "redis://secret-host:6379"),
                     ("CACHE_PASSWORD", "secret"),
@@ -167,18 +209,20 @@ fn routing_state_store_config(#[case] name: &str) {
         }
         "unknown_nested_key_is_reported" => {
             let error = load(
-                "router_settings:\n  redis_kwargs:\n    startup_nodes: []\n",
+                "router_settings:\n  redis_kwargs:\n    startup_nodes: []\n  cache_kwargs:\n    startup_nodes: []\n",
                 &[],
             )
             .unwrap_err();
-            assert!(matches!(
-                error,
-                ConfigError::Unsupported { paths }
-                    if paths.iter().any(|path| path == "router_settings.redis_kwargs.startup_nodes")
-            ));
+            let ConfigError::Unsupported { paths } = error else {
+                panic!("expected an unsupported-key error");
+            };
+            for key in ["redis_kwargs", "cache_kwargs"] {
+                let path = format!("router_settings.{key}.startup_nodes");
+                assert!(paths.contains(&path), "{path} missing from {paths:?}");
+            }
         }
         "empty_namespace_is_kept" => {
-            let settings = configured("router_settings:\n  redis_kwargs:\n    namespace: ''\n");
+            let settings = configured("router_settings:\n  cache_kwargs:\n    namespace: ''\n");
             assert_eq!(settings.namespace.as_deref(), Some(""));
         }
         "empty_environment_values_are_unset" => {

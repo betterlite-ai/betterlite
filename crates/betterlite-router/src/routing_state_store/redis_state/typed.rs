@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use betterlite_redis::cache_primitives::protocol::AsyncRedisCommands as _;
 use redis::cmd;
@@ -6,8 +8,6 @@ use super::super::error::StateStoreError;
 use super::RedisState;
 use super::codec::{decode, encode, incremented, reply_bytes};
 use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
-
-const UPDATE_ATTEMPTS: usize = 8;
 
 pub(crate) async fn read_one(
     state: &RedisState,
@@ -45,10 +45,11 @@ pub(crate) async fn increment_until_written(
     ttl: i64,
     key: &RouteKey,
 ) -> Result<RouteValue, StateStoreError> {
-    for _attempt in 0..UPDATE_ATTEMPTS {
+    let started = Instant::now();
+    loop {
         let current = read_one(state, namespaced).await?;
         let remaining = read_ttl(state, namespaced).await?;
-        let next = incremented(namespaced, &current, by)?;
+        let next = incremented(key, &current, by)?;
         if encode(&next)?.is_none() {
             return Ok(next);
         }
@@ -58,10 +59,12 @@ pub(crate) async fn increment_until_written(
         if outcome.swapped {
             return Ok(next);
         }
+        if started.elapsed() >= state.update_window {
+            return Err(StateStoreError::Conflict {
+                key: key.as_ref().to_owned(),
+            });
+        }
     }
-    Err(StateStoreError::Conflict {
-        key: key.as_ref().to_owned(),
-    })
 }
 
 pub(crate) async fn read_batch(

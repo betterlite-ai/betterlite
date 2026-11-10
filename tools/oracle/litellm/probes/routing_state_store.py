@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Annotated, Final, Literal, Protocol, Self, cast
 from unittest.mock import patch
 
+from litellm._redis import get_redis_async_client
 from litellm.caching.redis_cache import (
     RedisCache,
     RedisCircuitBreaker,
@@ -22,6 +23,7 @@ WORKERS: Final = 2
 
 
 class Settings(Strict):
+    url: str | None = None
     namespace: str | None
     password: str | None
     failure_threshold: int
@@ -156,7 +158,7 @@ async def noop_hook(**_kwargs: object) -> None:
 
 def build_cache(store: FakeStore, settings: Settings) -> Cache:
     cache = object.__new__(RedisCache)
-    client = FakeClient(store)
+    client = FakeClient(store) if settings.url is None else get_redis_async_client(url=settings.url)
     breaker = RedisCircuitBreaker(
         failure_threshold=settings.failure_threshold,
         recovery_timeout=settings.recovery_timeout_millis // 1000,

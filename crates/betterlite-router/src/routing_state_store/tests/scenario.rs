@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -25,16 +26,28 @@ pub struct ScenarioInput {
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScenarioSettings {
+    #[serde(default)]
+    pub url: Option<String>,
     pub namespace: Option<String>,
     pub password: Option<String>,
     pub failure_threshold: u32,
     pub recovery_timeout_millis: u64,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepKind {
+    Increment,
+    Claim,
+    Fail,
+    Recover,
+    Leak,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScenarioStep {
-    pub kind: String,
+    pub kind: StepKind,
     pub now_millis: u64,
     #[serde(default)]
     pub worker: usize,
@@ -57,7 +70,7 @@ pub struct ScenarioOutput {
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScenarioStepOutput {
-    pub kind: String,
+    pub kind: StepKind,
     pub value: Option<ScenarioValue>,
     pub error: Option<String>,
 }
@@ -98,19 +111,23 @@ pub async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput, Strin
 }
 
 fn settings(input: &ScenarioInput, server: &FakeRedis) -> Settings {
+    let url = input.settings.url.clone().map(SecretString::from);
+    let named = url.is_none();
     Settings {
         redis: RedisSettings {
-            url: None,
-            host: Some("127.0.0.1".to_owned()),
-            port: Some(i64::from(server.port())),
+            host: named.then(|| "127.0.0.1".to_owned()),
+            port: named.then(|| i64::from(server.port())),
+            url,
             password: input
                 .settings
                 .password
                 .as_ref()
+                .filter(|_| named)
                 .map(|password| SecretString::from(password.clone())),
             namespace: input.settings.namespace.clone(),
-            socket_timeout: Some(2.0_f64),
+            socket_timeout: 2.0_f64,
             pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
         },
         breaker: BreakerSettings {
             enabled: true,
@@ -128,19 +145,18 @@ async fn apply(
     server: &FakeRedis,
     input: &ScenarioInput,
 ) -> Result<ScenarioStepOutput, String> {
-    match step.kind.as_str() {
-        "increment" => increment(step, stores).await,
-        "claim" => claim(step, stores).await,
-        "fail" => {
+    match step.kind {
+        StepKind::Increment => increment(step, stores).await,
+        StepKind::Claim => claim(step, stores).await,
+        StepKind::Fail => {
             server.set_down(true);
             Ok(output(step, None, None))
         }
-        "recover" => {
+        StepKind::Recover => {
             server.set_down(false);
             Ok(output(step, None, None))
         }
-        "leak" => leak(step, stores, input).await,
-        other => Err(format!("unknown step {other}")),
+        StepKind::Leak => leak(step, stores, input).await,
     }
 }
 
@@ -201,13 +217,13 @@ fn leaked(
     }
 }
 
-fn output(
+const fn output(
     step: &ScenarioStep,
     value: Option<ScenarioValue>,
     error: Option<String>,
 ) -> ScenarioStepOutput {
     ScenarioStepOutput {
-        kind: step.kind.clone(),
+        kind: step.kind,
         value,
         error,
     }

@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rust_decimal::Decimal;
 use tokio::time::timeout;
 
+use super::super::RoutingStateStore;
 use super::super::error::{StateStoreError, StoreWarning};
-use super::support::{TestClock, breaker, route_key, same_f64, seed, store};
+use super::support::{TestClock, breaker, route_key, same_f64, seed, settings, store};
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{
     MAX_VALUE_BYTES, PinValue, RouteIncrement, RouteKey, RouteValue, StoreError, StoreRead,
@@ -93,6 +94,8 @@ async fn expiry_cases(name: &str) -> bool {
 async fn pipeline_cases(name: &str) -> bool {
     if name == "float_pipeline_invalid_ttl_is_an_error" { float_pipeline_invalid_ttl_is_an_error().await; return true; }
     if name == "float_pipeline_zero_ttl_is_sent" { float_pipeline_zero_ttl_is_sent().await; return true; }
+    if name == "increment_succeeds_under_contention" { increment_succeeds_under_contention().await; return true; }
+    if name == "increment_conflicts_after_the_update_window" { increment_conflicts_after_the_update_window().await; return true; }
     if name == "cancelled_compare_and_set_leaves_the_connection_usable" { cancelled_compare_and_set_leaves_the_connection_usable().await; return true; }
     false
 }
@@ -384,4 +387,43 @@ async fn cancelled_compare_and_set_leaves_the_connection_usable() {
         store.get(&key).await.unwrap().value,
         StoreRead::Value(value)
     );
+}
+
+async fn increment_succeeds_under_contention() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let store = store(&server, None, breaker(5, 60_000), &clock);
+    let key = route_key("counter");
+    store
+        .increment(&key, &RouteIncrement::Counter(2), None)
+        .await
+        .unwrap();
+    server.rival_writes_before_exec(25);
+    let observed = store
+        .increment(&key, &RouteIncrement::Counter(3), None)
+        .await
+        .unwrap();
+    assert_eq!(observed.value, RouteValue::Counter(5));
+    let stored: RouteValue = serde_json::from_slice(&server.raw("counter").unwrap().0).unwrap();
+    assert_eq!(stored, RouteValue::Counter(5));
+}
+
+async fn increment_conflicts_after_the_update_window() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let mut section = settings(&server, None, breaker(5, 60_000));
+    section.redis.socket_timeout = 0.3_f64;
+    let store = RoutingStateStore::new(&section, clock.breaker_clock()).unwrap();
+    server.rival_writes_before_exec(u64::MAX);
+    let started = Instant::now();
+    let error = store
+        .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, StateStoreError::Conflict { .. }),
+        "{error:?}"
+    );
+    assert!(started.elapsed() >= Duration::from_millis(300));
+    assert!(server.raw("counter").is_none());
 }

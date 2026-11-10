@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::cache_primitives::namespace::check_and_fix_namespace;
@@ -41,6 +42,7 @@ pub(crate) struct RedisState {
     pub(crate) counters: RedisCounters,
     pub(crate) namespace: Option<String>,
     pub(crate) default_ttl: i64,
+    pub(crate) update_window: Duration,
     pub(crate) policy: Mutex<RedisFailurePolicy>,
     pub(crate) clock: BreakerClock,
     pub(crate) cas: CasConnection,
@@ -64,6 +66,7 @@ pub(crate) fn open(
         counters,
         namespace: settings.namespace.clone(),
         default_ttl: DEFAULT_TTL,
+        update_window: Duration::try_from_secs_f64(settings.socket_timeout).unwrap_or_default(),
         policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
         clock,
         cas: CasConnection {
@@ -119,7 +122,7 @@ fn connection_settings(
         password: settings.password.clone().map(Some),
         url: settings.url.clone().map(Some),
         ssl: None,
-        socket_timeout: settings.socket_timeout.map(FloatOrText::Value),
+        socket_timeout: Some(FloatOrText::Value(settings.socket_timeout)),
         socket_connect_timeout: None,
         socket_keepalive: None,
         max_connections: None,
@@ -143,12 +146,19 @@ fn connection_settings(
         aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
     };
-    let environment: BTreeMap<String, String> = BTreeMap::new();
     Ok(resolve_redis_kwargs(
         overrides,
         ClientKind::Async,
-        &environment,
+        &exposed_environment(settings),
     )?)
+}
+
+fn exposed_environment(settings: &RedisSettings) -> BTreeMap<String, String> {
+    settings
+        .environment
+        .iter()
+        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+        .collect()
 }
 
 pub(crate) async fn run_observed<T, F, Fut>(

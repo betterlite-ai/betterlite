@@ -3,7 +3,7 @@ use std::io;
 use std::mem::take;
 use std::net::SocketAddr;
 use std::str::FromStr as _;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use rust_decimal::Decimal;
@@ -29,6 +29,9 @@ struct Inner {
 struct State {
     inner: Mutex<Inner>,
     down: AtomicBool,
+    reject_auth: AtomicBool,
+    rival_writes: AtomicU64,
+    handshakes: Mutex<Vec<Vec<String>>>,
 }
 
 struct Command {
@@ -70,6 +73,25 @@ impl FakeRedis {
 
     pub fn set_down(&self, down: bool) {
         self.state.down.store(down, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reject_auth(&self, reject: bool) {
+        self.state.reject_auth.store(reject, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rival_writes_before_exec(&self, times: u64) {
+        self.state.rival_writes.store(times, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn handshakes(&self) -> Vec<Vec<String>> {
+        self.state
+            .handshakes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     #[cfg(test)]
@@ -172,7 +194,8 @@ fn dispatch(state: &State, connection: &mut ConnectionState, command: Command) -
     }
     match name.as_str() {
         "PING" => simple("PONG"),
-        "CLIENT" | "SELECT" | "AUTH" => simple("OK"),
+        "CLIENT" => simple("OK"),
+        "SELECT" | "AUTH" => handshake(state, &command),
         "WATCH" => watch(state, connection, &command),
         "UNWATCH" => {
             connection.watched.clear();
@@ -197,6 +220,18 @@ fn dispatch(state: &State, connection: &mut ConnectionState, command: Command) -
     }
 }
 
+fn handshake(state: &State, command: &Command) -> Vec<u8> {
+    state
+        .handshakes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(command.args.clone());
+    if state.reject_auth.load(Ordering::SeqCst) && arg(command, 0).eq_ignore_ascii_case("AUTH") {
+        return error("WRONGPASS invalid username-password pair or user is disabled.");
+    }
+    simple("OK")
+}
+
 fn watch(state: &State, connection: &mut ConnectionState, command: &Command) -> Vec<u8> {
     let inner = lock(state);
     for key in command.args.iter().skip(1) {
@@ -212,6 +247,17 @@ fn execute(state: &State, connection: &mut ConnectionState) -> Vec<u8> {
         return error("ERR EXEC without MULTI");
     }
     let mut inner = lock(state);
+    if state
+        .rival_writes
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+            left.checked_sub(1)
+        })
+        .is_ok()
+    {
+        for (key, _version) in &connection.watched {
+            touch(&mut inner, key);
+        }
+    }
     let changed = connection
         .watched
         .iter()

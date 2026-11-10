@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -52,8 +53,9 @@ pub(crate) fn settings(
             port: Some(i64::from(server.port())),
             password: None,
             namespace: namespace.map(str::to_owned),
-            socket_timeout: Some(1.0_f64),
+            socket_timeout: 1.0_f64,
             pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
         },
         breaker: breaker_settings,
     }

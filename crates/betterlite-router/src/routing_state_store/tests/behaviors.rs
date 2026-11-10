@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 
 use betterlite_config::sections::routing_state_store::Settings as ConfigSettings;
 
@@ -66,6 +67,14 @@ async fn failure_cases(name: &str) -> bool {
     }
     if name == "credentials_stay_out_of_errors" {
         credentials_stay_out_of_errors().await;
+        return true;
+    }
+    if name == "url_credentials_stay_out_of_errors" {
+        url_credentials_stay_out_of_errors().await;
+        return true;
+    }
+    if name == "redis_environment_reaches_the_connection" {
+        redis_environment_reaches_the_connection().await;
         return true;
     }
     false
@@ -410,27 +419,84 @@ async fn breaker_recovers_after_the_timeout() {
     ));
 }
 
+fn config_section(
+    url: Option<&str>,
+    host: Option<&str>,
+    port: Option<i64>,
+    environment: BTreeMap<String, SecretString>,
+) -> ConfigSettings {
+    ConfigSettings {
+        redis_url: url.map(secret),
+        redis_host: host.map(str::to_owned),
+        redis_port: port,
+        redis_password: Some(secret("pw")),
+        namespace: None,
+        socket_timeout: 5.0_f64,
+        pool_timeout_seconds: 5,
+        redis_environment: environment,
+    }
+}
+
 fn config_mapping_defaults() {
-    let section = ConfigSettings {
-        redis_url: None,
-        redis_host: Some("cache".to_owned()),
-        redis_port: Some(6380),
-        redis_password: None,
-        namespace: Some("router".to_owned()),
-        socket_timeout: 1.5_f64,
-        pool_timeout_seconds: 9,
-    };
-    let mapped = RedisSettings::try_from(&section).unwrap();
+    let mut named = config_section(None, Some("cache"), Some(6380), BTreeMap::new());
+    named.namespace = Some("router".to_owned());
+    named.socket_timeout = 1.5_f64;
+    named.pool_timeout_seconds = 9;
+    let mapped = RedisSettings::try_from(&named).unwrap();
     assert_eq!(mapped.host.as_deref(), Some("cache"));
     assert_eq!(mapped.port, Some(6380));
     assert_eq!(mapped.namespace.as_deref(), Some("router"));
-    assert!(same_f64(mapped.socket_timeout.unwrap(), 1.5_f64));
+    assert!(same_f64(mapped.socket_timeout, 1.5_f64));
     assert_eq!(mapped.pool_timeout_seconds, 9);
-    let empty = ConfigSettings::default();
-    assert!(matches!(
-        RedisSettings::try_from(&empty),
-        Err(StateStoreError::NotConfigured)
-    ));
+    let with_url = config_section(Some("redis://cache:6379"), None, None, BTreeMap::new());
+    RedisSettings::try_from(&with_url).unwrap();
+    let overlay = BTreeMap::from([
+        ("REDIS_URL".to_owned(), secret("redis://cache:6379")),
+        ("REDIS_HOST".to_owned(), secret("cache")),
+        ("REDIS_PORT".to_owned(), secret("6379")),
+    ]);
+    let not_configured = [
+        config_section(None, None, None, BTreeMap::new()),
+        config_section(None, Some("cache"), None, BTreeMap::new()),
+        config_section(None, None, Some(6380), BTreeMap::new()),
+        config_section(None, None, None, overlay),
+    ];
+    for section in &not_configured {
+        assert!(matches!(
+            RedisSettings::try_from(section),
+            Err(StateStoreError::NotConfigured)
+        ));
+    }
+}
+
+async fn redis_environment_reaches_the_connection() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let mut redis = settings(&server, None, breaker(5, 60_000)).redis;
+    redis.environment = BTreeMap::from([
+        ("REDIS_USERNAME".to_owned(), secret("env-user")),
+        ("REDIS_PASSWORD".to_owned(), secret("env-password")),
+        ("REDIS_DB".to_owned(), secret("3")),
+    ]);
+    let settings = Settings {
+        redis,
+        breaker: breaker(5, 60_000),
+    };
+    let store = RoutingStateStore::new(&settings, clock.breaker_clock()).unwrap();
+    store.get(&route_key("counter")).await.unwrap();
+    let handshakes = server.handshakes();
+    assert!(
+        handshakes.contains(&vec![
+            "AUTH".to_owned(),
+            "env-user".to_owned(),
+            "env-password".to_owned()
+        ]),
+        "{handshakes:?}"
+    );
+    assert!(
+        handshakes.contains(&vec!["SELECT".to_owned(), "3".to_owned()]),
+        "{handshakes:?}"
+    );
 }
 
 async fn credentials_stay_out_of_errors() {
@@ -453,4 +519,37 @@ async fn credentials_stay_out_of_errors() {
     assert!(!rendered.contains(password));
     let debugged = format!("{settings:?}");
     assert!(!debugged.contains(password));
+}
+
+async fn url_credentials_stay_out_of_errors() {
+    let password = "super-secret-redis-password";
+    let rejecting = FakeRedis::start().await;
+    rejecting.reject_auth(true);
+    let unreachable = FakeRedis::start().await;
+    let unreachable_port = unreachable.port();
+    drop(unreachable);
+    for port in [rejecting.port(), unreachable_port] {
+        let clock = TestClock::new();
+        let mut redis = settings(&rejecting, None, breaker(5, 60_000)).redis;
+        redis.host = None;
+        redis.port = None;
+        redis.url = Some(secret(&format!("redis://:{password}@127.0.0.1:{port}")));
+        let settings = Settings {
+            redis,
+            breaker: breaker(5, 60_000),
+        };
+        let store = RoutingStateStore::new(&settings, clock.breaker_clock()).unwrap();
+        let error = store
+            .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
+            .await
+            .unwrap_err();
+        let rendered = format!("{error} {error:?}");
+        assert!(!rendered.contains(password), "{rendered}");
+        assert!(!format!("{settings:?}").contains(password));
+    }
+    assert!(rejecting.handshakes().iter().any(|command| {
+        command
+            .first()
+            .is_some_and(|name| name.eq_ignore_ascii_case("AUTH"))
+    }));
 }

@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use redis::FromRedisValue as _;
-use rust_decimal::Decimal;
 
 use super::super::error::StateStoreError;
 use crate::routing_value_store::codec::parse_route_value;
 use crate::routing_value_store::{
-    MAX_VALUE_BYTES, RouteIncrement, RouteValue, StoreError, StoreRead,
+    MAX_VALUE_BYTES, RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
+    StoreRead, StoreSettings,
 };
 
 pub(crate) fn encode(value: &RouteValue) -> Result<Option<Vec<u8>>, StateStoreError> {
@@ -13,51 +15,23 @@ pub(crate) fn encode(value: &RouteValue) -> Result<Option<Vec<u8>>, StateStoreEr
     Ok((bytes.len() <= MAX_VALUE_BYTES).then_some(bytes))
 }
 
-// B390's checked arithmetic stays private, so the redis transport repeats its outcomes without its match shape
+// B390 keeps its checked arithmetic private, so a scratch store runs the same increment on the value read from redis
 pub(crate) fn incremented(
-    key: &str,
+    key: &RouteKey,
     stored: &StoreRead,
     by: &RouteIncrement,
 ) -> Result<RouteValue, StateStoreError> {
-    match (stored, by) {
-        (StoreRead::Missing, RouteIncrement::Counter(value)) => Ok(RouteValue::Counter(*value)),
-        (StoreRead::Missing, RouteIncrement::Spend(value)) => Ok(RouteValue::Spend(*value)),
-        (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Counter(value)) => {
-            counter_sum(key, *current, *value)
-        }
-        (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Spend(value)) => {
-            spend_sum(key, Decimal::from(*current), *value)
-        }
-        (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Counter(value)) => {
-            spend_sum(key, *current, Decimal::from(*value))
-        }
-        (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Spend(value)) => {
-            spend_sum(key, *current, *value)
-        }
-        (StoreRead::Value(_), RouteIncrement::Counter(_) | RouteIncrement::Spend(_)) => {
-            Err(StateStoreError::Store(StoreError::NotIncrementable {
-                key: key.to_owned(),
-            }))
-        }
+    let settings = StoreSettings {
+        max_size_in_memory: None,
+        default_ttl_seconds: None,
+        max_size_per_item: None,
+        loaded_max_size_per_item_kib: 1024,
+    };
+    let scratch = RoutingValueStore::new(settings, Arc::new(|| 0.0_f64))?;
+    if let StoreRead::Value(current) = stored {
+        scratch.set(key, current, None)?;
     }
-}
-
-fn counter_sum(key: &str, current: i64, amount: i64) -> Result<RouteValue, StateStoreError> {
-    current
-        .checked_add(amount)
-        .map(RouteValue::Counter)
-        .ok_or(StateStoreError::Store(StoreError::CounterOverflow {
-            key: key.to_owned(),
-        }))
-}
-
-fn spend_sum(key: &str, current: Decimal, amount: Decimal) -> Result<RouteValue, StateStoreError> {
-    current
-        .checked_add(amount)
-        .map(RouteValue::Spend)
-        .ok_or(StateStoreError::Store(StoreError::SpendOverflow {
-            key: key.to_owned(),
-        }))
+    Ok(scratch.increment(key, by, None)?)
 }
 
 pub(crate) fn decode(raw: Option<Vec<u8>>) -> Result<StoreRead, StateStoreError> {

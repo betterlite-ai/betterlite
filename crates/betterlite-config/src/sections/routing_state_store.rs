@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use secrecy::SecretString;
@@ -8,7 +9,10 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_secret, resolve_string};
 use crate::sections::Section;
 
+mod environment;
+
 const DEFAULT_SOCKET_TIMEOUT: f64 = 5.0;
+const SHARED_CLIENT_SOCKET_TIMEOUT: f64 = 0.1;
 const DEFAULT_POOL_TIMEOUT: u32 = 5;
 
 #[derive(Debug, Default, Deserialize)]
@@ -27,8 +31,10 @@ struct RawRouterSettings {
     port: Option<RawNumber>,
     #[serde(default, rename = "redis_password")]
     password: Option<SecretString>,
-    #[serde(default, rename = "redis_kwargs")]
-    kwargs: RawKwargs,
+    #[serde(default)]
+    cache_kwargs: RawKwargs,
+    #[serde(default)]
+    redis_kwargs: RawKwargs,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -36,7 +42,26 @@ struct RawKwargs {
     #[serde(default)]
     namespace: Option<String>,
     #[serde(default)]
-    socket_timeout: Option<RawNumber>,
+    socket_timeout: Presence<RawNumber>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum Presence<T> {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Null(()),
+    Value(T),
+}
+
+impl<T> Presence<T> {
+    fn or(self, other: Self) -> Self {
+        match self {
+            Self::Absent => other,
+            set @ (Self::Null(()) | Self::Value(_)) => set,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -48,14 +73,12 @@ pub struct Settings {
     pub namespace: Option<String>,
     pub socket_timeout: f64,
     pub pool_timeout_seconds: u32,
+    pub redis_environment: BTreeMap<String, SecretString>,
 }
 
-struct Connection {
-    url: Option<SecretString>,
-    host: Option<String>,
-    port: Option<i64>,
-    password: Option<SecretString>,
-    kwargs: RawKwargs,
+struct Kwargs {
+    namespace: Option<String>,
+    socket_timeout: Presence<f64>,
 }
 
 impl Section for Raw {
@@ -65,72 +88,53 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let connection = connection(self.router_settings, lookup)?;
+        let router = self.router_settings;
+        let cache = kwargs(router.cache_kwargs, "cache_kwargs", lookup)?;
+        let redis = kwargs(router.redis_kwargs, "redis_kwargs", lookup)?;
+        let shared_timeout = number::<f64, _>(lookup, "REDIS_SOCKET_TIMEOUT")?
+            .unwrap_or(SHARED_CLIENT_SOCKET_TIMEOUT);
+        let socket_timeout = match cache.socket_timeout.or(redis.socket_timeout) {
+            Presence::Absent => DEFAULT_SOCKET_TIMEOUT,
+            Presence::Null(()) => shared_timeout,
+            Presence::Value(seconds) => seconds,
+        };
+        let port =
+            resolve_number::<i64, _>(router.port, "router_settings.redis_port", lookup, parse_i64)?;
         Ok(Settings {
-            redis_url: connection.url,
-            redis_host: connection.host,
-            redis_port: connection.port,
-            redis_password: connection.password,
-            namespace: optional_text(
-                connection.kwargs.namespace,
-                "router_settings.redis_kwargs.namespace",
+            redis_url: resolve_secret(router.url, "router_settings.redis_url", lookup)?,
+            redis_host: optional_text(router.host, "router_settings.redis_host", lookup)?,
+            redis_port: port,
+            redis_password: resolve_secret(
+                router.password,
+                "router_settings.redis_password",
                 lookup,
             )?,
-            socket_timeout: socket_timeout(connection.kwargs.socket_timeout, lookup)?,
+            namespace: cache.namespace.or(redis.namespace),
+            socket_timeout,
             pool_timeout_seconds: number::<u32, _>(lookup, "REDIS_CONNECTION_POOL_TIMEOUT")?
                 .unwrap_or(DEFAULT_POOL_TIMEOUT),
+            redis_environment: environment::collect(lookup),
         })
     }
 }
 
-fn connection<L>(raw: RawRouterSettings, lookup: &L) -> Result<Connection, ConfigError>
+fn kwargs<L>(raw: RawKwargs, section: &str, lookup: &L) -> Result<Kwargs, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let host = optional_text(raw.host, "router_settings.redis_host", lookup)?
-        .map_or_else(|| lookup.lookup("REDIS_HOST"), Some);
-    let explicit = resolve_secret(raw.url, "router_settings.redis_url", lookup)?;
-    let url = match (explicit, host.as_ref()) {
-        (Some(url), _) => Some(url),
-        (None, None) => lookup.lookup("REDIS_URL").map(SecretString::from),
-        (None, Some(_)) => None,
+    let path = |key: &str| format!("router_settings.{section}.{key}");
+    let socket_timeout = match raw.socket_timeout {
+        Presence::Absent => Presence::Absent,
+        Presence::Null(()) => Presence::Null(()),
+        Presence::Value(number) => {
+            resolve_number::<f64, _>(Some(number), &path("socket_timeout"), lookup, parse_float)?
+                .map_or(Presence::Null(()), Presence::Value)
+        }
     };
-    let port = match resolve_number::<i64, _>(
-        raw.port,
-        "router_settings.redis_port",
-        lookup,
-        parse_i64,
-    )? {
-        Some(port) => Some(port),
-        None => number::<i64, _>(lookup, "REDIS_PORT")?,
-    };
-    let password = resolve_secret(raw.password, "router_settings.redis_password", lookup)?
-        .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
-    Ok(Connection {
-        url,
-        host,
-        port,
-        password,
-        kwargs: raw.kwargs,
+    Ok(Kwargs {
+        namespace: optional_text(raw.namespace, &path("namespace"), lookup)?,
+        socket_timeout,
     })
-}
-
-fn socket_timeout<L>(raw: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(value) = raw else {
-        return Ok(
-            number::<f64, _>(lookup, "REDIS_SOCKET_TIMEOUT")?.unwrap_or(DEFAULT_SOCKET_TIMEOUT)
-        );
-    };
-    let seconds = resolve_number::<f64, _>(
-        Some(value),
-        "router_settings.redis_kwargs.socket_timeout",
-        lookup,
-        parse_float,
-    )?;
-    Ok(seconds.unwrap_or(DEFAULT_SOCKET_TIMEOUT))
 }
 
 fn optional_text<L>(

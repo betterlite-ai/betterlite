@@ -8,6 +8,7 @@ pub mod test_scenario;
 pub mod test_support;
 mod tests;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,15 +31,17 @@ pub struct RedisSettings {
     pub port: Option<i64>,
     pub password: Option<SecretString>,
     pub namespace: Option<String>,
-    pub socket_timeout: Option<f64>,
+    pub socket_timeout: f64,
     pub pool_timeout_seconds: u32,
+    pub environment: BTreeMap<String, SecretString>,
 }
 
 impl TryFrom<&config::Settings> for RedisSettings {
     type Error = StateStoreError;
 
     fn try_from(section: &config::Settings) -> Result<Self, StateStoreError> {
-        if section.redis_url.is_none() && section.redis_host.is_none() {
+        let named_host = section.redis_host.is_some() && section.redis_port.is_some();
+        if section.redis_url.is_none() && !named_host {
             return Err(StateStoreError::NotConfigured);
         }
         Ok(Self {
@@ -47,8 +50,9 @@ impl TryFrom<&config::Settings> for RedisSettings {
             port: section.redis_port,
             password: section.redis_password.clone(),
             namespace: section.namespace.clone(),
-            socket_timeout: Some(section.socket_timeout),
+            socket_timeout: section.socket_timeout,
             pool_timeout_seconds: section.pool_timeout_seconds,
+            environment: section.redis_environment.clone(),
         })
     }
 }

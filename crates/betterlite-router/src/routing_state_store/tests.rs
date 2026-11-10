@@ -29,6 +29,8 @@ fn runtime() -> Runtime {
 #[case::breaker_recovers_after_the_timeout("breaker_recovers_after_the_timeout")]
 #[case::config_mapping_defaults("config_mapping_defaults")]
 #[case::credentials_stay_out_of_errors("credentials_stay_out_of_errors")]
+#[case::url_credentials_stay_out_of_errors("url_credentials_stay_out_of_errors")]
+#[case::redis_environment_reaches_the_connection("redis_environment_reaches_the_connection")]
 fn routing_state_store_behaviors(#[case] name: &str) {
     runtime().block_on(behaviors::run(name));
 }
@@ -58,6 +60,8 @@ fn routing_state_store_behaviors(#[case] name: &str) {
 )]
 #[case::float_pipeline_invalid_ttl_is_an_error("float_pipeline_invalid_ttl_is_an_error")]
 #[case::float_pipeline_zero_ttl_is_sent("float_pipeline_zero_ttl_is_sent")]
+#[case::increment_succeeds_under_contention("increment_succeeds_under_contention")]
+#[case::increment_conflicts_after_the_update_window("increment_conflicts_after_the_update_window")]
 #[case::cancelled_compare_and_set_leaves_the_connection_usable(
     "cancelled_compare_and_set_leaves_the_connection_usable"
 )]
