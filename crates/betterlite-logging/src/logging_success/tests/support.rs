@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
@@ -24,7 +25,7 @@ use crate::registry::identity::CallbackIdentity;
 use crate::registry::phases::CallbackList;
 use crate::registry::sink::CallbackSink;
 
-use super::super::handler::SuccessHandler;
+use super::super::handler::{SuccessHandler, async_success_handler, success_handler};
 use super::super::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use super::super::types::{SuccessMode, SuccessRequest, SuccessResult};
 
@@ -351,6 +352,7 @@ pub(super) struct Fixture {
     pub excluded_fields: Vec<String>,
     pub known: Box<dyn Fn(&str) -> bool + Send + Sync>,
     pub stamp: ResponseStamp,
+    pub privacy: Settings,
 }
 
 impl Fixture {
@@ -368,6 +370,7 @@ impl Fixture {
             excluded_fields: Vec::new(),
             known: Box::new(|_name: &str| false),
             stamp: stamp(),
+            privacy: Settings::default(),
         }
     }
 
@@ -389,6 +392,7 @@ impl Fixture {
             excluded_fields: &self.excluded_fields,
             known_callback: self.known.as_ref(),
             stamp: &self.stamp,
+            privacy: self.privacy,
         }
     }
 }
@@ -473,4 +477,22 @@ pub(super) fn bare_request(result: SuccessResult) -> SuccessRequest {
 
 pub(super) fn correlation() -> CorrelationContext {
     CorrelationContext::default()
+}
+
+pub(super) async fn run_once(
+    path: &str,
+    handler: &SuccessHandler<'_>,
+    state: &mut LoggingState,
+    correlation: &mut CorrelationContext,
+    request: &SuccessRequest,
+) {
+    if path == "sync" {
+        success_handler(handler, state, correlation, request);
+    } else {
+        async_success_handler(handler, state, correlation, request).await;
+    }
+}
+
+pub(super) fn parse(text: &str) -> Json {
+    serde_json::from_str(text).unwrap()
 }

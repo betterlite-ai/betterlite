@@ -72,8 +72,11 @@ fn store_payload(state: &mut LoggingState, payload: Option<&StandardLoggingPaylo
     }
 }
 
-// LiteLLM also logs a plain dict or list result, which no call type has to recognize
+// LiteLLM builds nothing for a missing result, and also logs a plain dict or list no call type recognizes
 fn recognizes_service_call(state: &LoggingState, result: &SuccessResult) -> bool {
+    if matches!(result, SuccessResult::Other(Json::Null)) {
+        return false;
+    }
     is_recognized_call_type(result, &state.call_type)
         || matches!(
             result,

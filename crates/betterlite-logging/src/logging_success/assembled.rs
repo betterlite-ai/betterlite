@@ -7,14 +7,14 @@ pub const ASYNC_STREAM_RESPONSE_KEY: &str = "async_complete_streaming_response";
 pub const COMPLETE_STREAMING_RESPONSE: &str = "complete_streaming_response";
 pub const FINAL_STREAM_DISPATCH_MARKER: &str = "has_dispatched_final_stream_success";
 
-// A chunk passed while streaming is a per-chunk success; any other result on a stream is the final export
+// A chunk or a missing result is a per-chunk success; any other result on a stream is the final export
 #[must_use]
 pub fn is_assembled_stream_success(state: &LoggingState, result: &SuccessResult) -> bool {
     if state.stream != Some(true) {
         return false;
     }
     match result {
-        SuccessResult::Chunk(_) => {
+        SuccessResult::Chunk(_) | SuccessResult::Other(Json::Null) => {
             state
                 .model_call_details
                 .contains_key(ASYNC_STREAM_RESPONSE_KEY)

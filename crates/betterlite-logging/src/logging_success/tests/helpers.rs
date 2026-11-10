@@ -27,6 +27,10 @@ fn object_with(entries: &[(&str, Json)]) -> SuccessResult {
 #[case::assembled_async_key("assembled_async_key")]
 #[case::assembled_complete_null("assembled_complete_null")]
 #[case::assembled_complete_value("assembled_complete_value")]
+#[case::assembled_null_result("assembled_null_result")]
+#[case::assembled_null_result_async_key("assembled_null_result_async_key")]
+#[case::assembled_null_result_complete("assembled_null_result_complete")]
+#[case::prepare_null_result("prepare_null_result")]
 #[case::recognized_chat("recognized_chat")]
 #[case::recognized_embedding("recognized_embedding")]
 #[case::recognized_chunk("recognized_chunk")]
@@ -108,6 +112,51 @@ fn logging_success_behavior_tests_behavior(#[case] scenario: &str) {
         "interactions_other" => {
             assert!(!is_interactions_create("get_interaction"));
             assert!(!is_interactions_create("completion"));
+        }
+        "assembled_null_result" => {
+            let state = state(Some(true));
+            assert!(!is_assembled_stream_success(
+                &state,
+                &SuccessResult::Other(Json::Null)
+            ));
+        }
+        "assembled_null_result_async_key" => {
+            let mut state = state(Some(true));
+            state
+                .model_call_details
+                .insert(ASYNC_STREAM_RESPONSE_KEY.to_owned(), Json::Null);
+            assert!(is_assembled_stream_success(
+                &state,
+                &SuccessResult::Other(Json::Null)
+            ));
+        }
+        "assembled_null_result_complete" => {
+            let mut state = state(Some(true));
+            state.model_call_details.insert(
+                COMPLETE_STREAMING_RESPONSE.to_owned(),
+                Json::Text("done".to_owned()),
+            );
+            assert!(is_assembled_stream_success(
+                &state,
+                &SuccessResult::Other(Json::Null)
+            ));
+        }
+        "prepare_null_result" => {
+            let fixture = Fixture::new();
+            let mut state = state(Some(false));
+            state.call_type = "call_mcp_tool".to_owned();
+            let handler = fixture.handler();
+            prepare(
+                &handler,
+                &mut state,
+                &bare_request(SuccessResult::Other(Json::Null)),
+            );
+            assert_eq!(fixture.builder.builds(), 0);
+            assert!(standard_logging_object(&state).unwrap().is_none());
+            assert_eq!(
+                state.model_call_details.get("response_cost"),
+                Some(&Json::Null)
+            );
         }
         "prepare_defaults" => {
             let fixture = Fixture::new();

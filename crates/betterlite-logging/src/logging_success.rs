@@ -8,6 +8,7 @@ pub mod ports;
 pub mod prepare;
 pub mod recognized;
 pub mod redaction;
+pub mod request_redaction;
 pub mod types;
 
 mod tests;

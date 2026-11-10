@@ -3,25 +3,9 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::support::{CallLog, FakeLogger, Fixture, chat_result, correlation, request, state};
-use crate::logging_state::LoggingState;
-use crate::logging_state::correlation::CorrelationContext;
-use crate::logging_success::handler::{SuccessHandler, async_success_handler, success_handler};
-use crate::logging_success::types::SuccessRequest;
-
-async fn run_once(
-    path: &str,
-    handler: &SuccessHandler<'_>,
-    state: &mut LoggingState,
-    correlation: &mut CorrelationContext,
-    request: &SuccessRequest,
-) {
-    if path == "sync" {
-        success_handler(handler, state, correlation, request);
-    } else {
-        async_success_handler(handler, state, correlation, request).await;
-    }
-}
+use super::support::{
+    CallLog, FakeLogger, Fixture, chat_result, correlation, request, run_once, state,
+};
 
 #[rstest]
 #[case::sync_twice("sync", false, "", false, 1)]

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::exporter_options::failure_counter::CallbackFailureCounter;
 use betterlite_logging::exporter_options::redaction::ResponseStamp;
@@ -80,6 +81,7 @@ impl Scenario {
             excluded_fields: &self.excluded_fields,
             known_callback: self.known.as_ref(),
             stamp: &self.stamp,
+            privacy: Settings::default(),
         }
     }
 }

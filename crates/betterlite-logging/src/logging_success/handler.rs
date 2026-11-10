@@ -1,16 +1,24 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 
 use super::assembled::{
     ASYNC_STREAM_RESPONSE_KEY, COMPLETE_STREAMING_RESPONSE, is_assembled_stream_success,
 };
 use super::callback_failure::handle_callback_failure;
-use super::delivery::{callback_logger, deliver_async, deliver_sync, global_loggers, logger_event};
-use super::payload_state::{set_standard_logging_object, standard_logging_object};
+use super::delivery::{
+    callback_logger, deliver_async, deliver_sync, global_loggers, may_run_callback,
+};
+use super::payload_state::{
+    STANDARD_LOGGING_OBJECT, set_standard_logging_object, standard_logging_object,
+};
 use super::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use super::prepare::{Prepared, prepare};
 use super::redaction::redacted_payload;
+use super::request_redaction::{
+    redact_payload, redact_stored_payload, should_redact_message_logging,
+};
 use super::types::{PASS_THROUGH_CALL_TYPE, SuccessMode, SuccessRequest};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::event::LoggerEvent;
@@ -21,7 +29,6 @@ use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::LoggingState;
-use crate::logging_state::callbacks::{CallbackKind, should_run_callback};
 use crate::logging_state::correlation::{CorrelationContext, restore_correlation_context};
 use crate::logging_state::events::{
     LoggingEvent, has_run_logging, is_sync_litellm_request, should_run_logging,
@@ -37,12 +44,14 @@ pub struct SuccessHandler<'handler> {
     pub excluded_fields: &'handler [String],
     pub known_callback: &'handler (dyn Fn(&str) -> bool + Send + Sync),
     pub stamp: &'handler ResponseStamp,
+    pub privacy: Settings,
 }
 
 struct DeliveryPlan {
     prepared: Prepared,
     callbacks: Vec<DynamicCallback>,
     stream_event: bool,
+    redact: bool,
 }
 
 pub fn success_handler(
@@ -110,18 +119,23 @@ fn begin(
     };
     let callbacks =
         get_combined_callback_list(dynamic.as_deref(), &global_loggers(handler.registry));
+    let redact = should_redact_message_logging(state, handler.privacy);
+    if redact {
+        redact_stored_payload(state);
+    }
     has_run_logging(state, logging_event(mode));
     Some(DeliveryPlan {
         stream_event: state.stream == Some(true) && complete.is_none(),
         prepared,
         callbacks,
+        redact,
     })
 }
 
 fn run_sync_callbacks(handler: &SuccessHandler<'_>, state: &LoggingState, plan: &DeliveryPlan) {
     let is_sync_request = is_sync_litellm_request(&state.litellm_params);
     for logger in plan.callbacks.iter().filter_map(callback_logger) {
-        if !should_run_callback(state, CallbackKind::External, &state.litellm_params)
+        if !may_run_callback(state, logger.as_ref())
             || !is_sync_request
             || state.call_type == PASS_THROUGH_CALL_TYPE
         {
@@ -141,7 +155,7 @@ async fn run_async_callbacks(
     plan: &DeliveryPlan,
 ) {
     for logger in plan.callbacks.iter().filter_map(callback_logger) {
-        if !should_run_callback(logging, CallbackKind::External, &logging.litellm_params) {
+        if !may_run_callback(logging, logger.as_ref()) {
             continue;
         }
         let Some(event) = callback_event(handler, logging, plan, logger, SuccessMode::Async) else {
@@ -162,7 +176,7 @@ fn callback_event(
     logger: &Arc<dyn CallbackLogger>,
     mode: SuccessMode,
 ) -> Option<Arc<LoggerEvent>> {
-    let stored = event_payload(handler, state, &plan.prepared)?;
+    let stored = event_payload(handler, state, plan)?;
     let payload = match mode {
         SuccessMode::Sync => stored,
         SuccessMode::Async => match redacted_payload(
@@ -182,11 +196,12 @@ fn callback_event(
             }
         },
     };
-    Some(logger_event(
-        state,
-        payload,
-        plan.prepared.guardrail_snapshot.as_ref(),
-    ))
+    Some(Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(Json::Object(state.callback_dynamic_params.clone())),
+        stream: state.stream == Some(true),
+        guardrail_snapshot: plan.prepared.guardrail_snapshot.clone(),
+    }))
 }
 
 fn complete_stream(
@@ -195,36 +210,81 @@ fn complete_stream(
     prepared: &Prepared,
     mode: SuccessMode,
 ) -> Option<Json> {
-    let complete = handler
+    let assembled = handler
         .stream_assembler
-        .assemble(state, &prepared.result, mode)?;
+        .assemble(state, &prepared.result, mode);
+    let Some(complete) = assembled else {
+        return pass_through_response(handler, state, prepared, mode);
+    };
     state
         .model_call_details
         .insert(stream_key(mode).to_owned(), complete.clone());
+    store_built_payload(handler, state, prepared, &complete);
+    Some(complete)
+}
+
+// the async body logs a pass-through result as the complete response; its cost stays unset unless a handler set one
+fn pass_through_response(
+    handler: &SuccessHandler<'_>,
+    state: &mut LoggingState,
+    prepared: &Prepared,
+    mode: SuccessMode,
+) -> Option<Json> {
+    if mode != SuccessMode::Async || state.call_type != PASS_THROUGH_CALL_TYPE {
+        return None;
+    }
+    let response = prepared.result.response().clone();
+    state
+        .model_call_details
+        .insert(ASYNC_STREAM_RESPONSE_KEY.to_owned(), response.clone());
+    state
+        .model_call_details
+        .entry("response_cost".to_owned())
+        .or_insert(Json::Null);
+    if !state
+        .model_call_details
+        .contains_key(STANDARD_LOGGING_OBJECT)
+    {
+        store_built_payload(handler, state, prepared, &response);
+    }
+    Some(response)
+}
+
+fn store_built_payload(
+    handler: &SuccessHandler<'_>,
+    state: &mut LoggingState,
+    prepared: &Prepared,
+    response: &Json,
+) {
     let payload =
         handler
             .payload_builder
-            .build(state, &complete, prepared.start_time, prepared.end_time);
+            .build(state, response, prepared.start_time, prepared.end_time);
     if let Err(error) = set_standard_logging_object(state, payload.as_ref()) {
-        tracing::warn!(%error, "the assembled stream payload could not be stored");
+        tracing::warn!(%error, "the assembled response payload could not be stored");
     }
-    Some(complete)
 }
 
 // The event's payload is the standard logging object; a chunk without one asks B190 for a fresh build
 fn event_payload(
     handler: &SuccessHandler<'_>,
     state: &LoggingState,
-    prepared: &Prepared,
+    plan: &DeliveryPlan,
 ) -> Option<StandardLoggingPayload> {
     match standard_logging_object(state) {
         Ok(Some(payload)) => Some(payload),
-        Ok(None) => handler.payload_builder.build(
-            state,
-            prepared.result.response(),
-            prepared.start_time,
-            prepared.end_time,
-        ),
+        Ok(None) => {
+            let mut built = handler.payload_builder.build(
+                state,
+                plan.prepared.result.response(),
+                plan.prepared.start_time,
+                plan.prepared.end_time,
+            )?;
+            if plan.redact {
+                redact_payload(&mut built);
+            }
+            Some(built)
+        }
         Err(error) => {
             tracing::warn!(%error, "the standard logging payload could not be read");
             None
