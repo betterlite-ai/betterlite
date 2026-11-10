@@ -1,33 +1,5 @@
-use super::fixture::{
-    Fixture, HOST, NOW, PASSWORD, Reply, USERNAME, form_map, input_for, openid, token,
-};
-use super::scenarios::{second_token_body, token_body};
-
-pub(super) fn renewal_sends_the_password_again() {
-    let with_refresh = token_body().replace(
-        r#""expires_in":3600"#,
-        r#""expires_in":3600,"refresh_token":"rt-1""#,
-    );
-    let fixture = Fixture::new(vec![
-        openid(HOST),
-        token(&with_refresh),
-        token(&second_token_body()),
-    ]);
-    let provider = fixture
-        .provider(&input_for(USERNAME, PASSWORD, None))
-        .unwrap();
-    provider.token().unwrap();
-    fixture.clock.set(NOW + 3600);
-    provider.token().unwrap();
-    let posts = fixture.transport.posts();
-    assert_eq!(posts.len(), 2);
-    for post in posts {
-        let form = form_map(&post);
-        assert_eq!(form.get("grant_type").map(String::as_str), Some("password"));
-        assert_eq!(form.get("password").map(String::as_str), Some(PASSWORD));
-        assert!(!form.contains_key("refresh_token"));
-    }
-}
+use super::fixture::{Fixture, HOST, PASSWORD, Reply, USERNAME, input_for, openid, token};
+use super::scenarios::token_body;
 
 fn realm_outcome(realm: Reply) -> (Result<(), String>, usize) {
     let fixture = Fixture::new(vec![openid(HOST), realm, token(&token_body())]);

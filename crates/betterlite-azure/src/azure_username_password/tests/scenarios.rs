@@ -251,6 +251,7 @@ pub(super) fn token_response() {
     first_call();
     reuse_window();
     hard_expiry();
+    renewal_sends_the_password_again();
     info_fields();
     record_claims();
     incomplete_results();
@@ -323,6 +324,32 @@ fn hard_expiry() {
     assert_eq!(provider.token().unwrap().token.expose_secret(), "tok-2");
     assert_eq!(fixture.transport.posts().len(), 2);
     assert_eq!(fixture.transport.requests().len(), 5);
+}
+
+fn renewal_sends_the_password_again() {
+    let with_refresh = token_body().replace(
+        r#""expires_in":3600"#,
+        r#""expires_in":3600,"refresh_token":"rt-1""#,
+    );
+    let fixture = Fixture::new(vec![
+        openid(HOST),
+        token(&with_refresh),
+        token(&second_token_body()),
+    ]);
+    let provider = fixture
+        .provider(&input_for(USERNAME, PASSWORD, None))
+        .unwrap();
+    provider.token().unwrap();
+    fixture.clock.set(NOW + 3600);
+    provider.token().unwrap();
+    let posts = fixture.transport.posts();
+    assert_eq!(posts.len(), 2);
+    for post in posts {
+        let form = form_map(&post);
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("password"));
+        assert_eq!(form.get("password").map(String::as_str), Some(PASSWORD));
+        assert!(!form.contains_key("refresh_token"));
+    }
 }
 
 fn access_for(body: &str) -> AccessToken {
