@@ -2,13 +2,14 @@ use super::claims::decode_web_identity_claims;
 use super::error::WebIdentityError;
 use super::sts::{required_credentials, sts_client};
 use crate::aws_endpoints::sts::StsClientKwargs;
-use crate::aws_settings::error::AwsAuthError;
+use crate::aws_settings::error::{AWS_CONSOLE_URL, AwsAuthError};
 use crate::aws_settings::policy::web_identity_policy;
 use crate::aws_settings::sources::{Credentials, NativeSources};
 use aws_sdk_sts::Client;
 use aws_sdk_sts::error::SdkError;
 use aws_sdk_sts::operation::assume_role_with_web_identity::AssumeRoleWithWebIdentityError;
 use aws_sdk_sts::types::Credentials as ResponseCredentials;
+use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use std::time::Duration;
@@ -51,22 +52,33 @@ fn resolve_token(
     secrets: &SecretLookup,
     native: &NativeSources,
 ) -> Result<SecretString, WebIdentityError> {
-    if auth.token_reference.starts_with("os.environ/")
+    let (status, message) = if auth.token_reference.starts_with("os.environ/")
         || native.environment.contains_key(auth.token_reference)
     {
-        return Err(WebIdentityError::Auth(Box::new(AwsAuthError::from((
-            400_u16,
-            "Invalid web identity token reference.".to_owned(),
-        )))));
-    }
-    match secrets.get_secret(&native.environment, auth.token_reference, None)? {
-        Some(SecretValue::Text(token)) => Ok(token),
-        Some(SecretValue::Bool(_)) => Err(WebIdentityError::SecretType),
-        None => Err(WebIdentityError::Auth(Box::new(AwsAuthError::from((
-            401_u16,
-            "OIDC token could not be retrieved from secret manager.".to_owned(),
-        ))))),
-    }
+        (400, "Invalid web identity token reference.")
+    } else {
+        match secrets.get_secret(&native.environment, auth.token_reference, None)? {
+            Some(SecretValue::Text(token)) => return Ok(token),
+            Some(SecretValue::Bool(_)) => return Err(WebIdentityError::SecretType),
+            None => (
+                401,
+                "OIDC token could not be retrieved from secret manager.",
+            ),
+        }
+    };
+    let request = ErrorRequest {
+        method: "POST".to_owned(),
+        url: AWS_CONSOLE_URL.to_owned(),
+    };
+    Err(WebIdentityError::Auth(Box::new(AwsAuthError {
+        status,
+        message: message.to_owned(),
+        response: ErrorResponse {
+            status_code: status,
+            request: request.clone(),
+        },
+        request,
+    })))
 }
 #[expect(
     deprecated,
@@ -90,11 +102,11 @@ async fn send(
         .await
         .map_err(|error| rejected(error, token.expose_secret()))?;
     let credentials = required_credentials(response.credentials(), "web identity")?;
-    let Some(packed_policy_size) = response.packed_policy_size() else {
-        return Err(WebIdentityError::MissingField(
+    let packed_policy_size = response.packed_policy_size().ok_or_else(|| {
+        WebIdentityError::MissingField(
             "the STS web identity response has no PackedPolicySize".to_owned(),
-        ));
-    };
+        )
+    })?;
     Ok((credentials.clone(), packed_policy_size))
 }
 fn finish(
@@ -109,13 +121,9 @@ fn finish(
     }
     WebIdentityCredentials {
         credentials: Credentials {
-            access_key_id: SecretString::from(response_credentials.access_key_id().to_owned()),
-            secret_access_key: SecretString::from(
-                response_credentials.secret_access_key().to_owned(),
-            ),
-            session_token: Some(SecretString::from(
-                response_credentials.session_token().to_owned(),
-            )),
+            access_key_id: SecretString::from(response_credentials.access_key_id()),
+            secret_access_key: SecretString::from(response_credentials.secret_access_key()),
+            session_token: Some(SecretString::from(response_credentials.session_token())),
         },
         cache_ttl: Duration::from_mins(59),
     }
@@ -128,8 +136,20 @@ fn rejected(error: SdkError<AssumeRoleWithWebIdentityError>, token: &str) -> Web
         let detail = decode_web_identity_claims(token)
             .map_or_else(String::new, |claims| format!(" Token {claims}"));
         let message = format!("AWS STS rejected the web identity token: {error}.{detail}");
+        let request = ErrorRequest {
+            method: "POST".to_owned(),
+            url: AWS_CONSOLE_URL.to_owned(),
+        };
         return WebIdentityError::RejectedToken {
-            error: Box::new(AwsAuthError::from((401_u16, message))),
+            error: Box::new(AwsAuthError {
+                status: 401,
+                message,
+                response: ErrorResponse {
+                    status_code: 401,
+                    request: request.clone(),
+                },
+                request,
+            }),
             source: Box::new(error),
         };
     }

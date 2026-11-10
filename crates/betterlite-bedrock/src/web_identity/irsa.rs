@@ -88,8 +88,7 @@ async fn assume_irsa_role(
         .map_err(|source| WebIdentityError::WebIdentity {
             source: Box::new(source),
         })?;
-    let credentials = required_credentials(response.credentials(), "web identity")?;
-    Ok(credentials.clone())
+    required_credentials(response.credentials(), "web identity").cloned()
 }
 async fn read_token_file(
     token_file: &str,
@@ -141,8 +140,7 @@ async fn send_assume_role(
         .map_err(|source| WebIdentityError::AssumeRole {
             source: Box::new(source),
         })?;
-    let credentials = required_credentials(response.credentials(), "assume role")?;
-    sts_response(credentials)
+    sts_response(required_credentials(response.credentials(), "assume role")?)
 }
 fn tags_to_sdk(tags: &[AwsSessionTag]) -> Result<Vec<Tag>, WebIdentityError> {
     tags.iter()

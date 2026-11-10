@@ -49,11 +49,9 @@ pub(super) fn required_credentials<'creds>(
     required: Option<&'creds ResponseCredentials>,
     call: &'static str,
 ) -> Result<&'creds ResponseCredentials, WebIdentityError> {
-    let Some(credentials) = required else {
-        return Err(WebIdentityError::MissingField(format!(
-            "the STS {call} response has no Credentials"
-        )));
-    };
+    let credentials = required.ok_or_else(|| {
+        WebIdentityError::MissingField(format!("the STS {call} response has no Credentials"))
+    })?;
     for (member, value) in [
         ("AccessKeyId", credentials.access_key_id()),
         ("SecretAccessKey", credentials.secret_access_key()),
