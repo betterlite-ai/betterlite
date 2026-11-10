@@ -4,6 +4,7 @@ mod config_errors;
 mod corpus;
 mod declares;
 mod identity;
+mod numeric;
 mod spillover;
 mod terms;
 mod zeroed;

@@ -54,7 +54,7 @@ fn rate_text(text: &str) -> Option<Decimal> {
     parse_decimal_lexeme(&trimmed.replace('_', "")).ok()
 }
 
-fn float_literal(text: &str) -> bool {
+pub(super) fn float_literal(text: &str) -> bool {
     let body = text.strip_prefix(['+', '-']).unwrap_or(text);
     let (mantissa, exponent) = match body.split_once(['e', 'E']) {
         Some((mantissa, exponent)) => (mantissa, Some(exponent)),
