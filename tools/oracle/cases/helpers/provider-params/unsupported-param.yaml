@@ -1,0 +1,20 @@
+kind: helper
+name: provider-params-unsupported-param
+call:
+  provider_params:
+    steps:
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+          thinking: {type: enabled, budget_tokens: 2048}
+          metadata: {trace: x}
+          temperature: 0.5
+        policy: {}
+env: {}
+compare: {ignore: []}

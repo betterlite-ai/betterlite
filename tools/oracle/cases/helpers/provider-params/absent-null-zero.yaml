@@ -1,0 +1,55 @@
+kind: helper
+name: provider-params-absent-null-zero
+call:
+  provider_params:
+    steps:
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          temperature: 0
+          top_p: null
+          presence_penalty: 0
+          frequency_penalty: null
+          n: 0
+          stop: ""
+          logprobs: false
+          max_tokens: 0
+          seed: 0
+          user: ""
+          service_tier: ""
+          stream: false
+          vendor_flag: {mode: fast}
+          vendor_null: null
+        policy: {}
+      - function: reasoning_effort
+        budget_tokens: 1023
+      - function: reasoning_effort
+        budget_tokens: 1024
+      - function: reasoning_effort
+        budget_tokens: 2047
+      - function: reasoning_effort
+        budget_tokens: 2048
+      - function: reasoning_effort
+        budget_tokens: 4095
+      - function: reasoning_effort
+        budget_tokens: 4096
+      - function: resolved_service_tier
+        response_tier: null
+        usage_tier: flex
+        requested_tier: auto
+      - function: logging_projection
+        model_parameters:
+          messages: [{role: user, content: hi}]
+          prompt: p
+          metadata: {trace: x}
+          temperature: 0
+          tools: []
+          thinking: {type: enabled}
+          vendor_flag: 1
+env: {}
+compare: {ignore: []}
