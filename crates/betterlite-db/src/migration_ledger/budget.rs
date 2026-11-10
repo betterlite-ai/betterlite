@@ -41,7 +41,8 @@ impl MigrateAttemptBudget {
     #[must_use]
     pub const fn spend(&self) -> Self {
         Self {
-            attempts_left: self.attempts_left.saturating_sub(1),
+            // Python's int has no floor, so spending past zero keeps counting down; only i32::MIN wraps
+            attempts_left: self.attempts_left.wrapping_sub(1),
             contention_left: self.contention_left,
         }
     }

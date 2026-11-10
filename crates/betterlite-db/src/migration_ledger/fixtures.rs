@@ -156,7 +156,7 @@ pub(super) async fn insert_row(pool: &Pool, row: &LedgerRow<'_>) {
         .execute(
             "INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, \
              finished_at, rolled_back_at, applied_steps_count) VALUES ($1, $2, $3, $4, \
-             $5::timestamptz, CASE WHEN $6 THEN current_timestamp END, \
+             $5::text::timestamptz, CASE WHEN $6 THEN current_timestamp END, \
              CASE WHEN $7 THEN current_timestamp END, $8)",
             &[
                 &row.id,

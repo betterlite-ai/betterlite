@@ -2,7 +2,6 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use tokio_postgres::Error as PostgresError;
 
-use super::ledger_table;
 use super::lock::{JitterSource, LockError, MigrationCoordinator};
 use super::progress::{MigrationProgress, migration_records};
 use crate::migration_deploy::catalog::Migration;
@@ -38,11 +37,11 @@ pub async fn recover_completed_migration(
     if !progress.confirms_completion(&migration.sql) {
         return Ok(false);
     }
+    let table = format!("\"{}\".\"_prisma_migrations\"", schema.replace('"', "\"\""));
     let statement = format!(
-        "UPDATE {} SET finished_at = current_timestamp \
+        "UPDATE {table} SET finished_at = current_timestamp \
          WHERE id = $1 AND checksum = $2 AND applied_steps_count = 1 \
-         AND finished_at IS NULL AND rolled_back_at IS NULL AND coalesce(logs, '') = $3",
-        ledger_table(schema)
+         AND finished_at IS NULL AND rolled_back_at IS NULL AND coalesce(logs, '') = $3"
     );
     let affected = coordinator
         .client

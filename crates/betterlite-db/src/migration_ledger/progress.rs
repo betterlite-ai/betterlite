@@ -1,7 +1,6 @@
 use sha2::{Digest as _, Sha256};
 use tokio_postgres::Error as PostgresError;
 
-use super::ledger_table;
 use super::lock::MigrationCoordinator;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,11 +28,11 @@ pub(super) async fn migration_records(
     schema: &str,
     migration_name: &str,
 ) -> Result<Vec<MigrationProgress>, PostgresError> {
+    let table = format!("\"{}\".\"_prisma_migrations\"", schema.replace('"', "\"\""));
     let statement = format!(
         "SELECT id, checksum, applied_steps_count, coalesce(logs, '') AS logs, \
-         finished_at IS NOT NULL AS finished FROM {} \
-         WHERE migration_name = $1 AND rolled_back_at IS NULL",
-        ledger_table(schema)
+         finished_at IS NOT NULL AS finished FROM {table} \
+         WHERE migration_name = $1 AND rolled_back_at IS NULL"
     );
     let rows = coordinator
         .client

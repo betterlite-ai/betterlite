@@ -5,7 +5,6 @@ use thiserror::Error;
 use tokio_postgres::Error as PostgresError;
 use uuid::Uuid;
 
-use super::ledger_table;
 use super::lock::{JitterSource, LockError, MigrationCoordinator};
 use crate::migration_deploy::catalog::Migration;
 use crate::schema_agent_identity::MIGRATION_CATALOG as AGENT_IDENTITY;
@@ -87,7 +86,10 @@ pub async fn baseline_current_schema(
 ) -> Result<(), BaselineError> {
     require_packaged_history(inputs)?;
     coordinator.acquire_prisma_lock(jitter).await?;
-    let table = ledger_table(inputs.schema);
+    let table = format!(
+        "\"{}\".\"_prisma_migrations\"",
+        inputs.schema.replace('"', "\"\"")
+    );
     if ledger_exists(coordinator, &table).await? {
         return Ok(());
     }

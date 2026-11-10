@@ -4,7 +4,6 @@ use regex::Regex;
 use thiserror::Error;
 use tokio_postgres::Error as PostgresError;
 
-use super::ledger_table;
 use super::lock::{JitterSource, LockError, MigrationCoordinator};
 use super::progress::{MigrationProgress, migration_records};
 use crate::migration_deploy::catalog::Migration;
@@ -70,10 +69,10 @@ pub async fn rollback_inert_migration(
     let [progress] = unfinished.as_slice() else {
         return Ok(false);
     };
+    let table = format!("\"{}\".\"_prisma_migrations\"", schema.replace('"', "\"\""));
     let statement = format!(
-        "UPDATE {} SET rolled_back_at = current_timestamp \
-         WHERE id = $1 AND finished_at IS NULL AND rolled_back_at IS NULL",
-        ledger_table(schema)
+        "UPDATE {table} SET rolled_back_at = current_timestamp \
+         WHERE id = $1 AND finished_at IS NULL AND rolled_back_at IS NULL"
     );
     let affected = coordinator
         .client

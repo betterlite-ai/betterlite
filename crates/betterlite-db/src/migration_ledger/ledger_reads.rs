@@ -3,14 +3,13 @@ use tokio_postgres::{Row, types::ToSql};
 
 use super::connection::connect;
 use super::environment::{DEFAULT_SCHEMA, prisma_schema_param};
-use super::ledger_table;
 use crate::database_tls::translation::strip_prisma_query_params;
 
-// One probe answers both failed-history reads: the CASE keeps logs only on the unfinished row callers accept.
+// One probe answers both failed-history reads; the text cast makes the driver bind started_at as text.
 const FAILED_MIGRATION_SQL: &str = "SELECT CASE WHEN finished_at IS NULL AND rolled_back_at IS NULL \
      THEN logs END AS failed_logs, \
      (finished_at IS NOT NULL OR rolled_back_at IS NOT NULL) AS recovered \
-     FROM {} WHERE migration_name = $1 AND started_at = $2::timestamptz";
+     FROM {} WHERE migration_name = $1 AND started_at = $2::text::timestamptz";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailedMigration {
@@ -44,7 +43,11 @@ pub async fn look_up_failed_migration(
     let Ok(client) = connect(&SecretString::from(stripped)).await else {
         return FailedLookup::Unavailable;
     };
-    let table = ledger_table(schema.as_deref().unwrap_or(DEFAULT_SCHEMA));
+    let namespace = schema.as_deref().unwrap_or(DEFAULT_SCHEMA);
+    let table = format!(
+        "\"{}\".\"_prisma_migrations\"",
+        namespace.replace('"', "\"\"")
+    );
     match client
         .query_opt(&FAILED_MIGRATION_SQL.replace("{}", &table), &parameters)
         .await

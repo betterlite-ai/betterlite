@@ -26,14 +26,28 @@ fn attempt_and_contention_budgets() {
     );
     let exhausted = budget.spend().spend().spend().spend();
     assert_eq!(exhausted.attempts_left, 0_i32);
-    assert!(exhausted.attempts_left <= 0_i32);
-    assert_eq!(exhausted.spend().attempts_left, 0_i32);
     assert_eq!(exhausted.attempt_number(), 5_i64);
+}
+
+#[test]
+fn exhausted_attempts_keep_decrementing() {
+    let exhausted = MigrateAttemptBudget::default()
+        .spend()
+        .spend()
+        .spend()
+        .spend();
+    let overspent = exhausted.spend();
+    assert_eq!(overspent.attempts_left, -1_i32);
+    assert!(overspent.attempts_left <= 0_i32);
+    assert_eq!(overspent.attempt_number(), 6_i64);
+    let further = overspent.spend();
+    assert_eq!(further.attempts_left, -2_i32);
+    assert_eq!(further.attempt_number(), 7_i64);
     assert_eq!(
-        exhausted
+        further
             .after_contention(Duration::from_secs(1))
             .unwrap()
             .attempts_left,
-        0_i32
+        -2_i32
     );
 }
