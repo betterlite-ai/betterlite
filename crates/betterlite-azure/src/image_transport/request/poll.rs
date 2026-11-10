@@ -37,14 +37,13 @@ where
             .status
             .clone()
             .ok_or(ImageTransportError::MissingStatusInitial)?;
-        while !matches!(&status, JsonValue::String(value) if value.as_str() == "succeeded" || value.as_str() == "failed")
-        {
+        while !terminal(&status) {
             let elapsed = self.clock.now().saturating_sub(started);
             if elapsed > self.settings.timeout {
                 return Err(ImageTransportError::PollingTimeout);
             }
             let seconds = retry_after(&reply.headers)?;
-            self.wait(seconds, elapsed).await?;
+            let capped = self.wait(seconds, elapsed).await?;
             reply = send(
                 self.client,
                 Method::GET,
@@ -58,19 +57,34 @@ where
                 .status
                 .clone()
                 .ok_or(ImageTransportError::MissingStatus)?;
+            if capped && !terminal(&status) {
+                return Err(ImageTransportError::PollingTimeout);
+            }
         }
         Ok((reply, operation))
     }
 
-    async fn wait(&self, seconds: i64, elapsed: Duration) -> Result<(), ImageTransportError> {
+    async fn wait(&self, seconds: i64, elapsed: Duration) -> Result<bool, ImageTransportError> {
         let remaining = self.settings.timeout.saturating_sub(elapsed);
         let requested = Duration::from_secs(u64::try_from(seconds).unwrap_or(0));
         if requested > remaining {
             let capped = i64::try_from(remaining.as_secs()).unwrap_or(i64::MAX);
             self.clock.pause(capped).await;
-            return Err(ImageTransportError::PollingTimeout);
+            return Ok(true);
         }
-        sleep(self.clock, seconds, self.settings.style).await
+        sleep(self.clock, seconds, self.settings.style).await?;
+        Ok(false)
+    }
+}
+
+fn terminal(status: &JsonValue) -> bool {
+    match status {
+        JsonValue::String(value) => value.as_str() == "succeeded" || value.as_str() == "failed",
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => false,
     }
 }
 

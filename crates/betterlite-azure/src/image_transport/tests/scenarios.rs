@@ -241,23 +241,32 @@ fn timeout_strictly_greater() {
 }
 
 pub(super) fn retry_after_capped_at_deadline() {
-    for (style_sync, header) in [(false, "86400"), (true, "21")] {
+    for (sync, header, last, succeeds) in [
+        (false, "86400", RUNNING, false),
+        (true, "21", RUNNING, false),
+        (false, "86400", SUCCEEDED, true),
+        (true, "21", SUCCEEDED, true),
+    ] {
         let mut step = Step::preview(vec![
             submit_reply(),
             reply(200, vec![("retry-after", "100")], RUNNING),
             reply(200, vec![("retry-after", header)], RUNNING),
-            reply(200, vec![], SUCCEEDED),
+            reply(200, vec![], last),
         ]);
-        if style_sync {
+        if sync {
             step = step.sync();
         }
         let outcome = run(step);
-        let failure = failure_of(&outcome);
-        assert!(matches!(failure, ImageTransportError::PollingTimeout));
-        assert_eq!(failure.status_code(), Some(408));
+        if succeeds {
+            assert_eq!(success(&outcome).status, 200);
+        } else {
+            let failure = failure_of(&outcome);
+            assert!(matches!(failure, ImageTransportError::PollingTimeout));
+            assert_eq!(failure.status_code(), Some(408));
+        }
         assert_eq!(outcome.harness.sleeps(), vec![100, 20]);
         assert_eq!(outcome.harness.elapsed_seconds(), 120);
-        assert_eq!(outcome.harness.calls().len(), 3);
+        assert_eq!(outcome.harness.calls().len(), 4);
     }
 }
 
