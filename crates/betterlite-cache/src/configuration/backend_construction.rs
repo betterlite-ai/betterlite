@@ -112,12 +112,15 @@ async fn redis_backend(
     dependencies: &CacheDependencies,
 ) -> Result<Backend, BackendConstructionError> {
     // LiteLLM selects cluster mode from the constructor list first, then from the environment
+    let cluster_nodes = environment
+        .lookup(REDIS_CLUSTER_NODES)
+        .is_some_and(|nodes| !nodes.trim().is_empty());
     if settings
         .redis
         .startup_nodes
         .as_ref()
         .is_some_and(Scalar::is_truthy)
-        || environment.lookup(REDIS_CLUSTER_NODES).is_some()
+        || cluster_nodes
     {
         return Err(BackendConstructionError::Unsupported(
             CacheTypeNotSupportedError::RedisCluster {
@@ -155,6 +158,9 @@ struct RedisEnvironment<'config> {
 
 impl RedisEnvironmentLookup for RedisEnvironment<'_> {
     fn lookup(&self, name: &str) -> Option<String> {
-        self.config.lookup(name)
+        // an empty env var counts as unset, so a variable the process sets empty never reaches redis
+        self.config
+            .lookup(name)
+            .filter(|value| !value.trim().is_empty())
     }
 }

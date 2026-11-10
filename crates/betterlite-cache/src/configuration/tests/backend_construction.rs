@@ -260,6 +260,32 @@ async fn an_empty_startup_node_list_falls_through_to_the_url_from_the_environmen
 }
 
 #[tokio::test]
+async fn an_empty_cluster_nodes_variable_counts_as_unset() {
+    let server = FakeRedis::start().await;
+    let redis_environment = BTreeMap::from([
+        ("REDIS_CLUSTER_NODES".to_owned(), String::new()),
+        ("REDIS_HOST".to_owned(), server.host()),
+        ("REDIS_PORT".to_owned(), server.port().to_string()),
+    ]);
+    let mut callbacks = CacheCallbacks::default();
+    let cache = Cache::open(
+        settings(LiteLlmCacheType::Redis),
+        &mut callbacks,
+        &redis_environment,
+        &dependencies(),
+    )
+    .await
+    .expect("a single node cache");
+    let Backend::Redis(redis) = &cache.backend else {
+        panic!("expected a redis backend");
+    };
+    assert_eq!(
+        redis.transport.settings.host.as_deref(),
+        Some(server.host().as_str())
+    );
+}
+
+#[tokio::test]
 async fn the_redis_backend_uses_the_configured_flush_size() {
     let server = FakeRedis::start().await;
     let mut redis_config = redis_settings(&server);
@@ -368,6 +394,27 @@ async fn default_in_redis_ttl_applies_only_to_a_redis_cache() {
     .await
     .expect("a redis cache");
     assert_eq!(redis_with_memory_ttl_cache.ttl, Some(1.0_f64));
+}
+
+#[rstest]
+#[case::disk(LiteLlmCacheType::Disk)]
+#[case::s3(LiteLlmCacheType::S3)]
+#[case::qdrant_semantic(LiteLlmCacheType::QdrantSemantic)]
+#[case::azure_blob(LiteLlmCacheType::AzureBlob)]
+#[case::gcs(LiteLlmCacheType::Gcs)]
+#[tokio::test]
+async fn other_types_keep_the_configured_ttl(#[case] cache_type: LiteLlmCacheType) {
+    let (injected, _disconnects) = test_backend();
+    let mut other = settings(cache_type);
+    other.ttl = Some(1.0_f64);
+    other.default_in_memory_ttl = Some(5.0_f64);
+    other.default_in_redis_ttl = Some(7.0_f64);
+    other.backend = Some(injected);
+    let mut callbacks = CacheCallbacks::default();
+    let cache = Cache::open(other, &mut callbacks, &environment(), &dependencies())
+        .await
+        .expect("an injected cache");
+    assert_eq!(cache.ttl, Some(1.0_f64));
 }
 
 #[rstest]

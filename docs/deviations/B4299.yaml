@@ -41,16 +41,18 @@ deviations:
       The Azure Blob backend is built by B4351, and its account settings live with that task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L284-L288
   - what: >-
-      A redis cache with a truthy redis_startup_nodes, or with REDIS_CLUSTER_NODES present in the
+      A redis cache with a truthy redis_startup_nodes, or with a non-empty REDIS_CLUSTER_NODES in the
       environment, raises CacheTypeNotSupportedError("cache type 'redis' with cluster mode is owned by
       B5640") instead of constructing RedisClusterCache. The environment value is never parsed, so a
-      malformed value raises the same error rather than a JSON decode error, and an explicit empty
-      startup node list also raises when the variable is set. The startup node list never reaches the
-      single-node RedisCache.
+      malformed non-empty value raises the same error rather than a JSON decode error, and an explicit
+      empty startup node list still reads the environment. An empty environment value counts as unset,
+      as docs/compatibility.md says, so it selects the single-node cache. The startup node list never
+      reaches the single-node RedisCache.
     why: >-
       Redis cluster mode is B5640's connect path over B4325 and B5220, which B4299 does not wire. Parsing
       the value would only decide between an unsupported cluster and a single node, and the error names
-      the owner without risking a decode failure on a value the user cannot act on here.
+      the owner without risking a decode failure on a value the user cannot act on here. docs/compatibility.md
+      makes an empty env var unset, so only a value with content selects cluster mode.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L190-L219
   - what: >-
       A namespace is passed to RedisCache through RedisCacheOptions at construction instead of being
