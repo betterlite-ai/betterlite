@@ -1080,6 +1080,8 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
