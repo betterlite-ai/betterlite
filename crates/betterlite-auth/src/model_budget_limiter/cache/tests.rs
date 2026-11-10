@@ -49,6 +49,18 @@ async fn a_numeric_text_counter_reads_as_its_number() {
 }
 
 #[tokio::test]
+async fn a_non_finite_text_counter_reads_as_zero() {
+    let cache = FakeCache::new();
+    cache
+        .memory_values
+        .lock()
+        .unwrap()
+        .insert("counter".to_owned(), CachedSpend::Text("-inf".to_owned()));
+    let subject = limiter(cache);
+    assert_eq!(cached_spend(&subject, "counter").await, Decimal::ZERO);
+}
+
+#[tokio::test]
 async fn an_unreadable_counter_reads_as_zero() {
     let cache = FakeCache::new();
     cache
