@@ -1,0 +1,10 @@
+kind: helper
+name: azure-chat-base-policy-schema-seed
+call:
+  azure_chat_base_policy:
+    action: sanitized_tool_schema
+    optional:
+      tools:
+        - {type: function, function: {name: f, parameters: {type: object}}}
+env: {}
+compare: {ignore: []}

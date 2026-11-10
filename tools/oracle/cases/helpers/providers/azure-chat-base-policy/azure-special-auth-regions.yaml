@@ -1,0 +1,14 @@
+kind: helper
+name: azure-special-auth-regions
+call:
+  azure_chat_base_policy:
+    action: azure_special_auth_regions
+    steps:
+      - non_default: {token: abc, other: 1}
+        optional: {keep: true, azure_ad_token: old}
+      - non_default: {token: null}
+        optional: {}
+      - non_default: {other: 1}
+        optional: {azure_ad_token: old}
+env: {}
+compare: {ignore: []}

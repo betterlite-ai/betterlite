@@ -1,0 +1,22 @@
+kind: helper
+name: enforcement-team-overridden-by-key
+call:
+  b3006:
+    uptime_seconds: 0.0
+    memory:
+      "team_model_spend:team-1:gpt-4o:1d": 5.0
+    calls:
+      - kind: team
+        team_id: team-1
+        model: gpt-4o
+        budget:
+          gpt-4o:
+            max_budget: 5.0
+            budget_duration: 1d
+        key_budget:
+          gpt-4o:
+            max_budget: 10.0
+            budget_duration: 1d
+env: {}
+compare:
+  ignore: []
