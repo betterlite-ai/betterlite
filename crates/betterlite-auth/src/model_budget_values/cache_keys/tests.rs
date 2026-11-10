@@ -2,7 +2,7 @@
 use rstest::rstest;
 
 use super::{
-    BudgetScope, BudgetSlot, batch_charged_once_marker_key, model_budget_spend_cache_key,
+    BudgetScope, batch_charged_once_marker_key, model_budget_spend_cache_key,
     model_budget_start_time_cache_key,
 };
 
@@ -27,13 +27,10 @@ fn cache_keys_for_start_times_use_the_scope_prefix(
     #[case] scope: BudgetScope,
     #[case] expected: &str,
 ) {
-    let slot = BudgetSlot {
-        scope,
-        entity_id: "id-1",
-        budget_model: "gpt-4o",
-        budget_duration: "30d",
-    };
-    assert_eq!(model_budget_start_time_cache_key(&slot), expected);
+    assert_eq!(
+        model_budget_start_time_cache_key(scope, "id-1", "gpt-4o", "30d"),
+        expected
+    );
 }
 
 #[test]
@@ -45,20 +42,22 @@ fn spend_keys_keep_the_budget_model_verbatim() {
 }
 
 #[test]
-fn spend_keys_order_the_entity_before_the_model_before_the_duration() {
+fn cache_keys_order_the_entity_before_the_model_before_the_duration() {
     assert_eq!(
         model_budget_spend_cache_key(BudgetScope::Team, "entity", "model", "duration"),
         "team_model_spend:entity:model:duration"
     );
-    let slot = BudgetSlot {
-        scope: BudgetScope::Team,
-        entity_id: "entity",
-        budget_model: "model",
-        budget_duration: "duration",
-    };
     assert_eq!(
-        model_budget_start_time_cache_key(&slot),
+        model_budget_start_time_cache_key(BudgetScope::Team, "entity", "model", "duration"),
         "team_model_budget_start_time:entity:model:duration"
+    );
+}
+
+#[test]
+fn start_time_keys_keep_the_budget_model_verbatim() {
+    assert_eq!(
+        model_budget_start_time_cache_key(BudgetScope::User, "u", "openai/gpt-4o:x", "1h"),
+        "user_model_budget_start_time:u:openai/gpt-4o:x:1h"
     );
 }
 

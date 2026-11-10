@@ -6,8 +6,8 @@ use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
+use super::budget_config::{BudgetConfig, BudgetRuntime};
 use super::cache_keys::{BudgetScope, model_budget_spend_cache_key};
-use super::malformed_build::{BudgetConfig, BudgetRuntime};
 use super::spend_reads::error::SpendReadError;
 use super::spend_reads::{SpendCache, current_window_spends};
 
@@ -15,7 +15,9 @@ const SPEND_DECIMAL_PLACES: u32 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ModelBudgetUsage {
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub current_spend: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub budget_limit: Option<Decimal>,
     pub time_period: String,
 }

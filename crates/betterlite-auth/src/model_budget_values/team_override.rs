@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 
+use super::budget_config::BudgetRuntime;
 use super::candidates::BedrockCatalog;
-use super::malformed_build::BudgetRuntime;
-use super::malformed_resolve::resolve_model_budget;
+use super::resolution::resolve_model_budget;
 
 #[must_use]
 pub fn team_model_budget_applies(

@@ -12,8 +12,8 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::budget_primitives::window_start::DurationParser;
+use crate::model_budget_values::budget_config::BudgetRuntime;
 use crate::model_budget_values::candidates::BedrockCatalog;
-use crate::model_budget_values::malformed_build::BudgetRuntime;
 use crate::model_budget_values::spend_reads::{CachedSpend, SpendCache};
 
 pub(crate) struct FixedDurations;

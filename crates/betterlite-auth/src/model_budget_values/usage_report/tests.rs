@@ -226,7 +226,7 @@ async fn usage_report_reads_redis_over_memory() {
 fn usage_report_serializes_with_the_litellm_field_names() {
     let usage = ModelBudgetUsage {
         current_spend: amount(15, 1),
-        budget_limit: None,
+        budget_limit: Some(amount(25, 1)),
         time_period: "1d".to_owned(),
     };
     let parsed = serde_json::to_value(&usage).unwrap();
@@ -234,7 +234,17 @@ fn usage_report_serializes_with_the_litellm_field_names() {
     names.sort();
     assert_eq!(names, ["budget_limit", "current_spend", "time_period"]);
     assert_eq!(parsed["time_period"], "1d");
-    assert!(parsed["budget_limit"].is_null());
+    assert!(parsed["current_spend"].is_number());
+    assert!(parsed["budget_limit"].is_number());
+    assert_eq!(parsed["current_spend"].as_f64(), Some(1.5_f64));
+    assert_eq!(parsed["budget_limit"].as_f64(), Some(2.5_f64));
+
+    let unlimited = ModelBudgetUsage {
+        current_spend: amount(0, 0),
+        budget_limit: None,
+        time_period: "1h".to_owned(),
+    };
+    assert!(serde_json::to_value(&unlimited).unwrap()["budget_limit"].is_null());
 }
 
 #[tokio::test]

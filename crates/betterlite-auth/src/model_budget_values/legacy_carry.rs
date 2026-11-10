@@ -2,9 +2,9 @@ mod tests;
 
 use std::time::Duration;
 
+use super::budget_config::BudgetRuntime;
 use super::cache_keys::{BudgetScope, model_budget_spend_cache_key};
-use super::malformed_build::BudgetRuntime;
-use super::malformed_resolve::ResolvedModelBudget;
+use super::resolution::ResolvedModelBudget;
 
 #[derive(Clone, Copy)]
 pub struct LegacyCarry<'parser> {
@@ -29,8 +29,10 @@ impl LegacyCarry<'_> {
             .runtime
             .durations
             .seconds(budget_duration, self.runtime.now)?;
-        let window = Duration::from_secs(u64::try_from(window_seconds).unwrap_or(0));
-        if self.uptime >= window {
+        let Ok(window_secs) = u64::try_from(window_seconds) else {
+            return None;
+        };
+        if self.uptime >= Duration::from_secs(window_secs) {
             return None;
         }
         let legacy = model_budget_spend_cache_key(scope, entity_id, request_model, budget_duration);

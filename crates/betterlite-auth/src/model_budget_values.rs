@@ -1,10 +1,12 @@
 pub mod amount_text;
 pub mod batch_dedup;
+pub mod budget_config;
 pub mod cache_keys;
 pub mod candidates;
 pub mod legacy_carry;
-pub mod malformed_build;
-pub mod malformed_resolve;
+mod malformed_build;
+mod malformed_resolve;
+pub mod resolution;
 pub mod spend_reads;
 pub mod team_override;
 mod tests;
