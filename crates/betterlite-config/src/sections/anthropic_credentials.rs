@@ -58,12 +58,6 @@ impl Settings {
         let api_base = non_empty(lookup.lookup("ANTHROPIC_API_BASE"))
             .or_else(|| non_empty(lookup.lookup("ANTHROPIC_BASE_URL")))
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        let disable_url_suffix = lookup
-            .lookup("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
-            .map(|text| betterlite_env::flag("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", &text))
-            .transpose()?
-            .flatten()
-            .unwrap_or(false);
         Ok(Self {
             // LiteLLM's get_secret_str keeps an empty value as a real key, so only absence is unset
             api_key: lookup.lookup("ANTHROPIC_API_KEY").map(SecretString::from),
@@ -73,7 +67,7 @@ impl Settings {
             api_base,
             use_bearer_for_custom_base: false,
             deployment_bearer_opt_ins: Vec::new(),
-            disable_url_suffix,
+            disable_url_suffix: disable_url_suffix(lookup)?,
         })
     }
 }
@@ -105,6 +99,18 @@ impl Section for Raw {
             ..environment
         })
     }
+}
+
+fn disable_url_suffix<L>(lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let flag = lookup
+        .lookup("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
+        .map(|text| betterlite_env::flag("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", &text))
+        .transpose()?
+        .flatten();
+    Ok(flag.unwrap_or(false))
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
