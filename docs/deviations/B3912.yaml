@@ -1,0 +1,23 @@
+task: B3912
+deviations:
+  - what: >-
+      A caller prompt that cannot become a Langfuse prompt (a Prompt_Text or Prompt_Chat body missing or
+      mistyping a required field, or content that is neither text nor chat) is logged at error level and the
+      generation is logged without a prompt. LiteLLM lets the pydantic ValidationError, KeyError or TypeError
+      escape _add_prompt_to_generation_params, and the outer handler in _log_langfuse_v2 then drops the whole
+      generation.
+    why: >-
+      A malformed prompt in the caller's metadata is data, and losing the generation's trace, usage and cost
+      because of it is a failure no working LiteLLM setup relies on. The prompt is the only thing skipped here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1167-L1208
+  - what: >-
+      The prompt management metadata is the typed StandardLoggingPromptManagementMetadata record. When the
+      caller's metadata carries a prompt_management_metadata value that record cannot be read from (missing
+      prompt_id or prompt_integration), the generation is logged without a prompt. LiteLLM reads the same dict
+      untyped, so a missing prompt_integration or prompt_id raises inside the branch condition or the
+      get_prompt call and the outer handler drops the whole generation.
+    why: >-
+      docs/compatibility.md rejects a value the declared type cannot hold at the boundary, and the same
+      non-blocking posture as the prompt validation failure keeps the generation's other data. The prompt
+      variables are unused, so an unreadable record changes nothing else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1209-L1213
