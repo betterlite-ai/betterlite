@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::fmt::Write as _;
 use std::fs;
 
 use rstest::rstest;
@@ -202,41 +201,30 @@ fn parse_rejects_a_non_boolean_route() {
 }
 
 fn many_providers() -> String {
-    let mut source = String::from(r#"{"providers":{"#);
-    for index in 0_i32..=10_000_i32 {
-        if index > 0_i32 {
-            source.push(',');
-        }
-        write!(source, r#""p{index}":{{}}"#).unwrap();
-    }
-    source.push_str("}}");
-    source
+    let entries: Vec<String> = (0_i32..=10_000_i32)
+        .map(|index| format!(r#""p{index}":{{}}"#))
+        .collect();
+    format!(r#"{{"providers":{{{}}}}}"#, entries.join(","))
 }
 
 fn many_provider_endpoints() -> String {
-    let mut endpoints = String::new();
-    for index in 0_usize..=MAX_REGISTRY_ENDPOINTS {
-        if index > 0 {
-            endpoints.push(',');
-        }
-        write!(endpoints, r#""e{index}":false"#).unwrap();
-    }
-    format!(r#"{{"providers":{{"a":{{"endpoints":{{{endpoints}}}}}}}}}"#)
+    let entries: Vec<String> = (0_usize..=MAX_REGISTRY_ENDPOINTS)
+        .map(|index| format!(r#""e{index}":false"#))
+        .collect();
+    format!(
+        r#"{{"providers":{{"a":{{"endpoints":{{{}}}}}}}}}"#,
+        entries.join(",")
+    )
 }
 
 fn many_endpoint_labels() -> String {
-    let mut labels = String::new();
-    for index in 0_usize..=MAX_REGISTRY_ENDPOINTS {
-        if index > 0 {
-            labels.push(',');
-        }
-        write!(
-            labels,
-            r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#
-        )
-        .unwrap();
-    }
-    format!(r#"{{"providers":{{}},"endpoints":{{{labels}}}}}"#)
+    let entries: Vec<String> = (0_usize..=MAX_REGISTRY_ENDPOINTS)
+        .map(|index| format!(r#""l{index}":{{"docs_label":"a","display_name":"b","leftnav_label":"c","provider_json_field":"d","url":"e"}}"#))
+        .collect();
+    format!(
+        r#"{{"providers":{{}},"endpoints":{{{}}}}}"#,
+        entries.join(",")
+    )
 }
 
 #[test]
