@@ -24,6 +24,6 @@ deviations:
       deployment.
     why: >-
       ChatDeployment is built once per entry at startup, and a model that names no provider can never
-      be served. The error keeps its typed cause and the entry's model_name. provider_resolution_tests_behavior
-      in chat_setup and deployment pins the refusal.
+      be served. The error keeps its typed cause, which names the model. provider_resolution_tests_behavior in
+      chat_setup and deployment pins the refusal.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L549-L562
