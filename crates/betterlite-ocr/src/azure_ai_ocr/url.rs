@@ -24,19 +24,17 @@ pub(crate) fn api_base_error() -> OcrError {
 }
 
 fn path_overlap(existing: &[String], target: &[&str]) -> usize {
-    let mut overlap = existing.len().min(target.len());
-    while overlap > 0 {
-        let suffix = existing
-            .get(existing.len().saturating_sub(overlap)..)
-            .unwrap_or_default();
-        if suffix
-            .iter()
-            .map(String::as_str)
-            .eq(target.iter().copied().take(overlap))
-        {
-            break;
-        }
-        overlap = overlap.saturating_sub(1);
-    }
-    overlap
+    let longest = existing.len().min(target.len());
+    (0..=longest)
+        .rev()
+        .find(|length| {
+            let suffix = existing
+                .get(existing.len().saturating_sub(*length)..)
+                .unwrap_or_default();
+            suffix
+                .iter()
+                .map(String::as_str)
+                .eq(target.iter().copied().take(*length))
+        })
+        .unwrap_or(0)
 }
