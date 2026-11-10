@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Final, Literal, Self, cast
+from typing import TYPE_CHECKING, Final, Literal, Self, cast, final
 from unittest.mock import patch
 
 from litellm.caching.dual_cache import DualCache
@@ -63,6 +63,7 @@ class Output(Strict):
     reads: list[list[str]]
 
 
+@final
 class FakeStore:
     def __init__(self, values: dict[str, str]) -> None:
         self.values = values
@@ -70,6 +71,7 @@ class FakeStore:
         self.reads: list[list[str]] = []
 
 
+@final
 class FakePipeline:
     def __init__(self, store: FakeStore) -> None:
         self.store = store
@@ -92,6 +94,7 @@ class FakePipeline:
         return [[self.store.values.get(key) for key in self.keys]]
 
 
+@final
 class FakeClient:
     def __init__(self, store: FakeStore) -> None:
         self.store = store
@@ -183,6 +186,7 @@ class CooldownView:
         return []
 
 
+@final
 class Scenario:
     def __init__(self, spec: "RoutingReadBatch") -> None:
         self.spec = spec

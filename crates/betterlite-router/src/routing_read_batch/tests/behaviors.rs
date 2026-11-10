@@ -379,6 +379,7 @@ async fn requests_are_isolated() {
         &mut first_request,
     ));
     let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
+    // the first request's arm already reserved the shared read throttle for "a"
     let second_results = read_once(
         &mut batch,
         &store,
@@ -387,7 +388,7 @@ async fn requests_are_isolated() {
         slice::from_ref(&first),
     )
     .await;
-    assert_eq!(second_results.cooldown, vec![Some(counter(3))]);
+    assert_eq!(second_results.cooldown, vec![None]);
     assert!(first_request.prefetch.is_some());
     let first_results = read_once(
         &mut batch,
@@ -399,7 +400,7 @@ async fn requests_are_isolated() {
     .await;
     assert_eq!(first_results.cooldown, vec![Some(counter(3))]);
     assert!(first_request.prefetch.is_none());
-    assert_eq!(store.reads().len(), 2);
+    assert_eq!(store.reads(), vec![vec![first]]);
 }
 
 fn cancelled_read_releases_the_reservation() {
