@@ -1,5 +1,5 @@
 use super::error::WebIdentityError;
-use super::sts::{identity, sts_client, sts_response};
+use super::sts::{identity, required_credentials, sts_client, sts_response};
 use crate::assume_role::expiry::StsResponse;
 use crate::aws_endpoints::sts::StsClientKwargs;
 use crate::aws_settings::sources::NativeSources;
@@ -9,6 +9,7 @@ use aws_sdk_sts::operation::assume_role::AssumeRoleOutput;
 use aws_sdk_sts::types::Credentials as ResponseCredentials;
 use aws_sdk_sts::types::Tag;
 use aws_smithy_types::error::display::DisplayErrorContext;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::path::Path;
 pub struct SameAccountIrsa<'text> {
     pub role_arn: &'text str,
@@ -72,9 +73,10 @@ async fn assume_role_response(
 ) -> Result<StsResponse, WebIdentityError> {
     let response = send_assume_role(client, input).await?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField(
-            "the STS assume role response has no Credentials",
-        ));
+        return Err(WebIdentityError::MissingField {
+            call: "assume role",
+            member: "Credentials",
+        });
     };
     sts_response(credentials)
 }
@@ -82,7 +84,7 @@ async fn assume_irsa_role(
     sts: &StsClientKwargs,
     native: &NativeSources,
     input: &CrossAccountIrsa<'_>,
-    web_identity_token: String,
+    web_identity_token: SecretString,
 ) -> Result<ResponseCredentials, WebIdentityError> {
     let irsa_client = sts_client(sts, native, None).await;
     tracing::debug!(
@@ -94,23 +96,25 @@ async fn assume_irsa_role(
         .assume_role_with_web_identity()
         .role_arn(input.irsa_role_arn)
         .role_session_name(input.session_name)
-        .web_identity_token(web_identity_token)
+        .web_identity_token(web_identity_token.expose_secret())
         .send()
         .await
         .map_err(|source| WebIdentityError::WebIdentity {
             source: Box::new(source),
         })?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField(
-            "the STS web identity response has no Credentials",
-        ));
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
+            member: "Credentials",
+        });
     };
+    required_credentials(credentials, "web identity")?;
     Ok(credentials.clone())
 }
 async fn read_token_file(
     token_file: &str,
     native: &NativeSources,
-) -> Result<String, WebIdentityError> {
+) -> Result<SecretString, WebIdentityError> {
     let path = Path::new(token_file);
     let bytes = native
         .filesystem
@@ -124,7 +128,7 @@ async fn read_token_file(
         path: path.to_owned(),
         source,
     })?;
-    Ok(text.trim().to_owned())
+    Ok(SecretString::from(text.trim().to_owned()))
 }
 async fn log_caller_identity(client: &Client, prefix: &str) {
     match client.get_caller_identity().send().await {

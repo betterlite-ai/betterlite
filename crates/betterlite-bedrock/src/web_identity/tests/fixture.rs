@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use std::fmt::Write as _;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -260,6 +261,35 @@ pub(super) fn web_identity_ok(
     let packed = packed_xml(packed_policy_size);
     Answer::Ok(format!(
         "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{credentials}{packed}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>"
+    ))
+}
+
+pub(super) fn credentials_without(member: &str) -> String {
+    let mut members = vec![
+        ("AccessKeyId", "ASIAFIXTURE"),
+        ("SecretAccessKey", "fixture-secret"),
+        ("SessionToken", "fixture-session"),
+        ("Expiration", "2026-01-01T01:00:00Z"),
+    ];
+    members.retain(|(name, _)| *name != member);
+    let mut inner = String::new();
+    for (name, value) in &members {
+        write!(inner, "<{name}>{value}</{name}>").unwrap();
+    }
+    format!("<Credentials>{inner}</Credentials>")
+}
+
+pub(super) fn web_identity_missing(member: &str) -> Answer {
+    Answer::Ok(format!(
+        "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
+        credentials_without(member)
+    ))
+}
+
+pub(super) fn assume_role_missing(member: &str) -> Answer {
+    Answer::Ok(format!(
+        "<AssumeRoleResponse><AssumeRoleResult>{}</AssumeRoleResult></AssumeRoleResponse>",
+        credentials_without(member)
     ))
 }
 

@@ -214,6 +214,34 @@ fn assert_same_account_error() {
         response.unwrap_err(),
         WebIdentityError::AssumeRole { .. }
     ));
+    assert_same_account_missing_members();
+}
+
+fn assert_same_account_missing_members() {
+    for member in [
+        "AccessKeyId",
+        "SecretAccessKey",
+        "SessionToken",
+        "Expiration",
+    ] {
+        let input = SameAccountIrsa {
+            role_arn: ROLE_ARN,
+            session_name: SESSION_NAME,
+            external_id: None,
+            tags: None,
+        };
+        let (response, _exchanges) = run_same_account(
+            &input,
+            replies([
+                ("GetCallerIdentity", fixture::access_denied()),
+                ("AssumeRole", fixture::assume_role_missing(member)),
+            ]),
+        );
+        assert!(matches!(
+            response.unwrap_err(),
+            WebIdentityError::MissingField { member: found, .. } if found == member
+        ));
+    }
 }
 
 fn cross_input(tags: &[AwsSessionTag]) -> CrossAccountIrsa<'_> {
@@ -267,6 +295,49 @@ pub(super) fn cross_account_irsa() {
     assert_target(&credentials);
     assert_cross_calls(&calls(&recorder));
     assert_cross_failures(&input, &kwargs);
+    assert_cross_missing_members(&input, &kwargs);
+}
+
+fn assert_cross_missing_members(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
+    let first_hop = cross_error(
+        input,
+        kwargs,
+        &[(TOKEN_FILE, IRSA_TOKEN)],
+        replies([(
+            "AssumeRoleWithWebIdentity",
+            fixture::web_identity_missing("AccessKeyId"),
+        )]),
+    );
+    assert!(matches!(
+        first_hop,
+        WebIdentityError::MissingField {
+            member: "AccessKeyId",
+            ..
+        }
+    ));
+    for member in [
+        "AccessKeyId",
+        "SecretAccessKey",
+        "SessionToken",
+        "Expiration",
+    ] {
+        let target = cross_error(
+            input,
+            kwargs,
+            &[(TOKEN_FILE, IRSA_TOKEN)],
+            replies([
+                (
+                    "AssumeRoleWithWebIdentity",
+                    fixture::web_identity_ok("ASIAIRSA", "s", "t", "2026-01-01T00:30:00Z", None),
+                ),
+                ("AssumeRole", fixture::assume_role_missing(member)),
+            ]),
+        );
+        assert!(matches!(
+            target,
+            WebIdentityError::MissingField { member: found, .. } if found == member
+        ));
+    }
 }
 
 fn assert_cross_calls(exchanges: &[Exchange]) {
@@ -345,7 +416,10 @@ fn assert_cross_failures(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs)
     );
     assert!(matches!(
         missing,
-        WebIdentityError::MissingField("the STS web identity response has no Credentials")
+        WebIdentityError::MissingField {
+            member: "Credentials",
+            ..
+        }
     ));
     let denied = cross_error(
         input,

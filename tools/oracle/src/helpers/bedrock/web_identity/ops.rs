@@ -6,6 +6,7 @@ use super::input::{Case, Input, Reply, ReplyTag};
 use super::ports;
 use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
+use betterlite_bedrock::aws_endpoints::error::AwsEndpointError;
 use betterlite_bedrock::aws_endpoints::sts::StsClientKwargs;
 use betterlite_bedrock::aws_settings::AwsSessionTag;
 use betterlite_bedrock::aws_settings::sources::NativeSources;
@@ -13,11 +14,32 @@ use betterlite_bedrock::web_identity::auth::{WebIdentityAuth, auth_with_web_iden
 use betterlite_bedrock::web_identity::claims::decode_web_identity_claims;
 use betterlite_bedrock::web_identity::error::WebIdentityError;
 use betterlite_bedrock::web_identity::irsa::{SameAccountIrsa, handle_irsa_same_account};
+use betterlite_config::sections::bedrock_web_identity::DEFAULT_MAX_POLICY_SIZE;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use tokio::runtime::Runtime;
-const DEFAULT_MAX_POLICY_SIZE: i64 = 75;
+#[derive(Debug, thiserror::Error)]
+pub(super) enum FixtureError {
+    #[error(transparent)]
+    Endpoint(#[from] AwsEndpointError),
+    #[error(transparent)]
+    Runtime(#[from] std::io::Error),
+    #[error("{0}")]
+    Case(&'static str),
+}
+impl From<FixtureError> for Box<HelperError> {
+    fn from(error: FixtureError) -> Self {
+        Self::new(HelperError {
+            class: "FixtureError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
+}
 pub(super) type Fixture = (NativeSources, Record, StsClientKwargs, Runtime);
 pub(super) fn fixture(
     case: &Case,
@@ -30,12 +52,11 @@ pub(super) fn fixture(
     };
     let record = transport.record.clone();
     let native = fixture::sources(&case.environment, files, transport);
-    let kwargs = fixture::kwargs(&case.environment).map_err(fixture_failure)?;
+    let kwargs = fixture::kwargs(&case.environment).map_err(FixtureError::from)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| error.to_string())
-        .map_err(fixture_failure)?;
+        .map_err(FixtureError::from)?;
     Ok((native, record, kwargs, runtime))
 }
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -64,7 +85,7 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         | WebIdentityError::Endpoint(_)
         | WebIdentityError::TokenFile { .. }
         | WebIdentityError::TokenFileEncoding { .. }
-        | WebIdentityError::MissingField(_)
+        | WebIdentityError::MissingField { .. }
         | WebIdentityError::WebIdentity { .. }
         | WebIdentityError::AssumeRole { .. }
         | WebIdentityError::SecretType { .. }
@@ -80,16 +101,6 @@ pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
         param: None,
         code: None,
         message: error.to_string(),
-    })
-}
-pub(super) fn fixture_failure(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "FixtureError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }
 pub(super) fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
@@ -118,9 +129,9 @@ pub(super) fn irsa_json(record: &Record, response: &StsResponse) -> Value {
 }
 fn web_identity(case: &Case) -> HelperResult {
     let Some(Reply::Web(reply)) = case.reply.as_ref() else {
-        return Err(fixture_failure(
-            "the case needs a web identity reply".to_owned(),
-        ));
+        return Err(Box::<HelperError>::from(FixtureError::Case(
+            "the case needs a web identity reply",
+        )));
     };
     let answers = BTreeMap::from([(
         "AssumeRoleWithWebIdentity".to_owned(),
@@ -154,9 +165,9 @@ fn web_identity(case: &Case) -> HelperResult {
 }
 fn same_account_irsa(case: &Case) -> HelperResult {
     let Some(Reply::Credentials(reply)) = case.reply.as_ref() else {
-        return Err(fixture_failure(
-            "the case needs a credentials reply".to_owned(),
-        ));
+        return Err(Box::<HelperError>::from(FixtureError::Case(
+            "the case needs a credentials reply",
+        )));
     };
     let tags = tags_of(&case.tags);
     let input = SameAccountIrsa {

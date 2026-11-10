@@ -34,8 +34,11 @@ pub enum WebIdentityError {
         #[source]
         source: FromUtf8Error,
     },
-    #[error("{0}")]
-    MissingField(&'static str),
+    #[error("the STS {call} response has no {member}")]
+    MissingField {
+        call: &'static str,
+        member: &'static str,
+    },
     #[error("the STS web identity call failed")]
     WebIdentity {
         #[source]
@@ -63,18 +66,20 @@ pub enum WebIdentityError {
     #[error("the STS credential expiry is outside the representable range")]
     Expiry,
 }
-pub(super) fn auth_error(status: u16, message: String) -> AwsAuthError {
-    let request = ErrorRequest {
-        method: "POST".to_owned(),
-        url: AWS_CONSOLE_URL.to_owned(),
-    };
-    AwsAuthError {
-        status,
-        message,
-        response: ErrorResponse {
-            status_code: status,
-            request: request.clone(),
-        },
-        request,
+impl From<(u16, String)> for AwsAuthError {
+    fn from((status, message): (u16, String)) -> Self {
+        let request = ErrorRequest {
+            method: "POST".to_owned(),
+            url: AWS_CONSOLE_URL.to_owned(),
+        };
+        Self {
+            status,
+            message,
+            response: ErrorResponse {
+                status_code: status,
+                request: request.clone(),
+            },
+            request,
+        }
     }
 }

@@ -1,7 +1,8 @@
 use super::claims::decode_web_identity_claims;
-use super::error::{WebIdentityError, auth_error};
-use super::sts::sts_client;
+use super::error::WebIdentityError;
+use super::sts::{required_credentials, sts_client};
 use crate::aws_endpoints::sts::StsClientKwargs;
+use crate::aws_settings::error::AwsAuthError;
 use crate::aws_settings::policy::web_identity_policy;
 use crate::aws_settings::sources::{Credentials, NativeSources};
 use aws_sdk_sts::Client;
@@ -53,22 +54,26 @@ fn resolve_token(
     if auth.token_reference.starts_with("os.environ/")
         || native.environment.contains_key(auth.token_reference)
     {
-        return Err(WebIdentityError::Auth(Box::new(auth_error(
-            400,
+        return Err(WebIdentityError::Auth(Box::new(AwsAuthError::from((
+            400_u16,
             "Invalid web identity token reference.".to_owned(),
-        ))));
+        )))));
     }
     match secrets.get_secret(&native.environment, auth.token_reference, None)? {
         Some(SecretValue::Text(token)) => Ok(token),
         Some(SecretValue::Bool(_)) => Err(WebIdentityError::SecretType {
             field: "aws_web_identity_token",
         }),
-        None => Err(WebIdentityError::Auth(Box::new(auth_error(
-            401,
+        None => Err(WebIdentityError::Auth(Box::new(AwsAuthError::from((
+            401_u16,
             "OIDC token could not be retrieved from secret manager.".to_owned(),
-        )))),
+        ))))),
     }
 }
+#[expect(
+    deprecated,
+    reason = "LiteLLM reads PackedPolicySize; aws-sdk-sts 1.116.0 deprecates it"
+)]
 async fn send(
     client: &Client,
     auth: &WebIdentityAuth<'_>,
@@ -87,14 +92,17 @@ async fn send(
         .await
         .map_err(|error| rejected(error, token.expose_secret()))?;
     let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField(
-            "the STS web identity response has no Credentials",
-        ));
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
+            member: "Credentials",
+        });
     };
+    required_credentials(credentials, "web identity")?;
     let Some(packed_policy_size) = response.packed_policy_size() else {
-        return Err(WebIdentityError::MissingField(
-            "the STS web identity response has no PackedPolicySize",
-        ));
+        return Err(WebIdentityError::MissingField {
+            call: "web identity",
+            member: "PackedPolicySize",
+        });
     };
     Ok((credentials.clone(), packed_policy_size))
 }
@@ -130,7 +138,7 @@ fn rejected(error: SdkError<AssumeRoleWithWebIdentityError>, token: &str) -> Web
             .map_or_else(String::new, |claims| format!(" Token {claims}"));
         let message = format!("AWS STS rejected the web identity token: {error}.{detail}");
         return WebIdentityError::RejectedToken {
-            error: Box::new(auth_error(401, message)),
+            error: Box::new(AwsAuthError::from((401_u16, message))),
             source: Box::new(error),
         };
     }

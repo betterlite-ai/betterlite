@@ -235,7 +235,10 @@ pub(super) fn sts_credentials_missing() {
     );
     assert!(matches!(
         outcome.result.unwrap_err(),
-        WebIdentityError::MissingField("the STS web identity response has no Credentials")
+        WebIdentityError::MissingField {
+            member: "Credentials",
+            ..
+        }
     ));
     assert_missing_packed_policy_size();
     assert_propagated_failures();
@@ -250,7 +253,10 @@ fn assert_missing_packed_policy_size() {
     );
     assert!(matches!(
         outcome.result.unwrap_err(),
-        WebIdentityError::MissingField("the STS web identity response has no PackedPolicySize")
+        WebIdentityError::MissingField {
+            member: "PackedPolicySize",
+            ..
+        }
     ));
 }
 
@@ -259,8 +265,12 @@ fn assert_propagated_failures() {
     let outcome = run(TOKEN_REFERENCE, Some(RESOLVED_TOKEN), 75_i64, incomplete);
     assert!(matches!(
         outcome.result.unwrap_err(),
-        WebIdentityError::WebIdentity { .. }
+        WebIdentityError::MissingField {
+            member: "AccessKeyId",
+            ..
+        }
     ));
+    assert_missing_members();
     let denied = run(
         TOKEN_REFERENCE,
         Some(RESOLVED_TOKEN),
@@ -271,6 +281,21 @@ fn assert_propagated_failures() {
         denied.result.unwrap_err(),
         WebIdentityError::WebIdentity { .. }
     ));
+}
+
+fn assert_missing_members() {
+    for member in ["AccessKeyId", "SecretAccessKey", "SessionToken"] {
+        let outcome = run(
+            TOKEN_REFERENCE,
+            Some(RESOLVED_TOKEN),
+            75_i64,
+            fixture::web_identity_missing(member),
+        );
+        assert!(matches!(
+            outcome.result.unwrap_err(),
+            WebIdentityError::MissingField { member: found, .. } if found == member
+        ));
+    }
 }
 
 pub(super) fn invalid_identity_token_error() {

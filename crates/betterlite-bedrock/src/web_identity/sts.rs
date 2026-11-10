@@ -45,6 +45,30 @@ pub(super) async fn sts_client(
     }
     Client::from_conf(builder.build())
 }
+pub(super) fn required_credentials(
+    credentials: &ResponseCredentials,
+    call: &'static str,
+) -> Result<(), WebIdentityError> {
+    match (
+        credentials.access_key_id().is_empty(),
+        credentials.secret_access_key().is_empty(),
+        credentials.session_token().is_empty(),
+    ) {
+        (true, _, _) => Err(WebIdentityError::MissingField {
+            call,
+            member: "AccessKeyId",
+        }),
+        (_, true, _) => Err(WebIdentityError::MissingField {
+            call,
+            member: "SecretAccessKey",
+        }),
+        (_, _, true) => Err(WebIdentityError::MissingField {
+            call,
+            member: "SessionToken",
+        }),
+        _ => Ok(()),
+    }
+}
 pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
     SdkCredentials::new(
         credentials.access_key_id(),
@@ -57,7 +81,14 @@ pub(super) fn identity(credentials: &ResponseCredentials) -> SdkCredentials {
 pub(super) fn sts_response(
     credentials: &ResponseCredentials,
 ) -> Result<StsResponse, WebIdentityError> {
+    required_credentials(credentials, "assume role")?;
     let expiration = credentials.expiration();
+    if expiration.secs() == 0 && expiration.subsec_nanos() == 0 {
+        return Err(WebIdentityError::MissingField {
+            call: "assume role",
+            member: "Expiration",
+        });
+    }
     let expiry = DateTime::<Utc>::from_timestamp(expiration.secs(), expiration.subsec_nanos())
         .ok_or(WebIdentityError::Expiry)?
         .fixed_offset();

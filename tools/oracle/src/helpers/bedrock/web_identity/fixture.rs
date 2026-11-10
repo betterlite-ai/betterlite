@@ -11,6 +11,7 @@ use aws_smithy_runtime_api::client::{
 use aws_smithy_runtime_api::http::StatusCode;
 use aws_smithy_types::body::SdkBody;
 use aws_types::os_shim_internal::Fs;
+use betterlite_bedrock::aws_endpoints::error::AwsEndpointError;
 use betterlite_bedrock::aws_endpoints::sts::{StsClientKwargs, StsSettings, sts_client_kwargs};
 use betterlite_bedrock::aws_settings::sources::NativeSources;
 use betterlite_config::tls::Verification;
@@ -96,14 +97,16 @@ pub(super) fn sources(
         timeout: Duration::from_secs(5),
     }
 }
-pub(super) fn kwargs(environment: &BTreeMap<String, String>) -> Result<StsClientKwargs, String> {
+pub(super) fn kwargs(
+    environment: &BTreeMap<String, String>,
+) -> Result<StsClientKwargs, AwsEndpointError> {
     let settings = StsSettings {
         endpoint: None,
         aws_region: environment.get("AWS_REGION").map(String::as_str),
         aws_default_region: environment.get("AWS_DEFAULT_REGION").map(String::as_str),
         configured_region: None,
     };
-    sts_client_kwargs(&settings, Verification::Enabled).map_err(|error| error.to_string())
+    sts_client_kwargs(&settings, Verification::Enabled)
 }
 fn credentials_xml(credentials: &ReplyCredentials) -> String {
     format!(

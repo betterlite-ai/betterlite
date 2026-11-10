@@ -1,7 +1,7 @@
 use super::fixture::{Answer, assume_role_answer, denied_identity, web_identity_answer};
 use super::input::{Case, Reply, ReplyCredentials, WebIdentityReply};
-use super::ops::{failure, fixture, fixture_failure, irsa_json, tags_of};
-use crate::helpers::HelperResult;
+use super::ops::{FixtureError, failure, fixture, irsa_json, tags_of};
+use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::web_identity::irsa::{CrossAccountIrsa, handle_irsa_cross_account};
 use std::collections::BTreeMap;
 fn answers(reply: &ReplyCredentials, irsa_reply: &ReplyCredentials) -> BTreeMap<String, Answer> {
@@ -20,9 +20,9 @@ pub(super) fn cross_account_irsa(case: &Case) -> HelperResult {
         case.irsa_reply.as_ref(),
         case.reply.as_ref(),
     ) else {
-        return Err(fixture_failure(
-            "the cross-account case needs a token file and two credentials replies".to_owned(),
-        ));
+        return Err(Box::<HelperError>::from(FixtureError::Case(
+            "the cross-account case needs a token file and two credentials replies",
+        )));
     };
     let files = [(token_file.path.as_str(), token_file.content.as_str())];
     let (native, record, kwargs, runtime) = fixture(case, &files, answers(reply, irsa_reply))?;
