@@ -11,10 +11,6 @@ use super::error::CohereError;
 
 type Object = indexmap::IndexMap<String, Json>;
 
-const FUNCTION_TYPE: &str = "function";
-const CALL_PREFIX: &str = "call_";
-const EMPTY_ARGUMENTS: &str = "{}";
-
 #[derive(Debug, Error)]
 pub enum ReplyError {
     #[error("the Cohere response is not valid JSON: {1}")]
@@ -143,10 +139,10 @@ fn reply_tool_call(tool: &Json) -> Result<V1ToolCall, ReplyError> {
     // LiteLLM writes json.dumps(parameters) into the call with a default of {}
     let arguments = fields
         .get("parameters")
-        .map_or_else(|| String::from(EMPTY_ARGUMENTS), dumps);
+        .map_or_else(|| String::from("{}"), dumps);
     Ok(V1ToolCall {
-        id: format!("{CALL_PREFIX}{generation_id}"),
-        kind: FUNCTION_TYPE.to_owned(),
+        id: format!("call_{generation_id}"),
+        kind: String::from("function"),
         function: V1Function { name, arguments },
     })
 }
@@ -188,11 +184,21 @@ const fn object_field<'value>(
 }
 
 fn count(value: Option<&Json>, field: &'static str) -> Result<i64, ReplyError> {
+    let invalid = || ReplyError::Field(field, "is not an integer");
     match value {
         None | Some(Json::Null) => Ok(0),
         Some(Json::Number(number)) => number
             .as_i64()
-            .ok_or(ReplyError::Field(field, "is not an integer")),
-        Some(_) => Err(ReplyError::Field(field, "is not an integer")),
+            .or_else(|| number.as_f64().and_then(whole_number))
+            .ok_or_else(invalid),
+        Some(_) => Err(invalid()),
     }
+}
+
+// LiteLLM hands the counts to Usage, whose pydantic int field takes a whole float such as 9.0 as 9
+fn whole_number(value: f64) -> Option<i64> {
+    if value.fract().to_bits() != 0.0_f64.to_bits() {
+        return None;
+    }
+    format!("{value:.0}").parse().ok()
 }

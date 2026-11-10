@@ -16,6 +16,7 @@ call:
                 parameters:
                   properties:
                     query: {type: string, description: Seed query}
+                    free: {description: Seed free}
                   required: [query]
 compare: {ignore: []}
 env: {}

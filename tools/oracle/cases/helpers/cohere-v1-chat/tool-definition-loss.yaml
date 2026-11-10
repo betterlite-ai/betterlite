@@ -26,6 +26,7 @@ call:
                       type: object
                       properties:
                         country: {type: string}
+                    free: {description: x}
                   required: [location]
             - type: function
               function:

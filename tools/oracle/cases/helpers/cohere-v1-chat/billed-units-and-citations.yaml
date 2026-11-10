@@ -25,5 +25,10 @@ call:
         model: command-r
         created: 45
         id: chatcmpl-template
+      - body: '{"text":"answer","meta":{"billed_units":{"input_tokens":9.0,"output_tokens":4.0}}}'
+        status: 200
+        model: command-r
+        created: 46
+        id: chatcmpl-template
 compare: {ignore: []}
 env: {}

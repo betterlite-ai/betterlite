@@ -229,6 +229,7 @@ fn tools_keep_only_name_description_type_and_required() {
             "parameters":{"type":"object","properties":{
                 "location":{"type":"string","description":"City","enum":["a","b"]},
                 "nested":{"type":"object","properties":{"inner":{"type":"string"}}},
+                "free":{"description":"x"},
                 "unit":{"type":"string"}
             },"required":["location"]}}}]}"#,
         r#"[{"role":"user","content":"hi"}]"#,
@@ -240,6 +241,7 @@ fn tools_keep_only_name_description_type_and_required() {
                 "parameter_definitions": {
                     "location": {"description": "City", "type": "string", "required": true},
                     "nested": {"description": "", "type": "object", "required": false},
+                    "free": {"description": "x", "type": "", "required": false},
                     "unit": {"description": "", "type": "string", "required": false}
                 }}]}"#
         )
@@ -381,6 +383,21 @@ fn usage_reads_billed_units_and_defaults_missing_counts_to_zero() {
 }
 
 #[test]
+fn whole_float_token_counts_are_read_as_integers() {
+    let billed =
+        reply(r#"{"text":"hi","meta":{"billed_units":{"input_tokens":9.0,"output_tokens":4.0}}}"#)
+            .unwrap();
+    assert_eq!(
+        billed.usage,
+        CohereUsage {
+            prompt_tokens: 9,
+            completion_tokens: 4,
+            total_tokens: 13,
+        }
+    );
+}
+
+#[test]
 fn the_reply_takes_the_request_model_and_clock_and_keeps_the_other_fields() {
     let reply = decode_cohere_chat_v1(reply_input(
         br#"{"text":"hi","model":"provider-model","finish_reason":"COMPLETE"}"#,
@@ -404,6 +421,7 @@ fn the_reply_takes_the_request_model_and_clock_and_keeps_the_other_fields() {
 #[case::meta_not_an_object(r#"{"text":"hi","meta":[]}"#)]
 #[case::billed_units_not_an_object(r#"{"text":"hi","meta":{"billed_units":[]}}"#)]
 #[case::token_not_an_integer(r#"{"text":"hi","meta":{"billed_units":{"input_tokens":"7"}}}"#)]
+#[case::token_with_a_fraction(r#"{"text":"hi","meta":{"billed_units":{"input_tokens":1.5}}}"#)]
 fn later_field_failures_carry_no_status(#[case] body: &str) {
     let error = reply(body).unwrap_err();
     assert_eq!(error.status_code(), None, "status for {body}");
