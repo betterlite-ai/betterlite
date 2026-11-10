@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-media-mime-alias
+call:
+  gemini_media:
+    call: mime_alias
+    values:
+      - "image/jpg"
+      - "IMAGE/JPG"
+      - "IMAGE/JPG; charset=utf-8"
+      - " image/jpg ; q=1"
+      - "image/jpeg"
+      - "application/pdf; charset=utf-8"
+      - "application/x-custom"
+      - ""
+env: {}
+compare:
+  ignore: []

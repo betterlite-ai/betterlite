@@ -236,7 +236,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus)"
       && grep -q 'decode_pegasus_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_pegasus.rs && cargo
-      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_pegasus_corpus$/)'
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_pegasus_corpus(::|$)/)'
   - id: case-pegasus-options
     why: Supported names are exactly max_tokens,max_completion_tokens,temperature,response_format. Both token aliases
       write maxOutputTokens in input order, temperature copies unchanged, response_format writes normalized responseFormat;
