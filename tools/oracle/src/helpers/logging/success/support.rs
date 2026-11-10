@@ -124,6 +124,7 @@ impl StandardPayloadBuilder for FixedBuilder {
 
 pub(crate) struct FixedAssembler {
     pub(crate) complete: Option<Json>,
+    pub(crate) declines_results: bool,
 }
 
 impl StreamAssembler for FixedAssembler {
@@ -139,7 +140,7 @@ impl StreamAssembler for FixedAssembler {
         match result {
             SuccessResult::Chunk(_) => self.complete.clone(),
             SuccessResult::Chat(_) | SuccessResult::Embeddings(_) | SuccessResult::Other(_) => {
-                Some(result.response().clone())
+                (!self.declines_results).then(|| result.response().clone())
             }
         }
     }

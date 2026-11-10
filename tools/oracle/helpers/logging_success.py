@@ -117,6 +117,7 @@ class _Globals:
     excluded_fields: object
     max_budget: object
     request_correlation: bool
+    turn_off_message_logging: object
 
 
 def _save_globals() -> _Globals:
@@ -138,6 +139,7 @@ def _save_globals() -> _Globals:
         ),
         max_budget=cast("object", litellm.max_budget),
         request_correlation=litellm.request_correlation_in_logs,
+        turn_off_message_logging=cast("object", litellm.turn_off_message_logging),
     )
 
 
@@ -156,6 +158,7 @@ def _restore_globals(saved: _Globals) -> None:
     )
     litellm.max_budget = cast("float | None", saved.max_budget)
     litellm.request_correlation_in_logs = saved.request_correlation
+    litellm.turn_off_message_logging = cast("bool | None", saved.turn_off_message_logging)
 
 
 def _getter(value: Json) -> Callable[..., Json]:
@@ -201,7 +204,7 @@ def _build_payload(payload: Json) -> Callable[..., Json]:
     return build
 
 
-def _assemble(complete: Json) -> Callable[..., object]:
+def _assemble(complete: Json, *, declines_results: bool) -> Callable[..., object]:
     def assemble(  # noqa: PLR0913
         self: Logging,
         *,
@@ -216,7 +219,7 @@ def _assemble(complete: Json) -> Callable[..., object]:
             return None
         if isinstance(result, ModelResponseStream):
             return complete
-        return result
+        return None if declines_results else result
 
     return assemble
 
@@ -233,11 +236,6 @@ def _stamp(probe: Fields) -> tuple[str, int]:
     return (identifier, seconds)
 
 
-def _redact_identity(model_call_details: Fields, result: object) -> object:
-    del model_call_details
-    return result
-
-
 async def _no_truncate(messages: object) -> object:
     return messages
 
@@ -247,8 +245,15 @@ def _probe_patches(probe: Fields) -> Generator[None]:
     params = _object(probe.get("litellm_params"), "litellm_params")
     built = probe.get("built_payload")
     complete = probe.get("complete_response")
+    dynamic = _object(probe.get("dynamic_params"), "dynamic_params")
+    declines_results = _boolean(
+        probe.get("assembler_returns_none", False), "assembler_returns_none"
+    )
     saved = _save_globals()
     litellm.max_budget = 0
+    litellm.turn_off_message_logging = _boolean(
+        probe.get("global_redaction", False), "global_redaction"
+    )
     litellm.request_correlation_in_logs = _boolean(
         probe.get("request_correlation", False), "request_correlation"
     )
@@ -266,7 +271,7 @@ def _probe_patches(probe: Fields) -> Generator[None]:
                 patch.object(
                     litellm_logging,
                     "_initialize_standard_callback_dynamic_params",
-                    _getter({}),
+                    _getter(dynamic),
                 )
             )
             stack.enter_context(
@@ -296,13 +301,10 @@ def _probe_patches(probe: Fields) -> Generator[None]:
                 )
             )
             stack.enter_context(
-                patch.object(Logging, "_get_assembled_streaming_response", _assemble(complete))
-            )
-            stack.enter_context(
                 patch.object(
-                    litellm_logging,
-                    "redact_message_input_output_from_logging",
-                    _redact_identity,
+                    Logging,
+                    "_get_assembled_streaming_response",
+                    _assemble(complete, declines_results=declines_results),
                 )
             )
             stack.enter_context(

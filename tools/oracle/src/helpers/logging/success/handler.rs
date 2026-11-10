@@ -39,7 +39,7 @@ fn handler_probe(probe: &HandlerProbe, runtime: &Runtime) -> Result<Value, Box<H
         .map_err(|failure| super::value_error(&failure))?;
     let end = DateTime::parse_from_rfc3339(&probe.end_time)
         .map_err(|failure| super::value_error(&failure))?;
-    let scenario = Scenario::new(ScenarioSpec {
+    let mut scenario = Scenario::new(ScenarioSpec {
         loggers: &probe.loggers,
         built_payload: probe.built_payload.as_ref(),
         complete: probe.complete_response.as_ref(),
@@ -47,7 +47,10 @@ fn handler_probe(probe: &HandlerProbe, runtime: &Runtime) -> Result<Value, Box<H
         excluded_fields: probe.excluded_fields.clone(),
         stamp: probe.stamp.as_ref(),
     })?;
+    scenario.assembler.declines_results = probe.assembler_returns_none.unwrap_or(false);
+    scenario.privacy.turn_off_message_logging = probe.global_redaction.unwrap_or(false);
     let (mut state, mut context) = handler_state(probe, start)?;
+    state.callback_dynamic_params = state::params(&probe.dynamic_params)?;
     let request = handler_request(probe, start, end)?;
     let logging = scenario.handler();
     match probe.mode {

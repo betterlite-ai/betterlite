@@ -12,6 +12,12 @@ call:
           - {stream: true, result: {kind: chunk}, complete_key: "null"}
           - {stream: true, result: {kind: chunk}, complete_key: assembled}
           - {stream: true, result: {kind: other, value: {object: chat.completion}}}
+          - {stream: true, result: {kind: other, value: null}}
+          - {stream: true, result: {kind: other, value: null}, async_key: "null"}
+          - {stream: true, result: {kind: other, value: null}, async_key: assembled}
+          - {stream: true, result: {kind: other, value: null}, complete_key: "null"}
+          - {stream: true, result: {kind: other, value: null}, complete_key: assembled}
+          - {stream: false, result: {kind: other, value: null}}
       - operation: recognized
         probes:
           - {result: {kind: chat}, call_type: completion}

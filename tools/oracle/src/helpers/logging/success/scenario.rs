@@ -44,6 +44,7 @@ pub(crate) struct Scenario {
     pub(crate) excluded_fields: Vec<String>,
     pub(crate) stamp: ResponseStamp,
     pub(crate) known: Box<dyn Fn(&str) -> bool + Send + Sync>,
+    pub(crate) privacy: Settings,
 }
 
 impl Scenario {
@@ -60,6 +61,7 @@ impl Scenario {
             },
             assembler: FixedAssembler {
                 complete: spec.complete.map(decode::<Json>).transpose()?,
+                declines_results: false,
             },
             clock: FixedClock { now: spec.now },
             counters,
@@ -68,6 +70,7 @@ impl Scenario {
             excluded_fields: spec.excluded_fields,
             stamp: stamp_value(spec.stamp),
             known: Box::new(|_name: &str| false),
+            privacy: Settings::default(),
         })
     }
 
@@ -81,7 +84,7 @@ impl Scenario {
             excluded_fields: &self.excluded_fields,
             known_callback: self.known.as_ref(),
             stamp: &self.stamp,
-            privacy: Settings::default(),
+            privacy: self.privacy,
         }
     }
 }
