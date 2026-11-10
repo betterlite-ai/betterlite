@@ -348,8 +348,20 @@ fn routing_state_store_config(#[case] name: &str) {
                 "AWS_REGION",
                 "AWS_DEFAULT_REGION",
             ];
-            let environment: Vec<(&str, &str)> =
-                names.iter().map(|variable| (*variable, "set")).collect();
+            let flags = ["REDIS_AWS_IAM_AUTH", "REDIS_AWS_IAM_SERVERLESS"];
+            let environment: Vec<(&str, &str)> = names
+                .iter()
+                .map(|variable| {
+                    (
+                        *variable,
+                        if flags.contains(variable) {
+                            "true"
+                        } else {
+                            "set"
+                        },
+                    )
+                })
+                .collect();
             let settings = load("", &environment).unwrap();
             for variable in names {
                 assert!(
