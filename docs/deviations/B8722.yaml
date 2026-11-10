@@ -1,0 +1,11 @@
+task: B8722
+deviations:
+  - what: A tools/call whose Mcp-Param-* header disagrees with the call arguments is dispatched instead of refused, where the SDK first reads the tool's inputSchema and answers the caller's HEADER_MISMATCH rejection.
+    why: The check needs the caller's own tools/list listing and a JSON Schema walk of the x-mcp-header annotations before dispatch. This task ports the single exchange transport, and that schema reader is a separate feature no betterlite task builds yet.
+    link: ""
+  - what: A request body larger than 4 MiB is refused with 413 before it is decoded, where the modern entry reads the body without a limit.
+    why: Rule bounded-inputs forbids an unbounded read of an inbound body; the cap is the one the SDK's body middleware applies to the other transports.
+    link: ""
+  - what: A _meta that is not an object, and one that lacks an envelope key, both get the missing-key message naming the keys rmcp's typed metadata could not decode, where the SDK has a separate "params._meta must be an object" message and a non-string version rejection.
+    why: The request is decoded into rmcp's typed model before the classifier sees it, and its metadata accessors report a wrongly typed or absent value the same way. The status is 400 and the code is -32602 on both sides.
+    link: ""

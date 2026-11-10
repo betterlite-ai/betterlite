@@ -13,7 +13,7 @@ use rmcp::RoleServer;
 use rmcp::ServerHandler;
 use rmcp::model::{
     ClientJsonRpcMessage, ClientRequest, ErrorCode, ErrorData, JsonRpcError, JsonRpcMessage,
-    JsonRpcRequest, JsonRpcResponse, RequestId, ServerRequest, ServerResult,
+    JsonRpcRequest, JsonRpcResponse, RequestId, ServerResult,
 };
 use rmcp::service::{RunningService, TxJsonRpcMessage, serve_directly};
 use tokio::time::{Interval, interval, timeout};
@@ -27,8 +27,6 @@ const SERVICE_CHANNEL_CAPACITY: usize = 32;
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const PING: &[u8] = b": ping\r\n\r\n";
 const INTERNAL_ERROR_MESSAGE: &str = "Internal server error";
-const NO_BACK_CHANNEL: &str =
-    "Cannot send a server-initiated request: this transport context has no back-channel";
 
 pub(super) async fn serve_request<H>(
     call: JsonRpcRequest<ClientRequest>,
@@ -49,7 +47,7 @@ where
         return internal_failure(&request_id);
     }
     let mut outgoing = from_service_rx;
-    match first_event(&mut outgoing, &mut to_service).await {
+    match first_event(&mut outgoing).await {
         FirstEvent::Reply(Reply::Response(response)) => json_response(
             StatusCode::OK,
             serde_json::to_string(&response).unwrap_or_default(),
@@ -84,10 +82,7 @@ enum Reply {
     Error(JsonRpcError),
 }
 
-async fn first_event(
-    outgoing: &mut mpsc::Receiver<TxJsonRpcMessage<RoleServer>>,
-    service: &mut mpsc::Sender<ClientJsonRpcMessage>,
-) -> FirstEvent {
+async fn first_event(outgoing: &mut mpsc::Receiver<TxJsonRpcMessage<RoleServer>>) -> FirstEvent {
     loop {
         match timeout(PING_INTERVAL, outgoing.next()).await {
             Ok(Some(JsonRpcMessage::Response(response))) => {
@@ -96,11 +91,8 @@ async fn first_event(
             Ok(Some(JsonRpcMessage::Error(error))) => {
                 return FirstEvent::Reply(Reply::Error(error));
             }
-            Ok(Some(JsonRpcMessage::Request(request))) => {
-                let _ignored = service
-                    .send(ClientJsonRpcMessage::Error(no_back_channel(&request)))
-                    .await;
-            }
+            // rmcp refuses a server-initiated request on 2026-07-28 before it reaches this sink
+            Ok(Some(JsonRpcMessage::Request(_))) => {}
             Ok(Some(message @ JsonRpcMessage::Notification(_))) => {
                 return FirstEvent::Notification(Box::new(message));
             }
@@ -123,7 +115,8 @@ where
     ping: Interval,
     opening: Option<Opening>,
     request_id: RequestId,
-    service: mpsc::Sender<ClientJsonRpcMessage>,
+    // the service quits when its input closes, so the sender lives as long as the stream
+    _service: mpsc::Sender<ClientJsonRpcMessage>,
     // dropping the running service cancels its handler, which a closed response body must do
     _running: RunningService<RoleServer, H>,
     finished: bool,
@@ -151,11 +144,8 @@ where
         }
         loop {
             match Pin::new(&mut this.outgoing).poll_next(cx) {
-                Poll::Ready(Some(JsonRpcMessage::Request(request))) => {
-                    let _ignored = this
-                        .service
-                        .try_send(ClientJsonRpcMessage::Error(no_back_channel(&request)));
-                }
+                // rmcp refuses a server-initiated request on 2026-07-28 before it reaches this sink
+                Poll::Ready(Some(JsonRpcMessage::Request(_))) => {}
                 Poll::Ready(Some(message)) => {
                     this.finished = matches!(
                         message,
@@ -194,7 +184,7 @@ where
         ping: ping_interval(),
         opening: Some(opening),
         request_id,
-        service,
+        _service: service,
         _running: running,
         finished: false,
     };
@@ -236,11 +226,4 @@ fn internal_error(request_id: RequestId) -> TxJsonRpcMessage<RoleServer> {
         Some(request_id),
         ErrorData::new(ErrorCode::INTERNAL_ERROR, INTERNAL_ERROR_MESSAGE, None),
     ))
-}
-
-fn no_back_channel(request: &JsonRpcRequest<ServerRequest>) -> JsonRpcError {
-    JsonRpcError::new(
-        Some(request.id.clone()),
-        ErrorData::new(ErrorCode::INVALID_REQUEST, NO_BACK_CHANNEL, None),
-    )
 }

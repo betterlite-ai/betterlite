@@ -12,8 +12,9 @@ use rmcp::ErrorData as McpError;
 use rmcp::RoleServer;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ErrorCode, InputRequiredResult,
-    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, RequestId, ServerConfig,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ElicitRequest, ElicitRequestParams,
+    ElicitationSchema, ErrorCode, InputRequiredResult, ListToolsResult, PaginatedRequestParams,
+    ProgressNotificationParam, RequestId, ServerConfig, ServerRequest,
 };
 use rmcp::service::RequestContext;
 use rstest::rstest;
@@ -35,6 +36,19 @@ const CALL_TOOL: &str = concat!(
     r#""io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
     r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
 );
+const GET_PROMPT: &str = concat!(
+    r#"{"jsonrpc":"2.0","id":11,"method":"prompts/get","params":{"#,
+    r#""name":"test-prompt","_meta":{"#,
+    r#""io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+    r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+);
+const READ_RESOURCE: &str = concat!(
+    r#"{"jsonrpc":"2.0","id":12,"method":"resources/read","params":{"#,
+    r#""uri":"test://resource","_meta":{"#,
+    r#""io.modelcontextprotocol/protocolVersion":"2026-07-28","#,
+    r#""io.modelcontextprotocol/clientCapabilities":{}}}}"#
+);
+const BASE64_TOOL_NAME: &str = "=?base64?dGVzdC10b29s?=";
 const NOTIFICATION: &str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
 const NO_META: &str = r#"{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}"#;
 const NO_CAPABILITIES: &str = concat!(
@@ -48,6 +62,8 @@ enum Behaviour {
     NotifyThenAnswer,
     Slow,
     InputRequired,
+    AnswerAfterBackChannel,
+    NotifyThenBackChannel,
 }
 
 #[derive(Clone, Copy)]
@@ -69,17 +85,34 @@ impl ServerHandler for FakeHandler {
         if let Some(code) = self.failure {
             return Err(McpError::new(code, "the fake handler failed", None));
         }
-        match self.behaviour {
-            Behaviour::NotifyThenAnswer => {
-                if let Some(token) = context.meta.get_progress_token() {
-                    let _sent = context
-                        .peer
-                        .notify_progress(ProgressNotificationParam::new(token, 1.0))
-                        .await;
-                }
-            }
-            Behaviour::Slow => sleep(Duration::from_secs(20)).await,
-            Behaviour::Answer | Behaviour::InputRequired => {}
+        if matches!(
+            self.behaviour,
+            Behaviour::NotifyThenAnswer | Behaviour::NotifyThenBackChannel
+        ) && let Some(token) = context.meta.get_progress_token()
+        {
+            let _sent = context
+                .peer
+                .notify_progress(ProgressNotificationParam::new(token, 1.0))
+                .await;
+        }
+        if matches!(
+            self.behaviour,
+            Behaviour::AnswerAfterBackChannel | Behaviour::NotifyThenBackChannel
+        ) {
+            let requested_schema = ElicitationSchema::builder()
+                .required_email("email")
+                .build()
+                .expect("an elicitation schema");
+            let params = ElicitRequestParams::FormElicitationParams {
+                meta: None,
+                message: "the fake handler asks".to_owned(),
+                requested_schema,
+            };
+            let request = ServerRequest::ElicitRequest(ElicitRequest::new(params));
+            let _refused = context.peer.send_request(request).await;
+        }
+        if self.behaviour == Behaviour::Slow {
+            sleep(Duration::from_secs(20)).await;
         }
         Ok(ListToolsResult::default())
     }
@@ -261,6 +294,16 @@ fn routes_by_the_first_duplicate_version_header() {
     assert!(!takes_modern_path(&reversed));
 }
 
+#[test]
+fn routes_a_version_header_that_is_not_utf8() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "mcp-protocol-version",
+        HeaderValue::from_bytes(b"2026-07-28\x80").expect("a header"),
+    );
+    assert!(takes_modern_path(&headers));
+}
+
 #[tokio::test]
 async fn answers_a_request_with_a_json_body() {
     let router = app(answers());
@@ -431,16 +474,32 @@ async fn answers_a_non_post_with_allow_post() {
     assert!(body_bytes(response).await.is_empty());
 }
 
+#[rstest]
+#[case::both("application/json, text/event-stream", StatusCode::OK)]
+#[case::wildcard("*/*", StatusCode::OK)]
+#[case::wildcard_types("application/*, text/*", StatusCode::OK)]
+#[case::json_only("application/json", StatusCode::NOT_ACCEPTABLE)]
+#[case::event_stream_only("text/event-stream", StatusCode::NOT_ACCEPTABLE)]
 #[tokio::test]
-async fn refuses_an_accept_without_event_stream() {
-    let router = app(answers());
+async fn checks_the_accept_media_ranges(#[case] accept: &str, #[case] expected: StatusCode) {
     let request = post()
-        .header(header::ACCEPT, "application/json")
+        .header(header::ACCEPT, accept)
         .header("mcp-protocol-version", PROTOCOL_VERSION)
         .header("mcp-method", "tools/list")
         .body(Body::from(LIST_TOOLS.to_owned()))
         .expect("a request");
-    let response = send(&router, request).await;
+    let response = send(&app(answers()), request).await;
+    assert_eq!(response.status(), expected);
+}
+
+#[tokio::test]
+async fn refuses_a_request_without_an_accept_header() {
+    let request = post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/list")
+        .body(Body::from(LIST_TOOLS.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
     assert!(body_bytes(response).await.is_empty());
 }
@@ -523,23 +582,55 @@ async fn refuses_a_method_header_that_disagrees_with_the_body() {
     );
 }
 
+#[rstest]
+#[case::call_tool(CALL_TOOL, "tools/call", "other-tool", "'name'")]
+#[case::get_prompt(GET_PROMPT, "prompts/get", "other-prompt", "'name'")]
+#[case::read_resource(READ_RESOURCE, "resources/read", "other-uri", "'uri'")]
 #[tokio::test]
-async fn refuses_a_name_header_that_disagrees_with_the_body() {
-    let router = app(answers());
+async fn refuses_a_name_header_that_disagrees_with_the_body(
+    #[case] body: &'static str,
+    #[case] method: &'static str,
+    #[case] name: &'static str,
+    #[case] parameter: &'static str,
+) {
     let request = accepted_post()
         .header("mcp-protocol-version", PROTOCOL_VERSION)
-        .header("mcp-method", "tools/call")
-        .header("mcp-name", "other-tool")
-        .body(Body::from(CALL_TOOL.to_owned()))
+        .header("mcp-method", method)
+        .header("mcp-name", name)
+        .body(Body::from(body.to_owned()))
         .expect("a request");
-    let response = send(&router, request).await;
+    let response = send(&app(answers()), request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let refusal: Refusal = refusal(response).await;
     assert_eq!(refusal.error.code, -32020_i32);
     assert_eq!(
         refusal.error.message,
-        "mcp-name header does not match the request body's 'name' parameter"
+        format!("mcp-name header does not match the request body's {parameter} parameter")
     );
+}
+
+#[tokio::test]
+async fn accepts_a_base64_name_header_that_matches() {
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/call")
+        .header("mcp-name", BASE64_TOOL_NAME)
+        .body(Body::from(CALL_TOOL.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn refuses_a_malformed_base64_name_header() {
+    let request = accepted_post()
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/call")
+        .header("mcp-name", "=?base64?not base64?=")
+        .body(Body::from(CALL_TOOL.to_owned()))
+        .expect("a request");
+    let response = send(&app(answers()), request).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -592,6 +683,18 @@ async fn maps_a_method_not_found_error_to_404() {
 }
 
 #[tokio::test]
+async fn maps_a_missing_capability_error_to_400() {
+    let router = app(FakeHandler {
+        behaviour: Behaviour::Answer,
+        failure: Some(ErrorCode::MISSING_REQUIRED_CLIENT_CAPABILITY),
+    });
+    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let refusal: Refusal = refusal(response).await;
+    assert_eq!(refusal.error.code, -32021_i32);
+}
+
+#[tokio::test]
 async fn maps_an_invalid_params_error_to_400() {
     let router = app(FakeHandler {
         behaviour: Behaviour::Answer,
@@ -613,6 +716,36 @@ async fn maps_an_internal_error_to_200() {
     assert_eq!(response.status(), StatusCode::OK);
     let refusal: Refusal = refusal(response).await;
     assert_eq!(refusal.error.code, -32603_i32);
+}
+
+#[tokio::test]
+async fn keeps_a_refused_server_request_off_the_wire() {
+    let router = app(FakeHandler {
+        behaviour: Behaviour::AnswerAfterBackChannel,
+        failure: None,
+    });
+    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_text(response).await;
+    assert!(!body.contains("elicitation/create"), "{body}");
+    assert!(body.contains("\"id\":7"), "{body}");
+}
+
+#[tokio::test]
+async fn keeps_a_refused_server_request_out_of_a_stream() {
+    let router = app(FakeHandler {
+        behaviour: Behaviour::NotifyThenBackChannel,
+        failure: None,
+    });
+    let response = send(&router, modern_request(LIST_TOOLS, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&HeaderValue::from_static("text/event-stream"))
+    );
+    let body = body_text(response).await;
+    assert!(!body.contains("elicitation/create"), "{body}");
+    assert_eq!(events(&body).len(), 2, "{body}");
 }
 
 #[tokio::test]
