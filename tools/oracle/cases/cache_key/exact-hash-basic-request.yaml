@@ -1,0 +1,15 @@
+kind: helper
+name: exact-hash-basic-request
+call:
+  b4296:
+    get_cache_key:
+      cache_type: local
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+        - {name: messages, value: [{role: user, content: hi}]}
+        - {name: temperature, value: 0.7}
+        - {name: max_tokens, value: 100}
+env: {}
+compare:
+  ignore: []

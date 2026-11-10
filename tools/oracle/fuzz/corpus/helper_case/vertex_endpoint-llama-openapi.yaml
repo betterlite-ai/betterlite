@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-endpoint-llama-openapi-seed
+call:
+  vertex_endpoint:
+    llama_openapi:
+      complete:
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: https://proxy.example.com}
+env: {}
+compare: {ignore: []}
