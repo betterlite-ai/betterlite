@@ -39,6 +39,9 @@ const CATALOG: &str = r#"{
     "watsonx-model": {"litellm_provider": "watsonx"},
     "empower/empower-functions": {"litellm_provider": "empower"},
     "gradient-model": {"litellm_provider": "gradient_ai"},
+    "empower-custom": {"litellm_provider": "empower"},
+    "claude-opus@x": {"litellm_provider": "vertex_ai-anthropic_models"},
+    "foo/vertex_ai/imagen-4": {"litellm_provider": "vertex_ai-image-models"},
     "azure-model": {"litellm_provider": "azure"},
     "fallback_generalizations": {"rules": [
         {"name": "brand-new", "pattern": "^brand-new-", "model_info": {"litellm_provider": "anthropic"}}
@@ -436,6 +439,45 @@ fn observe(
     None,
     "anthropic.claude-v2|bedrock|-|-"
 )]
+#[case::dall_e_is_openai("dall-e-3", None, None, None, "dall-e-3|openai|-|-")]
+#[case::gpt_image_is_openai("gpt-image-1", None, None, None, "gpt-image-1|openai|-|-")]
+#[case::sora_is_openai("sora-2", None, None, None, "sora-2|openai|-|-")]
+#[case::a_catalog_empower_model_outside_the_constants(
+    "empower-custom",
+    None,
+    None,
+    None,
+    "empower-custom|empower|-|-"
+)]
+#[case::a_replicate_version_id_has_64_characters(
+    "my-model:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    None,
+    None,
+    None,
+    "my-model:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|replicate|-|-"
+)]
+#[case::a_63_character_version_id_is_not_replicate(
+    "my-model:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    None,
+    None,
+    None,
+    "error"
+)]
+#[case::a_65_character_version_id_is_not_replicate(
+    "my-model:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    None,
+    None,
+    None,
+    "error"
+)]
+#[case::a_namespaced_vertex_image_key_is_not_inferred(
+    "foo/vertex_ai/imagen-4",
+    None,
+    None,
+    None,
+    "error"
+)]
+#[case::another_vertex_family_slug_is_not_vertex("claude-opus@x", None, None, None, "error")]
 #[case::the_sambanova_branch_is_unreachable_like_litellm(
     "not-a-known-model",
     None,

@@ -172,9 +172,10 @@ fn is_bedrock(model: &str, provider: Option<&str>, mode: Option<Mode>) -> bool {
     {
         return true;
     }
+    // A bedrock/<region>/<model> key never reaches here: the bedrock/ prefix classifies first.
     provider == Some("bedrock")
         && mode != Some(Mode::Guardrail)
-        && !is_bedrock_pricing_only_model(model)
+        && !model.contains("month-commitment")
 }
 
 fn prefixed(model: &str) -> Option<Inference> {
@@ -194,22 +195,4 @@ fn is_replicate(model: &str) -> bool {
     parts
         .next()
         .is_some_and(|id| id.chars().count() == REPLICATE_ID_LENGTH)
-}
-
-// is_bedrock_pricing_only_model: bedrock/<region>/<model> keys and month-commitment keys price only.
-fn is_bedrock_pricing_only_model(model: &str) -> bool {
-    if model.contains("month-commitment") {
-        return true;
-    }
-    let Some(rest) = model.strip_prefix("bedrock/") else {
-        return false;
-    };
-    let Some((region, name)) = rest.split_once('/') else {
-        return false;
-    };
-    !region.is_empty()
-        && !name.is_empty()
-        && region
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
 }
