@@ -1,0 +1,36 @@
+kind: helper
+name: anthropic-web-replay-server-tool-correlation
+call:
+  anthropic_web_replay:
+    messages:
+      - role: assistant
+        content:
+          - type: web_search_tool_result
+            tool_use_id: dup
+            content:
+              - {type: web_search_result, url: u}
+          - {type: server_tool_use, id: dup, name: web_search, input: {query: first}}
+          - {type: server_tool_use, id: dup, name: other_name, input: {query: last}}
+          - {type: server_tool_use, id: unmatched, input: {query: q}}
+          - {type: server_tool_use, id: kept, name: other}
+          - {type: server_tool_use, id: 7, input: {query: bad-id}}
+          - {type: server_tool_use, input: {query: no-id}}
+          - {type: server_tool_use, id: badinput, input: {query: 7}}
+          - {type: server_tool_use, id: nullinput, input: null}
+          - {type: {server_tool_use: null}, id: dup, input: {query: map-type}}
+          - {type: server_tool_use, id: dup, input: []}
+          - [server_tool_use, dup, {query: array}]
+          - {type: web_search_tool_result, id: dup, input: {}}
+      - role: assistant
+        content:
+          - {type: server_tool_use, id: later, input: {query: "later query"}}
+          - type: web_search_tool_result
+            tool_use_id: later
+            content:
+              - {type: web_search_result, url: u}
+          - type: web_search_tool_result
+            tool_use_id: nomatch
+            content:
+              - {type: web_search_result, url: v}
+env: {}
+compare: {ignore: []}

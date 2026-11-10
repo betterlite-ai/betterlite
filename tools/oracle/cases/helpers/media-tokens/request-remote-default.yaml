@@ -1,0 +1,15 @@
+kind: helper
+name: media-tokens-request-remote-default
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        use_default_image_token_count: true
+        content:
+          - type: image_url
+            image_url:
+              url: "https://example.com/a.png"
+              detail: high
+env: {}
+compare: {ignore: []}
