@@ -32,7 +32,7 @@ pub(crate) async fn run(name: &str) {
         "increment_conflicts_after_the_update_window" => {
             increment_conflicts_after_the_update_window().await;
         }
-        _ => panic!("unknown case {name}"),
+        _ => super::server::run(name).await,
     }
 }
 

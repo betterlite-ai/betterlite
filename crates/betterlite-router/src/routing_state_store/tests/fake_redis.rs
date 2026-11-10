@@ -50,7 +50,7 @@ struct ConnectionState {
 pub struct FakeRedis {
     addr: SocketAddr,
     state: Arc<State>,
-    tasks: JoinSet<()>,
+    _tasks: JoinSet<()>,
 }
 
 impl FakeRedis {
@@ -60,7 +60,11 @@ impl FakeRedis {
         let state = Arc::new(State::default());
         let mut tasks = JoinSet::new();
         tasks.spawn(accept_loop(listener, Arc::clone(&state)));
-        Ok(Self { addr, state, tasks })
+        Ok(Self {
+            addr,
+            state,
+            _tasks: tasks,
+        })
     }
 
     #[cfg(test)]
@@ -116,12 +120,6 @@ impl FakeRedis {
         );
         touch(&mut inner, key);
         drop(inner);
-    }
-}
-
-impl Drop for FakeRedis {
-    fn drop(&mut self) {
-        self.tasks.abort_all();
     }
 }
 
@@ -190,13 +188,12 @@ fn dispatch(state: &State, connection: &mut ConnectionState, command: Command) -
         .first()
         .map(|arg| arg.to_ascii_uppercase())
         .unwrap_or_default();
-    if connection.multi && !matches!(name.as_str(), "EXEC" | "DISCARD" | "MULTI") {
+    if connection.multi && name != "EXEC" {
         connection.queued.push(command);
         return simple("QUEUED");
     }
     match name.as_str() {
         "PING" => simple("PONG"),
-        "CLIENT" => simple("OK"),
         "SELECT" | "AUTH" => handshake(state, &command),
         "WATCH" => watch(state, connection, &command),
         "UNWATCH" => {
@@ -206,12 +203,6 @@ fn dispatch(state: &State, connection: &mut ConnectionState, command: Command) -
         "MULTI" => {
             connection.multi = true;
             connection.queued.clear();
-            simple("OK")
-        }
-        "DISCARD" => {
-            connection.multi = false;
-            connection.queued.clear();
-            connection.watched.clear();
             simple("OK")
         }
         "EXEC" => execute(state, connection),
@@ -307,7 +298,12 @@ fn run(inner: &mut Inner, command: &Command) -> Vec<u8> {
             array(replies)
         }
         "DEL" => delete(inner, command),
-        "TTL" => integer(ttl_of(inner, arg(command, 1))),
+        "TTL" => integer(
+            inner
+                .entries
+                .get(arg(command, 1))
+                .map_or(-2, |entry| entry.ttl),
+        ),
         "EXPIRE" => integer(expire(inner, command)),
         "INCRBYFLOAT" => increment(inner, command),
         _ => simple("OK"),
@@ -393,14 +389,6 @@ fn delete(inner: &mut Inner, command: &Command) -> Vec<u8> {
         }
     }
     integer(deleted)
-}
-
-fn ttl_of(inner: &Inner, key: &str) -> i64 {
-    match inner.entries.get(key) {
-        None => -2,
-        Some(entry) if entry.ttl < 0 => -1,
-        Some(entry) => entry.ttl,
-    }
 }
 
 fn expire(inner: &mut Inner, command: &Command) -> i64 {

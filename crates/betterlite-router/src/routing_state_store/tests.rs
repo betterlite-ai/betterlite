@@ -2,7 +2,9 @@
 
 mod behaviors;
 mod boundaries;
+mod classes;
 mod connection;
+mod server;
 mod support;
 
 use rstest::rstest;
@@ -79,6 +81,13 @@ fn routing_state_store_connection(#[case] name: &str) {
 #[case::cancelled_compare_and_set_leaves_the_connection_usable(
     "cancelled_compare_and_set_leaves_the_connection_usable"
 )]
+#[case::fake_server_stores_values_and_expiry("fake_server_stores_values_and_expiry")]
+#[case::fake_server_deletes_and_increments("fake_server_deletes_and_increments")]
+#[case::fake_server_reports_error_replies("fake_server_reports_error_replies")]
+#[case::mismatched_compare_releases_its_watch("mismatched_compare_releases_its_watch")]
+#[case::rival_created_key_gets_the_default_expiry("rival_created_key_gets_the_default_expiry")]
+#[case::redis_errors_map_to_failure_classes("redis_errors_map_to_failure_classes")]
+#[case::scenario_helpers_report_outcomes("scenario_helpers_report_outcomes")]
 fn routing_state_store_boundaries(#[case] name: &str) {
     runtime().block_on(boundaries::run(name));
 }

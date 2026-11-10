@@ -195,7 +195,7 @@ fn claim_output(step: &ScenarioStep, outcome: Result<Observed<CompareOutcome>, S
     }
 }
 
-fn current(read: StoreRead) -> Option<RouteValue> {
+pub(crate) fn current(read: StoreRead) -> Option<RouteValue> {
     match read {
         StoreRead::Missing => None,
         StoreRead::Value(value) => Some(value),
@@ -209,7 +209,7 @@ async fn leak(step: &ScenarioStep, stores: &[RoutingStateStore], input: &Scenari
     Ok(output(step, Some(ScenarioValue::Flag(leaked(failure, input.settings.password.as_deref()))), None))
 }
 
-fn leaked(
+pub(crate) fn leaked(
     failure: Result<Observed<RouteValue>, StateStoreError>,
     configured: Option<&str>,
 ) -> bool {
@@ -238,7 +238,7 @@ fn request<'stores>(step: &ScenarioStep, stores: &'stores [RoutingStateStore]) -
     Ok((store, RouteKey::parse(raw).map_err(|error| error.to_string())?))
 }
 
-fn label(error: &StateStoreError) -> String {
+pub(crate) fn label(error: &StateStoreError) -> String {
     if matches!(error, StateStoreError::CircuitOpen { .. }) {
         return "circuit_open".to_owned();
     }
