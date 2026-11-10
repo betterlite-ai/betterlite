@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -114,10 +115,8 @@ impl Peer for PlannedPeer {
         }
         match self.responses.pop_front() {
             Some(Ok(response)) => Ok(response),
-            Some(Err(message)) => Err(ScenarioError::Message { message }),
-            None => Err(ScenarioError::Message {
-                message: "no scripted response".to_owned(),
-            }),
+            Some(Err(message)) => Err(ScenarioError::Io(io::Error::other(message))),
+            None => Err(ScenarioError::Io(io::Error::other("no scripted response"))),
         }
     }
 
@@ -163,11 +162,7 @@ impl PeerFactory for FakeFactory {
             env: input.env.clone(),
         });
         self.peers.pop_front().map_or_else(
-            || {
-                Err(ScenarioError::Message {
-                    message: "no scripted peer".to_owned(),
-                })
-            },
+            || Err(ScenarioError::Io(io::Error::other("no scripted peer"))),
             |peer| {
                 let boxed: Box<dyn Peer> = Box::new(peer);
                 Ok(boxed)
@@ -235,9 +230,9 @@ impl PollingTransport for FakePolling {
         ttl_seconds: u64,
     ) -> Result<(), ScenarioError> {
         if self.fail {
-            return Err(ScenarioError::Message {
-                message: "the polling transport is unavailable".to_owned(),
-            });
+            return Err(ScenarioError::Io(io::Error::other(
+                "the polling transport is unavailable",
+            )));
         }
         self.writes.push(PollWrite {
             prefix: prefix.to_owned(),
@@ -327,9 +322,9 @@ pub(crate) fn response(status: u16, body: Value) -> Response {
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, ScenarioError> {
-    mutex.lock().map_err(|_source| ScenarioError::Message {
-        message: "the test mutex was poisoned".to_owned(),
-    })
+    mutex
+        .lock()
+        .map_err(|_source| ScenarioError::Io(io::Error::other("the test mutex was poisoned")))
 }
 
 pub(crate) fn artifact_files(root: &Path) -> Vec<(PathBuf, String)> {

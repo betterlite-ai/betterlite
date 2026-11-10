@@ -1,12 +1,17 @@
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, BufReader, Write as _};
+use std::mem;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use super::polling::RedisPolling;
 use crate::http_scenarios::error::ScenarioError;
+
+const MAX_BULK_BYTES: usize = 16 * 1024 * 1024;
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub(super) struct StoredEntry {
@@ -21,8 +26,10 @@ pub(super) type Entries = Arc<Mutex<Registry>>;
 pub(super) struct RedisServer {
     addr: SocketAddr,
     entries: Entries,
+    unsupported: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
+    served: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl RedisServer {
@@ -30,22 +37,32 @@ impl RedisServer {
         let listener = TcpListener::bind("127.0.0.1:0").map_err(ScenarioError::Io)?;
         let addr = listener.local_addr().map_err(ScenarioError::Io)?;
         let entries: Entries = Arc::new(Mutex::new(Registry::new()));
+        let unsupported = Arc::new(Mutex::new(None));
+        let served = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let shared = Arc::clone(&entries);
+        let slot = Arc::clone(&unsupported);
+        let threads = Arc::clone(&served);
         let stopping = Arc::clone(&stop);
         let accept = thread::Builder::new()
-            .spawn(move || accept_loop(&listener, &shared, &stopping))
+            .spawn(move || accept_loop(&listener, &shared, &slot, &threads, &stopping))
             .map_err(ScenarioError::Io)?;
         Ok(Self {
             addr,
             entries,
+            unsupported,
             stop,
             accept: Some(accept),
+            served,
         })
     }
 
     pub(super) fn url(&self) -> String {
         format!("redis://{}/0", self.addr)
+    }
+
+    pub(super) fn unsupported(&self) -> Option<String> {
+        locked(&self.unsupported).clone()
     }
 
     pub(super) fn polling(&self) -> RedisPolling {
@@ -63,31 +80,50 @@ impl Drop for RedisServer {
         if let Some(accept) = self.accept.take() {
             let _joined = accept.join();
         }
+        let served = mem::take(&mut *locked(&self.served));
+        for handle in served {
+            let _joined = handle.join();
+        }
     }
 }
 
-fn accept_loop(listener: &TcpListener, entries: &Entries, stop: &Arc<AtomicBool>) {
+fn accept_loop(
+    listener: &TcpListener,
+    entries: &Entries,
+    unsupported: &Arc<Mutex<Option<String>>>,
+    served: &Arc<Mutex<Vec<JoinHandle<()>>>>,
+    stop: &Arc<AtomicBool>,
+) {
     while let Ok((stream, _peer)) = listener.accept() {
         if stop.load(Ordering::Relaxed) {
             return;
         }
+        if stream.set_read_timeout(Some(READ_TIMEOUT)).is_err() {
+            continue;
+        }
         let shared = Arc::clone(entries);
-        let _served = thread::Builder::new().spawn(move || serve(stream, &shared));
+        let slot = Arc::clone(unsupported);
+        let Ok(handle) = thread::Builder::new().spawn(move || serve(stream, &shared, &slot)) else {
+            continue;
+        };
+        locked(served).push(handle);
     }
 }
 
-fn serve(stream: TcpStream, entries: &Entries) {
+fn serve(stream: TcpStream, entries: &Entries, unsupported: &Mutex<Option<String>>) {
     let Ok(cloned) = stream.try_clone() else {
         return;
     };
     let mut reader = BufReader::new(cloned);
     let mut writer = stream;
     while let Ok(Some(command)) = read_command(&mut reader) {
-        let reply = match command.name.as_str() {
-            "SET" => store(entries, &command),
-            "GET" => lookup(entries, &command),
-            "PING" => b"+PONG\r\n".to_vec(),
-            _ => b"+OK\r\n".to_vec(),
+        let Some(reply) = answer(entries, &command) else {
+            record_unsupported(unsupported, &command.name);
+            let error = format!("-ERR unknown command '{}'\r\n", command.name);
+            if writer.write_all(error.as_bytes()).is_err() {
+                return;
+            }
+            continue;
         };
         if writer.write_all(&reply).is_err() {
             return;
@@ -133,10 +169,40 @@ fn read_header(reader: &mut impl BufRead, marker: char) -> io::Result<Option<usi
 }
 
 fn read_argument(reader: &mut impl BufRead, length: usize) -> io::Result<String> {
+    if length > MAX_BULK_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a bulk string exceeds 16 MiB",
+        ));
+    }
     let mut bytes = vec![0_u8; length.saturating_add(2)];
     reader.read_exact(&mut bytes)?;
     bytes.truncate(length);
     String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+fn answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
+    match command.name.as_str() {
+        "SET" => Some(store(entries, command)),
+        "GET" => Some(lookup(entries, command)),
+        "PING" => Some(b"+PONG\r\n".to_vec()),
+        "SELECT" | "AUTH" | "QUIT" => Some(b"+OK\r\n".to_vec()),
+        "CLIENT" => client_answer(command),
+        _ => None,
+    }
+}
+
+fn client_answer(command: &Command) -> Option<Vec<u8>> {
+    let subcommand = command.args.get(1)?;
+    let supported = subcommand.eq_ignore_ascii_case("SETINFO");
+    supported.then_some(b"+OK\r\n".to_vec())
+}
+
+fn record_unsupported(unsupported: &Mutex<Option<String>>, name: &str) {
+    let mut slot = locked(unsupported);
+    if slot.is_none() {
+        *slot = Some(name.to_owned());
+    }
 }
 
 fn store(entries: &Entries, command: &Command) -> Vec<u8> {
@@ -179,7 +245,7 @@ fn encode_bulk(value: &str) -> Vec<u8> {
     reply
 }
 
-pub(super) fn locked(registry: &Mutex<Registry>) -> MutexGuard<'_, Registry> {
+pub(super) fn locked<T>(registry: &Mutex<T>) -> MutexGuard<'_, T> {
     match registry.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),

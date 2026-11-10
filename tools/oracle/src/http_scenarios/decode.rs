@@ -101,12 +101,11 @@ impl ScenarioFile {
 }
 
 fn validate_env(env: &BTreeMap<String, String>) -> Result<(), ScenarioError> {
-    for name in env.keys() {
-        if RESERVED_ENV.contains(&name.as_str()) {
-            return Err(ScenarioError::ReservedEnv { name: name.clone() });
-        }
-    }
-    Ok(())
+    env.keys()
+        .find(|name| RESERVED_ENV.contains(&name.as_str()))
+        .map_or(Ok(()), |name| {
+            Err(ScenarioError::ReservedEnv { name: name.clone() })
+        })
 }
 
 fn validate_steps(steps: &[Step]) -> Result<(), ScenarioError> {
@@ -159,15 +158,12 @@ fn reject_header(
     value: &str,
     secrets: &BTreeMap<String, bool>,
 ) -> Result<(), ScenarioError> {
-    let mut secret = None;
-    for segment in segments(value, index)? {
-        if let Segment::Capture(name) = segment
-            && secrets.get(name) == Some(&true)
-        {
-            secret = Some(name.to_owned());
-            break;
-        }
-    }
+    let secret = segments(value, index)?.into_iter().find_map(|segment| {
+        let Segment::Capture(name) = segment else {
+            return None;
+        };
+        (secrets.get(name) == Some(&true)).then(|| name.to_owned())
+    });
     secret.map_or(Ok(()), |name| {
         Err(ScenarioError::SecretCaptureHeader {
             index,
@@ -178,17 +174,12 @@ fn reject_header(
 }
 
 fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {
-    if step.name.is_empty() {
-        return Err(ScenarioError::StepField {
-            index,
-            field: "name",
-        });
-    }
-    if step.request.path.is_empty() {
-        return Err(ScenarioError::StepField {
-            index,
-            field: "request.path",
-        });
+    let empty = [
+        ("name", step.name.is_empty()),
+        ("request.path", step.request.path.is_empty()),
+    ];
+    if let Some((field, _)) = empty.iter().find(|(_, missing)| *missing) {
+        return Err(ScenarioError::StepField { index, field });
     }
     request_body(&step.request.body, step.request.body_kind)
         .map_err(|source| ScenarioError::Body { index, source })?;
@@ -200,19 +191,14 @@ fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {
 }
 
 fn validate_ignores(index: usize, ignores: &[Ignore]) -> Result<(), ScenarioError> {
-    for ignored in ignores {
-        if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
-            return Err(ScenarioError::Ignore {
-                index,
-                problem: "pointers must be JSON pointers",
-            });
-        }
-        if ignored.why.is_empty() {
-            return Err(ScenarioError::Ignore {
-                index,
-                problem: "entries need a why",
-            });
-        }
-    }
-    Ok(())
+    ignores.iter().try_for_each(|ignored| {
+        let problem = if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
+            "pointers must be JSON pointers"
+        } else if ignored.why.is_empty() {
+            "entries need a why"
+        } else {
+            return Ok(());
+        };
+        Err(ScenarioError::Ignore { index, problem })
+    })
 }

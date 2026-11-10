@@ -65,16 +65,17 @@ fn store_polling(
     let ttl = Duration::from_secs(ttl_seconds).as_secs_f64();
     runtime
         .block_on(cache.async_set_cache(Some(full_key), &entry, Some(ttl), false))
-        .map_err(|error| ScenarioError::Message {
-            message: format!("scenario polling entry {full_key} failed: {error}"),
+        .map_err(|source| ScenarioError::PollingEntry {
+            key: full_key.to_owned(),
+            source,
         })?;
     let expected = i64::try_from(ttl_seconds).ok();
     let stored = polling.entry(full_key);
     if stored.is_some_and(|record| record.value == value && record.ttl_seconds == expected) {
         return Ok(());
     }
-    Err(ScenarioError::Message {
-        message: "scenario polling entry was not stored with the expected value and TTL".to_owned(),
+    Err(ScenarioError::PollingNotStored {
+        key: full_key.to_owned(),
     })
 }
 
@@ -87,9 +88,7 @@ fn cache(addr: SocketAddr) -> Result<RedisCacheValues, ScenarioError> {
         Arc::new(RedisClientStore::new()),
         None,
     )
-    .map_err(|error| ScenarioError::Message {
-        message: format!("scenario polling transport failed: {error}"),
-    })?;
+    .map_err(|source| ScenarioError::PollingTransport { source })?;
     Ok(RedisCacheValues::new(
         RedisCacheValuesSettings {
             namespace: None,
@@ -103,19 +102,44 @@ fn cache(addr: SocketAddr) -> Result<RedisCacheValues, ScenarioError> {
 }
 
 fn connection_settings(addr: SocketAddr) -> Result<RedisConnectionSettings, ScenarioError> {
-    let overrides = RedisOverrides {
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    resolve_redis_kwargs(overrides(addr), ClientKind::Async, &environment)
+        .map_err(|source| ScenarioError::PollingSettings { source })
+}
+
+fn overrides(addr: SocketAddr) -> RedisOverrides {
+    RedisOverrides {
         host: Some(addr.ip().to_string()),
         port: Some(Scalar::Value(i64::from(addr.port()))),
+        db: None,
+        username: None,
+        password: None,
+        url: None,
+        ssl: None,
         socket_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
         socket_connect_timeout: Some(Scalar::Value(SOCKET_TIMEOUT)),
-        ..RedisOverrides::default()
-    };
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    resolve_redis_kwargs(overrides, ClientKind::Async, &environment).map_err(|error| {
-        ScenarioError::Message {
-            message: format!("scenario polling settings failed: {error}"),
-        }
-    })
+        socket_keepalive: None,
+        max_connections: None,
+        health_check_interval: None,
+        credential_provider: false,
+        startup_nodes: None,
+        sentinel_nodes: None,
+        sentinel_password: None,
+        service_name: None,
+        ssl_password: None,
+        gcp_service_account: None,
+        gcp_ssl_ca_certs: None,
+        azure_redis_ad_token: None,
+        azure_client_id: None,
+        azure_tenant_id: None,
+        azure_client_secret: None,
+        aws_iam_auth: None,
+        aws_iam_user_name: None,
+        aws_iam_cache_name: None,
+        aws_iam_region: None,
+        aws_iam_serverless: None,
+        passthrough: BTreeMap::new(),
+    }
 }
 
 struct AllowHooks;

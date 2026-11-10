@@ -210,22 +210,13 @@ fn ensure_matching(first: &PeerTranscript, second: &PeerTranscript) -> Result<()
     let first_url = first.names.database_url.expose_secret();
     let second_url = second.names.database_url.expose_secret();
     if !first_url.is_empty() && first_url == second_url {
-        return Err(ScenarioError::Message {
-            message:
-                "scenario setup differs between peers: both peers share one postgres namespace"
-                    .to_owned(),
-        });
+        return Err(ScenarioError::SharedDatabase);
     }
     if first.names.redis_prefix == second.names.redis_prefix {
-        return Err(ScenarioError::Message {
-            message: "scenario setup differs between peers: both peers share one redis prefix"
-                .to_owned(),
-        });
+        return Err(ScenarioError::SharedRedisPrefix);
     }
     if first.journal != second.journal {
-        return Err(ScenarioError::Message {
-            message: "scenario setup differs between peers: the setup journals differ".to_owned(),
-        });
+        return Err(ScenarioError::JournalMismatch);
     }
     Ok(())
 }

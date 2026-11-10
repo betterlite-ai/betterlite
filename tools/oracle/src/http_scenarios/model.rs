@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_postgres_fixture::fixtures::http_scenarios::ScenarioSetup;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::case::{BodyKind, Ignore, UpstreamAnswer};
@@ -91,14 +91,21 @@ pub(crate) struct StepCompare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
+#[derive(Serialize)]
+struct ResponseDocument<'input> {
+    status: u16,
+    headers: &'input BTreeMap<String, String>,
+    body: &'input Value,
+}
+
 // the document a capture pointer resolves against: the wire response the client saw
 pub(crate) fn response_document(response: &Response) -> Result<Value, ScenarioError> {
-    let headers = serde_json::to_value(&response.headers).map_err(ScenarioError::Json)?;
-    let mut document = serde_json::Map::new();
-    document.insert("status".to_owned(), Value::from(response.status));
-    document.insert("headers".to_owned(), headers);
-    document.insert("body".to_owned(), response.body.clone());
-    Ok(Value::Object(document))
+    serde_json::to_value(ResponseDocument {
+        status: response.status,
+        headers: &response.headers,
+        body: &response.body,
+    })
+    .map_err(ScenarioError::Json)
 }
 
 pub(crate) struct CapturedValue {

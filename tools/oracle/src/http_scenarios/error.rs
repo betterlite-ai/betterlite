@@ -4,6 +4,9 @@ use std::str::Utf8Error;
 use std::string::FromUtf8Error;
 
 use betterlite_postgres_fixture::error::FixtureError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_client_reuse::error::ClientReuseError;
+use betterlite_redis::redis_connection_settings::error::RedisSettingsError;
 use thiserror::Error;
 
 use crate::OracleError;
@@ -54,16 +57,46 @@ pub enum ScenarioError {
     FixturesTooLarge { limit: usize },
     #[error("scenario exceeded 120 seconds")]
     Deadline,
-    #[error("scenario step {index} capture {name} {reason}")]
-    Capture {
+    #[error("scenario step {index} capture {name} missing pointer {pointer}")]
+    MissingPointer {
         index: usize,
         name: String,
-        reason: String,
+        pointer: String,
     },
+    #[error("scenario step {index} capture {name} is not a scalar value")]
+    CaptureNotScalar { index: usize, name: String },
     #[error("scenario step {index} references unresolved capture \"{name}\"")]
     UnresolvedCapture { index: usize, name: String },
-    #[error("{message}")]
-    Message { message: String },
+    #[error("scenario peer failed: the peer is not running")]
+    Peer,
+    #[error("scenario peer failed: the provider trace shrank between steps")]
+    ProviderTraceShrank,
+    #[error("scenario setup differs between peers: both peers share one postgres namespace")]
+    SharedDatabase,
+    #[error("scenario setup differs between peers: both peers share one redis prefix")]
+    SharedRedisPrefix,
+    #[error("scenario setup differs between peers: the setup journals differ")]
+    JournalMismatch,
+    #[error("scenario redis command \"{command}\" is not supported")]
+    UnknownCommand { command: String },
+    #[error("scenario polling entry {key} failed: {source}")]
+    PollingEntry {
+        key: String,
+        #[source]
+        source: RedisCacheValuesError,
+    },
+    #[error("scenario polling transport failed: {source}")]
+    PollingTransport {
+        #[source]
+        source: ClientReuseError,
+    },
+    #[error("scenario polling settings failed: {source}")]
+    PollingSettings {
+        #[source]
+        source: RedisSettingsError,
+    },
+    #[error("scenario polling entry {key} was not stored with the expected value and TTL")]
+    PollingNotStored { key: String },
     #[error(transparent)]
     Request(Box<OracleError>),
     #[error("scenario fixture failed: {0}")]

@@ -12,6 +12,7 @@ use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::cli::Options;
 use crate::http;
+use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::model::HttpScenario;
 use crate::http_scenarios::run::{PeerFixture, ScenarioDependencies, run};
 use crate::mock::MockProvider;
@@ -76,22 +77,10 @@ pub(crate) fn run_case(
         client: http::client()?,
         group_dir: environment.group_dir.clone(),
     };
-    let redis_url = environment.redis.url();
-    let mut first_repository = PostgresRepository {
-        configured_url: environment.configured_url.clone(),
-        fixture: None,
-        prefix: format!("oracle-scenario-first-{}", unique_id()?),
-        redis_url: redis_url.clone(),
-    };
-    let mut second_repository = PostgresRepository {
-        configured_url: environment.configured_url.take(),
-        fixture: None,
-        prefix: format!("oracle-scenario-second-{}", unique_id()?),
-        redis_url,
-    };
+    let (mut first_repository, mut second_repository) = repositories(&mut environment)?;
     let mut first_polling = environment.redis.polling();
     let mut second_polling = environment.redis.polling();
-    Ok(run(ScenarioDependencies {
+    let outcome = run(ScenarioDependencies {
         scenario,
         clock: &SystemClock,
         factory: &mut factory,
@@ -105,5 +94,30 @@ pub(crate) fn run_case(
         },
         upstream: &environment.provider.base_url,
         artifact_root: root,
-    })?)
+    })?;
+    if let Some(command) = environment.redis.unsupported() {
+        return Err(OracleError::HttpScenario(Box::new(
+            ScenarioError::UnknownCommand { command },
+        )));
+    }
+    Ok(outcome)
+}
+
+fn repositories(
+    environment: &mut ScenarioEnvironment,
+) -> Result<(PostgresRepository, PostgresRepository), OracleError> {
+    let redis_url = environment.redis.url();
+    let first = PostgresRepository {
+        configured_url: environment.configured_url.clone(),
+        fixture: None,
+        prefix: format!("oracle-scenario-first-{}", unique_id()?),
+        redis_url: redis_url.clone(),
+    };
+    let second = PostgresRepository {
+        configured_url: environment.configured_url.take(),
+        fixture: None,
+        prefix: format!("oracle-scenario-second-{}", unique_id()?),
+        redis_url,
+    };
+    Ok((first, second))
 }
