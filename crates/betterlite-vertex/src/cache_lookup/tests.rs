@@ -32,6 +32,7 @@ const VERTEX_TARGET_URL: &str = "https://us-central1-aiplatform.googleapis.com/v
 const PROXY_TARGET_URL: &str =
     "https://proxy.example.com/v1/projects/proj/locations/us-central1/cachedContents";
 
+#[derive(Clone)]
 enum Reply {
     Status { status: u16, body: Vec<u8> },
     Failure,
@@ -45,6 +46,7 @@ struct Recorded {
 
 struct Pages {
     replies: Mutex<VecDeque<Reply>>,
+    fallback: Option<Reply>,
     requests: Mutex<Vec<Recorded>>,
 }
 
@@ -52,12 +54,28 @@ impl Pages {
     fn new(replies: Vec<Reply>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
+            fallback: None,
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn repeating(reply: Reply) -> Self {
+        Self {
+            replies: Mutex::new(VecDeque::new()),
+            fallback: Some(reply),
             requests: Mutex::new(Vec::new()),
         }
     }
 
     fn requests(&self) -> Vec<Recorded> {
         self.requests.lock().unwrap().clone()
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.requests()
+            .into_iter()
+            .map(|record| record.url)
+            .collect()
     }
 }
 
@@ -72,7 +90,13 @@ impl CacheTransport for Pages {
             .lock()
             .unwrap()
             .push(Recorded { url, headers });
-        let reply = self.replies.lock().unwrap().pop_front().unwrap();
+        let reply = self
+            .replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .or_else(|| self.fallback.clone())
+            .unwrap();
         ready(match reply {
             Reply::Status { status, body } => Ok(UpstreamResponse {
                 status,
@@ -81,38 +105,6 @@ impl CacheTransport for Pages {
             }),
             Reply::Failure => Err(TransportError::Closed),
         })
-    }
-}
-
-struct Repeating {
-    body: Vec<u8>,
-    requests: Mutex<Vec<String>>,
-}
-
-impl Repeating {
-    fn new(body: &str) -> Self {
-        Self {
-            body: body.as_bytes().to_vec(),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn urls(&self) -> Vec<String> {
-        self.requests.lock().unwrap().clone()
-    }
-}
-
-impl CacheTransport for Repeating {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.requests.lock().unwrap().push(request.url.to_string());
-        ready(Ok(UpstreamResponse {
-            status: 200,
-            headers: HeaderMap::new(),
-            body: self.body.clone(),
-        }))
     }
 }
 
@@ -600,7 +592,7 @@ async fn empty_page_token_stops() {
 
 #[tokio::test]
 async fn page_limit() {
-    let pages = Repeating::new(r#"{"cachedContents":[],"nextPageToken":"loop"}"#);
+    let pages = Pages::repeating(page(r#"{"cachedContents":[],"nextPageToken":"loop"}"#));
     let found = check_cache(
         &pages,
         &native_target(),
