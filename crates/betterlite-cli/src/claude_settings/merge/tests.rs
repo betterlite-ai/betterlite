@@ -301,9 +301,9 @@ fn with_status_line_treats_a_null_entry_as_absent() {
 }
 
 #[rstest]
-#[case::ours("python3 /home/tester/.litellm/statusline.py")]
 #[case::older_binary("/opt/betterlite/bin/lite statusline")]
-#[case::embedded_subcommand("/usr/bin/statusline-runner")]
+#[case::quoted_binary("'/opt/betterlite/bin/lite' statusline")]
+#[case::relative_binary("target/debug/lite statusline")]
 fn with_status_line_replaces_an_entry_that_runs_our_subcommand(#[case] existing: &str) {
     let original = settings(&format!(
         r#"{{"statusLine":{{"type":"command","command":"{existing}"}}}}"#
@@ -317,6 +317,13 @@ fn with_status_line_replaces_an_entry_that_runs_our_subcommand(#[case] existing:
 #[case::entry_without_command(r#"{"statusLine":{"type":"command"}}"#)]
 #[case::text_entry(r#"{"statusLine":"/usr/bin/mine"}"#)]
 #[case::number_entry(r#"{"statusLine":7}"#)]
+#[case::litellm_script(
+    r#"{"statusLine":{"type":"command","command":"python3 /home/tester/.litellm/statusline.py"}}"#
+)]
+#[case::user_script(r#"{"statusLine":{"type":"command","command":"~/.claude/statusline.sh"}}"#)]
+#[case::subcommand_runner(
+    r#"{"statusLine":{"type":"command","command":"/usr/bin/statusline-runner"}}"#
+)]
 fn with_status_line_leaves_another_entry_alone(#[case] original: &str) {
     let existing = settings(original);
     assert_eq!(with_status_line(&existing, COMMAND), existing);

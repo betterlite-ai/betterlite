@@ -46,15 +46,13 @@ pub fn merge_claude_settings(
 pub fn with_status_line(settings: &SettingsDocument, command: &str) -> SettingsDocument {
     let ours = match settings.get(STATUS_LINE_KEY) {
         None | Some(JsonValue::Null) => true,
-        Some(JsonValue::Object(entry)) => entry
-            .get("command")
-            .and_then(JsonValue::as_str)
-            .is_some_and(|existing| {
-                command
-                    .split_whitespace()
-                    .last()
-                    .is_some_and(|subcommand| existing.contains(subcommand))
-            }),
+        Some(JsonValue::Object(entry)) => {
+            let subcommand = command.split_whitespace().last();
+            entry
+                .get("command")
+                .and_then(JsonValue::as_str)
+                .is_some_and(|existing| existing.split_whitespace().last() == subcommand)
+        }
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_),
         ) => false,
