@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::agent_launch::EnvVars;
 
@@ -66,15 +65,6 @@ pub struct ModelListingResponse {
 
 pub trait ModelListingTransport {
     fn get(&self, request: &ModelListingRequest) -> io::Result<ModelListingResponse>;
-}
-
-#[derive(Debug, Error)]
-pub enum OpenCodeError {
-    #[error("could not encode the OpenCode config: {source}")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
 }
 
 #[derive(Serialize)]
@@ -178,7 +168,7 @@ fn opencode_model_entry(model: &ListedModel) -> OpenCodeModel {
 pub fn opencode_provider_config(
     base_url: &str,
     models: &[ListedModel],
-) -> Result<String, OpenCodeError> {
+) -> Result<String, ModelSyncSkipped> {
     let mut entries = BTreeMap::new();
     for model in chat_models(models) {
         entries.insert(model.id.clone(), opencode_model_entry(&model));
@@ -195,7 +185,9 @@ pub fn opencode_provider_config(
     let config = OpenCodeConfig {
         provider: BTreeMap::from([(OPENCODE_PROVIDER_ID.to_owned(), provider)]),
     };
-    serde_json::to_string(&config).map_err(|source| OpenCodeError::Encode { source })
+    serde_json::to_string(&config).map_err(|_invalid| ModelSyncSkipped {
+        reason: "could not encode the OpenCode config".to_owned(),
+    })
 }
 
 #[must_use]
@@ -219,9 +211,7 @@ pub fn opencode_model_sync_env(
             OPENCODE_CONFIG_CONTENT_ENV.to_owned(),
             config,
         )])),
-        Err(error) => ModelSyncResult::Skipped(ModelSyncSkipped {
-            reason: error.to_string(),
-        }),
+        Err(skipped) => ModelSyncResult::Skipped(skipped),
     }
 }
 
