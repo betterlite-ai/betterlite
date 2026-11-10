@@ -4,18 +4,48 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 use crate::OracleError;
+use crate::http_scenarios::decode_http_scenario;
+use crate::http_scenarios::model::{HttpScenario, Limits};
 use crate::routing_component_oracle::{ProbeCase, validate_probe_case};
 use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_http_case};
 
 use super::{CaseKind, LoadedCase, parse_case};
 
-// sdk_http and probe cases run through their own drivers, so this list leaves them out
+// sdk_http, probe and http_scenario cases run through their own drivers, so this list leaves them out
 pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
-    let texts = cases_matching(paths, |kind| !matches!(kind, Some("sdk_http" | "probe")))?;
+    let texts = cases_matching(paths, |kind| {
+        !matches!(kind, Some("sdk_http" | "probe" | "http_scenario"))
+    })?;
     texts
         .iter()
         .map(|(path, text)| parse_case(path, text))
         .collect()
+}
+
+pub(crate) fn load_http_scenario_cases(
+    paths: &[PathBuf],
+) -> Result<Vec<HttpScenario>, OracleError> {
+    match cases_matching(paths, |kind| kind == Some("http_scenario")) {
+        Ok(selection) => decode_scenarios(selection),
+        Err(error) => Err(error),
+    }
+}
+
+fn decode_scenarios(selection: Vec<(PathBuf, String)>) -> Result<Vec<HttpScenario>, OracleError> {
+    let mut scenarios = Vec::with_capacity(selection.len());
+    let mut remaining = selection.into_iter();
+    while let Some((path, text)) = remaining.next() {
+        match decode_http_scenario(text.as_bytes(), &Limits::default()) {
+            Ok(scenario) => scenarios.push(scenario),
+            Err(source) => {
+                return Err(OracleError::HttpScenarioCase {
+                    path,
+                    source: Box::new(source),
+                });
+            }
+        }
+    }
+    Ok(scenarios)
 }
 
 pub(crate) fn load_sdk_http_cases(paths: &[PathBuf]) -> Result<Vec<SdkHttpCase>, OracleError> {

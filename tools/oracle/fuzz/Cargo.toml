@@ -107,3 +107,10 @@ path = "fuzz_targets/sdk_http_case.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "http_scenarios"
+path = "fuzz_targets/http_scenarios.rs"
+test = false
+doc = false
+bench = false
