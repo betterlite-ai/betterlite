@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-ttl-reply-zero-stays-zero
+call:
+  b5640:
+    function: ttl_reply
+    namespace: ns
+    key: alpha
+    reply: 0
+env: {}
+compare: {ignore: []}
