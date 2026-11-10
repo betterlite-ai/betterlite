@@ -26,8 +26,12 @@ fn into_header_map(headers: &IndexMap<String, String>) -> Result<HeaderMap, Coun
     for (name, value) in headers {
         let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_invalid| CountTokensError::InvalidHeaderName { name: name.clone() })?;
-        let header_value = HeaderValue::from_str(value)
+        let mut header_value = HeaderValue::from_str(value)
             .map_err(|_invalid| CountTokensError::InvalidHeaderValue { name: name.clone() })?;
+        header_value.set_sensitive(matches!(
+            header_name.as_str(),
+            "x-api-key" | "authorization"
+        ));
         map.insert(header_name, header_value);
     }
     Ok(map)

@@ -59,13 +59,16 @@ async fn count_tokens_cases(#[case] case: u8) {
     }
 }
 
-fn body_for(messages: &Json) -> CountTokensBody<'_> {
+fn body_for<'call>(
+    messages: &'call Json,
+    options: &'call IndexMap<String, Json>,
+) -> CountTokensBody<'call> {
     CountTokensBody {
         model: MODEL,
         messages,
         tools: None,
         system: None,
-        optional_params: None,
+        optional_params: options,
     }
 }
 
@@ -102,7 +105,13 @@ async fn count_endpoint() {
 
 async fn default_endpoint() {
     let messages = user_messages();
-    let (sent, outcome) = handled(None, None, b198_request_timeout(), body_for(&messages)).await;
+    let (sent, outcome) = handled(
+        None,
+        None,
+        b198_request_timeout(),
+        body_for(&messages, &IndexMap::new()),
+    )
+    .await;
     outcome.unwrap();
     assert_eq!(b198_request_timeout(), Duration::from_mins(100));
     assert_eq!(sent.method, Method::POST);
@@ -112,8 +121,13 @@ async fn default_endpoint() {
 
 async fn empty_api_base() {
     let messages = user_messages();
-    let (sent, outcome) =
-        handled(Some(""), None, b198_request_timeout(), body_for(&messages)).await;
+    let (sent, outcome) = handled(
+        Some(""),
+        None,
+        b198_request_timeout(),
+        body_for(&messages, &IndexMap::new()),
+    )
+    .await;
     outcome.unwrap();
     assert_eq!(sent.url, DEFAULT_COUNT_TOKENS_ENDPOINT);
 }
@@ -125,7 +139,7 @@ async fn verbatim_endpoint() {
         Some(queried_endpoint),
         None,
         b198_request_timeout(),
-        body_for(&messages),
+        body_for(&messages, &IndexMap::new()),
     )
     .await;
     queried_outcome.unwrap();
@@ -134,7 +148,7 @@ async fn verbatim_endpoint() {
         Some("http://custom.example"),
         None,
         b198_request_timeout(),
-        body_for(&messages),
+        body_for(&messages, &IndexMap::new()),
     )
     .await;
     custom_outcome.unwrap();
@@ -147,7 +161,7 @@ async fn explicit_timeouts() {
         None,
         Some(Duration::ZERO),
         b198_request_timeout(),
-        body_for(&messages),
+        body_for(&messages, &IndexMap::new()),
     )
     .await;
     zero_outcome.unwrap();
@@ -156,7 +170,7 @@ async fn explicit_timeouts() {
         None,
         Some(Duration::from_secs(2)),
         Duration::from_secs(17),
-        body_for(&messages),
+        body_for(&messages, &IndexMap::new()),
     )
     .await;
     short_outcome.unwrap();
@@ -165,7 +179,13 @@ async fn explicit_timeouts() {
 
 async fn configured_timeout() {
     let messages = user_messages();
-    let (sent, outcome) = handled(None, None, Duration::from_secs(17), body_for(&messages)).await;
+    let (sent, outcome) = handled(
+        None,
+        None,
+        Duration::from_secs(17),
+        body_for(&messages, &IndexMap::new()),
+    )
+    .await;
     outcome.unwrap();
     assert_eq!(sent.deadline, Duration::from_secs(17));
 }
@@ -181,7 +201,7 @@ fn messages_system_tools() {
 fn omitted_optionals() {
     let messages =
         json(r#"[{"role":"user","content":[{"type":"text","text":"hi","x":1}],"extra":true}]"#);
-    let actual = transform_request(&body_for(&messages));
+    let actual = transform_request(&body_for(&messages, &IndexMap::new()));
     let mut expected = IndexMap::new();
     expected.insert("model".to_owned(), Json::Text(MODEL.to_owned()));
     expected.insert("messages".to_owned(), messages);
@@ -197,7 +217,7 @@ fn empty_optionals_are_kept() {
         messages: &messages,
         tools: Some(&tools),
         system: Some(&system),
-        optional_params: None,
+        optional_params: &IndexMap::new(),
     };
     let actual = transform_request(&body);
     assert_eq!(actual.get("system"), Some(&Json::Text(String::new())));
@@ -217,7 +237,7 @@ fn token_options_only() {
         messages: &messages,
         tools: None,
         system: None,
-        optional_params: Some(&params),
+        optional_params: &params,
     };
     let actual = transform_request(&body);
     assert_eq!(actual.get("thinking"), Some(&json(r#"{"type":"enabled"}"#)));
@@ -241,7 +261,7 @@ fn null_options_are_kept() {
         messages: &messages,
         tools: None,
         system: None,
-        optional_params: Some(&params),
+        optional_params: &params,
     };
     assert_eq!(transform_request(&body).get("thinking"), Some(&Json::Null));
 }
@@ -254,7 +274,7 @@ fn empty_messages_with_system() {
         messages: &messages,
         tools: None,
         system: Some(&system),
-        optional_params: None,
+        optional_params: &IndexMap::new(),
     };
     let actual = transform_request(&body);
     assert_eq!(actual.get("messages"), Some(&Json::List(Vec::new())));
@@ -343,7 +363,7 @@ fn validated(
         messages,
         tools,
         system,
-        optional_params: None,
+        optional_params: &IndexMap::new(),
     })
 }
 

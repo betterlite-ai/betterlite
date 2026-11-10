@@ -100,8 +100,8 @@ fn response_json(outcome: Result<CountResponse, ApiError>) -> Result<Value, Box<
     match outcome {
         Ok(value) => Ok(json!({"value": serde_json::to_value(value).map_err(failure)?})),
         Err(error) => Ok(json!({"error": {
-            "status_code": error.status_code,
-            "processing": error.message.starts_with("CountTokens processing error: "),
+            "status_code": error.status_code(),
+            "processing": matches!(error, ApiError::Processing { .. }),
         }})),
     }
 }

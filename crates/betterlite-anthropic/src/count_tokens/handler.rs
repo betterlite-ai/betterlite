@@ -7,7 +7,7 @@ use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use http::Method;
 use url::Url;
 
-use crate::count_tokens::error::{ApiError, CountTokensError, HandleFailure};
+use crate::count_tokens::error::{ApiError, CountTokensError};
 use crate::count_tokens::headers::{DEFAULT_COUNT_TOKENS_ENDPOINT, get_required_headers};
 use crate::count_tokens::validate::validate_request;
 use crate::count_tokens::wire::{
@@ -35,21 +35,11 @@ pub struct AnthropicCountTokensHandler<T> {
 }
 
 impl<T: CountTokensTransport> AnthropicCountTokensHandler<T> {
+    // LiteLLM re-raises AnthropicError untouched and wraps every other exception in a 500 AnthropicError
     pub async fn handle_count_tokens_request(
         &self,
         request: &CountTokensRequest<'_>,
     ) -> Result<CountResponse, ApiError> {
-        match self.send(request).await {
-            Ok(response) => Ok(response),
-            Err(HandleFailure::Api(error)) => Err(error),
-            Err(HandleFailure::Processing(error)) => Err(ApiError {
-                status_code: 500,
-                message: format!("CountTokens processing error: {error}"),
-            }),
-        }
-    }
-
-    async fn send(&self, request: &CountTokensRequest<'_>) -> Result<CountResponse, HandleFailure> {
         validate_request(&request.body)?;
         let body = transform_request(&request.body);
         let endpoint = request
@@ -81,12 +71,12 @@ impl<T: CountTokensTransport> AnthropicCountTokensHandler<T> {
             let status = response.status;
             let message = response_text(response.body);
             tracing::error!("the Anthropic CountTokens endpoint answered {status}: {message}");
-            return Err(HandleFailure::Api(ApiError {
+            return Err(ApiError::Upstream {
                 status_code: status,
-                message,
-            }));
+                text: message,
+            });
         }
-        decode_count_response(&response.body).map_err(HandleFailure::Processing)
+        Ok(decode_count_response(&response.body)?)
     }
 }
 

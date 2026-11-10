@@ -2,11 +2,25 @@ use betterlite_http::proxy::transport_error::TransportError;
 use thiserror::Error;
 
 // LiteLLM's AnthropicError carries the upstream status and the raw response text
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{message}")]
-pub struct ApiError {
-    pub status_code: u16,
-    pub message: String,
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error("{text}")]
+    Upstream { status_code: u16, text: String },
+    #[error("CountTokens processing error: {source}")]
+    Processing {
+        #[from]
+        source: CountTokensError,
+    },
+}
+
+impl ApiError {
+    #[must_use]
+    pub const fn status_code(&self) -> u16 {
+        match self {
+            Self::Upstream { status_code, .. } => *status_code,
+            Self::Processing { .. } => 500,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -51,13 +65,4 @@ pub enum CountTokensError {
         #[source]
         source: TransportError,
     },
-}
-
-// LiteLLM re-raises AnthropicError untouched and wraps every other exception in a 500 AnthropicError
-#[derive(Debug, Error)]
-pub(crate) enum HandleFailure {
-    #[error(transparent)]
-    Api(#[from] ApiError),
-    #[error(transparent)]
-    Processing(#[from] CountTokensError),
 }

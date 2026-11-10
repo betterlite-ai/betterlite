@@ -16,7 +16,7 @@ pub struct CountTokensBody<'call> {
     pub messages: &'call Json,
     pub tools: Option<&'call Json>,
     pub system: Option<&'call Json>,
-    pub optional_params: Option<&'call IndexMap<String, Json>>,
+    pub optional_params: &'call IndexMap<String, Json>,
 }
 
 #[derive(Debug)]
@@ -38,11 +38,9 @@ pub fn transform_request(body: &CountTokensBody<'_>) -> IndexMap<String, Json> {
     if let Some(tools) = body.tools {
         request.insert("tools".to_owned(), tools.clone());
     }
-    if let Some(params) = body.optional_params {
-        for name in COUNT_TOKEN_OPTION_NAMES {
-            if let Some(value) = params.get(name) {
-                request.insert(name.to_owned(), value.clone());
-            }
+    for name in COUNT_TOKEN_OPTION_NAMES {
+        if let Some(value) = body.optional_params.get(name) {
+            request.insert(name.to_owned(), value.clone());
         }
     }
     request

@@ -96,7 +96,7 @@ pub(crate) struct Parts {
     messages: Json,
     system: Option<Json>,
     tools: Option<Json>,
-    params: Option<IndexMap<String, Json>>,
+    params: IndexMap<String, Json>,
 }
 
 impl Parts {
@@ -115,22 +115,19 @@ impl Parts {
             messages: &self.messages,
             tools: self.tools.as_ref(),
             system: self.system.as_ref(),
-            optional_params: self.params.as_ref(),
+            optional_params: &self.params,
         }
     }
 }
 
 fn optional_params(
     params: Option<&serde_json::Map<String, Value>>,
-) -> Result<Option<IndexMap<String, Json>>, Box<HelperError>> {
-    let Some(provided) = params else {
-        return Ok(None);
-    };
+) -> Result<IndexMap<String, Json>, Box<HelperError>> {
     let mut converted = IndexMap::new();
-    for (name, value) in provided {
+    for (name, value) in params.into_iter().flatten() {
         converted.insert(name.clone(), json_value(value)?);
     }
-    Ok(Some(converted))
+    Ok(converted)
 }
 
 pub(crate) fn deployment(input: Option<&Deployment>) -> Option<LiteLlmParams> {

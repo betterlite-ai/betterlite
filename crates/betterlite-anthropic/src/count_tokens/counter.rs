@@ -1,5 +1,6 @@
 use betterlite_config::types::LiteLlmParams;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
@@ -74,7 +75,7 @@ impl<T: CountTokensTransport> AnthropicTokenCounter<T> {
                 messages,
                 tools: call.tools,
                 system: call.system,
-                optional_params: None,
+                optional_params: &IndexMap::new(),
             },
             api_key,
             api_base: None,
@@ -115,10 +116,10 @@ fn input_tokens(result: &CountResponse) -> Result<i64, CountTokensError> {
 
 // LiteLLM's except AnthropicError branch: the upstream status and the raw response text stay visible
 fn failure(call: &CountTokensCall<'_>, error: &ApiError) -> TokenCountResponse {
-    let status = error.status_code;
-    let message = &error.message;
+    let status = error.status_code();
+    let message = error.to_string();
     tracing::warn!("Anthropic CountTokens API error: status={status}, message={message}");
-    error_record(call, error.status_code, &error.message)
+    error_record(call, status, &message)
 }
 
 // LiteLLM's except Exception branch, reached when the response has no integer input_tokens
