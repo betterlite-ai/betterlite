@@ -133,13 +133,13 @@ async fn serve(
 async fn answer_request(stream: &mut TcpStream, answer: Answer) {
     match answer {
         Answer::Respond { status, body } => {
-            respond(stream, status, body.as_bytes(), &[]).await;
+            respond(stream, status, body.as_bytes(), &[], 0).await;
         }
         Answer::RespondWith {
             status,
             body,
             headers,
-        } => respond(stream, status, body.as_bytes(), &headers).await,
+        } => respond(stream, status, body.as_bytes(), &headers, 0).await,
         Answer::Close => {
             let _closed = stream.shutdown().await;
         }
@@ -149,35 +149,16 @@ async fn answer_request(stream: &mut TcpStream, answer: Answer) {
             body,
         } => {
             let _released = release.await;
-            respond(stream, status, body.as_bytes(), &[]).await;
+            respond(stream, status, body.as_bytes(), &[], 0).await;
         }
-        Answer::Raw { status, body } => respond(stream, status, &body, &[]).await,
-        Answer::Truncated { body, headers } => {
-            respond_truncated(stream, &body, &headers).await;
-        }
+        Answer::Raw { status, body } => respond(stream, status, &body, &[], 0).await,
+        // 16 bytes more than are sent, so the connection ends in the middle of the body
+        Answer::Truncated { body, headers } => respond(stream, 200, &body, &headers, 16).await,
         Answer::Stall(delay) => {
             sleep(delay).await;
-            respond(stream, 200, b"", &[]).await;
+            respond(stream, 200, b"", &[], 0).await;
         }
     }
-}
-
-async fn respond_truncated(
-    stream: &mut TcpStream,
-    body: &[u8],
-    headers: &[(&'static str, String)],
-) {
-    let declared = body.len().saturating_add(16);
-    let mut head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {declared}\r\nconnection: close\r\n"
-    );
-    for (name, value) in headers {
-        let _formatted = write!(head, "{name}: {value}\r\n");
-    }
-    head.push_str("\r\n");
-    let _head_written = stream.write_all(head.as_bytes()).await;
-    let _body_written = stream.write_all(body).await;
-    let _closed = stream.shutdown().await;
 }
 
 async fn read_head(stream: &mut TcpStream) -> String {
@@ -197,14 +178,15 @@ async fn respond(
     status: u16,
     body: &[u8],
     headers: &[(&'static str, String)],
+    declared_extra: usize,
 ) {
     let reason = http::StatusCode::from_u16(status)
         .expect("a status")
         .canonical_reason()
         .unwrap_or_default();
+    let declared = body.len().saturating_add(declared_extra);
     let mut head = format!(
-        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n",
-        body.len()
+        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {declared}\r\nconnection: close\r\n"
     );
     for (name, value) in headers {
         let _formatted = write!(head, "{name}: {value}\r\n");
