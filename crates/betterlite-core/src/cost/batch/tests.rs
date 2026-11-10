@@ -256,7 +256,8 @@ fn complete_supplied_prices_skip_the_public_lookup() {
 fn metadata_only_prices_are_replaced_by_the_whole_public_record() {
     let mut fixture = new_fixture();
     fixture.prompt_tokens = 100;
-    let supplied = model_info(r#"{"input_cost_per_audio_token_batches": 5}"#);
+    let supplied =
+        model_info(r#"{"input_cost_per_audio_token_batches": 5, "input_cost_per_token": null}"#);
     let lookup =
         RecordingLookup::returning(Some(model_info(r#"{"input_cost_per_token_batches": 0.5}"#)));
     let resolution = ResolutionFixture::new();
