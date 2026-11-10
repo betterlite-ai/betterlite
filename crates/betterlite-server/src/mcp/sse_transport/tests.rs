@@ -85,6 +85,10 @@ fn connect_request() -> Request<Body> {
         .expect("a request")
 }
 
+fn ping_request(id: u8) -> String {
+    format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"ping"}}"#)
+}
+
 fn message_request(target: &str, owner: &str, body: &str) -> Request<Body> {
     Request::builder()
         .method(Method::POST)
@@ -484,26 +488,30 @@ async fn matches_the_session_id_in_any_standard_uuid_spelling() {
     let uppercase_target = format!("/mcp/sse/messages?session_id={}", id.to_ascii_uppercase());
     let accepted_uppercase = send(
         &router,
-        message_request(&uppercase_target, DEFAULT_OWNER, PING),
+        message_request(&uppercase_target, DEFAULT_OWNER, &ping_request(2)),
     )
     .await;
     assert_eq!(accepted_uppercase.status(), StatusCode::ACCEPTED);
     let hyphenated_target = format!("/mcp/sse/messages?session_id={}", hyphenated(&id));
     let accepted_hyphenated = send(
         &router,
-        message_request(&hyphenated_target, DEFAULT_OWNER, PING),
+        message_request(&hyphenated_target, DEFAULT_OWNER, &ping_request(3)),
     )
     .await;
     assert_eq!(accepted_hyphenated.status(), StatusCode::ACCEPTED);
     let braced_target = format!("/mcp/sse/messages?session_id=%7B{id}%7D");
     let accepted_braced = send(
         &router,
-        message_request(&braced_target, DEFAULT_OWNER, PING),
+        message_request(&braced_target, DEFAULT_OWNER, &ping_request(4)),
     )
     .await;
     assert_eq!(accepted_braced.status(), StatusCode::ACCEPTED);
     let urn_target = format!("/mcp/sse/messages?session_id=urn:uuid:{id}");
-    let accepted_urn = send(&router, message_request(&urn_target, DEFAULT_OWNER, PING)).await;
+    let accepted_urn = send(
+        &router,
+        message_request(&urn_target, DEFAULT_OWNER, &ping_request(5)),
+    )
+    .await;
     assert_eq!(accepted_urn.status(), StatusCode::ACCEPTED);
     let initialize: InitializeReply =
         serde_json::from_str(&message_data(&next_event(&mut stream).await))
