@@ -23,6 +23,10 @@ call:
       - {kind: optional_params, data: {inputs: ["text"], options: {keep: 1}}, optional_params: {use_cache: true}}
       - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {options: "text", use_cache: true}}
       - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {parameters: [], top_k: 3}}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["use_cache", true], ["options", {keep: 1}]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["options", {keep: 1}], ["use_cache", true]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["max_length", 8], ["parameters", {truncate: true}]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["parameters", {truncate: true}], ["max_length", 8]]}
       - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["text"], optional_params: {dimensions: 8}, pipeline_tag: "embed"}
       - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["first", "second"], optional_params: {input_type: "similarity"}, pipeline_tag: "rerank"}
 env: {}

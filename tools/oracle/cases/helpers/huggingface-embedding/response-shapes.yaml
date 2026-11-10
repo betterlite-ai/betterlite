@@ -14,5 +14,7 @@ call:
       - {kind: response, model: "model", input: ["hello world"], embeddings: [[[]]]}
       - {kind: response, model: "model", input: ["hello world"], embeddings: [[], [0.1]]}
       - {kind: response, model: "model", input: ["second text", "third"], embeddings: [[0.1]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [0.5]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[0.1, 0.2]]}
 env: {}
 compare: {ignore: []}

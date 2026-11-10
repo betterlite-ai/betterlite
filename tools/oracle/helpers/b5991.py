@@ -52,7 +52,6 @@ VALIDATE = cast(
     HuggingFaceEmbeddingConfig().validate_environment,
 )
 ENCODING = cast(Encoding, default_encoding)
-LOOKUP = embedding_handler.get_hf_task_embedding_for_model
 TRANSFORM_INPUT = cast(
     "Callable[..., Object]",
     HANDLER._transform_input,  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
@@ -122,7 +121,6 @@ def embedding_url(model: str, api_base: str | None, task: str | None) -> str:
 class Hub:
     def __init__(self) -> None:
         self.pipeline_tag: str | None = None
-        self.queries: list[Json] = []
         self.requests: list[str] = []
 
     def client(self, **_kwargs: object) -> "HubClient":
@@ -141,13 +139,9 @@ class HubClient:
         return httpx.Response(200, json=body)
 
 
-class CountingLookup:
-    def __init__(self, hub: Hub) -> None:
-        self.hub = hub
-
-    def __call__(self, model: str, task_type: Json, api_base: str) -> str | None:
-        self.hub.queries.append({"model": model, "task_type": task_type})
-        return LOOKUP(model=model, task_type=cast("str | None", task_type), api_base=api_base)
+def hub_lookups(hub: Hub) -> list[Json]:
+    prefix = f"{embedding_handler.HF_HUB_URL}/api/models/"
+    return [url.removeprefix(prefix) for url in hub.requests]
 
 
 def prepare_step(step: Object, hub: Hub) -> Json:
@@ -158,11 +152,7 @@ def prepare_step(step: Object, hub: Hub) -> Json:
     api_key = optional_text(step.get("api_key"), "api_key")
     api_base = optional_text(step.get("api_base"), "api_base")
     apply_environment(step.get("env", {}))
-    lookup = CountingLookup(hub)
-    with (
-        patch.object(embedding_handler, "get_hf_task_embedding_for_model", lookup),
-        patch.object(embedding_handler, "HTTPHandler", hub.client),
-    ):
+    with patch.object(embedding_handler, "HTTPHandler", hub.client):
         validated = VALIDATE(headers, model, [], optional_params, {}, api_key=api_key)
         task = embedding_handler.get_hf_task_embedding_for_model(
             model=model,
@@ -175,7 +165,7 @@ def prepare_step(step: Object, hub: Hub) -> Json:
         "url": url,
         "headers": cast(Json, validated),
         "body": body,
-        "lookups": cast(Json, hub.queries),
+        "lookups": hub_lookups(hub),
     }
 
 
@@ -183,13 +173,9 @@ def transform_step(step: Object, hub: Hub) -> Json:
     model = text_value(step.get("model"), "model")
     inputs = string_list(step.get("input"), "input")
     optional_params = object_value(step.get("optional_params", {}), "optional_params")
-    lookup = CountingLookup(hub)
-    with (
-        patch.object(embedding_handler, "get_hf_task_embedding_for_model", lookup),
-        patch.object(embedding_handler, "HTTPHandler", hub.client),
-    ):
+    with patch.object(embedding_handler, "HTTPHandler", hub.client):
         body = TRANSFORM_INPUT(inputs, model, "sync", dict(optional_params), "")
-    return {"body": body, "lookups": cast(Json, hub.queries)}
+    return {"body": body, "lookups": hub_lookups(hub)}
 
 
 def pipeline_tag_step(step: Object) -> Json:
@@ -201,6 +187,15 @@ def pipeline_tag_step(step: Object) -> Json:
 def optional_params_step(step: Object) -> Json:
     data = object_value(step.get("data"), "data")
     optional_params = object_value(step.get("optional_params", {}), "optional_params")
+    ordered = step.get("ordered_params", [])
+    if not isinstance(ordered, list):
+        raise TypeError("ordered_params must be a list")
+    for pair in ordered:
+        match pair:
+            case [str() as name, item]:
+                optional_params[name] = item
+            case _:
+                raise TypeError("ordered_params entries must be [name, value] pairs")
     return PROCESS_OPTIONAL_PARAMS(data, optional_params)
 
 

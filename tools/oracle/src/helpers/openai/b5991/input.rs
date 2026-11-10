@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_openai::huggingface_embedding::request::Params;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use serde::Deserialize;
 use serde_json::Value;
@@ -27,7 +28,7 @@ pub(crate) struct PrepareStep {
     pub(crate) model: String,
     pub(crate) input: Vec<String>,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: Params,
     #[serde(default)]
     pub(crate) headers: Headers,
     pub(crate) api_key: Option<String>,
@@ -42,7 +43,7 @@ pub(crate) struct TransformInputStep {
     pub(crate) model: String,
     pub(crate) input: Vec<String>,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: Params,
     pub(crate) pipeline_tag: Option<String>,
 }
 
@@ -56,7 +57,18 @@ pub(crate) struct PipelineTagStep {
 pub(crate) struct OptionalParamsStep {
     pub(crate) data: Object,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: Params,
+    #[serde(default)]
+    pub(crate) ordered_params: Vec<(String, Value)>,
+}
+
+impl OptionalParamsStep {
+    // the oracle input is a sorted JSON object, so a case that needs the client's key order sends pairs
+    pub(crate) fn params(&self) -> Params {
+        let mut params = self.optional_params.clone();
+        params.extend(self.ordered_params.iter().cloned());
+        params
+    }
 }
 
 #[derive(Debug, Deserialize)]

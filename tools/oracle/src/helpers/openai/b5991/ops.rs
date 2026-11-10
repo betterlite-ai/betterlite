@@ -19,7 +19,6 @@ use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use secrecy::SecretString;
-use serde::Serialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -81,7 +80,7 @@ fn run_step(step: &Step, encoder: &BundledCl100k) -> Result<Value, B5991Error> {
         )?)),
         Step::OptionalParams(params_step) => Ok(Value::Object(process_optional_params(
             params_step.data.clone(),
-            &params_step.optional_params,
+            &params_step.params(),
         )?)),
         Step::Response(response_step) => response_value(response_step, encoder),
         Step::ValidateEnvironment(validate_step) => Ok(validate_value(validate_step)),
@@ -148,15 +147,9 @@ fn environment(env: &BTreeMap<String, String>) -> HuggingfaceEnv {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct Lookup {
-    model: String,
-    task_type: Option<String>,
-}
-
 struct RecordedSource {
     pipeline_tag: Option<String>,
-    lookups: Mutex<Vec<Lookup>>,
+    lookups: Mutex<Vec<String>>,
 }
 
 impl RecordedSource {
@@ -167,7 +160,7 @@ impl RecordedSource {
         }
     }
 
-    fn lookups(&self) -> Vec<Lookup> {
+    fn lookups(&self) -> Vec<String> {
         self.lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -179,18 +172,13 @@ impl PipelineTagSource for RecordedSource {
     fn tag(
         &self,
         model: &str,
-        task_type: Option<&str>,
+        _task_type: Option<&str>,
     ) -> Result<Option<String>, HuggingfaceError> {
         self.lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(Lookup {
-                model: model.to_owned(),
-                task_type: task_type.map(str::to_owned),
-            });
-        Ok(task_type
-            .map(str::to_owned)
-            .or_else(|| self.pipeline_tag.clone()))
+            .push(model.to_owned());
+        Ok(self.pipeline_tag.clone())
     }
 }
 

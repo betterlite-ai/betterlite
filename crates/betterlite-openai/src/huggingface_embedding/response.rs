@@ -7,12 +7,13 @@ use crate::openai_base_config::Headers;
 
 pub const MAX_RESPONSE_BYTES: usize = 0x10_0000;
 
+// Items comes first so a one-element list is never read as the single-field structs below
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum EmbeddingReply {
+    Items(Vec<Value>),
     Failure(FailureReply),
     Similarities(SimilaritiesReply),
-    Items(Vec<Value>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

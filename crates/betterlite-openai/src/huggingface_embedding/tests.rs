@@ -11,7 +11,7 @@ use serde_json::{Value, from_str, json};
 use super::PrepareRequest;
 use super::error::HuggingfaceEmbeddingError;
 use super::prepare;
-use super::request::{input_for_tag, process_optional_params, transform_input};
+use super::request::{Params, input_for_tag, process_optional_params, transform_input};
 use super::response::{
     EmbeddingReply, MAX_RESPONSE_BYTES, OrdinaryEncoder, decode_embedding_response,
     process_embedding_response,
@@ -67,10 +67,9 @@ impl PipelineTagSource for RecordedSource {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), task_type.map(str::to_owned)));
-        self.failure.as_ref().map_or_else(
-            || Ok(task_type.map_or_else(|| self.tag.clone(), |task| Some(task.to_owned()))),
-            |failure| Err(failure.clone()),
-        )
+        self.failure
+            .as_ref()
+            .map_or_else(|| Ok(self.tag.clone()), |failure| Err(failure.clone()))
     }
 }
 
@@ -93,7 +92,15 @@ fn texts(source: &str) -> Vec<String> {
     from_str(source).unwrap()
 }
 
-fn options(source: &str) -> Object {
+fn options(source: &str) -> Params {
+    from_str(source).unwrap()
+}
+
+fn value(source: &str) -> Value {
+    from_str(source).unwrap()
+}
+
+fn object(source: &str) -> Object {
     from_str(source).unwrap()
 }
 
@@ -139,7 +146,7 @@ fn prepared_request(
     source: &RecordedSource,
     model: &str,
     input: &[String],
-    optional_params: &Object,
+    optional_params: &Params,
     environment: &HuggingfaceEnv,
 ) -> Result<super::PreparedRequest, HuggingfaceEmbeddingError> {
     let headers = Headers::new();
@@ -162,14 +169,11 @@ fn prepared_request(
 #[case::embed("embed")]
 #[case::similarity("similarity")]
 fn task_accepts_every_embedding_value(#[case] task: &str) {
-    let source = RecordedSource::returning(None);
+    let source = RecordedSource::returning(Some("text-generation"));
     let value = json!(task);
     let resolved = resolve_task("org/model", Some(&value), &source).unwrap();
     assert_eq!(resolved, Some(task.to_owned()));
-    assert_eq!(
-        source.calls(),
-        vec![("org/model".to_owned(), Some(task.to_owned()))]
-    );
+    assert!(source.calls().is_empty());
 }
 
 #[rstest]
@@ -224,7 +228,7 @@ fn task_prepare_looks_up_twice_unless_sentence_transformers(
 ) {
     let source = RecordedSource::returning(Some("feature-extraction"));
     let input = texts(r#"["first", "second"]"#);
-    let params = Object::new();
+    let params = Params::new();
     let environment = HuggingfaceEnv::default();
     let prepared = prepared_request(&source, model, &input, &params, &environment).unwrap();
     assert_eq!(source.calls().len(), expected);
@@ -232,23 +236,19 @@ fn task_prepare_looks_up_twice_unless_sentence_transformers(
 }
 
 #[test]
-fn task_prepare_passes_the_input_type_to_every_lookup() {
-    let source = RecordedSource::returning(Some("rerank"));
+fn task_prepare_prefers_the_input_type_over_the_hub_tag() {
+    let source = RecordedSource::returning(Some("feature-extraction"));
     let input = texts(r#"["first", "second"]"#);
-    let params = options(r#"{"input_type": "embed"}"#);
+    let params = options(r#"{"input_type": "rerank"}"#);
     let environment = HuggingfaceEnv::default();
     let prepared = prepared_request(&source, "org/model", &input, &params, &environment).unwrap();
-    let embed = Some("embed".to_owned());
-    assert_eq!(
-        source.calls(),
-        vec![
-            ("org/model".to_owned(), embed.clone()),
-            ("org/model".to_owned(), embed)
-        ]
-    );
-    assert!(prepared.url.ends_with("/embed/org/model"));
+    assert!(source.calls().is_empty());
+    assert!(prepared.url.ends_with("/rerank/org/model"));
     let body: Value = from_str(&prepared.body).unwrap();
-    assert_eq!(body.get("inputs"), Some(&json!(["first", "second"])));
+    assert_eq!(
+        body.get("inputs"),
+        Some(&value(r#"{"query": "first", "texts": ["second"]}"#))
+    );
 }
 
 #[rstest]
@@ -321,7 +321,7 @@ fn url_the_router_default_carries_the_task(#[case] task: Option<&str>, #[case] e
 fn url_headers_merge_the_defaults_over_the_caller() {
     let source = RecordedSource::returning(Some("embed"));
     let input = texts(r#"["text"]"#);
-    let params = Object::new();
+    let params = Params::new();
     let headers: Headers = from_str(r#"{"content-type": "text/plain", "x-call": "kept"}"#).unwrap();
     let key = SecretString::from("sk-hf");
     let environment = HuggingfaceEnv::default();
@@ -350,7 +350,7 @@ fn url_headers_merge_the_defaults_over_the_caller() {
 fn url_headers_add_a_bearer_for_an_empty_key_and_none_without_one() {
     let source = RecordedSource::returning(Some("embed"));
     let input = texts(r#"["text"]"#);
-    let params = Object::new();
+    let params = Params::new();
     let headers = Headers::new();
     let empty = SecretString::from("");
     let environment = HuggingfaceEnv::default();
@@ -452,7 +452,7 @@ fn body_rerank_builds_query_and_texts() {
 #[case::single_input(r#"["only"]"#, pair("only", &[]))]
 fn body_sentence_transformers_builds_the_pair(#[case] source: &str, #[case] expected: Value) {
     let input = texts(source);
-    let params = Object::new();
+    let params = Params::new();
     let recorder = RecordedSource::returning(Some("rerank"));
     let body = transform_input(
         "sentence-transformers/all-MiniLM-L6-v2",
@@ -485,7 +485,7 @@ fn body_sentence_transformers_keeps_input_type_at_the_top_level() {
 #[test]
 fn body_sentence_transformers_rejects_an_empty_input() {
     let input: Vec<String> = Vec::new();
-    let params = Object::new();
+    let params = Params::new();
     let recorder = RecordedSource::returning(None);
     let error = transform_input(
         "sentence-transformers/all-MiniLM-L6-v2",
@@ -536,7 +536,7 @@ fn body_other_params_stay_at_the_top_level() {
 
 #[test]
 fn body_process_optional_params_merges_into_an_existing_section() {
-    let data = options(r#"{"inputs": ["text"], "options": {"keep": 1}}"#);
+    let data = object(r#"{"inputs": ["text"], "options": {"keep": 1}}"#);
     let params = options(r#"{"use_cache": true}"#);
     let merged = process_optional_params(data, &params).unwrap();
     assert_eq!(at(&merged, "/options/keep"), json!(1_u64));
@@ -544,10 +544,51 @@ fn body_process_optional_params_merges_into_an_existing_section() {
 }
 
 #[rstest]
+#[case::options_last(
+    r#"{"use_cache": true, "options": {"keep": 1}}"#,
+    "/options",
+    value(r#"{"keep": 1}"#)
+)]
+#[case::parameters_last(
+    r#"{"max_length": 8, "parameters": {"truncate": true}}"#,
+    "/parameters",
+    value(r#"{"truncate": true}"#)
+)]
+#[case::options_first(
+    r#"{"options": {"keep": 1}, "use_cache": true}"#,
+    "/options",
+    value(r#"{"keep": 1, "use_cache": true}"#)
+)]
+#[case::parameters_first(
+    r#"{"parameters": {"truncate": true}, "max_length": 8}"#,
+    "/parameters",
+    value(r#"{"truncate": true, "max_length": 8}"#)
+)]
+#[case::string_section_last(r#"{"use_cache": true, "options": "text"}"#, "/options", json!("text"))]
+fn body_optional_params_apply_in_the_order_sent(
+    #[case] params: &str,
+    #[case] pointer: &str,
+    #[case] expected: Value,
+) {
+    let data = object(r#"{"inputs": ["text"]}"#);
+    let merged = process_optional_params(data, &options(params)).unwrap();
+    assert_eq!(at(&merged, pointer), expected);
+}
+
+#[test]
+fn body_transform_input_keeps_the_order_after_removing_input_type() {
+    let input = texts(r#"["text"]"#);
+    let params = options(r#"{"max_length": 8, "input_type": "embed", "parameters": {"a": 1}}"#);
+    let recorder = RecordedSource::returning(None);
+    let body = transform_input("org/model", &input, &params, &recorder).unwrap();
+    assert_eq!(at(&body, "/parameters"), value(r#"{"a": 1}"#));
+}
+
+#[rstest]
 #[case::options(r#"{"options": "text", "use_cache": true}"#, "options")]
 #[case::parameters(r#"{"parameters": [], "top_k": 3}"#, "parameters")]
 fn body_a_section_collision_is_an_error(#[case] params: &str, #[case] section: &str) {
-    let data = options(r#"{"inputs": ["text"]}"#);
+    let data = object(r#"{"inputs": ["text"]}"#);
     let error = process_optional_params(data, &options(params)).unwrap_err();
     assert!(matches!(
         error,
@@ -559,7 +600,7 @@ fn body_a_section_collision_is_an_error(#[case] params: &str, #[case] section: &
 fn body_prepare_serializes_the_body_as_json() {
     let source = RecordedSource::returning(Some("sentence-similarity"));
     let input = texts(r#"["first", "second"]"#);
-    let params = Object::new();
+    let params = Params::new();
     let environment = HuggingfaceEnv::default();
     let prepared = prepared_request(&source, "org/model", &input, &params, &environment).unwrap();
     let body: Value = from_str(&prepared.body).unwrap();
@@ -575,6 +616,8 @@ fn body_prepare_serializes_the_body_as_json() {
 #[case::scalars("[0.5, 0.25]", &[json!(0.5_f64), json!(0.25_f64)])]
 #[case::nested("[[[0.1, 0.2]], [[0.3, 0.4]]]", &[json!(0.1_f64), json!(0.3_f64)])]
 #[case::integers("[1, [2, 3]]", &[json!(1_u64), json!([2_u64, 3_u64])])]
+#[case::single_vector("[[0.1, 0.2]]", &[json!([0.1_f64, 0.2_f64])])]
+#[case::single_scalar("[0.5]", &[json!(0.5_f64)])]
 fn response_each_element_becomes_a_record(#[case] source: &str, #[case] expected: &[Value]) {
     let reply: EmbeddingReply = from_str(source).unwrap();
     let input = texts(r#"["hello"]"#);
@@ -703,6 +746,19 @@ fn response_decoding_accepts_the_three_shapes() {
         decode_embedding_response(b"[[0.1]]").unwrap(),
         EmbeddingReply::Items(_)
     ));
+}
+
+#[rstest]
+#[case::vector(b"[[0.1, 0.2]]".as_slice(), json!([0.1_f64, 0.2_f64]))]
+#[case::scalar(b"[0.5]".as_slice(), json!(0.5_f64))]
+#[case::nested(b"[[[0.1, 0.2]]]".as_slice(), json!(0.1_f64))]
+fn response_decoding_reads_a_single_element_list(#[case] bytes: &[u8], #[case] expected: Value) {
+    let reply = decode_embedding_response(bytes).unwrap();
+    assert!(matches!(reply, EmbeddingReply::Items(_)));
+    let input = texts(r#"["hello"]"#);
+    let response = process_embedding_response(&reply, "m", &input, &FixedCount(1)).unwrap();
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].embedding, expected);
 }
 
 #[test]

@@ -20,6 +20,11 @@ call:
         pipeline_tag: "rerank"
       - kind: prepare
         model: "org/model"
+        input: ["first", "second"]
+        optional_params: {input_type: "rerank"}
+        pipeline_tag: "feature-extraction"
+      - kind: prepare
+        model: "org/model"
         input: ["first"]
         optional_params: {input_type: "bogus"}
       - kind: prepare

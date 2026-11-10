@@ -1,9 +1,12 @@
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::huggingface_chat::error::get_error_class;
 use crate::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use crate::huggingface_embedding::task::{PipelineTagSource, resolve_task};
 use crate::openai_base_config::{Headers, Object};
+
+pub type Params = IndexMap<String, Value>;
 
 const SENTENCE_TRANSFORMERS: &str = "sentence-transformers";
 const SENTENCE_KEYS: (&str, &str) = ("source_sentence", "sentences");
@@ -21,7 +24,7 @@ const PARAMETER_PARAMS: [&str; 7] = [
 pub fn transform_input(
     model: &str,
     input: &[String],
-    optional_params: &Object,
+    optional_params: &Params,
     source: &dyn PipelineTagSource,
 ) -> Result<Object, HuggingfaceEmbeddingError> {
     if model.contains(SENTENCE_TRANSFORMERS) {
@@ -38,7 +41,7 @@ pub fn transform_input(
         return process_optional_params(data, optional_params);
     }
     let mut params = optional_params.clone();
-    let task_type = params.remove("input_type");
+    let task_type = params.shift_remove("input_type");
     let task = resolve_task(model, task_type.as_ref(), source)?;
     let data = input_for_tag(input, task.as_deref())?;
     process_optional_params(data, &params)
@@ -82,7 +85,7 @@ fn pair_inputs(
 
 pub fn process_optional_params(
     mut data: Object,
-    optional_params: &Object,
+    optional_params: &Params,
 ) -> Result<Object, HuggingfaceEmbeddingError> {
     for (name, value) in optional_params {
         if OPTION_PARAMS.contains(&name.as_str()) {

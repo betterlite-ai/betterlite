@@ -10,15 +10,16 @@ use secrecy::SecretString;
 
 use crate::huggingface_chat::HuggingfaceEnv;
 use crate::huggingface_chat::headers::validate_environment;
-use crate::openai_base_config::{Headers, Object};
+use crate::openai_base_config::Headers;
 
 use error::HuggingfaceEmbeddingError;
+use request::Params;
 use task::{PipelineTagSource, resolve_task};
 
 pub struct PrepareRequest<'request> {
     pub model: &'request str,
     pub input: &'request [String],
-    pub optional_params: &'request Object,
+    pub optional_params: &'request Params,
     pub headers: &'request Headers,
     pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,

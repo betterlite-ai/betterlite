@@ -21,22 +21,20 @@ pub fn resolve_task(
     task_type: Option<&Value>,
     source: &dyn PipelineTagSource,
 ) -> Result<Option<String>, HuggingfaceEmbeddingError> {
-    let validated = match task_type {
-        None | Some(Value::Null) => None,
-        Some(Value::String(task)) if EMBEDDING_TASKS.contains(&task.as_str()) => Some(task.clone()),
-        Some(other) => {
-            let invalid = match other {
-                Value::String(task) => task.clone(),
-                Value::Null
-                | Value::Bool(_)
-                | Value::Number(_)
-                | Value::Array(_)
-                | Value::Object(_) => other.to_string(),
-            };
-            return Err(HuggingfaceEmbeddingError::InvalidTaskType { task_type: invalid });
+    match task_type {
+        None | Some(Value::Null) => source
+            .tag(model, None)
+            .map_err(HuggingfaceEmbeddingError::Huggingface),
+        Some(Value::String(task)) if EMBEDDING_TASKS.contains(&task.as_str()) => {
+            Ok(Some(task.clone()))
         }
-    };
-    source
-        .tag(model, validated.as_deref())
-        .map_err(HuggingfaceEmbeddingError::Huggingface)
+        Some(Value::String(task)) => Err(HuggingfaceEmbeddingError::InvalidTaskType {
+            task_type: task.clone(),
+        }),
+        Some(other @ (Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_))) => {
+            Err(HuggingfaceEmbeddingError::InvalidTaskType {
+                task_type: other.to_string(),
+            })
+        }
+    }
 }
