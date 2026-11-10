@@ -560,6 +560,18 @@ fn cloud_shell_missing_expiry() {
 }
 
 #[test]
+fn cloud_shell_unrecognized_keys_only() {
+    let clock = FixtureClock::fixed(NOW);
+    let (outcome, _) = Fixture::new()
+        .with_environment(&CLOUD_SHELL_ENVIRONMENT)
+        .acquire_cloud_shell(vec![response(r#"{"foo":1}"#)], &clock);
+    assert_eq!(
+        outcome.unwrap_err().to_string(),
+        "Unexpected response \"{\"foo\":1}\""
+    );
+}
+
+#[test]
 fn cloud_shell_missing_resource() {
     let clock = FixtureClock::fixed(NOW);
     let (outcome, _) = Fixture::new()
@@ -638,6 +650,20 @@ fn cloud_shell_refresh_threshold() {
     let token = outcome.unwrap();
     assert_eq!(token.expires_on, NOW + 7_200);
     assert_eq!(token.refresh_on, Some(NOW + 3_600));
+}
+
+#[test]
+fn cloud_shell_no_refresh_below_threshold() {
+    let clock = FixtureClock::fixed(NOW);
+    let (outcome, _) = Fixture::new().with_environment(&CLOUD_SHELL_ENVIRONMENT).acquire_cloud_shell(
+        vec![response(
+            r#"{"access_token":"shell-token","expires_in":7199,"resource":"https://cognitiveservices.azure.com"}"#,
+        )],
+        &clock,
+    );
+    let token = outcome.unwrap();
+    assert_eq!(token.expires_on, NOW + 7_199);
+    assert_eq!(token.refresh_on, None);
 }
 
 #[test]
