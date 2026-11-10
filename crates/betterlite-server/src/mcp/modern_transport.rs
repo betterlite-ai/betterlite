@@ -31,6 +31,12 @@ impl ModernTransport {
             return method_not_allowed();
         }
         let (parts, body) = request.into_parts();
+        // the SDK's security middleware always checks a POST's Content-Type, whatever its other settings
+        if !has_json_content_type(&parts.headers) {
+            let mut response = Response::new(Body::from("Invalid Content-Type header"));
+            *response.status_mut() = StatusCode::BAD_REQUEST;
+            return response;
+        }
         if !accepts_both_media_types(&parts.headers) {
             return empty_response(StatusCode::NOT_ACCEPTABLE);
         }
@@ -105,6 +111,13 @@ fn acknowledge_notification(headers: &HeaderMap) -> Response<Body> {
         return classify::Rejection::UnsupportedVersion(requested.to_owned()).respond(None);
     }
     empty_response(StatusCode::ACCEPTED)
+}
+
+fn has_json_content_type(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().starts_with(CONTENT_TYPE_JSON))
 }
 
 fn accepts_both_media_types(headers: &HeaderMap) -> bool {

@@ -152,6 +152,22 @@ fn accepted_post() -> Builder {
     post().header(header::ACCEPT, "application/json, text/event-stream")
 }
 
+fn content_type_post(content_type: Option<&str>) -> Request<Body> {
+    let builder = Request::builder()
+        .method("POST")
+        .uri("/mcp")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header("mcp-protocol-version", PROTOCOL_VERSION)
+        .header("mcp-method", "tools/list");
+    let with_type = match content_type {
+        Some(value) => builder.header(header::CONTENT_TYPE, value),
+        None => builder,
+    };
+    with_type
+        .body(Body::from(LIST_TOOLS.to_owned()))
+        .expect("a request")
+}
+
 fn modern_request(body: &str, method: &str) -> Request<Body> {
     accepted_post()
         .header("mcp-protocol-version", PROTOCOL_VERSION)
@@ -475,6 +491,22 @@ async fn answers_a_non_post_with_allow_post() {
 }
 
 #[rstest]
+#[case::missing(None, StatusCode::BAD_REQUEST)]
+#[case::text(Some("text/plain"), StatusCode::BAD_REQUEST)]
+#[case::json(Some("application/json"), StatusCode::OK)]
+#[case::json_with_charset(Some("Application/JSON; charset=utf-8"), StatusCode::OK)]
+#[tokio::test]
+async fn checks_the_content_type(#[case] content_type: Option<&str>, #[case] expected: StatusCode) {
+    let request = content_type_post(content_type);
+    let response = send(&app(answers()), request).await;
+    assert_eq!(response.status(), expected);
+    if expected == StatusCode::BAD_REQUEST {
+        assert!(response.headers().get(header::CONTENT_TYPE).is_none());
+        assert_eq!(body_text(response).await, "Invalid Content-Type header");
+    }
+}
+
+#[rstest]
 #[case::both("application/json, text/event-stream", StatusCode::OK)]
 #[case::wildcard("*/*", StatusCode::OK)]
 #[case::wildcard_types("application/*, text/*", StatusCode::OK)]
@@ -507,9 +539,21 @@ async fn refuses_a_request_without_an_accept_header() {
 #[tokio::test]
 async fn refuses_an_oversized_body() {
     let router = app(answers());
-    let oversized = "x".repeat(MAX_REQUEST_BYTES + 1);
+    let oversized = "x".repeat(MAX_REQUEST_BYTES.saturating_add(1));
     let response = send(&router, modern_request(&oversized, "tools/list")).await;
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn accepts_a_body_just_under_the_limit() {
+    let mut body = LIST_TOOLS.to_owned();
+    let padding = MAX_REQUEST_BYTES
+        .saturating_sub(body.len())
+        .saturating_sub(1);
+    body.push_str(&" ".repeat(padding));
+    assert!(body.len() < MAX_REQUEST_BYTES);
+    let response = send(&app(answers()), modern_request(&body, "tools/list")).await;
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
