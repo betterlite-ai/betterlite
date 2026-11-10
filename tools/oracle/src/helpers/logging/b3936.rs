@@ -1,5 +1,4 @@
 use betterlite_logging::datadog_llm_obs::messages::to_dd_messages;
-use betterlite_logging::datadog_llm_privacy::RecordEncodingError;
 use betterlite_logging::datadog_llm_privacy::cost_dimension::{
     cost_dimension_tags, declared_cost_tags,
 };
@@ -17,6 +16,8 @@ use betterlite_logging::datadog_llm_privacy::stream::is_streamed_request;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
+
+use crate::helpers::OrHelperError as _;
 
 pub(crate) struct Op;
 
@@ -98,12 +99,6 @@ struct CostOutput {
     declared: Vec<String>,
 }
 
-impl From<RecordEncodingError> for Box<crate::helpers::HelperError> {
-    fn from(error: RecordEncodingError) -> Self {
-        value_error(error)
-    }
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -130,15 +125,14 @@ impl crate::helpers::Helper for Op {
                 timing.completion_start,
                 timing.end,
             )),
-            Input::LatencyMetrics(latency) => encode(record_object(
-                "latency_metrics",
-                &latency_metrics(&latency.payload),
-            )?),
+            Input::LatencyMetrics(latency) => encode(
+                record_object("latency_metrics", &latency_metrics(&latency.payload))
+                    .or_value_error()?,
+            ),
             Input::StreamDetection(stream) => encode(is_streamed_request(&stream.payload)),
-            Input::SpendMetrics(spend) => encode(record_object(
-                "spend_metrics",
-                &spend_metrics(&spend.payload),
-            )?),
+            Input::SpendMetrics(spend) => encode(
+                record_object("spend_metrics", &spend_metrics(&spend.payload)).or_value_error()?,
+            ),
             Input::Metadata(metadata) => metadata_output(metadata),
         }
     }
@@ -168,7 +162,8 @@ fn metadata_output(input: &MetadataInput) -> crate::helpers::HelperResult {
         &router,
         &cost_tags,
         input.redact_prompt_text,
-    )?;
+    )
+    .or_value_error()?;
     encode(metadata)
 }
 
