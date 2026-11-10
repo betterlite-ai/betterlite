@@ -374,14 +374,34 @@ fn config_url_and_secret_precedence() {
         shown(reference.config_url.as_ref()),
         Some("os.environ/SET_URL")
     );
+    let reference_env = variables_map(&[
+        ("DATABASE_URL", "postgresql://env/db"),
+        ("SET_URL", "postgresql://reference/db"),
+    ]);
     assert_eq!(
         shown(
             reference
-                .cli_writer_url(&env_url, &no_secrets)
+                .cli_writer_url(&reference_env, &no_secrets)
                 .unwrap()
                 .as_ref()
         ),
         Some("postgresql://reference/db")
+    );
+}
+
+#[test]
+fn reference_resolving_to_bool_text_stays_absent() {
+    let no_secrets = secrets();
+    let settings = load(
+        "general_settings:\n  database_url: os.environ/FLAG\n",
+        &[("FLAG", "true")],
+    );
+    let environment = variables_map(&[("FLAG", "true")]);
+    assert!(
+        settings
+            .cli_writer_url(&environment, &no_secrets)
+            .unwrap()
+            .is_none()
     );
 }
 
