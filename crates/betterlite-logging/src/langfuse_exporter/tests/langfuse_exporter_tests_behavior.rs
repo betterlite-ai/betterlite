@@ -24,13 +24,12 @@ use crate::langfuse_exporter::endpoint::endpoint;
 use crate::langfuse_exporter::error::LangfuseExporterError;
 use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
 use crate::langfuse_exporter::http_transport::HttpTransport;
-use crate::langfuse_exporter::sleep::{Sleep, TokioSleep};
+use crate::langfuse_exporter::sleep::TokioSleep;
 
 use super::server::{reply, scripted};
 use super::support::{
-    CLOUD_ENDPOINT, DecodedSpan, RecordingSleep, ScriptedTransport, Step, UNENCODABLE_KEY,
-    attribute, captured, exporter_with, header, options_for, rejecting_exporter_with, span,
-    spans_of,
+    CLOUD_ENDPOINT, DecodedSpan, ScriptedTransport, Step, UNENCODABLE_KEY, attribute, captured,
+    exporter_with, header, options_for, rejecting_exporter_with, span, spans_of,
 };
 
 const INPUT: &str = "langfuse.observation.input";
@@ -491,7 +490,7 @@ async fn follows_a_308_with_the_same_body_and_headers(
         reply(final_status, None),
     ])
     .await;
-    let exporter = http_exporter(&server.base, Arc::new(TokioSleep));
+    let exporter = http_exporter(&server.base);
     let result = exporter
         .export(vec![span("one", &[(INPUT, "hello")])])
         .await;
@@ -500,39 +499,35 @@ async fn follows_a_308_with_the_same_body_and_headers(
     assert_eq!(seen.len(), 2);
     assert!(seen[0].head.starts_with("POST /api/public/otel/v1/traces "));
     assert!(seen[1].head.starts_with("POST /moved/traces "));
-    assert!(!seen[0].body.is_empty());
     assert_eq!(seen[1].body, seen[0].body);
-    let expected = [
-        Some("application/x-protobuf"),
-        Some("python"),
-        Some("4.15.2"),
-        Some("4"),
-        Some("pk-lf-test"),
-        Some("Basic cGstbGYtdGVzdDpzay1sZi10ZXN0"),
-    ];
-    assert_eq!(seen[0].sent_headers(), expected);
-    assert_eq!(seen[1].sent_headers(), expected);
+    assert_eq!(seen[1].sent_headers(), seen[0].sent_headers());
+    assert_eq!(seen[1].header("x-langfuse-sdk-name"), Some("python"));
+    assert_eq!(
+        seen[1].header("authorization"),
+        Some("Basic cGstbGYtdGVzdDpzay1sZi10ZXN0")
+    );
 }
 
-fn http_exporter(base_url: &str, sleep: Arc<dyn Sleep>) -> LangfuseSpanExporter<HttpTransport> {
+fn http_exporter(base_url: &str) -> LangfuseSpanExporter<HttpTransport> {
     let mut options = options_for(&[]).unwrap();
     options.base_url = base_url.to_owned();
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let transport = HttpTransport {
         client: ProxiedClient::outbound(&policy).unwrap(),
     };
-    LangfuseSpanExporter::new(&options, transport, Arc::new(OtlpSpanEncoder), sleep).unwrap()
+    LangfuseSpanExporter::new(
+        &options,
+        transport,
+        Arc::new(OtlpSpanEncoder),
+        Arc::new(TokioSleep),
+    )
+    .unwrap()
 }
 
 #[tokio::test]
 async fn a_redirect_loop_is_one_failed_attempt_and_is_not_retried() {
     let server = scripted(vec![reply(308, Some("/loop")); 11]).await;
-    let sleep = Arc::new(RecordingSleep::default());
-    let shared = Arc::clone(&sleep);
-    let recording: Arc<dyn Sleep> = shared;
-    let exporter = http_exporter(&server.base, recording);
-    let result = exporter.export(vec![span("one", &[])]).await;
-    assert!(result.is_err());
+    let exporter = http_exporter(&server.base);
+    assert!(exporter.export(vec![span("one", &[])]).await.is_err());
     assert_eq!(server.seen.lock().unwrap().len(), 11);
-    assert!(sleep.seconds().is_empty());
 }

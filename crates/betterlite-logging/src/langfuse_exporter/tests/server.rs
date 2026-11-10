@@ -46,34 +46,30 @@ pub(super) fn reply(status: u16, location: Option<&str>) -> Vec<u8> {
 async fn read_request(stream: &mut TcpStream) -> Option<Recorded> {
     let mut received = Vec::new();
     let mut chunk = [0_u8; 4096];
-    let head_end = loop {
-        if let Some(position) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
-            break position.checked_add(4)?;
-        }
-        let read = stream.read(&mut chunk).await.ok()?;
-        if read == 0 {
-            return None;
-        }
+    loop {
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .ok()
+            .filter(|read| *read > 0)?;
         received.extend_from_slice(chunk.get(..read)?);
-    };
-    let head = String::from_utf8(received.get(..head_end)?.to_vec()).ok()?;
-    let length: usize = head
-        .to_ascii_lowercase()
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: ")?.parse().ok())
-        .unwrap_or(0);
-    let total = head_end.checked_add(length)?;
-    while received.len() < total {
-        let read = stream.read(&mut chunk).await.ok()?;
-        if read == 0 {
-            return None;
+        let Some(position) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
+            continue;
+        };
+        let head_end = position.checked_add(4)?;
+        let head = String::from_utf8(received.get(..head_end)?.to_vec()).ok()?;
+        let length: usize = head
+            .to_ascii_lowercase()
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length: ")?.parse().ok())
+            .unwrap_or(0);
+        if received.len() >= head_end.checked_add(length)? {
+            return Some(Recorded {
+                head,
+                body: received.get(head_end..)?.to_vec(),
+            });
         }
-        received.extend_from_slice(chunk.get(..read)?);
     }
-    Some(Recorded {
-        head,
-        body: received.get(head_end..)?.to_vec(),
-    })
 }
 
 async fn accept_loop(
