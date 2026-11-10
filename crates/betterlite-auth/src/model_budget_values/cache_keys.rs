@@ -16,7 +16,7 @@ pub struct BudgetSlot<'slot> {
     pub budget_duration: &'slot str,
 }
 
-fn scope_prefix(scope: BudgetScope, names: [&'static str; 4]) -> &'static str {
+const fn scope_prefix(scope: BudgetScope, names: [&'static str; 4]) -> &'static str {
     let [key, user, end_user, team] = names;
     match scope {
         BudgetScope::Key => key,
