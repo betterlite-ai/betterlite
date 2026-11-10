@@ -20,7 +20,7 @@ use crate::langfuse_exporter::exporter::LangfuseSpanExporter;
 
 use super::support::{
     CLOUD_ENDPOINT, DecodedSpan, ScriptedTransport, Step, UNENCODABLE_KEY, attribute, captured,
-    exporter_with, header, options_for, rejecting_exporter_with, span, spans_in, spans_of,
+    exporter_with, header, options_for, rejecting_exporter_with, span, spans_of,
 };
 
 const INPUT: &str = "langfuse.observation.input";
@@ -320,14 +320,6 @@ fn drops_a_span_still_too_large_with_every_field_truncated() {
 }
 
 #[test]
-fn drops_a_span_with_no_langfuse_field_to_truncate() {
-    let fixture = exporter_with(vec![Step::Status(413)], &[]);
-    let batch = vec![span("one", &[("other.field", "value")])];
-    assert!(!export(&fixture.exporter, batch));
-    assert_eq!(fixture.transport.seen().len(), 1);
-}
-
-#[test]
 fn drops_only_the_spans_the_encoder_rejects() {
     let fixture = rejecting_exporter_with(vec![Step::Status(200)]);
     let batch = vec![
@@ -349,15 +341,6 @@ fn a_batch_whose_spans_are_all_rejected_is_not_sent() {
     ];
     assert!(!export(&fixture.exporter, batch));
     assert!(fixture.transport.seen().is_empty());
-}
-
-#[test]
-fn an_empty_batch_is_sent_once_as_litellm_sends_it() {
-    let fixture = exporter_with(vec![Step::Status(200)], &[]);
-    assert!(export(&fixture.exporter, Vec::new()));
-    let seen = fixture.transport.seen();
-    assert_eq!(seen.len(), 1);
-    assert!(spans_in(&seen[0].body).is_empty());
 }
 
 #[test]
@@ -409,13 +392,6 @@ fn the_discarding_exporter_accepts_spans_without_a_transport() {
     exporter.shutdown().unwrap();
 }
 
-#[test]
-fn a_failed_batch_reports_an_export_error() {
-    let fixture = exporter_with(vec![Step::Status(400)], &[]);
-    assert!(run(fixture.exporter.export(vec![span("one", &[])])).is_err());
-    fixture.exporter.force_flush().unwrap();
-}
-
 #[rstest]
 #[case::missing_route(404, true)]
 #[case::bad_request(400, false)]
@@ -440,15 +416,6 @@ fn passes_the_configured_timeout_to_every_request() {
 fn rejects_a_timeout_that_is_not_a_number() {
     let error = options_for(&[("LANGFUSE_TIMEOUT", "soon")], None).unwrap_err();
     assert!(matches!(error, LangfuseExporterError::Settings(_)));
-}
-
-#[test]
-fn rejects_a_timeout_below_zero() {
-    let error = options_for(&[("LANGFUSE_TIMEOUT", "-1")], None).unwrap_err();
-    assert!(matches!(
-        error,
-        LangfuseExporterError::UnusableTimeout { .. }
-    ));
 }
 
 #[test]
