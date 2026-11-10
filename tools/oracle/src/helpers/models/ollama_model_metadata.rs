@@ -130,8 +130,14 @@ fn load_fixture(fixture: &Fixture) -> Result<LoadedFixture, Box<HelperError>> {
     .load("")
     .map_err(|error| helper_error("ConfigError", error.to_string()))?;
     let mut entries = json!({});
+    let Some(object) = entries.as_object_mut() else {
+        return Err(helper_error(
+            "Fixture",
+            "catalog entries must be an object".to_owned(),
+        ));
+    };
     for key in &fixture.catalog {
-        entries[key.as_str()] = json!({});
+        object.insert(key.clone(), json!({}));
     }
     let bytes = serde_json::to_vec(&entries)
         .map_err(|error| helper_error("Serialize", error.to_string()))?;
@@ -140,7 +146,7 @@ fn load_fixture(fixture: &Fixture) -> Result<LoadedFixture, Box<HelperError>> {
     Ok(LoadedFixture {
         settings: OllamaSettings {
             api_key: config.sections.ollama_model_metadata.api_key.clone(),
-            api_base: config.sections.ollama_model_metadata.api_base.clone(),
+            api_base: config.sections.ollama_model_metadata.api_base,
         },
         globals: LiteLlmGlobals {
             api_key: fixture.globals.api_key.clone().map(SecretString::from),

@@ -30,7 +30,7 @@ pub(super) struct FixtureTransport {
 pub(super) struct FixtureFailure;
 
 impl FixtureTransport {
-    pub(super) fn new(outcome: FixtureOutcome) -> Self {
+    pub(super) const fn new(outcome: FixtureOutcome) -> Self {
         Self {
             outcome,
             recorded: Mutex::new(Vec::new()),
@@ -71,7 +71,7 @@ impl OllamaTransport for FixtureTransport {
             .push(Recorded {
                 url: request.url.clone(),
                 authorization,
-                name: request.body.name.to_owned(),
+                name: request.body.name.clone(),
             });
         match &self.outcome {
             FixtureOutcome::Reply { status, body } => Ok(ShowResponse {
