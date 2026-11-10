@@ -101,6 +101,7 @@ async fn periodic_flush_sends_queued_events_after_the_interval() {
         .await
         .expect("the async event is accepted");
     assert_eq!(transport.call_count(), 0);
+    settle().await;
     advance(Duration::from_secs(5)).await;
     settle().await;
     assert_eq!(transport.call_count(), 1);
@@ -127,6 +128,7 @@ async fn closing_the_tracker_stops_the_periodic_flush() {
         .async_log_success_event(support::event(support::standard_payload("one", false)))
         .await
         .expect("the async event is accepted");
+    settle().await;
     tasks.close();
     advance(Duration::from_secs(5)).await;
     settle().await;
