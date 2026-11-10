@@ -184,27 +184,6 @@ where
     })
 }
 
-#[derive(Default)]
-struct Ops {
-    calls: Mutex<Vec<Value>>,
-}
-
-impl Ops {
-    fn push(&self, value: Value) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(value);
-    }
-
-    fn calls(&self) -> Vec<Value> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
 fn moment() -> DateTime<FixedOffset> {
     DateTime::from_timestamp(1_704_067_200, 0).map_or_else(
         || DateTime::UNIX_EPOCH.fixed_offset(),
@@ -271,7 +250,10 @@ async fn perform(
             Ok(json!({"health": serde_json::to_value(status).map_err(value_error)?}))
         }
         Action::SyncLog { payload } => sync_log(logger, payload).await,
-        Action::GetPayload => Ok(get_payload(logger)),
+        Action::GetPayload => {
+            let found = inspection::get_request_response_payload(logger, "request-id", None, None);
+            Ok(json!({"payload": found.and_then(|fields| serde_json::to_value(fields).ok())}))
+        }
     }
 }
 
@@ -315,26 +297,6 @@ async fn sync_log(
     Ok(json!({"queue_length": logger.queue.pending().len()}))
 }
 
-fn get_payload(logger: &DatadogLogger) -> Value {
-    json!({
-        "payload": inspection::get_request_response_payload(logger, "request-id", None, None)
-            .map_or(Value::Null, |payload| normalize::message(&payload)),
-    })
-}
-
-fn queue_report(logger: &DatadogLogger) -> Value {
-    let payloads = logger.queue.pending();
-    let head: Vec<Value> = payloads.iter().take(3).map(normalize::payload).collect();
-    let tail: Vec<Value> = payloads
-        .iter()
-        .rev()
-        .take(3)
-        .rev()
-        .map(normalize::payload)
-        .collect();
-    json!({"length": payloads.len(), "head": head, "tail": tail})
-}
-
 fn run_scenario(scenario: &Scenario) -> Result<Value, Box<crate::helpers::HelperError>> {
     let init = build_init(&scenario.init);
     let transport = Arc::new(ScriptedTransport::new(&scenario.replies));
@@ -362,19 +324,18 @@ fn run_scenario(scenario: &Scenario) -> Result<Value, Box<crate::helpers::Helper
         .enable_all()
         .build()
         .map_err(value_error)?;
-    let ops = Ops::default();
-    runtime.block_on(async {
+    let results = runtime.block_on(async {
+        let mut results = Vec::new();
         for action in &scenario.actions {
-            let result = perform(&logger, &transport, action).await?;
-            ops.push(result);
+            results.push(perform(&logger, &transport, action).await?);
         }
-        Ok::<(), Box<crate::helpers::HelperError>>(())
+        Ok::<Vec<Value>, Box<crate::helpers::HelperError>>(results)
     })?;
     Ok(scenario_report(
         &scenario.name,
         &logger,
         &transport,
-        &ops.calls(),
+        &results,
     ))
 }
 

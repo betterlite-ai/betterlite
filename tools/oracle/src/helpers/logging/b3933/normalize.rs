@@ -1,10 +1,8 @@
 use std::io::Read as _;
 
 use betterlite_logging::datadog::payloads::types::DatadogPayload;
-use betterlite_models::decisions::Json;
 use flate2::read::GzDecoder;
 use http::HeaderMap;
-use indexmap::IndexMap;
 use serde_json::Value;
 
 // create_dummy_standard_logging_payload sets exactly these keys; the rest of the typed payload stays absent there
@@ -69,13 +67,6 @@ pub(super) fn body(bytes: &[u8], headers: &HeaderMap, action: &str) -> Value {
 }
 
 pub(super) fn payload(payload: &DatadogPayload) -> Value {
-    match serde_json::to_value(payload) {
-        Ok(value) => envelope(&value, ""),
-        Err(_error) => Value::Null,
-    }
-}
-
-pub(super) fn message(payload: &IndexMap<String, Json>) -> Value {
     match serde_json::to_value(payload) {
         Ok(value) => envelope(&value, ""),
         Err(_error) => Value::Null,
