@@ -1,0 +1,12 @@
+task: B4381
+deviations:
+  - what: >-
+      The embedding input is truncated inline in the async path; LiteLLM hands _embedding_input to asyncify so the blocking tokenizer work yields a worker thread.
+    why: >-
+      B195's tokenizer selection and encode are async and B4310's truncate_embedding_input awaits them, so the call already yields instead of blocking the executor; betterlite does not copy Python's thread-pool asyncify.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L526
+  - what: >-
+      A NaN embedding_timeout is an immediate Timeout without running the embedding call.
+    why: >-
+      asyncio.wait_for with a NaN delay starts the call and then makes the event loop raise "cannot convert float NaN to integer" (checked on Python 3.13), so no working setup can rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L546

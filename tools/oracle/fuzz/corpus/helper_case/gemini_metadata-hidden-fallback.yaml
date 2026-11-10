@@ -1,0 +1,21 @@
+kind: helper
+name: gemini-metadata-hidden-fallback
+call:
+  gemini_metadata:
+    call: hidden_fallback
+    chunks:
+      - vertex_ai_grounding_metadata: [{n: top}]
+      - model_extra:
+          vertex_ai_grounding_metadata: [{n: extra}]
+      - _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden}]
+      - vertex_ai_grounding_metadata: null
+        model_extra:
+          vertex_ai_grounding_metadata: [{n: after-null}]
+      - vertex_ai_citation_metadata: {citations: []}
+      - plain chunk
+      - _hidden_params:
+          vertex_ai_safety_ratings: [[{category: HARM_CATEGORY_HATE_SPEECH}]]
+          vertex_ai_safety_results: [[{category: HARM_CATEGORY_HATE_SPEECH}]]
+env: {}
+compare: {ignore: []}

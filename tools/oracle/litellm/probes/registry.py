@@ -68,6 +68,7 @@ from probes.member_router_writes import MemberRouterWrites
 from probes.model_generalizations import ModelGeneralizations
 from probes.model_rate_limits import ModelRateLimits
 from probes.native_stream_fallback import NativeStreamFallback
+from probes.passthrough_request_policies import PassthroughRequestPolicies
 from probes.passthrough_selection import PassthroughSelection
 from probes.pre_routing_registry import PreRoutingRegistry
 from probes.prompt_affinity import PromptAffinity
@@ -203,6 +204,7 @@ OPERATIONS: dict[str, type[Operation]] = {
     "model_generalizations": ModelGeneralizations,
     "model_rate_limits": ModelRateLimits,
     "native_stream_fallback": NativeStreamFallback,
+    "passthrough_request_policies": PassthroughRequestPolicies,
     "passthrough_selection": PassthroughSelection,
     "pre_routing_registry": PreRoutingRegistry,
     "prompt_affinity": PromptAffinity,

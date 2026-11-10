@@ -1,0 +1,16 @@
+kind: http_scenario
+name: http-scenario-polling-setup
+config: |-
+  model_list: []
+env: {}
+setup:
+  polling:
+    - name: litellm_poll_scenario
+      value: '{"id":"litellm_poll_scenario","object":"response","status":"queued","created_at":1700000000,"output":[],"usage":null,"metadata":{}}'
+steps:
+  - name: liveliness
+    request:
+      method: GET
+      path: /health/liveliness
+    upstream: []
+    compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
