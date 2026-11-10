@@ -582,12 +582,14 @@ fn irsa_denial_logs_trust_policy() {
 
 fn irsa_failure_without_trust_policy_text_stays_quiet() {
     let transport = Transport::with(&[
+        ("AssumeRoleWithWebIdentity", vec![reply("ASIAIRSA")]),
         ("GetCallerIdentity", vec![DENIED_IDENTITY]),
         (
             "AssumeRole",
             vec![denied("AccessDenied", "the caller may not assume the role")],
         ),
     ]);
+    let files = [("/var/run/secrets/token", "irsa-token\n")];
     let environment = [
         ("AWS_ROLE_ARN", IRSA),
         ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
@@ -595,9 +597,8 @@ fn irsa_failure_without_trust_policy_text_stays_quiet() {
         ("AWS_SECRET_ACCESS_KEY", "ambient-secret"),
         ("AWS_EC2_METADATA_DISABLED", "true"),
     ];
-    let files = [("/var/run/secrets/token", "irsa-token\n")];
     let fixture = Fixture::new(&environment, &files, &transport, None);
-    let (failed, entries) = logged(|| run_role(&fixture, &auth(IRSA, "bedrock", None, true)));
+    let (failed, entries) = logged(|| run_role(&fixture, &auth(OTHER, "bedrock", None, true)));
     assert!(matches!(failed, Err(CredentialError::WebIdentity(_))));
     assert!(entries.is_empty());
 }
