@@ -11,6 +11,7 @@ use std::os::unix::fs::{PermissionsExt as _, symlink};
 
 use betterlite_config::loader::EnvironmentLookup;
 use rstest::rstest;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use soft_canonicalize::soft_canonicalize;
@@ -128,7 +129,7 @@ fn saved_profile(environment: &FakeEnvironment, target: Target, model: Option<&s
         target,
         settings_text(environment, target),
         "https://gateway.example.com".to_owned(),
-        "sk-test",
+        SecretString::from("sk-test"),
         model.map(str::to_owned),
     )
     .expect("a valid saved setup")
@@ -190,7 +191,7 @@ fn saved_setup(base_url: &str, api_key: &str, model: Option<&str>) -> Result<Sav
         Target::Claude,
         "/home/tester/.claude/settings.json".to_owned(),
         base_url.to_owned(),
-        api_key,
+        SecretString::from(api_key),
         model.map(str::to_owned),
     )
 }
@@ -437,6 +438,46 @@ fn read_saved_setup_rejects_unknown_version() {
     let current = format!("\"version\":{SAVED_SETUP_VERSION}");
     let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
         .replace(&current, "\"version\":2");
+    write_profile(&environment, Target::Claude, &document);
+    assert!(matches!(
+        read_saved_setup(Target::Claude, &environment),
+        Err(Error::Invalid(Target::Claude, _))
+    ));
+}
+
+#[test]
+fn read_saved_setup_rejects_unknown_key() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
+        .replacen('}', ",\"extra\":1}", 1);
+    write_profile(&environment, Target::Claude, &document);
+    assert!(matches!(
+        read_saved_setup(Target::Claude, &environment),
+        Err(Error::InvalidJson(Target::Claude, _, _))
+    ));
+}
+
+#[test]
+fn read_saved_setup_defaults_missing_version() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let current = format!("\"version\":{SAVED_SETUP_VERSION},");
+    let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
+        .replace(&current, "");
+    write_profile(&environment, Target::Claude, &document);
+    let saved = read_saved_setup(Target::Claude, &environment)
+        .expect("a missing version defaults to one")
+        .expect("a saved setup");
+    assert_eq!(saved.target, Target::Claude);
+}
+
+#[test]
+fn read_saved_setup_rejects_missing_model_key() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
+        .replace(",\"model\":null", "");
     write_profile(&environment, Target::Claude, &document);
     assert!(matches!(
         read_saved_setup(Target::Claude, &environment),
