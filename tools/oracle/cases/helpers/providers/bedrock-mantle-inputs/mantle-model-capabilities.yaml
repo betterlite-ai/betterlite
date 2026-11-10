@@ -1,0 +1,43 @@
+kind: helper
+name: mantle-model-capabilities
+call:
+  bedrock_mantle_inputs:
+    mantle_model_capabilities:
+      model_cost:
+        bedrock_mantle/openai.gpt-5:
+          supported_endpoints: [/v1/chat/completions, /v1/responses]
+        bedrock_mantle/openai.gpt-5-lite:
+          mode: responses
+        bedrock_mantle/openai.gpt-5-mini:
+          mode: Responses
+        bedrock_mantle/openai.gpt-oss-120b:
+          supported_endpoints: [/v1/chat/completions]
+        bedrock_mantle/google.gemma-4:
+          supported_endpoints: "/prefix/v1/responses/suffix"
+        bedrock_mantle/openai.gpt-4o:
+          supported_endpoints: []
+          use_openai_responses_path: false
+        bedrock_mantle/openai.gpt-5-nano:
+          use_openai_responses_path: true
+        bedrock_mantle/openai.gpt-5-pro:
+          use_openai_responses_path: 1
+        bedrock_mantle/openai.gpt-4.1:
+          supported_endpoints: null
+          use_openai_responses_path: 'true'
+      models:
+        - openai.gpt-5
+        - eu-west-1/openai.gpt-5
+        - bedrock_mantle/openai.gpt-5
+        - openai.gpt-5-lite
+        - openai.gpt-5-mini
+        - openai.gpt-oss-120b
+        - google.gemma-4
+        - openai.gpt-4o
+        - openai.gpt-5-nano
+        - openai.gpt-5-pro
+        - openai.gpt-4.1
+        - null
+        - ''
+        - unknown.model
+env: {}
+compare: {ignore: []}

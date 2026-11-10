@@ -16,10 +16,12 @@ betterlite-core = { path = "../betterlite-core" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-guardrails = { path = "../betterlite-guardrails" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-openapi = { path = "../betterlite-openapi" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
@@ -48,6 +50,7 @@ scrypt = { version = "0.11.0", default-features = false }
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha1 = "0.11.0"
 sha2.workspace = true

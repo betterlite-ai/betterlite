@@ -316,7 +316,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records)"
       && grep -q 'decode_batch_input_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_records.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_records_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_records_corpus(::|$)/)'
   - id: case-nova-batch-record
     why: Only provider nova uses B600 constructor/map_openai_params with drop_params=False, then B604 transform_request
       with empty litellm_params/headers. Reuse its image blocks, inferenceConfig, defaults and strict unsupported-parameter

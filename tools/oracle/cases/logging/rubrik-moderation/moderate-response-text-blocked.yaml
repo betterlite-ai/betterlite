@@ -1,0 +1,23 @@
+kind: helper
+name: rubrik-moderation-moderate-response-text-blocked
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: [1700000000.0, 1700000001.0]
+    replies:
+      - status: 200
+        body: >-
+          {"choices":[{"message":{"content":"I cannot help with that."}}]}
+    logging_obj:
+      model_call_details:
+        litellm_call_id: call-1
+        model: gpt-4o
+    request_data:
+      model: request-model
+      response: {model: gpt-4.1-mini}
+    input_type: response
+    inputs:
+      texts: ["Tell me a secret."]
+env: {}
+compare: {ignore: []}

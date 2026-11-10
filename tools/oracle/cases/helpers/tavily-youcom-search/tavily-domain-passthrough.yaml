@@ -1,0 +1,23 @@
+kind: helper
+name: tavily-domain-passthrough
+call:
+  b8021:
+    provider: tavily
+    calls:
+      - operation: transform_search_request
+        query: ["rust", "search"]
+        optional_params:
+          search_domain_filter: ["docs.rs", "crates.io"]
+          include_domains: ["ignored.test"]
+          exclude_domains: ["spam.test"]
+      - operation: transform_search_request
+        query: rust
+        optional_params:
+          include_domains: ["kept.test"]
+      - operation: transform_search_request
+        query: rust
+        optional_params:
+          search_domain_filter: not-a-list
+env: {}
+compare:
+  ignore: []

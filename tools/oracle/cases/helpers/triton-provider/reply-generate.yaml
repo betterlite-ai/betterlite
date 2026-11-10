@@ -1,0 +1,18 @@
+kind: helper
+name: triton-provider-reply-generate
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: generate_reply
+    replies:
+      - {status: 200, body: '{"text_output":"hello"}'}
+      - {status: 200, body: '{"text_output":null}'}
+      - {status: 200, body: '{"text_output":"hi","extra":1}'}
+      - {status: 200, body: '{"other":1}'}
+      - {status: 200, body: '{"text_output":5}'}
+      - {status: 200, body: "[1,2]"}
+      - {status: 200, body: '["hi"]'}
+      - {status: 200, body: "5"}
+      - {status: 503, body: "not json"}
+      - {status: 400, body: ""}
