@@ -103,10 +103,11 @@ fn evicted(
         .map(|(_key, provider)| provider)
 }
 
-fn shut_down(dropped: &CachedProvider) {
+fn shut_down(dropped: &CachedProvider, shut_down_count: &mut usize) {
     if let Err(error) = dropped.provider.shutdown() {
         debug!(error = %error, "otel: a dropped dynamic tracer provider failed to shut down");
     }
+    *shut_down_count = shut_down_count.saturating_add(1);
 }
 
 fn start_shutdown_worker(receiver: Receiver<ShutdownJob>) {
@@ -116,10 +117,7 @@ fn start_shutdown_worker(receiver: Receiver<ShutdownJob>) {
             let mut shut_down_count = 0_usize;
             while let Ok(job) = receiver.recv() {
                 match job {
-                    ShutdownJob::Drop(dropped) => {
-                        shut_down(&dropped);
-                        shut_down_count = shut_down_count.saturating_add(1);
-                    }
+                    ShutdownJob::Drop(dropped) => shut_down(&dropped, &mut shut_down_count),
                     ShutdownJob::Flush(done) => _ = done.send(shut_down_count),
                 }
             }

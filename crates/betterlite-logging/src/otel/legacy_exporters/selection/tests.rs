@@ -115,6 +115,22 @@ fn span_processor_plan_picks_the_exporter_by_its_exact_text(
 }
 
 #[test]
+fn span_processor_plan_logs_only_the_unknown_exporter_text() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(Warnings(Arc::clone(&events)));
+    with_default(subscriber, || {
+        span_processor_plan(&config(named("console"), None, None), None, None, None)
+            .expect("console plan");
+        span_processor_plan(&config(named("jaeger"), None, None), None, None, None)
+            .expect("unknown plan");
+    });
+    let captured = events.lock().expect("events");
+    assert_eq!(captured.len(), 1);
+    assert!(captured[0].contains("unknown OpenTelemetry exporter"));
+    drop(captured);
+}
+
+#[test]
 fn span_processor_plan_normalizes_a_missing_endpoint_to_none() {
     let plan = span_plan(&config(named("otlp_http"), None, None), None, None, None);
     assert_eq!(plan.kind, ExporterKind::OtlpHttp);

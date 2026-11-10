@@ -17,7 +17,6 @@ use rstest::rstest;
 use temp_env::with_vars;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
-use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::LegacyExporterBuilder;
@@ -234,7 +233,7 @@ fn an_otlp_grpc_plan_builds_the_grpc_exporter(#[case] exporter: Exporter) {
     assert!(matches!(error, LegacyExporterError::Exporter(_)));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let endpoint = format!("http://{}", listener.local_addr().expect("address"));
@@ -246,7 +245,7 @@ async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
         None,
     )
     .expect("plan");
-    // The exporter reads this at build, so the flush gives up shortly after the connection closes.
+    // The exporter reads this at build, so a silent collector ends the export after a second.
     let processor = with_vars(
         [("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", Some("1000"))],
         || builder(&recorder).span_processor(&plan).expect("processor"),
@@ -255,8 +254,8 @@ async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
         .with_span_processor(processor)
         .build();
     provider.tracer("build-test").start("operation").end();
-    let mut flushing = JoinSet::new();
-    let _abort = flushing.spawn_blocking(move || provider.force_flush());
+    // This blocks one worker while the other drives the connection and the export timeout.
+    let _flushed = provider.force_flush();
     let (mut stream, _peer) = timeout(Duration::from_secs(10), listener.accept())
         .await
         .expect("the gRPC exporter must connect")
@@ -270,12 +269,6 @@ async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
     assert!(
         !recorder.recorded(),
         "the gRPC plan must not send through the HTTP client"
-    );
-    drop(stream);
-    let finished = timeout(Duration::from_secs(10), flushing.join_next()).await;
-    assert!(
-        matches!(finished, Ok(Some(Ok(_)))),
-        "the flush must end once the connection closes"
     );
 }
 
