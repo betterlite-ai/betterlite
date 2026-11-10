@@ -1,0 +1,32 @@
+task: B251
+deviations:
+  - what: The queued sync failure job runs on an owned copy of the failure facts and never mutates the finished call's logging state; the sync-failure claim is taken when the executor accepts the job.
+    why: betterlite has no shared mutable logging object to hand a worker thread, and the request is over once the job is queued, so only a duplicate dispatch could read that claim.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2236-L2245
+  - what: The queued sync failure job reuses the standard logging payload the async failure handler built instead of building its own.
+    why: The job owns a copy of the prepared payload; rebuilding it would need the full per-call logging state, which the finished request no longer owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3615-L3622
+  - what: Errors while preparing the async failure details, invalidating the baseline cache, notifying a rate-limit listener or flushing the post-call batches are logged and the remaining failure work continues.
+    why: LiteLLM lets those errors escape async_failure_handler, which replaces the request's original provider error and skips the remaining callbacks; failure logging must not break the error path it observes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3896-L3963
+  - what: When the standard logging payload cannot be built, the failure loggers are skipped with a warning instead of being called with a null payload.
+    why: betterlite's LoggerEvent carries a typed StandardLoggingPayload, so a logger cannot receive a payload that does not exist.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6771-L6774
+  - what: The failure dispatch redacts a copy of the standard logging payload for each logger, with that logger's turn_off_message_logging and redacts_messages_itself flags or the request's own redaction decision (dynamic parameter, redaction headers, global setting), and the call's model_call_details keep the unredacted standard_logging_object.
+    why: The task requires B3931's redaction for each failure logger; LiteLLM 1.105.1 only calls that hook from the success handlers, which leaks messages to a failure-only logger configured to redact them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3483-L3486
+  - what: Legacy non-logger failure callbacks (plain functions and unknown callback names) receive no event from the failure dispatch, and the queued sync handler calls only the registered loggers.
+    why: betterlite has no Python function callbacks; B8740 assigns the failure phase's Logger sinks to B250 and B251 and leaves channel and tracing sinks to the registry's own phase delivery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3793-L3814
+  - what: The call's failure details hold JSON only; the exception stays in the failure record and the recovered usage is stored as its JSON projection.
+    why: model_call_details is an IndexMap of JSON in betterlite, and loggers receive the typed payload rather than a raw kwargs map (B8740); the projection is what LiteLLM's payload builder reads back from the usage object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2206-L2215
+  - what: If the dispatch future is dropped while awaiting the async failure handler, the queued sync failure job is not submitted.
+    why: LiteLLM submits it from a finally block so asyncio task cancellation still fans out to legacy callbacks; betterlite's handler owns the borrowed call state, and a registry of logger sinks makes that submission skip every logger anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2225-L2245
+  - what: A request whose redaction headers cannot be read has its messages redacted for every failure logger.
+    why: Failing closed keeps a prompt out of the logs when the decision cannot be made; LiteLLM would raise out of the failure handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L328-L377
+  - what: An excluded standard logging payload field that the typed payload requires, such as model, is kept and a warning names it; the other excluded fields are still removed.
+    why: betterlite sends loggers a typed StandardLoggingPayload that cannot be built without its required fields, while LiteLLM redacts a plain dict that can drop any key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L910-L921
