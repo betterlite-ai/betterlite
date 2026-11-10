@@ -1,19 +1,23 @@
 use std::sync::Arc;
 
+use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::endpoints::{EndpointRegistry, EndpointSupport};
-use betterlite_models::lookup::capabilities::CapabilityView;
 use betterlite_models::lookup::info::{
-    ModelId, ModelInfo, ModelInfoError, ModelQuery, PtuBounds, declared_provider, find_entry,
-    resolved_id, validated_ptu,
+    ModelId, ModelInfo, ModelInfoError, ModelQuery, PtuBounds, resolved_id, validated_ptu,
 };
-use betterlite_models::lookup::limits::ModelLimits;
+use betterlite_models::lookup::resolve::{BedrockNames, find_info};
 
 use crate::count::Counter;
 use crate::count::error::CountError;
 use crate::count::wire::TokenRequestWire;
 
 mod tests;
+
+const BEDROCK_NAMES: BedrockNames = BedrockNames {
+    base_model: get_bedrock_base_model,
+    strip_routing_prefix: strip_bedrock_routing_prefix,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteStatus {
@@ -49,18 +53,18 @@ impl ModelCapabilities {
         id: Option<ModelId<'_>>,
         ptu: &PtuBounds,
     ) -> Result<ModelInfo, ModelInfoError> {
-        let Some(entry) = find_entry(&self.catalog, query) else {
+        let Some(resolved) = find_info(&self.catalog, &BEDROCK_NAMES, query)? else {
             return Err(ModelInfoError::unmapped(query));
         };
         let validated = validated_ptu(ptu)?;
         Ok(ModelInfo {
             id: resolved_id(id),
-            key: entry.name.clone(),
+            key: resolved.key,
             model: query.model.to_owned(),
-            provider: declared_provider(entry, query),
-            mode: entry.fields.metadata.mode,
-            limits: ModelLimits::from_fields(&entry.fields.metadata),
-            capabilities: CapabilityView::from_fields(&entry.fields.capabilities),
+            provider: resolved.provider,
+            mode: resolved.mode,
+            limits: resolved.limits,
+            capabilities: resolved.capabilities,
             ptu_count: validated.count,
             cost_per_ptu_per_hour: validated.cost_per_ptu_per_hour,
             ptu_effective_from: validated.effective_from,
@@ -72,10 +76,10 @@ impl ModelCapabilities {
         &self,
         query: &ModelQuery<'_>,
     ) -> Result<Vec<RouteStatus>, ModelInfoError> {
-        let Some(entry) = find_entry(&self.catalog, query) else {
+        let Some(resolved) = find_info(&self.catalog, &BEDROCK_NAMES, query)? else {
             return Err(ModelInfoError::unmapped(query));
         };
-        let Some(provider) = declared_provider(entry, query) else {
+        let Some(provider) = resolved.provider else {
             return Ok(Vec::new());
         };
         let Some(capabilities) = self.registry.providers.get(&provider) else {

@@ -1,15 +1,21 @@
+use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::endpoints::projection::project;
 use betterlite_models::endpoints::{
     EndpointRegistry, EndpointSupport, PACKAGED_ASSET, RUNTIME_ASSET, RegistryAsset, parse, support,
 };
-use betterlite_models::lookup::capabilities::CapabilityView;
-use betterlite_models::lookup::info::{ModelInfoError, ModelQuery, declared_provider, find_entry};
-use betterlite_models::lookup::limits::{ModelLimits, max_output_tokens};
+use betterlite_models::lookup::info::{ModelInfoError, ModelQuery};
+use betterlite_models::lookup::limits::max_output_tokens;
+use betterlite_models::lookup::resolve::{BedrockNames, find_info};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
+
+const BEDROCK_NAMES: BedrockNames = BedrockNames {
+    base_model: get_bedrock_base_model,
+    strip_routing_prefix: strip_bedrock_routing_prefix,
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -98,18 +104,17 @@ fn model_infos(input: &Input) -> HelperResult {
             model: &query.model,
             provider: query.provider.as_deref(),
         };
-        let Some(entry) = find_entry(&catalog, &typed) else {
-            return Err(helper_error(ModelInfoError::unmapped(&typed).to_string()));
-        };
-        let capabilities = CapabilityView::from_fields(&entry.fields.capabilities);
-        let limits = ModelLimits::from_fields(&entry.fields.metadata);
+        let resolved = find_info(&catalog, &BEDROCK_NAMES, &typed)
+            .map_err(|error| helper_error(error.to_string()))?
+            .ok_or_else(|| helper_error(ModelInfoError::unmapped(&typed).to_string()))?;
+        let capabilities = resolved.capabilities;
         results.push(json!({
-            "key": entry.name,
-            "provider": declared_provider(entry, &typed),
-            "mode": entry.fields.metadata.mode,
-            "max_tokens": limits.max_tokens,
-            "max_input_tokens": limits.max_input_tokens,
-            "max_output_tokens": limits.max_output_tokens,
+            "key": resolved.key,
+            "provider": resolved.provider,
+            "mode": resolved.mode,
+            "max_tokens": resolved.limits.max_tokens,
+            "max_input_tokens": resolved.limits.max_input_tokens,
+            "max_output_tokens": resolved.limits.max_output_tokens,
             "supports_vision": capabilities.supports_vision,
             "supports_function_calling": capabilities.supports_function_calling,
             "supports_tool_choice": capabilities.supports_tool_choice,

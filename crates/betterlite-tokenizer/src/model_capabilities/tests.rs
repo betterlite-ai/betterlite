@@ -147,6 +147,7 @@ enum Check {
     ProviderMissingFromRegistry,
     TokenCountUsesTheCatalog,
     RuntimeRegistryIsPackaged,
+    BedrockRoutingPrefixes,
 }
 
 #[rstest]
@@ -157,6 +158,7 @@ enum Check {
 #[case::provider_missing_from_registry_has_no_routes(Check::ProviderMissingFromRegistry)]
 #[case::token_count_uses_catalog_and_bundled_encoding(Check::TokenCountUsesTheCatalog)]
 #[case::runtime_registry_is_the_packaged_backup(Check::RuntimeRegistryIsPackaged)]
+#[case::bedrock_routing_prefixes_resolve_to_the_base_model(Check::BedrockRoutingPrefixes)]
 #[tokio::test]
 async fn model_capabilities_model_capability_tests_behavior(#[case] check: Check) {
     let directory = tempfile::tempdir().unwrap();
@@ -169,6 +171,7 @@ async fn model_capabilities_model_capability_tests_behavior(#[case] check: Check
         Check::ProviderMissingFromRegistry => provider_missing_from_registry(&layer),
         Check::TokenCountUsesTheCatalog => token_count(&layer).await,
         Check::RuntimeRegistryIsPackaged => runtime_registry_is_packaged(),
+        Check::BedrockRoutingPrefixes => bedrock_routing_prefixes(&layer),
     }
 }
 
@@ -257,4 +260,25 @@ fn runtime_registry_is_packaged() {
     let registry: EndpointRegistry = parse(PACKAGED_ASSET, RUNTIME_ASSET).unwrap();
     assert_eq!(registry.asset, RegistryAsset::Packaged);
     assert_eq!(registry.providers.len(), 152);
+}
+
+fn bedrock_routing_prefixes(layer: &ModelCapabilities) {
+    let base = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+    let routed = [
+        format!("converse/{base}"),
+        format!("apac.{base}"),
+        format!("eu-west-1/{base}"),
+    ];
+    for model in &routed {
+        let query = ModelQuery {
+            model,
+            provider: Some("bedrock"),
+        };
+        let info = layer
+            .model_info(&query, None, &PtuBounds::default())
+            .unwrap();
+        assert_eq!(info.key, base, "{model}");
+        assert_eq!(info.provider.as_deref(), Some("bedrock"));
+        assert_eq!(info.model, *model);
+    }
 }
