@@ -36,17 +36,18 @@ impl AwsCredentialResolver<'_> {
 
     pub async fn resolve_credentials(
         &self,
-        settings: &AwsSettings,
-        region: Option<&str>,
+        auth_params: &AwsSettings,
+        aws_region_name: Option<&str>,
     ) -> Result<Credentials, CredentialError> {
-        let effective_region = region.or_else(|| {
-            self.native
-                .environment
-                .get("AWS_REGION_NAME")
-                .map(String::as_str)
-        });
-        let resolved = sources::resolve(self, settings, effective_region, None).await?;
-        Ok(resolved)
+        if let Some(requested) = aws_region_name {
+            return sources::resolve(self, auth_params, Some(requested), None).await;
+        }
+        let fixed_region = self
+            .native
+            .environment
+            .get("AWS_REGION_NAME")
+            .map(String::as_str);
+        sources::resolve(self, auth_params, fixed_region, None).await
     }
 
     pub async fn resolve_s3_credentials(
