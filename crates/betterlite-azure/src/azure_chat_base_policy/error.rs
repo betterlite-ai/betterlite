@@ -1,4 +1,5 @@
 use betterlite_context::error::ContextError;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_prompts::azure::error::AzureError;
 use thiserror::Error;
@@ -34,23 +35,28 @@ pub enum PolicyError {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Kind {
+    UnsupportedParams,
+    BadRequest,
+    Server,
+}
+
 impl PolicyError {
-    #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    const fn kind(&self) -> Kind {
         match self {
-            Self::ToolChoiceUnsupported { .. } | Self::RequiredToolChoice { .. } => Some(400),
-            Self::ApiVersionNumber { .. }
-            | Self::ToolsNotList
-            | Self::ResponseFormat { .. }
-            | Self::Messages { .. }
-            | Self::Encode { .. } => None,
+            Self::ToolChoiceUnsupported { .. } | Self::RequiredToolChoice { .. } => {
+                Kind::UnsupportedParams
+            }
+            Self::ResponseFormat { .. } | Self::ToolsNotList => Kind::BadRequest,
+            Self::ApiVersionNumber { .. } | Self::Messages { .. } | Self::Encode { .. } => {
+                Kind::Server
+            }
         }
     }
 
-    #[must_use]
-    pub fn classify(&self) -> Option<ErrorClass> {
-        let _status = self.status_code()?;
-        Some(ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+    fn context(&self) -> ErrorContext {
+        ErrorContext {
             message: self.to_string(),
             model: None,
             provider: None,
@@ -59,6 +65,27 @@ impl PolicyError {
             body_type: None,
             body_param: None,
             body_code: None,
-        })))
+        }
+    }
+
+    #[must_use]
+    pub const fn status_code(&self) -> Option<u16> {
+        match self.kind() {
+            Kind::UnsupportedParams | Kind::BadRequest => Some(400),
+            Kind::Server => None,
+        }
+    }
+
+    #[must_use]
+    pub fn classify(&self) -> Option<ErrorClass> {
+        match self.kind() {
+            Kind::UnsupportedParams => {
+                Some(ErrorClass::UnsupportedParams(Box::new(self.context())))
+            }
+            Kind::BadRequest => Some(ErrorClass::BadRequest(Box::new(
+                ResponseDetails::with_status(self.context(), None),
+            ))),
+            Kind::Server => None,
+        }
     }
 }

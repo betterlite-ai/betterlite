@@ -27,3 +27,13 @@ fn azure_chat_base_policy_cases(#[case] scenario: fn()) {
 fn azure_chat_base_policy_settings_deserialize() {
     content::settings_deserialization();
 }
+
+#[test]
+fn azure_chat_base_policy_response_format_is_bad_request() {
+    mapping::response_format_error_class();
+}
+
+#[test]
+fn azure_chat_base_policy_tools_not_list_is_bad_request() {
+    mapping::tools_not_list_error_class();
+}

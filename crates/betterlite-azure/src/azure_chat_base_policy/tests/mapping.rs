@@ -1,4 +1,5 @@
 use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
 
 use crate::azure_chat_base_policy::SUPPORTED_OPENAI_PARAMS;
 use crate::azure_chat_base_policy::error::PolicyError;
@@ -500,6 +501,27 @@ fn format_errors() {
         );
         assert!(matches!(error, PolicyError::ResponseFormat { .. }));
     }
+}
+
+fn assert_bad_request(error: &PolicyError) {
+    assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(error.classify(), Some(ErrorClass::BadRequest(_))));
+}
+
+const MISSING_SCHEMA: &str = r#"{"response_format":{"json_schema":{"name":"n"}}}"#;
+
+pub(super) fn response_format_error_class() {
+    let mapping = policy("gpt-4o", "", DropMode::Off);
+    let error = blocked(&object(MISSING_SCHEMA), EMPTY, &mapping);
+    assert!(matches!(error, PolicyError::ResponseFormat { .. }));
+    assert_bad_request(&error);
+}
+
+pub(super) fn tools_not_list_error_class() {
+    let mapping = policy("gpt-4o", "", DropMode::Off);
+    let error = blocked(&object(TOOLS_B), TOOLS_X, &mapping);
+    assert!(matches!(error, PolicyError::ToolsNotList));
+    assert_bad_request(&error);
 }
 
 const NATIVE_CASES: [(&str, &str, &str, &str, &str); 2] = [
