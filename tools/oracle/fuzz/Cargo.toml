@@ -122,3 +122,10 @@ path = "fuzz_targets/datadog_llm_argument_decoder.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "http_scenarios"
+path = "fuzz_targets/http_scenarios.rs"
+test = false
+doc = false
+bench = false

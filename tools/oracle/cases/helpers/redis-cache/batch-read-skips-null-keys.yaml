@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-batch-read-skips-null-keys
+call:
+  b5640:
+    function: batch_read
+    namespace: ns
+    keys: [alpha, null, beta]
+    replies: [null, "2"]
+env: {}
+compare: {ignore: []}

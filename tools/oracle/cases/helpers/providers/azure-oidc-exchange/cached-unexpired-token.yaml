@@ -1,0 +1,34 @@
+kind: helper
+name: cached-unexpired-token
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {OIDC_ASSERTION: assertion-value}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: other-client, azure_tenant_id: tenant}
+        replies:
+          - {status: 200, body: '{"access_token":"one","expires_in":3600}'}
+          - {status: 200, body: '{"access_token":"two","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: other-tenant}
+        replies:
+          - {status: 200, body: '{"access_token":"one","expires_in":3600}'}
+          - {status: 200, body: '{"access_token":"two","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, OTHER_ASSERTION: other-assertion}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+          - {azure_ad_token: os.environ/OTHER_ASSERTION, azure_client_id: client, azure_tenant_id: tenant}
+        replies:
+          - {status: 200, body: '{"access_token":"one","expires_in":3600}'}
+          - {status: 200, body: '{"access_token":"two","expires_in":3600}'}
+env: {}
+compare: {ignore: []}

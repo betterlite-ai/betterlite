@@ -1,0 +1,48 @@
+kind: helper
+name: gemini-history-tool-result-after-plain-assistant
+call:
+  gemini_history:
+    cases:
+      - model: "gemini-3-pro-preview"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "calling"
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+          - {role: assistant, content: "plain"}
+          - {role: tool, tool_call_id: "c1", content: "res"}
+      - model: "gemini-2.5-flash"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "calling"
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+              - id: "c2"
+                type: function
+                function: {name: "g", arguments: "{}"}
+          - {role: tool, tool_call_id: "c1", content: "r1"}
+          - {role: tool, tool_call_id: "c2", content: "r2"}
+          - {role: user, content: "thanks"}
+      - model: "gemini-2.5-flash"
+        messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: null
+            tool_calls:
+              - id: "c1"
+                type: function
+                function: {name: "f", arguments: "{}"}
+          - role: tool
+            tool_call_id: "c1"
+            content:
+              - {type: text, text: "t"}
+              - {type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}
+env: {}
+compare:
+  ignore: []

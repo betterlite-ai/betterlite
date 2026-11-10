@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-no-tool-metadata
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: call_mcp_tool
+    response:
+      content:
+        - {type: text, text: not projected}
+env: {}
+compare: {ignore: []}
