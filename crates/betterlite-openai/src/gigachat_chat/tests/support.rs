@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::chat::ChatMessage;
 use crate::gigachat_chat::config::{GigachatBearer, GigachatChatConfig, GigachatImageUploader};
-use crate::gigachat_chat::error::GigachatTokenError;
+use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_utils::IdSource;
 use crate::openai_base_config::{Headers, Object};
 
@@ -24,7 +24,7 @@ impl IdSource for FixedIds {
 }
 
 pub(super) struct ScriptedBearer {
-    reply: Result<SecretString, GigachatTokenError>,
+    reply: Result<SecretString, GigaChatError>,
     seen: Mutex<Vec<Option<String>>>,
 }
 
@@ -38,9 +38,10 @@ impl ScriptedBearer {
 
     fn failing(status_code: u16) -> Self {
         Self {
-            reply: Err(GigachatTokenError {
+            reply: Err(GigaChatError {
                 status_code,
                 message: String::from("the token could not be fetched"),
+                headers: None,
             }),
             seen: Mutex::new(Vec::new()),
         }
@@ -56,7 +57,7 @@ impl GigachatBearer for ScriptedBearer {
     async fn access_token(
         &self,
         credentials: Option<&SecretString>,
-    ) -> Result<SecretString, GigachatTokenError> {
+    ) -> Result<SecretString, GigaChatError> {
         self.seen
             .lock()
             .unwrap()
@@ -98,7 +99,7 @@ impl GigachatImageUploader for ScriptedUploader {
 pub(super) struct Fixture {
     pub(super) bearer: ScriptedBearer,
     pub(super) uploader: ScriptedUploader,
-    ids: FixedIds,
+    pub(super) ids: FixedIds,
 }
 
 impl Fixture {

@@ -229,27 +229,29 @@ fn an_unknown_usage_key_still_marks_usage_present() {
 }
 
 #[test]
-fn a_usage_counter_too_large_for_the_chunk_usage_fails() {
+fn a_usage_counter_too_large_for_the_chunk_usage_stays_at_the_largest_value() {
     let event = format!(
         r#"{{"choices": [{{"delta": {{}}}}], "usage": {{"prompt_tokens": {}}}}}"#,
         u64::MAX
     );
-    assert!(matches!(
-        chunk_parser(event.as_bytes(), &FixedIds),
-        Err(StreamError::Counter { .. })
-    ));
+    let Ok(StreamEvent::Chunk(parsed)) = chunk_parser(event.as_bytes(), &FixedIds) else {
+        panic!("the chunk should parse");
+    };
+    assert_eq!(parsed.usage.unwrap().prompt_tokens, i64::MAX);
 }
 
 #[test]
-fn a_usage_sum_that_overflows_fails() {
+fn a_usage_sum_that_overflows_stays_at_the_largest_value() {
     let event = format!(
         r#"{{"choices": [{{"delta": {{}}}}], "usage": {{"prompt_tokens": {max}, "precached_prompt_tokens": 1}}}}"#,
         max = u64::MAX
     );
-    assert!(matches!(
-        chunk_parser(event.as_bytes(), &FixedIds),
-        Err(StreamError::Usage(_))
-    ));
+    let Ok(StreamEvent::Chunk(parsed)) = chunk_parser(event.as_bytes(), &FixedIds) else {
+        panic!("the chunk should parse");
+    };
+    let usage = parsed.usage.unwrap();
+    assert_eq!(usage.prompt_tokens, i64::MAX);
+    assert_eq!(usage.prompt_tokens_details.unwrap().cached_tokens, Some(1));
 }
 
 #[rstest]

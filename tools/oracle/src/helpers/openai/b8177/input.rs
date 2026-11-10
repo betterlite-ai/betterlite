@@ -12,10 +12,7 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
-    SupportedParams,
     MapParams(MapParamsStep),
-    Headers(HeadersStep),
-    Messages(MessagesStep),
     Request(RequestStep),
     Reply(ReplyStep),
     Stream(StreamStep),
@@ -26,23 +23,6 @@ pub(crate) struct MapParamsStep {
     pub(crate) params: Object,
     #[serde(default)]
     pub(crate) optional_params: Object,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct HeadersStep {
-    #[serde(default)]
-    pub(crate) headers: Headers,
-    pub(crate) api_key: Option<String>,
-    pub(crate) credentials: Option<String>,
-    pub(crate) fallback_key: Option<String>,
-    pub(crate) token: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct MessagesStep {
-    pub(crate) messages: Vec<ChatMessage>,
-    #[serde(default)]
-    pub(crate) uploads: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]

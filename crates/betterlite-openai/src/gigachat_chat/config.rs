@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use secrecy::SecretString;
 
-use crate::gigachat_chat::error::GigachatTokenError;
+use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_utils::IdSource;
 
 // The token seam B8312 fills over the GigaChat token source; this crate never fetches or caches a token
@@ -10,7 +10,7 @@ pub trait GigachatBearer: Send + Sync {
     async fn access_token(
         &self,
         credentials: Option<&SecretString>,
-    ) -> Result<SecretString, GigachatTokenError>;
+    ) -> Result<SecretString, GigaChatError>;
 }
 
 // The image seam B8178 fills over GigaChat's file upload; a URL that fails to upload keeps no id

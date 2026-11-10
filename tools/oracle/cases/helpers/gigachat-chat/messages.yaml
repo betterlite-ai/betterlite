@@ -1,56 +1,52 @@
 kind: helper
-name: gigachat-message-roles
+name: gigachat-messages
 call:
   b8177:
     steps:
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - {role: system, content: rules, name: bob}
           - {role: developer, content: later}
           - {role: system, content: second}
           - {role: user, content: hi}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - {role: developer, content: first}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - {role: user, content: null}
-      - kind: messages
-        messages:
           - {role: user, content: ""}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-tool-messages
-call:
-  b8177:
-    steps:
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - {role: tool, content: prague, tool_call_id: call_1}
           - {role: tool, content: '{"city": "prague"}'}
           - {role: tool}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: tool
             content:
               - {type: text, text: x}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-multimodal-messages
-call:
-  b8177:
-    steps:
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: user
             content:
               - {type: text, text: one}
               - {type: text, text: two}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         uploads:
           "https://images.example/one.png": file-1
           "data:image/png;base64,AAAA": file-2
@@ -60,32 +56,32 @@ call:
               - {type: text, text: look}
               - {type: image_url, image_url: {url: "https://images.example/one.png"}}
               - {type: image_url, image_url: "data:image/png;base64,AAAA"}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: user
             content:
               - {type: image_url, image_url: {url: "https://images.example/missing.png"}}
               - {type: text, text: after}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-assistant-tool-calls
-call:
-  b8177:
-    steps:
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: assistant
             tool_calls:
               - {id: call_1, type: function, function: {name: lookup, arguments: '{"city": "prague"}'}}
               - {id: call_2, type: function, function: {name: later, arguments: "{}"}}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: assistant
             tool_calls:
               - {id: call_1, type: function, function: {name: lookup, arguments: not json}}
-      - kind: messages
+      - kind: request
+        model: gigachat/GigaChat
+        token: token-1
         messages:
           - role: assistant
             tool_calls: []

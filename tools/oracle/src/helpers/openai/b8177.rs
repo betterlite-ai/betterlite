@@ -13,11 +13,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = support::runtime()?;
-        input
-            .steps
-            .iter()
-            .map(|step| ops::execute(step, &runtime))
-            .collect::<Result<Vec<Value>, _>>()
-            .map(Value::Array)
+        Ok(Value::Array(
+            input
+                .steps
+                .iter()
+                .map(|step| ops::execute(step, &runtime))
+                .collect(),
+        ))
     }
 }

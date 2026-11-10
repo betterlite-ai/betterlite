@@ -15,7 +15,7 @@ fn reply(
     structured_output: bool,
 ) -> Result<ChatResponse, GigaChatError> {
     transform_response(
-        &fixture.config(),
+        &fixture.ids,
         &ReplyInput {
             status_code: 200,
             body: body.as_bytes(),
@@ -217,7 +217,7 @@ fn tool_calls_in_the_reply_are_kept() {
 fn an_invalid_json_reply_fails_with_the_upstream_status() {
     let fixture = Fixture::issuing("token", &[]);
     let error = transform_response(
-        &fixture.config(),
+        &fixture.ids,
         &ReplyInput {
             status_code: 502,
             body: b"{not json",

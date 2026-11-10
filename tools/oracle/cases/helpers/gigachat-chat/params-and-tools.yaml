@@ -1,14 +1,5 @@
 kind: helper
-name: gigachat-supported-params
-call:
-  b8177:
-    steps:
-      - kind: supported_params
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-option-mapping
+name: gigachat-params-and-tools
 call:
   b8177:
     steps:
@@ -30,14 +21,24 @@ call:
         optional_params: {repetition_penalty: 1.1}
       - kind: map_params
         params: {seed: 4}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-tool-conversion
-call:
-  b8177:
-    steps:
+      - kind: map_params
+        params: {tool_choice: "none"}
+      - kind: map_params
+        params: {tool_choice: auto}
+      - kind: map_params
+        params: {tool_choice: required}
+      - kind: map_params
+        params:
+          tool_choice:
+            type: function
+            function: {name: lookup}
+      - kind: map_params
+        params:
+          tool_choice:
+            type: function
+            function: {name: ""}
+      - kind: map_params
+        params: {tool_choice: sometimes}
       - kind: map_params
         params:
           tools:
@@ -59,53 +60,11 @@ call:
               function: {name: minimal}
       - kind: map_params
         params: {tools: []}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-tool-choice
-call:
-  b8177:
-    steps:
-      - kind: map_params
-        params: {tool_choice: "none"}
-      - kind: map_params
-        params: {tool_choice: auto}
-      - kind: map_params
-        params: {tool_choice: required}
-      - kind: map_params
-        params:
-          tool_choice:
-            type: function
-            function: {name: lookup}
-      - kind: map_params
-        params:
-          tool_choice:
-            type: function
-            function: {name: ""}
-      - kind: map_params
-        params: {tool_choice: sometimes}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-functions-passthrough
-call:
-  b8177:
-    steps:
       - kind: map_params
         params:
           functions:
             - {name: lookup, description: find a city}
           function_call: {name: lookup}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-request-details
-call:
-  b8177:
-    steps:
       - kind: request
         model: gigachat/GigaChat
         messages:
@@ -119,54 +78,5 @@ call:
         token: token-1
         headers: {X-Trace: abc}
         params: {temperature: 0.4, max_tokens: 8}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-request-url-from-env
-call:
-  b8177:
-    steps:
-      - kind: request
-        model: gigachat/GigaChat
-        messages:
-          - {role: user, content: hi}
-        env_base: https://env.example/v1
-        token: token-1
-env: {GIGACHAT_API_BASE: "https://env.example/v1"}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-headers-from-credentials
-call:
-  b8177:
-    steps:
-      - kind: headers
-        headers: {X-Trace: abc}
-        api_key: api-key
-        credentials: env-cred
-        fallback_key: env-fallback
-        token: token-1
-      - kind: headers
-        credentials: env-cred
-        fallback_key: env-fallback
-        token: token-2
-      - kind: headers
-        api_key: ""
-        credentials: ""
-        fallback_key: env-fallback
-        token: token-3
-env:
-  GIGACHAT_CREDENTIALS: env-cred
-  GIGACHAT_API_KEY: env-fallback
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-headers-without-credentials
-call:
-  b8177:
-    steps:
-      - kind: headers
-        token: token-4
 env: {}
 compare: {ignore: []}

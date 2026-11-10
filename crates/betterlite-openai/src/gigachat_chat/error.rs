@@ -11,19 +11,21 @@ pub struct GigaChatError {
     pub headers: Option<Headers>,
 }
 
-// The token failure LiteLLM raises as GigaChatAuthError, the same class without headers
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{message}")]
-pub struct GigachatTokenError {
-    pub status_code: u16,
-    pub message: String,
-}
-
-impl From<GigachatTokenError> for GigaChatError {
-    fn from(error: GigachatTokenError) -> Self {
+impl GigaChatError {
+    // a request field GigaChat cannot take, which the project refuses with a 400 that names it
+    pub(crate) fn bad_request(message: &str) -> Self {
         Self {
-            status_code: error.status_code,
-            message: error.message,
+            status_code: 400,
+            message: message.to_owned(),
+            headers: None,
+        }
+    }
+
+    // a value that reached betterlite in a shape it cannot read, which LiteLLM fails on too
+    pub(crate) const fn server_error(message: String) -> Self {
+        Self {
+            status_code: 500,
+            message,
             headers: None,
         }
     }

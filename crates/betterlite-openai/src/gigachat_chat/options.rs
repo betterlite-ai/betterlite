@@ -1,4 +1,5 @@
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::gigachat_chat::error::GigaChatError;
 use crate::openai_base_config::Object;
@@ -22,6 +23,33 @@ pub const STRUCTURED_OUTPUT: &str = "_structured_output";
 
 const DEFAULT_SCHEMA_NAME: &str = "structured_output";
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct FunctionTool {
+    name: Option<String>,
+    description: Option<String>,
+    parameters: Option<Object>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct FunctionSchema {
+    name: Option<String>,
+    schema: Option<Object>,
+}
+
+#[derive(Serialize)]
+struct Function {
+    name: String,
+    description: String,
+    parameters: Object,
+}
+
+#[derive(Serialize)]
+struct FunctionName<'name> {
+    name: &'name str,
+}
+
 pub fn map_openai_params(
     non_default_params: &Object,
     mut optional_params: Object,
@@ -32,13 +60,10 @@ pub fn map_openai_params(
             continue;
         }
         match name.as_str() {
-            "stream" => {
-                optional_params.insert(String::from("stream"), value.clone());
+            "stream" | "top_p" | "functions" | "function_call" => {
+                optional_params.insert(name.clone(), value.clone());
             }
             "temperature" => insert_temperature(value, &mut optional_params),
-            "top_p" => {
-                optional_params.insert(String::from("top_p"), value.clone());
-            }
             "max_tokens" | "max_completion_tokens" => {
                 optional_params.insert(String::from("max_tokens"), value.clone());
             }
@@ -52,9 +77,6 @@ pub fn map_openai_params(
                 if let Some(choice) = map_tool_choice(value) {
                     optional_params.insert(String::from("function_call"), choice);
                 }
-            }
-            "functions" | "function_call" => {
-                optional_params.insert(name.clone(), value.clone());
             }
             "response_format" => apply_response_format(value, &mut optional_params)?,
             // LiteLLM accepts "stop" and sends nothing, and drops every option GigaChat does not take
@@ -79,11 +101,9 @@ fn insert_temperature(temperature: &Value, optional_params: &mut Object) {
 // LiteLLM keeps only function tools and writes the three function fields with empty defaults
 fn tools_to_functions(tools: &Value) -> Result<Vec<Value>, GigaChatError> {
     let Value::Array(entries) = tools else {
-        return Err(GigaChatError {
-            status_code: 400,
-            message: String::from("tools must be a list of tool objects"),
-            headers: None,
-        });
+        return Err(GigaChatError::bad_request(
+            "tools must be a list of tool objects",
+        ));
     };
     let mut functions = Vec::with_capacity(entries.len());
     for entry in entries {
@@ -93,27 +113,19 @@ fn tools_to_functions(tools: &Value) -> Result<Vec<Value>, GigaChatError> {
         if tool.get("type").and_then(Value::as_str) != Some("function") {
             continue;
         }
-        let definition = tool.get("function").and_then(Value::as_object);
-        let field = |name: &str, default: Value| {
-            definition
-                .and_then(|found| found.get(name))
-                .cloned()
-                .unwrap_or_else(|| default.clone())
+        let function: FunctionTool = match tool.get("function") {
+            None | Some(Value::Null) => FunctionTool::default(),
+            Some(value) => serde_json::from_value(value.clone()).map_err(|source| {
+                GigaChatError::bad_request(&format!(
+                    "a function tool holds an object function: {source}"
+                ))
+            })?,
         };
-        functions.push(Value::Object(Object::from_iter([
-            (
-                String::from("name"),
-                field("name", Value::String(String::new())),
-            ),
-            (
-                String::from("description"),
-                field("description", Value::String(String::new())),
-            ),
-            (
-                String::from("parameters"),
-                field("parameters", Value::Object(Object::new())),
-            ),
-        ])));
+        functions.push(json!(Function {
+            name: function.name.unwrap_or_default(),
+            description: function.description.unwrap_or_default(),
+            parameters: function.parameters.unwrap_or_default(),
+        }));
     }
     Ok(functions)
 }
@@ -135,10 +147,7 @@ fn map_tool_choice(tool_choice: &Value) -> Option<Value> {
                 .and_then(|implementation| implementation.get("name"))
                 .and_then(Value::as_str)
                 .filter(|name| !name.is_empty())?;
-            Some(Value::Object(Object::from_iter([(
-                String::from("name"),
-                Value::String(name.to_owned()),
-            )])))
+            Some(json!(FunctionName { name }))
         }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
             None
@@ -152,75 +161,39 @@ fn apply_response_format(
     optional_params: &mut Object,
 ) -> Result<(), GigaChatError> {
     let Value::Object(fields) = format else {
-        return Err(GigaChatError {
-            status_code: 400,
-            message: String::from("response_format must be an object"),
-            headers: None,
-        });
+        return Err(GigaChatError::bad_request(
+            "response_format must be an object",
+        ));
     };
     if fields.get("type").and_then(Value::as_str) != Some("json_schema") {
         return Ok(());
     }
-    let (name, parameters) = json_schema_fields(fields)?;
-    let function = Object::from_iter([
-        (String::from("name"), Value::String(name.clone())),
-        (
-            String::from("description"),
-            Value::String(format!("Output structured response: {name}")),
-        ),
-        (String::from("parameters"), parameters),
-    ]);
+    let schema: FunctionSchema = match fields.get("json_schema") {
+        None | Some(Value::Null) => FunctionSchema::default(),
+        Some(value) => serde_json::from_value(value.clone()).map_err(|source| {
+            GigaChatError::bad_request(&format!(
+                "response_format.json_schema holds declared fields: {source}"
+            ))
+        })?,
+    };
+    let name = schema
+        .name
+        .unwrap_or_else(|| String::from(DEFAULT_SCHEMA_NAME));
     let mut functions = optional_params
         .get("functions")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    functions.push(Value::Object(function));
+    functions.push(json!(Function {
+        description: format!("Output structured response: {name}"),
+        name: name.clone(),
+        parameters: schema.schema.unwrap_or_default(),
+    }));
     optional_params.insert(String::from("functions"), Value::Array(functions));
     optional_params.insert(
         String::from("function_call"),
-        Value::Object(Object::from_iter([(
-            String::from("name"),
-            Value::String(name),
-        )])),
+        json!(FunctionName { name: &name }),
     );
     optional_params.insert(String::from(STRUCTURED_OUTPUT), Value::Bool(true));
     Ok(())
-}
-
-fn json_schema_fields(format: &Object) -> Result<(String, Value), GigaChatError> {
-    let json_schema = match format.get("json_schema") {
-        None | Some(Value::Null) => Object::new(),
-        Some(Value::Object(schema)) => schema.clone(),
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
-            return Err(GigaChatError {
-                status_code: 400,
-                message: String::from("response_format.json_schema must be an object"),
-                headers: None,
-            });
-        }
-    };
-    let name = match json_schema.get("name") {
-        None | Some(Value::Null) => String::from(DEFAULT_SCHEMA_NAME),
-        Some(Value::String(name)) => name.clone(),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            return Err(GigaChatError {
-                status_code: 400,
-                message: String::from("response_format.json_schema.name must be a string"),
-                headers: None,
-            });
-        }
-    };
-    let parameters = match json_schema.get("schema") {
-        None | Some(Value::Null) => Value::Object(Object::new()),
-        Some(schema @ Value::Object(_)) => schema.clone(),
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
-            return Err(GigaChatError {
-                status_code: 400,
-                message: String::from("response_format.json_schema.schema must be an object"),
-                headers: None,
-            });
-        }
-    };
-    Ok((name, parameters))
 }

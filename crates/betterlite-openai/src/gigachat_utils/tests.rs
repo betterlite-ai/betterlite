@@ -4,8 +4,8 @@ use rstest::rstest;
 use serde_json::Value;
 
 use super::{
-    ConvertedUsage, GIGACHAT_BASE_URL, IdSource as _, TokenUsage, UsageError, UuidIds,
-    arguments_text, convert_usage, get_api_base,
+    ConvertedUsage, GIGACHAT_BASE_URL, IdSource as _, TokenUsage, UuidIds, arguments_text,
+    convert_usage, get_api_base,
 };
 use crate::openai_base_config::Object;
 
@@ -44,7 +44,7 @@ fn an_empty_api_base_argument_wins_over_the_environment_base() {
 
 #[test]
 fn usage_adds_precached_tokens_to_the_prompt_and_the_total() {
-    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), Some(6))).unwrap();
+    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), Some(6)));
     assert_eq!(
         converted,
         ConvertedUsage {
@@ -58,7 +58,7 @@ fn usage_adds_precached_tokens_to_the_prompt_and_the_total() {
 
 #[test]
 fn usage_without_precached_tokens_reports_no_cached_details() {
-    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), None)).unwrap();
+    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), None));
     assert_eq!(converted.prompt_tokens, 10);
     assert_eq!(converted.total_tokens, 14);
     assert_eq!(converted.cached_tokens, None);
@@ -66,13 +66,13 @@ fn usage_without_precached_tokens_reports_no_cached_details() {
 
 #[test]
 fn zero_precached_tokens_report_no_cached_details() {
-    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), Some(0))).unwrap();
+    let converted = convert_usage(&usage(Some(10), Some(4), Some(14), Some(0)));
     assert_eq!(converted.cached_tokens, None);
 }
 
 #[test]
 fn every_missing_counter_reads_as_zero() {
-    let converted = convert_usage(&usage(None, None, None, None)).unwrap();
+    let converted = convert_usage(&usage(None, None, None, None));
     assert_eq!(
         converted,
         ConvertedUsage {
@@ -95,15 +95,16 @@ fn an_unread_usage_key_still_makes_the_block_present() {
 }
 
 #[test]
-fn a_prompt_counter_that_overflows_fails() {
-    let error = convert_usage(&usage(Some(u64::MAX), None, None, Some(1))).unwrap_err();
-    assert_eq!(error, UsageError::Overflow);
+fn a_prompt_counter_that_overflows_stays_at_the_largest_value() {
+    let converted = convert_usage(&usage(Some(u64::MAX), None, None, Some(1)));
+    assert_eq!(converted.prompt_tokens, u64::MAX);
+    assert_eq!(converted.cached_tokens, Some(1));
 }
 
 #[test]
-fn a_total_counter_that_overflows_fails() {
-    let error = convert_usage(&usage(None, None, Some(u64::MAX), Some(1))).unwrap_err();
-    assert_eq!(error, UsageError::Overflow);
+fn a_total_counter_that_overflows_stays_at_the_largest_value() {
+    let converted = convert_usage(&usage(None, None, Some(u64::MAX), Some(1)));
+    assert_eq!(converted.total_tokens, u64::MAX);
 }
 
 #[test]

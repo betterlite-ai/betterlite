@@ -10,6 +10,17 @@ use crate::gigachat_chat::messages::transform_messages;
 use crate::gigachat_utils::get_api_base;
 use crate::openai_base_config::{Headers, Object};
 
+const COPIED_OPTIONS: [&str; 8] = [
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "stream",
+    "repetition_penalty",
+    "profanity_check",
+    "functions",
+    "function_call",
+];
+
 pub struct CompletionInput<'request> {
     pub model: &'request str,
     pub messages: &'request [ChatMessage],
@@ -43,7 +54,20 @@ pub async fn completion_request(
         config.bearer,
     )
     .await?;
-    let body = request_body(config, input).await?;
+    let messages = transform_messages(input.messages, config.uploader).await?;
+    let mut body = Object::from_iter([
+        (
+            String::from("model"),
+            Value::String(input.model.replace(MODEL_PREFIX, "")),
+        ),
+        (String::from("messages"), Value::Array(messages)),
+    ]);
+    // LiteLLM copies these provider options only when the request carries them
+    for key in COPIED_OPTIONS {
+        if let Some(value) = input.optional_params.get(key) {
+            body.insert(String::from(key), value.clone());
+        }
+    }
     Ok(CompletionRequest {
         url: format!(
             "{}/chat/completions",
@@ -52,33 +76,4 @@ pub async fn completion_request(
         headers,
         body,
     })
-}
-
-async fn request_body(
-    config: &GigachatChatConfig<'_>,
-    input: &CompletionInput<'_>,
-) -> Result<Object, GigaChatError> {
-    let messages = transform_messages(input.messages, config.uploader).await?;
-    let mut body = Object::new();
-    body.insert(
-        String::from("model"),
-        Value::String(input.model.replace(MODEL_PREFIX, "")),
-    );
-    body.insert(String::from("messages"), Value::Array(messages));
-    // LiteLLM copies these provider options only when the request carries them
-    for key in [
-        "temperature",
-        "top_p",
-        "max_tokens",
-        "stream",
-        "repetition_penalty",
-        "profanity_check",
-        "functions",
-        "function_call",
-    ] {
-        if let Some(value) = input.optional_params.get(key) {
-            body.insert(String::from(key), value.clone());
-        }
-    }
-    Ok(body)
 }

@@ -1,9 +1,25 @@
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::chat::ChatMessage;
 use crate::gigachat_chat::config::GigachatImageUploader;
 use crate::gigachat_chat::error::GigaChatError;
 use crate::openai_base_config::Object;
+
+#[derive(Deserialize)]
+struct ContentPart {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    text: Option<String>,
+    image_url: Option<ImageUrl>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ImageUrl {
+    Link(String),
+    Fields { url: Option<String> },
+}
 
 pub async fn transform_messages(
     messages: &[ChatMessage],
@@ -21,69 +37,53 @@ async fn transform_message(
     message: &ChatMessage,
     uploader: &dyn GigachatImageUploader,
 ) -> Result<Value, GigaChatError> {
-    let value = serde_json::to_value(message).map_err(|source| GigaChatError {
-        status_code: 500,
-        message: format!("the GigaChat request message cannot be encoded: {source}"),
-        headers: None,
-    })?;
-    let Value::Object(mut object) = value else {
-        return Err(GigaChatError {
-            status_code: 500,
-            message: String::from("the GigaChat request message is not an object"),
-            headers: None,
-        });
-    };
+    let mut object: Object = serde_json::to_value(message)
+        .and_then(serde_json::from_value)
+        .map_err(|source| {
+            GigaChatError::server_error(format!(
+                "the GigaChat request message cannot be encoded: {source}"
+            ))
+        })?;
     object.remove("name");
-    rewrite_role(index, &mut object)?;
+    rewrite_role(index, &mut object);
     rewrite_content(&mut object, uploader).await?;
     rewrite_tool_calls(message, &mut object);
     Ok(Value::Object(object))
 }
 
 // GigaChat takes a system message only at the first position, a developer role at none, and a tool role not at all
-fn rewrite_role(index: usize, object: &mut Object) -> Result<(), GigaChatError> {
-    let role = object
+fn rewrite_role(index: usize, object: &mut Object) {
+    let Some(role) = object
         .get("role")
         .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    match role.as_str() {
-        "developer" => {
-            object.insert(String::from("role"), Value::String(String::from("system")));
-        }
-        "system" if index > 0 => {
-            object.insert(String::from("role"), Value::String(String::from("user")));
-        }
-        "tool" => {
-            object.insert(
-                String::from("role"),
-                Value::String(String::from("function")),
-            );
-            let content = object
-                .get("content")
-                .cloned()
-                .unwrap_or_else(|| Value::String(String::new()));
-            let encoded = tool_content(&content)?;
-            object.insert(String::from("content"), encoded);
-        }
-        _ => {}
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let renamed = match role.as_str() {
+        "developer" => "system",
+        "system" if index > 0 => "user",
+        "tool" => "function",
+        _ => return,
+    };
+    if role == "tool" {
+        let content = object
+            .get("content")
+            .cloned()
+            .unwrap_or_else(|| Value::from(""));
+        object.insert("content".to_owned(), tool_content(&content));
     }
-    Ok(())
+    object.insert("role".to_owned(), Value::from(renamed));
 }
 
-fn tool_content(content: &Value) -> Result<Value, GigaChatError> {
+// a function message holds JSON text, so anything that is not JSON text yet is written as JSON
+fn tool_content(content: &Value) -> Value {
     if let Value::String(text) = content
         && serde_json::from_str::<Value>(text).is_ok()
     {
-        return Ok(Value::String(text.clone()));
+        return content.clone();
     }
-    serde_json::to_string(content)
-        .map(Value::String)
-        .map_err(|source| GigaChatError {
-            status_code: 500,
-            message: format!("the GigaChat tool message content cannot be encoded: {source}"),
-            headers: None,
-        })
+    Value::String(content.to_string())
 }
 
 async fn rewrite_content(
@@ -91,18 +91,35 @@ async fn rewrite_content(
     uploader: &dyn GigachatImageUploader,
 ) -> Result<(), GigaChatError> {
     if object.get("content").is_none_or(Value::is_null) {
-        object.insert(String::from("content"), Value::String(String::new()));
+        object.insert("content".to_owned(), Value::from(""));
     }
     let Some(Value::Array(parts)) = object.get("content").cloned() else {
         return Ok(());
     };
-    let (text, attachments) = transform_list_content(&parts, uploader).await?;
-    object.insert(String::from("content"), Value::String(text));
+    let mut texts = Vec::new();
+    let mut attachments = Vec::new();
+    for entry in parts.into_iter().filter(Value::is_object) {
+        let part: ContentPart = serde_json::from_value(entry).map_err(|source| {
+            GigaChatError::bad_request(&format!("a content part holds declared fields: {source}"))
+        })?;
+        match (part.kind.as_deref(), part.image_url) {
+            (Some("text"), _) => texts.push(part.text.unwrap_or_default()),
+            (
+                Some("image_url"),
+                Some(ImageUrl::Link(url) | ImageUrl::Fields { url: Some(url) }),
+            ) => {
+                if !url.is_empty()
+                    && let Some(file_id) = uploader.upload(&url).await
+                {
+                    attachments.push(Value::String(file_id));
+                }
+            }
+            _ => {}
+        }
+    }
+    object.insert("content".to_owned(), Value::String(texts.join("\n")));
     if !attachments.is_empty() {
-        object.insert(
-            String::from("attachments"),
-            Value::Array(attachments.into_iter().map(Value::String).collect()),
-        );
+        object.insert("attachments".to_owned(), Value::Array(attachments));
     }
     Ok(())
 }
@@ -118,74 +135,11 @@ fn rewrite_tool_calls(message: &ChatMessage, object: &mut Object) {
     let arguments = serde_json::from_str::<Value>(&first.function.arguments)
         .unwrap_or_else(|_| Value::Object(Object::new()));
     object.insert(
-        String::from("function_call"),
+        "function_call".to_owned(),
         Value::Object(Object::from_iter([
-            (
-                String::from("name"),
-                Value::String(first.function.name.clone()),
-            ),
-            (String::from("arguments"), arguments),
+            ("name".to_owned(), Value::from(first.function.name.as_str())),
+            ("arguments".to_owned(), arguments),
         ])),
     );
     object.remove("tool_calls");
-}
-
-async fn transform_list_content(
-    parts: &[Value],
-    uploader: &dyn GigachatImageUploader,
-) -> Result<(String, Vec<String>), GigaChatError> {
-    let mut texts = Vec::new();
-    let mut attachments = Vec::new();
-    for entry in parts {
-        let Some(part) = entry.as_object() else {
-            continue;
-        };
-        match part.get("type").and_then(Value::as_str) {
-            Some("text") => texts.push(text_of(part)?),
-            Some("image_url") => {
-                let url = image_url_of(part)?;
-                if !url.is_empty()
-                    && let Some(file_id) = uploader.upload(&url).await
-                {
-                    attachments.push(file_id);
-                }
-            }
-            None | Some(_) => {}
-        }
-    }
-    Ok((texts.join("\n"), attachments))
-}
-
-fn text_of(part: &Object) -> Result<String, GigaChatError> {
-    match part.get("text") {
-        None | Some(Value::Null) => Ok(String::new()),
-        Some(Value::String(text)) => Ok(text.clone()),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            Err(GigaChatError {
-                status_code: 400,
-                message: String::from("a text content part must hold a string text"),
-                headers: None,
-            })
-        }
-    }
-}
-
-fn image_url_of(part: &Object) -> Result<String, GigaChatError> {
-    match part.get("image_url") {
-        Some(Value::String(url)) => Ok(url.clone()),
-        Some(Value::Object(image)) => match image.get("url") {
-            None | Some(Value::Null) => Ok(String::new()),
-            Some(Value::String(url)) => Ok(url.clone()),
-            Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-                Err(GigaChatError {
-                    status_code: 400,
-                    message: String::from("an image_url part must hold a string url"),
-                    headers: None,
-                })
-            }
-        },
-        None | Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_)) => {
-            Ok(String::new())
-        }
-    }
 }

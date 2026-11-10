@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use serde_json::Value;
-use thiserror::Error;
 use uuid::Uuid;
 
 use crate::openai_base_config::Object;
@@ -17,6 +16,18 @@ pub trait IdSource: Send + Sync {
     fn new_uuid(&self) -> Uuid;
 }
 
+// LiteLLM writes a generated id as a prefix and the first hex characters of a uuid4
+pub(crate) fn generated_id(ids: &dyn IdSource, prefix: &str, chars: usize) -> String {
+    let hex: String = ids
+        .new_uuid()
+        .simple()
+        .to_string()
+        .chars()
+        .take(chars)
+        .collect();
+    format!("{prefix}{hex}")
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct UuidIds;
 
@@ -28,13 +39,10 @@ impl IdSource for UuidIds {
 
 #[must_use]
 pub fn get_api_base(api_base: Option<&str>, env_base: Option<&str>) -> String {
-    if let Some(base) = api_base {
-        return base.to_owned();
-    }
-    match env_base {
-        Some(base) if !base.is_empty() => base.to_owned(),
-        Some(_) | None => GIGACHAT_BASE_URL.to_owned(),
-    }
+    api_base
+        .or_else(|| env_base.filter(|base| !base.is_empty()))
+        .unwrap_or(GIGACHAT_BASE_URL)
+        .to_owned()
 }
 
 // GigaChat's usage block: LiteLLM reads each counter with 0 when the key is missing
@@ -70,30 +78,22 @@ pub struct ConvertedUsage {
     pub cached_tokens: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum UsageError {
-    #[error("the GigaChat token counters do not fit the total")]
-    Overflow,
-}
-
-pub fn convert_usage(usage: &TokenUsage) -> Result<ConvertedUsage, UsageError> {
+// Python adds without a limit, so a counter sum that leaves u64 stays at the largest value
+#[must_use]
+pub fn convert_usage(usage: &TokenUsage) -> ConvertedUsage {
     let precached = usage.precached_prompt_tokens.unwrap_or_default();
-    let prompt_tokens = usage
-        .prompt_tokens
-        .unwrap_or_default()
-        .checked_add(precached)
-        .ok_or(UsageError::Overflow)?;
-    let total_tokens = usage
-        .total_tokens
-        .unwrap_or_default()
-        .checked_add(precached)
-        .ok_or(UsageError::Overflow)?;
-    Ok(ConvertedUsage {
-        prompt_tokens,
+    ConvertedUsage {
+        prompt_tokens: usage
+            .prompt_tokens
+            .unwrap_or_default()
+            .saturating_add(precached),
         completion_tokens: usage.completion_tokens.unwrap_or_default(),
-        total_tokens,
+        total_tokens: usage
+            .total_tokens
+            .unwrap_or_default()
+            .saturating_add(precached),
         cached_tokens: (precached > 0).then_some(precached),
-    })
+    }
 }
 
 // LiteLLM writes an object arguments as JSON and keeps any other value as its own text

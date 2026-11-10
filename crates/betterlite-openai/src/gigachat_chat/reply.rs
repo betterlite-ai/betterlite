@@ -9,11 +9,10 @@ use crate::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
 use crate::chat::{FunctionCall, ToolCall};
-use crate::gigachat_chat::config::GigachatChatConfig;
 use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_utils::{
     CHAT_COMPLETION_ID_CHARS, IdSource, TOOL_CALL_ID_CHARS, TOOL_CALL_ID_PREFIX, TokenUsage,
-    arguments_text, convert_usage,
+    arguments_text, convert_usage, generated_id,
 };
 
 pub struct ReplyInput<'body> {
@@ -50,33 +49,32 @@ struct RawMessage {
     tool_calls: Option<Vec<ToolCall>>,
 }
 
-struct Converted {
-    content: Option<String>,
-    tool_calls: Option<Vec<ToolCall>>,
-    finish_reason: Option<String>,
-}
-
 pub fn transform_response(
-    config: &GigachatChatConfig<'_>,
+    ids: &dyn IdSource,
     input: &ReplyInput<'_>,
 ) -> Result<ChatResponse, GigaChatError> {
-    let RawReply {
-        id,
-        created,
-        choices,
-        usage,
-    } = decode_reply(input)?;
-    let converted_choices = choices
-        .into_iter()
-        .map(|choice| response_choice(choice, input.structured_output, config.ids))
-        .collect();
+    let reply = serde_json::from_slice::<RawReply>(input.body).map_err(|source| GigaChatError {
+        status_code: if matches!(source.classify(), Category::Syntax | Category::Eof) {
+            input.status_code
+        } else {
+            500
+        },
+        message: format!("the GigaChat reply cannot be read: {source}"),
+        headers: None,
+    })?;
     Ok(ChatResponse {
-        id: response_id(id, config.ids),
+        id: reply.id.unwrap_or_else(|| {
+            generated_id(ids, CHAT_COMPLETION_ID_PREFIX, CHAT_COMPLETION_ID_CHARS)
+        }),
         object: String::from("chat.completion"),
-        created: created.unwrap_or(input.created),
+        created: reply.created.unwrap_or(input.created),
         model: input.model.to_owned(),
-        choices: converted_choices,
-        usage: chat_usage(&usage.unwrap_or_default())?,
+        choices: reply
+            .choices
+            .into_iter()
+            .map(|choice| response_choice(choice, input.structured_output, ids))
+            .collect(),
+        usage: chat_usage(&reply.usage.unwrap_or_default()),
         system_fingerprint: None,
         service_tier: None,
     })
@@ -88,131 +86,71 @@ fn response_choice(choice: RawChoice, structured_output: bool, ids: &dyn IdSourc
         message,
         finish_reason,
     } = choice;
-    let raw = message.unwrap_or_default();
-    let converted = convert_function_call(&raw, finish_reason.as_deref(), structured_output, ids);
+    let mut raw = message.unwrap_or_default();
+    let (tool_calls, content, reason) =
+        convert_function_call(&mut raw, finish_reason, structured_output, ids);
     ChatChoice {
         index: index.unwrap_or_default(),
         message: AssistantMessage {
             role: raw.role.unwrap_or_else(|| String::from("assistant")),
-            content: converted.content,
-            tool_calls: converted.tool_calls,
+            content,
+            tool_calls,
             annotations: None,
             audio: None,
             refusal: None,
             provider_specific_fields: MessageProviderFields::default(),
         },
-        finish_reason: Some(
-            converted
-                .finish_reason
-                .unwrap_or_else(|| String::from("stop")),
-        ),
+        finish_reason: Some(reason.unwrap_or_else(|| String::from("stop"))),
         logprobs: None,
         provider_specific_fields: BTreeMap::new(),
     }
 }
 
-fn response_id(id: Option<String>, ids: &dyn IdSource) -> String {
-    id.unwrap_or_else(|| {
-        let hex: String = ids
-            .new_uuid()
-            .simple()
-            .to_string()
-            .chars()
-            .take(CHAT_COMPLETION_ID_CHARS)
-            .collect();
-        format!("{CHAT_COMPLETION_ID_PREFIX}{hex}")
-    })
-}
-
 // a reply that finishes on a function call becomes tool calls, or the message text when the request was structured
 fn convert_function_call(
-    message: &RawMessage,
-    finish_reason: Option<&str>,
+    raw: &mut RawMessage,
+    finish_reason: Option<String>,
     structured_output: bool,
     ids: &dyn IdSource,
-) -> Converted {
-    let unchanged = Converted {
-        content: message.content.clone(),
-        tool_calls: message.tool_calls.clone(),
-        finish_reason: finish_reason.map(str::to_owned),
-    };
-    if finish_reason != Some("function_call") {
-        return unchanged;
-    }
-    let Some(call) = message
-        .function_call
-        .as_ref()
-        .and_then(Value::as_object)
-        .filter(|call| !call.is_empty())
+) -> (Option<Vec<ToolCall>>, Option<String>, Option<String>) {
+    let function_call = raw.function_call.take().and_then(|call| {
+        call.as_object()
+            .filter(|fields| !fields.is_empty())
+            .cloned()
+    });
+    let Some(call) = function_call.filter(|_| finish_reason.as_deref() == Some("function_call"))
     else {
-        return unchanged;
+        return (raw.tool_calls.take(), raw.content.take(), finish_reason);
     };
     let arguments = arguments_text(call.get("arguments"));
     if structured_output {
-        return Converted {
-            content: Some(arguments),
-            tool_calls: None,
-            finish_reason: Some(String::from("stop")),
-        };
+        return (None, Some(arguments), Some(String::from("stop")));
     }
     let name = call.get("name").and_then(Value::as_str).unwrap_or_default();
-    Converted {
-        content: message.content.clone(),
-        tool_calls: Some(vec![tool_call(ids, name, arguments)]),
-        finish_reason: Some(String::from("tool_calls")),
-    }
-}
-
-fn tool_call(ids: &dyn IdSource, name: &str, arguments: String) -> ToolCall {
-    let hex: String = ids
-        .new_uuid()
-        .simple()
-        .to_string()
-        .chars()
-        .take(TOOL_CALL_ID_CHARS)
-        .collect();
-    ToolCall {
-        id: format!("{TOOL_CALL_ID_PREFIX}{hex}"),
+    let tool_call = ToolCall {
+        id: generated_id(ids, TOOL_CALL_ID_PREFIX, TOOL_CALL_ID_CHARS),
         kind: String::from("function"),
         function: FunctionCall {
             name: name.to_owned(),
             arguments,
         },
-    }
+    };
+    (
+        Some(vec![tool_call]),
+        raw.content.take(),
+        Some(String::from("tool_calls")),
+    )
 }
 
-fn decode_reply(input: &ReplyInput<'_>) -> Result<RawReply, GigaChatError> {
-    match serde_json::from_slice::<RawReply>(input.body) {
-        Ok(reply) => Ok(reply),
-        Err(source) if matches!(source.classify(), Category::Syntax | Category::Eof) => {
-            Err(GigaChatError {
-                status_code: input.status_code,
-                message: format!("the GigaChat reply is not valid JSON: {source}"),
-                headers: None,
-            })
-        }
-        Err(source) => Err(GigaChatError {
-            status_code: 500,
-            message: format!("the GigaChat reply does not hold the declared fields: {source}"),
-            headers: None,
-        }),
-    }
-}
-
-fn chat_usage(usage: &TokenUsage) -> Result<ChatUsage, GigaChatError> {
-    let converted = convert_usage(usage).map_err(|source| GigaChatError {
-        status_code: 500,
-        message: format!("the GigaChat reply usage cannot be read: {source}"),
-        headers: None,
-    })?;
-    let prompt_tokens_details = converted
-        .cached_tokens
-        .map(|cached| BTreeMap::from([(String::from("cached_tokens"), Some(cached))]));
-    Ok(ChatUsage {
+fn chat_usage(usage: &TokenUsage) -> ChatUsage {
+    let converted = convert_usage(usage);
+    ChatUsage {
         prompt_tokens: converted.prompt_tokens,
         completion_tokens: converted.completion_tokens,
         total_tokens: converted.total_tokens,
-        prompt_tokens_details,
+        prompt_tokens_details: converted
+            .cached_tokens
+            .map(|cached| BTreeMap::from([(String::from("cached_tokens"), Some(cached))])),
         completion_tokens_details: None,
-    })
+    }
 }

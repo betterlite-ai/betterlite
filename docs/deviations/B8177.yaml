@@ -9,3 +9,6 @@ deviations:
   - what: The stream parser refuses a JSON chunk whose declared fields have the wrong type with a typed StreamError, where LiteLLM raises a raw Python exception from chunk_parser.
     why: betterlite decodes the chunk into typed records; the same type of failure LiteLLM hits at attribute access is raised where the chunk is read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/streaming.py#L31-L102
+  - what: A usage counter sum that passes the largest 64-bit value stays at that value, and a stream counter that passes the signed 64-bit range stays at its largest value.
+    why: Python integers have no limit, the typed usage records do, and a counter that large only comes from a corrupt reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py

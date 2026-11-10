@@ -1,5 +1,5 @@
 kind: helper
-name: gigachat-structured-output-request
+name: gigachat-structured-output
 call:
   b8177:
     steps:
@@ -34,14 +34,16 @@ call:
               name: city
               schema: {}
           function_call: {name: earlier}
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-structured-reply
-call:
-  b8177:
-    steps:
+      - kind: request
+        model: gigachat/GigaChat
+        messages:
+          - {role: user, content: hi}
+        token: token-1
+        params:
+          functions:
+            - {name: city, description: "Output structured response: city", parameters: {}}
+          function_call: {name: city}
+          _structured_output: true
       - kind: reply
         status: 200
         model: gigachat/GigaChat
@@ -54,23 +56,5 @@ call:
         created: 1700000000
         structured_output: true
         body: '{"choices": [{"message": {"function_call": {"name": "city"}}, "finish_reason": "function_call"}]}'
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: gigachat-request-carries-the-structured-function
-call:
-  b8177:
-    steps:
-      - kind: request
-        model: gigachat/GigaChat
-        messages:
-          - {role: user, content: hi}
-        token: token-1
-        params:
-          functions:
-            - {name: city, description: "Output structured response: city", parameters: {}}
-          function_call: {name: city}
-          _structured_output: true
 env: {}
 compare: {ignore: []}
