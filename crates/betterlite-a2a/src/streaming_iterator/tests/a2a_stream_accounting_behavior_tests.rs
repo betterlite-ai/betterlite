@@ -823,25 +823,27 @@ async fn production_response_chunks_are_read_through_their_wire_form() {
     );
 }
 
-fn numbered_message(index: usize) -> String {
+fn numbered_message(index: usize, text: &str) -> String {
     format!(
-        r#"{{"id":"req-1","jsonrpc":"2.0","result":{{"kind":"message","messageId":"m{index}","role":"agent","parts":[{{"kind":"text","text":"text-{index}"}}]}}}}"#
+        r#"{{"id":"req-1","jsonrpc":"2.0","result":{{"kind":"message","messageId":"m{index}","role":"agent","parts":[{{"kind":"text","text":"{text}"}}]}}}}"#
     )
 }
 
-fn retained_cost(source: &str, index: usize) -> usize {
-    chunk(source)
-        .0
-        .to_string()
-        .len()
-        .saturating_add(format!("text-{index}").len())
+fn retained_cost(source: &str, text: &str) -> usize {
+    chunk(source).0.to_string().len().saturating_add(text.len())
 }
 
 #[tokio::test]
 async fn chunks_past_the_retention_cap_are_forwarded_but_not_kept() {
-    let sources: Vec<String> = (0..4).map(numbered_message).collect();
+    // every text has its own length, so the usage shows which text was counted
+    let texts: Vec<String> = (1..=4).map(|length| "x".repeat(length)).collect();
+    let sources: Vec<String> = texts
+        .iter()
+        .enumerate()
+        .map(|(index, text)| numbered_message(index, text))
+        .collect();
     let cap = (0..3)
-        .map(|index| retained_cost(&sources[index], index))
+        .map(|index| retained_cost(&sources[index], &texts[index]))
         .sum();
     let (dispatch, calls) = recorder();
     let counter = CharCounter;
@@ -868,8 +870,8 @@ async fn chunks_past_the_retention_cap_are_forwarded_but_not_kept() {
         recorded[0].details.get("usage"),
         Some(&object(&[
             ("prompt_tokens", number(0)),
-            ("completion_tokens", number(6)),
-            ("total_tokens", number(6)),
+            ("completion_tokens", number(4)),
+            ("total_tokens", number(4)),
         ]))
     );
     assert_eq!(
