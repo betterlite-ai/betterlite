@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::types::LiteLlmParams;
 use betterlite_http::url_path::encode_segment;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::SKILLS_BETA_VERSION;
 use super::error::SkillsError;
@@ -21,7 +20,8 @@ pub trait BaseSkillsApiConfig: Send + Sync {
     fn validate_environment(
         &self,
         headers: &mut HeaderMap,
-        params: &LiteLlmParams,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
     ) -> Result<(), SkillsError>;
 
     fn get_complete_url(
@@ -98,15 +98,11 @@ impl BaseSkillsApiConfig for AnthropicSkillsConfig {
     fn validate_environment(
         &self,
         headers: &mut HeaderMap,
-        params: &LiteLlmParams,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
     ) -> Result<(), SkillsError> {
-        let auth = get_auth_header(
-            params.api_key.as_ref(),
-            params.api_base.as_deref(),
-            false,
-            &self.settings,
-        )
-        .ok_or(SkillsError::MissingCredential)?;
+        let auth = get_auth_header(api_key, api_base, false, &self.settings)
+            .ok_or(SkillsError::MissingCredential)?;
         let mut value = HeaderValue::from_str(auth.value.expose_secret())
             .map_err(|_invalid| SkillsError::InvalidHeader { name: auth.name })?;
         value.set_sensitive(true);

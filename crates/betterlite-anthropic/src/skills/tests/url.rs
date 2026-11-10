@@ -1,7 +1,7 @@
 use http::header::HeaderMap;
 use rstest::rstest;
 
-use super::support::{DEFAULT_BASE, anthropic_config, header_values, params};
+use super::support::{DEFAULT_BASE, anthropic_config, header_values, secret};
 use crate::skills::config::BaseSkillsApiConfig as _;
 
 #[test]
@@ -108,7 +108,7 @@ fn skills_anthropic_url_resolves_the_settings_api_key() {
     let config = anthropic_config(Some("sk-ant-settings"), None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap();
     assert_eq!(header_values(&headers, "x-api-key"), ["sk-ant-settings"]);
     assert!(headers.get("x-api-key").unwrap().is_sensitive());
@@ -120,7 +120,7 @@ fn skills_anthropic_url_prefers_the_call_api_key() {
     let config = anthropic_config(Some("sk-ant-settings"), None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     config
-        .validate_environment(&mut headers, &params(Some("sk-ant-call"), None))
+        .validate_environment(&mut headers, Some(&secret("sk-ant-call")), None)
         .unwrap();
     assert_eq!(header_values(&headers, "x-api-key"), ["sk-ant-call"]);
 }
@@ -130,7 +130,7 @@ fn skills_anthropic_url_uses_the_auth_token_as_a_bearer() {
     let config = anthropic_config(None, Some("token"), DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap();
     assert_eq!(header_values(&headers, "authorization"), ["Bearer token"]);
     assert!(headers.get("authorization").unwrap().is_sensitive());
@@ -141,7 +141,7 @@ fn skills_anthropic_url_converts_an_oauth_key_to_a_bearer() {
     let config = anthropic_config(Some("sk-ant-oat01-abc"), None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap();
     assert_eq!(
         header_values(&headers, "authorization"),
@@ -150,11 +150,26 @@ fn skills_anthropic_url_converts_an_oauth_key_to_a_bearer() {
 }
 
 #[test]
+fn skills_anthropic_url_keeps_a_plain_key_on_a_custom_base_in_the_api_key_header() {
+    let config = anthropic_config(None, None, DEFAULT_BASE);
+    let mut headers = HeaderMap::new();
+    config
+        .validate_environment(
+            &mut headers,
+            Some(&secret("plain-key")),
+            Some("https://gateway.example"),
+        )
+        .unwrap();
+    assert_eq!(header_values(&headers, "x-api-key"), ["plain-key"]);
+    assert!(header_values(&headers, "authorization").is_empty());
+}
+
+#[test]
 fn skills_anthropic_url_requires_credentials() {
     let config = anthropic_config(None, None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     let error = config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -167,7 +182,7 @@ fn skills_anthropic_url_rejects_an_invalid_auth_value() {
     let config = anthropic_config(None, None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     let error = config
-        .validate_environment(&mut headers, &params(Some("bad\nkey"), None))
+        .validate_environment(&mut headers, Some(&secret("bad\nkey")), None)
         .unwrap_err();
     assert_eq!(
         error.to_string(),

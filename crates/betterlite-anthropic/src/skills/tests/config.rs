@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::types::LiteLlmParams;
 use http::header::HeaderMap;
+use secrecy::SecretString;
 
-use super::support::{DEFAULT_BASE, anthropic_config, params};
+use super::support::{DEFAULT_BASE, anthropic_config};
 use crate::skills::config::BaseSkillsApiConfig;
 use crate::skills::error::SkillsError;
 use crate::skills::wire::{
@@ -14,7 +14,7 @@ struct FixtureConfig;
 
 #[rustfmt::skip]
 impl BaseSkillsApiConfig for FixtureConfig {
-    fn validate_environment(&self, _headers: &mut HeaderMap, _params: &LiteLlmParams) -> Result<(), SkillsError> { Err(SkillsError::MissingCredential) }
+    fn validate_environment(&self, _headers: &mut HeaderMap, _api_key: Option<&SecretString>, _api_base: Option<&str>) -> Result<(), SkillsError> { Err(SkillsError::MissingCredential) }
 
     fn get_complete_url(&self, _api_base: Option<&str>, _endpoint: &str, _skill_id: Option<&str>) -> Result<String, SkillsError> { Err(SkillsError::MissingCredential) }
 
@@ -76,7 +76,7 @@ fn skills_config_trait_anthropic_implements_every_transformation() {
         &anthropic_config(Some("sk-ant-key"), None, DEFAULT_BASE);
     let mut headers = HeaderMap::new();
     config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap();
     assert_eq!(
         config.get_complete_url(None, "skills", None).unwrap(),

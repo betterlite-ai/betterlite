@@ -1,13 +1,13 @@
 use http::header::{HeaderMap, HeaderValue};
 
-use super::support::{DEFAULT_BASE, anthropic_config, beta_headers, header_values, params};
+use super::support::{DEFAULT_BASE, anthropic_config, beta_headers, header_values};
 use crate::skills::config::BaseSkillsApiConfig as _;
 
 fn validated(caller: HeaderMap) -> HeaderMap {
     let config = anthropic_config(Some("sk-ant-key"), None, DEFAULT_BASE);
     let mut headers = caller;
     config
-        .validate_environment(&mut headers, &params(None, None))
+        .validate_environment(&mut headers, None, None)
         .unwrap();
     headers
 }
