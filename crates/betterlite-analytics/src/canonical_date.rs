@@ -93,19 +93,18 @@ pub fn parse_canonical_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
-#[must_use]
 pub fn parse_canonical_date_range(
     start_date: Option<&str>,
     end_date: Option<&str>,
 ) -> Result<CanonicalDateRange, InvalidDateRange> {
-    let (Some(start_date), Some(end_date)) = (start_date, end_date) else {
+    let (Some(start_text), Some(end_text)) = (start_date, end_date) else {
         return Err(InvalidDateRange {
             reason: "Please provide start_date and end_date".to_owned(),
         });
     };
     let (Some(start), Some(end)) = (
-        parse_canonical_date(start_date),
-        parse_canonical_date(end_date),
+        parse_canonical_date(start_text),
+        parse_canonical_date(end_text),
     ) else {
         return Err(InvalidDateRange {
             reason: "start_date and end_date must be valid YYYY-MM-DD dates".to_owned(),

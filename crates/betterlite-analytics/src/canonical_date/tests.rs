@@ -31,8 +31,9 @@ fn parse_canonical_date_accepts_canonical_dates(#[case] value: &str) {
 #[case::single_digit_month("2026-9-24")]
 #[case::single_digit_day("2026-09-4")]
 #[case::compact("20260924")]
-#[case::full_width("２０２６-０９-２４")]
-#[case::full_width_month("2026-０９-24")]
+// full-width digits are what a pasted date from a CJK keyboard looks like
+#[case::full_width("\u{ff12}\u{ff10}\u{ff12}\u{ff16}-\u{ff10}\u{ff19}-\u{ff12}\u{ff14}")]
+#[case::full_width_month("2026-\u{ff10}\u{ff19}-24")]
 #[case::week_date("2026-W39-4")]
 #[case::timestamp("2026-09-24T00:00:00")]
 #[case::leading_space(" 2026-09-24")]
@@ -150,6 +151,6 @@ fn public_error_detail_serializes_the_fastapi_detail_body() {
 #[rstest]
 fn replays_the_canonical_date_corpus(#[files("fuzz/corpus/canonical_date/*")] path: PathBuf) {
     let text = fs::read_to_string(path).unwrap();
-    drop(parse_canonical_date(&text));
-    drop(parse_canonical_date_range(Some(&text), Some(&text)));
+    let _parsed = parse_canonical_date(&text);
+    let _range = parse_canonical_date_range(Some(&text), Some(&text));
 }

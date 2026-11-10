@@ -44,26 +44,38 @@ const KEY_METADATA_DEFAULT: &str = concat!(
 );
 
 #[test]
-fn spend_metrics_defaults_to_zero_for_every_field() {
+fn spend_metrics_defaults_money_to_zero() {
     let metrics = SpendMetrics::default();
     assert_eq!(metrics.spend, Decimal::ZERO);
     assert_eq!(metrics.flat_cost, Decimal::ZERO);
+    assert_eq!(metrics.compression_savings_spend, Decimal::ZERO);
+    assert_eq!(metrics.prompt_caching_savings_spend, Decimal::ZERO);
+    assert_eq!(metrics.gateway_caching_savings, Decimal::ZERO);
+    assert_eq!(metrics.autorouter_savings_spend, Decimal::ZERO);
+}
+
+#[test]
+fn spend_metrics_defaults_counts_to_zero() {
+    let metrics = SpendMetrics::default();
     assert_eq!(metrics.prompt_tokens, 0);
     assert_eq!(metrics.completion_tokens, 0);
     assert_eq!(metrics.cache_read_input_tokens, 0);
     assert_eq!(metrics.cache_creation_input_tokens, 0);
     assert_eq!(metrics.compression_saved_tokens, 0);
-    assert_eq!(metrics.compression_savings_spend, Decimal::ZERO);
-    assert_eq!(metrics.prompt_caching_savings_spend, Decimal::ZERO);
-    assert_eq!(metrics.gateway_caching_savings, Decimal::ZERO);
-    assert_eq!(metrics.autorouter_savings_spend, Decimal::ZERO);
     assert_eq!(metrics.total_tokens, 0);
     assert_eq!(metrics.successful_requests, 0);
     assert_eq!(metrics.failed_requests, 0);
     assert_eq!(metrics.api_requests, 0);
     assert_eq!(metrics.total_response_time_ms, 0);
     assert_eq!(metrics.timed_requests, 0);
-    assert_eq!(serde_json::to_string(&metrics).unwrap(), SPEND_ZERO);
+}
+
+#[test]
+fn spend_metrics_serializes_every_defaulted_field() {
+    assert_eq!(
+        serde_json::to_string(&SpendMetrics::default()).unwrap(),
+        SPEND_ZERO
+    );
 }
 
 #[test]
@@ -156,10 +168,15 @@ fn key_metric_with_metadata_defaults_its_metadata() {
     let metric: KeyMetricWithMetadata = serde_json::from_str(r#"{"metrics":{}}"#).unwrap();
     assert_eq!(metric.metrics, SpendMetrics::default());
     assert_eq!(metric.metadata, KeyMetadata::default());
-    assert_eq!(
-        serde_json::to_string(&metric).unwrap(),
-        format!(r#"{{"metrics":{SPEND_ZERO},"metadata":{KEY_METADATA_DEFAULT}}}"#)
-    );
+    let expected = [
+        r#"{"metrics":"#,
+        SPEND_ZERO,
+        r#","metadata":"#,
+        KEY_METADATA_DEFAULT,
+        "}",
+    ]
+    .concat();
+    assert_eq!(serde_json::to_string(&metric).unwrap(), expected);
 }
 
 #[test]
@@ -168,14 +185,17 @@ fn metric_with_metadata_defaults_its_empty_metadata_and_breakdown() {
     assert_eq!(metric.metrics, SpendMetrics::default());
     assert!(metric.metadata.is_empty());
     assert!(metric.api_key_breakdown.is_empty());
-    assert_eq!(
-        serde_json::to_string(&metric).unwrap(),
-        format!(r#"{{"metrics":{SPEND_ZERO},"metadata":{{}},"api_key_breakdown":{{}}}}"#)
-    );
+    let expected = [
+        r#"{"metrics":"#,
+        SPEND_ZERO,
+        r#","metadata":{},"api_key_breakdown":{}}"#,
+    ]
+    .concat();
+    assert_eq!(serde_json::to_string(&metric).unwrap(), expected);
 }
 
 #[test]
-fn daily_spend_metadata_defaults_match_litellm() {
+fn daily_spend_metadata_defaults_every_total_to_zero() {
     let metadata = DailySpendMetadata::default();
     assert_eq!(metadata.total_spend, Decimal::ZERO);
     assert_eq!(metadata.total_flat_cost, Decimal::ZERO);
@@ -185,6 +205,11 @@ fn daily_spend_metadata_defaults_match_litellm() {
     assert_eq!(metadata.total_prompt_caching_savings, Decimal::ZERO);
     assert_eq!(metadata.total_gateway_caching_savings, Decimal::ZERO);
     assert_eq!(metadata.total_autorouter_savings_spend, Decimal::ZERO);
+}
+
+#[test]
+fn daily_spend_metadata_defaults_the_page_fields() {
+    let metadata = DailySpendMetadata::default();
     assert_eq!(metadata.page, 1);
     assert_eq!(metadata.total_pages, 1);
     assert!(!metadata.has_more);
@@ -224,10 +249,16 @@ fn daily_spend_page_serializes_like_litellm() {
         }],
         metadata: DailySpendMetadata::default(),
     };
-    let expected = format!(concat!(
-        r#"{{"results":[{{"date":"2026-09-24","metrics":{SPEND_ZERO},"#,
-        r#""breakdown":{BREAKDOWN_EMPTY}}}],"metadata":{METADATA_DEFAULT}}}"#
-    ));
+    let expected = [
+        r#"{"results":[{"date":"2026-09-24","metrics":"#,
+        SPEND_ZERO,
+        r#","breakdown":"#,
+        BREAKDOWN_EMPTY,
+        r#"}],"metadata":"#,
+        METADATA_DEFAULT,
+        "}",
+    ]
+    .concat();
     let json = serde_json::to_string(&page).unwrap();
     assert_eq!(json, expected);
     let parsed: DailySpendPage = serde_json::from_str(&json).unwrap();
