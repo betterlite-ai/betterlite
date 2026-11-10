@@ -1,5 +1,5 @@
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::endpoints::projection::project;
 use betterlite_models::endpoints::{
     EndpointRegistry, EndpointSupport, PACKAGED_ASSET, RUNTIME_ASSET, RegistryAsset, parse, support,
@@ -96,38 +96,39 @@ fn registry_projection(registry: &EndpointRegistry) -> Value {
     })
 }
 
+fn model_info(catalog: &ModelCatalog, query: &ModelQueryInput) -> Result<Value, Box<HelperError>> {
+    let typed = ModelQuery {
+        model: &query.model,
+        provider: query.provider.as_deref(),
+    };
+    let resolved = find_info(catalog, &BEDROCK_NAMES, &typed)
+        .map_err(|error| helper_error(error.to_string()))?
+        .ok_or_else(|| helper_error(ModelInfoError::unmapped(&typed).to_string()))?;
+    let capabilities = resolved.capabilities;
+    Ok(json!({
+        "key": resolved.key,
+        "provider": resolved.provider,
+        "mode": resolved.mode,
+        "max_tokens": resolved.limits.max_tokens,
+        "max_input_tokens": resolved.limits.max_input_tokens,
+        "max_output_tokens": resolved.limits.max_output_tokens,
+        "supports_vision": capabilities.supports_vision,
+        "supports_function_calling": capabilities.supports_function_calling,
+        "supports_tool_choice": capabilities.supports_tool_choice,
+        "supports_response_schema": capabilities.supports_response_schema,
+        "supports_prompt_caching": capabilities.supports_prompt_caching,
+        "supports_reasoning": capabilities.supports_reasoning,
+        "supports_web_search": capabilities.supports_web_search,
+        "supports_pdf_input": capabilities.supports_pdf_input,
+    }))
+}
+
 fn model_infos(input: &Input) -> HelperResult {
     let catalog = BundledCatalog::default().get();
-    let results = input
-        .queries
-        .iter()
-        .map(|query| {
-            let typed = ModelQuery {
-                model: &query.model,
-                provider: query.provider.as_deref(),
-            };
-            let resolved = find_info(&catalog, &BEDROCK_NAMES, &typed)
-                .map_err(|error| helper_error(error.to_string()))?
-                .ok_or_else(|| helper_error(ModelInfoError::unmapped(&typed).to_string()))?;
-            let capabilities = resolved.capabilities;
-            Ok(json!({
-                "key": resolved.key,
-                "provider": resolved.provider,
-                "mode": resolved.mode,
-                "max_tokens": resolved.limits.max_tokens,
-                "max_input_tokens": resolved.limits.max_input_tokens,
-                "max_output_tokens": resolved.limits.max_output_tokens,
-                "supports_vision": capabilities.supports_vision,
-                "supports_function_calling": capabilities.supports_function_calling,
-                "supports_tool_choice": capabilities.supports_tool_choice,
-                "supports_response_schema": capabilities.supports_response_schema,
-                "supports_prompt_caching": capabilities.supports_prompt_caching,
-                "supports_reasoning": capabilities.supports_reasoning,
-                "supports_web_search": capabilities.supports_web_search,
-                "supports_pdf_input": capabilities.supports_pdf_input,
-            }))
-        })
-        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
+    let mut results = Vec::with_capacity(input.queries.len());
+    for query in &input.queries {
+        results.push(model_info(&catalog, query)?);
+    }
     Ok(json!({"results": results}))
 }
 
