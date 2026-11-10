@@ -71,3 +71,10 @@ path = "fuzz_targets/prompt_api_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ptu_instant"
+path = "fuzz_targets/ptu_instant.rs"
+test = false
+doc = false
+bench = false
