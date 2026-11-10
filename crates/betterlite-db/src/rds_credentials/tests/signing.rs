@@ -8,8 +8,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::fixture::{
-    BotocoreFixture, Clock, Preset, RecordingSecrets, Reply, TokenVector, aws_sources,
-    botocore_fixture, endpoint, environment, preset_inputs, secret,
+    BotocoreFixture, Clock, Preset, RecordingSecrets, Reply, SIGNER_CREDENTIALS, TokenVector,
+    aws_sources, botocore_fixture, endpoint, environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{
@@ -51,7 +51,7 @@ async fn assert_vector(pinned: &BotocoreFixture, name: &str) {
         .find(|vector| vector.name == name)
         .expect("a pinned botocore vector");
     let secrets = RecordingSecrets::new(&[]);
-    let environment = environment(&[]);
+    let environment = environment(&SIGNER_CREDENTIALS);
     let clock = Clock::at(pinned.fixed_time_unix_seconds);
     let (sources, _recorder) = aws_sources(
         &secrets,

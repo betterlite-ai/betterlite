@@ -33,6 +33,13 @@ const WITHOUT_CREDENTIALS_XML: &str =
     "<AssumeRoleResponse><AssumeRoleResult></AssumeRoleResult></AssumeRoleResponse>";
 
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";
+
+// the STS client signs with the ambient chain, so every test that reaches STS needs these
+pub(super) const SIGNER_CREDENTIALS: [(&str, &str); 3] = [
+    ("AWS_ACCESS_KEY_ID", "AKIDSIGNER"),
+    ("AWS_SECRET_ACCESS_KEY", "signersecret"),
+    ("AWS_EC2_METADATA_DISABLED", "true"),
+];
 pub(super) const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
 
 pub(super) fn botocore_fixture() -> BotocoreFixture {

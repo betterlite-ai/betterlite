@@ -5,8 +5,8 @@ use std::error::Error as _;
 use secrecy::ExposeSecret as _;
 
 use super::fixture::{
-    Call, Clock, Preset, RecordingSecrets, Reply, aws_sources, botocore_fixture, endpoint,
-    environment, preset_inputs, secret,
+    Call, Clock, Preset, RecordingSecrets, Reply, SIGNER_CREDENTIALS, aws_sources,
+    botocore_fixture, endpoint, environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{RdsCredentialInputs, RdsSigner};
@@ -27,7 +27,10 @@ async fn run(
     Vec<String>,
 ) {
     let secrets = RecordingSecrets::new(answers);
-    let environment = environment(environment_pairs);
+    let mut environment = environment(&SIGNER_CREDENTIALS);
+    for (name, value) in environment_pairs {
+        environment.insert((*name).to_owned(), (*value).to_owned());
+    }
     let clock = Clock::at(FIXED);
     let (sources, recorder) = aws_sources(&secrets, &environment, files, &clock, reply);
     let signer = RdsSigner::init(inputs, sources).await;

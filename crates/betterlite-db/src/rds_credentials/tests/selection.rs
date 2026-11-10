@@ -8,8 +8,8 @@ use secrecy::ExposeSecret as _;
 use tracing::subscriber::set_default;
 
 use super::fixture::{
-    Call, Clock, LogCapture, Preset, RecordingSecrets, Reply, SECRET_KEY, aws_sources,
-    botocore_fixture, endpoint, environment, preset_inputs, secret,
+    Call, Clock, LogCapture, Preset, RecordingSecrets, Reply, SECRET_KEY, SIGNER_CREDENTIALS,
+    aws_sources, botocore_fixture, endpoint, environment, preset_inputs, secret,
 };
 use crate::rds_credentials::error::RdsCredentialsError;
 use crate::rds_credentials::{RdsCredentialInputs, RdsSigner, RdsTimeout, generate_iam_auth_token};
@@ -19,11 +19,23 @@ const FIXED: u64 = 1_794_225_600;
 async fn mint(
     inputs: RdsCredentialInputs,
     answers: &[(&str, Option<&str>)],
+) -> Result<(String, Vec<Call>, Vec<String>), RdsCredentialsError> {
+    let files = [("/token", "oidc-token-value")];
+    mint_against(inputs, answers, &[], &files, Reply::WebIdentity).await
+}
+
+async fn mint_against(
+    inputs: RdsCredentialInputs,
+    answers: &[(&str, Option<&str>)],
+    environment_pairs: &[(&str, &str)],
     files: &[(&str, &str)],
     reply: Reply,
 ) -> Result<(String, Vec<Call>, Vec<String>), RdsCredentialsError> {
     let secrets = RecordingSecrets::new(answers);
-    let environment = environment(&[]);
+    let mut environment = environment(&SIGNER_CREDENTIALS);
+    for (name, value) in environment_pairs {
+        environment.insert((*name).to_owned(), (*value).to_owned());
+    }
     let clock = Clock::at(FIXED);
     let (sources, recorder) = aws_sources(&secrets, &environment, files, &clock, reply);
     let signer = RdsSigner::init(inputs, sources).await?;
@@ -33,14 +45,6 @@ async fn mint(
         recorder.calls(),
         secrets.calls(),
     ))
-}
-
-async fn mint_default(
-    inputs: RdsCredentialInputs,
-    answers: &[(&str, Option<&str>)],
-) -> Result<(String, Vec<Call>, Vec<String>), RdsCredentialsError> {
-    let files = [("/token", "oidc-token-value")];
-    mint(inputs, answers, &files, Reply::WebIdentity).await
 }
 
 fn region_of(token: &str) -> String {
@@ -62,9 +66,7 @@ fn region_of(token: &str) -> String {
 async fn minted_region(region_name: Option<&str>, answers: &[(&str, Option<&str>)]) -> String {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.region_name = region_name.map(str::to_owned);
-    let (token, _, _) = mint(inputs, answers, &[], Reply::WebIdentity)
-        .await
-        .expect("a region resolves");
+    let (token, _, _) = mint(inputs, answers).await.expect("a region resolves");
     region_of(&token)
 }
 
@@ -96,7 +98,7 @@ async fn region_lookup_before_parameter_secrets() {
     inputs.region_name = Some("os.environ/REGION_REF".to_owned());
     inputs.access_key_id = Some(secret("os.environ/KEY_REF"));
     inputs.secret_access_key = Some(secret("os.environ/SECRET_REF"));
-    let (token, _, calls) = mint(inputs, &answers, &[], Reply::WebIdentity)
+    let (token, _, calls) = mint(inputs, &answers)
         .await
         .expect("the references resolve");
     assert_eq!(calls.first().map(String::as_str), Some("AWS_REGION_NAME"));
@@ -134,7 +136,7 @@ async fn missing_region_before_credentials() {
 async fn resolved_access_key() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.access_key_id = Some(secret("os.environ/KEY_REF"));
-    let (token, _, _) = mint_default(inputs, &[("KEY_REF", Some("AKIDREF"))])
+    let (token, _, _) = mint(inputs, &[("KEY_REF", Some("AKIDREF"))])
         .await
         .expect("the access key resolves");
     assert!(token.contains("X-Amz-Credential=AKIDREF%2F"));
@@ -143,7 +145,7 @@ async fn resolved_access_key() {
 async fn resolved_secret_key(direct: &str) {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.secret_access_key = Some(secret("os.environ/SECRET_REF"));
-    let (token, _, _) = mint_default(inputs, &[("SECRET_REF", Some(SECRET_KEY))])
+    let (token, _, _) = mint(inputs, &[("SECRET_REF", Some(SECRET_KEY))])
         .await
         .expect("the secret key resolves");
     assert_eq!(token, direct);
@@ -152,14 +154,14 @@ async fn resolved_secret_key(direct: &str) {
 async fn resolved_region() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.region_name = Some("os.environ/REGION_REF".to_owned());
-    let (token, _, _) = mint_default(inputs, &[("REGION_REF", Some("eu-west-1"))])
+    let (token, _, _) = mint(inputs, &[("REGION_REF", Some("eu-west-1"))])
         .await
         .expect("the region reference resolves");
     assert_eq!(region_of(&token), "eu-west-1");
 }
 
 async fn resolved_sts_body(inputs: RdsCredentialInputs, name: &str, value: &str) -> String {
-    let (_, calls, _) = mint_default(inputs, &[(name, Some(value))])
+    let (_, calls, _) = mint(inputs, &[(name, Some(value))])
         .await
         .expect("the STS reference resolves");
     calls[0].body.clone()
@@ -171,14 +173,11 @@ async fn resolved_profile() {
     inputs.access_key_id = None;
     inputs.secret_access_key = None;
     let credentials = "[chosen]\naws_access_key_id = profile\naws_secret_access_key = private\n";
-    let answers = [
-        ("PROFILE_REF", Some("chosen")),
-        ("AWS_SHARED_CREDENTIALS_FILE", Some("/credentials")),
-        ("AWS_EC2_METADATA_DISABLED", Some("true")),
-    ];
-    let (token, calls, _) = mint(
+    let environment_pairs = [("AWS_SHARED_CREDENTIALS_FILE", "/credentials")];
+    let (token, calls, _) = mint_against(
         inputs,
-        &answers,
+        &[("PROFILE_REF", Some("chosen"))],
+        &environment_pairs,
         &[("/credentials", credentials)],
         Reply::WebIdentity,
     )
@@ -227,12 +226,10 @@ async fn seven_parameter_secret_references() {
 async fn direct_keys_before_profile() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.profile_name = Some("chosen".to_owned());
-    let (token, calls, _) = mint(
+    let (token, calls, _) = mint_against(
         inputs,
-        &[
-            ("AWS_SHARED_CREDENTIALS_FILE", Some("/credentials")),
-            ("AWS_EC2_METADATA_DISABLED", Some("true")),
-        ],
+        &[],
+        &[("AWS_SHARED_CREDENTIALS_FILE", "/credentials")],
         &[(
             "/credentials",
             "[chosen]\naws_access_key_id = profile\naws_secret_access_key = private\n",
@@ -249,12 +246,12 @@ async fn direct_keys_before_profile() {
 async fn empty_direct_key_not_ambient() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.access_key_id = Some(secret(""));
-    let (token, calls, _) = mint(
+    let (token, calls, _) = mint_against(
         inputs,
+        &[],
         &[
-            ("AWS_ACCESS_KEY_ID", Some("AKIDAMBIENT")),
-            ("AWS_SECRET_ACCESS_KEY", Some("ambientsecret")),
-            ("AWS_EC2_METADATA_DISABLED", Some("true")),
+            ("AWS_ACCESS_KEY_ID", "AKIDAMBIENT"),
+            ("AWS_SECRET_ACCESS_KEY", "ambientsecret"),
         ],
         &[],
         Reply::WebIdentity,
@@ -272,13 +269,13 @@ async fn profile_before_ambient() {
     inputs.access_key_id = None;
     inputs.secret_access_key = None;
     inputs.profile_name = Some("chosen".to_owned());
-    let (token, calls, _) = mint(
+    let (token, calls, _) = mint_against(
         inputs,
+        &[],
         &[
-            ("AWS_ACCESS_KEY_ID", Some("AKIDAMBIENT")),
-            ("AWS_SECRET_ACCESS_KEY", Some("ambientsecret")),
-            ("AWS_SHARED_CREDENTIALS_FILE", Some("/credentials")),
-            ("AWS_EC2_METADATA_DISABLED", Some("true")),
+            ("AWS_ACCESS_KEY_ID", "AKIDAMBIENT"),
+            ("AWS_SECRET_ACCESS_KEY", "ambientsecret"),
+            ("AWS_SHARED_CREDENTIALS_FILE", "/credentials"),
         ],
         &[(
             "/credentials",
@@ -298,12 +295,12 @@ async fn ambient_chain_when_nothing_is_configured() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.access_key_id = None;
     inputs.secret_access_key = None;
-    let (token, _, _) = mint(
+    let (token, _, _) = mint_against(
         inputs,
+        &[],
         &[
-            ("AWS_ACCESS_KEY_ID", Some("AKIDAMBIENT")),
-            ("AWS_SECRET_ACCESS_KEY", Some("ambientsecret")),
-            ("AWS_EC2_METADATA_DISABLED", Some("true")),
+            ("AWS_ACCESS_KEY_ID", "AKIDAMBIENT"),
+            ("AWS_SECRET_ACCESS_KEY", "ambientsecret"),
         ],
         &[],
         Reply::WebIdentity,
@@ -317,7 +314,7 @@ async fn ambient_chain_when_nothing_is_configured() {
 async fn role_without_session_falls_through() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.role_name = Some("arn:aws:iam::123456789012:role/db".to_owned());
-    let (token, calls, _) = mint(inputs, &[], &[], Reply::WebIdentity)
+    let (token, calls, _) = mint(inputs, &[])
         .await
         .expect("the direct branch still applies");
     assert!(token.contains("X-Amz-Credential=AKIDEXAMPLE%2F"));
@@ -328,7 +325,7 @@ async fn role_without_session_falls_through() {
 async fn incomplete_direct_credentials_fail() {
     let mut inputs = preset_inputs(Preset::Direct);
     inputs.secret_access_key = None;
-    let error = mint(inputs, &[], &[], Reply::WebIdentity)
+    let error = mint(inputs, &[])
         .await
         .expect_err("a key without its secret fails");
     assert!(matches!(
@@ -405,7 +402,7 @@ async fn secrets_absent_from_logs() {
     let mut inputs = preset_inputs(Preset::WebIdentity);
     inputs.web_identity_token = Some(secret("os.environ/TOKEN_REF"));
     let secrets = RecordingSecrets::new(&[("TOKEN_REF", Some("/token"))]);
-    let environment = environment(&[]);
+    let environment = environment(&SIGNER_CREDENTIALS);
     let clock = Clock::at(FIXED);
     let (log_sources, _log_recorder) = aws_sources(
         &secrets,
@@ -430,9 +427,10 @@ async fn secrets_absent_from_logs() {
 
 #[tokio::test]
 async fn failed_signer_text_hides_the_secrets() {
-    let error = mint(
+    let error = mint_against(
         preset_inputs(Preset::WebIdentity),
-        &[("AWS_REGION_NAME", Some("us-east-1"))],
+        &[],
+        &[],
         &[("/token", "oidc-marker-token")],
         Reply::Status(
             403,
