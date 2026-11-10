@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-text-embeddings-bge-vector-shape
+call:
+  vertex_text_embeddings:
+    replies:
+      - {model: bge-small, response: {predictions: [[0.1, 0.2], [0.3]]}}
+      - {model: bge-small, response: {}}
+      - {model: bge-small, response: {predictions: no}}
+      - {model: bge-small, response: {predictions: [[0.1], no]}}
+      - {model: "42", response: {predictions: [[[0.1, 0.2]]]}}
+compare: {ignore: []}
+env: {}

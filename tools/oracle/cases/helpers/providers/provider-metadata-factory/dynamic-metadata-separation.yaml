@@ -1,0 +1,18 @@
+kind: helper
+name: provider-metadata-factory-dynamic-metadata-separation
+call:
+  provider_metadata_factory:
+    dynamic_metadata_separation:
+      queries:
+        - {provider: "ollama", model: "qwen2.5"}
+        - {provider: "ollama_chat", model: "qwen2.5"}
+        - {provider: "lemonade", model: "qwen2.5"}
+        - {provider: "vllm", model: "m"}
+        - {provider: "hosted_vllm", model: "m"}
+        - {provider: "openai", model: "m"}
+        - {provider: "fireworks_ai", model: "m"}
+        - {provider: "xai", model: "m"}
+        - {provider: "azure_ai", model: "m"}
+        - {provider: "openai_like", model: "m"}
+env: {}
+compare: {ignore: []}

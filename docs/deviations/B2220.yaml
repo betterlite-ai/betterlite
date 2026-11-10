@@ -1,0 +1,8 @@
+task: B2220
+deviations:
+  - what: FireworksAIConfig constructor defaults are an immutable settings value per construction, so a later zero-argument construction does not inherit non-None arguments from an earlier construction in the same process.
+    why: The task stores parameterized class defaults as injected immutable settings, and LiteLLM writes the non-None arguments onto the class with setattr, which is process-wide mutable state rather than a value its declared types describe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L186-L195
+  - what: LemonadeChatConfig constructor defaults are an immutable settings value per construction, so a later zero-argument construction does not inherit non-None arguments from an earlier construction in the same process.
+    why: Same injected-settings model as Fireworks; LiteLLM writes the non-None locals onto LemonadeChatConfig's class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L56-L61
