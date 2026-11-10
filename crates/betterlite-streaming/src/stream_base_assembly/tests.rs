@@ -99,6 +99,26 @@ fn sorting_needs_a_timestamp_on_the_original_first_chunk() {
     .unwrap();
     assert_eq!(ids(&null_hidden.chunks), ["a", "b"]);
 
+    // a truthy non-number still turns sorting on, and its key sorts last
+    let text_timestamp = StreamedChunks::new(chunks(
+        r#"[{"id":"a","_hidden_params":{"created_at":"soon"}},{"id":"b","_hidden_params":{"created_at":1}}]"#,
+    ))
+    .unwrap();
+    assert_eq!(ids(&text_timestamp.chunks), ["b", "a"]);
+
+    // an empty list or object is not a timestamp
+    let empty_array = StreamedChunks::new(chunks(
+        r#"[{"id":"a","_hidden_params":{"created_at":[]}},{"id":"b","_hidden_params":{"created_at":1}}]"#,
+    ))
+    .unwrap();
+    assert_eq!(ids(&empty_array.chunks), ["a", "b"]);
+
+    let empty_object = StreamedChunks::new(chunks(
+        r#"[{"id":"a","_hidden_params":{"created_at":{}}},{"id":"b","_hidden_params":{"created_at":1}}]"#,
+    ))
+    .unwrap();
+    assert_eq!(ids(&empty_object.chunks), ["a", "b"]);
+
     assert_eq!(
         StreamedChunks::new(Vec::new()),
         Err(StreamBaseAssemblyError::NoChunks)
@@ -155,6 +175,10 @@ fn base_metadata_defaults() {
 
     let missing_model = base_for(r#"[{"choices":[]},{"model":"later"}]"#);
     assert_eq!(missing_model.model.as_deref(), Some("later"));
+
+    // an empty model in a later chunk is skipped in favour of the original model
+    let blank_model = base_for(r#"[{"model":"orig","choices":[]},{"model":"","choices":[]}]"#);
+    assert_eq!(blank_model.model.as_deref(), Some("orig"));
 }
 
 fn finish_and_hidden() {
