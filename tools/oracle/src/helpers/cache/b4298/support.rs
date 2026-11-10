@@ -58,7 +58,6 @@ impl CacheBackend for RecordingBackend {
 
 #[derive(Default)]
 pub(crate) struct RecordingStore {
-    pub(crate) failure: bool,
     pub(crate) writes: Mutex<Vec<PipelineWrite>>,
 }
 
@@ -78,9 +77,6 @@ impl EmbeddingCacheStore for RecordingStore {
         cache_list: Vec<(String, CacheValue)>,
         ttl: Ttl,
     ) -> CacheResult<()> {
-        if self.failure {
-            return Err(BackendError::Unsupported("async_set_cache_pipeline"));
-        }
         self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

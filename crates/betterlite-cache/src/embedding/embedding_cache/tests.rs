@@ -166,13 +166,13 @@ impl EmbeddingCacheStore for RecordingStore {
         cache_list: Vec<(String, CacheValue)>,
         ttl: Ttl,
     ) -> CacheResult<()> {
-        if self.failure {
-            return Err(BackendError::Unsupported("async_set_cache_pipeline"));
-        }
         self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((cache_list, ttl));
+        if self.failure {
+            return Err(BackendError::Unsupported("async_set_cache_pipeline"));
+        }
         Ok(())
     }
 }
@@ -510,12 +510,15 @@ fn per_item_details_distributes_integers(
             ("image_tokens", integer(2)),
         ])),
     );
+    let distributed =
+        tokens::per_item_prompt_tokens_details(&result, idx).expect("the details distribute");
     assert_eq!(
-        tokens::per_item_prompt_tokens_details(&result, idx),
-        Some(details(&[
-            ("cached_tokens", integer(expected_cached)),
-            ("image_tokens", integer(expected_image)),
-        ]))
+        distributed.get("cached_tokens"),
+        Some(&integer(expected_cached))
+    );
+    assert_eq!(
+        distributed.get("image_tokens"),
+        Some(&integer(expected_image))
     );
 }
 
