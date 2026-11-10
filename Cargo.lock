@@ -1203,6 +1203,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-tokenizer",
  "bytes",
  "chrono",
@@ -1225,6 +1226,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "url",
  "uuid",
 ]
