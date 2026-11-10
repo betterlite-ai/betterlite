@@ -3,9 +3,6 @@ deviations:
   - what: A reply body that is valid JSON but not the declared completion object returns TextCompletionCodestralError with status 422 instead of LiteLLM's uncaught AttributeError.
     why: LiteLLM fails such a reply with an exception the completion call turns into a 500, and betterlite rejects the undeclared shape as an unparsable provider answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L191-L196
-  - what: A stream chunk whose first choice has a null delta is rejected as a malformed chunk instead of getting an empty delta.
-    why: The shared stream chunk types betterlite-streaming declares take a delta object or nothing, and no provider sends a null delta.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L103
-  - what: The original chunk of a stream result carries an empty model string when the provider sent no model, where LiteLLM keeps it unset.
-    why: betterlite-streaming's StreamChunk declares model as a plain string.
+  - what: A stream chunk with a null delta in its first choice is rejected as malformed, and a chunk without a model carries an empty model string in its original chunk instead of an unset one.
+    why: The shared betterlite-streaming chunk types declare the delta as an object and the model as a plain string.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L103
