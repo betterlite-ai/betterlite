@@ -85,25 +85,6 @@ pub struct ResolutionContext<'context> {
     pub globals: GlobalCredentials,
 }
 
-impl<'context> ResolutionContext<'context> {
-    // A caller without catalog or policy state still resolves declared providers and exact names.
-    #[must_use]
-    pub fn minimal(catalog: &'context ModelCatalog) -> Self {
-        Self {
-            catalog,
-            known_model_names: &EMPTY_NAMES,
-            custom_providers: &EMPTY_NAMES,
-            environment: &EMPTY_ENVIRONMENT,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
-    }
-}
-
-static EMPTY_NAMES: BTreeSet<String> = BTreeSet::new();
-static EMPTY_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
-
 // Ports get_llm_provider lines 158-551: B209 classifies the declaration and this composes the defaults.
 pub fn resolve(
     request: &ResolutionRequest<'_>,

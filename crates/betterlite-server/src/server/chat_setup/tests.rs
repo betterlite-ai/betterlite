@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::chat::ChatRequest;
-use betterlite_openai::chat::deployment::Provider;
+use betterlite_openai::chat::deployment::{DeploymentError, Provider};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rcgen::{CertificateParams, KeyPair};
@@ -19,7 +19,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 
-use super::chat_executor;
+use super::{ChatSetupError, chat_executor};
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"u","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#;
 
@@ -115,6 +115,24 @@ fn provider_resolution_tests_behavior(#[case] params: &str, #[case] expected: &s
             model: expected.to_owned()
         }
     );
+}
+
+#[test]
+fn a_deployment_no_provider_places_fails_setup_with_the_resolution_error() {
+    let yaml =
+        "model_list:\n  - model_name: g\n    litellm_params:\n      model: not-a-known-model\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let result = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1));
+    assert!(matches!(
+        result,
+        Err(ChatSetupError::Deployment {
+            source: DeploymentError::Resolution { .. }
+        })
+    ));
 }
 
 #[test]

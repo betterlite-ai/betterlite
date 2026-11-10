@@ -408,6 +408,41 @@ fn observe(
     None,
     "error"
 )]
+#[case::a_second_table_provider_loses_its_prefix(
+    "mistral/mistral-large",
+    None,
+    None,
+    None,
+    "mistral-large|mistral|https://api.mistral.ai/v1|mistral-key"
+)]
+#[case::the_xai_prefix_is_stripped(
+    "xai/grok-2",
+    None,
+    None,
+    None,
+    "grok-2|xai|https://api.x.ai/v1|-"
+)]
+#[case::a_ragflow_model_keeps_one_ragflow_prefix(
+    "ragflow/chat/abc/gpt-4o",
+    None,
+    None,
+    None,
+    "ragflow/chat/abc/gpt-4o|ragflow|-|-"
+)]
+#[case::a_provider_in_neither_table_loses_its_prefix(
+    "bedrock/anthropic.claude-v2",
+    None,
+    None,
+    None,
+    "anthropic.claude-v2|bedrock|-|-"
+)]
+#[case::the_sambanova_branch_is_unreachable_like_litellm(
+    "not-a-known-model",
+    None,
+    Some("https://api.sambanova.ai/v1"),
+    None,
+    "error"
+)]
 fn provider_resolution_tests_behavior(
     #[case] model: &str,
     #[case] custom_llm_provider: Option<&str>,

@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::types::{LiteLlmParams, ModelDeployment};
@@ -5,8 +6,12 @@ use betterlite_http::url_policy::base::ConfiguredBase;
 use betterlite_http::url_policy::error::UrlPolicyError;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionContext, ResolutionRequest, resolve as resolve_model,
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest,
+    resolve as resolve_model,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest as _, Sha256};
@@ -40,6 +45,12 @@ pub enum DeploymentError {
         seconds: f64,
         #[source]
         source: TryFromFloatSecsError,
+    },
+    #[error("model_list entry {model_name} names a model no provider is resolved for: {source}")]
+    Resolution {
+        model_name: String,
+        #[source]
+        source: ResolutionError,
     },
 }
 
@@ -84,7 +95,17 @@ impl ChatDeployment {
         defaults: &OpenAiDefaults,
     ) -> Result<Self, DeploymentError> {
         let catalog = ModelCatalog::default();
-        let context = ResolutionContext::minimal(&catalog);
+        let names = BTreeSet::new();
+        let environment = BTreeMap::new();
+        let context = ResolutionContext {
+            catalog: &catalog,
+            known_model_names: &names,
+            custom_providers: &names,
+            environment: &environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
         Self::resolve_with(deployment, defaults, None, &context)
     }
 
@@ -97,7 +118,11 @@ impl ChatDeployment {
         let params = &deployment.litellm_params;
         let model_name = &deployment.model_name;
         let litellm_model = params.model.clone().unwrap_or_default();
-        let provider = resolved_provider(&litellm_model, custom_llm_provider, params, context);
+        let provider = resolved_provider(&litellm_model, custom_llm_provider, params, context)
+            .map_err(|source| DeploymentError::Resolution {
+                model_name: model_name.clone(),
+                source,
+            })?;
         let api_base = params
             .api_base
             .iter()
@@ -166,26 +191,25 @@ fn resolved_provider(
     custom_llm_provider: Option<&str>,
     params: &LiteLlmParams,
     context: &ResolutionContext<'_>,
-) -> Provider {
+) -> Result<Provider, ResolutionError> {
     let request = ResolutionRequest {
         model: litellm_model,
         custom_llm_provider,
         api_base: params.api_base.as_deref(),
         api_key: params.api_key.as_ref(),
     };
-    if let Ok(resolved) = resolve_model(&request, context)
-        && matches!(
-            resolved.provider,
-            ProviderIdentity::Known(ProviderId::Openai)
-        )
-    {
-        return Provider::OpenAi {
+    let resolved = resolve_model(&request, context)?;
+    if matches!(
+        resolved.provider,
+        ProviderIdentity::Known(ProviderId::Openai)
+    ) {
+        return Ok(Provider::OpenAi {
             model: resolved.model,
-        };
+        });
     }
-    Provider::Unsupported {
+    Ok(Provider::Unsupported {
         model: litellm_model.to_owned(),
-    }
+    })
 }
 
 // the base as written without its query, or rebuilt from the parsed URL when userinfo had to come out

@@ -29,7 +29,7 @@ pub(super) fn resolve(
     };
     let prepared = RequestA {
         provider: DefaultsProvider::Known(provider),
-        model,
+        model: model.clone(),
         api_base: request.api_base.map(str::to_owned),
         api_key: request.api_key.cloned(),
     };
@@ -41,7 +41,7 @@ pub(super) fn resolve(
     ) {
         Ok(resolved) => Ok(from_a(resolved)),
         Err(DefaultsAError::UnknownProvider { .. }) => {
-            resolve_from_second_table(provider, request, context)
+            resolve_from_second_table(provider, model, request, context)
         }
         Err(source) => Err(ResolutionError::DefaultsA { source }),
     }
@@ -62,19 +62,20 @@ fn from_a(resolved: ResolvedA) -> ResolvedModel {
 // A provider that neither table knows keeps the caller's base and key, as LiteLLM's fallthrough does.
 fn resolve_from_second_table(
     provider: ProviderId,
+    model: String,
     request: &ResolutionRequest<'_>,
     context: &ResolutionContext<'_>,
 ) -> Result<ResolvedModel, ResolutionError> {
     let prepared = RequestB {
         provider,
-        model: request.model.to_owned(),
+        model: model.clone(),
         api_base: request.api_base.map(str::to_owned),
         api_key: request.api_key.cloned(),
     };
     match resolve_b(prepared, &context.globals, context.environment) {
         Ok(resolved) => Ok(from_b(provider, resolved)),
         Err(DefaultsBError::UnknownProvider { .. }) => Ok(super::unchanged(
-            request.model.to_owned(),
+            model,
             ProviderIdentity::Known(provider),
             request,
         )),

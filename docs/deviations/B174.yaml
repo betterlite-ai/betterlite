@@ -18,3 +18,12 @@ deviations:
       on a human. B209 exposes the declaration separately as authenticating_provider, and the resolver
       keeps the declaration only.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L134-L143
+  - what: >-
+      A model_list entry whose model no provider can be resolved for makes the gateway refuse to start
+      with the resolution error. LiteLLM raises its BadRequestError (400) when a request reaches the
+      deployment.
+    why: >-
+      ChatDeployment is built once per entry at startup, and a model that names no provider can never
+      be served. The error keeps its typed cause and the entry's model_name. provider_resolution_tests_behavior
+      in chat_setup and deployment pins the refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L549-L562

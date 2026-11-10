@@ -74,7 +74,7 @@ const TOGETHER_KEYS: &[&str] = &[
     "TOGETHER_AI_TOKEN",
 ];
 
-pub(super) const ENV_BRANCHES: [Branch; 29] = [
+pub(super) const ENV_BRANCHES: [Branch; 28] = [
     (
         "api.perplexity.ai",
         Known(ProviderId::Perplexity),
@@ -129,11 +129,6 @@ pub(super) const ENV_BRANCHES: [Branch; 29] = [
         "https://api.friendli.ai/serverless/v1",
         Known(ProviderId::Friendliai),
         &["FRIENDLIAI_API_KEY", "FRIENDLI_TOKEN"],
-    ),
-    (
-        "api.sambanova.ai/v1",
-        Known(ProviderId::Sambanova),
-        &["SAMBANOVA_API_KEY"],
     ),
     ("ollama.com", Known(ProviderId::Ollama), &["OLLAMA_API_KEY"]),
     (

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as _;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
@@ -97,6 +98,16 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
         DeploymentError::ApiBase { .. } | DeploymentError::Timeout { .. }
     ));
     assert!(error.to_string().contains("model_list entry g"));
+}
+
+#[rstest]
+#[case::an_unknown_model("{model_name: g, litellm_params: {model: not-a-known-model}}")]
+#[case::a_missing_model("{model_name: g, litellm_params: {}}")]
+fn a_model_no_provider_places_is_a_resolution_error(#[case] entry: &str) {
+    let error = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap_err();
+    assert!(matches!(error, DeploymentError::Resolution { .. }));
+    assert!(error.to_string().contains("model_list entry g"));
+    assert!(error.source().is_some());
 }
 
 #[rstest]
@@ -226,7 +237,17 @@ fn http_boundaries_url_boundary_tests_behavior(#[case] api_base: &str, #[case] e
 
 fn provider_observation(entry: &str, custom_llm_provider: Option<&str>) -> String {
     let catalog = ModelCatalog::default();
-    let context = ResolutionContext::minimal(&catalog);
+    let names = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &names,
+        custom_providers: &names,
+        environment: &environment,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
     let resolved = ChatDeployment::resolve_with(
         &deployment(entry),
         &OpenAiDefaults::default(),
