@@ -3,7 +3,7 @@ use crate::helpers::{HelperError, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_vertex::gemini_media::equivalence::part_exists;
-use betterlite_vertex::gemini_media::error::{MediaError, MediaField};
+use betterlite_vertex::gemini_media::error::MediaField;
 use betterlite_vertex::gemini_media::mime::{MimeHints, apply_mime_alias};
 use betterlite_vertex::gemini_media::part::VideoMetadata;
 use betterlite_vertex::gemini_media::process::{MediaRequest, process_media};
