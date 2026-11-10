@@ -103,7 +103,6 @@ pub fn map_openai_params(
     Ok(optional_params)
 }
 
-// GigaChat answers a temperature of zero with top_p zero instead, and no temperature at all
 fn insert_temperature(temperature: &Value, optional_params: &mut Object) {
     if temperature
         .as_f64()
@@ -115,7 +114,6 @@ fn insert_temperature(temperature: &Value, optional_params: &mut Object) {
     }
 }
 
-// LiteLLM keeps only function tools and writes the three function fields with empty defaults
 fn tools_to_functions(tools: &Value) -> Result<Vec<Value>, GigaChatError> {
     let Value::Array(entries) = tools else {
         return Err(GigaChatError {
@@ -153,7 +151,6 @@ fn tools_to_functions(tools: &Value) -> Result<Vec<Value>, GigaChatError> {
     Ok(functions)
 }
 
-// LiteLLM maps the three OpenAI modes, sends a forced function as its name alone and drops anything else
 fn map_tool_choice(tool_choice: &Value) -> Option<Value> {
     match tool_choice {
         Value::String(choice) if choice == "none" || choice == "auto" => {
@@ -178,7 +175,6 @@ fn map_tool_choice(tool_choice: &Value) -> Option<Value> {
     }
 }
 
-// LiteLLM emulates a json_schema response format with a function whose schema GigaChat can call
 fn apply_response_format(
     format: &Value,
     optional_params: &mut Object,

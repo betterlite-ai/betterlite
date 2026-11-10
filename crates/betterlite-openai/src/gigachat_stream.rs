@@ -13,7 +13,6 @@ use crate::gigachat_utils::{
 };
 use crate::openai_base_config::Object;
 
-// LiteLLM's generic streaming chunk for GigaChat: a chunk the shared chunk decoder reads as is
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamEvent {
     Chunk(Box<GenericChunk>),

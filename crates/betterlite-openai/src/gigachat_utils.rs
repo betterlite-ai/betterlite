@@ -6,7 +6,6 @@ use crate::openai_base_config::Object;
 
 pub const GIGACHAT_BASE_URL: &str = "https://gigachat.devices.sberbank.ru/api/v1";
 
-// LiteLLM names a generated tool call and a generated chat completion the same way in the reply and the stream
 pub const TOOL_CALL_ID_PREFIX: &str = "call_";
 pub const TOOL_CALL_ID_CHARS: usize = 24;
 pub const CHAT_COMPLETION_ID_CHARS: usize = 12;
@@ -16,7 +15,6 @@ pub trait IdSource: Send + Sync {
     fn new_uuid(&self) -> Uuid;
 }
 
-// LiteLLM writes a generated id as a prefix and the first hex characters of a uuid4
 pub(crate) fn generated_id(ids: &dyn IdSource, prefix: &str, chars: usize) -> String {
     let hex: String = ids
         .new_uuid()
@@ -45,7 +43,6 @@ pub fn get_api_base(api_base: Option<&str>, env_base: Option<&str>) -> String {
         .to_owned()
 }
 
-// GigaChat's usage block: LiteLLM reads each counter with 0 when the key is missing
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct TokenUsage {
@@ -96,7 +93,6 @@ pub fn convert_usage(usage: &TokenUsage) -> ConvertedUsage {
     }
 }
 
-// LiteLLM writes an object arguments as JSON and keeps any other value as its own text
 #[must_use]
 pub(crate) fn arguments_text(arguments: Option<&Value>) -> String {
     match arguments {

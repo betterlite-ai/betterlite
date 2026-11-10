@@ -18,9 +18,20 @@ pub struct GigachatMessage {
     function_call: Option<GigachatFunctionCall>,
     tool_calls: Option<Vec<ToolCall>>,
     tool_call_id: Option<String>,
-    // message fields betterlite does not model, which LiteLLM forwards
     #[serde(flatten)]
     passthrough: IndexMap<String, Value>,
+}
+
+impl GigachatMessage {
+    // LiteLLM assigns these two keys on the message dict, so a generated value replaces the client's
+    fn drop_replaced_fields(&mut self) {
+        if self.function_call.is_some() {
+            self.passthrough.shift_remove("function_call");
+        }
+        if !self.attachments.is_empty() {
+            self.passthrough.shift_remove("attachments");
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,7 +75,7 @@ pub async fn transform_messages(
             (Some(MessageContent::Parts(parts)), _) => join_parts(parts, uploader).await?,
         };
         let first_call = message.tool_calls.as_ref().and_then(|calls| calls.first());
-        transformed.push(GigachatMessage {
+        let mut built = GigachatMessage {
             role,
             content,
             attachments,
@@ -80,12 +91,13 @@ pub async fn transform_messages(
             },
             tool_call_id: message.tool_call_id.clone(),
             passthrough: message.passthrough.clone(),
-        });
+        };
+        built.drop_replaced_fields();
+        transformed.push(built);
     }
     Ok(transformed)
 }
 
-// a function message holds JSON text, so anything that is not JSON text yet is written as JSON
 fn tool_content(content: Option<&MessageContent>) -> String {
     match content {
         Some(MessageContent::Parts(parts)) => json!(parts).to_string(),

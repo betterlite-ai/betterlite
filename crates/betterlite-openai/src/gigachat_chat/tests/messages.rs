@@ -253,6 +253,77 @@ async fn tool_arguments_that_are_not_json_become_an_empty_object() {
     );
 }
 
+async fn wire_text(input: &str, fixture: &Fixture) -> String {
+    let turned = transform_messages(&messages(input), &fixture.uploader)
+        .await
+        .unwrap();
+    serde_json::to_string(&turned[0]).unwrap()
+}
+
+#[tokio::test]
+async fn a_generated_function_call_replaces_the_one_the_client_sent() {
+    let fixture = Fixture::issuing("token", &[]);
+    let text = wire_text(
+        r#"[{"role": "assistant", "function_call": {"name": "old", "arguments": "{}"}, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}]"#,
+        &fixture,
+    )
+    .await;
+    assert_eq!(text.matches("\"function_call\"").count(), 1);
+    assert_eq!(
+        value(&text),
+        value(
+            r#"{"role": "assistant", "content": "", "function_call": {"name": "lookup", "arguments": {}}}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_function_call_from_the_client_is_kept_without_tool_calls() {
+    let fixture = Fixture::issuing("token", &[]);
+    let turned = transformed(
+        r#"[{"role": "assistant", "function_call": {"name": "old", "arguments": "{}"}}]"#,
+        &fixture,
+    )
+    .await;
+    assert_eq!(
+        turned,
+        vec![value(
+            r#"{"role": "assistant", "content": "", "function_call": {"name": "old", "arguments": "{}"}}"#
+        )]
+    );
+}
+
+#[tokio::test]
+async fn generated_attachments_replace_the_ones_the_client_sent() {
+    let fixture = Fixture::issuing("token", &[("https://images.example/one.png", "file-1")]);
+    let text = wire_text(
+        r#"[{"role": "user", "attachments": ["old"], "content": [{"type": "image_url", "image_url": {"url": "https://images.example/one.png"}}]}]"#,
+        &fixture,
+    )
+    .await;
+    assert_eq!(text.matches("\"attachments\"").count(), 1);
+    assert_eq!(
+        value(&text),
+        value(r#"{"role": "user", "content": "", "attachments": ["file-1"]}"#)
+    );
+}
+
+#[tokio::test]
+async fn attachments_from_the_client_are_kept_when_no_image_uploads() {
+    let fixture = Fixture::issuing("token", &[]);
+    let turned = transformed(
+        r#"[{"role": "user", "attachments": ["old"], "content": "hi"}]"#,
+        &fixture,
+    )
+    .await;
+    assert_eq!(
+        turned,
+        vec![value(
+            r#"{"role": "user", "content": "hi", "attachments": ["old"]}"#
+        )]
+    );
+}
+
 #[tokio::test]
 async fn an_empty_tool_calls_list_stays_as_sent() {
     let fixture = Fixture::issuing("token", &[]);

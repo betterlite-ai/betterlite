@@ -39,7 +39,6 @@ pub struct CompletionInput<'request> {
 pub struct RequestBody {
     model: String,
     messages: Vec<GigachatMessage>,
-    // the provider options LiteLLM copies as they came in, such as repetition_penalty, which betterlite does not model
     #[serde(flatten)]
     options: Object,
 }
