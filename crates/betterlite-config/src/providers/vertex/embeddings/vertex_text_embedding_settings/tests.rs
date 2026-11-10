@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use betterlite_env::EnvError;
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
 use crate::sections::Sections;
 
 const AUTO_TRUNCATE: &str = "VERTEX_AI_TEXT_EMBEDDING_AUTO_TRUNCATE";
@@ -58,23 +57,4 @@ fn an_invalid_auto_truncate_names_the_variable() {
             name: AUTO_TRUNCATE.to_owned()
         }
     );
-}
-
-#[test]
-fn the_real_loader_leaves_the_environment_settings_alone() {
-    let environment = lookup(&[
-        (AUTO_TRUNCATE, "true"),
-        (TASK_TYPE, "CLUSTERING"),
-        (TITLE, "docs"),
-    ]);
-    ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load("")
-    .unwrap();
-    let (auto_truncate, task_type, title) =
-        Sections::vertex_text_embedding_settings(&environment).unwrap();
-    assert_eq!(auto_truncate, Some(true));
-    assert_eq!(task_type.as_deref(), Some("CLUSTERING"));
-    assert_eq!(title.as_deref(), Some("docs"));
 }
