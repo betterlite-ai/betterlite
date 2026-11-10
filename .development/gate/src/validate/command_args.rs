@@ -206,12 +206,31 @@ fn nested_gate_problem(words: &[ShellWord]) -> Option<String> {
     None
 }
 
+// The self-check runs the Python helper on both sides, so a helper that fails the same way twice passes
+fn helper_self_check_problem(words: &[ShellWord]) -> Option<String> {
+    let mut oracle = false;
+    let mut self_check = false;
+    let mut helper_cases = false;
+    for word in words.iter().filter(|word| !word.quoted) {
+        oracle |= word.text == "betterlite-oracle";
+        self_check |= word.text == "--self-check";
+        helper_cases |= word.text.starts_with("tools/oracle/cases/helpers");
+    }
+    if oracle && self_check && helper_cases {
+        return Some(String::from(
+            "runs the oracle with --self-check on helper cases, so it compares the Python helper with itself; drop --self-check so the native helper is compared with LiteLLM",
+        ));
+    }
+    None
+}
+
 pub(crate) fn argument_problems(run: &str) -> Vec<String> {
     let mut problems = Vec::new();
     for words in shell_commands(run) {
         problems.extend(nextest_problems(&words));
         problems.extend(grep_problem(&words));
         problems.extend(nested_gate_problem(&words));
+        problems.extend(helper_self_check_problem(&words));
     }
     problems
 }
