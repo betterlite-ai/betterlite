@@ -87,7 +87,7 @@ impl<T: WorkloadIdentityTransport> WorkloadIdentityAuth<T> {
         let now = (self.clock)();
         let cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
         match cached.as_ref() {
-            Some(token) if now < token.expires_at && now < token.refresh_at => {
+            Some(token) if now < token.refresh_at.min(token.expires_at) => {
                 Snapshot::Fresh(token.access_token.clone())
             }
             Some(token) if now < token.expires_at => Snapshot::Stale(token.access_token.clone()),
