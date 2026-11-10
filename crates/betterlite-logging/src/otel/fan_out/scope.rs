@@ -19,3 +19,6 @@ impl RequestOtelScope {
 pub trait RequestScopeSource: Send + Sync + Debug {
     fn scope(&self) -> RequestOtelScope;
 }
+
+#[path = "scope/tests.rs"]
+mod tests;
