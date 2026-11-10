@@ -171,6 +171,36 @@ async fn duplicate_models_keep_the_first_position_and_count_their_own_model() {
 }
 
 #[tokio::test]
+async fn raw_bytes_do_not_change_a_count_under_the_python_rollout() {
+    let directory = tempfile::tempdir().unwrap();
+    let counter = Arc::new(support::legacy_counter(directory.path()));
+    let body = support::body(r#"{"prompt": "hello world"}"#);
+    let models = models();
+    let with_bytes = count_input_tokens(
+        &counter,
+        ParsedRequest {
+            body: &body,
+            raw_body: Some(b"{\"prompt\": \"other\"}"),
+        },
+        &models,
+        &FailingPool,
+    )
+    .await;
+    let plain = count_input_tokens(
+        &counter,
+        ParsedRequest {
+            body: &body,
+            raw_body: None,
+        },
+        &models,
+        &FailingPool,
+    )
+    .await;
+    assert_eq!(with_bytes, plain);
+    assert_eq!(plain.get(MODEL), Some(&2));
+}
+
+#[tokio::test]
 async fn mixed_models_leave_out_the_model_whose_count_fails() {
     let directory = tempfile::tempdir().unwrap();
     let counter = Arc::new(support::dead_remote_counter(directory.path()));
