@@ -1,7 +1,13 @@
+mod delete;
 pub mod error;
 mod flush;
+mod increment;
+mod mget;
 mod operation;
+mod replies;
 pub mod result;
+mod script;
+mod set;
 mod slot;
 mod tests;
 
@@ -13,10 +19,13 @@ use redis::Value;
 use serde::Serialize;
 use tokio::sync::Mutex as AsyncMutex;
 
-use self::operation::{
-    DeleteOperation, IncrementOperation, MgetOperation, Operation, ScriptOperation, SetOperation,
-};
+use self::delete::DeleteOperation;
+use self::increment::IncrementOperation;
+use self::mget::MgetOperation;
+use self::operation::Operation;
 use self::result::BatchResult;
+use self::script::ScriptOperation;
+use self::set::SetOperation;
 use self::slot::Slot;
 use crate::cache_primitives::decode::CachedValue;
 use crate::cache_primitives::protocol::RedisScalar;

@@ -299,7 +299,7 @@ async fn mget_reply_shape() {
     let mget = batch.mget(&["a".to_owned()]);
     let increment = batch.increment("b", 1.5, None);
     let error = mget.await.expect_err("the shaped mget");
-    let BatchError::MgetReply { kind } = error.as_ref() else {
+    let BatchError::MgetReply { kind, .. } = error.as_ref() else {
         panic!("expected an MGET shape error, got {error:?}");
     };
     assert_eq!(*kind, "a simple string");
@@ -317,7 +317,7 @@ async fn increment_reply_shape() {
 
     let increment = batch.increment("b", 1.5, None);
     let error = increment.await.expect_err("the shaped increment");
-    let BatchError::IncrementReply { kind } = error.as_ref() else {
+    let BatchError::IncrementReply { kind, .. } = error.as_ref() else {
         panic!("expected an increment shape error, got {error:?}");
     };
     assert_eq!(*kind, "nil");

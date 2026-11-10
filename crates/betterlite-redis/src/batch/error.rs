@@ -1,6 +1,4 @@
-use std::num::ParseFloatError;
-use std::str::Utf8Error;
-
+use redis::ParsingError;
 use thiserror::Error;
 
 use crate::cache_primitives::decode::DecodeError;
@@ -21,20 +19,22 @@ pub enum BatchError {
     #[error("the batch pipeline returned no reply for {operation}")]
     MissingReply { operation: &'static str },
     #[error("the MGET reply is {kind}, not an array")]
-    MgetReply { kind: &'static str },
-    #[error("an MGET value is {kind}, not a bulk string or nil")]
-    MgetValue { kind: &'static str },
-    #[error("the INCRBYFLOAT reply is {kind}, not a number")]
-    IncrementReply { kind: &'static str },
-    #[error("the INCRBYFLOAT reply text is not a number")]
-    IncrementText {
+    MgetReply {
+        kind: &'static str,
         #[source]
-        source: ParseFloatError,
+        source: ParsingError,
     },
-    #[error("a redis reply was not UTF-8")]
-    Utf8 {
+    #[error("an MGET value is {kind}, not a bulk string or nil")]
+    MgetValue {
+        kind: &'static str,
         #[source]
-        source: Utf8Error,
+        source: ParsingError,
+    },
+    #[error("the INCRBYFLOAT reply is {kind}, not a number")]
+    IncrementReply {
+        kind: &'static str,
+        #[source]
+        source: ParsingError,
     },
     #[error("the batch get asked for {requested} keys and returned {returned}")]
     MissingKeys { requested: usize, returned: usize },
