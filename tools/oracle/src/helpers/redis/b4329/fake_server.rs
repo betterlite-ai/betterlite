@@ -264,7 +264,6 @@ fn bulk_reply(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-
 fn error_reply(text: &str) -> Vec<u8> {
     let mut reply = b"-".to_vec();
     reply.extend_from_slice(text.as_bytes());

@@ -177,7 +177,6 @@ fn lpop_operation(input: &PipelineOperation) -> RedisPipelineLpopOperation {
     }
 }
 
-
 pub(crate) fn lpop_result(result: &LpopResult) -> Value {
     match result {
         LpopResult::Missing => Value::Null,
