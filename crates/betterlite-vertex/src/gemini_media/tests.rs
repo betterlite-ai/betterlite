@@ -58,6 +58,13 @@ fn media_error(url: &str, hints: &MimeHints) -> MediaError {
     process_media(&media_request(url, hints, None, None, None)).unwrap_err()
 }
 
+fn assert_wire(error: &MediaError, param: Option<&str>, code: Option<&str>) {
+    assert_eq!(error.status(), 400);
+    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.param(), param);
+    assert_eq!(error.code(), code);
+}
+
 #[derive(Deserialize)]
 struct PartCase {
     url: String,
@@ -137,16 +144,12 @@ fn media_cases_mime_alias(#[case] input: &str, #[case] alias: &str) {
 #[case::gif_is_not_accepted("gs://bucket/anim.gif", "image/gif")]
 #[case::csv_is_not_accepted("gs://bucket/report.csv", "text/csv")]
 fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
-    let hints = MimeHints::default();
-    let error = media_error(url, &hints);
+    let error = media_error(url, &MimeHints::default());
     assert_eq!(
         error,
         MediaError::UnsupportedMediaType(subject.to_owned(), None)
     );
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), "invalid_request_error");
-    assert_eq!(error.param(), None);
-    assert_eq!(error.code(), None);
+    assert_wire(&error, None, None);
 }
 
 #[rstest]
@@ -164,10 +167,7 @@ fn media_cases_rejected_media(#[case] url: &str, #[case] subject: &str) {
 fn media_cases_remote_media_required(#[case] url: &str, #[case] format: Option<&str>) {
     let error = media_error(url, &hints(format, None, None));
     assert_eq!(error, MediaError::RemoteMediaRequired(MediaField::ImageUrl));
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), "invalid_request_error");
-    assert_eq!(error.param(), Some("image_url"));
-    assert_eq!(error.code(), Some("unsupported_remote_media"));
+    assert_wire(&error, Some("image_url"), Some("unsupported_remote_media"));
 }
 
 #[rstest]
@@ -184,10 +184,7 @@ fn media_cases_invalid_reference(#[case] url: &str, #[case] inline: bool) {
         MediaError::InvalidMedia(url.to_owned())
     };
     assert_eq!(media_error(url, &hints), error);
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), "invalid_request_error");
-    assert_eq!(error.param(), None);
-    assert_eq!(error.code(), None);
+    assert_wire(&error, None, None);
 }
 
 #[rstest]
