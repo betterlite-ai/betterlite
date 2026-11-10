@@ -1,0 +1,8 @@
+kind: helper
+name: context-output-limits
+call:
+  model_capabilities:
+    operation: max_tokens
+    models: [gpt-4o, text-embedding-3-small, together-ai-8.1b-21b]
+env: {}
+compare: {ignore: []}

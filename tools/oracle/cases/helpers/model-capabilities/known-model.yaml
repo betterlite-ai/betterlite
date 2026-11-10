@@ -1,0 +1,9 @@
+kind: helper
+name: known-model
+call:
+  model_capabilities:
+    operation: model_info
+    queries:
+      - {model: gpt-4o, provider: openai}
+env: {}
+compare: {ignore: []}

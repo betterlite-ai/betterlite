@@ -92,3 +92,10 @@ path = "fuzz_targets/ollama_model_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "provider_capabilities"
+path = "fuzz_targets/provider_capabilities.rs"
+test = false
+doc = false
+bench = false
