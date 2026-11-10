@@ -57,7 +57,7 @@ impl Section for Raw {
             .model_list
             .into_iter()
             .enumerate()
-            .map(|(index, deployment)| deployment.litellm_params.resolve(index, lookup))
+            .map(|(index, deployment)| resolve_params(deployment.litellm_params, index, lookup))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Settings { deployments })
     }
@@ -89,27 +89,25 @@ where
     }
 }
 
-impl Params {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<S3Settings, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let resolver = Resolver { index, lookup };
-        Ok(S3Settings {
-            bucket_name: resolver.field(self.bucket_name, "s3_bucket_name", BUCKET_NAME_ENV)?,
-            output_bucket_name: resolver.field(
-                self.output_bucket_name,
-                "s3_output_bucket_name",
-                OUTPUT_BUCKET_NAME_ENV,
-            )?,
-            encryption_key_id: resolver.field(
-                self.encryption_key_id,
-                "s3_encryption_key_id",
-                ENCRYPTION_KEY_ID_ENV,
-            )?,
-            bucket_owner: resolver.field(self.bucket_owner, "s3_bucket_owner", BUCKET_OWNER_ENV)?,
-        })
-    }
+fn resolve_params<L>(params: Params, index: usize, lookup: &L) -> Result<S3Settings, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let resolver = Resolver { index, lookup };
+    Ok(S3Settings {
+        bucket_name: resolver.field(params.bucket_name, "s3_bucket_name", BUCKET_NAME_ENV)?,
+        output_bucket_name: resolver.field(
+            params.output_bucket_name,
+            "s3_output_bucket_name",
+            OUTPUT_BUCKET_NAME_ENV,
+        )?,
+        encryption_key_id: resolver.field(
+            params.encryption_key_id,
+            "s3_encryption_key_id",
+            ENCRYPTION_KEY_ID_ENV,
+        )?,
+        bucket_owner: resolver.field(params.bucket_owner, "s3_bucket_owner", BUCKET_OWNER_ENV)?,
+    })
 }
 
 mod tests;
