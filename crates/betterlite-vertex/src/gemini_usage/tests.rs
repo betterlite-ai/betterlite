@@ -343,6 +343,20 @@ fn the_constructor_clamp_subtracts_image_tokens() {
 }
 
 #[test]
+fn the_constructor_clamp_subtracts_audio_tokens() {
+    let usage = calculated(
+        r#"{"promptTokenCount": 1, "totalTokenCount": 1, "thoughtsTokenCount": 5,
+            "responseTokenCount": 7,
+            "responseTokensDetails": [{"modality": "AUDIO", "tokenCount": 2}]}"#,
+    );
+    assert_eq!(usage.completion_tokens, 7);
+    let completion = usage.completion_tokens_details.unwrap();
+    assert_eq!(completion.text_tokens, Some(0));
+    assert_eq!(completion.audio_tokens, Some(2));
+    assert_eq!(completion.reasoning_tokens, Some(5));
+}
+
+#[test]
 fn a_candidate_detail_list_creates_the_completion_details_without_a_candidate_count() {
     let usage = calculated(
         r#"{"promptTokenCount": 1, "totalTokenCount": 1,
