@@ -2004,6 +2004,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2125,6 +2126,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
  "quick-xml",
@@ -2857,10 +2859,13 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "http 1.5.0",
  "jiff",
  "regex",
  "rstest",
@@ -2870,6 +2875,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror",
+ "tokio",
  "tracing",
  "url",
 ]
