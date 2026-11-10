@@ -276,10 +276,15 @@ pub(super) fn assume_role_ok(
     session_token: &str,
     expiration: &str,
 ) -> Answer {
-    let credentials = credentials_xml(access_key, secret_key, session_token, expiration);
-    Answer::Ok(format!(
-        "<AssumeRoleResponse><AssumeRoleResult>{credentials}</AssumeRoleResult></AssumeRoleResponse>"
-    ))
+    let mut body = String::from("<AssumeRoleResponse><AssumeRoleResult>");
+    body.push_str(&credentials_xml(
+        access_key,
+        secret_key,
+        session_token,
+        expiration,
+    ));
+    body.push_str("</AssumeRoleResult></AssumeRoleResponse>");
+    Answer::Ok(body)
 }
 
 pub(super) fn identity_ok(arn: &str) -> Answer {

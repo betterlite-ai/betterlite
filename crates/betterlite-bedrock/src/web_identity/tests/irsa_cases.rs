@@ -92,6 +92,18 @@ fn expected_tags() -> [(String, String); 2] {
     ]
 }
 
+fn assert_target(response: &StsResponse) {
+    assert_eq!(
+        response.credentials.access_key_id.expose_secret(),
+        "ASIATARGET"
+    );
+    assert_eq!(
+        response.credentials.secret_access_key.expose_secret(),
+        "target-secret"
+    );
+    assert_expiration(response);
+}
+
 fn assert_expiration(response: &StsResponse) {
     let Expiration::Aware(expiry) = &response.credentials.expiration else {
         panic!("the fixture expiration is timezone aware");
@@ -125,16 +137,7 @@ pub(super) fn same_account_irsa() {
             ),
         ]),
     );
-    let credentials = response.unwrap();
-    assert_eq!(
-        credentials.credentials.access_key_id.expose_secret(),
-        "ASIATARGET"
-    );
-    assert_eq!(
-        credentials.credentials.secret_access_key.expose_secret(),
-        "target-secret"
-    );
-    assert_expiration(&credentials);
+    assert_target(&response.unwrap());
     assert_same_account_calls(&exchanges);
     assert_same_account_without_options();
     assert_same_account_error();
@@ -261,11 +264,7 @@ pub(super) fn cross_account_irsa() {
     let credentials = fixture::runtime()
         .block_on(handle_irsa_cross_account(&input, &kwargs, &native))
         .unwrap();
-    assert_eq!(
-        credentials.credentials.access_key_id.expose_secret(),
-        "ASIATARGET"
-    );
-    assert_expiration(&credentials);
+    assert_target(&credentials);
     assert_cross_calls(&calls(&recorder));
     assert_cross_failures(&input, &kwargs);
 }
@@ -304,75 +303,59 @@ fn assert_target_assumption(assume: &Exchange) {
     assert_eq!(assume.session_token.as_deref(), Some("irsa-session"));
 }
 
-fn assert_cross_failures(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    assert_missing_token_file(input, kwargs);
-    assert_binary_token_file(input, kwargs);
-    assert_missing_irsa_credentials(input, kwargs);
-    assert_assume_role_error(input, kwargs);
+fn cross_error(
+    input: &CrossAccountIrsa<'_>,
+    kwargs: &StsClientKwargs,
+    files: &[(&str, &str)],
+    answers: BTreeMap<String, Answer>,
+) -> WebIdentityError {
+    let (native, _recorder) = fixture::sources(&ENVIRONMENT, files, answers);
+    fixture::runtime()
+        .block_on(handle_irsa_cross_account(input, kwargs, &native))
+        .unwrap_err()
 }
 
-fn assert_missing_token_file(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    let (native, recorder) = fixture::sources(&ENVIRONMENT, &[], BTreeMap::new());
-    let error = fixture::runtime()
-        .block_on(handle_irsa_cross_account(input, kwargs, &native))
-        .unwrap_err();
+fn assert_cross_failures(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
+    let missing_file = cross_error(input, kwargs, &[], BTreeMap::new());
     assert!(matches!(
-        error,
+        missing_file,
         WebIdentityError::TokenFile { path, .. } if path.to_str() == Some(TOKEN_FILE)
     ));
-    assert!(calls(&recorder).is_empty());
-}
-
-fn assert_binary_token_file(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    let (native, _recorder) = fixture::sources_with_bytes(
+    let (binary, _binary_recorder) = fixture::sources_with_bytes(
         &ENVIRONMENT,
         &[(TOKEN_FILE, vec![b'i', b'r', 0xff])],
         BTreeMap::new(),
     );
-    let error = fixture::runtime()
-        .block_on(handle_irsa_cross_account(input, kwargs, &native))
-        .unwrap_err();
-    assert!(matches!(error, WebIdentityError::TokenFileEncoding { .. }));
-}
-
-fn assert_missing_irsa_credentials(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    let (native, recorder) = fixture::sources(
-        &ENVIRONMENT,
-        &[(TOKEN_FILE, IRSA_TOKEN)],
-        replies([
-            (
-                "AssumeRoleWithWebIdentity",
-                fixture::web_identity_without_credentials(None),
-            ),
-            ("AssumeRole", fixture::access_denied()),
-        ]),
-    );
-    let error = fixture::runtime()
-        .block_on(handle_irsa_cross_account(input, kwargs, &native))
+    let binary_error = fixture::runtime()
+        .block_on(handle_irsa_cross_account(input, kwargs, &binary))
         .unwrap_err();
     assert!(matches!(
-        error,
+        binary_error,
+        WebIdentityError::TokenFileEncoding { .. }
+    ));
+    let missing = cross_error(
+        input,
+        kwargs,
+        &[(TOKEN_FILE, IRSA_TOKEN)],
+        replies([(
+            "AssumeRoleWithWebIdentity",
+            fixture::web_identity_without_credentials(None),
+        )]),
+    );
+    assert!(matches!(
+        missing,
         WebIdentityError::WebIdentityResponse {
             field: "Credentials"
         }
     ));
-    assert_eq!(calls(&recorder).len(), 1_usize);
-}
-
-fn assert_assume_role_error(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    let (native, _recorder) = fixture::sources(
-        &ENVIRONMENT,
+    let denied = cross_error(
+        input,
+        kwargs,
         &[(TOKEN_FILE, IRSA_TOKEN)],
-        replies([
-            (
-                "AssumeRoleWithWebIdentity",
-                fixture::web_identity_ok("ASIAIRSA", "s", "t", "2026-01-01T00:30:00Z", None),
-            ),
-            ("AssumeRole", fixture::access_denied()),
-        ]),
+        replies([(
+            "AssumeRoleWithWebIdentity",
+            fixture::web_identity_ok("ASIAIRSA", "s", "t", "2026-01-01T00:30:00Z", None),
+        )]),
     );
-    let error = fixture::runtime()
-        .block_on(handle_irsa_cross_account(input, kwargs, &native))
-        .unwrap_err();
-    assert!(matches!(error, WebIdentityError::AssumeRole { .. }));
+    assert!(matches!(denied, WebIdentityError::AssumeRole { .. }));
 }

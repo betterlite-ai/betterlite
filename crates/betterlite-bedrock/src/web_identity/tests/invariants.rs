@@ -72,34 +72,34 @@ fn form<'exchange>(exchange: &'exchange Exchange, name: &str) -> Option<&'exchan
     exchange.form.get(name).map(String::as_str)
 }
 
-fn first_identity() -> Identity {
-    Identity {
-        reference: "identity-one-token",
-        token: "token-one-value",
-        role: "arn:aws:iam::123456789012:role/FirstRole",
-        session: "first-session",
-        access_key: "ASIAFIRST",
-        secret_key: "first-secret",
-        session_token: "first-token",
-    }
-}
-
-fn second_identity() -> Identity {
-    Identity {
-        reference: "identity-two-token",
-        token: "token-two-value",
-        role: "arn:aws:iam::123456789012:role/SecondRole",
-        session: "second-session",
-        access_key: "ASIASECOND",
-        secret_key: "second-secret",
-        session_token: "second-token",
+fn identity(first: bool) -> Identity {
+    if first {
+        Identity {
+            reference: "identity-one-token",
+            token: "token-one-value",
+            role: "arn:aws:iam::123456789012:role/FirstRole",
+            session: "first-session",
+            access_key: "ASIAFIRST",
+            secret_key: "first-secret",
+            session_token: "first-token",
+        }
+    } else {
+        Identity {
+            reference: "identity-two-token",
+            token: "token-two-value",
+            role: "arn:aws:iam::123456789012:role/SecondRole",
+            session: "second-session",
+            access_key: "ASIASECOND",
+            secret_key: "second-secret",
+            session_token: "second-token",
+        }
     }
 }
 
 #[test]
 fn bedrock_web_identity_credential_identity_isolation() {
-    let first = first_identity();
-    let second = second_identity();
+    let first = identity(true);
+    let second = identity(false);
     let (first_result, first_calls) = run(&first);
     let (second_result, second_calls) = run(&second);
     let first_credentials = first_result.unwrap();

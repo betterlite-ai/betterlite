@@ -2,18 +2,18 @@ use std::collections::BTreeMap;
 
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
 use betterlite_bedrock::aws_settings::AwsSessionTag;
+use betterlite_bedrock::aws_settings::sources::NativeSources;
 use betterlite_bedrock::web_identity::auth::{WebIdentityAuth, auth_with_web_identity_token};
 use betterlite_bedrock::web_identity::claims::decode_web_identity_claims;
 use betterlite_bedrock::web_identity::error::WebIdentityError;
-use betterlite_bedrock::web_identity::irsa::{
-    CrossAccountIrsa, SameAccountIrsa, handle_irsa_cross_account, handle_irsa_same_account,
-};
+use betterlite_bedrock::web_identity::irsa::{SameAccountIrsa, handle_irsa_same_account};
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-use super::answers::{assume_role_answer, credentials_xml, denied_identity, web_identity_answer};
+use super::answers::{assume_role_answer, denied_identity, web_identity_answer};
+use super::cross::cross_account_irsa;
 use super::fixture::{self, Answer, Record, Transport};
-use super::input::{CrossAccountCase, Input, ReplyTag, SameAccountCase, WebIdentityCase};
+use super::input::{Input, ReplyTag, SameAccountCase, WebIdentityCase};
 use super::ports;
 use crate::helpers::{HelperError, HelperResult};
 
@@ -42,7 +42,7 @@ fn audiences(tokens: &[String]) -> Value {
     json!({ "audiences": decoded })
 }
 
-fn failure(error: &WebIdentityError) -> Box<HelperError> {
+pub(super) fn failure(error: &WebIdentityError) -> Box<HelperError> {
     let (class, status) = match error {
         WebIdentityError::Auth(auth) | WebIdentityError::RejectedToken { error: auth, .. } => {
             ("AwsAuthError", Some(auth.status))
@@ -71,7 +71,7 @@ fn failure(error: &WebIdentityError) -> Box<HelperError> {
     })
 }
 
-fn fixture_failure(message: String) -> Box<HelperError> {
+pub(super) fn fixture_failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "FixtureError".to_owned(),
         status: None,
@@ -82,22 +82,7 @@ fn fixture_failure(message: String) -> Box<HelperError> {
     })
 }
 
-fn credentials_json(response: &StsResponse) -> Value {
-    json!([
-        response.credentials.access_key_id.expose_secret(),
-        response.credentials.secret_access_key.expose_secret(),
-        response.credentials.session_token.expose_secret(),
-    ])
-}
-
-const fn expiration_epoch(response: &StsResponse) -> i64 {
-    match &response.credentials.expiration {
-        Expiration::Aware(expiry) => expiry.timestamp(),
-        Expiration::Naive(expiry) => expiry.and_utc().timestamp(),
-    }
-}
-
-fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
+pub(super) fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
     tags.iter()
         .map(|tag| AwsSessionTag {
             key: tag.key.clone(),
@@ -106,21 +91,47 @@ fn tags_of(tags: &[ReplyTag]) -> Vec<AwsSessionTag> {
         .collect()
 }
 
-fn transport_of(answers: BTreeMap<String, Answer>) -> (Transport, Record) {
+pub(super) fn fixture_of(
+    environment: &BTreeMap<String, String>,
+    files: &[(String, Vec<u8>)],
+    answers: BTreeMap<String, Answer>,
+) -> (NativeSources, Record) {
     let transport = Transport {
         answers,
         record: Record::default(),
     };
     let record = transport.record.clone();
-    (transport, record)
+    (fixture::sources(environment, files, transport), record)
+}
+
+const fn irsa_expiration(response: &StsResponse) -> i64 {
+    match &response.credentials.expiration {
+        Expiration::Aware(expiry) => expiry.timestamp(),
+        Expiration::Naive(expiry) => expiry.and_utc().timestamp(),
+    }
+}
+
+pub(super) fn irsa_json(record: &Record, response: &StsResponse) -> Value {
+    json!({
+        "calls": record.calls(),
+        "credentials": [
+            response.credentials.access_key_id.expose_secret(),
+            response.credentials.secret_access_key.expose_secret(),
+            response.credentials.session_token.expose_secret(),
+        ],
+        "expiration": irsa_expiration(response),
+    })
 }
 
 fn web_identity(case: &WebIdentityCase) -> HelperResult {
-    let (transport, record) = transport_of(BTreeMap::from([(
-        "AssumeRoleWithWebIdentity".to_owned(),
-        web_identity_answer(&case.reply),
-    )]));
-    let native = fixture::sources(&case.environment, &[], transport);
+    let (native, record) = fixture_of(
+        &case.environment,
+        &[],
+        BTreeMap::from([(
+            "AssumeRoleWithWebIdentity".to_owned(),
+            web_identity_answer(&case.reply),
+        )]),
+    );
     let secrets = ports::secrets(case.resolved_token.as_deref());
     let kwargs = fixture::kwargs(
         &case.environment,
@@ -156,18 +167,6 @@ fn web_identity(case: &WebIdentityCase) -> HelperResult {
 }
 
 fn same_account_irsa(case: &SameAccountCase) -> HelperResult {
-    let (transport, record) = transport_of(BTreeMap::from([
-        ("GetCallerIdentity".to_owned(), denied_identity()),
-        ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
-    ]));
-    let native = fixture::sources(&case.environment, &[], transport);
-    let kwargs = fixture::kwargs(
-        &case.environment,
-        case.sts_endpoint.as_deref(),
-        case.region_name.as_deref(),
-        case.verify,
-    )
-    .map_err(fixture_failure)?;
     let tags = tags_of(&case.tags);
     let input = SameAccountIrsa {
         role_arn: &case.role_arn,
@@ -175,41 +174,14 @@ fn same_account_irsa(case: &SameAccountCase) -> HelperResult {
         external_id: case.external_id.as_deref(),
         tags: Some(tags.as_slice()),
     };
-    let runtime = ports::runtime().map_err(fixture_failure)?;
-    let response = runtime
-        .block_on(handle_irsa_same_account(&input, &kwargs, &native))
-        .map_err(|error| failure(&error))?;
-    Ok(json!({
-        "calls": record.calls(),
-        "credentials": credentials_json(&response),
-        "expiration": expiration_epoch(&response),
-    }))
-}
-
-fn cross_answers(case: &CrossAccountCase) -> BTreeMap<String, Answer> {
-    BTreeMap::from([
-        (
-            "AssumeRoleWithWebIdentity".to_owned(),
-            Answer {
-                status: 200,
-                body: format!(
-                    "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
-                    credentials_xml(&case.irsa_reply)
-                ),
-            },
-        ),
-        ("GetCallerIdentity".to_owned(), denied_identity()),
-        ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
-    ])
-}
-
-fn cross_account_irsa(case: &CrossAccountCase) -> HelperResult {
-    let (transport, record) = transport_of(cross_answers(case));
-    let files = [(
-        case.token_file.path.clone(),
-        case.token_file.content.as_bytes().to_vec(),
-    )];
-    let native = fixture::sources(&case.environment, &files, transport);
+    let (native, record) = fixture_of(
+        &case.environment,
+        &[],
+        BTreeMap::from([
+            ("GetCallerIdentity".to_owned(), denied_identity()),
+            ("AssumeRole".to_owned(), assume_role_answer(&case.reply)),
+        ]),
+    );
     let kwargs = fixture::kwargs(
         &case.environment,
         case.sts_endpoint.as_deref(),
@@ -217,22 +189,17 @@ fn cross_account_irsa(case: &CrossAccountCase) -> HelperResult {
         case.verify,
     )
     .map_err(fixture_failure)?;
-    let tags = tags_of(&case.tags);
-    let input = CrossAccountIrsa {
-        irsa_role_arn: &case.irsa_role_arn,
-        role_arn: &case.role_arn,
-        session_name: &case.session_name,
-        token_file: &case.token_file.path,
-        external_id: case.external_id.as_deref(),
-        tags: Some(tags.as_slice()),
-    };
-    let runtime = ports::runtime().map_err(fixture_failure)?;
-    let response = runtime
-        .block_on(handle_irsa_cross_account(&input, &kwargs, &native))
+    let response = ports::runtime()
+        .map_err(fixture_failure)?
+        .block_on(handle_irsa_same_account(&input, &kwargs, &native))
         .map_err(|error| failure(&error))?;
     Ok(json!({
         "calls": record.calls(),
-        "credentials": credentials_json(&response),
-        "expiration": expiration_epoch(&response),
+        "credentials": [
+            response.credentials.access_key_id.expose_secret(),
+            response.credentials.secret_access_key.expose_secret(),
+            response.credentials.session_token.expose_secret(),
+        ],
+        "expiration": irsa_expiration(&response),
     }))
 }
