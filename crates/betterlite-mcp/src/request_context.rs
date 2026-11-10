@@ -8,6 +8,7 @@ use http::Extensions;
 
 #[derive(Clone, Debug, Default)]
 pub struct McpContext {
+    // LiteLLM reads this part of the SDK context as request.scope; the session and peer live in the gateway handler
     pub request_scope: Extensions,
     pub active_toolset_id: Option<String>,
     pub initialize_instructions: Option<String>,
