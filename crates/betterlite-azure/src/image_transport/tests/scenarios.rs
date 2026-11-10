@@ -306,14 +306,14 @@ pub(super) fn retry_after_not_integer() {
 }
 
 fn retry_after_non_integer() {
-    let outcome = run(Step::preview(vec![
-        submit_reply(),
-        reply(200, vec![("retry-after", "soon")], RUNNING),
-    ]));
-    let failure = failure_of(&outcome);
-    assert!(matches!(failure, ImageTransportError::RetryAfter { .. }));
-    assert_eq!(failure.status_code(), None);
-    assert_eq!(outcome.harness.calls().len(), 2);
+    for header in ["soon", "\u{e9}"] {
+        let outcome = polled(vec![reply(200, vec![("retry-after", header)], RUNNING)]);
+        let failure = failure_of(&outcome);
+        assert!(matches!(failure, ImageTransportError::RetryAfter { .. }));
+        assert_eq!(failure.status_code(), None);
+        assert_eq!(outcome.harness.calls().len(), 2);
+        assert!(outcome.harness.sleeps().is_empty());
+    }
 }
 
 fn retry_after_empty_and_negative() {

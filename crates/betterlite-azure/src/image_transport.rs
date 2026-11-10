@@ -76,16 +76,7 @@ pub trait ImageClock: Send + Sync {
 }
 
 pub struct SystemClock {
-    origin: Instant,
-}
-
-impl SystemClock {
-    #[must_use]
-    pub fn start() -> Self {
-        Self {
-            origin: Instant::now(),
-        }
-    }
+    pub origin: Instant,
 }
 
 impl ImageClock for SystemClock {

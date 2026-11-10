@@ -65,10 +65,14 @@ where
 }
 
 fn retry_after(headers: &HeaderMap) -> Result<i64, ImageTransportError> {
-    let value = headers
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
+    let Some(raw) = headers.get(RETRY_AFTER) else {
+        return Ok(DEFAULT_RETRY_AFTER_SECONDS);
+    };
+    let Ok(value) = raw.to_str() else {
+        return Err(ImageTransportError::RetryAfter {
+            value: format!("{raw:?}"),
+        });
+    };
     if value.is_empty() {
         return Ok(DEFAULT_RETRY_AFTER_SECONDS);
     }
