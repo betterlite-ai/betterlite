@@ -161,10 +161,10 @@ async fn write_claude_settings_reports_a_failed_write() {
 
 #[test]
 fn write_target_keeps_a_plain_path() {
-    let path = Path::new("/home/tester/.claude/settings.json");
+    let path = Path::new("/home/tester/.claude/../.claude/settings.json");
     assert_eq!(
         write_target(path).unwrap(),
-        PathBuf::from("/home/tester/.claude/settings.json")
+        PathBuf::from("/home/tester/.claude/../.claude/settings.json")
     );
 }
 
@@ -183,6 +183,64 @@ fn write_target_resolves_a_symlink() {
         write_target(&link).unwrap(),
         fs::canonicalize(&target).unwrap()
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn write_target_follows_a_relative_link_target() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let target = home.path().join("dotfiles").join("settings.json");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, "{}").unwrap();
+    let link = home.path().join("settings.json");
+    symlink(Path::new("dotfiles").join("settings.json"), &link).unwrap();
+    assert_eq!(
+        write_target(&link).unwrap(),
+        fs::canonicalize(&target).unwrap()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn write_target_stops_at_a_file_after_forty_hops() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let target = home.path().join("settings.json");
+    fs::write(&target, "{}").unwrap();
+    let chain: Vec<PathBuf> = (0_usize..40)
+        .map(|index| home.path().join(format!("link-{index}")))
+        .collect();
+    chain
+        .windows(2)
+        .for_each(|pair| symlink(&pair[1], &pair[0]).unwrap());
+    symlink(&target, chain.last().unwrap()).unwrap();
+    assert_eq!(
+        write_target(&chain[0]).unwrap(),
+        fs::canonicalize(&target).unwrap()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn write_target_reports_a_chain_past_forty_hops() {
+    use std::os::unix::fs::symlink;
+
+    let home = TempDir::new().unwrap();
+    let target = home.path().join("settings.json");
+    fs::write(&target, "{}").unwrap();
+    let chain: Vec<PathBuf> = (0_usize..41)
+        .map(|index| home.path().join(format!("link-{index}")))
+        .collect();
+    chain
+        .windows(2)
+        .for_each(|pair| symlink(&pair[1], &pair[0]).unwrap());
+    symlink(&target, chain.last().unwrap()).unwrap();
+    let error = write_target(&chain[0]).unwrap_err();
+    assert!(matches!(error, ClaudeSettingsError::Resolve { .. }));
+    assert!(error.source().is_some());
 }
 
 #[test]

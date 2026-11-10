@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::settings::JsonValue;
@@ -8,6 +9,9 @@ use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
 use super::error::ClaudeSettingsError;
 use super::paths::resolve_settings_path;
 use super::{ENV_KEY, SettingsDocument};
+
+// Python's Path.resolve gives up after 40 links with ELOOP
+const MAX_SYMLINK_HOPS: usize = 40;
 
 pub fn load_json_or_empty(path: &Path) -> Result<SettingsDocument, ClaudeSettingsError> {
     let content = if path.exists() {
@@ -51,10 +55,34 @@ pub fn env_object(
 }
 
 pub fn write_target(settings_path: &Path) -> Result<PathBuf, ClaudeSettingsError> {
-    if settings_path.is_symlink() {
-        return resolve_settings_path(settings_path);
+    if !settings_path.is_symlink() {
+        return Ok(settings_path.to_owned());
     }
-    Ok(settings_path.to_owned())
+    let mut current = settings_path.to_owned();
+    for _ in 0..=MAX_SYMLINK_HOPS {
+        if !current.is_symlink() {
+            return resolve_settings_path(&current);
+        }
+        current = followed_link(&current, settings_path)?;
+    }
+    Err(ClaudeSettingsError::Resolve {
+        path: settings_path.to_owned(),
+        source: io::Error::other("too many levels of symbolic links"),
+    })
+}
+
+fn followed_link(link: &Path, settings_path: &Path) -> Result<PathBuf, ClaudeSettingsError> {
+    let target = fs::read_link(link).map_err(|source| ClaudeSettingsError::Resolve {
+        path: settings_path.to_owned(),
+        source,
+    })?;
+    let Some(parent) = link.parent() else {
+        return Ok(target);
+    };
+    if target.is_relative() {
+        return Ok(parent.join(target));
+    }
+    Ok(target)
 }
 
 pub async fn write_claude_settings(
