@@ -1960,6 +1960,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -1994,6 +1995,7 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "betterlite-tokenizer",
  "libfuzzer-sys",
  "serde_json",
 ]
