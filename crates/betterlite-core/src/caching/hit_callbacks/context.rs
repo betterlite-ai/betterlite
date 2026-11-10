@@ -158,9 +158,7 @@ fn request_parameters(hit: &CacheHitContext<'_>) -> Result<IndexMap<String, Json
     parameters.insert("custom_llm_provider".to_owned(), provider);
     parameters.insert(
         PRESET_CACHE_KEY.to_owned(),
-        preset_cache_key
-            .as_deref()
-            .map_or_else(|| Json::Null, |key| Json::Text(key.to_owned())),
+        preset_cache_key.map_or(Json::Null, Json::Text),
     );
     Ok(parameters)
 }

@@ -1,12 +1,12 @@
 task: B4301
 deviations:
   - what: >-
-      The cache-hit success callbacks are enqueued on a LoggingWorker the caller injects, not on a module-level
-      GLOBAL_LOGGING_WORKER singleton. The worker is started and stopped by its owner with the rest of the
-      server.
+      The cache-hit success callbacks are enqueued on the LoggingWorker the caller passes to
+      log_cache_hit_on_callbacks, not on a module-level GLOBAL_LOGGING_WORKER singleton. The worker is started
+      and stopped by its owner with the rest of the server, and the cache-hit path never starts it.
     why: >-
       betterlite has no globals and no lazy statics; B191 replaced the Python global worker and its atexit
-      teardown with an explicitly owned worker, so this module receives it through its constructor path.
+      teardown with an explicitly owned worker, so the entry point takes it as a parameter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L657
   - what: >-
       The async success handler and the sync-on-async callbacks run as one job inside the bounded logging

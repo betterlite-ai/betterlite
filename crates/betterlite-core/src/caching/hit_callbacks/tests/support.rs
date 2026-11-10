@@ -16,7 +16,6 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_logging::logging_success::handler::SuccessHandler;
 use betterlite_logging::logging_success::ports::{
     StandardPayloadBuilder, StreamAssembler, SuccessClock,
 };
@@ -35,7 +34,7 @@ use crate::caching::hit_callbacks::context::{
     CACHING_DETAILS, CacheHitContext, record_cache_hit_context,
 };
 use crate::caching::hit_callbacks::job::{
-    CacheHitSuccessJob, OwnedSuccessHandler, SyncSuccessDispatch,
+    CacheHitCallbacks, CacheHitSuccessJob, OwnedSuccessHandler,
 };
 
 pub(super) const PAYLOAD: &str = r#"{
@@ -284,23 +283,6 @@ impl CallbackFailureCounter for RecordingCounter {
     }
 }
 
-pub(super) struct RecordingSync {
-    pub(super) calls: Arc<Calls>,
-}
-
-impl SyncSuccessDispatch for RecordingSync {
-    fn dispatch(
-        &self,
-        _handler: &SuccessHandler<'_>,
-        _state: &mut LoggingState,
-        _correlation: &mut CorrelationContext,
-        _request: &SuccessRequest,
-    ) -> bool {
-        self.calls.record("sync");
-        true
-    }
-}
-
 pub(super) struct Fixture {
     pub(super) calls: Arc<Calls>,
     pub(super) counter: Arc<RecordingCounter>,
@@ -354,27 +336,43 @@ impl Fixture {
         }
     }
 
-    pub(super) fn cache_hit_job(&self, result: &Json) -> CacheHitSuccessJob {
-        let kwargs = params(&[
-            (
-                "messages",
-                object(&[("role", text("user")), ("content", text("hi"))]),
-            ),
-            ("stream", Json::Bool(false)),
-        ]);
-        let mut state = logging_state(None);
-        record_cache_hit_context(&mut state, &base_hit(&kwargs, result))
-            .expect("the cache hit is recorded");
+    pub(super) fn callbacks(&self, result: &Json) -> CacheHitCallbacks {
+        CacheHitCallbacks {
+            handler: self.owned_handler(),
+            state: logging_state(None),
+            correlation: CorrelationContext::default(),
+            result: SuccessResult::Chat(result.clone()),
+            start_time: Some(time("2024-01-01T00:00:00+00:00")),
+            end_time: Some(time("2024-01-01T00:00:02+00:00")),
+        }
+    }
+
+    pub(super) fn job(&self, result: &Json) -> CacheHitSuccessJob {
         CacheHitSuccessJob {
             handler: self.owned_handler(),
-            sync: Arc::new(RecordingSync {
-                calls: Arc::clone(&self.calls),
-            }),
-            state,
+            state: logging_state(None),
             correlation: CorrelationContext::default(),
             request: success_request(result),
         }
     }
+}
+
+pub(super) fn hit_kwargs() -> IndexMap<String, Json> {
+    params(&[
+        (
+            "messages",
+            object(&[("role", text("user")), ("content", text("hi"))]),
+        ),
+        ("stream", Json::Bool(false)),
+    ])
+}
+
+pub(super) fn recorded_state(result: &Json) -> LoggingState {
+    let kwargs = hit_kwargs();
+    let mut state = logging_state(None);
+    record_cache_hit_context(&mut state, &base_hit(&kwargs, result))
+        .expect("the cache hit is recorded");
+    state
 }
 
 pub(super) fn success_request(result: &Json) -> SuccessRequest {
@@ -386,19 +384,5 @@ pub(super) fn success_request(result: &Json) -> SuccessRequest {
         prefer_async_handlers: false,
         standard_logging_object: None,
         guardrail_snapshot: None,
-    }
-}
-
-pub(super) fn borrowed_handler(owned: &OwnedSuccessHandler) -> SuccessHandler<'_> {
-    SuccessHandler {
-        registry: &owned.registry,
-        payload_builder: owned.payload_builder.as_ref(),
-        stream_assembler: owned.stream_assembler.as_ref(),
-        clock: owned.clock.as_ref(),
-        failure_counters: &owned.failure_counters,
-        excluded_fields: &owned.excluded_fields,
-        known_callback: owned.known_callback.as_ref(),
-        stamp: &owned.stamp,
-        privacy: owned.privacy,
     }
 }
