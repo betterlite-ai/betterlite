@@ -9,7 +9,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::Method;
-use http::header::{AUTHORIZATION, CONTENT_ENCODING, HeaderMap, HeaderName, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -88,11 +88,10 @@ impl LangfuseHttp {
             deadline: self.timeout,
         };
         let stream = self.client.send_following(request).await?;
-        let encoded = decoded_encoding(stream.response.headers());
         let response = stream
             .buffered(self.client.limits.body_bytes)
             .await
-            .map_err(|source| buffered_failure(source, encoded))?;
+            .map_err(buffered_failure)?;
         Ok(HttpResponse {
             status: response.status,
             body: response.body,
@@ -100,9 +99,8 @@ impl LangfuseHttp {
     }
 }
 
-fn buffered_failure(error: TransportError, encoded: bool) -> RequestFailure {
-    if encoded
-        && let TransportError::Body(source) = &error
+fn buffered_failure(error: TransportError) -> RequestFailure {
+    if let TransportError::Body(source) = &error
         && !contains_hyper_error(source)
     {
         return RequestFailure::Decode(error);
@@ -120,17 +118,6 @@ fn contains_hyper_error(error: &(dyn StdError + 'static)) -> bool {
         current = source.source();
     }
     false
-}
-
-fn decoded_encoding(headers: &HeaderMap) -> bool {
-    headers.get(CONTENT_ENCODING).is_some_and(|value| {
-        value.to_str().is_ok_and(|text| {
-            text.split(',').any(|coding| {
-                let trimmed = coding.trim();
-                trimmed.eq_ignore_ascii_case("gzip") || trimmed.eq_ignore_ascii_case("deflate")
-            })
-        })
-    })
 }
 
 pub fn headers_for(
