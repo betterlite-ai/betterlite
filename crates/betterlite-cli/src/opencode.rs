@@ -15,6 +15,8 @@ const OPENCODE_PROVIDER_NAME: &str = "LiteLLM";
 const OPENCODE_PROVIDER_NPM: &str = "@ai-sdk/openai-compatible";
 const CHAT_MODES: [&str; 2] = ["chat", "responses"];
 const LISTING_TIMEOUT: Duration = Duration::from_secs(10);
+// a /v1/models row is a few hundred bytes, so 8 MiB covers tens of thousands of models
+const MAX_LISTING_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ListedModel {
@@ -53,6 +55,7 @@ pub struct ModelListingRequest {
     pub url: String,
     pub authorization: SecretString,
     pub timeout: Duration,
+    pub max_body_bytes: usize,
 }
 
 #[derive(Debug)]
@@ -133,6 +136,7 @@ pub fn fetch_model_listing(
         url: url.clone(),
         authorization: SecretString::from(format!("Bearer {key}")),
         timeout: LISTING_TIMEOUT,
+        max_body_bytes: MAX_LISTING_BODY_BYTES,
     };
     let response = match transport.get(&request) {
         Ok(response) => response,
@@ -146,6 +150,11 @@ pub fn fetch_model_listing(
     if status != 200 {
         return Err(ModelSyncSkipped {
             reason: format!("{url} returned HTTP {status}"),
+        });
+    }
+    if response.body.len() > MAX_LISTING_BODY_BYTES {
+        return Err(ModelSyncSkipped {
+            reason: format!("{url} returned more than {MAX_LISTING_BODY_BYTES} bytes"),
         });
     }
     serde_json::from_slice::<ModelListing>(&response.body)

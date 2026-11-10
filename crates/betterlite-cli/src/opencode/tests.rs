@@ -12,9 +12,10 @@ use serde::Deserialize;
 use crate::agent_launch::EnvVars;
 
 use super::{
-    ListedModel, ModelListingRequest, ModelListingResponse, ModelListingTransport, ModelSyncArgs,
-    ModelSyncResult, ModelSyncSkipped, OPENCODE_CONFIG_CONTENT_ENV, chat_models,
-    fetch_model_listing, opencode_model_entry, opencode_model_sync_env, opencode_provider_config,
+    ListedModel, MAX_LISTING_BODY_BYTES, ModelListingRequest, ModelListingResponse,
+    ModelListingTransport, ModelSyncArgs, ModelSyncResult, ModelSyncSkipped,
+    OPENCODE_CONFIG_CONTENT_ENV, chat_models, fetch_model_listing, opencode_model_entry,
+    opencode_model_sync_env, opencode_provider_config,
 };
 
 const KEY: &str = "sk-test";
@@ -24,6 +25,7 @@ struct RecordedRequest {
     url: String,
     authorization: String,
     timeout: Duration,
+    max_body_bytes: usize,
 }
 
 enum Reply {
@@ -38,9 +40,13 @@ struct FakeTransport {
 
 impl FakeTransport {
     fn replying(status: u16, body: &str) -> Self {
+        Self::replying_bytes(status, body.as_bytes().to_vec())
+    }
+
+    fn replying_bytes(status: u16, body: Vec<u8>) -> Self {
         Self {
             requests: Mutex::new(Vec::new()),
-            reply: Reply::Status(status, body.as_bytes().to_vec()),
+            reply: Reply::Status(status, body),
         }
     }
 
@@ -65,6 +71,7 @@ impl ModelListingTransport for FakeTransport {
                 url: request.url.clone(),
                 authorization: request.authorization.expose_secret().to_owned(),
                 timeout: request.timeout,
+                max_body_bytes: request.max_body_bytes,
             });
         match &self.reply {
             Reply::Status(status, body) => Ok(ModelListingResponse {
@@ -207,6 +214,29 @@ fn fetch_requests_models_with_bearer_auth_and_ten_second_timeout() {
     assert_eq!(requests[0].url, "http://proxy:4000/v1/models");
     assert_eq!(requests[0].authorization, "Bearer sk-test");
     assert_eq!(requests[0].timeout, Duration::from_secs(10));
+    assert_eq!(requests[0].max_body_bytes, MAX_LISTING_BODY_BYTES);
+}
+
+#[test]
+fn fetch_skips_a_body_over_the_size_limit() {
+    let transport = FakeTransport::replying_bytes(200, vec![b' '; MAX_LISTING_BODY_BYTES + 1]);
+    let skipped = fetch_model_listing("http://proxy", &key(), &transport)
+        .expect_err("an oversized body is a skip");
+    assert_eq!(
+        skipped.reason,
+        format!("http://proxy/v1/models returned more than {MAX_LISTING_BODY_BYTES} bytes")
+    );
+}
+
+#[test]
+fn fetch_allows_a_body_at_the_size_limit() {
+    let transport = FakeTransport::replying_bytes(200, vec![b' '; MAX_LISTING_BODY_BYTES]);
+    let skipped = fetch_model_listing("http://proxy", &key(), &transport)
+        .expect_err("whitespace is not a listing");
+    assert_eq!(
+        skipped.reason,
+        "http://proxy/v1/models returned an unexpected body"
+    );
 }
 
 #[rstest]
@@ -503,7 +533,9 @@ fn model_sync_env_skips_on_a_non_200_listing() {
 
 #[test]
 fn model_sync_env_passes_the_base_url_and_key_to_the_fetch() {
-    let transport = FakeTransport::replying(200, r#"{"data":[]}"#);
+    let body =
+        r#"{"data":[{"id":"chat","mode":"chat","max_input_tokens":1000,"max_output_tokens":500}]}"#;
+    let transport = FakeTransport::replying(200, body);
     let mut base = EnvVars::new();
     base.insert("OPENCODE_CONFIG".to_owned(), "user-config".to_owned());
     let env = env_of(opencode_model_sync_env(
@@ -513,7 +545,25 @@ fn model_sync_env_passes_the_base_url_and_key_to_the_fetch() {
         &transport,
     ));
     assert_eq!(env.len(), 1);
-    assert!(env.contains_key(OPENCODE_CONFIG_CONTENT_ENV));
+    let json = env
+        .get(OPENCODE_CONFIG_CONTENT_ENV)
+        .expect("config content");
+    let config: ExpectedConfig = serde_json::from_str(json).expect("the config is JSON");
+    assert_eq!(
+        config.provider["litellm"].options.base_url,
+        "http://proxy:4000/v1"
+    );
+    assert_eq!(
+        config.provider["litellm"].options.api_key,
+        "{env:OPENAI_API_KEY}"
+    );
+    assert_eq!(
+        config.provider["litellm"].models["chat"].limit,
+        Some(ExpectedLimit {
+            context: 1000,
+            output: 500,
+        })
+    );
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url, "http://proxy:4000/v1/models");
