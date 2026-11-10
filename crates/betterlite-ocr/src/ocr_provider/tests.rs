@@ -44,6 +44,7 @@ const DOC_INTELLIGENCE_PARAMS: &[&str] = &["pages", "features", "req_format"];
 const REDUCTO_V3_PARAMS: &[&str] = &["formatting", "retrieval", "settings"];
 const REDUCTO_LEGACY_PARAMS: &[&str] = &["enhance"];
 const TEXTRACT_ANALYZE_PARAMS: &[&str] = &["feature_types"];
+const NO_PARAMS: &[&str] = &[];
 const MISTRAL_PASSTHROUGH_BODY: &[u8] = br#"{
     "pages": [{"index": 0, "markdown": "page one"}, {"index": 1, "markdown": "page two"}],
     "model": "mistral-document-ai-2512",
@@ -376,7 +377,7 @@ fn resolve_refuses_textract_models_outside_its_operations(
 }
 
 #[rstest]
-#[case::aws_textract("aws_textract/detect-document-text", &[])]
+#[case::aws_textract("aws_textract/detect-document-text", NO_PARAMS)]
 #[case::aws_textract_analyze("aws_textract/analyze-document", TEXTRACT_ANALYZE_PARAMS)]
 #[case::cohere("cohere/parse", COHERE_PARSE_PARAMS)]
 #[case::mistral("mistral/ocr", MISTRAL_OCR_PARAMS)]
@@ -389,7 +390,7 @@ fn resolve_refuses_textract_models_outside_its_operations(
 #[case::reducto_legacy("reducto/parse-legacy", REDUCTO_LEGACY_PARAMS)]
 #[case::reducto_v3("reducto/parse-v3", REDUCTO_V3_PARAMS)]
 #[case::vertex_ai("vertex_ai/mistral-ocr", MISTRAL_OCR_PARAMS)]
-#[case::vertex_deepseek("vertex_ai/deepseek-ocr", &[])]
+#[case::vertex_deepseek("vertex_ai/deepseek-ocr", NO_PARAMS)]
 fn forward_supported_ocr_params_follow_the_selected_config(
     #[case] model: &str,
     #[case] expected: &[&str],
@@ -728,14 +729,16 @@ async fn perform_resolves_secrets_from_the_client_source() {
         "MISTRAL_API_KEY".to_owned(),
         SecretString::from("sk-from-source"),
     )])));
+    let interceptors = RecordingInterceptors::default();
     perform_ocr_request(
         &client,
         OcrConfigKind::Mistral,
         prepared_request(server.base.clone(), Object::new()),
-        &(),
+        &interceptors,
     )
     .await
     .expect("the call succeeds");
+    assert_eq!(interceptors.response_bodies().len(), 1);
     let requests = server.requests().await;
     let sent = requests.first().expect("one request is sent");
     assert!(
