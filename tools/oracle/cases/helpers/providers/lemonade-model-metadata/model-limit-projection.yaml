@@ -1,0 +1,35 @@
+kind: helper
+name: lemonade-model-metadata-model-limit-projection
+call:
+  lemonade_model_metadata:
+    operation: model_info
+    queries:
+      - model: lemonade/model
+        reply:
+          status: 200
+          body:
+            max_input_tokens: 100
+            max_output_tokens: "64"
+            max_tokens: 32
+            provider_specific_entry: {kept: "yes"}
+      - model: model
+        reply: {status: 200, body: {max_input_tokens: 100, max_output_tokens: 64}}
+      - model: model
+        reply: {status: 200, body: {max_input_tokens: 100}}
+      - model: model
+        reply: {status: 200, body: {max_tokens: 0, max_output_tokens: "-1"}}
+      - model: model
+        reply:
+          status: 200
+          body:
+            recipe_options: {ctx_size: "512"}
+            max_input_tokens: 999
+            context_window: 2048
+      - model: model
+        reply: {status: 200, body: {provider_specific_entry: {kept: true}}}
+      - model: model
+        reply: {status: 200, body: {max_input_tokens: "bad", context_window: "256"}}
+      - model: model
+        reply: {status: 200, body: {max_tokens: "2048", max_input_tokens: 100}}
+env: {}
+compare: {ignore: []}

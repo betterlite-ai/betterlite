@@ -1,7 +1,7 @@
 id: B5942
 milestone: M3 providers
 title: OCI chat wire types, message and tool adapters, response and chunk parsing
-status: todo
+status: done
 depends_on: [B5940, B2214, B218, B219]
 file: tasks/B5942-oci-chat-wire.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/oci/chat/generic.py"
 parent: B042
 split_from: B042
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1057

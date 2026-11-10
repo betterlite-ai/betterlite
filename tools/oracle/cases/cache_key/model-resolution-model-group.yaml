@@ -1,0 +1,14 @@
+kind: helper
+name: model-resolution-model-group
+call:
+  b4296:
+    get_cache_key:
+      cache_type: local
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+      metadata:
+        model_group: group-1
+env: {}
+compare:
+  ignore: []
