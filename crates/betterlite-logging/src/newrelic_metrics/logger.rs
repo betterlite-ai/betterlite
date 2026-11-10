@@ -22,7 +22,7 @@ use super::NewRelicMetricsError;
 use super::clock::Clock;
 use super::drain::drain_with_retry;
 use super::flush::{flush_queue, periodic_flush};
-use super::queue::{QueuedRecord, push_record};
+use super::queue::{QueuedRecord, push_record, queue_length};
 use super::records::metric_record_from_payload;
 use super::region::resolve_metric_endpoint;
 use super::transport::NewRelicTransport;
@@ -151,7 +151,8 @@ impl NewRelicMetricsLogger {
                 return;
             }
         };
-        let depth = push_record(self, record);
+        push_record(self, record);
+        let depth = queue_length(self);
         if self.stopped.load(Ordering::SeqCst) {
             // A stopped logger has no periodic loop left; this callback delivers its own record
             drain_with_retry(self).await;

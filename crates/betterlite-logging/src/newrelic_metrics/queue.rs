@@ -10,12 +10,10 @@ pub struct QueuedRecord {
     pub record: NewRelicMetricRecord,
 }
 
-#[must_use]
-pub fn push_record(logger: &NewRelicMetricsLogger, record: NewRelicMetricRecord) -> usize {
+pub fn push_record(logger: &NewRelicMetricsLogger, record: NewRelicMetricRecord) {
     let id = logger.next_id.fetch_add(1, Ordering::SeqCst);
     let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
     queue.push_back(QueuedRecord { id, record });
-    queue.len()
 }
 
 #[must_use]
