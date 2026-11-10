@@ -22,6 +22,7 @@ pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
+pub(crate) mod http_scenarios;
 pub(crate) mod native_feature_eligibility;
 mod scenario;
 pub(crate) mod sdk_http;
