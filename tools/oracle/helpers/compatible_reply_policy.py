@@ -19,7 +19,7 @@ class Recorder:
     def post(self, url: str, headers: dict[str, str], data: str) -> httpx.Response:  # noqa: ARG002
         self.body = data
         reply: Object = {"object": "list", "data": [], "model": "m", "usage": {"prompt_tokens": 0}}
-        return httpx.Response(200, json=reply)
+        return httpx.Response(200, json=reply, request=httpx.Request("POST", url))
 
 
 def validate(call: Object) -> Json:
