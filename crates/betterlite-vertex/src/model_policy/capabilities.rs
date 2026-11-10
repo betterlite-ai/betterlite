@@ -50,15 +50,17 @@ pub fn get_supports_system_message(
     lookup: &dyn ModelCapabilityLookup,
 ) -> bool {
     let provider_name = provider.lookup_name();
-    match lookup.supports(CapabilityKind::SystemMessages, model, provider_name) {
-        Ok(supported) => supported || model.contains("gemini/"),
-        Err(error) => {
-            tracing::warn!(
-                "Unable to identify if system message supported. Defaulting to 'False'. Received error message - {error}\nAdd it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"
-            );
-            false
-        }
-    }
+    lookup
+        .supports(CapabilityKind::SystemMessages, model, provider_name)
+        .map_or_else(
+            |error| {
+                tracing::warn!(
+                    "Unable to identify if system message supported. Defaulting to 'False'. Received error message - {error}\nAdd it here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"
+                );
+                false
+            },
+            |supported| supported || model.contains("gemini/"),
+        )
 }
 
 pub fn get_supports_response_schema(
