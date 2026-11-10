@@ -37,10 +37,7 @@ pub struct ProviderCapabilities {
     pub display_name: Option<String>,
     #[serde(default)]
     pub url: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     pub endpoints: IndexMap<String, bool>,
 }
 
@@ -67,10 +64,7 @@ pub struct RegistrySchema {
 pub struct SchemaProvider {
     pub display_name: String,
     pub url: String,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     pub endpoints: IndexMap<String, String>,
 }
 
@@ -81,15 +75,9 @@ struct RegistryDocument {
     comment: Option<String>,
     #[serde(rename = "_schema", default)]
     schema: Option<RegistrySchema>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     providers: IndexMap<String, ProviderCapabilities>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     endpoints: IndexMap<String, EndpointLabel>,
 }
 

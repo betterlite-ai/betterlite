@@ -213,11 +213,22 @@ fn deep_array() -> String {
     format!("{{\"extra\":{value}}}")
 }
 
+// json.load keeps the last value of a repeated key at the key's first position.
 #[test]
-fn parse_rejects_a_duplicate_provider() {
-    let source = r#"{"providers":{"a":{},"a":{}}}"#;
-    let error = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap_err();
-    assert!(matches!(error, RegistryError::Json(_)));
+fn parse_keeps_the_last_of_a_duplicate_provider() {
+    let source = r#"{"providers":{"a":{"url":"first"},"b":{},"a":{"url":"last"}}}"#;
+    let registry = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap();
+    let names: Vec<&str> = registry.providers.keys().map(String::as_str).collect();
+    assert_eq!(names, ["a", "b"]);
+    assert_eq!(registry.providers["a"].url.as_deref(), Some("last"));
+}
+
+#[test]
+fn parse_keeps_the_last_of_a_nested_duplicate_key() {
+    let source =
+        r#"{"providers":{"a":{"endpoints":{"chat_completions":true,"chat_completions":false}}}}"#;
+    let registry = parse(source.as_bytes(), RegistryAsset::Packaged).unwrap();
+    assert!(!registry.providers["a"].endpoints["chat_completions"]);
 }
 
 #[test]
