@@ -1,0 +1,10 @@
+kind: helper
+name: ptu-pricing-spillover-seed
+call:
+  ptu_pricing:
+    operation: spillover
+    response_headers:
+      x-ms-is-spilled-over: "true"
+      x-ms-spillover-from-deployment: dep-reserved
+env: {}
+compare: {ignore: []}

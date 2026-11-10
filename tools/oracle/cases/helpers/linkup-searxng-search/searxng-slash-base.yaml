@@ -1,0 +1,16 @@
+kind: helper
+name: searxng-slash-base
+call:
+  b8023:
+    operation: searxng_url
+    params:
+      environment:
+        SEARXNG_API_BASE: https://searx.test/
+      api_base: null
+      requests:
+        - query: q
+          optional_params: {}
+        - query: q
+          optional_params: {country: jp}
+env: {}
+compare: {ignore: []}

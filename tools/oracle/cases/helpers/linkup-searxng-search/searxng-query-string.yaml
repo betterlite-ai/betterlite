@@ -1,0 +1,32 @@
+kind: helper
+name: searxng-query-string
+call:
+  b8023:
+    operation: searxng_url
+    params:
+      environment:
+        SEARXNG_API_BASE: https://searx.test
+      api_base: null
+      requests:
+        - query:
+            - rust
+            - lang
+          optional_params:
+            country: us
+            mark: ~*
+            page: 2
+            safe: true
+            tags:
+              - a
+              - b
+        - query: q
+          optional_params:
+            country: us
+            language: fr
+        - query: q
+          optional_params:
+            tags:
+              - "O'Brien"
+              - "a\"b'c"
+env: {}
+compare: {ignore: []}

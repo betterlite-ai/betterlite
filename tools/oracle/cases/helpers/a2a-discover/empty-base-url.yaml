@@ -1,0 +1,8 @@
+kind: helper
+name: a2a-discover-empty-base-url
+call:
+  b8202:
+    operation: card
+    base_url: ''
+env: {}
+compare: {ignore: []}

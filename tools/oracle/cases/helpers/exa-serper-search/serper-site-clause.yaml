@@ -1,0 +1,39 @@
+kind: helper
+name: serper_site_clause
+call:
+  b8020:
+    environment:
+      SERPER_API_KEY: sk-serper
+    calls:
+      - provider: serper
+        call:
+          kind: request
+          query: ["search", "text"]
+          optional_params: {search_domain_filter: ["a.com", "b.com"]}
+      - provider: serper
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {search_domain_filter: ["a.com"]}
+      - provider: serper
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {search_domain_filter: []}
+      - provider: serper
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {search_domain_filter: "a.com"}
+      - provider: serper
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {search_domain_filter: null}
+      - provider: serper
+        call:
+          kind: request
+          query: "search text"
+          optional_params: {search_domain_filter: ["a.com"], max_results: 4, country: "US"}
+env: {}
+compare: {ignore: []}

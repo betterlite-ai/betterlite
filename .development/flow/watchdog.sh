@@ -54,7 +54,8 @@ sample_machine() {
   psi="$psi	$(sed -n '1s/.*total=//p' /proc/pressure/cpu)"
   df=$(df -k --output=used,size "$worktrees" | awk 'NR == 2 { print $1 "\t" $2 }')
   flows=$(pgrep -f -a '^bash .*/dispatch-flow\.sh B[0-9]+ ' | grep -o -E 'B[0-9]+' | sort -u | wc -l)
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$btime" "$disk" "$cpu" "$mem" "$psi" "$df" "$flows" "$(pgrep -xc rustc)" "$(pgrep -xc cargo)" >> "$samples"
+  clippy=$(ps -C clippy-driver -o rss= | awk '{ kb += $1 } END { print NR "\t" kb + 0 }')
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$btime" "$disk" "$cpu" "$mem" "$psi" "$df" "$flows" "$(pgrep -xc rustc)" "$(pgrep -xc cargo)" "$clippy" >> "$samples"
 }
 tick=0
 while [ ! -f "$L/watchdog.STOP" ]; do

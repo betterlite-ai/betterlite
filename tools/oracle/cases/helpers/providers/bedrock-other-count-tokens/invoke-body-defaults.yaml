@@ -1,0 +1,34 @@
+kind: helper
+name: invoke-body-defaults
+call:
+  bedrock_other_count_tokens:
+    invoke_body_defaults:
+      requests:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content:
+                - type: text
+                  text: hi
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content:
+                - type: text
+                  text: hi
+          anthropic_version: custom-version
+          max_tokens: 5
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content:
+                - type: text
+                  text: hi
+          anthropic_version: null
+          max_tokens: null
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          prompt: "\n\nHuman: hi\n\nAssistant:"
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: null
+env: {}
+compare: {ignore: []}
