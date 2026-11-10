@@ -2,7 +2,6 @@
 
 mod behaviors;
 mod boundaries;
-mod fake_redis;
 mod support;
 
 use rstest::rstest;
@@ -52,7 +51,7 @@ fn routing_state_store_behaviors(#[case] name: &str) {
 )]
 #[case::increment_keeps_a_live_expiry("increment_keeps_a_live_expiry")]
 #[case::increment_adds_expiry_when_none("increment_adds_expiry_when_none")]
-#[case::increment_without_ttl_keeps_no_expiry("increment_without_ttl_keeps_no_expiry")]
+#[case::increment_without_ttl_uses_the_default("increment_without_ttl_uses_the_default")]
 #[case::get_ttl_maps_absent_and_unexpiring_to_none("get_ttl_maps_absent_and_unexpiring_to_none")]
 #[case::float_increment_invalid_ttl_uses_the_default(
     "float_increment_invalid_ttl_uses_the_default"

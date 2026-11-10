@@ -39,7 +39,7 @@ struct RawKwargs {
     socket_timeout: Option<RawNumber>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub redis_url: Option<SecretString>,
     pub redis_host: Option<String>,
@@ -50,20 +50,6 @@ pub struct Settings {
     pub pool_timeout_seconds: u32,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            redis_url: None,
-            redis_host: None,
-            redis_port: None,
-            redis_password: None,
-            namespace: None,
-            socket_timeout: DEFAULT_SOCKET_TIMEOUT,
-            pool_timeout_seconds: DEFAULT_POOL_TIMEOUT,
-        }
-    }
-}
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -72,12 +58,13 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let raw = self.router_settings;
-        let target = resolve_target(raw.host, raw.url, raw.port, raw.password, lookup)?;
+        let (url, host) = connection_target(raw.host, raw.url, lookup)?;
+        let (port, password) = connection_auth(raw.port, raw.password, lookup)?;
         Ok(Settings {
-            redis_url: target.url,
-            redis_host: target.host,
-            redis_port: target.port,
-            redis_password: target.password,
+            redis_url: url,
+            redis_host: host,
+            redis_port: port,
+            redis_password: password,
             namespace: optional_text(
                 raw.kwargs.namespace,
                 "router_settings.redis_kwargs.namespace",
@@ -90,20 +77,11 @@ impl Section for Raw {
     }
 }
 
-struct Target {
-    url: Option<SecretString>,
-    host: Option<String>,
-    port: Option<i64>,
-    password: Option<SecretString>,
-}
-
-fn resolve_target<L>(
+fn connection_target<L>(
     explicit_host: Option<String>,
     explicit_url: Option<String>,
-    explicit_port: Option<RawNumber>,
-    explicit_password: Option<SecretString>,
     lookup: &L,
-) -> Result<Target, ConfigError>
+) -> Result<(Option<SecretString>, Option<String>), ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -116,6 +94,17 @@ where
             lookup.lookup("REDIS_URL").map(SecretString::from)
         }
     });
+    Ok((url, host))
+}
+
+fn connection_auth<L>(
+    explicit_port: Option<RawNumber>,
+    explicit_password: Option<SecretString>,
+    lookup: &L,
+) -> Result<(Option<i64>, Option<SecretString>), ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let port = match resolve_number::<i64, _>(
         explicit_port,
         "router_settings.redis_port",
@@ -127,12 +116,7 @@ where
     };
     let password = resolve_secret(explicit_password, "router_settings.redis_password", lookup)?
         .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
-    Ok(Target {
-        url,
-        host,
-        port,
-        password,
-    })
+    Ok((port, password))
 }
 
 fn socket_timeout<L>(raw: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>

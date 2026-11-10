@@ -7,11 +7,9 @@ use crate::routing_value_store::{
     MAX_VALUE_BYTES, RouteIncrement, RouteValue, StoreError, StoreRead,
 };
 
-pub(crate) fn encode(key: &str, value: &RouteValue) -> Result<Option<Vec<u8>>, StateStoreError> {
-    let bytes = serde_json::to_vec(value).map_err(|source| StateStoreError::Encoding {
-        key: key.to_owned(),
-        source,
-    })?;
+pub(crate) fn encode(value: &RouteValue) -> Result<Option<Vec<u8>>, StateStoreError> {
+    let bytes = serde_json::to_vec(value)
+        .map_err(|source| StateStoreError::Store(StoreError::Encoding { source }))?;
     Ok((bytes.len() <= MAX_VALUE_BYTES).then_some(bytes))
 }
 
@@ -78,11 +76,8 @@ pub(crate) fn reply_bytes(
         .map_err(|source| StateStoreError::Reply { operation, source })
 }
 
-pub(crate) fn set_command(key: &str, bytes: &[u8], ttl: Option<i64>) -> redis::Cmd {
+pub(crate) fn set_command(key: &str, bytes: &[u8], ttl: i64) -> redis::Cmd {
     let mut command = redis::cmd("SET");
-    command.arg(key).arg(bytes);
-    if let Some(seconds) = ttl {
-        command.arg("EX").arg(seconds);
-    }
+    command.arg(key).arg(bytes).arg("EX").arg(ttl);
     command
 }

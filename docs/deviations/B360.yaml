@@ -1,0 +1,20 @@
+task: B360
+deviations:
+  - what: Routing state values are stored as B390's typed JSON ({"Counter":5}, {"Spend":"1.25"}) instead of the bare number text INCRBYFLOAT writes, so a betterlite routing store cannot share keys with a LiteLLM RedisCache.
+    why: B390 owns the typed routing values and the task forbids INCRBYFLOAT and Lua numeric money, so the stored form is the typed one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: Spend increments and offsets are added with checked Decimal arithmetic, where LiteLLM's INCRBYFLOAT result is converted to a Python float and loses precision past an f64.
+    why: The task requires exact integer and Decimal updates for routing state; a spend counter must not drift.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1413-L1416
+  - what: A typed increment or compare-and-set given a TTL of zero, a negative TTL or a non-finite TTL fails with an error that names the value; LiteLLM truncates the number and passes it on, where SET EX 0 errors and a non-positive EXPIRE deletes the key.
+    why: A zero-length expiry is never what a routing-state caller means, and deleting the key under an increment silently loses the counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: The routing store's default TTL is a fixed 60 seconds; LiteLLM lets the process-wide litellm.default_redis_ttl change it.
+    why: litellm.default_redis_ttl is not one of this task's configuration boundary keys, so only LiteLLM's own default is reproduced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L671-L674
+  - what: A cluster target is refused for the routing store (the atomic compare-and-set needs a standalone connection), where LiteLLM builds a RedisClusterCache when startup_nodes or REDIS_CLUSTER_NODES is set.
+    why: startup_nodes is not a boundary key and no task has loaded the cluster configuration, so the cluster branch is not reachable here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1282-L1297
+  - what: When router_settings.redis_kwargs.socket_timeout is absent, betterlite uses REDIS_SOCKET_TIMEOUT before the 5-second default; LiteLLM's RedisCache passes its own 5-second default, and only a null socket_timeout reaches REDIS_SOCKET_TIMEOUT (0.1) through the shared client.
+    why: The task text asks for the REDIS_SOCKET_TIMEOUT fallback when the router setting does not override it, so the environment value outranks the signature default here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L615-L632

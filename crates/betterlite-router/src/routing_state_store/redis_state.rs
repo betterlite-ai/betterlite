@@ -18,12 +18,12 @@ use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
 use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
 use betterlite_redis::redis_connection_settings::model::settings::{
-    ClientKind, RedisConnectionSettings, RedisOverrides, Target,
+    ClientKind, RedisConnectionSettings, RedisOverrides,
 };
 use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use betterlite_redis::redis_connection_settings::target::resolve_target;
 use betterlite_redis::redis_counters::RedisCounters;
-use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_redis::redis_live_client::{LiveClientFactory, LiveEndpoint};
 use secrecy::ExposeSecret;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -34,7 +34,7 @@ use crate::redis_failure_policy::run::{CallError, run_async};
 use crate::redis_failure_policy::{RedisFailurePolicy, Settings as BreakerSettings};
 use crate::routing_value_store::RouteKey;
 
-const DEFAULT_REDIS_TTL: i64 = 60;
+const DEFAULT_TTL: i64 = 60;
 
 pub(crate) struct RedisState {
     pub(crate) transport: Arc<RedisTransport>,
@@ -51,9 +51,46 @@ pub(crate) fn open(
     breaker: BreakerSettings,
     clock: BreakerClock,
 ) -> Result<RedisState, StateStoreError> {
+    let (transport, endpoint) = transport(settings)?;
+    let counters = RedisCounters::new(
+        Arc::clone(&transport),
+        None,
+        DEFAULT_TTL,
+        Arc::new(NoopHooks),
+        Arc::new(NoopGate),
+    );
+    Ok(RedisState {
+        transport,
+        counters,
+        namespace: settings.namespace.clone(),
+        default_ttl: DEFAULT_TTL,
+        policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
+        clock,
+        cas: CasConnection {
+            endpoint,
+            slot: AsyncMutex::new(None),
+        },
+    })
+}
+
+fn transport(
+    settings: &RedisSettings,
+) -> Result<(Arc<RedisTransport>, LiveEndpoint), StateStoreError> {
     let connection_settings = connection_settings(settings)?;
-    let target = target_of(&connection_settings)?;
-    let pool = build_connection_pool(&connection_settings, target, &pool_environment(settings))?;
+    let target = resolve_target(
+        connection_settings.startup_nodes.as_deref(),
+        connection_settings.sentinel_nodes.as_deref(),
+        connection_settings
+            .url
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        connection_settings.host.as_deref(),
+    )?;
+    let pool_environment = BTreeMap::from([(
+        "REDIS_CONNECTION_POOL_TIMEOUT".to_owned(),
+        settings.pool_timeout_seconds.to_string(),
+    )]);
+    let pool = build_connection_pool(&connection_settings, target, &pool_environment)?;
     let factory = Arc::new(LiveClientFactory::new(None));
     let transport = Arc::new(RedisTransport::new(
         connection_settings,
@@ -68,25 +105,7 @@ pub(crate) fn open(
             operation: "open",
             source,
         })?;
-    let counters = RedisCounters::new(
-        Arc::clone(&transport),
-        None,
-        DEFAULT_REDIS_TTL,
-        Arc::new(NoopHooks),
-        Arc::new(NoopGate),
-    );
-    Ok(RedisState {
-        transport,
-        counters,
-        namespace: settings.namespace.clone(),
-        default_ttl: DEFAULT_REDIS_TTL,
-        policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
-        clock,
-        cas: CasConnection {
-            endpoint,
-            slot: AsyncMutex::new(None),
-        },
-    })
+    Ok((transport, endpoint))
 }
 
 fn connection_settings(
@@ -132,22 +151,6 @@ fn connection_settings(
     )?)
 }
 
-fn target_of(settings: &RedisConnectionSettings) -> Result<Target, StateStoreError> {
-    Ok(resolve_target(
-        settings.startup_nodes.as_deref(),
-        settings.sentinel_nodes.as_deref(),
-        settings.url.as_ref().map(ExposeSecret::expose_secret),
-        settings.host.as_deref(),
-    )?)
-}
-
-fn pool_environment(settings: &RedisSettings) -> BTreeMap<String, String> {
-    BTreeMap::from([(
-        "REDIS_CONNECTION_POOL_TIMEOUT".to_owned(),
-        settings.pool_timeout_seconds.to_string(),
-    )])
-}
-
 pub(crate) async fn run_observed<T, F, Fut>(
     state: &RedisState,
     operation: &'static str,
@@ -190,9 +193,12 @@ pub(crate) fn namespaced(state: &RedisState, key: &RouteKey) -> String {
         .unwrap_or_else(|| key.as_ref().to_owned())
 }
 
-pub(crate) fn typed_ttl(ttl_seconds: Option<f64>) -> Result<Option<i64>, StateStoreError> {
+pub(crate) fn typed_ttl(
+    state: &RedisState,
+    ttl_seconds: Option<f64>,
+) -> Result<i64, StateStoreError> {
     let Some(seconds) = ttl_seconds else {
-        return Ok(None);
+        return Ok(state.default_ttl);
     };
     let Some(whole) = truncate_seconds(seconds) else {
         return Err(StateStoreError::InvalidTtl { seconds });
@@ -200,7 +206,7 @@ pub(crate) fn typed_ttl(ttl_seconds: Option<f64>) -> Result<Option<i64>, StateSt
     if whole <= 0 {
         return Err(StateStoreError::InvalidTtl { seconds });
     }
-    Ok(Some(whole))
+    Ok(whole)
 }
 
 pub(crate) fn resolve_float_ttl(state: &RedisState, ttl_seconds: Option<f64>) -> i64 {

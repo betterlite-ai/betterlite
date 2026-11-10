@@ -6,11 +6,11 @@ use betterlite_config::sections::routing_state_store::Settings as ConfigSettings
 
 use super::super::error::{StateStoreError, StoreWarning};
 use super::super::{RedisSettings, RoutingStateStore, Settings};
-use super::fake_redis::FakeRedis;
 use super::support::{
     TestClock, breaker, redis_settings, route_key, same_f64, secret, seed, store,
 };
 use crate::redis_failure_policy::BreakerEvent;
+use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{
     CompareOutcome, PinValue, RouteIncrement, RouteValue, SchedulerTuple, StoreRead,
 };
@@ -144,12 +144,13 @@ async fn increment_counter_from_missing_and_existing() {
         .await
         .unwrap();
     assert_eq!(first.value, RouteValue::Counter(5));
+    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(60));
     let second = store
         .increment(&key, &RouteIncrement::Counter(7), Some(120.0_f64))
         .await
         .unwrap();
     assert_eq!(second.value, RouteValue::Counter(12));
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(120));
+    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(60));
 }
 
 async fn increment_spend_is_exact() {

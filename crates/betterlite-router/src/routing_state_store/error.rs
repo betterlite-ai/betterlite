@@ -58,12 +58,6 @@ pub enum StateStoreError {
     },
     #[error("the routing state ttl of {seconds} seconds is invalid")]
     InvalidTtl { seconds: f64 },
-    #[error("the routing value under {key} could not be encoded")]
-    Encoding {
-        key: String,
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the value under {key} kept changing during the update")]
     Conflict { key: String },
     #[error("atomic routing state changes need a standalone redis connection")]
@@ -72,6 +66,15 @@ pub enum StateStoreError {
     NoConnection,
     #[error("no redis target is configured for routing state")]
     NotConfigured,
+}
+
+impl From<(&'static str, redis::RedisError)> for StateStoreError {
+    fn from((operation, source): (&'static str, redis::RedisError)) -> Self {
+        Self::Redis {
+            operation,
+            source: LiveClientError::Redis(source),
+        }
+    }
 }
 
 impl RedisCallError for StateStoreError {
@@ -86,15 +89,22 @@ impl RedisCallError for StateStoreError {
 fn failure_class(error: &StateStoreError) -> Option<FailureClass> {
     match error {
         StateStoreError::Redis { source, .. } => live_class(source),
-        StateStoreError::Reuse(source) => reuse_class(source),
-        StateStoreError::Counters { source, .. } => counters_class(source),
+        StateStoreError::Counters { source, .. } => match source {
+            RedisCountersError::Client(client) => live_class(client),
+            RedisCountersError::Reuse(reuse) => reuse_class(reuse),
+            RedisCountersError::Decode(_)
+            | RedisCountersError::Breaker(_)
+            | RedisCountersError::UnexpectedReply { .. }
+            | RedisCountersError::InvalidTtl
+            | RedisCountersError::NonFiniteValue => None,
+        },
+        StateStoreError::Reuse(reuse) => reuse_class(reuse),
         StateStoreError::Settings(_)
         | StateStoreError::Factory(_)
         | StateStoreError::CircuitOpen { .. }
         | StateStoreError::Store(_)
         | StateStoreError::Reply { .. }
         | StateStoreError::InvalidTtl { .. }
-        | StateStoreError::Encoding { .. }
         | StateStoreError::Conflict { .. }
         | StateStoreError::UnsupportedTarget
         | StateStoreError::NoConnection
@@ -103,25 +113,13 @@ fn failure_class(error: &StateStoreError) -> Option<FailureClass> {
 }
 
 fn reuse_class(error: &ClientReuseError) -> Option<FailureClass> {
-    match error {
-        ClientReuseError::Live(source) => live_class(source),
-        ClientReuseError::Timeout(_) => Some(FailureClass::Timeout),
-        ClientReuseError::Factory(_)
-        | ClientReuseError::NoPubSubNode
-        | ClientReuseError::ClusterPubSub => None,
+    if matches!(error, ClientReuseError::Timeout(_)) {
+        return Some(FailureClass::Timeout);
     }
-}
-
-fn counters_class(error: &RedisCountersError) -> Option<FailureClass> {
-    match error {
-        RedisCountersError::Client(source) => live_class(source),
-        RedisCountersError::Reuse(source) => reuse_class(source),
-        RedisCountersError::Decode(_)
-        | RedisCountersError::Breaker(_)
-        | RedisCountersError::UnexpectedReply { .. }
-        | RedisCountersError::InvalidTtl
-        | RedisCountersError::NonFiniteValue => None,
+    if let ClientReuseError::Live(source) = error {
+        return live_class(source);
     }
+    None
 }
 
 fn live_class(error: &LiveClientError) -> Option<FailureClass> {

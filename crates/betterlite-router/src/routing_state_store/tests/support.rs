@@ -5,8 +5,8 @@ use std::time::Duration;
 use secrecy::SecretString;
 
 use super::super::{BreakerClock, RedisSettings, RoutingStateStore, Settings};
-use super::fake_redis::FakeRedis;
 use crate::redis_failure_policy::Settings as BreakerSettings;
+use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{RouteKey, RouteValue};
 
 pub(crate) struct TestClock(Arc<AtomicU64>);

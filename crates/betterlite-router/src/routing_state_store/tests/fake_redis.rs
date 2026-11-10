@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::mem::take;
 use std::net::SocketAddr;
 use std::str::FromStr as _;
@@ -41,30 +42,37 @@ struct ConnectionState {
     queued: Vec<Command>,
 }
 
-pub(crate) struct FakeRedis {
+pub struct FakeRedis {
     addr: SocketAddr,
     state: Arc<State>,
     tasks: JoinSet<()>,
 }
 
 impl FakeRedis {
-    pub(crate) async fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    pub async fn try_start() -> io::Result<Self> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
         let state = Arc::new(State::default());
         let mut tasks = JoinSet::new();
         tasks.spawn(accept_loop(listener, Arc::clone(&state)));
-        Self { addr, state, tasks }
+        Ok(Self { addr, state, tasks })
     }
 
-    pub(crate) const fn port(&self) -> u16 {
+    #[cfg(test)]
+    pub(crate) async fn start() -> Self {
+        Self::try_start().await.expect("the fake redis starts")
+    }
+
+    #[must_use]
+    pub const fn port(&self) -> u16 {
         self.addr.port()
     }
 
-    pub(crate) fn set_down(&self, down: bool) {
+    pub fn set_down(&self, down: bool) {
         self.state.down.store(down, Ordering::SeqCst);
     }
 
+    #[cfg(test)]
     pub(crate) fn raw(&self, key: &str) -> Option<(Vec<u8>, i64)> {
         lock(&self.state)
             .entries
@@ -72,6 +80,7 @@ impl FakeRedis {
             .map(|entry| (entry.value.clone(), entry.ttl))
     }
 
+    #[cfg(test)]
     pub(crate) fn seed(&self, key: &str, value: &[u8], ttl: i64) {
         let mut inner = lock(&self.state);
         inner.entries.insert(

@@ -1,5 +1,11 @@
 pub mod error;
 mod redis_state;
+#[cfg(any(test, feature = "testing"))]
+#[path = "routing_state_store/tests/scenario.rs"]
+pub mod test_scenario;
+#[cfg(any(test, feature = "testing"))]
+#[path = "routing_state_store/tests/fake_redis.rs"]
+pub mod test_support;
 mod tests;
 
 use std::sync::Arc;
@@ -121,7 +127,7 @@ impl RoutingStateStore {
         by: &RouteIncrement,
         ttl_seconds: Option<f64>,
     ) -> Result<Observed<RouteValue>, StateStoreError> {
-        let ttl = redis_state::typed_ttl(ttl_seconds)?;
+        let ttl = redis_state::typed_ttl(&self.redis, ttl_seconds)?;
         let namespaced = redis_state::namespaced(&self.redis, key);
         let key_name = key.as_ref().to_owned();
         redis_state::run_observed(&self.redis, "async_increment", None, move || async move {
@@ -138,7 +144,7 @@ impl RoutingStateStore {
         value: &RouteValue,
         ttl_seconds: Option<f64>,
     ) -> Result<Observed<CompareOutcome>, StateStoreError> {
-        let ttl = redis_state::typed_ttl(ttl_seconds)?;
+        let ttl = redis_state::typed_ttl(&self.redis, ttl_seconds)?;
         let namespaced = redis_state::namespaced(&self.redis, key);
         redis_state::run_observed(&self.redis, "compare_and_set", None, move || async move {
             redis_state::cas::compare_and_set(&self.redis, &namespaced, expected, value, ttl).await
@@ -214,10 +220,15 @@ impl RoutingStateStore {
 
     pub async fn get_ttl(&self, key: &RouteKey) -> Result<Observed<Option<i64>>, StateStoreError> {
         let namespaced = redis_state::namespaced(&self.redis, key);
-        redis_state::run_observed(&self.redis, "async_get_ttl", None, move || async move {
-            let ttl = redis_state::typed::read_ttl(&self.redis, &namespaced).await?;
-            Ok((ttl > -1).then_some(ttl))
-        })
+        redis_state::run_observed(
+            &self.redis,
+            "async_get_ttl",
+            Some(None),
+            move || async move {
+                let ttl = redis_state::typed::read_ttl(&self.redis, &namespaced).await?;
+                Ok((ttl > -1).then_some(ttl))
+            },
+        )
         .await
     }
 

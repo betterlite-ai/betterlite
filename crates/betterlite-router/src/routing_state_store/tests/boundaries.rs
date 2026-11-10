@@ -4,8 +4,8 @@ use rust_decimal::Decimal;
 use tokio::time::timeout;
 
 use super::super::error::{StateStoreError, StoreWarning};
-use super::fake_redis::FakeRedis;
 use super::support::{TestClock, breaker, route_key, same_f64, seed, store};
+use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{
     MAX_VALUE_BYTES, PinValue, RouteIncrement, RouteKey, RouteValue, StoreError, StoreRead,
 };
@@ -60,7 +60,7 @@ async fn expiry_and_float_cases(name: &str) -> bool {
     match name {
         "increment_keeps_a_live_expiry" => increment_keeps_a_live_expiry().await,
         "increment_adds_expiry_when_none" => increment_adds_expiry_when_none().await,
-        "increment_without_ttl_keeps_no_expiry" => increment_without_ttl_keeps_no_expiry().await,
+        "increment_without_ttl_uses_the_default" => increment_without_ttl_uses_the_default().await,
         "get_ttl_maps_absent_and_unexpiring_to_none" => {
             get_ttl_maps_absent_and_unexpiring_to_none().await;
         }
@@ -319,7 +319,7 @@ async fn increment_adds_expiry_when_none() {
     assert_eq!(server.raw("counter").map(|entry| entry.1), Some(100));
 }
 
-async fn increment_without_ttl_keeps_no_expiry() {
+async fn increment_without_ttl_uses_the_default() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
@@ -328,7 +328,7 @@ async fn increment_without_ttl_keeps_no_expiry() {
         .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
         .await
         .unwrap();
-    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(-1));
+    assert_eq!(server.raw("counter").map(|entry| entry.1), Some(60));
 }
 
 async fn get_ttl_maps_absent_and_unexpiring_to_none() {

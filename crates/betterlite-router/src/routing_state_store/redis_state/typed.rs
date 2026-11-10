@@ -38,17 +38,17 @@ pub(crate) async fn increment_until_written(
     state: &RedisState,
     namespaced: &str,
     by: &RouteIncrement,
-    ttl: Option<i64>,
+    ttl: i64,
     key_name: String,
 ) -> Result<RouteValue, StateStoreError> {
     for _attempt in 0..UPDATE_ATTEMPTS {
         let current = read_one(state, namespaced).await?;
         let remaining = read_ttl(state, namespaced).await?;
         let next = incremented(namespaced, &current, by)?;
-        if encode(namespaced, &next)?.is_none() {
+        if encode(&next)?.is_none() {
             return Ok(next);
         }
-        let expiry = if remaining >= 0 { Some(remaining) } else { ttl };
+        let expiry = if remaining >= 0 { remaining } else { ttl };
         let outcome =
             super::cas::compare_and_set(state, namespaced, &current, &next, expiry).await?;
         if outcome.swapped {
