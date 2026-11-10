@@ -11,45 +11,49 @@ use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_htt
 
 use super::{CaseKind, LoadedCase, parse_case};
 
-// sdk_http, probe and http_scenario cases run through their own drivers, so this list leaves them out
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
+fn load_selected<T, F>(
+    paths: &[PathBuf],
+    keep: fn(Option<&str>) -> bool,
+    decode: F,
+) -> Result<Vec<T>, OracleError>
+where
+    F: Fn(&Path, &str) -> Result<T, OracleError>,
+{
     let mut cases = Vec::new();
     for (path, text) in read_case_files(paths)? {
         let probe: CaseKind = parse_case_text(&path, &text)?;
-        if matches!(
-            probe.kind.as_deref(),
-            Some("sdk_http" | "probe" | "http_scenario")
-        ) {
-            continue;
+        if keep(probe.kind.as_deref()) {
+            cases.push(decode(&path, &text)?);
         }
-        cases.push(parse_case(&path, &text)?);
     }
     Ok(cases)
 }
 
-pub(crate) fn load_http_scenario_cases(
-    paths: &[PathBuf],
-) -> Result<Vec<HttpScenario>, OracleError> {
-    match cases_matching(paths, |kind| kind == Some("http_scenario")) {
-        Ok(selection) => decode_scenarios(selection),
-        Err(error) => Err(error),
-    }
+// sdk_http, probe and http_scenario cases run through their own drivers, so this list leaves them out
+pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
+    load_selected(
+        paths,
+        |kind| !matches!(kind, Some("sdk_http" | "probe" | "http_scenario")),
+        parse_case,
+    )
 }
 
-fn decode_scenarios(selection: Vec<(PathBuf, String)>) -> Result<Vec<HttpScenario>, OracleError> {
-    let mut scenarios = Vec::with_capacity(selection.len());
-    for (path, text) in selection {
-        match decode_http_scenario(text.as_bytes(), &Limits::default()) {
-            Ok(scenario) => scenarios.push(scenario),
-            Err(source) => {
-                return Err(OracleError::HttpScenarioCase {
-                    path,
+pub(crate) fn load_http_scenario_cases(
+    paths: &[PathBuf],
+    limits: &Limits,
+) -> Result<Vec<HttpScenario>, OracleError> {
+    load_selected(
+        paths,
+        |kind| kind == Some("http_scenario"),
+        |path, text| {
+            decode_http_scenario(text.as_bytes(), limits).map_err(|source| {
+                OracleError::HttpScenarioCase {
+                    path: path.to_owned(),
                     source: Box::new(source),
-                });
-            }
-        }
-    }
-    Ok(scenarios)
+                }
+            })
+        },
+    )
 }
 
 pub(crate) fn load_sdk_http_cases(paths: &[PathBuf]) -> Result<Vec<SdkHttpCase>, OracleError> {

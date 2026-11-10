@@ -10,8 +10,6 @@ mod adapters;
 mod gateway;
 #[path = "http_scenarios/fixtures/run.rs"]
 mod run;
-#[path = "http_scenarios/fixtures/scripted.rs"]
-mod scripted;
 pub(crate) fn run_cases(
     options: &Options,
     scenarios: &[HttpScenario],

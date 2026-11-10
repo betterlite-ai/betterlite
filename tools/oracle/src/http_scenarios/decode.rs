@@ -4,7 +4,7 @@ use betterlite_postgres_fixture::fixtures::http_scenarios::ScenarioSetup;
 use serde::Deserialize;
 
 use super::error::ScenarioError;
-use super::model::{HttpScenario, Limits, Segment, Step, segments, validate_placeholders};
+use super::model::{HttpScenario, Limits, Segment, Step, segments};
 use crate::case::Ignore;
 use crate::multipart_oracle::request::request_body;
 
@@ -50,15 +50,8 @@ fn root_key(line: &str) -> Option<String> {
         return None;
     }
     let (raw_key, _) = trimmed.split_once(':')?;
-    let key = raw_key.trim();
-    let unquoted = key.strip_prefix('"').map_or_else(
-        || {
-            key.strip_prefix('\'')
-                .map_or(key, |rest| rest.strip_suffix('\'').unwrap_or(key))
-        },
-        |rest| rest.strip_suffix('"').unwrap_or(key),
-    );
-    (!unquoted.is_empty()).then(|| unquoted.to_owned())
+    let key = raw_key.trim().trim_matches(['"', '\'']);
+    (!key.is_empty()).then(|| key.to_owned())
 }
 
 impl ScenarioFile {
@@ -199,9 +192,9 @@ fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {
     }
     request_body(&step.request.body, step.request.body_kind)
         .map_err(|source| ScenarioError::Body { index, source })?;
-    validate_placeholders(&step.request.path, index)?;
+    segments(&step.request.path, index)?;
     for value in step.request.headers.values() {
-        validate_placeholders(value, index)?;
+        segments(value, index)?;
     }
     validate_ignores(index, &step.compare.ignore)
 }
@@ -209,10 +202,16 @@ fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {
 fn validate_ignores(index: usize, ignores: &[Ignore]) -> Result<(), ScenarioError> {
     for ignored in ignores {
         if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
-            return Err(ScenarioError::IgnorePointer { index });
+            return Err(ScenarioError::Ignore {
+                index,
+                problem: "pointers must be JSON pointers",
+            });
         }
         if ignored.why.is_empty() {
-            return Err(ScenarioError::IgnoreWhy { index });
+            return Err(ScenarioError::Ignore {
+                index,
+                problem: "entries need a why",
+            });
         }
     }
     Ok(())

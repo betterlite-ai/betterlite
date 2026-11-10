@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use betterlite_postgres_fixture::fixtures::http_scenarios::SetupJournalEntry;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -44,7 +44,7 @@ struct StepView<'input> {
     betterlite: Side<'input>,
 }
 
-pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, ScenarioError> {
+pub(crate) fn write(input: ArtifactInput<'_>) -> Result<(), ScenarioError> {
     let directory = input
         .root
         .join(safe_name(&input.scenario.name))
@@ -80,8 +80,7 @@ pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, ScenarioError> 
         &directory.join("betterlite.log"),
         &input.second.log,
         input.secrets,
-    )?;
-    Ok(directory)
+    )
 }
 
 fn redis_views(scenario: &HttpScenario) -> Vec<RedisView> {

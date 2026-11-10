@@ -4,33 +4,25 @@ use std::sync::Arc;
 
 use reqwest::blocking::Client;
 
-use super::scripted::ScriptedProvider;
 use crate::case::Request;
 use crate::cli::Options;
 use crate::gateway::{self, GatewayInput};
 use crate::http::{self, Response};
 use crate::http_scenarios::error::ScenarioError;
-use crate::http_scenarios::run::{Peer, PeerFactory, PeerStart};
-use crate::mock::ProviderRequest;
+use crate::http_scenarios::run::{Peer, PeerFactory, PeerStart, ProviderSplit};
+use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::free_port;
 use crate::process::Gateway;
 
 pub(super) struct GatewayPeerFactory<'input> {
     pub(super) options: &'input Options,
     pub(super) group_dir: PathBuf,
-    pub(super) provider: Arc<ScriptedProvider>,
+    pub(super) provider: Arc<MockProvider>,
     pub(super) client: Client,
-    pub(super) started: bool,
 }
 
 impl PeerFactory for GatewayPeerFactory<'_> {
     fn start(&mut self, input: PeerStart<'_>) -> Result<Box<dyn Peer>, ScenarioError> {
-        if self.started {
-            self.provider
-                .reset()
-                .map_err(|source| ScenarioError::Request(Box::new(source)))?;
-        }
-        self.started = true;
         let config_path = self
             .group_dir
             .join(format!("scenario-{}-config.yaml", input.role.label()));
@@ -63,7 +55,7 @@ impl PeerFactory for GatewayPeerFactory<'_> {
 struct GatewayPeer {
     gateway: Gateway,
     client: Client,
-    provider: Arc<ScriptedProvider>,
+    provider: Arc<MockProvider>,
 }
 
 impl Peer for GatewayPeer {
@@ -73,9 +65,37 @@ impl Peer for GatewayPeer {
     }
 
     fn provider_requests(&self) -> Result<Vec<ProviderRequest>, ScenarioError> {
-        self.provider
-            .requests()
-            .map_err(|source| ScenarioError::Request(Box::new(source)))
+        Ok(Vec::new())
+    }
+
+    fn provider_splits(
+        &mut self,
+        counts: &[usize],
+    ) -> Result<Option<Vec<ProviderSplit>>, ScenarioError> {
+        let calls = self
+            .provider
+            .finish_run()
+            .map_err(|source| ScenarioError::Request(Box::new(source)))?;
+        let trace = calls
+            .into_iter()
+            .map(|call| call.request)
+            .collect::<Vec<ProviderRequest>>();
+        let mut splits = Vec::with_capacity(counts.len());
+        let mut previous = 0_usize;
+        for (index, count) in counts.iter().enumerate() {
+            let last = index.saturating_add(1) == counts.len();
+            let end = if last {
+                trace.len()
+            } else {
+                previous.saturating_add(*count).min(trace.len())
+            };
+            splits.push(ProviderSplit {
+                requests: trace.get(previous..end).unwrap_or_default().to_vec(),
+                total: end,
+            });
+            previous = end;
+        }
+        Ok(Some(splits))
     }
 
     fn log(&self) -> Result<String, ScenarioError> {

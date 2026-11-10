@@ -38,10 +38,8 @@ pub enum ScenarioError {
         index: usize,
         source: MultipartError,
     },
-    #[error("scenario step {index} compare.ignore pointers must be JSON pointers")]
-    IgnorePointer { index: usize },
-    #[error("scenario step {index} compare.ignore entries need a why")]
-    IgnoreWhy { index: usize },
+    #[error("scenario step {index} compare.ignore {problem}")]
+    Ignore { index: usize, problem: &'static str },
     #[error("scenario step {index} has a malformed capture placeholder")]
     MalformedPlaceholder { index: usize },
     #[error("scenario step {index} header \"{header}\" cannot use secret capture \"{name}\"")]
@@ -56,26 +54,20 @@ pub enum ScenarioError {
     FixturesTooLarge { limit: usize },
     #[error("scenario exceeded 120 seconds")]
     Deadline,
-    #[error("scenario step {index} capture {name} missing pointer {pointer}")]
-    MissingPointer {
+    #[error("scenario step {index} capture {name} {reason}")]
+    Capture {
         index: usize,
         name: String,
-        pointer: String,
+        reason: String,
     },
-    #[error("scenario step {index} capture {name} is not a scalar value")]
-    CaptureNotScalar { index: usize, name: String },
     #[error("scenario step {index} references unresolved capture \"{name}\"")]
     UnresolvedCapture { index: usize, name: String },
-    #[error("scenario peer failed: {message}")]
-    Peer { message: String },
+    #[error("{message}")]
+    Message { message: String },
     #[error(transparent)]
     Request(Box<OracleError>),
     #[error("scenario fixture failed: {0}")]
     Fixture(#[source] FixtureError),
-    #[error("scenario runtime failed: {0}")]
-    Runtime(#[source] io::Error),
-    #[error("scenario setup differs between peers: {message}")]
-    SetupMismatch { message: String },
     #[error("scenario artifact {path} failed: {source}")]
     Artifact { path: PathBuf, source: io::Error },
     #[error("scenario log {path} is not valid UTF-8: {source}")]
@@ -85,8 +77,8 @@ pub enum ScenarioError {
     },
     #[error("cannot serialize scenario artifact: {0}")]
     Json(#[source] serde_json::Error),
-    #[error("cannot write scenario progress: {0}")]
-    Output(#[source] io::Error),
+    #[error("scenario I/O failed: {0}")]
+    Io(#[source] io::Error),
     #[error("scenario operation failed and cleanup failed: {operation}; {cleanup}")]
     OperationCleanup {
         #[source]

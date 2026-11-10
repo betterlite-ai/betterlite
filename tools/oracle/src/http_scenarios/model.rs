@@ -91,21 +91,14 @@ pub(crate) struct StepCompare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
-#[derive(serde::Serialize)]
-struct ResponseDocument<'input> {
-    status: u16,
-    headers: &'input BTreeMap<String, String>,
-    body: &'input Value,
-}
-
 // the document a capture pointer resolves against: the wire response the client saw
 pub(crate) fn response_document(response: &Response) -> Result<Value, ScenarioError> {
-    let document = ResponseDocument {
-        status: response.status,
-        headers: &response.headers,
-        body: &response.body,
-    };
-    serde_json::to_value(document).map_err(ScenarioError::Json)
+    let headers = serde_json::to_value(&response.headers).map_err(ScenarioError::Json)?;
+    let mut document = serde_json::Map::new();
+    document.insert("status".to_owned(), Value::from(response.status));
+    document.insert("headers".to_owned(), headers);
+    document.insert("body".to_owned(), response.body.clone());
+    Ok(Value::Object(document))
 }
 
 pub(crate) struct CapturedValue {
@@ -135,11 +128,6 @@ pub(crate) fn segments(text: &str, index: usize) -> Result<Vec<Segment<'_>>, Sce
     }
     segments.push(Segment::Text(remaining));
     Ok(segments)
-}
-
-pub(crate) fn validate_placeholders(text: &str, index: usize) -> Result<(), ScenarioError> {
-    drop(segments(text, index)?);
-    Ok(())
 }
 
 pub(crate) struct Placeholders<'input> {

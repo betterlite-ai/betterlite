@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use betterlite_postgres_fixture::fixtures::http_scenarios::{ScenarioSetup, SetupJournalEntry};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use self::peer::{PeerRun, check_deadline, expired, run_peer};
+use self::peer::{PeerRun, check_deadline, run_peer};
 use super::artifacts::{self, ArtifactInput};
 use super::compare::{self, Difference};
 use super::error::ScenarioError;
@@ -23,9 +23,20 @@ pub(crate) trait Clock {
     fn now(&self) -> Instant;
 }
 
+pub(crate) struct ProviderSplit {
+    pub(crate) requests: Vec<ProviderRequest>,
+    pub(crate) total: usize,
+}
+
 pub(crate) trait Peer {
     fn send(&mut self, request: &Request) -> Result<Response, ScenarioError>;
     fn provider_requests(&self) -> Result<Vec<ProviderRequest>, ScenarioError>;
+    fn provider_splits(
+        &mut self,
+        _counts: &[usize],
+    ) -> Result<Option<Vec<ProviderSplit>>, ScenarioError> {
+        Ok(None)
+    }
     fn log(&self) -> Result<String, ScenarioError>;
     fn stop(&mut self) -> Result<(), ScenarioError>;
 }
@@ -100,11 +111,6 @@ pub(crate) struct ScenarioDependencies<'input> {
     pub(crate) artifact_root: &'input Path,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ScenarioOutcome {
-    pub(crate) different: bool,
-}
-
 pub(crate) struct StepCapture {
     pub(crate) response: Response,
     pub(crate) provider: Vec<ProviderRequest>,
@@ -126,7 +132,7 @@ struct ScenarioRun<'input> {
     upstream: &'input str,
 }
 
-pub(crate) fn run(deps: ScenarioDependencies<'_>) -> Result<ScenarioOutcome, ScenarioError> {
+pub(crate) fn run(deps: ScenarioDependencies<'_>) -> Result<bool, ScenarioError> {
     let ScenarioDependencies {
         scenario,
         clock,
@@ -147,9 +153,9 @@ pub(crate) fn run(deps: ScenarioDependencies<'_>) -> Result<ScenarioOutcome, Sce
         upstream,
     };
     let first_transcript = run_peer(scenario_run.peer(PeerRole::First, first), factory)
-        .map_err(|error| expired(clock, deadline, error))?;
+        .map_err(|error| check_deadline(clock, deadline).err().unwrap_or(error))?;
     let second_transcript = run_peer(scenario_run.peer(PeerRole::Second, second), factory)
-        .map_err(|error| expired(clock, deadline, error))?;
+        .map_err(|error| check_deadline(clock, deadline).err().unwrap_or(error))?;
     scenario_run.finish(artifact_root, &first_transcript, &second_transcript)
 }
 
@@ -172,14 +178,13 @@ impl<'input> ScenarioRun<'input> {
         artifact_root: &Path,
         first: &PeerTranscript,
         second: &PeerTranscript,
-    ) -> Result<ScenarioOutcome, ScenarioError> {
+    ) -> Result<bool, ScenarioError> {
         check_deadline(self.clock, self.deadline)?;
-        ensure_isolated(&first.names, &second.names)?;
-        ensure_journal(&first.journal, &second.journal)?;
+        ensure_matching(first, second)?;
         let difference =
             compare::compare_transcripts(&first.steps, &second.steps, &self.scenario.steps);
         let secrets = collect_secrets([first, second]);
-        let directory = artifacts::write(ArtifactInput {
+        artifacts::write(ArtifactInput {
             root: artifact_root,
             scenario: self.scenario,
             first,
@@ -187,53 +192,42 @@ impl<'input> ScenarioRun<'input> {
             difference: difference.as_ref().err(),
             secrets: &secrets,
         })?;
-        report(self.scenario, &directory, difference.as_ref().err())?;
+        report(self.scenario, difference.as_ref().err())?;
         check_deadline(self.clock, self.deadline)?;
-        Ok(ScenarioOutcome {
-            different: difference.is_err(),
-        })
+        Ok(difference.is_err())
     }
 }
 
-fn report(
-    scenario: &HttpScenario,
-    directory: &Path,
-    difference: Option<&Difference>,
-) -> Result<(), ScenarioError> {
+fn report(scenario: &HttpScenario, difference: Option<&Difference>) -> Result<(), ScenarioError> {
     let outcome = difference.map_or_else(
-        || format!("PASS {}: {}", scenario.name, directory.display()),
+        || format!("PASS {}", scenario.name),
         |error| format!("FAIL {}: {}", scenario.name, error.pointer),
     );
-    writeln!(io::stdout().lock(), "{outcome}").map_err(ScenarioError::Output)?;
-    Ok(())
+    writeln!(io::stdout().lock(), "{outcome}").map_err(ScenarioError::Io)
 }
 
-fn ensure_isolated(first: &PhysicalNames, second: &PhysicalNames) -> Result<(), ScenarioError> {
-    let first_url = first.database_url.expose_secret();
-    let second_url = second.database_url.expose_secret();
+fn ensure_matching(first: &PeerTranscript, second: &PeerTranscript) -> Result<(), ScenarioError> {
+    let first_url = first.names.database_url.expose_secret();
+    let second_url = second.names.database_url.expose_secret();
     if !first_url.is_empty() && first_url == second_url {
-        return Err(ScenarioError::SetupMismatch {
-            message: "both peers share one postgres namespace".to_owned(),
+        return Err(ScenarioError::Message {
+            message:
+                "scenario setup differs between peers: both peers share one postgres namespace"
+                    .to_owned(),
         });
     }
-    if first.redis_prefix == second.redis_prefix {
-        return Err(ScenarioError::SetupMismatch {
-            message: "both peers share one redis prefix".to_owned(),
+    if first.names.redis_prefix == second.names.redis_prefix {
+        return Err(ScenarioError::Message {
+            message: "scenario setup differs between peers: both peers share one redis prefix"
+                .to_owned(),
+        });
+    }
+    if first.journal != second.journal {
+        return Err(ScenarioError::Message {
+            message: "scenario setup differs between peers: the setup journals differ".to_owned(),
         });
     }
     Ok(())
-}
-
-fn ensure_journal(
-    first: &[SetupJournalEntry],
-    second: &[SetupJournalEntry],
-) -> Result<(), ScenarioError> {
-    if first == second {
-        return Ok(());
-    }
-    Err(ScenarioError::SetupMismatch {
-        message: "the setup journals differ".to_owned(),
-    })
 }
 
 fn collect_secrets(transcripts: [&PeerTranscript; 2]) -> Vec<SecretString> {

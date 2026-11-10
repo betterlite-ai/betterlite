@@ -1,6 +1,6 @@
-use std::fs::{self, OpenOptions};
-use std::io::{Read as _, Write as _};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::Read as _;
+use std::path::Path;
 use std::time::Instant;
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -8,12 +8,11 @@ use betterlite_postgres_fixture::fixtures::http_scenarios::{
     ScenarioSetup, SetupJournalEntry, apply_setup,
 };
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Serialize;
 use tokio::runtime::Builder;
 
 use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::run::Clock;
-use crate::http_scenarios::run::{FixtureRepository, PhysicalNames, PollingTransport};
+use crate::http_scenarios::run::{FixtureRepository, PhysicalNames};
 
 const MAX_LOG_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -39,6 +38,7 @@ pub(super) struct PostgresRepository {
     pub(super) configured_url: Option<SecretString>,
     pub(super) fixture: Option<PostgresFixture>,
     pub(super) prefix: String,
+    pub(super) redis_url: String,
 }
 
 impl PostgresRepository {
@@ -46,7 +46,7 @@ impl PostgresRepository {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(ScenarioError::Runtime)?;
+            .map_err(ScenarioError::Io)?;
         let entered = runtime.enter();
         let mut task = PostgresFixture::provision_schema(self.configured_url.as_ref());
         let fixture = runtime
@@ -68,7 +68,7 @@ impl FixtureRepository for PostgresRepository {
         };
         Ok(PhysicalNames {
             database_url: SecretString::from(database_url),
-            redis_url: "redis://127.0.0.1:6379/0".to_owned(),
+            redis_url: self.redis_url.clone(),
             redis_prefix: self.prefix.clone(),
         })
     }
@@ -85,49 +85,6 @@ impl FixtureRepository for PostgresRepository {
             || Ok(()),
             |fixture| fixture.close().map_err(ScenarioError::Fixture),
         )
-    }
-}
-
-#[derive(Serialize)]
-struct PollingRecord<'input> {
-    prefix: &'input str,
-    key: &'input str,
-    value: &'input str,
-    ttl_seconds: u64,
-}
-
-// B5640's real Valkey transport replaces this recorder; it keeps the exact key and TTL visible.
-pub(super) struct JournalPolling {
-    pub(super) path: PathBuf,
-}
-
-impl PollingTransport for JournalPolling {
-    fn write(
-        &mut self,
-        prefix: &str,
-        key: &str,
-        value: &str,
-        ttl_seconds: u64,
-    ) -> Result<(), ScenarioError> {
-        let record = PollingRecord {
-            prefix,
-            key,
-            value,
-            ttl_seconds,
-        };
-        let line = serde_json::to_string(&record).map_err(ScenarioError::Json)?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            .map_err(|source| ScenarioError::Artifact {
-                path: self.path.clone(),
-                source,
-            })?;
-        writeln!(file, "{line}").map_err(|source| ScenarioError::Artifact {
-            path: self.path.clone(),
-            source,
-        })
     }
 }
 

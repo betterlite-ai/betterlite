@@ -18,7 +18,7 @@ use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::model::{HttpScenario, Limits, ScenarioRequest, Step, StepCompare};
 use crate::http_scenarios::run::{
     Clock, FixtureRepository, Peer, PeerFactory, PeerFixture, PeerStart, PhysicalNames,
-    PollingTransport, ScenarioDependencies, ScenarioOutcome, StepCapture, run,
+    PollingTransport, ScenarioDependencies, StepCapture, run,
 };
 use crate::mock::ProviderRequest;
 
@@ -114,8 +114,8 @@ impl Peer for PlannedPeer {
         }
         match self.responses.pop_front() {
             Some(Ok(response)) => Ok(response),
-            Some(Err(message)) => Err(ScenarioError::Peer { message }),
-            None => Err(ScenarioError::Peer {
+            Some(Err(message)) => Err(ScenarioError::Message { message }),
+            None => Err(ScenarioError::Message {
                 message: "no scripted response".to_owned(),
             }),
         }
@@ -164,7 +164,7 @@ impl PeerFactory for FakeFactory {
         });
         self.peers.pop_front().map_or_else(
             || {
-                Err(ScenarioError::Peer {
+                Err(ScenarioError::Message {
                     message: "no scripted peer".to_owned(),
                 })
             },
@@ -235,7 +235,7 @@ impl PollingTransport for FakePolling {
         ttl_seconds: u64,
     ) -> Result<(), ScenarioError> {
         if self.fail {
-            return Err(ScenarioError::Peer {
+            return Err(ScenarioError::Message {
                 message: "the polling transport is unavailable".to_owned(),
             });
         }
@@ -292,7 +292,7 @@ impl Harness {
         self.factory.push(peer);
     }
 
-    pub(crate) fn start(&mut self) -> Result<ScenarioOutcome, ScenarioError> {
+    pub(crate) fn start(&mut self) -> Result<bool, ScenarioError> {
         let dependencies = self.dependencies();
         run(dependencies)
     }
@@ -327,7 +327,7 @@ pub(crate) fn response(status: u16, body: Value) -> Response {
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, ScenarioError> {
-    mutex.lock().map_err(|_source| ScenarioError::Peer {
+    mutex.lock().map_err(|_source| ScenarioError::Message {
         message: "the test mutex was poisoned".to_owned(),
     })
 }

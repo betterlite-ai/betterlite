@@ -344,7 +344,7 @@ fn capture_substitution() {
         Ok(response(200, json("{}"))),
     ]));
     let outcome = harness.start().unwrap();
-    assert!(!outcome.different);
+    assert!(!outcome);
     let sent = requests.lock().unwrap();
     assert_eq!(sent.len(), 2);
     assert_eq!(sent[1].path, "/second/201?d=slash-value&t=tilde-value");
@@ -378,7 +378,7 @@ fn secret_capture_redaction() {
     harness.push_peer(first);
     harness.push_peer(secret_peer("second"));
     let outcome = harness.start().unwrap();
-    assert!(outcome.different);
+    assert!(outcome);
     assert_secret_sent(&requests.lock().unwrap());
     assert_secret_redacted(harness.root.path());
 }
@@ -625,7 +625,7 @@ fn assert_changed_provider_body() {
     harness.push_peer(first);
     harness.push_peer(second);
     let outcome = harness.start().unwrap();
-    assert!(outcome.different);
+    assert!(outcome);
     let diff = artifact_named(harness.root.path(), "diff.json");
     assert!(diff.contains("/steps/0/provider/0/body"));
 }
@@ -641,7 +641,7 @@ fn assert_changed_status() {
         Ok(response(200, Value::Null)),
     ]));
     let outcome = harness.start().unwrap();
-    assert!(outcome.different);
+    assert!(outcome);
     let diff = artifact_named(harness.root.path(), "diff.json");
     assert!(diff.contains("/steps/0/status"));
 }
@@ -673,7 +673,7 @@ fn isolated_state() {
     harness.push_peer(PlannedPeer::new(vec![Ok(response(200, json("{}")))]));
     harness.push_peer(PlannedPeer::new(vec![Ok(response(200, json("{}")))]));
     let outcome = harness.start().unwrap();
-    assert!(!outcome.different);
+    assert!(!outcome);
     assert_fixtures_isolated(&harness);
     assert_config_tokens(&harness);
     assert_polling_entries(&harness);
@@ -785,7 +785,7 @@ fn assert_success_cleanup() {
     harness.push_peer(first);
     harness.push_peer(second);
     let outcome = harness.start().unwrap();
-    assert!(!outcome.different);
+    assert!(!outcome);
     assert_eq!(first_stopped.load(Ordering::SeqCst), 1);
     assert_eq!(second_stopped.load(Ordering::SeqCst), 1);
     assert_eq!(harness.first.closes, 1);

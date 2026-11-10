@@ -11,7 +11,7 @@ use super::super::model::{
 };
 use super::{
     Clock, Peer, PeerFactory, PeerFixture, PeerRole, PeerStart, PeerTranscript, PhysicalNames,
-    StepCapture, child_environment, render_config,
+    ProviderSplit, StepCapture, child_environment, render_config,
 };
 use crate::case::Request;
 use crate::http::Response;
@@ -26,14 +26,6 @@ pub(super) struct PeerRun<'input> {
     pub(super) fixture: PeerFixture<'input>,
     pub(super) peer: Option<Box<dyn Peer>>,
     pub(super) captures: BTreeMap<String, CapturedValue>,
-}
-
-pub(super) fn expired(clock: &dyn Clock, deadline: Instant, error: ScenarioError) -> ScenarioError {
-    if clock.now() >= deadline {
-        ScenarioError::Deadline
-    } else {
-        error
-    }
 }
 
 pub(super) fn check_deadline(clock: &dyn Clock, deadline: Instant) -> Result<(), ScenarioError> {
@@ -77,7 +69,20 @@ impl PeerRun<'_> {
             env: &env,
         })?;
         self.peer = Some(peer);
-        let steps = self.run_steps()?;
+        let mut steps = self.run_steps()?;
+        check_deadline(self.clock, self.deadline)?;
+        let counts = self
+            .scenario
+            .steps
+            .iter()
+            .map(|step| step.upstream.len())
+            .collect::<Vec<usize>>();
+        if let Some(splits) = self.provider_splits(&counts)? {
+            for (capture, split) in steps.iter_mut().zip(splits) {
+                capture.provider = split.requests;
+                capture.provider_total = split.total;
+            }
+        }
         check_deadline(self.clock, self.deadline)?;
         let log = self.stop_and_log()?;
         Ok(PeerTranscript {
@@ -109,10 +114,10 @@ impl PeerRun<'_> {
     }
 
     fn run_steps(&mut self) -> Result<Vec<StepCapture>, ScenarioError> {
-        let steps = self.scenario.steps.clone();
-        let mut results = Vec::with_capacity(steps.len());
+        let scenario = self.scenario;
+        let mut results = Vec::with_capacity(scenario.steps.len());
         let mut previous = 0_usize;
-        for (index, step) in steps.iter().enumerate() {
+        for (index, step) in scenario.steps.iter().enumerate() {
             check_deadline(self.clock, self.deadline)?;
             let request = self.build_request(index, step)?;
             let response = self.send_to_peer(&request)?;
@@ -120,8 +125,9 @@ impl PeerRun<'_> {
             let cumulative = self.provider_requests()?;
             let provider = cumulative
                 .get(previous..)
-                .ok_or_else(|| ScenarioError::Peer {
-                    message: "the provider trace shrank between steps".to_owned(),
+                .ok_or_else(|| ScenarioError::Message {
+                    message: "scenario peer failed: the provider trace shrank between steps"
+                        .to_owned(),
                 })?
                 .to_vec();
             previous = cumulative.len();
@@ -157,8 +163,8 @@ impl PeerRun<'_> {
 
     fn send_to_peer(&mut self, request: &Request) -> Result<Response, ScenarioError> {
         let Some(peer) = self.peer.as_mut() else {
-            return Err(ScenarioError::Peer {
-                message: "the peer is not running".to_owned(),
+            return Err(ScenarioError::Message {
+                message: "scenario peer failed: the peer is not running".to_owned(),
             });
         };
         peer.send(request)
@@ -166,11 +172,23 @@ impl PeerRun<'_> {
 
     fn provider_requests(&self) -> Result<Vec<ProviderRequest>, ScenarioError> {
         let Some(peer) = self.peer.as_ref() else {
-            return Err(ScenarioError::Peer {
-                message: "the peer is not running".to_owned(),
+            return Err(ScenarioError::Message {
+                message: "scenario peer failed: the peer is not running".to_owned(),
             });
         };
         peer.provider_requests()
+    }
+
+    fn provider_splits(
+        &mut self,
+        counts: &[usize],
+    ) -> Result<Option<Vec<ProviderSplit>>, ScenarioError> {
+        let Some(peer) = self.peer.as_mut() else {
+            return Err(ScenarioError::Message {
+                message: "scenario peer failed: the peer is not running".to_owned(),
+            });
+        };
+        peer.provider_splits(counts)
     }
 
     fn apply_captures(
@@ -181,16 +199,18 @@ impl PeerRun<'_> {
     ) -> Result<(), ScenarioError> {
         let document = response_document(response)?;
         for capture in &step.capture {
-            let value = document.pointer(&capture.pointer).ok_or_else(|| {
-                ScenarioError::MissingPointer {
-                    index,
-                    name: capture.name.clone(),
-                    pointer: capture.pointer.clone(),
-                }
-            })?;
-            let text = scalar_text(value).ok_or_else(|| ScenarioError::CaptureNotScalar {
+            let value =
+                document
+                    .pointer(&capture.pointer)
+                    .ok_or_else(|| ScenarioError::Capture {
+                        index,
+                        name: capture.name.clone(),
+                        reason: format!("missing pointer {}", capture.pointer),
+                    })?;
+            let text = scalar_text(value).ok_or_else(|| ScenarioError::Capture {
                 index,
                 name: capture.name.clone(),
+                reason: "is not a scalar value".to_owned(),
             })?;
             self.captures.insert(
                 capture.name.clone(),
