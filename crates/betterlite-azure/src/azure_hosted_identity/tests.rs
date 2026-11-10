@@ -212,7 +212,7 @@ fn secret_safe_cloud_shell() {
     ]);
     let (outcome, _) = fixture.acquire_cloud_shell(
         vec![response(
-            r#"{"access_token":"fixture-access-token","echo":"fixture-msi-secret"}"#,
+            r#"{"access_token":"fixture-access-token","echo":"fixture-msi-secret","note":"fixture-access-token","refresh_token":"fixture-refresh-value"}"#,
         )],
         &clock,
     );
@@ -220,6 +220,9 @@ fn secret_safe_cloud_shell() {
     let shown = format!("{error} {error:?}");
     assert!(!shown.contains("fixture-msi-secret"));
     assert!(!shown.contains("fixture-access-token"));
+    assert!(!shown.contains("fixture-refresh-value"));
+    assert!(shown.contains(r#""note":"****""#));
+    assert!(shown.contains("[redacted]"));
 }
 
 #[test]

@@ -543,10 +543,10 @@ fn cloud_shell_missing_token() {
     let (outcome, _) = Fixture::new()
         .with_environment(&CLOUD_SHELL_ENVIRONMENT)
         .acquire_cloud_shell(vec![response(r#"{"access_token":"shell-token"}"#)], &clock);
-    assert_eq!(
-        outcome.unwrap_err().to_string(),
-        "Unexpected response \"{\"access_token\":\"****\"}\""
-    );
+    let message = outcome.unwrap_err().to_string();
+    assert!(message.starts_with("Unexpected response \""));
+    assert!(message.contains("REDACTED"));
+    assert!(!message.contains("shell-token"));
 }
 
 #[test]

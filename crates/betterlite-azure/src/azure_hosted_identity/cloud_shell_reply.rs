@@ -1,3 +1,4 @@
+use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret as _;
 
 use crate::azure_client_secret::token::AccessToken;
@@ -13,6 +14,7 @@ const TOKEN_MASK: &str = "****";
 pub fn cloud_shell_response(
     response: &HostedResponse,
     environment: &HostedEnvironment,
+    redactor: &Redactor,
     request_time: i64,
 ) -> Result<AccessToken, HostedIdentityError> {
     let raw = response.body.expose_secret();
@@ -37,10 +39,10 @@ pub fn cloud_shell_response(
         return Err(HostedIdentityError::NoToken);
     };
     let Some(token) = parsed.access_token.as_ref() else {
-        return Err(unexpected(parsed, environment, raw));
+        return Err(unexpected(parsed, environment, redactor, raw));
     };
     if parsed.expires_in.is_none() && parsed.expires_on.is_none() {
-        return Err(unexpected(parsed, environment, raw));
+        return Err(unexpected(parsed, environment, redactor, raw));
     }
     let (expires_on, refresh_on) = cloud_shell_times(parsed, request_time)?;
     if parsed.resource.is_none() {
@@ -100,6 +102,7 @@ fn cloud_shell_times(
 fn unexpected(
     reply: &HostedTokenReply,
     environment: &HostedEnvironment,
+    redactor: &Redactor,
     raw: &str,
 ) -> HostedIdentityError {
     let masked = reply.token().map_or_else(
@@ -112,6 +115,6 @@ fn unexpected(
         },
     );
     HostedIdentityError::UnexpectedResponse {
-        content: environment.redact_known(&masked),
+        content: environment.redact_known(&redactor.redact_string(&masked)),
     }
 }
