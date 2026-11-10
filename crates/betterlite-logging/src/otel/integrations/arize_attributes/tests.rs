@@ -407,6 +407,14 @@ fn session_metadata_not_an_object_is_skipped() {
 }
 
 #[test]
+fn session_falsy_metadata_still_writes_trace_id() {
+    let attributes = session_attributes(
+        r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":""}}"#,
+    );
+    assert_eq!(attr(&attributes, "litellm.trace_id"), Some("trace-1"));
+}
+
+#[test]
 fn session_null_metadata_still_writes_trace_id() {
     let attributes = session_attributes(
         r#"{"standard_logging_object":{"call_type":"acompletion","trace_id":"trace-1","metadata":null}}"#,

@@ -25,8 +25,8 @@ pub(super) fn set_session_and_user_attrs<S>(
     let empty = MetadataMap::new();
     let metadata = match payload.get("metadata") {
         Some(OtelModelValue::Object(fields)) => fields,
-        Some(OtelModelValue::Null(())) | None => &empty,
-        Some(_) => return,
+        Some(value) if is_worth_writing(value) => return,
+        _ => &empty,
     };
     if let Some(session_id) = metadata
         .get("user_api_key_end_user_id")
