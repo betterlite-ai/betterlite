@@ -11,18 +11,10 @@ pub enum CohereLegacyEmbeddingError {
     Transport(#[from] TransportError),
     #[error("the Cohere embeddings endpoint is not a URL")]
     Url(#[from] url::ParseError),
-    #[error("the {name} header name cannot be carried in a request")]
-    HeaderName {
-        name: String,
-        #[source]
-        source: InvalidHeaderName,
-    },
-    #[error("the {name} header value cannot be carried in a request")]
-    HeaderValue {
-        name: String,
-        #[source]
-        source: InvalidHeaderValue,
-    },
+    #[error("the {0} header name cannot be carried in a request")]
+    HeaderName(String, #[source] InvalidHeaderName),
+    #[error("the {0} header value cannot be carried in a request")]
+    HeaderValue(String, #[source] InvalidHeaderValue),
     #[error("the Cohere embedding JSON could not be read or written")]
     Json(#[from] serde_json::Error),
     #[error("the Cohere embedding reply carries no usable embeddings")]

@@ -62,8 +62,9 @@ impl EmbeddingHooks for Recorder {
             api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
             body: Json::Object(call.body.clone()),
             request: call
-                .request
-                .map(|request| (request.headers.clone(), request.api_base.to_owned())),
+                .headers
+                .zip(call.api_base)
+                .map(|(headers, api_base)| (headers.clone(), api_base.to_owned())),
         });
     }
 

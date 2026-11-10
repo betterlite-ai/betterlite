@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -12,25 +11,20 @@ use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingErro
 use betterlite_openai::cohere_legacy_embedding::execute::{
     ExecuteInput, LegacyEmbeddingTransport, execute,
 };
-use betterlite_openai::cohere_legacy_embedding::plan::{LegacyEmbeddingPlan, PlanInput, plan};
+use betterlite_openai::cohere_legacy_embedding::plan::{PlanInput, plan};
 use betterlite_openai::cohere_legacy_embedding::{EmbeddingHooks, PostCall, PreCall, SdkMode};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_tokenizer::engine::error::EngineError;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-// a supplied client keeps its own timeout, so only the sync plan's client default could be read
-const HELPER_TIMEOUT: Duration = Duration::from_secs(600);
-
 pub(crate) struct Op;
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Call {
-    mode: Mode,
     model: String,
     #[serde(default)]
     input: Vec<String>,
@@ -42,14 +36,6 @@ pub(crate) struct Call {
     api_key: Option<String>,
     runs: Vec<Run>,
 }
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-enum Mode {
-    Sync,
-    Async,
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Run {
@@ -58,12 +44,10 @@ struct Run {
     status: u16,
     body: String,
 }
-
 struct Fixture {
     status: u16,
     body: Vec<u8>,
 }
-
 impl LegacyEmbeddingTransport for Fixture {
     fn send(
         &self,
@@ -76,91 +60,54 @@ impl LegacyEmbeddingTransport for Fixture {
         }))
     }
 }
+impl TextEncoding for Fixture {
+    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
+        Ok(text.chars().count())
+    }
+}
 
 #[derive(Default)]
 struct Recorder {
     records: Vec<Value>,
 }
 
+fn record(phase: &str, input: &[String], api_key: Option<&SecretString>, args: Value) -> Value {
+    json!({
+        "phase": phase,
+        "input": input,
+        "api_key": api_key.map(|key| key.expose_secret().to_owned()),
+        "additional_args": args,
+    })
+}
+
 impl EmbeddingHooks for Recorder {
     fn pre_call(&mut self, call: PreCall<'_>) {
-        let mut record = Map::from_iter([
-            (String::from("phase"), json!("pre_call")),
-            (String::from("input"), json!(call.input)),
-            (
-                String::from("api_key"),
-                json!(call.api_key.map(|key| key.expose_secret().to_owned())),
-            ),
-            (String::from("body"), json!(call.body)),
-        ]);
-        if let Some(request) = call.request {
-            record.insert(String::from("headers"), json!(request.headers));
-            record.insert(String::from("api_base"), json!(request.api_base));
-        }
-        self.records.push(Value::Object(record));
+        let args = json!({
+            "complete_input_dict": call.body,
+            "headers": call.headers,
+            "api_base": call.api_base,
+        });
+        self.records
+            .push(record("pre_call", call.input, call.api_key, args));
     }
 
     fn post_call(&mut self, call: PostCall<'_>) {
-        self.records.push(json!({
-            "phase": "post_call",
-            "input": call.input,
-            "api_key": call.api_key.map(|key| key.expose_secret().to_owned()),
-            "body": call.body,
-            "original_response": call.original_response,
-        }));
-    }
-}
-
-#[derive(Default)]
-struct Encoder {
-    encoded: Mutex<Vec<String>>,
-}
-
-impl Encoder {
-    fn recorded(&self) -> Vec<String> {
-        match self.encoded.lock() {
-            Ok(encoded) => encoded.clone(),
-            Err(_poisoned) => Vec::new(),
+        let args = json!({"complete_input_dict": call.body});
+        let mut value = record("post_call", call.input, call.api_key, args);
+        if let Value::Object(fields) = &mut value {
+            fields.insert(
+                String::from("original_response"),
+                json!(call.original_response),
+            );
         }
+        self.records.push(value);
     }
-}
-
-impl TextEncoding for Encoder {
-    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
-        let Ok(mut encoded) = self.encoded.lock() else {
-            return Err(EngineError::PoolClosed);
-        };
-        encoded.push(text.to_owned());
-        Ok(text.chars().count())
-    }
-}
-
-const fn mode(mode: Mode) -> SdkMode {
-    match mode {
-        Mode::Sync => SdkMode::Sync,
-        Mode::Async => SdkMode::Async,
-    }
-}
-
-fn build(input: &Call, run: &Run) -> LegacyEmbeddingPlan {
-    let key = input.api_key.clone().map(SecretString::from);
-    plan(&PlanInput {
-        mode: mode(input.mode),
-        model: &input.model,
-        input: &input.input,
-        optional_params: &input.optional_params,
-        supplied_data: run.data.as_ref(),
-        complete_api_base: None,
-        api_key: key.as_ref(),
-        headers: &input.headers,
-        timeout: HELPER_TIMEOUT,
-    })
 }
 
 fn outcome(value: Result<LegacyEmbeddingResponse, CohereLegacyEmbeddingError>) -> Value {
     match value {
         Ok(response) => {
-            let usage = response.usage;
+            let usage = &response.usage;
             json!({
                 "ok": true,
                 "value": {
@@ -180,43 +127,34 @@ fn outcome(value: Result<LegacyEmbeddingResponse, CohereLegacyEmbeddingError>) -
 }
 
 fn scenario(runtime: &Runtime, input: &Call, run: &Run) -> Value {
-    let plan = build(input, run);
+    let key = input.api_key.clone().map(SecretString::from);
+    let plan = plan(&PlanInput {
+        mode: SdkMode::Async,
+        model: &input.model,
+        input: &input.input,
+        optional_params: &input.optional_params,
+        supplied_data: run.data.as_ref(),
+        complete_api_base: None,
+        api_key: key.as_ref(),
+        headers: &input.headers,
+        timeout: Duration::from_secs(600),
+    });
     let fixture = Fixture {
         status: run.status,
         body: run.body.as_bytes().to_vec(),
     };
-    let encoder = Encoder::default();
     let mut recorder = Recorder::default();
-    let key = input.api_key.clone().map(SecretString::from);
     let value = runtime.block_on(execute(
         &fixture,
         ExecuteInput {
             plan: &plan,
             input: &input.input,
             api_key: key.as_ref(),
-            encoding: &encoder,
+            encoding: &fixture,
         },
         &mut recorder,
     ));
-    json!({
-        "url": plan.url,
-        "headers": plan.headers,
-        "data": plan.data,
-        "hooks": recorder.records,
-        "outcome": outcome(value),
-        "encoded": encoder.recorded(),
-    })
-}
-
-fn failure(error: &std::io::Error) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("CohereLegacyEmbedError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+    json!({"hooks": recorder.records, "outcome": outcome(value)})
 }
 
 impl crate::helpers::Helper for Op {
@@ -225,7 +163,16 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
-            .map_err(|error| failure(&error))?;
+            .map_err(|error| {
+                Box::new(crate::helpers::HelperError {
+                    class: String::from("CohereLegacyEmbedError"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?;
         let runs: Vec<Value> = input
             .runs
             .iter()

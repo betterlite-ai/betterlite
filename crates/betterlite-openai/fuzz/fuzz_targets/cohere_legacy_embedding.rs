@@ -10,13 +10,11 @@ use betterlite_tokenizer::engine::error::EngineError;
 use libfuzzer_sys::fuzz_target;
 
 struct Fixture;
-
 impl TextEncoding for Fixture {
     fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
         Ok(text.len())
     }
 }
-
 impl EmbeddingHooks for Fixture {
     fn pre_call(&mut self, _call: PreCall<'_>) {}
 
@@ -25,15 +23,14 @@ impl EmbeddingHooks for Fixture {
 
 fuzz_target!(|bytes: &[u8]| {
     let input = [String::from("hello")];
-    let mut fixture = Fixture;
-    let encoding = Fixture;
+    let mut hooks = Fixture;
     let reply = DecodeInput {
         body: bytes,
         model: "m",
         api_key: None,
         request_data: &Object::new(),
         input: &input,
-        encoding: &encoding,
+        encoding: &Fixture,
     };
-    let _unused = decode_cohere_legacy_embedding(reply, &mut fixture);
+    let _unused = decode_cohere_legacy_embedding(reply, &mut hooks);
 });

@@ -13,7 +13,7 @@ use url::Url;
 use super::decode::{DecodeInput, LegacyEmbeddingResponse, decode_cohere_legacy_embedding};
 use super::error::CohereLegacyEmbeddingError;
 use super::plan::LegacyEmbeddingPlan;
-use super::{EmbeddingHooks, PostCall, PreCall, RequestDetails, SdkMode};
+use super::{EmbeddingHooks, PostCall, PreCall, SdkMode};
 use crate::cohere_embedding::TextEncoding;
 use crate::cohere_streams::cohere_error;
 
@@ -24,7 +24,6 @@ pub trait LegacyEmbeddingTransport: Sync {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
 }
-
 impl LegacyEmbeddingTransport for ProxiedClient {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         Self::send_buffered(self, request).await
@@ -46,7 +45,14 @@ pub async fn execute<T>(
 where
     T: LegacyEmbeddingTransport,
 {
-    hooks.pre_call(pre_call(call.plan, call.input, call.api_key));
+    let asynchronous = call.plan.mode == SdkMode::Async;
+    hooks.pre_call(PreCall {
+        input: call.input,
+        api_key: call.api_key,
+        body: &call.plan.data,
+        headers: asynchronous.then_some(&call.plan.headers),
+        api_base: asynchronous.then_some(call.plan.url.as_str()),
+    });
     let request = match outbound(call.plan) {
         Ok(request) => request,
         Err(error) => {
@@ -67,25 +73,6 @@ where
         }
     };
     finish(&reply, &call, hooks)
-}
-
-fn pre_call<'call>(
-    plan: &'call LegacyEmbeddingPlan,
-    input: &'call [String],
-    api_key: Option<&'call SecretString>,
-) -> PreCall<'call> {
-    PreCall {
-        input,
-        api_key,
-        body: &plan.data,
-        request: match plan.mode {
-            SdkMode::Sync => None,
-            SdkMode::Async => Some(RequestDetails {
-                headers: &plan.headers,
-                api_base: &plan.url,
-            }),
-        },
-    }
 }
 
 // httpx's raise_for_status leaves the 3xx range alone, so only 4xx and 5xx are failures
@@ -132,23 +119,14 @@ fn fail(
     }
     error
 }
-
 fn outbound(plan: &LegacyEmbeddingPlan) -> Result<OutboundRequest, CohereLegacyEmbeddingError> {
     let mut headers = HeaderMap::new();
     for (name, value) in &plan.headers {
-        let header_name = HeaderName::try_from(name.as_str()).map_err(|source| {
-            CohereLegacyEmbeddingError::HeaderName {
-                name: name.clone(),
-                source,
-            }
-        })?;
-        let header_value = HeaderValue::try_from(value.as_str()).map_err(|source| {
-            CohereLegacyEmbeddingError::HeaderValue {
-                name: name.clone(),
-                source,
-            }
-        })?;
-        headers.insert(header_name, header_value);
+        let key = HeaderName::try_from(name.as_str())
+            .map_err(|source| CohereLegacyEmbeddingError::HeaderName(name.clone(), source))?;
+        let held = HeaderValue::try_from(value.as_str())
+            .map_err(|source| CohereLegacyEmbeddingError::HeaderValue(name.clone(), source))?;
+        headers.insert(key, held);
     }
     Ok(OutboundRequest {
         method: Method::POST,

@@ -34,7 +34,6 @@ pub struct DecodeInput<'call> {
     pub input: &'call [String],
     pub encoding: &'call dyn TextEncoding,
 }
-
 // _transform_response: the reply is parsed before post_call, so a malformed body logs nothing
 pub fn decode_cohere_legacy_embedding(
     reply: DecodeInput<'_>,
@@ -49,7 +48,6 @@ pub fn decode_cohere_legacy_embedding(
     });
     populate_embedding_response(&decoded, reply.model, reply.input, reply.encoding)
 }
-
 // split out so a caller that already logged the reply fills a response without a second post_call
 pub fn populate_embedding_response(
     decoded: &Json,
@@ -63,35 +61,20 @@ pub fn populate_embedding_response(
     let embeddings = fields
         .get("embeddings")
         .ok_or(CohereLegacyEmbeddingError::Embeddings)?;
-    let mut data = Vec::new();
-    match embeddings {
-        Json::Object(groups) => {
-            for (name, group) in groups {
-                let Json::List(rows) = group else {
-                    return Err(CohereLegacyEmbeddingError::Embeddings);
-                };
-                data.extend(
-                    rows.iter()
-                        .enumerate()
-                        .map(|(index, embedding)| row(index, embedding, Some(name))),
-                );
-            }
+    let data = match embeddings {
+        Json::Object(groups) => grouped_rows(groups)?,
+        Json::List(rows)
+            if fields.get("response_type").and_then(Json::as_str) != Some("embeddings_by_type") =>
+        {
+            rows.iter()
+                .enumerate()
+                .map(|(index, embedding)| row(index, embedding, None))
+                .collect()
         }
-        Json::List(rows) => {
-            // a reply that says embeddings_by_type but carries a list has no type to label
-            if fields.get("response_type").and_then(Json::as_str) == Some("embeddings_by_type") {
-                return Err(CohereLegacyEmbeddingError::Embeddings);
-            }
-            data.extend(
-                rows.iter()
-                    .enumerate()
-                    .map(|(index, embedding)| row(index, embedding, None)),
-            );
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
+        Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
             return Err(CohereLegacyEmbeddingError::Embeddings);
         }
-    }
+    };
     Ok(LegacyEmbeddingResponse {
         object: String::from("list"),
         data,
@@ -99,8 +82,22 @@ pub fn populate_embedding_response(
         usage: calculate_usage(input, encoding, fields.get("meta"))?,
     })
 }
-
 // every embedding type numbers its own rows from zero and adds its name as the row type
+fn grouped_rows(groups: &Object) -> Result<Vec<LegacyEmbeddingRecord>, CohereLegacyEmbeddingError> {
+    let mut records = Vec::new();
+    for (name, group) in groups {
+        let Json::List(rows) = group else {
+            return Err(CohereLegacyEmbeddingError::Embeddings);
+        };
+        records.extend(
+            rows.iter()
+                .enumerate()
+                .map(|(index, embedding)| row(index, embedding, Some(name))),
+        );
+    }
+    Ok(records)
+}
+
 fn row(index: usize, embedding: &Json, kind: Option<&String>) -> LegacyEmbeddingRecord {
     LegacyEmbeddingRecord {
         object: String::from("embedding"),
