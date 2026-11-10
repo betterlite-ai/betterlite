@@ -5,12 +5,11 @@ use serde_json::{Map, Value};
 use super::{RecordedWrite, failure};
 
 pub(crate) fn object_json(object: &KeyObject) -> Value {
-    Value::Object(
-        object
-            .iter()
-            .map(|(name, value)| (name.clone(), key_value_json(value)))
-            .collect::<Map<String, Value>>(),
-    )
+    let mut fields = Map::new();
+    for (name, value) in object {
+        fields.insert(name.clone(), key_value_json(value));
+    }
+    Value::Object(fields)
 }
 
 pub(crate) fn key_value_json(value: &KeyValue) -> Value {

@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
@@ -10,7 +9,7 @@ use thiserror::Error;
 
 use super::backend::EnvelopeBackend;
 use super::decode::decode_cached;
-use super::limits::{async_max_age, sync_max_age, write_ttl};
+use super::limits::{async_max_age, sync_max_age};
 use super::lookup::{CacheLookup, update_metadata};
 use super::request::EnvelopeRequest;
 use crate::backend::BackendError;
@@ -19,7 +18,12 @@ use crate::cache_key::error::CacheKeyError;
 use crate::cache_key::settings::CacheKeySettings;
 use crate::types::cache_type::LiteLlmCacheType;
 
+mod write;
+
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
+// A per-call backend that replaces the facade's own one, LiteLLM's dynamic_cache_object.
+pub type Dynamic<'backend> = Option<&'backend dyn EnvelopeBackend>;
+pub type CachedResponse = Option<CacheValue>;
 
 // The Cache fields the envelope functions read: the default ttl and the flush size that selects batched writes.
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -43,6 +47,12 @@ pub enum WriteError {
     },
 }
 
+struct PreparedRead {
+    key: String,
+    lookup: CacheLookup,
+    max_age: Option<i64>,
+}
+
 pub struct ResponseCache<L: LoggerSink, C: ConsoleSink> {
     pub backend: Arc<dyn EnvelopeBackend>,
     pub key_settings: CacheKeySettings,
@@ -57,100 +67,50 @@ where
     C: ConsoleSink + Send + Sync,
 {
     #[must_use]
-    pub fn get_cache(
-        &self,
-        dynamic: Option<&dyn EnvelopeBackend>,
-        request: &mut EnvelopeRequest,
-    ) -> Option<CacheValue> {
-        if !should_use_cache(&self.key_settings, request.key.cache_control.as_ref()) {
-            return None;
-        }
-        let key = match self.resolve_key(request) {
-            Ok(key) => key,
-            Err(error) => {
-                self.log_exception(&error);
-                return None;
-            }
-        };
-        let mut lookup = CacheLookup::project(&request.key);
-        let cached = match Self::lookup(dynamic, self.backend.as_ref(), &key, &mut lookup) {
-            Ok(cached) => cached,
-            Err(error) => {
-                self.log_exception(&error);
-                return None;
-            }
-        };
-        update_metadata(&mut request.key, &lookup);
-        match decode_cached(
-            cached.as_ref(),
-            sync_max_age(&request.control),
-            (self.clock)(),
-        ) {
-            Ok(response) => response,
-            Err(error) => {
-                self.log_exception(&error);
-                None
-            }
-        }
+    pub fn get_cache(&self, dynamic: Dynamic<'_>, request: &mut EnvelopeRequest) -> CachedResponse {
+        let mut read = self.start_read(request, sync_max_age(&request.control))?;
+        let backend = dynamic.unwrap_or_else(|| self.backend.as_ref());
+        let outcome = backend.get_cache(&read.key, &mut read.lookup);
+        self.complete_read(request, &read, outcome)
     }
 
     #[must_use]
     pub async fn async_get_cache(
         &self,
-        dynamic: Option<&dyn EnvelopeBackend>,
+        dynamic: Dynamic<'_>,
         request: &mut EnvelopeRequest,
-    ) -> Option<CacheValue> {
-        if !should_use_cache(&self.key_settings, request.key.cache_control.as_ref()) {
-            return None;
-        }
-        let key = match self.resolve_key(request) {
-            Ok(key) => key,
-            Err(error) => {
-                self.log_exception(&error);
-                return None;
-            }
-        };
-        let mut lookup = CacheLookup::project(&request.key);
-        let cached = match self.async_lookup(dynamic, &key, &mut lookup).await {
-            Ok(cached) => cached,
-            Err(error) => {
-                self.log_exception(&error);
-                return None;
-            }
-        };
-        update_metadata(&mut request.key, &lookup);
-        match decode_cached(
-            cached.as_ref(),
-            async_max_age(&request.control),
-            (self.clock)(),
-        ) {
-            Ok(response) => response,
-            Err(error) => {
-                self.log_exception(&error);
-                None
-            }
-        }
+    ) -> CachedResponse {
+        let max_age = async_max_age(&request.control);
+        let mut read = self.start_read(request, max_age)?;
+        let outcome = self.async_fetch(dynamic, &read.key, &mut read.lookup).await;
+        self.complete_read(request, &read, outcome)
     }
 
     pub fn add_cache(&self, request: &mut EnvelopeRequest, result: &CacheValue) {
-        if !should_use_cache(&self.key_settings, request.key.cache_control.as_ref()) {
-            return;
-        }
-        if let Err(error) = self.write(request, result) {
+        if should_use_cache(&self.key_settings, request.key.cache_control.as_ref())
+            && let Err(error) = self.set(request, result)
+        {
             self.log_add_failure(&error);
         }
     }
 
     pub async fn async_add_cache(
         &self,
-        dynamic: Option<&dyn EnvelopeBackend>,
+        dynamic: Dynamic<'_>,
         request: &mut EnvelopeRequest,
         result: &CacheValue,
     ) {
         if !should_use_cache(&self.key_settings, request.key.cache_control.as_ref()) {
             return;
         }
-        if let Err(error) = self.async_write(dynamic, request, result).await {
+        let outcome = if self.key_settings.cache_type == LiteLlmCacheType::Redis
+            && self.settings.redis_flush_size.is_some()
+        {
+            self.batch_cache_write(request, result).await
+        } else {
+            write::set_through(self, dynamic, request, result).await
+        };
+        if let Err(error) = outcome {
             self.log_add_failure(&error);
         }
     }
@@ -160,12 +120,75 @@ where
         request: &mut EnvelopeRequest,
         result: &CacheValue,
     ) -> Result<(), WriteError> {
-        let key = self.resolve_key(request)?;
-        let envelope = self.envelope(result);
-        let ttl = write_ttl(self.settings.ttl, &request.control)
-            .and_then(|seconds| serde_json::Number::from(seconds).as_f64());
-        self.backend.batch_cache_write(&key, envelope, ttl).await?;
+        let prepared = write::prepare(self, request, result)?;
+        self.backend
+            .batch_cache_write(&prepared.key, prepared.envelope, prepared.ttl)
+            .await?;
         Ok(())
+    }
+
+    fn set(&self, request: &mut EnvelopeRequest, result: &CacheValue) -> Result<(), WriteError> {
+        let prepared = write::prepare(self, request, result)?;
+        self.backend
+            .set_cache(&prepared.key, prepared.envelope, prepared.ttl)?;
+        Ok(())
+    }
+
+    fn start_read(
+        &self,
+        request: &mut EnvelopeRequest,
+        max_age: Option<i64>,
+    ) -> Option<PreparedRead> {
+        if !should_use_cache(&self.key_settings, request.key.cache_control.as_ref()) {
+            return None;
+        }
+        let key = match self.resolve_key(request) {
+            Ok(key) => key,
+            Err(error) => {
+                self.log_exception(&error);
+                return None;
+            }
+        };
+        Some(PreparedRead {
+            key,
+            lookup: CacheLookup::project(&request.key),
+            max_age,
+        })
+    }
+
+    fn complete_read(
+        &self,
+        request: &mut EnvelopeRequest,
+        read: &PreparedRead,
+        outcome: Result<Option<CacheValue>, BackendError>,
+    ) -> CachedResponse {
+        let cached = match outcome {
+            Ok(cached) => cached,
+            Err(error) => {
+                self.log_exception(&error);
+                return None;
+            }
+        };
+        update_metadata(&mut request.key, &read.lookup);
+        match decode_cached(cached.as_ref(), read.max_age, (self.clock)()) {
+            Ok(response) => response,
+            Err(error) => {
+                self.log_exception(&error);
+                None
+            }
+        }
+    }
+
+    async fn async_fetch(
+        &self,
+        dynamic: Dynamic<'_>,
+        key: &str,
+        lookup: &mut CacheLookup,
+    ) -> Result<Option<CacheValue>, BackendError> {
+        dynamic
+            .unwrap_or_else(|| self.backend.as_ref())
+            .async_get_cache(key, lookup)
+            .await
     }
 
     fn resolve_key(&self, request: &mut EnvelopeRequest) -> Result<String, CacheKeyError> {
@@ -173,71 +196,6 @@ where
             Some(key) => Ok(key),
             None => get_cache_key(&mut request.key, &self.key_settings, &self.hooks),
         }
-    }
-
-    fn lookup(
-        dynamic: Option<&dyn EnvelopeBackend>,
-        backend: &dyn EnvelopeBackend,
-        key: &str,
-        lookup: &mut CacheLookup,
-    ) -> Result<Option<CacheValue>, BackendError> {
-        match dynamic {
-            Some(chosen) => chosen.get_cache(key, lookup),
-            None => backend.get_cache(key, lookup),
-        }
-    }
-
-    async fn async_lookup(
-        &self,
-        dynamic: Option<&dyn EnvelopeBackend>,
-        key: &str,
-        lookup: &mut CacheLookup,
-    ) -> Result<Option<CacheValue>, BackendError> {
-        match dynamic {
-            Some(chosen) => chosen.async_get_cache(key, lookup).await,
-            None => self.backend.async_get_cache(key, lookup).await,
-        }
-    }
-
-    fn write(&self, request: &mut EnvelopeRequest, result: &CacheValue) -> Result<(), WriteError> {
-        let key = self.resolve_key(request)?;
-        let envelope = self.envelope(result);
-        let ttl = write_ttl(self.settings.ttl, &request.control)
-            .and_then(|seconds| serde_json::Number::from(seconds).as_f64());
-        self.backend.set_cache(&key, envelope, ttl)?;
-        Ok(())
-    }
-
-    async fn async_write(
-        &self,
-        dynamic: Option<&dyn EnvelopeBackend>,
-        request: &mut EnvelopeRequest,
-        result: &CacheValue,
-    ) -> Result<(), WriteError> {
-        if self.key_settings.cache_type == LiteLlmCacheType::Redis
-            && self.settings.redis_flush_size.is_some()
-        {
-            return self.batch_cache_write(request, result).await;
-        }
-        let key = self.resolve_key(request)?;
-        let envelope = self.envelope(result);
-        let ttl = write_ttl(self.settings.ttl, &request.control)
-            .and_then(|seconds| serde_json::Number::from(seconds).as_f64());
-        match dynamic {
-            Some(chosen) => chosen.async_set_cache(&key, envelope, ttl).await?,
-            None => self.backend.async_set_cache(&key, envelope, ttl).await?,
-        }
-        Ok(())
-    }
-
-    fn envelope(&self, result: &CacheValue) -> CacheValue {
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            super::TIMESTAMP_FIELD.to_owned(),
-            CacheValue::Float((self.clock)()),
-        );
-        fields.insert(super::RESPONSE_FIELD.to_owned(), result.clone());
-        CacheValue::Object(fields)
     }
 
     fn log_exception<Failure>(&self, failure: &Failure)

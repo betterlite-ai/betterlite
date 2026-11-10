@@ -84,21 +84,23 @@ pub(crate) fn hooks() -> Hooks {
 }
 
 pub(crate) fn messages(hooks: &Hooks) -> Vec<String> {
-    hooks
+    let records = hooks
         .logger
         .records
         .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .filter_map(|payload| match payload {
-            Payload::String(text) => Some(text.clone()),
-            Payload::Null
-            | Payload::Bool(_)
-            | Payload::Number(_)
-            | Payload::Array(_)
-            | Payload::Object(_) => None,
-        })
-        .collect()
+        .unwrap_or_else(PoisonError::into_inner);
+    records.iter().filter_map(payload_text).collect()
+}
+
+fn payload_text(payload: &Payload) -> Option<String> {
+    match payload {
+        Payload::String(text) => Some(text.clone()),
+        Payload::Null
+        | Payload::Bool(_)
+        | Payload::Number(_)
+        | Payload::Array(_)
+        | Payload::Object(_) => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
