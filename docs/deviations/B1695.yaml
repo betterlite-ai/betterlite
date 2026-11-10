@@ -1,0 +1,21 @@
+task: B1695
+deviations:
+  - what: >-
+      At 30000 characters and above the accounting runs on a bounded worker task instead of a worker
+      thread, where LiteLLM hands it to asyncio.to_thread.
+    why: >-
+      betterlite's counting is asynchronous and every tokenizer call already runs on the blocking
+      facility the tokenizer service was built with, so blocking a thread to drive it would gain
+      nothing. The request's own task never blocks and the work is bounded by TOKEN_COUNTER_MAX_CONCURRENT_COUNTS.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/input_tokens.py#L60-L66
+  - what: >-
+      A message whose content list holds image, document, file or Anthropic tool blocks is counted
+      through LiteLLM's ValueError fallback as the raw text of the messages value, or left out when
+      that fallback fails, where LiteLLM prices those blocks as media tokens. A remote image that
+      needs exact dimensions is treated the same way.
+    why: >-
+      B196's message counter reports every non-text content block as unsupported and its Texter is
+      not reachable from betterlite-tokenizer::reservation, so B197's media accounting cannot be
+      composed into the message counter from this task's scope. A caller that needs the media count
+      keeps it out of the messages field, where a text request counts identically on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L869-L951

@@ -1,0 +1,19 @@
+kind: helper
+name: per-item-details-multi-item-distribution
+call:
+  b4298:
+    get_per_item_prompt_tokens_details:
+      usage:
+        prompt_tokens: 10
+        prompt_tokens_details:
+          cached_tokens: 7
+          image_tokens: 2
+          ratio: 1.5
+          note: x
+          video_length_seconds: 10
+          cache_creation_tokens: 5
+      data_count: 3
+      idx: 0
+env: {}
+compare:
+  ignore: []
