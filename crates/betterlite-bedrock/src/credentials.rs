@@ -39,7 +39,12 @@ impl AwsCredentialResolver<'_> {
         settings: &AwsSettings,
         region: Option<&str>,
     ) -> Result<Credentials, CredentialError> {
-        let effective_region = region.or(settings.region_name.as_deref());
+        let effective_region = region.or_else(|| {
+            self.native
+                .environment
+                .get("AWS_REGION_NAME")
+                .map(String::as_str)
+        });
         let resolved = sources::resolve(self, settings, effective_region, None).await?;
         Ok(resolved)
     }

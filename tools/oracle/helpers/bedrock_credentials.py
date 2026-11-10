@@ -17,6 +17,11 @@ Json: TypeAlias = JsonValue
 Params: TypeAlias = dict[str, Json]
 
 DEFAULT_NOW = 1767225600
+CASE_KEYS: dict[str, str] = {
+    "AssumeRole": "assume_role",
+    "AssumeRoleWithWebIdentity": "assume_role_with_web_identity",
+    "GetCallerIdentity": "get_caller_identity",
+}
 CODES: dict[str, str] = {
     (
         "AssumeRole failed for %s (%s). Caller is already running as this role; "
@@ -107,7 +112,7 @@ class FakeSts:
             },
         )
         self.calls.append(call)
-        queue = self.answers.get(action, [])
+        queue = self.answers.get(CASE_KEYS[action], [])
         if not queue:
             raise RuntimeError(f"the fixture has no answer for {action}")
         return self.reply(action, queue.pop(0))
@@ -125,7 +130,7 @@ class FakeSts:
             identity = object_value(value["identity"], "identity")
             return {"Arn": string_value(identity.get("arn"), "arn"), "UserId": "fixture"}
         credentials = object_value(value.get("credentials"), "credentials")
-        return {
+        reply: dict[str, object] = {
             "Credentials": {
                 "AccessKeyId": string_value(credentials.get("access_key_id"), "access_key_id"),
                 "SecretAccessKey": string_value(
@@ -137,6 +142,10 @@ class FakeSts:
                 ),
             }
         }
+        packed = credentials.get("packed_policy_size")
+        if packed is not None:
+            reply["PackedPolicySize"] = packed
+        return reply
 
 
 class FixedClock:
@@ -221,6 +230,8 @@ def harness(case: Params) -> Generator[FakeSts, None, None]:
             patch.dict(os.environ, mapped, clear=True),
             patch("boto3.client", side_effect=sts.client),
             patch.object(base_aws_llm, "datetime", FixedClock(now)),
+            patch.object(base_aws_llm, "get_secret", return_value=case.get("resolved_token")),
+            patch.object(base_aws_llm, "BEDROCK_MAX_POLICY_SIZE", 75),
             patch.object(base_aws_llm.verbose_logger, "warning", new=sts.warnings.warning),
             patch.object(base_aws_llm.verbose_logger, "error", new=sts.warnings.error),
         ):

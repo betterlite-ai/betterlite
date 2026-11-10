@@ -118,8 +118,12 @@ fn credentials_xml(reply: &Reply) -> String {
     let Reply::Credentials(credentials) = reply else {
         return String::new();
     };
+    let packed = credentials.packed_policy_size.map_or_else(
+        String::new,
+        |size| format!("<PackedPolicySize>{size}</PackedPolicySize>"),
+    );
     format!(
-        "<Credentials><AccessKeyId>{}</AccessKeyId><SecretAccessKey>{}</SecretAccessKey><SessionToken>{}</SessionToken><Expiration>{}</Expiration></Credentials>",
+        "<Credentials><AccessKeyId>{}</AccessKeyId><SecretAccessKey>{}</SecretAccessKey><SessionToken>{}</SessionToken><Expiration>{}</Expiration></Credentials>{packed}",
         credentials.access_key_id,
         credentials.secret_access_key,
         credentials.session_token,

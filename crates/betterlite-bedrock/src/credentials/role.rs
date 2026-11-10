@@ -43,9 +43,9 @@ pub struct RoleCredentials {
 pub(super) async fn resolve_role_credentials(
     resolver: &AwsCredentialResolver<'_>,
     settings: &AwsSettings,
+    role_name: &str,
     tags: Option<&[AwsSessionTag]>,
 ) -> Result<ResolvedCredentials, CredentialError> {
-    let role_name = settings.role_name.as_deref().unwrap_or_default();
     if is_already_running_as_role(role_name, resolver.native).await {
         tracing::debug!("Already running as target role {role_name}, using ambient credentials");
         let credentials = resolver.native.load(&AwsSettings::default()).await?;
@@ -59,6 +59,7 @@ pub(super) async fn resolve_role_credentials(
     let auth = RoleAuth {
         role_name,
         session_name: &session_name,
+
         access_key_id: settings.access_key_id.as_ref(),
         secret_access_key: settings.secret_access_key.as_ref(),
         session_token: settings.session_token.as_ref(),

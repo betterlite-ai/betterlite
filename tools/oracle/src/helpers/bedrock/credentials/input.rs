@@ -68,4 +68,5 @@ pub(crate) struct ReplyCredentials {
     pub secret_access_key: String,
     pub session_token: String,
     pub expiration: String,
+    pub packed_policy_size: Option<i32>,
 }

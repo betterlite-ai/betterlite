@@ -26,8 +26,8 @@ call:
             aws_web_identity_token: web-token-ref
       answers:
         assume_role_with_web_identity:
-          - credentials: {access_key_id: ASIAWEB, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z'}
-          - credentials: {access_key_id: ASIAEMPTY, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z'}
+          - credentials: {access_key_id: ASIAWEB, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z', packed_policy_size: 10}
+          - credentials: {access_key_id: ASIAEMPTY, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z', packed_policy_size: 10}
         get_caller_identity:
           - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
         assume_role:

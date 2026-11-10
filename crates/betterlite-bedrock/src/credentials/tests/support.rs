@@ -165,7 +165,7 @@ fn body(reply: &Reply, action: &str) -> String {
         Reply::Credentials { .. } => {
             if action == "AssumeRoleWithWebIdentity" {
                 format!(
-                    "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
+                    "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{}<PackedPolicySize>10</PackedPolicySize></AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>",
                     credentials_xml(reply)
                 )
             } else {

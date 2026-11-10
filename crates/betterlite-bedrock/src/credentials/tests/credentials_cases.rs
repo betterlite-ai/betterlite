@@ -338,7 +338,8 @@ fn incomplete_s3_pair_resolves_normally() {
                 .resolve_s3_credentials(&s3, &settings, None),
         )
         .unwrap();
-    assert_eq!(resolved.access_key_id.expose_secret(), "static");
+    assert_eq!(resolved.access_key_id.expose_secret(), "ambient");
+    assert_eq!(resolved.secret_access_key.expose_secret(), "ambient-secret");
     assert_eq!(transport.record.count(), 0);
 }
 
