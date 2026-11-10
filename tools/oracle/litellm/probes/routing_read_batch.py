@@ -186,15 +186,15 @@ class CooldownView:
 class Scenario:
     def __init__(self, spec: "RoutingReadBatch") -> None:
         self.spec = spec
-        expiry = millis_to_seconds(
+        expiry = (
             spec.read_expiry_millis
             if spec.read_expiry_millis is not None
             else DEFAULT_READ_EXPIRY_MILLIS
-        )
+        ) / 1000
         backfill = (
             None
             if spec.backfill_ttl_millis is None
-            else millis_to_seconds(spec.backfill_ttl_millis)
+            else spec.backfill_ttl_millis / 1000
         )
         self.store = FakeStore(
             {key: json.dumps(value) for key, value in spec.remote.items()}
@@ -227,7 +227,7 @@ class Scenario:
     async def run_step(self, step: Step) -> StepOutput:
         if step.request >= len(self.requests):
             raise ProbeError("invalid_request", f"unknown request {step.request}")
-        with patch("time.time", return_value=millis_to_seconds(step.now_millis)):
+        with patch("time.time", return_value=step.now_millis / 1000):
             token = _active_request_batches.set(self.requests[step.request])
             try:
                 result = await self.apply_step(step)
@@ -264,9 +264,6 @@ class Scenario:
             _ = await batch.async_get_cooldown_deployments(self.router, [], None)  # pyright: ignore[reportUnknownMemberType]
         return (True, self.view.last_results)
 
-
-def millis_to_seconds(millis: int) -> float:
-    return millis / 1000
 
 
 class RoutingReadBatch(Operation):

@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_router::routing_read_batch::local::{LocalTier, ReadTierSettings, TierState};
+use betterlite_router::routing_read_batch::local::{
+    DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_MAX_LAST_READS, DEFAULT_MAX_LOCAL_ENTRIES,
+    DEFAULT_READ_EXPIRY_SECONDS, LocalTier, ReadTierSettings, TierState,
+};
 use betterlite_router::routing_read_batch::store::{
     BatchRead, BatchReadFuture, BatchReadStore, ReadWarning,
 };
@@ -15,8 +18,6 @@ use rust_decimal::prelude::ToPrimitive as _;
 use tokio::runtime::Builder;
 
 use super::{Input, Output, ScenarioError, Step, StepKind, StepOutput};
-
-const DEFAULT_READ_EXPIRY_MILLIS: u64 = 10_000;
 
 pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
     let runtime = Builder::new_current_thread()
@@ -129,7 +130,10 @@ struct Scenario {
 
 impl Scenario {
     fn new(input: &Input) -> Result<Self, ScenarioError> {
-        let cooldown_keys = parse_keys(&input.cooldown.keys)?;
+        let mut cooldown_keys = Vec::with_capacity(input.cooldown.keys.len());
+        for text in &input.cooldown.keys {
+            cooldown_keys.push(parse_key(text)?);
+        }
         let clock = Clock {
             seconds: Arc::new(Mutex::new(0.0_f64)),
         };
@@ -224,16 +228,18 @@ impl Scenario {
 
 fn settings(input: &Input) -> Result<ReadTierSettings, ScenarioError> {
     let backfill_ttl_seconds = match input.backfill_ttl_millis {
-        Some(millis) => Some(seconds(millis)?),
-        None => None,
+        Some(millis) => seconds(millis)?,
+        None => DEFAULT_LOCAL_TTL_SECONDS,
+    };
+    let read_expiry_seconds = match input.read_expiry_millis {
+        Some(millis) => seconds(millis)?,
+        None => DEFAULT_READ_EXPIRY_SECONDS,
     };
     Ok(ReadTierSettings {
         backfill_ttl_seconds,
-        read_expiry_seconds: seconds(
-            input
-                .read_expiry_millis
-                .unwrap_or(DEFAULT_READ_EXPIRY_MILLIS),
-        )?,
+        read_expiry_seconds,
+        max_entries: DEFAULT_MAX_LOCAL_ENTRIES,
+        max_last_reads: DEFAULT_MAX_LAST_READS,
     })
 }
 
@@ -256,14 +262,6 @@ fn seed_tier(
         tier.apply(slice::from_ref(&key), &[None], &fetched);
     }
     Ok(())
-}
-
-fn parse_keys(raw: &[String]) -> Result<Vec<RouteKey>, ScenarioError> {
-    let mut keys = Vec::with_capacity(raw.len());
-    for text in raw {
-        keys.push(parse_key(text)?);
-    }
-    Ok(keys)
 }
 
 fn parse_key(raw: &str) -> Result<RouteKey, ScenarioError> {

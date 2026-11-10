@@ -9,7 +9,8 @@ use super::support::{
 };
 use crate::routing_read_batch::store::ReadWarning;
 use crate::routing_read_batch::{
-    PrefetchedUsage, RequestReads, RoutingPrefetch, RoutingReadBatch, RoutingReadSession,
+    PrefetchedUsage, ReadTiers, RequestReads, RoutingPrefetch, RoutingReadBatch,
+    RoutingReadResults, RoutingReadSession, UsageReadKeys,
 };
 use crate::routing_value_store::RouteValue;
 
@@ -28,6 +29,10 @@ pub(crate) async fn run(name: &str) {
             read_falls_back_when_the_prefetch_is_short().await;
         }
         "backfill_keeps_local_values" => backfill_keeps_local_values().await,
+        "read_merges_the_usage_counters" => read_merges_the_usage_counters().await,
+        "the_prefetched_usage_serves_the_next_read" => {
+            the_prefetched_usage_serves_the_next_read().await;
+        }
         "read_without_a_selector_keeps_no_prefetched_usage" => {
             read_without_a_selector_keeps_no_prefetched_usage().await;
         }
@@ -255,6 +260,89 @@ async fn backfill_keeps_local_values() {
         vec![Some(counter(1)), Some(counter(7))]
     );
     assert_eq!(store.reads(), vec![vec![second]]);
+}
+
+async fn read_merges_the_usage_counters() {
+    let clock = TestClock::new();
+    let cooldown_key = key("deployment:a:cooldown");
+    let cooldown = tier(&clock, None, 10.0);
+    seed(&cooldown, &cooldown_key, counter(1));
+    let tiers = tiers(cooldown, Some(tier(&clock, None, 10.0)));
+    let store = MemoryStore::healthy(values(&[
+        ("a:model:tpm:00-00", 5),
+        ("a:model:rpm:00-00", 3),
+    ]));
+    let mut request = RequestReads::default();
+    let usage_keys = usage(&["a:model:tpm:00-00"], &["a:model:rpm:00-00"]);
+    let mut batch = RoutingReadBatch::for_strategy(Some(usage_keys.clone()), true).unwrap();
+    let results = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&cooldown_key),
+    )
+    .await;
+    assert_usage_read(&batch, &tiers, &store, &results, &usage_keys);
+}
+
+async fn the_prefetched_usage_serves_the_next_read() {
+    let clock = TestClock::new();
+    let cooldown_key = key("deployment:a:cooldown");
+    let tiers = tiers(tier(&clock, None, 10.0), Some(tier(&clock, None, 10.0)));
+    seed(&tiers.cooldown, &cooldown_key, counter(1));
+    let store = MemoryStore::healthy(values(&[
+        ("a:model:tpm:00-00", 5),
+        ("a:model:rpm:00-00", 3),
+    ]));
+    let mut request = RequestReads::default();
+    let usage_keys = usage(&["a:model:tpm:00-00"], &["a:model:rpm:00-00"]);
+    assert!(RoutingPrefetch::arm(
+        &read_keys(vec![cooldown_key.clone()], Some(usage_keys.clone())),
+        &tiers,
+        true,
+        &mut request,
+    ));
+    let mut batch = RoutingReadBatch::for_strategy(Some(usage_keys.clone()), true).unwrap();
+    let results = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&cooldown_key),
+    )
+    .await;
+    assert_usage_read(&batch, &tiers, &store, &results, &usage_keys);
+}
+
+fn assert_usage_read(
+    batch: &RoutingReadBatch<RouteValue>,
+    tiers: &ReadTiers<RouteValue>,
+    store: &MemoryStore,
+    results: &RoutingReadResults<RouteValue>,
+    usage_keys: &UsageReadKeys,
+) {
+    let expected = Some(vec![Some(counter(5)), Some(counter(3))]);
+    assert_eq!(results.cooldown, vec![Some(counter(1))]);
+    assert_eq!(results.usage, expected);
+    let prefetched = batch.prefetched_usage.as_ref().unwrap();
+    assert_eq!(prefetched.values_for(&usage_keys.combined()), expected);
+    assert_eq!(
+        tiers
+            .usage
+            .as_ref()
+            .unwrap()
+            .batch_get(&usage_keys.combined()),
+        vec![Some(counter(5)), Some(counter(3))]
+    );
+    assert_eq!(
+        tiers.cooldown.batch_get(&usage_keys.combined()),
+        vec![None, None]
+    );
+    assert_eq!(
+        store.reads(),
+        vec![vec![key("a:model:tpm:00-00"), key("a:model:rpm:00-00")]]
+    );
 }
 
 async fn read_without_a_selector_keeps_no_prefetched_usage() {

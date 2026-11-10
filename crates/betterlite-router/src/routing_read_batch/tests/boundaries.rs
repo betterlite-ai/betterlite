@@ -1,11 +1,13 @@
 use std::slice;
 
 use super::support::{
-    MemoryStore, TestClock, counter, key, read_keys, read_once, seed, tier, tiers, usage, values,
+    BreakerTestClock, MemoryStore, TestClock, counter, key, read_keys, read_once, real_store, seed,
+    seed_remote, tier, tier_capped, tiers, usage, values,
 };
 use crate::routing_read_batch::local::{DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_READ_EXPIRY_SECONDS};
 use crate::routing_read_batch::store::ReadWarning;
 use crate::routing_read_batch::{RequestReads, RoutingPrefetch, RoutingReadBatch};
+use crate::routing_state_store::test_support::FakeRedis;
 
 pub(crate) async fn run(name: &str) {
     match name {
@@ -14,6 +16,8 @@ pub(crate) async fn run(name: &str) {
         "default_read_expiry_is_ten_seconds" => default_read_expiry_is_ten_seconds(),
         "take_requires_every_needed_key" => take_requires_every_needed_key(),
         "take_releases_a_short_prefetch" => take_releases_a_short_prefetch(),
+        "local_entries_are_capped" => local_entries_are_capped(),
+        "last_reads_are_capped" => last_reads_are_capped(),
         "local_value_is_readable_at_its_exact_expiry" => {
             local_value_is_readable_at_its_exact_expiry();
         }
@@ -31,6 +35,13 @@ pub(crate) async fn run(name: &str) {
             an_absent_remote_value_still_consumes_the_prefetch().await;
         }
         "duplicate_cooldown_keys_are_read_once" => duplicate_cooldown_keys_are_read_once().await,
+        "real_store_opens_the_circuit_and_releases" => {
+            real_store_opens_the_circuit_and_releases().await;
+        }
+        "real_store_keeps_the_reservation_when_unavailable" => {
+            real_store_keeps_the_reservation_when_unavailable().await;
+        }
+        "real_store_serves_a_recovered_probe" => real_store_serves_a_recovered_probe().await,
         _ => panic!("unknown case {name}"),
     }
 }
@@ -358,4 +369,170 @@ async fn duplicate_cooldown_keys_are_read_once() {
     let results = read_once(&mut batch, &store, &tiers, &mut request, &cooldown_keys).await;
     assert_eq!(results.cooldown, vec![Some(counter(2)), Some(counter(2))]);
     assert_eq!(store.reads(), vec![vec![first]]);
+}
+
+fn local_entries_are_capped() {
+    let clock = TestClock::new();
+    let first = key("a");
+    let second = key("b");
+    let third = key("c");
+    let cooldown = tier_capped(&clock, 2, 1_000);
+    clock.set(0.0_f64);
+    seed(&cooldown, &first, counter(0));
+    clock.set(1.0_f64);
+    seed(&cooldown, &second, counter(1));
+    clock.set(2.0_f64);
+    seed(&cooldown, &third, counter(2));
+    assert_eq!(
+        cooldown.batch_get(&[first, second, third]),
+        vec![None, Some(counter(1)), Some(counter(2))]
+    );
+}
+
+fn last_reads_are_capped() {
+    let clock = TestClock::new();
+    let first = key("a");
+    let second = key("b");
+    let third = key("c");
+    let cooldown = tier_capped(&clock, 200, 2);
+    clock.set(0.0_f64);
+    assert_eq!(
+        cooldown
+            .prepare(slice::from_ref(&first))
+            .reservation
+            .due
+            .len(),
+        1
+    );
+    clock.set(1.0_f64);
+    assert_eq!(
+        cooldown
+            .prepare(slice::from_ref(&second))
+            .reservation
+            .due
+            .len(),
+        1
+    );
+    clock.set(2.0_f64);
+    assert_eq!(
+        cooldown
+            .prepare(slice::from_ref(&third))
+            .reservation
+            .due
+            .len(),
+        1
+    );
+    let state = cooldown.state.lock().unwrap();
+    assert!(!state.last_reads.contains_key(&first));
+    assert!(state.last_reads.contains_key(&second));
+    assert!(state.last_reads.contains_key(&third));
+    drop(state);
+}
+
+async fn real_store_opens_the_circuit_and_releases() {
+    let server = FakeRedis::try_start().await.unwrap();
+    let breaker_clock = BreakerTestClock::new();
+    let store = real_store(&server, 1, 60_000, &breaker_clock);
+    server.set_down(true);
+    let clock = TestClock::new();
+    let tiers = tiers(tier(&clock, None, 10.0), None);
+    let mut request = RequestReads::default();
+    let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
+    let warm_key = key("deployment:a:cooldown");
+    let warm = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&warm_key),
+    )
+    .await;
+    assert_eq!(warm.warning, Some(ReadWarning::Unavailable));
+    let open_key = key("deployment:b:cooldown");
+    let opened = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&open_key),
+    )
+    .await;
+    assert_eq!(opened.warning, Some(ReadWarning::CircuitOpen));
+    assert_eq!(
+        tiers
+            .cooldown
+            .prepare(slice::from_ref(&open_key))
+            .reservation
+            .due
+            .len(),
+        1
+    );
+}
+
+async fn real_store_keeps_the_reservation_when_unavailable() {
+    let server = FakeRedis::try_start().await.unwrap();
+    let breaker_clock = BreakerTestClock::new();
+    let store = real_store(&server, 100, 60_000, &breaker_clock);
+    server.set_down(true);
+    let clock = TestClock::new();
+    let tiers = tiers(tier(&clock, None, 10.0), None);
+    let mut request = RequestReads::default();
+    let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
+    let first = key("deployment:a:cooldown");
+    let results = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&first),
+    )
+    .await;
+    assert_eq!(results.warning, Some(ReadWarning::Unavailable));
+    assert!(
+        tiers
+            .cooldown
+            .prepare(slice::from_ref(&first))
+            .reservation
+            .due
+            .is_empty()
+    );
+}
+
+async fn real_store_serves_a_recovered_probe() {
+    let server = FakeRedis::try_start().await.unwrap();
+    let breaker_clock = BreakerTestClock::new();
+    let store = real_store(&server, 1, 100, &breaker_clock);
+    server.set_down(true);
+    let clock = TestClock::new();
+    let tiers = tiers(tier(&clock, None, 10.0), None);
+    let mut request = RequestReads::default();
+    let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
+    let warm_key = key("deployment:a:cooldown");
+    let warm = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&warm_key),
+    )
+    .await;
+    assert_eq!(warm.warning, Some(ReadWarning::Unavailable));
+    breaker_clock.set_millis(200);
+    server.set_down(false);
+    let recovered = key("deployment:b:cooldown");
+    seed_remote(&server, &recovered, &counter(7));
+    let results = read_once(
+        &mut batch,
+        &store,
+        &tiers,
+        &mut request,
+        slice::from_ref(&recovered),
+    )
+    .await;
+    assert_eq!(results.cooldown, vec![Some(counter(7))]);
+    assert!(results.warning.is_none());
+    assert_eq!(
+        tiers.cooldown.batch_get(slice::from_ref(&recovered)),
+        vec![Some(counter(7))]
+    );
 }

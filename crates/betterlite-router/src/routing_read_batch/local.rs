@@ -5,11 +5,15 @@ use crate::routing_value_store::RouteKey;
 
 pub const DEFAULT_LOCAL_TTL_SECONDS: f64 = 600.0;
 pub const DEFAULT_READ_EXPIRY_SECONDS: f64 = 10.0;
+pub const DEFAULT_MAX_LOCAL_ENTRIES: usize = 200;
+pub const DEFAULT_MAX_LAST_READS: usize = 1_000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReadTierSettings {
-    pub backfill_ttl_seconds: Option<f64>,
+    pub backfill_ttl_seconds: f64,
     pub read_expiry_seconds: f64,
+    pub max_entries: usize,
+    pub max_last_reads: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -99,6 +103,7 @@ where
                 due.push(key.clone());
             }
         }
+        enforce_read_capacity(&mut state, self.settings.max_last_reads);
         drop(state);
         PreparedRead {
             local,
@@ -114,38 +119,44 @@ where
     ) -> Vec<Option<V>> {
         let now = (self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let ttl = self
-            .settings
-            .backfill_ttl_seconds
-            .unwrap_or(DEFAULT_LOCAL_TTL_SECONDS);
         let mut merged = Vec::with_capacity(keys.len());
         for (key, stored) in keys.iter().zip(local) {
             match fetched.get(key) {
                 Some(value) => {
-                    insert(&mut state, key, value, now, ttl);
+                    insert(
+                        &mut state,
+                        key,
+                        value,
+                        now,
+                        self.settings.backfill_ttl_seconds,
+                    );
                     merged.push(Some(value.clone()));
                 }
                 None => merged.push(stored.clone()),
             }
         }
+        enforce_entry_capacity(&mut state, now, self.settings.max_entries);
         merged
     }
 
     pub fn backfill(&self, keys: &[RouteKey], values: &BTreeMap<RouteKey, V>) {
         let now = (self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let ttl = self
-            .settings
-            .backfill_ttl_seconds
-            .unwrap_or(DEFAULT_LOCAL_TTL_SECONDS);
         for key in keys {
             let Some(value) = values.get(key) else {
                 continue;
             };
             if read(&mut state, key, now).is_none() {
-                insert(&mut state, key, value, now, ttl);
+                insert(
+                    &mut state,
+                    key,
+                    value,
+                    now,
+                    self.settings.backfill_ttl_seconds,
+                );
             }
         }
+        enforce_entry_capacity(&mut state, now, self.settings.max_entries);
     }
 }
 
@@ -180,5 +191,37 @@ where
 pub(super) fn push_unique(keys: &mut Vec<RouteKey>, key: &RouteKey) {
     if !keys.contains(key) {
         keys.push(key.clone());
+    }
+}
+
+fn enforce_entry_capacity<V>(state: &mut TierState<V>, now: f64, max_entries: usize) {
+    if state.entries.len() <= max_entries {
+        return;
+    }
+    state.entries.retain(|_, entry| now <= entry.expires_at);
+    while state.entries.len() > max_entries {
+        let Some(oldest) = state
+            .entries
+            .iter()
+            .min_by(|left, right| left.1.expires_at.total_cmp(&right.1.expires_at))
+            .map(|(key, _)| key.clone())
+        else {
+            return;
+        };
+        state.entries.remove(&oldest);
+    }
+}
+
+fn enforce_read_capacity<V>(state: &mut TierState<V>, max_last_reads: usize) {
+    while state.last_reads.len() > max_last_reads {
+        let Some(oldest) = state
+            .last_reads
+            .iter()
+            .min_by(|left, right| left.1.total_cmp(right.1))
+            .map(|(key, _)| key.clone())
+        else {
+            return;
+        };
+        state.last_reads.remove(&oldest);
     }
 }

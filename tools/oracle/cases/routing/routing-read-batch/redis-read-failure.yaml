@@ -13,8 +13,6 @@ probes:
             deployment:a:cooldown: {counter: 1}
         remote:
           deployment:b:cooldown: {counter: 7}
-        read_expiry_millis: 10000
-        backfill_ttl_millis: null
         steps:
           - {kind: down, now_millis: 0, down: true}
           - {kind: arm, now_millis: 0, request: 0}

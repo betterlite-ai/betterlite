@@ -1,13 +1,25 @@
 use std::collections::BTreeMap;
 use std::future::pending;
 use std::slice;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
-use crate::routing_read_batch::local::{LocalTier, ReadTierSettings, TierState};
+use betterlite_config::sections::routing_state_store::connection::Connection;
+
+use crate::redis_failure_policy::Settings as BreakerSettings;
+use crate::routing_read_batch::local::{
+    DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_MAX_LAST_READS, DEFAULT_MAX_LOCAL_ENTRIES, LocalTier,
+    ReadTierSettings, TierState,
+};
 use crate::routing_read_batch::store::{BatchRead, BatchReadFuture, BatchReadStore, ReadWarning};
 use crate::routing_read_batch::{
     ReadTiers, RequestReads, RoutingReadBatch, RoutingReadKeys, RoutingReadResults,
     RoutingReadSession, UsageReadKeys,
+};
+use crate::routing_state_store::test_support::FakeRedis;
+use crate::routing_state_store::{
+    BreakerClock, RedisSettings, RoutingStateStore, Settings as StoreSettings,
 };
 use crate::routing_value_store::{RouteKey, RouteValue};
 
@@ -127,8 +139,27 @@ pub(crate) fn values(entries: &[(&str, i64)]) -> BTreeMap<RouteKey, RouteValue> 
 pub(crate) fn tier(clock: &TestClock, ttl: Option<f64>, expiry: f64) -> LocalTier<RouteValue> {
     LocalTier {
         settings: ReadTierSettings {
-            backfill_ttl_seconds: ttl,
+            backfill_ttl_seconds: ttl.unwrap_or(DEFAULT_LOCAL_TTL_SECONDS),
             read_expiry_seconds: expiry,
+            max_entries: DEFAULT_MAX_LOCAL_ENTRIES,
+            max_last_reads: DEFAULT_MAX_LAST_READS,
+        },
+        clock: clock.handle(),
+        state: Mutex::new(TierState::default()),
+    }
+}
+
+pub(crate) fn tier_capped(
+    clock: &TestClock,
+    max_entries: usize,
+    max_last_reads: usize,
+) -> LocalTier<RouteValue> {
+    LocalTier {
+        settings: ReadTierSettings {
+            backfill_ttl_seconds: DEFAULT_LOCAL_TTL_SECONDS,
+            read_expiry_seconds: 10.0_f64,
+            max_entries,
+            max_last_reads,
         },
         clock: clock.handle(),
         state: Mutex::new(TierState::default()),
@@ -177,4 +208,54 @@ where
         request,
     };
     batch.read_routing_state(&mut session, cooldown_keys).await
+}
+
+pub(crate) struct BreakerTestClock(Arc<AtomicU64>);
+
+impl BreakerTestClock {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(AtomicU64::new(0)))
+    }
+
+    pub(crate) fn set_millis(&self, millis: u64) {
+        self.0.store(millis, Ordering::SeqCst);
+    }
+
+    pub(crate) fn handle(&self) -> BreakerClock {
+        let source = Arc::clone(&self.0);
+        Arc::new(move || Duration::from_millis(source.load(Ordering::SeqCst)))
+    }
+}
+
+pub(crate) fn real_store(
+    server: &FakeRedis,
+    threshold: u32,
+    recovery_millis: u64,
+    clock: &BreakerTestClock,
+) -> RoutingStateStore {
+    let settings = StoreSettings {
+        redis: RedisSettings {
+            url: None,
+            host: Some("127.0.0.1".to_owned()),
+            port: Some(i64::from(server.port())),
+            password: None,
+            namespace: None,
+            connection: Connection::default(),
+            socket_timeout: 2.0_f64,
+            pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
+        },
+        breaker: BreakerSettings {
+            enabled: true,
+            failure_threshold: threshold,
+            recovery_timeout: Duration::from_millis(recovery_millis),
+            timeout_min_duration: Duration::ZERO,
+            timeout_log_interval: Duration::from_secs(1),
+        },
+    };
+    RoutingStateStore::new(&settings, clock.handle()).unwrap()
+}
+
+pub(crate) fn seed_remote(server: &FakeRedis, key: &RouteKey, value: &RouteValue) {
+    server.seed(key.as_ref(), &serde_json::to_vec(&value).unwrap(), -1);
 }

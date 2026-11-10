@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::routing_state_store::RoutingStateStore;
-use crate::routing_state_store::error::{Observed, StateStoreError};
+use crate::routing_state_store::error::{Observed, StateStoreError, StoreWarning};
 use crate::routing_value_store::{RouteKey, RouteValue, StoreRead};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,24 +48,18 @@ impl BatchReadStore for RoutingStateStore {
                             StoreRead::Value(stored) => Some(stored),
                         })
                         .collect(),
-                    warning: warning.map(|_| ReadWarning::Unavailable),
+                    // a breaker event on a completed read means its half-open probe succeeded, so the values are usable
+                    warning: match warning {
+                        Some(StoreWarning::Unavailable { .. }) => Some(ReadWarning::Unavailable),
+                        Some(StoreWarning::Breaker(_)) | None => None,
+                    },
                 },
                 Err(error) => BatchRead {
                     values: vec![None; keys.len()],
-                    warning: Some(match error {
-                        StateStoreError::CircuitOpen { .. } => ReadWarning::CircuitOpen,
-                        StateStoreError::Settings(_)
-                        | StateStoreError::Factory(_)
-                        | StateStoreError::Reuse(_)
-                        | StateStoreError::Redis { .. }
-                        | StateStoreError::Counters { .. }
-                        | StateStoreError::Store(_)
-                        | StateStoreError::Reply { .. }
-                        | StateStoreError::InvalidTtl { .. }
-                        | StateStoreError::Conflict { .. }
-                        | StateStoreError::UnsupportedTarget
-                        | StateStoreError::NoConnection
-                        | StateStoreError::NotConfigured => ReadWarning::Unavailable,
+                    warning: Some(if matches!(error, StateStoreError::CircuitOpen { .. }) {
+                        ReadWarning::CircuitOpen
+                    } else {
+                        ReadWarning::Unavailable
                     }),
                 },
             }
