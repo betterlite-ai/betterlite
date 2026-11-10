@@ -12,6 +12,8 @@ use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_redact::error::RedactionError;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::rngs::StdRng;
 use secrecy::ExposeSecret;
 use sha2::{Digest as _, Sha256};
@@ -47,6 +49,11 @@ pub enum ChatSetupError {
         #[from]
         source: PoolError,
     },
+    #[error(transparent)]
+    Redactor {
+        #[from]
+        source: RedactionError,
+    },
 }
 
 // reads certificate files, so it runs before the async runtime starts
@@ -80,9 +87,8 @@ pub fn chat_executor(
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
         .collect::<Result<Vec<_>, _>>()?;
     let mock = mock_settings(config, &mut deployments);
-    let client = outbound_client(config, environment, &deployments)?;
     Ok(ChatExecutor {
-        client,
+        client: outbound_client(config, environment, &deployments)?,
         deployments,
         // the model cost map is not loaded yet, so no model counts as a catalog model
         catalog: CatalogCapabilities {
@@ -95,6 +101,7 @@ pub fn chat_executor(
         mock,
         mock_chat,
         mock_embedding,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
     })
 }
 

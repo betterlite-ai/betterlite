@@ -1,0 +1,5 @@
+kind: helper
+name: b5847-stream-seed
+call: {b5847: {op: stream, requests: [{policy: lenient, url: "https://poll/seed", polls: [{body: '{"status":"failed","error":"seed"}'}]}]}}
+env: {}
+compare: {ignore: []}

@@ -170,7 +170,7 @@ fn failure(
     call: &CallContext<'_>,
     deployment: Option<&ChatDeployment>,
 ) -> Response {
-    let failure = error.failure();
+    let failure = error.failure(&call.errors.redactor);
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let redactor = &call.errors.redactor;
     let message = redactor.redact_internal_details(&error.to_string());

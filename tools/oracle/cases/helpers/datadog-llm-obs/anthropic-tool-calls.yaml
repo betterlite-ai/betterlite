@@ -1,0 +1,30 @@
+kind: helper
+name: datadog-llm-obs-anthropic-tool-calls
+call:
+  b3935:
+    function: messages
+    messages:
+      - role: assistant
+        content:
+          - {type: text, text: "Let me check."}
+          - {type: tool_use, id: toolu_1, name: get_weather, input: {city: Paris}}
+          - {type: tool_use, id: toolu_2, name: lookup, input: null}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: toolu_1, content: '{"temp": 21}'}
+          - {type: tool_result, tool_use_id: toolu_2, content: [{type: text, text: "found"}]}
+          - {type: text, text: "thanks"}
+      - role: assistant
+        content: null
+        tool_calls:
+          - {id: toolu_2, function: {name: openai_override, arguments: "{}"}}
+          - {id: call_new, function: {name: openai_first, arguments: "{}"}}
+      - role: assistant
+        content:
+          - {type: tool_use, id: call_new, name: anthropic_later, input: {q: 1}}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: call_new, content: "ok"}
+env: {}
+compare:
+  ignore: []

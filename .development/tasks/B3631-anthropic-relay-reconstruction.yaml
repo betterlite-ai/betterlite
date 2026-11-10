@@ -57,7 +57,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail
     - id: parser-corpus
       why: The SSE byte decoders lack a fuzz target, new corpus seeds or passing replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-streaming/fuzz/corpus/anthropic_relay_reconstruction)" && grep -q '_split_sse_chunk_into_events\|_collapse_pure_text_chunks' crates/betterlite-streaming/fuzz/fuzz_targets/anthropic_relay_reconstruction.rs && cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::replays_the_anthropic_relay_reconstruction_corpus$/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-streaming/fuzz/corpus/anthropic_relay_reconstruction)" && grep -q '_split_sse_chunk_into_events\|_collapse_pure_text_chunks' crates/betterlite-streaming/fuzz/fuzz_targets/anthropic_relay_reconstruction.rs && cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::replays_the_anthropic_relay_reconstruction_corpus(::|$)/)'
 
 oracle_cases: []
 
