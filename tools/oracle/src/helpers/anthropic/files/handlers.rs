@@ -48,7 +48,7 @@ fn upload_view(item: &UploadItem, now_epoch: i64) -> Value {
         item.purpose.as_deref(),
         now_epoch,
     ) {
-        Ok(parts) => parts_view(&parts),
+        Ok(parts) => json!({"parts": parts_view(&parts)}),
         Err(error) => json!({"raised": raised(&error)}),
     }
 }
