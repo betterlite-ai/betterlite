@@ -43,7 +43,7 @@ pub(super) fn resolve(
         Err(DefaultsAError::UnknownProvider { .. }) => {}
         Err(source) => return Err(ResolutionError::DefaultsA { source }),
     }
-    // A provider that neither table knows keeps the caller's base and key, as LiteLLM's fallthrough does.
+    // A provider that neither table knows keeps the caller's base and key (the final api_key fallback, line 934).
     let second = RequestB {
         provider,
         model: model.clone(),
@@ -52,11 +52,10 @@ pub(super) fn resolve(
     };
     match resolve_b(second, &context.globals, context.environment) {
         Ok(resolved) => Ok(from_b(provider, resolved)),
-        Err(DefaultsBError::UnknownProvider { .. }) => Ok(super::unchanged(
-            model,
-            ProviderIdentity::Known(provider),
-            request,
-        )),
+        Err(DefaultsBError::UnknownProvider { .. }) => Ok(ResolvedModel {
+            api_key: request.api_key.cloned(),
+            ..super::unchanged(model, ProviderIdentity::Known(provider), request)
+        }),
         Err(source) => Err(ResolutionError::DefaultsB { source }),
     }
 }
