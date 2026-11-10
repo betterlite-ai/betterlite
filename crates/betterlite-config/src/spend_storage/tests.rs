@@ -30,7 +30,7 @@ fn loads_spend_storage_policy() {
     );
     assert!(!initial.store_prompts_in_spend_logs);
     assert_eq!(initial.max_string_length_prompt_in_db, 100);
-    assert!(initial.omits_missing_session());
+    assert_eq!(initial.missing_session_id, Some(MissingSessionId::Omit));
     assert_eq!(
         runtime_max_prompt_length(initial.max_string_length_prompt_in_db, Some("200")),
         200
@@ -67,10 +67,6 @@ fn loads_spend_update_flag(#[case] value: &str, #[case] expected: SpendUpdates) 
     let source = format!("general_settings:\n  disable_spend_updates: {value}\n");
     let settings = load(&source, &[]);
     assert_eq!(settings.spend_updates, expected);
-    assert_eq!(
-        settings.spend_updates.is_disabled(),
-        expected == SpendUpdates::Disabled
-    );
 }
 
 #[rstest]
@@ -106,10 +102,6 @@ fn parses_missing_session_policy(#[case] line: &str, #[case] expected: Option<Mi
     let source = format!("general_settings:\n  {line}\n");
     let settings = load(&source, &[]);
     assert_eq!(settings.missing_session_id, expected);
-    assert_eq!(
-        settings.omits_missing_session(),
-        expected == Some(MissingSessionId::Omit)
-    );
 }
 
 #[rstest]
@@ -151,7 +143,7 @@ fn decodes_a_stored_policy_row() {
     )
     .unwrap();
     assert!(decoded.store_prompts_in_spend_logs);
-    assert!(decoded.spend_updates.is_disabled());
+    assert_eq!(decoded.spend_updates, SpendUpdates::Disabled);
     assert_eq!(decoded.max_string_length_prompt_in_db, 12);
     decode_spend_storage_policy(b"not json").unwrap_err();
 }

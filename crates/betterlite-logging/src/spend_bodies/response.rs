@@ -1,8 +1,9 @@
 use super::SpendStoragePolicy;
 use super::redaction::{redact_response, should_redact_message_logging};
-use super::support::{Fields, as_object, counts_as_present, safe_structure, sanitize_fields};
+use super::support::{
+    Fields, as_object, counts_as_present, log_truncation, safe_structure, sanitize_fields,
+};
 use crate::python_json;
-use crate::spend_sanitize::truncate::{TRUNCATED_PAYLOAD_FIELD, TRUNCATION_DB_SAFEGUARD_NOTE};
 use betterlite_models::decisions::Json;
 pub struct ResponseKwargs<'data> {
     pub realtime_tool_calls: Option<&'data Json>,
@@ -15,49 +16,9 @@ pub fn storage_response(
     kwargs: Option<&ResponseKwargs<'_>>,
     policy: SpendStoragePolicy,
 ) -> String {
-    let Some(stored_payload) = payload.and_then(as_object) else {
+    let Some(original) = stored_response(payload, policy) else {
         return "{}".to_owned();
     };
-    if !policy.sanitize.store_bodies {
-        return "{}".to_owned();
-    }
-    let Some(original) = stored_payload.get("response") else {
-        return "{}".to_owned();
-    };
-    if matches!(original, Json::Null) {
-        return "{}".to_owned();
-    }
-    let stored = prepared_response(original, kwargs, policy);
-    let wrapper = Fields::from([("response".to_owned(), stored)]);
-    let sanitized = sanitize_fields(&wrapper, policy.sanitize.max_string_length);
-    let Some(fields) = as_object(&sanitized) else {
-        return "{}".to_owned();
-    };
-    let Some(sanitized_response) = fields.get("response") else {
-        return "{}".to_owned();
-    };
-    if matches!(sanitized_response, Json::Null) {
-        return "{}".to_owned();
-    }
-    let text = match sanitized_response {
-        Json::Text(text) => text.replace('\0', ""),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            python_json::dumps(&safe_structure(sanitized_response, 0))
-        }
-    };
-    if text.contains(TRUNCATED_PAYLOAD_FIELD) {
-        tracing::info!(
-            "Spend Log: response was truncated before storing in DB. {}",
-            TRUNCATION_DB_SAFEGUARD_NOTE
-        );
-    }
-    text
-}
-fn prepared_response(
-    original: &Json,
-    kwargs: Option<&ResponseKwargs<'_>>,
-    policy: SpendStoragePolicy,
-) -> Json {
     let mut stored = original.clone();
     if let Some(tool_calls) = kwargs.and_then(|response_kwargs| response_kwargs.realtime_tool_calls)
         && counts_as_present(tool_calls)
@@ -72,8 +33,31 @@ fn prepared_response(
             policy.turn_off_message_logging,
         )
     });
-    if redact {
-        return redact_response(stored);
-    }
-    stored
+    let redacted = if redact {
+        redact_response(stored)
+    } else {
+        stored
+    };
+    let wrapper = Fields::from([("response".to_owned(), redacted)]);
+    let sanitized = sanitize_fields(&wrapper, policy.sanitize.max_string_length);
+    let Some(sanitized_response) = as_object(&sanitized)
+        .and_then(|fields| fields.get("response"))
+        .filter(|response| !matches!(response, Json::Null))
+    else {
+        return "{}".to_owned();
+    };
+    let text = if let Json::Text(text) = sanitized_response {
+        text.replace('\0', "")
+    } else {
+        python_json::dumps(&safe_structure(sanitized_response, 0))
+    };
+    log_truncation(&text, "response");
+    text
+}
+fn stored_response(payload: Option<&Json>, policy: SpendStoragePolicy) -> Option<&Json> {
+    payload
+        .filter(|_| policy.sanitize.store_bodies)
+        .and_then(as_object)
+        .and_then(|fields| fields.get("response"))
+        .filter(|response| !matches!(response, Json::Null))
 }

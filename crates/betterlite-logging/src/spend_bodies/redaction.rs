@@ -26,20 +26,15 @@ pub fn should_redact_message_logging(
     {
         return flag;
     }
-    if header_flag(metadata, "litellm-enable-message-redaction")
+    header_flag(metadata, "litellm-enable-message-redaction")
         || header_flag(metadata, "x-litellm-enable-message-redaction")
-    {
-        return true;
-    }
-    global
+        || global
 }
 fn request_metadata(litellm_params: Option<&Fields>) -> Option<&Fields> {
     let params = litellm_params?;
-    let field = if params.contains_key("litellm_metadata") {
-        "litellm_metadata"
-    } else {
-        "metadata"
-    };
+    let field = params
+        .get("litellm_metadata")
+        .map_or("metadata", |_| "litellm_metadata");
     params
         .get(field)
         .and_then(as_object)
@@ -70,12 +65,11 @@ pub fn redact_request_body(body: &mut Json) {
         request.shift_remove("classifier_input");
         request.shift_remove("originating_request_masked");
     }
-    let mut message = IndexMap::new();
-    message.insert("role".to_owned(), Json::Text("user".to_owned()));
-    message.insert(
-        "content".to_owned(),
-        Json::Text(REDACTED_BY_LITELLM.to_owned()),
-    );
+    let redacted = Json::Text(REDACTED_BY_LITELLM.to_owned());
+    let message = IndexMap::from([
+        ("role".to_owned(), Json::Text("user".to_owned())),
+        ("content".to_owned(), redacted),
+    ]);
     fields.insert(
         "messages".to_owned(),
         Json::List(vec![Json::Object(message)]),
@@ -116,10 +110,9 @@ pub fn redact_response(mut response: Json) -> Json {
         && let Some(Json::List(items)) = fields.get_mut("output")
     {
         for item in items {
-            let Json::Object(output) = item else {
-                continue;
-            };
-            redact_output_item(output);
+            if let Json::Object(output) = item {
+                redact_output_item(output);
+            }
         }
     }
     if fields.contains_key("output") {
@@ -128,19 +121,16 @@ pub fn redact_response(mut response: Json) -> Json {
     text_object()
 }
 fn text_object() -> Json {
+    let text = Json::Text(REDACTED_BY_LITELLM.to_owned());
     let mut fields = IndexMap::new();
-    fields.insert(
-        "text".to_owned(),
-        Json::Text(REDACTED_BY_LITELLM.to_owned()),
-    );
+    fields.insert("text".to_owned(), text);
     Json::Object(fields)
 }
 fn redact_choices(choices: &mut [Json]) {
     for choice in choices {
-        let Json::Object(choice_fields) = choice else {
-            continue;
-        };
-        redact_choice(choice_fields);
+        if let Json::Object(choice_fields) = choice {
+            redact_choice(choice_fields);
+        }
     }
 }
 fn redact_choice(fields: &mut Fields) {
@@ -173,51 +163,39 @@ fn redact_message(message: &mut Fields) {
             }
         }
     }
-    if let Some(Json::Object(function_call)) = message.get_mut("function_call")
-        && function_call.contains_key("arguments")
-    {
-        function_call.insert(
-            "arguments".to_owned(),
-            Json::Text(REDACTED_BY_LITELLM.to_owned()),
-        );
+    if let Some(Json::Object(function_call)) = message.get_mut("function_call") {
+        set_text(function_call, "arguments");
     }
 }
 fn redact_output_item(fields: &mut Fields) {
     redact_present_text(fields, "text");
     if let Some(Json::List(content)) = fields.get_mut("content") {
         for content_item in content {
-            let Json::Object(entry) = content_item else {
-                continue;
-            };
-            redact_present_text(entry, "text");
-            redact_present_text(entry, "refusal");
+            if let Json::Object(entry) = content_item {
+                redact_present_text(entry, "text");
+                redact_present_text(entry, "refusal");
+            }
         }
     }
     if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "reasoning")
         && let Some(Json::List(summary)) = fields.get_mut("summary")
     {
         for summary_item in summary {
-            let Json::Object(entry) = summary_item else {
-                continue;
-            };
-            redact_present_text(entry, "text");
+            if let Json::Object(entry) = summary_item {
+                redact_present_text(entry, "text");
+            }
         }
     }
-    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "function_call")
-        && fields.contains_key("arguments")
-    {
-        fields.insert(
-            "arguments".to_owned(),
-            Json::Text(REDACTED_BY_LITELLM.to_owned()),
-        );
+    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "function_call") {
+        set_text(fields, "arguments");
     }
-    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "custom_tool_call")
-        && fields.contains_key("input")
-    {
-        fields.insert(
-            "input".to_owned(),
-            Json::Text(REDACTED_BY_LITELLM.to_owned()),
-        );
+    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "custom_tool_call") {
+        set_text(fields, "input");
+    }
+}
+fn set_text(fields: &mut Fields, name: &str) {
+    if fields.contains_key(name) {
+        fields.insert(name.to_owned(), Json::Text(REDACTED_BY_LITELLM.to_owned()));
     }
 }
 fn redact_present_text(fields: &mut Fields, name: &str) {

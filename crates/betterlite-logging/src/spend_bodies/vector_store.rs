@@ -10,11 +10,8 @@ pub fn redact_vector_store(requests: &mut [Json], store_bodies: bool) {
     }
 }
 fn redact_request(request: &mut Json) {
-    let Some(stored_request) = as_object_mut(request) else {
-        return;
-    };
-    let Some(response) = stored_request
-        .get_mut("vector_store_search_response")
+    let Some(response) = as_object_mut(request)
+        .and_then(|fields| fields.get_mut("vector_store_search_response"))
         .and_then(as_object_mut)
     else {
         return;
@@ -34,10 +31,9 @@ fn redact_response_item(response_item: &mut Json) {
         return;
     };
     for content_item in content {
-        let Some(stored_content) = as_object_mut(content_item) else {
-            continue;
-        };
-        if stored_content.contains_key("text") {
+        if let Json::Object(stored_content) = content_item
+            && stored_content.contains_key("text")
+        {
             stored_content.insert("text".to_owned(), Json::Text(REDACTED_BY_LITELM.to_owned()));
         }
     }

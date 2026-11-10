@@ -37,15 +37,15 @@ pub fn placeholder_request_metadata(
     let Some(body) = as_object(request_body) else {
         return request_body.clone();
     };
-    if let Some(metadata) = body.get("metadata").and_then(as_object) {
-        let mut stored_body = body.clone();
-        stored_body.insert(
-            "metadata".to_owned(),
-            replaced_metadata(metadata, model_group, raw_model),
-        );
-        return Json::Object(stored_body);
-    }
-    request_body.clone()
+    let Some(metadata) = body.get("metadata").and_then(as_object) else {
+        return request_body.clone();
+    };
+    let mut stored_body = body.clone();
+    stored_body.insert(
+        "metadata".to_owned(),
+        replaced_metadata(metadata, model_group, raw_model),
+    );
+    Json::Object(stored_body)
 }
 fn replaced_metadata(metadata: &Fields, model_group: &str, raw_model: &str) -> Json {
     let mut entries = metadata.clone();
@@ -61,15 +61,16 @@ fn replaced_metadata(metadata: &Fields, model_group: &str, raw_model: &str) -> J
     Json::Object(entries)
 }
 fn scrub_error_information(information: &Fields, raw_model: &str) -> Fields {
-    let mut entries = Fields::with_capacity(information.len());
-    for (key, value) in information {
-        let scrubbed = match (key.as_str(), value) {
-            ("error_message" | "traceback", Json::Text(text)) => {
-                Json::Text(scrub_raw_model_text(text, raw_model))
-            }
-            _ => value.clone(),
-        };
-        entries.insert(key.clone(), scrubbed);
-    }
-    entries
+    information
+        .iter()
+        .map(|(key, value)| {
+            let scrubbed = match (key.as_str(), value) {
+                ("error_message" | "traceback", Json::Text(text)) => {
+                    Json::Text(scrub_raw_model_text(text, raw_model))
+                }
+                _ => value.clone(),
+            };
+            (key.clone(), scrubbed)
+        })
+        .collect()
 }

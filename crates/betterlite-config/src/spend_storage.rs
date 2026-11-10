@@ -9,17 +9,15 @@ pub const ENV_STORE_PROMPTS: &str = "STORE_PROMPTS_IN_SPEND_LOGS";
 pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Raw {
-    #[serde(default)]
     pub general_settings: GeneralSettings,
 }
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct GeneralSettings {
-    #[serde(default)]
     store_prompts_in_spend_logs: JsonValue,
-    #[serde(default)]
     missing_session_id: JsonValue,
-    #[serde(default)]
     disable_spend_updates: JsonValue,
 }
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -40,24 +38,6 @@ pub struct Settings {
     pub max_string_length_prompt_in_db: i64,
     pub missing_session_id: Option<MissingSessionId>,
     pub spend_updates: SpendUpdates,
-}
-impl SpendUpdates {
-    #[must_use]
-    pub const fn is_disabled(self) -> bool {
-        match self {
-            Self::Allowed => false,
-            Self::Disabled => true,
-        }
-    }
-}
-impl Settings {
-    #[must_use]
-    pub const fn omits_missing_session(&self) -> bool {
-        match self.missing_session_id {
-            Some(MissingSessionId::Omit) => true,
-            Some(MissingSessionId::Generate | MissingSessionId::Reject) | None => false,
-        }
-    }
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -86,40 +66,29 @@ where
     let (raw, _ignored) = parse_view::<Raw>(source)?;
     Section::convert(raw, lookup)
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct PolicyInput {
-    #[serde(default)]
     pub general_settings: GeneralSettings,
-    #[serde(default)]
     pub environment: BTreeMap<String, String>,
 }
 #[derive(Debug, thiserror::Error)]
 pub enum SpendStorageError {
-    #[error("invalid spend storage policy: {source}")]
-    Json {
-        #[from]
-        source: serde_json::Error,
-    },
+    #[error("invalid spend storage policy: {0}")]
+    Json(#[from] serde_json::Error),
     #[error(transparent)]
     Config(#[from] ConfigError),
 }
 pub fn decode_spend_storage_policy(bytes: &[u8]) -> Result<Settings, SpendStorageError> {
     let input: PolicyInput = serde_json::from_slice(bytes)?;
-    let PolicyInput {
-        general_settings,
-        environment,
-    } = input;
-    let settings = Section::convert(Raw { general_settings }, &environment)?;
-    Ok(settings)
+    let raw = Raw {
+        general_settings: input.general_settings,
+    };
+    Ok(Section::convert(raw, &input.environment)?)
 }
 fn store_prompts(configured: &JsonValue, environment: Option<&str>) -> bool {
-    let enabled = match configured {
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::String(text) => text.to_lowercase() == "true",
-        JsonValue::Null | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            false
-        }
-    };
+    let enabled = matches!(configured, JsonValue::Bool(true))
+        || matches!(configured, JsonValue::String(text) if text.to_lowercase() == "true");
     enabled || environment.and_then(text_to_bool).unwrap_or(false)
 }
 fn initial_max_prompt_length(value: Option<&str>) -> Result<i64, ConfigError> {

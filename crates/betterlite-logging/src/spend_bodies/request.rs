@@ -1,9 +1,10 @@
 use super::SpendStoragePolicy;
 use super::classifier::classifier_audit_fields;
 use super::redaction::{redact_request_body, should_redact_message_logging};
-use super::support::{Fields, as_object, counts_as_present, safe_structure, sanitize_fields};
+use super::support::{
+    Fields, as_object, counts_as_present, log_truncation, safe_structure, sanitize_fields,
+};
 use crate::python_json;
-use crate::spend_sanitize::truncate::{TRUNCATED_PAYLOAD_FIELD, TRUNCATION_DB_SAFEGUARD_NOTE};
 use betterlite_models::decisions::Json;
 pub struct RequestKwargs<'data> {
     pub standard_logging_object: Option<&'data Json>,
@@ -16,10 +17,7 @@ pub fn storage_request_body(
     kwargs: Option<&RequestKwargs<'_>>,
     policy: SpendStoragePolicy,
 ) -> String {
-    if !policy.sanitize.store_bodies {
-        return "{}".to_owned();
-    }
-    let Some(params) = as_object(litellm_params) else {
+    let Some(params) = as_object(litellm_params).filter(|_| policy.sanitize.store_bodies) else {
         return "{}".to_owned();
     };
     let Some(mut body) = body_fields(params, kwargs) else {
@@ -45,12 +43,7 @@ pub fn storage_request_body(
         sanitize_fields(&body, policy.sanitize.max_string_length)
     };
     let text = python_json::dumps(&safe_structure(&sanitized, 0));
-    if text.contains(TRUNCATED_PAYLOAD_FIELD) {
-        tracing::info!(
-            "Spend Log: request body was truncated before storing in DB. {}",
-            TRUNCATION_DB_SAFEGUARD_NOTE
-        );
-    }
+    log_truncation(&text, "request body");
     text
 }
 fn body_fields(params: &Fields, kwargs: Option<&RequestKwargs<'_>>) -> Option<Fields> {
