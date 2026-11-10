@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use betterlite_config::sections::routing_state_store::connection::Connection;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
@@ -125,6 +126,7 @@ fn settings(input: &ScenarioInput, server: &FakeRedis) -> Settings {
                 .filter(|_| named)
                 .map(|password| SecretString::from(password.clone())),
             namespace: input.settings.namespace.clone(),
+            connection: Connection::default(),
             socket_timeout: 2.0_f64,
             pool_timeout_seconds: 5,
             environment: BTreeMap::new(),

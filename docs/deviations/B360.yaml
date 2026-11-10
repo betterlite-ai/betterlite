@@ -24,3 +24,9 @@ deviations:
   - what: get_ttl goes through the B393 breaker, so an open breaker returns the circuit-open error, where LiteLLM's async_get_ttl is not breaker-guarded and returns None for every failure.
     why: Every routing-state operation shares one failure policy, and the breaker-open path is not a transport failure the read may swallow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2020-L2042
+  - what: A routing store whose REDIS_* environment asks for GCP, Azure or AWS IAM authentication (REDIS_GCP_SERVICE_ACCOUNT, REDIS_AZURE_REDIS_AD_TOKEN, REDIS_AWS_IAM_AUTH) fails to open with a missing credential source error; LiteLLM fetches a token and authenticates.
+    why: No cloud token fetcher exists in this workspace to inject into the live redis client, so the store refuses to connect instead of connecting without a credential and failing with NOAUTH.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L509-L539
+  - what: router_settings.cache_kwargs and redis_kwargs accept namespace, socket_timeout, db, username, ssl, socket_connect_timeout, socket_keepalive, max_connections and health_check_interval; any other key is a config error that names it, where LiteLLM forwards every extra key to the redis client.
+    why: The config loader reports unknown keys instead of ignoring them, and the remaining redis client options (cluster and sentinel nodes, TLS files, IAM fields) have no routing state consumer yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L969

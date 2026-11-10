@@ -6,10 +6,15 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number, resolve_secret, resolve_string};
+use crate::resolve::{resolve_number, resolve_secret, resolve_string};
 use crate::sections::Section;
 
+use self::connection::Connection;
+use self::kwargs::{Presence, RawKwargs, kwargs, parse_i64};
+
+pub mod connection;
 mod environment;
+mod kwargs;
 
 const DEFAULT_SOCKET_TIMEOUT: f64 = 5.0;
 const SHARED_CLIENT_SOCKET_TIMEOUT: f64 = 0.1;
@@ -31,37 +36,12 @@ struct RawRouterSettings {
     port: Option<RawNumber>,
     #[serde(default, rename = "redis_password")]
     password: Option<SecretString>,
+    #[serde(default, rename = "redis_db")]
+    db: Option<RawNumber>,
     #[serde(default)]
     cache_kwargs: RawKwargs,
     #[serde(default)]
     redis_kwargs: RawKwargs,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawKwargs {
-    #[serde(default)]
-    namespace: Option<String>,
-    #[serde(default)]
-    socket_timeout: Presence<RawNumber>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum Presence<T> {
-    #[default]
-    #[serde(skip_deserializing)]
-    Absent,
-    Null(()),
-    Value(T),
-}
-
-impl<T> Presence<T> {
-    fn or(self, other: Self) -> Self {
-        match self {
-            Self::Absent => other,
-            set @ (Self::Null(()) | Self::Value(_)) => set,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -71,14 +51,10 @@ pub struct Settings {
     pub redis_port: Option<i64>,
     pub redis_password: Option<SecretString>,
     pub namespace: Option<String>,
+    pub connection: Connection,
     pub socket_timeout: f64,
     pub pool_timeout_seconds: u32,
     pub redis_environment: BTreeMap<String, SecretString>,
-}
-
-struct Kwargs {
-    namespace: Option<String>,
-    socket_timeout: Presence<f64>,
 }
 
 impl Section for Raw {
@@ -100,6 +76,11 @@ impl Section for Raw {
         };
         let port =
             resolve_number::<i64, _>(router.port, "router_settings.redis_port", lookup, parse_i64)?;
+        let legacy_db =
+            resolve_number::<i64, _>(router.db, "router_settings.redis_db", lookup, parse_i64)?;
+        let db = cache.connection.db.or(legacy_db).or(redis.connection.db);
+        let mut connection = cache.connection.or(redis.connection);
+        connection.db = db;
         Ok(Settings {
             redis_url: resolve_secret(router.url, "router_settings.redis_url", lookup)?,
             redis_host: optional_text(router.host, "router_settings.redis_host", lookup)?,
@@ -110,31 +91,13 @@ impl Section for Raw {
                 lookup,
             )?,
             namespace: cache.namespace.or(redis.namespace),
+            connection,
             socket_timeout,
             pool_timeout_seconds: number::<u32, _>(lookup, "REDIS_CONNECTION_POOL_TIMEOUT")?
                 .unwrap_or(DEFAULT_POOL_TIMEOUT),
             redis_environment: environment::collect(lookup),
         })
     }
-}
-
-fn kwargs<L>(raw: RawKwargs, section: &str, lookup: &L) -> Result<Kwargs, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let path = |key: &str| format!("router_settings.{section}.{key}");
-    let socket_timeout = match raw.socket_timeout {
-        Presence::Absent => Presence::Absent,
-        Presence::Null(()) => Presence::Null(()),
-        Presence::Value(number) => {
-            resolve_number::<f64, _>(Some(number), &path("socket_timeout"), lookup, parse_float)?
-                .map_or(Presence::Null(()), Presence::Value)
-        }
-    };
-    Ok(Kwargs {
-        namespace: optional_text(raw.namespace, &path("namespace"), lookup)?,
-        socket_timeout,
-    })
 }
 
 fn optional_text<L>(
@@ -158,15 +121,6 @@ where
         None => Ok(None),
         Some(text) => Ok(betterlite_env::number::<T>(name, &text)?),
     }
-}
-
-fn parse_i64(text: &str, path: &str) -> Result<i64, ConfigError> {
-    text.trim()
-        .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
 }
 
 mod tests;

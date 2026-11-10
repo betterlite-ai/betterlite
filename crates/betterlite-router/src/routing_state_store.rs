@@ -31,6 +31,7 @@ pub struct RedisSettings {
     pub port: Option<i64>,
     pub password: Option<SecretString>,
     pub namespace: Option<String>,
+    pub connection: config::connection::Connection,
     pub socket_timeout: f64,
     pub pool_timeout_seconds: u32,
     pub environment: BTreeMap<String, SecretString>,
@@ -50,6 +51,7 @@ impl TryFrom<&config::Settings> for RedisSettings {
             port: section.redis_port,
             password: section.redis_password.clone(),
             namespace: section.namespace.clone(),
+            connection: section.connection.clone(),
             socket_timeout: section.socket_timeout,
             pool_timeout_seconds: section.pool_timeout_seconds,
             environment: section.redis_environment.clone(),
@@ -105,7 +107,7 @@ impl RoutingStateStore {
         let state = &self.redis;
         let ttl = redis_state::typed_ttl(state, ttl_seconds)?;
         let name = redis_state::namespaced(state, key);
-        let swap = redis_state::cas::compare_and_set(state, &name, expected, value, ttl);
+        let swap = redis_state::cas::compare_and_set(state, &name, expected, value, redis_state::codec::Expiry::Seconds(ttl));
         redis_state::run_observed(state, "compare_and_set", None, move || swap).await
     }
 

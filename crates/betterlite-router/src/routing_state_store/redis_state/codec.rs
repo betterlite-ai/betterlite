@@ -50,8 +50,18 @@ pub(crate) fn reply_bytes(
         .map_err(|source| StateStoreError::Reply { operation, source })
 }
 
-pub(crate) fn set_command(key: &str, bytes: &[u8], ttl: i64) -> redis::Cmd {
+#[derive(Clone, Copy)]
+pub(crate) enum Expiry {
+    Seconds(i64),
+    Keep,
+}
+
+pub(crate) fn set_command(key: &str, bytes: &[u8], expiry: Expiry) -> redis::Cmd {
     let mut command = redis::cmd("SET");
-    command.arg(key).arg(bytes).arg("EX").arg(ttl);
+    command.arg(key).arg(bytes);
+    match expiry {
+        Expiry::Seconds(ttl) => command.arg("EX").arg(ttl),
+        Expiry::Keep => command.arg("KEEPTTL"),
+    };
     command
 }

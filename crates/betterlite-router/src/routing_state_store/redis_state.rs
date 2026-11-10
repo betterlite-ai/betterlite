@@ -17,7 +17,9 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
-use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
+use betterlite_redis::redis_connection_settings::model::scalars::{
+    BoolOrText, FloatOrText, IntOrText,
+};
 use betterlite_redis::redis_connection_settings::model::settings::{
     ClientKind, RedisConnectionSettings, RedisOverrides,
 };
@@ -111,22 +113,23 @@ fn transport(
     Ok((transport, endpoint))
 }
 
-fn connection_settings(
+pub(crate) fn connection_settings(
     settings: &RedisSettings,
 ) -> Result<RedisConnectionSettings, StateStoreError> {
+    let connection = &settings.connection;
     let overrides = RedisOverrides {
         host: settings.host.clone(),
         port: settings.port.map(IntOrText::Value),
-        db: None,
-        username: None,
+        db: connection.db.map(IntOrText::Value),
+        username: connection.username.clone(),
         password: settings.password.clone().map(Some),
         url: settings.url.clone().map(Some),
-        ssl: None,
+        ssl: connection.ssl.map(BoolOrText::Value),
         socket_timeout: Some(FloatOrText::Value(settings.socket_timeout)),
-        socket_connect_timeout: None,
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
+        socket_connect_timeout: connection.socket_connect_timeout.map(FloatOrText::Value),
+        socket_keepalive: connection.socket_keepalive.map(BoolOrText::Value),
+        max_connections: connection.max_connections.map(IntOrText::Value),
+        health_check_interval: connection.health_check_interval.map(IntOrText::Value),
         credential_provider: false,
         startup_nodes: None,
         sentinel_nodes: None,

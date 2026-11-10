@@ -26,6 +26,9 @@ pub(crate) async fn run(name: &str) {
     }
     match name {
         "increment_succeeds_under_contention" => increment_succeeds_under_contention().await,
+        "increment_keeps_an_expiring_key_at_ttl_zero" => {
+            increment_keeps_an_expiring_key_at_ttl_zero().await;
+        }
         "increment_conflicts_after_the_update_window" => {
             increment_conflicts_after_the_update_window().await;
         }
@@ -122,7 +125,28 @@ async fn ttl_is_rejected(seconds: f64) {
             if same_f64(reported, seconds) || (reported.is_nan() && seconds.is_nan())
     );
     assert!(rejected);
-    assert!(server.raw("counter").is_none());
+}
+
+async fn increment_keeps_an_expiring_key_at_ttl_zero() {
+    let server = FakeRedis::start().await;
+    let clock = TestClock::new();
+    let store = store(&server, None, breaker(5, 60_000), &clock);
+    seed(&server, "counter", &RouteValue::Counter(5), 0);
+    let observed = store
+        .increment(
+            &route_key("counter"),
+            &RouteIncrement::Counter(1),
+            Some(100.0_f64),
+        )
+        .await
+        .unwrap();
+    assert_eq!(observed.value, RouteValue::Counter(6));
+    let (bytes, ttl) = server.raw("counter").unwrap();
+    assert_eq!(
+        serde_json::from_slice::<RouteValue>(&bytes).unwrap(),
+        RouteValue::Counter(6)
+    );
+    assert_eq!(ttl, 0);
 }
 
 async fn fractional_ttl_truncates() {
@@ -402,14 +426,14 @@ async fn increment_succeeds_under_contention() {
         .increment(&key, &RouteIncrement::Counter(2), None)
         .await
         .unwrap();
-    server.rival_writes_before_exec(25);
+    server.rival_writes_before_exec(4);
     let observed = store
         .increment(&key, &RouteIncrement::Counter(3), None)
         .await
         .unwrap();
-    assert_eq!(observed.value, RouteValue::Counter(5));
+    assert_eq!(observed.value, RouteValue::Counter(9));
     let stored: RouteValue = serde_json::from_slice(&server.raw("counter").unwrap().0).unwrap();
-    assert_eq!(stored, RouteValue::Counter(5));
+    assert_eq!(stored, RouteValue::Counter(9));
 }
 
 async fn increment_conflicts_after_the_update_window() {

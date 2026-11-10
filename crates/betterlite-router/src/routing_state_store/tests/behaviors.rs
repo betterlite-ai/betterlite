@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 
 use betterlite_config::sections::routing_state_store::Settings as ConfigSettings;
+use betterlite_config::sections::routing_state_store::connection::Connection;
 
 use super::super::error::{StateStoreError, StoreWarning};
 use super::super::{RedisSettings, RoutingStateStore, Settings};
@@ -431,6 +432,7 @@ fn config_section(
         redis_port: port,
         redis_password: Some(secret("pw")),
         namespace: None,
+        connection: Connection::default(),
         socket_timeout: 5.0_f64,
         pool_timeout_seconds: 5,
         redis_environment: environment,

@@ -6,7 +6,7 @@ use redis::cmd;
 
 use super::super::error::StateStoreError;
 use super::RedisState;
-use super::codec::{decode, encode, incremented, reply_bytes};
+use super::codec::{Expiry, decode, encode, incremented, reply_bytes};
 use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 pub(crate) async fn read_one(
@@ -53,7 +53,11 @@ pub(crate) async fn increment_until_written(
         if encode(&next)?.is_none() {
             return Ok(next);
         }
-        let expiry = if remaining >= 0 { remaining } else { ttl };
+        let expiry = if remaining >= 0 {
+            Expiry::Keep
+        } else {
+            Expiry::Seconds(ttl)
+        };
         let outcome =
             super::cas::compare_and_set(state, namespaced, &current, &next, expiry).await?;
         if outcome.swapped {

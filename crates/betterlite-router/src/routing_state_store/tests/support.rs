@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use betterlite_config::sections::routing_state_store::connection::Connection;
 use secrecy::SecretString;
 
 use super::super::{BreakerClock, RedisSettings, RoutingStateStore, Settings};
@@ -53,6 +54,7 @@ pub(crate) fn settings(
             port: Some(i64::from(server.port())),
             password: None,
             namespace: namespace.map(str::to_owned),
+            connection: Connection::default(),
             socket_timeout: 1.0_f64,
             pool_timeout_seconds: 5,
             environment: BTreeMap::new(),

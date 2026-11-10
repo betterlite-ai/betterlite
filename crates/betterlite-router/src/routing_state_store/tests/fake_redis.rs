@@ -13,6 +13,8 @@ use tokio::io::{
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
+use crate::routing_value_store::RouteValue;
+
 struct Entry {
     value: Vec<u8>,
     ttl: i64,
@@ -232,6 +234,17 @@ fn handshake(state: &State, command: &Command) -> Vec<u8> {
     simple("OK")
 }
 
+fn rival_write(inner: &mut Inner, key: &str) {
+    let next = match get(inner, key).map(|bytes| serde_json::from_slice::<RouteValue>(&bytes)) {
+        None => 1,
+        Some(Ok(RouteValue::Counter(count))) => count.saturating_add(1),
+        Some(_) => return touch(inner, key),
+    };
+    let ttl = inner.entries.get(key).map_or(-1, |entry| entry.ttl);
+    let bytes = serde_json::to_vec(&RouteValue::Counter(next)).unwrap_or_default();
+    put(inner, key, bytes, ttl);
+}
+
 fn watch(state: &State, connection: &mut ConnectionState, command: &Command) -> Vec<u8> {
     let inner = lock(state);
     for key in command.args.iter().skip(1) {
@@ -255,7 +268,7 @@ fn execute(state: &State, connection: &mut ConnectionState) -> Vec<u8> {
         .is_ok()
     {
         for (key, _version) in &connection.watched {
-            touch(&mut inner, key);
+            rival_write(&mut inner, key);
         }
     }
     let changed = connection
@@ -310,37 +323,60 @@ fn get(inner: &Inner, key: &str) -> Option<Vec<u8>> {
 }
 
 fn set(inner: &mut Inner, command: &Command) -> Vec<u8> {
-    let (ttl, only_missing) = set_options(command);
+    let options = set_options(command);
     let key = arg(command, 1);
-    if only_missing && inner.entries.contains_key(key) {
+    if options.ttl.is_some_and(|ttl| ttl <= 0) {
+        return error("ERR invalid expire time in 'set' command");
+    }
+    if options.only_missing && inner.entries.contains_key(key) {
         return bulk(None);
     }
+    let ttl = if options.keep_ttl {
+        inner.entries.get(key).map_or(-1, |entry| entry.ttl)
+    } else {
+        options.ttl.unwrap_or(-1)
+    };
     put(inner, key, arg(command, 2).as_bytes().to_vec(), ttl);
     simple("OK")
 }
 
-fn set_options(command: &Command) -> (i64, bool) {
-    let mut ttl = -1;
-    let mut only_missing = false;
+struct SetOptions {
+    ttl: Option<i64>,
+    only_missing: bool,
+    keep_ttl: bool,
+}
+
+fn set_options(command: &Command) -> SetOptions {
+    let mut options = SetOptions {
+        ttl: None,
+        only_missing: false,
+        keep_ttl: false,
+    };
     let mut index = 3;
     while let Some(option) = command.args.get(index) {
         match option.to_ascii_uppercase().as_str() {
             "EX" => {
-                ttl = command
-                    .args
-                    .get(index.saturating_add(1))
-                    .and_then(|text| text.parse().ok())
-                    .unwrap_or(-1);
+                options.ttl = Some(
+                    command
+                        .args
+                        .get(index.saturating_add(1))
+                        .and_then(|text| text.parse().ok())
+                        .unwrap_or(0),
+                );
                 index = index.saturating_add(2);
             }
             "NX" => {
-                only_missing = true;
+                options.only_missing = true;
+                index = index.saturating_add(1);
+            }
+            "KEEPTTL" => {
+                options.keep_ttl = true;
                 index = index.saturating_add(1);
             }
             _ => index = index.saturating_add(1),
         }
     }
-    (ttl, only_missing)
+    options
 }
 
 fn put(inner: &mut Inner, key: &str, value: Vec<u8>, ttl: i64) {

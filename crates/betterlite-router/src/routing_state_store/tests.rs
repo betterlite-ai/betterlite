@@ -2,6 +2,7 @@
 
 mod behaviors;
 mod boundaries;
+mod connection;
 mod support;
 
 use rstest::rstest;
@@ -36,6 +37,18 @@ fn routing_state_store_behaviors(#[case] name: &str) {
 }
 
 #[rstest]
+#[case::connection_options_reach_the_handshake("connection_options_reach_the_handshake")]
+#[case::connection_options_outrank_the_environment("connection_options_outrank_the_environment")]
+#[case::ssl_option_switches_to_tls("ssl_option_switches_to_tls")]
+#[case::connection_options_reach_the_client_settings(
+    "connection_options_reach_the_client_settings"
+)]
+#[case::iam_environment_needs_a_credential_source("iam_environment_needs_a_credential_source")]
+fn routing_state_store_connection(#[case] name: &str) {
+    runtime().block_on(connection::run(name));
+}
+
+#[rstest]
 #[case::ttl_zero_is_rejected("ttl_zero_is_rejected")]
 #[case::ttl_negative_is_rejected("ttl_negative_is_rejected")]
 #[case::ttl_infinite_is_rejected("ttl_infinite_is_rejected")]
@@ -62,6 +75,7 @@ fn routing_state_store_behaviors(#[case] name: &str) {
 #[case::float_pipeline_zero_ttl_is_sent("float_pipeline_zero_ttl_is_sent")]
 #[case::increment_succeeds_under_contention("increment_succeeds_under_contention")]
 #[case::increment_conflicts_after_the_update_window("increment_conflicts_after_the_update_window")]
+#[case::increment_keeps_an_expiring_key_at_ttl_zero("increment_keeps_an_expiring_key_at_ttl_zero")]
 #[case::cancelled_compare_and_set_leaves_the_connection_usable(
     "cancelled_compare_and_set_leaves_the_connection_usable"
 )]

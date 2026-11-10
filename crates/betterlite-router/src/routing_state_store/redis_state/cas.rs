@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 use super::super::error::StateStoreError;
 use super::RedisState;
-use super::codec::{decode, encode, set_command};
+use super::codec::{Expiry, decode, encode, set_command};
 use crate::routing_value_store::{CompareOutcome, RouteValue, StoreRead};
 
 pub(crate) struct CasConnection {
@@ -18,12 +18,12 @@ pub(crate) async fn compare_and_set(
     key: &str,
     expected: &StoreRead,
     value: &RouteValue,
-    ttl: i64,
+    expiry: Expiry,
 ) -> Result<CompareOutcome, StateStoreError> {
     let mut slot = state.cas.slot.lock().await;
     let outcome = {
         let connection = connection(&mut slot, &state.cas.endpoint).await?;
-        compare_on(connection, key, expected, value, ttl).await
+        compare_on(connection, key, expected, value, expiry).await
     };
     if outcome.is_err() {
         *slot = None;
@@ -36,7 +36,7 @@ async fn compare_on(
     key: &str,
     expected: &StoreRead,
     value: &RouteValue,
-    ttl: i64,
+    expiry: Expiry,
 ) -> Result<CompareOutcome, StateStoreError> {
     let current = watched_read(connection, key).await?;
     if current != *expected {
@@ -53,7 +53,7 @@ async fn compare_on(
             current,
         });
     };
-    if write_watched(connection, key, &bytes, ttl).await? {
+    if write_watched(connection, key, &bytes, expiry).await? {
         return Ok(CompareOutcome {
             swapped: true,
             current: StoreRead::Value(value.clone()),
@@ -109,11 +109,11 @@ async fn write_watched(
     connection: &mut MultiplexedConnection,
     key: &str,
     bytes: &[u8],
-    ttl: i64,
+    expiry: Expiry,
 ) -> Result<bool, StateStoreError> {
     let mut pipeline = redis::Pipeline::new();
     pipeline.atomic();
-    pipeline.add_command(set_command(key, bytes, ttl));
+    pipeline.add_command(set_command(key, bytes, expiry));
     let executed: Option<Value> = pipeline
         .query_async(connection)
         .await
