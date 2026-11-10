@@ -1,0 +1,11 @@
+kind: helper
+name: metric-plan-http-endpoint
+call:
+  b3855:
+    function: metric_reader_plan
+    config:
+      exporter: http/protobuf
+      endpoint: http://collector:4318/v1/traces
+      headers: x-key=one
+env: {}
+compare: {ignore: []}

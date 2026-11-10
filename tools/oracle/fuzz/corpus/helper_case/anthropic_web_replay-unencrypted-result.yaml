@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-web-replay-unencrypted-result
+call:
+  anthropic_web_replay:
+    messages:
+      - role: assistant
+        content:
+          - {type: server_tool_use, id: s1, input: {query: rust}}
+          - type: web_search_tool_result
+            tool_use_id: s1
+            content:
+              - {type: web_search_result, title: A, url: "https://a.example", snippet: S, extra: 1}
+              - {type: web_search_result, title: "", url: "https://b.example"}
+          - {type: web_search_result, url: independent}
+env: {}
+compare: {ignore: []}

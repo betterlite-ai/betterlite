@@ -1,0 +1,17 @@
+kind: helper
+name: catalog-failure-warning
+call:
+  vertex_model_policy:
+    capabilities:
+      cases:
+        - {model: gemini-2.5-pro, provider: vertex_ai, system: 'true', schema: 'true'}
+        - {model: unknown-model, provider: vertex_ai_beta, system: error, schema: 'false'}
+        - {model: gemini/123456, provider: vertex_ai, system: 'false', schema: 'true'}
+        - {model: gemini-1.5-pro, provider: vertex_ai_beta, system: 'true', schema: 'true'}
+        - {model: gemini-10-pro, provider: gemini, system: 'false', schema: error}
+        - {model: GEMINI-3-PRO, provider: vertex_ai, system: 'false', schema: 'false'}
+        - {model: gemini-2x, provider: vertex_ai, system: 'false', schema: 'false'}
+        - {model: gemma-2.5-pro, provider: vertex_ai, system: 'true', schema: 'false'}
+        - {model: chat-bison, provider: vertex_ai, system: 'false', schema: 'false'}
+env: {}
+compare: {ignore: []}

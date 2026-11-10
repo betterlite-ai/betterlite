@@ -1,0 +1,5 @@
+kind: helper
+name: openai-workload-identity-seed-resolve
+call: {openai_workload_identity: {resolve: {probes: [{env: {}, api_key: sk-seed}]}}}
+env: {}
+compare: {ignore: []}
