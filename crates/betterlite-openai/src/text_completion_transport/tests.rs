@@ -404,6 +404,40 @@ fn error_mapping() {
     status_error_is_wrapped();
     missing_status_defaults_and_null();
     transform_failure_is_wrapped();
+    undecodable_answers_are_wrapped();
+}
+
+// A body that is no completion and an SSE event past the byte limit both reach the caller as wrapped errors
+fn undecodable_answers_are_wrapped() {
+    let (transport, _constructor) = support::transport(Answer::buffered(&support::object(vec![(
+        "id",
+        Value::from(1_i64),
+    )])));
+    let (call, _logger) = begin_only(&transport, text_request(Vec::new()));
+    let error = run(transport.send(&call, None)).expect_err("not a completion");
+    assert_eq!(wrapped_status(&error).0, ErrorStatus::Missing);
+    assert!(
+        error
+            .to_string()
+            .starts_with("the answer is not a completion")
+    );
+    let oversized = "x".repeat(1_100_000);
+    let (transport_big, _constructor_big) =
+        support::transport(Answer::stream(vec![support::chunk(&oversized, None)]));
+    let exchange = begin_send(
+        &transport_big,
+        text_request(vec![("stream", Value::Bool(true))]),
+    );
+    let (outcome, _logger_big) = finish(&transport_big, exchange);
+    let TextCompletionOutcome::Stream(stream) = outcome else {
+        panic!("not a stream");
+    };
+    let items: Vec<Result<StreamChunk, TextCompletionError>> = run(stream.collect());
+    let Some(Err(failed)) = items.last() else {
+        panic!("the oversized event was not rejected");
+    };
+    assert_eq!(failed.status, ErrorStatus::Missing);
+    assert!(failed.message.contains("exceeds the byte limit"));
 }
 
 fn status_error_is_wrapped() {
@@ -646,6 +680,7 @@ fn caller_headers_stay_hidden(secret: &str) {
     let record = first_pre(&logger);
     assert!(record.complete_input_dict.contains_key("extra_headers"));
     assert!(!format!("{call:?}").contains(secret));
+    assert!(format!("{call:?}").contains("extra_headers"));
     assert!(!format!("{record:?}").contains(secret));
     assert!(format!("{record:?}").contains("extra_headers"));
 }
