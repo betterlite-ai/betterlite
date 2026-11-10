@@ -103,6 +103,24 @@ fn records_the_defaults_when_the_request_omits_the_optional_values() {
 }
 
 #[test]
+fn a_null_kwarg_takes_the_field_default() {
+    let kwargs = params(&[
+        ("api_base", Json::Null),
+        ("metadata", Json::Null),
+        ("user", Json::Null),
+        ("stream", Json::Null),
+    ]);
+    let cached_result = cached();
+    let state = recorded(&kwargs, &cached_result, |_hit| {});
+    assert_eq!(state.user, None);
+    assert_eq!(details(&state, &["stream"]), r#"{"stream":false}"#);
+    assert_eq!(
+        encoded(&Json::Object(state.litellm_params)),
+        r#"{"logger_fn":null,"acompletion":true,"api_base":"","metadata":{},"model_info":{},"proxy_server_request":null,"stream_response":{},"custom_llm_provider":"openai","preset_cache_key":"preset-key"}"#
+    );
+}
+
+#[test]
 fn a_sync_cache_hit_records_a_sync_call() {
     let kwargs = params(&[]);
     let cached_result = cached();

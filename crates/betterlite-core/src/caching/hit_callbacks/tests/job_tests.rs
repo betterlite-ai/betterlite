@@ -1,10 +1,17 @@
 use betterlite_logging::logging_state::correlation::CorrelationContext;
-use betterlite_logging::worker::{Admission, LoggingWorker, Rejection};
+use betterlite_logging::worker::{Admission, Callback as _, LoggingWorker, Rejection};
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{Fixture, borrowed_handler, cached, state, success_request, worker_settings};
 use crate::caching::hit_callbacks::job::{LoggingSyncDispatch, SyncSuccessDispatch as _};
+
+#[test]
+fn a_cache_hit_job_names_the_cache_hit_success_event() {
+    let fixture = Fixture::new(false);
+    let job = fixture.cache_hit_job(&cached());
+    assert_eq!(job.name(), "cache_hit_success");
+}
 
 #[tokio::test]
 async fn a_cache_hit_runs_the_async_handler_then_the_sync_callbacks_once() {
