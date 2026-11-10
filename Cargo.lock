@@ -1894,6 +1894,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
  "secrecy",
