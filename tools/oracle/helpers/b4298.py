@@ -220,7 +220,6 @@ class RecordingBackend(BaseCache):
         super().__init__()
         self.failure = failure
         self.pipeline: PipelineCall | None = None
-        self.sets: list[tuple[str, Json]] = []
 
     async def async_set_cache_pipeline(
         self, cache_list: Sequence[tuple[str, object]], **kwargs: object
@@ -231,9 +230,6 @@ class RecordingBackend(BaseCache):
         self.pipeline = PipelineCall(
             cache_list=[(key, cast(Json, value)) for (key, value) in cache_list], ttl=ttl
         )
-
-    async def async_set_cache(self, key: str, value: object, **_kwargs: object) -> None:
-        self.sets.append((key, cast(Json, value)))
 
 
 class FakeNative:

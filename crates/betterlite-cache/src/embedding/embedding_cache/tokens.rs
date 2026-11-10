@@ -12,7 +12,7 @@ enum DetailKind {
     Value,
 }
 
-// PromptTokensDetailsWrapper declares these fields, so the split follows the field type pydantic coerced the value to.
+// The fields PromptTokensDetailsWrapper declares, so the split follows the type pydantic coerced the value to.
 fn declared_kind(name: &str) -> DetailKind {
     match name {
         "audio_tokens"
@@ -37,13 +37,12 @@ fn declared_kind(name: &str) -> DetailKind {
 #[must_use]
 pub fn per_item_prompt_tokens(result: &EmbeddingResponse, idx: usize) -> Option<i64> {
     let total = result.usage.as_ref()?.prompt_tokens?;
-    let count = i64::try_from(result.data.len()).ok()?;
-    if count <= 1 {
-        return Some(total);
-    }
-    let items = i128::from(count);
+    let items = i128::try_from(result.data.len()).ok()?;
     let index = i128::try_from(idx).ok()?;
     let wide_total = i128::from(total);
+    if items <= 1 {
+        return Some(total);
+    }
     let quotient = wide_total.checked_div_euclid(items)?;
     let remainder = wide_total.checked_rem_euclid(items)?;
     let share = if index < remainder {
@@ -70,13 +69,14 @@ pub fn per_item_prompt_tokens_details(result: &EmbeddingResponse, idx: usize) ->
     if result.data.len() <= 1 {
         return Some(mirrored);
     }
-    let items = i128::try_from(result.data.len()).ok()?;
-    let index = i128::try_from(idx).ok()?;
     let per_item = mirrored
         .into_iter()
         .map(|(name, value)| {
             let kind = declared_kind(&name);
-            Some((name, distributed_detail(kind, value, items, index)?))
+            Some((
+                name,
+                distributed_detail(kind, value, result.data.len(), idx)?,
+            ))
         })
         .collect::<Option<Extra>>()?;
     Some(per_item)
@@ -98,7 +98,9 @@ fn mirror_cache_tokens(mut details: Extra) -> Extra {
     details
 }
 
-fn distributed_detail(kind: DetailKind, value: Json, items: i128, index: i128) -> Option<Json> {
+fn distributed_detail(kind: DetailKind, value: Json, count: usize, idx: usize) -> Option<Json> {
+    let items = i128::try_from(count).ok()?;
+    let index = i128::try_from(idx).ok()?;
     match kind {
         DetailKind::Integer => Some(distributed_integer(value, items, index)),
         DetailKind::Float => Some(distributed_float(value, items)),
@@ -142,16 +144,13 @@ fn integer_share(total: i128, items: i128, index: i128) -> Option<i128> {
 }
 
 fn distributed_float(value: Json, items: i128) -> Json {
-    let Json::Number(number) = &value else {
-        return value;
-    };
-    let Some(total) = number.as_f64() else {
-        return value;
-    };
-    let Ok(count) = u32::try_from(items) else {
-        return value;
-    };
-    Number::from_f64(Div::div(total, f64::from(count))).map_or(value, Json::Number)
+    if let (Json::Number(number), Ok(count)) = (&value, u32::try_from(items))
+        && let Some(total) = number.as_f64()
+        && let Some(scaled) = Number::from_f64(Div::div(total, f64::from(count)))
+    {
+        return Json::Number(scaled);
+    }
+    value
 }
 
 // Fields outside the wrapper's declarations keep their json type, so an extra int divides and an extra float scales.
