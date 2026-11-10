@@ -5,77 +5,49 @@ use betterlite_prompts::media::base64_string::is_base64_encoded;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
-use super::{CohereEmbeddingError, DEFAULT_COMPLETE_URL};
+use super::{CohereEmbeddingError, DEFAULT_COMPLETE_URL, DEFAULT_EMBEDDING_INPUT_TYPE};
 use crate::embedding::EmbeddingInput;
 use crate::openai_base_config::Headers;
 
-// COHERE_EMBEDDING_INPUT_TYPES: the closed set the request builder and an overlay may write
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CohereInputType {
-    SearchDocument,
-    SearchQuery,
-    Classification,
-    Clustering,
-    Image,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum CohereTruncate {
-    None,
-    Start,
-    End,
-}
-
-// CohereEmbeddingRequestWithModel: model plus every request field optional_params can overlay
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CohereEmbeddingRequest {
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub texts: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<String>>,
-    pub input_type: CohereInputType,
+    pub input_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub truncate: Option<CohereTruncate>,
+    pub truncate: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding_types: Option<Vec<Json>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_dimension: Option<i64>,
+    #[serde(flatten)]
+    pub extra: Object,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-struct InferenceParams {
-    model: Option<String>,
-    texts: Option<Vec<String>>,
-    images: Option<Vec<String>>,
-    input_type: Option<CohereInputType>,
-    truncate: Option<CohereTruncate>,
-    embedding_types: Option<Vec<Json>>,
-    output_dimension: Option<i64>,
-}
-
-// map_openai_params: encoding_format stays a list, every other value becomes a one-entry list
 #[must_use]
 pub fn map_openai_params(non_default_params: &Object, mut optional_params: Object) -> Object {
     for (name, value) in non_default_params {
-        if name == "encoding_format" {
-            let types = if let Json::List(items) = value {
-                items.clone()
-            } else {
-                vec![value.clone()]
-            };
-            optional_params.insert(String::from("embedding_types"), Json::List(types));
-        } else if name == "dimensions" {
-            optional_params.insert(String::from("output_dimension"), value.clone());
+        match name.as_str() {
+            "encoding_format" => {
+                let types = if let Json::List(items) = value {
+                    items.clone()
+                } else {
+                    vec![value.clone()]
+                };
+                optional_params.insert(String::from("embedding_types"), Json::List(types));
+            }
+            "dimensions" => {
+                optional_params.insert(String::from("output_dimension"), value.clone());
+            }
+            _ => {}
         }
     }
     optional_params
 }
 
-// validate_environment: defaults first, then the caller's exact header spellings on top
 #[must_use]
 pub fn validate_environment(headers: Headers, api_key: Option<&SecretString>) -> Headers {
     let mut merged = Headers::from([(
@@ -92,7 +64,6 @@ pub fn validate_environment(headers: Headers, api_key: Option<&SecretString>) ->
     merged
 }
 
-// get_complete_url: a non-empty supplied base is the whole URL, never a base plus a suffix
 #[must_use]
 pub fn get_complete_url(api_base: Option<&str>) -> String {
     match api_base {
@@ -108,48 +79,30 @@ pub fn transform_request(
     inference_params: &Object,
 ) -> Result<CohereEmbeddingRequest, CohereEmbeddingError> {
     let image = input.last().is_some_and(|text| is_base64_encoded(text));
-    let mut request = CohereEmbeddingRequest {
+    let built = CohereEmbeddingRequest {
         model: model.to_owned(),
         texts: (!image).then_some(input.to_vec()),
         images: image.then_some(input.to_vec()),
-        input_type: if image {
-            CohereInputType::Image
+        input_type: String::from(if image {
+            "image"
         } else {
-            CohereInputType::SearchDocument
-        },
+            DEFAULT_EMBEDDING_INPUT_TYPE
+        }),
         truncate: None,
         embedding_types: None,
         output_dimension: None,
+        extra: Object::new(),
     };
-    let value = serde_json::to_value(inference_params)
-        .map_err(|source| CohereEmbeddingError::Json { source })?;
-    let params: InferenceParams =
-        serde_json::from_value(value).map_err(|source| CohereEmbeddingError::Json { source })?;
-    if let Some(model) = params.model {
-        request.model = model;
-    }
-    if let Some(texts) = params.texts {
-        request.texts = Some(texts);
-    }
-    if let Some(images) = params.images {
-        request.images = Some(images);
-    }
-    if let Some(input_type) = params.input_type {
-        request.input_type = input_type;
-    }
-    if let Some(truncate) = params.truncate {
-        request.truncate = Some(truncate);
-    }
-    if let Some(embedding_types) = params.embedding_types {
-        request.embedding_types = Some(embedding_types);
-    }
-    if let Some(output_dimension) = params.output_dimension {
-        request.output_dimension = Some(output_dimension);
-    }
-    Ok(request)
+    let mut fields: Object = serde_json::from_value(serde_json::to_value(built)?)?;
+    fields.extend(
+        inference_params
+            .iter()
+            .filter(|(_, value)| **value != Json::Null)
+            .map(|(name, value)| (name.clone(), value.clone())),
+    );
+    Ok(serde_json::from_value(serde_json::to_value(fields)?)?)
 }
 
-// transform_embedding_request drops a token input at input[0] and wraps a single string in a list
 pub fn transform_embedding_request(
     model: &str,
     input: &EmbeddingInput,

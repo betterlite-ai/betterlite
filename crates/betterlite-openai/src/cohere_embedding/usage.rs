@@ -1,12 +1,13 @@
-use betterlite_prompts::arguments::json::Json;
-use serde::Serialize;
-
 use super::{CohereEmbeddingError, TextEncoding};
+use betterlite_prompts::arguments::json::Json;
+use serde::{Deserialize, Serialize};
 
-// PromptTokensDetailsWrapper: both billed fields survive a zero and stay null when the answer omits them
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+// the aliases are Cohere's meta.billed_units names; serialization keeps the OpenAI names
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BilledUnits {
+    #[serde(alias = "input_tokens")]
     pub text_tokens: Option<i64>,
+    #[serde(alias = "images")]
     pub image_tokens: Option<i64>,
 }
 
@@ -18,92 +19,41 @@ pub struct CohereEmbeddingUsage {
     pub prompt_tokens_details: Option<BilledUnits>,
 }
 
+#[derive(Default, Deserialize)]
+struct Meta {
+    billed_units: Option<BilledUnits>,
+}
+
 // _calculate_usage: only when the answer bills neither field does the encoding service count the input
 pub fn calculate_usage(
     input: &[String],
     encoding: &dyn TextEncoding,
     meta: Option<&Json>,
 ) -> Result<CohereEmbeddingUsage, CohereEmbeddingError> {
-    let meta_fields = match meta {
-        None | Some(Json::Null) => None,
-        Some(Json::Object(fields)) => Some(fields),
-        Some(_) => {
-            return Err(CohereEmbeddingError::Field {
-                name: "meta",
-                problem: "is not an object",
-            });
-        }
-    };
-    let billed = match meta_fields.and_then(|fields| fields.get("billed_units")) {
-        None | Some(Json::Null) => None,
-        Some(Json::Object(fields)) => Some(fields),
-        Some(_) => {
-            return Err(CohereEmbeddingError::Field {
-                name: "meta.billed_units",
-                problem: "is not an object",
-            });
-        }
-    };
-    let text_tokens = optional_integer(
-        billed.and_then(|fields| fields.get("input_tokens")),
-        "meta.billed_units.input_tokens",
-    )?;
-    let image_tokens = optional_integer(
-        billed.and_then(|fields| fields.get("images")),
-        "meta.billed_units.images",
-    )?;
-    if text_tokens.is_none() && image_tokens.is_none() {
-        let mut counted = 0usize;
+    let parsed: Option<Meta> = serde_json::from_value(serde_json::to_value(meta)?)?;
+    let billed = parsed.unwrap_or_default().billed_units.unwrap_or_default();
+    let (prompt_tokens, prompt_tokens_details) = if billed == BilledUnits::default() {
+        let mut counted = 0_usize;
         for text in input {
-            let tokens = encoding
-                .count_tokens(text)
-                .map_err(|source| CohereEmbeddingError::Encoding { source })?;
             counted = counted
-                .checked_add(tokens)
+                .checked_add(encoding.count_tokens(text)?)
                 .ok_or(CohereEmbeddingError::UsageOverflow)?;
         }
         let prompt_tokens =
             i64::try_from(counted).map_err(|_overflow| CohereEmbeddingError::UsageOverflow)?;
-        return Ok(CohereEmbeddingUsage {
-            prompt_tokens,
-            completion_tokens: 0,
-            total_tokens: prompt_tokens,
-            prompt_tokens_details: None,
-        });
-    }
-    let prompt_tokens = text_tokens
-        .unwrap_or(0)
-        .checked_add(image_tokens.unwrap_or(0))
-        .ok_or(CohereEmbeddingError::UsageOverflow)?;
+        (prompt_tokens, None)
+    } else {
+        let billed_total = billed
+            .text_tokens
+            .unwrap_or(0)
+            .checked_add(billed.image_tokens.unwrap_or(0))
+            .ok_or(CohereEmbeddingError::UsageOverflow)?;
+        (billed_total, Some(billed))
+    };
     Ok(CohereEmbeddingUsage {
         prompt_tokens,
         completion_tokens: 0,
         total_tokens: prompt_tokens,
-        prompt_tokens_details: Some(BilledUnits {
-            text_tokens,
-            image_tokens,
-        }),
+        prompt_tokens_details,
     })
-}
-
-fn optional_integer(
-    value: Option<&Json>,
-    field: &'static str,
-) -> Result<Option<i64>, CohereEmbeddingError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => {
-            number
-                .as_i64()
-                .map(Some)
-                .ok_or(CohereEmbeddingError::Field {
-                    name: field,
-                    problem: "is not an integer",
-                })
-        }
-        Some(_) => Err(CohereEmbeddingError::Field {
-            name: field,
-            problem: "is not an integer",
-        }),
-    }
 }

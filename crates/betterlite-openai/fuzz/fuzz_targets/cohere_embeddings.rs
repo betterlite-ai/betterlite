@@ -1,28 +1,22 @@
 #![no_main]
 
 use betterlite_openai::cohere_embedding::request::transform_request;
-use betterlite_openai::cohere_embedding::response::{DecodeInput, decode_cohere_embeddings};
-use betterlite_openai::cohere_embedding::{
-    EmbeddingLogging, ModelCallDetails, PostCall, TextEncoding,
-};
+use betterlite_openai::cohere_embedding::response::{DecodeInput, transform_embedding_response};
+use betterlite_openai::cohere_embedding::{EmbeddingLogging, PostCall, TextEncoding};
 use betterlite_tokenizer::engine::error::EngineError;
 use libfuzzer_sys::fuzz_target;
 
-struct Counting;
+struct Fixture(Vec<String>);
 
-impl TextEncoding for Counting {
+impl TextEncoding for Fixture {
     fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
         Ok(text.len())
     }
 }
 
-struct Silent {
-    details: ModelCallDetails,
-}
-
-impl EmbeddingLogging for Silent {
-    fn model_call_details(&self) -> &ModelCallDetails {
-        &self.details
+impl EmbeddingLogging for Fixture {
+    fn input(&self) -> &[String] {
+        &self.0
     }
 
     fn post_call(&mut self, _call: PostCall<'_>) {}
@@ -30,27 +24,17 @@ impl EmbeddingLogging for Silent {
 
 fuzz_target!(|bytes: &[u8]| {
     let input = [String::from("hello")];
-    let Ok(empty) = serde_json::from_str("{}") else {
+    let Ok(request) = transform_request("m", &input, &Default::default()) else {
         return;
     };
-    let Ok(request) = transform_request("m", &input, &empty) else {
-        return;
+    let mut fixture = Fixture(input.to_vec());
+    let encoding = Fixture(Vec::new());
+    let reply = DecodeInput {
+        body: bytes,
+        model: "m",
+        api_key: None,
+        request_data: &request,
+        encoding: &encoding,
     };
-    let encoding = Counting;
-    let mut logging = Silent {
-        details: ModelCallDetails {
-            input: input.to_vec(),
-        },
-    };
-    let _unused = decode_cohere_embeddings(
-        DecodeInput {
-            body: bytes,
-            model: "m",
-            input: &input,
-            api_key: None,
-            request_data: &request,
-            encoding: &encoding,
-        },
-        &mut logging,
-    );
+    let _unused = transform_embedding_response(reply, &mut fixture);
 });

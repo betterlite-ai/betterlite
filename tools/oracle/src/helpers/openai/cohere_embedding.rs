@@ -5,9 +5,9 @@ use betterlite_openai::cohere_embedding::request::{
     CohereEmbeddingRequest, get_complete_url, map_openai_params, transform_embedding_request,
     transform_request, validate_environment,
 };
-use betterlite_openai::cohere_embedding::response::{TransformInput, transform_embedding_response};
+use betterlite_openai::cohere_embedding::response::{DecodeInput, transform_embedding_response};
 use betterlite_openai::cohere_embedding::{
-    DEFAULT_EMBEDDING_INPUT_TYPE, EmbeddingLogging, ModelCallDetails, PostCall,
+    CohereEmbeddingError, DEFAULT_EMBEDDING_INPUT_TYPE, EmbeddingLogging, PostCall,
     SUPPORTED_OPENAI_PARAMS, TextEncoding,
 };
 use betterlite_openai::embedding::EmbeddingInput;
@@ -27,7 +27,7 @@ enum Function {
 }
 
 #[derive(Deserialize)]
-struct Call {
+pub(crate) struct Call {
     function: Function,
     model: String,
     #[serde(default)]
@@ -54,14 +54,17 @@ struct Reply {
     fail_on: Option<String>,
 }
 
-struct Fixture {
+struct Encoder {
     encoded: Mutex<Vec<String>>,
     fail_on: Option<String>,
-    details: ModelCallDetails,
+}
+
+struct Recorder {
+    input: Vec<String>,
     calls: Vec<Value>,
 }
 
-impl TextEncoding for Fixture {
+impl TextEncoding for Encoder {
     fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
         let Ok(mut encoded) = self.encoded.lock() else {
             return Err(EngineError::PoolClosed);
@@ -77,9 +80,9 @@ impl TextEncoding for Fixture {
     }
 }
 
-impl EmbeddingLogging for Fixture {
-    fn model_call_details(&self) -> &ModelCallDetails {
-        &self.details
+impl EmbeddingLogging for Recorder {
+    fn input(&self) -> &[String] {
+        &self.input
     }
 
     fn post_call(&mut self, call: PostCall<'_>) {
@@ -92,65 +95,28 @@ impl EmbeddingLogging for Fixture {
     }
 }
 
-fn secret(value: Option<&String>) -> Option<SecretString> {
-    match value {
-        Some(key) => Some(SecretString::from(key.clone())),
-        None => None,
-    }
-}
-
-fn fixture(fail_on: Option<String>, input: &[String]) -> Fixture {
-    Fixture {
-        encoded: Mutex::new(Vec::new()),
-        fail_on,
-        details: ModelCallDetails {
-            input: input.to_vec(),
-        },
-        calls: Vec::new(),
-    }
-}
-
-fn outcome(request: Option<CohereEmbeddingRequest>) -> Value {
-    match request {
-        Some(request) => json!({"ok": true, "value": request}),
-        None => json!({"ok": false, "value": null}),
-    }
-}
-
-fn wrapper(model: &str, raw: &Value, mapped: &Object) -> Value {
-    outcome(
-        serde_json::from_value::<EmbeddingInput>(raw.clone())
-            .ok()
-            .and_then(|typed| transform_embedding_request(model, &typed, mapped).ok()),
+fn outcome(result: Result<CohereEmbeddingRequest, CohereEmbeddingError>) -> Value {
+    result.map_or_else(
+        |_| json!({"ok": false, "value": null}),
+        |value| json!({"ok": true, "value": value}),
     )
-}
-
-fn lower(model: &str, raw: &Value, mapped: &Object) -> Value {
-    let Value::Array(items) = raw else {
-        return Value::Null;
-    };
-    let Some(texts) = items
-        .iter()
-        .map(|item| item.as_str().map(str::to_owned))
-        .collect::<Option<Vec<String>>>()
-    else {
-        return Value::Null;
-    };
-    outcome(transform_request(model, &texts, mapped).ok())
 }
 
 fn request(call: &Call) -> Value {
     let mut mapped = map_openai_params(&call.options, Object::new());
     mapped.extend(call.inference.clone());
-    let key = secret(call.api_key.as_ref());
+    let key = call.api_key.clone().map(SecretString::from);
     let calls: Vec<Value> = call
         .inputs
         .iter()
         .map(|raw| {
-            json!({
-                "wrapper": wrapper(&call.model, raw, &mapped),
-                "lower": lower(&call.model, raw, &mapped),
-            })
+            let wrapper = serde_json::from_value::<EmbeddingInput>(raw.clone())
+                .map_err(CohereEmbeddingError::from)
+                .and_then(|typed| transform_embedding_request(&call.model, &typed, &mapped));
+            let lower = serde_json::from_value::<Vec<String>>(raw.clone())
+                .ok()
+                .map(|strings| outcome(transform_request(&call.model, &strings, &mapped)));
+            json!({"wrapper": outcome(wrapper), "lower": lower})
         })
         .collect();
     json!({
@@ -165,50 +131,58 @@ fn request(call: &Call) -> Value {
 
 fn reply(model: &str, entry: &Reply) -> Value {
     let mapped = map_openai_params(&entry.options, Object::new());
-    let Ok(request) =
-        transform_embedding_request(model, &EmbeddingInput::Texts(entry.input.clone()), &mapped)
-    else {
-        return json!({"ok": false, "value": null, "post_call": [], "encoded": []});
+    let input = EmbeddingInput::Texts(entry.input.clone());
+    let key = entry.api_key.clone().map(SecretString::from);
+    let encoding = Encoder {
+        encoded: Mutex::new(Vec::new()),
+        fail_on: entry.fail_on.clone(),
     };
-    let key = secret(entry.api_key.as_ref());
-    let encoding = fixture(entry.fail_on.clone(), &entry.input);
-    let mut logging = fixture(None, &entry.input);
-    let result = transform_embedding_response(
-        TransformInput {
+    let mut logging = Recorder {
+        input: entry.input.clone(),
+        calls: Vec::new(),
+    };
+    let result = transform_embedding_request(model, &input, &mapped).and_then(|request| {
+        let reply = DecodeInput {
             body: entry.body.as_bytes(),
             model,
             api_key: key.as_ref(),
             request_data: &request,
             encoding: &encoding,
-        },
-        &mut logging,
-    );
-    let encoded = encoding
-        .encoded
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_default();
-    let mut value = json!({
-        "ok": result.is_ok(),
-        "value": null,
-        "post_call": logging.calls,
-        "encoded": encoded,
+        };
+        transform_embedding_response(reply, &mut logging)
     });
-    if let Ok(response) = result {
-        value["value"] = json!(response);
-    }
-    value
+    let encoded = encoding.encoded.lock().map(|guard| guard.clone());
+    let value = result.map(|response| {
+        let usage = &response.usage;
+        json!({
+            "object": response.object,
+            "data": response.data,
+            "model": response.model,
+            "usage": [usage.prompt_tokens, usage.completion_tokens, usage.total_tokens],
+            "billed": usage.prompt_tokens_details.map(|billed| [billed.text_tokens, billed.image_tokens]),
+        })
+    });
+    json!({
+        "ok": value.is_ok(),
+        "value": value.ok(),
+        "post_call": logging.calls,
+        "encoded": encoded.unwrap_or_default(),
+    })
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Call;
 
-    fn run(call: &Self::Input) -> crate::helpers::HelperResult {
-        Ok(match call.function {
-            Function::Request => request(call),
-            Function::Response => json!({
-                "calls": call.requests.iter().map(|entry| reply(&call.model, entry)).collect::<Vec<Value>>(),
-            }),
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        Ok(match input.function {
+            Function::Request => request(input),
+            Function::Response => {
+                let calls = input
+                    .requests
+                    .iter()
+                    .map(|entry| reply(&input.model, entry));
+                json!({"calls": calls.collect::<Vec<_>>()})
+            }
         })
     }
 }

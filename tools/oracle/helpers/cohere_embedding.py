@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, TypeAlias, cast
+from contextlib import suppress
+from typing import TYPE_CHECKING, NotRequired, TypeAlias, TypedDict, cast
 from unittest.mock import patch
 
 import httpx
@@ -18,36 +19,34 @@ if TYPE_CHECKING:
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
 
+
+class Reply(TypedDict):
+    body: str
+    input: list[str]
+    options: NotRequired[Object]
+    api_key: NotRequired[str | None]
+    fail_on: NotRequired[str | None]
+
+
+class Call(TypedDict):
+    function: str
+    model: str
+    options: NotRequired[Object]
+    inference: NotRequired[Object]
+    api_base: NotRequired[str | None]
+    api_key: NotRequired[str | None]
+    headers: NotRequired[Object]
+    inputs: NotRequired[list[Json]]
+    requests: NotRequired[list[Reply]]
+
+
 CONFIG = CohereEmbeddingConfig()
-SUPPORTED = cast("Callable[..., list[str]]", CONFIG.get_supported_openai_params)
 MAP = cast("Callable[..., Object]", CONFIG.map_openai_params)
-VALIDATE = cast("Callable[..., Object]", CONFIG.validate_environment)
-URL = cast("Callable[..., str]", CONFIG.get_complete_url)
-TRANSFORM = cast("Callable[..., Object]", CONFIG._transform_request)
 REQUEST = cast("Callable[..., Object]", CONFIG.transform_embedding_request)
+LOWER = cast("Callable[..., Object]", CONFIG._transform_request)
+HEADERS = cast("Callable[..., Object]", CONFIG.validate_environment)
+URL = cast("Callable[..., str]", CONFIG.get_complete_url)
 RESPONSE = cast("Callable[..., EmbeddingResponse]", CONFIG.transform_embedding_response)
-
-
-def text(value: Json) -> str:
-    if not isinstance(value, str):
-        raise TypeError("expected text")
-    return value
-
-
-def obj(value: Json) -> Object:
-    if not isinstance(value, dict):
-        raise TypeError("expected an object")
-    return value
-
-
-def optional(value: Json) -> str | None:
-    return None if value is None else text(value)
-
-
-def names(value: Json) -> list[str]:
-    if not isinstance(value, list):
-        raise TypeError("expected a list")
-    return [text(item) for item in value]
 
 
 class Encoding:
@@ -64,7 +63,7 @@ class Encoding:
 
 class Recorder:
     def __init__(self, input_value: list[str]) -> None:
-        self.model_call_details: dict[str, Json] = {"input": cast(Json, input_value)}
+        self.model_call_details: dict[str, Json] = {"input": cast("Json", input_value)}
         self.calls: list[Json] = []
 
     def post_call(self, **params: Json) -> None:
@@ -80,114 +79,70 @@ class Recorder:
         )
 
 
-def result(value: Object | None) -> Json:
-    return {"ok": True, "value": value} if value is not None else {"ok": False, "value": None}
-
-
-def wrapper(model: str, raw: Json, mapped: Object) -> Json:
+def attempt(function: "Callable[..., Json]", *args: Json) -> Json:
     try:
-        return result(REQUEST(model, raw, mapped, {}))
+        return {"ok": True, "value": function(*args)}
     except Exception:  # noqa: BLE001 - both sides report a refusal as a failed outcome
-        return result(None)
+        return {"ok": False, "value": None}
 
 
-def lower(model: str, raw: Json, mapped: Object) -> Json:
-    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
-        return None
-    try:
-        return result(TRANSFORM(model, cast(list[str], raw), mapped))
-    except Exception:  # noqa: BLE001 - both sides report a refusal as a failed outcome
-        return result(None)
-
-
-def request(call: Object) -> Json:
-    model = text(call["model"])
-    mapped = MAP(dict(obj(call.get("options", {}))), {}, model, drop_params=False)
-    mapped.update(obj(call.get("inference", {})))
-    key = optional(call.get("api_key"))
-    calls = [
-        {"wrapper": wrapper(model, raw, mapped), "lower": lower(model, raw, mapped)}
-        for raw in cast(list[Json], call.get("inputs", []))
-    ]
+def request(call: Call) -> Json:
+    model = call["model"]
+    mapped = MAP(dict(call.get("options", {})), {}, model, drop_params=False)
+    mapped.update(call.get("inference", {}))
+    key = call.get("api_key")
+    calls: list[Json] = []
+    for raw in call.get("inputs", []):
+        texts = isinstance(raw, list) and all(isinstance(item, str) for item in raw)
+        lower = attempt(LOWER, model, raw, mapped) if texts else None
+        calls.append({"wrapper": attempt(REQUEST, model, raw, mapped, {}), "lower": lower})
+    headers = HEADERS(call.get("headers", {}), model, [], {}, {}, api_key=key)
     return cast(
-        Json,
+        "Json",
         {
             "default_input_type": COHERE_DEFAULT_EMBEDDING_INPUT_TYPE,
-            "supported": list(SUPPORTED(model)),
+            "supported": CONFIG.get_supported_openai_params(model),
             "options": mapped,
-            "headers": VALIDATE(obj(call.get("headers", {})), model, [], {}, {}, api_key=key),
-            "url": URL(optional(call.get("api_base")), key, model, {}, {}),
+            "headers": headers,
+            "url": URL(call.get("api_base"), key, model, {}, {}),
             "calls": calls,
         },
     )
 
 
-def projection(response: EmbeddingResponse) -> Json:
-    usage = cast(Usage, response.usage)
-    details = usage.prompt_tokens_details
-    billed: Json = (
-        None
-        if details is None
-        else cast(Json, {"text_tokens": details.text_tokens, "image_tokens": details.image_tokens})
-    )
-    return cast(
-        Json,
-        {
-            "object": response.object,
-            "data": cast(Json, response.data),
-            "model": response.model,
-            "usage": {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-                "prompt_tokens_details": billed,
-            },
-        },
-    )
-
-
-def reply(model: str, entry: Object) -> Json:
-    input_value = names(entry.get("input", []))
-    mapped = MAP(dict(obj(entry.get("options", {}))), {}, model, drop_params=False)
-    data = REQUEST(model, input_value, mapped, {})
-    encoding = Encoding(optional(entry.get("fail_on")))
-    recorder = Recorder(input_value)
-    try:
-        with patch.object(litellm, "encoding", encoding):
-            response = RESPONSE(
-                model=model,
-                raw_response=httpx.Response(200, content=text(entry["body"])),
-                model_response=EmbeddingResponse(),
-                logging_obj=cast("Logging", recorder),
-                api_key=optional(entry.get("api_key")),
-                request_data=data,
-                optional_params={},
-                litellm_params={},
-            )
-    except Exception:  # noqa: BLE001 - both sides report a refusal as a failed outcome
-        return cast(
-            Json,
-            {"ok": False, "value": None, "post_call": recorder.calls, "encoded": encoding.encoded},
+def reply(model: str, entry: Reply) -> Json:
+    mapped = MAP(dict(entry.get("options", {})), {}, model, drop_params=False)
+    data = REQUEST(model, entry["input"], mapped, {})
+    encoding = Encoding(entry.get("fail_on"))
+    recorder = Recorder(entry["input"])
+    outcome: Object = {"ok": False, "value": None}
+    with suppress(Exception), patch.object(litellm, "encoding", encoding):
+        response = RESPONSE(
+            model,
+            httpx.Response(200, content=entry["body"]),
+            EmbeddingResponse(),
+            cast("Logging", recorder),
+            entry.get("api_key"),
+            data,
+            {},
+            {},
         )
-    return cast(
-        Json,
-        {
-            "ok": True,
-            "value": projection(response),
-            "post_call": recorder.calls,
-            "encoded": encoding.encoded,
-        },
-    )
+        usage = cast("Usage", response.usage)
+        details = usage.prompt_tokens_details
+        billed: Json = None if details is None else [details.text_tokens, details.image_tokens]
+        value: Object = {
+            "object": response.object,
+            "data": cast("Json", response.data),
+            "model": response.model,
+            "usage": [usage.prompt_tokens, usage.completion_tokens, usage.total_tokens],
+            "billed": billed,
+        }
+        outcome = {"ok": True, "value": cast("Json", value)}
+    return {**outcome, "post_call": recorder.calls, "encoded": cast("Json", encoding.encoded)}
 
 
 def run(input_value: Object) -> Json:
-    function = input_value.get("function")
-    if function == "request":
-        return request(input_value)
-    if function == "response":
-        calls = [
-            reply(text(input_value["model"]), obj(entry))
-            for entry in cast(list[Json], input_value.get("requests", []))
-        ]
-        return cast(Json, {"calls": calls})
-    raise ValueError(f"unsupported function {function}")
+    call = cast("Call", input_value)
+    if call["function"] == "request":
+        return request(call)
+    return {"calls": [reply(call["model"], entry) for entry in call.get("requests", [])]}
