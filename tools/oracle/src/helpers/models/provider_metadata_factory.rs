@@ -206,7 +206,18 @@ fn constructors(input: &ConstructorsInput) -> HelperResult {
     let foundry: Vec<Value> = input
         .foundry
         .iter()
-        .map(|model| json!({"model": model}))
+        .map(|model| {
+            let stored =
+                select(model.as_deref(), ProviderId::AzureAi).and_then(|adapter| match adapter {
+                    ProviderModelMetadata::AzureAi(config) => config.model,
+                    ProviderModelMetadata::FireworksAi(_)
+                    | ProviderModelMetadata::Xai
+                    | ProviderModelMetadata::Ollama
+                    | ProviderModelMetadata::Lemonade(_)
+                    | ProviderModelMetadata::Stateless(_) => None,
+                });
+            json!({"model": stored})
+        })
         .collect();
     Ok(json!({"fireworks": fireworks, "lemonade": lemonade, "foundry": foundry}))
 }
