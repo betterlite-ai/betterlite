@@ -1,0 +1,11 @@
+kind: helper
+name: provider-api-base-resolver-base-and-failure
+call:
+  b7320:
+    model: perplexity/llama-3-sonar
+    params:
+      api_key: pplx-key
+    environment:
+      PERPLEXITY_API_BASE: https://perplexity.test/v1
+env: {}
+compare: {ignore: []}
