@@ -1,13 +1,17 @@
 #![cfg(test)]
 
+use std::env::temp_dir;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::process::id;
 use std::sync::atomic::Ordering;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_certificate::assertion::{IdSource as _, RandomIds};
+use crate::azure_certificate::credential::{FileReader as _, StdFiles};
 use crate::azure_certificate::material::decode_certificate_material;
 use crate::azure_client_secret::transport::HttpRequest;
 use fixture::{
@@ -108,6 +112,24 @@ fn azure_certificate_secret_safe_failure() {
     assert!(!denied_text.contains(PASSWORD));
     let second_assertion = form(&fixture.transport.posts()[1])["client_assertion"].clone();
     assert!(!denied_text.contains(&second_assertion));
+}
+
+#[test]
+fn azure_certificate_default_seams() {
+    let first = RandomIds.next_id();
+    let second = RandomIds.next_id();
+    assert_ne!(first, second);
+    assert_eq!(uuid::Uuid::parse_str(&first).unwrap().get_version_num(), 4);
+
+    let folder = temp_dir().join(format!("betterlite-azure-{}", id()));
+    fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("leaf.pem");
+    fs::write(&file, RSA_PKCS8).unwrap();
+    let read = StdFiles.read(file.to_str().unwrap()).unwrap();
+    assert_eq!(read, RSA_PKCS8);
+    let missing = StdFiles.read(folder.join("absent.pem").to_str().unwrap());
+    assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
+    fs::remove_dir_all(&folder).unwrap();
 }
 
 #[test]
