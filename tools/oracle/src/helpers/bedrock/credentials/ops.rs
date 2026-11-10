@@ -106,74 +106,41 @@ impl Operation {
         step: &Step,
         environment: &BTreeMap<String, String>,
     ) -> StepResult {
-        match self {
-            Self::GetCredentials => get_credentials(resolver, step, environment).await,
-            Self::ResolveCredentials => resolve_credentials(resolver, step, environment).await,
-            Self::ResolveS3Credentials => resolve_s3(resolver, step, environment).await,
-            Self::AuthWithAwsRole => role_credentials(resolver, step, environment).await,
+        if matches!(self, Self::AuthWithAwsRole) {
+            let Ok(owned) = OwnedRoleAuth::parse(step, environment) else {
+                return StepResult::Failed(None);
+            };
+            return match auth_with_aws_role(resolver, &owned.auth()).await {
+                Ok(role) => StepResult::Credentials {
+                    credentials: role.credentials,
+                    ttl: role.ttl.map(|ttl| match ttl {
+                        CredentialTtl::Fractional(seconds) => json!(seconds),
+                        CredentialTtl::Whole(seconds) => json!(seconds),
+                    }),
+                },
+                Err(error) => StepResult::Failed(status(&error)),
+            };
         }
-    }
-}
-
-async fn get_credentials(
-    resolver: &AwsCredentialResolver<'_>,
-    step: &Step,
-    environment: &BTreeMap<String, String>,
-) -> StepResult {
-    let Ok((settings, _s3)) = sections(step, environment) else {
-        return StepResult::Failed(None);
-    };
-    finish(
-        resolver
-            .get_credentials(&settings, step.ssl_verify.as_ref())
-            .await,
-    )
-}
-
-async fn resolve_credentials(
-    resolver: &AwsCredentialResolver<'_>,
-    step: &Step,
-    environment: &BTreeMap<String, String>,
-) -> StepResult {
-    let Ok((settings, _s3)) = sections(step, environment) else {
-        return StepResult::Failed(None);
-    };
-    finish(
-        resolver
-            .resolve_credentials(&settings, step.region.as_deref())
-            .await,
-    )
-}
-
-async fn resolve_s3(
-    resolver: &AwsCredentialResolver<'_>,
-    step: &Step,
-    environment: &BTreeMap<String, String>,
-) -> StepResult {
-    let Ok((settings, s3)) = sections(step, environment) else {
-        return StepResult::Failed(None);
-    };
-    finish(
-        resolver
-            .resolve_s3_credentials(&s3, &settings, step.region.as_deref())
-            .await,
-    )
-}
-
-async fn role_credentials(
-    resolver: &AwsCredentialResolver<'_>,
-    step: &Step,
-    environment: &BTreeMap<String, String>,
-) -> StepResult {
-    let Ok(owned) = OwnedRoleAuth::parse(step, environment) else {
-        return StepResult::Failed(None);
-    };
-    match auth_with_aws_role(resolver, &owned.auth()).await {
-        Ok(role) => StepResult::Credentials {
-            credentials: role.credentials,
-            ttl: role.ttl.map(ttl_json),
-        },
-        Err(error) => StepResult::Failed(status(&error)),
+        let Ok((settings, s3)) = sections(step, environment) else {
+            return StepResult::Failed(None);
+        };
+        let region = step.region.as_deref();
+        match self {
+            Self::GetCredentials => finish(
+                resolver
+                    .get_credentials(&settings, step.ssl_verify.as_ref())
+                    .await,
+            ),
+            Self::ResolveCredentials => {
+                finish(resolver.resolve_credentials(&settings, region).await)
+            }
+            Self::ResolveS3Credentials => finish(
+                resolver
+                    .resolve_s3_credentials(&s3, &settings, region)
+                    .await,
+            ),
+            Self::AuthWithAwsRole => StepResult::Failed(None),
+        }
     }
 }
 
@@ -223,13 +190,6 @@ fn sections(
         .next()
         .ok_or_else(|| failure("the fixture config has no deployment"))?;
     Ok((settings, s3))
-}
-
-fn ttl_json(ttl: CredentialTtl) -> Value {
-    match ttl {
-        CredentialTtl::Fractional(seconds) => json!(seconds),
-        CredentialTtl::Whole(seconds) => json!(seconds),
-    }
 }
 
 fn status(error: &CredentialError) -> Option<u16> {

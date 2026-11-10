@@ -32,42 +32,19 @@ impl OwnedRoleAuth {
             .map(|value| serde_json::from_value::<Vec<AwsSessionTag>>(value.clone()))
             .transpose()
             .map_err(failure)?;
+        let field = |name: &str| {
+            step.params
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
         Ok(Self {
-            role_name: step
-                .params
-                .get("aws_role_name")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_default(),
-            session_name: step
-                .params
-                .get("aws_session_name")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_default(),
-            access_key_id: step
-                .params
-                .get("aws_access_key_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .map(SecretString::from),
-            secret_access_key: step
-                .params
-                .get("aws_secret_access_key")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .map(SecretString::from),
-            session_token: step
-                .params
-                .get("aws_session_token")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .map(SecretString::from),
-            external_id: step
-                .params
-                .get("aws_external_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
+            role_name: field("aws_role_name").unwrap_or_default(),
+            session_name: field("aws_session_name").unwrap_or_default(),
+            access_key_id: field("aws_access_key_id").map(SecretString::from),
+            secret_access_key: field("aws_secret_access_key").map(SecretString::from),
+            session_token: field("aws_session_token").map(SecretString::from),
+            external_id: field("aws_external_id"),
             irsa_role_arn: environment.get("AWS_ROLE_ARN").cloned(),
             web_identity_token_file: environment.get("AWS_WEB_IDENTITY_TOKEN_FILE").cloned(),
             tags,
