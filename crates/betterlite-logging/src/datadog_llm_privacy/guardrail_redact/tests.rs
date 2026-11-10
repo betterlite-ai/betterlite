@@ -87,7 +87,11 @@ fn guardrail_redaction_accepts_a_single_record_or_a_list() {
 #[test]
 fn guardrail_redaction_reports_no_records_for_null_or_a_scalar() {
     assert!(redact_guardrails(None).is_none());
-    assert_eq!(redact_guardrails(Some(&Json::Null)), None);
+    assert_eq!(
+        redact_guardrails(Some(&Json::Null)),
+        None,
+        "a JSON null is no record list"
+    );
     let entries =
         redact_guardrails(Some(&json("\"not a record\""))).expect("a scalar is no record");
     assert!(entries.is_empty());

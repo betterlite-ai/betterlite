@@ -10,7 +10,7 @@ use super::{RecordEncodingError, record_object};
 // LiteLLM reads one record or a list of them, keeps the audit fields and marks the prompt-carrying ones
 #[must_use]
 pub fn redact_guardrails(value: Option<&Json>) -> Option<Vec<Object>> {
-    let records = value?;
+    let records = value.filter(|records| !matches!(records, Json::Null))?;
     let grouped = match records {
         Json::Object(fields) => vec![fields],
         Json::List(items) => items.iter().filter_map(as_object).collect(),

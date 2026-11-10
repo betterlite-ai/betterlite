@@ -1,16 +1,6 @@
 task: B3936
 deviations:
   - what: >-
-      A standard-logging metadata field with no value is left out of the span metadata instead of
-      being written as null, and an `_dd` mapping the metadata carries is not merged into the cost
-      tags object.
-    why: >-
-      LiteLLM's standard-logging metadata record names every field, so its span metadata spreads the
-      unset ones as null. betterlite's StandardLoggingPayload models the same record with optional
-      fields, where an absent field and a null one are the same value, so the projection writes the
-      fields the payload carries and no others.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L975
-  - what: >-
       The budget reset decoder reads a bounded ISO 8601 grammar: a date, or a date and a time
       separated by T or a space with seconds, an optional fraction and a Z or +HH:MM offset, and a
       string longer than 64 characters is refused before it is parsed.

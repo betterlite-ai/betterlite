@@ -32,20 +32,41 @@ call:
       hidden_params: {}
       standard_built_in_tools_params: null
       metadata:
-        user_api_key_user_id: "alice"
-        user_api_key_alias: "prod-key"
         user_api_key_hash: "hash-1"
+        user_api_key_alias: "prod-key"
         user_api_key_spend: 0.5
         user_api_key_max_budget: 100.5
         user_api_key_budget_reset_at: "2026-01-01T00:00:00"
-        usage_object: {prompt_tokens: 2}
+        user_api_key_user_spend: null
+        user_api_key_user_max_budget: null
+        user_api_key_team_spend: null
+        user_api_key_team_max_budget: null
+        user_api_key_org_id: null
+        user_api_key_org_alias: null
+        user_api_key_team_id: null
+        user_api_key_project_id: null
+        user_api_key_project_alias: null
+        user_api_key_user_id: "alice"
+        user_api_key_user_email: null
+        user_api_key_team_alias: null
+        user_api_key_end_user_id: null
+        user_api_key_request_route: null
+        user_api_key_auth_metadata: null
+        spend_logs_metadata: null
         requester_ip_address: "203.0.113.5"
-        team_alias: "engineering"
-        routing_decision: {tier: "low", cause: "heuristic", score: 0.5, signals: ["a long prompt"], context_escalated: true, routed_model: "gpt-4o-mini"}
+        user_agent: null
         requester_metadata: {prompt: "secret"}
+        requester_custom_headers: null
         prompt_management_metadata: {prompt_id: "p-1"}
         mcp_tool_call_metadata: {tool: "search"}
         vector_store_request_metadata: [{id: "vs-1"}]
+        routing_decision: {tier: "low", cause: "heuristic", score: 0.5, signals: ["a long prompt"], context_escalated: true, routed_model: "gpt-4o-mini"}
+        applied_guardrails: null
+        usage_object: {prompt_tokens: 2}
+        cold_storage_object_key: null
+        team_alias: "engineering"
+        team_id: null
+        used_client_oauth_token: null
       guardrail_information:
         - guardrail_name: "pii-guard"
           guardrail_status: "guardrail_flagged"

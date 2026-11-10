@@ -76,6 +76,7 @@ fn latency_metrics_omit_a_zero_guardrail_total() {
 #[test]
 fn latency_metrics_keep_a_zero_overhead_the_payload_carries() {
     let mut payload = support::payload();
+    payload.completion_start_time = payload.start_time;
     payload.hidden_params.litellm_overhead_time_ms = Some(DecimalValue(Decimal::ZERO));
     let object = metrics(&payload);
     assert_eq!(
