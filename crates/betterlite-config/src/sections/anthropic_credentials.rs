@@ -55,19 +55,22 @@ impl Settings {
     where
         L: EnvironmentLookup,
     {
-        let api_base = non_empty(lookup.lookup("ANTHROPIC_API_BASE"))
-            .or_else(|| non_empty(lookup.lookup("ANTHROPIC_BASE_URL")))
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        let disable_url_suffix = lookup
+            .lookup("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
+            .map(|text| betterlite_env::flag("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", &text))
+            .transpose()?
+            .flatten()
+            .unwrap_or(false);
         Ok(Self {
             // LiteLLM's get_secret_str keeps an empty value as a real key, so only absence is unset
             api_key: lookup.lookup("ANTHROPIC_API_KEY").map(SecretString::from),
             auth_token: lookup
                 .lookup("ANTHROPIC_AUTH_TOKEN")
                 .map(SecretString::from),
-            api_base,
+            api_base: api_base_from(lookup),
             use_bearer_for_custom_base: false,
             deployment_bearer_opt_ins: Vec::new(),
-            disable_url_suffix: disable_url_suffix(lookup)?,
+            disable_url_suffix,
         })
     }
 }
@@ -79,38 +82,34 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let environment = Settings::resolve_environment(lookup)?;
+        let mut settings = Settings::resolve_environment(lookup)?;
         let module_bearer = self
             .litellm_settings
             .use_bearer_for_custom_base
             .unwrap_or(false);
-        Ok(Settings {
-            use_bearer_for_custom_base: module_bearer,
-            deployment_bearer_opt_ins: self
-                .model_list
-                .into_iter()
-                .map(|deployment| {
-                    deployment
-                        .litellm_params
-                        .use_bearer_for_custom_base
-                        .unwrap_or(module_bearer)
-                })
-                .collect(),
-            ..environment
-        })
+        let deployment_bearer_opt_ins = self
+            .model_list
+            .into_iter()
+            .map(|deployment| {
+                deployment
+                    .litellm_params
+                    .use_bearer_for_custom_base
+                    .unwrap_or(module_bearer)
+            })
+            .collect();
+        settings.use_bearer_for_custom_base = module_bearer;
+        settings.deployment_bearer_opt_ins = deployment_bearer_opt_ins;
+        Ok(settings)
     }
 }
 
-fn disable_url_suffix<L>(lookup: &L) -> Result<bool, ConfigError>
+fn api_base_from<L>(lookup: &L) -> String
 where
     L: EnvironmentLookup,
 {
-    let flag = lookup
-        .lookup("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
-        .map(|text| betterlite_env::flag("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", &text))
-        .transpose()?
-        .flatten();
-    Ok(flag.unwrap_or(false))
+    non_empty(lookup.lookup("ANTHROPIC_API_BASE"))
+        .or_else(|| non_empty(lookup.lookup("ANTHROPIC_BASE_URL")))
+        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
