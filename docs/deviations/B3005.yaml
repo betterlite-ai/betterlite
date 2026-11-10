@@ -1,0 +1,8 @@
+task: B3005
+deviations:
+  - what: Window spend is read and rounded as a decimal. Rounding to four places is half-to-even on the exact decimal value, so a cached spend such as 0.00005 rounds to 0.0000 and 0.00015 rounds to 0.0002.
+    why: Money is held as decimals everywhere in betterlite. LiteLLM rounds the binary float, so an exact tie can land on either side depending on the float's representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L235
+  - what: A cached spend that is the text nan, inf or -inf reads as zero spend.
+    why: A decimal cannot hold those values, and a spend counter that holds one is corrupt. LiteLLM turns it into a float nan or inf that then poisons every comparison against the budget.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L270-L274

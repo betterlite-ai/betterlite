@@ -1,3 +1,7 @@
 [profile.default]
 # a hung test fails after 10 minutes instead of holding a CI job until its 120-minute limit
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# CI's task part reports up to 20 failing tests in one fix round instead of stopping at the first
+[profile.task]
+fail-fast = { max-fail = 20 }
