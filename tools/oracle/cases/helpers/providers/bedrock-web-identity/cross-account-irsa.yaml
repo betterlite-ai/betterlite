@@ -17,8 +17,6 @@ call:
       external_id: external-1
       tags:
         - {key: env, value: prod}
-      identity:
-        denied: the fixture identity call is denied
       irsa_reply:
         access_key_id: ASIAIRSA
         secret_access_key: irsa-secret

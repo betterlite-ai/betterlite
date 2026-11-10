@@ -14,8 +14,6 @@ call:
       tags:
         - {key: env, value: prod}
         - {key: team, value: genai}
-      identity:
-        arn: 'arn:aws:sts::123456789012:assumed-role/Current/session'
       reply:
         access_key_id: ASIATARGET
         secret_access_key: target-secret
