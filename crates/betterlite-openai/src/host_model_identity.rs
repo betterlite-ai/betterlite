@@ -154,17 +154,22 @@ pub fn process_clarifai_response(
     reply: HostReply<'_>,
     logger: &mut dyn PostCallLogger,
 ) -> Result<ChatResponse, HostModelIdentityError> {
+    log_reply(&reply, logger);
+    let mode = HostReplyMode::Clarifai {
+        request_model: reply.request_model,
+    };
+    decode_host_named_reply(reply.body.as_bytes(), mode, &reply.source)
+        .map_err(|error| wrap_json_failure(error, reply.status_code, reply.headers.clone()))
+}
+
+// both pinned transforms log the raw text, the messages, the key and the request body before parsing
+fn log_reply(reply: &HostReply<'_>, logger: &mut dyn PostCallLogger) {
     logger.post_call(PostCall {
         input: reply.messages,
         api_key: reply.api_key,
         original_response: reply.body,
         complete_input_dict: reply.request_data,
     });
-    let mode = HostReplyMode::Clarifai {
-        request_model: reply.request_model,
-    };
-    decode_host_named_reply(reply.body.as_bytes(), mode, &reply.source)
-        .map_err(|error| wrap_json_failure(error, reply.status_code, reply.headers.clone()))
 }
 
 // only the json decode is inside the pinned try, so a shape failure keeps its own class
@@ -193,12 +198,7 @@ pub fn process_compactifai_response(
     reply: HostReply<'_>,
     logger: &mut dyn PostCallLogger,
 ) -> Result<ChatResponse, HostModelIdentityError> {
-    logger.post_call(PostCall {
-        input: reply.messages,
-        api_key: reply.api_key,
-        original_response: reply.body,
-        complete_input_dict: reply.request_data,
-    });
+    log_reply(&reply, logger);
     let mode = HostReplyMode::Compactifai {
         request_model: reply.request_model,
         json_mode: reply.json_mode,

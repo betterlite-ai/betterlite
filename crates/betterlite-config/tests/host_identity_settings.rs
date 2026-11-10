@@ -83,80 +83,56 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-#[rstest]
-#[case::explicit_wins(&[("CLARIFAI_API_KEY", "env-key")], Some("https://explicit.example"), Some("explicit-key"), "https://explicit.example", "explicit-key")]
-#[case::absent_takes_environment(&[("CLARIFAI_API_KEY", "env-key")], None, None, CLARIFAI_DEFAULT, "env-key")]
-#[case::empty_falls_through_to_environment(&[("CLARIFAI_API_KEY", "env-key")], Some(""), Some(""), CLARIFAI_DEFAULT, "env-key")]
-#[case::nothing_anywhere(&[], None, None, CLARIFAI_DEFAULT, "")]
-#[case::empty_without_environment(&[], Some(""), Some(""), CLARIFAI_DEFAULT, "")]
-fn clarifai_resolution_follows_the_pinned_fallbacks(
-    #[case] environment: &[(&str, &str)],
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] base: &str,
-    #[case] key: &str,
-) {
-    let explicit = explicit_key.map(secret);
-    let (resolved_base, resolved) =
-        settings(environment).resolve_clarifai(explicit_base, explicit.as_ref());
-    assert_eq!(resolved_base, base);
-    assert_eq!(resolved_key(&resolved), key);
+#[derive(Clone, Copy)]
+enum Host {
+    Clarifai,
+    Compactifai,
+    Datarobot,
+}
+
+fn resolve(
+    host: Host,
+    settings: &Settings,
+    explicit_base: Option<&str>,
+    explicit_key: Option<&SecretString>,
+) -> (String, SecretString) {
+    match host {
+        Host::Clarifai => settings.resolve_clarifai(explicit_base, explicit_key),
+        Host::Compactifai => settings.resolve_compactifai(explicit_base, explicit_key),
+        Host::Datarobot => settings.resolve_datarobot(explicit_base, explicit_key),
+    }
 }
 
 #[rstest]
-#[case::explicit_wins(&[("COMPACTIFAI_API_KEY", "env-key")], Some("https://explicit.example"), Some("explicit-key"), "https://explicit.example", "explicit-key")]
-#[case::absent_takes_environment(&[("COMPACTIFAI_API_KEY", "env-key")], None, None, COMPACTIFAI_DEFAULT, "env-key")]
-#[case::empty_falls_through_to_environment(&[("COMPACTIFAI_API_KEY", "env-key")], Some(""), Some(""), COMPACTIFAI_DEFAULT, "env-key")]
-#[case::nothing_anywhere(&[], None, None, COMPACTIFAI_DEFAULT, "")]
-fn compactifai_resolution_follows_the_pinned_fallbacks(
+#[case::clarifai_explicit_wins(Host::Clarifai, &[("CLARIFAI_API_KEY", "env-key")], Some("https://explicit.example"), Some("explicit-key"), ("https://explicit.example", "explicit-key"))]
+#[case::clarifai_absent_takes_environment(Host::Clarifai, &[("CLARIFAI_API_KEY", "env-key")], None, None, (CLARIFAI_DEFAULT, "env-key"))]
+#[case::clarifai_empty_falls_through(Host::Clarifai, &[("CLARIFAI_API_KEY", "env-key")], Some(""), Some(""), (CLARIFAI_DEFAULT, "env-key"))]
+#[case::clarifai_nothing_anywhere(Host::Clarifai, &[], None, None, (CLARIFAI_DEFAULT, ""))]
+#[case::clarifai_empty_without_environment(Host::Clarifai, &[], Some(""), Some(""), (CLARIFAI_DEFAULT, ""))]
+#[case::compactifai_explicit_wins(Host::Compactifai, &[("COMPACTIFAI_API_KEY", "env-key")], Some("https://explicit.example"), Some("explicit-key"), ("https://explicit.example", "explicit-key"))]
+#[case::compactifai_absent_takes_environment(Host::Compactifai, &[("COMPACTIFAI_API_KEY", "env-key")], None, None, (COMPACTIFAI_DEFAULT, "env-key"))]
+#[case::compactifai_empty_falls_through(Host::Compactifai, &[("COMPACTIFAI_API_KEY", "env-key")], Some(""), Some(""), (COMPACTIFAI_DEFAULT, "env-key"))]
+#[case::compactifai_nothing_anywhere(Host::Compactifai, &[], None, None, (COMPACTIFAI_DEFAULT, ""))]
+#[case::datarobot_nothing_set(Host::Datarobot, &[], None, None, (DATAROBOT_DEFAULT, "fake-api-key"))]
+#[case::datarobot_environment_values(Host::Datarobot, &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")], None, None, ("https://tenant.example", "env-token"))]
+#[case::datarobot_explicit_values(Host::Datarobot, &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")], Some("https://explicit.example"), Some("explicit-key"), ("https://explicit.example", "explicit-key"))]
+#[case::datarobot_empty_explicit_takes_environment(Host::Datarobot, &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")], Some(""), Some(""), ("https://tenant.example", "env-token"))]
+#[case::datarobot_empty_endpoint_is_kept(Host::Datarobot, &[("DATAROBOT_ENDPOINT", "")], None, None, ("", "fake-api-key"))]
+#[case::datarobot_empty_token_keeps_the_fake_key(Host::Datarobot, &[("DATAROBOT_API_TOKEN", "")], None, None, (DATAROBOT_DEFAULT, "fake-api-key"))]
+fn resolution_follows_the_pinned_fallbacks(
+    #[case] host: Host,
     #[case] environment: &[(&str, &str)],
     #[case] explicit_base: Option<&str>,
     #[case] explicit_key: Option<&str>,
-    #[case] base: &str,
-    #[case] key: &str,
+    #[case] expected: (&str, &str),
 ) {
     let explicit = explicit_key.map(secret);
-    let (resolved_base, resolved) =
-        settings(environment).resolve_compactifai(explicit_base, explicit.as_ref());
-    assert_eq!(resolved_base, base);
-    assert_eq!(resolved_key(&resolved), key);
-}
-
-#[rstest]
-#[case::nothing_set(&[], None, None, DATAROBOT_DEFAULT, "fake-api-key")]
-#[case::environment_values(
-    &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")],
-    None,
-    None,
-    "https://tenant.example",
-    "env-token"
-)]
-#[case::explicit_values(
-    &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")],
-    Some("https://explicit.example"),
-    Some("explicit-key"),
-    "https://explicit.example",
-    "explicit-key"
-)]
-#[case::empty_explicit_takes_environment(
-    &[("DATAROBOT_ENDPOINT", "https://tenant.example"), ("DATAROBOT_API_TOKEN", "env-token")],
-    Some(""),
-    Some(""),
-    "https://tenant.example",
-    "env-token"
-)]
-#[case::empty_endpoint_is_kept(&[("DATAROBOT_ENDPOINT", "")], None, None, "", "fake-api-key")]
-#[case::empty_token_keeps_the_fake_key(&[("DATAROBOT_API_TOKEN", "")], None, None, DATAROBOT_DEFAULT, "fake-api-key")]
-fn datarobot_resolution_keeps_empty_and_missing_apart(
-    #[case] environment: &[(&str, &str)],
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] base: &str,
-    #[case] key: &str,
-) {
-    let explicit = explicit_key.map(secret);
-    let (resolved_base, resolved) =
-        settings(environment).resolve_datarobot(explicit_base, explicit.as_ref());
-    assert_eq!(resolved_base, base);
-    assert_eq!(resolved_key(&resolved), key);
+    let (resolved_base, resolved) = resolve(
+        host,
+        &settings(environment),
+        explicit_base,
+        explicit.as_ref(),
+    );
+    assert_eq!(resolved_base, expected.0);
+    assert_eq!(resolved_key(&resolved), expected.1);
 }
