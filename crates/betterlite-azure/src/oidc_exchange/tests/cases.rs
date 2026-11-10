@@ -17,15 +17,15 @@ const EXPLICIT_URL: &str = "https://login.microsoftonline.com/explicit-tenant/oa
 const OTHER_TENANT_URL: &str = "https://login.microsoftonline.com/other-tenant/oauth2/v2.0/token";
 
 #[rstest]
-#[case::case_1_oidc_form_grant(oidc_form_grant)]
-#[case::case_2_authority_tenant_path(authority_tenant_path)]
-#[case::case_3_missing_client_tenant(missing_client_tenant)]
-#[case::case_4_unresolved_oidc_token(unresolved_oidc_token)]
-#[case::case_5_missing_access_token(missing_access_token)]
-#[case::case_6_missing_expires_in(missing_expires_in)]
-#[case::case_7_cached_unexpired_token(cached_unexpired_token)]
-#[case::case_8_expired_token_refresh(expired_token_refresh)]
-#[case::case_9_oidc_http_failure(oidc_http_failure)]
+#[case::oidc_form_grant(oidc_form_grant)]
+#[case::authority_tenant_path(authority_tenant_path)]
+#[case::missing_client_tenant(missing_client_tenant)]
+#[case::unresolved_oidc_token(unresolved_oidc_token)]
+#[case::missing_access_token(missing_access_token)]
+#[case::missing_expires_in(missing_expires_in)]
+#[case::cached_unexpired_token(cached_unexpired_token)]
+#[case::expired_token_refresh(expired_token_refresh)]
+#[case::oidc_http_failure(oidc_http_failure)]
 fn oidc_exchange_cases(#[case] scenario: fn()) {
     scenario();
 }

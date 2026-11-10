@@ -24,8 +24,8 @@ fn authority(variables: &[(&str, &str)]) -> String {
 }
 
 #[rstest]
-#[case::case_1_loads_azure_authority_host(0)]
-#[case::case_2_rejects_unrelated_key(1)]
+#[case::loads_azure_authority_host(0)]
+#[case::rejects_unrelated_key(1)]
 fn azure_oidc_exchange_config_cases(#[case] case: u8) {
     if case == 0 {
         loads_azure_authority_host();
