@@ -129,17 +129,17 @@ pub(crate) fn stream_chunk_value(chunk: &GenericChunk) -> Value {
     })
 }
 
-// LiteLLM spaces the JSON text it writes with json.dumps, so a string that holds an object or list is compared parsed
 pub(crate) fn settle(value: &mut Value) {
-    match value {
-        Value::Array(items) => items.iter_mut().for_each(settle),
-        Value::Object(fields) => fields.values_mut().for_each(settle),
-        Value::String(text) if text.starts_with(['{', '[']) => {
-            if let Ok(parsed) = serde_json::from_str(text) {
-                *value = parsed;
-                settle(value);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    if let Value::String(text) = value
+        && text.starts_with(['{', '['])
+        && let Ok(parsed) = serde_json::from_str(text)
+    {
+        *value = parsed;
+    }
+    if let Value::Array(items) = value {
+        items.iter_mut().for_each(settle);
+    }
+    if let Value::Object(fields) = value {
+        fields.values_mut().for_each(settle);
     }
 }

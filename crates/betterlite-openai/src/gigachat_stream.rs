@@ -56,7 +56,6 @@ pub fn chunk_parser(event: &[u8], ids: &dyn IdSource) -> Result<StreamEvent, Str
     if payload.trim() == "[DONE]" {
         return Ok(StreamEvent::Done);
     }
-    // LiteLLM reads a line that is not JSON as an empty chunk and a JSON line of the wrong shape as a failure
     let raw = match serde_json::from_str::<Value>(payload) {
         Ok(value) => serde_json::from_value::<Object>(value)
             .and_then(|fields| serde_json::from_value::<RawChunk>(Value::Object(fields)))
@@ -121,7 +120,6 @@ fn tool_use_of(call: &Object, ids: &dyn IdSource) -> JsonValue {
     ]))
 }
 
-// a Python counter has no limit, so one that leaves i64 stays at the largest value
 fn stream_usage(usage: &TokenUsage) -> Usage {
     let converted = convert_usage(usage);
     let counter = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);

@@ -19,7 +19,6 @@ pub async fn validate_environment(
     input: &HeaderInput<'_>,
     bearer: &dyn GigachatBearer,
 ) -> Result<Headers, GigaChatError> {
-    // LiteLLM reads api_key, then GIGACHAT_CREDENTIALS, then GIGACHAT_API_KEY, and an empty value counts as unset
     let credentials = [input.api_key, input.credentials, input.fallback_key]
         .into_iter()
         .flatten()

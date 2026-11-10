@@ -49,13 +49,11 @@ pub struct TokenUsage {
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     pub precached_prompt_tokens: Option<u64>,
-    // a key betterlite does not read still makes the block present, as any non-empty mapping does in LiteLLM
     #[serde(flatten)]
     pub other: Object,
 }
 
 impl TokenUsage {
-    // LiteLLM skips an empty usage mapping, so an all-absent record is no usage at all
     #[must_use]
     pub fn is_present(&self) -> bool {
         !self.other.is_empty()
@@ -74,7 +72,6 @@ pub struct ConvertedUsage {
     pub cached_tokens: Option<u64>,
 }
 
-// Python adds without a limit, so a counter sum that leaves u64 stays at the largest value
 #[must_use]
 pub fn convert_usage(usage: &TokenUsage) -> ConvertedUsage {
     let precached = usage.precached_prompt_tokens.unwrap_or_default();

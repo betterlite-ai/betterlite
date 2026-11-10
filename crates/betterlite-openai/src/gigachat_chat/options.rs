@@ -22,7 +22,6 @@ pub const STRUCTURED_OUTPUT: &str = "_structured_output";
 
 const DEFAULT_SCHEMA_NAME: &str = "structured_output";
 
-// LiteLLM walks the request in get_optional_params' signature order, so a later key overwrites an earlier one
 const LITELLM_ORDER: [&str; 10] = [
     "functions",
     "function_call",

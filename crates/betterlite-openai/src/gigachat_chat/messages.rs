@@ -23,7 +23,6 @@ pub struct GigachatMessage {
 }
 
 impl GigachatMessage {
-    // LiteLLM assigns these two keys on the message dict, so a generated value replaces the client's
     fn drop_replaced_fields(&mut self) {
         if self.function_call.is_some() {
             self.passthrough.shift_remove("function_call");
