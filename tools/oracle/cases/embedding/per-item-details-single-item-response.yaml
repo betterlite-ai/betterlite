@@ -1,0 +1,15 @@
+kind: helper
+name: per-item-details-single-item-response
+call:
+  b4298:
+    get_per_item_prompt_tokens_details:
+      usage:
+        prompt_tokens: 7
+        prompt_tokens_details:
+          cached_tokens: 3
+          image_tokens: 1
+      data_count: 1
+      idx: 0
+env: {}
+compare:
+  ignore: []

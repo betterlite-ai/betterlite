@@ -1,0 +1,21 @@
+kind: helper
+name: gemini-usage-live-and-candidates
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 8
+      candidatesTokenCount: 10
+      totalTokenCount: 20
+      responseTokenCount: 12
+      responseTokensDetails:
+        - {modality: TEXT, tokenCount: 4}
+        - {modality: AUDIO, tokenCount: 1}
+        - {modality: DOCUMENT, tokenCount: 1}
+        - {modality: IMAGE, tokenCount: 9}
+      candidatesTokensDetails:
+        - {modality: TEXT, tokenCount: 3}
+        - {modality: AUDIO, tokenCount: 2}
+        - {modality: IMAGE, tokenCount: 2}
+        - {modality: VIDEO, tokenCount: 1}
+env: {}
+compare: {ignore: []}
