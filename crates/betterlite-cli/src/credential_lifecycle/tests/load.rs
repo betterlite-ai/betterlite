@@ -4,8 +4,8 @@ use crate::credential_lifecycle::load::load_cli_token;
 use crate::token_records::secret::decode_secret;
 
 use super::support::{
-    OTHER_SERVER, Refusal, SERVER, VaultRefusal, encoded, fake_vault, metadata, record,
-    scripted_files, secret, vault_entry,
+    OTHER_SERVER, Refusal, SERVER, StageRefusal, VaultRefusal, encoded, fake_vault, metadata,
+    record, scripted_files, secret, vault_entry,
 };
 
 #[tokio::test]
@@ -295,6 +295,27 @@ async fn load_keeps_the_rejoined_entry_when_the_file_refuses_the_rewrite() {
     assert_eq!(
         decoded.refresh_token.expect("a refresh").expose_secret(),
         "refresh-secret"
+    );
+}
+
+#[tokio::test]
+async fn load_never_hands_the_vault_a_copy_it_could_not_scrub() {
+    let mut files = scripted_files();
+    files.put(&record(1_000.0));
+    files.stage = StageRefusal::Always;
+    let mut vault = fake_vault();
+
+    let loaded = load_cli_token(&files, &mut vault).await.expect("loads");
+
+    assert_eq!(
+        loaded.key.as_ref().expect("a key").expose_secret(),
+        "sk-secret"
+    );
+    assert!(vault.writes().is_empty());
+    let kept = files.stored().expect("the file stays");
+    assert_eq!(
+        kept.key.as_ref().expect("a key").expose_secret(),
+        "sk-secret"
     );
 }
 

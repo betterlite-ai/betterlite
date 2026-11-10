@@ -14,21 +14,19 @@ pub async fn save_cli_token(
     record: CliTokenRecord,
 ) -> SecretSave {
     let stamped = stamp_past_every_stored_login(files, &*vault, record);
+    let secret = if holds_secret(&stamped) {
+        match encode_secret(&stamped) {
+            Ok(blob) => Some(blob),
+            Err(source) => return SecretSave::CredentialNotSaved(CredentialNotSaved { source }),
+        }
+    } else {
+        None
+    };
     let staged = match files.stage(&without_secret(&stamped)).await {
         Ok(staged) => staged,
         Err(source) => return SecretSave::CredentialNotSaved(CredentialNotSaved { source }),
     };
-    let outcome = if holds_secret(&stamped) {
-        match encode_secret(&stamped) {
-            Ok(blob) => vault.write(&blob),
-            Err(source) => {
-                files.discard(&staged).await;
-                return SecretSave::CredentialNotSaved(CredentialNotSaved { source });
-            }
-        }
-    } else {
-        Ok(Write::SecretStored)
-    };
+    let outcome = secret.map_or(Ok(Write::SecretStored), |blob| vault.write(&blob));
     if matches!(outcome, Ok(Write::SecretStored)) {
         if files.commit(&staged).await {
             return saved_as(&outcome);

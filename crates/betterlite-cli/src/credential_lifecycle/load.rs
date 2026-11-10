@@ -85,11 +85,10 @@ async fn migrate_file_secret(
     if !holds_secret(&record) {
         return None;
     }
-    let Ok(staged) = files.stage(&without_secret(&record)).await else {
+    let Ok(blob) = encode_secret(&record) else {
         return Some(record);
     };
-    let Ok(blob) = encode_secret(&record) else {
-        files.discard(&staged).await;
+    let Ok(staged) = files.stage(&without_secret(&record)).await else {
         return Some(record);
     };
     if !matches!(vault.write(&blob), Ok(Write::SecretStored)) {
