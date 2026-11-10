@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import httpx
 import litellm
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.deprecated_providers import aleph_alpha
 from litellm.llms.deprecated_providers.aleph_alpha import AlephAlphaConfig
 from litellm.main import _get_encoding  # pyright: ignore[reportPrivateUsage]
@@ -72,30 +73,21 @@ class RecordingEncoding:
         return self.encoding.encode(text)
 
 
-class RecordingClient:
-    def __init__(self, response: httpx.Response) -> None:
-        self.response = response
+class RecordingTransport:
+    def __init__(self, status: int, body: str) -> None:
+        self.status = status
+        self.body = body
         self.calls: list[Object] = []
 
-    def post(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        data: str | None = None,
-        stream: bool = False,
-    ) -> httpx.Response:
+    def handle(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(
             {
-                "url": url,
-                "headers": {}
-                if headers is None
-                else {name.lower(): value for name, value in headers.items()},
-                "body": {} if data is None else cast("Json", json.loads(data)),
-                "stream": stream,
+                "url": str(request.url),
+                "headers": {name.lower(): value for name, value in request.headers.items()},
+                "body": cast("Json", json.loads(request.content)),
             }
         )
-        return self.response
+        return httpx.Response(self.status, content=self.body.encode(), request=request)
 
 
 class RecordingLogging:
@@ -218,13 +210,8 @@ def run(input_value: dict[str, Json]) -> Json:
     body = expect_text(reply_input["body"])
     stream = optional_params.get("stream") is True
     encoding = RecordingEncoding()
-    client = RecordingClient(
-        httpx.Response(
-            status,
-            content=body.encode(),
-            request=httpx.Request("POST", api_base),
-        )
-    )
+    transport = RecordingTransport(status, body)
+    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(transport.handle)))
     logging_obj = RecordingLogging()
     reply: Json = None
     lines: Json = None
@@ -267,5 +254,5 @@ def run(input_value: dict[str, Json]) -> Json:
         "tokens": tokens,
         "log": logging_obj.calls,
     }
-    output.update(request_of(client.calls[0] if client.calls else None))
+    output.update(request_of(transport.calls[0] if transport.calls else None))
     return output

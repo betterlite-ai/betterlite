@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::mem;
-use std::str;
 
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
+use encoding_rs::{CoderResult, Decoder as Utf8Decoder, UTF_8};
 use futures_util::StreamExt as _;
 use futures_util::stream::{BoxStream, unfold};
 
@@ -19,12 +19,12 @@ const LINE_BREAKS: [char; 10] = [
 
 // LiteLLM hands the raw response lines on with iter_lines, which splits the incrementally decoded text
 #[must_use]
-pub fn decode_lines(response: StreamResponse) -> LineStream {
+pub fn decode_lines(response: StreamResponse, line_limit: usize) -> LineStream {
     unfold(
         LineState {
             body: response.body_stream(),
             pending: VecDeque::new(),
-            decoder: Decoder::default(),
+            decoder: LineDecoder::new(line_limit),
             finished: false,
         },
         next_line,
@@ -34,19 +34,37 @@ pub fn decode_lines(response: StreamResponse) -> LineStream {
 
 #[must_use]
 pub fn decode_text(bytes: &[u8]) -> String {
-    let mut partial = Vec::new();
     let mut text = String::new();
-    decode_utf8(&mut partial, bytes, &mut text);
-    if !partial.is_empty() {
-        text.push('\u{fffd}');
-    }
+    decode_chunk(
+        &mut UTF_8.new_decoder_without_bom_handling(),
+        bytes,
+        true,
+        &mut text,
+    );
     text
+}
+
+fn decode_chunk(decoder: &mut Utf8Decoder, chunk: &[u8], last: bool, text: &mut String) {
+    let mut offset = 0_usize;
+    loop {
+        text.reserve(
+            decoder
+                .max_utf8_buffer_length(chunk.len().saturating_sub(offset))
+                .unwrap_or_default(),
+        );
+        let (result, read, _replaced) =
+            decoder.decode_to_string(chunk.get(offset..).unwrap_or_default(), text, last);
+        offset = offset.saturating_add(read);
+        if result == CoderResult::InputEmpty {
+            return;
+        }
+    }
 }
 
 struct LineState {
     body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     pending: VecDeque<String>,
-    decoder: Decoder,
+    decoder: LineDecoder,
     finished: bool,
 }
 
@@ -59,7 +77,12 @@ async fn next_line(mut state: LineState) -> Option<(Result<String, AlephAlphaErr
             return None;
         }
         match state.body.next().await {
-            Some(Ok(chunk)) => state.decoder.push(&chunk, &mut state.pending),
+            Some(Ok(chunk)) => {
+                if let Err(failure) = state.decoder.push(&chunk, &mut state.pending) {
+                    state.finished = true;
+                    return Some((Err(failure), state));
+                }
+            }
             Some(Err(error)) => {
                 state.finished = true;
                 let failure = AlephAlphaError::Transport {
@@ -75,18 +98,39 @@ async fn next_line(mut state: LineState) -> Option<(Result<String, AlephAlphaErr
     }
 }
 
-#[derive(Debug, Default)]
-struct Decoder {
-    partial: Vec<u8>,
+#[derive(Debug)]
+pub struct LineDecoder {
+    utf8: Utf8Decoder,
     buffer: String,
     trailing_cr: bool,
+    line_limit: usize,
 }
 
-impl Decoder {
-    fn push(&mut self, chunk: &[u8], lines: &mut VecDeque<String>) {
+impl LineDecoder {
+    #[must_use]
+    pub fn new(line_limit: usize) -> Self {
+        Self {
+            utf8: UTF_8.new_decoder_without_bom_handling(),
+            buffer: String::new(),
+            trailing_cr: false,
+            line_limit,
+        }
+    }
+
+    pub fn push(
+        &mut self,
+        chunk: &[u8],
+        lines: &mut VecDeque<String>,
+    ) -> Result<(), AlephAlphaError> {
         let mut text = String::new();
-        decode_utf8(&mut self.partial, chunk, &mut text);
+        decode_chunk(&mut self.utf8, chunk, false, &mut text);
         self.split(&text, lines);
+        if self.buffer.len() > self.line_limit {
+            return Err(AlephAlphaError::LineTooLong {
+                limit: self.line_limit,
+            });
+        }
+        Ok(())
     }
 
     fn split(&mut self, text: &str, lines: &mut VecDeque<String>) {
@@ -126,7 +170,10 @@ impl Decoder {
         lines.extend(parts);
     }
 
-    fn flush(&mut self, lines: &mut VecDeque<String>) {
+    pub fn flush(&mut self, lines: &mut VecDeque<String>) {
+        let mut tail = String::new();
+        decode_chunk(&mut self.utf8, &[], true, &mut tail);
+        self.split(&tail, lines);
         if self.buffer.is_empty() && !self.trailing_cr {
             return;
         }
@@ -158,39 +205,4 @@ fn split_lines(text: &str) -> Vec<String> {
         lines.push(text.get(start..).unwrap_or_default().to_owned());
     }
     lines
-}
-
-fn decode_utf8(partial: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
-    partial.extend_from_slice(chunk);
-    let mut start = 0_usize;
-    loop {
-        let remaining = partial.get(start..).unwrap_or_default();
-        let error = match str::from_utf8(remaining) {
-            Ok(decoded) => {
-                text.push_str(decoded);
-                start = partial.len();
-                break;
-            }
-            Err(error) => error,
-        };
-        let valid_end = start.saturating_add(error.valid_up_to());
-        if let Some(valid) = partial.get(start..valid_end)
-            && let Ok(decoded) = str::from_utf8(valid)
-        {
-            text.push_str(decoded);
-        }
-        if let Some(length) = error.error_len() {
-            text.push('\u{fffd}');
-            start = valid_end.saturating_add(length);
-        } else {
-            start = valid_end;
-            break;
-        }
-    }
-    if start >= partial.len() {
-        partial.clear();
-    } else {
-        let tail = partial.split_off(start);
-        *partial = tail;
-    }
 }

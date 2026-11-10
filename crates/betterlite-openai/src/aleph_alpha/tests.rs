@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,9 +20,10 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 
-use super::adapter::{AlephAlphaAdapter, CallPhase, CompletionOutcome};
+use super::adapter::{AlephAlphaAdapter, CallPhase, CompletionOutcome, mask_sensitive_info};
 use super::config::{AlephAlphaConfig, ConfigError};
 use super::error::AlephAlphaError;
+use super::lines::{LineDecoder, decode_text};
 use super::reply::{decode_aleph_reply, resolve_usage};
 use super::request::{
     CompletionInput, CompletionRequest, build_prompt, completion_request, validate_environment,
@@ -394,7 +395,7 @@ async fn raw_stream_hands_lines_over_before_json_error_handling() {
     let mut sink = |phase: CallPhase<'_>| phases.push(phase_name(&phase));
     let (outcome, captured) = tokio::join!(
         adapter.completion(&call, &mut sink),
-        serve(listener, 500, answer)
+        serve(listener, 200, answer)
     );
     let CompletionOutcome::Stream(mut lines) = outcome.unwrap() else {
         panic!("stream=True must hand back the raw lines");
@@ -420,6 +421,102 @@ async fn raw_stream_hands_lines_over_before_json_error_handling() {
         Some("application/json")
     );
     assert_eq!(captured.headers.get("authorization"), None);
+}
+
+type Call = (
+    Result<CompletionOutcome, AlephAlphaError>,
+    Vec<&'static str>,
+);
+
+async fn call_with(status: u16, answer: &[u8], optional: &str, limit: Option<usize>) -> Call {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}/complete");
+    let messages = [message(Role::User, "Hi")];
+    let config = aleph_config(4096, "{}");
+    let optional = params(optional);
+    let mut adapter = adapter(cl100k());
+    if let Some(bytes) = limit {
+        adapter.client.limits.body_bytes = bytes;
+    }
+    let call = input(&base, &messages, &config, &optional);
+    let mut phases = Vec::new();
+    let mut sink = |phase: CallPhase<'_>| phases.push(phase_name(&phase));
+    let (outcome, _captured) = tokio::join!(
+        adapter.completion(&call, &mut sink),
+        serve(listener, status, answer)
+    );
+    (outcome, phases)
+}
+
+const COMPLETIONS: &[u8] = br#"{"completions":[{"completion":"a","finish_reason":"stop"}]}"#;
+
+#[rstest]
+#[case::stream_unauthorized(401, b"denied", r#"{"stream": true}"#)]
+#[case::stream_server_error(500, COMPLETIONS, r#"{"stream": true}"#)]
+#[case::buffered_server_error_with_completions(500, COMPLETIONS, "{}")]
+#[case::buffered_not_found(404, b"gone", "{}")]
+#[tokio::test]
+async fn non_success_status_raises_before_streaming_or_parsing(
+    #[case] status: u16,
+    #[case] answer: &[u8],
+    #[case] optional: &str,
+) {
+    let (outcome, phases) = call_with(status, answer, optional, None).await;
+    let Err(AlephAlphaError::Provider {
+        status_code,
+        message,
+    }) = outcome
+    else {
+        panic!("a non-2xx reply must raise AlephAlphaError::Provider");
+    };
+    assert_eq!(status_code, status);
+    assert_eq!(message.as_bytes(), answer);
+    assert_eq!(phases, vec!["pre_call"]);
+}
+
+#[rstest]
+#[case::line_at_the_limit(b"12345678", &["Ok:12345678"])]
+#[case::line_one_byte_over_the_limit(b"123456789", &["Err:a streamed line is longer than 8 bytes"])]
+#[case::short_lines_past_the_limit_in_total(b"1234\n5678\n12", &["Ok:1234", "Ok:5678", "Ok:12"])]
+#[case::lines_before_an_oversized_one(b"ab\n123456789", &["Ok:ab", "Err:a streamed line is longer than 8 bytes"])]
+#[tokio::test]
+async fn a_streamed_line_past_the_byte_limit_ends_the_stream(
+    #[case] answer: &[u8],
+    #[case] expected: &[&str],
+) {
+    let (outcome, _phases) = call_with(200, answer, r#"{"stream": true}"#, Some(8)).await;
+    let Ok(CompletionOutcome::Stream(mut lines)) = outcome else {
+        panic!("a literal true stream hands back the raw lines");
+    };
+    let mut seen = Vec::new();
+    while let Some(line) = lines.next().await {
+        seen.push(match line {
+            Ok(text) => format!("Ok:{text}"),
+            Err(error) => format!("Err:{error}"),
+        });
+    }
+    assert_eq!(seen, expected);
+}
+
+#[rstest]
+#[case::no_key("bad token", "bad token")]
+#[case::key_to_the_end("url?key=sk-1", "url?key=[REDACTED_API_KEY]")]
+#[case::key_before_another_parameter("url?key=sk-1&x=2", "url?key=[REDACTED_API_KEY]&x=2")]
+#[case::only_the_first_key("key=a&key=b", "key=[REDACTED_API_KEY]&key=b")]
+#[case::empty_value("key=", "key=[REDACTED_API_KEY]")]
+fn error_text_masks_the_first_key_parameter(#[case] text: &str, #[case] expected: &str) {
+    assert_eq!(mask_sensitive_info(text), expected);
+}
+
+#[rstest]
+#[case::plain(b"abc", "abc")]
+#[case::invalid_byte_is_replaced(b"a\xffb", "a\u{fffd}b")]
+#[case::cut_sequence_at_the_end_is_replaced(b"a\xe2\x82", "a\u{fffd}")]
+#[case::complete_sequence_is_kept(b"\xe2\x82\xac", "\u{20ac}")]
+#[case::bom_is_kept(b"\xef\xbb\xbfx", "\u{feff}x")]
+fn decode_text_replaces_invalid_utf8(#[case] bytes: &[u8], #[case] expected: &str) {
+    assert_eq!(decode_text(bytes), expected);
 }
 
 #[tokio::test]
@@ -457,6 +554,39 @@ async fn completion_counts_the_prompt_and_the_first_choice() {
         captured.body.get("model"),
         Some(&Value::from("luminous-base"))
     );
+}
+
+#[rstest]
+fn replays_aleph_lines(#[files("fuzz/corpus/aleph_lines/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
+    let (cut, body) = bytes.split_first().unwrap();
+    let (head, tail) = body.split_at(usize::from(*cut) % (body.len() + 1));
+    let mut whole = LineDecoder::new(usize::MAX);
+    let mut whole_lines = VecDeque::new();
+    whole.push(body, &mut whole_lines).unwrap();
+    whole.flush(&mut whole_lines);
+    let mut split = LineDecoder::new(usize::MAX);
+    let mut split_lines = VecDeque::new();
+    split.push(head, &mut split_lines).unwrap();
+    split.push(tail, &mut split_lines).unwrap();
+    split.flush(&mut split_lines);
+    assert_eq!(whole_lines, split_lines);
+}
+
+#[rstest]
+#[case::cr_then_lf_across_chunks(&[b"a\r", b"\nb"], &["a", "b"])]
+#[case::cut_multibyte_across_chunks(&[b"\xe2\x82", b"\xac\n"], &["\u{20ac}"])]
+#[case::cut_sequence_never_finished(&[b"a\xe2\x82"], &["a\u{fffd}"])]
+#[case::lone_cr_flushes_an_empty_line(&[b"\r"], &[""])]
+#[case::unicode_separator(&[b"a\xe2\x80\xa8b\n"], &["a", "b"])]
+fn line_decoder_follows_httpx(#[case] chunks: &[&[u8]], #[case] expected: &[&str]) {
+    let mut decoder = LineDecoder::new(usize::MAX);
+    let mut lines = VecDeque::new();
+    for chunk in chunks {
+        decoder.push(chunk, &mut lines).unwrap();
+    }
+    decoder.flush(&mut lines);
+    assert_eq!(lines, expected);
 }
 
 #[rstest]

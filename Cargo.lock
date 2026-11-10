@@ -1961,6 +1961,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
+ "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",

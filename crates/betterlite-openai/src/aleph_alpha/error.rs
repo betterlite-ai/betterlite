@@ -38,6 +38,8 @@ pub enum AlephAlphaError {
         #[source]
         source: EngineError,
     },
+    #[error("a streamed line is longer than {limit} bytes")]
+    LineTooLong { limit: usize },
     #[error("the provider could not be reached")]
     Transport {
         #[source]
@@ -58,6 +60,7 @@ impl AlephAlphaError {
             | Self::NoChoices
             | Self::Usage
             | Self::Tokenize { .. }
+            | Self::LineTooLong { .. }
             | Self::Transport { .. } => None,
         }
     }

@@ -60,11 +60,23 @@ impl AlephAlphaAdapter {
             body: &request.body,
         });
         let response = self.send(&request).await?;
+        let limit = self.client.limits.body_bytes;
+        // HTTPHandler.post raises on any non-2xx status before the stream check or any parsing
+        if !response.response.status().is_success() {
+            let failed = response
+                .buffered(limit)
+                .await
+                .map_err(|source| AlephAlphaError::Transport { source })?;
+            return Err(AlephAlphaError::Provider {
+                status_code: failed.status,
+                message: mask_sensitive_info(&decode_text(&failed.body)),
+            });
+        }
         if request.stream {
-            return Ok(CompletionOutcome::Stream(decode_lines(response)));
+            return Ok(CompletionOutcome::Stream(decode_lines(response, limit)));
         }
         let upstream = response
-            .buffered(self.client.limits.body_bytes)
+            .buffered(limit)
             .await
             .map_err(|source| AlephAlphaError::Transport { source })?;
         let text = decode_text(&upstream.body);
@@ -100,4 +112,20 @@ impl AlephAlphaAdapter {
             .await
             .map_err(|source| AlephAlphaError::Transport { source })
     }
+}
+
+// LiteLLM's http_handler.mask_sensitive_info: the first key= value goes, up to the next & or the end
+#[must_use]
+pub fn mask_sensitive_info(text: &str) -> String {
+    let Some(found) = text.find("key=") else {
+        return text.to_owned();
+    };
+    let value_start = found.saturating_add(4);
+    let rest = text.get(value_start..).unwrap_or_default();
+    let tail = rest
+        .find('&')
+        .and_then(|next| rest.get(next..))
+        .unwrap_or_default();
+    let head = text.get(..value_start).unwrap_or_default();
+    format!("{head}[REDACTED_API_KEY]{tail}")
 }
