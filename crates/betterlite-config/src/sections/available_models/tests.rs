@@ -49,7 +49,10 @@ fn endpoint_checks_reject_an_unreadable_value() {
         "litellm_settings:\n  check_provider_endpoint: os.environ/CHECK_PROVIDER_ENDPOINT\n";
     let environment = load(source, &[("CHECK_PROVIDER_ENDPOINT", "sometimes")]).unwrap_err();
     assert!(matches!(environment, ConfigError::Environment { .. }));
-    assert!(environment.to_string().contains("CHECK_PROVIDER_ENDPOINT"));
+    assert_eq!(
+        environment.to_string(),
+        "environment variable CHECK_PROVIDER_ENDPOINT must be a bool"
+    );
     assert!(matches!(
         load(source, &[]),
         Err(ConfigError::MissingEnvironment { .. })
@@ -64,10 +67,9 @@ fn endpoint_checks_reject_an_unreadable_value() {
     )
     .unwrap_err();
     assert!(matches!(inline, ConfigError::Environment { .. }));
-    assert!(
-        inline
-            .to_string()
-            .contains("litellm_settings.check_provider_endpoint")
+    assert_eq!(
+        inline.to_string(),
+        "environment variable litellm_settings.check_provider_endpoint must be a bool"
     );
 }
 

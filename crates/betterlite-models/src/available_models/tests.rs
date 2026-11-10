@@ -680,7 +680,7 @@ fn supplied_params_bypass_env_check() {
 
 #[test]
 fn cache_failure_warn_drop() {
-    let environment = snapshot(&[("OPENAI_API_KEY", "sk")]);
+    let environment = snapshot(&[("OPENAI_API_KEY", "sk"), ("COHERE_API_KEY", "sk-c")]);
     let provider_list = [ProviderId::Openai, ProviderId::Cohere];
     let catalog = catalog(&[(ProviderId::Cohere, &["c1"])]);
     let mut listing = ListingScript::default();
@@ -822,19 +822,31 @@ fn fresh_expiries_start_at_the_read_clock() {
 #[test]
 fn cache_evicts_the_earliest_expiry_at_capacity() {
     let environment = snapshot(&[]);
-    let mut cache = cache();
-    (0..300_usize).for_each(|index| {
+    let (state, clock) = switchable_clock();
+    let mut cache = AvailableModelsCache::with_clock(clock);
+    (0..299_usize).for_each(|index| {
         let parameters = params(&format!("model-{index}"), None, None);
         cache
             .set(ProviderId::Openai, Some(&parameters), &models(&["value"]))
             .unwrap();
     });
+    state.lock().unwrap().now = 500.0_f64;
+    let fresh = params("model-fresh", None, None);
+    cache
+        .set(ProviderId::Openai, Some(&fresh), &models(&["fresh"]))
+        .unwrap();
     assert_eq!(cache.ttl_entries().len(), 300_usize);
     let extra = params("model-extra", None, None);
     cache
         .set(ProviderId::Openai, Some(&extra), &models(&["extra"]))
         .unwrap();
     assert_eq!(cache.ttl_entries().len(), 300_usize);
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), Some(&fresh), &environment)
+            .unwrap(),
+        Some(models(&["fresh"]))
+    );
     assert_eq!(
         cache
             .get(Some(ProviderId::Openai), Some(&extra), &environment)
