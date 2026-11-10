@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-web-identity-packed-policy-warning-and-ttl
+call:
+  bedrock_web_identity:
+    web_identity:
+      environment:
+        AWS_ACCESS_KEY_ID: AKIAAMBIENT
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_REGION: us-east-1
+      token_reference: web-identity-token
+      resolved_token: header.eyJhdWQiOiJsaXRlbGxtIn0.signature
+      role_arn: 'arn:aws:iam::123456789012:role/TargetRole'
+      session_name: bedrock-session
+      max_policy_size: 10
+      reply:
+        credentials:
+          access_key_id: ASIAWARN
+          secret_access_key: warn-secret
+          session_token: warn-session
+          expiration: '2030-06-01T12:00:00Z'
+          packed_policy_size: 11
+env: {}
+compare: {ignore: []}

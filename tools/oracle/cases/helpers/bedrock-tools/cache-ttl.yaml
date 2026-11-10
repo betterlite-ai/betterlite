@@ -1,0 +1,81 @@
+kind: helper
+name: bedrock-tools-cache-ttl
+call:
+  bedrock_tools:
+    call: cache_point
+    scenarios:
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: ephemeral
+            ttl: 5m
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            ttl: 1h
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: ephemeral
+      - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        capability:
+          cache_points: short_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+      - model: anthropic.claude-v2:1
+        capability:
+          cache_points: unsupported
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+      - model: null
+        capability:
+          cache_points: short_ttl
+          supports_strict_tools: false
+        tool:
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control:
+            type: persistent
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool:
+          cache_control: null
+      - model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capability:
+          cache_points: extended_ttl
+          supports_strict_tools: true
+        tool: {}
+env: {}
+compare:
+  ignore: []

@@ -1,1 +1,1 @@
-
+mod vertex_text_embedding_settings;
