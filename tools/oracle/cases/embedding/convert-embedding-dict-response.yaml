@@ -1,0 +1,16 @@
+kind: helper
+name: convert-embedding-dict-response
+call:
+  b4298:
+    convert_to_cached_embedding:
+      shape: dict
+      response:
+        embedding: null
+        index: null
+        object: null
+      model: null
+      prompt_tokens: null
+      prompt_tokens_details: null
+env: {}
+compare:
+  ignore: []
