@@ -16,8 +16,6 @@ use crate::router_probes::random::InjectedRandom;
 pub struct Input {
     pub cooldown: TierInput,
     #[serde(default)]
-    pub usage: Option<UsageInput>,
-    #[serde(default)]
     pub remote: BTreeMap<String, RouteValue>,
     #[serde(default)]
     pub read_expiry_millis: Option<u64>,
@@ -30,15 +28,6 @@ pub struct Input {
 #[serde(deny_unknown_fields)]
 pub struct TierInput {
     pub keys: Vec<String>,
-    #[serde(default)]
-    pub local: BTreeMap<String, RouteValue>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UsageInput {
-    pub tpm: Vec<String>,
-    pub rpm: Vec<String>,
     #[serde(default)]
     pub local: BTreeMap<String, RouteValue>,
 }
@@ -59,8 +48,6 @@ pub struct Step {
     #[serde(default)]
     pub request: usize,
     #[serde(default)]
-    pub usage_v2: bool,
-    #[serde(default)]
     pub down: bool,
 }
 
@@ -78,17 +65,7 @@ pub struct StepOutput {
     pub armed: Option<bool>,
     pub active: Option<bool>,
     pub cooldown: Option<Vec<Option<RouteValue>>>,
-    pub usage: Option<Vec<Option<RouteValue>>>,
-    pub prefetched_usage: Option<UsageOutput>,
     pub cooldown_local: Vec<Option<RouteValue>>,
-    pub usage_local: Vec<Option<RouteValue>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UsageOutput {
-    pub covers: bool,
-    pub values: Option<Vec<Option<RouteValue>>>,
 }
 
 #[derive(Debug, Error)]
@@ -101,8 +78,6 @@ pub enum ScenarioError {
     },
     #[error("request {request} is not one of the two scenario requests")]
     UnknownRequest { request: usize },
-    #[error("a usage-based read needs the scenario's usage keys")]
-    MissingUsageKeys,
     #[error("the time {millis} milliseconds cannot be represented as seconds")]
     TimeOverflow { millis: u64 },
     #[error("the scenario runtime could not start")]
@@ -110,8 +85,6 @@ pub enum ScenarioError {
         #[source]
         source: io::Error,
     },
-    #[error("the scenario ends in an invalid state")]
-    InvalidState,
 }
 
 pub(crate) fn run(

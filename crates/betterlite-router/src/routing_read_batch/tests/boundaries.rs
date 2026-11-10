@@ -8,27 +8,30 @@ use crate::routing_read_batch::store::ReadWarning;
 use crate::routing_read_batch::{RequestReads, RoutingPrefetch, RoutingReadBatch};
 
 pub(crate) async fn run(name: &str) {
-    if reservation_cases(name) {
-        return;
-    }
-    if ttl_cases(name) {
-        return;
-    }
-    if read_cases(name).await {
-        return;
-    }
-    panic!("unknown case {name}");
-}
-
-fn reservation_cases(name: &str) -> bool {
     match name {
         "reservation_is_due_at_the_exact_expiry" => reservation_is_due_at_the_exact_expiry(),
         "default_read_expiry_is_ten_seconds" => default_read_expiry_is_ten_seconds(),
         "take_requires_every_needed_key" => take_requires_every_needed_key(),
         "take_releases_a_short_prefetch" => take_releases_a_short_prefetch(),
-        _ => return false,
+        "local_value_is_readable_at_its_exact_expiry" => {
+            local_value_is_readable_at_its_exact_expiry();
+        }
+        "default_local_ttl_is_six_hundred_seconds" => {
+            default_local_ttl_is_six_hundred_seconds();
+        }
+        "backfill_ttl_comes_from_the_tier" => backfill_ttl_comes_from_the_tier(),
+        "empty_keys_never_arm_or_read" => empty_keys_never_arm_or_read().await,
+        "usage_without_keys_still_tracks_the_selector" => {
+            usage_without_keys_still_tracks_the_selector().await;
+        }
+        "circuit_open_keeps_the_local_values" => circuit_open_keeps_the_local_values().await,
+        "unavailable_keeps_the_reservation" => unavailable_keeps_the_reservation().await,
+        "an_absent_remote_value_still_consumes_the_prefetch" => {
+            an_absent_remote_value_still_consumes_the_prefetch().await;
+        }
+        "duplicate_cooldown_keys_are_read_once" => duplicate_cooldown_keys_are_read_once().await,
+        _ => panic!("unknown case {name}"),
     }
-    true
 }
 
 fn reservation_is_due_at_the_exact_expiry() {
@@ -140,20 +143,6 @@ fn take_releases_a_short_prefetch() {
     );
 }
 
-fn ttl_cases(name: &str) -> bool {
-    match name {
-        "local_value_is_readable_at_its_exact_expiry" => {
-            local_value_is_readable_at_its_exact_expiry();
-        }
-        "default_local_ttl_is_six_hundred_seconds" => {
-            default_local_ttl_is_six_hundred_seconds();
-        }
-        "backfill_ttl_comes_from_the_tier" => backfill_ttl_comes_from_the_tier(),
-        _ => return false,
-    }
-    true
-}
-
 fn local_value_is_readable_at_its_exact_expiry() {
     let clock = TestClock::new();
     let first = key("a");
@@ -195,24 +184,6 @@ fn backfill_ttl_comes_from_the_tier() {
     );
     clock.set(5.001_f64);
     assert_eq!(cooldown.batch_get(slice::from_ref(&first)), vec![None]);
-}
-
-async fn read_cases(name: &str) -> bool {
-    match name {
-        "empty_keys_never_arm_or_read" => empty_keys_never_arm_or_read().await,
-        "usage_without_keys_still_tracks_the_selector" => {
-            usage_without_keys_still_tracks_the_selector().await;
-        }
-        "circuit_open_keeps_the_local_values" => circuit_open_keeps_the_local_values().await,
-        "circuit_open_releases_the_reservation" => circuit_open_releases_the_reservation().await,
-        "unavailable_keeps_the_reservation" => unavailable_keeps_the_reservation().await,
-        "an_absent_remote_value_still_consumes_the_prefetch" => {
-            an_absent_remote_value_still_consumes_the_prefetch().await;
-        }
-        "duplicate_cooldown_keys_are_read_once" => duplicate_cooldown_keys_are_read_once().await,
-        _ => return false,
-    }
-    true
 }
 
 async fn empty_keys_never_arm_or_read() {
@@ -270,31 +241,20 @@ async fn circuit_open_keeps_the_local_values() {
     let store = MemoryStore::new(values(&[("b", 2)]), Some(ReadWarning::CircuitOpen));
     let mut request = RequestReads::default();
     let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
-    let results = read_once(&mut batch, &store, &tiers, &mut request, &[first, second]).await;
-    assert_eq!(results.cooldown, vec![Some(counter(1)), None]);
-    assert_eq!(results.warning, Some(ReadWarning::CircuitOpen));
-}
-
-async fn circuit_open_releases_the_reservation() {
-    let clock = TestClock::new();
-    let first = key("b");
-    let tiers = tiers(tier(&clock, None, 10.0), None);
-    let store = MemoryStore::new(values(&[("b", 2)]), Some(ReadWarning::CircuitOpen));
-    let mut request = RequestReads::default();
-    let mut batch = RoutingReadBatch::for_strategy(None, true).unwrap();
     let results = read_once(
         &mut batch,
         &store,
         &tiers,
         &mut request,
-        slice::from_ref(&first),
+        &[first, second.clone()],
     )
     .await;
-    assert!(results.warning.is_some());
+    assert_eq!(results.cooldown, vec![Some(counter(1)), None]);
+    assert_eq!(results.warning, Some(ReadWarning::CircuitOpen));
     assert_eq!(
         tiers
             .cooldown
-            .prepare(slice::from_ref(&first))
+            .prepare(slice::from_ref(&second))
             .reservation
             .due
             .len(),

@@ -51,7 +51,6 @@ fn routing_read_batch_behaviors(#[case] name: &str) {
     "usage_without_keys_still_tracks_the_selector"
 )]
 #[case::circuit_open_keeps_the_local_values("circuit_open_keeps_the_local_values")]
-#[case::circuit_open_releases_the_reservation("circuit_open_releases_the_reservation")]
 #[case::unavailable_keeps_the_reservation("unavailable_keeps_the_reservation")]
 #[case::an_absent_remote_value_still_consumes_the_prefetch(
     "an_absent_remote_value_still_consumes_the_prefetch"

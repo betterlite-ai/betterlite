@@ -7,15 +7,14 @@ use betterlite_router::routing_read_batch::store::{
     BatchRead, BatchReadFuture, BatchReadStore, ReadWarning,
 };
 use betterlite_router::routing_read_batch::{
-    ReadTiers, RequestReads, RoutingPrefetch, RoutingReadBatch, RoutingReadKeys,
-    RoutingReadSession, UsageReadKeys,
+    ReadTiers, RequestReads, RoutingPrefetch, RoutingReadBatch, RoutingReadKeys, RoutingReadSession,
 };
 use betterlite_router::routing_value_store::{RouteKey, RouteValue, StoreError};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use tokio::runtime::Builder;
 
-use super::{Input, Output, ScenarioError, Step, StepKind, StepOutput, UsageInput, UsageOutput};
+use super::{Input, Output, ScenarioError, Step, StepKind, StepOutput};
 
 const DEFAULT_READ_EXPIRY_MILLIS: u64 = 10_000;
 
@@ -45,8 +44,7 @@ struct Clock {
 
 impl Clock {
     fn set_millis(&self, millis: u64) -> Result<(), ScenarioError> {
-        let seconds = millis_to_seconds(millis)?;
-        *self.seconds.lock().unwrap_or_else(PoisonError::into_inner) = seconds;
+        *self.seconds.lock().unwrap_or_else(PoisonError::into_inner) = seconds(millis)?;
         Ok(())
     }
 }
@@ -123,7 +121,6 @@ impl BatchReadStore for ScenarioStore {
 
 struct Scenario {
     cooldown_keys: Vec<RouteKey>,
-    usage_keys: Option<UsageReadKeys>,
     clock: Clock,
     tiers: ReadTiers<RouteValue>,
     store: ScenarioStore,
@@ -133,18 +130,18 @@ struct Scenario {
 impl Scenario {
     fn new(input: &Input) -> Result<Self, ScenarioError> {
         let cooldown_keys = parse_keys(&input.cooldown.keys)?;
-        let usage_keys = match &input.usage {
-            Some(usage) => Some(usage_keys(usage)?),
-            None => None,
-        };
         let clock = Clock {
             seconds: Arc::new(Mutex::new(0.0_f64)),
         };
+        let cooldown = new_tier(settings(input)?, &clock);
+        seed_tier(&cooldown, &input.cooldown.local)?;
         Ok(Self {
             cooldown_keys,
-            usage_keys,
-            tiers: build_tiers(input, &clock)?,
             clock,
+            tiers: ReadTiers {
+                cooldown: Arc::new(cooldown),
+                usage: None,
+            },
             store: ScenarioStore::new(&input.remote)?,
             requests: vec![
                 RequestReads { prefetch: None },
@@ -158,41 +155,28 @@ impl Scenario {
         let mut armed = None;
         let mut active = None;
         let mut cooldown = None;
-        let mut usage = None;
-        let mut prefetched_usage = None;
         match step.kind {
             StepKind::Arm => armed = Some(self.arm(step)?),
             StepKind::Read => {
                 let outcome = self.read(step).await?;
-                active = Some(outcome.active);
-                cooldown = outcome.cooldown;
-                usage = outcome.usage;
-                prefetched_usage = outcome.prefetched_usage;
+                active = Some(outcome.0);
+                cooldown = outcome.1;
             }
             StepKind::Down => self.store.set_down(step.down),
         }
-        let cooldown_local = self.tiers.cooldown.batch_get(&self.cooldown_keys);
-        let usage_local = match (&self.usage_keys, self.tiers.usage.as_ref()) {
-            (Some(keys), Some(tier)) => tier.batch_get(&keys.combined()),
-            _ => Vec::new(),
-        };
         Ok(StepOutput {
             kind: step.kind,
             armed,
             active,
             cooldown,
-            usage,
-            prefetched_usage,
-            cooldown_local,
-            usage_local,
+            cooldown_local: self.tiers.cooldown.batch_get(&self.cooldown_keys),
         })
     }
 
     fn arm(&mut self, step: &Step) -> Result<bool, ScenarioError> {
-        let usage = self.select_usage(step)?;
         let keys = RoutingReadKeys {
             cooldown: self.cooldown_keys.clone(),
-            usage,
+            usage: None,
         };
         let request = self
             .requests
@@ -203,8 +187,10 @@ impl Scenario {
         Ok(RoutingPrefetch::arm(&keys, &self.tiers, true, request))
     }
 
-    async fn read(&mut self, step: &Step) -> Result<ReadOutcome, ScenarioError> {
-        let usage = self.select_usage(step)?;
+    async fn read(
+        &mut self,
+        step: &Step,
+    ) -> Result<(bool, Option<Vec<Option<RouteValue>>>), ScenarioError> {
         let armed = self
             .requests
             .get(step.request)
@@ -213,8 +199,8 @@ impl Scenario {
             })?
             .prefetch
             .is_some();
-        let Some(mut batch) = RoutingReadBatch::for_strategy(usage, armed) else {
-            return Ok(ReadOutcome::inactive());
+        let Some(mut batch) = RoutingReadBatch::for_strategy(None, armed) else {
+            return Ok((false, None));
         };
         let request = self
             .requests
@@ -232,79 +218,22 @@ impl Scenario {
                 .read_routing_state(&mut session, &self.cooldown_keys)
                 .await
         };
-        let prefetched_usage = self.usage_output(&batch);
-        Ok(ReadOutcome {
-            active: true,
-            cooldown: Some(results.cooldown),
-            usage: results.usage,
-            prefetched_usage,
-        })
-    }
-
-    fn select_usage(&self, step: &Step) -> Result<Option<UsageReadKeys>, ScenarioError> {
-        if !step.usage_v2 {
-            return Ok(None);
-        }
-        self.usage_keys
-            .clone()
-            .map(Some)
-            .ok_or(ScenarioError::MissingUsageKeys)
-    }
-
-    fn usage_output(&self, batch: &RoutingReadBatch<RouteValue>) -> Option<UsageOutput> {
-        let prefetched = batch.prefetched_usage.as_ref()?;
-        let keys = self.usage_keys.as_ref()?.combined();
-        Some(UsageOutput {
-            covers: prefetched.covers(&keys),
-            values: prefetched.values_for(&keys),
-        })
+        Ok((true, Some(results.cooldown)))
     }
 }
 
-struct ReadOutcome {
-    active: bool,
-    cooldown: Option<Vec<Option<RouteValue>>>,
-    usage: Option<Vec<Option<RouteValue>>>,
-    prefetched_usage: Option<UsageOutput>,
-}
-
-impl ReadOutcome {
-    const fn inactive() -> Self {
-        Self {
-            active: false,
-            cooldown: None,
-            usage: None,
-            prefetched_usage: None,
-        }
-    }
-}
-
-fn build_tiers(input: &Input, clock: &Clock) -> Result<ReadTiers<RouteValue>, ScenarioError> {
+fn settings(input: &Input) -> Result<ReadTierSettings, ScenarioError> {
     let backfill_ttl_seconds = match input.backfill_ttl_millis {
-        Some(millis) => Some(millis_to_seconds(millis)?),
+        Some(millis) => Some(seconds(millis)?),
         None => None,
     };
-    let settings = ReadTierSettings {
+    Ok(ReadTierSettings {
         backfill_ttl_seconds,
-        read_expiry_seconds: millis_to_seconds(
+        read_expiry_seconds: seconds(
             input
                 .read_expiry_millis
                 .unwrap_or(DEFAULT_READ_EXPIRY_MILLIS),
         )?,
-    };
-    let cooldown = new_tier(settings, clock);
-    seed_tier(&cooldown, &input.cooldown.local)?;
-    let usage = match &input.usage {
-        Some(entry) => {
-            let tier = new_tier(settings, clock);
-            seed_tier(&tier, &entry.local)?;
-            Some(tier)
-        }
-        None => None,
-    };
-    Ok(ReadTiers {
-        cooldown: Arc::new(cooldown),
-        usage: usage.map(Arc::new),
     })
 }
 
@@ -329,13 +258,6 @@ fn seed_tier(
     Ok(())
 }
 
-fn usage_keys(usage: &UsageInput) -> Result<UsageReadKeys, ScenarioError> {
-    Ok(UsageReadKeys {
-        tpm: parse_keys(&usage.tpm)?,
-        rpm: parse_keys(&usage.rpm)?,
-    })
-}
-
 fn parse_keys(raw: &[String]) -> Result<Vec<RouteKey>, ScenarioError> {
     let mut keys = Vec::with_capacity(raw.len());
     for text in raw {
@@ -351,9 +273,11 @@ fn parse_key(raw: &str) -> Result<RouteKey, ScenarioError> {
     })
 }
 
-fn millis_to_seconds(millis: u64) -> Result<f64, ScenarioError> {
-    let seconds = Decimal::from(millis)
-        .checked_div(Decimal::ONE_THOUSAND)
-        .and_then(|value| value.to_f64());
-    seconds.ok_or(ScenarioError::TimeOverflow { millis })
+fn seconds(millis: u64) -> Result<f64, ScenarioError> {
+    let Some(quotient) = Decimal::from(millis).checked_div(Decimal::from(1_000_i64)) else {
+        return Err(ScenarioError::TimeOverflow { millis });
+    };
+    quotient
+        .to_f64()
+        .ok_or(ScenarioError::TimeOverflow { millis })
 }

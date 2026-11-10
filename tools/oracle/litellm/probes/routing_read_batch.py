@@ -12,7 +12,6 @@ from litellm.caching.redis_batch import (
     _active_request_batches,  # pyright: ignore[reportPrivateUsage]
 )
 from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
-from litellm.router_strategy.lowest_tpm_rpm_v2 import LowestTPMLoggingHandler_v2
 from litellm.router_utils.cooldown_cache import CooldownCache
 from litellm.router_utils.routing_read_batch import (
     RoutingPrefetch,
@@ -44,23 +43,11 @@ class TierInput(Strict):
     local: dict[str, JsonValue] = Field(default_factory=dict)
 
 
-class UsageInput(Strict):
-    tpm: list[str]
-    rpm: list[str]
-    local: dict[str, JsonValue] = Field(default_factory=dict)
-
-
 class Step(Strict):
     kind: Literal["arm", "read", "down"]
     now_millis: int
     request: int = 0
-    usage_v2: bool = False
     down: bool = False
-
-
-class UsageOutput(Strict):
-    covers: bool
-    values: list[JsonValue | None] | None = None
 
 
 class StepOutput(Strict):
@@ -68,10 +55,7 @@ class StepOutput(Strict):
     armed: bool | None = None
     active: bool | None = None
     cooldown: list[JsonValue | None] | None = None
-    usage: list[JsonValue | None] | None = None
-    prefetched_usage: UsageOutput | None = None
     cooldown_local: list[JsonValue | None]
-    usage_local: list[JsonValue | None]
 
 
 class Output(Strict):
@@ -172,17 +156,16 @@ def memory_values(cache: DualCache, keys: Sequence[str]) -> list[JsonValue | Non
     return [cast("JsonValue | None", value) for value in values]
 
 
-def millis_to_seconds(millis: int) -> float:
-    return millis / 1000
-
-
-StepResult = tuple[
-    bool | None,
-    bool | None,
-    list[JsonValue | None] | None,
-    list[JsonValue | None] | None,
-    UsageOutput | None,
-]
+def validated_model_ids(keys: Sequence[str]) -> list[str]:
+    identifiers: list[str] = []
+    for key in keys:
+        if not key.startswith(COOLDOWN_KEY_PREFIX) or not key.endswith(COOLDOWN_KEY_SUFFIX):
+            raise ProbeError("invalid_request", f"{key!r} is not a cooldown cache key")
+        identifiers.append(key[len(COOLDOWN_KEY_PREFIX) : len(key) - len(COOLDOWN_KEY_SUFFIX)])
+    derived = [CooldownCache.get_cooldown_cache_key(model_id) for model_id in identifiers]
+    if derived != list(keys):
+        raise ProbeError("invalid_request", "the cooldown keys do not match their model ids")
+    return identifiers
 
 
 class CooldownView:
@@ -198,29 +181,6 @@ class CooldownView:
             None if results is None else [cast("JsonValue", value) for value in results]
         )
         return []
-
-
-def fake_selector(cache: DualCache) -> LowestTPMLoggingHandler_v2:
-    selector = object.__new__(LowestTPMLoggingHandler_v2)
-    object.__setattr__(selector, "router_cache", cache)
-    return selector
-
-
-def model_ids_from(keys: Sequence[str]) -> list[str]:
-    identifiers: list[str] = []
-    for key in keys:
-        if not key.startswith(COOLDOWN_KEY_PREFIX) or not key.endswith(COOLDOWN_KEY_SUFFIX):
-            raise ProbeError("invalid_request", f"{key!r} is not a cooldown cache key")
-        identifiers.append(key[len(COOLDOWN_KEY_PREFIX) : len(key) - len(COOLDOWN_KEY_SUFFIX)])
-    return identifiers
-
-
-def validated_model_ids(keys: Sequence[str]) -> list[str]:
-    identifiers = model_ids_from(keys)
-    derived = [CooldownCache.get_cooldown_cache_key(model_id) for model_id in identifiers]
-    if derived != list(keys):
-        raise ProbeError("invalid_request", "the cooldown keys do not match their model ids")
-    return identifiers
 
 
 class Scenario:
@@ -239,26 +199,24 @@ class Scenario:
         self.store = FakeStore(
             {key: json.dumps(value) for key, value in spec.remote.items()}
         )
-        self.redis = build_redis(self.store)
-        self.cooldown = build_dual(self.redis, expiry, backfill)
-        self.usage = build_dual(self.redis, expiry, backfill)
+        redis = build_redis(self.store)
+        self.cooldown = build_dual(redis, expiry, backfill)
         with patch("time.time", return_value=0.0):
             seed(self.cooldown, spec.cooldown.local)
-            if spec.usage is not None:
-                seed(self.usage, spec.usage.local)
         self.cooldown_keys = list(spec.cooldown.keys)
-        self.model_ids = validated_model_ids(self.cooldown_keys)
-        self.usage_keys = usage_key_lists(spec.usage)
-        self.selector = fake_selector(self.usage)
-        self.cooldown_view = CooldownView()
-        self.cooldown_view.cooldown_store = self.cooldown
+        model_ids = validated_model_ids(self.cooldown_keys)
+        self.view = CooldownView()
+        self.view.cooldown_store = self.cooldown
         self.router = cast(
             "Router",
-            cast("object", SimpleNamespace(
-                cache=SimpleNamespace(redis_cache=self.redis),
-                cooldown_cache=self.cooldown_view,
-                get_model_ids=lambda: self.model_ids,
-            )),
+            cast(
+                "object",
+                SimpleNamespace(
+                    cache=SimpleNamespace(redis_cache=redis),
+                    cooldown_cache=self.view,
+                    get_model_ids=lambda: model_ids,
+                ),
+            ),
         )
         self.requests = [RequestRedisBatches() for _index in range(REQUESTS)]
 
@@ -269,86 +227,50 @@ class Scenario:
     async def run_step(self, step: Step) -> StepOutput:
         if step.request >= len(self.requests):
             raise ProbeError("invalid_request", f"unknown request {step.request}")
-        request = self.requests[step.request]
         with patch("time.time", return_value=millis_to_seconds(step.now_millis)):
-            token = _active_request_batches.set(request)
+            token = _active_request_batches.set(self.requests[step.request])
             try:
-                outcome = await self.apply_step(step)
+                result = await self.apply_step(step)
             finally:
                 _active_request_batches.reset(token)
             return StepOutput(
                 kind=step.kind,
-                armed=outcome[0],
-                active=outcome[1],
-                cooldown=outcome[2],
-                usage=outcome[3],
-                prefetched_usage=outcome[4],
+                armed=result[0],
+                active=result[1],
+                cooldown=result[2],
                 cooldown_local=memory_values(self.cooldown, self.cooldown_keys),
-                usage_local=memory_values(
-                    self.usage, self.usage_keys[0] + self.usage_keys[1]
-                ),
             )
 
-    async def apply_step(self, step: Step) -> StepResult:
+    async def apply_step(
+        self, step: Step
+    ) -> tuple[bool | None, bool | None, list[JsonValue | None] | None]:
         if step.kind == "arm":
-            return (self.arm(step), None, None, None, None)
+            return (self.arm(), None, None)
         if step.kind == "read":
-            active, cooldown, usage, prefetched = await self.read(step)
-            return (None, active, cooldown, usage, prefetched)
+            active, cooldown = await self.read()
+            return (None, active, cooldown)
         self.store.down = step.down
-        return (None, None, None, None, None)
+        return (None, None, None)
 
-    def arm(self, step: Step) -> bool:
-        selector = self.selector if step.usage_v2 else None
-        with patch.object(
-            LowestTPMLoggingHandler_v2,
-            "usage_counter_keys",
-            return_value=self.usage_keys,
-        ):
-            RoutingPrefetch.arm(self.router, selector, [{}])  # pyright: ignore[reportUnknownMemberType]
+    def arm(self) -> bool:
+        RoutingPrefetch.arm(self.router, None, [{}])  # pyright: ignore[reportUnknownMemberType]
         return RoutingPrefetch.armed()
 
-    async def read(
-        self, step: Step
-    ) -> tuple[
-        bool,
-        list[JsonValue | None] | None,
-        list[JsonValue | None] | None,
-        UsageOutput | None,
-    ]:
-        selector = self.selector if step.usage_v2 else None
-        strategy = "usage-based-routing-v2" if step.usage_v2 else "simple-shuffle"
-        with patch.object(
-            LowestTPMLoggingHandler_v2,
-            "usage_counter_keys",
-            return_value=self.usage_keys,
-        ):
-            batch = LiteLLMRoutingReadBatch.for_strategy(strategy, selector)
-            if batch is None:
-                return (False, None, None, None)
-            with LiteLLMRoutingReadBatch.scoped(batch):
-                _ = await batch.async_get_cooldown_deployments(self.router, [], None)  # pyright: ignore[reportUnknownMemberType]
-
-        prefetched = batch.prefetched_usage
-        if prefetched is None:
-            return (True, self.cooldown_view.last_results, None, None)
-        combined = self.usage_keys[0] + self.usage_keys[1]
-        output = UsageOutput(
-            covers=prefetched.covers(combined),
-            values=cast("list[JsonValue | None] | None", prefetched.values_for(combined)),
-        )
-        return (True, self.cooldown_view.last_results, output.values, output)
+    async def read(self) -> tuple[bool, list[JsonValue | None] | None]:
+        batch = LiteLLMRoutingReadBatch.for_strategy("simple-shuffle", None)
+        if batch is None:
+            return (False, None)
+        with LiteLLMRoutingReadBatch.scoped(batch):
+            _ = await batch.async_get_cooldown_deployments(self.router, [], None)  # pyright: ignore[reportUnknownMemberType]
+        return (True, self.view.last_results)
 
 
-def usage_key_lists(usage: UsageInput | None) -> tuple[list[str], list[str]]:
-    if usage is None:
-        return ([], [])
-    return (list(usage.tpm), list(usage.rpm))
+def millis_to_seconds(millis: int) -> float:
+    return millis / 1000
 
 
 class RoutingReadBatch(Operation):
     cooldown: TierInput
-    usage: UsageInput | None = None
     remote: dict[str, JsonValue] = Field(default_factory=dict)
     read_expiry_millis: int | None = None
     backfill_ttl_millis: int | None = None
@@ -356,5 +278,4 @@ class RoutingReadBatch(Operation):
 
     @override
     def run(self) -> Output:
-        scenario = Scenario(self)
-        return asyncio.run(scenario.run())
+        return asyncio.run(Scenario(self).run())

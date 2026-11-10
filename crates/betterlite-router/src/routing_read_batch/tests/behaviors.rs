@@ -14,34 +14,38 @@ use crate::routing_read_batch::{
 use crate::routing_value_store::RouteValue;
 
 pub(crate) async fn run(name: &str) {
-    if arm_cases(name) {
-        return;
-    }
-    if prefetch_read_cases(name).await {
-        return;
-    }
-    if session_cases(name).await {
-        return;
-    }
-    if usage_cases(name) {
-        return;
-    }
-    if strategy_cases(name) {
-        return;
-    }
-    panic!("unknown case {name}");
-}
-
-fn arm_cases(name: &str) -> bool {
     match name {
         "arm_without_a_remote_store" => arm_without_a_remote_store(),
         "arm_keeps_the_first_prefetch" => arm_keeps_the_first_prefetch(),
         "arm_reserves_only_missing_keys" => arm_reserves_only_missing_keys(),
         "arm_merges_cooldown_and_usage_keys" => arm_merges_cooldown_and_usage_keys(),
         "arm_with_nothing_due" => arm_with_nothing_due(),
-        _ => return false,
+        "read_uses_the_prefetch_once" => read_uses_the_prefetch_once().await,
+        "read_falls_back_after_a_failed_prefetch" => {
+            read_falls_back_after_a_failed_prefetch().await;
+        }
+        "read_falls_back_when_the_prefetch_is_short" => {
+            read_falls_back_when_the_prefetch_is_short().await;
+        }
+        "backfill_keeps_local_values" => backfill_keeps_local_values().await,
+        "read_without_a_selector_keeps_no_prefetched_usage" => {
+            read_without_a_selector_keeps_no_prefetched_usage().await;
+        }
+        "requests_are_isolated" => requests_are_isolated().await,
+        "cancelled_read_releases_the_reservation" => cancelled_read_releases_the_reservation(),
+        "prefetched_usage_covers_the_strategy_keys" => prefetched_usage_covers_the_strategy_keys(),
+        "prefetched_usage_values_are_none_when_failed" => {
+            prefetched_usage_values_are_none_when_failed();
+        }
+        "for_strategy_uses_usage_keys_without_a_prefetch" => {
+            for_strategy_uses_usage_keys_without_a_prefetch();
+        }
+        "for_strategy_needs_an_armed_prefetch_without_usage" => {
+            for_strategy_needs_an_armed_prefetch_without_usage();
+        }
+        "for_strategy_keeps_no_usage_keys" => for_strategy_keeps_no_usage_keys(),
+        _ => panic!("unknown case {name}"),
     }
-    true
 }
 
 fn arm_without_a_remote_store() {
@@ -131,28 +135,6 @@ fn arm_with_nothing_due() {
     );
     assert!(!armed);
     assert!(request.prefetch.is_none());
-}
-
-async fn prefetch_read_cases(name: &str) -> bool {
-    match name {
-        "read_uses_the_prefetch_once" => {
-            read_uses_the_prefetch_once().await;
-        }
-        "read_falls_back_after_a_failed_prefetch" => {
-            read_falls_back_after_a_failed_prefetch().await;
-        }
-        "read_falls_back_when_the_prefetch_is_short" => {
-            read_falls_back_when_the_prefetch_is_short().await;
-        }
-        "backfill_keeps_local_values" => {
-            backfill_keeps_local_values().await;
-        }
-        "read_without_a_selector_keeps_no_prefetched_usage" => {
-            read_without_a_selector_keeps_no_prefetched_usage().await;
-        }
-        _ => return false,
-    }
-    true
 }
 
 async fn read_uses_the_prefetch_once() {
@@ -295,15 +277,6 @@ async fn read_without_a_selector_keeps_no_prefetched_usage() {
     assert!(batch.prefetched_usage.is_none());
 }
 
-async fn session_cases(name: &str) -> bool {
-    match name {
-        "requests_are_isolated" => requests_are_isolated().await,
-        "cancelled_read_releases_the_reservation" => cancelled_read_releases_the_reservation(),
-        _ => return false,
-    }
-    true
-}
-
 async fn requests_are_isolated() {
     let clock = TestClock::new();
     let first = key("a");
@@ -370,17 +343,6 @@ fn cancelled_read_releases_the_reservation() {
     assert_eq!(prepared.reservation.due.len(), 1);
 }
 
-fn usage_cases(name: &str) -> bool {
-    match name {
-        "prefetched_usage_covers_the_strategy_keys" => prefetched_usage_covers_the_strategy_keys(),
-        "prefetched_usage_values_are_none_when_failed" => {
-            prefetched_usage_values_are_none_when_failed();
-        }
-        _ => return false,
-    }
-    true
-}
-
 fn prefetched_usage_covers_the_strategy_keys() {
     let tpm = key("tpm");
     let rpm = key("rpm");
@@ -409,20 +371,6 @@ fn prefetched_usage_values_are_none_when_failed() {
     };
     assert!(prefetched.covers(&all));
     assert_eq!(prefetched.values_for(&all), None);
-}
-
-fn strategy_cases(name: &str) -> bool {
-    match name {
-        "for_strategy_uses_usage_keys_without_a_prefetch" => {
-            for_strategy_uses_usage_keys_without_a_prefetch();
-        }
-        "for_strategy_needs_an_armed_prefetch_without_usage" => {
-            for_strategy_needs_an_armed_prefetch_without_usage();
-        }
-        "for_strategy_keeps_no_usage_keys" => for_strategy_keeps_no_usage_keys(),
-        _ => return false,
-    }
-    true
 }
 
 fn for_strategy_uses_usage_keys_without_a_prefetch() {
