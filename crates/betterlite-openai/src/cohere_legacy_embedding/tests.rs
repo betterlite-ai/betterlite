@@ -547,6 +547,30 @@ async fn a_status_failure_logs_the_reply_text_before_it_returns() {
 }
 
 #[tokio::test]
+async fn a_failure_body_that_is_not_utf8_is_logged_as_empty_text() {
+    let spec = Spec::new();
+    let mut fixture = Fixture::answering(502, "");
+    fixture.body = vec![0xff, 0xfe];
+    let encoding = Counting::default();
+    let (hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
+    let Err(CohereLegacyEmbeddingError::Status(error)) = outcome else {
+        panic!("a 502 reply must become the status error");
+    };
+    assert_eq!(error.status_code, 502);
+    assert_eq!(error.message, "");
+    let [
+        Hook::Pre { .. },
+        Hook::Post {
+            original_response, ..
+        },
+    ] = hooks.hooks.as_slice()
+    else {
+        panic!("the failure logs one pre_call and one post_call");
+    };
+    assert_eq!(*original_response, Json::Text(String::new()));
+}
+
+#[tokio::test]
 async fn a_transport_failure_logs_the_error_before_it_returns_it() {
     let spec = Spec::new();
     let fixture = Fixture::failing(TransportError::Closed);
