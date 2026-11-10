@@ -1,8 +1,8 @@
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_config::sections::azure_client_secret::Settings;
-use indexmap::IndexMap;
+use lru::LruCache;
 use secrecy::ExposeSecret as _;
 use sha2::{Digest as _, Sha256};
 
@@ -42,7 +42,13 @@ pub struct ClientSecretProvider {
     settings: Settings,
     transport: Arc<dyn Transport>,
     clock: Arc<dyn Clock>,
-    token: Mutex<Option<AccessToken>>,
+    state: Mutex<State>,
+}
+
+#[derive(Default)]
+struct State {
+    token: Option<AccessToken>,
+    token_endpoint: Option<String>,
 }
 
 // the credential's secret and every acquired token stay out of the Debug output
@@ -60,34 +66,50 @@ impl fmt::Debug for ClientSecretProvider {
 impl ClientSecretProvider {
     pub fn token(&self) -> Result<AccessToken, ClientSecretError> {
         let now = self.clock.now_unix_seconds();
-        if let Some(token) = self.cached(now)? {
-            return Ok(token);
+        let cached = self.state()?.token.clone();
+        if let Some(token) = &cached
+            && now < token.refresh_on.unwrap_or(token.expires_on)
+        {
+            return Ok(token.clone());
         }
-        let token = self.acquire()?;
-        let mut cached = self
-            .token
-            .lock()
-            .map_err(|_error| ClientSecretError::ProviderCachePoisoned)?;
-        *cached = Some(token.clone());
-        drop(cached);
-        Ok(token)
+        match self.acquire() {
+            Ok(token) => {
+                self.state()?.token = Some(token.clone());
+                Ok(token)
+            }
+            // azure-identity swallows a failed refresh while the cached token is still valid
+            Err(error) => match cached {
+                Some(token) if now < token.expires_on => Ok(token),
+                _ => Err(error),
+            },
+        }
     }
 
-    fn cached(&self, now: i64) -> Result<Option<AccessToken>, ClientSecretError> {
-        let cached = self
-            .token
+    fn state(&self) -> Result<MutexGuard<'_, State>, ClientSecretError> {
+        self.state
             .lock()
-            .map_err(|_error| ClientSecretError::ProviderCachePoisoned)?;
-        let Some(token) = cached.as_ref() else {
-            return Ok(None);
-        };
-        let refresh_at = token.refresh_on.unwrap_or(token.expires_on);
-        let reuse = (now < refresh_at).then(|| token.clone());
-        drop(cached);
-        Ok(reuse)
+            .map_err(|_error| ClientSecretError::ProviderCachePoisoned)
     }
 
     fn acquire(&self) -> Result<AccessToken, ClientSecretError> {
+        let known = self.state()?.token_endpoint.clone();
+        let token_endpoint = if let Some(endpoint) = known {
+            endpoint
+        } else {
+            let endpoint = self.resolve_token_endpoint()?;
+            self.state()?.token_endpoint = Some(endpoint.clone());
+            endpoint
+        };
+        token::request_token(
+            &*self.transport,
+            &*self.clock,
+            &token_endpoint,
+            &self.credentials,
+        )
+    }
+
+    // msal builds its application, region and authority included, once per credential
+    fn resolve_token_endpoint(&self) -> Result<String, ClientSecretError> {
         let selection = region::select_region(&self.settings, &*self.transport);
         let central = self.central_authority(selection.opted_in)?;
         let endpoint = match selection
@@ -98,12 +120,7 @@ impl ClientSecretProvider {
             Some(region) => authority::regional_authority(&*self.transport, &central, region)?,
             None => central,
         };
-        token::request_token(
-            &*self.transport,
-            &*self.clock,
-            &endpoint.token_endpoint,
-            &self.credentials,
-        )
+        Ok(endpoint.token_endpoint)
     }
 
     fn central_authority(&self, opted_in: bool) -> Result<Authority, ClientSecretError> {
@@ -127,7 +144,7 @@ pub struct ProviderCache {
     transport: Arc<dyn Transport>,
     clock: Arc<dyn Clock>,
     settings: Settings,
-    entries: IndexMap<CacheKey, Arc<ClientSecretProvider>>,
+    entries: LruCache<CacheKey, Arc<ClientSecretProvider>>,
 }
 
 impl ProviderCache {
@@ -137,7 +154,7 @@ impl ProviderCache {
             transport,
             clock,
             settings,
-            entries: IndexMap::new(),
+            entries: LruCache::new(PROVIDER_CACHE_CAPACITY),
         }
     }
 
@@ -149,9 +166,8 @@ impl ProviderCache {
     ) -> Result<Arc<ClientSecretProvider>, ClientSecretError> {
         let credentials = resolve_client_secret(input, resolver)?;
         let key = CacheKey::new(&credentials);
-        if let Some(provider) = self.entries.shift_remove(&key) {
-            self.entries.insert(key, Arc::clone(&provider));
-            return Ok(provider);
+        if let Some(provider) = self.entries.get(&key) {
+            return Ok(Arc::clone(provider));
         }
         let normalized_host = validate_credentials(
             &credentials,
@@ -163,12 +179,9 @@ impl ProviderCache {
             settings: self.settings.clone(),
             transport: Arc::clone(&self.transport),
             clock: Arc::clone(&self.clock),
-            token: Mutex::new(None),
+            state: Mutex::new(State::default()),
         });
-        self.entries.insert(key, Arc::clone(&provider));
-        while self.entries.len() > PROVIDER_CACHE_CAPACITY {
-            drop(self.entries.shift_remove_index(0));
-        }
+        self.entries.put(key, Arc::clone(&provider));
         Ok(provider)
     }
 }

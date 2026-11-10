@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use betterlite_azure::azure_client_secret::provider::{ClientSecretProvider, ProviderCache};
 use betterlite_azure::azure_client_secret::token::AccessToken;
@@ -24,8 +25,6 @@ mod steps;
 mod tests;
 
 pub(crate) struct Op;
-
-const NO_TOKEN: &str = "the credential did not acquire a token";
 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -63,15 +62,18 @@ fn provider_for(
         .map_err(|error| failure("ClientAuthenticationError", error.to_string()))
 }
 
-fn step_cache(step: &Step, settings: Settings) -> (Arc<FixtureTransport>, ProviderCache) {
+fn step_cache(
+    step: &Step,
+    settings: Settings,
+) -> (Arc<FixtureTransport>, Arc<FixtureClock>, ProviderCache) {
     let transport = Arc::new(FixtureTransport::new(&step.replies));
+    let clock = Arc::new(FixtureClock {
+        now: AtomicI64::new(NOW),
+    });
     let cache_transport = Arc::clone(&transport);
-    let cache = ProviderCache::new(
-        cache_transport,
-        Arc::new(FixtureClock { now: NOW }),
-        settings,
-    );
-    (transport, cache)
+    let cache_clock = Arc::clone(&clock);
+    let cache = ProviderCache::new(cache_transport, cache_clock, settings);
+    (transport, clock, cache)
 }
 
 fn grant_value(transport: &FixtureTransport, token: &str) -> Value {
@@ -90,14 +92,11 @@ fn grant_value(transport: &FixtureTransport, token: &str) -> Value {
     }
 }
 
-enum Acquired {
-    Token(Arc<FixtureTransport>, AccessToken),
-    Refused,
-}
+type Attempts = (Arc<FixtureTransport>, Vec<Option<AccessToken>>);
 
-fn acquire(step: &Step) -> Result<Acquired, Box<HelperError>> {
-    let settings = load_settings(&step.environment)?;
-    let (transport, mut cache) = step_cache(step, settings);
+// one token request, then a second after the clock moved on when the step asks for it
+fn attempts(step: &Step) -> Result<Attempts, Box<HelperError>> {
+    let (transport, clock, mut cache) = step_cache(step, load_settings(&step.environment)?);
     let resolver = FixtureResolver::from(step);
     let Ok(provider) = provider_for(
         &mut cache,
@@ -105,34 +104,40 @@ fn acquire(step: &Step) -> Result<Acquired, Box<HelperError>> {
         &resolver,
         step.authority_host.as_deref(),
     ) else {
-        return Ok(Acquired::Refused);
+        return Ok((transport, vec![None]));
     };
-    match provider.token() {
-        Ok(token) => Ok(Acquired::Token(transport, token)),
-        Err(_error) => Ok(Acquired::Refused),
+    let mut tokens = vec![provider.token().ok()];
+    if let Some(advance) = step.advance {
+        clock
+            .now
+            .store(NOW.saturating_add(advance), Ordering::SeqCst);
+        tokens.push(provider.token().ok());
     }
+    Ok((transport, tokens))
 }
 
 fn grant_step(step: &Step) -> Result<Value, Box<HelperError>> {
-    if let Acquired::Token(transport, token) = acquire(step)? {
-        return Ok(grant_value(&transport, token.token.expose_secret()));
-    }
-    Ok(json!({"kind": "error"}))
-}
-
-fn expiry_value(token: &AccessToken) -> Value {
-    json!({
-        "expires_on": token.expires_on,
-        "token_type": token.token_type,
-        "refresh_on": token.refresh_on,
+    let (transport, tokens) = attempts(step)?;
+    Ok(match tokens.into_iter().next().flatten() {
+        Some(token) => grant_value(&transport, token.token.expose_secret()),
+        None => json!({"kind": "error"}),
     })
 }
 
 fn expiry_step(step: &Step) -> Result<Value, Box<HelperError>> {
-    match acquire(step)? {
-        Acquired::Token(_transport, token) => Ok(expiry_value(&token)),
-        Acquired::Refused => Err(failure("ClientAuthenticationError", NO_TOKEN.to_owned())),
+    let (_transport, tokens) = attempts(step)?;
+    let mut values = Vec::new();
+    for token in tokens {
+        values.push(match token {
+            Some(acquired) => json!({
+                "expires_on": acquired.expires_on,
+                "token_type": acquired.token_type,
+                "refresh_on": acquired.refresh_on,
+            }),
+            None => json!({"kind": "error"}),
+        });
     }
+    Ok(Value::Array(values))
 }
 
 fn resolved_value(credentials: &ResolvedCredentials) -> Value {
@@ -166,7 +171,9 @@ fn call_input(call: &Call) -> ClientSecretInput {
 fn cache_report(steps: &[Step]) -> HelperResult {
     let mut cache = ProviderCache::new(
         Arc::new(FixtureTransport::new(&[])),
-        Arc::new(FixtureClock { now: NOW }),
+        Arc::new(FixtureClock {
+            now: AtomicI64::new(NOW),
+        }),
         Settings::default(),
     );
     let mut seen: Vec<Arc<ClientSecretProvider>> = Vec::new();

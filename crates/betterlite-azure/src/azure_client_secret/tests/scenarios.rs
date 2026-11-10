@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::mem::discriminant;
 use std::sync::Arc;
 
@@ -151,12 +152,144 @@ pub(super) fn oauth_failure() {
     assert!(matches!(error, ClientSecretError::TokenAccessTokenMissing));
     assert!(!error_text(&error).contains(FIXTURE_SECRET));
     assert_eq!(fixture.transport.posts().len(), 1);
+    transport_failure();
+    server_failure();
+}
+
+fn transport_failure() {
+    let fixture = Fixture::new(vec![
+        openid(HOST, TENANT),
+        Reply::failure("/oauth2/v2.0/token"),
+    ]);
+    let error = fixture.provider().token().unwrap_err();
+    assert!(matches!(error, ClientSecretError::TokenTransport { .. }));
+    assert_eq!(error.to_string(), "Authentication failed: connection reset");
+    assert_eq!(error.source().unwrap().to_string(), "connection reset");
+}
+
+fn server_failure() {
+    let fixture = Fixture::new(vec![
+        openid(HOST, TENANT),
+        Reply::status(503, "/oauth2/v2.0/token", "unavailable"),
+    ]);
+    let error = fixture.provider().token().unwrap_err();
+    assert!(matches!(error, ClientSecretError::Authentication { .. }));
+    assert_eq!(error.to_string(), "Authentication failed: HTTP Error: 503");
+    assert!(error.source().is_none());
 }
 
 pub(super) fn token_expiry() {
     token_lifetime();
     token_refresh();
     explicit_token_type();
+    refresh_in_lifetime();
+    stale_token_fallback();
+    endpoint_resolved_once();
+    failed_resolution_retries();
+}
+
+fn refresh_in_lifetime() {
+    let body = r#"{"access_token":"tok","expires_in":3600,"refresh_in":1200}"#;
+    let fixture = Fixture::new(vec![openid(HOST, TENANT), token(body)]);
+    let access = fixture.provider().token().unwrap();
+    assert_eq!(access.expires_on, NOW + 3600);
+    assert_eq!(access.refresh_on, Some(NOW + 1200));
+    refresh_in_wins();
+    refresh_in_errors();
+}
+
+fn refresh_in_wins() {
+    let both =
+        r#"{"access_token":"tok","expires_in":3600,"refresh_in":1200,"refresh_on":"1700009999"}"#;
+    let fixture = Fixture::new(vec![openid(HOST, TENANT), token(both)]);
+    assert_eq!(
+        fixture.provider().token().unwrap().refresh_on,
+        Some(NOW + 1200)
+    );
+}
+
+fn refresh_in_errors() {
+    let text = r#"{"access_token":"tok","expires_in":3600,"refresh_in":"soon"}"#;
+    let overflow = format!(
+        r#"{{"access_token":"tok","expires_in":3600,"refresh_in":{}}}"#,
+        i64::MAX
+    );
+    let errors: Vec<ClientSecretError> = [text, overflow.as_str()]
+        .iter()
+        .map(|body| {
+            Fixture::new(vec![openid(HOST, TENANT), token(body)])
+                .provider()
+                .token()
+                .unwrap_err()
+        })
+        .collect();
+    assert!(matches!(
+        errors[0],
+        ClientSecretError::TokenInteger {
+            field: "refresh_in"
+        }
+    ));
+    assert!(matches!(errors[1], ClientSecretError::TokenExpiryOverflow));
+}
+
+fn stale_token_fallback() {
+    let first = r#"{"access_token":"tok-1","expires_in":3600,"refresh_in":100}"#;
+    let fixture = Fixture::new(vec![
+        openid(HOST, TENANT),
+        token(first),
+        Reply::failure("/oauth2/v2.0/token"),
+        Reply::failure("/oauth2/v2.0/token"),
+    ]);
+    let provider = fixture.provider();
+    provider.token().unwrap();
+    fixture.clock.set(NOW + 100);
+    let served = provider.token().unwrap();
+    assert_eq!(served.token.expose_secret(), "tok-1");
+    assert_eq!(fixture.transport.posts().len(), 2);
+    fixture.clock.set(NOW + 3599);
+    assert_eq!(provider.token().unwrap().token.expose_secret(), "tok-1");
+    assert_eq!(fixture.transport.posts().len(), 3);
+    fixture.clock.set(NOW + 3600);
+    let error = provider.token().unwrap_err();
+    assert!(matches!(error, ClientSecretError::TokenTransport { .. }));
+    assert_eq!(fixture.transport.posts().len(), 4);
+}
+
+fn endpoint_resolved_once() {
+    let body = r#"{"access_token":"tok-1","expires_in":3600,"refresh_in":100}"#;
+    let fixture = Fixture::new(vec![
+        openid(HOST, TENANT),
+        openid_for("westus2.login.microsoftonline.com"),
+        token(body),
+        token(TOKEN_BODY),
+    ])
+    .with_settings(region_settings(Some("true"), None, "westus2"));
+    let provider = fixture.provider();
+    provider.token().unwrap();
+    let discoveries = fixture.transport.requests_matching("well-known").len();
+    assert_eq!(discoveries, 2);
+    fixture.clock.set(NOW + 100);
+    assert_eq!(provider.token().unwrap().token.expose_secret(), "tok");
+    assert_eq!(
+        fixture.transport.requests_matching("well-known").len(),
+        discoveries
+    );
+    let posts = fixture.transport.posts();
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[0].url, posts[1].url);
+    assert!(posts[1].url.contains("westus2.login.microsoftonline.com"));
+}
+
+fn failed_resolution_retries() {
+    let fixture = Fixture::new(vec![
+        Reply::failure("well-known"),
+        openid(HOST, TENANT),
+        token(TOKEN_BODY),
+    ]);
+    let provider = fixture.provider();
+    provider.token().unwrap_err();
+    provider.token().unwrap();
+    assert_eq!(fixture.transport.requests_matching("well-known").len(), 2);
 }
 
 fn token_lifetime() {
@@ -170,12 +303,7 @@ fn token_lifetime() {
 
 fn token_refresh() {
     let body = r#"{"access_token":"tok","expires_in":"3600","refresh_on":"1700003000"}"#;
-    let fixture = Fixture::new(vec![
-        openid(HOST, TENANT),
-        token(body),
-        openid(HOST, TENANT),
-        token(body),
-    ]);
+    let fixture = Fixture::new(vec![openid(HOST, TENANT), token(body), token(body)]);
     let provider = fixture.provider();
     provider.token().unwrap();
     provider.token().unwrap();
@@ -183,6 +311,7 @@ fn token_refresh() {
     fixture.clock.set(1_700_003_000);
     provider.token().unwrap();
     assert_eq!(fixture.transport.posts().len(), 2);
+    assert_eq!(fixture.transport.requests_matching("well-known").len(), 1);
 }
 
 fn explicit_token_type() {
@@ -334,7 +463,7 @@ fn capacity() {
             None,
         )
         .unwrap();
-    for index in 1..=PROVIDER_CACHE_CAPACITY {
+    for index in 1..=PROVIDER_CACHE_CAPACITY.get() {
         cache
             .provider(
                 &input_for(&format!("tenant-{index}"), CLIENT, SECRET, None),
@@ -707,8 +836,10 @@ fn malformed_configuration() {
     .unwrap_err();
     assert!(matches!(
         error,
-        ClientSecretError::AuthorityConfiguration { .. }
+        ClientSecretError::AuthorityConfigurationJson { .. }
     ));
+    assert!(error.is_authority_value());
+    assert!(error.source().is_some());
 }
 
 fn retry_policy() {

@@ -27,6 +27,8 @@ pub(super) struct Step {
     #[serde(default)]
     pub(super) replies: Vec<Reply>,
     #[serde(default)]
+    pub(super) advance: Option<i64>,
+    #[serde(default)]
     pub(super) calls: Vec<Call>,
     #[serde(default)]
     pub(super) status_code: u16,

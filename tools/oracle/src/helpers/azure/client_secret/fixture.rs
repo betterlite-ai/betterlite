@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::io;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::azure_client_secret::transport::{
@@ -70,19 +71,19 @@ impl Transport for FixtureTransport {
             Some(message) => Err(io::Error::other(message)),
             None => Ok(HttpReply {
                 status: reply.status,
-                body: reply.body,
+                body: SecretString::from(reply.body),
             }),
         }
     }
 }
 
 pub(super) struct FixtureClock {
-    pub(super) now: i64,
+    pub(super) now: AtomicI64,
 }
 
 impl Clock for FixtureClock {
     fn now_unix_seconds(&self) -> i64 {
-        self.now
+        self.now.load(Ordering::SeqCst)
     }
 }
 

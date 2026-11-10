@@ -1136,6 +1136,7 @@ dependencies = [
  "betterlite-openai",
  "hex",
  "indexmap 2.14.2",
+ "lru",
  "rstest",
  "secrecy",
  "serde",

@@ -133,7 +133,7 @@ impl Transport for FixtureTransport {
             Some(message) => Err(io::Error::other(message)),
             None => Ok(HttpReply {
                 status: reply.status,
-                body: reply.body,
+                body: SecretString::from(reply.body),
             }),
         }
     }

@@ -20,6 +20,7 @@ pub struct TokenResponse {
     pub expires_in: i64,
     pub token_type: String,
     pub refresh_on: Option<i64>,
+    pub refresh_in: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +29,7 @@ struct RawTokenResponse {
     expires_in: Option<NumberField>,
     token_type: Option<TextField>,
     refresh_on: Option<NumberField>,
+    refresh_in: Option<NumberField>,
 }
 
 #[derive(Deserialize)]
@@ -70,15 +72,20 @@ pub fn decode_client_secret_token(bytes: &[u8]) -> Result<TokenResponse, ClientS
         }
         None => "Bearer".to_owned(),
     };
-    let refresh_on = parsed
+    let absolute_refresh = parsed
         .refresh_on
         .map(|value| integer(value, "refresh_on"))
+        .transpose()?;
+    let relative_refresh = parsed
+        .refresh_in
+        .map(|value| integer(value, "refresh_in"))
         .transpose()?;
     Ok(TokenResponse {
         access_token,
         expires_in,
         token_type,
-        refresh_on,
+        refresh_on: absolute_refresh,
+        refresh_in: relative_refresh,
     })
 }
 
@@ -121,23 +128,29 @@ pub fn request_token(
     let request = token_request(token_endpoint, credentials);
     let reply = transport
         .send(&request)
-        .map_err(|source| ClientSecretError::Authentication {
-            message: source.to_string(),
-        })?;
+        .map_err(|source| ClientSecretError::TokenTransport { source })?;
     if reply.status >= 500 {
         return Err(ClientSecretError::Authentication {
             message: format!("HTTP Error: {}", reply.status),
         });
     }
-    let response = decode_client_secret_token(reply.body.as_bytes())?;
-    let expires_on = clock
-        .now_unix_seconds()
+    let response = decode_client_secret_token(reply.body.expose_secret().as_bytes())?;
+    let now = clock.now_unix_seconds();
+    let expires_on = now
         .checked_add(response.expires_in)
         .ok_or(ClientSecretError::TokenExpiryOverflow)?;
+    // MSAL turns a refresh_in lifetime into an absolute refresh_on and drops the field
+    let refresh_on = match response.refresh_in {
+        Some(refresh_in) => Some(
+            now.checked_add(refresh_in)
+                .ok_or(ClientSecretError::TokenExpiryOverflow)?,
+        ),
+        None => response.refresh_on,
+    };
     Ok(AccessToken {
         token: response.access_token,
         expires_on,
         token_type: response.token_type,
-        refresh_on: response.refresh_on,
+        refresh_on,
     })
 }

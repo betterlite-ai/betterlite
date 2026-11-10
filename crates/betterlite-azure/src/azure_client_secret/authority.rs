@@ -1,3 +1,4 @@
+use secrecy::ExposeSecret as _;
 use url::Url;
 
 use super::ClientSecretError;
@@ -220,7 +221,7 @@ fn instance_discovery_endpoint(
     let reply = transport
         .send(&request)
         .map_err(|source| ClientSecretError::AuthorityTransport { source })?;
-    let payload: InstancePayload = serde_json::from_str(&reply.body)
+    let payload: InstancePayload = serde_json::from_str(reply.body.expose_secret())
         .map_err(|source| ClientSecretError::AuthorityResponse { source })?;
     if payload.error.as_deref() == Some("invalid_instance") {
         return Err(ClientSecretError::InvalidInstance {
@@ -250,11 +251,10 @@ fn tenant_discovery(
     if reply.status != 200 {
         return Err(discovery_status_error(reply.status, canonical));
     }
-    let configuration: OpenIdConfiguration =
-        serde_json::from_str(&reply.body).map_err(|_error| {
-            ClientSecretError::AuthorityConfiguration {
-                authority: canonical.url.to_string(),
-            }
+    let configuration: OpenIdConfiguration = serde_json::from_str(reply.body.expose_secret())
+        .map_err(|source| ClientSecretError::AuthorityConfigurationJson {
+            authority: canonical.url.to_string(),
+            source,
         })?;
     let _authorization_endpoint =
         configuration

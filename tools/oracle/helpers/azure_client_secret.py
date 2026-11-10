@@ -52,6 +52,7 @@ class Step(TypedDict, total=False):
     scope: str | None
     authority_host: str | None
     replies: list[Reply]
+    advance: int
     calls: list[Call]
     status_code: int
     message: str
@@ -174,9 +175,9 @@ def fixture_environment(environment: dict[str, str]) -> Generator[None]:
 
 
 @contextmanager
-def fixed_clock() -> Generator[None]:
-    with mock.patch.object(time, "time", return_value=float(NOW)):
-        yield
+def fixed_clock() -> Generator[mock.MagicMock]:
+    with mock.patch.object(time, "time", return_value=float(NOW)) as clock:
+        yield clock
 
 
 @contextmanager
@@ -232,12 +233,25 @@ def grant_step(step: Step) -> Json:
     )
 
 
+def expiry_attempt(credential: ClientSecretCredential, scope: str) -> Json:
+    try:
+        info = credential.get_token_info(scope)
+    except (ClientAuthenticationError, ValueError, RuntimeError, OSError):
+        return {"kind": "error"}
+    return {
+        "expires_on": info.expires_on,
+        "token_type": info.token_type,
+        "refresh_on": info.refresh_on,
+    }
+
+
+# one token request, then a second after the clock moved on when the step asks for it
 def expiry_step(step: Step) -> Json:
     client = FixtureClient(list(step.get("replies", [])))
     with (
         fixture_environment(grant_environment(step)),
         fixture_msal_client(client),
-        fixed_clock(),
+        fixed_clock() as clock,
     ):
         credential = ClientSecretCredential(
             step.get("tenant_id", ""),
@@ -245,12 +259,13 @@ def expiry_step(step: Step) -> Json:
             step.get("client_secret", ""),
         )
         scope = step.get("scope")
-        info = credential.get_token_info(DEFAULT_SCOPE if scope is None else scope)
-    return {
-        "expires_on": info.expires_on,
-        "token_type": info.token_type,
-        "refresh_on": info.refresh_on,
-    }
+        scope = DEFAULT_SCOPE if scope is None else scope
+        attempts = [expiry_attempt(credential, scope)]
+        advance = step.get("advance")
+        if advance is not None:
+            clock.return_value = float(NOW + advance)
+            attempts.append(expiry_attempt(credential, scope))
+    return cast("Json", attempts)
 
 
 class FakeCredential:

@@ -1,4 +1,5 @@
 use std::io;
+use std::num::NonZeroUsize;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -14,7 +15,7 @@ mod tests;
 
 pub const DEFAULT_SCOPE: &str = "https://cognitiveservices.azure.com/.default";
 pub const DEFAULT_AUTHORITY_HOST: &str = "login.microsoftonline.com";
-pub const PROVIDER_CACHE_CAPACITY: usize = 128;
+pub const PROVIDER_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(128).unwrap();
 const OS_ENVIRON_PREFIX: &str = "os.environ/";
 
 #[derive(Debug, Error)]
@@ -45,6 +46,12 @@ pub enum ClientSecretError {
     InvalidInstance { authority: String },
     #[error("Unable to get authority configuration for {authority}")]
     AuthorityConfiguration { authority: String },
+    #[error("Unable to get authority configuration for {authority}")]
+    AuthorityConfigurationJson {
+        authority: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the authority discovery response is not JSON")]
     AuthorityResponse {
         #[source]
@@ -63,6 +70,11 @@ pub enum ClientSecretError {
     InstanceMetadata,
     #[error("Authentication failed: {message}")]
     Authentication { message: String },
+    #[error("Authentication failed: {source}")]
+    TokenTransport {
+        #[source]
+        source: io::Error,
+    },
     #[error("the token response is not JSON")]
     TokenJson {
         #[source]
@@ -92,6 +104,7 @@ impl ClientSecretError {
                 | Self::AuthorityAddress { .. }
                 | Self::InvalidInstance { .. }
                 | Self::AuthorityConfiguration { .. }
+                | Self::AuthorityConfigurationJson { .. }
                 | Self::AuthorityResponse { .. }
         )
     }

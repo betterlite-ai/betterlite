@@ -1,4 +1,5 @@
 use betterlite_config::sections::azure_client_secret::Settings;
+use secrecy::ExposeSecret as _;
 
 use super::transport::{HttpMethod, HttpRequest, Transport};
 
@@ -64,7 +65,7 @@ pub fn detect_region_of_azure_vm(transport: &dyn Transport) -> Option<String> {
             tracing::info!("IMDS {IMDS_REGION_URL} unavailable. Perhaps not running in Azure VM?");
             None
         },
-        |reply| Some(reply.body.trim().to_owned()),
+        |reply| Some(reply.body.expose_secret().trim().to_owned()),
     )
 }
 

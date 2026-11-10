@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 
 use betterlite_azure::azure_client_secret::provider::{ClientSecretProvider, ProviderCache};
 use betterlite_azure::azure_client_secret::region::{self, ConfiguredRegion};
@@ -86,7 +87,9 @@ fn prepare(
     let cache_transport = Arc::clone(&transport);
     let cache = ProviderCache::new(
         cache_transport,
-        Arc::new(FixtureClock { now: NOW }),
+        Arc::new(FixtureClock {
+            now: AtomicI64::new(NOW),
+        }),
         settings,
     );
     let resolver = FixtureResolver::from(step);

@@ -6,11 +6,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_client_secret::provider::ClientSecretProvider;
 use crate::azure_client_secret::token::decode_client_secret_token;
-use crate::azure_client_secret::transport::HttpRequest;
+use crate::azure_client_secret::transport::{HttpReply, HttpRequest};
 use fixture::{CLIENT, Fixture, HOST, Reply, TENANT, form_map, input_for, openid, token};
 
 mod fixture;
@@ -144,6 +144,13 @@ fn azure_client_secret_secret_safe_failure() {
     ]);
     let access = successful.provider().token().unwrap();
     assert_eq!(access.token.expose_secret(), "fixture-token");
+    let reply = HttpReply {
+        status: 200,
+        body: SecretString::from("fixture-token"),
+    };
+    let reply_debug = format!("{reply:?}");
+    assert!(!reply_debug.contains("fixture-token"));
+    assert!(reply_debug.contains("[REDACTED]"));
     let token_debug = format!("{access:?}");
     assert!(!token_debug.contains("fixture-token"));
     assert!(token_debug.contains("[REDACTED]"));

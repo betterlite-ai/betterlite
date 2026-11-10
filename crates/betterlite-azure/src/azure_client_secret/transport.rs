@@ -1,6 +1,8 @@
 use std::fmt;
 use std::io;
 
+use secrecy::SecretString;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
@@ -37,10 +39,10 @@ impl fmt::Debug for HttpRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct HttpReply {
     pub status: u16,
-    pub body: String,
+    pub body: SecretString,
 }
 
 // the outbound pool is injected, so a fixture transport drives every protocol case without leaving the host
