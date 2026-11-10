@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, TypeAlias, cast
 from unittest.mock import patch
 
@@ -12,28 +13,12 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 Object: TypeAlias = dict[str, Json]
 
 
-class _AudienceCredential:
-    def __init__(self) -> None:
-        self.valid = True
-        self.token = "fixture-token"  # noqa: S105 - a local fixture credential, never sent
-        self.audience: str | None = None
-
-    def with_gdch_audience(self, audience: str) -> "_AudienceCredential":
-        self.audience = audience
-        return self
-
-    def __call__(self, _api_key: str) -> tuple["_AudienceCredential", bool]:
-        return self, True
-
-
 def obj(value: Json) -> Object:
+    if value is None:
+        return {}
     if not isinstance(value, dict):
         raise TypeError("expected an object")
     return value
-
-
-def optional_obj(value: Json) -> Object:
-    return {} if value is None else obj(value)
 
 
 def text(fields: Object, name: str) -> str:
@@ -60,7 +45,7 @@ def listing(fields: Object, name: str) -> list[Json]:
 
 
 def apply_globals(config: Json) -> None:
-    settings = optional_obj(optional_obj(config).get("litellm_settings"))
+    settings = obj(obj(config).get("litellm_settings"))
     litellm.api_base = optional_text(settings, "api_base")
     litellm.gdc_api_base = optional_text(settings, "gdc_api_base")
     litellm.vertex_project = optional_text(settings, "vertex_project")
@@ -72,7 +57,7 @@ def deployment_params(config: Object, value: Json) -> Object:
     index = value if isinstance(value, int) and not isinstance(value, bool) else -1
     if index < 0 or index >= len(deployments):
         raise IndexError(f"deployment {value} is not configured")
-    return optional_obj(obj(deployments[index]).get("litellm_params"))
+    return obj(obj(deployments[index]).get("litellm_params"))
 
 
 def url_outcome(fields: Object, config: Object) -> Json:
@@ -82,7 +67,7 @@ def url_outcome(fields: Object, config: Object) -> Json:
             api_base=optional_text(fields, "base"),
             api_key=None,
             model=text(fields, "model"),
-            optional_params=cast("dict[str, object]", optional_obj(fields.get("optional_params"))),
+            optional_params=cast("dict[str, object]", obj(fields.get("optional_params"))),
             litellm_params=cast(
                 "dict[str, object]", deployment_params(config, fields.get("deployment"))
             ),
@@ -94,22 +79,27 @@ def url_outcome(fields: Object, config: Object) -> Json:
 
 def audience_outcome(fields: Object, config: Object) -> Json:
     instance = GDCGeminiConfig()
-    credential = _AudienceCredential()
+    credential = SimpleNamespace(valid=True, token="fixture-token")  # noqa: S106 - a local fixture, never sent
     params = deployment_params(config, fields.get("deployment"))
-    with (
-        patch.object(instance, "_load_creds_from_key", credential),
-        patch.object(instance, "_fetch_auth"),
-    ):
-        instance.validate_environment(  # pyright: ignore[reportUnknownMemberType]
-            headers={},
-            model="gdc/gemini-2.5-pro",
-            messages=[],
-            optional_params={},
-            litellm_params=cast("dict[str, object]", params),
-            api_key="fixture",
-            api_base=text(fields, "base"),
-        )
-    return cast(Json, credential.audience)
+    try:
+        with (
+            patch.object(instance, "_load_creds_from_key", return_value=(credential, True)),
+            patch.object(instance, "_fetch_auth"),
+            patch.object(instance, "_with_gdch_audience", return_value=credential) as bound,
+        ):
+            instance.validate_environment(  # pyright: ignore[reportUnknownMemberType]
+                headers={},
+                model="gdc/gemini-2.5-pro",
+                messages=[],
+                optional_params={},
+                litellm_params=cast("dict[str, object]", params),
+                api_key="fixture",
+                api_base=text(fields, "base"),
+            )
+    except ValueError:
+        # litellm.exception_type maps an unmapped ValueError to a 500 APIConnectionError
+        return {"ok": False, "status": 500}
+    return {"ok": True, "value": cast(Json, bound.call_args.args[1])}
 
 
 def settings_outcome(fields: Object, config: Object) -> Json:
@@ -123,11 +113,8 @@ def settings_outcome(fields: Object, config: Object) -> Json:
         "GDC_TOKEN_CACHING",
         default=False,
     )
-    return {
-        "ssl_verify": cast(Json, ssl_verify),
-        "gdc_token_caching": cast(Json, caching),
-        "caching_enabled": bool(caching),
-    }
+    return {"ssl_verify": cast(Json, ssl_verify), "gdc_token_caching": cast(Json, caching),
+            "caching_enabled": bool(caching)}
 
 
 def supported_outcome(fields: Object) -> Json:
@@ -157,7 +144,7 @@ def request_outcome(fields: Object) -> Json:
                 model=text(fields, "model"),
                 messages=cast("list[AllMessageValues]", messages),
                 optional_params=cast(
-                    "dict[str, object]", optional_obj(fields.get("optional_params"))
+                    "dict[str, object]", obj(fields.get("optional_params"))
                 ),
                 litellm_params={},
                 headers={},
@@ -169,11 +156,11 @@ def request_outcome(fields: Object) -> Json:
 
 
 def scenario(fields: Object) -> Json:
-    config = optional_obj(fields.get("config"))
+    config = obj(fields.get("config"))
     apply_globals(config)
     for name in ("SSL_VERIFY", "GDC_TOKEN_CACHING"):
         os.environ.pop(name, None)
-    environment = optional_obj(fields.get("environment"))
+    environment = obj(fields.get("environment"))
     os.environ.update(
         {name: value for name, value in environment.items() if isinstance(value, str)}
     )

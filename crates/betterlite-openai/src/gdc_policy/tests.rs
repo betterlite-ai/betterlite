@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::gdc_settings::{BoolOrString, CallSettings, GlobalSettings};
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde_json::Value;
 
@@ -194,39 +194,85 @@ fn resolves_vertex_values_through_the_litellm_order(#[case] row: VertexRow) {
     global.vertex_project = row.global_project.map(str::to_owned);
     global.vertex_location = row.global_location.map(str::to_owned);
     let request = optional(row.request);
-    assert_eq!(
-        resolve_project(&call, &global, &request)
-            .unwrap()
-            .as_deref(),
-        row.project
-    );
-    assert_eq!(
-        resolve_location(&call, &global, &request)
-            .unwrap()
-            .as_deref(),
-        row.location
-    );
+    let project = resolve_project(&call, &global, &request);
+    let location = resolve_location(&call, &global, &request);
+    assert_eq!(project.as_ref().and_then(Json::as_str), row.project);
+    assert_eq!(location.as_ref().and_then(Json::as_str), row.location);
 }
 
 #[rstest]
-#[case::number(parsed(r#"{"vertex_project": 5}"#), true)]
-#[case::truth(parsed(r#"{"vertex_project": true}"#), true)]
-#[case::list(parsed(r#"{"vertex_project": ["p"]}"#), true)]
-#[case::object(parsed(r#"{"vertex_project": {"name": "p"}}"#), true)]
-#[case::zero(parsed(r#"{"vertex_project": 0}"#), false)]
-#[case::false_value(parsed(r#"{"vertex_project": false}"#), false)]
-#[case::null(parsed(r#"{"vertex_project": null}"#), false)]
-#[case::empty_text(parsed(r#"{"vertex_project": ""}"#), false)]
-#[case::empty_list(parsed(r#"{"vertex_project": []}"#), false)]
+#[case::number(
+    parsed(r#"{"vertex_project": 5, "vertex_location": "location"}"#),
+    true
+)]
+#[case::truth(
+    parsed(r#"{"vertex_project": true, "vertex_location": "location"}"#),
+    true
+)]
+#[case::list(
+    parsed(r#"{"vertex_project": ["p"], "vertex_location": "location"}"#),
+    true
+)]
+#[case::object(
+    parsed(r#"{"vertex_project": {"name": "p"}, "vertex_location": "location"}"#),
+    true
+)]
+#[case::zero(
+    parsed(r#"{"vertex_project": 0, "vertex_location": "location"}"#),
+    false
+)]
+#[case::false_value(
+    parsed(r#"{"vertex_project": false, "vertex_location": "location"}"#),
+    false
+)]
+#[case::null(
+    parsed(r#"{"vertex_project": null, "vertex_location": "location"}"#),
+    false
+)]
+#[case::empty_text(
+    parsed(r#"{"vertex_project": "", "vertex_location": "location"}"#),
+    false
+)]
+#[case::empty_list(
+    parsed(r#"{"vertex_project": [], "vertex_location": "location"}"#),
+    false
+)]
 fn a_truthy_non_string_project_is_a_parameter_error(
     #[case] request: Value,
     #[case] rejected: bool,
 ) {
-    let outcome = resolve_project(&call(), &global(), &optional(request));
+    let outcome = complete_url(
+        Some("https://gateway"),
+        &call(),
+        &global(),
+        &optional(request),
+        "gdc/gemini-2.5-pro",
+    );
     assert_eq!(
         matches!(outcome, Err(GdcPolicyError::Parameter { .. })),
         rejected
     );
+}
+
+#[test]
+fn a_non_string_project_fails_after_the_missing_location_check() {
+    let request = optional(parsed(r#"{"vertex_project": 5}"#));
+    let error = complete_url(
+        Some("https://gateway"),
+        &call(),
+        &global(),
+        &request,
+        "gdc/gemini-2.5-pro",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        &error,
+        GdcPolicyError::Missing {
+            what: "location",
+            ..
+        }
+    ));
+    assert_eq!(error_status(&error), 401);
 }
 
 #[rstest]
@@ -244,12 +290,8 @@ fn effective_project_prefers_a_project_path_in_the_base(
     #[case] expected: Option<&str>,
 ) {
     let request = optional(parsed(r#"{"vertex_project": "optional"}"#));
-    assert_eq!(
-        effective_project(api_base, &located_call(), &global(), &request)
-            .unwrap()
-            .as_deref(),
-        expected
-    );
+    let project = effective_project(api_base, &located_call(), &global(), &request);
+    assert_eq!(project.as_ref().and_then(Json::as_str), expected);
 }
 
 #[rstest]
@@ -267,11 +309,20 @@ fn effective_project_prefers_a_project_path_in_the_base(
 #[case::non_ascii("\u{e9}", false)]
 #[case::tab("a\tb", false)]
 fn validates_plain_identifiers_as_python_does(#[case] value: &str, #[case] accepted: bool) {
-    let outcome = validate_path_id(value, "vertex_project", "gdc/gemini-2.5-pro");
+    let identifier = Json::Text(value.to_owned());
+    let outcome = validate_path_id(&identifier, "vertex_project", "gdc/gemini-2.5-pro");
     assert_eq!(outcome.is_ok(), accepted);
     if accepted {
-        assert_eq!(outcome.unwrap(), value);
+        assert_eq!(outcome.unwrap(), identifier.as_str().unwrap());
     }
+}
+
+#[test]
+fn a_non_string_identifier_is_a_parameter_error() {
+    let request = optional(parsed(r#"{"vertex_project": 5}"#));
+    let value = request.get("vertex_project").unwrap();
+    let error = validate_path_id(value, "vertex_project", "gdc/gemini-2.5-pro").unwrap_err();
+    assert_eq!(error.class().metadata().status_code, 400);
 }
 
 #[rstest]
@@ -481,11 +532,24 @@ fn a_terminal_newline_identifier_reaches_the_url() {
 #[case::fragment_only("https://host#f", "https://host")]
 #[case::empty_authority("https://", "https://")]
 #[case::last_port("https://host:99999/x", "https://host:99999")]
+#[case::ipv_future("https://[v1.foo]:443/x", "https://[v1.foo]:443")]
 fn audience_is_the_scheme_and_netloc_of_the_original_base(
     #[case] base: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(audience(base), expected);
+    assert_eq!(audience(base).unwrap(), expected);
+}
+
+#[rstest]
+#[case::unclosed_bracket("https://[fd00::1/x")]
+#[case::stray_closing_bracket("https://gdc]/x")]
+#[case::data_before_the_bracket("https://a[::1]/x")]
+#[case::bracketed_host_is_not_an_address("https://[notip]/x")]
+#[case::suffix_after_the_bracket("https://[::1]x/path")]
+fn audience_rejects_what_urlsplit_rejects(#[case] base: &str) {
+    let error = audience(base).unwrap_err();
+    assert!(matches!(&error, GdcPolicyError::InvalidBase));
+    assert_eq!(error.class().metadata().status_code, 500);
 }
 
 #[rstest]

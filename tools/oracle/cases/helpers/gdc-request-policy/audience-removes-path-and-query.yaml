@@ -12,5 +12,6 @@ call:
           - {base: "gateway.example/path", deployment: 0}
           - {base: "HTTP://API.Example.COM:443/x", deployment: 0}
           - {base: "https://user:pw@host:8080/p?q=1#f", deployment: 0}
+          - {base: "https://[fd00::1/x", deployment: 0}
 env: {}
 compare: {ignore: []}

@@ -23,7 +23,7 @@ pub(crate) struct Input { scenarios: Vec<Scenario> }
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
 struct Scenario {
-    #[serde(default = "default_config")] config: Value,
+    config: Value,
     #[serde(default)] environment: BTreeMap<String, String>,
     #[serde(default)] urls: Vec<UrlCall>,
     #[serde(default)] audiences: Vec<AudienceCall>,
@@ -31,9 +31,6 @@ struct Scenario {
     #[serde(default)] settings: Vec<SettingsCall>,
     #[serde(default)] requests: Vec<RequestCall>,
 }
-
-#[rustfmt::skip]
-fn default_config() -> Value { json!({}) }
 
 #[rustfmt::skip]
 #[derive(Debug, Deserialize)] #[serde(deny_unknown_fields)]
@@ -66,14 +63,6 @@ impl Helper for Op {
 }
 
 #[rustfmt::skip]
-fn settings(config: &Value, environment: &BTreeMap<String, String>) -> Result<Settings, Box<HelperError>> {
-    let raw = serde_json::from_value::<Raw>(config.clone())
-        .map_err(|error| Box::new(HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message: error.to_string() }))?;
-    Section::convert(raw, environment)
-        .map_err(|error| Box::new(HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message: error.to_string() }))
-}
-
-#[rustfmt::skip]
 fn deployment(settings: &Settings, index: usize) -> Result<&CallSettings, Box<HelperError>> {
     settings
         .deployments
@@ -83,7 +72,10 @@ fn deployment(settings: &Settings, index: usize) -> Result<&CallSettings, Box<He
 
 #[rustfmt::skip]
 fn scenario(input: &Scenario) -> Result<Value, Box<HelperError>> {
-    let loaded = settings(&input.config, &input.environment)?;
+    let raw = serde_json::from_value::<Raw>(input.config.clone())
+        .map_err(|error| Box::new(HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message: error.to_string() }))?;
+    let loaded = Section::convert(raw, &input.environment)
+        .map_err(|error| Box::new(HelperError { class: "InvalidInput".to_owned(), status: None, error_type: None, param: None, code: None, message: error.to_string() }))?;
     let urls = input.urls.iter().map(|call| url_outcome(call, &loaded)).collect::<Result<Vec<_>, _>>()?;
     let audiences = input.audiences.iter().map(|call| audience_outcome(call, &loaded)).collect::<Result<Vec<_>, _>>()?;
     let setting_values = input.settings.iter().map(|call| settings_outcome(call, &loaded)).collect::<Result<Vec<_>, _>>()?;
@@ -104,7 +96,10 @@ fn url_outcome(call: &UrlCall, settings: &Settings) -> Result<Value, Box<HelperE
 #[rustfmt::skip]
 fn audience_outcome(call: &AudienceCall, settings: &Settings) -> Result<Value, Box<HelperError>> {
     deployment(settings, call.deployment)?;
-    Ok(json!(audience(&call.base)))
+    Ok(match audience(&call.base) {
+        Ok(value) => json!({"ok": true, "value": value}),
+        Err(error) => json!({"ok": false, "status": error.class().metadata().status_code}),
+    })
 }
 
 #[rustfmt::skip]

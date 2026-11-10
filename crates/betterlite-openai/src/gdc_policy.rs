@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::gdc_settings::{BoolOrString, CallSettings, GlobalSettings};
 use betterlite_env::flag;
@@ -33,21 +35,23 @@ pub enum GdcPolicyError {
     Identifier { field: &'static str, model: String },
     #[error("the GDC Gemini {param} must be a string")]
     Parameter { param: &'static str },
+    #[error("the GDC Gemini base URL cannot be split")]
+    InvalidBase,
 }
 
 impl GdcPolicyError {
     #[must_use]
     #[rustfmt::skip]
     pub fn class(&self) -> ErrorClass {
-        let (message, model, status) = match self {
-            Self::Missing { what, model } => (format!("the GDC Gemini {what} is not set"), Some(model.clone()), 401_u16),
-            Self::Identifier { field, model } => (format!("the GDC Gemini {field} is not a plain identifier"), Some(model.clone()), 401_u16),
-            Self::Parameter { param } => (format!("the GDC Gemini {param} must be a string"), None, 400_u16),
+        let model = match self {
+            Self::Missing { model, .. } | Self::Identifier { model, .. } => Some(model.clone()),
+            Self::Parameter { .. } | Self::InvalidBase => None,
         };
-        let context = ErrorContext { message, model, provider: Some(PROVIDER.to_owned()), max_retries: None, num_retries: None, body_type: None, body_param: None, body_code: None };
-        match status {
-            401 => ErrorClass::Authentication(Box::new(ResponseDetails::from(context))),
-            _ => ErrorClass::BadRequest(Box::new(ResponseDetails::from(context))),
+        let context = ErrorContext { message: self.to_string(), model, provider: Some(PROVIDER.to_owned()), max_retries: None, num_retries: None, body_type: None, body_param: None, body_code: None };
+        match self {
+            Self::Missing { .. } | Self::Identifier { .. } => ErrorClass::Authentication(Box::new(ResponseDetails::from(context))),
+            Self::Parameter { .. } => ErrorClass::BadRequest(Box::new(ResponseDetails::from(context))),
+            Self::InvalidBase => ErrorClass::ApiConnection(Box::new(context)),
         }
     }
 }
@@ -60,8 +64,9 @@ pub fn get_supported_openai_params(model: &str, config: &OpenAiConfig, catalog: 
     params
 }
 
+#[must_use]
 #[rustfmt::skip]
-pub fn resolve_project(call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Result<Option<String>, GdcPolicyError> {
+pub fn resolve_project(call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Option<Json> {
     resolve(
         &[call.vertex_project.as_deref(), call.vertex_ai_project.as_deref(), global.vertex_project.as_deref()],
         optional,
@@ -69,8 +74,9 @@ pub fn resolve_project(call: &CallSettings, global: &GlobalSettings, optional: &
     )
 }
 
+#[must_use]
 #[rustfmt::skip]
-pub fn resolve_location(call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Result<Option<String>, GdcPolicyError> {
+pub fn resolve_location(call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Option<Json> {
     resolve(
         &[call.vertex_location.as_deref(), call.vertex_ai_location.as_deref(), global.vertex_location.as_deref()],
         optional,
@@ -79,32 +85,31 @@ pub fn resolve_location(call: &CallSettings, global: &GlobalSettings, optional: 
 }
 
 #[rustfmt::skip]
-fn resolve(configured: &[Option<&str>], optional: &Object, names: [&'static str; 2]) -> Result<Option<String>, GdcPolicyError> {
+fn resolve(configured: &[Option<&str>], optional: &Object, names: [&'static str; 2]) -> Option<Json> {
     if let Some(value) = configured.iter().flatten().find(|value| !value.is_empty()) {
-        return Ok(Some((*value).to_owned()));
+        return Some(Json::Text((*value).to_owned()));
     }
-    for name in names {
-        if let Some(value) = request_text(optional.get(name), name)? {
-            return Ok(Some(value.to_owned()));
-        }
-    }
-    Ok(None)
+    names.into_iter().find_map(|name| optional.get(name).filter(|value| value.is_truthy()).cloned())
 }
 
+#[must_use]
 #[rustfmt::skip]
-pub fn effective_project(api_base: &str, call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Result<Option<String>, GdcPolicyError> {
+pub fn effective_project(api_base: &str, call: &CallSettings, global: &GlobalSettings, optional: &Object) -> Option<Json> {
     if let Some(project) = project_from_base(api_base) {
-        return Ok(Some(project));
+        return Some(Json::Text(project));
     }
     resolve_project(call, global, optional)
 }
 
 #[rustfmt::skip]
-pub fn validate_path_id<'value>(value: &'value str, field: &'static str, model: &str) -> Result<&'value str, GdcPolicyError> {
-    let checked = value.strip_suffix('\n').unwrap_or(value);
+pub fn validate_path_id<'value>(value: &'value Json, field: &'static str, model: &str) -> Result<&'value str, GdcPolicyError> {
+    let Some(text) = value.as_str() else {
+        return Err(GdcPolicyError::Parameter { param: field });
+    };
+    let checked = text.strip_suffix('\n').unwrap_or(text);
     let plain = !checked.is_empty() && checked.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'));
     if plain {
-        return Ok(value);
+        return Ok(text);
     }
     Err(GdcPolicyError::Identifier { field, model: model.to_owned() })
 }
@@ -119,10 +124,10 @@ pub fn complete_url(api_base: Option<&str>, call: &CallSettings, global: &Global
     if trimmed.contains(PROJECTS_PATH) {
         return Ok(trimmed.to_owned());
     }
-    let Some(project) = resolve_project(call, global, optional)? else {
+    let Some(project) = resolve_project(call, global, optional) else {
         return Err(GdcPolicyError::Missing { what: "project", model: model.to_owned() });
     };
-    let Some(location) = resolve_location(call, global, optional)? else {
+    let Some(location) = resolve_location(call, global, optional) else {
         return Err(GdcPolicyError::Missing { what: "location", model: model.to_owned() });
     };
     let checked_project = validate_path_id(&project, "vertex_project", model)?;
@@ -130,14 +135,35 @@ pub fn complete_url(api_base: Option<&str>, call: &CallSettings, global: &Global
     Ok(format!("{trimmed}{PROJECTS_PATH}{checked_project}/locations/{checked_location}{COMPLETIONS_PATH}"))
 }
 
-#[must_use]
 #[rustfmt::skip]
-pub fn audience(api_base: &str) -> String {
+pub fn audience(api_base: &str) -> Result<String, GdcPolicyError> {
     // urlsplit strips leading C0 controls and spaces, then removes tab, carriage return and newline anywhere
     let cleaned = with_scheme(api_base).trim_start_matches(|character: char| character <= '\u{20}').replace(['\t', '\r', '\n'], "");
     let (scheme, rest) = split_scheme(&cleaned);
     let netloc = rest.strip_prefix("//").and_then(|authority| authority.split(['/', '?', '#']).next()).unwrap_or_default();
-    format!("{}://{netloc}", scheme.unwrap_or_default())
+    if !netloc_is_splittable(netloc) {
+        return Err(GdcPolicyError::InvalidBase);
+    }
+    Ok(format!("{}://{netloc}", scheme.unwrap_or_default()))
+}
+
+#[rustfmt::skip]
+fn netloc_is_splittable(netloc: &str) -> bool {
+    if netloc.contains('[') != netloc.contains(']') { return false; }
+    if !netloc.contains('[') { return true; }
+    let after_userinfo = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
+    let Some((before, bracketed)) = after_userinfo.split_once('[') else { return false };
+    let Some((host, port)) = bracketed.split_once(']') else { return false };
+    before.is_empty() && (port.is_empty() || port.starts_with(':')) && bracketed_host_is_valid(host)
+}
+
+#[rustfmt::skip]
+fn bracketed_host_is_valid(host: &str) -> bool {
+    if let Some(future) = host.strip_prefix('v') {
+        let Some((version, address)) = future.split_once('.') else { return false };
+        return !version.is_empty() && version.chars().all(|character| character.is_ascii_hexdigit()) && !address.is_empty();
+    }
+    host.parse::<Ipv6Addr>().is_ok()
 }
 
 #[must_use]
@@ -175,15 +201,6 @@ pub fn transform_request(model: &str, messages: &[ChatMessage], optional_params:
 #[rustfmt::skip]
 fn with_scheme(base: &str) -> String {
     if base.starts_with("http") { base.to_owned() } else { format!("https://{base}") }
-}
-
-#[rustfmt::skip]
-fn request_text<'value>(value: Option<&'value Json>, param: &'static str) -> Result<Option<&'value str>, GdcPolicyError> {
-    let Some(present) = value else { return Ok(None) };
-    if !present.is_truthy() {
-        return Ok(None);
-    }
-    present.as_str().map_or_else(|| Err(GdcPolicyError::Parameter { param }), |text| Ok(Some(text)))
 }
 
 #[rustfmt::skip]

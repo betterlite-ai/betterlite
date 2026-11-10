@@ -105,11 +105,12 @@ fn an_audience_keeps_only_the_scheme_and_netloc() {
     assert_eq!(
         output["scenarios"][0]["audiences"],
         json!([
-            "https://gateway.example",
-            "https://gateway.example",
-            "https://gateway.example",
-            "https://HTTP:",
-            "https://user:pw@host:8080"
+            {"ok": true, "value": "https://gateway.example"},
+            {"ok": true, "value": "https://gateway.example"},
+            {"ok": true, "value": "https://gateway.example"},
+            {"ok": true, "value": "https://HTTP:"},
+            {"ok": true, "value": "https://user:pw@host:8080"},
+            {"ok": false, "status": 500_i32}
         ])
     );
 }
