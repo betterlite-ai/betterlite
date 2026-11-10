@@ -1,0 +1,20 @@
+kind: helper
+name: database-tls-blank-and-duplicate-params
+call:
+  database_tls:
+    function: batch
+    calls:
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslmode=verify-full&sslaccept="
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslrootcert=&sslmode=verify-full"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslcert=&sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslmode=verify-full&sslrootcert=a.pem&sslrootcert=b.pem&application_name=a&application_name=b"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u@h/db?sslrootcert=root.pem&sslcert=pinned.pem&sslmode=verify-full&sslcert=second.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslmode=verify-ca&sslmode=&sslrootcert="
+env: {}
+compare: {ignore: []}

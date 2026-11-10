@@ -1,0 +1,51 @@
+kind: helper
+name: model-validation
+call:
+  anthropic_count_tokens:
+    function: validate
+    cases:
+        - model: ''
+          messages: [{role: user, content: hi}]
+        - model: ''
+          messages: not a list
+        - model: m
+          messages: []
+        - model: m
+          messages: null
+        - model: m
+          messages: []
+          system: ''
+          tools: []
+        - model: m
+          messages: not a list
+        - model: m
+          messages: {role: user}
+        - model: m
+          messages: [1]
+        - model: m
+          messages: [{role: user}]
+        - model: m
+          messages: [{content: hi}]
+        - model: m
+          messages: [{role: user, content: hi}, 5]
+        - model: m
+          messages: [{role: null, content: null}]
+        - model: m
+          messages: []
+          system: sys
+        - model: m
+          messages: []
+          tools: [{name: lookup}]
+        - model: ' '
+          messages: [{role: user, content: hi}]
+        - model: m
+          messages: []
+          system: 0
+        - model: m
+          messages: []
+          system: false
+        - model: m
+          messages: []
+          tools: {}
+env: {}
+compare: {ignore: []}
