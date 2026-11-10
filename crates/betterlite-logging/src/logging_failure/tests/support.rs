@@ -485,26 +485,9 @@ pub(crate) fn payload() -> StandardLoggingPayload {
 }
 
 pub(crate) fn exception(message: &str) -> ExceptionFacts {
-    ExceptionFacts {
-        class_name: "APIError".to_owned(),
-        class: None,
-        message: Some(message.to_owned()),
-        code: None,
-        status_code: None,
-        response_status_code: None,
-        llm_provider: None,
-        category: None,
-        rate_limit_type: None,
-        budget_entity_type: None,
-        budget_entity_id: None,
-        budget_limit: None,
-        budget_spend: None,
-        proxy_type: None,
-        headers: None,
-        response_headers: None,
-        litellm_response_headers: None,
-        traceback_lines: Vec::new(),
-    }
+    let text = serde_json::to_string(message).expect("the message encodes");
+    let encoded = format!(r#"{{"class_name": "APIError", "message": {text}}}"#);
+    serde_json::from_str(&encoded).expect("the exception fixture parses")
 }
 
 pub(crate) fn report(message: &str) -> FailureReport {
@@ -565,7 +548,7 @@ pub(crate) fn build_in(
     .expect("the fixture builds")
 }
 
-pub(crate) fn registry(loggers: &[Arc<FakeLogger>]) -> CallbackRegistry {
+fn with_sink(loggers: &[Arc<FakeLogger>], extra: Option<CallbackSink>) -> CallbackRegistry {
     let mut registry = CallbackRegistry::new(100);
     for logger in loggers {
         let _registration = registry.register(
@@ -577,21 +560,26 @@ pub(crate) fn registry(loggers: &[Arc<FakeLogger>]) -> CallbackRegistry {
             CallbackList::Failure,
         );
     }
+    if let Some(sink) = extra {
+        let _registration = registry.register(
+            CallbackIdentity {
+                class_name: "legacy".to_owned(),
+                attributes: IndexMap::new(),
+            },
+            sink,
+            CallbackList::Failure,
+        );
+    }
     registry
 }
 
+pub(crate) fn registry(loggers: &[Arc<FakeLogger>]) -> CallbackRegistry {
+    with_sink(loggers, None)
+}
+
 pub(crate) fn registry_with_channel(loggers: &[Arc<FakeLogger>]) -> CallbackRegistry {
-    let mut registry = registry(loggers);
     let (sender, _receiver) = mpsc::channel(4);
-    let _registration = registry.register(
-        CallbackIdentity {
-            class_name: "legacy".to_owned(),
-            attributes: IndexMap::new(),
-        },
-        CallbackSink::Channel(sender),
-        CallbackList::Failure,
-    );
-    registry
+    with_sink(loggers, Some(CallbackSink::Channel(sender)))
 }
 
 pub(crate) fn callbacks(registry: &CallbackRegistry) -> FailureCallbacks<'_> {
@@ -620,9 +608,8 @@ pub(crate) fn run_sync_handler(
     registry: &CallbackRegistry,
     harness: &Harness,
 ) {
-    let mut failure_call = call(state, record, context);
     failure_handler(
-        &mut failure_call,
+        &mut call(state, record, context),
         &report("provider exploded"),
         &callbacks(registry),
         &harness.deps(),
@@ -637,11 +624,13 @@ pub(crate) async fn run_async_handler(
     harness: &Harness,
 ) {
     let mut failure_call = call(state, record, context);
+    let callbacks = callbacks(registry);
+    let deps = harness.deps();
     async_failure_handler(
         &mut failure_call,
         &report("provider exploded"),
-        &callbacks(registry),
-        &harness.deps(),
+        &callbacks,
+        &deps,
     )
     .await;
 }

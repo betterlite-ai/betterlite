@@ -53,7 +53,7 @@ async fn dispatch_setup(
     (state, record)
 }
 
-fn sync_sdk_dispatches_the_sync_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_sync_sdk_dispatches_the_sync_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -66,7 +66,7 @@ fn sync_sdk_dispatches_the_sync_handler() -> Pin<Box<dyn Future<Output = ()> + S
     })
 }
 
-fn async_sdk_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_async_sdk_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -78,7 +78,7 @@ fn async_sdk_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()> +
     })
 }
 
-fn prefer_async_dispatches_async_then_the_queued_sync_handler()
+fn test_prefer_async_dispatches_async_then_the_queued_sync_handler()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
@@ -92,7 +92,7 @@ fn prefer_async_dispatches_async_then_the_queued_sync_handler()
     })
 }
 
-fn passthrough_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_passthrough_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -106,7 +106,7 @@ fn passthrough_dispatches_the_async_handler() -> Pin<Box<dyn Future<Output = ()>
     })
 }
 
-fn a_rejected_job_does_not_take_the_sync_claim() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_rejected_job_does_not_take_the_sync_claim() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry_with_channel(&[Arc::clone(&logger)]);
@@ -119,7 +119,7 @@ fn a_rejected_job_does_not_take_the_sync_claim() -> Pin<Box<dyn Future<Output = 
     })
 }
 
-fn the_predicate_is_false_for_loggers_only() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_predicate_is_false_for_loggers_only() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -127,7 +127,7 @@ fn the_predicate_is_false_for_loggers_only() -> Pin<Box<dyn Future<Output = ()> 
     })
 }
 
-fn the_predicate_is_true_for_channel_sinks() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_predicate_is_true_for_channel_sinks() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry_with_channel(&[Arc::clone(&logger)]);
@@ -135,8 +135,8 @@ fn the_predicate_is_true_for_channel_sinks() -> Pin<Box<dyn Future<Output = ()> 
     })
 }
 
-fn the_predicate_is_true_for_unresolved_dynamic_names() -> Pin<Box<dyn Future<Output = ()> + Send>>
-{
+fn test_the_predicate_is_true_for_unresolved_dynamic_names()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -155,8 +155,8 @@ fn the_predicate_is_true_for_unresolved_dynamic_names() -> Pin<Box<dyn Future<Ou
     })
 }
 
-fn a_queued_job_for_an_async_sdk_request_calls_nothing() -> Pin<Box<dyn Future<Output = ()> + Send>>
-{
+fn test_a_queued_job_for_an_async_sdk_request_calls_nothing()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -171,7 +171,7 @@ fn a_queued_job_for_an_async_sdk_request_calls_nothing() -> Pin<Box<dyn Future<O
     })
 }
 
-fn a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let harness = Harness::without_payload();
@@ -196,7 +196,7 @@ fn a_queued_job_without_a_payload_calls_nothing() -> Pin<Box<dyn Future<Output =
     })
 }
 
-fn a_queued_job_with_callbacks_not_allowed_calls_nothing()
+fn test_a_queued_job_with_callbacks_not_allowed_calls_nothing()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
@@ -221,24 +221,28 @@ fn a_queued_job_with_callbacks_not_allowed_calls_nothing()
 }
 
 #[rstest]
-#[case::sync_sdk_dispatches_the_sync_handler(sync_sdk_dispatches_the_sync_handler)]
-#[case::async_sdk_dispatches_the_async_handler(async_sdk_dispatches_the_async_handler)]
+#[case::sync_sdk_dispatches_the_sync_handler(test_sync_sdk_dispatches_the_sync_handler)]
+#[case::async_sdk_dispatches_the_async_handler(test_async_sdk_dispatches_the_async_handler)]
 #[case::prefer_async_dispatches_async_then_the_queued_sync_handler(
-    prefer_async_dispatches_async_then_the_queued_sync_handler
+    test_prefer_async_dispatches_async_then_the_queued_sync_handler
 )]
-#[case::passthrough_dispatches_the_async_handler(passthrough_dispatches_the_async_handler)]
-#[case::a_rejected_job_does_not_take_the_sync_claim(a_rejected_job_does_not_take_the_sync_claim)]
-#[case::the_predicate_is_false_for_loggers_only(the_predicate_is_false_for_loggers_only)]
-#[case::the_predicate_is_true_for_channel_sinks(the_predicate_is_true_for_channel_sinks)]
+#[case::passthrough_dispatches_the_async_handler(test_passthrough_dispatches_the_async_handler)]
+#[case::a_rejected_job_does_not_take_the_sync_claim(
+    test_a_rejected_job_does_not_take_the_sync_claim
+)]
+#[case::the_predicate_is_false_for_loggers_only(test_the_predicate_is_false_for_loggers_only)]
+#[case::the_predicate_is_true_for_channel_sinks(test_the_predicate_is_true_for_channel_sinks)]
 #[case::the_predicate_is_true_for_unresolved_dynamic_names(
-    the_predicate_is_true_for_unresolved_dynamic_names
+    test_the_predicate_is_true_for_unresolved_dynamic_names
 )]
 #[case::a_queued_job_for_an_async_sdk_request_calls_nothing(
-    a_queued_job_for_an_async_sdk_request_calls_nothing
+    test_a_queued_job_for_an_async_sdk_request_calls_nothing
 )]
-#[case::a_queued_job_without_a_payload_calls_nothing(a_queued_job_without_a_payload_calls_nothing)]
+#[case::a_queued_job_without_a_payload_calls_nothing(
+    test_a_queued_job_without_a_payload_calls_nothing
+)]
 #[case::a_queued_job_with_callbacks_not_allowed_calls_nothing(
-    a_queued_job_with_callbacks_not_allowed_calls_nothing
+    test_a_queued_job_with_callbacks_not_allowed_calls_nothing
 )]
 #[tokio::test]
 async fn logging_failure_behavior_tests_behavior(#[case] behavior: Behavior) {

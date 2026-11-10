@@ -48,6 +48,7 @@ fn with_headers(message: &str, headers: &[(&str, &str)]) -> FailureReport {
     }
 }
 
+#[test]
 fn details_carry_the_failure_facts() {
     let mut fixture = fixture();
     let mut call = super::support::call(
@@ -76,6 +77,7 @@ fn details_carry_the_failure_facts() {
     );
 }
 
+#[test]
 fn tracebacks_are_redacted() {
     let mut fixture = fixture();
     let mut call = super::support::call(
@@ -95,6 +97,7 @@ fn tracebacks_are_redacted() {
     assert!(traceback.contains("Traceback"));
 }
 
+#[test]
 fn reported_start_and_end_times_win() {
     let mut fixture = fixture();
     let mut failure = report("provider exploded");
@@ -111,6 +114,7 @@ fn reported_start_and_end_times_win() {
     assert_eq!(timing.end_time, moment("2026-01-02T00:00:03+00:00"));
 }
 
+#[test]
 fn partial_usage_is_preserved() {
     let mut fixture = fixture();
     fixture.state.model_call_details.insert(
@@ -138,6 +142,7 @@ fn partial_usage_is_preserved() {
     );
 }
 
+#[test]
 fn a_null_usage_object_still_zeroes_the_cost() {
     let mut fixture = fixture();
     fixture
@@ -165,6 +170,7 @@ fn a_null_usage_object_still_zeroes_the_cost() {
     );
 }
 
+#[test]
 fn an_original_response_is_kept() {
     let mut fixture = fixture();
     fixture
@@ -188,6 +194,7 @@ fn an_original_response_is_kept() {
     );
 }
 
+#[test]
 fn exception_headers_are_merged_into_the_metadata() {
     let mut fixture = fixture();
     fixture.state.litellm_params = params(&[("metadata", object(&[("team_id", text("team-a"))]))]);
@@ -211,6 +218,7 @@ fn exception_headers_are_merged_into_the_metadata() {
     assert_eq!(metadata.get("team_id"), Some(&text("header-team")));
 }
 
+#[test]
 fn a_missing_metadata_object_is_created() {
     let mut fixture = fixture();
     let mut call = super::support::call(
@@ -227,6 +235,7 @@ fn a_missing_metadata_object_is_created() {
     );
 }
 
+#[test]
 fn a_non_object_litellm_params_is_a_typed_error() {
     let mut fixture = fixture();
     fixture
@@ -245,6 +254,7 @@ fn a_non_object_litellm_params_is_a_typed_error() {
     assert!(!fixture.record_marker());
 }
 
+#[test]
 fn a_non_object_metadata_is_a_typed_error() {
     let mut fixture = fixture();
     fixture.state.model_call_details.insert(
@@ -262,6 +272,7 @@ fn a_non_object_metadata_is_a_typed_error() {
     assert!(matches!(error, FailureError::MetadataNotObject));
 }
 
+#[test]
 fn a_missing_payload_stores_null() {
     let mut fixture = fixture();
     fixture.harness = Harness::without_payload();
@@ -286,6 +297,7 @@ fn a_missing_payload_stores_null() {
     assert!(fixture.record.payload.is_none());
 }
 
+#[test]
 fn the_built_payload_is_stored_and_records_the_timing() {
     let mut fixture = fixture();
     let mut call = super::support::call(
@@ -314,6 +326,7 @@ fn the_built_payload_is_stored_and_records_the_timing() {
     assert!(inputs[0].ends_with("|2026-01-01T00:00:02+00:00"));
 }
 
+#[test]
 fn the_same_exception_is_prepared_once() {
     let mut fixture = fixture();
     let first = report("provider exploded");
@@ -332,6 +345,7 @@ fn the_same_exception_is_prepared_once() {
     assert_eq!(fixture.harness.payloads.calls(), 1);
 }
 
+#[test]
 fn a_new_exception_is_prepared_again() {
     let mut fixture = fixture();
     let mut call = super::support::call(
@@ -354,6 +368,7 @@ fn a_new_exception_is_prepared_again() {
     assert_eq!(fixture.harness.payloads.calls(), 2);
 }
 
+#[test]
 fn the_error_text_is_redacted_for_the_payload_builder() {
     let mut fixture = fixture();
     let mut call = super::support::call(

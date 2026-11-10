@@ -20,6 +20,7 @@ fn claim(state: &LoggingState, name: &str) -> bool {
     state.model_call_details.get(name) == Some(&Json::Bool(true))
 }
 
+#[test]
 fn sync_request_calls_the_sync_callback() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -33,6 +34,7 @@ fn sync_request_calls_the_sync_callback() {
     assert!(claim(&state, "has_logged_sync_failure"));
 }
 
+#[test]
 fn async_sdk_requests_skip_the_sync_callback() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -47,6 +49,7 @@ fn async_sdk_requests_skip_the_sync_callback() {
     assert!(claim(&state, "has_logged_sync_failure"));
 }
 
+#[test]
 fn passthrough_requests_skip_the_sync_callback() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -60,6 +63,7 @@ fn passthrough_requests_skip_the_sync_callback() {
     assert!(logger.calls().is_empty());
 }
 
+#[test]
 fn no_log_requests_skip_the_callback_but_take_the_claim() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -74,6 +78,7 @@ fn no_log_requests_skip_the_callback_but_take_the_claim() {
     assert!(claim(&state, "has_logged_sync_failure"));
 }
 
+#[test]
 fn global_disable_no_log_wins() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -90,6 +95,7 @@ fn global_disable_no_log_wins() {
     assert_eq!(logger.calls(), ["sync"]);
 }
 
+#[test]
 fn the_first_failure_is_logged_once() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -103,6 +109,7 @@ fn the_first_failure_is_logged_once() {
     assert_eq!(harness.payloads.calls(), 1);
 }
 
+#[test]
 fn stream_failures_are_logged_each_time() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -118,6 +125,7 @@ fn stream_failures_are_logged_each_time() {
     assert!(!claim(&state, "has_logged_sync_failure"));
 }
 
+#[test]
 fn a_failing_callback_does_not_stop_the_next() {
     let first = Arc::new(FakeLogger::new("first").failing_sync());
     let second = Arc::new(FakeLogger::new("second"));
@@ -131,6 +139,7 @@ fn a_failing_callback_does_not_stop_the_next() {
     assert_eq!(second.calls(), ["sync"]);
 }
 
+#[test]
 fn a_turned_off_logger_gets_placeholder_messages() {
     let logger = Arc::new(FakeLogger::new("private").turning_off_messages());
     let registry = registry(&[Arc::clone(&logger)]);
@@ -149,6 +158,7 @@ fn a_turned_off_logger_gets_placeholder_messages() {
     assert_eq!(messages, placeholder_messages());
 }
 
+#[test]
 fn a_self_redacting_logger_keeps_its_messages() {
     let logger = Arc::new(
         FakeLogger::new("private")
@@ -171,6 +181,7 @@ fn a_self_redacting_logger_keeps_its_messages() {
     );
 }
 
+#[test]
 fn excluded_fields_are_removed_from_the_event() {
     let logger = Arc::new(FakeLogger::new("private"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -193,6 +204,7 @@ fn excluded_fields_are_removed_from_the_event() {
     assert!(!payload.contains_key("messages"));
 }
 
+#[test]
 fn a_missing_payload_skips_the_callbacks_but_keeps_the_claim() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -205,6 +217,7 @@ fn a_missing_payload_skips_the_callbacks_but_keeps_the_claim() {
     assert!(claim(&state, "has_logged_sync_failure"));
 }
 
+#[test]
 fn a_preparation_error_skips_the_callbacks_and_the_claim() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -236,6 +249,7 @@ fn a_preparation_error_skips_the_callbacks_and_the_claim() {
     assert!(record.payload.is_none());
 }
 
+#[test]
 fn the_context_is_restored() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);
@@ -259,6 +273,7 @@ fn the_context_is_restored() {
     assert_eq!(context.session_id, "outer-session");
 }
 
+#[test]
 fn the_event_carries_the_stream_flag() {
     let logger = Arc::new(FakeLogger::new("first"));
     let registry = registry(&[Arc::clone(&logger)]);

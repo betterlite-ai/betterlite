@@ -31,7 +31,7 @@ fn metadata_init(metadata: Json) -> LoggingInit {
     logging_init
 }
 
-fn async_request_calls_the_async_callback() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_async_request_calls_the_async_callback() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -47,8 +47,8 @@ fn async_request_calls_the_async_callback() -> Pin<Box<dyn Future<Output = ()> +
     })
 }
 
-fn a_failing_callback_increments_the_first_counter_only() -> Pin<Box<dyn Future<Output = ()> + Send>>
-{
+fn test_a_failing_callback_increments_the_first_counter_only()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first").failing_async());
         let registry = registry(&[Arc::clone(&logger)]);
@@ -76,7 +76,7 @@ fn a_failing_callback_increments_the_first_counter_only() -> Pin<Box<dyn Future<
     })
 }
 
-fn a_failing_callback_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_failing_callback_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let first = Arc::new(FakeLogger::new("first").failing_async());
         let second = Arc::new(FakeLogger::new("second"));
@@ -91,7 +91,7 @@ fn a_failing_callback_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()
     })
 }
 
-fn the_first_async_failure_is_logged_once() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_first_async_failure_is_logged_once() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -106,7 +106,7 @@ fn the_first_async_failure_is_logged_once() -> Pin<Box<dyn Future<Output = ()> +
     })
 }
 
-fn stream_failures_are_logged_each_time() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_stream_failures_are_logged_each_time() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -123,7 +123,7 @@ fn stream_failures_are_logged_each_time() -> Pin<Box<dyn Future<Output = ()> + S
     })
 }
 
-fn the_context_is_restored() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_context_is_restored() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -147,7 +147,7 @@ fn the_context_is_restored() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     })
 }
 
-fn the_baseline_estimate_is_invalidated() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_baseline_estimate_is_invalidated() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let harness = Harness::new();
         let mut state = build(init());
@@ -168,7 +168,7 @@ fn the_baseline_estimate_is_invalidated() -> Pin<Box<dyn Future<Output = ()> + S
     })
 }
 
-fn the_post_call_batches_are_flushed() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_post_call_batches_are_flushed() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let harness = Harness::new();
         let mut state = build(init());
@@ -186,7 +186,7 @@ fn the_post_call_batches_are_flushed() -> Pin<Box<dyn Future<Output = ()> + Send
     })
 }
 
-fn a_flush_failure_is_swallowed() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_flush_failure_is_swallowed() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let mut harness = Harness::new();
         harness.flush = RecordingFlush::failing();
@@ -216,7 +216,7 @@ fn a_missing_payload_skips_the_callbacks_but_still_flushes()
     })
 }
 
-fn a_preparation_error_stops_before_the_flush() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_preparation_error_stops_before_the_flush() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -250,7 +250,8 @@ fn a_preparation_error_stops_before_the_flush() -> Pin<Box<dyn Future<Output = (
     })
 }
 
-fn no_log_requests_skip_the_callback_but_still_flush() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_no_log_requests_skip_the_callback_but_still_flush()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -266,7 +267,8 @@ fn no_log_requests_skip_the_callback_but_still_flush() -> Pin<Box<dyn Future<Out
     })
 }
 
-fn single_deployment_metadata_notifies_the_listener() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_single_deployment_metadata_notifies_the_listener()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let listener = Arc::new(FakeLogger::new("router"));
         let mut harness = Harness::new();
@@ -286,7 +288,8 @@ fn single_deployment_metadata_notifies_the_listener() -> Pin<Box<dyn Future<Outp
     })
 }
 
-fn the_no_deployments_message_notifies_the_listener() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_the_no_deployments_message_notifies_the_listener()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let listener = Arc::new(FakeLogger::new("router"));
         let mut harness = Harness::new();
@@ -302,7 +305,7 @@ fn the_no_deployments_message_notifies_the_listener() -> Pin<Box<dyn Future<Outp
     })
 }
 
-fn other_failures_are_not_special() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_other_failures_are_not_special() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let listener = Arc::new(FakeLogger::new("router"));
         let mut harness = Harness::new();
@@ -328,7 +331,7 @@ fn a_non_integer_group_size_is_not_a_single_deployment() -> Pin<Box<dyn Future<O
     })
 }
 
-fn a_failing_listener_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_failing_listener_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let first = Arc::new(FakeLogger::new("first").failing_special());
         let second = Arc::new(FakeLogger::new("second"));
@@ -345,7 +348,7 @@ fn a_failing_listener_does_not_stop_the_next() -> Pin<Box<dyn Future<Output = ()
     })
 }
 
-fn a_disabled_no_log_policy_still_logs() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_a_disabled_no_log_policy_still_logs() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let logger = Arc::new(FakeLogger::new("first"));
         let registry = registry(&[Arc::clone(&logger)]);
@@ -364,36 +367,36 @@ fn a_disabled_no_log_policy_still_logs() -> Pin<Box<dyn Future<Output = ()> + Se
 }
 
 #[rstest]
-#[case::async_request_calls_the_async_callback(async_request_calls_the_async_callback)]
+#[case::async_request_calls_the_async_callback(test_async_request_calls_the_async_callback)]
 #[case::a_failing_callback_increments_the_first_counter_only(
-    a_failing_callback_increments_the_first_counter_only
+    test_a_failing_callback_increments_the_first_counter_only
 )]
-#[case::a_failing_callback_does_not_stop_the_next(a_failing_callback_does_not_stop_the_next)]
-#[case::the_first_async_failure_is_logged_once(the_first_async_failure_is_logged_once)]
-#[case::stream_failures_are_logged_each_time(stream_failures_are_logged_each_time)]
-#[case::the_context_is_restored(the_context_is_restored)]
-#[case::the_baseline_estimate_is_invalidated(the_baseline_estimate_is_invalidated)]
-#[case::the_post_call_batches_are_flushed(the_post_call_batches_are_flushed)]
-#[case::a_flush_failure_is_swallowed(a_flush_failure_is_swallowed)]
+#[case::a_failing_callback_does_not_stop_the_next(test_a_failing_callback_does_not_stop_the_next)]
+#[case::the_first_async_failure_is_logged_once(test_the_first_async_failure_is_logged_once)]
+#[case::stream_failures_are_logged_each_time(test_stream_failures_are_logged_each_time)]
+#[case::the_context_is_restored(test_the_context_is_restored)]
+#[case::the_baseline_estimate_is_invalidated(test_the_baseline_estimate_is_invalidated)]
+#[case::the_post_call_batches_are_flushed(test_the_post_call_batches_are_flushed)]
+#[case::a_flush_failure_is_swallowed(test_a_flush_failure_is_swallowed)]
 #[case::a_missing_payload_skips_the_callbacks_but_still_flushes(
     a_missing_payload_skips_the_callbacks_but_still_flushes
 )]
-#[case::a_preparation_error_stops_before_the_flush(a_preparation_error_stops_before_the_flush)]
+#[case::a_preparation_error_stops_before_the_flush(test_a_preparation_error_stops_before_the_flush)]
 #[case::no_log_requests_skip_the_callback_but_still_flush(
-    no_log_requests_skip_the_callback_but_still_flush
+    test_no_log_requests_skip_the_callback_but_still_flush
 )]
 #[case::single_deployment_metadata_notifies_the_listener(
-    single_deployment_metadata_notifies_the_listener
+    test_single_deployment_metadata_notifies_the_listener
 )]
 #[case::the_no_deployments_message_notifies_the_listener(
-    the_no_deployments_message_notifies_the_listener
+    test_the_no_deployments_message_notifies_the_listener
 )]
-#[case::other_failures_are_not_special(other_failures_are_not_special)]
+#[case::other_failures_are_not_special(test_other_failures_are_not_special)]
 #[case::a_non_integer_group_size_is_not_a_single_deployment(
     a_non_integer_group_size_is_not_a_single_deployment
 )]
-#[case::a_failing_listener_does_not_stop_the_next(a_failing_listener_does_not_stop_the_next)]
-#[case::a_disabled_no_log_policy_still_logs(a_disabled_no_log_policy_still_logs)]
+#[case::a_failing_listener_does_not_stop_the_next(test_a_failing_listener_does_not_stop_the_next)]
+#[case::a_disabled_no_log_policy_still_logs(test_a_disabled_no_log_policy_still_logs)]
 #[tokio::test]
 async fn logging_failure_behavior_tests_behavior(#[case] behavior: Behavior) {
     behavior().await;

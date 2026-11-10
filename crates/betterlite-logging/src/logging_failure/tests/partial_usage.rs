@@ -38,6 +38,7 @@ impl AssembledResponse for Assembled {
     }
 }
 
+#[test]
 fn records_usage_and_cost() {
     let mut state = build(init());
     record_partial_usage_for_failure(&mut state, &usage(), money("0.5"));
@@ -51,6 +52,7 @@ fn records_usage_and_cost() {
     );
 }
 
+#[test]
 fn overwrites_previous_values() {
     let mut state = build(init());
     state
@@ -71,6 +73,7 @@ fn overwrites_previous_values() {
     );
 }
 
+#[test]
 fn zero_cost_is_a_float() {
     let mut state = build(init());
     record_partial_usage_for_failure(&mut state, &usage(), Decimal::ZERO);
@@ -80,6 +83,7 @@ fn zero_cost_is_a_float() {
     );
 }
 
+#[test]
 fn assembled_response_records_its_usage_and_calculated_cost() {
     let mut state = build(init());
     let assembled = Assembled {
@@ -98,6 +102,7 @@ fn assembled_response_records_its_usage_and_calculated_cost() {
     );
 }
 
+#[test]
 fn assembled_response_without_a_cost_records_zero() {
     let mut state = build(init());
     let assembled = Assembled {
@@ -111,6 +116,7 @@ fn assembled_response_without_a_cost_records_zero() {
     );
 }
 
+#[test]
 fn assembled_response_without_usage_records_nothing() {
     let mut state = build(init());
     state.model_call_details.insert(

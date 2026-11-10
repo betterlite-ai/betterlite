@@ -24,13 +24,30 @@ use crate::logging_state::events::{
 };
 
 pub fn failure_handler(
+    log: &mut FailureCall<'_>,
+    failure: &FailureReport,
+    loggers: &FailureCallbacks<'_>,
+    dependencies: &FailureDeps<'_>,
+) {
+    failure_handler_body(log, failure, loggers, dependencies);
+    restore_correlation_context(log.state, log.context);
+}
+
+fn prepare_failure(
     call: &mut FailureCall<'_>,
     report: &FailureReport,
-    callbacks: &FailureCallbacks<'_>,
     deps: &FailureDeps<'_>,
-) {
-    failure_handler_body(call, report, callbacks, deps);
-    restore_correlation_context(call.state, call.context);
+    event: LoggingEvent,
+) -> bool {
+    if !should_run_logging(call.state, event) {
+        return false;
+    }
+    if let Err(error) = failure_handler_helper_fn(call, report, deps) {
+        tracing::error!(%error, "the failure details could not be prepared");
+        return false;
+    }
+    has_run_logging(call.state, event);
+    true
 }
 
 pub fn failure_handler_body(
@@ -39,19 +56,23 @@ pub fn failure_handler_body(
     callbacks: &FailureCallbacks<'_>,
     deps: &FailureDeps<'_>,
 ) {
-    if !should_run_logging(call.state, LoggingEvent::SyncFailure) {
+    if !prepare_failure(call, report, deps, LoggingEvent::SyncFailure) {
         return;
     }
-    let is_sync_request = is_sync_litellm_request(&call.state.litellm_params);
-    if let Err(error) = failure_handler_helper_fn(call, report, deps) {
-        tracing::error!(%error, "the sync failure details could not be prepared");
-        return;
-    }
-    has_run_logging(call.state, LoggingEvent::SyncFailure);
+    deliver_sync_loggers(call, callbacks, deps);
+}
+
+fn deliver_sync_loggers(
+    call: &FailureCall<'_>,
+    callbacks: &FailureCallbacks<'_>,
+    deps: &FailureDeps<'_>,
+) {
     let Some(delivery) = deliverable(call, deps) else {
         return;
     };
-    if !is_sync_request || call.state.call_type == PASS_THROUGH_CALL_TYPE {
+    if !is_sync_litellm_request(&call.state.litellm_params)
+        || call.state.call_type == PASS_THROUGH_CALL_TYPE
+    {
         return;
     }
     for logger in callbacks.sync_loggers() {
@@ -66,7 +87,9 @@ pub async fn async_failure_handler(
     deps: &FailureDeps<'_>,
 ) {
     async_failure_handler_body(call, report, callbacks, deps).await;
-    restore_correlation_context(call.state, call.context);
+    let pre_call = &call.state.correlation.pre_call;
+    call.context.trace_id.clone_from(&pre_call.trace_id);
+    call.context.session_id.clone_from(&pre_call.session_id);
 }
 
 pub async fn async_failure_handler_body(
@@ -81,14 +104,9 @@ pub async fn async_failure_handler_body(
         tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
     }
     special_failure_handlers(call.state, report, deps.special_listeners).await;
-    if !should_run_logging(call.state, LoggingEvent::AsyncFailure) {
+    if !prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
         return;
     }
-    if let Err(error) = failure_handler_helper_fn(call, report, deps) {
-        tracing::error!(%error, "the async failure details could not be prepared");
-        return;
-    }
-    has_run_logging(call.state, LoggingEvent::AsyncFailure);
     if let Some(delivery) = deliverable(call, deps) {
         for logger in callbacks.async_loggers() {
             deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
