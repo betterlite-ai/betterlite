@@ -1,12 +1,14 @@
+use std::fmt;
+
 use secrecy::SecretString;
-use serde_json::Value;
+use serde::Serialize;
 
 use crate::chat::ChatMessage;
 use crate::gigachat_chat::MODEL_PREFIX;
 use crate::gigachat_chat::config::GigachatChatConfig;
 use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_chat::headers::{HeaderInput, validate_environment};
-use crate::gigachat_chat::messages::transform_messages;
+use crate::gigachat_chat::messages::{GigachatMessage, transform_messages};
 use crate::gigachat_utils::get_api_base;
 use crate::openai_base_config::{Headers, Object};
 
@@ -33,11 +35,30 @@ pub struct CompletionInput<'request> {
     pub optional_params: &'request Object,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RequestBody {
+    model: String,
+    messages: Vec<GigachatMessage>,
+    // the provider options LiteLLM copies as they came in, such as repetition_penalty, which betterlite does not model
+    #[serde(flatten)]
+    options: Object,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct CompletionRequest {
     pub url: String,
     pub headers: Headers,
-    pub body: Object,
+    pub body: RequestBody,
+}
+
+impl fmt::Debug for CompletionRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompletionRequest")
+            .field("url", &self.url)
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("body", &self.body)
+            .finish()
+    }
 }
 
 pub async fn completion_request(
@@ -55,25 +76,23 @@ pub async fn completion_request(
     )
     .await?;
     let messages = transform_messages(input.messages, config.uploader).await?;
-    let mut body = Object::from_iter([
-        (
-            String::from("model"),
-            Value::String(input.model.replace(MODEL_PREFIX, "")),
-        ),
-        (String::from("messages"), Value::Array(messages)),
-    ]);
-    // LiteLLM copies these provider options only when the request carries them
-    for key in COPIED_OPTIONS {
-        if let Some(value) = input.optional_params.get(key) {
-            body.insert(String::from(key), value.clone());
-        }
-    }
+    let options = COPIED_OPTIONS
+        .into_iter()
+        .filter_map(|key| {
+            let value = input.optional_params.get(key)?;
+            Some((String::from(key), value.clone()))
+        })
+        .collect();
     Ok(CompletionRequest {
         url: format!(
             "{}/chat/completions",
             get_api_base(input.api_base, input.env_base)
         ),
         headers,
-        body,
+        body: RequestBody {
+            model: input.model.replace(MODEL_PREFIX, ""),
+            messages,
+            options,
+        },
     })
 }

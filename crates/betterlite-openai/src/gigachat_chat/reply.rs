@@ -61,6 +61,7 @@ pub fn transform_response(
         },
         message: format!("the GigaChat reply cannot be read: {source}"),
         headers: None,
+        source: Some(source),
     })?;
     Ok(ChatResponse {
         id: reply.id.unwrap_or_else(|| {

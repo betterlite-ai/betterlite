@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::support::{Fixture, messages};
 use crate::gigachat_chat::messages::transform_messages;
@@ -10,9 +10,10 @@ fn value(text: &str) -> Value {
 }
 
 async fn transformed(input: &str, fixture: &Fixture) -> Vec<Value> {
-    transform_messages(&messages(input), &fixture.uploader)
+    let turned = transform_messages(&messages(input), &fixture.uploader)
         .await
-        .unwrap()
+        .unwrap();
+    turned.iter().map(|message| json!(message)).collect()
 }
 
 #[tokio::test]
@@ -217,6 +218,7 @@ async fn a_text_part_of_the_wrong_shape_is_rejected() {
     .await
     .unwrap_err();
     assert_eq!(error.status_code, 400);
+    assert!(error.source.is_some());
 }
 
 #[tokio::test]

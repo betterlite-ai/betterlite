@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::support::{Fixture, headers, messages, object};
 use crate::gigachat_chat::error::GigaChatError;
@@ -81,7 +81,7 @@ async fn the_model_loses_every_gigachat_prefix() {
     let mut request_case = default_case();
     request_case.model = "gigachat/gigachat-pro";
     let request = completion(&request_case).await.unwrap();
-    assert_eq!(request.body.get("model"), Some(&Value::from("pro")));
+    assert_eq!(json!(request.body).get("model"), Some(&Value::from("pro")));
 }
 
 #[tokio::test]
@@ -90,10 +90,10 @@ async fn the_body_carries_the_mapped_options_that_are_present() {
     request_case.params = r#"{"temperature": 0.4, "top_p": 0.9, "max_tokens": 8, "stream": true, "repetition_penalty": 1.1, "profanity_check": false, "functions": [{"name": "lookup"}], "function_call": "auto"}"#;
     let request = completion(&request_case).await.unwrap();
     assert_eq!(
-        request.body,
-        object(
+        json!(request.body),
+        Value::Object(object(
             r#"{"model": "GigaChat", "messages": [{"role": "user", "content": "hi"}], "temperature": 0.4, "top_p": 0.9, "max_tokens": 8, "stream": true, "repetition_penalty": 1.1, "profanity_check": false, "functions": [{"name": "lookup"}], "function_call": "auto"}"#
-        )
+        ))
     );
 }
 
@@ -101,12 +101,12 @@ async fn the_body_carries_the_mapped_options_that_are_present() {
 async fn the_structured_output_flag_stays_out_of_the_body() {
     let mut request_case = default_case();
     request_case.params = r#"{"functions": [{"name": "city"}], "function_call": {"name": "city"}, "_structured_output": true}"#;
-    let request = completion(&request_case).await.unwrap();
+    let body = json!(completion(&request_case).await.unwrap().body);
     assert_eq!(
-        request.body.get("function_call"),
+        body.get("function_call"),
         Some(&Value::Object(object(r#"{"name": "city"}"#)))
     );
-    assert!(!request.body.contains_key("_structured_output"));
+    assert!(body.get("_structured_output").is_none());
 }
 
 #[tokio::test]
@@ -116,6 +116,14 @@ async fn the_headers_carry_the_bearer_token() {
         request.headers.get("Authorization"),
         Some(&String::from("Bearer token-1"))
     );
+}
+
+#[tokio::test]
+async fn the_debug_text_names_the_headers_but_hides_the_token() {
+    let request = completion(&default_case()).await.unwrap();
+    let text = format!("{request:?}");
+    assert!(text.contains("Authorization"));
+    assert!(!text.contains("token-1"));
 }
 
 #[tokio::test]
@@ -144,7 +152,7 @@ async fn the_request_uploads_images_before_it_builds_the_body() {
     .await
     .unwrap();
     assert_eq!(
-        request.body.get("messages"),
+        json!(request.body).get("messages"),
         Some(&Value::Array(vec![Value::Object(object(
             r#"{"role": "user", "content": "look", "attachments": ["file-9"]}"#
         ))]))

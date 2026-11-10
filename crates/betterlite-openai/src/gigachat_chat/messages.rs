@@ -1,13 +1,36 @@
-use serde::Deserialize;
-use serde_json::Value;
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use serde_with::skip_serializing_none;
 
-use crate::chat::ChatMessage;
+use crate::chat::{ChatMessage, ContentPart, MessageContent, Role, ToolCall};
 use crate::gigachat_chat::config::GigachatImageUploader;
 use crate::gigachat_chat::error::GigaChatError;
 use crate::openai_base_config::Object;
 
+#[skip_serializing_none]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GigachatMessage {
+    role: Role,
+    content: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attachments: Vec<String>,
+    function_call: Option<GigachatFunctionCall>,
+    tool_calls: Option<Vec<ToolCall>>,
+    tool_call_id: Option<String>,
+    // message fields betterlite does not model, which LiteLLM forwards
+    #[serde(flatten)]
+    passthrough: IndexMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct GigachatFunctionCall {
+    name: String,
+    arguments: Value,
+}
+
 #[derive(Deserialize)]
-struct ContentPart {
+struct Part {
     #[serde(rename = "type")]
     kind: Option<String>,
     text: Option<String>,
@@ -24,83 +47,68 @@ enum ImageUrl {
 pub async fn transform_messages(
     messages: &[ChatMessage],
     uploader: &dyn GigachatImageUploader,
-) -> Result<Vec<Value>, GigaChatError> {
+) -> Result<Vec<GigachatMessage>, GigaChatError> {
     let mut transformed = Vec::with_capacity(messages.len());
     for (index, message) in messages.iter().enumerate() {
-        transformed.push(transform_message(index, message, uploader).await?);
+        // GigaChat takes a system message only at the first position, a developer role at none, and a tool role not at all
+        let role = match message.role {
+            Role::Developer => Role::System,
+            Role::System if index > 0 => Role::User,
+            Role::Tool => Role::Function,
+            Role::System | Role::User | Role::Assistant | Role::Function => message.role,
+        };
+        let (content, attachments) = match (&message.content, message.role) {
+            (content, Role::Tool) => (tool_content(content.as_ref()), Vec::new()),
+            (None, _) => (String::new(), Vec::new()),
+            (Some(MessageContent::Text(text)), _) => (text.clone(), Vec::new()),
+            (Some(MessageContent::Parts(parts)), _) => join_parts(parts, uploader).await?,
+        };
+        let first_call = message.tool_calls.as_ref().and_then(|calls| calls.first());
+        transformed.push(GigachatMessage {
+            role,
+            content,
+            attachments,
+            function_call: first_call.map(|call| GigachatFunctionCall {
+                name: call.function.name.clone(),
+                arguments: serde_json::from_str(&call.function.arguments)
+                    .unwrap_or_else(|_| Value::Object(Object::new())),
+            }),
+            tool_calls: if first_call.is_some() {
+                None
+            } else {
+                message.tool_calls.clone()
+            },
+            tool_call_id: message.tool_call_id.clone(),
+            passthrough: message.passthrough.clone(),
+        });
     }
     Ok(transformed)
 }
 
-async fn transform_message(
-    index: usize,
-    message: &ChatMessage,
-    uploader: &dyn GigachatImageUploader,
-) -> Result<Value, GigaChatError> {
-    let mut object: Object = serde_json::to_value(message)
-        .and_then(serde_json::from_value)
-        .map_err(|source| {
-            GigaChatError::server_error(format!(
-                "the GigaChat request message cannot be encoded: {source}"
-            ))
-        })?;
-    object.remove("name");
-    rewrite_role(index, &mut object);
-    rewrite_content(&mut object, uploader).await?;
-    rewrite_tool_calls(message, &mut object);
-    Ok(Value::Object(object))
-}
-
-// GigaChat takes a system message only at the first position, a developer role at none, and a tool role not at all
-fn rewrite_role(index: usize, object: &mut Object) {
-    let Some(role) = object
-        .get("role")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-    else {
-        return;
-    };
-    let renamed = match role.as_str() {
-        "developer" => "system",
-        "system" if index > 0 => "user",
-        "tool" => "function",
-        _ => return,
-    };
-    if role == "tool" {
-        let content = object
-            .get("content")
-            .cloned()
-            .unwrap_or_else(|| Value::from(""));
-        object.insert("content".to_owned(), tool_content(&content));
-    }
-    object.insert("role".to_owned(), Value::from(renamed));
-}
-
 // a function message holds JSON text, so anything that is not JSON text yet is written as JSON
-fn tool_content(content: &Value) -> Value {
-    if let Value::String(text) = content
-        && serde_json::from_str::<Value>(text).is_ok()
-    {
-        return content.clone();
+fn tool_content(content: Option<&MessageContent>) -> String {
+    match content {
+        Some(MessageContent::Parts(parts)) => json!(parts).to_string(),
+        Some(MessageContent::Text(text)) if serde_json::from_str::<Value>(text).is_ok() => {
+            text.clone()
+        }
+        Some(MessageContent::Text(text)) => json!(text).to_string(),
+        None => String::from("\"\""),
     }
-    Value::String(content.to_string())
 }
 
-async fn rewrite_content(
-    object: &mut Object,
+async fn join_parts(
+    parts: &[ContentPart],
     uploader: &dyn GigachatImageUploader,
-) -> Result<(), GigaChatError> {
-    if object.get("content").is_none_or(Value::is_null) {
-        object.insert("content".to_owned(), Value::from(""));
-    }
-    let Some(Value::Array(parts)) = object.get("content").cloned() else {
-        return Ok(());
-    };
+) -> Result<(String, Vec<String>), GigaChatError> {
     let mut texts = Vec::new();
     let mut attachments = Vec::new();
-    for entry in parts.into_iter().filter(Value::is_object) {
-        let part: ContentPart = serde_json::from_value(entry).map_err(|source| {
-            GigaChatError::bad_request(&format!("a content part holds declared fields: {source}"))
+    for entry in parts {
+        let part: Part = serde_json::from_value(json!(entry)).map_err(|source| GigaChatError {
+            status_code: 400,
+            message: format!("a content part holds declared fields: {source}"),
+            headers: None,
+            source: Some(source),
         })?;
         match (part.kind.as_deref(), part.image_url) {
             (Some("text"), _) => texts.push(part.text.unwrap_or_default()),
@@ -111,35 +119,11 @@ async fn rewrite_content(
                 if !url.is_empty()
                     && let Some(file_id) = uploader.upload(&url).await
                 {
-                    attachments.push(Value::String(file_id));
+                    attachments.push(file_id);
                 }
             }
             _ => {}
         }
     }
-    object.insert("content".to_owned(), Value::String(texts.join("\n")));
-    if !attachments.is_empty() {
-        object.insert("attachments".to_owned(), Value::Array(attachments));
-    }
-    Ok(())
-}
-
-fn rewrite_tool_calls(message: &ChatMessage, object: &mut Object) {
-    let Some(first) = message
-        .tool_calls
-        .as_ref()
-        .and_then(|tool_calls| tool_calls.first())
-    else {
-        return;
-    };
-    let arguments = serde_json::from_str::<Value>(&first.function.arguments)
-        .unwrap_or_else(|_| Value::Object(Object::new()));
-    object.insert(
-        "function_call".to_owned(),
-        Value::Object(Object::from_iter([
-            ("name".to_owned(), Value::from(first.function.name.as_str())),
-            ("arguments".to_owned(), arguments),
-        ])),
-    );
-    object.remove("tool_calls");
+    Ok((texts.join("\n"), attachments))
 }

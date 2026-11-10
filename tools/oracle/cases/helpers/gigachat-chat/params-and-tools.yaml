@@ -13,6 +13,8 @@ call:
       - kind: map_params
         params: {max_completion_tokens: 7}
       - kind: map_params
+        params: {max_tokens: 100, max_completion_tokens: 200}
+      - kind: map_params
         params: {temperature: 0}
       - kind: map_params
         params: {temperature: 0.0}

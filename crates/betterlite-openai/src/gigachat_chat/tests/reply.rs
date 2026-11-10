@@ -238,6 +238,7 @@ fn a_reply_of_the_wrong_shape_fails_with_500(#[case] body: &str) {
     let fixture = Fixture::issuing("token", &[]);
     let error = reply(&fixture, body, false).unwrap_err();
     assert_eq!(error.status_code, 500);
+    assert!(error.source.is_some());
 }
 
 #[test]

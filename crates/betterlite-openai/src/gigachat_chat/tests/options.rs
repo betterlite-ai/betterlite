@@ -35,6 +35,14 @@ fn supported_params_are_the_eleven_litellm_names_in_order() {
 #[case::top_p(r#"{"top_p": 0.5}"#, r#"{"top_p": 0.5}"#)]
 #[case::max_tokens(r#"{"max_tokens": 12}"#, r#"{"max_tokens": 12}"#)]
 #[case::max_completion_tokens(r#"{"max_completion_tokens": 12}"#, r#"{"max_tokens": 12}"#)]
+#[case::both_max_keys(
+    r#"{"max_tokens": 100, "max_completion_tokens": 200}"#,
+    r#"{"max_tokens": 200}"#
+)]
+#[case::top_p_wins_over_a_zero_temperature(
+    r#"{"temperature": 0, "top_p": 0.5}"#,
+    r#"{"top_p": 0.5}"#
+)]
 #[case::temperature(r#"{"temperature": 0.5}"#, r#"{"temperature": 0.5}"#)]
 #[case::stop(r#"{"stop": ["a"]}"#, "{}")]
 #[case::unknown(r#"{"seed": 4}"#, "{}")]
@@ -171,6 +179,19 @@ fn a_json_schema_response_format_appends_to_existing_functions() {
 }
 
 #[test]
+fn tools_overwrite_the_functions_a_response_format_added() {
+    let mapped = map(
+        r#"{"tools": [{"type": "function", "function": {"name": "lookup"}}], "response_format": {"type": "json_schema", "json_schema": {"name": "city", "schema": {}}}}"#,
+    );
+    assert_eq!(
+        mapped,
+        object(
+            r#"{"functions": [{"name": "lookup", "description": "", "parameters": {}}], "function_call": {"name": "city"}, "_structured_output": true}"#
+        )
+    );
+}
+
+#[test]
 fn a_response_format_that_is_not_json_schema_sets_nothing() {
     assert_eq!(
         map(r#"{"response_format": {"type": "json_object"}}"#),
@@ -190,4 +211,11 @@ fn a_response_format_that_is_not_json_schema_sets_nothing() {
 fn a_response_format_of_the_wrong_shape_is_rejected(#[case] params: &str) {
     let error = map_openai_params(&object(params), Object::new()).unwrap_err();
     assert_eq!(error.status_code, 400);
+}
+
+#[test]
+fn a_parse_failure_keeps_its_serde_error_as_the_source() {
+    let params = object(r#"{"response_format": {"type": "json_schema", "json_schema": 5}}"#);
+    let error = map_openai_params(&params, Object::new()).unwrap_err();
+    assert!(error.source.is_some());
 }

@@ -24,7 +24,7 @@ impl IdSource for FixedIds {
 }
 
 pub(super) struct ScriptedBearer {
-    reply: Result<SecretString, GigaChatError>,
+    reply: Result<SecretString, u16>,
     seen: Mutex<Vec<Option<String>>>,
 }
 
@@ -38,11 +38,7 @@ impl ScriptedBearer {
 
     fn failing(status_code: u16) -> Self {
         Self {
-            reply: Err(GigaChatError {
-                status_code,
-                message: String::from("the token could not be fetched"),
-                headers: None,
-            }),
+            reply: Err(status_code),
             seen: Mutex::new(Vec::new()),
         }
     }
@@ -62,7 +58,12 @@ impl GigachatBearer for ScriptedBearer {
             .lock()
             .unwrap()
             .push(credentials.map(|value| value.expose_secret().to_owned()));
-        self.reply.clone()
+        self.reply.clone().map_err(|status_code| GigaChatError {
+            status_code,
+            message: String::from("the token could not be fetched"),
+            headers: None,
+            source: None,
+        })
     }
 }
 
