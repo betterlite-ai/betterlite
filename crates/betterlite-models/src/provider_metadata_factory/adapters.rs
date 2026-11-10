@@ -157,19 +157,18 @@ pub struct FireworksSettings {
 impl FireworksSettings {
     // The base constructor runs first, then the Fireworks-only arguments are stored.
     #[must_use]
-    pub fn with_args(self, args: Self) -> Self {
-        Self {
-            openai: self.openai.with_args(args.openai),
-            tools: args.tools.or(self.tools),
-            tool_choice: args.tool_choice.or(self.tool_choice),
-            top_k: args.top_k.or(self.top_k),
-            presence_penalty: args.presence_penalty.or(self.presence_penalty),
-            user: args.user.or(self.user),
-            logprobs: args.logprobs.or(self.logprobs),
-            reasoning_effort: args.reasoning_effort.or(self.reasoning_effort),
-            prompt_truncate_len: args.prompt_truncate_len.or(self.prompt_truncate_len),
-            context_limit_behavior: args.context_limit_behavior.or(self.context_limit_behavior),
-        }
+    pub fn with_args(mut self, args: Self) -> Self {
+        self.openai = self.openai.with_args(args.openai);
+        self.tools = args.tools.or(self.tools);
+        self.tool_choice = args.tool_choice.or(self.tool_choice);
+        self.top_k = args.top_k.or(self.top_k);
+        self.presence_penalty = args.presence_penalty.or(self.presence_penalty);
+        self.user = args.user.or(self.user);
+        self.logprobs = args.logprobs.or(self.logprobs);
+        self.reasoning_effort = args.reasoning_effort.or(self.reasoning_effort);
+        self.prompt_truncate_len = args.prompt_truncate_len.or(self.prompt_truncate_len);
+        self.context_limit_behavior = args.context_limit_behavior.or(self.context_limit_behavior);
+        self
     }
 }
 
