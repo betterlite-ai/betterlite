@@ -212,12 +212,10 @@ impl Postgres {
     async fn connect(
         fixture: &PostgresFixture,
     ) -> (Client, JoinSet<Result<(), tokio_postgres::Error>>) {
-        let (client, connection) = fixture
-            .options
-            .config
-            .connect(NoTls)
-            .await
-            .expect("a test connection");
+        let (client, connection) =
+            tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
+                .await
+                .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
         (client, tasks)

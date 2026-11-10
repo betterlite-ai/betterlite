@@ -6,7 +6,7 @@ type FakeExecute<'database> = ExecuteFuture<'database, FakeFailure>;
 type FakeQuery<'database> = QueryFuture<'database, FakeFailure>;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::{self, Write};
@@ -67,9 +67,7 @@ impl Database {
             .resolve()
             .await
             .unwrap();
-        let (client, connection) = fixture.options.config.connect(NoTls).await.unwrap();
-        let mut tasks = JoinSet::new();
-        tasks.spawn(connection);
+        let (client, tasks) = connect(&fixture).await;
         client.batch_execute(BASE_SCHEMA).await.unwrap();
         Self {
             fixture,
@@ -80,10 +78,7 @@ impl Database {
     pub(super) async fn another_client(
         &self,
     ) -> (Client, JoinSet<Result<(), tokio_postgres::Error>>) {
-        let (client, connection) = self.fixture.options.config.connect(NoTls).await.unwrap();
-        let mut tasks = JoinSet::new();
-        tasks.spawn(connection);
-        (client, tasks)
+        connect(&self.fixture).await
     }
     pub(super) async fn close(self) {
         let Self {
@@ -95,6 +90,17 @@ impl Database {
         drop(tasks);
         fixture.close_async().await.unwrap();
     }
+}
+// the fixture's Config carries a schema-mode options value the server rejects; its URL does not
+async fn connect(
+    fixture: &PostgresFixture,
+) -> (Client, JoinSet<Result<(), tokio_postgres::Error>>) {
+    let (client, connection) = tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
+        .await
+        .unwrap();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(connection);
+    (client, tasks)
 }
 pub(super) async fn view_columns(client: &Client, view: &str) -> Vec<(String, String)> {
     client
@@ -172,6 +178,7 @@ where
         .with_ansi(false)
         .with_target(false)
         .with_level(false)
+        .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
     let output = future.with_subscriber(subscriber).await;
