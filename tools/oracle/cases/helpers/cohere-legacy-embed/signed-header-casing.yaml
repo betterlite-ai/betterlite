@@ -1,0 +1,17 @@
+kind: helper
+name: cohere-legacy-embed-signed-header-casing
+call:
+  cohere_legacy_embed:
+    model: embed-english-v3.0
+    input: [hello, world]
+    headers:
+      Content-Type: application/json
+      X-Amz-Date: 20260101T000000Z
+      Authorization: AWS4-HMAC-SHA256 Credential=AKIA/20260101
+      Request-Source: bedrock
+    api_key: sk-test
+    runs:
+      - status: 200
+        body: '{"embeddings":[[0.5],[0.25]],"meta":{"billed_units":{"input_tokens":2,"images":0}}}'
+compare: {ignore: []}
+env: {}
