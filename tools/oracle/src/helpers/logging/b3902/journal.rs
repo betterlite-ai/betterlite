@@ -18,7 +18,6 @@ impl Journal {
         encodes.push(spans.to_vec());
         u64::try_from(encodes.len().saturating_sub(1)).unwrap_or(u64::MAX)
     }
-
     pub(crate) fn encoded(&self, index: u64) -> Option<Vec<SpanData>> {
         let position = usize::try_from(index).ok()?;
         self.encodes
@@ -27,7 +26,6 @@ impl Journal {
             .get(position)
             .cloned()
     }
-
     pub(crate) fn record_request(&self, request: Value) {
         self.requests
             .lock()
