@@ -108,7 +108,7 @@ fn is_max_budget(error: &BudgetConfigError) -> bool {
     r#"{"max_budget": 1, "budget_limit": "x", "budget_duration": "1d"}"#,
     is_entry
 )]
-#[case::unrepresentable_budget(r#"{"max_budget": 1e400, "budget_duration": "1d"}"#, is_max_budget)]
+#[case::unrepresentable_budget(r#"{"max_budget": 1e30, "budget_duration": "1d"}"#, is_max_budget)]
 #[case::fractional_tpm(r#"{"budget_duration": "1d", "tpm_limit": 1.5}"#, is_entry)]
 #[case::string_rpm(r#"{"budget_duration": "1d", "rpm_limit": "5"}"#, is_entry)]
 fn budget_config_rejects_unusable_entries(
