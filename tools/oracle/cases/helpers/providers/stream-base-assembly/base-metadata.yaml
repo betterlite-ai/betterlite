@@ -1,0 +1,28 @@
+kind: helper
+name: base-metadata
+call:
+  stream_base_assembly:
+    function: batch
+    cases:
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, id: '', created: 7, model: orig, system_fingerprint: fp, choices: []}
+          - {object: chat.completion.chunk, id: id2, created: 7, model: real, choices: [{delta: {role: user}, finish_reason: null}]}
+          - {object: chat.completion.chunk, id: id2, created: 7, model: real, service_tier: t1, choices: [{delta: {role: tool}}]}
+          - {object: chat.completion.chunk, id: id2, created: 7, model: real, service_tier: ''}
+      - function: base_metadata
+        chunks:
+          - {form: model_response_stream, id: '', created: 7, model: orig, system_fingerprint: fp, choices: []}
+          - {form: model_response_stream, id: id2, created: 7, model: real, service_tier: t1, choices: [{delta: {role: user}}]}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, model: m, choices: []}
+          - {object: chat.completion.chunk, created: 1, model: m, choices: [{delta: {role: ''}}, {delta: {role: tool}}]}
+          - {object: chat.completion.chunk, created: 1, model: m, choices: [{delta: {role: user}}]}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, model: orig, choices: []}
+      - function: base_metadata
+        chunks: []
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}
