@@ -73,7 +73,7 @@ async fn run_pipeline(batch: &RedisBatch, ops: &mut [Operation]) {
             );
             let error = Arc::new(BatchError::Pipeline(failure));
             for op in ops.iter() {
-                op.fail(Arc::clone(&error));
+                op.settle_unresolved(Some(Arc::clone(&error)));
             }
         }
     }
@@ -146,7 +146,7 @@ struct Draining {
 impl Draining {
     async fn finish(mut self) {
         for op in &self.ops {
-            op.cancel();
+            op.settle_unresolved(None);
         }
         for op in &self.ops {
             op.run_hooks().await;
@@ -161,7 +161,7 @@ impl Drop for Draining {
             return;
         }
         for op in &self.ops {
-            op.cancel();
+            op.settle_unresolved(None);
         }
         for op in &self.ops {
             op.run_hooks_now();

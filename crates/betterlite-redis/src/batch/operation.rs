@@ -66,23 +66,13 @@ impl Operation {
         }
     }
 
-    pub(crate) fn fail(&self, error: Arc<BatchError>) {
+    pub(crate) fn settle_unresolved(&self, failure: Option<Arc<BatchError>>) {
         match self {
-            Self::Mget(op) => op.slot.complete(Err(error)),
-            Self::Script(op) => op.slot.complete(Err(error)),
-            Self::Increment(op) => op.slot.complete(Err(error)),
-            Self::Set(op) => op.slot.complete(Err(error)),
-            Self::Delete(op) => op.slot.complete(Err(error)),
-        }
-    }
-
-    pub(crate) fn cancel(&self) {
-        match self {
-            Self::Mget(op) => op.slot.cancel(),
-            Self::Script(op) => op.slot.cancel(),
-            Self::Increment(op) => op.slot.cancel(),
-            Self::Set(op) => op.slot.cancel(),
-            Self::Delete(op) => op.slot.cancel(),
+            Self::Mget(op) => op.slot.settle_unresolved(failure),
+            Self::Script(op) => op.slot.settle_unresolved(failure),
+            Self::Increment(op) => op.slot.settle_unresolved(failure),
+            Self::Set(op) => op.slot.settle_unresolved(failure),
+            Self::Delete(op) => op.slot.settle_unresolved(failure),
         }
     }
 

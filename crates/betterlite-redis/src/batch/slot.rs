@@ -72,10 +72,13 @@ impl<T> Slot<T> {
         }
     }
 
-    pub(crate) fn cancel(&self) {
-        match self.0.lock() {
-            Ok(mut inner) => inner.cancel(),
-            Err(poisoned) => poisoned.into_inner().cancel(),
+    pub(crate) fn settle_unresolved(&self, failure: Option<Arc<BatchError>>) {
+        match failure {
+            Some(error) => self.complete(Err(error)),
+            None => match self.0.lock() {
+                Ok(mut inner) => inner.cancel(),
+                Err(poisoned) => poisoned.into_inner().cancel(),
+            },
         }
     }
 
