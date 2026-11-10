@@ -24,30 +24,12 @@ pub enum HistoryError {
     Encode(#[source] serde_json::Error),
 }
 
-#[derive(Clone, Copy)]
-pub struct WireError {
-    pub status: u16,
-    pub error_type: Option<&'static str>,
-    pub param: Option<&'static str>,
-    pub code: Option<&'static str>,
-}
-
 impl HistoryError {
     #[must_use]
-    pub const fn wire(&self) -> WireError {
+    pub const fn status(&self) -> u16 {
         if let Self::Media(source) = self {
-            return WireError {
-                status: source.status(),
-                error_type: source.error_type(),
-                param: source.param(),
-                code: source.code(),
-            };
+            return source.status();
         }
-        WireError {
-            status: 400,
-            error_type: None,
-            param: None,
-            code: Some("400"),
-        }
+        400
     }
 }

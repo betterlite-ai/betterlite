@@ -93,7 +93,7 @@ where
             self.user_turn()?;
             self.assistant_turn()?;
             self.tool_result().await?;
-            self.flush_tool_responses();
+            self.flush_tool_responses(false);
             if self.index == initial {
                 let role = self
                     .messages
@@ -177,12 +177,12 @@ where
         Ok(())
     }
 
-    fn flush_tool_responses(&mut self) {
+    fn flush_tool_responses(&mut self, trailing: bool) {
         let tool_role_next = self
             .messages
             .get(self.index)
             .is_some_and(|current| matches!(current.role.as_str(), TOOL | FUNCTION));
-        if tool_role_next || self.tool_responses.is_empty() {
+        if (!trailing && tool_role_next) || self.tool_responses.is_empty() {
             return;
         }
         self.history.contents.push(Content {
@@ -192,12 +192,7 @@ where
     }
 
     fn finish(&mut self) {
-        if !self.tool_responses.is_empty() {
-            self.history.contents.push(Content {
-                role: Role::User,
-                parts: take(&mut self.tool_responses),
-            });
-        }
+        self.flush_tool_responses(true);
         if self.history.contents.is_empty() {
             self.history.warnings.push(HistoryWarning::EmptyHistory);
             tracing::warn!("the history has no content; a single space turn is sent instead");

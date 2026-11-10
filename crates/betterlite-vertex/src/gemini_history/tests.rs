@@ -86,11 +86,7 @@ fn error_of(source: &str, model: Option<&str>) -> HistoryError {
 }
 
 fn assert_field_error(error: &HistoryError, field: &str) {
-    let wire = error.wire();
-    assert_eq!(wire.status, 400);
-    assert_eq!(wire.code, Some("400"));
-    assert_eq!(wire.error_type, None);
-    assert_eq!(wire.param, None);
+    assert_eq!(error.status(), 400);
     assert!(
         error.to_string().contains(field),
         "{error} does not name {field}"
@@ -562,10 +558,12 @@ fn propagates_the_remote_media_rejection() {
         error,
         HistoryError::Media(MediaError::RemoteMediaRequired(MediaField::ImageUrl))
     ));
-    let wire = error.wire();
-    assert_eq!(wire.status, 400);
-    assert_eq!(wire.param, Some("image_url"));
-    assert_eq!(wire.code, Some("unsupported_remote_media"));
+    let HistoryError::Media(source) = error else {
+        panic!("a remote media reference must stay a media error");
+    };
+    assert_eq!(source.status(), 400);
+    assert_eq!(source.param(), Some("image_url"));
+    assert_eq!(source.code(), Some("unsupported_remote_media"));
 }
 
 #[test]
