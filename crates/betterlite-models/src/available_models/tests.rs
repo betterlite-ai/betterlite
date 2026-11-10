@@ -856,6 +856,50 @@ fn cache_evicts_the_earliest_expiry_at_capacity() {
 }
 
 #[test]
+fn capacity_after_environment_clear_evicts_live_values() {
+    let environment = snapshot(&[]);
+    let (state, clock) = switchable_clock();
+    let mut cache = AvailableModelsCache::with_clock(clock);
+    (0..300_usize).for_each(|index| {
+        let parameters = params(&format!("old-{index}"), None, None);
+        cache
+            .set(ProviderId::Openai, Some(&parameters), &models(&["old"]))
+            .unwrap();
+    });
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), None, &environment)
+            .unwrap(),
+        None
+    );
+    (0..301_usize).for_each(|index| {
+        state.lock().unwrap().now =
+            f64::from(u32::try_from(index).unwrap()).mul_add(1.0_f64, 500.0_f64);
+        let parameters = params(&format!("new-{index}"), None, None);
+        cache
+            .set(ProviderId::Openai, Some(&parameters), &models(&["new"]))
+            .unwrap();
+    });
+    let evicted = params("new-0", None, None);
+    assert_eq!(
+        cache
+            .get(Some(ProviderId::Openai), Some(&evicted), &environment)
+            .unwrap(),
+        None
+    );
+    let present = (0..301_usize)
+        .filter(|index| {
+            let parameters = params(&format!("new-{index}"), None, None);
+            cache
+                .get(Some(ProviderId::Openai), Some(&parameters), &environment)
+                .unwrap()
+                .is_some()
+        })
+        .count();
+    assert_eq!(present, 300_usize);
+}
+
+#[test]
 fn expiry_pruning_bounds_the_expiry_map() {
     let (state, clock) = switchable_clock();
     let mut cache = AvailableModelsCache::with_clock(clock);

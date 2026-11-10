@@ -122,9 +122,13 @@ impl AvailableModelsCache {
     ) -> Result<(), CacheError> {
         let now = self.read_clock()?;
         self.prune_expired(now);
-        // a set inserts one entry, so the cache holds at most its capacity here
-        if self.state.values.len() == self.limits.capacity {
+        while self.state.values.len() >= self.limits.capacity {
+            let known = self.state.expiries.len();
             self.evict_earliest()?;
+            // an expiry left behind by an environment clear has no value, so a call that removes nothing would spin
+            if self.state.expiries.len() == known {
+                return Err(CacheError::MissingExpiry);
+            }
         }
         let key = cache_key(Some(provider), parameters);
         // prune_expired dropped every expiry at or before now, so only an absent one needs a new expiry
