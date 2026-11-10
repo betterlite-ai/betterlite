@@ -88,15 +88,15 @@ fn a_full_project_url_is_returned_after_trimming() {
 fn identifiers_are_checked_and_keep_one_terminal_newline() {
     let output = run_case("identifier-slash-and-terminal-newline.yaml");
     let urls = &output["scenarios"][0]["urls"];
-    assert_eq!(urls[0], json!({"ok": false, "status": 401}));
-    assert_eq!(urls[1], json!({"ok": false, "status": 401}));
+    assert_eq!(urls[0], json!({"ok": false, "status": 401_i32}));
+    assert_eq!(urls[1], json!({"ok": false, "status": 401_i32}));
     assert_eq!(
         urls[2]["value"],
         "https://gateway.example/v1/projects/project\n/locations/location/chat/completions"
     );
-    assert_eq!(urls[3], json!({"ok": false, "status": 401}));
-    assert_eq!(urls[4], json!({"ok": false, "status": 401}));
-    assert_eq!(urls[5], json!({"ok": false, "status": 401}));
+    assert_eq!(urls[3], json!({"ok": false, "status": 401_i32}));
+    assert_eq!(urls[4], json!({"ok": false, "status": 401_i32}));
+    assert_eq!(urls[5], json!({"ok": false, "status": 401_i32}));
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn the_option_list_leads_with_the_vertex_names_and_the_body_drops_routing_fields
         json!({
             "model": "gemini-2.5-pro",
             "messages": [{"role": "user", "content": "hi"}],
-            "temperature": 1
+            "temperature": 1_i32
         })
     );
     assert_eq!(requests[1]["value"]["model"], "gemini");

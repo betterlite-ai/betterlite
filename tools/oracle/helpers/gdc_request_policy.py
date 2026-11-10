@@ -1,14 +1,15 @@
 import os
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
 from litellm.llms.gdc.chat.transformation import GDCGeminiConfig
-from litellm.types.llms.openai import AllMessageValues
+
+if TYPE_CHECKING:
+    from litellm.types.llms.openai import AllMessageValues
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
-Globals: TypeAlias = tuple[str | None, str | None, str | None, str | None]
 
 
 class _AudienceCredential:
@@ -58,49 +59,12 @@ def listing(fields: Object, name: str) -> list[Json]:
     return value
 
 
-def strings(fields: Object, name: str) -> set[str]:
-    return {value for value in listing(fields, name) if isinstance(value, str)}
-
-
-def environment(fields: Object) -> dict[str, str]:
-    raw = optional_obj(fields.get("environment"))
-    variables = {name: value for name, value in raw.items() if isinstance(value, str)}
-    if len(variables) != len(raw):
-        raise TypeError("environment values must be strings")
-    return variables
-
-
-def apply_environment(fields: Object) -> None:
-    variables = environment(fields)
-    for name in ("SSL_VERIFY", "GDC_TOKEN_CACHING"):
-        os.environ.pop(name, None)
-    os.environ.update(variables)
-
-
-def save_globals() -> Globals:
-    return (
-        litellm.api_base,
-        litellm.gdc_api_base,
-        litellm.vertex_project,
-        litellm.vertex_location,
-    )
-
-
-def apply_globals(config: Object) -> None:
-    settings = optional_obj(config.get("litellm_settings"))
+def apply_globals(config: Json) -> None:
+    settings = optional_obj(optional_obj(config).get("litellm_settings"))
     litellm.api_base = optional_text(settings, "api_base")
     litellm.gdc_api_base = optional_text(settings, "gdc_api_base")
     litellm.vertex_project = optional_text(settings, "vertex_project")
     litellm.vertex_location = optional_text(settings, "vertex_location")
-
-
-def restore_globals(saved: Globals) -> None:
-    (
-        litellm.api_base,
-        litellm.gdc_api_base,
-        litellm.vertex_project,
-        litellm.vertex_location,
-    ) = saved
 
 
 def deployment_params(config: Object, value: Json) -> Object:
@@ -168,9 +132,11 @@ def settings_outcome(fields: Object, config: Object) -> Json:
 
 def supported_outcome(fields: Object) -> Json:
     instance = GDCGeminiConfig()
+    chat_models = {name for name in listing(fields, "chat_models") if isinstance(name, str)}
+    text_models = {name for name in listing(fields, "text_models") if isinstance(name, str)}
     with (
-        patch.object(litellm, "open_ai_chat_completion_models", strings(fields, "chat_models")),
-        patch.object(litellm, "open_ai_text_completion_models", strings(fields, "text_models")),
+        patch.object(litellm, "open_ai_chat_completion_models", chat_models),
+        patch.object(litellm, "open_ai_text_completion_models", text_models),
     ):
         supported = cast(
             "list[object]",
@@ -181,21 +147,15 @@ def supported_outcome(fields: Object) -> Json:
     return cast(Json, [str(name) for name in supported])
 
 
-def messages(fields: Object) -> list[AllMessageValues]:
-    value = fields.get("messages", [])
-    if not isinstance(value, list):
-        raise TypeError("messages must be a list")
-    return cast("list[AllMessageValues]", value)
-
-
 def request_outcome(fields: Object) -> Json:
     instance = GDCGeminiConfig()
+    messages = listing(fields, "messages")
     try:
         value = cast(
             "dict[str, object]",
             instance.transform_request(  # pyright: ignore[reportUnknownMemberType]
                 model=text(fields, "model"),
-                messages=messages(fields),
+                messages=cast("list[AllMessageValues]", messages),
                 optional_params=cast(
                     "dict[str, object]", optional_obj(fields.get("optional_params"))
                 ),
@@ -210,29 +170,22 @@ def request_outcome(fields: Object) -> Json:
 
 def scenario(fields: Object) -> Json:
     config = optional_obj(fields.get("config"))
-    saved = save_globals()
-    try:
-        apply_globals(config)
-        apply_environment(fields)
-        return {
-            "urls": [
-                url_outcome(obj(entry), config) for entry in listing(fields, "urls")
-            ],
-            "audiences": [
-                audience_outcome(obj(entry), config) for entry in listing(fields, "audiences")
-            ],
-            "supported": [
-                supported_outcome(obj(entry)) for entry in listing(fields, "supported")
-            ],
-            "settings": [
-                settings_outcome(obj(entry), config) for entry in listing(fields, "settings")
-            ],
-            "requests": [
-                request_outcome(obj(entry)) for entry in listing(fields, "requests")
-            ],
-        }
-    finally:
-        restore_globals(saved)
+    apply_globals(config)
+    for name in ("SSL_VERIFY", "GDC_TOKEN_CACHING"):
+        os.environ.pop(name, None)
+    environment = optional_obj(fields.get("environment"))
+    os.environ.update(
+        {name: value for name, value in environment.items() if isinstance(value, str)}
+    )
+    return {
+        "urls": [url_outcome(obj(entry), config) for entry in listing(fields, "urls")],
+        "audiences": [
+            audience_outcome(obj(entry), config) for entry in listing(fields, "audiences")
+        ],
+        "supported": [supported_outcome(obj(entry)) for entry in listing(fields, "supported")],
+        "settings": [settings_outcome(obj(entry), config) for entry in listing(fields, "settings")],
+        "requests": [request_outcome(obj(entry)) for entry in listing(fields, "requests")],
+    }
 
 
 def run(argument: Json) -> Json:
