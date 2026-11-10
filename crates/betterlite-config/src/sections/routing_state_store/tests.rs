@@ -207,10 +207,10 @@ fn routing_state_store_config(#[case] name: &str) {
                 load("router_settings:\n  redis_port: many\n", &[]),
                 Err(ConfigError::InvalidInteger { .. })
             ));
-            assert!(matches!(
-                load("", &[("REDIS_PORT", "many")]),
-                Err(ConfigError::Environment { .. })
-            ));
+            let settings = load("", &[("REDIS_PORT", "many")]).unwrap();
+            assert_eq!(settings.redis_port, None);
+            let port = settings.redis_environment.get("REDIS_PORT").unwrap();
+            assert_eq!(port.expose_secret(), "many");
         }
         "unknown_nested_key_is_reported" => {
             let error = load(

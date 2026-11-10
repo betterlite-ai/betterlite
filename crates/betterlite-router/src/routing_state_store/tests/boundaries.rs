@@ -445,7 +445,11 @@ async fn increment_conflicts_after_the_update_window() {
     server.rival_writes_before_exec(u64::MAX);
     let started = Instant::now();
     let error = store
-        .increment(&route_key("counter"), &RouteIncrement::Counter(1), None)
+        .increment(
+            &route_key("counter"),
+            &RouteIncrement::Counter(1_000_000_000),
+            None,
+        )
         .await
         .unwrap_err();
     assert!(
@@ -453,5 +457,10 @@ async fn increment_conflicts_after_the_update_window() {
         "{error:?}"
     );
     assert!(started.elapsed() >= Duration::from_millis(300));
-    assert!(server.raw("counter").is_none());
+    let (bytes, _ttl) = server.raw("counter").unwrap();
+    let stored: RouteValue = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        matches!(stored, RouteValue::Counter(count) if count < 1_000_000_000),
+        "{stored:?}"
+    );
 }

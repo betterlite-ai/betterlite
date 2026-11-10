@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Annotated, Final, Literal, Protocol, Self, cast
 from unittest.mock import patch
 
-from litellm._redis import get_redis_async_client
+from litellm._redis import get_redis_async_client  # pyright: ignore[reportUnknownVariableType]
 from litellm.caching.redis_cache import (
     RedisCache,
     RedisCircuitBreaker,
@@ -189,8 +189,8 @@ async def increment(step: Step, caches: list[Cache]) -> StepOutput:
     result = await cache.async_increment(step.key, amount, ttl=None)
     if isinstance(step.by, SpendIncrement):
         rendered = str(Decimal(str(result)).normalize())
-        return StepOutput(kind=step.kind, value=cast("JsonValue", {"Spend": rendered}), error=None)
-    return StepOutput(kind=step.kind, value=cast("JsonValue", {"Counter": int(result)}), error=None)
+        return StepOutput(kind=step.kind, value=cast("JsonValue", {"spend": rendered}), error=None)
+    return StepOutput(kind=step.kind, value=cast("JsonValue", {"counter": int(result)}), error=None)
 
 
 async def claim(step: Step, caches: list[Cache]) -> StepOutput:

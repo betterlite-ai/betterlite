@@ -11,6 +11,6 @@ probes:
           failure_threshold: 5
           recovery_timeout_millis: 30000
         steps:
-          - {kind: claim, now_millis: 0, worker: 0, key: affinity, value: {Pin: {model_id: first}}, ttl_seconds: 120}
-          - {kind: claim, now_millis: 0, worker: 1, key: affinity, value: {Pin: {model_id: second}}, ttl_seconds: 120}
-          - {kind: claim, now_millis: 0, worker: 0, key: affinity, value: {Pin: {model_id: third}}}
+          - {kind: claim, now_millis: 0, worker: 0, key: affinity, value: {pin: {model_id: first}}, ttl_seconds: 120}
+          - {kind: claim, now_millis: 0, worker: 1, key: affinity, value: {pin: {model_id: second}}, ttl_seconds: 120}
+          - {kind: claim, now_millis: 0, worker: 0, key: affinity, value: {pin: {model_id: third}}}

@@ -1,6 +1,6 @@
 task: B360
 deviations:
-  - what: Routing state values are stored as B390's typed JSON ({"Counter":5}, {"Spend":"1.25"}) instead of the bare number text INCRBYFLOAT writes, so a betterlite routing store cannot share keys with a LiteLLM RedisCache.
+  - what: Routing state values are stored as B390's typed JSON ({"counter":5}, {"spend":"1.25"}) instead of the bare number text INCRBYFLOAT writes, so a betterlite routing store cannot share keys with a LiteLLM RedisCache.
     why: B390 owns the typed routing values and the task forbids INCRBYFLOAT and Lua numeric money, so the stored form is the typed one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
   - what: Spend increments and offsets are added with checked Decimal arithmetic, where LiteLLM's INCRBYFLOAT result is converted to a Python float and loses precision past an f64.
