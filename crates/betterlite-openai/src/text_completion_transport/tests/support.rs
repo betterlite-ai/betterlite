@@ -362,41 +362,32 @@ pub(super) fn header_map(headers: &SecretHeaders) -> BTreeMap<String, String> {
     headers.0.clone()
 }
 
-fn choice(value: &str, finish_reason: Option<&str>) -> Value {
-    object(vec![
-        ("text", text(value)),
-        ("index", Value::from(0_i64)),
-        ("logprobs", Value::Null),
-        ("finish_reason", finish_reason.map_or(Value::Null, text)),
-    ])
-}
-
-pub(super) fn completion_body() -> Value {
-    object(vec![
-        ("id", text("cmpl-1")),
-        ("object", text("text_completion")),
-        ("created", Value::from(1234_i64)),
-        ("model", text("text-davinci-003")),
-        ("choices", Value::Array(vec![choice("hello", Some("stop"))])),
-        (
-            "usage",
-            object(vec![
-                ("prompt_tokens", Value::from(3_i64)),
-                ("completion_tokens", Value::from(2_i64)),
-                ("total_tokens", Value::from(5_i64)),
-            ]),
-        ),
-    ])
-}
-
 pub(super) fn chunk(value: &str, finish_reason: Option<&str>) -> Value {
     object(vec![
         ("id", text("cmpl-1")),
         ("object", text("text_completion")),
         ("created", Value::from(1234_i64)),
         ("model", text("text-davinci-003")),
-        ("choices", Value::Array(vec![choice(value, finish_reason)])),
+        (
+            "choices",
+            Value::Array(vec![object(vec![
+                ("text", text(value)),
+                ("index", Value::from(0_i64)),
+                ("logprobs", Value::Null),
+                ("finish_reason", finish_reason.map_or(Value::Null, text)),
+            ])]),
+        ),
     ])
+}
+
+pub(super) fn completion_body() -> Value {
+    let mut body = chunk("hello", Some("stop"));
+    body["usage"] = object(vec![
+        ("prompt_tokens", Value::from(3_i64)),
+        ("completion_tokens", Value::from(2_i64)),
+        ("total_tokens", Value::from(5_i64)),
+    ]);
+    body
 }
 
 pub(super) fn message(value: &str) -> Value {

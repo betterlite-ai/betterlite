@@ -121,6 +121,14 @@ pub(super) struct Constructor {
     pub(super) answer: Answer,
 }
 
+impl Constructor {
+    pub(super) fn logs(&self) -> (Vec<Value>, Vec<Value>) {
+        let built = self.built.lock().unwrap_or_else(PoisonError::into_inner);
+        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        (built.clone(), calls.clone())
+    }
+}
+
 impl ClientConstructor for Constructor {
     type Client = Sdk;
 

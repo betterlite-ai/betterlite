@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::text_completion_transport::TextCompletionTransport;
@@ -69,6 +69,22 @@ struct Output {
     calls: Vec<Value>,
 }
 
+impl Raised {
+    fn new(
+        mapped: bool,
+        status: Option<u16>,
+        message: String,
+        headers: BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            mapped,
+            status,
+            message,
+            headers: Some(headers).filter(|fields| !fields.is_empty()),
+        }
+    }
+}
+
 fn sdk_raised(error: &SdkError) -> Raised {
     let (status, headers) = match error {
         SdkError::Status(failure) => (
@@ -77,42 +93,32 @@ fn sdk_raised(error: &SdkError) -> Raised {
         ),
         SdkError::Other { .. } => (None, BTreeMap::new()),
     };
-    Raised {
-        mapped: false,
-        status,
-        message: error.to_string(),
-        headers: Some(headers).filter(|fields| !fields.is_empty()),
-    }
-}
-
-fn wrapped_raised(error: &TextCompletionError) -> Raised {
-    Raised {
-        mapped: true,
-        status: match error.status {
-            ErrorStatus::Missing => Some(500),
-            ErrorStatus::Null => None,
-            ErrorStatus::Code(code) => Some(code),
-        },
-        message: error.message.clone(),
-        headers: error
-            .headers
-            .as_ref()
-            .map(|fields| fields.0.clone())
-            .filter(|fields| !fields.is_empty()),
-    }
+    Raised::new(false, status, error.to_string(), headers)
 }
 
 fn item_raised(error: StreamItemError) -> Raised {
     match error {
         StreamItemError::Mapped(wrapped) => wrapped_raised(&wrapped),
         StreamItemError::Sdk(source) => sdk_raised(&source),
-        StreamItemError::Chunk(source) => Raised {
-            mapped: false,
-            status: None,
-            message: source.to_string(),
-            headers: None,
-        },
+        StreamItemError::Chunk(source) => {
+            Raised::new(false, None, source.to_string(), BTreeMap::new())
+        }
     }
+}
+
+fn wrapped_raised(error: &TextCompletionError) -> Raised {
+    let status = match error.status {
+        ErrorStatus::Missing => Some(500),
+        ErrorStatus::Null => None,
+        ErrorStatus::Code(code) => Some(code),
+    };
+    let headers = error.headers.as_ref().map(|fields| fields.0.clone());
+    Raised::new(
+        true,
+        status,
+        error.message.clone(),
+        headers.unwrap_or_default(),
+    )
 }
 
 fn project(chunk: &StreamChunk) -> Value {
@@ -167,6 +173,13 @@ async fn flow(
     Ok(())
 }
 
+fn failure_raised(failure: TextCompletionFailure) -> Raised {
+    match failure {
+        TextCompletionFailure::Wrapped(error) => wrapped_raised(&error),
+        TextCompletionFailure::Raw(error) => sdk_raised(&error),
+    }
+}
+
 async fn drive(call: &Call) -> Output {
     let constructor = Constructor {
         built: Log::default(),
@@ -200,27 +213,11 @@ async fn drive(call: &Call) -> Output {
     )
     .await;
     if let Err(failure) = flowed {
-        output.raised = Some(match failure {
-            TextCompletionFailure::Wrapped(error) => wrapped_raised(&error),
-            TextCompletionFailure::Raw(error) => sdk_raised(&error),
-        });
+        output.raised = Some(failure_raised(failure));
     }
     output.pre_call = logger.pre;
     output.post_call = logger.post;
-    let built = transport.constructor.built.lock();
-    output.built.extend(
-        built
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .cloned(),
-    );
-    let calls = transport.constructor.calls.lock();
-    output.calls.extend(
-        calls
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .cloned(),
-    );
+    (output.built, output.calls) = transport.constructor.logs();
     output
 }
 

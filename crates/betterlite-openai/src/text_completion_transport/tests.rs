@@ -75,10 +75,7 @@ fn begin_only(
 }
 
 fn begin_send(transport: &Transport, request: TextCompletionRequest) -> Exchange {
-    let mut logger = RecordingLogger::default();
-    let call = transport
-        .begin(request, ProviderId::Openai, &mut logger)
-        .expect("begin");
+    let (call, logger) = begin_only(transport, request);
     let sent = run(transport.send(&call, None)).expect("send");
     Exchange { call, sent, logger }
 }

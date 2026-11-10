@@ -99,29 +99,7 @@ pub struct B249Logger<'call, 'env> {
     pub env: &'call PrePostEnv<'env>,
 }
 
-fn decision(value: Value) -> Json {
-    match value {
-        Value::Null => Json::Null,
-        Value::Bool(flag) => Json::Bool(flag),
-        Value::Number(number) => Json::Number(number),
-        Value::String(text) => Json::Text(text),
-        Value::Array(items) => Json::List(items.into_iter().map(decision).collect()),
-        Value::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(name, entry)| (name, decision(entry)))
-                .collect(),
-        ),
-    }
-}
-
-fn decision_map(fields: serde_json::Map<String, Value>) -> IndexMap<String, Json> {
-    fields
-        .into_iter()
-        .map(|(name, value)| (name, decision(value)))
-        .collect()
-}
-
+// Json and serde_json::Value hold the same shapes, so serde moves values between them without failing
 fn additional_args(
     api_base: Option<String>,
     headers: SecretHeaders,
@@ -136,27 +114,19 @@ fn additional_args(
                 .map(|(name, value)| (name, Json::Text(value)))
                 .collect(),
         ),
-        complete_input_dict: Some(RawBody::Object(decision_map(body))),
+        complete_input_dict: Some(RawBody::Object(
+            serde_json::from_value(Value::Object(body)).unwrap_or_default(),
+        )),
         request_str: None,
         openai_sdk: None,
         passthrough: IndexMap::new(),
     }
 }
 
-fn shaping_json(value: &Json) -> JsonValue {
-    match value {
-        Json::Null => JsonValue::Null,
-        Json::Bool(flag) => JsonValue::Bool(*flag),
-        Json::Number(number) => JsonValue::Number(number.clone()),
-        Json::Text(text) => JsonValue::String(text.clone()),
-        Json::List(items) => JsonValue::Array(items.iter().map(shaping_json).collect()),
-        Json::Object(fields) => JsonValue::Object(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), shaping_json(entry)))
-                .collect(),
-        ),
-    }
+fn shaping_json(value: &Json) -> Option<JsonValue> {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|plain| serde_json::from_value(plain).ok())
 }
 
 fn stream_options(value: &Json) -> StreamOptions {
@@ -174,7 +144,8 @@ fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> JsonObject {
         "api_base".to_owned(),
         litellm_params
             .get("api_base")
-            .map_or(JsonValue::Null, shaping_json),
+            .and_then(shaping_json)
+            .unwrap_or(JsonValue::Null),
     );
     hidden.insert(
         "additional_headers".to_owned(),
@@ -187,7 +158,7 @@ fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> JsonObject {
 impl CompletionLogger for B249Logger<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let call = PreCall {
-            input: Json::List(record.input.into_iter().map(decision).collect()),
+            input: serde_json::from_value(Value::Array(record.input)).unwrap_or(Json::Null),
             model: None,
             additional_args: additional_args(
                 record.api_base,
@@ -201,7 +172,8 @@ impl CompletionLogger for B249Logger<'_, '_> {
 
     fn post_call(&mut self, record: PostCallRecord) {
         let call = PostCall {
-            original_response: decision(record.original_response),
+            original_response: serde_json::from_value(record.original_response)
+                .unwrap_or(Json::Null),
             input: Json::Null,
             additional_args: additional_args(
                 record.api_base,
@@ -225,7 +197,7 @@ impl CompletionLogger for B249Logger<'_, '_> {
                 self.state
                     .optional_params
                     .iter()
-                    .map(|(name, value)| (name.clone(), shaping_json(value))),
+                    .filter_map(|(name, value)| Some((name.clone(), shaping_json(value)?))),
             ))),
             base_hidden_params: base_hidden_params(&self.state.litellm_params),
         }

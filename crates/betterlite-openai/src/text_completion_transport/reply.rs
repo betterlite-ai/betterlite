@@ -105,27 +105,27 @@ fn normalized_choice(mut fields: Map<String, Value>) -> Value {
 
 // TextCompletionResponse.__init__ replaces any choices value that is not a list with one default choice.
 fn normalized_choices(raw: Option<Value>) -> Value {
-    let Some(Value::Array(choices)) = raw else {
-        let mut choice = Map::new();
-        choice.insert("text".to_owned(), Value::Null);
-        choice.insert("finish_reason".to_owned(), Value::Null);
-        choice.insert("logprobs".to_owned(), Value::Null);
-        choice.insert("index".to_owned(), Value::from(0_i64));
-        return Value::Array(vec![Value::Object(choice)]);
-    };
-    Value::Array(
-        choices
-            .into_iter()
-            .map(|choice| match choice {
-                Value::Object(fields) => normalized_choice(fields),
-                other @ (Value::Null
-                | Value::Bool(_)
-                | Value::Number(_)
-                | Value::String(_)
-                | Value::Array(_)) => other,
-            })
-            .collect(),
-    )
+    match raw {
+        Some(Value::Array(choices)) => Value::Array(
+            choices
+                .into_iter()
+                .map(|choice| match choice {
+                    Value::Object(fields) => normalized_choice(fields),
+                    other @ (Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::String(_)
+                    | Value::Array(_)) => other,
+                })
+                .collect(),
+        ),
+        _ => Value::Array(vec![Value::Object(Map::from_iter([
+            ("text".to_owned(), Value::Null),
+            ("finish_reason".to_owned(), Value::Null),
+            ("logprobs".to_owned(), Value::Null),
+            ("index".to_owned(), Value::from(0_i64)),
+        ]))]),
+    }
 }
 
 // TextCompletionResponse(**response_json).model_dump(): object is forced and Usage/TextChoices default their fields.
