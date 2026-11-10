@@ -19,9 +19,9 @@ use crate::ocr_auth::AzureTokenSource;
 use crate::ocr_config::PreparedOcrRequest;
 use crate::ocr_config::connection::{OcrInputSource, OcrSourced};
 use crate::ocr_document::OcrDocument;
-use crate::ocr_error::OcrError;
-use crate::ocr_http::OcrClient;
+use crate::ocr_error::{OcrError, OcrSecretError};
 use crate::ocr_http::tests::support::{MockServer, Reply, ocr_client, reply};
+use crate::ocr_http::{OcrClient, SecretSource};
 use crate::ocr_input::wire::{OcrWireRequest, decode_request, decode_request_input};
 use crate::ocr_input::{LiteLLMOcrRequest, OcrConnectionInputs, OcrDocumentInput};
 use crate::ocr_route::{OcrCall, OcrHost, OcrMachine, OcrOp, OcrRoute, aocr};
@@ -154,6 +154,20 @@ fn counting_host() -> (Arc<dyn OcrHost>, Arc<AtomicUsize>) {
         calls: Arc::clone(&calls),
     });
     (host, calls)
+}
+
+struct EnvironmentSecret {
+    name: &'static str,
+    value: &'static str,
+}
+
+impl SecretSource for EnvironmentSecret {
+    fn secret(&self, name: &str) -> Result<Option<SecretString>, OcrSecretError> {
+        if name == self.name {
+            return Ok(Some(SecretString::from(self.value)));
+        }
+        Ok(None)
+    }
 }
 
 #[tokio::test]
@@ -309,6 +323,37 @@ async fn a_call_without_a_caller_token_does_not_ask_the_host() {
     assert_eq!(response.model, "pixtral-12b");
     assert_eq!(host_calls.load(Ordering::SeqCst), 0);
     let _requests = server.requests().await;
+}
+
+#[tokio::test]
+async fn execute_resolves_the_client_secrets_into_the_connection() {
+    let server = MockServer::start(vec![answer_reply()]).await;
+    let mut client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    client.secrets = Arc::new(EnvironmentSecret {
+        name: "AZURE_AI_API_KEY",
+        value: "env-key",
+    });
+    let mut request_wire = wire(
+        "azure_ai/pixtral-12b",
+        document("data:application/pdf;base64,YWJj"),
+        Some(server.base.clone()),
+    );
+    request_wire.api_key = None;
+    let request = decode_request(request_wire).expect("the request decodes");
+    let response = OcrRoute::from(client)
+        .execute(request, &())
+        .await
+        .expect("the call succeeds");
+    assert_eq!(response.model, "pixtral-12b");
+    let requests = server.requests().await;
+    let lowered = requests
+        .first()
+        .expect("one request was sent")
+        .to_lowercase();
+    assert!(
+        lowered.contains("authorization: bearer env-key"),
+        "{lowered}"
+    );
 }
 
 #[tokio::test]

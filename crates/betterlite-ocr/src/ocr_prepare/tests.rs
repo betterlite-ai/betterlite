@@ -133,6 +133,8 @@ fn file_encoding_rejects_empty_and_oversized_bytes() {
 #[case::newline("text/plain\n")]
 #[case::empty("")]
 #[case::no_slash("text")]
+#[case::no_kind("/plain")]
+#[case::no_subtype("text/")]
 fn invalid_mime_types_are_rejected(#[case] mime: &str) {
     assert!(matches!(
         encode_file_document(b"abc", None, Some(mime)),

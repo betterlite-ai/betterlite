@@ -232,6 +232,21 @@ fn an_unknown_input_source_is_a_request_field() {
     );
 }
 
+#[rstest]
+#[case::request("request", OcrInputSource::Request)]
+#[case::deployment("deployment", OcrInputSource::Deployment)]
+#[case::environment("environment", OcrInputSource::Environment)]
+fn input_sources_decode_to_their_kind(#[case] name: &str, #[case] expected: OcrInputSource) {
+    let request = decode_request(OcrWireRequest {
+        api_key: Some(SecretString::from("sk-test")),
+        input_sources: BTreeMap::from([("api_key".to_owned(), name.to_owned())]),
+        ..request_with(document("https://example.com/a.pdf"))
+    })
+    .expect("the request decodes");
+    let api_key = request.credentials.api_key.expect("the key is kept");
+    assert_eq!(api_key.source, expected);
+}
+
 #[test]
 fn decode_request_input_keeps_a_path_document() {
     let request = decode_request_input(OcrWireRequest::<OcrDocumentInput> {

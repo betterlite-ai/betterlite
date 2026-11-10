@@ -94,22 +94,10 @@ fn valid_mime_type(value: &str) -> bool {
 
 #[must_use]
 pub fn mime_type_for_name(name: &str) -> &'static str {
-    let extension = Path::new(name)
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default();
-    match extension.to_ascii_lowercase().as_str() {
-        "pdf" => "application/pdf",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "tiff" | "tif" => "image/tiff",
-        "bmp" => "image/bmp",
-        _ => mime_guess::from_path(name)
-            .first_raw()
-            .unwrap_or("application/octet-stream"),
+    if let Some(mime) = mime_guess::from_path(name).first_raw() {
+        return mime;
     }
+    "application/octet-stream"
 }
 
 const fn connection_env_names(kind: OcrConfigKind) -> (Option<&'static str>, Option<&'static str>) {
