@@ -151,6 +151,19 @@ fn project(scenario: &Scenario) -> Json {
     },
     parsed(r#""openai""#)
 )]
+#[case::provider_ignores_non_string_credentials(
+    Scenario::Provider {
+        request: r#"{"api_base":5,"api_key":false,"litellm_params":{"api_base":"https://params.example/v1","api_key":"sk-2"}}"#,
+        model: Some("openai/gpt-4o"),
+        fixed: Fixed {
+            provider: Some("openai"),
+            model: "openai/gpt-4o",
+            api_base: Some("https://params.example/v1"),
+            api_key: Some("sk-2"),
+        },
+    },
+    parsed(r#""openai""#)
+)]
 #[case::provider_ignores_a_non_string_declaration(
     Scenario::Provider {
         request: r#"{"custom_llm_provider":5,"model":"openai/gpt-4o"}"#,
