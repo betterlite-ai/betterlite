@@ -3,14 +3,12 @@ use thiserror::Error;
 
 use crate::openai_base_config::Headers;
 
+use super::MAX_REPLY_BYTES;
+
 #[derive(Debug, Error)]
 pub enum HostModelIdentityError {
-    #[error("the {host} reply is {size} bytes, over the {limit} byte limit")]
-    TooLarge {
-        host: &'static str,
-        size: usize,
-        limit: usize,
-    },
+    #[error("the reply is over the {MAX_REPLY_BYTES} byte limit")]
+    TooLarge,
     #[error("the {host} reply is not valid JSON")]
     Json {
         host: &'static str,

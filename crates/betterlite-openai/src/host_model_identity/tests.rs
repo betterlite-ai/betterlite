@@ -9,12 +9,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::clarifai::{self, Reply as ClarifaiReply};
-use super::compactifai::{self, Reply as CompactifaiReply};
-use super::datarobot;
 use super::error::{HostModelIdentityError, get_error_class};
-use super::reply::{
-    HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, ReplySource, decode_host_named_reply,
+use super::identity::{
+    SUPPORTED_OPENAI_PARAMS, clarifai_base_model, clarifai_request_model, datarobot_api_base,
+};
+use super::{
+    HostReply, HostReplyMode, MAX_REPLY_BYTES, PostCall, PostCallLogger, ReplySource,
+    decode_host_named_reply, process_clarifai_response, process_compactifai_response,
 };
 use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::openai_base_config::{Headers, Object};
@@ -113,7 +114,7 @@ const USAGE: &str = r#"{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3
 #[test]
 fn clarifai_advertises_its_openai_params_in_litellm_order() {
     assert_eq!(
-        clarifai::SUPPORTED_OPENAI_PARAMS,
+        SUPPORTED_OPENAI_PARAMS,
         [
             "max_tokens",
             "max_completion_tokens",
@@ -140,7 +141,7 @@ fn clarifai_base_model_accepts_three_dotted_components(
     #[case] expected: &str,
 ) {
     assert_eq!(
-        clarifai::base_model(Some(model)).unwrap(),
+        clarifai_base_model(Some(model)).unwrap(),
         Some(expected.to_owned())
     );
 }
@@ -150,14 +151,14 @@ fn clarifai_base_model_accepts_three_dotted_components(
 #[case::four_components("a.b.c.d")]
 #[case::trailing_dot("user.app.model.")]
 fn clarifai_base_model_rejects_other_arities(#[case] model: &str) {
-    let error = clarifai::base_model(Some(model)).unwrap_err();
+    let error = clarifai_base_model(Some(model)).unwrap_err();
     assert!(matches!(error, HostModelIdentityError::ModelName { .. }));
 }
 
 #[test]
 fn clarifai_base_model_keeps_an_absent_or_empty_model() {
-    assert_eq!(clarifai::base_model(None).unwrap(), None);
-    assert_eq!(clarifai::base_model(Some("")).unwrap(), None);
+    assert_eq!(clarifai_base_model(None).unwrap(), None);
+    assert_eq!(clarifai_base_model(Some("")).unwrap(), None);
 }
 
 #[rstest]
@@ -171,7 +172,7 @@ fn clarifai_request_model_keeps_a_falsey_model_unchanged(
     #[case] model: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    assert_eq!(clarifai::request_model(model).unwrap().as_deref(), expected);
+    assert_eq!(clarifai_request_model(model).unwrap().as_deref(), expected);
 }
 
 #[rstest]
@@ -341,14 +342,7 @@ fn a_reply_body_that_is_not_an_object_is_malformed(#[case] body: &[u8]) {
 fn a_reply_over_the_transport_limit_is_refused() {
     let body = vec![b' '; MAX_REPLY_BYTES + 1];
     let error = decode(&body, clarifai_mode()).unwrap_err();
-    assert!(matches!(
-        error,
-        HostModelIdentityError::TooLarge {
-            size,
-            limit: MAX_REPLY_BYTES,
-            ..
-        } if size == MAX_REPLY_BYTES + 1
-    ));
+    assert!(matches!(error, HostModelIdentityError::TooLarge));
 }
 
 fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
@@ -359,8 +353,8 @@ fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
     let request_data =
         Object::from_iter([(String::from("model"), Value::String(String::from("m")))]);
     let mut recorder = Recorder::default();
-    let error = clarifai::process_response(
-        ClarifaiReply {
+    let error = process_clarifai_response(
+        HostReply {
             body,
             status_code: 400,
             headers: &supplied,
@@ -368,6 +362,7 @@ fn failing_clarifai_reply() -> (Recorder, Headers, HostModelIdentityError) {
             messages: &input,
             api_key: Some(&key),
             request_data: &request_data,
+            json_mode: false,
             source: source(),
         },
         &mut recorder,
@@ -413,9 +408,11 @@ fn compactifai_logs_the_raw_reply_before_its_json_failure() {
     let key = secret("request-key");
     let input = messages(value("[]"));
     let mut recorder = Recorder::default();
-    let error = compactifai::process_response(
-        CompactifaiReply {
+    let error = process_compactifai_response(
+        HostReply {
             body,
+            status_code: 200,
+            headers: &Headers::new(),
             request_model: "user.app.model",
             messages: &input,
             api_key: Some(&key),
@@ -437,8 +434,8 @@ fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
     let key = secret("request-key");
     let input = messages(value(r#"[{"role":"user","content":"hello"}]"#));
     let mut recorder = Recorder::default();
-    let response = clarifai::process_response(
-        ClarifaiReply {
+    let response = process_clarifai_response(
+        HostReply {
             body: &body,
             status_code: 200,
             headers: &Headers::new(),
@@ -446,6 +443,7 @@ fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
             messages: &input,
             api_key: Some(&key),
             request_data: &Object::new(),
+            json_mode: false,
             source: source(),
         },
         &mut recorder,
@@ -489,7 +487,7 @@ fn a_valid_reply_logs_the_same_call_before_it_is_returned() {
     "https://tenant.example//api//v2//"
 )]
 fn datarobot_edits_only_the_path(#[case] api_base: &str, #[case] expected: &str) {
-    assert_eq!(datarobot::transform_api_base(api_base).unwrap(), expected);
+    assert_eq!(datarobot_api_base(api_base).unwrap(), expected);
 }
 
 #[test]

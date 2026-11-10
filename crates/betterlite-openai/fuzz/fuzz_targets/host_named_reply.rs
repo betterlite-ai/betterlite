@@ -1,9 +1,7 @@
 #![no_main]
 
 use betterlite_openai::compatible_wire::{NEW_ID, system_clock};
-use betterlite_openai::host_model_identity::reply::{
-    HostReplyMode, ReplySource, decode_host_named_reply,
-};
+use betterlite_openai::host_model_identity::{HostReplyMode, ReplySource, decode_host_named_reply};
 use libfuzzer_sys::fuzz_target;
 
 // an even tag is Clarifai, an odd one CompactifAI, and its second bit turns on json mode

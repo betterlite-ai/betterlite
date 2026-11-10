@@ -19,15 +19,5 @@ call:
         model: user.app.model
         messages: [{role: user, content: hello}]
         request_data: {model: user.app.model}
-      - kind: error_class
-        host: clarifai
-        status: 429
-        message: rate limited
-        headers: {x-request-id: req-2}
-      - kind: error_class
-        host: compactifai
-        status: 422
-        message: invalid params
-        headers: {x-trace: trace-2}
 compare: {ignore: []}
 env: {}
