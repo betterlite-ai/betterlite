@@ -217,17 +217,11 @@ pub fn decode_lemonade_model_reply(
     }
 }
 
-fn default_model_info(model: &str) -> LemonadeModelInfo {
-    LemonadeModelInfo {
-        key: format!("lemonade/{model}"),
-        litellm_provider: LITELLM_PROVIDER.to_owned(),
-        mode: Mode::Chat,
-        input_cost_per_token: ZERO_PRICE,
-        output_cost_per_token: ZERO_PRICE,
-        max_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
-        provider_specific_entry: None,
+fn model_info_request(origin: &ResolvedOrigin, model: &str) -> ModelInfoRequest {
+    let encoded = utf8_percent_encode(model, QUOTE_SAFE);
+    ModelInfoRequest {
+        url: format!("{}/models/{encoded}", origin.api_base),
+        headers: auth_header(Some(&origin.api_key)).into_iter().collect(),
     }
 }
 
@@ -258,12 +252,18 @@ where
 {
     let stripped = model.strip_prefix("lemonade/").unwrap_or(model);
     let origin = resolve_origin(settings, deployment);
-    let encoded = utf8_percent_encode(stripped, QUOTE_SAFE);
-    let request = ModelInfoRequest {
-        url: format!("{}/models/{encoded}", origin.api_base),
-        headers: auth_header(Some(&origin.api_key)).into_iter().collect(),
+    let request = model_info_request(&origin, stripped);
+    let info = LemonadeModelInfo {
+        key: format!("lemonade/{stripped}"),
+        litellm_provider: LITELLM_PROVIDER.to_owned(),
+        mode: Mode::Chat,
+        input_cost_per_token: ZERO_PRICE,
+        output_cost_per_token: ZERO_PRICE,
+        max_tokens: None,
+        max_input_tokens: None,
+        max_output_tokens: None,
+        provider_specific_entry: None,
     };
-    let info = default_model_info(stripped);
     let Ok(response) = client.get(&request).await else {
         tracing::debug!("LemonadeError: Could not get model info.");
         return Ok(info);
