@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use secrecy::SecretString;
 
-use crate::identity::declared::authenticating_provider;
+use crate::identity::declared::{OAUTH_VIA_PROVIDER_INFO, authenticating_provider};
 use crate::identity::provider_id::ProviderId;
 use crate::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionRequest, ResolvedModel, resolve,
@@ -19,6 +19,20 @@ pub enum LoginFreeProvider {
     GithubCopilot,
     Chatgpt,
 }
+
+impl LoginFreeProvider {
+    // Matched without a wildcard, so a new member forces its B209 id into the table below.
+    const fn provider_id(self) -> ProviderId {
+        match self {
+            Self::GithubCopilot => ProviderId::GithubCopilot,
+            Self::Chatgpt => ProviderId::Chatgpt,
+        }
+    }
+}
+
+// B209's set is a closed list, so a member added there fails to compile until it appears here.
+const LOGIN_FREE_PROVIDERS: [LoginFreeProvider; OAUTH_VIA_PROVIDER_INFO.len()] =
+    [LoginFreeProvider::GithubCopilot, LoginFreeProvider::Chatgpt];
 
 pub trait ApiBaseHooks {
     fn login_free_api_base(&self, provider: LoginFreeProvider) -> Option<String>;
@@ -69,17 +83,15 @@ pub fn get_api_base(
     if let Some(declared) =
         authenticating_provider(Some(&selected_model), params.custom_llm_provider.as_deref())
     {
-        if declared == ProviderId::GithubCopilot {
-            return Ok(context
-                .hooks
-                .login_free_api_base(LoginFreeProvider::GithubCopilot));
-        }
-        if declared == ProviderId::Chatgpt {
-            return Ok(context
-                .hooks
-                .login_free_api_base(LoginFreeProvider::Chatgpt));
-        }
-        return Ok(None);
+        let matched = LOGIN_FREE_PROVIDERS
+            .into_iter()
+            .find(|candidate| candidate.provider_id() == declared);
+        let Some(provider) = matched else {
+            // The table above covers B209's whole set, so this arm cannot be reached
+            tracing::debug!(provider = ?declared, "the declared provider has no login-free base");
+            return Ok(None);
+        };
+        return Ok(context.hooks.login_free_api_base(provider));
     }
     resolve_then_default(&selected_model, params, context)
 }

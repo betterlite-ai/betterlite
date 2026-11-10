@@ -221,13 +221,17 @@ fn declared_login_free_none_stops_the_lookup() {
         login_free: None,
         claude: ClaudeHook::Records,
     };
+    let params = ApiBaseParams {
+        api_base: None,
+        base_url: None,
+        custom_llm_provider: None,
+        api_key: None,
+        vertex_location: Some(String::from("us-central1")),
+        vertex_project: Some(String::from("proj")),
+        stream: false,
+    };
     assert_eq!(
-        lookup(
-            "chatgpt/gemini-pro",
-            &ApiBaseParams::default(),
-            &BTreeMap::new(),
-            &hooks
-        ),
+        lookup("chatgpt/gemini-pro", &params, &BTreeMap::new(), &hooks),
         Ok(None)
     );
 }
