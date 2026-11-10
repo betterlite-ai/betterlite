@@ -2199,6 +2199,7 @@ dependencies = [
  "chrono",
  "clap",
  "cookie_store",
+ "flate2",
  "futures-util",
  "hex",
  "http 1.5.0",
