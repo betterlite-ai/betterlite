@@ -1,3 +1,16 @@
+fn assert_drift(error: &BaselineError) {
+    match error {
+        BaselineError::SchemaMismatch { summary, .. } => {
+            assert!(summary.contains("operator_notes"), "{summary}");
+        }
+        BaselineError::CustomHistory
+        | BaselineError::Database(_)
+        | BaselineError::Lock(_)
+        | BaselineError::VerificationUnavailable
+        | BaselineError::Verification(_) => panic!("expected schema drift, got {error:?}"),
+    }
+}
+
 async fn refuse_baseline(database: &TestDatabase, catalog: &[Migration], schema_prisma: &[u8]) {
     let inputs = baseline_input(catalog, schema_prisma, None);
     let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(10)).await;
@@ -5,7 +18,7 @@ async fn refuse_baseline(database: &TestDatabase, catalog: &[Migration], schema_
         .await
         .expect_err("a custom migration history is refused");
     assert!(matches!(error, BaselineError::CustomHistory), "{error:?}");
-    coordinator.rollback().await.unwrap();
+    drop(coordinator);
 }
 
 async fn accepted_baseline(live: &TestDatabase, expected: &SchemaContract) -> Vec<Migration> {
@@ -77,11 +90,8 @@ async fn native_baseline_current_only() {
         let error = baseline_current_schema(&drifted, &inputs, &jitter)
             .await
             .expect_err("an operator relation is drift");
-        assert!(
-            matches!(error, BaselineError::SchemaMismatch { .. }),
-            "{error:?}"
-        );
-        drifted.rollback().await.unwrap();
+        assert_drift(&error);
+        drop(drifted);
         assert!(!exists(&live.pool, "_prisma_migrations").await);
 
         let cleanup = live.pool.get().await.unwrap();
@@ -254,7 +264,7 @@ async fn postgres_failure_effects() {
             .await
             .expect_err("the duplicated identifier breaks the second insert");
         assert!(matches!(error, BaselineError::Database(_)), "{error:?}");
-        coordinator.rollback().await.unwrap();
+        drop(coordinator);
         assert!(!exists(&database.pool, "_prisma_migrations").await);
     })
     .await;

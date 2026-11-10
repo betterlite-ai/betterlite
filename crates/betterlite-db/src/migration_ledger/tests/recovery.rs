@@ -143,3 +143,34 @@ async fn completion_single_unconfirmed_row() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn completion_updates_only_finished_at() {
+    database(|database| async move {
+        create_ledger(&database.pool).await;
+        let pending = migration(
+            "20250111000000_confirming",
+            "CREATE TABLE confirming (id int);",
+        );
+        insert_confirmed(&database.pool, "row-confirming", &pending, false).await;
+        let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(10)).await;
+        assert!(
+            recover_completed_migration(&coordinator, PUBLIC_SCHEMA, &pending, &DrawingJitter(0))
+                .await
+                .unwrap()
+        );
+        coordinator.finish().await.unwrap();
+        let rows = ledger_rows(&database.pool).await;
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].get::<_, bool>("finished"));
+        assert!(!rows[0].get::<_, bool>("rolled_back"));
+        assert_eq!(rows[0].get::<_, String>("id"), "row-confirming");
+        assert_eq!(rows[0].get::<_, String>("checksum"), pending.checksum);
+        assert_eq!(
+            rows[0].get::<_, Option<String>>("logs").as_deref(),
+            Some("")
+        );
+        assert_eq!(rows[0].get::<_, i32>("applied_steps_count"), 1_i32);
+    })
+    .await;
+}

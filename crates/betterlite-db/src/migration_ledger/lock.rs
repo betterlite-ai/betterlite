@@ -162,14 +162,6 @@ impl MigrationCoordinator {
             .await
             .map_err(|source| LockError::Connection { source })
     }
-
-    // The context manager's error exit: nothing the caller did may survive a failed baseline or recovery
-    pub async fn rollback(self) -> Result<(), LockError> {
-        self.client
-            .batch_execute("ROLLBACK")
-            .await
-            .map_err(|source| LockError::Connection { source })
-    }
 }
 
 // Mirrors held_migration_lock: a session-level, non-blocking hold for DDL that cannot run inside a transaction
@@ -234,7 +226,7 @@ where
     }
 }
 
-fn pause(jitter: &dyn JitterSource, deadline: Option<Instant>) -> Duration {
+pub(super) fn pause(jitter: &dyn JitterSource, deadline: Option<Instant>) -> Duration {
     let drawn = JITTER_FLOOR.saturating_add(Duration::from_nanos(
         jitter.uniform_nanos(JITTER_SPAN_NANOS),
     ));

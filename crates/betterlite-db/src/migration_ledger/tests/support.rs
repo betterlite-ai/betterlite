@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
+use std::iter::repeat_with;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -10,6 +11,7 @@ use deadpool_postgres::{Client, ClientWrapper, Pool};
 use rstest::rstest;
 use secrecy::SecretString;
 use sha2::{Digest as _, Sha256};
+use tokio::time::Instant as TokioInstant;
 use tracing::Subscriber;
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
@@ -27,8 +29,8 @@ use super::fixtures::{
 use super::inert::{InertError, is_inert_migration, rollback_inert_migration};
 use super::ledger_reads::{FailedLookup, FailedMigration, look_up_failed_migration};
 use super::lock::{
-    HeldLockError, LockError, MIGRATION_LOCK_KEY, MigrationCoordinator, PRISMA_LOCK_KEY,
-    held_migration_lock,
+    HeldLockError, JitterSource as _, LockError, MIGRATION_LOCK_KEY, MigrationCoordinator,
+    PRISMA_LOCK_KEY, SystemJitter, held_migration_lock, pause,
 };
 use super::progress::MigrationProgress;
 use super::recovery::{RecoveryError, recover_completed_migration};

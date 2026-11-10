@@ -171,3 +171,25 @@ async fn held_lock_false() {
     })
     .await;
 }
+
+#[test]
+fn pause_floor_and_deadline() {
+    let floor = DrawingJitter(0);
+    assert_eq!(pause(&floor, None), Duration::from_millis(500));
+    let sooner = TokioInstant::now()
+        .checked_add(Duration::from_millis(40))
+        .unwrap();
+    assert!(pause(&floor, Some(sooner)) <= Duration::from_millis(40));
+    let drawn = DrawingJitter(250_000_000);
+    assert_eq!(pause(&drawn, None), Duration::from_millis(750));
+}
+
+#[test]
+fn system_jitter_draws_inside_the_range() {
+    let jitter = SystemJitter::try_new().unwrap();
+    assert_eq!(jitter.uniform_nanos(0), 0);
+    let draws: Vec<u64> = repeat_with(|| jitter.uniform_nanos(2)).take(256).collect();
+    assert!(draws.iter().all(|draw| *draw < 2));
+    assert!(draws.contains(&0));
+    assert!(draws.contains(&1));
+}
