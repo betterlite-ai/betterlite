@@ -132,13 +132,18 @@ fn envelope_without_response_is_an_error() {
 
 #[test]
 fn json_string_response_is_decoded() {
+    // null is JSON-only: the bounded literal parser rejects it, so only the JSON step can decode this
     let cached = envelope(
         Some(FRESH),
-        CacheValue::Text("{\"choices\": []}".to_owned()),
+        CacheValue::Text("{\"choices\": [], \"usage\": null}".to_owned()),
     );
+    let expected = CacheValue::Object(BTreeMap::from([
+        ("choices".to_owned(), CacheValue::Array(Vec::new())),
+        ("usage".to_owned(), CacheValue::Null),
+    ]));
     assert_eq!(
         decode_cached(Some(&cached), None, NOW).expect("a decoded response"),
-        Some(reply_response())
+        Some(expected)
     );
 }
 
@@ -195,10 +200,15 @@ fn non_text_non_object_response_is_an_error(#[case] response: CacheValue) {
 
 #[test]
 fn cached_bytes_read_a_json_envelope() {
-    let bytes = br#"{"timestamp": 9999999999, "response": {"choices": []}}"#;
+    // lowercase true is JSON-only: the bounded literal parser accepts True, not true
+    let bytes = br#"{"timestamp": 9999999999, "response": {"stream": true}}"#;
+    let expected = CacheValue::Object(BTreeMap::from([(
+        "stream".to_owned(),
+        CacheValue::Boolean(true),
+    )]));
     assert_eq!(
         decode_bytes(bytes).expect("a decoded envelope"),
-        Some(reply_response())
+        Some(expected)
     );
 }
 
