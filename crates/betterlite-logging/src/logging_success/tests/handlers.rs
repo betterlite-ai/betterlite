@@ -47,3 +47,33 @@ async fn logging_success_behavior_tests_behavior(
     run_once(path, &handler, &mut state, &mut correlation, &request).await;
     assert_eq!(calls.events().len(), expected);
 }
+
+// an assembled stream result skips the has_logged gate on the async path only
+#[rstest]
+#[case::async_assembled_stream("async", "has_logged_async_success", 1)]
+#[case::sync_stream_result("sync", "has_logged_sync_success", 0)]
+#[tokio::test]
+async fn already_logged_stream_gate(
+    #[case] path: &str,
+    #[case] key: &str,
+    #[case] expected: usize,
+) {
+    let mut fixture = Fixture::new();
+    let calls = Arc::new(CallLog::default());
+    fixture.add(&Arc::new(FakeLogger::new("langfuse", &calls)));
+    let mut state = state(Some(true));
+    state
+        .model_call_details
+        .insert(key.to_owned(), Json::Bool(true));
+    let mut correlation = correlation();
+    let request = request(chat_result());
+    run_once(
+        path,
+        &fixture.handler(),
+        &mut state,
+        &mut correlation,
+        &request,
+    )
+    .await;
+    assert_eq!(calls.events().len(), expected);
+}

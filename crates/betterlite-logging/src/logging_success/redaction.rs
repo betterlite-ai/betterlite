@@ -43,14 +43,9 @@ pub(super) fn redacted_payload(
         return Ok(redacted);
     }
     // The typed payload has required fields, so an excluded required field stays with a warning
-    let excluded_required: Vec<String> = original
-        .keys()
-        .filter(|key| !standard_logging_object.contains_key(*key))
-        .cloned()
-        .collect();
     tracing::warn!(
         callback = logger.callback_name(),
-        fields = ?excluded_required,
+        fields = ?excluded_fields,
         "the typed standard logging payload cannot drop these excluded fields"
     );
     let mut merged = original;
