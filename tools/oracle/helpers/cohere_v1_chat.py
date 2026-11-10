@@ -67,12 +67,12 @@ def request_outcome(fields: Object) -> Json:
         settings = obj(fields.get("settings", {}))
         instance = CohereChatConfig(**cast("dict[str, object]", settings))  # pyright: ignore[reportArgumentType]
         model = text(fields, "model")
-        mapped = instance.map_openai_params(  # pyright: ignore[reportUnknownMemberType]
+        mapped = cast("dict[str, object]", instance.map_openai_params(  # pyright: ignore[reportUnknownMemberType]
             obj(fields.get("non_default_params", {})), obj(fields.get("optional_params", {})),
-            model, drop_params=False)
-        result = instance.transform_request(  # pyright: ignore[reportUnknownMemberType]
+            model, drop_params=False))
+        result = cast("dict[str, object]", instance.transform_request(  # pyright: ignore[reportUnknownMemberType]
             model=model, messages=cast("list[AllMessageValues]", listing(fields, "messages")),
-            optional_params=cast("dict[str, object]", mapped), litellm_params={}, headers={})
+            optional_params=mapped, litellm_params={}, headers={}))
     except Exception as error:  # noqa: BLE001 - the carried status is what a caller can branch on
         return {"ok": False, "status": cast(Json, getattr(error, "status_code", None))}
     return {"ok": True, "value": cast(Json, result)}
