@@ -7,7 +7,7 @@ use betterlite_error::error::ErrorClass;
 
 use super::ModelBudgetLimiter;
 use super::cache::ModelBudgetCache;
-use super::enforcement::key_within_model_budget;
+use super::enforcement::{BudgetSubject, subject_within_model_budget};
 
 pub struct FallbackQuery<'input> {
     pub entity_id: &'input str,
@@ -32,14 +32,12 @@ where
         return Ok(None);
     };
     for candidate in candidates {
-        let within = key_within_model_budget(
-            limiter,
-            query.entity_id,
-            query.key_alias,
-            query.model_max_budget,
-            candidate,
-        )
-        .await;
+        let subject = BudgetSubject::Key {
+            entity_id: query.entity_id,
+            key_alias: query.key_alias,
+        };
+        let within =
+            subject_within_model_budget(limiter, &subject, query.model_max_budget, candidate).await;
         match within {
             Ok(()) => return Ok(Some(candidate.clone())),
             Err(ErrorClass::BudgetExceeded(_)) => {}

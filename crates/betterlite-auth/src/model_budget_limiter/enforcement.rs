@@ -17,6 +17,24 @@ use crate::model_budget_values::team_override::team_model_budget_applies;
 use super::ModelBudgetLimiter;
 use super::cache::{ModelBudgetCache, cached_spend};
 
+// the entity whose model budget is checked, with the fields each LiteLLM check takes
+pub enum BudgetSubject<'input> {
+    Key {
+        entity_id: &'input str,
+        key_alias: Option<&'input str>,
+    },
+    User {
+        user_id: &'input str,
+    },
+    EndUser {
+        end_user_id: &'input str,
+    },
+    Team {
+        team_id: &'input str,
+        key_model_max_budget: Option<&'input BTreeMap<String, JsonData>>,
+    },
+}
+
 struct EntityCheck<'input> {
     scope: BudgetScope,
     entity_id: &'input str,
@@ -25,23 +43,39 @@ struct EntityCheck<'input> {
     message: String,
 }
 
-pub async fn key_within_model_budget<C>(
+pub async fn subject_within_model_budget<C>(
     limiter: &ModelBudgetLimiter<C>,
-    entity_id: &str,
-    key_alias: Option<&str>,
+    subject: &BudgetSubject<'_>,
     model_max_budget: Option<&BTreeMap<String, JsonData>>,
     model: &str,
 ) -> Result<(), ErrorClass>
 where
     C: ModelBudgetCache,
 {
-    let alias = key_alias.unwrap_or("none");
-    let message =
-        format!("virtual key {entity_id} (alias {alias}) exceeded its budget for model {model}");
+    if let BudgetSubject::Team {
+        key_model_max_budget,
+        ..
+    } = subject
+    {
+        let runtime = BudgetRuntime {
+            durations: limiter.durations.as_ref(),
+            now: limiter.clock.now(),
+        };
+        let team_applies = team_model_budget_applies(
+            model,
+            *key_model_max_budget,
+            limiter.catalog.as_ref(),
+            runtime,
+        );
+        if !team_applies {
+            return Ok(());
+        }
+    }
+    let (scope, entity_id, message) = check_parts(subject, model);
     entity_within_model_budget(
         limiter,
         EntityCheck {
-            scope: BudgetScope::Key,
+            scope,
             entity_id,
             model_max_budget,
             model,
@@ -51,87 +85,37 @@ where
     .await
 }
 
-pub async fn user_within_model_budget<C>(
-    limiter: &ModelBudgetLimiter<C>,
-    user_id: &str,
-    user_model_max_budget: Option<&BTreeMap<String, JsonData>>,
+fn check_parts<'input>(
+    subject: &BudgetSubject<'input>,
     model: &str,
-) -> Result<(), ErrorClass>
-where
-    C: ModelBudgetCache,
-{
-    let message = format!("user {user_id} exceeded its budget for model {model}");
-    entity_within_model_budget(
-        limiter,
-        EntityCheck {
-            scope: BudgetScope::User,
-            entity_id: user_id,
-            model_max_budget: user_model_max_budget,
-            model,
-            message,
-        },
-    )
-    .await
-}
-
-pub async fn end_user_within_model_budget<C>(
-    limiter: &ModelBudgetLimiter<C>,
-    end_user_id: &str,
-    end_user_model_max_budget: Option<&BTreeMap<String, JsonData>>,
-    model: &str,
-) -> Result<(), ErrorClass>
-where
-    C: ModelBudgetCache,
-{
-    let message = format!("end user {end_user_id} exceeded its budget for model {model}");
-    entity_within_model_budget(
-        limiter,
-        EntityCheck {
-            scope: BudgetScope::EndUser,
-            entity_id: end_user_id,
-            model_max_budget: end_user_model_max_budget,
-            model,
-            message,
-        },
-    )
-    .await
-}
-
-pub async fn team_within_model_budget<C>(
-    limiter: &ModelBudgetLimiter<C>,
-    team_id: &str,
-    team_model_max_budget: Option<&BTreeMap<String, JsonData>>,
-    key_model_max_budget: Option<&BTreeMap<String, JsonData>>,
-    model: &str,
-) -> Result<(), ErrorClass>
-where
-    C: ModelBudgetCache,
-{
-    let runtime = BudgetRuntime {
-        durations: limiter.durations.as_ref(),
-        now: limiter.clock.now(),
-    };
-    let team_applies = team_model_budget_applies(
-        model,
-        key_model_max_budget,
-        limiter.catalog.as_ref(),
-        runtime,
-    );
-    if !team_applies {
-        return Ok(());
+) -> (BudgetScope, &'input str, String) {
+    match subject {
+        BudgetSubject::Key {
+            entity_id,
+            key_alias,
+        } => {
+            let alias = key_alias.unwrap_or("none");
+            let message = format!(
+                "virtual key {entity_id} (alias {alias}) exceeded its budget for model {model}"
+            );
+            (BudgetScope::Key, entity_id, message)
+        }
+        BudgetSubject::User { user_id } => (
+            BudgetScope::User,
+            user_id,
+            format!("user {user_id} exceeded its budget for model {model}"),
+        ),
+        BudgetSubject::EndUser { end_user_id } => (
+            BudgetScope::EndUser,
+            end_user_id,
+            format!("end user {end_user_id} exceeded its budget for model {model}"),
+        ),
+        BudgetSubject::Team { team_id, .. } => (
+            BudgetScope::Team,
+            team_id,
+            format!("team {team_id} exceeded its budget for model {model}"),
+        ),
     }
-    let message = format!("team {team_id} exceeded its budget for model {model}");
-    entity_within_model_budget(
-        limiter,
-        EntityCheck {
-            scope: BudgetScope::Team,
-            entity_id: team_id,
-            model_max_budget: team_model_max_budget,
-            model,
-            message,
-        },
-    )
-    .await
 }
 
 async fn entity_within_model_budget<C>(

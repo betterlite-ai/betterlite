@@ -1,6 +1,6 @@
+pub(crate) mod input;
 mod oracle_cache;
 
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_auth::budget_primitives::window_start::DurationParser;
@@ -9,9 +9,8 @@ use betterlite_auth::model_budget_limiter::charging::{
     ChargeMetadata, PayloadIdentity, SuccessEvent, log_success_event,
 };
 use betterlite_auth::model_budget_limiter::clock::BudgetClock;
-use betterlite_auth::model_budget_limiter::enforcement::end_user_within_model_budget;
 use betterlite_auth::model_budget_limiter::enforcement::{
-    key_within_model_budget, team_within_model_budget, user_within_model_budget,
+    BudgetSubject, subject_within_model_budget,
 };
 use betterlite_auth::model_budget_limiter::fallbacks::{
     FallbackQuery, fallback_model_within_budget,
@@ -19,106 +18,17 @@ use betterlite_auth::model_budget_limiter::fallbacks::{
 use betterlite_auth::model_budget_values::amount_text::amount_from_text;
 use betterlite_auth::model_budget_values::candidates::BedrockCatalog;
 use betterlite_core::duration::seconds::duration_in_seconds;
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
-use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
+use input::{Call, ChargeCall, FallbackCall, Input, TeamCall};
 use oracle_cache::OracleCache;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    uptime_seconds: f64,
-    #[serde(default)]
-    memory: BTreeMap<String, JsonData>,
-    calls: Vec<Call>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum Call {
-    Key(CheckCall),
-    User(CheckCall),
-    EndUser(CheckCall),
-    Team(TeamCall),
-    Fallback(FallbackCall),
-    Charge(Box<ChargeCall>),
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CheckCall {
-    entity_id: String,
-    #[serde(default)]
-    key_alias: Option<String>,
-    model: String,
-    #[serde(default)]
-    budget: Option<BTreeMap<String, JsonData>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TeamCall {
-    team_id: String,
-    model: String,
-    #[serde(default)]
-    budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    key_budget: Option<BTreeMap<String, JsonData>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FallbackCall {
-    entity_id: String,
-    #[serde(default)]
-    key_alias: Option<String>,
-    model: String,
-    #[serde(default)]
-    budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    fallbacks: Option<BTreeMap<String, Vec<String>>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCall {
-    #[serde(default)]
-    model_group: Option<String>,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    response_cost: Option<serde_json::Number>,
-    #[serde(default)]
-    key_budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    team_budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    user_budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    end_user_budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
-    key_hash: Option<String>,
-    #[serde(default)]
-    team_id: Option<String>,
-    #[serde(default)]
-    user_id: Option<String>,
-    #[serde(default)]
-    end_user: Option<String>,
-    #[serde(default)]
-    end_user_id: Option<String>,
-    #[serde(default)]
-    call_type: Option<String>,
-    #[serde(default)]
-    batch_id: Option<String>,
-}
 
 struct CoreDurations(TimeZoneDatabase);
 
@@ -209,59 +119,48 @@ async fn execute(input: &Input) -> HelperResult {
 
 async fn run_call(limiter: &ModelBudgetLimiter<OracleCache>, call: &Call) -> Value {
     match call {
-        Call::Key(check) => key_call(limiter, check).await,
-        Call::User(check) => user_call(limiter, check).await,
-        Call::EndUser(check) => end_user_call(limiter, check).await,
+        Call::Key(check) => {
+            let subject = BudgetSubject::Key {
+                entity_id: &check.entity_id,
+                key_alias: check.key_alias.as_deref(),
+            };
+            check_outcome(
+                subject_within_model_budget(limiter, &subject, check.budget.as_ref(), &check.model)
+                    .await,
+            )
+        }
+        Call::User(check) => {
+            let subject = BudgetSubject::User {
+                user_id: &check.entity_id,
+            };
+            check_outcome(
+                subject_within_model_budget(limiter, &subject, check.budget.as_ref(), &check.model)
+                    .await,
+            )
+        }
+        Call::EndUser(check) => {
+            let subject = BudgetSubject::EndUser {
+                end_user_id: &check.entity_id,
+            };
+            check_outcome(
+                subject_within_model_budget(limiter, &subject, check.budget.as_ref(), &check.model)
+                    .await,
+            )
+        }
         Call::Team(check) => team_call(limiter, check).await,
         Call::Fallback(check) => fallback_outcome(limiter, check).await,
         Call::Charge(charge) => charge_outcome(limiter, charge).await,
     }
 }
 
-async fn key_call(limiter: &ModelBudgetLimiter<OracleCache>, check: &CheckCall) -> Value {
-    let result = key_within_model_budget(
-        limiter,
-        &check.entity_id,
-        check.key_alias.as_deref(),
-        check.budget.as_ref(),
-        &check.model,
-    )
-    .await;
-    check_outcome(result)
-}
-
-async fn user_call(limiter: &ModelBudgetLimiter<OracleCache>, check: &CheckCall) -> Value {
-    let result = user_within_model_budget(
-        limiter,
-        &check.entity_id,
-        check.budget.as_ref(),
-        &check.model,
-    )
-    .await;
-    check_outcome(result)
-}
-
-async fn end_user_call(limiter: &ModelBudgetLimiter<OracleCache>, check: &CheckCall) -> Value {
-    let result = end_user_within_model_budget(
-        limiter,
-        &check.entity_id,
-        check.budget.as_ref(),
-        &check.model,
-    )
-    .await;
-    check_outcome(result)
-}
-
 async fn team_call(limiter: &ModelBudgetLimiter<OracleCache>, check: &TeamCall) -> Value {
-    let result = team_within_model_budget(
-        limiter,
-        &check.team_id,
-        check.budget.as_ref(),
-        check.key_budget.as_ref(),
-        &check.model,
+    let subject = BudgetSubject::Team {
+        team_id: &check.team_id,
+        key_model_max_budget: check.key_budget.as_ref(),
+    };
+    check_outcome(
+        subject_within_model_budget(limiter, &subject, check.budget.as_ref(), &check.model).await,
     )
-    .await;
-    check_outcome(result)
 }
 
 fn check_outcome(result: Result<(), ErrorClass>) -> Value {
