@@ -603,11 +603,9 @@ fn the_environment_project_fills_in_when_nothing_else_names_one() {
         settings(None, None),
         secrets(&[("VERTEXAI_PROJECT", "env-project")]),
     );
+    let config = common::vertex_config(&request).expect("the config parses");
     assert_eq!(
-        common::vertex_config(&request)
-            .expect("the config parses")
-            .project
-            .as_deref(),
+        common::project(&request, &config).as_deref(),
         Some("env-project")
     );
 }
@@ -625,6 +623,36 @@ fn the_settings_project_is_used_before_the_environment() {
             .project
             .as_deref(),
         Some("settings-project")
+    );
+}
+
+#[test]
+fn a_blank_project_option_falls_through_to_the_settings() {
+    let request = vertex_request(
+        params(r#"{"vertex_project":"   "}"#),
+        settings(Some("settings-project"), None),
+        Secrets::new(),
+    );
+    assert_eq!(
+        common::vertex_config(&request)
+            .expect("the config parses")
+            .project
+            .as_deref(),
+        Some("settings-project")
+    );
+}
+
+#[test]
+fn an_empty_settings_project_falls_through_to_the_environment() {
+    let request = vertex_request(
+        Object::new(),
+        settings(Some(""), None),
+        secrets(&[("VERTEXAI_PROJECT", "env-project")]),
+    );
+    let config = common::vertex_config(&request).expect("the config parses");
+    assert_eq!(
+        common::project(&request, &config).as_deref(),
+        Some("env-project")
     );
 }
 

@@ -41,6 +41,13 @@ pub(crate) fn vertex_config(request: &PreparedOcrRequest) -> Result<VertexConfig
     })
 }
 
+pub(crate) fn project(request: &PreparedOcrRequest, config: &VertexConfig) -> Option<String> {
+    config
+        .project
+        .clone()
+        .or_else(|| non_empty_secret(&request.connection, "VERTEXAI_PROJECT"))
+}
+
 pub(crate) fn location(request: &PreparedOcrRequest, config: &VertexConfig) -> String {
     config
         .location
@@ -56,12 +63,10 @@ pub(crate) async fn environment(
 ) -> Result<VertexOcrEnvironment, OcrError> {
     let config = vertex_config(request)?;
     validate_destination(&request.connection)?;
-    let project = config
-        .project
-        .or_else(|| non_empty_secret(&request.connection, "VERTEXAI_PROJECT"));
+    let named_project = project(request, &config);
     let extra_headers = request.connection.extra_headers.clone();
     if has_header(&extra_headers, "authorization") {
-        let project_id = match project {
+        let project_id = match named_project {
             Some(named) => named,
             None => client
                 .vertex
@@ -75,8 +80,13 @@ pub(crate) async fn environment(
             project_id,
         });
     }
-    let (token, project_id) =
-        access_token(request, client, static_token(&request.connection), project).await?;
+    let (token, project_id) = access_token(
+        request,
+        client,
+        static_token(&request.connection),
+        named_project,
+    )
+    .await?;
     Ok(VertexOcrEnvironment {
         headers: bearer_headers(&token, &extra_headers)?,
         project_id,

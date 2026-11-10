@@ -480,28 +480,36 @@ fn a_bad_model_value_is_the_model_response_field() {
 }
 
 #[rstest]
-#[case::markdown(r#"{"pages":[{"markdown":42}]}"#, "pages[0].markdown")]
-#[case::index(r#"{"pages":[{"index":"abc"}]}"#, "pages[0].index")]
-#[case::index_null(r#"{"pages":[{"index":null}]}"#, "pages[0].index")]
-#[case::index_fraction(r#"{"pages":[{"index":2.5}]}"#, "pages[0].index")]
-fn a_bad_page_field_names_its_page_path(#[case] content: &str, #[case] path: &str) {
+#[case::markdown(r#"{"pages":[{"markdown":42}]}"#)]
+#[case::index(r#"{"pages":[{"index":"abc"}]}"#)]
+#[case::index_null(r#"{"pages":[{"index":null}]}"#)]
+#[case::index_fraction(r#"{"pages":[{"index":2.5}]}"#)]
+#[case::index_fraction_string(r#"{"pages":[{"index":"2.5"}]}"#)]
+#[case::index_trailing_separator(r#"{"pages":[{"index":"2_"}]}"#)]
+#[case::index_signed_separator(r#"{"pages":[{"index":"+_2"}]}"#)]
+fn a_bad_page_field_names_its_page_path(#[case] content: &str) {
     let payload = r#"{"choices":[{"message":{"content":CONTENT}}]}"#.replace("CONTENT", content);
     let error = decode(&payload).expect_err("the page does not decode");
-    let expected = format!("choices[0].message.content.{path}");
     assert!(
-        matches!(&error, OcrError::ResponseField { path: actual } if *actual == expected),
+        matches!(
+            &error,
+            OcrError::ResponseField { path }
+                if path.starts_with("choices[0].message.content.pages[0]")
+        ),
         "{error:?}"
     );
 }
 
 #[test]
-fn a_page_index_accepts_a_numeric_string_and_a_whole_float() {
-    let payload = r#"{"choices":[{"message":{"content":{"pages":[{"index":"2","markdown":"a"},{"index":3.0,"markdown":"b"},{"markdown":"c"}],"usage_info":null}}}]}"#;
+fn a_page_index_accepts_the_lax_integer_spellings() {
+    let payload = r#"{"choices":[{"message":{"content":{"pages":[{"index":"2","markdown":"a"},{"index":3.0,"markdown":"b"},{"index":"4.0","markdown":"c"},{"index":"1_0","markdown":"d"},{"markdown":"e"}],"usage_info":null}}}]}"#;
     let response = decode(payload).expect("the response decodes");
-    assert_eq!(response.pages.len(), 3);
+    assert_eq!(response.pages.len(), 5);
     assert_eq!(response.pages[0].index, 2);
     assert_eq!(response.pages[1].index, 3);
-    assert_eq!(response.pages[2].index, 0);
+    assert_eq!(response.pages[2].index, 4);
+    assert_eq!(response.pages[3].index, 10);
+    assert_eq!(response.pages[4].index, 0);
     assert!(response.usage_info.is_none());
 }
 

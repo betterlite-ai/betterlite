@@ -67,6 +67,8 @@ impl OcrProviderConfig for VertexAIDeepSeekOCRConfig {
         common::SECRET_NAMES.to_vec()
     }
 
+    // the empty params make Ok(Default::default()) the same value as Ok(Object::new())
+    #[cfg_attr(test, mutants::skip)]
     fn map_ocr_params(
         &self,
         _non_default_params: &Object,
