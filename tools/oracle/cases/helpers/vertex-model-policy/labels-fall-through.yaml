@@ -1,0 +1,36 @@
+kind: helper
+name: labels-fall-through
+call:
+  vertex_model_policy:
+    labels:
+      cases:
+        - optional_params: {labels: {team: core, env: prod}, temperature: 0.2}
+          litellm_params: {metadata: {requester_metadata: {team: from_metadata}}}
+        - optional_params: {labels: {count: 3, ratio: 0.5}}
+          litellm_params: {metadata: {requester_metadata: {team: from_metadata}}}
+        - optional_params: {labels: {}}
+          litellm_params: {metadata: {requester_metadata: {team: from_metadata}}}
+        - optional_params: {temperature: 0.2}
+          litellm_params:
+            metadata: {requester_metadata: {count: 2}}
+            litellm_metadata: {requester_metadata: {team: second}}
+        - optional_params: {labels: null, temperature: 1}
+          litellm_params: {litellm_metadata: {requester_metadata: {team: second}}}
+        - optional_params: null
+          litellm_params:
+            metadata: {requester_metadata: not-a-map}
+            litellm_metadata: {requester_metadata: {team: second}}
+        - optional_params: null
+          litellm_params:
+            metadata: null
+            litellm_metadata: {requester_metadata: {team: second}}
+        - optional_params: null
+          litellm_params: {metadata: {requester_metadata: {team: first}}, litellm_metadata: {requester_metadata: {team: second}}}
+        - {optional_params: null}
+        - optional_params: null
+          litellm_params: {}
+        - optional_params: {labels: {team: explicit}}
+          litellm_params: null
+        - optional_params: {labels: [team]}
+env: {}
+compare: {ignore: []}

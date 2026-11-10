@@ -1,0 +1,17 @@
+kind: helper
+name: embedding-host-plan-replies-seed
+call:
+  embedding_host_plan:
+    jina:
+      model: jina-clip-v2
+      input: ["data:image/png;base64,aGVsbG8=", 5]
+      env: {JINA_API_KEY: second}
+      reply: {status: 200, body: '{"model":"m","object":"list","data":[],"usage":{"prompt_tokens":1,"total_tokens":1}}'}
+    infinity:
+      model: bge
+      input: hello
+      base: "https://infinity.test/"
+      reply: {status: 200, body: '{"usage":{"total_tokens":4}}'}
+      error: {status: 503, message: down}
+env: {}
+compare: {ignore: []}

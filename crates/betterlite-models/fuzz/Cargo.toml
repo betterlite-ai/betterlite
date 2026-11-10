@@ -80,6 +80,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "lemonade_model_reply"
+path = "fuzz_targets/lemonade_model_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ollama_model_reply"
+path = "fuzz_targets/ollama_model_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "query_parsing"
 path = "fuzz_targets/query_parsing.rs"
 test = false
