@@ -47,7 +47,6 @@ pub struct Plan {
     pub messages: Vec<Value>,
     pub api_key: SecretString,
 }
-// LiteLLM rejects only a None key, so an empty key still builds a bearer header
 pub fn validate_environment(
     api_key: Option<&SecretString>,
     user_headers: &Headers,

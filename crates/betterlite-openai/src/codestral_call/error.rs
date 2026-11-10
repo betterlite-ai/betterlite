@@ -53,11 +53,11 @@ pub enum CodestralCallError {
 impl CodestralCallError {
     #[must_use]
     pub const fn transport(source: TransportError, wrapped: bool) -> Self {
-        let deadline = matches!(
+        let timed = matches!(
             &source,
             TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
         );
-        let status = if wrapped || !deadline { 500 } else { 408 };
+        let status = if wrapped || !timed { 500 } else { 408 };
         Self::Transport { status, source }
     }
     #[must_use]

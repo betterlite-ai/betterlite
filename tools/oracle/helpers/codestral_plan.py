@@ -14,6 +14,8 @@ from litellm.types.utils import TextCompletionResponse
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportArgumentType=false, reportAny=false
 if TYPE_CHECKING:
     import functools
+# keep exception_type()'s debug banner off stdout; the oracle protocol reads one JSON line
+litellm.suppress_debug_info = True
 Object: TypeAlias = dict[str, object]
 class StopError(Exception):
     pass

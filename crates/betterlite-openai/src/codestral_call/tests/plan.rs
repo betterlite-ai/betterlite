@@ -266,6 +266,20 @@ async fn the_supplied_timeout_is_used_only_by_the_async_reply(
 }
 
 #[tokio::test]
+async fn the_plan_carries_every_serialized_message_in_order() {
+    let mut fixture = base();
+    fixture.messages = messages(
+        r#"[{"role": "user", "content": "first"}, {"role": "assistant", "content": "second"}]"#,
+    );
+    let plan = prepare_for(&fixture.request()).await.unwrap();
+    let expected: Vec<Value> = serde_json::from_str(
+        r#"[{"role": "user", "content": "first"}, {"role": "assistant", "content": "second"}]"#,
+    )
+    .unwrap();
+    assert_eq!(plan.messages, expected);
+}
+
+#[tokio::test]
 async fn the_pre_call_records_the_prepared_request() {
     let mut fixture = base();
     fixture.messages = messages(r#"[{"role": "user", "content": "write"}]"#);

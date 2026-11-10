@@ -13,7 +13,6 @@ pub struct PreCall<'call> {
 pub struct StreamPostCall<'call> {
     pub input: &'call [Value],
     pub api_key: &'call str,
-    // make_call hands its callbacks the line iterator itself, so the marker names the stream instead
     pub original_response: &'static str,
     pub request_data: &'call str,
 }
