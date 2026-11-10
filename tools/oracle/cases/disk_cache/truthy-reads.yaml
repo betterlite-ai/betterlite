@@ -12,6 +12,8 @@ call:
         - null
         - 1
         - -1
+        - 12.5
+        - 0.0
         - cached-text
         - true
         - - 0

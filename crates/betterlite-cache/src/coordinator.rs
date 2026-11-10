@@ -195,7 +195,7 @@ impl EventDrivenCacheCoordinator {
 
     fn log_step(&self, message: &str) {
         if !self.log_prefix.is_empty() {
-            tracing::debug!(prefix = %self.log_prefix, "{message}");
+            tracing::debug!("{} {message}", self.log_prefix);
         }
     }
 }

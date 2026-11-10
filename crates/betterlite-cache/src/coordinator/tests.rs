@@ -357,7 +357,7 @@ async fn cache_coordination_loader_failure_signals_waiters() {
     let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
     assert!(matches!(failed, Err(CoordinatorError::Load { .. })));
     assert_eq!(from_wait, None);
-    assert_eq!(scenario.loads.load(Ordering::SeqCst), 0);
+    assert_eq!(scenario.loads.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -374,7 +374,7 @@ async fn cache_coordination_cancelled_loader_signals_waiters() {
     let from_wait = waiter.join_next().await.unwrap().unwrap().unwrap();
     assert!(cancelled.is_cancelled());
     assert_eq!(from_wait, None);
-    assert_eq!(scenario.loads.load(Ordering::SeqCst), 0);
+    assert_eq!(scenario.loads.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

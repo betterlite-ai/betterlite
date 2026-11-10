@@ -4,7 +4,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use rusqlite::OptionalExtension as _;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, TransactionBehavior, params};
 
 use super::{DiskError, LOCK_TIMEOUT};
 
@@ -99,8 +99,9 @@ impl DiskStore {
         expire_at: Option<f64>,
     ) -> Result<i64, DiskError> {
         let mut connection = self.connect()?;
+        // diskcache's transact() opens BEGIN IMMEDIATE, so the write lock is taken before the read
         let transaction = connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| DiskError::Store { source })?;
         // LiteLLM starts from the stored int and from zero for anything else, so the read and the write share one transaction
         let base = match read(&transaction, key, now)? {
@@ -142,7 +143,11 @@ fn read(connection: &Connection, key: &str, now: f64) -> Result<Option<CacheValu
     if expire_at.is_some_and(|expiry| expiry <= now) {
         return Ok(None);
     }
-    serde_json::from_str(&body)
+    let parsed = serde_json::from_str(&body).map_err(|source| DiskError::Decode {
+        key: key.to_owned(),
+        source,
+    })?;
+    serde_json::from_value(parsed)
         .map(Some)
         .map_err(|source| DiskError::Decode {
             key: key.to_owned(),

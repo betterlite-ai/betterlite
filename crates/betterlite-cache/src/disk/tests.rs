@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env::{current_dir, set_current_dir};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::scope;
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use rstest::rstest;
@@ -57,7 +59,16 @@ fn disk_cache_creates_a_missing_directory() {
 
 #[test]
 fn disk_cache_defaults_to_the_dot_litellm_cache_directory() {
-    assert_eq!(DEFAULT_DISK_CACHE_DIRECTORY, ".litellm_cache");
+    let directory = TempDir::new().unwrap();
+    let previous = current_dir().unwrap();
+    set_current_dir(directory.path()).unwrap();
+    let cache = DiskCache::open(None, Arc::new(|| 1000.0_f64)).unwrap();
+    cache
+        .set_cache("key", &CacheValue::Integer(1), None)
+        .unwrap();
+    let created = Path::new(DEFAULT_DISK_CACHE_DIRECTORY).join("cache.db");
+    assert!(created.exists(), "{} is missing", created.display());
+    set_current_dir(previous).unwrap();
 }
 
 #[test]
@@ -198,6 +209,37 @@ fn disk_cache_increments_from_the_stored_integer() {
     assert_eq!(
         cache.get_cache("counter").unwrap(),
         Some(CacheValue::Integer(5))
+    );
+}
+
+fn increment_twenty_five_times(path: &Path) {
+    let handle = DiskCache::open(Some(path), Arc::new(|| 1000.0_f64)).unwrap();
+    for _ in 0..25_usize {
+        handle.increment_cache("counter", 1, None).unwrap();
+    }
+}
+
+fn increment_from_two_handles(path: &Path) {
+    scope(|scope| {
+        for _ in 0..2_usize {
+            let worker_path = path.to_owned();
+            scope.spawn(move || increment_twenty_five_times(&worker_path));
+        }
+    });
+}
+
+#[test]
+fn disk_cache_increments_stay_atomic_across_two_handles() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().to_owned();
+    let counter = DiskCache::open(Some(&path), Arc::new(|| 1000.0_f64)).unwrap();
+    counter
+        .set_cache("counter", &CacheValue::Integer(0), None)
+        .unwrap();
+    increment_from_two_handles(&path);
+    assert_eq!(
+        counter.get_cache("counter").unwrap(),
+        Some(CacheValue::Integer(50))
     );
 }
 
