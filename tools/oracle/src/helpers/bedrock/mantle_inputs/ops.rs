@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use betterlite_bedrock::mantle_inputs::capability::{base_segment, supports_responses};
-use betterlite_bedrock::mantle_inputs::chat_endpoint::{
-    ChatEndpointInputs, ChatEndpointParams, chat_endpoint_inputs,
-};
+use betterlite_bedrock::mantle_inputs::chat_endpoint::{ChatEndpointParams, chat_endpoint_inputs};
 use betterlite_bedrock::mantle_inputs::credentials::resolve_bearer_token;
 use betterlite_bedrock::mantle_inputs::records::MantleGlobals;
 use betterlite_bedrock::mantle_inputs::region::{resolve_region, split_region_prefix};
@@ -126,8 +124,7 @@ fn chat_inputs(model_cost: &ParamMap, cases: &[ChatCase]) -> HelperResult {
             api_key: api_key.as_ref(),
             aws_region_name: case.aws_region_name.as_deref(),
         };
-        let outcome: Result<ChatEndpointInputs, _> =
-            chat_endpoint_inputs(params, &globals, model_cost);
+        let outcome = chat_endpoint_inputs(params, &globals, model_cost);
         inputs.push(outcome.map_or_else(
             |_error| json!({"error": true}),
             |resolved| {

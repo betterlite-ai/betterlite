@@ -73,7 +73,8 @@ fn explicit_region_cases() {
     assert!(rejected(Some("US-EAST-1"), None, &[]));
     assert!(rejected(Some("eu_west_1"), None, &[]));
     assert!(rejected(Some("us east 1"), None, &[]));
-    assert!(rejected(Some("-"), None, &[]));
+    // LiteLLM's `\A[a-z0-9-]+\Z` accepts a bare hyphen, and the resolver returns it unchanged
+    assert_eq!(resolved(Some("-"), None, &[]), "-");
     // an empty explicit region is ignored rather than rejected
     assert_eq!(
         resolved(
@@ -180,9 +181,10 @@ fn environment_base_cases() {
     )];
     assert_eq!(resolved(None, None, &environment), "sa-east-1");
     assert_eq!(resolved(None, Some(""), &environment), "sa-east-1");
+    // a nonempty explicit base replaces the environment base before host matching
     assert_eq!(
         resolved(None, Some("https://elsewhere"), &environment),
-        "sa-east-1"
+        "us-east-1"
     );
 }
 
