@@ -1,4 +1,3 @@
-use secrecy::ExposeSecret as _;
 use tokio::runtime::Builder;
 use tokio::sync::Mutex;
 
@@ -25,6 +24,7 @@ impl<V: SecretVault + Send + Sync> GatewayKeyStore for VaultGatewayStore<'_, V> 
                 key: None,
             });
         }
+        // the SDK entry point is synchronous and the token file operations are not
         let runtime = Builder::new_current_thread().build().ok()?;
         let resolved = runtime.block_on(async {
             let mut vault = self.vault.lock().await;
@@ -32,7 +32,7 @@ impl<V: SecretVault + Send + Sync> GatewayKeyStore for VaultGatewayStore<'_, V> 
         })?;
         Some(StoredCredential {
             base_url: resolved.base_url,
-            key: resolved.key.map(|key| key.expose_secret().to_owned()),
+            key: resolved.key,
         })
     }
 }

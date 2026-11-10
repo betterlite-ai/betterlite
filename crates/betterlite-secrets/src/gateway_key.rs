@@ -1,7 +1,9 @@
+use secrecy::{ExposeSecret as _, SecretString};
+
 #[derive(Clone, Debug)]
 pub struct StoredCredential {
     pub base_url: String,
-    pub key: Option<String>,
+    pub key: Option<SecretString>,
 }
 
 pub trait GatewayKeyStore {
@@ -20,5 +22,5 @@ pub fn get_litellm_gateway_api_key(
     {
         return None;
     }
-    credential.key
+    credential.key.map(|key| key.expose_secret().to_owned())
 }

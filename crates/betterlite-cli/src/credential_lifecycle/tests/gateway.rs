@@ -9,7 +9,7 @@ use crate::credential_lifecycle::gateway::VaultGatewayStore;
 use crate::token_records::secret::decode_secret;
 
 use super::support::{
-    OTHER_SERVER, SERVER, fake_vault, metadata, record, scripted_files, vault_entry,
+    OTHER_SERVER, SERVER, fake_vault, metadata, record, scripted_files, secret, vault_entry,
 };
 
 struct FixedStore(Option<StoredCredential>);
@@ -23,7 +23,7 @@ impl GatewayKeyStore for FixedStore {
 fn keyed() -> FixedStore {
     FixedStore(Some(StoredCredential {
         base_url: SERVER.to_owned(),
-        key: Some("sk-secret".to_owned()),
+        key: Some(secret("sk-secret")),
     }))
 }
 
