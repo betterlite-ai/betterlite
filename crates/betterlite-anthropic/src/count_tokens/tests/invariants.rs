@@ -162,9 +162,13 @@ fn header_errors_are_safe() {
     assert!(!failure.contains("sk-fixture-secret"));
     let headers = get_required_headers(&key, "fixture-beta").unwrap();
     assert!(!format!("{headers:?}").contains("sk-fixture-secret"));
+    assert!(headers["x-api-key"].is_sensitive());
+    assert!(!headers["anthropic-version"].is_sensitive());
+    assert!(!headers["content-type"].is_sensitive());
     let oauth = secret("sk-ant-oat-fixture-token");
     let oauth_headers = get_required_headers(&oauth, "fixture-beta").unwrap();
     assert!(!format!("{oauth_headers:?}").contains("sk-ant-oat-fixture-token"));
+    assert!(oauth_headers["authorization"].is_sensitive());
     let empty_counter = AnthropicTokenCounter {
         handler: handler(Script::replying(200, b"{\"input_tokens\":1}")),
         environment_api_key: None,
