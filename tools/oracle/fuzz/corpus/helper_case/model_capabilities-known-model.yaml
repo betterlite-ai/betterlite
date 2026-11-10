@@ -5,5 +5,11 @@ call:
     operation: model_info
     queries:
       - {model: gpt-4o, provider: openai}
+      - {model: openai/gpt-4o}
+      - {model: azure/gpt-5-chat, provider: azure}
+      - {model: claude-sonnet-9, provider: anthropic}
+      - {model: 'converse/anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
+      - {model: 'apac.anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
+      - {model: 'eu-west-1/anthropic.claude-3-5-sonnet-20240620-v1:0', provider: bedrock}
 env: {}
 compare: {ignore: []}
