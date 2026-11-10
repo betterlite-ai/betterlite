@@ -329,15 +329,18 @@ fn a_missing_api_base_is_the_azure_ai_missing_base_error() {
     let error = AzureAiOcrConfig
         .get_complete_url(&request, &Object::new(), &Vec::new())
         .expect_err("a missing base fails");
-    let OcrError::Auth(OcrAuthError::MissingApiBase { provider, guidance }) = &error else {
+    let OcrError::Auth(auth) = &error else {
         panic!("the missing base is the Azure AI authentication error");
+    };
+    let OcrAuthError::MissingApiBase { provider, guidance } = auth else {
+        panic!("the missing base names the missing API base");
     };
     assert_eq!(*provider, "Azure AI");
     assert_eq!(
         *guidance,
         "Set AZURE_AI_API_BASE environment variable or pass api_base parameter"
     );
-    assert!(error.to_string().contains(*guidance), "{error}");
+    assert!(auth.to_string().contains(*guidance), "{auth}");
 }
 
 #[tokio::test]
