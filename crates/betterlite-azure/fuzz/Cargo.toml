@@ -49,3 +49,10 @@ path = "fuzz_targets/azure_username_password.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_image_transport"
+path = "fuzz_targets/azure_image_transport.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,18 @@
+kind: helper
+name: azure-image-transport-poll-seed
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: seed-key}
+        data: {model: dall-e-2, prompt: a seed, n: 1}
+        is_async: true
+        environment: {AZURE_OPERATION_POLLING_TIMEOUT: '30'}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, headers: {retry-after: '1'}, body: '{"status":"running"}'}
+          - {status: 200, body: '{"status":"succeeded","result":{"data":[]}}'}
+env: {}
+compare: {ignore: []}
