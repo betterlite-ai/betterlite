@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
@@ -16,9 +15,7 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
-use betterlite_redis::redis_connection_settings::model::settings::{
-    ClientKind, RedisConnectionSettings,
-};
+use betterlite_redis::redis_connection_settings::model::settings::ClientKind;
 use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use serde_json::{Map, Value, json};
@@ -85,8 +82,17 @@ pub(crate) fn build(
     call: &Call,
     hooks: Arc<RecordingHooks>,
 ) -> Result<RedisListOperations, Box<HelperError>> {
+    let overrides = serde_json::from_value(json!({
+        "host": server.addr.ip().to_string(),
+        "port": server.addr.port(),
+        "socket_timeout": 2.0_f64,
+        "socket_connect_timeout": 2.0_f64,
+    }))
+    .map_err(|error| helper_error("InvalidInput", error))?;
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Async, &BTreeMap::new())
+        .map_err(|error| helper_error("RedisError", error))?;
     let transport = RedisTransport::new(
-        connection_settings(server.addr)?,
+        settings,
         RedisCacheFamily::Standalone,
         Arc::new(LiveClientFactory::new(None)),
         Arc::new(RedisClientStore::new()),
@@ -171,17 +177,6 @@ fn lpop_operation(input: &PipelineOperation) -> RedisPipelineLpopOperation {
     }
 }
 
-fn connection_settings(addr: SocketAddr) -> Result<RedisConnectionSettings, Box<HelperError>> {
-    let overrides = serde_json::from_value(json!({
-        "host": addr.ip().to_string(),
-        "port": addr.port(),
-        "socket_timeout": 2.0_f64,
-        "socket_connect_timeout": 2.0_f64,
-    }))
-    .map_err(|error| helper_error("InvalidInput", error))?;
-    resolve_redis_kwargs(overrides, ClientKind::Async, &BTreeMap::new())
-        .map_err(|error| helper_error("RedisError", error))
-}
 
 pub(crate) fn lpop_result(result: &LpopResult) -> Value {
     match result {
@@ -189,16 +184,26 @@ pub(crate) fn lpop_result(result: &LpopResult) -> Value {
         LpopResult::Item(text) => json!(text),
         LpopResult::ItemBytes(bytes) => json!({ "bytes": bytes }),
         LpopResult::Items(items) => json!(items),
-        LpopResult::ItemsBytes(items) => json!(items),
+        LpopResult::ItemsBytes(items) => bytes_values(items),
     }
 }
 
 pub(crate) fn lists(lists: &BTreeMap<String, Vec<Vec<u8>>>) -> Value {
     let mut object = Map::new();
     for (key, rows) in lists {
-        object.insert(key.clone(), json!(rows));
+        object.insert(key.clone(), bytes_values(rows));
     }
     Value::Object(object)
+}
+
+fn bytes_values(values: &[Vec<u8>]) -> Value {
+    let mut projected = Vec::with_capacity(values.len());
+    for bytes in values {
+        let mut object = Map::new();
+        object.insert("bytes".to_owned(), json!(bytes));
+        projected.push(Value::Object(object));
+    }
+    Value::Array(projected)
 }
 
 pub(crate) fn events(events: &[RecordedEvent]) -> Value {
@@ -214,6 +219,6 @@ pub(crate) fn lpop_entry(entry: &LpopPipelineEntry) -> Value {
     match entry {
         LpopPipelineEntry::Missing => Value::Null,
         LpopPipelineEntry::Items(items) => json!(items),
-        LpopPipelineEntry::ItemsBytes(items) => json!(items),
+        LpopPipelineEntry::ItemsBytes(items) => bytes_values(items),
     }
 }

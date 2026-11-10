@@ -6,7 +6,6 @@ from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
 from litellm.types.caching import RedisPipelineLpopOperation, RedisPipelineRpushOperation
 from redis.exceptions import ResponseError
 
-# litellm types these methods with an untyped **kwargs, so their member types are partly unknown
 # pyright: reportUnknownMemberType=false
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -236,22 +235,20 @@ async def drive(input_value: dict[str, Json], cache: RedisCache) -> Json:
     return result
 
 
-def initial_lists(input_value: dict[str, Json]) -> dict[str, list[bytes]]:
-    raw = input_value.get("lists")
-    if raw is None:
-        return {}
-    return {
-        key: [as_bytes(decode_value(item)) for item in list_value(rows, key)]
-        for key, rows in object_value(raw, "lists").items()
-    }
-
-
 def project_lists(lists: dict[str, list[bytes]]) -> Json:
     return {key: [project_value(cast(Json, item)) for item in rows] for key, rows in lists.items()}
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    lists = initial_lists(input_value)
+    raw = input_value.get("lists")
+    lists = (
+        {}
+        if raw is None
+        else {
+            key: [as_bytes(decode_value(item)) for item in list_value(rows, key)]
+            for key, rows in object_value(raw, "lists").items()
+        }
+    )
     logger = RecordingLogger()
     cache = object.__new__(RedisCache)
     fields: dict[str, object] = {

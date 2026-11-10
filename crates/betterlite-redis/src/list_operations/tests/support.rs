@@ -182,7 +182,7 @@ fn connection_settings(host: &str, port: u16) -> RedisConnectionSettings {
     settings
 }
 
-fn transport_to(host: &str, port: u16) -> Arc<RedisTransport> {
+pub(crate) fn transport_to(host: &str, port: u16) -> Arc<RedisTransport> {
     let settings = connection_settings(host, port);
     Arc::new(
         RedisTransport::new(

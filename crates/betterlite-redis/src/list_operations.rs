@@ -1,8 +1,11 @@
 pub mod error;
 mod lpop;
+mod lpop_grouped;
 pub mod results;
 mod rpush;
+mod rpush_pipeline;
 mod tests;
+mod trim;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -27,7 +30,6 @@ pub(crate) fn namespaced_key(lists: &RedisListOperations, key: &str) -> String {
 
 pub(crate) struct Call {
     pub(crate) name: &'static str,
-    pub(crate) key: Option<String>,
     pub(crate) log: &'static str,
 }
 
@@ -78,11 +80,11 @@ impl RedisListOperations {
     }
 
     pub async fn async_rpush(&self, key: &str, values: &[RedisScalar]) -> ListResult<i64> {
-        let namespaced = namespaced_key(self, key);
-        let call = rpush::rpush_call(&namespaced);
-        let admission = self.gate.enter(call.name)?;
-        self.perform(admission, call, rpush::rpush(self, &namespaced, values))
-            .await
+        let call = Call {
+            name: "async_rpush",
+            log: "LiteLLM Redis Cache RPUSH: - Got exception from REDIS",
+        };
+        rpush::async_rpush(self, call, key, values).await
     }
 
     pub async fn async_rpush_and_trim(
@@ -91,45 +93,45 @@ impl RedisListOperations {
         values: &[RedisScalar],
         max_len: i64,
     ) -> ListResult<i64> {
-        let namespaced = namespaced_key(self, key);
-        let call = rpush::trim_call(&namespaced);
-        let admission = self.gate.enter(call.name)?;
-        self.perform(
-            admission,
-            call,
-            rpush::rpush_and_trim(self, &namespaced, values, max_len),
-        )
-        .await
+        let call = Call {
+            name: "async_rpush_and_trim",
+            log: "LiteLLM Redis Cache RPUSH+LTRIM: - Got exception from REDIS",
+        };
+        trim::async_rpush_and_trim(self, call, key, values, max_len).await
     }
 
     pub async fn async_rpush_pipeline(&self, rpush_list: &RpushList) -> ListResult<Vec<i64>> {
-        let call = rpush::rpush_pipeline_call();
-        let Some(admission) = self.admit(call.name, rpush_list.is_empty())? else {
-            return Ok(Vec::new());
+        let call = Call {
+            name: "async_rpush_pipeline",
+            log: "LiteLLM Redis Caching: async_rpush_pipeline() - Got exception from REDIS",
         };
-        self.perform(admission, call, rpush::rpush_pipeline(self, rpush_list))
-            .await
+        rpush_pipeline::async_rpush_pipeline(self, call, rpush_list).await
     }
 
     pub async fn async_lpop(&self, key: &str, count: Option<i64>) -> ListResult<LpopResult> {
-        let namespaced = namespaced_key(self, key);
-        let call = lpop::lpop_call(&namespaced);
-        let admission = self.gate.enter(call.name)?;
-        self.perform(admission, call, lpop::lpop(self, &namespaced, count))
-            .await
+        let call = Call {
+            name: "async_lpop",
+            log: "LiteLLM Redis Cache LPOP: - Got exception from REDIS",
+        };
+        lpop::async_lpop(self, call, key, count).await
     }
 
     pub async fn async_lpop_pipeline(&self, lpop_list: &LpopList) -> ListResult<LpopEntries> {
-        let call = lpop::lpop_pipeline_call();
-        let Some(admission) = self.admit(call.name, lpop_list.is_empty())? else {
-            return Ok(Vec::new());
+        let call = Call {
+            name: "async_lpop_pipeline",
+            log: "LiteLLM Redis Caching: async_lpop_pipeline() - Got exception from REDIS",
         };
-        self.perform(admission, call, lpop::lpop_pipeline(self, lpop_list))
-            .await
+        lpop::async_lpop_pipeline(self, call, lpop_list).await
     }
 
     // litellm raises from the guarded method, so a failed call records the failure and never reaches exit
-    async fn perform<T, F>(&self, admission: BreakerAdmission, call: Call, body: F) -> ListResult<T>
+    async fn perform<T, F>(
+        &self,
+        admission: BreakerAdmission,
+        call: Call,
+        key: Option<&str>,
+        body: F,
+    ) -> ListResult<T>
     where
         F: Future<Output = ListResult<T>>,
     {
@@ -138,7 +140,7 @@ impl RedisListOperations {
         let event = ServiceEvent {
             call_type: call.name,
             duration: started.elapsed(),
-            key: call.key,
+            key: key.map(|raw| namespaced_key(self, raw)),
         };
         match outcome {
             Ok(value) => {

@@ -3,9 +3,10 @@ use std::time::Duration;
 use redis::Value;
 use rstest::rstest;
 
+use super::raw_server::{RawServer, array, bulk};
 use super::support::{
     TestGate, build, harness, harness_without_server, settings, settings_with_default,
-    transport_for,
+    transport_for, transport_to,
 };
 use crate::cache_primitives::protocol::RedisScalar;
 use crate::list_operations::error::RedisListOperationsError;
@@ -609,6 +610,54 @@ async fn lpop_pipeline_regroups_a_partly_empty_group() {
             "a1".to_owned(),
             "a3".to_owned()
         ])]
+    );
+}
+
+#[rstest]
+#[case::redis_seven_bulk("7.0.0", vec![array(&[vec![0xff], b"ok".to_vec()])])]
+#[case::redis_six_flat("6.2.0", vec![bulk(&[0xff]), bulk(b"ok")])]
+#[tokio::test]
+async fn lpop_pipeline_keeps_the_original_bytes(
+    #[case] version: &str,
+    #[case] replies: Vec<Vec<u8>>,
+) {
+    let server = RawServer::start(replies).expect("a raw server");
+    let harness = build(
+        settings(None, version),
+        transport_to(&server.host(), server.port()),
+        TestGate::never(),
+    );
+    let entries = harness
+        .lists
+        .async_lpop_pipeline(&[pop("a", Some(2))])
+        .await
+        .expect("a pipeline");
+    assert_eq!(
+        entries,
+        vec![LpopPipelineEntry::ItemsBytes(vec![
+            vec![0xff],
+            b"ok".to_vec()
+        ])]
+    );
+    assert_eq!(server.pending(), 0);
+}
+
+#[tokio::test]
+async fn lpop_keeps_the_original_bytes_from_the_old_redis_loop_too() {
+    let server = RawServer::start(vec![bulk(&[0xff]), bulk(b"ok")]).expect("a raw server");
+    let harness = build(
+        settings(None, "6.2.0"),
+        transport_to(&server.host(), server.port()),
+        TestGate::never(),
+    );
+    let result = harness
+        .lists
+        .async_lpop("queue", Some(2))
+        .await
+        .expect("a pop");
+    assert_eq!(
+        result,
+        LpopResult::ItemsBytes(vec![vec![0xff], b"ok".to_vec()])
     );
 }
 

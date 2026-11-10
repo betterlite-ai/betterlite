@@ -218,7 +218,12 @@ fn pop_reply(lists: &mut Lists, key: &str, command: &Command) -> Vec<u8> {
         None => bulk_reply(&rows.remove(0)),
         Some(limit) => {
             let take = usize::try_from(limit).map_or(rows.len(), |value| value.min(rows.len()));
-            array_reply(&rows.drain(..take).collect::<Vec<_>>())
+            let popped: Vec<Vec<u8>> = rows.drain(..take).collect();
+            let mut out = format!("*{}\r\n", popped.len()).into_bytes();
+            for value in &popped {
+                out.extend(bulk_reply(value));
+            }
+            out
         }
     }
 }
@@ -259,13 +264,6 @@ fn bulk_reply(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-fn array_reply(values: &[Vec<u8>]) -> Vec<u8> {
-    let mut out = format!("*{}\r\n", values.len()).into_bytes();
-    for value in values {
-        out.extend(bulk_reply(value));
-    }
-    out
-}
 
 fn error_reply(text: &str) -> Vec<u8> {
     let mut reply = b"-".to_vec();

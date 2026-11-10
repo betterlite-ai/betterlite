@@ -6,13 +6,13 @@ use crate::cache_primitives::protocol::AsyncRedisCommands as _;
 use crate::cache_primitives::version::parse_major_version;
 use crate::redis_live_client::LiveAsyncClient;
 
-use super::Call;
 use super::error::RedisListOperationsError;
-use super::namespaced_key;
+use super::lpop_grouped;
 use super::results::{
     LpopPipelineEntry, LpopResult, decode_group, decode_popped, decode_reply, popped_items,
     reply_bytes,
 };
+use super::{Call, ListResult, namespaced_key};
 use super::{RedisListOperations, RedisPipelineLpopOperation};
 
 pub(crate) fn lpop_command(key: &str, count: Option<i64>) -> Cmd {
@@ -24,38 +24,28 @@ pub(crate) fn lpop_command(key: &str, count: Option<i64>) -> Cmd {
     command
 }
 
-pub(crate) fn lpop_call(key: &str) -> Call {
-    Call {
-        name: "async_lpop",
-        key: Some(key.to_owned()),
-        log: "LiteLLM Redis Cache LPOP: - Got exception from REDIS",
-    }
-}
-
-pub(crate) const fn lpop_pipeline_call() -> Call {
-    Call {
-        name: "async_lpop_pipeline",
-        key: None,
-        log: "LiteLLM Redis Caching: async_lpop_pipeline() - Got exception from REDIS",
-    }
-}
-
-pub(crate) async fn lpop(
+pub(crate) async fn async_lpop(
     lists: &RedisListOperations,
+    call: Call,
     key: &str,
     count: Option<i64>,
-) -> Result<LpopResult, RedisListOperationsError> {
-    let client = lists.transport.async_client().await?;
-    let major = parse_major_version(
-        &lists.settings.redis_version,
-        lists.settings.default_major_version,
-    );
-    let Some(limit) = count.filter(|_value| major < 7) else {
-        let reply = client.lpop(key, count).await?;
-        return decode_reply(&reply);
+) -> ListResult<LpopResult> {
+    let admission = lists.gate.enter(call.name)?;
+    let request = async {
+        let namespaced = namespaced_key(lists, key);
+        let client = lists.transport.async_client().await?;
+        let major = parse_major_version(
+            &lists.settings.redis_version,
+            lists.settings.default_major_version,
+        );
+        let Some(limit) = count.filter(|_value| major < 7) else {
+            let reply = client.lpop(&namespaced, count).await?;
+            return decode_reply(&reply);
+        };
+        let popped = pop_in_loop(&client, &namespaced, limit).await?;
+        Ok(decode_popped(&popped))
     };
-    let popped = pop_in_loop(&client, key, limit).await?;
-    Ok(decode_popped(&popped))
+    lists.perform(admission, call, Some(key), request).await
 }
 
 async fn pop_in_loop(
@@ -76,19 +66,26 @@ async fn pop_in_loop(
     Ok(popped)
 }
 
-pub(crate) async fn lpop_pipeline(
+pub(crate) async fn async_lpop_pipeline(
     lists: &RedisListOperations,
+    call: Call,
     lpop_list: &[RedisPipelineLpopOperation],
-) -> Result<Vec<LpopPipelineEntry>, RedisListOperationsError> {
-    let client = lists.transport.async_client().await?;
-    let major = parse_major_version(
-        &lists.settings.redis_version,
-        lists.settings.default_major_version,
-    );
-    if major >= 7 {
-        return bulk_pipeline(lists, &client, lpop_list).await;
-    }
-    grouped_pipeline(lists, &client, lpop_list).await
+) -> ListResult<Vec<LpopPipelineEntry>> {
+    let Some(admission) = lists.admit(call.name, lpop_list.is_empty())? else {
+        return Ok(Vec::new());
+    };
+    let request = async {
+        let client = lists.transport.async_client().await?;
+        let major = parse_major_version(
+            &lists.settings.redis_version,
+            lists.settings.default_major_version,
+        );
+        if major >= 7 {
+            return bulk_pipeline(lists, &client, lpop_list).await;
+        }
+        lpop_grouped::grouped_pipeline(lists, &client, lpop_list).await
+    };
+    lists.perform(admission, call, None, request).await
 }
 
 async fn bulk_pipeline(
@@ -106,61 +103,18 @@ async fn bulk_pipeline(
     let results = pipeline.execute().await?;
     let mut entries = Vec::with_capacity(results.len());
     for value in &results {
-        entries.push(bulk_entry(value)?);
+        if let Value::Array(items) = value {
+            entries.push(decode_group(&popped_items(items, "async_lpop_pipeline")?));
+            continue;
+        }
+        let Some(bytes) = reply_bytes(value, "async_lpop_pipeline")? else {
+            entries.push(LpopPipelineEntry::Missing);
+            continue;
+        };
+        entries.push(match str::from_utf8(bytes) {
+            Ok(text) => LpopPipelineEntry::Items(vec![text.to_owned()]),
+            Err(_source) => LpopPipelineEntry::ItemsBytes(vec![bytes.to_vec()]),
+        });
     }
     Ok(entries)
-}
-
-// litellm queues one LPOP per count and regroups the flat reply, so one key's empty list shifts no other key
-async fn grouped_pipeline(
-    lists: &RedisListOperations,
-    client: &LiveAsyncClient,
-    lpop_list: &[RedisPipelineLpopOperation],
-) -> Result<Vec<LpopPipelineEntry>, RedisListOperationsError> {
-    let planned: Vec<(String, i64)> = lpop_list
-        .iter()
-        .map(|operation| {
-            (
-                namespaced_key(lists, &operation.key),
-                operation.count.unwrap_or(1),
-            )
-        })
-        .collect();
-    let mut pipeline = client.pipeline(false);
-    let mut counts = Vec::with_capacity(planned.len());
-    for (key, count) in &planned {
-        counts.push(*count);
-        for _ in 0..*count {
-            pipeline.commands.add_command(lpop_command(key, None));
-        }
-    }
-    let flat = pipeline.execute().await?;
-    let mut values = flat.into_iter();
-    let mut entries = Vec::with_capacity(counts.len());
-    for count in counts {
-        let mut group = Vec::new();
-        for _ in 0..count {
-            let Some(value) = values.next() else {
-                break;
-            };
-            if let Some(bytes) = reply_bytes(&value, "async_lpop_pipeline")? {
-                group.push(bytes.to_vec());
-            }
-        }
-        entries.push(decode_group(&group));
-    }
-    Ok(entries)
-}
-
-fn bulk_entry(value: &Value) -> Result<LpopPipelineEntry, RedisListOperationsError> {
-    if let Value::Array(items) = value {
-        return Ok(decode_group(&popped_items(items, "async_lpop_pipeline")?));
-    }
-    let Some(bytes) = reply_bytes(value, "async_lpop_pipeline")? else {
-        return Ok(LpopPipelineEntry::Missing);
-    };
-    Ok(match str::from_utf8(bytes) {
-        Ok(text) => LpopPipelineEntry::Items(vec![text.to_owned()]),
-        Err(_source) => LpopPipelineEntry::ItemsBytes(vec![bytes.to_vec()]),
-    })
 }

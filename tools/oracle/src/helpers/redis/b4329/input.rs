@@ -7,18 +7,14 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Call {
     pub(crate) operation: Operation,
-    #[serde(default)]
     pub(crate) namespace: Option<String>,
     pub(crate) redis_version: String,
     #[serde(default)]
     pub(crate) lists: BTreeMap<String, Vec<ListValue>>,
-    #[serde(default)]
     pub(crate) key: Option<String>,
     #[serde(default)]
     pub(crate) values: Vec<ListValue>,
-    #[serde(default)]
     pub(crate) max_len: Option<i64>,
-    #[serde(default)]
     pub(crate) count: Option<i64>,
     #[serde(default)]
     pub(crate) operations: Vec<PipelineOperation>,
@@ -40,7 +36,6 @@ pub(crate) struct PipelineOperation {
     pub(crate) key: String,
     #[serde(default)]
     pub(crate) values: Vec<ListValue>,
-    #[serde(default)]
     pub(crate) count: Option<i64>,
 }
 
