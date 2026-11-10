@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use tokio_util::task::TaskTracker;
@@ -433,13 +431,10 @@ async fn the_rest_client_sends_basic_authorization_and_identity_headers() {
         .await
         .expect("the prompt");
     let head = server.requests().into_iter().next().expect("a request");
-    let expected = format!(
-        "Basic {}",
-        STANDARD.encode(format!("{PUBLIC_KEY}:{SECRET_KEY}"))
-    );
+    // base64 of "pk-lf-test:sk-lf-test"
     assert_eq!(
         header(&head, "authorization").as_deref(),
-        Some(expected.as_str())
+        Some("Basic cGstbGYtdGVzdDpzay1sZi10ZXN0")
     );
     assert_eq!(
         header(&head, "x-langfuse-public-key").as_deref(),
