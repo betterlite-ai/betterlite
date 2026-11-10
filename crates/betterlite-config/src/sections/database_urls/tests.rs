@@ -184,6 +184,87 @@ fn invalid_disable_env_flag_stops_loading() {
 }
 
 #[test]
+fn env_aliases_load_writer_fields() {
+    let settings = load(
+        "model_list: []\n",
+        &[
+            ("DATABASE_URL", "postgresql://writer/db"),
+            ("DIRECT_URL", "postgresql://direct/db"),
+            ("DATABASE_HOST", "db.example"),
+            ("DATABASE_PORT", "6543"),
+            ("DATABASE_USER", "writer"),
+            ("DATABASE_NAME", "litellm"),
+            ("DATABASE_SCHEMA", "tenant"),
+            ("DATABASE_PASSWORD", "secret"),
+            ("DATABASE_SSLMODE", "require"),
+            ("DATABASE_SSLROOTCERT", "/certs/root.pem"),
+        ],
+    );
+    let endpoints = &settings.endpoints;
+    assert_eq!(
+        endpoints.database_url.as_deref(),
+        Some("postgresql://writer/db")
+    );
+    assert_eq!(
+        endpoints.direct_url.as_deref(),
+        Some("postgresql://direct/db")
+    );
+    assert_eq!(endpoints.database_host.as_deref(), Some("db.example"));
+    assert_eq!(endpoints.database_port, "6543");
+    assert_eq!(endpoints.database_user.as_deref(), Some("writer"));
+    assert_eq!(endpoints.database_name.as_deref(), Some("litellm"));
+    assert_eq!(endpoints.database_schema.as_deref(), Some("tenant"));
+    assert!(endpoints.database_password.is_some());
+    assert_eq!(endpoints.database_sslmode.as_deref(), Some("require"));
+    assert_eq!(
+        endpoints.database_sslrootcert.as_deref(),
+        Some("/certs/root.pem")
+    );
+}
+
+#[test]
+fn env_aliases_load_reader_fields() {
+    let settings = load(
+        "model_list: []\n",
+        &[
+            ("DATABASE_URL_READ_REPLICA", "postgresql://reader/db"),
+            ("DATABASE_HOST_READ_REPLICA", "replica.example"),
+            ("DATABASE_PORT_READ_REPLICA", "5433"),
+            ("DATABASE_USER_READ_REPLICA", "reader"),
+            ("DATABASE_NAME_READ_REPLICA", "reader_db"),
+            ("DATABASE_SCHEMA_READ_REPLICA", "reader_schema"),
+            ("DATABASE_PASSWORD_READ_REPLICA", "reader_secret"),
+        ],
+    );
+    let endpoints = &settings.endpoints;
+    assert_eq!(
+        endpoints.database_url_read_replica.as_deref(),
+        Some("postgresql://reader/db")
+    );
+    assert_eq!(
+        endpoints.database_host_read_replica.as_deref(),
+        Some("replica.example")
+    );
+    assert_eq!(
+        endpoints.database_port_read_replica.as_deref(),
+        Some("5433")
+    );
+    assert_eq!(
+        endpoints.database_user_read_replica.as_deref(),
+        Some("reader")
+    );
+    assert_eq!(
+        endpoints.database_name_read_replica.as_deref(),
+        Some("reader_db")
+    );
+    assert_eq!(
+        endpoints.database_schema_read_replica.as_deref(),
+        Some("reader_schema")
+    );
+    assert!(endpoints.database_password_read_replica.is_some());
+}
+
+#[test]
 fn invalid_idle_integer_stops_loading() {
     let error = load_error(
         "model_list: []\n",
@@ -278,6 +359,17 @@ fn pool_timeout_precedence() {
     assert_pool_timeout(&defaults, QueryValue::Integer(60));
     let zero = load("general_settings:\n  database_connection_timeout: 0\n", &[]);
     assert_pool_timeout(&zero, QueryValue::Integer(0));
+    let limited = load(
+        "general_settings:\n  database_connection_pool_limit: 25\n",
+        &[],
+    );
+    assert_eq!(
+        limited.writer_connection_params(),
+        vec![
+            scalar("connection_limit", QueryValue::Integer(25)),
+            scalar("pool_timeout", QueryValue::Integer(60))
+        ]
+    );
 }
 
 #[test]
