@@ -333,3 +333,107 @@ fn file_mode(path: &Path) -> u32 {
 fn directory_mode(path: &Path) -> u32 {
     file_mode(path)
 }
+
+#[tokio::test]
+async fn read_settings_reports_a_directory() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::create_dir_all(&settings).unwrap();
+    let error = read_settings(&settings).await.unwrap_err();
+    assert!(matches!(error, CodexSettingsError::Read { .. }));
+}
+
+#[tokio::test]
+async fn read_settings_reports_non_utf8() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, [0xff_u8, 0xfe, 0x00]).unwrap();
+    let error = read_settings(&settings).await.unwrap_err();
+    assert!(matches!(error, CodexSettingsError::NotUtf8 { .. }));
+}
+
+#[tokio::test]
+async fn read_receipt_reports_a_directory() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"keep\"\n").unwrap();
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    fs::create_dir_all(&state_path).unwrap();
+    let error = read_receipt(&settings).await.unwrap_err();
+    assert!(matches!(error, CodexSettingsError::Receipt { .. }));
+}
+
+#[tokio::test]
+async fn receipt_accepts_a_missing_version() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    let resolved = resolve_settings_path(&settings).unwrap();
+    let quoted = serde_json::to_string(&settings_path_text(&resolved).unwrap()).unwrap();
+    let receipt = format!(
+        "{{\"settings_path\":{quoted},\"file_existed\":false,\"providers_existed\":false,\"previous\":{{}},\"written\":{{}}}}"
+    );
+    fs::write(&state_path, receipt).unwrap();
+    let parsed = read_receipt(&settings).await.unwrap().unwrap();
+    assert_eq!(parsed.version, 1);
+}
+
+#[tokio::test]
+async fn receipt_rejects_a_multi_key_snapshot() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    let resolved = resolve_settings_path(&settings).unwrap();
+    let quoted = serde_json::to_string(&settings_path_text(&resolved).unwrap()).unwrap();
+    let saved = serde_json::to_string("value = 1\nother = 2\n").unwrap();
+    let receipt = format!(
+        "{{\"version\":1,\"settings_path\":{quoted},\"file_existed\":false,\"providers_existed\":false,\"previous\":{{\"model\":{saved}}},\"written\":{{\"model\":\"{}\"}}}}",
+        "0".repeat(64)
+    );
+    fs::write(&state_path, receipt).unwrap();
+    let error = read_receipt(&settings).await.unwrap_err();
+    assert!(matches!(
+        error,
+        CodexSettingsError::Receipt {
+            source: ReceiptSource::Snapshot(_),
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn repeated_configure_keeps_the_displaced_value() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"original\"\n").unwrap();
+    let files = PrivateFiles::default();
+    configure_with(&settings, &files, GATEWAY, KEY, MODEL)
+        .await
+        .unwrap();
+    configure_with(&settings, &files, GATEWAY, KEY, "second-model")
+        .await
+        .unwrap();
+    unconfigure_at(&settings, &files).await.unwrap();
+    let document = document_at(&settings);
+    assert_eq!(string_at(&document, "model").as_deref(), Some("original"));
+}
+
+#[tokio::test]
+async fn unconfigure_skips_a_field_restored_unchanged() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"original\"\n").unwrap();
+    let files = PrivateFiles::default();
+    configure_with(&settings, &files, GATEWAY, KEY, MODEL)
+        .await
+        .unwrap();
+    configure_with(&settings, &files, GATEWAY, KEY, "original")
+        .await
+        .unwrap();
+    let outcome = unconfigure_at(&settings, &files).await.unwrap();
+    assert!(!outcome.restored.contains(&"model".to_owned()));
+    let document = document_at(&settings);
+    assert_eq!(string_at(&document, "model").as_deref(), Some("original"));
+}

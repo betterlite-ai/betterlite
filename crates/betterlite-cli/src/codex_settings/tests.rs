@@ -16,6 +16,7 @@ use tempfile::TempDir;
 use toml_edit::{DocumentMut, Item, TableLike, Value};
 
 use super::configure::{ConfigureCodexSettings, configure_codex_settings};
+use super::document::read_settings;
 use super::error::CodexSettingsError;
 use super::paths::{codex_configure_state_path, resolve_settings_path, settings_path_text};
 use super::preflight::preflight_codex_settings;

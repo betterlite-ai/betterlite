@@ -45,7 +45,7 @@ pub enum ReceiptSource {
 }
 
 const fn default_version() -> u8 {
-    RECEIPT_VERSION
+    1
 }
 
 #[must_use]
