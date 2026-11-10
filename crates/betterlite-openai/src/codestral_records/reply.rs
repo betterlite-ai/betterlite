@@ -1,16 +1,9 @@
-use std::str;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::codestral_records::error::{NativeError, TextCompletionCodestralError};
-use crate::codestral_records::{MAX_RECORD_BYTES, RecordSource};
+use crate::codestral_records::{RecordSource, record_text};
 use crate::text_completion_policy::reply::mapped_finish_reason;
-
-pub struct CodestralHttpResponse<'body> {
-    pub status_code: u16,
-    pub text: &'body str,
-}
 
 pub struct PostCall<'request> {
     pub input: &'request [Value],
@@ -23,44 +16,12 @@ pub trait PostCallLogger {
     fn post_call(&mut self, call: PostCall<'_>);
 }
 
-pub struct ReplyInput<'body> {
-    pub response: CodestralHttpResponse<'body>,
-    pub messages: &'body [Value],
-    pub api_key: &'body str,
-    pub request_data: &'body Value,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CodestralUsage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CodestralChoiceMessage {
-    pub content: Option<String>,
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CodestralChoice {
-    pub index: i64,
-    pub message: Option<CodestralChoiceMessage>,
-    pub finish_reason: Option<String>,
-    pub logprobs: Option<Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CodestralCompletionResponse {
-    pub id: Option<String>,
-    pub created: Option<i64>,
-    pub model: Option<String>,
-    pub object: Option<String>,
-    pub usage: Option<CodestralUsage>,
-    #[serde(default)]
-    pub choices: Vec<CodestralChoice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -81,23 +42,39 @@ pub struct CodestralReply {
     pub usage: CodestralUsage,
 }
 
+#[derive(Deserialize)]
+struct ReplyWire {
+    id: Option<String>,
+    created: Option<i64>,
+    model: Option<String>,
+    usage: Option<CodestralUsage>,
+    #[serde(default)]
+    choices: Vec<ChoiceWire>,
+}
+
+#[derive(Deserialize)]
+struct ChoiceWire {
+    index: i64,
+    message: Option<MessageWire>,
+    finish_reason: Option<String>,
+    logprobs: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct MessageWire {
+    content: Option<String>,
+}
+
 // LiteLLM logs the raw answer before it looks at the status, so a rejected reply still reaches post_call
 pub fn process_response(
-    input: &ReplyInput<'_>,
+    status_code: u16,
+    call: PostCall<'_>,
     logger: &mut dyn PostCallLogger,
     source: &RecordSource,
 ) -> Result<CodestralReply, TextCompletionCodestralError> {
-    logger.post_call(PostCall {
-        input: input.messages,
-        api_key: input.api_key,
-        original_response: input.response.text,
-        request_data: input.request_data,
-    });
-    decode_codestral_reply(
-        input.response.status_code,
-        input.response.text.as_bytes(),
-        source,
-    )
+    let body = call.original_response;
+    logger.post_call(call);
+    decode_codestral_reply(status_code, body.as_bytes(), source)
 }
 
 pub fn decode_codestral_reply(
@@ -105,57 +82,39 @@ pub fn decode_codestral_reply(
     body: &[u8],
     source: &RecordSource,
 ) -> Result<CodestralReply, TextCompletionCodestralError> {
-    if body.len() > MAX_RECORD_BYTES {
-        return Err(TextCompletionCodestralError::TooLarge {
-            size: body.len(),
-            limit: MAX_RECORD_BYTES,
-        });
-    }
-    let text = str::from_utf8(body).map_err(TextCompletionCodestralError::BodyNotUtf8)?;
-    if status_code != 200 {
-        return Err(TextCompletionCodestralError::Native(Box::new(
-            NativeError::new(status_code, text.to_owned(), None, None),
-        )));
-    }
-    let response = match serde_json::from_str::<CodestralCompletionResponse>(text) {
-        Ok(response) => response,
-        Err(_invalid) => {
-            return Err(TextCompletionCodestralError::Native(Box::new(
-                NativeError::new(422, text.to_owned(), None, None),
-            )));
-        }
+    let text = record_text(body)?;
+    let native = |code| {
+        TextCompletionCodestralError::Native(Box::new(NativeError::new(
+            code,
+            text.to_owned(),
+            None,
+            None,
+        )))
     };
-    Ok(reply_from(response, source))
-}
-
-#[must_use]
-fn reply_from(response: CodestralCompletionResponse, source: &RecordSource) -> CodestralReply {
-    let id = response
-        .id
-        .unwrap_or_else(|| format!("chatcmpl-{}", source.id));
-    let choices = response.choices.into_iter().map(reply_choice).collect();
-    CodestralReply {
-        id,
+    if status_code != 200 {
+        return Err(native(status_code));
+    }
+    let wire: ReplyWire = serde_json::from_str(text).map_err(|_invalid| native(422))?;
+    Ok(CodestralReply {
+        id: wire.id.unwrap_or_else(|| format!("chatcmpl-{}", source.id)),
         // TextCompletionResponse.__init__ overwrites whatever object the provider sent
         object: "text_completion".to_owned(),
-        created: response.created.unwrap_or(source.created),
-        model: response.model,
-        choices,
-        usage: response.usage.unwrap_or_default(),
-    }
-}
-
-#[must_use]
-fn reply_choice(choice: CodestralChoice) -> CodestralReplyChoice {
-    // TextChoices maps a non-blank reason and keeps a blank one as None
-    let finish_reason = choice
-        .finish_reason
-        .filter(|reason| !reason.is_empty())
-        .map(|reason| mapped_finish_reason(&reason).to_owned());
-    CodestralReplyChoice {
-        index: choice.index,
-        text: choice.message.and_then(|message| message.content),
-        finish_reason,
-        logprobs: choice.logprobs,
-    }
+        created: wire.created.unwrap_or(source.created),
+        model: wire.model,
+        // TextChoices maps a non-blank reason and keeps a blank one as None
+        choices: wire
+            .choices
+            .into_iter()
+            .map(|choice| CodestralReplyChoice {
+                index: choice.index,
+                text: choice.message.and_then(|message| message.content),
+                finish_reason: choice
+                    .finish_reason
+                    .filter(|reason| !reason.is_empty())
+                    .map(|reason| mapped_finish_reason(&reason).to_owned()),
+                logprobs: choice.logprobs,
+            })
+            .collect(),
+        usage: wire.usage.unwrap_or_default(),
+    })
 }

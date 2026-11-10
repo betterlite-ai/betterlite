@@ -6,12 +6,12 @@ use rstest::rstest;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use super::chunk::{CodestralChunk, CodestralEmpty, decode_codestral_chunk};
+use super::chunk::{CodestralChunk, decode_codestral_chunk};
 use super::error::{NativeError, NativeRequest, NativeResponse, TextCompletionCodestralError};
 use super::options::{CodestralSettings, SUPPORTED_PARAMS, map_params};
 use super::reply::{
-    CodestralHttpResponse, CodestralReply, CodestralUsage, PostCall, PostCallLogger, ReplyInput,
-    decode_codestral_reply, process_response,
+    CodestralReply, CodestralUsage, PostCall, PostCallLogger, decode_codestral_reply,
+    process_response,
 };
 use super::{MAX_RECORD_BYTES, RecordKind, RecordSource};
 use crate::base_helpers::provider_config;
@@ -359,16 +359,13 @@ fn post_call_records_the_answer_before_the_status_check() {
     let data = value(r#"{"prompt":"p"}"#);
     let messages = vec![value(r#"{"role":"user","content":"p"}"#)];
     let mut recorder = Recorder { calls: Vec::new() };
-    let rejected = ReplyInput {
-        response: CodestralHttpResponse {
-            status_code: 201,
-            text: "created",
-        },
-        messages: &messages,
+    let rejected = PostCall {
+        input: &messages,
         api_key: "key",
+        original_response: "created",
         request_data: &data,
     };
-    let _refused = process_response(&rejected, &mut recorder, &source());
+    let _refused = process_response(201, rejected, &mut recorder, &source());
     assert_eq!(
         recorder.calls,
         vec![("key".to_owned(), "created".to_owned(), data.clone())]
@@ -380,16 +377,13 @@ fn post_call_records_a_successful_answer() {
     let data = value(r#""body""#);
     let body = r#"{"id":"x","created":1,"choices":[]}"#;
     let mut recorder = Recorder { calls: Vec::new() };
-    let accepted = ReplyInput {
-        response: CodestralHttpResponse {
-            status_code: 200,
-            text: body,
-        },
-        messages: &[],
+    let accepted = PostCall {
+        input: &[],
         api_key: "key",
+        original_response: body,
         request_data: &data,
     };
-    let projected = process_response(&accepted, &mut recorder, &source()).expect("a reply");
+    let projected = process_response(200, accepted, &mut recorder, &source()).expect("a reply");
     assert_eq!(projected.id, "x");
     assert_eq!(recorder.calls.len(), 1);
     assert_eq!(recorder.calls[0].1, body);
@@ -406,23 +400,36 @@ fn post_call_records_a_successful_answer() {
 #[case::null_choices(r#"{"choices": null}"#)]
 fn chunk_malformed_lines_are_empty_and_unfinished(#[case] line: &str) {
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("an empty chunk");
-    assert_eq!(chunk, CodestralChunk::Empty(CodestralEmpty::default()));
+    assert_eq!(chunk, CodestralChunk::default());
 }
 
 #[test]
 fn chunk_projects_only_the_first_choice_delta() {
     let line = r#"{"id":"c1","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null},{"index":1,"delta":{"content":"ignored"},"finish_reason":"stop"}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
+    let content = chunk;
     assert_eq!(content.text, "hi");
     assert!(!content.is_finished);
     assert_eq!(content.finish_reason, None);
     assert_eq!(content.logprobs, None);
-    assert_eq!(content.original_chunk.choices.len(), 2);
     assert_eq!(
-        content.original_chunk.choices[1].delta.content.as_deref(),
+        content
+            .original_chunk
+            .as_ref()
+            .expect("an original chunk")
+            .choices
+            .len(),
+        2
+    );
+    assert_eq!(
+        content
+            .original_chunk
+            .as_ref()
+            .expect("an original chunk")
+            .choices[1]
+            .delta
+            .content
+            .as_deref(),
         Some("ignored")
     );
 }
@@ -431,14 +438,12 @@ fn chunk_projects_only_the_first_choice_delta() {
 fn chunk_original_keeps_identity_and_maps_each_finish_reason() {
     let line = r#"{"id":"c1","created":7,"model":"m","object":"chat.completion.chunk","system_fingerprint":"fp","choices":[{"index":2,"delta":{"content":"a","role":"assistant"},"finish_reason":"stop_sequence","logprobs":null}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
-    let original = content.original_chunk;
+    let content = chunk;
+    let original = content.original_chunk.expect("an original chunk");
     assert_eq!(original.id, "c1");
     assert_eq!(original.created, 7);
     assert_eq!(original.object, "chat.completion.chunk");
-    assert_eq!(original.model.as_deref(), Some("m"));
+    assert_eq!(original.model, "m");
     assert_eq!(original.system_fingerprint.as_deref(), Some("fp"));
     assert_eq!(original.usage, None);
     assert_eq!(original.choices[0].index, 2);
@@ -455,28 +460,31 @@ fn chunk_generates_the_missing_stream_identity() {
     };
     let line = r#"{"choices":[{"index":0,"delta":{"content":"x"},"finish_reason":null}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
+    let content = chunk;
     assert_eq!(
-        content.original_chunk.id,
+        content
+            .original_chunk
+            .as_ref()
+            .expect("an original chunk")
+            .id,
         "chatcmpl-00000000-0000-0000-0000-000000000000"
     );
-    assert_eq!(content.original_chunk.created, 1_700_000_000);
+    assert_eq!(
+        content.original_chunk.expect("an original chunk").created,
+        1_700_000_000
+    );
 }
 
 #[test]
 fn chunk_empty_finish_reason_finishes_and_carries_logprobs() {
     let line = r#"{"id":"c2","created":2,"choices":[{"index":0,"delta":{"content":""},"finish_reason":"","logprobs":{"tokens":["a"],"token_logprobs":[null]}}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
+    let content = chunk;
     assert!(content.is_finished);
     assert_eq!(content.finish_reason.as_deref(), Some(""));
     assert_eq!(
-        content.logprobs,
-        Some(value(r#"{"tokens":["a"],"token_logprobs":[null]}"#))
+        serde_json::to_value(&content.logprobs).expect("serializable logprobs"),
+        value(r#"{"tokens":["a"],"token_logprobs":[null]}"#)
     );
 }
 
@@ -484,9 +492,7 @@ fn chunk_empty_finish_reason_finishes_and_carries_logprobs() {
 fn chunk_without_a_delta_content_is_empty_text() {
     let line = r#"{"id":"c3","created":3,"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}"#;
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
+    let content = chunk;
     assert_eq!(content.text, "");
 }
 
@@ -496,9 +502,7 @@ fn chunk_without_a_delta_content_is_empty_text() {
 #[case::padded(r#"  {"choices": [{"delta": {"content": "x"}, "finish_reason": null}]}  "#)]
 fn chunk_strips_the_sse_prefix_and_whitespace(#[case] line: &str) {
     let chunk = decode_codestral_chunk(line.as_bytes(), &source()).expect("a content chunk");
-    let CodestralChunk::Content(content) = chunk else {
-        panic!("a content chunk")
-    };
+    let content = chunk;
     assert_eq!(content.text, "x");
 }
 
