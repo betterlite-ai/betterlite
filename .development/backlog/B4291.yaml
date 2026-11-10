@@ -1,7 +1,7 @@
 id: B4291
 milestone: M8 platform
 title: Persistent disk cache and typed cache coordination
-status: todo
+status: done
 depends_on: [B4290]
 file: tasks/B4291-disk-cache-coordination.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1073
