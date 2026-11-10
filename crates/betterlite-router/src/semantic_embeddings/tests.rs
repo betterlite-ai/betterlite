@@ -459,12 +459,14 @@ const ZERO_TIMEOUT: f64 = 0.0;
 const NEGATIVE_TIMEOUT: f64 = -1.0;
 const NAN_TIMEOUT: f64 = f64::NAN;
 const INFINITE_TIMEOUT: f64 = f64::INFINITY;
+const HUGE_TIMEOUT: f64 = f64::MAX;
 
 #[rstest]
 #[case::zero(ZERO_TIMEOUT)]
 #[case::negative(NEGATIVE_TIMEOUT)]
 #[case::nan(NAN_TIMEOUT)]
 #[case::infinite(INFINITE_TIMEOUT)]
+#[case::huge(HUGE_TIMEOUT)]
 #[tokio::test(start_paused = true)]
 async fn unusable_embedding_timeout_skips_the_call(#[case] timeout: f64) {
     let calls = RecordingCalls::succeeding(vec![vec![0.5_f64]]);

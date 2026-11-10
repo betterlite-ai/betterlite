@@ -136,8 +136,11 @@ where
                         seconds: self.embedding_timeout,
                     });
                 }
-                let wait =
-                    Duration::try_from_secs_f64(self.embedding_timeout).unwrap_or(Duration::ZERO);
+                let Ok(wait) = Duration::try_from_secs_f64(self.embedding_timeout) else {
+                    return Err(SemanticEmbeddingError::Timeout {
+                        seconds: self.embedding_timeout,
+                    });
+                };
                 match timeout(wait, self.calls.aembedding(request)).await {
                     Ok(result) => result.map_err(SemanticEmbeddingError::Call),
                     Err(_elapsed) => Err(SemanticEmbeddingError::Timeout {
