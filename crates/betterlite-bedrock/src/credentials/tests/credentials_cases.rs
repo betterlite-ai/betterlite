@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use aws_types::os_shim_internal::Fs;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::tls::VerifySetting;
 use rstest::rstest;
@@ -121,6 +122,8 @@ fn credentials_cases(#[case] scenario: Scenario) {
             profile_wins_over_static();
             session_token_triple_is_direct();
             incomplete_static_falls_through_to_ambient();
+            profile_credentials_bypass_the_cache();
+            session_token_triple_bypasses_the_cache();
         }
         Scenario::S3StaticPairIsolated => {
             s3_pair_bypasses_resolution();
@@ -329,6 +332,52 @@ fn incomplete_static_falls_through_to_ambient() {
     let ambient = resolve(&fixture, &settings(incomplete, AMBIENT), None).unwrap();
     assert_eq!(ambient.access_key_id.expose_secret(), "ambient");
     assert_eq!(transport.record.count(), 0);
+}
+
+fn profile_credentials_bypass_the_cache() {
+    let transport = Transport::with(&[]);
+    let environment = [
+        ("AWS_SHARED_CREDENTIALS_FILE", "/credentials"),
+        ("AWS_CONFIG_FILE", "/config"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ];
+    let files = [
+        (
+            "/credentials",
+            "[named]\naws_access_key_id = first\naws_secret_access_key = first-secret\n",
+        ),
+        ("/config", ""),
+    ];
+    let mut fixture = Fixture::new(&environment, &files, &transport, None);
+    let params = "aws_profile_name: named, aws_region_name: us-east-1";
+    let first = resolve(&fixture, &settings(params, &environment), None).unwrap();
+    assert_eq!(first.access_key_id.expose_secret(), "first");
+    assert!(fixture.cache_events().is_empty());
+    let rotated = [
+        (
+            "/credentials",
+            "[named]\naws_access_key_id = rotated\naws_secret_access_key = rotated-secret\n",
+        ),
+        ("/config", ""),
+    ];
+    fixture.native.filesystem = Fs::from_slice(&rotated);
+    let second = resolve(&fixture, &settings(params, &environment), None).unwrap();
+    assert_eq!(second.access_key_id.expose_secret(), "rotated");
+}
+
+fn session_token_triple_bypasses_the_cache() {
+    let transport = Transport::with(&[]);
+    let fixture = Fixture::new(AMBIENT, &[], &transport, None);
+    let triple =
+        "aws_access_key_id: session, aws_secret_access_key: secret, aws_session_token: token";
+    let resolved = resolve(&fixture, &settings(triple, AMBIENT), None).unwrap();
+    assert_eq!(resolved.access_key_id.expose_secret(), "session");
+    assert!(fixture.cache_events().is_empty());
+    let statics =
+        "aws_access_key_id: static, aws_secret_access_key: secret, aws_region_name: us-west-2";
+    let cached = resolve(&fixture, &settings(statics, AMBIENT), None).unwrap();
+    assert_eq!(cached.access_key_id.expose_secret(), "static");
+    assert!(!fixture.cache_events().is_empty());
 }
 
 fn s3_pair_bypasses_resolution() {

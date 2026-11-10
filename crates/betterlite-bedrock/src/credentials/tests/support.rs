@@ -28,7 +28,7 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::tls::Verification;
 use betterlite_context::local_ttl_cache::{
     LocalTtlCache,
-    dual::{Diagnostics, DualLocalCache},
+    dual::{CacheEvent, Diagnostics, DualLocalCache},
 };
 use betterlite_redact::secret::Redactor;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -271,7 +271,7 @@ pub(super) fn sts_kwargs(environment: &[(&str, &str)]) -> StsClientKwargs {
     sts_client_kwargs(&settings, Verification::Enabled).unwrap()
 }
 
-pub(super) fn cache() -> CredentialCache {
+pub(super) fn cache(events: Arc<Mutex<Vec<String>>>) -> CredentialCache {
     let memory = LocalTtlCache::with_clock(
         Some(1000),
         None,
@@ -285,7 +285,12 @@ pub(super) fn cache() -> CredentialCache {
         default_in_memory_ttl: None,
         diagnostics: Diagnostics {
             redactor: Arc::new(Redactor::new(16).unwrap()),
-            emit: Arc::new(|_| {}),
+            emit: Arc::new(move |event: CacheEvent| {
+                events
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(event.message);
+            }),
         },
     })
     .unwrap()
@@ -347,6 +352,7 @@ pub(super) struct Fixture {
     pub(super) secrets: SecretLookup,
     pub(super) sts: StsClientKwargs,
     pub(super) runtime: Runtime,
+    pub(super) events: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fixture {
@@ -357,8 +363,9 @@ impl Fixture {
         token: Option<&str>,
     ) -> Self {
         let connector = transport.clone();
+        let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         Self {
-            cache: cache(),
+            cache: cache(Arc::clone(&events)),
             native: NativeSources {
                 environment: environment
                     .iter()
@@ -375,6 +382,7 @@ impl Fixture {
             secrets: secrets(token),
             sts: sts_kwargs(environment),
             runtime: Builder::new_current_thread().enable_all().build().unwrap(),
+            events,
         }
     }
 
@@ -386,6 +394,13 @@ impl Fixture {
             sts: &self.sts,
             max_policy_size: 75,
         }
+    }
+
+    pub(super) fn cache_events(&self) -> Vec<String> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
