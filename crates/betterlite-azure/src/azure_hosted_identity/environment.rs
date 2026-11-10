@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use betterlite_config::loader::EnvironmentLookup;
 
@@ -32,16 +32,13 @@ impl HostedEnvironment {
 
     #[must_use]
     pub fn redact_known(&self, text: &str) -> String {
-        let mut output = text.to_owned();
-        for secret in [self.identity_header.as_ref(), self.msi_secret.as_ref()]
+        [self.identity_header.as_ref(), self.msi_secret.as_ref()]
             .into_iter()
             .flatten()
-        {
-            let value = secret.expose_secret();
-            if !value.is_empty() {
-                output = output.replace(value, REDACTED);
-            }
-        }
-        output
+            .map(ExposeSecret::expose_secret)
+            .filter(|value| !value.is_empty())
+            .fold(text.to_owned(), |output, value| {
+                output.replace(value, REDACTED)
+            })
     }
 }

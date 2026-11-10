@@ -137,12 +137,7 @@ impl CloudShellCredential {
     pub fn acquire(&self, io: &HostedIo<'_>, resource: &str) -> TokenResult {
         let request = self.request(resource)?;
         let (response, request_time) = io.exchange(&request)?;
-        cloud_shell_reply::cloud_shell_response(
-            &response,
-            &self.environment,
-            io.redactor,
-            request_time,
-        )
+        cloud_shell_reply::cloud_shell_response(&response, &self.environment, request_time, io)
     }
 
     fn request(&self, resource: &str) -> Result<HostedRequest, HostedIdentityError> {

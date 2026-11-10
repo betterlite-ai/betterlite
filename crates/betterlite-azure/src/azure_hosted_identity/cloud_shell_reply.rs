@@ -7,15 +7,15 @@ use super::decode::{Expiry, HostedTokenReply, decode_hosted_identity_token};
 use super::environment::HostedEnvironment;
 use super::error::HostedIdentityError;
 use super::msal_reply::{DEFAULT_TOKEN_TYPE, REFRESH_THRESHOLD_SECONDS};
-use super::request::HostedResponse;
+use super::request::{HostedIo, HostedResponse};
 
 const TOKEN_MASK: &str = "****";
 
 pub fn cloud_shell_response(
     response: &HostedResponse,
     environment: &HostedEnvironment,
-    redactor: &Redactor,
     request_time: i64,
+    io: &HostedIo<'_>,
 ) -> Result<AccessToken, HostedIdentityError> {
     let raw = response.body.expose_secret();
     if raw.is_empty() {
@@ -39,10 +39,10 @@ pub fn cloud_shell_response(
         return Err(HostedIdentityError::NoToken);
     };
     let Some(token) = parsed.access_token.as_ref() else {
-        return Err(unexpected(parsed, environment, redactor, raw));
+        return Err(unexpected(parsed, environment, io.redactor, raw));
     };
     if parsed.expires_in.is_none() && parsed.expires_on.is_none() {
-        return Err(unexpected(parsed, environment, redactor, raw));
+        return Err(unexpected(parsed, environment, io.redactor, raw));
     }
     let (expires_on, refresh_on) = cloud_shell_times(parsed, request_time)?;
     if parsed.resource.is_none() {
