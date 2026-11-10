@@ -274,9 +274,10 @@ fn the_fee_lookup_always_passes_the_azure_ai_provider() {
 
 #[test]
 fn overflowing_fee_multiplication_fails() {
+    // Decimal::MAX as a quoted lexeme, which the shared coercion parses exactly
     let lookup = CatalogLookup::new(&[(
         "azure_ai/model_router",
-        priced(&[("input_cost_per_token", "79228162514264337593543950335")]),
+        priced(&[("input_cost_per_token", "\"79228162514264337593543950335\"")]),
     )]);
     let error = router_flat_cost("model_router", 2, &lookup).expect_err("an overflowing fee fails");
     assert!(matches!(error, PricingError::Overflow));
@@ -529,7 +530,7 @@ fn an_overflowing_total_fails() {
         ("my-model-router", priced(&[("input_cost_per_token", "1")])),
         (
             "azure_ai/model_router",
-            priced(&[("input_cost_per_token", "79228162514264337593543950335")]),
+            priced(&[("input_cost_per_token", "\"79228162514264337593543950335\"")]),
         ),
     ]);
     let usage = usage(1, 0);
