@@ -32,3 +32,12 @@ deviations:
       REQUEST_TIMEOUT variable behave the same (6000 seconds, an empty value counts as
       unset), and assigning a module global has no native equivalent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577
+  - what: >-
+      A REQUEST_TIMEOUT that parses as a negative or non-finite float fails with a typed
+      timeout error before the request. LiteLLM passes that value through `timeout or
+      request_timeout` to the provider handler, where httpx refuses it.
+    why: >-
+      Duration::try_from_secs_f64 rejects the value, and betterlite resolves the timeout
+      at the call boundary instead of handing an impossible duration to the transport. No
+      working setup configures a negative timeout, and both sides fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576

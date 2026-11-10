@@ -1,4 +1,3 @@
-use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
@@ -29,17 +28,6 @@ pub trait HostedSkillsHandler: Send + Sync {
 pub struct HostedSkillsHandlers<Handler> {
     pub create: Box<dyn Fn() -> Arc<Handler> + Send + Sync>,
     pub cached: Mutex<Option<Arc<Handler>>>,
-}
-
-impl<Handler> fmt::Debug for HostedSkillsHandlers<Handler> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HostedSkillsHandlers")
-            .field(
-                "initialized",
-                &self.cached.lock().is_ok_and(|cached| cached.is_some()),
-            )
-            .finish_non_exhaustive()
-    }
 }
 
 #[must_use]
