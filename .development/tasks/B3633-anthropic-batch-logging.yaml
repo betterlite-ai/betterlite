@@ -103,7 +103,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-batch-logging)" &&
         grep -rlE '^[[:space:]]+b3633:' tools/oracle/cases/helpers/anthropic-batch-logging &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/anthropic-batch-logging
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/anthropic-batch-logging
 oracle_cases:
   - tools/oracle/cases/helpers/anthropic-batch-logging/create-top-level-model-id-scoped.yaml
   - tools/oracle/cases/helpers/anthropic-batch-logging/create-nested-params-model.yaml

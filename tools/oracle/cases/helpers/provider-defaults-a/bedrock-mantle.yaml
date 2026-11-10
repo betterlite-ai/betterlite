@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-bedrock-mantle
+call:
+  provider_defaults_a:
+    provider: bedrock_mantle
+    model: openai.gpt-5.5
+    environment:
+      BEDROCK_MANTLE_API_KEY: mantle-key
+    mantle_openai_path_models: [openai.gpt-5.5]
+env: {}
+compare: {ignore: []}

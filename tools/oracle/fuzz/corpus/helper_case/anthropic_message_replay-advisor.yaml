@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-message-replay-advisor
+call:
+  anthropic_message_replay:
+    function: advisor
+    replace_with_text: true
+    messages:
+    - role: assistant
+      content:
+      - {type: server_tool_use, id: adv_1, name: advisor, input: {q: x}}
+      - {type: advisor_tool_result, tool_use_id: adv_1, content: [ {type: text, text: advice} ]}
+      - {type: text, text: kept}
+env: {}
+compare: {ignore: []}

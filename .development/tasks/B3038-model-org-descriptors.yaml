@@ -134,7 +134,7 @@ checks:
       why: the oracle cases for the model and organization descriptors are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rate-limit-model-descriptors)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/rate-limit-model-descriptors
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/rate-limit-model-descriptors
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-

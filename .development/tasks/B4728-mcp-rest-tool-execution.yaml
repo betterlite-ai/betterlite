@@ -131,7 +131,7 @@ checks:
         Tool execution responses, HTTP statuses, error shapes, metadata logging,
         upstream auth relay or virtual tool behavior deviate from LiteLLM behavior.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-rest-tool-execution
 
 oracle_cases: []

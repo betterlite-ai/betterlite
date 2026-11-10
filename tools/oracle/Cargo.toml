@@ -29,6 +29,7 @@ betterlite-cost = { path = "../../crates/betterlite-cost" }
 betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-env = { path = "../../crates/betterlite-env" }
 betterlite-error = { path = "../../crates/betterlite-error" }
+betterlite-foundry = { path = "../../crates/betterlite-foundry" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-harness = { path = "../../crates/betterlite-harness" }
 betterlite-http = { path = "../../crates/betterlite-http" }
@@ -70,6 +71,7 @@ http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 opentelemetry = { version = "0.33.1", default-features = false }
+opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
 percent-encoding.workspace = true
 quick-xml.workspace = true

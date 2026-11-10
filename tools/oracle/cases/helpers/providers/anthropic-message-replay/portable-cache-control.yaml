@@ -1,0 +1,88 @@
+kind: helper
+name: portable-cache-control
+call:
+  anthropic_message_replay:
+    function: cache_control
+    payload:
+      model: claude
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+      system:
+      - type: text
+        text: sys
+        cache_control:
+          type: ephemeral
+          ttl: 1h
+          scope: global
+      - type: text
+        text: plain
+      - system-string
+      tools:
+      - name: t
+        input_schema:
+          type: object
+          cache_control:
+            type: keep
+        cache_control:
+          type: ephemeral
+          ttl: 5m
+      - name: u
+        input_schema:
+          cache_control:
+            type: x
+      messages:
+      - role: user
+        content: hello
+        cache_control:
+          type: ephemeral
+          ttl: 1h
+      - role: assistant
+        content:
+        - type: text
+          text: hi
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+          scope: x
+        - type: tool_use
+          id: a
+          input:
+            cache_control:
+              type: nested
+            x: 1
+          cache_control: {}
+        - type: tool_result
+          tool_use_id: a
+          content:
+          - type: text
+            text: r
+            cache_control:
+              ttl: 1h
+          - type: text
+            text: r2
+            cache_control: drop-me
+          - type: text
+            text: r3
+            cache_control:
+              type: ''
+        cache_control:
+          type: ephemeral
+          ttl: 1h
+      - role: user
+        content:
+        - type: tool_result
+          tool_use_id: b
+          content: string content
+          cache_control:
+            type: ephemeral
+            ttl: 1h
+      - not-a-message
+      thinking:
+        type: enabled
+      metadata:
+        cache_control:
+          type: keep
+env: {}
+compare:
+  ignore: []
