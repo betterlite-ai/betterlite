@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use num_traits::ToPrimitive as _;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use super::{FETCH_TIMEOUT, ModelLimits, ProxyGet};
@@ -26,8 +26,8 @@ pub fn fetch_model_limits(
     get: &dyn ProxyGet,
 ) -> BTreeMap<String, ModelLimits> {
     let url = format!("{}/model_group/info", base_url.trim_end_matches('/'));
-    let authorization = SecretString::from(format!("Bearer {}", api_key.expose_secret()));
-    let Ok(response) = get.get(&url, &authorization, FETCH_TIMEOUT) else {
+    let sent_headers = super::request_headers(api_key, &[]);
+    let Ok(response) = get.get(&url, &sent_headers, FETCH_TIMEOUT) else {
         return BTreeMap::new();
     };
     if response.status != 200 {

@@ -4,6 +4,7 @@ mod support;
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::time::Duration;
 
 use betterlite_logging::private_json::files::{FileAccess, LocalFiles};
 use rstest::rstest;
@@ -19,8 +20,7 @@ use crate::pi::listing::{fetch_model_ids, fetch_model_listing};
 use crate::pi::models_json::{ModelEntry, models_json_path, provider_block, sync_models_json};
 use crate::pi::prepare::{PreparePiContext, prepare_pi};
 use crate::pi::{
-    FETCH_TIMEOUT, ListedModel, ListingFailure, ListingViolation, ModelLimits, PI_CONFIG_DIR_ENV,
-    PiSyncError,
+    ListedModel, ListingFailure, ListingViolation, ModelLimits, PI_CONFIG_DIR_ENV, PiSyncError,
 };
 
 include!("tests/listing.rs");

@@ -7,7 +7,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -47,9 +47,31 @@ pub trait ProxyGet {
     fn get(
         &self,
         url: &str,
-        authorization: &SecretString,
+        headers: &[(String, SecretString)],
         timeout: Duration,
     ) -> Result<ProxyResponse, io::Error>;
+}
+
+// LiteLLM sends {"Authorization": f"Bearer {api_key}", **headers}, so an extra Authorization replaces the bearer value
+pub(crate) fn request_headers(
+    api_key: &SecretString,
+    extra_headers: &[(&str, &str)],
+) -> Vec<(String, SecretString)> {
+    let mut headers = vec![(
+        "Authorization".to_owned(),
+        SecretString::from(format!("Bearer {}", api_key.expose_secret())),
+    )];
+    for &(name, value) in extra_headers {
+        let secret = SecretString::from(value.to_owned());
+        match headers
+            .iter_mut()
+            .find(|(existing, _value)| existing.as_str() == name)
+        {
+            Some((_name, existing)) => *existing = secret,
+            None => headers.push((name.to_owned(), secret)),
+        }
+    }
+    headers
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]

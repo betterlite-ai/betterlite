@@ -1,6 +1,6 @@
 fn listing_failure(text: &str) -> PiSyncError {
     let get = ScriptedGet::new(vec![body(200, text)]);
-    fetch_model_listing(BASE_URL, &api_key(), &get).unwrap_err()
+    fetch_model_listing(BASE_URL, &api_key(), &get, &[]).unwrap_err()
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn unique_mappings_treats_a_missing_source_model_as_the_id() {
         200,
         r#"{"data":[{"id":"a"},{"id":"a","source_model":"a"}]}"#,
     )]);
-    let models = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap();
+    let models = fetch_model_listing(BASE_URL, &api_key(), &get, &[]).unwrap();
     assert_eq!(models.len(), 2);
 }
 
@@ -45,7 +45,7 @@ fn unique_mappings_allows_one_source_model_for_different_ids() {
         200,
         r#"{"data":[{"id":"a","source_model":"x"},{"id":"b","source_model":"x"}]}"#,
     )]);
-    let models = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap();
+    let models = fetch_model_listing(BASE_URL, &api_key(), &get, &[]).unwrap();
     assert_eq!(models.len(), 2);
 }
 
@@ -55,7 +55,7 @@ fn unique_mappings_dedupes_identical_entries_before_counting() {
         200,
         r#"{"data":[{"id":"a","source_model":"x"},{"id":"a","source_model":"x"}]}"#,
     )]);
-    let models = fetch_model_listing(BASE_URL, &api_key(), &get).unwrap();
+    let models = fetch_model_listing(BASE_URL, &api_key(), &get, &[]).unwrap();
     assert_eq!(
         models,
         vec![ListedModel {

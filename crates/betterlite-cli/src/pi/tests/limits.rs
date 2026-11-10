@@ -21,8 +21,11 @@ fn failure_classification_limits_read_model_group_windows() {
     );
     let request = get.requests().pop().unwrap();
     assert_eq!(request.url, "https://proxy.test/model_group/info");
-    assert_eq!(request.authorization, format!("Bearer {API_KEY}"));
-    assert_eq!(request.timeout, FETCH_TIMEOUT);
+    assert_eq!(
+        request.headers,
+        vec![("Authorization".to_owned(), format!("Bearer {API_KEY}"))]
+    );
+    assert_eq!(request.timeout, Duration::from_secs(10));
 }
 
 #[test]

@@ -1,7 +1,14 @@
 #[test]
 fn json_path_uses_the_pi_coding_agent_dir() {
     let directory = TempDir::new().unwrap();
-    let environment = FakeEnvironment::with_override(directory.path());
+    let environment = FakeEnvironment {
+        variables: BTreeMap::from([(
+            "PI_CODING_AGENT_DIR".to_owned(),
+            directory.path().to_str().unwrap().to_owned(),
+        )]),
+        home: None,
+    };
+    assert_eq!(PI_CONFIG_DIR_ENV, "PI_CODING_AGENT_DIR");
     assert_eq!(
         models_json_path(&environment),
         Some(directory.path().join("models.json"))
@@ -248,7 +255,7 @@ fn atomic_write_replaces_an_existing_litellm_provider() {
     let path = directory.path().join("models.json");
     fs::write(
         &path,
-        r#"{"providers":{"litellm":{"baseUrl":"https://old.test/v1","api":"legacy"},"other":{}}}"#,
+        r#"{"providers":{"litellm":{"baseUrl":"https://old.test/v1","api":"legacy","headers":{"x":"y"}},"other":{}}}"#,
     )
     .unwrap();
     sync_models_json(
@@ -271,6 +278,8 @@ fn atomic_write_replaces_an_existing_litellm_provider() {
         document.pointer("/providers/litellm/api").unwrap().as_str(),
         Some("openai-completions")
     );
+    // A merge into the old entry would keep this stale key and pi would keep sending it
+    assert!(document.pointer("/providers/litellm/headers").is_none());
     assert!(document.pointer("/providers/other").is_some());
 }
 

@@ -31,7 +31,7 @@ pub(super) fn body(status: u16, body: &str) -> GetAnswer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecordedRequest {
     pub(super) url: String,
-    pub(super) authorization: String,
+    pub(super) headers: Vec<(String, String)>,
     pub(super) timeout: Duration,
 }
 
@@ -76,12 +76,15 @@ impl ProxyGet for ScriptedGet {
     fn get(
         &self,
         url: &str,
-        authorization: &SecretString,
+        headers: &[(String, SecretString)],
         timeout: Duration,
     ) -> Result<ProxyResponse, io::Error> {
         self.record(RecordedRequest {
             url: url.to_owned(),
-            authorization: authorization.expose_secret().to_owned(),
+            headers: headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+                .collect(),
             timeout,
         });
         match self.next_answer() {

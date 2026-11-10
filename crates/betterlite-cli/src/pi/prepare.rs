@@ -21,7 +21,7 @@ pub fn prepare_pi(
     api_key: &SecretString,
     context: &mut PreparePiContext<'_>,
 ) -> Result<Vec<String>, PiSyncError> {
-    let model_ids = match fetch_model_ids(base_url, api_key, context.get) {
+    let model_ids = match fetch_model_ids(base_url, api_key, context.get, &[]) {
         Ok(model_ids) => model_ids,
         Err(PiSyncError::NoModels) => return Err(PiSyncError::NothingToRun),
         Err(error) => return Err(error),
