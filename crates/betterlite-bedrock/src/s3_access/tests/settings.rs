@@ -1,6 +1,8 @@
 use secrecy::ExposeSecret as _;
 
-use crate::s3_access::{S3Setting, S3SettingSources, SettingMap, SettingValue, resolve_s3_setting};
+use crate::s3_access::settings::{
+    S3Setting, S3SettingSources, SettingMap, SettingValue, resolve_s3_setting,
+};
 
 use super::support::{environment, secrets};
 

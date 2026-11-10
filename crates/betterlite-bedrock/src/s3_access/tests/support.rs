@@ -18,9 +18,10 @@ use secrecy::SecretString;
 
 use crate::aws_settings::credential_cache::CredentialCache;
 use crate::bedrock_settings::{BedrockError, ResponseBody};
+use crate::s3_access::managed::ManagedObjectError;
+use crate::s3_access::settings::{SettingMap, SettingValue};
 use crate::s3_access::{
-    ManagedObjectError, S3AccessError, S3AccessParams, SettingMap, SettingValue,
-    TrustedModelCredentials, TrustedValue, frozen_mapping,
+    S3AccessError, S3AccessParams, TrustedModelCredentials, TrustedValue, frozen_mapping,
 };
 
 pub(super) struct NoOidc;

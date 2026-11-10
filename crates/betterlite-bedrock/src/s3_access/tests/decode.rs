@@ -1,6 +1,7 @@
 use rstest::rstest;
 
-use crate::s3_access::{MANAGED_FILE_ID_ERROR, S3AccessError, decode_managed_file_id};
+use crate::s3_access::decode::decode_managed_file_id;
+use crate::s3_access::{MANAGED_FILE_ID_ERROR, S3AccessError};
 
 use super::fixtures::{
     INVALID_UTF8_FILE_ID, MANAGED_FILE_ID, MANAGED_OBJECT, MARKER_SEMICOLON_FILE_ID,

@@ -5,11 +5,16 @@ use betterlite_context::cloud_storage::CloudStorageError;
 use secrecy::ExposeSecret as _;
 
 use crate::aws_settings::AUTHENTICATION_PARAMS;
+use crate::s3_access::decode::decode_managed_file_id;
+use crate::s3_access::handler::{AwsBase, BatchFiles, BedrockFilesHandler};
+use crate::s3_access::managed::{
+    ManagedObjectError, resolve_managed_s3_object, validate_configured_file_id,
+};
+use crate::s3_access::models::{bedrock_model_id, parse_s3_uri};
+use crate::s3_access::settings::{S3Setting, S3SettingSources, resolve_s3_setting};
 use crate::s3_access::{
-    AwsBase, BatchFiles, BedrockFilesHandler, ManagedObjectError, S3AccessError, S3AccessParams,
-    S3Setting, S3SettingSources, TrustedValue, allow_legacy_cloud_file_ids, bedrock_model_id,
-    configured_bucket_name, configured_bucket_names, decode_managed_file_id, frozen_mapping,
-    parse_s3_uri, resolve_managed_s3_object, resolve_s3_setting, validate_configured_file_id,
+    S3AccessError, S3AccessParams, TrustedValue, allow_legacy_cloud_file_ids,
+    configured_bucket_name, configured_bucket_names, frozen_mapping,
 };
 
 use super::fixtures::{
@@ -354,6 +359,7 @@ fn s3_model_helpers() {
     let batch = BatchFiles {
         base: AwsBase {
             credential_cache: Arc::clone(&shared),
+            authentication_params: &AUTHENTICATION_PARAMS,
         },
     };
     assert!(Arc::ptr_eq(&batch.base.credential_cache, &shared));
@@ -393,6 +399,7 @@ fn files_handler_initialization() {
     let handler = BedrockFilesHandler {
         base: AwsBase {
             credential_cache: Arc::clone(&shared),
+            authentication_params: &AUTHENTICATION_PARAMS,
         },
         client: client(),
     };

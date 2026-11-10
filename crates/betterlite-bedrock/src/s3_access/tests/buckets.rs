@@ -1,11 +1,14 @@
 use betterlite_context::cloud_storage::CloudStorageError;
 use rstest::rstest;
 
+use crate::s3_access::decode::decode_managed_file_id;
+use crate::s3_access::managed::{
+    ManagedObjectError, resolve_managed_s3_object, validate_configured_file_id,
+};
 use crate::s3_access::{
-    MANAGED_FILE_ID_ERROR, ManagedObjectError, S3_BUCKET_REQUIRED_ERROR, S3AccessError,
-    S3AccessParams, TrustedModelCredentials, TrustedValue, allow_legacy_cloud_file_ids,
-    configured_bucket_name, configured_bucket_names, decode_managed_file_id, frozen_mapping,
-    resolve_managed_s3_object, validate_configured_file_id,
+    MANAGED_FILE_ID_ERROR, S3_BUCKET_REQUIRED_ERROR, S3AccessError, S3AccessParams,
+    TrustedModelCredentials, TrustedValue, allow_legacy_cloud_file_ids, configured_bucket_name,
+    configured_bucket_names, frozen_mapping,
 };
 
 use super::support::{assert_bedrock_rejection, environment, params, store};
@@ -263,10 +266,14 @@ fn legacy_mode_relaxes_only_the_managed_name_prefix() {
 fn every_bucket_before_the_last_is_tried_and_the_last_error_wins() {
     let buckets = [String::from("other"), String::from("configured/prefix")];
     assert_eq!(
-        validate_configured_file_id("s3://configured/litellm-batch-outputs/x", &buckets, false),
+        validate_configured_file_id(
+            "s3://configured/prefix/litellm-batch-outputs/x",
+            &buckets,
+            false
+        ),
         Ok((
             "configured".to_owned(),
-            "litellm-batch-outputs/x".to_owned()
+            "prefix/litellm-batch-outputs/x".to_owned()
         ))
     );
     assert_eq!(

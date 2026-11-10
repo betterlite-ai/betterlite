@@ -12,11 +12,12 @@ use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
 
 use crate::aws_settings::AUTHENTICATION_PARAMS;
-use crate::s3_access::{
-    AwsBase, BatchFiles, BedrockFilesHandler, S3Setting, S3SettingSources, SettingMap,
-    TrustedValue, allow_legacy_cloud_file_ids, configured_bucket_name, decode_managed_file_id,
-    invoke_route_model, resolve_managed_s3_object, resolve_s3_setting, strip_llm_routing_prefix,
-};
+use crate::s3_access::decode::decode_managed_file_id;
+use crate::s3_access::handler::{AwsBase, BatchFiles, BedrockFilesHandler};
+use crate::s3_access::managed::resolve_managed_s3_object;
+use crate::s3_access::models::{invoke_route_model, strip_llm_routing_prefix};
+use crate::s3_access::settings::{S3Setting, S3SettingSources, SettingMap, resolve_s3_setting};
+use crate::s3_access::{TrustedValue, allow_legacy_cloud_file_ids, configured_bucket_name};
 
 use super::fixtures::{MANAGED_FILE_ID, MANAGED_OBJECT};
 use super::support::{
@@ -29,6 +30,7 @@ async fn handler_holds_the_base_and_the_pooled_client() {
     let handler = BedrockFilesHandler {
         base: AwsBase {
             credential_cache: Arc::clone(&shared),
+            authentication_params: &AUTHENTICATION_PARAMS,
         },
         client: client(),
     };
@@ -45,6 +47,7 @@ async fn handler_holds_the_base_and_the_pooled_client() {
     let batch = BatchFiles {
         base: AwsBase {
             credential_cache: Arc::clone(&shared),
+            authentication_params: &AUTHENTICATION_PARAMS,
         },
     };
     assert!(Arc::ptr_eq(&batch.base.credential_cache, &shared));
