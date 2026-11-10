@@ -108,7 +108,6 @@ fn distributed_detail(kind: DetailKind, value: Json, count: usize, idx: usize) -
     }
 }
 
-// pydantic accepts an integral float for a declared int field and turns it into an int before the split.
 fn exact_integer(number: &Number) -> Option<i128> {
     if let Some(value) = number.as_i128() {
         return Some(value);
@@ -153,7 +152,6 @@ fn distributed_float(value: Json, items: i128) -> Json {
     value
 }
 
-// Fields outside the wrapper's declarations keep their json type, so an extra int divides and an extra float scales.
 fn distributed_value(value: Json, items: i128, index: i128) -> Option<Json> {
     let Json::Number(number) = value else {
         return Some(value);
