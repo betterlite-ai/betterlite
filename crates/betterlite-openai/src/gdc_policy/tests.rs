@@ -535,6 +535,9 @@ fn a_terminal_newline_identifier_reaches_the_url() {
 #[case::ipv_future("https://[v1.foo]:443/x", "https://[v1.foo]:443")]
 #[case::scoped_ipv6("https://[fe80::1%25eth0]:443/x", "https://[fe80::1%25eth0]:443")]
 #[case::scoped_ipv6_without_encoding("https://[fe80::1%eth0]/x", "https://[fe80::1%eth0]")]
+#[case::brackets_in_userinfo("https://u[]@v1.x", "https://u[]@v1.x")]
+#[case::brackets_in_userinfo_with_port("https://u[x]@v1.x:443/p", "https://u[x]@v1.x:443")]
+#[case::nfkc_clean("https://gdc.ex\u{e9}mple", "https://gdc.ex\u{e9}mple")]
 fn audience_is_the_scheme_and_netloc_of_the_original_base(
     #[case] base: &str,
     #[case] expected: &str,
@@ -553,6 +556,9 @@ fn audience_is_the_scheme_and_netloc_of_the_original_base(
 #[case::empty_ipv_future_address("https://[v1.]/x")]
 #[case::empty_scope_id("https://[fe80::1%]/x")]
 #[case::scope_with_a_percent("https://[fe80::1%eth0%x]/x")]
+#[case::brackets_in_userinfo_for_a_non_ip_host("https://u[]@example.com")]
+#[case::nfkc_reintroduces_a_slash("https://gdc.example\u{2100}")]
+#[case::nfkc_reintroduces_a_fullwidth_slash("https://gdc\u{ff0f}example")]
 fn audience_rejects_what_urlsplit_rejects(#[case] base: &str) {
     let error = audience(base).unwrap_err();
     assert!(matches!(&error, GdcPolicyError::InvalidBase));

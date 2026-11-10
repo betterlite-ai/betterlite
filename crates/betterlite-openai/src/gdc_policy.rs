@@ -1,10 +1,9 @@
-use std::net::Ipv6Addr;
-
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::gdc_settings::{BoolOrString, CallSettings, GlobalSettings};
 use betterlite_env::flag;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_models::provider_defaults_a::url;
 use betterlite_prompts::arguments::json::{Json, Object};
 use thiserror::Error;
 
@@ -137,33 +136,18 @@ pub fn complete_url(api_base: Option<&str>, call: &CallSettings, global: &Global
 
 #[rustfmt::skip]
 pub fn audience(api_base: &str) -> Result<String, GdcPolicyError> {
-    // urlsplit strips leading C0 controls and spaces, then removes tab, carriage return and newline anywhere
-    let cleaned = with_scheme(api_base).trim_start_matches(|character: char| character <= '\u{20}').replace(['\t', '\r', '\n'], "");
-    let (scheme, rest) = split_scheme(&cleaned);
-    let netloc = rest.strip_prefix("//").and_then(|authority| authority.split(['/', '?', '#']).next()).unwrap_or_default();
-    if !netloc_is_splittable(netloc) {
+    let Ok(parts) = url::parse(&with_scheme(api_base)) else {
         return Err(GdcPolicyError::InvalidBase);
+    };
+    let hostinfo = parts.netloc.rsplit_once('@').map_or(parts.netloc.as_str(), |(_, after)| after);
+    // urlsplit runs its bracketed-host check on the host after the userinfo even when no bracket follows it
+    if parts.netloc.contains('[') && !hostinfo.contains('[') {
+        let host = hostinfo.split_once(':').map_or(hostinfo, |(host, _)| host);
+        if url::parse(&format!("//[{host}]")).is_err() {
+            return Err(GdcPolicyError::InvalidBase);
+        }
     }
-    Ok(format!("{}://{netloc}", scheme.unwrap_or_default()))
-}
-
-#[rustfmt::skip]
-fn netloc_is_splittable(netloc: &str) -> bool {
-    if netloc.contains('[') != netloc.contains(']') { return false; }
-    if !netloc.contains('[') { return true; }
-    let after_userinfo = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
-    let Some((before, bracketed)) = after_userinfo.split_once('[') else { return false };
-    let Some((host, port)) = bracketed.split_once(']') else { return false };
-    before.is_empty() && (port.is_empty() || port.starts_with(':')) && bracketed_host_is_valid(host)
-}
-
-#[rustfmt::skip]
-fn bracketed_host_is_valid(host: &str) -> bool {
-    if let Some(future) = host.strip_prefix('v') {
-        let Some((version, address)) = future.split_once('.') else { return false };
-        return !version.is_empty() && version.chars().all(|character| character.is_ascii_hexdigit()) && !address.is_empty();
-    }
-    host.split_once('%').map_or_else(|| host.parse::<Ipv6Addr>().is_ok(), |(address, scope)| !scope.is_empty() && !scope.contains(['%', '/']) && address.parse::<Ipv6Addr>().is_ok())
+    Ok(format!("{}://{}", parts.scheme, parts.netloc))
 }
 
 #[must_use]
@@ -209,15 +193,4 @@ fn project_from_base(api_base: &str) -> Option<String> {
         let end = tail.find('/').unwrap_or(tail.len());
         tail.get(..end).filter(|project| !project.is_empty()).map(str::to_owned)
     })
-}
-
-#[rustfmt::skip]
-fn split_scheme(url: &str) -> (Option<String>, &str) {
-    let Some((candidate, rest)) = url.split_once(':') else {
-        return (None, url);
-    };
-    let mut characters = candidate.chars();
-    let valid = characters.next().is_some_and(|first| first.is_ascii_alphabetic())
-        && characters.all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.'));
-    if valid { (Some(candidate.to_lowercase()), rest) } else { (None, url) }
 }

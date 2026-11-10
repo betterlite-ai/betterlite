@@ -111,7 +111,9 @@ fn an_audience_keeps_only_the_scheme_and_netloc() {
             {"ok": true, "value": "https://HTTP:"},
             {"ok": true, "value": "https://user:pw@host:8080"},
             {"ok": false, "status": 500_i32},
-            {"ok": true, "value": "https://[fe80::1%25eth0]:443"}
+            {"ok": true, "value": "https://[fe80::1%25eth0]:443"},
+            {"ok": true, "value": "https://u[]@v1.x"},
+            {"ok": false, "status": 500_i32}
         ])
     );
 }
