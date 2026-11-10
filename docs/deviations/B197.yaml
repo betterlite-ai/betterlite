@@ -1,0 +1,44 @@
+task: B197
+deviations:
+  - what: >-
+      Request-path counting uses the default image token count for a remote image, or refuses a remote
+      image that needs exact dimensions unless the caller chose that default-count mode; exact counting
+      never fetches a request-supplied URL.
+    why: >-
+      B009 and the bounded-inputs rule forbid fetching request-supplied media URLs. A caller that needs
+      the exact count passes the image bytes as a data URL.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L248
+  - what: >-
+      Open, waiting for Max: keep no remote image fetches with default-count request behavior, or share
+      SSRF-checked remote dimensions with the B009/B183 downloader.
+    why: >-
+      The public helper defaults use_default_image_token_count=false and may fetch; no new downloader is
+      built pending the shared decision.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
+  - what: >-
+      Content nested deeper than 32 levels is a typed depth error, or the fallback token count for the
+      enclosing list, where LiteLLM recurses until Python's recursion limit raises.
+    why: >-
+      Bounded-inputs caps recursion over untrusted input; no working setup nests message content 32
+      levels deep.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L869-L951
+  - what: >-
+      Token counts and image counts are unsigned 64-bit values, so a negative fallback count or a count
+      past 2^64 is a typed error or the fallback count, where Python's integers take either value.
+    why: >-
+      Counts are machine words in betterlite, and no working setup counts a negative number of tokens
+      or near 2^64.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L131
+  - what: >-
+      A huggingface base_model missing from the catalog keeps the caller's max_tokens with the
+      UnknownMaxOutputTokens warning, where LiteLLM fetches the repo's config.json and clamps max_tokens
+      to its max_position_embeddings.
+    why: >-
+      Bounded-inputs forbids fetching a URL built from a request-supplied hf_model_name, so betterlite
+      never calls Hugging Face.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5484-L5486

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-soniox
+call:
+  provider_defaults_a:
+    provider: soniox
+    model: any-model
+env: {}
+compare: {ignore: []}
