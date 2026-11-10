@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,8 @@ use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
 use super::baseline::{BaselineError, BaselineInputs, baseline_current_schema};
+use super::budget::{MAX_MIGRATE_DEPLOY_ATTEMPTS, MigrateAttemptBudget};
+use super::catalog::{get_migration_names, max_migration_timestamp, migration_timestamp};
 use super::environment::{migration_environment, prisma_schema_param};
 use super::fixtures::{
     DrawingJitter, HistorySource, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase,
