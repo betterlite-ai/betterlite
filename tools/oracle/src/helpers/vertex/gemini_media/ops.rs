@@ -1,3 +1,5 @@
+use crate::compare::helper::ErrorCode;
+use crate::helpers::{HelperError, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_vertex::gemini_media::equivalence::part_exists;
@@ -8,8 +10,6 @@ use betterlite_vertex::gemini_media::process::{MediaRequest, process_media};
 use betterlite_vertex::gemini_media::resolution::{convert_detail, max_media_resolution};
 use serde::Deserialize;
 use serde_json::json;
-use crate::compare::helper::ErrorCode;
-use crate::helpers::{HelperError, HelperResult};
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Call {
@@ -47,12 +47,17 @@ pub(crate) struct Case {
 pub(super) fn run(input: &Input) -> HelperResult {
     match input.call {
         Call::MimeAlias => {
-            let aliases: Vec<String> = input.values.iter().map(|value| apply_mime_alias(value)).collect();
+            let aliases: Vec<String> = input
+                .values
+                .iter()
+                .map(|value| apply_mime_alias(value))
+                .collect();
             Ok(json!({"values": aliases}))
         }
-        Call::ExplicitGcsFormat | Call::FilesUriWithoutMime | Call::HttpsPassthrough | Call::VideoOffsets => {
-            parts(&input.cases)
-        }
+        Call::ExplicitGcsFormat
+        | Call::FilesUriWithoutMime
+        | Call::HttpsPassthrough
+        | Call::VideoOffsets => parts(&input.cases),
         Call::ResolutionMaximum => Ok(json!({
             "maximum": max_media_resolution(&input.messages),
         })),
@@ -76,7 +81,9 @@ fn parts(cases: &[Case]) -> HelperResult {
                 status: Some(error.status()),
                 error_type: Some(Some(error.error_type().to_owned())),
                 param: Some(error.param().map(str::to_owned)),
-                code: error.code().map(|code| Some(ErrorCode::Text(code.to_owned()))),
+                code: error
+                    .code()
+                    .map(|code| Some(ErrorCode::Text(code.to_owned()))),
                 message: error.to_string(),
             })
         })?);

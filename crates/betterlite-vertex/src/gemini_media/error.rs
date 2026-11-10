@@ -1,9 +1,19 @@
 use betterlite_openai::api::file_type_records::FileTypeError;
 use thiserror::Error;
+const INVALID_REQUEST: &str = "invalid_request_error";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaField {
     ImageUrl,
     File,
+}
+impl MediaField {
+    #[must_use]
+    pub const fn param(self) -> &'static str {
+        match self {
+            Self::ImageUrl => "image_url",
+            Self::File => "file",
+        }
+    }
 }
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MediaError {
@@ -32,23 +42,22 @@ impl MediaError {
             Self::UnsupportedMediaType(..)
             | Self::RemoteMediaRequired(..)
             | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => "invalid_request_error",
+            | Self::InvalidInlineData(..) => INVALID_REQUEST,
         }
     }
     #[must_use]
     pub const fn param(&self) -> Option<&'static str> {
-        match self {
-            Self::RemoteMediaRequired(MediaField::ImageUrl) => Some("image_url"),
-            Self::RemoteMediaRequired(MediaField::File) => Some("file"),
-            Self::UnsupportedMediaType(..)
-            | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => None,
+        if let Self::RemoteMediaRequired(field) = self {
+            return Some(field.param());
         }
+        None
     }
     #[must_use]
     pub const fn code(&self) -> Option<&'static str> {
         match self {
-            Self::RemoteMediaRequired(..) => Some("unsupported_remote_media"),
+            Self::RemoteMediaRequired(MediaField::ImageUrl | MediaField::File) => {
+                Some("unsupported_remote_media")
+            }
             Self::UnsupportedMediaType(..)
             | Self::InvalidMedia(..)
             | Self::InvalidInlineData(..) => None,
