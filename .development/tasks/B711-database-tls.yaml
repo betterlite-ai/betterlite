@@ -72,6 +72,7 @@ description: >-
   70 adapters and 35 wiring, 715 within 800. Split source by translation, options and pool policy.
 scope:
   paths:
+    - crates/betterlite-db/src/database_url_policy/url_codec.rs
     - crates/betterlite-db/src/database_tls.rs
     - crates/betterlite-db/src/database_tls/**
     - crates/betterlite-db/Cargo.toml
