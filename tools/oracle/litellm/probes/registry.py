@@ -20,6 +20,7 @@ from probes.auto_router_preview import AutoRouterPreview
 from probes.auto_router_read_api import AutoRouterReadApi
 from probes.auto_router_rollups import AutoRouterRollups
 from probes.automatic_router_pipeline import AutomaticRouterPipeline
+from probes.batch import Batch
 from probes.benchmark_aggregates import BenchmarkAggregates
 from probes.budget_windows import BudgetWindows
 from probes.cache_cost_routing import CacheCostRouting
@@ -153,6 +154,7 @@ OPERATIONS: dict[str, type[Operation]] = {
     "auto_router_preview": AutoRouterPreview,
     "auto_router_read_api": AutoRouterReadApi,
     "auto_router_rollups": AutoRouterRollups,
+    "batch": Batch,
     "automatic_router_pipeline": AutomaticRouterPipeline,
     "benchmark_aggregates": BenchmarkAggregates,
     "budget_windows": BudgetWindows,
