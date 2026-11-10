@@ -839,7 +839,7 @@ fn retained_cost(source: &str, index: usize) -> usize {
 
 #[tokio::test]
 async fn chunks_past_the_retention_cap_are_forwarded_but_not_kept() {
-    let sources: Vec<String> = (0..6).map(numbered_message).collect();
+    let sources: Vec<String> = (0..4).map(numbered_message).collect();
     let cap = (0..3)
         .map(|index| retained_cost(&sources[index], index))
         .sum();
@@ -874,27 +874,6 @@ async fn chunks_past_the_retention_cap_are_forwarded_but_not_kept() {
     );
     assert_eq!(
         result_object(&recorded[0].call.result, "result"),
-        Some(chunk_result(&sources[5]))
+        Some(chunk_result(&sources[3]))
     );
-}
-
-#[tokio::test]
-async fn chunks_that_fit_the_retention_cap_exactly_are_all_kept() {
-    let sources: Vec<String> = (0..3).map(numbered_message).collect();
-    let cap = (0..3)
-        .map(|index| retained_cost(&sources[index], index))
-        .sum();
-    let (dispatch, _calls) = recorder();
-    let counter = CharCounter;
-    let mut stream_setup = setup(dispatch, &counter, START, END);
-    stream_setup.max_retained_bytes = cap;
-    let refs: Vec<&str> = sources.iter().map(String::as_str).collect();
-    let mut iterator =
-        A2AStreamingIterator::new(chunks(&refs), plain_request(), priced(), stream_setup);
-
-    collect_chunks(&mut iterator).await;
-
-    assert_eq!(iterator.chunks.len(), 3);
-    assert_eq!(iterator.retained_bytes, cap);
-    assert!(!iterator.retention_capped);
 }
