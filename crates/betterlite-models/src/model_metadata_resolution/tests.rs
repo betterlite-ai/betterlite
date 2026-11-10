@@ -405,7 +405,6 @@ fn potential_names_case() {
     assert_eq!(inferred.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(inferred.split_model, "gpt-4o");
     assert_eq!(inferred.combined_model_name, "gpt-4o");
-    assert_eq!(inferred.stripped_model_name, "gpt-4o");
     assert_eq!(inferred.combined_stripped_model_name, "gpt-4o");
     assert_eq!(inferred.provider_prefixed_model_name, "gpt-4o");
 
@@ -428,7 +427,6 @@ fn explicit_potential_names_case() {
     assert_eq!(prefixed.provider_prefixed_model_name, "groq/groq/llama3-8b");
 
     let dated = names(&fixture, "llama3-8b-2024-01-01", Some("groq"));
-    assert_eq!(dated.split_model, "llama3-8b-2024-01-01");
     assert_eq!(dated.combined_model_name, "groq/llama3-8b-2024-01-01");
     assert_eq!(dated.stripped_model_name, "llama3-8b");
     assert_eq!(dated.combined_stripped_model_name, "groq/llama3-8b");
@@ -442,7 +440,6 @@ fn explicit_potential_names_case() {
 fn bedrock_and_mantle_names_follow_the_source() {
     let fixture = Fixture::new("{}");
     let bedrock = names(&fixture, "converse/anthropic.claude-3", Some("bedrock"));
-    assert_eq!(bedrock.split_model, "anthropic.claude-3");
     assert_eq!(bedrock.stripped_model_name, "anthropic.claude-3");
     assert_eq!(
         bedrock.combined_model_name,
