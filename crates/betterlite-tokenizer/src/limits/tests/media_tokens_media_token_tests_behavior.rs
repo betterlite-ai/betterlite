@@ -10,6 +10,8 @@ const SHARED_CONTEXT: &str = "ai21.j2-mid-v1";
 const NO_OUTPUT_LIMIT: &str = "databricks/databricks-grok-4-6";
 const NO_INPUT_LIMIT: &str = "gemini/gemini-gemma-2-27b-it";
 const UNKNOWN: &str = "not-a-model";
+const UNKNOWN_PROVIDER: &str = "foo/gpt-3.5-turbo";
+const NESTED_UNKNOWN_PROVIDER: &str = "a/b/gpt-3.5-turbo";
 
 fn resolved(max_tokens: i64) -> Modified {
     Modified {
@@ -52,6 +54,8 @@ fn buffer(buffer_fraction: f64, buffer_minimum_tokens: f64) -> Settings {
 #[case::separate_output_limit_with_large_input((GPT35, GPT35), Some(5000), Some(5000), Settings::default(), resolved(4096))]
 #[case::separate_output_limit_keeps_a_fitting_limit((GPT4O, GPT4O), Some(1000), Some(0), Settings::default(), resolved(1000))]
 #[case::provider_prefixed_model_clamps((GPT35_PREFIXED, GPT35_PREFIXED), Some(5000), Some(0), Settings::default(), resolved(4096))]
+#[case::unknown_provider_prefix_keeps_the_limit((UNKNOWN_PROVIDER, UNKNOWN_PROVIDER), Some(5000), Some(0), Settings::default(), warned(5000, Warning::UnknownModel { model: UNKNOWN_PROVIDER.to_owned() }))]
+#[case::nested_unknown_provider_prefix_keeps_the_limit((NESTED_UNKNOWN_PROVIDER, NESTED_UNKNOWN_PROVIDER), Some(5000), Some(0), Settings::default(), warned(5000, Warning::UnknownModel { model: NESTED_UNKNOWN_PROVIDER.to_owned() }))]
 #[case::default_percentage_boundary((SHARED_CONTEXT, SHARED_CONTEXT), Some(8100), Some(100), buffer(0.29, 10.0), resolved(8063))]
 #[case::buffer_minimum_dominates((SHARED_CONTEXT, SHARED_CONTEXT), Some(8000), Some(1000), buffer(0.001, 50.0), resolved(7141))]
 #[case::buffer_minimum_truncates((SHARED_CONTEXT, SHARED_CONTEXT), Some(8180), Some(10), buffer(0.1, 10.9), resolved(8171))]

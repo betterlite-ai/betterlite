@@ -1,4 +1,9 @@
+use std::collections::BTreeSet;
+
 use betterlite_models::catalog::{CatalogEntry, ModelCatalog};
+use betterlite_models::identity::explicit_prefix::{
+    PrefixClassification, PrefixClassificationInput, classify_prefix,
+};
 use rust_decimal::prelude::ToPrimitive as _;
 
 mod tests;
@@ -119,14 +124,23 @@ fn model_limits(catalog: &ModelCatalog, models: Models<'_>) -> Result<ModelLimit
     })
 }
 
-// LiteLLM's get_model_info and get_max_tokens retry a provider-prefixed name without its first segment
+// LiteLLM's get_max_tokens retries without the prefix only when get_llm_provider accepts it
 fn catalog_entry<'catalog>(
     catalog: &'catalog ModelCatalog,
     name: &str,
 ) -> Option<&'catalog CatalogEntry> {
     lookup(catalog, name).or_else(|| {
-        let (_, stripped) = name.split_once('/')?;
-        lookup(catalog, stripped)
+        let configured_model_names = BTreeSet::new();
+        let classification = classify_prefix(&PrefixClassificationInput {
+            model: name,
+            custom_llm_provider: None,
+            configured_model_names: &configured_model_names,
+            catalog,
+        });
+        match classification {
+            PrefixClassification::ExplicitProvider { model, .. } => lookup(catalog, &model),
+            _ => None,
+        }
     })
 }
 
