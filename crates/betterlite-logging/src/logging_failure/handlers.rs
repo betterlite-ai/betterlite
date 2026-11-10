@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
-
 use betterlite_models::prompt_contracts::StandardCallbackDynamicParams;
 use indexmap::IndexMap;
 
@@ -135,9 +134,7 @@ pub async fn dispatch_failure_handlers(
     if deps.executor.enqueue_sync_failure(job) == SyncAdmission::Accepted {
         has_run_logging(call.state, LoggingEvent::SyncFailure);
     } else {
-        tracing::warn!(
-            "the queued sync failure callbacks were dropped: the callback queue is full"
-        );
+        tracing::warn!("the queued sync failure callbacks were dropped: the queue is full");
     }
 }
 
