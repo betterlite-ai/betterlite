@@ -1,6 +1,7 @@
 #![cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use http::HeaderMap;
 use http::header::CONTENT_TYPE;
@@ -13,6 +14,11 @@ use opentelemetry_sdk::logs::{SdkLoggerProvider, SimpleLogProcessor};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
+use temp_env::with_vars;
+use tokio::io::AsyncReadExt as _;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::LegacyExporterBuilder;
 use crate::otel::legacy_exporters::error::LegacyExporterError;
@@ -216,7 +222,7 @@ fn otlp_http_plan_posts_protobuf_for_the_json_http_name() {
 #[case::otlp_grpc(named("otlp_grpc"))]
 fn an_otlp_grpc_plan_builds_the_grpc_exporter(#[case] exporter: Exporter) {
     let recorder = Arc::new(LastRequest::default());
-    // Tonic validates the endpoint at build, so only a plan that reached the gRPC builder fails here.
+    // A console sink ignores the endpoint; both OTLP builders reject this malformed one at build.
     let plan = span_processor_plan(
         &config(exporter, Some("http://[invalid"), None),
         None,
@@ -226,6 +232,51 @@ fn an_otlp_grpc_plan_builds_the_grpc_exporter(#[case] exporter: Exporter) {
     .expect("plan");
     let error = builder(&recorder).span_processor(&plan).unwrap_err();
     assert!(matches!(error, LegacyExporterError::Exporter(_)));
+}
+
+#[tokio::test]
+async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    let recorder = Arc::new(LastRequest::default());
+    let plan = span_processor_plan(
+        &config(named("grpc"), Some(&endpoint), None),
+        None,
+        None,
+        None,
+    )
+    .expect("plan");
+    // The exporter reads this at build, so the flush gives up shortly after the connection closes.
+    let processor = with_vars(
+        [("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", Some("1000"))],
+        || builder(&recorder).span_processor(&plan).expect("processor"),
+    );
+    let provider = SdkTracerProvider::builder()
+        .with_span_processor(processor)
+        .build();
+    provider.tracer("build-test").start("operation").end();
+    let mut flushing = JoinSet::new();
+    let _abort = flushing.spawn_blocking(move || provider.force_flush());
+    let (mut stream, _peer) = timeout(Duration::from_secs(10), listener.accept())
+        .await
+        .expect("the gRPC exporter must connect")
+        .expect("accept");
+    let mut preface = [0_u8; 24];
+    timeout(Duration::from_secs(10), stream.read_exact(&mut preface))
+        .await
+        .expect("the HTTP/2 preface must arrive")
+        .expect("read");
+    assert_eq!(&preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+    assert!(
+        !recorder.recorded(),
+        "the gRPC plan must not send through the HTTP client"
+    );
+    drop(stream);
+    let finished = timeout(Duration::from_secs(10), flushing.join_next()).await;
+    assert!(
+        matches!(finished, Ok(Some(Ok(_)))),
+        "the flush must end once the connection closes"
+    );
 }
 
 #[rstest]
