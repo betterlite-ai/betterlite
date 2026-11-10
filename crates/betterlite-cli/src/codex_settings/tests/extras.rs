@@ -504,3 +504,64 @@ async fn configure_through_a_symlink_updates_the_target() {
     let document = document_at(&alias);
     assert_eq!(string_at(&document, "model").as_deref(), Some("old"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configure_refuses_a_non_utf8_settings_path() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let home = TempDir::new().unwrap();
+    let settings = home
+        .path()
+        .join(OsString::from_vec(b"config-\xff.toml".to_vec()));
+    let error = configure_with(&settings, &PrivateFiles::default(), GATEWAY, KEY, MODEL)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CodexSettingsError::NonUtf8Path { .. }));
+    assert!(!settings.exists());
+    assert!(!codex_configure_state_path(&settings).unwrap().exists());
+}
+
+#[tokio::test]
+async fn configure_receipt_failure_discards_both_staged_files() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"old\"\n").unwrap();
+    let (files, journal) = journal_files();
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    journal.fail_replace(&state_path, 1);
+    let error = configure_with(&settings, &files, GATEWAY, KEY, MODEL)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CodexSettingsError::WriteReceipt { .. }));
+    assert_eq!(fs::read_to_string(&settings).unwrap(), "model = \"old\"\n");
+    assert!(!state_path.exists());
+    let resolved_parent = resolve_settings_path(&settings).unwrap();
+    let parent = resolved_parent.parent().unwrap();
+    let state_directory = parent.join(".litellm");
+    assert!(staging_files(&[parent, state_directory.as_path()]).is_empty());
+}
+
+#[tokio::test]
+async fn unconfigure_keeps_the_receipt_when_the_write_fails() {
+    let home = TempDir::new().unwrap();
+    let settings = home.path().join("config.toml");
+    fs::write(&settings, "model = \"old\"\n").unwrap();
+    configure_with(&settings, &PrivateFiles::default(), GATEWAY, KEY, MODEL)
+        .await
+        .unwrap();
+    let before = fs::read(&settings).unwrap();
+    let state_path = codex_configure_state_path(&settings).unwrap();
+    let (files, journal) = journal_files();
+    journal.fail_replace(&resolve_settings_path(&settings).unwrap(), 1);
+    let error = unconfigure_at(&settings, &files).await.unwrap_err();
+    assert!(matches!(error, CodexSettingsError::Undo { .. }));
+    assert_eq!(fs::read(&settings).unwrap(), before);
+    assert!(state_path.exists());
+    unconfigure_at(&settings, &PrivateFiles::default())
+        .await
+        .unwrap();
+    let document = document_at(&settings);
+    assert_eq!(string_at(&document, "model").as_deref(), Some("old"));
+}
