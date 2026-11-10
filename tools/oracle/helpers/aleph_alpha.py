@@ -203,7 +203,7 @@ def request_of(call: Object | None) -> Object:
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    if set(input_value) != FIELDS:
+    if frozenset(input_value) != FIELDS:
         raise ValueError(f"input fields must be {sorted(FIELDS)}")
     model = expect_text(input_value["model"])
     messages = expect_list(input_value["messages"])
