@@ -419,3 +419,14 @@ async fn bedrock_processor_behavior_tests_behavior_an_assistant_message_without_
         .unwrap();
     assert_eq!(converted, Vec::new());
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_control_only_text_block_is_blank() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"assistant","content":[{"type":"text","text":"\u001c"}]}]"#);
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(converted, Vec::new());
+}

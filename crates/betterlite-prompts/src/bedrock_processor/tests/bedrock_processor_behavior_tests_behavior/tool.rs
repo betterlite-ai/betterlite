@@ -151,6 +151,10 @@ async fn bedrock_processor_behavior_tests_behavior_a_tool_content_cache_control_
             ]}]"#
         )
     );
+    assert_eq!(
+        harness.cache.seen(),
+        vec![(json(r#"{"type":"ephemeral"}"#), None)]
+    );
 }
 
 #[tokio::test]

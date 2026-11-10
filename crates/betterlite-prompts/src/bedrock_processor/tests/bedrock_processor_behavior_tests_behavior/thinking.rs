@@ -172,3 +172,11 @@ fn bedrock_processor_behavior_tests_behavior_a_non_string_reasoning_signature_is
         ProcessorError::ReasoningSignatureNotText { block: 0 }
     ));
 }
+
+#[test]
+fn bedrock_processor_behavior_tests_behavior_empty_reasoning_text_is_kept() {
+    let mut parts = Vec::new();
+    let blocks = list(r#"[{"reasoningContent":{"reasoningText":{}}}]"#);
+    append_thinking_blocks(&blocks, &mut parts).unwrap();
+    assert_eq!(parts, blocks);
+}

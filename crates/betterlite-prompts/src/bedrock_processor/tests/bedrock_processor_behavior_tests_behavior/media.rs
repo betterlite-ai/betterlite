@@ -492,3 +492,31 @@ async fn bedrock_processor_behavior_tests_behavior_a_document_data_that_is_not_a
         ProcessorError::DocumentDataNotText { block: 0 }
     ));
 }
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_large_document_hashes_its_full_payload() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let data = "A".repeat(2000);
+    let messages = list(&format!(
+        r#"[{{"role":"user","content":[{{"type":"document","source":{{
+            "type":"base64","media_type":"application/pdf","data":"{data}"
+        }}}}]}}]"#
+    ));
+    let converted = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        converted,
+        list(&format!(
+            r#"[{{"role":"user","content":[
+                {{"document":{{
+                    "format":"pdf",
+                    "source":{{"bytes":"{data}"}},
+                    "name":"Document_52aba26af5dbf741_pdf"
+                }}}},
+                {{"text":"."}}
+            ]}}]"#
+        ))
+    );
+}
