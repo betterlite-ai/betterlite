@@ -94,6 +94,15 @@ fn an_unread_usage_key_still_makes_the_block_present() {
     assert!(!usage(None, None, None, None).is_present());
 }
 
+#[rstest]
+#[case::prompt(usage(Some(1), None, None, None))]
+#[case::completion(usage(None, Some(1), None, None))]
+#[case::total(usage(None, None, Some(1), None))]
+#[case::precached(usage(None, None, None, Some(1)))]
+fn any_single_counter_makes_the_block_present(#[case] counters: TokenUsage) {
+    assert!(counters.is_present());
+}
+
 #[test]
 fn a_prompt_counter_that_overflows_stays_at_the_largest_value() {
     let converted = convert_usage(&usage(Some(u64::MAX), None, None, Some(1)));

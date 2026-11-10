@@ -97,7 +97,8 @@ def reply_value(result: ModelResponse) -> Json:
         choices.append(
             {
                 **pick(choice, "index", "finish_reason", "provider_specific_fields"),
-                **pick(message, "role", "content"),
+                "role": message.get("role"),
+                "content": parse_arguments(message.get("content")),
                 "tool_calls": None
                 if calls is None
                 else [
@@ -162,6 +163,9 @@ def request(step: Object) -> Json:
                 stream=None,
             )
             body = TRANSFORM_REQUEST(model, messages, params, {}, headers)
+            for sent in items(body.get("messages")):
+                if sent.get("role") == "function":
+                    sent["content"] = parse_arguments(sent.get("content"))
         except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
             return failure(error)
     return {"ok": True, "url": url, "headers": headers, "body": body}

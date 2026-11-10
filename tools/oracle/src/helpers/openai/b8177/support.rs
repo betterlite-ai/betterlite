@@ -72,7 +72,7 @@ pub(crate) fn chat_reply_value(response: &ChatResponse) -> Value {
             json!({
                 "index": choice.index,
                 "role": choice.message.role,
-                "content": choice.message.content,
+                "content": choice.message.content.as_deref().map(parsed_text),
                 "tool_calls": choice
                     .message
                     .tool_calls
@@ -100,10 +100,42 @@ fn tool_call_value(call: &ToolCall) -> Value {
         "type": call.kind,
         "function": {
             "name": call.function.name,
-            "arguments": serde_json::from_str::<Value>(&call.function.arguments)
-                .unwrap_or_else(|_| Value::String(call.function.arguments.clone())),
+            "arguments": parsed_text(&call.function.arguments),
         },
     })
+}
+
+// LiteLLM writes JSON text with json.dumps spacing, so both helpers compare the parsed value
+fn parsed_text(text: &str) -> Value {
+    match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(_) => Value::String(text.to_owned()),
+    }
+}
+
+pub(crate) fn settled_body(mut body: Value) -> Value {
+    if let Some(Value::Array(messages)) = body.get_mut("messages") {
+        for message in messages {
+            if message.get("role").and_then(Value::as_str) != Some("function") {
+                continue;
+            }
+            if let Some(content) = message.get_mut("content")
+                && let Some(text) = content.as_str()
+            {
+                *content = parsed_text(text);
+            }
+        }
+    }
+    body
+}
+
+fn settled_tool_use(mut tool_use: Value) -> Value {
+    if let Some(arguments) = tool_use.pointer_mut("/function/arguments")
+        && let Some(text) = arguments.as_str()
+    {
+        *arguments = parsed_text(text);
+    }
+    tool_use
 }
 
 fn usage_value<Usage>(usage: &Usage) -> Value
@@ -122,7 +154,7 @@ where
 pub(crate) fn stream_chunk_value(chunk: &GenericChunk) -> Value {
     json!({
         "text": chunk.text,
-        "tool_use": chunk.tool_use,
+        "tool_use": settled_tool_use(json!(chunk.tool_use)),
         "is_finished": chunk.is_finished,
         "finish_reason": chunk.finish_reason,
         "usage": chunk.usage.as_ref().map(usage_value),
