@@ -1,0 +1,8 @@
+task: B1425
+deviations:
+  - what: An embedding request always carries Content-Type application/json, even when the caller passes an explicit headers map without it.
+    why: The shared transport sets the header for every JSON body, and a JSON endpoint that rejects a body without it is not a setup anyone relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/embedding/handler.py#L158
+  - what: An error answer whose body is not UTF-8 is reported as its own error, where LiteLLM decodes it with replacement characters.
+    why: Lossy text would hide a corrupt answer behind a made-up message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/embedding/handler.py#L68

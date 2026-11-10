@@ -1,0 +1,27 @@
+kind: helper
+name: vector-text-and-existing-placeholder-fields
+call:
+  spend_bodies:
+    function: vector_and_placeholder
+    store_bodies: false
+    vector_store:
+      - vector_store_search_response:
+          data:
+            - score: 0.5
+              content:
+                - {type: text, text: hidden, page: 2}
+                - {type: image, url: u}
+    litellm_params:
+      proxy_server_request:
+        body:
+          model: unsafe-model
+          metadata:
+            model_group: old-group
+            error_information:
+              error_message: unsafe-model failed
+              traceback: unsafe-model trace
+              error_class: BadRequest
+    model_group: new-group
+    raw_model: unsafe-model
+env: {}
+compare: {ignore: []}
