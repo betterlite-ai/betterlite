@@ -84,14 +84,6 @@ def _scalar(value: object) -> Json:
     return "object"
 
 
-def _encode(value: Json, name: str) -> Json:
-    try:
-        encoded = cast(Json, json.loads(json.dumps(value)))
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{name} is not valid JSON") from error
-    return encoded
-
-
 def _apply_catalog(value: Json) -> None:
     model_cost = cast("dict[str, Json]", litellm.model_cost)
     model_cost.clear()
@@ -348,9 +340,10 @@ def _execute(function: str, call: dict[str, Json]) -> Json:
 def _run_call(call: dict[str, Json]) -> Json:
     try:
         value = _execute(_string(call.get("function"), "function"), call)
+        encoded = cast(Json, json.loads(json.dumps(value)))
     except Exception as error:  # noqa: BLE001 - a rejected probe is part of the compared outcome
         return {"ok": False, "error": {"class": type(error).__name__}}
-    return {"ok": True, "value": _encode(value, "value")}
+    return {"ok": True, "value": encoded}
 
 
 def run(input_value: dict[str, Json]) -> Json:
