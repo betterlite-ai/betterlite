@@ -486,6 +486,44 @@ fn read_saved_setup_rejects_missing_model_key() {
 }
 
 #[test]
+fn read_saved_setup_wraps_validator_failure() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let document = profile_document("claude", &settings_text(&environment, Target::Claude), None)
+        .replace(
+            "\"base_url\":\"https://gateway.example.com\"",
+            "\"base_url\":\"https://gateway.example.com/\"",
+        );
+    write_profile(&environment, Target::Claude, &document);
+    assert!(matches!(
+        read_saved_setup(Target::Claude, &environment),
+        Err(Error::InvalidValues(Target::Claude, _, _))
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn read_saved_setup_wraps_resolution_failure() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    let first = home.path().join("first");
+    let second = home.path().join("second");
+    symlink(&second, &first).expect("the first link");
+    symlink(&first, &second).expect("the second link");
+    let settings = first.join("settings.json");
+    let document = profile_document(
+        "claude",
+        settings.to_str().expect("a UTF-8 settings path"),
+        None,
+    );
+    write_profile(&environment, Target::Claude, &document);
+    assert!(matches!(
+        read_saved_setup(Target::Claude, &environment),
+        Err(Error::InvalidPath(Target::Claude, _, _))
+    ));
+}
+
+#[test]
 fn read_saved_setup_error_names_unconfigure_forget() {
     let home = TempDir::new().expect("a home");
     let environment = home_environment(home.path());
@@ -617,6 +655,28 @@ async fn setup_locks_releases_acquired_locks_on_timeout() {
     assert!(
         lock_state(&claude).is_ok(),
         "the Claude lock is released on failure"
+    );
+}
+
+#[tokio::test]
+async fn setup_locks_wraps_directory_failure() {
+    let home = TempDir::new().expect("a home");
+    let environment = home_environment(home.path());
+    fs::write(home.path().join(".litellm"), "not a directory").expect("a blocking file");
+    let result = setup_locks(&[Target::Claude], &environment, &SystemClock).await;
+    let Err(error) = result else {
+        panic!("a lock directory failure is reported");
+    };
+    assert_eq!(
+        error.to_string(),
+        "Could not lock agent setup; retry when other configure commands finish"
+    );
+    let Error::LockPrepare(lock, _) = error else {
+        panic!("the directory failure is typed");
+    };
+    assert_eq!(
+        lock,
+        lock_path_for(Target::Claude, &environment).expect("a lock path")
     );
 }
 
