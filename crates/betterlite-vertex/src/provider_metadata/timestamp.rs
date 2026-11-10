@@ -5,6 +5,7 @@ use jiff::tz::{AmbiguousOffset, TimeZone};
 use thiserror::Error;
 
 const MAX_TIMESTAMP_BYTES: usize = 64;
+const NANOS_PER_SECOND: i128 = 1_000_000_000;
 
 #[derive(Clone, Debug)]
 pub struct LocalTimeContext {
@@ -48,21 +49,26 @@ pub fn decode_vertex_timestamp(
     }
     let text = from_utf8(bytes).map_err(VertexTimestampError::Utf8)?;
     let civil = civil_from_parts(split_timestamp(text)?)?;
+    let epoch = civil::DateTime::new(1970, 1, 1, 0, 0, 0, 0)
+        .map_err(VertexTimestampError::InvalidCalendar)?;
     // the source reads a naive datetime in the process's local zone; fold=0 and mktime both take the offset before a transition
     let offset = match local.zone.to_ambiguous_timestamp(civil).offset() {
         AmbiguousOffset::Unambiguous { offset } => offset,
         AmbiguousOffset::Gap { before, .. } | AmbiguousOffset::Fold { before, .. } => before,
     };
-    let timestamp = offset
-        .to_timestamp(civil)
-        .map_err(VertexTimestampError::InvalidCalendar)?;
-    let seconds = timestamp.as_second();
-    if seconds < 0 && timestamp.subsec_nanosecond() > 0_i32 {
-        return seconds
-            .checked_add(1)
-            .ok_or(VertexTimestampError::OutOfRange);
-    }
-    Ok(seconds)
+    // jiff's Timestamp stops before the last hour of year 9999, but civil arithmetic covers it; dividing truncates toward zero like int()
+    let offset_nanos = i128::from(offset.seconds())
+        .checked_mul(NANOS_PER_SECOND)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    let instant_nanos = civil
+        .duration_since(epoch)
+        .as_nanos()
+        .checked_sub(offset_nanos)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    let seconds = instant_nanos
+        .checked_div(NANOS_PER_SECOND)
+        .ok_or(VertexTimestampError::OutOfRange)?;
+    i64::try_from(seconds).map_err(|_error| VertexTimestampError::OutOfRange)
 }
 
 fn split_timestamp(text: &str) -> Result<TimestampParts<'_>, VertexTimestampError> {

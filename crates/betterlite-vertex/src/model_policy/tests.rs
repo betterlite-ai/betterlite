@@ -150,7 +150,7 @@ fn route_without_params_uses_only_the_model() {
 #[case::gemma_slash_is_deployed("gemma/gemma-3-12b-it", false, false, true)]
 #[case::gemma_numeric_is_deployed("gemma/123456", false, false, true)]
 #[case::bare_gemma_is_not_deployed("gemma-3-12b-it", false, false, false)]
-#[case::meta_partner("meta/llama-3", true, false, false)]
+#[case::meta_partner("meta/llama-3", true, true, false)]
 #[case::bare_llama_is_openai_handler_only("llama3-405b", false, true, false)]
 #[case::gpt_oss_partner("openai/gpt-oss-120b", true, true, false)]
 #[case::openai_publisher_is_deployed("openai/foo", false, false, true)]
