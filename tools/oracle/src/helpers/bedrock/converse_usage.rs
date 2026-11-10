@@ -15,7 +15,7 @@ mod tests;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct ReasoningFields {
+pub(crate) struct ReasoningFields {
     reasoning_content: Option<String>,
     thinking_ran: bool,
     provider_reasoning_tokens: Option<i64>,
@@ -89,7 +89,7 @@ struct TokenizerCounter;
 impl ReasoningTokenCounter for TokenizerCounter {
     type Failure = TokenCountFailure;
 
-    fn count_reasoning_tokens(&self, text: &str) -> Result<usize, Self::Failure> {
+    fn count_reasoning_tokens(&self, text: &str) -> Result<i64, Self::Failure> {
         let request = TokenCountRequest {
             function: "token_counter",
             model: "",
