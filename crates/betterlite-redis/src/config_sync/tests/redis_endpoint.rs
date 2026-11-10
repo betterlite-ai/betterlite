@@ -73,6 +73,20 @@ async fn the_redis_endpoint_delivers_a_published_message() {
 }
 
 #[tokio::test]
+async fn a_closed_subscription_no_longer_reaches_redis() {
+    let server = PushServer::start().await;
+    let cache = redis_cache_at(&server.host(), server.port(), None).await;
+    let client = RedisConfigSyncClient {
+        cache: Arc::new(cache),
+    };
+    let mut subscription = client.subscribe().await.expect("a subscription");
+    subscription.close().await;
+    server.close_connections();
+    let outcome = subscription.next_message(Duration::from_secs(2)).await;
+    assert!(matches!(outcome, Ok(None)));
+}
+
+#[tokio::test]
 async fn a_closed_redis_connection_is_an_error() {
     let server = PushServer::start().await;
     let cache = redis_cache_at(&server.host(), server.port(), None).await;
