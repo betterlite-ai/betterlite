@@ -96,10 +96,10 @@ pub async fn async_failure_handler(
     special_failure_handlers(call.state, report, deps.special_listeners).await;
     if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
         if let Some(delivery) = deliverable(call, deps) {
-            for logger in callbacks.async_loggers() {
-                if logger_may_run(call.state, logger.as_ref()) {
-                    deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
-                }
+            let mut loggers = callbacks.async_loggers();
+            loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
+            for logger in loggers {
+                deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
             }
         }
         if let Some(flush) = deps.flush
