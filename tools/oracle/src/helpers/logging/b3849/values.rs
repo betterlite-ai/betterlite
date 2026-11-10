@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::otel::fan_out::attributes::attribute_map;
-use betterlite_logging::otel::mappers::base::AttributeMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use opentelemetry::{Array, Key, KeyValue, StringValue, Value};
 use opentelemetry_sdk::trace::SpanData;
@@ -73,7 +72,7 @@ fn text_value(item: &OtelModelValue) -> Result<StringValue, Box<HelperError>> {
 }
 
 pub(super) fn view_json(span: &SpanData) -> Json {
-    let attributes: AttributeMap = attribute_map(&span.attributes);
+    let attributes = attribute_map(&span.attributes);
     let fields = Json::Object(
         attributes
             .iter()
