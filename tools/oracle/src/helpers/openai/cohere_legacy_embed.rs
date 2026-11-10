@@ -71,7 +71,7 @@ struct Recorder {
     records: Vec<Value>,
 }
 
-fn record(phase: &str, input: &[String], api_key: Option<&SecretString>, args: Value) -> Value {
+fn record(phase: &str, input: &[String], api_key: Option<&SecretString>, args: &Value) -> Value {
     json!({
         "phase": phase,
         "input": input,
@@ -88,12 +88,12 @@ impl EmbeddingHooks for Recorder {
             "api_base": call.api_base,
         });
         self.records
-            .push(record("pre_call", call.input, call.api_key, args));
+            .push(record("pre_call", call.input, call.api_key, &args));
     }
 
     fn post_call(&mut self, call: PostCall<'_>) {
         let args = json!({"complete_input_dict": call.body});
-        let mut value = record("post_call", call.input, call.api_key, args);
+        let mut value = record("post_call", call.input, call.api_key, &args);
         if let Value::Object(fields) = &mut value {
             fields.insert(
                 String::from("original_response"),
