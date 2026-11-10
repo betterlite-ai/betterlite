@@ -226,6 +226,22 @@ fn secret_safe_cloud_shell() {
 }
 
 #[test]
+fn an_empty_identity_secret_leaves_the_failure_text_alone() {
+    let fixture = Fixture::new().with_environment(&[
+        ("MSI_ENDPOINT", "http://shell.test/token"),
+        ("MSI_SECRET", ""),
+    ]);
+    let (outcome, _) = fixture.acquire_cloud_shell(
+        vec![response(r#"{"expires_in":3600}"#)],
+        &FixtureClock::fixed(NOW),
+    );
+    assert_eq!(
+        outcome.unwrap_err().to_string(),
+        "Unexpected response \"{\"expires_in\":3600}\""
+    );
+}
+
+#[test]
 fn replays_the_azure_hosted_identity_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/azure_hosted_identity");
     let mut replayed = 0_usize;
