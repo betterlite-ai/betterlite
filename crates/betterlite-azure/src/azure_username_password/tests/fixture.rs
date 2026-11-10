@@ -98,18 +98,20 @@ impl Transport for FixtureTransport {
             .push(request.clone());
         let reply = {
             let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
-            let index = replies
-                .iter()
-                .position(|reply| {
-                    reply
-                        .url_contains
-                        .as_ref()
-                        .is_none_or(|needle| request.url.contains(needle))
-                })
-                .ok_or_else(|| io::Error::other(format!("no reply for {}", request.url)))?;
-            replies
-                .remove(index)
-                .ok_or_else(|| io::Error::other("no reply"))?
+            let position = replies.iter().position(|reply| {
+                reply
+                    .url_contains
+                    .as_ref()
+                    .is_none_or(|needle| request.url.contains(needle))
+            });
+            // a managed account is the common case, so a test that is not about the realm needs no reply for it
+            match position {
+                Some(index) => replies
+                    .remove(index)
+                    .ok_or_else(|| io::Error::other("no reply"))?,
+                None if request.url.contains("/common/userrealm/") => Reply::ok("", "{}"),
+                None => return Err(io::Error::other(format!("no reply for {}", request.url))),
+            }
         };
         match reply.error {
             Some(message) => Err(io::Error::other(message)),

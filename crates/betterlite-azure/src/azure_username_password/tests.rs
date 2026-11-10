@@ -19,7 +19,17 @@ use scenarios::token_body;
 
 mod fixture;
 mod logs;
+mod realm;
 mod scenarios;
+
+#[rstest]
+#[case::managed_accounts_proceed(realm::managed_accounts_proceed)]
+#[case::federated_account_is_refused(realm::federated_account_is_refused)]
+#[case::realm_failures_stop_the_grant(realm::realm_failures_stop_the_grant)]
+#[case::renewal_sends_the_password_again(realm::renewal_sends_the_password_again)]
+fn azure_username_password_realm_discovery(#[case] scenario: fn()) {
+    scenario();
+}
 
 #[rstest]
 #[case::password_grant_form(scenarios::password_grant_form)]

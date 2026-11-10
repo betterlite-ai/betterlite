@@ -3,7 +3,7 @@ import time
 import warnings
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Self, TypeAlias, TypedDict, cast
+from typing import NotRequired, Self, TypeAlias, TypedDict, cast
 from unittest import mock
 
 import azure.identity
@@ -23,14 +23,11 @@ NOW = 1_700_000_000
 CREDENTIAL_ARGUMENTS = {"client_id", "password", "username"}
 
 
-class ReplyRequired(TypedDict):
+class Reply(TypedDict):
     status: int
     body: str
-
-
-class Reply(ReplyRequired, total=False):
-    url_contains: str
-    error: str
+    url_contains: NotRequired[str]
+    error: NotRequired[str]
 
 
 class Step(TypedDict, total=False):
@@ -283,17 +280,13 @@ def construction_action(provider: Callable[[], str], _live: Live, step: Step) ->
     return {"kind": "constructed"}
 
 
-def exposes_identity(message: str, step: Step) -> bool:
-    secrets = [step.get("username", ""), step.get("password", "")]
-    return any(secret != "" and secret in message for secret in secrets)
-
-
 def debug_of(step: Step) -> Json:
     lines: list[Json] = []
     for message, args in DEBUG_CALLS:
         if not isinstance(message, str):
             continue
-        exposes = exposes_identity(message, step)
+        secrets = [step.get("username", ""), step.get("password", "")]
+        exposes = any(secret != "" and secret in message for secret in secrets)
         if message.startswith("client_id="):
             filled = (*args, "", False, False)
             lines.append(

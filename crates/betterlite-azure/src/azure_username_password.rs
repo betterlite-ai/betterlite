@@ -41,6 +41,12 @@ pub enum UsernamePasswordError {
     },
     #[error("Authentication failed: You cannot use any scope value that is reserved.")]
     ReservedScope,
+    #[error(
+        "Authentication failed: the account is federated, and the WS-Trust sign-in it needs is not supported"
+    )]
+    FederatedAccount,
+    #[error("the user realm response is not the expected JSON")]
+    Realm(#[source] serde_json::Error),
     #[error("the token lifetime overflows the clock")]
     ExpiryOverflow,
     #[error("the token provider cache is poisoned")]

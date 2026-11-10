@@ -21,8 +21,10 @@ pub enum RecordError {
     IdentityTokenMissing,
     #[error("the identity token has no {claim}")]
     ClaimMissing { claim: &'static str },
-    #[error("the client info is unreadable: {0}")]
-    ClientInfo(String),
+    #[error("the client info is not base64")]
+    ClientInfoBase64(#[from] base64::DecodeError),
+    #[error("the client info is not the expected JSON")]
+    ClientInfoJson(#[from] serde_json::Error),
 }
 
 #[derive(Deserialize)]
@@ -73,11 +75,8 @@ pub fn build(
 }
 
 fn client_info_id(raw: &str) -> Result<String, RecordError> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(raw.trim_end_matches('='))
-        .map_err(|error| RecordError::ClientInfo(error.to_string()))?;
-    let info: ClientInfo = serde_json::from_slice(&bytes)
-        .map_err(|error| RecordError::ClientInfo(error.to_string()))?;
+    let bytes = URL_SAFE_NO_PAD.decode(raw.trim_end_matches('='))?;
+    let info: ClientInfo = serde_json::from_slice(&bytes)?;
     Ok(format!("{}.{}", info.uid, info.utid))
 }
 

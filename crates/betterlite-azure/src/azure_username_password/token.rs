@@ -4,6 +4,7 @@ use serde::de::IgnoredAny;
 use thiserror::Error;
 
 use crate::azure_client_secret::ClientSecretError;
+use crate::azure_client_secret::authority::Authority;
 use crate::azure_client_secret::token::decode_client_secret_token;
 use crate::azure_client_secret::transport::HttpMethod;
 
@@ -13,17 +14,11 @@ use super::{DEFAULT_SCOPE, UsernamePasswordError, UsernamePasswordInput, scope};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IdentityClaims {
-    #[serde(default)]
     pub aud: Option<String>,
-    #[serde(default)]
     pub iss: Option<String>,
-    #[serde(default)]
     pub sub: Option<String>,
-    #[serde(default)]
     pub tid: Option<String>,
-    #[serde(default)]
     pub preferred_username: Option<String>,
-    #[serde(default)]
     pub upn: Option<String>,
 }
 
@@ -40,15 +35,9 @@ pub struct PasswordToken {
 #[derive(Debug, Error)]
 pub enum PasswordTokenError {
     #[error("the token response is not JSON")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
+    Json(#[source] serde_json::Error),
     #[error("the token response has the wrong shape")]
-    Shape {
-        #[source]
-        source: serde_json::Error,
-    },
+    Shape(#[source] serde_json::Error),
     #[error("the token response is missing access_token")]
     AccessTokenMissing {
         error: Option<String>,
@@ -57,29 +46,21 @@ pub enum PasswordTokenError {
     #[error("the token response field {field} has the wrong type")]
     FieldType { field: &'static str },
     #[error("Failed to build AuthenticationRecord from unexpected identity token")]
-    Record {
-        #[source]
-        source: RecordError,
-    },
+    Record(#[source] RecordError),
     #[error(transparent)]
     Shared(#[from] ClientSecretError),
 }
 
 #[derive(Deserialize)]
 struct AccessEnvelope {
-    #[serde(default)]
     access_token: Option<TextField>,
-    #[serde(default)]
     error: Option<TextField>,
-    #[serde(default)]
     error_description: Option<TextField>,
 }
 
 #[derive(Deserialize)]
 struct ClaimsEnvelope {
-    #[serde(default)]
     id_token_claims: Option<IdentityClaims>,
-    #[serde(default)]
     client_info: Option<String>,
 }
 
@@ -99,9 +80,14 @@ impl TextField {
     }
 }
 
+#[derive(Deserialize)]
+struct RealmEnvelope {
+    account_type: Option<String>,
+}
+
 pub fn decode_password_token(bytes: &[u8]) -> Result<PasswordToken, PasswordTokenError> {
     let envelope: AccessEnvelope =
-        serde_json::from_slice(bytes).map_err(|source| PasswordTokenError::Json { source })?;
+        serde_json::from_slice(bytes).map_err(PasswordTokenError::Json)?;
     let access_token = match envelope.access_token {
         Some(TextField::Text(token)) => SecretString::from(token),
         Some(TextField::Other(_ignored)) => {
@@ -117,13 +103,13 @@ pub fn decode_password_token(bytes: &[u8]) -> Result<PasswordToken, PasswordToke
         }
     };
     let claims: ClaimsEnvelope =
-        serde_json::from_slice(bytes).map_err(|source| PasswordTokenError::Shape { source })?;
+        serde_json::from_slice(bytes).map_err(PasswordTokenError::Shape)?;
     // the SDK builds the authentication record before it reads the expiry, so a bare access token fails here
     let record = record::build(
         claims.id_token_claims.as_ref(),
         claims.client_info.as_deref(),
     )
-    .map_err(|source| PasswordTokenError::Record { source })?;
+    .map_err(PasswordTokenError::Record)?;
     let token = decode_client_secret_token(bytes).map_err(PasswordTokenError::Shared)?;
     Ok(PasswordToken {
         access_token,
@@ -137,34 +123,62 @@ pub fn decode_password_token(bytes: &[u8]) -> Result<PasswordToken, PasswordToke
 
 // MSAL drops a falsy form value, so an empty client id, username or password leaves its field out
 fn password_form(input: &UsernamePasswordInput, scope: &str) -> Vec<(String, String)> {
-    let mut form = Vec::new();
-    if !input.client_id.is_empty() {
-        form.push(("client_id".to_owned(), input.client_id.clone()));
+    [
+        ("client_id", input.client_id.as_str()),
+        ("grant_type", "password"),
+        ("client_info", "1"),
+        ("username", input.username.as_str()),
+        ("password", input.password.expose_secret()),
+        ("scope", scope),
+    ]
+    .into_iter()
+    .filter(|(_name, value)| !value.is_empty())
+    .map(|(name, value)| (name.to_owned(), value.to_owned()))
+    .collect()
+}
+
+// MSAL asks the user realm endpoint before every password grant; a 404 means the host has none, so the account is managed
+fn reject_federated(
+    transport: &dyn Transport,
+    instance: &str,
+    username: &str,
+) -> Result<(), UsernamePasswordError> {
+    let request = HttpRequest {
+        method: HttpMethod::Get,
+        url: format!("https://{instance}/common/userrealm/{username}?api-version=1.0"),
+        query: Vec::new(),
+        headers: vec![("Accept".to_owned(), "application/json".to_owned())],
+        form: Vec::new(),
+    };
+    let reply = transport
+        .send(&request)
+        .map_err(|source| UsernamePasswordError::Transport { source })?;
+    if reply.status == 404 {
+        return Ok(());
     }
-    form.push(("grant_type".to_owned(), "password".to_owned()));
-    form.push(("client_info".to_owned(), "1".to_owned()));
-    if !input.username.is_empty() {
-        form.push(("username".to_owned(), input.username.clone()));
+    if reply.status >= 400 {
+        return Err(UsernamePasswordError::Authentication {
+            message: format!("HTTP Error: {}", reply.status),
+        });
     }
-    if !input.password.expose_secret().is_empty() {
-        form.push((
-            "password".to_owned(),
-            input.password.expose_secret().to_owned(),
-        ));
+    let realm: RealmEnvelope = serde_json::from_slice(reply.body.expose_secret().as_bytes())
+        .map_err(UsernamePasswordError::Realm)?;
+    if realm.account_type.as_deref() == Some("Federated") {
+        return Err(UsernamePasswordError::FederatedAccount);
     }
-    form.push(("scope".to_owned(), scope.to_owned()));
-    form
+    Ok(())
 }
 
 pub fn request_token(
     transport: &dyn Transport,
-    endpoint: &str,
+    authority: &Authority,
     input: &UsernamePasswordInput,
 ) -> Result<PasswordToken, UsernamePasswordError> {
     let decorated = scope::decorate(input.scope.as_deref().unwrap_or(DEFAULT_SCOPE))?;
+    reject_federated(transport, &authority.instance, &input.username)?;
     let request = HttpRequest {
         method: HttpMethod::Post,
-        url: endpoint.to_owned(),
+        url: authority.token_endpoint.clone(),
         query: Vec::new(),
         headers: vec![("Accept".to_owned(), "application/json".to_owned())],
         form: password_form(input, &decorated),

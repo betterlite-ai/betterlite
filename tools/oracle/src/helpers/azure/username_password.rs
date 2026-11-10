@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::helpers::{Helper, HelperResult};
 
-use steps::Steps;
+use steps::{Step, Steps};
 
 mod fixture;
 mod report;
@@ -28,18 +28,17 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        Ok(match input {
+        let (steps, convert): (&Steps, fn(&Step) -> Value) = match input {
             Input::PasswordGrantForm(steps) | Input::DefaultTenant(steps) => {
-                Value::Array(steps.steps.iter().map(report::grant_step).collect())
+                (steps, report::grant_step)
             }
             Input::InvalidGrant(steps)
             | Input::TokenResponse(steps)
-            | Input::PasswordScopeDecoration(steps) => {
-                Value::Array(steps.steps.iter().map(report::attempt_step).collect())
-            }
+            | Input::PasswordScopeDecoration(steps) => (steps, report::attempt_step),
             Input::UsernameDebugWarning(steps) | Input::UsernameConstructorFailure(steps) => {
-                Value::Array(steps.steps.iter().map(report::construction_step).collect())
+                (steps, report::construction_step)
             }
-        })
+        };
+        Ok(Value::Array(steps.steps.iter().map(convert).collect()))
     }
 }

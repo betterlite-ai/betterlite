@@ -9,8 +9,10 @@ use super::fixture::{
 use crate::azure_client_secret::ClientSecretError;
 use crate::azure_client_secret::ResolvedCredentials;
 use crate::azure_client_secret::token::token_request as client_credentials_request;
+use crate::azure_client_secret::transport::HttpMethod;
 use crate::azure_username_password::provider::{AccessToken, DEPRECATION_WARNING};
 use crate::azure_username_password::token::PasswordTokenError;
+use crate::azure_username_password::transport::HttpRequest;
 use crate::azure_username_password::{DEFAULT_SCOPE, UsernamePasswordError, UsernamePasswordInput};
 
 use tracing::subscriber::with_default;
@@ -42,6 +44,19 @@ fn granted(
     fixture
 }
 
+fn realm_request(request: &HttpRequest, username: &str) {
+    assert_eq!(request.method, HttpMethod::Get);
+    assert_eq!(
+        request.url,
+        format!("https://{HOST}/common/userrealm/{username}?api-version=1.0")
+    );
+    assert_eq!(
+        request.headers,
+        vec![("Accept".to_owned(), "application/json".to_owned())]
+    );
+    assert!(request.form.is_empty());
+}
+
 pub(super) fn password_grant_form() {
     let username = "user name+tag@example.com";
     let password = "p@ss word+\u{fc}n\u{ef}code";
@@ -51,8 +66,10 @@ pub(super) fn password_grant_form() {
         None,
     );
     let requests = fixture.transport.requests();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].url, well_known_url(HOST));
+    realm_request(&requests[1], username);
+    assert_eq!(requests[2].method, HttpMethod::Post);
     let posts = fixture.transport.posts();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].url, token_url(HOST));
@@ -60,15 +77,7 @@ pub(super) fn password_grant_form() {
         posts[0].headers,
         vec![("Accept".to_owned(), "application/json".to_owned())]
     );
-    let form = form_map(&posts[0]);
-    assert_eq!(form.len(), 6);
-    assert_eq!(form.get("grant_type").map(String::as_str), Some("password"));
-    assert_eq!(form.get("client_id").map(String::as_str), Some(CLIENT));
-    assert_eq!(form.get("username").map(String::as_str), Some(username));
-    assert_eq!(form.get("password").map(String::as_str), Some(password));
-    assert_eq!(form.get("client_info").map(String::as_str), Some("1"));
-    assert!(!form.contains_key("client_secret"));
-    assert!(!form.contains_key("tenant_id"));
+    password_form_fields(&posts[0], username, password);
     assert_eq!(
         scope_set(&posts[0]),
         vec![
@@ -78,6 +87,18 @@ pub(super) fn password_grant_form() {
             "profile".to_owned(),
         ]
     );
+}
+
+fn password_form_fields(request: &HttpRequest, username: &str, password: &str) {
+    let form = form_map(request);
+    assert_eq!(form.len(), 6);
+    assert_eq!(form.get("grant_type").map(String::as_str), Some("password"));
+    assert_eq!(form.get("client_id").map(String::as_str), Some(CLIENT));
+    assert_eq!(form.get("username").map(String::as_str), Some(username));
+    assert_eq!(form.get("password").map(String::as_str), Some(password));
+    assert_eq!(form.get("client_info").map(String::as_str), Some("1"));
+    assert!(!form.contains_key("client_secret"));
+    assert!(!form.contains_key("tenant_id"));
 }
 
 pub(super) fn default_tenant() {
@@ -135,6 +156,10 @@ fn custom_host() {
             "https://login.microsoftonline.com/common/discovery/instance"
         );
         assert_eq!(requests[1].url, discovery);
+        assert_eq!(
+            requests[2].url,
+            "https://login.contoso.test/common/userrealm/user@example.com?api-version=1.0"
+        );
         assert_eq!(
             fixture.transport.posts()[0].url,
             "https://login.contoso.test/organizations/oauth2/v2.0/token"
@@ -208,7 +233,7 @@ fn identity_token_failures() {
 
 fn server_failures() {
     assert_eq!(
-        token_error(400, "unexpected"),
+        token_error(500, "unexpected"),
         "Authentication failed: HTTP Error: 500"
     );
     let fixture = Fixture::new(vec![openid(HOST), Reply::failure("/oauth2/v2.0/token")]);
@@ -281,7 +306,7 @@ fn reuse_window() {
         "tok-2"
     );
     assert_eq!(renewed.transport.posts().len(), 2);
-    assert_eq!(renewed.transport.requests().len(), 3);
+    assert_eq!(renewed.transport.requests().len(), 5);
 }
 
 fn hard_expiry() {
@@ -297,7 +322,7 @@ fn hard_expiry() {
     fixture.clock.set(NOW + 3600);
     assert_eq!(provider.token().unwrap().token.expose_secret(), "tok-2");
     assert_eq!(fixture.transport.posts().len(), 2);
-    assert_eq!(fixture.transport.requests().len(), 3);
+    assert_eq!(fixture.transport.requests().len(), 5);
 }
 
 fn access_for(body: &str) -> AccessToken {
@@ -342,7 +367,7 @@ fn sub_fallback() {
         .token()
         .unwrap();
     assert_eq!(access.record.home_account_id, "subject");
-    assert_eq!(access.record.tenant_id, "tenant");
+    assert_eq!(access.record.tenant_id, "tenant/v2.0");
 }
 
 fn upn_fallback() {
@@ -368,7 +393,7 @@ fn incomplete_results() {
         .unwrap_err();
     assert!(matches!(
         bare_error,
-        UsernamePasswordError::Token(PasswordTokenError::Record { .. })
+        UsernamePasswordError::Token(PasswordTokenError::Record(_))
     ));
     let claims_without_expiry = r#"{"access_token":"tok","id_token_claims":{"aud":"client","iss":"https://login.microsoftonline.com/tenant/v2.0","sub":"subject","preferred_username":"user@example.com"},"client_info":"eyJ1aWQiOiJ1aWQiLCJ1dGlkIjoidXRpZCJ9"}"#;
     let fixture = Fixture::new(vec![openid(HOST), token(claims_without_expiry)]);

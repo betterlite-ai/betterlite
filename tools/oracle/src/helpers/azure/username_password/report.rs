@@ -7,7 +7,6 @@ use betterlite_azure::azure_client_secret::transport::HttpMethod;
 use betterlite_azure::azure_username_password::provider::{AccessToken, UsernamePasswordProvider};
 use betterlite_azure::azure_username_password::record::AuthenticationRecord;
 use betterlite_azure::azure_username_password::token::PasswordTokenError;
-use betterlite_azure::azure_username_password::transport::HttpRequest;
 use betterlite_azure::azure_username_password::{
     DEFAULT_SCOPE, UsernamePasswordError, UsernamePasswordInput,
 };
@@ -77,7 +76,7 @@ fn token_failure(error: &UsernamePasswordError, attempt: &Attempt) -> Value {
 
 fn token_reason(error: &UsernamePasswordError, token_requests: usize) -> (&'static str, String) {
     match error {
-        UsernamePasswordError::Token(PasswordTokenError::Record { .. }) => {
+        UsernamePasswordError::Token(PasswordTokenError::Record(_)) => {
             ("auth_record", error.to_string())
         }
         UsernamePasswordError::ReservedScope => ("reserved_scope", error.to_string()),
@@ -95,15 +94,11 @@ fn token_reason(error: &UsernamePasswordError, token_requests: usize) -> (&'stat
         UsernamePasswordError::Authority(_) => ("authentication_failed", String::new()),
         UsernamePasswordError::Transport { .. } => ("transport", String::new()),
         UsernamePasswordError::Token(_)
+        | UsernamePasswordError::FederatedAccount
+        | UsernamePasswordError::Realm(_)
         | UsernamePasswordError::ExpiryOverflow
         | UsernamePasswordError::ProviderCachePoisoned => ("other", String::new()),
     }
-}
-
-fn first_post(requests: &[HttpRequest]) -> Option<&HttpRequest> {
-    requests
-        .iter()
-        .find(|request| request.method == HttpMethod::Post)
 }
 
 fn record_json(record: &AuthenticationRecord) -> Value {
@@ -118,7 +113,10 @@ fn record_json(record: &AuthenticationRecord) -> Value {
 
 fn grant_json(token: &AccessToken, step: &Step, attempt: &Attempt) -> Value {
     let requests = attempt.transport.requests();
-    let Some(post) = first_post(&requests) else {
+    let Some(post) = requests
+        .iter()
+        .find(|request| request.method == HttpMethod::Post)
+    else {
         return error_json("no_token_request", "", attempt.transport.posts().len());
     };
     let mut scopes: Vec<&str> = post
@@ -220,11 +218,6 @@ pub(super) fn attempt_step(step: &Step) -> Value {
     })
 }
 
-fn exposes_identity(message: &str, step: &Step) -> bool {
-    (!step.username.is_empty() && message.contains(&step.username))
-        || (!step.password.is_empty() && message.contains(&step.password))
-}
-
 fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
     let mut lines = Vec::new();
     for event in events.iter().filter(|event| {
@@ -232,7 +225,9 @@ fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
             && (event.message.starts_with("client_id=")
                 || event.message.starts_with("token_provider "))
     }) {
-        let exposes = exposes_identity(&event.message, step);
+        let exposes = [&step.username, &step.password]
+            .into_iter()
+            .any(|secret| !secret.is_empty() && event.message.contains(secret.as_str()));
         if event.message.starts_with("client_id=") {
             lines.push(json!({
                 "kind": "credentials",

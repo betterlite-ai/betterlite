@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use secrecy::SecretString;
 
-use crate::azure_client_secret::authority::normalize_authority;
+use crate::azure_client_secret::authority::{Authority, discover_authority, normalize_authority};
 use crate::azure_client_secret::transport::Clock;
 
 use super::authority;
@@ -48,7 +48,7 @@ pub struct UsernamePasswordProvider {
 #[derive(Default)]
 struct State {
     token: Option<AccessToken>,
-    token_endpoint: Option<String>,
+    authority: Option<Authority>,
 }
 
 // the password, the tokens and the user identity stay out of the Debug output
@@ -100,8 +100,8 @@ impl UsernamePasswordProvider {
                 return Ok(token.clone());
             }
         }
-        let endpoint = self.token_endpoint()?;
-        let response = token::request_token(&*self.transport, &endpoint, &self.input)?;
+        let authority = self.authority()?;
+        let response = token::request_token(&*self.transport, &authority, &self.input)?;
         let expires_on = now
             .checked_add(response.expires_in)
             .ok_or(UsernamePasswordError::ExpiryOverflow)?;
@@ -126,16 +126,24 @@ impl UsernamePasswordProvider {
     }
 
     // MSAL builds its application, authority included, once per credential and keeps the app for every grant
-    fn token_endpoint(&self) -> Result<String, UsernamePasswordError> {
+    fn authority(&self) -> Result<Authority, UsernamePasswordError> {
         {
             let state = self.state()?;
-            if let Some(endpoint) = &state.token_endpoint {
-                return Ok(endpoint.clone());
+            if let Some(authority) = &state.authority {
+                return Ok(authority.clone());
             }
         }
-        let endpoint = authority::token_endpoint(&*self.transport, &self.authority_host)?;
-        self.state()?.token_endpoint = Some(endpoint.clone());
-        Ok(endpoint)
+        let bridged = authority::Bridged {
+            transport: &*self.transport,
+        };
+        let authority = discover_authority(
+            &bridged,
+            &self.authority_host,
+            authority::ORGANIZATIONS_TENANT,
+            true,
+        )?;
+        self.state()?.authority = Some(authority.clone());
+        Ok(authority)
     }
 
     fn state(&self) -> Result<MutexGuard<'_, State>, UsernamePasswordError> {
