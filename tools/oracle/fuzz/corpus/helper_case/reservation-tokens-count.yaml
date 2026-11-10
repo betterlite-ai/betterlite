@@ -1,0 +1,17 @@
+kind: helper
+name: reservation-tokens-count-seed
+call:
+  reservation_tokens:
+    calls:
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          prompt: hello world
+      - function: aggregate
+        models: [gpt-3.5-turbo, gpt-4o]
+        request:
+          messages:
+            - role: user
+              content: hello world
+env: {}
+compare: {ignore: []}

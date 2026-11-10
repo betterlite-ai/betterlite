@@ -1,0 +1,28 @@
+kind: helper
+name: azure_doc_intel_pages_and_features
+call:
+  b6805:
+    model: doc-intelligence/prebuilt-layout
+    document:
+      type: document_url
+      document_url: data:application/pdf;base64,YWJj
+    options:
+      pages: [2, 0, 0, 1]
+      features: ["keyValuePairs", " languages "]
+    environment:
+      AZURE_DOCUMENT_INTELLIGENCE_API_KEY: oracle-key
+    analyze:
+      status: 200
+      body:
+        status: succeeded
+        analyzeResult:
+          pages:
+            - pageNumber: 3
+              width: 6.5
+              height: 9
+              unit: inch
+              lines:
+                - content: third
+env:
+  AZURE_DOCUMENT_INTELLIGENCE_API_KEY: oracle-key
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+task: B1322
+deviations:
+  - what: betterlite records the cached prompt count only under prompt_tokens_details.cached_tokens, where LiteLLM's Usage additionally gains a top-level cache_read_input_tokens attribute from the cache_read_input_tokens keyword and serializes it in model_dump.
+    why: both the complete and Live paths return the shared betterlite_models usage record, which declares the count once in the prompt details, the field the cost and Responses projections read (LiteLLM's own cost calculator falls back to prompt_tokens_details.cached_tokens when the top-level attribute is missing). The count itself is retained and tested; only the duplicate top-level copy is absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1911
