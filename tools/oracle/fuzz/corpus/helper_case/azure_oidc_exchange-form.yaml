@@ -1,0 +1,12 @@
+kind: helper
+name: azure-oidc-exchange-form-seed
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {OIDC_ASSERTION: seeded-assertion}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION, azure_client_id: seeded-client, azure_tenant_id: seeded-tenant}
+        replies:
+          - {status: 200, body: '{"access_token":"seeded-token","expires_in":3600}'}
+env: {}
+compare: {ignore: []}
