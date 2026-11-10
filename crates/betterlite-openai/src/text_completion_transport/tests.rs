@@ -465,6 +465,13 @@ fn prepost_logger_records_the_call() {
     post_call_is_logged(&mut logging, &env, headers);
 }
 
+fn assert_event_logged(logging: &LoggingState, event_type: &str) -> Value {
+    let args = logged(logging, "additional_args");
+    assert_eq!(args["api_base"], support::text("https://host/v1"));
+    assert_eq!(logged(logging, "log_event_type"), support::text(event_type));
+    args
+}
+
 fn pre_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers: SecretHeaders) {
     PrePostLogger {
         state: logging,
@@ -478,43 +485,31 @@ fn pre_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers:
         complete_input_dict: Map::from_iter([("model".to_owned(), support::text("m"))]),
     })
     .expect("pre_call");
-    let args = logged(logging, "additional_args");
-    assert_eq!(args["api_base"], support::text("https://host/v1"));
+    let args = assert_event_logged(logging, "pre_api_call");
     assert!(args["headers"].get("x-trace").is_some());
     assert_eq!(
         args["complete_input_dict"],
         support::object(vec![("model", support::text("m"))])
     );
-    assert_eq!(
-        logged(logging, "log_event_type"),
-        support::text("pre_api_call")
-    );
 }
 
 fn post_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers: SecretHeaders) {
-    PrePostLogger {
+    let original_response = support::object(vec![("id", support::text("cmpl-1"))]);
+    let mut logger = PrePostLogger {
         state: logging,
         env,
-    }
-    .post_call(PostCallRecord {
+    };
+    logger.post_call(PostCallRecord {
         api_key: None,
-        original_response: support::object(vec![("id", support::text("cmpl-1"))]),
+        original_response,
         kind: ResponseKind::DumpedDict,
         headers,
         api_base: Some("https://host/v1".to_owned()),
     });
-    let args = logged(logging, "additional_args");
-    assert_eq!(args["api_base"], support::text("https://host/v1"));
+    let args = assert_event_logged(logging, "post_api_call");
     assert!(args.get("complete_input_dict").is_none());
-    assert_eq!(
-        logged(logging, "log_event_type"),
-        support::text("post_api_call")
-    );
-    assert!(
-        logged(logging, "original_response")
-            .as_str()
-            .is_some_and(|shown| shown.contains("cmpl-1"))
-    );
+    let shown = logged(logging, "original_response");
+    assert!(shown.as_str().is_some_and(|text| text.contains("cmpl-1")));
 }
 
 fn async_buffered_reply(transport: &Transport) {
