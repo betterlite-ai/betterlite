@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::time::Duration;
 use thiserror::Error;
-
 pub const LITELLM_PROXY_API_KEY_ENV: &str = "LITELLM_PROXY_API_KEY";
 const GATEWAY_DISCOVERY: &str = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY";
 const STOP_HOOKS_PATTERN: &str = r#"(?m)^\s*(\[\[\s*"?hooks"?\s*\.\s*"?Stop"?\s*\]\]|"?hooks"?(?:\s*\.\s*"?Stop"?)?\s*=|\[\s*"?hooks"?\s*\])"#;
@@ -28,14 +27,12 @@ pub enum EnvProfile {
     ProxyKey,
 }
 const BOTH_PROFILES: &[EnvProfile] = &[EnvProfile::Anthropic, EnvProfile::OpenAi];
-pub type KnownAgent = (&'static str, &'static str, &'static [EnvProfile], bool);
-pub const KNOWN_AGENTS: [KnownAgent; 4] = [
+pub const KNOWN_AGENTS: [(&str, &str, &[EnvProfile], bool); 4] = [
     ("claude", "Claude Code", &[EnvProfile::Anthropic], false),
     ("codex", "Codex", &[EnvProfile::OpenAi], false),
     ("opencode", "OpenCode", &[EnvProfile::OpenAi], false),
     ("pi", "pi", &[EnvProfile::ProxyKey], true),
 ];
-
 fn command_name(command: &str) -> &str {
     Path::new(command)
         .file_name()
@@ -50,7 +47,6 @@ pub fn agent_profile(command: &str) -> (String, &'static [EnvProfile]) {
         None => (name.to_owned(), BOTH_PROFILES),
     }
 }
-
 #[derive(Debug, Error)]
 pub enum AgentRunError {
     #[error("could not reach the LiteLLM proxy at {0}: {1}. Is it running?")]
@@ -59,14 +55,9 @@ pub enum AgentRunError {
     RejectedKey(u16),
     #[error("cannot pass a line break to `{0}` on Windows: cmd.exe would drop the rest")]
     LineBreak(String),
-    #[error("could not encode a Codex provider setting: {0}")]
-    Serialize(#[from] serde_json::Error),
     #[error("could not start the agent process: {0}")]
     Process(#[from] io::Error),
-    #[error("{message}")]
-    Message { message: String },
 }
-
 #[must_use]
 pub fn build_agent_env(
     base_env: &EnvVars,
@@ -112,40 +103,53 @@ pub fn codex_proxy_provider(base_url: &str) -> CodexProxyProvider {
         requires_openai_auth: false,
     }
 }
-pub fn codex_proxy_args(base_url: &str) -> Result<Vec<String>, AgentRunError> {
+fn json_string(value: &str) -> String {
+    let mut encoded = String::new();
+    encoded.extend(value.chars().map(|character| match character {
+        '"' | '\\' => format!("\\{character}"),
+        control if control.is_control() => format!("\\u{:04x}", u32::from(control)),
+        other => String::from(other),
+    }));
+    format!("\"{encoded}\"")
+}
+#[must_use]
+pub fn codex_proxy_args(base_url: &str) -> Vec<String> {
     let provider = codex_proxy_provider(base_url);
-    let prefix = "model_providers.litellm".to_owned();
+    let prefix = "model_providers.litellm";
     let websockets = provider.supports_websockets.to_string();
     let openai_auth = provider.requires_openai_auth.to_string();
     let fields = [
-        ("name", serde_json::to_string(provider.name)?),
-        ("base_url", serde_json::to_string(&provider.base_url)?),
-        ("wire_api", serde_json::to_string(provider.wire_api)?),
+        ("name", json_string(provider.name)),
+        ("base_url", json_string(&provider.base_url)),
+        ("wire_api", json_string(provider.wire_api)),
         ("supports_websockets", websockets),
         ("requires_openai_auth", openai_auth),
     ];
-    let mut args = vec!["-c".to_owned()];
-    args.push("model_provider=\"litellm\"".to_owned());
+    let mut args = vec!["-c".to_owned(), "model_provider=\"litellm\"".to_owned()];
     for (key, value) in fields {
         args.extend(["-c".to_owned(), format!("{prefix}.{key}={value}")]);
     }
-    let env_key = serde_json::to_string("OPENAI_API_KEY")?;
+    let env_key = json_string("OPENAI_API_KEY");
     args.extend(["-c".to_owned(), format!("{prefix}.env_key={env_key}")]);
     args.extend(["-c".to_owned(), format!("{prefix}.http_headers={{}}")]);
-    Ok(args)
+    args
 }
-pub fn agent_launch_args(command: &str, base_url: &str) -> Result<Vec<String>, AgentRunError> {
-    if command_name(command) == "codex" {
-        return codex_proxy_args(base_url);
+#[must_use]
+pub fn agent_launch_args(command: &str, base_url: &str) -> Vec<String> {
+    match command_name(command) {
+        "codex" => codex_proxy_args(base_url),
+        _ => Vec::new(),
     }
-    Ok(Vec::new())
 }
 pub fn codex_config_path(environment: &dyn EnvironmentLookup) -> Option<PathBuf> {
-    let home = environment
+    if let Some(home) = environment
         .lookup("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| environment.system_home().map(|home| home.join(".codex")))?;
-    Some(home.join("config.toml"))
+        .filter(|home| !home.is_empty())
+    {
+        return Some(PathBuf::from(home).join("config.toml"));
+    }
+    let home = environment.system_home()?;
+    Some(home.join(".codex").join("config.toml"))
 }
 #[must_use]
 pub fn codex_declares_stop_hooks(config_path: &Path) -> bool {
@@ -157,7 +161,7 @@ pub fn warn(writer: &mut dyn Write, message: &str) -> io::Result<()> {
     writer.flush()
 }
 pub trait KeyProbe {
-    fn status(&self, url: &str, authorization: &str, timeout: Duration) -> io::Result<u16>;
+    fn status(&self, url: &str, api_key: &SecretString, timeout: Duration) -> io::Result<u16>;
 }
 pub fn verify_proxy_key(
     base_url: &str,
@@ -166,16 +170,14 @@ pub fn verify_proxy_key(
 ) -> Result<(), AgentRunError> {
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/v1/models");
-    let authorization = format!("Bearer {}", api_key.expose_secret());
     let status = probe
-        .status(&url, &authorization, Duration::from_secs(10))
+        .status(&url, api_key, Duration::from_secs(10))
         .map_err(|source| AgentRunError::Unreachable(base.to_owned(), source))?;
     match status {
         401 | 403 => Err(AgentRunError::RejectedKey(status)),
         _ => Ok(()),
     }
 }
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WindowsCommand {
     Direct(String, Vec<String>),
@@ -184,8 +186,7 @@ pub enum WindowsCommand {
 pub fn windows_command(path: &str, args: &[String]) -> Result<WindowsCommand, AgentRunError> {
     let rest = args.iter().skip(1).cloned().collect::<Vec<String>>();
     let ext = Path::new(path).extension().and_then(OsStr::to_str);
-    let extension = ext.map(str::to_ascii_lowercase);
-    let is_shim = matches!(extension.as_deref(), Some("cmd" | "bat"));
+    let is_shim = matches!(ext.map(str::to_lowercase).as_deref(), Some("cmd" | "bat"));
     if !is_shim {
         return Ok(WindowsCommand::Direct(path.to_owned(), rest));
     }
@@ -195,11 +196,10 @@ pub fn windows_command(path: &str, args: &[String]) -> Result<WindowsCommand, Ag
     let mut tokens = vec![quote_for_cmd(path)];
     tokens.extend(rest.iter().map(|token| quote_for_cmd(token)));
     let inner = tokens.join(" ");
-    Ok(WindowsCommand::Batch(format!(
-        "/d /e:on /v:off /s /c \"{inner}\""
-    )))
+    let arguments = format!("/d /e:on /v:off /s /c \"{inner}\"");
+    Ok(WindowsCommand::Batch(arguments))
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum Platform {
     Unix,
     Windows,
@@ -208,17 +208,25 @@ pub trait ProcessLauncher {
     fn replace(&self, path: &str, args: &[String], env: &EnvVars) -> io::Result<i32>;
     fn spawn(&self, command: &WindowsCommand, env: &EnvVars) -> io::Result<i32>;
 }
-// The CLI hands its own process over to the agent; this is the one place that starts one.
 pub struct StdLauncher;
+#[cfg(unix)]
+fn exec_command(path: &str, args: &[String], env: &EnvVars) -> std_process::Command {
+    let mut command = std_process::Command::new(path);
+    if let Some((name, rest)) = args.split_first() {
+        command.arg0(name);
+        command.args(rest);
+    }
+    command.env_clear().envs(env);
+    command
+}
 impl ProcessLauncher for StdLauncher {
+    #[cfg(unix)]
     fn replace(&self, path: &str, args: &[String], env: &EnvVars) -> io::Result<i32> {
-        let mut command = std_process::Command::new(path);
-        command.args(args).env_clear().envs(env);
-        #[cfg(unix)]
-        let failure = command.exec();
-        #[cfg(not(unix))]
-        let failure = io::Error::from(io::ErrorKind::Unsupported);
-        Err(failure)
+        Err(exec_command(path, args, env).exec())
+    }
+    #[cfg(not(unix))]
+    fn replace(&self, _path: &str, _args: &[String], _env: &EnvVars) -> io::Result<i32> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
     fn spawn(&self, command: &WindowsCommand, env: &EnvVars) -> io::Result<i32> {
         match command {
@@ -244,7 +252,6 @@ impl ProcessLauncher for StdLauncher {
         }
     }
 }
-
 pub fn hand_off(
     path: &str,
     args: &[String],
@@ -258,43 +265,37 @@ pub fn hand_off(
     };
     result.map_err(AgentRunError::Process)
 }
-
 pub trait Terminal {
-    fn stdin_is_tty(&self) -> bool;
+    fn is_interactive(&self) -> bool;
     fn open_controlling(&self) -> io::Result<File>;
     fn attach_stdin(&self, terminal: File) -> io::Result<()>;
-    fn is_interactive(&self) -> bool {
-        self.stdin_is_tty()
-    }
     fn restore_controlling_terminal(&self) -> io::Result<()> {
-        if self.stdin_is_tty() {
+        if self.is_interactive() {
             return Ok(());
         }
-        let Ok(controlling) = self.open_controlling() else {
-            return Ok(());
-        };
-        self.attach_stdin(controlling)
+        match self.open_controlling() {
+            Ok(controlling) => self.attach_stdin(controlling),
+            Err(_unavailable) => Ok(()),
+        }
     }
 }
 pub struct StdTerminal;
 impl Terminal for StdTerminal {
-    fn stdin_is_tty(&self) -> bool {
+    fn is_interactive(&self) -> bool {
         io::stdin().is_terminal()
     }
     fn open_controlling(&self) -> io::Result<File> {
         File::open("/dev/tty")
     }
     fn attach_stdin(&self, terminal: File) -> io::Result<()> {
+        #[cfg(not(unix))]
+        drop(terminal);
         #[cfg(unix)]
         {
             dup2_stdin(&terminal).map_err(io::Error::from)
         }
         #[cfg(not(unix))]
-        {
-            drop(terminal);
-            Err(io::Error::from(io::ErrorKind::Unsupported))
-        }
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
-
 mod tests;

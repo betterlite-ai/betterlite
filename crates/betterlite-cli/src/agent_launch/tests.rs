@@ -8,14 +8,16 @@ use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::{NamedTempFile, TempDir};
 
+#[cfg(unix)]
+use super::exec_command;
 use super::{
     AgentRunError, EnvProfile, EnvVars, KNOWN_AGENTS, KeyProbe, LITELLM_PROXY_API_KEY_ENV,
     Platform, ProcessLauncher, Terminal, WindowsCommand, agent_launch_args, agent_profile,
-    build_agent_env, codex_config_path, codex_declares_stop_hooks, codex_proxy_provider, hand_off,
-    verify_proxy_key, warn, windows_command,
+    build_agent_env, codex_config_path, codex_declares_stop_hooks, codex_proxy_args,
+    codex_proxy_provider, hand_off, verify_proxy_key, warn, windows_command,
 };
 
 fn vars(pairs: &[(&str, &str)]) -> EnvVars {
@@ -68,7 +70,7 @@ impl EnvironmentLookup for FakeEnvironment {
 #[derive(Clone, Debug)]
 struct ProbeCall {
     url: String,
-    authorization: String,
+    key_matches: bool,
     timeout: Duration,
 }
 
@@ -105,10 +107,10 @@ impl FakeProbe {
 }
 
 impl KeyProbe for FakeProbe {
-    fn status(&self, url: &str, authorization: &str, timeout: Duration) -> io::Result<u16> {
+    fn status(&self, url: &str, api_key: &SecretString, timeout: Duration) -> io::Result<u16> {
         self.record(ProbeCall {
             url: url.to_owned(),
-            authorization: authorization.to_owned(),
+            key_matches: api_key.expose_secret() == "sk-test",
             timeout,
         });
         self.failure
@@ -174,7 +176,7 @@ impl ProcessLauncher for FakeLauncher {
 }
 
 struct FakeTerminal {
-    stdin_is_tty: bool,
+    interactive: bool,
     controlling: Option<File>,
     opens: Mutex<Vec<()>>,
     attaches: Mutex<Vec<()>>,
@@ -182,9 +184,9 @@ struct FakeTerminal {
 }
 
 impl FakeTerminal {
-    fn with_stdin(stdin_is_tty: bool) -> Self {
+    fn with_stdin(interactive: bool) -> Self {
         Self {
-            stdin_is_tty,
+            interactive,
             controlling: None,
             opens: Mutex::new(Vec::new()),
             attaches: Mutex::new(Vec::new()),
@@ -224,8 +226,8 @@ impl FakeTerminal {
 }
 
 impl Terminal for FakeTerminal {
-    fn stdin_is_tty(&self) -> bool {
-        self.stdin_is_tty
+    fn is_interactive(&self) -> bool {
+        self.interactive
     }
 
     fn open_controlling(&self) -> io::Result<File> {
@@ -394,14 +396,14 @@ fn codex_config_path_without_home_is_none() {
 }
 
 #[test]
-fn codex_config_path_empty_home_used_as_given() {
+fn codex_config_path_empty_home_falls_back_to_home() {
     let environment = FakeEnvironment {
         variables: vars(&[("CODEX_HOME", "")]),
         home: Some(PathBuf::from("/home/tester")),
     };
     assert_eq!(
         codex_config_path(&environment),
-        Some(PathBuf::from("config.toml"))
+        Some(PathBuf::from("/home/tester/.codex/config.toml"))
     );
 }
 
@@ -463,7 +465,7 @@ fn codex_provider_frozen_mapping() {
 
 #[test]
 fn codex_args_provider_override() {
-    let args = agent_launch_args("/usr/local/bin/codex", "http://proxy/").unwrap();
+    let args = agent_launch_args("/usr/local/bin/codex", "http://proxy/");
     let expected = [
         "-c",
         "model_provider=\"litellm\"",
@@ -486,13 +488,20 @@ fn codex_args_provider_override() {
 }
 
 #[test]
+fn codex_proxy_args_escapes_the_base_url() {
+    let args = codex_proxy_args("http://proxy/a\"b\\c\nd");
+    let expected = r#"model_providers.litellm.base_url="http://proxy/a\"b\\c\u000ad/v1""#;
+    assert!(args.iter().any(|argument| argument.as_str() == expected));
+}
+
+#[test]
 fn agent_launch_args_empty_for_other_agents() {
     assert_eq!(
-        agent_launch_args("/usr/bin/claude", "http://proxy").unwrap(),
+        agent_launch_args("/usr/bin/claude", "http://proxy"),
         Vec::<String>::new()
     );
     assert_eq!(
-        agent_launch_args("mytool", "http://proxy").unwrap(),
+        agent_launch_args("mytool", "http://proxy"),
         Vec::<String>::new()
     );
 }
@@ -505,7 +514,7 @@ fn proxy_401_rejected() {
     let calls = probe.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].url, "http://proxy/v1/models");
-    assert_eq!(calls[0].authorization, "Bearer sk-test");
+    assert!(calls[0].key_matches);
     assert_eq!(calls[0].timeout, Duration::from_secs(10));
 }
 
@@ -618,6 +627,20 @@ fn linebreak_in_a_direct_argument_is_tolerated() {
         windows_command("C:\\bin\\codex.exe", &args).unwrap(),
         WindowsCommand::Direct("C:\\bin\\codex.exe".to_owned(), vec!["a\nb".to_owned()])
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_exec_command_keeps_the_caller_name_as_argv_zero() {
+    let env = vars(&[("KEEP", "1")]);
+    let args = vec!["claude".to_owned(), "--model".to_owned()];
+    let command = exec_command("/usr/bin/claude", &args, &env);
+    assert_eq!(command.get_program().to_str(), Some("/usr/bin/claude"));
+    let arguments = command
+        .get_args()
+        .map(|argument| argument.to_str().unwrap())
+        .collect::<Vec<&str>>();
+    assert_eq!(arguments, ["--model"]);
 }
 
 #[test]
