@@ -13,6 +13,8 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
+use tokio::task::yield_now;
+use tokio::time::{advance, pause};
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -404,6 +406,15 @@ impl Fixture {
             self.transport.attach(logger);
         }
         built
+    }
+
+    // Ends the periodic flush task so a later stop() has only its own drain left to deliver
+    pub(super) async fn end_periodic_flush(&self) {
+        pause();
+        yield_now().await;
+        self.tasks.close();
+        advance(Duration::from_secs(5)).await;
+        self.tasks.wait().await;
     }
 
     pub(super) async fn wait_for_tasks(&self) {

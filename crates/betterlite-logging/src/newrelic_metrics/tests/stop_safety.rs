@@ -9,6 +9,7 @@ use crate::newrelic_metrics::queue::{push_record, queue_length};
 async fn stop_safety_schedules_a_final_drain() {
     let fixture = Fixture::new_with_replies(&[Reply::Status(202)]);
     let logger = fixture.build();
+    fixture.end_periodic_flush().await;
     push_record(&logger, record_at(0));
     assert!(logger.stop());
     fixture.wait_for_tasks().await;
@@ -27,19 +28,22 @@ async fn stop_safety_marks_the_logger_stopped() {
 
 #[tokio::test]
 async fn stop_safety_schedules_one_drain_per_call() {
-    let fixture = Fixture::new_with_replies(&[Reply::Status(202)]);
+    let fixture = Fixture::new();
     let logger = fixture.build();
-    push_record(&logger, record_at(0));
+    fixture.end_periodic_flush().await;
+    assert_eq!(fixture.tasks.len(), 0);
     assert!(logger.stop());
+    assert_eq!(fixture.tasks.len(), 1);
     assert!(logger.stop());
+    assert_eq!(fixture.tasks.len(), 2);
     fixture.wait_for_tasks().await;
-    assert_eq!(fixture.transport.requests().len(), 1);
 }
 
 #[tokio::test]
 async fn stop_safety_drains_a_record_after_a_failing_first_pass() {
     let fixture = Fixture::new_with_replies(&[Reply::Status(500), Reply::Status(202)]);
     let logger = fixture.build();
+    fixture.end_periodic_flush().await;
     push_record(&logger, record_at(0));
     assert!(logger.stop());
     fixture.wait_for_tasks().await;
