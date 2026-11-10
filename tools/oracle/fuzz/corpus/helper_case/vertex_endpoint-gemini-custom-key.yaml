@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-endpoint-gemini-custom-key-seed
+call:
+  vertex_endpoint:
+    gemini_custom_key:
+      tokens:
+        - {provider: gemini, model: gemini-2.5-flash, gemini_api_key: gk, stream: true, api_base: https://custom.example.com, mode: chat}
+      proxies:
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://custom.example.com, model: gemini-2.5-flash, gemini_api_key: gk, provider: gemini}
+env: {}
+compare: {ignore: []}

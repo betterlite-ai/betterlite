@@ -1,0 +1,15 @@
+kind: helper
+name: google-first-domain-only
+call:
+  b8024:
+    provider: google_pse
+    query: "orbital"
+    optional_params:
+      search_domain_filter: ["first.example", "second.example"]
+    api_key: "caller-key"
+    api_base: null
+    search_engine_id: "engine-id"
+    environment: {}
+    headers: {}
+env: {}
+compare: {ignore: []}

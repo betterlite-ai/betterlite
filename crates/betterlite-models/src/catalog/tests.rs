@@ -5,6 +5,7 @@ use super::{
     MAX_CATALOG_ENTRIES, MAX_CATALOG_WARNING_BYTES, MAX_CATALOG_WARNINGS, ModelCatalog,
     UnknownFields,
 };
+use crate::fetch_policy::revision::git_blob_id;
 use crate::metadata::identity::Mode;
 use crate::token_rates::Usage;
 use crate::token_rates::batch::get_batch_cost_rates;
@@ -523,6 +524,31 @@ fn embedded_backup_is_cached() {
     assert_eq!(loader.get().entries.len(), 4458);
     let first = loader.get();
     assert!(Arc::ptr_eq(&first, &loader.get()));
+}
+
+#[rstest]
+#[case::plain(br#"{"model":{}}"#.as_slice(), 1)]
+#[case::sample_spec(br#"{"sample_spec":{},"model":{}}"#.as_slice(), 2)]
+#[case::generalizations(
+    br#"{"sample_spec":{},"fallback_generalizations":{"rules":[]},"model":{}}"#.as_slice(),
+    2
+)]
+#[case::aliases(br#"{"model":{"aliases":["alias"]}}"#.as_slice(), 2)]
+#[case::alias_conflict(
+    br#"{"first":{"aliases":["model"]},"model":{}}"#.as_slice(),
+    2
+)]
+fn parsed_catalog_records_adopted_size_and_revision(
+    #[case] bytes: &[u8],
+    #[case] adopted_size: usize,
+) {
+    let catalog = ModelCatalog::parse(bytes, UnknownFields::Reject).unwrap();
+    let expected_revision = git_blob_id(bytes);
+    assert_eq!(catalog.adopted_size, adopted_size);
+    assert_eq!(
+        catalog.revision.as_deref(),
+        Some(expected_revision.as_str())
+    );
 }
 
 #[test]

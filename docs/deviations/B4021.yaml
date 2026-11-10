@@ -1,0 +1,26 @@
+task: B4021
+deviations:
+  - what: WebhookEvent carries budget spend data (spend, max_budget, soft_budget) and a hashed key token; webhook POST serializes all fields to JSON and sends to an externally configured URL.
+    why: B4021 delivers structured budget webhooks to external endpoints specified by configuration; this is a data exposure path requiring security review.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1193-L1222
+  - what: Digest formatted messages include PROXY_BASE_URL as a footer when set, matching the source behavior.
+    why: B4021 renders digest summaries directly and must preserve the source's formatting including optional PROXY_BASE_URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1643-L1645
+  - what: Batch transport errors are caught broadly and logged at debug level; the alert queue clears regardless.
+    why: LiteLLM swallows all delivery errors to avoid blocking the main request path, and console emission in finally ensures observability.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/batching_handler.py#L73-L76
+  - what: A webhook URL never appears in a log line; a delivery failure logs the alert type, the status and the response text instead.
+    why: A webhook URL carries its access token in the path, so logging it would leak a secret. secrets-stay-secret requires the URL to stay inside its SecretString.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/batching_handler.py#L71-L74
+  - what: Webhook POSTs do not follow redirects; a 3xx answer counts as a failed delivery and is logged at debug.
+    why: The shared pooled transport sends every outbound request with follow_redirects disabled, and a webhook endpoint that redirects is a configuration error rather than a new destination to follow. LiteLLM's AsyncHTTPHandler defaults to following redirects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L688-L698
+  - what: An alert enqueued while a batch is being delivered stays queued for the next flush instead of being cleared with the batch.
+    why: LiteLLM reads its queue, sends the squashed alerts and then clears the whole queue, so an alert enqueued during the sends is cleared without ever being delivered. Keeping it is a lost-data fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1597-L1607
+  - what: Digest summary start and end times are rendered from the process clock in UTC rather than Python's local datetime.now().
+    why: betterlite has no local timezone database wired for this module, and every other injected clock in the crate returns UTC, so a host outside UTC sees the digest window in UTC.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1617
+  - what: Digest buckets are capped at 1024 entries, and a new key beyond the cap is folded into a per-alert-type overflow entry instead of opening another bucket.
+    why: LiteLLM keeps one digest bucket per distinct alert_type/request_model/api_base key with no limit, and both the model and the api base come from the request, so a client can grow the map for a whole digest interval. The cap bounds that memory while the overflow entry still reports how many alerts of its type arrived.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1522-L1541

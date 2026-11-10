@@ -1,0 +1,17 @@
+kind: helper
+name: model-resolution-caching-group
+call:
+  b4296:
+    get_cache_key:
+      cache_type: local
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+        - {name: temperature, value: 0.7}
+      metadata:
+        model_group: gpt-4
+        caching_groups:
+          - [gpt-4, gpt-4o]
+env: {}
+compare:
+  ignore: []

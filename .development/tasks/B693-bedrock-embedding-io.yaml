@@ -223,7 +223,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_embedding_io)"
       && grep -q 'decode_embedding_response' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_embedding_io.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_embedding_io_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_embedding_io_corpus(::|$)/)'
   - id: case-embedding-credentials
     why: Call B590 pop_aws_auth_params, then pop aws_region_name from the caller options. If the region is None,
       read B8500 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including empty strings,

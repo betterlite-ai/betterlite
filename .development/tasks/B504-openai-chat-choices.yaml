@@ -268,7 +268,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_chat_choices)"
       && grep -q 'decode_chat_choices' crates/betterlite-openai/fuzz/fuzz_targets/openai_chat_choices.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_chat_choices_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_chat_choices_corpus(::|$)/)'
   - id: case-stream-envelope-fields
     why: Force object=chat.completion.chunk, carry id/created/model, default choices=[], add usage only when non-None
       and service_tier only for a nonempty string.

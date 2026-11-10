@@ -1,0 +1,20 @@
+task: B5847
+deviations:
+  - what: One async implementation serves the sync and async LiteLLM paths, with OutputPolicy keeping their different output handling.
+    why: Two copies would drift. The sync face is B158's, and the visible results (chunks, errors, delays) stay those of each LiteLLM path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L26-L123
+  - what: A prediction reply whose output is null or holds a value that is not a list of strings gives ReplicateError 422 "Unable to parse response. Got=...".
+    why: LiteLLM joins the value without a guard, so a null or numeric output raises an unhandled TypeError that its exception mapper turns into a 500. A 4xx for a malformed prediction reply is what a caller can act on, and the text is the one the streaming poller already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L256-L259
+  - what: A create reply whose urls member is null or not an object gives ReplicateError 400 "LiteLLM Error - prediction url is None - ...".
+    why: LiteLLM calls .get on that member, so a null or string urls raises an unhandled AttributeError and answers 500. The create reply is malformed in either case, and 400 with the same text as the missing-get case names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L289-L297
+  - what: A poll reply that is not JSON, is not a JSON object, or carries no string status gives the typed Decode, ReplyNotObject or MissingStatus failure.
+    why: LiteLLM raises JSONDecodeError, AttributeError or KeyError there and its mapper answers a generic 500 with Python's exception text; a typed decoder keeps the cause for the caller that maps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L37-L39
+  - what: A urls.get value that is not a string gives the typed PredictionUrlType failure.
+    why: LiteLLM hands the value to its HTTP client, which fails on a non-string URL; the provider reply is outside the declared type, so betterlite names the field instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L289-L297
+  - what: DEFAULT_REPLICATE_POLLING_RETRIES is read as a 32-bit integer, so a value above 2147483647 is an environment error instead of a retry count.
+    why: LiteLLM's int has no bound, but a loop of that many polls never ends in practice. A type that needs no conversion keeps the retry loop free of a fallback value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L97-L98

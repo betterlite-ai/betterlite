@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Result as IoResult, Write};
 use std::path::{Path, PathBuf};
@@ -12,7 +13,7 @@ use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::catalog::{adapter_for, validate_callback_vars};
+use super::catalog::validate_callback_vars;
 use super::error::RegistryError;
 use super::identity::{Attribute, CallbackIdentity};
 use super::phases::{CallbackList, CallbackPhase};
@@ -20,6 +21,8 @@ use super::sink::{CallbackEvent, CallbackSink, SinkError};
 use super::{CallbackRegistry, Registration};
 use crate::callback_config::error::ValidationError;
 use crate::callback_config::{CallbackVars, FeatureFlags};
+use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::resolver::LoggerResolver;
 
 enum Scenario {
     RegistersInOrder,
@@ -40,8 +43,37 @@ enum Scenario {
     TracingSink,
     KnownNames,
     UnknownName,
+    ResolverRegisters,
+    ResolverNotBuilt,
     ValidationKinds,
     ValidationPrecedence,
+}
+
+struct NamedLogger {
+    name: String,
+}
+
+impl CallbackLogger for NamedLogger {
+    fn callback_name(&self) -> &str {
+        &self.name
+    }
+}
+
+struct NamedResolver {
+    logger: Arc<dyn CallbackLogger>,
+}
+
+impl LoggerResolver for NamedResolver {
+    fn resolve(
+        &self,
+        name: &str,
+        _params: &BTreeMap<String, String>,
+    ) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError> {
+        if name == self.logger.callback_name() {
+            return Ok(Some(Arc::clone(&self.logger)));
+        }
+        Ok(None)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -168,6 +200,8 @@ struct MetadataEntry {
 #[case::tracing_sink_logs_the_phase(Scenario::TracingSink)]
 #[case::known_metadata_names_are_unavailable(Scenario::KnownNames)]
 #[case::unknown_name_is_unavailable(Scenario::UnknownName)]
+#[case::an_attached_resolver_registers_its_logger(Scenario::ResolverRegisters)]
+#[case::a_resolver_that_gives_none_registers_nothing(Scenario::ResolverNotBuilt)]
 #[case::validators_report_each_kind(Scenario::ValidationKinds)]
 #[case::validation_precedes_adapter_resolution(Scenario::ValidationPrecedence)]
 fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
@@ -540,26 +574,77 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             let mut registry = CallbackRegistry::new(100);
             for name in names {
                 assert!(matches!(
-                    adapter_for(&name),
-                    Err(RegistryError::UnavailableAdapter { name: rejected }) if rejected == name
-                ));
-                assert!(matches!(
                     registry.register_configured(
                         &name,
                         &CallbackVars::new(),
                         CallbackList::Success,
                         flags(false)
                     ),
-                    Err(RegistryError::UnavailableAdapter { .. })
+                    Err(RegistryError::UnavailableAdapter { name: rejected }) if rejected == name
                 ));
             }
             assert!(keys(&registry, CallbackList::Success).is_empty());
         }
         Scenario::UnknownName => {
+            let mut registry = CallbackRegistry::new(100);
             assert!(matches!(
-                adapter_for("definitely_not_a_litellm_callback"),
-                Err(RegistryError::UnavailableAdapter { .. })
+                registry.register_configured(
+                    "definitely_not_a_litellm_callback",
+                    &CallbackVars::new(),
+                    CallbackList::Success,
+                    flags(false)
+                ),
+                Err(RegistryError::UnavailableAdapter { name })
+                    if name == "definitely_not_a_litellm_callback"
             ));
+        }
+        Scenario::ResolverRegisters => {
+            let logger: Arc<dyn CallbackLogger> = Arc::new(NamedLogger {
+                name: "pagerduty".to_owned(),
+            });
+            let resolver: Arc<dyn LoggerResolver> = Arc::new(NamedResolver {
+                logger: Arc::clone(&logger),
+            });
+            let mut registry = CallbackRegistry::new(100).with_resolver(resolver);
+            assert_eq!(
+                registry
+                    .register_configured(
+                        "pagerduty",
+                        &CallbackVars::new(),
+                        CallbackList::Success,
+                        flags(false)
+                    )
+                    .unwrap(),
+                Registration::Registered
+            );
+            assert_eq!(keys(&registry, CallbackList::Success), ["pagerduty"]);
+            let loggers = registry.loggers(CallbackPhase::Success);
+            assert_eq!(loggers.len(), 1);
+            assert!(
+                loggers
+                    .first()
+                    .is_some_and(|found| Arc::ptr_eq(found, &logger))
+            );
+        }
+        Scenario::ResolverNotBuilt => {
+            let logger: Arc<dyn CallbackLogger> = Arc::new(NamedLogger {
+                name: "pagerduty".to_owned(),
+            });
+            let resolver: Arc<dyn LoggerResolver> = Arc::new(NamedResolver { logger });
+            let mut registry = CallbackRegistry::new(100).with_resolver(resolver);
+            assert_eq!(
+                registry
+                    .register_configured(
+                        "langsmith",
+                        &CallbackVars::new(),
+                        CallbackList::Success,
+                        flags(false)
+                    )
+                    .unwrap(),
+                Registration::NotBuilt
+            );
+            assert!(keys(&registry, CallbackList::Success).is_empty());
+            assert!(registry.loggers(CallbackPhase::Success).is_empty());
         }
         Scenario::ValidationKinds => {
             validate_callback_vars(Some("arize"), &vars(&[]), &[], flags(false)).unwrap();

@@ -1,0 +1,5 @@
+kind: helper
+name: banner-text
+call: {"b4175": {"operation": "banner_text"}}
+env: {}
+compare: {ignore: []}

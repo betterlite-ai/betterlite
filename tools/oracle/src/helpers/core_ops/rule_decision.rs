@@ -4,6 +4,7 @@ use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::rules::{RuleDecision, RuleError, RuleEvaluator, RulePhase, evaluate};
 use betterlite_openai::chat::mock_failure;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -103,7 +104,11 @@ fn rule_failure(error: &RuleError) -> Box<crate::helpers::HelperError> {
 }
 
 fn mock_answer_failure(error: MockError) -> Box<crate::helpers::HelperError> {
-    let facts = mock_failure(error).failure();
+    let redactor = match Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) {
+        Ok(redactor) => redactor,
+        Err(redaction) => return failure("Redaction", None, redaction.to_string()),
+    };
+    let facts = mock_failure(error).failure(&redactor);
     failure(
         "MockException",
         Some(facts.status),
