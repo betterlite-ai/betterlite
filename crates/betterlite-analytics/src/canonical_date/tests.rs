@@ -39,6 +39,12 @@ fn parse_canonical_date_accepts_canonical_dates(#[case] value: &str) {
 #[case::leading_space(" 2026-09-24")]
 #[case::trailing_space("2026-09-24 ")]
 #[case::slashes("2026/09/24")]
+#[case::first_slash("2026/09-24")]
+#[case::second_slash("2026-09/24")]
+#[case::signed_year("-026-09-24")]
+#[case::non_ascii_month("2026-\u{e9}-24")]
+#[case::punct_month_tens("2026-:9-24")]
+#[case::punct_month_ones("2026-0:-24")]
 #[case::empty("")]
 #[case::impossible_day("2026-02-30")]
 #[case::month_zero("2026-00-01")]
@@ -103,12 +109,10 @@ fn raise_public_lifts_scope_denied_to_its_status(
     #[case] status: ScopeDenial,
     #[case] expected: u16,
 ) {
-    let raised = raise_public(PublicFailure::ScopeDenied {
-        denied: ScopeDenied {
-            status,
-            reason: "team is not visible to this key".to_owned(),
-        },
-    });
+    let raised = raise_public(PublicFailure::ScopeDenied(ScopeDenied {
+        status,
+        reason: "team is not visible to this key".to_owned(),
+    }));
     assert_eq!(raised.status_code, expected);
     assert_eq!(
         raised.detail,
@@ -123,11 +127,9 @@ fn raise_public_lifts_scope_denied_to_its_status(
 #[case::malformed("start_date and end_date must be valid YYYY-MM-DD dates")]
 #[case::reversed("end_date must be on or after start_date")]
 fn raise_public_lifts_invalid_date_range_to_bad_request(#[case] reason: &str) {
-    let raised = raise_public(PublicFailure::InvalidDateRange {
-        range: InvalidDateRange {
-            reason: reason.to_owned(),
-        },
-    });
+    let raised = raise_public(PublicFailure::InvalidDateRange(InvalidDateRange {
+        reason: reason.to_owned(),
+    }));
     assert_eq!(raised.status_code, 400);
     assert_eq!(
         raised.detail,

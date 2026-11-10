@@ -30,10 +30,10 @@ pub struct InvalidDateRange {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PublicFailure {
-    #[error("{}", .denied.reason)]
-    ScopeDenied { denied: ScopeDenied },
-    #[error("{}", .range.reason)]
-    InvalidDateRange { range: InvalidDateRange },
+    #[error("{}", .0.reason)]
+    ScopeDenied(ScopeDenied),
+    #[error("{}", .0.reason)]
+    InvalidDateRange(InvalidDateRange),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -60,10 +60,10 @@ pub fn parse_canonical_date(value: &str) -> Option<NaiveDate> {
         year_second,
         year_third,
         year_fourth,
-        first_dash,
+        b'-',
         month_first,
         month_second,
-        second_dash,
+        b'-',
         day_first,
         day_second,
     ] = value.as_bytes()
@@ -80,13 +80,10 @@ pub fn parse_canonical_date(value: &str) -> Option<NaiveDate> {
         day_first,
         day_second,
     ];
-    if digits.iter().any(|digit| !digit.is_ascii_digit())
-        || *first_dash != b'-'
-        || *second_dash != b'-'
-    {
+    if digits.iter().any(|digit| !digit.is_ascii_digit()) {
         return None;
     }
-    // Python's date rejects year 0; chrono would accept it and the four-digit check alone would not
+    // Python's date rejects year 0, which chrono would accept
     if [year_first, year_second, year_third, year_fourth] == [&b'0', &b'0', &b'0', &b'0'] {
         return None;
     }
@@ -116,13 +113,13 @@ pub fn parse_canonical_date_range(
 #[must_use]
 pub fn raise_public(failure: PublicFailure) -> PublicError {
     match failure {
-        PublicFailure::ScopeDenied { denied } => PublicError {
+        PublicFailure::ScopeDenied(denied) => PublicError {
             status_code: denied.status.status_code(),
             detail: PublicErrorDetail {
                 error: denied.reason,
             },
         },
-        PublicFailure::InvalidDateRange { range } => PublicError {
+        PublicFailure::InvalidDateRange(range) => PublicError {
             status_code: 400,
             detail: PublicErrorDetail {
                 error: range.reason,
