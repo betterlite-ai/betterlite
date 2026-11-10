@@ -115,12 +115,13 @@ fn flow_requests(step: &Step) -> Result<Vec<HttpRequest>, Box<HelperError>> {
 
 fn selection_report(
     step: &Step,
-) -> Result<(Settings, region::RegionSelection, usize, Value), Box<HelperError>> {
+) -> Result<(Settings, region::RegionSelection, usize, Value, Value), Box<HelperError>> {
     let settings = load_settings(&step.environment)?;
     let transport = FixtureTransport::new(&step.replies);
     let selection = region::select_region(&settings, &transport);
     let (imds_requests, metadata) = imds_report(&transport);
-    Ok((settings, selection, imds_requests, metadata))
+    let host = regional_host(&flow_requests(step)?, &step.environment);
+    Ok((settings, selection, imds_requests, metadata, host))
 }
 
 fn selection_value(selection: &region::RegionSelection, extra: &[(&str, Value)]) -> Value {
@@ -134,18 +135,14 @@ fn selection_value(selection: &region::RegionSelection, extra: &[(&str, Value)])
 }
 
 pub(super) fn inputs_report(step: &Step) -> Result<Value, Box<HelperError>> {
-    let (settings, selection, _imds_requests, _metadata) = selection_report(step)?;
-    let host = regional_host(&flow_requests(step)?, &step.environment);
-    let extra = [
-        ("configured", configured_input(&settings)),
-        ("regional_host", host),
-    ];
+    let (settings, selection, _imds_requests, _metadata, host) = selection_report(step)?;
+    let mut extra = vec![("configured", configured_input(&settings))];
+    extra.push(("regional_host", host));
     Ok(selection_value(&selection, &extra))
 }
 
 pub(super) fn discovery_report(step: &Step) -> Result<Value, Box<HelperError>> {
-    let (_settings, selection, imds_requests, metadata) = selection_report(step)?;
-    let host = regional_host(&flow_requests(step)?, &step.environment);
+    let (_settings, selection, imds_requests, metadata, host) = selection_report(step)?;
     let mut extra = vec![("imds_requests", json!(imds_requests))];
     extra.extend([("metadata", metadata), ("regional_host", host)]);
     Ok(selection_value(&selection, &extra))
