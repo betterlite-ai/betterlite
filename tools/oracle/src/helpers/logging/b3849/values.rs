@@ -26,49 +26,61 @@ fn otel_value(value: &OtelModelValue) -> Result<Value, Box<HelperError>> {
             .as_i64()
             .map(Value::I64)
             .or_else(|| number.as_f64().map(Value::F64))
-            .ok_or_else(|| helper_error!("InvalidInput", "unrepresentable number".to_owned())),
-        OtelModelValue::Array(items) => string_array(items),
-        OtelModelValue::Null(()) | OtelModelValue::Object(_) => Err(helper_error!(
-            "InvalidInput",
-            "unsupported span attribute value".to_owned()
-        )),
+            .ok_or_else(|| {
+                Box::new(HelperError {
+                    class: "InvalidInput".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: "unrepresentable number".to_owned(),
+                })
+            }),
+        OtelModelValue::Array(items) => {
+            let texts = items
+                .iter()
+                .map(text_value)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::Array(Array::String(texts)))
+        }
+        OtelModelValue::Null(()) | OtelModelValue::Object(_) => Err(Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "unsupported span attribute value".to_owned(),
+        })),
     }
 }
 
-fn string_array(items: &[OtelModelValue]) -> Result<Value, Box<HelperError>> {
-    let mut texts = Vec::with_capacity(items.len());
-    for item in items {
-        match item {
-            OtelModelValue::String(text) => texts.push(StringValue::from(text.clone())),
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::Array(_)
-            | OtelModelValue::Object(_) => {
-                return Err(helper_error!(
-                    "InvalidInput",
-                    "string arrays only".to_owned()
-                ));
-            }
-        }
+fn text_value(item: &OtelModelValue) -> Result<StringValue, Box<HelperError>> {
+    match item {
+        OtelModelValue::String(text) => Ok(StringValue::from(text.clone())),
+        OtelModelValue::Null(())
+        | OtelModelValue::Bool(_)
+        | OtelModelValue::Number(_)
+        | OtelModelValue::Array(_)
+        | OtelModelValue::Object(_) => Err(Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "string arrays only".to_owned(),
+        })),
     }
-    Ok(Value::Array(Array::String(texts)))
 }
 
 pub(super) fn view_json(span: &SpanData) -> Json {
-    json!({
-        "name": span.name.as_ref(),
-        "attributes": attributes_json(&attribute_map(&span.attributes)),
-    })
-}
-
-fn attributes_json(attributes: &AttributeMap) -> Json {
-    Json::Object(
+    let attributes: AttributeMap = attribute_map(&span.attributes);
+    let fields = Json::Object(
         attributes
             .iter()
             .map(|(key, value)| (key.clone(), json_value(value)))
             .collect(),
-    )
+    );
+    json!({"name": span.name.as_ref(), "attributes": fields})
 }
 
 fn json_value(value: &Value) -> Json {

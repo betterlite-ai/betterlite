@@ -87,10 +87,12 @@ impl DrainPool {
 
     #[must_use]
     pub fn saturated(&self) -> bool {
-        match self.shared.state.lock() {
-            Ok(state) => state.backlog >= self.capacity,
-            Err(poisoned) => poisoned.into_inner().backlog >= self.capacity,
-        }
+        self.shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .backlog
+            >= self.capacity
     }
 
     pub fn close(&self, timeout: Duration) {

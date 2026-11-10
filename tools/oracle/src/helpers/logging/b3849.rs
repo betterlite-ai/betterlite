@@ -12,19 +12,6 @@ use serde_json::{Value as Json, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
-macro_rules! helper_error {
-    ($class:expr, $message:expr) => {
-        Box::new(crate::helpers::HelperError {
-            class: $class.to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: $message,
-        })
-    };
-}
-
 use input::{Input, SpanInput};
 use values::{attributes_of, view_json};
 
@@ -44,10 +31,14 @@ impl Helper for Op {
             "for_destination" => view_json(&tenant_view(&span_from(&input.span)?)),
             "sink_key" => sink_record(input),
             other => {
-                return Err(helper_error!(
-                    "UnknownFunction",
-                    format!("unknown b3849 function {other}")
-                ));
+                return Err(Box::new(HelperError {
+                    class: "UnknownFunction".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: format!("unknown b3849 function {other}"),
+                }));
             }
         };
         Ok(json!({"result": value}))
