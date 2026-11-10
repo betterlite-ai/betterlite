@@ -1,0 +1,36 @@
+task: B3861
+deviations:
+  - what: >-
+      Every JSON text written to an attribute (`metadata`, `llm.invocation_parameters`, the MCP
+      arguments and payload, Weave's prompt and output) comes from `serde_json::to_string`. It has no
+      spaces after `:` and `,`, it sorts object keys, it keeps NUL characters, and it has no depth
+      limit with a `MaxDepthExceeded` marker.
+    why: >-
+      Spacing is a json.dumps habit that docs/compatibility.md leaves out of the contract. Key order
+      is a BTreeMap detail of OtelModelValue. The NUL strip exists for PostgreSQL columns and the
+      depth marker for Python object graphs, and neither applies to a span attribute built from
+      parsed JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L12-L93
+  - what: >-
+      A response cost that is NaN or infinite (a string such as `nan`) writes no cost attributes.
+      LiteLLM writes the float.
+    why: >-
+      OtelModelValue holds a serde_json number, which cannot carry a non-finite float. A real
+      response_cost is never one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L886-L905
+  - what: >-
+      The `exception` span event written for a missing standard_logging_object has `exception.type`
+      and `exception.message` only, with no `exception.stacktrace`.
+    why: >-
+      There is no Python traceback to record, and the message names the same cause. The oracle
+      compares type and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L413-L486
+  - what: >-
+      A standard_logging_object that is neither an object nor null takes the missing-payload path.
+      LiteLLM raises AttributeError from `standard_logging_payload.get("metadata")` and records that
+      exception instead.
+    why: >-
+      The declared type is StandardLoggingPayload, so a string or number there is a caller bug, and
+      one error path with one message is clearer than a second exception shape no working setup
+      produces. The task text asks for this path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L429-L436
