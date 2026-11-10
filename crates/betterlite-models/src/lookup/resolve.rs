@@ -4,16 +4,16 @@ use serde::Deserialize;
 
 use crate::catalog::{CatalogEntry, ModelCatalog};
 use crate::catalog_generalizations::ModelInfo;
-use crate::fireworks_catalog_metadata::get_model_cost_key;
 use crate::identity::explicit_prefix::{
     PrefixClassification, PrefixClassificationInput, classify_prefix,
 };
 use crate::metadata::identity::Mode;
-use crate::model_catalog_keys::{EntryProvider, check_provider_match, strip_model_name};
+use crate::model_catalog_keys::{EntryProvider, check_provider_match};
 
 use super::capabilities::CapabilityView;
 use super::info::{ModelInfoError, ModelQuery};
 use super::limits::ModelLimits;
+use super::names::potential_names;
 use super::provider_info::provider_info;
 use super::remap::remap;
 
@@ -38,15 +38,6 @@ pub struct Resolved {
     pub mode: Option<Mode>,
     pub limits: ModelLimits,
     pub capabilities: CapabilityView,
-}
-
-struct Names {
-    split_model: String,
-    combined: String,
-    stripped: String,
-    combined_stripped: String,
-    provider_prefixed: String,
-    provider: Option<String>,
 }
 
 struct Found<'catalog> {
@@ -115,67 +106,6 @@ pub fn split_model(catalog: &ModelCatalog, requested: &str) -> SplitModel {
             }
         }
     }
-}
-
-fn unprovided_names(catalog: &ModelCatalog, bedrock: &BedrockNames, model: &str) -> Names {
-    let split = split_model(catalog, model);
-    let stripped = strip_model_name(model, split.provider.as_deref(), bedrock.base_model);
-    Names {
-        split_model: split.model,
-        combined: model.to_owned(),
-        combined_stripped: stripped.clone(),
-        stripped,
-        provider_prefixed: model.to_owned(),
-        provider: split.provider,
-    }
-}
-
-fn provided_names(bedrock: &BedrockNames, model: &str, provider: &str) -> Names {
-    let remainder = model.strip_prefix(&format!("{provider}/"));
-    let split = remainder.unwrap_or(model);
-    let stripped = strip_model_name(split, Some(provider), bedrock.base_model);
-    Names {
-        split_model: split.to_owned(),
-        combined: if remainder.is_some() {
-            model.to_owned()
-        } else {
-            format!("{provider}/{model}")
-        },
-        combined_stripped: format!("{provider}/{stripped}"),
-        stripped,
-        provider_prefixed: format!("{provider}/{model}"),
-        provider: Some(provider.to_owned()),
-    }
-}
-
-fn potential_names(
-    catalog: &ModelCatalog,
-    bedrock: &BedrockNames,
-    query: &ModelQuery<'_>,
-) -> Names {
-    let mut names = query.provider.map_or_else(
-        || unprovided_names(catalog, bedrock, query.model),
-        |provider| provided_names(bedrock, query.model, provider),
-    );
-    match names.provider.as_deref() {
-        Some("bedrock" | "bedrock_converse") => {
-            names.split_model = (bedrock.strip_routing_prefix)(&names.split_model);
-        }
-        Some("bedrock_mantle") => {
-            names.split_model = (bedrock.strip_mantle_region)(&names.split_model);
-            let stripped = strip_model_name(
-                &names.split_model,
-                Some("bedrock_mantle"),
-                bedrock.base_model,
-            );
-            names.combined_stripped = format!("bedrock_mantle/{stripped}");
-        }
-        Some("fireworks_ai") => {
-            names.provider_prefixed = get_model_cost_key(&names.split_model);
-        }
-        _ => {}
-    }
-    names
 }
 
 fn exact_entry<'catalog>(
