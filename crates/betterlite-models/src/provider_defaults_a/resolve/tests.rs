@@ -167,6 +167,9 @@ fn exposed_key(resolved: &ResolvedProvider) -> Option<String> {
 #[case::json_registry_default(DefaultsProvider::Known(ProviderId::Publicai), "x", NO_INPUTS, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Publicai), model: "x", api_base: Some("https://api.publicai.co/v1"), api_key: None })]
 #[case::json_registry_environment(DefaultsProvider::Known(ProviderId::Publicai), "x", Inputs { api_base: None, api_key: None, env: &[("PUBLICAI_API_BASE", "https://env.publicai.example/v1"), ("PUBLICAI_API_KEY", "public-key")] }, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Publicai), model: "x", api_base: Some("https://env.publicai.example/v1"), api_key: Some("public-key") })]
 #[case::json_registry_explicit_overrides_environment(DefaultsProvider::Known(ProviderId::Publicai), "x", Inputs { api_base: Some("https://explicit.example/v1"), api_key: Some("explicit-key"), env: &[("PUBLICAI_API_BASE", "https://env.publicai.example/v1"), ("PUBLICAI_API_KEY", "public-key")] }, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Publicai), model: "x", api_base: Some("https://explicit.example/v1"), api_key: Some("explicit-key") })]
+#[case::datarobot_root_path_appends_llmgw(DefaultsProvider::Known(ProviderId::Datarobot), "x", Inputs { api_base: Some("https://tenant.datarobot.com/"), api_key: None, env: &[] }, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Datarobot), model: "x", api_base: Some("https://tenant.datarobot.com/api/v2/genai/llmgw/chat/completions/"), api_key: Some("fake-api-key") })]
+#[case::datarobot_keeps_an_existing_llmgw_path(DefaultsProvider::Known(ProviderId::Datarobot), "x", Inputs { api_base: Some("https://tenant.datarobot.com/api/v2/genai/llmgw/chat/completions"), api_key: None, env: &[] }, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Datarobot), model: "x", api_base: Some("https://tenant.datarobot.com/api/v2/genai/llmgw/chat/completions/"), api_key: Some("fake-api-key") })]
+#[case::baseten_model_with_eight_characters_and_a_dash(DefaultsProvider::Known(ProviderId::Baseten), "abc-1234", NO_INPUTS, policies(&[], &[], &[]), Expected::Resolved { provider: DefaultsProvider::Known(ProviderId::Baseten), model: "abc-1234", api_base: Some("https://inference.baseten.co/v1"), api_key: None })]
 #[case::unknown_provider_errors(DefaultsProvider::Known(ProviderId::Openai), "gpt-4o", NO_INPUTS, policies(&[], &[], &[]), Expected::UnknownProvider)]
 fn provider_defaults_a_behavior_tests_behavior(
     #[case] provider: DefaultsProvider,
@@ -216,4 +219,14 @@ fn provider_defaults_a_behavior_tests_behavior(
             ));
         }
     }
+}
+
+#[test]
+fn slug_reports_the_wire_name_of_each_provider_key() {
+    assert_eq!(DefaultsProvider::Known(ProviderId::Groq).slug(), "groq");
+    assert_eq!(
+        DefaultsProvider::Known(ProviderId::Llama).slug(),
+        "meta_llama"
+    );
+    assert_eq!(DefaultsProvider::Anyscale.slug(), "anyscale");
 }
