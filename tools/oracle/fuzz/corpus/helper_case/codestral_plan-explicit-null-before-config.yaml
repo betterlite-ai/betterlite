@@ -1,0 +1,17 @@
+kind: helper
+name: explicit-null-before-config
+call:
+  codestral_plan:
+    settings: {temperature: 0.7, max_tokens: 32, top_p: 0.9, stop: "\n\n"}
+    calls:
+      - mode: sync
+        api_key: sk-codestral
+        model: codestral-latest
+        messages: [{role: user, content: write}]
+        timeout: 12.5
+        headers: {}
+        api_base: null
+        custom_prompt_dict: {}
+        optional_params: {temperature: null, max_tokens: 0, suffix: null}
+env: {}
+compare: {ignore: []}
