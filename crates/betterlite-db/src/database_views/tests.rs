@@ -435,6 +435,15 @@ async fn postgres_runtime_and_offline_verification_columns() {
     offline.close().await;
 }
 #[tokio::test]
+async fn runtime_keeps_existing_offline_verification_view() {
+    let database = Database::new().await;
+    execute(&database.client, SEED_VERIFICATION).await;
+    create_offline_views(&database).await;
+    create_missing_views(&database.client).await.unwrap();
+    assert_view_columns(&database.client, VERIFICATION_TOKEN_VIEW, OFFLINE_COLUMNS).await;
+    database.close().await;
+}
+#[tokio::test]
 async fn left_joins_keep_missing_team_project_and_key() {
     let database = Database::new().await;
     execute(&database.client, SEED_LEFT_JOINS).await;

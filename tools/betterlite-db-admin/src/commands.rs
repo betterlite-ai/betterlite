@@ -26,6 +26,8 @@ pub struct Cli {
 pub enum Operation {
     #[command(about = "Run the database migration job")]
     Migrate,
+    #[command(about = "Create the views LiteLLM's proxy reads, as the offline db_scripts job does")]
+    DatabaseViews,
 }
 
 impl Operation {
@@ -33,6 +35,7 @@ impl Operation {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Migrate => "migrate",
+            Self::DatabaseViews => "database-views",
         }
     }
 
@@ -49,6 +52,7 @@ impl Operation {
                         .map_or("true", String::as_str),
                 )),
             }),
+            Self::DatabaseViews => DbAdminCommand::DatabaseViews,
         }
     }
 }
@@ -56,6 +60,7 @@ impl Operation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DbAdminCommand {
     Migrate(MigrationOptions),
+    DatabaseViews,
 }
 
 impl DbAdminCommand {
@@ -63,6 +68,7 @@ impl DbAdminCommand {
     pub const fn operation(self) -> Operation {
         match self {
             Self::Migrate(_) => Operation::Migrate,
+            Self::DatabaseViews => Operation::DatabaseViews,
         }
     }
 }
@@ -73,11 +79,12 @@ pub struct MigrationOptions {
     pub use_v2_resolver: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DbAdminOutcome {
     Completed,
     RetriesExhausted,
     IndexJobFailed,
+    Views { lines: Vec<String> },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +96,30 @@ pub enum DbAdminError {
         #[source]
         source: MigrationError,
     },
+    #[error("{source}")]
+    Views {
+        lines: Vec<String>,
+        #[source]
+        source: ViewsError,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ViewsError {
+    #[error("the database URL is not a PostgreSQL connection string: {source}")]
+    Url {
+        #[source]
+        source: tokio_postgres::Error,
+    },
+    #[error("could not connect to the database: {source}")]
+    Connect {
+        #[source]
+        source: tokio_postgres::Error,
+    },
+    #[error("the database did not answer within {seconds} seconds")]
+    Timeout { seconds: u64 },
+    #[error("{message}")]
+    Database { message: String },
 }
 
 #[derive(Debug, thiserror::Error)]
