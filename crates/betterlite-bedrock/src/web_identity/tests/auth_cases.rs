@@ -291,10 +291,7 @@ fn assert_missing_members() {
             75_i64,
             fixture::web_identity_missing(member),
         );
-        assert!(matches!(
-            outcome.result.unwrap_err(),
-            WebIdentityError::MissingField { member: found, .. } if found == member
-        ));
+        fixture::assert_missing(&outcome.result.unwrap_err(), member);
     }
 }
 

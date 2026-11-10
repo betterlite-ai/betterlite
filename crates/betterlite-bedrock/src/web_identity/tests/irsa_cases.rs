@@ -237,10 +237,7 @@ fn assert_same_account_missing_members() {
                 ("AssumeRole", fixture::assume_role_missing(member)),
             ]),
         );
-        assert!(matches!(
-            response.unwrap_err(),
-            WebIdentityError::MissingField { member: found, .. } if found == member
-        ));
+        fixture::assert_missing(&response.unwrap_err(), member);
     }
 }
 
@@ -299,22 +296,18 @@ pub(super) fn cross_account_irsa() {
 }
 
 fn assert_cross_missing_members(input: &CrossAccountIrsa<'_>, kwargs: &StsClientKwargs) {
-    let first_hop = cross_error(
-        input,
-        kwargs,
-        &[(TOKEN_FILE, IRSA_TOKEN)],
-        replies([(
-            "AssumeRoleWithWebIdentity",
-            fixture::web_identity_missing("AccessKeyId"),
-        )]),
-    );
-    assert!(matches!(
-        first_hop,
-        WebIdentityError::MissingField {
-            member: "AccessKeyId",
-            ..
-        }
-    ));
+    for member in ["AccessKeyId", "SecretAccessKey", "SessionToken"] {
+        let first_hop = cross_error(
+            input,
+            kwargs,
+            &[(TOKEN_FILE, IRSA_TOKEN)],
+            replies([(
+                "AssumeRoleWithWebIdentity",
+                fixture::web_identity_missing(member),
+            )]),
+        );
+        fixture::assert_missing(&first_hop, member);
+    }
     for member in [
         "AccessKeyId",
         "SecretAccessKey",
@@ -333,10 +326,7 @@ fn assert_cross_missing_members(input: &CrossAccountIrsa<'_>, kwargs: &StsClient
                 ("AssumeRole", fixture::assume_role_missing(member)),
             ]),
         );
-        assert!(matches!(
-            target,
-            WebIdentityError::MissingField { member: found, .. } if found == member
-        ));
+        fixture::assert_missing(&target, member);
     }
 }
 

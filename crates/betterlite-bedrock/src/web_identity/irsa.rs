@@ -5,7 +5,6 @@ use crate::aws_endpoints::sts::StsClientKwargs;
 use crate::aws_settings::sources::NativeSources;
 use crate::aws_settings::{AwsSessionTag, assume_role_parameters};
 use aws_sdk_sts::Client;
-use aws_sdk_sts::operation::assume_role::AssumeRoleOutput;
 use aws_sdk_sts::types::Credentials as ResponseCredentials;
 use aws_sdk_sts::types::Tag;
 use aws_smithy_types::error::display::DisplayErrorContext;
@@ -38,7 +37,7 @@ pub async fn handle_irsa_same_account(
         input.role_arn,
         input.session_name
     );
-    assume_role_response(&client, input).await
+    send_assume_role(&client, input).await
 }
 pub async fn handle_irsa_cross_account(
     input: &CrossAccountIrsa<'_>,
@@ -65,20 +64,7 @@ pub async fn handle_irsa_cross_account(
         external_id: input.external_id,
         tags: input.tags,
     };
-    assume_role_response(&target_client, &target).await
-}
-async fn assume_role_response(
-    client: &Client,
-    input: &SameAccountIrsa<'_>,
-) -> Result<StsResponse, WebIdentityError> {
-    let response = send_assume_role(client, input).await?;
-    let Some(credentials) = response.credentials() else {
-        return Err(WebIdentityError::MissingField {
-            call: "assume role",
-            member: "Credentials",
-        });
-    };
-    sts_response(credentials)
+    send_assume_role(&target_client, &target).await
 }
 async fn assume_irsa_role(
     sts: &StsClientKwargs,
@@ -142,7 +128,7 @@ async fn log_caller_identity(client: &Client, prefix: &str) {
 async fn send_assume_role(
     client: &Client,
     input: &SameAccountIrsa<'_>,
-) -> Result<AssumeRoleOutput, WebIdentityError> {
+) -> Result<StsResponse, WebIdentityError> {
     let params = assume_role_parameters(
         input.role_arn.to_owned(),
         input.session_name.to_owned(),
@@ -150,7 +136,7 @@ async fn send_assume_role(
         input.tags.map(<[AwsSessionTag]>::to_vec),
     );
     let tags = params.tags.as_deref().map(tags_to_sdk).transpose()?;
-    client
+    let response = client
         .assume_role()
         .role_arn(params.role_arn)
         .role_session_name(params.role_session_name)
@@ -160,7 +146,14 @@ async fn send_assume_role(
         .await
         .map_err(|source| WebIdentityError::AssumeRole {
             source: Box::new(source),
-        })
+        })?;
+    let Some(credentials) = response.credentials() else {
+        return Err(WebIdentityError::MissingField {
+            call: "assume role",
+            member: "Credentials",
+        });
+    };
+    sts_response(credentials)
 }
 fn tags_to_sdk(tags: &[AwsSessionTag]) -> Result<Vec<Tag>, WebIdentityError> {
     tags.iter()

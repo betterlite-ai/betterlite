@@ -38,6 +38,7 @@ use url::{Url, form_urlencoded};
 
 use crate::aws_endpoints::sts::{StsClientKwargs, StsSettings, sts_client_kwargs};
 use crate::aws_settings::sources::NativeSources;
+use crate::web_identity::error::WebIdentityError;
 
 pub(super) type Recorder = Arc<Mutex<Vec<Exchange>>>;
 
@@ -262,6 +263,13 @@ pub(super) fn web_identity_ok(
     Answer::Ok(format!(
         "<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult>{credentials}{packed}</AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>"
     ))
+}
+
+pub(super) fn assert_missing(error: &WebIdentityError, member: &str) {
+    assert!(matches!(
+        error,
+        WebIdentityError::MissingField { member: found, .. } if *found == member
+    ));
 }
 
 pub(super) fn credentials_without(member: &str) -> String {
