@@ -1,0 +1,52 @@
+kind: helper
+name: azure_doc_intel_analyze_and_poll
+call:
+  b6805:
+    model: doc-intelligence/prebuilt-layout
+    document:
+      type: document_url
+      document_url: https://example.test/invoice.pdf
+    options:
+      req_format: native
+    api_key: oracle-key
+    extra_headers:
+      x-caller: "yes"
+    analyze:
+      status: 202
+      headers:
+        operation-location: /operations/abc
+        retry-after: "1"
+      body:
+        status: running
+        analyzeResult:
+          content: accepted
+    polls:
+      - status: 200
+        body:
+          status: running
+      - status: 200
+        body:
+          status: succeeded
+          analyzeResult:
+            content: "Invoice total: $4.00"
+            pages:
+              - pageNumber: 1
+                width: 8.5
+                height: 11
+                unit: inch
+                lines:
+                  - content: "Invoice total: $4.00"
+                  - content: ""
+              - pageNumber: 2
+                width: 612
+                height: 792
+                unit: pixel
+                lines:
+                  - content: Page two
+            tables:
+              - rowCount: 1
+            keyValuePairs:
+              - key:
+                  content: vendor
+env: {}
+compare: {ignore: []}
