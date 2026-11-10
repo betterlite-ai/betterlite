@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-history-mixed-role-runs
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - {role: system, content: "sys"}
+          - {role: user, content: "u"}
+          - {role: user, content: [{type: text, text: "v"}]}
+          - {role: assistant, content: "one"}
+          - {role: assistant, content: [{type: text, text: "two"}, {type: text, text: ""}]}
+          - {role: user, content: [{type: text, text: ""}, {type: text, text: "w"}]}
+      - messages:
+          - {role: user, content: ""}
+          - {role: assistant, content: ""}
+      - messages:
+          - {role: user, content: [{type: video_url, video_url: {url: "x"}}, {type: text, text: "kept"}]}
+      - messages:
+          - {role: system, content: [{type: text, text: "s"}]}
+          - {role: user, content: [{type: image_url, image_url: "data:image/png;base64,YWJj"}, {type: text, text: "u"}]}
+env: {}
+compare:
+  ignore: []

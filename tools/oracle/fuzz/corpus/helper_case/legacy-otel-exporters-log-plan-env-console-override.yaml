@@ -1,0 +1,14 @@
+kind: helper
+name: log-plan-env-console-override
+call:
+  b3855:
+    function: log_exporter_plan
+    config:
+      exporter: otlp_http
+      endpoint: http://collector:4318/v1/traces
+      headers: x-key=one
+    environment:
+      OTEL_LOGS_EXPORTER: console
+env:
+  OTEL_LOGS_EXPORTER: console
+compare: {ignore: []}

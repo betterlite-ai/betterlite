@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-metadata-citation-empty-title
+call:
+  gemini_metadata:
+    call: citation_empty_title
+    content_text: short
+    grounding_metadata:
+      - groundingChunks:
+          - web: {uri: 'https://no-title'}
+          - web: {title: No URI}
+          - web: {}
+          - retrievedContext: {uri: 'gs://local'}
+        groundingSupports:
+          - segment: {startIndex: 0, endIndex: 100}
+            groundingChunkIndices: [0]
+          - segment: {startIndex: 3, endIndex: 4}
+            groundingChunkIndices: [1]
+          - segment: {startIndex: 5, endIndex: 6}
+            groundingChunkIndices: [2]
+          - segment: {startIndex: 7, endIndex: 8}
+            groundingChunkIndices: [3]
+env: {}
+compare: {ignore: []}
