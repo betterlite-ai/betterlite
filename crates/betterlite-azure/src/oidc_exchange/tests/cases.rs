@@ -228,39 +228,23 @@ fn missing_expires_in() {
     assert_eq!(missing.status_code(), Some(422));
     let absent = token_error(r#"{"access_token":"tok","expires_in":null}"#);
     assert!(matches!(&absent, OidcExchangeError::ExpiresInMissing));
-    zero_lifetime_is_cached();
-}
-
-fn zero_lifetime_is_cached() {
-    let fixture = Fixture::new(vec![Reply::ok(r#"{"access_token":"zero","expires_in":0}"#)]);
-    let exchange = fixture.exchange();
-    let first = exchange
-        .token(&default_input(), &fixture.resolver())
-        .unwrap();
-    let second = exchange
-        .token(&default_input(), &fixture.resolver())
-        .unwrap();
-    assert_eq!(first.expose_secret(), "zero");
-    assert_eq!(second.expose_secret(), "zero");
-    assert_eq!(fixture.requests().len(), 1);
+    // a zero lifetime is used as the cache TTL, and an expiry equal to the clock still reads
+    cached_token_is_reused(r#"{"access_token":"zero","expires_in":0}"#, "zero");
 }
 
 fn cached_unexpired_token() {
-    same_identity_is_cached();
+    cached_token_is_reused(TOKEN_BODY, "tok-value");
     distinct_identities_refetch();
 }
 
-fn same_identity_is_cached() {
-    let fixture = Fixture::new(vec![Reply::ok(TOKEN_BODY)]);
+fn cached_token_is_reused(body: &str, expected: &str) {
+    let fixture = Fixture::new(vec![Reply::ok(body)]);
     let exchange = fixture.exchange();
-    let first = exchange
-        .token(&default_input(), &fixture.resolver())
-        .unwrap();
-    let second = exchange
-        .token(&default_input(), &fixture.resolver())
-        .unwrap();
-    assert_eq!(first.expose_secret(), "tok-value");
-    assert_eq!(second.expose_secret(), "tok-value");
+    let resolver = fixture.resolver();
+    let first = next_token(&exchange, &resolver, &default_input());
+    let second = next_token(&exchange, &resolver, &default_input());
+    assert_eq!(first, expected);
+    assert_eq!(second, expected);
     assert_eq!(fixture.requests().len(), 1);
 }
 
