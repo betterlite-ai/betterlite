@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-history-missing-media-fields
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - {role: user, content: [{type: image_url}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: null}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {}}]}
+      - messages:
+          - {role: user, content: [{type: file}]}
+      - messages:
+          - {role: user, content: [{type: file, file: null}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "gs://bucket/anim.gif"}}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {url: "gs://bucket/anim.gif"}}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}]}
+env: {}
+compare:
+  ignore: []

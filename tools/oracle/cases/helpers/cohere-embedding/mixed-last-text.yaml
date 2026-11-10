@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-mixed-last-text
+call:
+  cohere_embedding: {function: request, model: embed-v4.0, options: {encoding_format: [float, int8]}, inference: {model: overridden-model, input_type: search_query, truncate: END}, api_base: '', api_key: '', headers: {content-type: application/json, Authorization: Bearer caller}, inputs: [["data:image/png;base64,YWJj", hello world], ["data:text/plain;base64,YQ==", mixed]]}
+compare: {ignore: []}
+env: {}

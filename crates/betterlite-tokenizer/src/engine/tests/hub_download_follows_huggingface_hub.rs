@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,6 +10,7 @@ use betterlite_config::sections::huggingface_hub::{
 use secrecy::SecretString;
 use temp_env::async_with_vars;
 use tokio::fs;
+use tokio::net::TcpSocket;
 use tokio::time::Instant;
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::with_default;
@@ -434,9 +435,13 @@ async fn retry_after_cache_miss_succeeds() {
 
 #[tokio::test]
 async fn a_connection_error_retries_once_the_hub_answers() {
-    let probe = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = probe.local_addr().unwrap();
-    drop(probe);
+    // bound but not listening, the port refuses connections and no other test can take it
+    let socket = TcpSocket::new_v4().unwrap();
+    socket
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .unwrap();
+    let address = socket.local_addr().unwrap();
+    let reserved = Mutex::new(Some(socket));
     let directory = tempfile::tempdir().unwrap();
     let settings = hub_settings(&format!("http://{address}"), directory.path());
     let calls = Arc::new(AtomicUsize::new(0));
@@ -448,7 +453,8 @@ async fn a_connection_error_retries_once_the_hub_answers() {
         if call != 3 {
             return Instant::now();
         }
-        let listener = TcpListener::bind(address).unwrap();
+        let bound = reserved.lock().unwrap().take().unwrap();
+        let listener = bound.listen(1024).unwrap().into_std().unwrap();
         let server = Server::on_listener(listener, |request| standard_reply(request, BODY));
         kept.lock().unwrap().replace(server);
         Instant::now()
@@ -503,11 +509,13 @@ async fn token_header_is_present() {
 
 #[tokio::test]
 async fn token_header_is_absent() {
+    // an unset HF_HOME falls back to ~/.cache/huggingface, so a developer's token file would leak in
+    let home = tempfile::tempdir().unwrap();
     async_with_vars(
         [
             ("HF_TOKEN", None::<String>),
             ("HF_TOKEN_PATH", None::<String>),
-            ("HF_HOME", None::<String>),
+            ("HF_HOME", Some(home.path().display().to_string())),
         ],
         async {
             let server = Server::start(|request| standard_reply(request, BODY)).await;

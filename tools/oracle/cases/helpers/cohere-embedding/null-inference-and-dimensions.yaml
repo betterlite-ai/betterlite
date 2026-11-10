@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-null-inference-and-dimensions
+call:
+  cohere_embedding: {function: request, model: embed-v4.0, options: {dimensions: null}, inference: {truncate: null, model: null, input_type: null, custom_key: null}, api_base: 'https://example.test/v2/embed', api_key: sk-test, headers: {}, inputs: [[hello], ["data:image/png;base64,YWJj"]]}
+compare: {ignore: []}
+env: {}

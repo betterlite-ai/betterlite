@@ -1,0 +1,15 @@
+kind: helper
+name: passthrough-underscore-spelling
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      additional_args:
+        complete_input_dict:
+          messages:
+            - {role: user, content: underscore call type}
+      standard_logging_object:
+        call_type: allm_pass_through_route
+    response: null
+env: {}
+compare: {ignore: []}
