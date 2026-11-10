@@ -311,6 +311,8 @@ fn a_tilde_secret_in_a_form_field_is_masked() {
 #[case::non_octal_digit(r#"token="a\108b""#, vec!["a108b"])]
 #[case::two_digits_are_not_an_escape(r#"token="a\12""#, vec!["a12"])]
 #[case::attribute_before_a_morsel("Path=/", vec![])]
+#[case::attribute_before_a_morsel_hides_a_later_pair("Path=/; a=1", vec![])]
+#[case::valueless_reserved_attribute_after_a_morsel("a=1; Path", vec![])]
 #[case::flag_attribute("a=1; Secure", vec!["1"])]
 fn cookie_headers_yield_their_morsels(#[case] value: &str, #[case] expected: Vec<&str>) {
     let mut secrets = header_secret_values("cookie", value);
