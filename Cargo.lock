@@ -1155,8 +1155,10 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-openai",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "lru",
  "rstest",
@@ -1166,6 +1168,7 @@ dependencies = [
  "serde_path_to_error",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "tracing",
  "url",
 ]
