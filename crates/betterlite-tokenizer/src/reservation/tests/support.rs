@@ -68,18 +68,21 @@ pub(crate) async fn text_tokens(counter: &Counter, model: &str, text: &str) -> u
 }
 
 pub(crate) fn bundled_counter(directory: &Path) -> Counter {
-    let catalog = BundledCatalog::default().get();
-    counter(directory, catalog, bundled_fetcher)
+    let service = service(4, Arc::new(InlineCounter));
+    let fetcher = bundled_fetcher(Arc::clone(&service));
+    assemble(directory, service, fetcher, BundledCatalog::default().get())
 }
 
 pub(crate) fn legacy_counter(directory: &Path) -> Counter {
-    let catalog = Arc::new(ModelCatalog::parse(CATALOG, UnknownFields::Reject).unwrap());
-    counter(directory, catalog, bundled_fetcher)
+    let service = service(4, Arc::new(InlineCounter));
+    let fetcher = bundled_fetcher(Arc::clone(&service));
+    assemble(directory, service, fetcher, catalog())
 }
 
 pub(crate) fn dead_remote_counter(directory: &Path) -> Counter {
-    let catalog = Arc::new(ModelCatalog::parse(CATALOG, UnknownFields::Reject).unwrap());
-    counter(directory, catalog, dead_remote_fetcher)
+    let service = service(4, Arc::new(InlineCounter));
+    let fetcher = dead_remote_fetcher(Arc::clone(&service));
+    assemble(directory, service, fetcher, catalog())
 }
 
 pub(crate) fn counter_with_facility(
@@ -88,8 +91,12 @@ pub(crate) fn counter_with_facility(
     max_concurrent: usize,
 ) -> Counter {
     let service = service(max_concurrent, facility);
-    let fetcher = Arc::new(TiktokenFetcher::new(client(), None, Arc::clone(&service)));
-    assemble(directory, service, fetcher)
+    let fetcher = bundled_fetcher(Arc::clone(&service));
+    assemble(directory, service, fetcher, catalog())
+}
+
+fn catalog() -> Arc<ModelCatalog> {
+    Arc::new(ModelCatalog::parse(CATALOG, UnknownFields::Reject).unwrap())
 }
 
 fn bundled_fetcher(service: Arc<CountingService>) -> Arc<TiktokenFetcher> {
@@ -103,35 +110,12 @@ fn dead_remote_fetcher(service: Arc<CountingService>) -> Arc<TiktokenFetcher> {
     ))
 }
 
-fn counter(
-    directory: &Path,
-    catalog: Arc<ModelCatalog>,
-    fetcher_for: fn(Arc<CountingService>) -> Arc<TiktokenFetcher>,
-) -> Counter {
-    let service = service(4, Arc::new(InlineCounter));
-    let fetcher = fetcher_for(Arc::clone(&service));
-    let hub = hub_settings(directory);
-    let downloader = Arc::new(HubDownloader::new(
-        Arc::new(hub.clone()),
-        resolver(&hub),
-        Arc::new(Instant::now),
-    ));
-    let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
-        downloader,
-        Arc::clone(&catalog),
-        Arc::clone(&service),
-        false,
-    ));
-    Counter::new(selector, fetcher, service, catalog, Settings::default())
-}
-
 fn assemble(
     directory: &Path,
     service: Arc<CountingService>,
     fetcher: Arc<TiktokenFetcher>,
+    catalog: Arc<ModelCatalog>,
 ) -> Counter {
-    let catalog = Arc::new(ModelCatalog::parse(CATALOG, UnknownFields::Reject).unwrap());
     let hub = hub_settings(directory);
     let downloader = Arc::new(HubDownloader::new(
         Arc::new(hub.clone()),

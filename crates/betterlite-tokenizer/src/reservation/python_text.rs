@@ -1,5 +1,4 @@
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use serde_json::Number;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -13,6 +12,7 @@ enum Piece<'text> {
     Value(&'text Json),
     Key(&'text str),
     Literal(&'static str),
+    Entry(&'text str, &'text Json),
 }
 
 // Python's str() of a value; a top-level string is itself, everything else takes repr text
@@ -45,42 +45,42 @@ fn push_piece<'text>(
     style: Style,
 ) {
     match piece {
+        Piece::Value(Json::List(items)) => {
+            open_container(out, stack, '[', "]");
+            for (index, item) in items.iter().enumerate().rev() {
+                stack.push(Piece::Value(item));
+                push_separator(stack, index);
+            }
+        }
+        Piece::Value(Json::Object(fields)) => {
+            open_container(out, stack, '{', "}");
+            for (index, (key, value)) in fields.iter().enumerate().rev() {
+                stack.push(Piece::Entry(key.as_str(), value));
+                push_separator(stack, index);
+            }
+        }
+        Piece::Entry(key, value) => {
+            stack.push(Piece::Value(value));
+            stack.push(Piece::Literal(": "));
+            stack.push(Piece::Key(key));
+        }
         Piece::Literal(text) => out.push_str(text),
         Piece::Key(key) => push_quoted(out, key, style),
         Piece::Value(Json::Null) => out.push_str(null_text(style)),
         Piece::Value(Json::Bool(value)) => out.push_str(bool_text(*value, style)),
         Piece::Value(Json::Number(number)) => out.push_str(&number_text(number, style)),
         Piece::Value(Json::Text(text)) => push_quoted(out, text, style),
-        Piece::Value(Json::List(items)) => push_list(out, stack, items),
-        Piece::Value(Json::Object(fields)) => push_object(out, stack, fields),
     }
 }
 
-fn push_list<'text>(out: &mut String, stack: &mut Vec<Piece<'text>>, items: &'text [Json]) {
-    out.push('[');
-    stack.push(Piece::Literal("]"));
-    for (index, item) in items.iter().enumerate().rev() {
-        stack.push(Piece::Value(item));
-        if index != 0 {
-            stack.push(Piece::Literal(", "));
-        }
-    }
+fn open_container(out: &mut String, stack: &mut Vec<Piece<'_>>, open: char, close: &'static str) {
+    out.push(open);
+    stack.push(Piece::Literal(close));
 }
 
-fn push_object<'text>(
-    out: &mut String,
-    stack: &mut Vec<Piece<'text>>,
-    fields: &'text IndexMap<String, Json>,
-) {
-    out.push('{');
-    stack.push(Piece::Literal("}"));
-    for (index, (key, value)) in fields.iter().enumerate().rev() {
-        stack.push(Piece::Value(value));
-        stack.push(Piece::Literal(": "));
-        stack.push(Piece::Key(key.as_str()));
-        if index != 0 {
-            stack.push(Piece::Literal(", "));
-        }
+fn push_separator(stack: &mut Vec<Piece<'_>>, index: usize) {
+    if index != 0 {
+        stack.push(Piece::Literal(", "));
     }
 }
 
@@ -160,21 +160,23 @@ fn push_escaped(out: &mut String, character: char, quote: char, style: Style) {
         out.push(character);
         return;
     }
-    match style {
-        Style::Json => push_json_character(out, character),
-        Style::Python => push_repr_character(out, character),
-    }
+    push_character(out, character, style);
 }
 
-fn push_json_character(out: &mut String, character: char) {
-    match character {
-        '\u{8}' => out.push_str("\\b"),
-        '\u{c}' => out.push_str("\\f"),
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        ' '..='~' => out.push(character),
-        other => push_unicode_escape(out, other),
+fn push_character(out: &mut String, character: char, style: Style) {
+    let code = u32::from(character);
+    match (style, character) {
+        (Style::Json, '\u{8}') => out.push_str("\\b"),
+        (Style::Json, '\u{c}') => out.push_str("\\f"),
+        (Style::Json | Style::Python, '\n') => out.push_str("\\n"),
+        (Style::Json | Style::Python, '\r') => out.push_str("\\r"),
+        (Style::Json | Style::Python, '\t') => out.push_str("\\t"),
+        (Style::Json, ' '..='~') => out.push(character),
+        (Style::Python, printable) if is_printable(printable) => out.push(printable),
+        (Style::Json, _) => push_unicode_escape(out, character),
+        (Style::Python, _) if code <= 0xFF => push_hex_escape(out, 'x', code, 2),
+        (Style::Python, _) if code <= 0xFFFF => push_hex_escape(out, 'u', code, 4),
+        (Style::Python, _) => push_hex_escape(out, 'U', code, 8),
     }
 }
 
@@ -182,18 +184,6 @@ fn push_unicode_escape(out: &mut String, character: char) {
     let mut units = [0_u16; 2];
     for unit in character.encode_utf16(&mut units) {
         push_hex_escape(out, 'u', u32::from(*unit), 4);
-    }
-}
-
-fn push_repr_character(out: &mut String, character: char) {
-    match character {
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        other if is_printable(other) => out.push(other),
-        other if u32::from(other) <= 0xFF => push_hex_escape(out, 'x', u32::from(other), 2),
-        other if u32::from(other) <= 0xFFFF => push_hex_escape(out, 'u', u32::from(other), 4),
-        other => push_hex_escape(out, 'U', u32::from(other), 8),
     }
 }
 

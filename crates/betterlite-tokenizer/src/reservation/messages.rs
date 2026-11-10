@@ -154,63 +154,56 @@ fn parse_parts(items: &[Json]) -> Result<Vec<Part>, MessageFailure> {
 fn parse_tool_calls(value: Option<&Json>) -> Result<Option<Vec<ToolCall>>, MessageFailure> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::List(calls)) => {
-            let mut parsed = Vec::with_capacity(calls.len());
-            for call in calls {
-                let arguments = parse_call_arguments(call)?;
-                parsed.push(ToolCall {
-                    function: ToolCallFunction { arguments },
-                });
-            }
-            Ok(Some(parsed))
-        }
+        Some(Json::List(calls)) => parse_calls(calls),
         Some(_) => Err(MessageFailure::ValueError),
     }
 }
 
-fn parse_call_arguments(call: &Json) -> Result<String, MessageFailure> {
-    let Json::Object(fields) = call else {
-        return Err(MessageFailure::Unavailable);
-    };
-    let Some(function_value) = fields.get("function") else {
-        return Err(MessageFailure::ValueError);
-    };
-    let Json::Object(function) = function_value else {
-        return Err(MessageFailure::Unavailable);
-    };
-    match function.get("arguments") {
+fn parse_calls(calls: &[Json]) -> Result<Option<Vec<ToolCall>>, MessageFailure> {
+    let mut parsed = Vec::with_capacity(calls.len());
+    for call in calls {
+        let Json::Object(fields) = call else {
+            return Err(MessageFailure::Unavailable);
+        };
+        let Some(function_value) = fields.get("function") else {
+            return Err(MessageFailure::ValueError);
+        };
+        let Json::Object(function) = function_value else {
+            return Err(MessageFailure::Unavailable);
+        };
+        parsed.push(ToolCall {
+            function: ToolCallFunction {
+                arguments: arguments(function)?,
+            },
+        });
+    }
+    Ok(Some(parsed))
+}
+
+fn parse_function_call(value: Option<&Json>) -> Result<Option<FunctionCall>, MessageFailure> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(fields)) => Ok(Some(FunctionCall {
+            arguments: arguments(fields)?,
+        })),
+        Some(_) => Err(MessageFailure::ValueError),
+    }
+}
+
+fn arguments(fields: &IndexMap<String, Json>) -> Result<String, MessageFailure> {
+    match fields.get("arguments") {
         None => Ok(String::new()),
         Some(Json::Text(text)) => Ok(text.clone()),
         Some(_) => Err(MessageFailure::Unavailable),
     }
 }
 
-fn parse_function_call(value: Option<&Json>) -> Result<Option<FunctionCall>, MessageFailure> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => match fields.get("arguments") {
-            None => Ok(Some(FunctionCall {
-                arguments: String::new(),
-            })),
-            Some(Json::Text(text)) => Ok(Some(FunctionCall {
-                arguments: text.clone(),
-            })),
-            Some(_) => Err(MessageFailure::Unavailable),
-        },
-        Some(_) => Err(MessageFailure::ValueError),
-    }
-}
-
 fn parse_tools(value: Option<&Json>) -> Result<Option<Vec<Json>>, ReservationError> {
-    let Some(tools) = value else {
-        return Ok(None);
-    };
-    if is_falsey(tools) {
-        return Ok(None);
-    }
+    let tools = value.filter(|tools| !is_falsey(tools));
     match tools {
-        Json::List(items) => Ok(Some(items.clone())),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+        None => Ok(None),
+        Some(Json::List(items)) => Ok(Some(items.clone())),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
             Err(ReservationError::Tools)
         }
     }
@@ -219,19 +212,21 @@ fn parse_tools(value: Option<&Json>) -> Result<Option<Vec<Json>>, ReservationErr
 fn parse_tool_choice(value: Option<&Json>) -> Result<Option<ToolChoice>, ReservationError> {
     match value {
         Some(Json::Text(mode)) => Ok(Some(ToolChoice::Mode(mode.clone()))),
-        Some(Json::Object(fields)) => {
-            let Some(Json::Object(function)) = fields.get("function") else {
-                return Err(ReservationError::ToolChoice);
-            };
-            let Some(Json::Text(name)) = function.get("name") else {
-                return Err(ReservationError::ToolChoice);
-            };
-            Ok(Some(ToolChoice::Named(NamedToolChoice {
-                function: ToolFunctionName { name: name.clone() },
-            })))
-        }
+        Some(Json::Object(fields)) => named_choice(fields),
         None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => Ok(None),
     }
+}
+
+fn named_choice(fields: &IndexMap<String, Json>) -> Result<Option<ToolChoice>, ReservationError> {
+    let Some(Json::Object(function)) = fields.get("function") else {
+        return Err(ReservationError::ToolChoice);
+    };
+    let Some(Json::Text(name)) = function.get("name") else {
+        return Err(ReservationError::ToolChoice);
+    };
+    Ok(Some(ToolChoice::Named(NamedToolChoice {
+        function: ToolFunctionName { name: name.clone() },
+    })))
 }
 
 // Python's falsey JSON values: null, false, zero, "" and the empty list or object
