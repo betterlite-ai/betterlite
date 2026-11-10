@@ -144,7 +144,7 @@ checks:
       why: the helper cases are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-oauth-identity-binding)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/mcp-oauth-identity-binding
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/mcp-oauth-identity-binding
     - id: helper-python
       why: the Python helper adapter is unchanged or fails the strict checks
       run: >-

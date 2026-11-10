@@ -123,7 +123,7 @@ checks:
         Tool listing responses, HTTP statuses, error shapes or per-server outcome tracking
         deviate from LiteLLM behavior.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-rest-tools
 
 oracle_cases: []
