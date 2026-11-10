@@ -194,6 +194,18 @@ fn the_hook_sees_the_builtin_before_the_response_model_is_built() {
     assert_eq!(response.usage.total_tokens, 3);
 }
 
+#[rstest]
+#[case::other_object(
+    br#"{"object":"other","model":"jina","data":[],"usage":{"prompt_tokens":1,"total_tokens":1}}"#
+)]
+#[case::missing_object(
+    br#"{"model":"jina","data":[],"usage":{"prompt_tokens":1,"total_tokens":1}}"#
+)]
+fn the_object_is_always_list(#[case] raw: &[u8]) {
+    let response = transform_embedding_response(raw, None, &Object::new(), |_| {}).unwrap();
+    assert_eq!(response.object, "list");
+}
+
 #[test]
 fn the_hook_fires_even_when_the_response_model_cannot_be_built() {
     let mut calls = Vec::new();

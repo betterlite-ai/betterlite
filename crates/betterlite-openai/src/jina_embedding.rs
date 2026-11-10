@@ -130,7 +130,7 @@ pub fn transform_embedding_response<F>(
 where
     F: FnMut(&PostCall<'_>),
 {
-    let response_json =
+    let mut response_json =
         serde_json::from_slice::<Value>(raw).map_err(|source| EmbeddingError::Decode { source })?;
     post_call(&PostCall {
         input: BuiltinInput,
@@ -138,6 +138,10 @@ where
         complete_input_dict: request_data,
         original_response: &response_json,
     });
+    // LiteLLM's EmbeddingResponse sets object to "list" whatever the reply says
+    if let Value::Object(fields) = &mut response_json {
+        fields.insert(String::from("object"), Value::String(String::from("list")));
+    }
     serde_json::from_value(response_json).map_err(|source| EmbeddingError::Decode { source })
 }
 
