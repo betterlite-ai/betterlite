@@ -403,6 +403,24 @@ async fn refuses_bytes_that_are_not_utf8() {
 }
 
 #[tokio::test]
+async fn refuses_a_character_cut_off_at_the_end_of_the_stream() {
+    let redactor = redactor();
+    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    transport.push(&[0xc3]);
+    transport.close();
+    let (mut stream, _default) =
+        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let error = stream
+        .fragments
+        .next()
+        .await
+        .expect("fragment")
+        .expect_err("refused");
+    assert!(matches!(error, BytezStreamError::InvalidUtf8 { .. }));
+    assert!(stream.fragments.next().await.is_none());
+}
+
+#[tokio::test]
 async fn delivers_embedded_newlines_and_data_text_as_plain_content() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));

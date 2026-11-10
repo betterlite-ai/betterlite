@@ -90,7 +90,8 @@ async fn next_fragment(
 ) -> Option<(Result<String, BytezStreamError>, Decoder)> {
     loop {
         let next = match timeout(STREAMING_TIMEOUT, decoder.chunks.next()).await {
-            Ok(next) => next?,
+            Ok(Some(next)) => next,
+            Ok(None) => return finish(decoder),
             Err(_elapsed) => return Some((Err(BytezStreamError::Timeout), decoder)),
         };
         let bytes = match next {
@@ -103,6 +104,15 @@ async fn next_fragment(
             Err(error) => return Some((Err(error), decoder)),
         }
     }
+}
+
+// httpx flushes its TextDecoder after the last chunk, so bytes still waiting there are never dropped
+fn finish(mut decoder: Decoder) -> Option<(Result<String, BytezStreamError>, Decoder)> {
+    let Err(source) = str::from_utf8(&decoder.pending) else {
+        return None;
+    };
+    decoder.pending.clear();
+    Some((Err(BytezStreamError::InvalidUtf8 { source }), decoder))
 }
 
 // httpx's incremental TextDecoder keeps an incomplete multi-byte character for the next fragment

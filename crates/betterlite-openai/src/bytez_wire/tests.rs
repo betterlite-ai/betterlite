@@ -480,6 +480,10 @@ fn decode_bytez_reply_falls_back_to_latin_1_for_the_whole_header_set() {
 #[rstest]
 #[case::not_json("{")]
 #[case::list_root("[1,2]")]
+#[case::list_root_with_an_error_position(r#"["boom"]"#)]
+#[case::list_root_with_an_output_position(
+    r#"[null,{"role":"assistant","content":[{"type":"text","text":"x"}]}]"#
+)]
 #[case::missing_output(r#"{"error":null}"#)]
 #[case::output_not_object(r#"{"output":"text"}"#)]
 #[case::content_not_list(r#"{"output":{"role":"assistant","content":"text"}}"#)]

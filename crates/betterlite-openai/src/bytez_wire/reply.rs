@@ -5,7 +5,9 @@ use std::str;
 
 use betterlite_prompts::arguments::json::Json;
 use http::HeaderMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::value::RawValue;
 use thiserror::Error;
 
 use super::error::{BytezConfigError, BytezError};
@@ -52,14 +54,6 @@ pub struct ReplyInput<'request> {
     pub created: i64,
     pub messages: &'request [RawMessage],
     pub headers: &'request HeaderMap,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReplyBody {
-    #[serde(default)]
-    error: Option<Json>,
-    #[serde(default)]
-    output: Option<RawMessage>,
 }
 
 #[derive(Debug, Error)]
@@ -111,21 +105,17 @@ pub fn decode_bytez_reply(input: &ReplyInput<'_>) -> Result<BytezReply, BytezRep
             size: input.body.len(),
         });
     }
-    let body: ReplyBody = serde_json::from_slice(input.body)?;
-    if let Some(error) = body
-        .error
-        .as_ref()
-        .filter(|value| !matches!(value, Json::Null))
-    {
+    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_slice(input.body)?;
+    if let Some(error) = field::<Json>(&fields, "error")? {
         let message =
-            serde_json::to_string(error).map_err(|source| BytezReplyError::Encode { source })?;
+            serde_json::to_string(&error).map_err(|source| BytezReplyError::Encode { source })?;
         return Err(BytezReplyError::Api(BytezError {
             status_code: input.status,
             message,
         }));
     }
     let headers = decoded_headers(input.headers);
-    let output = body.output.ok_or(BytezReplyError::MissingOutput)?;
+    let output = field::<RawMessage>(&fields, "output")?.ok_or(BytezReplyError::MissingOutput)?;
     let content = output_text(&output)?.to_owned();
     let prompt = normalize_messages(input.messages)?;
     let prompt_tokens = get_tokens_from_messages(&prompt)?;
@@ -146,6 +136,20 @@ pub fn decode_bytez_reply(input: &ReplyInput<'_>) -> Result<BytezReply, BytezRep
         provider_specific_fields: rate_limit_fields(&headers),
         additional_headers: response_headers(&headers),
     })
+}
+
+// the root must be an object: LiteLLM calls json.get("error") on it, so a list root fails there
+fn field<T>(
+    fields: &BTreeMap<String, Box<RawValue>>,
+    name: &str,
+) -> Result<Option<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
+    let Some(raw) = fields.get(name) else {
+        return Ok(None);
+    };
+    serde_json::from_str(raw.get())
 }
 
 // LiteLLM reads output.content[0].text straight out of the reply dict
