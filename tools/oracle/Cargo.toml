@@ -22,6 +22,7 @@ betterlite-auth = { path = "../../crates/betterlite-auth" }
 betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-cache = { path = "../../crates/betterlite-cache" }
+betterlite-cli = { path = "../../crates/betterlite-cli" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
