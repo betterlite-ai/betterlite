@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-web-identity-irsa-seed
+call:
+  bedrock_web_identity:
+    same_account_irsa:
+      environment: {AWS_ACCESS_KEY_ID: AKIAAMBIENT, AWS_SECRET_ACCESS_KEY: ambient-secret, AWS_REGION: us-east-1}
+      role_arn: 'arn:aws:iam::123456789012:role/TargetRole'
+      session_name: bedrock-session
+      external_id: external-1
+      tags: [{key: team, value: genai}]
+      identity: {arn: 'arn:aws:sts::123456789012:assumed-role/Current/session'}
+      reply:
+        credentials:
+          access_key_id: ASIATARGET
+          secret_access_key: target-secret
+          session_token: target-session
+          expiration: '2026-01-01T01:00:00Z'
+env: {}
+compare: {ignore: []}

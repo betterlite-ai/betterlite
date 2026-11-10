@@ -1,0 +1,13 @@
+kind: helper
+name: compatible-model-limits-positive-nonbool-and-clamp
+call:
+  compatible_model_limits:
+    calls:
+      - {model: m, body: '{"data":[{"id":"m","max_model_len":4096,"max_input_tokens":8192,"max_output_tokens":1024}]}'}
+      - {model: m, body: '{"data":[{"id":"m","context_length":2048}]}'}
+      - {model: m, body: '{"data":[{"id":"m","max_model_len":4096,"context_length":2048}]}'}
+      - {model: m, body: '{"data":[{"id":"m","max_model_len":true,"context_length":512}]}'}
+      - {model: m, body: '{"data":[{"id":"m","max_model_len":0,"context_length":-5,"max_input_tokens":7}]}'}
+      - {model: m, body: '{"data":[{"id":"m","max_input_tokens":300}]}'}
+env: {}
+compare: {ignore: []}

@@ -44,3 +44,10 @@ path = "fuzz_targets/collector_settings.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_storage_policy"
+path = "fuzz_targets/spend_storage_policy.rs"
+test = false
+doc = false
+bench = false

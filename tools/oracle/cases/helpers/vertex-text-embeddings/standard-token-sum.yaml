@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-text-embeddings-standard-token-sum
+call:
+  vertex_text_embeddings:
+    replies:
+      - model: text-embedding-005
+        response:
+          predictions:
+            - embeddings: {values: [0.1, 0.2], statistics: {token_count: 3}}
+              index: 9
+            - embeddings: {values: [0.3], statistics: {token_count: 4}}
+      - model: text-embedding-005
+        response: {predictions: []}
+compare: {ignore: []}
+env: {}
