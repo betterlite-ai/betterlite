@@ -26,7 +26,7 @@ use betterlite_redis::redis_connection_settings::model::settings::{
 use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use betterlite_redis::redis_connection_settings::target::resolve_target;
 use betterlite_redis::redis_counters::RedisCounters;
-use betterlite_redis::redis_live_client::{LiveClientFactory, LiveEndpoint};
+use betterlite_redis::redis_live_client::LiveClientFactory;
 use secrecy::ExposeSecret;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -55,7 +55,7 @@ pub(crate) fn open(
     breaker: BreakerSettings,
     clock: BreakerClock,
 ) -> Result<RedisState, StateStoreError> {
-    let (transport, endpoint) = transport(settings)?;
+    let (transport, cas) = transport(settings)?;
     let counters = RedisCounters::new(
         Arc::clone(&transport),
         None,
@@ -71,16 +71,13 @@ pub(crate) fn open(
         update_window: Duration::try_from_secs_f64(settings.socket_timeout).unwrap_or_default(),
         policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
         clock,
-        cas: CasConnection {
-            endpoint,
-            slot: AsyncMutex::new(None),
-        },
+        cas,
     })
 }
 
 fn transport(
     settings: &RedisSettings,
-) -> Result<(Arc<RedisTransport>, LiveEndpoint), StateStoreError> {
+) -> Result<(Arc<RedisTransport>, CasConnection), StateStoreError> {
     let connection_settings = connection_settings(settings)?;
     let target = resolve_target(
         connection_settings.startup_nodes.as_deref(),
@@ -110,7 +107,11 @@ fn transport(
             operation: "open",
             source,
         })?;
-    Ok((transport, endpoint))
+    let cas = CasConnection {
+        endpoint,
+        slot: AsyncMutex::new(None),
+    };
+    Ok((transport, cas))
 }
 
 pub(crate) fn connection_settings(
