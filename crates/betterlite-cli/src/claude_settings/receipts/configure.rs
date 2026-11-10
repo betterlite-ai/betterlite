@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
 
 use super::super::choices::{ModelChoice, StaticToken};
 use super::super::io::{env_object, load_json_or_empty, write_target};
@@ -9,7 +10,7 @@ use super::super::paths::{SettingsFileOwner, refuse_while_owned};
 use super::super::statusline_install::install_statusline_script;
 use super::super::{MODEL_PATHS, SettingsDocument};
 use super::error::ReceiptsError;
-use super::files::SettingsFiles;
+use super::files::SettingsCommit;
 use super::lookup::with;
 use super::read::read_configure_receipt;
 use super::record::{ConfigureReceipt, build_receipt, owns, receipt_document};
@@ -34,13 +35,14 @@ struct Plan {
 
 pub async fn configure_claude_settings(
     request: &ConfigureRequest<'_>,
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
 ) -> Result<(), ReceiptsError> {
     let plan = build_plan(request)?;
     files
-        .ensure_dir(state_directory(request.state_path))
+        .ensure_private_dir(state_directory(request.state_path))
         .await?;
-    stage_and_commit(files, request.state_path, &plan).await
+    stage_and_commit(files, commits, request.state_path, &plan).await
 }
 
 fn build_plan(request: &ConfigureRequest<'_>) -> Result<Plan, ReceiptsError> {
@@ -76,29 +78,41 @@ fn build_plan(request: &ConfigureRequest<'_>) -> Result<Plan, ReceiptsError> {
 }
 
 async fn stage_and_commit(
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
     state_path: &Path,
     plan: &Plan,
 ) -> Result<(), ReceiptsError> {
+    let document = receipt_document(&plan.receipt, state_path)?;
     let staged_receipt = files
-        .stage(state_path, &receipt_document(&plan.receipt, state_path)?)
+        .stage_private(state_path, PrivateDocument::json(&document)?)
         .await?;
-    let settings_document = JsonValue::Object(plan.merged.clone().into_iter().collect());
-    let staged_settings = match files.stage(&plan.target, &settings_document).await {
+    let merged = JsonValue::Object(plan.merged.clone().into_iter().collect());
+    let staged_settings = match files
+        .stage_private(&plan.target, PrivateDocument::json(&merged)?)
+        .await
+    {
         Ok(staged) => staged,
         Err(error) => {
-            files.discard(&staged_receipt).await?;
-            return Err(error);
+            files.discard_staged_json(&staged_receipt).await?;
+            return Err(ReceiptsError::from(error));
         }
     };
-    if let Err(error) = files.commit(&staged_receipt, state_path).await {
-        files.discard(&staged_settings).await?;
+    if let Err(error) = commits.commit(&staged_receipt, state_path).await {
+        files.discard_staged_json(&staged_settings).await?;
         return Err(error);
     }
-    match files.commit(&staged_settings, &plan.target).await {
+    match commits.commit(&staged_settings, &plan.target).await {
         Ok(()) => Ok(()),
         Err(settings_error) => {
-            rollback(files, state_path, plan.earlier.as_ref(), settings_error).await
+            rollback(
+                files,
+                commits,
+                state_path,
+                plan.earlier.as_ref(),
+                settings_error,
+            )
+            .await
         }
     }
 }
@@ -132,14 +146,23 @@ fn state_directory(state_path: &Path) -> &Path {
 }
 
 async fn rollback(
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
     state_path: &Path,
     earlier: Option<&ConfigureReceipt>,
     settings_error: ReceiptsError,
 ) -> Result<(), ReceiptsError> {
     let restored = match earlier {
-        None => files.remove(state_path).await,
-        Some(receipt) => restore_receipt(files, state_path, receipt).await,
+        None => {
+            let staged = StagedFile {
+                path: state_path.to_owned(),
+            };
+            files
+                .discard_staged_json(&staged)
+                .await
+                .map_err(ReceiptsError::from)
+        }
+        Some(receipt) => restore_receipt(files, commits, state_path, receipt).await,
     };
     match restored {
         Ok(()) => Err(settings_error),
@@ -152,11 +175,14 @@ async fn rollback(
 }
 
 async fn restore_receipt(
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
     state_path: &Path,
     receipt: &ConfigureReceipt,
 ) -> Result<(), ReceiptsError> {
     let document = receipt_document(receipt, state_path)?;
-    let staged = files.stage(state_path, &document).await?;
-    files.commit(&staged, state_path).await
+    let staged = files
+        .stage_private(state_path, PrivateDocument::json(&document)?)
+        .await?;
+    commits.commit(&staged, state_path).await
 }

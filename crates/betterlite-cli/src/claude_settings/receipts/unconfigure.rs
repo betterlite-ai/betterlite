@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_logging::private_json::files::StagedFile;
+use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
 
 use super::super::io::{env_object, load_json_or_empty, write_target};
 use super::super::paths::{SettingsFileOwner, refuse_while_owned};
@@ -10,7 +10,7 @@ use super::super::{
     ANTHROPIC_BASE_URL_KEY, BASE_URL_PATH, CREDENTIAL_PATHS, ENV_KEY, OWNED_PATHS, SettingsDocument,
 };
 use super::error::ReceiptsError;
-use super::files::SettingsFiles;
+use super::files::SettingsCommit;
 use super::lookup::{env_is_empty, lookup, with};
 use super::read::read_configure_receipt;
 use super::record::{ConfigureReceipt, owns, receipt_document};
@@ -35,11 +35,17 @@ struct Restored {
     withheld: Vec<WithheldCredential>,
 }
 
+struct Documents<'input> {
+    settings: Option<&'input SettingsDocument>,
+    receipt: Option<&'input ConfigureReceipt>,
+}
+
 pub async fn unconfigure_claude_settings(
     settings_path: &Path,
     state_path: &Path,
     owners: &[SettingsFileOwner],
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
 ) -> Result<UnconfigureOutcome, ReceiptsError> {
     refuse_while_owned(settings_path, owners)?;
     let Some(receipt) = read_configure_receipt(state_path)? else {
@@ -52,7 +58,13 @@ pub async fn unconfigure_claude_settings(
     let (ours, kept) = owned_and_kept(&current, &receipt);
     let restored = restored_document(&current, &receipt, &ours);
     let target = write_target(settings_path)?;
-    let file_removed = write_documents(files, state_path, &target, &receipt, &restored).await?;
+    let file_removed = restored.settings.is_empty() && !(receipt.file_existed && target.exists());
+    let kept_receipt = withheld_receipt(&receipt, &restored.withheld);
+    let documents = Documents {
+        settings: (!file_removed).then_some(&restored.settings),
+        receipt: kept_receipt.as_ref(),
+    };
+    write_documents(files, commits, state_path, &target, &documents).await?;
     let restored_paths = ours
         .iter()
         .filter(|path| lookup(&current, path) != lookup(&restored.settings, path))
@@ -124,74 +136,89 @@ fn restored_document(
     Restored { settings, withheld }
 }
 
+async fn stage_settings(
+    files: &PrivateFiles,
+    target: &Path,
+    settings: Option<&SettingsDocument>,
+) -> Result<Option<StagedFile>, ReceiptsError> {
+    let Some(document) = settings else {
+        return Ok(None);
+    };
+    let value = JsonValue::Object(document.clone().into_iter().collect());
+    let staged = files
+        .stage_private(target, PrivateDocument::json(&value)?)
+        .await?;
+    Ok(Some(staged))
+}
+
 async fn write_documents(
-    files: &dyn SettingsFiles,
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
     state_path: &Path,
     target: &Path,
-    receipt: &ConfigureReceipt,
-    restored: &Restored,
-) -> Result<bool, ReceiptsError> {
-    let file_removed = restored.settings.is_empty() && !(receipt.file_existed && target.exists());
-    let kept_document = withheld_receipt(receipt, &restored.withheld)
-        .map(|record| receipt_document(&record, state_path))
-        .transpose()?;
-    let staged_settings = if file_removed {
-        None
-    } else {
-        let document = JsonValue::Object(restored.settings.clone().into_iter().collect());
-        Some(files.stage(target, &document).await?)
-    };
-    let staged_receipt = match &kept_document {
+    documents: &Documents<'_>,
+) -> Result<(), ReceiptsError> {
+    let staged_settings = stage_settings(files, target, documents.settings).await?;
+    let staged_receipt = match documents.receipt {
         None => None,
-        Some(document) => match files.stage(state_path, document).await {
-            Ok(staged) => Some(staged),
-            Err(error) => {
-                discard_staged(files, staged_settings.as_ref()).await?;
-                return Err(error);
+        Some(receipt) => {
+            let value = receipt_document(receipt, state_path)?;
+            match files
+                .stage_private(state_path, PrivateDocument::json(&value)?)
+                .await
+            {
+                Ok(staged) => Some(staged),
+                Err(error) => {
+                    if let Some(staged) = &staged_settings {
+                        files.discard_staged_json(staged).await?;
+                    }
+                    return Err(ReceiptsError::from(error));
+                }
             }
-        },
+        }
     };
     land_settings(
         files,
+        commits,
         target,
         staged_settings.as_ref(),
         staged_receipt.as_ref(),
     )
     .await?;
-    match &staged_receipt {
-        Some(staged) => files.commit(staged, state_path).await?,
-        None => files.remove(state_path).await?,
-    }
-    Ok(file_removed)
-}
-
-async fn land_settings(
-    files: &dyn SettingsFiles,
-    target: &Path,
-    staged_settings: Option<&StagedFile>,
-    staged_receipt: Option<&StagedFile>,
-) -> Result<(), ReceiptsError> {
-    let landed = match staged_settings {
-        Some(staged) => files.commit(staged, target).await,
-        None => files.remove(target).await,
-    };
-    if let Err(error) = landed {
-        if let Some(staged) = staged_receipt {
-            files.discard(staged).await?;
-        }
-        return Err(error);
+    if let Some(staged) = &staged_receipt {
+        commits.commit(staged, state_path).await?;
+    } else {
+        let staged = StagedFile {
+            path: state_path.to_owned(),
+        };
+        files.discard_staged_json(&staged).await?;
     }
     Ok(())
 }
 
-async fn discard_staged(
-    files: &dyn SettingsFiles,
-    staged: Option<&StagedFile>,
+async fn land_settings(
+    files: &PrivateFiles,
+    commits: &dyn SettingsCommit,
+    target: &Path,
+    staged_settings: Option<&StagedFile>,
+    staged_receipt: Option<&StagedFile>,
 ) -> Result<(), ReceiptsError> {
-    match staged {
-        Some(record) => files.discard(record).await,
-        None => Ok(()),
+    let landed = if let Some(staged) = staged_settings {
+        commits.commit(staged, target).await
+    } else {
+        let staged = StagedFile {
+            path: target.to_owned(),
+        };
+        files.discard_staged_json(&staged).await?;
+        Ok(())
+    };
+    if let Err(error) = landed {
+        if let Some(staged) = staged_receipt {
+            files.discard_staged_json(staged).await?;
+        }
+        return Err(error);
     }
+    Ok(())
 }
 
 fn written_paths(receipt: &ConfigureReceipt) -> Vec<String> {

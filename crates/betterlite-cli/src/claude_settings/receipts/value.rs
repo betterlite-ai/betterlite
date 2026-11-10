@@ -66,19 +66,26 @@ fn write_json(value: &JsonValue, text: &mut String) {
 fn write_json_string(content: &str, text: &mut String) {
     text.push('"');
     for character in content.chars() {
-        match character {
-            '"' => text.push_str("\\\""),
-            '\\' => text.push_str("\\\\"),
-            '\n' => text.push_str("\\n"),
-            '\r' => text.push_str("\\r"),
-            '\t' => text.push_str("\\t"),
-            '\u{08}' => text.push_str("\\b"),
-            '\u{0c}' => text.push_str("\\f"),
-            ' '..='~' => text.push(character),
-            other => write_unicode_escape(other, text),
+        match simple_escape(character) {
+            Some(escaped) => text.push_str(escaped),
+            None if character.is_ascii_graphic() || character == ' ' => text.push(character),
+            None => write_unicode_escape(character, text),
         }
     }
     text.push('"');
+}
+
+const fn simple_escape(character: char) -> Option<&'static str> {
+    match character {
+        '"' => Some("\\\""),
+        '\\' => Some("\\\\"),
+        '\n' => Some("\\n"),
+        '\r' => Some("\\r"),
+        '\t' => Some("\\t"),
+        '\u{08}' => Some("\\b"),
+        '\u{0c}' => Some("\\f"),
+        _ => None,
+    }
 }
 
 fn write_unicode_escape(character: char, text: &mut String) {

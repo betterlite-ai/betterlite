@@ -10,6 +10,8 @@ use crate::claude_settings::error::ClaudeSettingsError;
 pub enum ReceiptsError {
     #[error(transparent)]
     Settings(#[from] ClaudeSettingsError),
+    #[error(transparent)]
+    Storage(#[from] PrivateJsonError),
     #[error("cannot read the configure receipt {path}: {source}")]
     ReadReceipt {
         path: PathBuf,
@@ -33,24 +35,6 @@ pub enum ReceiptsError {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
-    },
-    #[error("cannot write {path}: {source}")]
-    Write {
-        path: PathBuf,
-        #[source]
-        source: PrivateJsonError,
-    },
-    #[error("cannot remove {path}: {source}")]
-    Remove {
-        path: PathBuf,
-        #[source]
-        source: PrivateJsonError,
-    },
-    #[error("cannot discard the staged file {path}: {source}")]
-    Discard {
-        path: PathBuf,
-        #[source]
-        source: PrivateJsonError,
     },
     #[error(
         "{settings} The receipt at {state_path} now describes settings that were not written and could not be put back either ({receipt}); remove it before retrying"
