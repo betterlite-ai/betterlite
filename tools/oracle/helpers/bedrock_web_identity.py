@@ -87,14 +87,6 @@ def one(value: Json, name: str) -> tuple[str, Json]:
     return next(iter(value.items()))
 
 
-def field(params: Mapping[str, Json], name: str) -> str:
-    return cast(str, params[name])
-
-
-def optional(params: Mapping[str, Json], name: str) -> str | None:
-    return cast("str | None", params.get(name))
-
-
 def environment(params: Mapping[str, Json]) -> dict[str, str]:
     return cast(dict[str, str], params.get("environment", {}))
 
@@ -150,10 +142,11 @@ def harness(sts: FakeSts, params: Params) -> Generator[list[str], None, None]:
         warnings.append(message % args if args else message)
 
     max_policy_size = cast(int, params.get("max_policy_size", 75))
+    resolved = cast("str | None", params.get("resolved_token"))
     with (
         patch.dict(os.environ, sts.environment, clear=True),
         patch("boto3.client", side_effect=sts.client),
-        patch.object(base_aws_llm, "get_secret", return_value=optional(params, "resolved_token")),
+        patch.object(base_aws_llm, "get_secret", return_value=resolved),
         patch.object(base_aws_llm, "BEDROCK_MAX_POLICY_SIZE", max_policy_size),
         patch.object(base_aws_llm.verbose_logger, "warning", new=record),
     ):
@@ -166,10 +159,10 @@ def web_identity(params: Params) -> Json:
     )
     with harness(sts, params) as warnings:
         creds, ttl = BaseAWSLLM()._auth_with_web_identity_token(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-            aws_web_identity_token=field(params, "token_reference"),
-            aws_role_name=field(params, "role_arn"),
-            aws_session_name=field(params, "session_name"),
-            aws_external_id=optional(params, "external_id"),
+            aws_web_identity_token=cast(str, params["token_reference"]),
+            aws_role_name=cast(str, params["role_arn"]),
+            aws_session_name=cast(str, params["session_name"]),
+            aws_external_id=cast("str | None", params.get("external_id")),
             aws_sts_endpoint=None,
             aws_region_name=None,
             ssl_verify=True,
@@ -191,10 +184,10 @@ def same_account(params: Params) -> Json:
     sts = FakeSts({"AssumeRole": credentials(reply)}, environment(params))
     with harness(sts, params):
         response = BaseAWSLLM()._handle_irsa_same_account(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-            aws_role_name=field(params, "role_arn"),
-            aws_session_name=field(params, "session_name"),
+            aws_role_name=cast(str, params["role_arn"]),
+            aws_session_name=cast(str, params["session_name"]),
             aws_session_tags=session_tags(params),
-            aws_external_id=optional(params, "external_id"),
+            aws_external_id=cast("str | None", params.get("external_id")),
             aws_sts_endpoint=None,
             aws_region_name=None,
             ssl_verify=True,
@@ -216,12 +209,12 @@ def cross_account(params: Params) -> Json:
         path.write_text(token_file["content"], encoding="utf-8")
         with harness(sts, params):
             response = BaseAWSLLM()._handle_irsa_cross_account(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-                irsa_role_arn=field(params, "irsa_role_arn"),
-                aws_role_name=field(params, "role_arn"),
-                aws_session_name=field(params, "session_name"),
+                irsa_role_arn=cast(str, params["irsa_role_arn"]),
+                aws_role_name=cast(str, params["role_arn"]),
+                aws_session_name=cast(str, params["session_name"]),
                 web_identity_token_file=str(path),
                 aws_session_tags=session_tags(params),
-                aws_external_id=optional(params, "external_id"),
+                aws_external_id=cast("str | None", params.get("external_id")),
                 aws_sts_endpoint=None,
                 aws_region_name=None,
                 ssl_verify=True,
@@ -242,11 +235,7 @@ def audiences(params: Params) -> Json:
 HANDLERS: dict[str, Callable[[Params], Json]] = {
     "jwt_audience_hint": audiences,
     "malformed_token": audiences,
-    "web_identity_assume_role": web_identity,
-    "secure_transport_session_policy": web_identity,
-    "invalid_identity_token_error": web_identity,
-    "sts_credentials_missing": web_identity,
-    "packed_policy_warning_and_ttl": web_identity,
+    "web_identity": web_identity,
     "same_account_irsa": same_account,
     "cross_account_irsa": cross_account,
 }

@@ -14,9 +14,6 @@ call:
       tags:
         - {key: env, value: prod}
         - {key: team, value: genai}
-      region_name: us-east-1
-      sts_endpoint: https://sts.us-east-1.amazonaws.com
-      verify: true
       identity:
         arn: 'arn:aws:sts::123456789012:assumed-role/Current/session'
       reply:

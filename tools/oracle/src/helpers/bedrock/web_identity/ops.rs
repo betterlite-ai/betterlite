@@ -43,11 +43,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::JwtAudienceHint { tokens } | Input::MalformedToken { tokens } => {
             Ok(audiences(tokens))
         }
-        Input::WebIdentityAssumeRole(case)
-        | Input::SecureTransportSessionPolicy(case)
-        | Input::InvalidIdentityTokenError(case)
-        | Input::StsCredentialsMissing(case)
-        | Input::PackedPolicyWarningAndTtl(case) => web_identity(case),
+        Input::WebIdentity(case) => web_identity(case),
         Input::SameAccountIrsa(case) => same_account_irsa(case),
         Input::CrossAccountIrsa(case) => cross_account_irsa(case),
     }

@@ -10,9 +10,6 @@ call:
       token_file: {path: /var/run/secrets/token, content: "irsa-token"}
       external_id: external-1
       tags: [{key: team, value: genai}]
-      region_name: us-east-1
-      sts_endpoint: https://sts.us-east-1.amazonaws.com
-      verify: true
       identity: {denied: denied by the fixture}
       irsa_reply:
         access_key_id: ASIAIRSA

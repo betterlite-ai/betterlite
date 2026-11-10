@@ -121,16 +121,12 @@ fn base64_symbols(payload: &str) -> Option<(String, usize)> {
     let mut pads = 0_usize;
     for character in payload.chars() {
         match character {
-            '-' => {
-                symbols.push('+');
-                pads = 0;
-            }
-            '_' => {
-                symbols.push('/');
-                pads = 0;
-            }
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '+' | '/' => {
-                symbols.push(character);
+            '-' | '_' | 'A'..='Z' | 'a'..='z' | '0'..='9' | '+' | '/' => {
+                symbols.push(match character {
+                    '-' => '+',
+                    '_' => '/',
+                    other => other,
+                });
                 pads = 0;
             }
             '=' => pads = pads.saturating_add(1),

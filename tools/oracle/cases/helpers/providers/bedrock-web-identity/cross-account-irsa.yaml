@@ -17,9 +17,6 @@ call:
       external_id: external-1
       tags:
         - {key: env, value: prod}
-      region_name: us-east-1
-      sts_endpoint: https://sts.us-east-1.amazonaws.com
-      verify: true
       identity:
         denied: the fixture identity call is denied
       irsa_reply:
