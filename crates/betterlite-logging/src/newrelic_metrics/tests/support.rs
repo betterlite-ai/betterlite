@@ -91,21 +91,13 @@ pub(super) fn record() -> NewRelicMetricRecord {
 
 // A distinct model keeps each record in its own bucket, so the queue order stays readable
 pub(super) fn record_at(index: usize) -> NewRelicMetricRecord {
-    NewRelicMetricRecord {
-        team_id: "team-1".to_owned(),
-        team_alias: "Team One".to_owned(),
-        model_group: "production".to_owned(),
-        model: format!("gpt-{index}"),
-        custom_llm_provider: "openai".to_owned(),
-        status: "success".to_owned(),
-        response_cost: Decimal::ZERO,
-        prompt_tokens: 1,
-        completion_tokens: 1,
-        total_tokens: 2,
-        duration_ms: 100.0,
-        team_max_budget: None,
-        team_spend: None,
-    }
+    let mut record = record();
+    record.model = format!("gpt-{index}");
+    record.response_cost = Decimal::ZERO;
+    record.duration_ms = 100.0_f64;
+    record.team_max_budget = None;
+    record.team_spend = None;
+    record
 }
 
 pub(super) fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
@@ -246,6 +238,7 @@ pub(super) struct Recorded {
     pub(super) body: Vec<u8>,
 }
 
+#[derive(Default)]
 pub(super) struct FakeTransport {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<Recorded>>,
@@ -255,12 +248,13 @@ pub(super) struct FakeTransport {
 
 impl FakeTransport {
     pub(super) fn new(replies: &[Reply]) -> Self {
-        Self {
-            replies: Mutex::new(replies.iter().copied().collect()),
-            requests: Mutex::new(Vec::new()),
-            attached: Mutex::new(None),
-            during_send: Mutex::new(None),
-        }
+        let transport = Self::default();
+        transport
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(replies.iter().copied());
+        transport
     }
 
     pub(super) fn attach(&self, logger: &Arc<NewRelicMetricsLogger>) {
@@ -528,26 +522,22 @@ impl<'writer> MakeWriter<'writer> for WarningBuffer {
     }
 }
 
-pub(super) fn capture_warnings() -> (WarningBuffer, DefaultGuard) {
+pub(super) fn capture_at(level: Level) -> (WarningBuffer, DefaultGuard) {
     let buffer = WarningBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .without_time()
-        .with_max_level(Level::WARN)
+        .with_max_level(level)
         .with_writer(buffer.clone())
         .finish();
     let guard = set_default(subscriber);
     (buffer, guard)
 }
 
+pub(super) fn capture_warnings() -> (WarningBuffer, DefaultGuard) {
+    capture_at(Level::WARN)
+}
+
 pub(super) fn capture_logs() -> (WarningBuffer, DefaultGuard) {
-    let buffer = WarningBuffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(Level::DEBUG)
-        .with_writer(buffer.clone())
-        .finish();
-    let guard = set_default(subscriber);
-    (buffer, guard)
+    capture_at(Level::DEBUG)
 }

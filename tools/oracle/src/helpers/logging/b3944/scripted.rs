@@ -106,16 +106,17 @@ impl ScriptedTransport {
     }
 
     pub(super) fn requests(&self) -> Vec<RecordedRequest> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|request| RecordedRequest {
+        let recorded = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut snapshot = Vec::with_capacity(recorded.len());
+        for request in recorded.iter() {
+            snapshot.push(RecordedRequest {
                 url: request.url,
                 headers: request.headers.clone(),
                 body: request.body.clone(),
-            })
-            .collect()
+            });
+        }
+        drop(recorded);
+        snapshot
     }
 
     fn append_during_send(&self) {
