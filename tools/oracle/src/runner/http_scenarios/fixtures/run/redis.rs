@@ -186,10 +186,16 @@ fn answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
         "SET" => Some(store(entries, command)),
         "GET" => Some(lookup(entries, command)),
         "PING" => Some(b"+PONG\r\n".to_vec()),
-        "SELECT" | "AUTH" | "QUIT" => Some(b"+OK\r\n".to_vec()),
+        "SELECT" => select_answer(command),
+        "QUIT" => Some(b"+OK\r\n".to_vec()),
         "CLIENT" => client_answer(command),
         _ => None,
     }
+}
+
+fn select_answer(command: &Command) -> Option<Vec<u8>> {
+    let database = command.args.get(1)?;
+    (database == "0").then_some(b"+OK\r\n".to_vec())
 }
 
 fn client_answer(command: &Command) -> Option<Vec<u8>> {
