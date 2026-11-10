@@ -3,8 +3,11 @@
 use std::fs;
 use std::path::Path;
 
+use serde_json::Value;
+
 use crate::case::HelperCase;
 use crate::case::helper::validate_helper;
+use crate::compare::helper::HelperOutput;
 use crate::helpers::invoke;
 
 fn seeds() -> Vec<(String, HelperCase)> {
@@ -31,48 +34,79 @@ fn seeds() -> Vec<(String, HelperCase)> {
 fn helper_seeds_select_bytez_record() {
     let seeds = seeds();
     assert!(!seeds.is_empty());
-    for (path, case) in &seeds {
-        assert_eq!(case.call.operation, "bytez_record", "{path}");
-        assert!(
-            validate_helper(Path::new("<helper>"), case).is_ok(),
-            "{path}"
-        );
-    }
+    let wrong: Vec<&str> = seeds
+        .iter()
+        .filter(|(_, case)| case.call.operation != "bytez_record")
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:?}");
+    let invalid: Vec<&str> = seeds
+        .iter()
+        .filter(|(_, case)| validate_helper(Path::new("<helper>"), case).is_err())
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(invalid.is_empty(), "{invalid:?}");
+}
+
+fn prompt_tokens(output: &HelperOutput) -> Option<i64> {
+    output
+        .value
+        .as_ref()
+        .and_then(|value| value.pointer("/value/prompt_tokens"))
+        .and_then(Value::as_i64)
+}
+
+fn has_blocks(output: &HelperOutput) -> bool {
+    output
+        .value
+        .as_ref()
+        .and_then(|value| value.pointer("/value/normalized"))
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().any(|message| {
+                message["content"]
+                    .as_array()
+                    .is_some_and(|blocks| !blocks.is_empty())
+            })
+        })
 }
 
 #[test]
 fn helper_seeds_normalize_messages_and_count_usage() {
-    let mut normalized = 0_usize;
-    let mut counted = 0_usize;
-    for (path, case) in seeds() {
-        let output = invoke(&case.call);
-        let Some(value) = output.value else {
-            continue;
-        };
-        if let Some(prompt_tokens) = value
-            .get("value")
-            .and_then(|value| value.get("prompt_tokens"))
-            .and_then(serde_json::Value::as_i64)
-        {
-            assert!(prompt_tokens > 0, "{path}");
-            counted += 1;
-        }
-        let Some(messages) = value
-            .get("value")
-            .and_then(|value| value.get("normalized"))
-            .and_then(serde_json::Value::as_array)
-        else {
-            continue;
-        };
-        assert!(!messages.is_empty(), "{path}");
-        assert!(
-            messages.iter().any(|message| message["content"]
-                .as_array()
-                .is_some_and(|blocks| !blocks.is_empty())),
-            "{path}"
-        );
-        normalized += 1;
-    }
-    assert!(normalized > 0);
-    assert!(counted > 0);
+    let outputs: Vec<(String, HelperOutput)> = seeds()
+        .into_iter()
+        .map(|(path, case)| (path, invoke(&case.call)))
+        .collect();
+    let counted: Vec<&str> = outputs
+        .iter()
+        .filter(|(_, output)| prompt_tokens(output).is_some())
+        .map(|(path, _)| path.as_str())
+        .collect();
+    let normalized: Vec<&str> = outputs
+        .iter()
+        .filter(|(_, output)| has_blocks(output))
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(!counted.is_empty());
+    assert!(!normalized.is_empty());
+    let uncounted: Vec<&str> = outputs
+        .iter()
+        .filter(|(_, output)| prompt_tokens(output).is_some_and(|tokens| tokens <= 0))
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(uncounted.is_empty(), "{uncounted:?}");
+    let empty: Vec<&str> = outputs
+        .iter()
+        .filter(|(_, output)| value_has_normalized(output) && !has_blocks(output))
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(empty.is_empty(), "{empty:?}");
+}
+
+fn value_has_normalized(output: &HelperOutput) -> bool {
+    output
+        .value
+        .as_ref()
+        .and_then(|value| value.pointer("/value/normalized"))
+        .is_some()
 }
