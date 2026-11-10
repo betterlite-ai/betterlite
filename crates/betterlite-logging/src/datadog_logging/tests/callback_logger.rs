@@ -73,12 +73,17 @@ fn callback_logger_reports_message_logging_from_its_options() {
 }
 
 #[test]
-fn uuid_id_returns_a_fresh_uuid_each_time() {
-    let first = uuid_id();
-    let second = uuid_id();
-    assert!(uuid::Uuid::parse_str(&first).is_ok(), "{first}");
-    assert!(uuid::Uuid::parse_str(&second).is_ok(), "{second}");
-    assert_ne!(first, second);
+fn uuid_id_is_a_hyphenated_version_4_uuid() {
+    let id = uuid_id();
+    let parsed = uuid::Uuid::parse_str(&id).expect("the id is a UUID");
+    assert_eq!(id.len(), 36, "{id}");
+    assert_eq!(id, parsed.hyphenated().to_string());
+    assert_eq!(parsed.get_version_num(), 4, "{id}");
+}
+
+#[test]
+fn uuid_id_returns_a_fresh_id_each_time() {
+    assert_ne!(uuid_id(), uuid_id());
 }
 
 #[test]
