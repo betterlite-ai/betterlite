@@ -1,0 +1,3 @@
+litellm_settings:
+  azure_region: eastus
+  region: eastus

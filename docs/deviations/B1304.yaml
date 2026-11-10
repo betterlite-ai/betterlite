@@ -1,0 +1,11 @@
+task: B1304
+deviations:
+  - what: get_complete_vertex_url returns EndpointTargetError::Project when vertex_project is absent or empty and project_id is empty, where LiteLLM passes the empty fallback into create_vertex_url and writes an empty projects/ segment into the URL.
+    why: A projects// path is a target no working Vertex setup relies on; the caller gets an error naming the missing project instead of a request Google cannot route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L338
+  - what: construct_target_url returns EndpointTargetError::Project or EndpointTargetError::Location for a route without a projects/locations pair when the project or location is absent or empty, where LiteLLM's f-string writes the literal None or an empty segment into the path.
+    why: projects/None/locations/None is a URL no working Vertex pass-through setup relies on; failing at construction names the missing value instead of sending a request that cannot succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1160-L1169
+  - what: A configured api_base that does not parse as an absolute http or https URL is a typed error in check_custom_proxy, graft_default_vertex_path and construct_target_url, where LiteLLM's urlparse-based branches accept any string and concatenate it into the target.
+    why: B009 validates configured origins before they reach provider code, so a base with another scheme or unparsable bytes must not become an upstream target; no working Vertex setup configures one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L653-L690

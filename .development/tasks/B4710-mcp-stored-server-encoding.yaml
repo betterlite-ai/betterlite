@@ -131,7 +131,7 @@ checks:
         Cross-language encryption/decryption interoperability between Python
         LiteLLM behavior and Rust implementation is missing.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-server-encoding
         -k 'b4710'
 

@@ -66,6 +66,7 @@ scope:
     - crates/betterlite-db/fuzz/fuzz_targets/database_repair.rs
     - crates/betterlite-db/fuzz/corpus/database_repair/**
     - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
     - tools/betterlite-db-admin/src/commands.rs
     - tools/betterlite-db-admin/src/database_repair.rs
     - tools/betterlite-db-admin/src/database_repair/**

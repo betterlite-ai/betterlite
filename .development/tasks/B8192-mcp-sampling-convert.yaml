@@ -68,7 +68,7 @@ checks:
     - id: convert-oracle
       why: Converted messages or results differ from LiteLLM on the same input.
       run: >-
-        cargo run --locked -p betterlite-oracle -- --self-check
+        cargo run --locked -p betterlite-oracle --
         tools/oracle/cases/helpers/mcp-sampling-convert
 
 oracle_cases: []
