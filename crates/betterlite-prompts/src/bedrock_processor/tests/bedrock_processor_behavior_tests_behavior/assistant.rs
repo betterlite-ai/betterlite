@@ -1,7 +1,7 @@
 use crate::bedrock_content::error::ContentError;
 use crate::bedrock_processor::error::ProcessorError;
 
-use super::prelude::{Harness, RecordingCachePoints, Settings, list};
+use super::prelude::{Harness, RecordingCachePoints, Settings, json, list};
 
 #[tokio::test]
 async fn bedrock_processor_behavior_tests_behavior_an_assistant_text_turn_becomes_a_text_block() {
@@ -456,4 +456,14 @@ async fn bedrock_processor_behavior_tests_behavior_an_unknown_assistant_block_st
             ]}]"#
         )
     );
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_blank_assistant_continue_text_is_dropped() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let continue_message = json(r#"{"role":"assistant","content":[{"type":"text","text":""}]}"#);
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let messages = list(r#"[{"role":"assistant","content":[]}]"#);
+    let converted = harness.convert(&messages, &settings).await.unwrap();
+    assert_eq!(converted, Vec::new());
 }
