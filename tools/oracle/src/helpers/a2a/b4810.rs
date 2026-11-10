@@ -183,7 +183,7 @@ fn model_info_result(instance: &ModelInfoInstance) -> HelperResult {
     }))
 }
 
-fn streaming_logging(instance: &BuildStreamingInstance) -> Result<LoggingState, Box<HelperError>> {
+fn build_streaming_result(instance: &BuildStreamingInstance) -> HelperResult {
     let mut context = CorrelationContext::default();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| helper_error("RedactorError", error.to_string()))?;
@@ -195,7 +195,7 @@ fn streaming_logging(instance: &BuildStreamingInstance) -> Result<LoggingState, 
         metadata: instance.metadata.as_ref(),
         proxy_server_request: instance.proxy_server_request.as_ref(),
     };
-    build_streaming_logging_obj(
+    let logging = build_streaming_logging_obj(
         &request,
         LoggingDeps {
             start_time: state::fixed_time(state::FIXED_START)?,
@@ -208,11 +208,7 @@ fn streaming_logging(instance: &BuildStreamingInstance) -> Result<LoggingState, 
             clock: || Duration::ZERO,
         },
     )
-    .map_err(|error| helper_error("LoggingContextError", error.to_string()))
-}
-
-fn build_streaming_result(instance: &BuildStreamingInstance) -> HelperResult {
-    let logging = streaming_logging(instance)?;
+    .map_err(|error| helper_error("LoggingContextError", error.to_string()))?;
     let trace_generated = !logging.litellm_trace_id.is_empty();
     let details = state::details_value(&logging)?;
     Ok(serde_json::json!({
