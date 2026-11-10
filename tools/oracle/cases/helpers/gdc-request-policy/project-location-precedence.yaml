@@ -1,0 +1,45 @@
+kind: helper
+name: gdc-request-policy-project-location-precedence
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params:
+                vertex_project: call-project
+                vertex_ai_project: call-alias-project
+                vertex_location: call-location
+                vertex_ai_location: call-alias-location
+            - litellm_params: {}
+            - litellm_params:
+                vertex_ai_project: alias-project
+                vertex_ai_location: alias-location
+          litellm_settings:
+            gdc_api_base: https://gateway.example
+            vertex_project: global-project
+            vertex_location: global-location
+        urls:
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: optional-project, vertex_location: optional-location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 1
+            optional_params: {vertex_project: optional-project, vertex_location: optional-location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 2
+            optional_params: {vertex_project: optional-project, vertex_location: optional-location}
+      - config:
+          model_list:
+            - litellm_params: {}
+          litellm_settings: {}
+        urls:
+          - base: https://gateway.example
+            model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: optional-project, vertex_location: optional-location}
+          - base: https://gateway.example
+            model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_ai_project: optional-alias-project, vertex_ai_location: optional-alias-location}
+env: {}
+compare: {ignore: []}

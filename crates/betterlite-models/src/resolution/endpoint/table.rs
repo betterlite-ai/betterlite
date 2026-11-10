@@ -1,0 +1,233 @@
+use crate::identity::provider_id::ProviderId;
+
+use super::EndpointProvider::{Anyscale, Known};
+
+#[derive(Clone, Copy)]
+pub(super) enum EndpointProvider {
+    Anyscale,
+    Known(ProviderId),
+}
+
+// LiteLLM keeps every one of these endpoints in openai_compatible_endpoints, in this order.
+pub(super) const ENDPOINTS: [&str; 52] = [
+    "api.perplexity.ai",
+    "api.endpoints.anyscale.com/v1",
+    "api.deepinfra.com/v1/openai",
+    "api.mistral.ai/v1",
+    "codestral.mistral.ai/v1/chat/completions",
+    "codestral.mistral.ai/v1/fim/completions",
+    "api.groq.com/openai/v1",
+    "https://integrate.api.nvidia.com/v1",
+    "https://api.getnadir.com/v1",
+    "api.deepseek.com/v1",
+    "api.together.ai/v1",
+    "api.together.xyz/v1",
+    "app.empower.dev/api/v1",
+    "https://api.friendli.ai/serverless/v1",
+    "api.sambanova.ai/v1",
+    "api.x.ai/v1",
+    "ollama.com",
+    "api.galadriel.ai/v1",
+    "api.llama.com/compat/v1/",
+    "api.featherless.ai/v1",
+    "inference.api.nscale.com/v1",
+    "api.studio.nebius.ai/v1",
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "https://api-inference.modelscope.cn/v1",
+    "https://api.moonshot.ai/v1",
+    "https://api.publicai.co/v1",
+    "https://api.synthetic.new/openai/v1",
+    "https://serverless.tensormesh.ai/v1",
+    "https://api.stima.tech/v1",
+    "https://nano-gpt.com/api/v1",
+    "https://api.poe.com/v1",
+    "https://llm.chutes.ai/v1/",
+    "https://api.v0.dev/v1",
+    "https://api.morphllm.com/v1",
+    "https://api.lambda.ai/v1",
+    "https://api.inceptionlabs.ai/v1",
+    "https://api.hyperbolic.xyz/v1",
+    "https://ai-gateway.helicone.ai/",
+    "https://ai-gateway.vercel.sh/v1",
+    "https://api.edenai.run/v3",
+    "https://api.inference.wandb.ai/v1",
+    "https://api.clarifai.com/v2/ext/openai/v1",
+    "https://api.libertai.io/v1",
+    "https://pinstripes.io/v1",
+    "https://api.meta.ai/v1",
+    "https://api.sailresearch.com/v1",
+    "https://api.cognition.ai/v1",
+    "https://api.cortecs.ai/v1",
+    "https://api.scx.ai/v1",
+    "https://api.prisminference.com/v1",
+    "https://gigachat.devices.sberbank.ru/api/v1",
+];
+
+// An elif arm of LiteLLM's loop, compared against the matched endpoint's literal string.
+pub(super) type Branch = (&'static str, EndpointProvider, &'static [&'static str]);
+
+const TOGETHER_KEYS: &[&str] = &[
+    "TOGETHER_API_KEY",
+    "TOGETHER_AI_API_KEY",
+    "TOGETHERAI_API_KEY",
+    "TOGETHER_AI_TOKEN",
+];
+
+pub(super) const ENV_BRANCHES: [Branch; 28] = [
+    (
+        "api.perplexity.ai",
+        Known(ProviderId::Perplexity),
+        &["PERPLEXITYAI_API_KEY"],
+    ),
+    (
+        "api.endpoints.anyscale.com/v1",
+        Anyscale,
+        &["ANYSCALE_API_KEY"],
+    ),
+    (
+        "api.deepinfra.com/v1/openai",
+        Known(ProviderId::Deepinfra),
+        &["DEEPINFRA_API_KEY"],
+    ),
+    (
+        "api.mistral.ai/v1",
+        Known(ProviderId::Mistral),
+        &["MISTRAL_API_KEY"],
+    ),
+    (
+        "codestral.mistral.ai/v1/chat/completions",
+        Known(ProviderId::Codestral),
+        &["CODESTRAL_API_KEY"],
+    ),
+    (
+        "codestral.mistral.ai/v1/fim/completions",
+        Known(ProviderId::TextCompletionCodestral),
+        &["CODESTRAL_API_KEY"],
+    ),
+    (
+        "api.groq.com/openai/v1",
+        Known(ProviderId::Groq),
+        &["GROQ_API_KEY"],
+    ),
+    (
+        "https://integrate.api.nvidia.com/v1",
+        Known(ProviderId::NvidiaNim),
+        &["NVIDIA_NIM_API_KEY"],
+    ),
+    (
+        "api.deepseek.com/v1",
+        Known(ProviderId::Deepseek),
+        &["DEEPSEEK_API_KEY"],
+    ),
+    (
+        "app.empower.dev/api/v1",
+        Known(ProviderId::Empower),
+        &["EMPOWER_API_KEY"],
+    ),
+    (
+        "https://api.friendli.ai/serverless/v1",
+        Known(ProviderId::Friendliai),
+        &["FRIENDLIAI_API_KEY", "FRIENDLI_TOKEN"],
+    ),
+    ("ollama.com", Known(ProviderId::Ollama), &["OLLAMA_API_KEY"]),
+    (
+        "https://api-inference.modelscope.cn/v1",
+        Known(ProviderId::Modelscope),
+        &["MODELSCOPE_API_KEY"],
+    ),
+    (
+        "https://api.synthetic.new/openai/v1",
+        Known(ProviderId::Synthetic),
+        &["SYNTHETIC_API_KEY"],
+    ),
+    (
+        "https://api.stima.tech/v1",
+        Known(ProviderId::Apertis),
+        &["STIMA_API_KEY"],
+    ),
+    (
+        "https://nano-gpt.com/api/v1",
+        Known(ProviderId::Nanogpt),
+        &["NANOGPT_API_KEY"],
+    ),
+    (
+        "https://api.poe.com/v1",
+        Known(ProviderId::Poe),
+        &["POE_API_KEY"],
+    ),
+    (
+        "https://llm.chutes.ai/v1/",
+        Known(ProviderId::Chutes),
+        &["CHUTES_API_KEY"],
+    ),
+    (
+        "https://api.v0.dev/v1",
+        Known(ProviderId::V0),
+        &["V0_API_KEY"],
+    ),
+    (
+        "https://api.lambda.ai/v1",
+        Known(ProviderId::LambdaAi),
+        &["LAMBDA_API_KEY"],
+    ),
+    (
+        "https://api.inceptionlabs.ai/v1",
+        Known(ProviderId::Inception),
+        &["INCEPTION_API_KEY"],
+    ),
+    (
+        "https://api.hyperbolic.xyz/v1",
+        Known(ProviderId::Hyperbolic),
+        &["HYPERBOLIC_API_KEY"],
+    ),
+    (
+        "https://ai-gateway.vercel.sh/v1",
+        Known(ProviderId::VercelAiGateway),
+        &["VERCEL_AI_GATEWAY_API_KEY"],
+    ),
+    (
+        "https://api.edenai.run/v3",
+        Known(ProviderId::Edenai),
+        &["EDENAI_API_KEY"],
+    ),
+    (
+        "https://api.inference.wandb.ai/v1",
+        Known(ProviderId::Wandb),
+        &["WANDB_API_KEY"],
+    ),
+    (
+        "https://pinstripes.io/v1",
+        Known(ProviderId::Pinstripes),
+        &["PINSTRIPES_API_KEY"],
+    ),
+    (
+        "https://api.meta.ai/v1",
+        Known(ProviderId::Meta),
+        &["META_API_KEY"],
+    ),
+    (
+        "https://gigachat.devices.sberbank.ru/api/v1",
+        Known(ProviderId::Gigachat),
+        &["GIGACHAT_API_KEY"],
+    ),
+];
+
+pub(super) const HTTPS_ONLY_BRANCHES: [Branch; 1] = [(
+    "https://api.getnadir.com/v1",
+    Known(ProviderId::Nadir),
+    &["NADIR_API_KEY"],
+)];
+
+pub(super) const EXPLICIT_BRANCHES: [Branch; 2] = [
+    (
+        "api.together.ai/v1",
+        Known(ProviderId::TogetherAi),
+        TOGETHER_KEYS,
+    ),
+    (
+        "api.together.xyz/v1",
+        Known(ProviderId::TogetherAi),
+        TOGETHER_KEYS,
+    ),
+];

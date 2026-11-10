@@ -364,6 +364,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gigachat_stream_chunk"
+path = "fuzz_targets/gigachat_stream_chunk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "host_named_reply"
 path = "fuzz_targets/host_named_reply.rs"
 test = false
