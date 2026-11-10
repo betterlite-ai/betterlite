@@ -189,27 +189,23 @@ fn outcome_value(
                 choice.message.tool_calls,
             ])).collect::<Vec<Value>>(),
         }),
-        Err(error) => error_value(&error, supplied),
-    }
-}
-
-fn error_value(error: &HostModelIdentityError, supplied: &BTreeMap<String, String>) -> Value {
-    match error {
-        HostModelIdentityError::Api {
+        Err(HostModelIdentityError::Api {
             status_code,
             headers,
             ..
-        } => json!({
+        }) => json!({
             "kind": "error",
             "status": status_code,
             "headers": supplied.keys().map(|name| (name.clone(), headers.get(name).cloned())).collect::<BTreeMap<String, Option<String>>>(),
         }),
-        HostModelIdentityError::TooLarge
-        | HostModelIdentityError::Json { .. }
-        | HostModelIdentityError::Malformed { .. }
-        | HostModelIdentityError::Reply { .. }
-        | HostModelIdentityError::ModelName { .. }
-        | HostModelIdentityError::ApiBase { .. } => {
+        Err(
+            HostModelIdentityError::TooLarge
+            | HostModelIdentityError::Json { .. }
+            | HostModelIdentityError::Malformed { .. }
+            | HostModelIdentityError::Reply { .. }
+            | HostModelIdentityError::ModelName { .. }
+            | HostModelIdentityError::ApiBase { .. },
+        ) => {
             json!({"kind": "error", "status": null, "headers": null})
         }
     }
