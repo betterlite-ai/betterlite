@@ -7,5 +7,6 @@ mod placeholder;
 mod request;
 mod response;
 mod session;
+mod structure;
 mod support;
 mod vector_store;

@@ -16,10 +16,20 @@ use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
 use betterlite_logging::spend_sanitize::value::SpendValue;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 pub(super) fn classifier(call: &ClassifierInput) -> HelperResult {
     let standard = call.standard_logging_object.as_ref();
-    let (audit, without) = audit_json(standard)?;
+    let (audit, without) = match standard {
+        None => (Value::Null, Value::Null),
+        Some(Json::Object(fields)) => (
+            json!(classifier_audit_fields(fields)),
+            json!(without_classifier_audit(fields)),
+        ),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(invalid("the payload must be an object"));
+        }
+    };
     let storage = SpendStoragePolicy {
         sanitize: SpendSanitizePolicy {
             store_bodies: call.store_bodies,
@@ -41,18 +51,6 @@ pub(super) fn classifier(call: &ClassifierInput) -> HelperResult {
         "without": without,
     }))
 }
-fn audit_json(standard: Option<&Json>) -> Result<(Value, Value), Box<HelperError>> {
-    let Some(payload) = standard else {
-        return Ok((Value::Null, Value::Null));
-    };
-    let Json::Object(fields) = payload else {
-        return Err(invalid("the payload must be an object"));
-    };
-    Ok((
-        json!(classifier_audit_fields(fields)),
-        json!(without_classifier_audit(fields)),
-    ))
-}
 fn snapshots(specs: &[SnapshotSpec]) -> Result<Vec<Value>, Box<HelperError>> {
     specs
         .iter()
@@ -65,21 +63,18 @@ fn snapshots(specs: &[SnapshotSpec]) -> Result<Vec<Value>, Box<HelperError>> {
         })
         .collect()
 }
-fn redacted_vectors(
-    vector_store: Option<&Json>,
-    store_bodies: bool,
-) -> Result<Value, Box<HelperError>> {
-    let Some(value) = vector_store else {
-        return Ok(Value::Null);
-    };
-    let Json::List(mut items) = value.clone() else {
-        return Err(invalid("vector_store must be a JSON list"));
-    };
-    redact_vector_store(&mut items, store_bodies);
-    Ok(json!(items))
-}
 pub(super) fn vector_and_placeholder(call: &VectorInput) -> HelperResult {
-    let vector_store = redacted_vectors(call.vector_store.as_ref(), call.store_bodies)?;
+    let vector_store = match call.vector_store.as_ref() {
+        None => Value::Null,
+        Some(Json::List(items)) => {
+            let mut redacted = items.clone();
+            redact_vector_store(&mut redacted, call.store_bodies);
+            json!(redacted)
+        }
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(invalid("vector_store must be a JSON list"));
+        }
+    };
     Ok(json!({
         "placeholder": placeholder_request_body(&call.litellm_params, &call.model_group, &call.raw_model),
         "vector_store": vector_store,
@@ -116,14 +111,23 @@ pub(super) fn session(
 fn session_value(case: &SessionCase) -> Option<String> {
     let omit = omits_session_id_when_missing(case.metadata.as_ref(), case.configured_omit);
     let batch = batch_trace_session_id(case.call_type.as_deref(), case.request_id.as_deref());
+    let payload = object_with("trace_id", case.trace_id.as_ref());
+    let kwargs = object_with("litellm_trace_id", case.litellm_trace_id.as_ref());
     session_id(&SessionInput {
-        kwargs: case.litellm_trace_id.as_ref(),
+        kwargs: kwargs.as_ref(),
         metadata: case.metadata.as_ref(),
-        standard_logging_payload: case.trace_id.as_ref(),
+        standard_logging_payload: payload.as_ref(),
         omit_when_missing: omit,
         batch_trace_session_id: batch.as_deref(),
         injected_uuid: &case.injected_uuid,
     })
+}
+fn object_with(key: &str, source: Option<&Json>) -> Option<Json> {
+    let value = source?;
+    Some(Json::Object(IndexMap::from([(
+        key.to_owned(),
+        value.clone(),
+    )])))
 }
 fn timestamp(text: &str) -> Result<SpendTimestamp, Box<HelperError>> {
     if let Ok(aware) = DateTime::<FixedOffset>::parse_from_rfc3339(text) {

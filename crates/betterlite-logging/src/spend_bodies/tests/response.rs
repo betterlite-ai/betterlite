@@ -9,7 +9,12 @@ fn stored(payload: &Json, kwargs: Option<&ResponseKwargs<'_>>, redact: bool) -> 
     } else {
         policy(true, 2048)
     };
-    storage_response(Some(payload), kwargs, policy)
+    let empty = ResponseKwargs {
+        realtime_tool_calls: None,
+        litellm_params: None,
+        dynamic_params: None,
+    };
+    storage_response(Some(payload), Some(kwargs.unwrap_or(&empty)), policy)
 }
 
 #[test]
@@ -71,6 +76,17 @@ fn redaction_rewrites_responses_output_items() {
     assert_eq!(
         stored(&payload, None, true),
         r#"{"output": [{"type": "function_call", "arguments": "redacted-by-litellm"}, {"type": "custom_tool_call", "input": "redacted-by-litellm"}, {"type": "message", "content": [{"text": "redacted-by-litellm", "refusal": "redacted-by-litellm"}]}]}"#
+    );
+}
+
+#[test]
+fn redaction_keeps_null_content_and_clears_vertex_metadata() {
+    let payload = value(
+        r#"{"response": {"choices": [{"message": {"content": null, "reasoning_content": null}}], "vertex_ai_safety_ratings": [{"x": 1}], "_hidden_params": {"vertex_ai_safety_ratings": 1, "other": 2}}}"#,
+    );
+    assert_eq!(
+        stored(&payload, None, true),
+        r#"{"choices": [{"message": {"content": null, "reasoning_content": null}}], "vertex_ai_safety_ratings": [], "_hidden_params": {"other": 2}}"#
     );
 }
 

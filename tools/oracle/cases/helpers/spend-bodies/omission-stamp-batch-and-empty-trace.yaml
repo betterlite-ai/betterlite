@@ -46,6 +46,13 @@ call:
         trace_id: null
         litellm_trace_id: null
         injected_uuid: "66666666-6666-6666-6666-666666666666"
+      - metadata: null
+        configured_omit: false
+        call_type: completion
+        request_id: null
+        trace_id: null
+        litellm_trace_id: from-kwargs
+        injected_uuid: "77777777-7777-7777-7777-777777777777"
     durations:
       - {start: "2024-01-02T03:04:05+00:00", end: "2024-01-02T03:04:06.500+00:00"}
       - {start: "2024-01-02T03:04:06.500+00:00", end: "2024-01-02T03:04:05+00:00"}
