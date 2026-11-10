@@ -1,5 +1,6 @@
 mod script;
 
+use crate::helpers::OrHelperError as _;
 use std::collections::BTreeMap;
 use std::fs;
 use std::mem;
@@ -103,7 +104,8 @@ fn probe(fields: &Probe) -> Result<Value, Box<HelperError>> {
     let config = ConfigLoader {
         lookup: fields.env.clone(),
     }
-    .load("")?;
+    .load("")
+    .or_config_error()?;
     let api_key = fields.api_key.clone().map(SecretString::from);
     let found = resolve_config(
         api_key.as_ref(),

@@ -1,0 +1,14 @@
+task: B8177
+deviations:
+  - what: A GigaChat reply whose declared fields have the wrong type fails with a typed GigaChatError carrying status 500, where LiteLLM raises a raw Python exception out of the reply transform.
+    why: betterlite decodes the reply into typed records, so a shape LiteLLM only fails on at attribute access is refused where it is read; 500 is the status LiteLLM's own handler gives an unclassified exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L408-L491
+  - what: The generated ids (call_ plus 24 hex characters and chatcmpl- plus 12 hex characters) come from an injected id source instead of a global uuid4 call.
+    why: Tests and the oracle need fixed ids; the prefix and the hex length stay what LiteLLM writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L456-L485
+  - what: The stream parser refuses a JSON chunk whose declared fields have the wrong type with a typed StreamError, where LiteLLM raises a raw Python exception from chunk_parser.
+    why: betterlite decodes the chunk into typed records; the same type of failure LiteLLM hits at attribute access is raised where the chunk is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/streaming.py#L31-L102
+  - what: A usage counter sum that passes the largest 64-bit value stays at that value, and a stream counter that passes the signed 64-bit range stays at its largest value.
+    why: Python integers have no limit, the typed usage records do, and a counter that large only comes from a corrupt reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py

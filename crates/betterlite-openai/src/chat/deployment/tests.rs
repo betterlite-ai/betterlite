@@ -1,10 +1,15 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::ModelDeployment;
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
@@ -92,6 +97,15 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
         DeploymentError::ApiBase { .. } | DeploymentError::Timeout { .. }
     ));
     assert!(error.to_string().contains("model_list entry g"));
+}
+
+#[rstest]
+#[case::an_unknown_model("{model_name: g, litellm_params: {model: not-a-known-model}}")]
+#[case::a_missing_model("{model_name: g, litellm_params: {}}")]
+fn a_model_no_provider_places_is_a_resolution_error(#[case] entry: &str) {
+    let error = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap_err();
+    assert!(matches!(error, DeploymentError::Resolution { .. }));
+    assert!(error.to_string().contains("LLM Provider NOT provided"));
 }
 
 #[rstest]
@@ -217,4 +231,91 @@ fn boundary_observation(api_base: &str) -> String {
 )]
 fn http_boundaries_url_boundary_tests_behavior(#[case] api_base: &str, #[case] expected: &str) {
     assert_eq!(boundary_observation(api_base), expected);
+}
+
+fn provider_observation(entry: &str, custom_llm_provider: Option<&str>) -> String {
+    let catalog = ModelCatalog::default();
+    let names = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &names,
+        custom_providers: &names,
+        environment: &environment,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let resolved = ChatDeployment::resolve_with(
+        &deployment(entry),
+        &OpenAiDefaults::default(),
+        custom_llm_provider,
+        &context,
+    )
+    .unwrap();
+    match resolved.provider {
+        Provider::OpenAi { model } => format!("openai:{model}"),
+        Provider::Unsupported { model } => format!("unsupported:{model}"),
+    }
+}
+
+#[rstest]
+#[case::an_openai_prefix_strips_and_keeps_the_suffix(
+    "{model_name: g, litellm_params: {model: openai/gpt-4o-2024-08-06}}",
+    None,
+    "openai:gpt-4o-2024-08-06"
+)]
+#[case::custom_llm_provider_selects_openai(
+    "{model_name: g, litellm_params: {model: vendor-model}}",
+    Some("openai"),
+    "openai:vendor-model"
+)]
+#[case::another_provider_stays_unsupported(
+    "{model_name: g, litellm_params: {model: groq/llama}}",
+    None,
+    "unsupported:groq/llama"
+)]
+#[case::azure_stays_unsupported(
+    "{model_name: g, litellm_params: {model: azure/m}}",
+    None,
+    "unsupported:azure/m"
+)]
+#[case::a_declaration_rewrites_the_model_prefix(
+    "{model_name: g, litellm_params: {model: openai/m}}",
+    Some("groq"),
+    "unsupported:openai/m"
+)]
+fn provider_resolution_tests_behavior(
+    #[case] entry: &str,
+    #[case] custom_llm_provider: Option<&str>,
+    #[case] expected: &str,
+) {
+    assert_eq!(provider_observation(entry, custom_llm_provider), expected);
+}
+
+#[test]
+fn a_resolved_environment_credential_never_reaches_the_deployment() {
+    let entry = "{model_name: g, litellm_params: {model: groq/llama}}";
+    let catalog = ModelCatalog::default();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let environment = BTreeMap::from([("GROQ_API_KEY".to_owned(), "groq-secret".to_owned())]);
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &known,
+        custom_providers: &custom,
+        environment: &environment,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let resolved = ChatDeployment::resolve_with(
+        &deployment(entry),
+        &OpenAiDefaults::default(),
+        None,
+        &context,
+    )
+    .unwrap();
+    assert!(matches!(resolved.provider, Provider::Unsupported { .. }));
+    assert!(resolved.api_key.is_none());
 }
