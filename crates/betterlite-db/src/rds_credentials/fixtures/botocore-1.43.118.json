@@ -57,6 +57,18 @@
       "token": "db.example.com:443/?Action=connect&DBUser=admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=17e11c9e472e3e9a6b97eb60fc6e7ba5f8568f6296840397023ba120bae19414"
     },
     {
+      "name": "mixed_case_host",
+      "source": "direct",
+      "access_key_id": "AKIDEXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      "session_token": null,
+      "region": "eu-west-1",
+      "host": "MyDB.Cluster.EU-West-1.rds.amazonaws.com",
+      "port": "5434",
+      "user": "Admin",
+      "token": "MyDB.Cluster.EU-West-1.rds.amazonaws.com:5434/?Action=connect&DBUser=Admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Feu-west-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=aa7d7cf3bd0008c2e43afa53f2ec0fa943d2b5afd3b902b30ed6d032db8836cd"
+    },
+    {
       "name": "temporary_web_identity",
       "source": "web_identity",
       "access_key_id": "ASIAWEB",

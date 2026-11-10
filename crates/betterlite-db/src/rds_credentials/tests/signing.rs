@@ -88,6 +88,7 @@ pub(super) async fn pinned_vectors() {
     assert_vector(&pinned, "no_session_token_special_user").await;
     assert_vector(&pinned, "empty_access_key").await;
     assert_vector(&pinned, "default_https_port").await;
+    assert_vector(&pinned, "mixed_case_host").await;
     assert_vector(&pinned, "temporary_web_identity").await;
     assert_vector(&pinned, "temporary_assume_role").await;
 }
