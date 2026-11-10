@@ -182,9 +182,9 @@ struct FakeTerminal {
 }
 
 impl FakeTerminal {
-    fn attached() -> Self {
+    fn with_stdin(stdin_is_tty: bool) -> Self {
         Self {
-            stdin_is_tty: true,
+            stdin_is_tty,
             controlling: None,
             opens: Mutex::new(Vec::new()),
             attaches: Mutex::new(Vec::new()),
@@ -192,14 +192,12 @@ impl FakeTerminal {
         }
     }
 
+    fn attached() -> Self {
+        Self::with_stdin(true)
+    }
+
     fn detached() -> Self {
-        Self {
-            stdin_is_tty: false,
-            controlling: None,
-            opens: Mutex::new(Vec::new()),
-            attaches: Mutex::new(Vec::new()),
-            attach_failure: None,
-        }
+        Self::with_stdin(false)
     }
 
     fn detached_with_file() -> Self {
