@@ -1321,6 +1321,7 @@ dependencies = [
  "hex",
  "httparse",
  "keyring-core",
+ "num-traits",
  "regex",
  "rstest",
  "rustix",
