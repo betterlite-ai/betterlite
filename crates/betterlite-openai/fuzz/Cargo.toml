@@ -302,3 +302,10 @@ path = "fuzz_targets/mongodb_vector_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_workload_identity"
+path = "fuzz_targets/openai_workload_identity.rs"
+test = false
+doc = false
+bench = false
