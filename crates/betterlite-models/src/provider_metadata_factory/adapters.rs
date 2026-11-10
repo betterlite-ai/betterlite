@@ -84,61 +84,32 @@ pub struct ProviderSpecificModelInfo {
     pub supports_web_search: Option<bool>,
 }
 
-// The B668 OpenAIGPTConfig constructor arguments FireworksAIConfig passes through.
+// B668's OpenAIGPTConfig arguments are plain fields here, so an unknown constructor argument is rejected.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OpenAiGptSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub frequency_penalty: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "n")]
-    pub number: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop: Option<Stop>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<JsonObject>,
-}
-
-// A constructor stores only the arguments it was given, so None keeps the value already configured.
-macro_rules! merge_arguments {
-    ($args:expr, $base:expr; $($field:ident),+ $(,)?) => {
-        Self {
-            $($field: $args.$field.or($base.$field),)+
-        }
-    };
-}
-
-impl OpenAiGptSettings {
-    #[must_use]
-    pub fn with_args(self, args: Self) -> Self {
-        merge_arguments!(args, self;
-            frequency_penalty,
-            max_tokens,
-            number,
-            stop,
-            temperature,
-            top_p,
-            response_format,
-        )
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FireworksSettings {
-    #[serde(flatten)]
-    pub openai: OpenAiGptSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Json>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_k: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "n")]
+    pub number: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Stop>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<JsonObject>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -155,10 +126,16 @@ pub struct FireworksSettings {
 }
 
 impl FireworksSettings {
-    // The base constructor runs first, then the Fireworks-only arguments are stored.
+    // The base constructor runs first with its seven arguments, then the Fireworks-only ones are stored.
     #[must_use]
     pub fn with_args(mut self, args: Self) -> Self {
-        self.openai = self.openai.with_args(args.openai);
+        self.frequency_penalty = args.frequency_penalty.or(self.frequency_penalty);
+        self.max_tokens = args.max_tokens.or(self.max_tokens);
+        self.number = args.number.or(self.number);
+        self.stop = args.stop.or(self.stop);
+        self.temperature = args.temperature.or(self.temperature);
+        self.top_p = args.top_p.or(self.top_p);
+        self.response_format = args.response_format.or(self.response_format);
         self.tools = args.tools.or(self.tools);
         self.tool_choice = args.tool_choice.or(self.tool_choice);
         self.top_k = args.top_k.or(self.top_k);

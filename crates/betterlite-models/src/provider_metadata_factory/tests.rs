@@ -11,7 +11,7 @@ use crate::identity::provider_id::ProviderId;
 
 use super::adapters::{
     AzureFoundryModelInfo, ContextLimitBehavior, DynamicModelInfo, FireworksSettings,
-    LemonadeSettings, OpenAiGptSettings, ProviderSpecificModelInfo, Stop, ToolChoice,
+    LemonadeSettings, ProviderSpecificModelInfo, Stop, ToolChoice,
 };
 use super::selection::{MetadataQuery, ProviderModelMetadata, get_provider_info, select};
 
@@ -76,10 +76,6 @@ fn query(catalog: &Catalog) -> MetadataQuery<'_> {
 
 fn empty_fireworks() -> FireworksSettings {
     FireworksSettings::default()
-}
-
-fn empty_openai() -> OpenAiGptSettings {
-    OpenAiGptSettings::default()
 }
 
 fn empty_lemonade() -> LemonadeSettings {
@@ -235,6 +231,8 @@ fn free_projection() {
         get_provider_info("grok-4", Some("xai"), query(&free)),
         Some(XAI_INFO)
     );
+    // The guard is case-sensitive: only the exact slug selects the adapter.
+    assert_eq!(get_provider_info("grok-4", Some("XAI"), query(&free)), None);
     assert_eq!(
         get_provider_info("glm-4p6", Some("fireworks_ai"), query(&free))
             .unwrap()
@@ -311,26 +309,23 @@ fn fireworks_keeps_configured_values() {
     };
     assert_eq!(base.clone().with_args(empty_fireworks()), base);
     let merged = base.with_args(FireworksSettings {
-        openai: OpenAiGptSettings {
-            max_tokens: Some(0),
-            temperature: Some(0),
-            stop: Some(Stop::Text(String::new())),
-            response_format: Some(IndexMap::new()),
-            number: Some(0),
-            ..empty_openai()
-        },
+        max_tokens: Some(0),
+        temperature: Some(0),
+        stop: Some(Stop::Text(String::new())),
+        response_format: Some(IndexMap::new()),
+        number: Some(0),
         user: Some(String::new()),
         tools: Some(Vec::new()),
         tool_choice: Some(ToolChoice::Name(String::new())),
         ..empty_fireworks()
     });
-    assert_eq!(merged.openai.temperature, Some(0));
+    assert_eq!(merged.temperature, Some(0));
     assert_eq!(merged.top_k, Some(3));
     assert_eq!(merged.user.as_deref(), Some(""));
-    assert_eq!(merged.openai.stop, Some(Stop::Text(String::new())));
+    assert_eq!(merged.stop, Some(Stop::Text(String::new())));
     assert_eq!(merged.tools, Some(Vec::new()));
-    assert_eq!(merged.openai.response_format, Some(IndexMap::new()));
-    assert_eq!(merged.openai.number, Some(0));
+    assert_eq!(merged.response_format, Some(IndexMap::new()));
+    assert_eq!(merged.number, Some(0));
     assert_eq!(merged.tool_choice, Some(ToolChoice::Name(String::new())));
     assert_eq!(
         json(&serde_json::to_string(&merged).unwrap()),
@@ -462,7 +457,7 @@ fn vllm_has_no_dynamic_query() {
 fn fireworks_wire_names_parse_and_print() {
     let settings: FireworksSettings =
         serde_json::from_str(r#"{"stop":"END","tool_choice":{"type":"function"}}"#).unwrap();
-    assert_eq!(settings.openai.stop, Some(Stop::Text("END".to_owned())));
+    assert_eq!(settings.stop, Some(Stop::Text("END".to_owned())));
     assert_eq!(
         settings.tool_choice,
         Some(ToolChoice::Object(IndexMap::from([(
@@ -476,10 +471,10 @@ fn fireworks_wire_names_parse_and_print() {
     );
     let listed: FireworksSettings = serde_json::from_str(r#"{"stop":["a","b"],"n":3}"#).unwrap();
     assert_eq!(
-        listed.openai.stop,
+        listed.stop,
         Some(Stop::List(vec!["a".to_owned(), "b".to_owned()]))
     );
-    assert_eq!(listed.openai.number, Some(3));
+    assert_eq!(listed.number, Some(3));
     assert_eq!(
         json(&serde_json::to_string(&listed).unwrap()),
         json(r#"{"n":3,"stop":["a","b"]}"#)
@@ -496,5 +491,6 @@ fn settings_reject_values_outside_the_declared_shape() {
     );
     serde_json::from_str::<FireworksSettings>(r#"{"context_length_exceeded_behavior":"drop"}"#)
         .unwrap_err();
+    serde_json::from_str::<FireworksSettings>(r#"{"unknown_key":1}"#).unwrap_err();
     serde_json::from_str::<LemonadeSettings>(r#"{"unknown_key":1}"#).unwrap_err();
 }

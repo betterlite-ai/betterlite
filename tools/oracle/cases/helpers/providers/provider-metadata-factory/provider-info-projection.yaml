@@ -16,6 +16,7 @@ call:
             supports_pdf_input: true
       steps:
         - {op: free, model: "grok-4", provider: "xai"}
+        - {op: free, model: "grok-4", provider: "XAI"}
         - {op: free, model: "glm-4p6", provider: "fireworks_ai"}
         - {op: free, model: "gpt-4o", provider: "openai"}
         - {op: free, model: "m"}
