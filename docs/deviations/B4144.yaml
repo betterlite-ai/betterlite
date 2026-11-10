@@ -19,6 +19,13 @@ deviations:
       checked at compile time, and reads never cross the adapter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L125-L160
   - what: >-
+      Closing a subscription cannot report an error, so the debug line LiteLLM logs when
+      aclose fails never appears; dropping the subscription closes the redis-rs pub/sub
+      connection.
+    why: >-
+      redis-rs has no separate close call that can fail, so there is nothing to catch and log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L280-L284
+  - what: >-
       betterlite skips parsing and validation of the published pubsub message body, matching
       LiteLLM's behavior.
     why: >-
