@@ -295,6 +295,14 @@ fn every_bucket_before_the_last_is_tried_and_the_last_error_wins() {
 }
 
 #[test]
+fn an_empty_bucket_list_is_refused_without_panicking() {
+    assert_eq!(
+        validate_configured_file_id("s3://bucket/litellm-bedrock-files-x", &[], false),
+        Err(CloudStorageError::EmptyBucket)
+    );
+}
+
+#[test]
 fn a_foreign_file_id_becomes_a_400_bedrock_error() {
     let configured = params(Some(trusted(Some("configured"), None)));
     let rejection = resolve_managed_s3_object(
