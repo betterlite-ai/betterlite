@@ -12,6 +12,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::backend::{BackendError, CacheBackend, CacheResult, Ttl};
+use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::request::{CacheKeyRequest, KeyParam, RequestCacheControl};
 use crate::cache_key::settings::CacheKeySettings;
 use crate::cache_key::value::KeyValue;
@@ -600,6 +601,27 @@ fn add_embedding_entry_derives_key_and_envelope() {
     assert_eq!(stored.model.as_deref(), Some("text-embedding-3-small"));
     assert_eq!(stored.prompt_tokens, Some(10));
     assert_eq!(stored.format_version, EMBEDDING_CACHE_FORMAT_VERSION);
+}
+
+#[test]
+fn add_embedding_entry_derives_the_key_from_the_item_input() {
+    let recording = Arc::new(RecordingCache::default());
+    let cache = cache(Arc::clone(&recording), CacheMode::DefaultOn, settings(None));
+    let mut cache_request = request(vec![
+        param("model", text("m")),
+        param("input", inputs(&["hello", "world"])),
+    ]);
+    let result = response(2, Some(10), None);
+    let entry =
+        add_embedding_entry_to_cache(&cache, &mut cache_request, &result, &text("hello"), 0)
+            .expect("the entry is built");
+    let mut reference = request(vec![
+        param("model", text("m")),
+        param("input", text("hello")),
+    ]);
+    let expected = get_cache_key(&mut reference.key, &cache.key_settings, &cache.hooks)
+        .expect("the reference key derives");
+    assert_eq!(entry.cache_key, expected);
 }
 
 #[test]

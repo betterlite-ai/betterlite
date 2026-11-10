@@ -47,7 +47,7 @@ pub fn per_item_prompt_tokens_details(result: &EmbeddingResponse, idx: usize) ->
         .into_iter()
         .map(|(name, value)| Some((name, distributed_value(value, items, index)?)))
         .collect::<Option<Extra>>()?;
-    (!per_item.is_empty()).then_some(per_item)
+    Some(per_item)
 }
 
 // Python's divmod on the one side and true division on the other; any other json value passes through unchanged.
