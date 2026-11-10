@@ -189,11 +189,8 @@ fn unresolved(
     }
     // An unregistered declared provider string survives here in LiteLLM; betterlite keeps it as a custom name.
     if let Some(provider) = custom_llm_provider {
-        return Ok(unchanged(
-            model,
-            ProviderIdentity::Custom(provider),
-            request,
-        ));
+        let identity = ProviderIdentity::Custom(provider);
+        return Ok(unchanged(model, identity, request));
     }
     Err(ResolutionError::MissingProvider { model })
 }

@@ -29,8 +29,9 @@ pub(super) fn resolve(
         return Ok(None);
     };
     let environment = context.environment;
-    if let Some((provider, api_key)) = known_branch(endpoint, api_base, request, environment) {
-        return Ok(Some(matched(provider, api_key)));
+    if let Some((named, api_key)) = known_branch(endpoint, api_base, request, environment) {
+        let provider = identity(named);
+        return Ok(Some(EndpointMatch { provider, api_key }));
     }
     if let Some(descriptor) = context.registry.get_by_base_url(endpoint) {
         let api_key = request.api_key.cloned().or_else(|| {
@@ -76,13 +77,6 @@ fn known_branch(
         .cloned()
         .or_else(|| first_set(environment, names).map(SecretString::from));
     Some((*provider, api_key))
-}
-
-const fn matched(provider: EndpointProvider, api_key: Option<SecretString>) -> EndpointMatch {
-    EndpointMatch {
-        provider: identity(provider),
-        api_key,
-    }
 }
 
 const fn identity(provider: EndpointProvider) -> ProviderIdentity {
