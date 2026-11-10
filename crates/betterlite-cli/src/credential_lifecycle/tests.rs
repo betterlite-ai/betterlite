@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod clear;
+mod files;
 mod gateway;
 mod load;
 mod outcome;

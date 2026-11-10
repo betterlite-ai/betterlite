@@ -177,6 +177,21 @@ async fn save_stamps_past_the_keychain_login_the_file_could_not_record() {
 }
 
 #[tokio::test]
+async fn save_stamps_past_a_login_stamped_at_the_same_instant() {
+    let files = scripted_files();
+    files.put(&metadata(2_000.0));
+    let mut vault = fake_vault();
+
+    let outcome = save_cli_token(&files, &mut vault, record(2_000.0)).await;
+
+    assert!(matches!(outcome, SecretSave::SecretStored));
+    let expected = 2_000.0_f64.next_up();
+    let held = vault.blob.as_ref().expect("the vault holds the secret");
+    let decoded = decode_secret(held.expose_secret(), SERVER).expect("the vault entry pairs");
+    assert_eq!(decoded.timestamp.to_bits(), expected.to_bits());
+}
+
+#[tokio::test]
 async fn save_keeps_the_sign_in_time_on_a_clock_that_only_moves_forwards() {
     let files = scripted_files();
     files.put(&record(1_000.0));
