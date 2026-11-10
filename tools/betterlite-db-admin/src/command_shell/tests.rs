@@ -140,23 +140,13 @@ async fn invoke(
     (status, recorder)
 }
 
-fn error_lines(recorder: &Recorder) -> Vec<String> {
+fn lines_with(recorder: &Recorder, prefix: &str) -> Vec<String> {
     recorder
         .lines
         .lock()
         .expect("diagnostics")
         .iter()
-        .filter_map(|line| line.strip_prefix("err|").map(str::to_owned))
-        .collect()
-}
-
-fn output_lines(recorder: &Recorder) -> Vec<String> {
-    recorder
-        .lines
-        .lock()
-        .expect("diagnostics")
-        .iter()
-        .filter_map(|line| line.strip_prefix("out|").map(str::to_owned))
+        .filter_map(|line| line.strip_prefix(prefix).map(str::to_owned))
         .collect()
 }
 
@@ -185,11 +175,11 @@ async fn help_lists_registered_operations() {
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(status.code(), 0);
     assert!(
-        output_lines(&recorder)
+        lines_with(&recorder, "out|")
             .iter()
             .any(|line| line.contains("migrate"))
     );
-    assert!(error_lines(&recorder).is_empty());
+    assert!(lines_with(&recorder, "err|").is_empty());
 }
 
 #[tokio::test]
@@ -198,9 +188,9 @@ async fn unknown_operation_fails() {
     let (status, recorder) = invoke(&["frobnicate"], environment(&[]), &harness.backend).await;
     assert_eq!(status, ExitStatus::Usage);
     assert_eq!(status.code(), 2);
-    assert!(output_lines(&recorder).is_empty());
+    assert!(lines_with(&recorder, "out|").is_empty());
     assert!(
-        error_lines(&recorder)
+        lines_with(&recorder, "err|")
             .iter()
             .any(|line| line.contains("frobnicate"))
     );
@@ -222,7 +212,7 @@ async fn malformed_argv_exits_two_before_config() {
     )
     .await;
     assert_eq!(status, ExitStatus::Usage);
-    let errors = error_lines(&recorder);
+    let errors = lines_with(&recorder, "err|");
     assert!(errors.iter().any(|line| line.contains("--bogus")));
     assert!(!errors.iter().any(|line| line.contains("configuration")));
     assert!(harness.captures.lock().expect("captures").is_empty());
@@ -233,7 +223,7 @@ async fn unregistered_backend_fails() {
     let backend = DbAdminBackend::default();
     let (status, recorder) = invoke(&["migrate"], pinned_environment(), &backend).await;
     assert_eq!(status, ExitStatus::Failure);
-    assert!(error_lines(&recorder).iter().any(|line| {
+    assert!(lines_with(&recorder, "err|").iter().any(|line| {
         line.contains("no native service is registered for the migrate operation")
     }));
 }
@@ -289,9 +279,13 @@ async fn missing_url_exits_one_before_backend() {
     let (status, recorder) = invoke(&["migrate"], environment(&[]), &harness.backend).await;
     assert_eq!(status, ExitStatus::Failure);
     assert_eq!(status.code(), 1);
-    assert!(error_lines(&recorder).iter().any(|line| line.contains(
-        "DATABASE_URL is not set and could not be assembled from the DATABASE_* env vars"
-    )));
+    assert!(
+        lines_with(&recorder, "err|")
+            .iter()
+            .any(|line| line.contains(
+                "DATABASE_URL is not set and could not be assembled from the DATABASE_* env vars"
+            ))
+    );
     assert!(harness.captures.lock().expect("captures").is_empty());
 }
 
@@ -306,7 +300,7 @@ async fn url_resolution_error_stops_dispatch() {
     let (status, recorder) = invoke(&["migrate"], variables, &harness.backend).await;
     assert_eq!(status, ExitStatus::Failure);
     assert!(
-        error_lines(&recorder)
+        lines_with(&recorder, "err|")
             .iter()
             .any(|line| line.contains("Invalid IPv6 URL"))
     );
@@ -325,7 +319,7 @@ async fn migration_flags_defaults() {
             use_v2_resolver: true,
         })
     );
-    assert!(error_lines(&recorder).iter().any(|line| {
+    assert!(lines_with(&recorder, "err|").iter().any(|line| {
         line.contains("Starting migration job (use_migrate=true, use_v2_resolver=true)")
     }));
 }
@@ -411,7 +405,7 @@ async fn retry_and_index_failure_exit_one(#[case] reply: Reply) {
     assert_eq!(status, ExitStatus::Failure);
     assert_eq!(status.code(), 1);
     assert!(
-        error_lines(&recorder)
+        lines_with(&recorder, "err|")
             .iter()
             .any(|line| line.contains("Migration job failed after retries."))
     );
@@ -424,7 +418,7 @@ async fn success_after_indexes_exit_zero() {
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(status.code(), 0);
     assert!(
-        error_lines(&recorder)
+        lines_with(&recorder, "err|")
             .iter()
             .any(|line| line.contains("Migration job completed successfully."))
     );
@@ -436,7 +430,7 @@ async fn unrecoverable_native_exit_two() {
     let (status, recorder) = invoke(&["migrate"], pinned_environment(), &harness.backend).await;
     assert_eq!(status, ExitStatus::Unrecoverable);
     assert_eq!(status.code(), 2);
-    assert!(error_lines(&recorder).iter().any(|line| {
+    assert!(lines_with(&recorder, "err|").iter().any(|line| {
         line.contains("Database migration cannot proceed: the database is unreachable")
     }));
 }
@@ -446,8 +440,8 @@ async fn native_omits_client_generation() {
     let harness = harness(Reply::Completed);
     let (status, recorder) = invoke(&["migrate"], pinned_environment(), &harness.backend).await;
     assert_eq!(status, ExitStatus::Success);
-    let errors = error_lines(&recorder);
-    assert!(output_lines(&recorder).is_empty());
+    let errors = lines_with(&recorder, "err|");
+    assert!(lines_with(&recorder, "out|").is_empty());
     assert!(!errors.iter().any(|line| line.contains("generate")));
     assert!(!errors.iter().any(|line| line.contains("prisma")));
     assert!(!errors.iter().any(|line| line.contains("stdout")));
