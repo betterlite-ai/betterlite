@@ -1,4 +1,3 @@
-use crate::helpers::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_vertex::gemini_media::equivalence::part_exists;
@@ -8,7 +7,7 @@ use betterlite_vertex::gemini_media::part::VideoMetadata;
 use betterlite_vertex::gemini_media::process::{MediaRequest, process_media};
 use betterlite_vertex::gemini_media::resolution::{convert_detail, max_media_resolution};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Call {
@@ -43,7 +42,7 @@ pub(crate) struct Case {
     part: Object,
     excluded_keys: Vec<String>,
 }
-pub(super) fn run(input: &Input) -> HelperResult {
+pub(super) fn run(input: &Input) -> Value {
     match input.call {
         Call::MimeAlias => {
             let aliases: Vec<String> = input
@@ -51,24 +50,24 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 .iter()
                 .map(|value| apply_mime_alias(value))
                 .collect();
-            Ok(json!({"values": aliases}))
+            json!({"values": aliases})
         }
         Call::ExplicitGcsFormat
         | Call::FilesUriWithoutMime
         | Call::HttpsPassthrough
         | Call::VideoOffsets => parts(&input.cases),
-        Call::ResolutionMaximum => Ok(json!({
+        Call::ResolutionMaximum => json!({
             "maximum": max_media_resolution(&input.messages),
-        })),
-        Call::PartKeyEquivalence => Ok(json!({
+        }),
+        Call::PartKeyEquivalence => json!({
             "matches": input.cases.iter().map(|case| {
                 let excluded: Vec<&str> = case.excluded_keys.iter().map(String::as_str).collect();
                 part_exists(&case.parts, &case.part, &excluded)
             }).collect::<Vec<bool>>(),
-        })),
+        }),
     }
 }
-fn parts(cases: &[Case]) -> HelperResult {
+fn parts(cases: &[Case]) -> Value {
     let mut output = Vec::with_capacity(cases.len());
     for case in cases {
         let request = MediaRequest {
@@ -90,5 +89,5 @@ fn parts(cases: &[Case]) -> HelperResult {
         };
         output.push(entry);
     }
-    Ok(json!({"parts": output}))
+    json!({"parts": output})
 }
