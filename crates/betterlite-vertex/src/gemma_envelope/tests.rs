@@ -234,6 +234,8 @@ fn projection_container_accepts_coercible_codes(#[case] code: &str) {
 #[case::trailing_dot(r#""429.""#)]
 #[case::leading_dot(r#"".5""#)]
 #[case::double_underscore(r#""4__29""#)]
+#[case::leading_underscore(r#""_429""#)]
+#[case::trailing_underscore(r#""429_""#)]
 #[case::underscored_fraction(r#""429.0_0""#)]
 #[case::bool("true")]
 #[case::null("null")]
@@ -241,6 +243,8 @@ fn projection_container_accepts_coercible_codes(#[case] code: &str) {
 #[case::object("{}")]
 #[case::float_fraction("429.5")]
 #[case::negative(r#""-429""#)]
+#[case::empty(r#""""#)]
+#[case::dot(r#"".""#)]
 fn projection_container_rejects_malformed_codes(#[case] code: &str) {
     let text = format!(r#"{{"object":"error","message":"m","code":{code}}}"#);
     assert_eq!(parse_gemma_container_error(&payload(&text)), None);

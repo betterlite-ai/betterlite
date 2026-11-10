@@ -48,7 +48,7 @@ fn text_code(text: &str) -> Option<u16> {
         Some((whole, fraction)) => (whole, Some(fraction)),
         None => (unsigned, None),
     };
-    if whole.is_empty() || whole.starts_with('_') || whole.ends_with('_') || whole.contains("__") {
+    if whole.starts_with('_') || whole.ends_with('_') || whole.contains("__") {
         return None;
     }
     if let Some(rest) = fraction
