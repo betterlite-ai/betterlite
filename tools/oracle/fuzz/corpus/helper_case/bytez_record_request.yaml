@@ -1,0 +1,18 @@
+kind: helper
+name: bytez-record-request
+call:
+  bytez_record:
+    function: request
+    requests:
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content:
+              - type: image_url
+                url: https://img.test/a.png
+              - type: text
+                text: hello
+        optional_params: {stream: true, max_new_tokens: 10}
+compare: {ignore: []}
+env: {}
