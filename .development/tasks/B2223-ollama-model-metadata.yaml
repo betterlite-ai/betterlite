@@ -250,7 +250,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/ollama_model_reply)"
       && grep -q 'decode_ollama_model_reply' crates/betterlite-models/fuzz/fuzz_targets/ollama_model_reply.rs &&
-      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_ollama_model_reply_corpus$/)'
+      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_ollama_model_reply_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/ollama-model-metadata/configured-origin-auth.yaml
 - tools/oracle/cases/helpers/providers/ollama-model-metadata/static-catalog-first.yaml

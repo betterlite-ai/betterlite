@@ -264,7 +264,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_videos)"
       && grep -q 'decode_video_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_videos.rs && cargo nextest
-      run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_videos_corpus$/)'
+      run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_videos_corpus(::|$)/)'
   - id: case-video-auth-chain
     why: Use explicit api_key, then litellm_params.api_key, then litellm.api_key, litellm.openai_key and OPENAI_API_KEY,
       all by truthiness; overwrite Authorization with Bearer <key> or Bearer None. Default only a None api_base
