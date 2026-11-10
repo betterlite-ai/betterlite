@@ -26,6 +26,13 @@ thiserror = "2.0.17"
 tl = "0.7.8"
 
 [[bin]]
+name = "datadog_logs"
+path = "fuzz_targets/datadog_logs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "helper_case"
 path = "fuzz_targets/helper_case.rs"
 test = false
@@ -112,6 +119,13 @@ bench = false
 [[bin]]
 name = "datadog_llm_argument_decoder"
 path = "fuzz_targets/datadog_llm_argument_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "datadog_budget_reset_decoder"
+path = "fuzz_targets/datadog_budget_reset_decoder.rs"
 test = false
 doc = false
 bench = false

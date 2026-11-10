@@ -10,19 +10,23 @@ default = []
 os-keyring = ["dep:apple-native-keyring-store", "dep:secret-service-store", "dep:keyring-core", "dep:windows-native-keyring-store"]
 
 [dependencies]
+async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-logging = { path = "../betterlite-logging" }
+betterlite-models = { path = "../betterlite-models" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 clap = { version = "4.6.7", features = ["derive"] }
 hex.workspace = true
 httparse = "1.10.1"
+indexmap = "2.14.2"
 keyring-core = { version = "1.0.1", optional = true }
 num-traits = "0.2.19"
 regex.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_json = { version = "1.0.154", features = ["float_roundtrip", "raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
 shlex = "2.0.1"
@@ -30,6 +34,7 @@ soft-canonicalize = "0.5.6"
 subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+toml_edit = "0.25.17"
 url = "2.5.8"
 
 [target.'cfg(unix)'.dependencies]

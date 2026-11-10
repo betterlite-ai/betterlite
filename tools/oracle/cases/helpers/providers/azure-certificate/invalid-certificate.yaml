@@ -1,0 +1,46 @@
+kind: helper
+name: invalid-certificate
+call:
+  azure_certificate:
+    steps:
+    - certificate: not a certificate
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: ''
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |-
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5V
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate_base64: AAECbm90IGEga2V5c3RvcmU=
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate_base64: MIIM2AIBAzCCDI4GCSqGSIb3DQEHAaCCDH8Eggx7MIIMdzCCBsoGCSqGSIb3DQEHBqCCBrswgga3AgEAMIIGsAYJKoZIhvcNAQcBMF8GCSqGSIb3DQEFDTBSMDEGCSqGSIb3DQEFDDAkBBCN3DgmM73/oToUyBBs6bxdAgJOIDAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQBKgQQmR20k9tFJBb9eSbwQCjzEICCBkBLMrhWF2C3kqHpYWM0c4nIP1Xpc7/FB5I=
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - missing_file: true
+env: {}
+compare:
+  ignore: []

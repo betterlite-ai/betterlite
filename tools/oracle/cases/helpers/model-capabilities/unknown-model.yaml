@@ -1,0 +1,9 @@
+kind: helper
+name: unknown-model
+call:
+  model_capabilities:
+    operation: model_info
+    queries:
+      - {model: not-a-mapped-model, provider: openai}
+env: {}
+compare: {ignore: []}

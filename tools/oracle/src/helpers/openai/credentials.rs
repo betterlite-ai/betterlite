@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use crate::helpers::{HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -67,10 +68,11 @@ fn invalid_input(message: String) -> Box<HelperError> {
 }
 
 fn load_config(env: &BTreeMap<String, String>) -> Result<Config, Box<HelperError>> {
-    Ok(ConfigLoader {
+    ConfigLoader {
         lookup: env.clone(),
     }
-    .load("")?)
+    .load("")
+    .or_config_error()
 }
 
 fn credentials(fields: &CredentialFields) -> HelperResult {

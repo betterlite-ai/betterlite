@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-processor-system-blocks
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - {role: user, content: hi}
+      - {role: system, content: be nice}
+    modify_params: false
+env: {}
+compare: {ignore: []}

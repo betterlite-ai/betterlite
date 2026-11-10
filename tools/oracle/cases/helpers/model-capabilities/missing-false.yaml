@@ -1,0 +1,9 @@
+kind: helper
+name: missing-false
+call:
+  model_capabilities:
+    operation: model_info
+    queries:
+      - {model: o3-mini, provider: openai}
+env: {}
+compare: {ignore: []}
