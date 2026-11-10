@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::time::Duration;
 use thiserror::Error;
+
 pub const LITELLM_PROXY_API_KEY_ENV: &str = "LITELLM_PROXY_API_KEY";
 const GATEWAY_DISCOVERY: &str = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY";
 const STOP_HOOKS_PATTERN: &str = r#"(?m)^\s*(\[\[\s*"?hooks"?\s*\.\s*"?Stop"?\s*\]\]|"?hooks"?(?:\s*\.\s*"?Stop"?)?\s*=|\[\s*"?hooks"?\s*\])"#;
@@ -33,6 +34,7 @@ pub const KNOWN_AGENTS: [(&str, &str, &[EnvProfile], bool); 4] = [
     ("opencode", "OpenCode", &[EnvProfile::OpenAi], false),
     ("pi", "pi", &[EnvProfile::ProxyKey], true),
 ];
+
 fn command_name(command: &str) -> &str {
     Path::new(command)
         .file_name()
@@ -47,6 +49,7 @@ pub fn agent_profile(command: &str) -> (String, &'static [EnvProfile]) {
         None => (name.to_owned(), BOTH_PROFILES),
     }
 }
+
 #[derive(Debug, Error)]
 pub enum AgentRunError {
     #[error("could not reach the LiteLLM proxy at {0}: {1}. Is it running?")]
@@ -86,6 +89,7 @@ pub fn build_agent_env(
     }
     env
 }
+
 pub struct CodexProxyProvider {
     pub name: &'static str,
     pub base_url: String,
@@ -103,15 +107,6 @@ pub fn codex_proxy_provider(base_url: &str) -> CodexProxyProvider {
         requires_openai_auth: false,
     }
 }
-fn json_string(value: &str) -> String {
-    let mut encoded = String::new();
-    encoded.extend(value.chars().map(|character| match character {
-        '"' | '\\' => format!("\\{character}"),
-        control if control.is_control() => format!("\\u{:04x}", u32::from(control)),
-        other => String::from(other),
-    }));
-    format!("\"{encoded}\"")
-}
 #[must_use]
 pub fn codex_proxy_args(base_url: &str) -> Vec<String> {
     let provider = codex_proxy_provider(base_url);
@@ -119,9 +114,9 @@ pub fn codex_proxy_args(base_url: &str) -> Vec<String> {
     let websockets = provider.supports_websockets.to_string();
     let openai_auth = provider.requires_openai_auth.to_string();
     let fields = [
-        ("name", json_string(provider.name)),
-        ("base_url", json_string(&provider.base_url)),
-        ("wire_api", json_string(provider.wire_api)),
+        ("name", serde_json::json!(provider.name).to_string()),
+        ("base_url", serde_json::json!(provider.base_url).to_string()),
+        ("wire_api", serde_json::json!(provider.wire_api).to_string()),
         ("supports_websockets", websockets),
         ("requires_openai_auth", openai_auth),
     ];
@@ -129,11 +124,12 @@ pub fn codex_proxy_args(base_url: &str) -> Vec<String> {
     for (key, value) in fields {
         args.extend(["-c".to_owned(), format!("{prefix}.{key}={value}")]);
     }
-    let env_key = json_string("OPENAI_API_KEY");
+    let env_key = serde_json::json!("OPENAI_API_KEY").to_string();
     args.extend(["-c".to_owned(), format!("{prefix}.env_key={env_key}")]);
     args.extend(["-c".to_owned(), format!("{prefix}.http_headers={{}}")]);
     args
 }
+
 #[must_use]
 pub fn agent_launch_args(command: &str, base_url: &str) -> Vec<String> {
     match command_name(command) {

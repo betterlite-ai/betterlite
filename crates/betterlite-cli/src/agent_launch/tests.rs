@@ -490,7 +490,7 @@ fn codex_args_provider_override() {
 #[test]
 fn codex_proxy_args_escapes_the_base_url() {
     let args = codex_proxy_args("http://proxy/a\"b\\c\nd");
-    let expected = r#"model_providers.litellm.base_url="http://proxy/a\"b\\c\u000ad/v1""#;
+    let expected = r#"model_providers.litellm.base_url="http://proxy/a\"b\\c\nd/v1""#;
     assert!(args.iter().any(|argument| argument.as_str() == expected));
 }
 
