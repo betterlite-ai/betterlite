@@ -1,0 +1,62 @@
+kind: helper
+name: environment-and-static
+call:
+  available_models:
+    enumerate:
+      environment:
+        OPENAI_API_KEY: ""
+        ANTHROPIC_API_KEY: sk-anthropic
+        TOGETHERAI_API_KEY: sk-together
+        JINA_AI_API_KEY: sk-jina
+        AZURE_API_KEY: sk-azure
+      provider_list: [openai, anthropic, together_ai, jina_ai, azure, cohere, openai]
+      models_by_provider:
+        openai: [gpt-a, gpt-a, gpt-b]
+        anthropic: [claude-a]
+        together_ai: [together-a]
+        jina_ai: [jina-a]
+        azure: [azure-catalog]
+        cohere: [cohere-a]
+      global_check_provider_endpoint: false
+      calls:
+        - listing: {}
+        - custom_llm_provider: openai
+          listing: {}
+        - custom_llm_provider: azure
+          listing: {}
+        - custom_llm_provider: openai
+          global_check_provider_endpoint: true
+          listing:
+            OpenAIGPTConfig: {models: [listed-o]}
+        - custom_llm_provider: openai
+          global_check_provider_endpoint: true
+          listing:
+            OpenAIGPTConfig: {models: [never-listed]}
+        - custom_llm_provider: anthropic
+          global_check_provider_endpoint: true
+          check_provider_endpoint: false
+          listing:
+            AnthropicModelInfo: {models: [listed-a]}
+        - custom_llm_provider: cohere
+          global_check_provider_endpoint: true
+          listing: {}
+        - custom_llm_provider: openai
+          global_check_provider_endpoint: true
+          check_provider_endpoint: true
+          litellm_params: {model: arg-model, api_key: params-key, api_base: "https://params"}
+          api_key: explicit-key
+          api_base: "https://explicit"
+          listing:
+            OpenAIGPTConfig: {models: [listed-cred]}
+        - custom_llm_provider: openai
+          global_check_provider_endpoint: true
+          litellm_params: {model: params-model, api_key: params-key, api_base: "https://params"}
+          listing:
+            OpenAIGPTConfig: {models: [listed-params]}
+        - custom_llm_provider: openai
+          check_provider_endpoint: true
+          litellm_params: {model: true-argument}
+          listing:
+            OpenAIGPTConfig: {models: [listed-arg]}
+env: {}
+compare: {ignore: []}
