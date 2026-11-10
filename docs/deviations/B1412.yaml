@@ -1,0 +1,11 @@
+task: B1412
+deviations:
+  - what: A reply body that is valid JSON but not the declared completion object returns TextCompletionCodestralError with status 422 instead of LiteLLM's uncaught AttributeError.
+    why: LiteLLM fails such a reply with an exception the completion call turns into a 500, and betterlite rejects the undeclared shape as an unparsable provider answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L191-L196
+  - what: A stream chunk with a null delta in its first choice is rejected as malformed, and a chunk without a model carries an empty model string in its original chunk instead of an unset one.
+    why: The shared betterlite-streaming chunk types declare the delta as an object and the model as a plain string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L103
+  - what: A reply choice whose logprobs is an object keeps that object as sent, where LiteLLM rejects one that lacks text_offset, token_logprobs, tokens or top_logprobs.
+    why: The declared choice logprobs is a free-form object, and a provider reply with partial logprobs should still reach the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L216-L221

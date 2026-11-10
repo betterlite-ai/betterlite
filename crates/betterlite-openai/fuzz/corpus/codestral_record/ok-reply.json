@@ -1,0 +1,1 @@
+R{"id":"cmpl-1","created":1700000000,"model":"codestral-latest","object":"text_completion","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5},"choices":[{"index":0,"message":{"role":"assistant","content":"<|assistant|>hi"},"finish_reason":"length","logprobs":null}]}

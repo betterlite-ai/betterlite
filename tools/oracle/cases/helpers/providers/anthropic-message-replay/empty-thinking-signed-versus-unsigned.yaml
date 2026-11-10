@@ -1,0 +1,57 @@
+kind: helper
+name: empty-thinking-signed-versus-unsigned
+call:
+  anthropic_message_replay:
+    function: empty_predicates
+    blocks:
+    - type: thinking
+      thinking: ''
+      signature: sig
+    - type: thinking
+      thinking: '   '
+      signature: sig
+    - type: thinking
+    - type: thinking
+      thinking: 5
+    - type: thinking
+      thinking: reasoning
+    - type: thinking
+      thinking: ''
+      signature: ''
+    - type: thinking
+      thinking: ''
+      signature: null
+    - type: thinking
+      thinking: ''
+      signature: false
+    - type: thinking
+      thinking: ''
+      signature: 0
+    - type: thinking
+      thinking: ''
+      signature: true
+    - type: thinking
+      thinking: ''
+      signature:
+      - 1
+    - type: thinking
+      thinking: ''
+      signature:
+        a: 1
+    - type: redacted_thinking
+      data: x
+    - type: text
+      text: ''
+    - type: text
+      text: "  \n\t"
+    - type: text
+    - type: text
+      text: 5
+    - type: text
+      text: hi
+    - type: tool_use
+      id: x
+    - not a block
+env: {}
+compare:
+  ignore: []
