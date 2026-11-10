@@ -33,8 +33,8 @@ use crate::client::records::compat::{
 };
 use crate::client::records::response::{SendMessageResponse, StreamResult};
 use crate::streaming_iterator::{
-    A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
-    TokenCounter, json_rpc_id_json,
+    A2AStreamingIterator, DEFAULT_MAX_RETAINED_BYTES, StreamSetup, StreamSuccessCall,
+    StreamSuccessDispatch, StreamedChunk, TokenCounter, json_rpc_id_json,
 };
 
 const HELLO: &str = r#"{"id":"req-1","jsonrpc":"2.0","result":{"kind":"message","messageId":"m2","role":"agent","parts":[{"kind":"text","text":"Hello"}]}}"#;
@@ -145,6 +145,7 @@ fn setup<'counter>(
 ) -> StreamSetup<'counter, Recorder, TestClock> {
     StreamSetup {
         counter,
+        max_retained_bytes: DEFAULT_MAX_RETAINED_BYTES,
         dispatch,
         clock: clock(start, end),
     }
@@ -820,4 +821,80 @@ async fn production_response_chunks_are_read_through_their_wire_form() {
         result_object(&recorded[0].call.result, "result"),
         Some(chunk_result(COMPLETED))
     );
+}
+
+fn numbered_message(index: usize) -> String {
+    format!(
+        r#"{{"id":"req-1","jsonrpc":"2.0","result":{{"kind":"message","messageId":"m{index}","role":"agent","parts":[{{"kind":"text","text":"text-{index}"}}]}}}}"#
+    )
+}
+
+fn retained_cost(source: &str, index: usize) -> usize {
+    chunk(source)
+        .0
+        .to_string()
+        .len()
+        .saturating_add(format!("text-{index}").len())
+}
+
+#[tokio::test]
+async fn chunks_past_the_retention_cap_are_forwarded_but_not_kept() {
+    let sources: Vec<String> = (0..6).map(numbered_message).collect();
+    let cap = (0..3)
+        .map(|index| retained_cost(&sources[index], index))
+        .sum();
+    let (dispatch, calls) = recorder();
+    let counter = CharCounter;
+    let mut stream_setup = setup(dispatch, &counter, START, END);
+    stream_setup.max_retained_bytes = cap;
+    let refs: Vec<&str> = sources.iter().map(String::as_str).collect();
+    let mut iterator =
+        A2AStreamingIterator::new(chunks(&refs), plain_request(), priced(), stream_setup);
+
+    let items = collect_chunks(&mut iterator).await;
+
+    let forwarded: Vec<AgentJson> = items
+        .into_iter()
+        .map(|item| item.expect("a chunk").0)
+        .collect();
+    let expected: Vec<AgentJson> = refs.iter().map(|source| chunk(source).0).collect();
+    assert_eq!(forwarded, expected);
+    assert_eq!(iterator.chunks.len(), 3);
+    assert_eq!(iterator.collected_text_parts.len(), 3);
+    assert_eq!(iterator.retained_bytes, cap);
+    assert!(iterator.retention_capped);
+    let recorded = snapshot(&calls);
+    assert_eq!(
+        recorded[0].details.get("usage"),
+        Some(&object(&[
+            ("prompt_tokens", number(0)),
+            ("completion_tokens", number(6)),
+            ("total_tokens", number(6)),
+        ]))
+    );
+    assert_eq!(
+        result_object(&recorded[0].call.result, "result"),
+        Some(chunk_result(&sources[5]))
+    );
+}
+
+#[tokio::test]
+async fn chunks_that_fit_the_retention_cap_exactly_are_all_kept() {
+    let sources: Vec<String> = (0..3).map(numbered_message).collect();
+    let cap = (0..3)
+        .map(|index| retained_cost(&sources[index], index))
+        .sum();
+    let (dispatch, _calls) = recorder();
+    let counter = CharCounter;
+    let mut stream_setup = setup(dispatch, &counter, START, END);
+    stream_setup.max_retained_bytes = cap;
+    let refs: Vec<&str> = sources.iter().map(String::as_str).collect();
+    let mut iterator =
+        A2AStreamingIterator::new(chunks(&refs), plain_request(), priced(), stream_setup);
+
+    collect_chunks(&mut iterator).await;
+
+    assert_eq!(iterator.chunks.len(), 3);
+    assert_eq!(iterator.retained_bytes, cap);
+    assert!(!iterator.retention_capped);
 }

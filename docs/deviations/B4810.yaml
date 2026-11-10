@@ -9,3 +9,6 @@ deviations:
   - what: A poll after the stream has ended returns None without running the completion handler again. LiteLLM's __anext__ calls the exhausted stream and runs _handle_stream_complete on every further StopAsyncIteration, which dispatches the success handlers a second time.
     why: An async for loop never polls past the end, so no working setup relies on the second dispatch, and billing a call twice is a bug.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/streaming_iterator.py#L65-L70
+  - what: The iterator keeps chunks and extracted text only up to max_retained_bytes (DEFAULT_MAX_RETAINED_BYTES, 8 MiB, the transport's response cap) and then goes on forwarding every chunk without keeping it, with one warning when the cap is hit. The last extracted text and the last chunk are tracked on their own, so the completion usage and the logged final result stay the same.
+    why: An upstream agent's stream is untrusted input (rule bounded-inputs), and agents that resend the full text in every chunk make the kept text grow quadratically. LiteLLM appends every chunk and every non-empty text with no limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/streaming_iterator.py#L48-L63

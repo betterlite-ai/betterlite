@@ -60,8 +60,12 @@ pub trait StreamSuccessDispatch: Send {
     async fn dispatch(&mut self, logging: &mut LoggingState, call: StreamSuccessCall);
 }
 
+// the transport's response cap for an agent's streamed reply
+pub const DEFAULT_MAX_RETAINED_BYTES: usize = 0x80_0000;
+
 pub struct StreamSetup<'counter, Dispatch, Clock> {
     pub counter: &'counter dyn TokenCounter,
+    pub max_retained_bytes: usize,
     pub dispatch: Dispatch,
     pub clock: Clock,
 }
@@ -90,8 +94,13 @@ pub struct A2AStreamingIterator<'counter, Chunk, Source, Dispatch, Clock> {
     pub dispatch: Dispatch,
     pub clock: Clock,
     pub start_time: DateTime<FixedOffset>,
+    pub max_retained_bytes: usize,
+    pub retained_bytes: usize,
+    pub retention_capped: bool,
     pub chunks: Vec<Chunk>,
     pub collected_text_parts: Vec<String>,
+    pub last_text: Option<String>,
+    pub last_chunk: Option<Chunk>,
     pub final_chunk: Option<Chunk>,
     pub finished: bool,
 }
@@ -118,8 +127,13 @@ where
             dispatch: setup.dispatch,
             clock: setup.clock,
             start_time,
+            max_retained_bytes: setup.max_retained_bytes,
+            retained_bytes: 0,
+            retention_capped: false,
             chunks: Vec::new(),
             collected_text_parts: Vec::new(),
+            last_text: None,
+            last_chunk: None,
             final_chunk: None,
             finished: false,
         }
@@ -147,26 +161,56 @@ where
     }
 
     fn collect(&mut self, chunk: &Chunk) {
-        self.chunks.push(chunk.clone());
+        self.last_chunk = Some(chunk.clone());
         let Ok(wire) = chunk.wire() else {
             tracing::debug!("Failed to extract text from A2A streaming chunk");
+            self.retain(chunk, size_of::<Chunk>(), None);
             return;
         };
-        match chunk_text(&wire) {
-            Ok(text) if !text.is_empty() => self.collected_text_parts.push(text),
-            Ok(_) => {}
+        let text = match chunk_text(&wire) {
+            Ok(text) if !text.is_empty() => Some(text),
+            Ok(_) => None,
             Err(error) => {
                 tracing::debug!("Failed to extract text from A2A streaming chunk: {error}");
+                None
             }
-        }
+        };
         if completed_chunk(&wire) {
             self.final_chunk = Some(chunk.clone());
+        }
+        if text.is_some() {
+            self.last_text.clone_from(&text);
+        }
+        self.retain(chunk, wire.to_string().len(), text);
+    }
+
+    // an agent's stream is untrusted input, so the kept copies stop at a byte cap and the stream goes on
+    fn retain(&mut self, chunk: &Chunk, cost: usize, text: Option<String>) {
+        if self.retention_capped {
+            return;
+        }
+        let total = self
+            .retained_bytes
+            .saturating_add(cost)
+            .saturating_add(text.as_ref().map_or(0, String::len));
+        if total > self.max_retained_bytes {
+            self.retention_capped = true;
+            tracing::warn!(
+                max_retained_bytes = self.max_retained_bytes,
+                "A2A streaming chunks are no longer retained, the stream continues"
+            );
+            return;
+        }
+        self.retained_bytes = total;
+        self.chunks.push(chunk.clone());
+        if let Some(kept) = text {
+            self.collected_text_parts.push(kept);
         }
     }
 
     async fn finish(&mut self) {
-        if self.final_chunk.is_none() && !self.chunks.is_empty() {
-            self.final_chunk = self.chunks.last().cloned();
+        if self.final_chunk.is_none() {
+            self.final_chunk = self.last_chunk.take();
         }
         if let Err(error) = self.handle_stream_complete().await {
             tracing::debug!("Error in A2A streaming completion handler: {error}");
@@ -178,7 +222,7 @@ where
         let prompt_text = input_text(&self.request.params.message);
         let prompt_tokens = u64::try_from(self.counter.count_tokens(&prompt_text).await)
             .map_err(StreamCompletionError::TokenCount)?;
-        let output_text = self.collected_text_parts.last().map_or("", String::as_str);
+        let output_text = self.last_text.as_deref().unwrap_or("");
         let completion_tokens = u64::try_from(self.counter.count_tokens(output_text).await)
             .map_err(StreamCompletionError::TokenCount)?;
         let usage = usage_json(prompt_tokens, completion_tokens)?;
