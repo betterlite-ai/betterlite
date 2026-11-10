@@ -1,13 +1,17 @@
 use betterlite_db::database_url_policy::flag::TokenFlagError;
 use betterlite_db::database_url_policy::policy::{
-    ConfiguredSeconds, DatabaseTimeoutSettings, POOL_LIMIT_DEFAULT, TimeoutError,
+    ConfiguredSeconds, DatabaseTimeoutSettings, POOL_LIMIT_DEFAULT, POOL_TIMEOUT_DEFAULT,
+    TimeoutError,
 };
-use betterlite_db::database_url_policy::query::{AppendQueryParam, QueryValue};
+use betterlite_db::database_url_policy::query::{
+    AppendQueryParam, IDLE_LIFETIME_DEFAULT, QueryValue,
+};
 use betterlite_db::database_urls::environment::EnvironmentSource;
 use betterlite_db::database_urls::settings::{
     DatabaseUrlFlag, DatabaseUrlSettings, SettingsError, from_env,
 };
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -63,15 +67,15 @@ enum RawFlag {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub endpoints: DatabaseUrlSettings,
-    pub config_url: Option<String>,
+    // the raw general_settings.database_url, resolved through get_secret_str only when the CLI picks the writer URL
+    pub config_url: Option<SecretString>,
     pub pool_limit: i64,
-    pub connection_timeout: Option<QueryValue>,
-    pub pool_timeout: Option<QueryValue>,
+    pub pool_timeout: QueryValue,
     pub connect_timeout: Option<QueryValue>,
     pub socket_timeout: Option<QueryValue>,
     pub disable_prepared_statements: DatabaseUrlFlag,
     pub extra_params: Vec<(String, AppendQueryParam)>,
-    pub max_idle_lifetime: Option<QueryValue>,
+    pub idle_lifetime: QueryValue,
     pub statement_timeout: Option<f64>,
     pub lock_timeout: Option<f64>,
 }
@@ -82,13 +86,12 @@ impl Default for Settings {
             endpoints: DatabaseUrlSettings::default(),
             config_url: None,
             pool_limit: POOL_LIMIT_DEFAULT,
-            connection_timeout: None,
-            pool_timeout: None,
+            pool_timeout: QueryValue::Integer(POOL_TIMEOUT_DEFAULT),
             connect_timeout: None,
             socket_timeout: None,
             disable_prepared_statements: false,
             extra_params: Vec::new(),
-            max_idle_lifetime: None,
+            idle_lifetime: QueryValue::Integer(IDLE_LIFETIME_DEFAULT),
             statement_timeout: None,
             lock_timeout: None,
         }
@@ -109,10 +112,12 @@ impl Section for Raw {
             || endpoints.disable_prepared_statements;
         Ok(Settings {
             endpoints,
-            config_url: config_url(general.database_url, lookup),
+            config_url: general.database_url.map(SecretString::from),
             pool_limit: general.pool_limit.unwrap_or(POOL_LIMIT_DEFAULT),
-            connection_timeout: general.connection_timeout,
-            pool_timeout: general.pool_timeout,
+            pool_timeout: general
+                .connection_timeout
+                .or(general.pool_timeout)
+                .unwrap_or(QueryValue::Integer(POOL_TIMEOUT_DEFAULT)),
             connect_timeout: general.connect_timeout,
             socket_timeout: general.socket_timeout,
             disable_prepared_statements: disable_prepared,
@@ -120,7 +125,9 @@ impl Section for Raw {
                 .extra_params
                 .map(|entries| entries.into_iter().collect())
                 .unwrap_or_default(),
-            max_idle_lifetime: general.max_idle_lifetime,
+            idle_lifetime: general
+                .max_idle_lifetime
+                .unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT)),
             statement_timeout: configured_seconds(
                 general.statement_timeout,
                 "general_settings.database_statement_timeout",
@@ -147,18 +154,6 @@ where
             .lookup(name)
             .or_else(|| self.variables.lookup(&name.to_ascii_lowercase()))
     }
-}
-
-// LiteLLM reads this key through get_secret_str with a None default, so an unset os.environ reference leaves it absent
-fn config_url<L>(raw: Option<String>, lookup: &L) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    let text = raw?;
-    if let Some(name) = text.strip_prefix("os.environ/") {
-        return lookup.lookup(name);
-    }
-    Some(text)
 }
 
 fn settings_error(error: SettingsError) -> ConfigError {

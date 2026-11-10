@@ -1,5 +1,5 @@
 pub mod cli_url;
-pub mod endpoint;
+mod endpoint;
 pub mod environment;
 pub mod error;
 pub mod password;

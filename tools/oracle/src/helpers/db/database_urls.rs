@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::database_url_policy::query::QueryValue;
-use secrecy::ExposeSecret as _;
 use betterlite_db::database_urls::cli_url::construct_cli_database_url;
 use betterlite_db::database_urls::error::DatabaseUrlError;
 use betterlite_db::database_urls::password::{
@@ -10,6 +9,7 @@ use betterlite_db::database_urls::password::{
 use betterlite_db::database_urls::scheme::{validate_cli_urls, validate_component_schemes};
 use betterlite_db::database_urls::settings::{AuthMode, DatabaseUrlSettings, from_env};
 use betterlite_db::database_urls::tls::tls_params;
+use secrecy::ExposeSecret as _;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
