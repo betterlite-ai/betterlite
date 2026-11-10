@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-usage-url-context-billable-tokens
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 10
+      candidatesTokenCount: 2
+      totalTokenCount: 15
+      toolUsePromptTokenCount: 3
+    candidates:
+      - groundingMetadata:
+          groundingChunks:
+            - web: {uri: "https://example.com"}
+env: {}
+compare: {ignore: []}
