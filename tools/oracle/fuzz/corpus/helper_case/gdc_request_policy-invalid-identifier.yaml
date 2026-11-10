@@ -1,0 +1,14 @@
+kind: helper
+name: gdc-request-policy-invalid-identifier-seed
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {}
+          litellm_settings:
+            gdc_api_base: https://gateway.example
+        urls:
+          - {model: gdc/gemini-2.5-pro, deployment: 0, optional_params: {vertex_project: bad/project, vertex_location: location}}
+env: {}
+compare: {ignore: []}

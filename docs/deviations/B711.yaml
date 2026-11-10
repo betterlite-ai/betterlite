@@ -1,0 +1,17 @@
+task: B711
+deviations:
+  - what: LITELLM_PGBOUNCER_ENABLED=true caps the shared native writer pool at min(database_connection_pool_limit, LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS) and leaves the configured endpoint in use. LITELLM_PGBOUNCER_PORT, LITELLM_PGBOUNCER_MAX_CLIENT_CONN and LITELLM_PGBOUNCER_BINARY are validated, warned about once and otherwise ignored. No PgBouncer process, loopback listener, userlist file, pooled URL or private pool password is created, and reader and migration sessions keep their configured sizes.
+    why: The Rust gateway cannot spawn and supervise LiteLLM's embedded PgBouncer. One deadpool-postgres writer pool cannot bound connections across processes or pods, so the native cap is documented as a per-process pool size, not the pod-wide upstream limit an embedded PgBouncer enforces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L686-L743
+  - what: Native TLS loads every certificate in the configured CA bundle on the real database connection. There is no preliminary Postgres probe and no litellm-sslcert temporary file.
+    why: pin_bundle_root reduces a multi-root bundle to one certificate because Prisma's certificate loader reads only the first PEM section. rustls trusts the whole bundle, so the probe, the reduced file and its hashed temporary path have no native equivalent; a wrong or unreadable bundle fails the connection instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L154-L218
+  - what: Native TLS reads libpq PEM client certificates from sslcert plus sslkey but rejects Prisma's PKCS#12 sslidentity and its sslpassword with a typed error.
+    why: The task's connector is rustls, whose certificate and key parsing handles PEM only; decrypting a PKCS#12 identity would need a separate parser outside the TLS library.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L91
+  - what: The LITELLM_PGBOUNCER_* names are read in their canonical upper-case spelling and in all-lower-case; a mixed-case spelling such as LiteLLM_PgBouncer_Enabled is not read.
+    why: betterlite resolves the process environment through the config loader's exact-name lookup and does not enumerate the environment outside the config crate. The helm chart and LiteLLM's documentation spell every variable in upper case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L102-L104
+  - what: LITELLM_PGBOUNCER_ENABLED, LITELLM_PGBOUNCER_PORT, LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS and LITELLM_PGBOUNCER_MAX_CLIENT_CONN are parsed by betterlite-env. Booleans accept true/false/1/0/yes/no/on/off case-insensitively with surrounding whitespace trimmed; pydantic also accepts t/f/y/n and rejects padded text. Integers accept a signed digit string, trimmed; pydantic and Python int() additionally accept digit-group underscores, and values above i64 are an error here.
+    why: Environment text becomes a bool or a number only in the shared parser in betterlite-env, which keeps one spelling policy for every setting. The accepted spellings cover what pydantic models accept for ordinary configuration values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L106-L110
