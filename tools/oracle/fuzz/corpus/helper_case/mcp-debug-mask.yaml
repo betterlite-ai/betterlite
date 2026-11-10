@@ -1,0 +1,1 @@
+{"kind":"helper","name":"mcp-debug-mask-seed","call":{"b8194":{"operation":"mask_secret","values":[null,"","sk-1234567890abcdef"]}},"env":{},"compare":{"ignore":[]}}

@@ -13,7 +13,7 @@ use http::{HeaderMap, HeaderValue};
 
 use self::secrets::sensitive_field;
 use self::text::safe_text;
-use self::upstream::{BodyState, UpstreamFailure, UpstreamResponse};
+use self::upstream::{BodyState, UpstreamFailure, UpstreamRequest, UpstreamResponse};
 
 pub const BODY_CAPTURE_BYTES: usize = 0x4000;
 pub const CAPTURE_TIMEOUT_SECONDS: u64 = 1;
@@ -136,34 +136,53 @@ pub(super) fn header_text(value: &HeaderValue) -> String {
 }
 
 #[must_use]
+pub fn request_body_preview(
+    request: &UpstreamRequest,
+    secrets: Option<&[String]>,
+    redactor: &Redactor,
+) -> String {
+    match &request.body {
+        BodyState::NotRead => STREAMED_BODY.to_owned(),
+        BodyState::Read(raw) => preview(
+            raw.as_slice(),
+            &content_type(&request.headers),
+            secrets.unwrap_or_default(),
+            redactor,
+        ),
+    }
+}
+
+#[must_use]
+pub fn response_body_preview(
+    response: &UpstreamResponse,
+    secrets: Option<&[String]>,
+    redactor: &Redactor,
+) -> String {
+    let Some(found) = secrets else {
+        return CREDENTIALS_UNAVAILABLE.to_owned();
+    };
+    if let Some(captured) = response.captured.as_ref() {
+        return captured.clone();
+    }
+    match &response.body {
+        BodyState::NotRead => UNREAD_BODY.to_owned(),
+        BodyState::Read(raw) => preview(
+            raw.as_slice(),
+            &content_type(&response.headers),
+            found,
+            redactor,
+        ),
+    }
+}
+
+#[must_use]
 pub fn describe_upstream_response(response: &UpstreamResponse, redactor: &Redactor) -> String {
     let Some(request) = response.request.as_ref() else {
         return format!("HTTP {} | request unavailable", response.status.as_u16());
     };
     let secrets = secrets::request_secret_values(request);
-    let request_body = match &request.body {
-        BodyState::NotRead => STREAMED_BODY.to_owned(),
-        BodyState::Read(raw) => preview(
-            raw,
-            &content_type(&request.headers),
-            secrets.as_deref().unwrap_or_default(),
-            redactor,
-        ),
-    };
-    let response_body = secrets.map_or_else(
-        || CREDENTIALS_UNAVAILABLE.to_owned(),
-        |found| {
-            response
-                .captured
-                .clone()
-                .unwrap_or_else(|| match &response.body {
-                    BodyState::NotRead => UNREAD_BODY.to_owned(),
-                    BodyState::Read(raw) => {
-                        preview(raw, &content_type(&response.headers), &found, redactor)
-                    }
-                })
-        },
-    );
+    let request_body = request_body_preview(request, secrets.as_deref(), redactor);
+    let response_body = response_body_preview(response, secrets.as_deref(), redactor);
     format!(
         "{} {} -> HTTP {} | request headers: {} | request body: {request_body} | response body: {response_body}",
         safe_text(&request.method),
