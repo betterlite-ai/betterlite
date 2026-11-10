@@ -24,17 +24,14 @@ pub enum MsalKind {
     ServiceFabric,
 }
 
-#[derive(Debug)]
-pub enum MsalReply {
-    Token {
-        access_token: SecretString,
-        expires_in: i64,
-        token_type: String,
-    },
-    Error {
-        error: String,
-        description: String,
-    },
+impl MsalKind {
+    const fn prefix(self) -> &'static str {
+        match self {
+            Self::AppService => APP_SERVICE_PREFIX,
+            Self::AzureMl => AZURE_ML_PREFIX,
+            Self::ServiceFabric => SERVICE_FABRIC_PREFIX,
+        }
+    }
 }
 
 fn scalar_text(value: Option<&ReplyScalar>) -> String {
@@ -66,14 +63,20 @@ pub fn msal_response(
         environment,
         redactor: io.redactor,
     };
-    let normalized = msal_reply(kind, &reply, &scrub, response_time, raw)?;
-    let prefix = match kind {
-        MsalKind::AppService => APP_SERVICE_PREFIX,
-        MsalKind::AzureMl => AZURE_ML_PREFIX,
-        MsalKind::ServiceFabric => SERVICE_FABRIC_PREFIX,
-    };
+    let (token, expires_in, token_type) = msal_reply(kind, &reply, &scrub, response_time, raw)?;
     // the SDK reads its own clock after MSAL normalized the reply, so a slow request shifts expires_on
-    complete_msal(normalized, prefix, started, io.clock.now_unix_seconds())
+    let finished = io.clock.now_unix_seconds();
+    Ok(AccessToken {
+        token,
+        expires_on: finished
+            .checked_add(expires_in)
+            .ok_or(HostedIdentityError::ExpiryOverflow)?,
+        token_type,
+        refresh_on: (expires_in >= REFRESH_THRESHOLD_SECONDS)
+            .then(|| started.checked_add(expires_in.div_euclid(2)))
+            .map(|refresh| refresh.ok_or(HostedIdentityError::ExpiryOverflow))
+            .transpose()?,
+    })
 }
 
 struct Scrub<'scrub> {
@@ -100,7 +103,7 @@ fn msal_reply(
     scrub: &Scrub<'_>,
     now: i64,
     raw: &str,
-) -> Result<MsalReply, HostedIdentityError> {
+) -> Result<(SecretString, i64, String), HostedIdentityError> {
     if let Some(token) = reply.token()
         && let Some(deadline) = Expiry::nonzero_seconds(reply.expires_on.as_ref(), "expires_on")?
     {
@@ -112,13 +115,10 @@ fn msal_reply(
             }
             (_, token_type) => token_type.unwrap_or_else(|| DEFAULT_TOKEN_TYPE.to_owned()),
         };
-        return Ok(MsalReply::Token {
-            access_token: token.clone(),
-            expires_in: deadline
-                .checked_sub(now)
-                .ok_or(HostedIdentityError::ExpiryOverflow)?,
-            token_type,
-        });
+        let expires_in = deadline
+            .checked_sub(now)
+            .ok_or(HostedIdentityError::ExpiryOverflow)?;
+        return Ok((token.clone(), expires_in, token_type));
     }
     let (error, description) = match kind {
         MsalKind::AppService => (
@@ -132,7 +132,8 @@ fn msal_reply(
         MsalKind::AzureMl => ("invalid_scope", raw.to_owned()),
         MsalKind::ServiceFabric => (service_fabric_error(reply)?, raw.to_owned()),
     };
-    Ok(MsalReply::Error {
+    Err(HostedIdentityError::TokenRequest {
+        prefix: kind.prefix(),
         error: error.to_owned(),
         description: scrub.description(&description, reply.token()),
     })
@@ -150,34 +151,4 @@ fn service_fabric_error(reply: &HostedTokenReply) -> Result<&'static str, Hosted
         Some(ReplyScalar::Text(text)) if text == "ArgumentNullOrEmpty" => "invalid_scope",
         _ => "invalid_request",
     })
-}
-
-fn complete_msal(
-    reply: MsalReply,
-    prefix: &'static str,
-    started: i64,
-    finished: i64,
-) -> Result<AccessToken, HostedIdentityError> {
-    match reply {
-        MsalReply::Error { error, description } => Err(HostedIdentityError::TokenRequest {
-            prefix,
-            error,
-            description,
-        }),
-        MsalReply::Token {
-            access_token,
-            expires_in,
-            token_type,
-        } => Ok(AccessToken {
-            token: access_token,
-            expires_on: finished
-                .checked_add(expires_in)
-                .ok_or(HostedIdentityError::ExpiryOverflow)?,
-            token_type,
-            refresh_on: (expires_in >= REFRESH_THRESHOLD_SECONDS)
-                .then(|| started.checked_add(expires_in.div_euclid(2)))
-                .map(|refresh| refresh.ok_or(HostedIdentityError::ExpiryOverflow))
-                .transpose()?,
-        }),
-    }
 }

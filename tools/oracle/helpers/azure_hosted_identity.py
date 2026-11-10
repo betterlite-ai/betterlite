@@ -10,7 +10,6 @@ from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 from unittest import mock
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
-from azure.core.credentials import AccessToken, AccessTokenInfo
 from azure.core.exceptions import ClientAuthenticationError, DecodeError
 from azure.identity import CredentialUnavailableError
 from azure.identity._credentials.app_service import AppServiceCredential
@@ -59,10 +58,9 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-class FixtureCredential(Protocol):
-    def get_token_info(self, *scopes: str) -> AccessTokenInfo: ...
-
-    def get_token(self, *scopes: str) -> AccessToken: ...
+FixtureCredential: TypeAlias = (
+    AppServiceCredential | AzureMLCredential | CloudShellCredential | ServiceFabricCredential
+)
 
 
 class HttpRequestLike(Protocol):
@@ -208,17 +206,14 @@ def category(error: BaseException) -> str:
 
 
 def source_name(source: object) -> str:
-    if source is msal_managed_identity.SERVICE_FABRIC:
-        return "service_fabric"
-    if source is msal_managed_identity.APP_SERVICE:
-        return "app_service"
-    if source is msal_managed_identity.MACHINE_LEARNING:
-        return "azure_ml"
-    if source is msal_managed_identity.AZURE_ARC:
-        return "arc"
-    if source is msal_managed_identity.CLOUD_SHELL:
-        return "cloud_shell"
-    return "vm"
+    names = {
+        msal_managed_identity.SERVICE_FABRIC: "service_fabric",
+        msal_managed_identity.APP_SERVICE: "app_service",
+        msal_managed_identity.MACHINE_LEARNING: "azure_ml",
+        msal_managed_identity.AZURE_ARC: "arc",
+        msal_managed_identity.CLOUD_SHELL: "cloud_shell",
+    }
+    return names.get(source, "vm")
 
 
 def build_credential(step: TokenStep, transport: FixtureTransport) -> FixtureCredential:

@@ -12,7 +12,6 @@ pub struct HostedEnvironment {
     pub imds_endpoint: Option<String>,
     pub msi_endpoint: Option<String>,
     pub msi_secret: Option<SecretString>,
-    pub pod_identity_authority_host: Option<String>,
 }
 
 impl HostedEnvironment {
@@ -28,7 +27,6 @@ impl HostedEnvironment {
             imds_endpoint: lookup.lookup("IMDS_ENDPOINT"),
             msi_endpoint: lookup.lookup("MSI_ENDPOINT"),
             msi_secret: lookup.lookup("MSI_SECRET").map(SecretString::from),
-            pod_identity_authority_host: lookup.lookup("AZURE_POD_IDENTITY_AUTHORITY_HOST"),
         }
     }
 

@@ -27,7 +27,6 @@ pub(crate) enum Step {
     Select {
         #[serde(default)]
         environment: BTreeMap<String, String>,
-        #[serde(default)]
         platform: Option<String>,
         #[serde(default)]
         files: BTreeMap<String, String>,

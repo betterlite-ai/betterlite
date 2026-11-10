@@ -88,11 +88,7 @@ pub fn cloud_shell_request(
     client_id: Option<&str>,
 ) -> HostedRequest {
     let mut form = vec![("resource".to_owned(), resource.to_owned())];
-    form.extend(
-        identity_config
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone())),
-    );
+    form.extend(identity_config.clone());
     if let Some(identifier) = client_id {
         form.push(("client_id".to_owned(), identifier.to_owned()));
     }

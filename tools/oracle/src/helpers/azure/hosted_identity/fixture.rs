@@ -14,8 +14,6 @@ use serde_json::json;
 
 #[derive(Clone, Deserialize)]
 pub(crate) struct Reply {
-    #[serde(rename = "status")]
-    _status: u16,
     #[serde(default)]
     headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -113,11 +111,7 @@ impl ArcHost for Selection<'_> {
     }
 
     fn file_size(&self, path: &str) -> io::Result<u64> {
-        let text = self
-            .files
-            .get(path)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, path.to_owned()))?;
-        u64::try_from(text.len()).map_err(io::Error::other)
+        u64::try_from(self.read_text(path)?.len()).map_err(io::Error::other)
     }
 
     fn read_text(&self, path: &str) -> io::Result<String> {

@@ -60,12 +60,12 @@ pub enum Member<T> {
 
 impl<T> Member<T> {
     pub fn read(&self, field: &'static str) -> Result<&T, HostedIdentityError> {
-        let Self::Read(value) = self else {
-            return Err(HostedIdentityError::ReplyValue {
+        match self {
+            Self::Read(value) => Ok(value),
+            Self::Skipped(_) => Err(HostedIdentityError::ReplyValue {
                 field: field.to_owned(),
-            });
-        };
-        Ok(value)
+            }),
+        }
     }
 }
 

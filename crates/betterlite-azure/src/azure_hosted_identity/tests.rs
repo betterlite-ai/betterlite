@@ -15,6 +15,7 @@ use fixture::{Fixture, FixtureClock, NOW, Recorded, THUMBPRINT, only_request, re
 
 mod fixture;
 mod scenarios;
+mod selection;
 
 #[rstest]
 #[case::app_service_header(scenarios::app_service_header)]
@@ -25,7 +26,7 @@ mod scenarios;
 #[case::cloud_shell_reply(scenarios::cloud_shell_reply)]
 #[case::service_fabric_reply(scenarios::service_fabric_reply)]
 #[case::hosted_errors(scenarios::hosted_errors)]
-#[case::hosted_inner_selection(scenarios::hosted_inner_selection)]
+#[case::hosted_inner_selection(selection::hosted_inner_selection)]
 fn azure_hosted_identity_cases(#[case] scenario: fn()) {
     scenario();
 }
