@@ -36,9 +36,15 @@ fn block_text_field<'block>(block: &'block Json, key: &str) -> Option<&'block st
     }
 }
 
+pub struct ToolIds<'message> {
+    pub uses: Vec<&'message str>,
+    pub last_result: Option<&'message str>,
+}
+
 #[must_use]
-pub fn tool_use_ids(messages: &[Json]) -> Vec<&str> {
-    let mut ids = Vec::new();
+pub fn tool_ids(messages: &[Json]) -> ToolIds<'_> {
+    let mut uses = Vec::new();
+    let mut last_result = None;
     for message in messages {
         let Some(blocks) = content_blocks(message) else {
             continue;
@@ -47,29 +53,16 @@ pub fn tool_use_ids(messages: &[Json]) -> Vec<&str> {
             if block_kind(block) == Some("tool_use")
                 && let Some(id) = block_text_field(block, "id")
             {
-                ids.push(id);
+                uses.push(id);
             }
-        }
-    }
-    ids
-}
-
-#[must_use]
-pub fn last_completed_tool_use_id(messages: &[Json]) -> Option<&str> {
-    let mut last = None;
-    for message in messages {
-        let Some(blocks) = content_blocks(message) else {
-            continue;
-        };
-        for block in blocks {
             if block_kind(block) == Some("tool_result")
                 && let Some(id) = block_text_field(block, "tool_use_id")
             {
-                last = Some(id);
+                last_result = Some(id);
             }
         }
     }
-    last
+    ToolIds { uses, last_result }
 }
 
 #[must_use]

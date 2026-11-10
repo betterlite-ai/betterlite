@@ -2,9 +2,7 @@ use std::collections::BTreeSet;
 
 use betterlite_models::decisions::Json;
 
-use crate::api::messages_context_clear::blocks::{
-    clear_tool_results, last_completed_tool_use_id, tool_use_ids,
-};
+use crate::api::messages_context_clear::blocks::{clear_tool_results, tool_ids};
 use crate::api::messages_context_clear::constants::{
     CLEAR_TOOL_USES_EDIT_TYPE, DEFAULT_INPUT_TOKENS_TRIGGER, DEFAULT_KEEP_TOOL_USES,
 };
@@ -96,7 +94,7 @@ fn trigger_met(
         let Some(threshold) = trigger.value.as_ref().and_then(integer_value) else {
             return Ok((false, None));
         };
-        let count = tool_use_ids(&request.messages).len();
+        let count = tool_ids(&request.messages).uses.len();
         return Ok((exceeds(count, threshold), None));
     }
     let default_threshold = i128::from(DEFAULT_INPUT_TOKENS_TRIGGER);
@@ -116,8 +114,8 @@ fn trigger_met(
 }
 
 fn selected_ids<'message>(
-    messages: &'message [Json],
     ids: &[&'message str],
+    last_result: Option<&'message str>,
     keep_count: usize,
 ) -> BTreeSet<&'message str> {
     let mut selected: BTreeSet<&str> = ids
@@ -125,7 +123,7 @@ fn selected_ids<'message>(
         .take(ids.len().saturating_sub(keep_count))
         .copied()
         .collect();
-    if let Some(last) = last_completed_tool_use_id(messages) {
+    if let Some(last) = last_result {
         selected.remove(last);
     }
     selected
@@ -190,11 +188,11 @@ fn clear_messages(
         return Ok((request.messages, None));
     }
     let keep_count = resolved_keep_count(&keep);
-    let ids = tool_use_ids(&request.messages);
-    if ids.len() <= keep_count {
+    let collected = tool_ids(&request.messages);
+    if collected.uses.len() <= keep_count {
         return Ok((request.messages, None));
     }
-    let selected = selected_ids(&request.messages, &ids, keep_count);
+    let selected = selected_ids(&collected.uses, collected.last_result, keep_count);
     let (edited, cleared) = clear_tool_results(&request.messages, &selected);
     tracing::debug!("context_management polyfill: edited: {edited:?}");
     if cleared == 0 {

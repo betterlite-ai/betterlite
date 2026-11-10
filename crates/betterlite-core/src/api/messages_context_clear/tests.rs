@@ -8,7 +8,7 @@ use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::error::CountError;
 use rstest::rstest;
 
-use super::blocks::{cleared_tool_result_content, tool_use_ids};
+use super::blocks::{cleared_tool_result_content, tool_ids};
 use super::constants::{
     CLEAR_TOOL_USES_EDIT_TYPE, CLEARED_TOOL_RESULT_CONTENT, COMPACT_DEFAULT_INSTRUCTIONS,
     COMPACT_DEFAULT_TRIGGER_TOKENS, COMPACT_EDIT_TYPE, COMPACT_MIN_TRIGGER_TOKENS,
@@ -52,14 +52,26 @@ fn conversation() -> Vec<Json> {
     ]
 }
 
-fn wide_conversation() -> Vec<Json> {
+fn generated_conversation(ids: &[&str], results: &[&str]) -> Vec<Json> {
+    let uses: Vec<String> = ids
+        .iter()
+        .map(|id| format!(r#"{{"type":"tool_use","id":"{id}"}}"#))
+        .collect();
+    let answered: Vec<String> = results
+        .iter()
+        .map(|id| {
+            format!(r#"{{"type":"tool_result","tool_use_id":"{id}","content":"result {id}"}}"#)
+        })
+        .collect();
     vec![
-        json(
-            r#"{"role":"assistant","content":[{"type":"tool_use","id":"a"},{"type":"tool_use","id":"b"},{"type":"tool_use","id":"c"},{"type":"tool_use","id":"d"},{"type":"tool_use","id":"e"}]}"#,
-        ),
-        json(
-            r#"{"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content":"a"},{"type":"tool_result","tool_use_id":"b","content":"b"},{"type":"tool_result","tool_use_id":"c","content":"c"},{"type":"tool_result","tool_use_id":"e","content":"e"},{"type":"tool_result","tool_use_id":"d","content":"d"}]}"#,
-        ),
+        json(&format!(
+            r#"{{"role":"assistant","content":[{}]}}"#,
+            uses.join(",")
+        )),
+        json(&format!(
+            r#"{{"role":"user","content":[{}]}}"#,
+            answered.join(",")
+        )),
     ]
 }
 
@@ -271,7 +283,7 @@ fn only_string_tool_use_ids_count() {
             r#"{"role":"user","content":[{"type":"tool_result","tool_use_id":"","content":"empty result"},{"type":"tool_result","tool_use_id":"a","content":"a result"}]}"#,
         ),
     ];
-    assert_eq!(tool_use_ids(&messages), vec!["", "a"]);
+    assert_eq!(tool_ids(&messages).uses, vec!["", "a"]);
 
     let counter = ScriptedCounter::new(&[10, 4]);
     let outcome = run_editor(
@@ -317,7 +329,7 @@ fn invalid_keep_values_use_three(#[case] keep: &str) {
 fn boolean_true_keep_keeps_one() {
     let counter = ScriptedCounter::new(&[10, 4]);
     let outcome = run_editor(
-        wide_conversation(),
+        generated_conversation(&["a", "b", "c", "d", "e"], &["a", "b", "c", "e", "d"]),
         r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"value":true}}"#,
         &counter,
     );
@@ -328,7 +340,7 @@ fn boolean_true_keep_keeps_one() {
 fn boolean_false_keep_keeps_none() {
     let counter = ScriptedCounter::new(&[10, 4]);
     let outcome = run_editor(
-        wide_conversation(),
+        generated_conversation(&["a", "b", "c", "d", "e"], &["a", "b", "c", "e", "d"]),
         r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"value":false}}"#,
         &counter,
     );
