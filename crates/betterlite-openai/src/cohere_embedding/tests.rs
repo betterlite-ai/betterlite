@@ -2,10 +2,12 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::engine::error::EngineError;
+use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
+use betterlite_tokenizer::engine::{Engine, assets};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
@@ -163,6 +165,19 @@ fn inference_parameters_overlay_the_built_request() {
             .model,
         "m"
     );
+}
+
+#[test]
+fn a_null_inference_value_leaves_the_built_field_alone() {
+    let request = transform_request(
+        "m",
+        &texts(&["hello"]),
+        &params(r#"{"model":null,"input_type":null,"extra":null}"#),
+    )
+    .unwrap();
+    assert_eq!(request.model, "m");
+    assert_eq!(request.input_type, DEFAULT_EMBEDDING_INPUT_TYPE);
+    assert!(request.extra.is_empty());
 }
 
 #[rstest]
@@ -433,4 +448,14 @@ fn replays_the_cohere_embeddings_corpus(#[files("fuzz/corpus/cohere_embeddings/*
         encoding: &encoding,
     };
     let _unused = transform_embedding_response(reply, &mut logging);
+}
+
+#[test]
+fn the_real_engine_counts_the_encoded_tokens() {
+    let data = assets::bundled(Encoding::P50kBase).unwrap();
+    let engine = Engine::Tiktoken(Arc::new(
+        TiktokenEngine::from_bpe_file(Encoding::P50kBase, &data).unwrap(),
+    ));
+    assert_eq!(engine.count_tokens("hello world").unwrap(), 2);
+    assert_eq!(engine.count_tokens("").unwrap(), 0);
 }
