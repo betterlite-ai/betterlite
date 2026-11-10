@@ -513,6 +513,33 @@ fn an_ordinary_response_pricing_failure_propagates() {
 }
 
 #[test]
+fn an_unknown_router_response_with_an_unmapped_fee_fails() {
+    let lookup = CatalogLookup::new(&[]);
+    let usage = usage(8, 4);
+    let extras = PromptExtras::default();
+    let request = request("model_router/gpt-4o", &usage, &extras);
+    let error = response_cost(&lookup, &request)
+        .expect_err("the swallowed response failure still leaves the fee failure");
+    assert!(matches!(error, PricingError::MissingFeeEntry { .. }));
+}
+
+#[test]
+fn an_overflowing_total_fails() {
+    let lookup = CatalogLookup::new(&[
+        ("my-model-router", priced(&[("input_cost_per_token", "1")])),
+        (
+            "azure_ai/model_router",
+            priced(&[("input_cost_per_token", "79228162514264337593543950335")]),
+        ),
+    ]);
+    let usage = usage(1, 0);
+    let extras = PromptExtras::default();
+    let request = request("my-model-router", &usage, &extras);
+    let error = response_cost(&lookup, &request).expect_err("a total past the range fails");
+    assert!(matches!(error, PricingError::Overflow));
+}
+
+#[test]
 fn a_router_response_fails_when_the_fee_entry_is_missing() {
     let lookup = CatalogLookup::new(&[(
         "model_router/azure-gpt-4o",
