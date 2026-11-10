@@ -481,12 +481,11 @@ fn a_bad_model_value_is_the_model_response_field() {
 
 #[rstest]
 #[case::markdown(r#"{"pages":[{"markdown":42}]}"#)]
-#[case::index_text(r#"{"pages":[{"index":"abc"}]}"#)]
-#[case::index_numeric_string(r#"{"pages":[{"index":"2"}]}"#)]
+#[case::index(r#"{"pages":[{"index":"abc"}]}"#)]
+#[case::index_null(r#"{"pages":[{"index":null}]}"#)]
 #[case::index_fraction(r#"{"pages":[{"index":2.5}]}"#)]
-#[case::index_whole_float(r#"{"pages":[{"index":3.0}]}"#)]
 #[case::index_fraction_string(r#"{"pages":[{"index":"2.5"}]}"#)]
-#[case::index_separator(r#"{"pages":[{"index":"2_"}]}"#)]
+#[case::index_trailing_separator(r#"{"pages":[{"index":"2_"}]}"#)]
 #[case::index_signed_separator(r#"{"pages":[{"index":"+_2"}]}"#)]
 fn a_bad_page_field_names_its_page_path(#[case] content: &str) {
     let payload = r#"{"choices":[{"message":{"content":CONTENT}}]}"#.replace("CONTENT", content);
@@ -502,13 +501,15 @@ fn a_bad_page_field_names_its_page_path(#[case] content: &str) {
 }
 
 #[test]
-fn a_page_without_an_index_defaults_to_zero() {
-    let payload = r#"{"choices":[{"message":{"content":{"pages":[{"markdown":"a"},{"index":null,"markdown":"b"},{"index":2,"markdown":"c"}],"usage_info":null}}}]}"#;
+fn a_page_index_accepts_the_lax_integer_spellings() {
+    let payload = r#"{"choices":[{"message":{"content":{"pages":[{"index":"2","markdown":"a"},{"index":3.0,"markdown":"b"},{"index":"4.0","markdown":"c"},{"index":"1_0","markdown":"d"},{"markdown":"e"}],"usage_info":null}}}]}"#;
     let response = decode(payload).expect("the response decodes");
-    assert_eq!(response.pages.len(), 3);
-    assert_eq!(response.pages[0].index, 0);
-    assert_eq!(response.pages[1].index, 0);
-    assert_eq!(response.pages[2].index, 2);
+    assert_eq!(response.pages.len(), 5);
+    assert_eq!(response.pages[0].index, 2);
+    assert_eq!(response.pages[1].index, 3);
+    assert_eq!(response.pages[2].index, 4);
+    assert_eq!(response.pages[3].index, 10);
+    assert_eq!(response.pages[4].index, 0);
     assert!(response.usage_info.is_none());
 }
 

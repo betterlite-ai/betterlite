@@ -33,10 +33,14 @@ enum DeepSeekContent {
     Object(Object),
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(try_from = "Json")]
+struct LaxIndex(i64);
+
 #[derive(Debug, Deserialize)]
 struct DeepSeekPage {
     #[serde(default)]
-    index: Option<i64>,
+    index: LaxIndex,
     #[serde(default)]
     markdown: String,
     images: Option<Vec<OCRPageImage>>,
@@ -44,6 +48,18 @@ struct DeepSeekPage {
     #[serde(flatten)]
     extra: Object,
 }
+
+impl TryFrom<Json> for LaxIndex {
+    type Error = LaxIndexError;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        integer_from_json(&value).map(Self).ok_or(LaxIndexError)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("expected an integer in the i64 range")]
+struct LaxIndexError;
 
 pub(crate) fn normalize_response(
     model: &str,
@@ -133,7 +149,7 @@ fn decode_page(page: &Json, position: usize) -> Result<OCRPage, OcrError> {
     let prefix = format!("{CONTENT_PATH}.pages[{position}]");
     let decoded: DeepSeekPage = decode_value(page, &prefix, OcrFieldKind::Response)?;
     Ok(OCRPage {
-        index: decoded.index.unwrap_or(0),
+        index: decoded.index.0,
         markdown: decoded.markdown,
         images: decoded.images,
         dimensions: decoded.dimensions,
@@ -198,6 +214,50 @@ fn extra_fields(data: &Object) -> Object {
         })
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
+}
+
+fn integer_from_json(value: &Json) -> Option<i64> {
+    match value {
+        Json::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_f64().and_then(integral)),
+        Json::Text(text) => integer_from_text(text.trim()),
+        Json::Bool(flag) => Some(i64::from(*flag)),
+        Json::Null | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+// LiteLLM's LaxI64 takes an integral float; the parse refuses anything outside the i64 range
+fn integral(value: f64) -> Option<i64> {
+    if !value.is_finite() || value.fract() != 0.0_f64 {
+        return None;
+    }
+    format!("{value:.0}").parse().ok()
+}
+
+fn integer_from_text(text: &str) -> Option<i64> {
+    let integer = match text.split_once('.') {
+        Some((integer, fraction))
+            if !fraction.is_empty() && fraction.bytes().all(|byte| byte == b'0') =>
+        {
+            integer
+        }
+        Some(_) => return None,
+        None => text,
+    };
+    if integer.starts_with('_') || integer.ends_with('_') || integer.contains("__") {
+        return None;
+    }
+    let digits = integer.strip_prefix(['+', '-']).unwrap_or(integer);
+    if digits.is_empty()
+        || digits.starts_with('_')
+        || !digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    {
+        return None;
+    }
+    integer.replace('_', "").parse().ok()
 }
 
 fn default_usage() -> Json {
