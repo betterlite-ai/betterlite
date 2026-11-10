@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::env;
+use std::mem;
 use std::path::Path;
 
 use super::error::ClaudeSettingsError;
@@ -45,6 +46,55 @@ fn quote_in_shell(token: &str, path: &Path) -> Result<String, ClaudeSettingsErro
             path: path.to_owned(),
             source,
         })
+}
+
+// A user's status line can end in the same subcommand word, so the binary name has to match too
+#[must_use]
+pub fn is_our_statusline(existing: &str, command: &str) -> bool {
+    let posix_ours = shlex::split(command).unwrap_or_default();
+    let posix_theirs = shlex::split(existing).unwrap_or_default();
+    let cmd_ours = cmd_words(command);
+    let cmd_theirs = cmd_words(existing);
+    same_status_command(&posix_ours, &posix_theirs) || same_status_command(&cmd_ours, &cmd_theirs)
+}
+
+fn same_status_command(ours: &[String], theirs: &[String]) -> bool {
+    let [our_binary, our_subcommand] = ours else {
+        return false;
+    };
+    let [their_binary, their_subcommand] = theirs else {
+        return false;
+    };
+    our_subcommand == STATUSLINE_SUBCOMMAND
+        && their_subcommand == our_subcommand
+        && our_binary.rsplit(['/', '\\']).next() == their_binary.rsplit(['/', '\\']).next()
+}
+
+// quote_for_cmd wraps every token in double quotes and doubles a quote inside one
+fn cmd_words(command: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut characters = command.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '"' if quoted && characters.peek() == Some(&'"') => {
+                characters.next();
+                current.push('"');
+            }
+            '"' => quoted = !quoted,
+            ' ' | '\t' if !quoted => {
+                if !current.is_empty() {
+                    words.push(mem::take(&mut current));
+                }
+            }
+            other => current.push(other),
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
 }
 
 mod tests;

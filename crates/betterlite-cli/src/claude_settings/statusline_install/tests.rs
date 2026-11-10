@@ -6,8 +6,11 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use super::{install_statusline_script, statusline_command};
+use super::{install_statusline_script, is_our_statusline, statusline_command};
 use crate::claude_settings::error::ClaudeSettingsError;
+
+const COMMAND: &str = "'/usr/local/bin/lite' statusline";
+const CMD_COMMAND: &str = "\"C:\\bin\\lite.exe\" \"statusline\"";
 
 #[test]
 fn statusline_command_leaves_a_plain_posix_path_unquoted() {
@@ -86,4 +89,28 @@ fn statusline_command_refuses_a_path_that_is_not_utf8() {
     let path = Path::new(OsStr::from_bytes(b"/opt/\xff/lite"));
     let error = statusline_command(path, "linux").unwrap_err();
     assert!(matches!(error, ClaudeSettingsError::NonUtf8Path { .. }));
+}
+
+#[rstest]
+#[case::same_binary("/opt/old/lite statusline", true)]
+#[case::quoted_binary("'/opt/my tools/lite' statusline", true)]
+#[case::bare_binary("lite statusline", true)]
+#[case::ccusage_via_bun("bun x ccusage statusline", false)]
+#[case::ccusage_via_npx("npx -y ccusage statusline", false)]
+#[case::our_script("python3 /home/tester/.litellm/statusline.py", false)]
+#[case::another_binary("/usr/bin/other statusline", false)]
+fn is_our_statusline_matches_a_two_word_command_for_the_same_binary(
+    #[case] existing: &str,
+    #[case] expected: bool,
+) {
+    assert_eq!(is_our_statusline(existing, COMMAND), expected);
+}
+
+#[rstest]
+#[case::same_binary("\"C:\\old\\lite.exe\" \"statusline\"", true)]
+#[case::quoted_space("\"C:\\Program Files\\betterlite\\lite.exe\" \"statusline\"", true)]
+#[case::another_binary("\"C:\\bin\\other.exe\" \"statusline\"", false)]
+#[case::ccusage("\"C:\\bin\\bun.exe\" x ccusage statusline", false)]
+fn is_our_statusline_parses_cmd_quoting(#[case] existing: &str, #[case] expected: bool) {
+    assert_eq!(is_our_statusline(existing, CMD_COMMAND), expected);
 }

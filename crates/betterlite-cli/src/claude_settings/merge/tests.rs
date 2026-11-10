@@ -324,9 +324,25 @@ fn with_status_line_replaces_an_entry_that_runs_our_subcommand(#[case] existing:
 #[case::subcommand_runner(
     r#"{"statusLine":{"type":"command","command":"/usr/bin/statusline-runner"}}"#
 )]
+#[case::ccusage_via_bun(
+    r#"{"statusLine":{"type":"command","command":"bun x ccusage statusline"}}"#
+)]
+#[case::ccusage_via_npx(
+    r#"{"statusLine":{"type":"command","command":"npx -y ccusage statusline"}}"#
+)]
 fn with_status_line_leaves_another_entry_alone(#[case] original: &str) {
     let existing = settings(original);
     assert_eq!(with_status_line(&existing, COMMAND), existing);
+}
+
+#[test]
+fn with_status_line_replaces_a_cmd_quoted_entry_for_the_same_binary() {
+    let original = settings(
+        r#"{"statusLine":{"type":"command","command":"\"C:\\old\\lite.exe\" \"statusline\""}}"#,
+    );
+    let command = "\"C:\\bin\\lite.exe\" \"statusline\"";
+    let document = with_status_line(&original, command);
+    assert_eq!(command_of(&document), Some(command));
 }
 
 #[test]

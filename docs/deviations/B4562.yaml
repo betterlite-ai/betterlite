@@ -12,6 +12,6 @@ deviations:
   - what: configure_state_path hashes the resolved settings path's operating-system bytes for the receipt file name, where LiteLLM hashes the UTF-8 of Python's str path.
     why: The two encodings agree for every path that is valid UTF-8; hashing the OS bytes keeps a settings path that is not valid UTF-8 working instead of failing mid-configure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L123-L130
-  - what: with_status_line treats an existing statusLine entry as betterlite's own only when the command's last word equals the last word of betterlite's command, where LiteLLM treats any command containing the last word of its command as its own.
-    why: betterlite's command is identified by the statusline subcommand name, a word a user's own script path may also hold; a substring match would replace that user command rather than leave it alone.
+  - what: with_status_line treats an existing statusLine entry as betterlite's own only when its command splits into exactly two words, the second the statusline subcommand and the first a binary with the same file name as betterlite's, where LiteLLM treats any command containing the last word of its command as its own.
+    why: betterlite's command is identified by the statusline subcommand name, which a user's own status line such as `bun x ccusage statusline` also ends with; the two-word, same-binary test leaves such an entry alone while a betterlite install under another directory is still recognised.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L366-L374

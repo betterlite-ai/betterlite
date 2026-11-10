@@ -32,7 +32,6 @@ pub const TIER_MODEL_ENV_KEYS: [&str; 4] = [
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
-// The settings keys a configure takes over, as the dotted paths a receipt records them under
 pub const OWNED_PATHS: [&str; 9] = [
     "env.ENABLE_TOOL_SEARCH",
     "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",

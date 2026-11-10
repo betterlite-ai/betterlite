@@ -4,6 +4,7 @@ use betterlite_config::sections::settings::JsonValue;
 use secrecy::ExposeSecret as _;
 
 use super::choices::{ModelChoice, StaticToken};
+use super::statusline_install::is_our_statusline;
 use super::{
     ANTHROPIC_API_KEY_KEY, ANTHROPIC_AUTH_TOKEN_KEY, ANTHROPIC_BASE_URL_KEY, ANTHROPIC_MODEL_KEY,
     API_KEY_HELPER_KEY, ENABLE_TOOL_SEARCH_KEY, ENABLE_TOOL_SEARCH_VALUE, ENV_KEY,
@@ -46,13 +47,10 @@ pub fn merge_claude_settings(
 pub fn with_status_line(settings: &SettingsDocument, command: &str) -> SettingsDocument {
     let ours = match settings.get(STATUS_LINE_KEY) {
         None | Some(JsonValue::Null) => true,
-        Some(JsonValue::Object(entry)) => {
-            let subcommand = command.split_whitespace().last();
-            entry
-                .get("command")
-                .and_then(JsonValue::as_str)
-                .is_some_and(|existing| existing.split_whitespace().last() == subcommand)
-        }
+        Some(JsonValue::Object(entry)) => entry
+            .get("command")
+            .and_then(JsonValue::as_str)
+            .is_some_and(|existing| is_our_statusline(existing, command)),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_),
         ) => false,
