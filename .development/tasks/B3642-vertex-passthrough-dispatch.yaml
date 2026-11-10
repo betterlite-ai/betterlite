@@ -213,7 +213,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-passthrough-handler)" &&
         grep -rlE '^[[:space:]]+b3642:' tools/oracle/cases/helpers/vertex-passthrough-handler &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/vertex-passthrough-handler
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/vertex-passthrough-handler
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-interactions.yaml
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-predict-long-running.yaml
