@@ -61,48 +61,38 @@ pub fn populate_embedding_response(
     let embeddings = fields
         .get("embeddings")
         .ok_or(CohereLegacyEmbeddingError::Embeddings)?;
-    let data = match embeddings {
-        Json::Object(groups) => grouped_rows(groups)?,
-        Json::List(rows)
-            if fields.get("response_type").and_then(Json::as_str) != Some("embeddings_by_type") =>
-        {
-            rows.iter()
-                .enumerate()
-                .map(|(index, embedding)| row(index, embedding, None))
-                .collect()
-        }
+    let by_type = fields.get("response_type").and_then(Json::as_str) == Some("embeddings_by_type");
+    let groups: Vec<(Option<&String>, &Json)> = match embeddings {
+        Json::Object(groups) => groups
+            .iter()
+            .map(|(name, rows)| (Some(name), rows))
+            .collect(),
+        Json::List(_) if !by_type => vec![(None, embeddings)],
         Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
             return Err(CohereLegacyEmbeddingError::Embeddings);
         }
     };
+    // every embedding type numbers its own rows from zero and adds its name as the row type
+    let mut data = Vec::new();
+    for (kind, group) in groups {
+        let Json::List(rows) = group else {
+            return Err(CohereLegacyEmbeddingError::Embeddings);
+        };
+        data.extend(
+            rows.iter()
+                .enumerate()
+                .map(|(index, embedding)| LegacyEmbeddingRecord {
+                    object: String::from("embedding"),
+                    index,
+                    embedding: embedding.clone(),
+                    kind: kind.cloned(),
+                }),
+        );
+    }
     Ok(LegacyEmbeddingResponse {
         object: String::from("list"),
         data,
         model: model.to_owned(),
         usage: calculate_usage(input, encoding, fields.get("meta"))?,
     })
-}
-// every embedding type numbers its own rows from zero and adds its name as the row type
-fn grouped_rows(groups: &Object) -> Result<Vec<LegacyEmbeddingRecord>, CohereLegacyEmbeddingError> {
-    let mut records = Vec::new();
-    for (name, group) in groups {
-        let Json::List(rows) = group else {
-            return Err(CohereLegacyEmbeddingError::Embeddings);
-        };
-        records.extend(
-            rows.iter()
-                .enumerate()
-                .map(|(index, embedding)| row(index, embedding, Some(name))),
-        );
-    }
-    Ok(records)
-}
-
-fn row(index: usize, embedding: &Json, kind: Option<&String>) -> LegacyEmbeddingRecord {
-    LegacyEmbeddingRecord {
-        object: String::from("embedding"),
-        index,
-        embedding: embedding.clone(),
-        kind: kind.cloned(),
-    }
 }

@@ -627,15 +627,43 @@ async fn an_unbuildable_endpoint_logs_a_post_call_in_async_mode() {
 }
 
 #[rstest]
-#[case::redirect(399, true)]
+#[case::informational(199, false)]
+#[case::ok(200, true)]
+#[case::last_success(299, true)]
+#[case::redirect(300, false)]
 #[case::client_error(400, false)]
 #[tokio::test]
-async fn the_status_boundary_is_four_hundred(#[case] status: u16, #[case] accepted: bool) {
+async fn only_a_two_hundred_series_status_is_a_success(
+    #[case] status: u16,
+    #[case] accepted: bool,
+) {
     let spec = Spec::new();
     let fixture = Fixture::answering(status, FLAT_REPLY);
     let encoding = Counting::default();
-    let (_hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
+    let (hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
     assert_eq!(outcome.is_ok(), accepted);
+    let failure_logged = matches!(
+        hooks.hooks.as_slice(),
+        [Hook::Pre { .. }, Hook::Post { original_response, .. }]
+            if *original_response == Json::Text(String::from(FLAT_REPLY))
+    );
+    assert_eq!(failure_logged, !accepted);
+}
+
+#[tokio::test]
+async fn a_redirect_without_a_location_is_a_status_failure() {
+    let spec = Spec::new();
+    let fixture = Fixture::answering(307, "");
+    let encoding = Counting::default();
+    let (hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
+    assert!(matches!(
+        outcome,
+        Err(CohereLegacyEmbeddingError::Status(error)) if error.status_code == 307
+    ));
+    assert!(matches!(
+        hooks.hooks.as_slice(),
+        [Hook::Pre { .. }, Hook::Post { .. }]
+    ));
 }
 
 #[tokio::test]

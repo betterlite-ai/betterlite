@@ -26,7 +26,10 @@ pub trait LegacyEmbeddingTransport: Sync {
 }
 impl LegacyEmbeddingTransport for ProxiedClient {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        Self::send_buffered(self, request).await
+        self.send_following(request)
+            .await?
+            .buffered(self.limits.body_bytes)
+            .await
     }
 }
 
@@ -75,13 +78,13 @@ where
     finish(&reply, &call, hooks)
 }
 
-// httpx's raise_for_status leaves the 3xx range alone, so only 4xx and 5xx are failures
+// httpx's raise_for_status rejects every status outside 2xx, a redirect that was not followed included
 fn finish(
     reply: &UpstreamResponse,
     call: &ExecuteInput<'_>,
     hooks: &mut dyn EmbeddingHooks,
 ) -> Result<LegacyEmbeddingResponse, CohereLegacyEmbeddingError> {
-    if reply.status >= 400 {
+    if !(200..300).contains(&reply.status) {
         let message = str::from_utf8(&reply.body).unwrap_or_default().to_owned();
         let error = CohereLegacyEmbeddingError::Status(Box::new(cohere_error(
             reply.status,
