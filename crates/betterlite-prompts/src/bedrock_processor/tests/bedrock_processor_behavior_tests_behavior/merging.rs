@@ -90,7 +90,7 @@ async fn bedrock_processor_behavior_tests_behavior_an_assistant_continue_message
 #[tokio::test]
 async fn bedrock_processor_behavior_tests_behavior_an_assistant_continue_string_is_used_verbatim() {
     let harness = Harness::new(RecordingCachePoints::accepting());
-    let continue_message = json("keep going");
+    let continue_message = json(r#""keep going""#);
     let settings = Settings::default().with_assistant_continue(&continue_message);
     let messages = list(&format!(
         r#"[{{"role":"user","content":"hi"}},{TOOL_MESSAGE}]"#

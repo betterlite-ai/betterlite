@@ -1,3 +1,4 @@
+use crate::bedrock_content::error::ContentError;
 use crate::bedrock_processor::error::ProcessorError;
 
 use super::prelude::{Harness, RecordingCachePoints, Settings, list};
@@ -332,7 +333,10 @@ async fn bedrock_processor_behavior_tests_behavior_an_assistant_element_that_is_
         .convert(&messages, &Settings::default())
         .await
         .unwrap_err();
-    assert!(matches!(error, ProcessorError::BlockNotObject { block: 0 }));
+    assert!(matches!(
+        error,
+        ProcessorError::Content(ContentError::PartNotObject { index: 0 })
+    ));
 }
 
 #[tokio::test]

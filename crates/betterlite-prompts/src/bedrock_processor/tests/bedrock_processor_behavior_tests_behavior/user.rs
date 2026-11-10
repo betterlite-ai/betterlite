@@ -1,3 +1,4 @@
+use crate::bedrock_content::error::ContentError;
 use crate::bedrock_processor::error::ProcessorError;
 
 use super::prelude::{DEFAULT_POINT, Harness, RecordingCachePoints, Settings, json, list};
@@ -96,17 +97,14 @@ async fn bedrock_processor_behavior_tests_behavior_a_user_block_without_a_type_i
 }
 
 #[tokio::test]
-async fn bedrock_processor_behavior_tests_behavior_a_user_text_block_without_text_is_rejected() {
+async fn bedrock_processor_behavior_tests_behavior_a_user_text_block_without_text_is_dropped() {
     let harness = Harness::new(RecordingCachePoints::accepting());
     let messages = list(r#"[{"role":"user","content":[{"type":"text"}]}]"#);
-    let error = harness
+    let converted = harness
         .convert(&messages, &Settings::default())
         .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        ProcessorError::TextWithoutText { block: 0 }
-    ));
+        .unwrap();
+    assert_eq!(converted, Vec::new());
 }
 
 #[tokio::test]
@@ -118,7 +116,10 @@ async fn bedrock_processor_behavior_tests_behavior_a_user_text_block_with_a_non_
         .convert(&messages, &Settings::default())
         .await
         .unwrap_err();
-    assert!(matches!(error, ProcessorError::TextNotText { block: 0 }));
+    assert!(matches!(
+        error,
+        ProcessorError::Content(ContentError::TextPartNotText { index: 0 })
+    ));
 }
 
 #[tokio::test]
@@ -294,4 +295,30 @@ async fn bedrock_processor_behavior_tests_behavior_a_user_image_without_an_image
         error,
         ProcessorError::ImageUrlMissing { block: 0 }
     ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_grounding_source_without_text_is_rejected() {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":[{"type":"grounding_source"}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProcessorError::TextWithoutText { block: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn bedrock_processor_behavior_tests_behavior_a_grounding_source_with_a_non_string_text_is_rejected()
+ {
+    let harness = Harness::new(RecordingCachePoints::accepting());
+    let messages = list(r#"[{"role":"user","content":[{"type":"grounding_source","text":5}]}]"#);
+    let error = harness
+        .convert(&messages, &Settings::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProcessorError::TextNotText { block: 0 }));
 }
