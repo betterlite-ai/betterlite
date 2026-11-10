@@ -20,7 +20,7 @@ use crate::a2a_text::{A2aResponse, A2aTextError};
 use crate::client::records::compat::{Message, Part, SendMessageRequest};
 use crate::client::records::response::SendMessageResponse;
 use crate::cost_calculator::{CostCalculatorError, a2a_call_cost};
-use crate::logging_context::{LoggingContextError, json_rpc_id_json, usage_json};
+use crate::logging_context::{LoggingContextError, json_rpc_id_value, usage_json};
 
 mod tests;
 
@@ -217,7 +217,8 @@ where
 
     fn build_logging_result(&self, usage: &Json) -> Json {
         let mut result = IndexMap::new();
-        result.insert("id".to_owned(), json_rpc_id_json(&self.request_id));
+        let (_, id) = json_rpc_id_value(&self.request_id);
+        result.insert("id".to_owned(), id);
         result.insert("jsonrpc".to_owned(), Json::Text("2.0".to_owned()));
         result.insert("usage".to_owned(), usage.clone());
         // LiteLLM drops the final result when the chunk cannot be dumped, and still dispatches

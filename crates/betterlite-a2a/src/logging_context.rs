@@ -43,15 +43,14 @@ pub(crate) fn usage_json(
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(LoggingContextError::UsageOverflow)?;
-    let counts = [
+    let usage = [
         ("prompt_tokens", prompt_tokens),
         ("completion_tokens", completion_tokens),
         ("total_tokens", total_tokens),
-    ];
-    let usage = counts
-        .into_iter()
-        .map(|(name, count)| (name.to_owned(), Json::Number(Number::from(count))))
-        .collect();
+    ]
+    .into_iter()
+    .map(|(name, count)| (name.to_owned(), Json::Number(Number::from(count))))
+    .collect();
     Ok(Json::Object(usage))
 }
 
@@ -149,25 +148,14 @@ fn card_name(agent_card: &AgentCard) -> Option<&str> {
 }
 
 // The wire id of a typed A2A request is always a string or an integer number
-pub(crate) fn json_rpc_id_text(id: &AgentJson) -> String {
+pub(crate) fn json_rpc_id_value(id: &AgentJson) -> (String, Json) {
     match id {
-        AgentJson::String(text) => text.clone(),
-        other @ (AgentJson::Null
-        | AgentJson::Bool(_)
-        | AgentJson::Number(_)
-        | AgentJson::Array(_)
-        | AgentJson::Object(_)) => other.to_string(),
-    }
-}
-
-pub(crate) fn json_rpc_id_json(id: &AgentJson) -> Json {
-    match id {
-        AgentJson::String(text) => Json::Text(text.clone()),
-        AgentJson::Number(number) => Json::Number(number.clone()),
+        AgentJson::String(text) => (text.clone(), Json::Text(text.clone())),
+        AgentJson::Number(number) => (number.to_string(), Json::Number(number.clone())),
         other @ (AgentJson::Null
         | AgentJson::Bool(_)
         | AgentJson::Array(_)
-        | AgentJson::Object(_)) => Json::Text(other.to_string()),
+        | AgentJson::Object(_)) => (other.to_string(), Json::Text(other.to_string())),
     }
 }
 
@@ -195,22 +183,16 @@ pub fn build_streaming_logging_obj<Clock>(
 where
     Clock: FnMut() -> Duration,
 {
-    let LoggingDeps {
-        start_time,
-        correlation,
-        redactor,
-        generated_trace_id,
-        clock,
-    } = deps;
-    let request_id = json_rpc_id_text(request.request_id);
+    let generated_trace_id = deps.generated_trace_id;
+    let (request_id, _) = json_rpc_id_value(request.request_id);
     let model = format!("a2a_agent/{}", request.agent_name);
-    let init = streaming_logging_init(&request_id, &model, start_time);
+    let init = streaming_logging_init(&request_id, &model, deps.start_time);
     let mut logging = LoggingState::new(
         init,
-        correlation,
-        redactor,
+        deps.correlation,
+        deps.redactor,
         || generated_trace_id.to_owned(),
-        clock,
+        deps.clock,
     )?;
     let metadata = object_param(request.metadata, "metadata")?;
     let params = streaming_params(request, metadata)?;

@@ -20,7 +20,7 @@ use serde_json::Number;
 use crate::agent_card::{AgentCard, WireValue};
 use crate::logging_context::{
     A2A_COST_PARAM_KEYS, LoggingContextError, LoggingDeps, StreamingLoggingRequest,
-    a2a_cost_params, build_streaming_logging_obj, get_a2a_model_info, json_rpc_id_text,
+    a2a_cost_params, build_streaming_logging_obj, get_a2a_model_info, json_rpc_id_value,
     set_agent_id_on_logging_obj, set_litellm_params, set_usage_on_logging_obj, usage_json,
 };
 
@@ -420,8 +420,8 @@ fn json_rpc_ids_keep_their_text_form() {
     let text_id = AgentJson::String("req-7".to_owned());
     let number_id = numeric_id(12);
 
-    assert_eq!(json_rpc_id_text(&text_id), "req-7".to_owned());
-    assert_eq!(json_rpc_id_text(&number_id), "12".to_owned());
+    assert_eq!(json_rpc_id_value(&text_id).0, "req-7".to_owned());
+    assert_eq!(json_rpc_id_value(&number_id).0, "12".to_owned());
 }
 
 fn full_request<'request>(

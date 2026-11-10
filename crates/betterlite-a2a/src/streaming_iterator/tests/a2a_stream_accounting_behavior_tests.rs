@@ -34,7 +34,7 @@ use crate::client::records::compat::{
 use crate::client::records::response::{SendMessageResponse, StreamResult};
 use crate::streaming_iterator::{
     A2AStreamingIterator, StreamSetup, StreamSuccessCall, StreamSuccessDispatch, StreamedChunk,
-    TokenCounter, json_rpc_id_json,
+    TokenCounter, json_rpc_id_value,
 };
 
 const HELLO: &str = r#"{"id":"req-1","jsonrpc":"2.0","result":{"kind":"message","messageId":"m2","role":"agent","parts":[{"kind":"text","text":"Hello"}]}}"#;
@@ -745,8 +745,8 @@ async fn the_result_keeps_an_integer_request_id() {
 
 #[test]
 fn request_ids_keep_their_json_form() {
-    assert_eq!(json_rpc_id_json(&numeric_request_id()), number(7));
-    assert_eq!(json_rpc_id_json(&request_id()), text("req-1"));
+    assert_eq!(json_rpc_id_value(&numeric_request_id()).1, number(7));
+    assert_eq!(json_rpc_id_value(&request_id()).1, text("req-1"));
 }
 
 #[tokio::test]
