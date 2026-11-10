@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -14,18 +16,11 @@ struct Outcome {
     error: Option<String>,
 }
 
-// a unit struct reads null, so the brackets stay: only an object with no members parses
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[expect(
-    clippy::empty_structs_with_brackets,
-    reason = "a unit struct deserializes from null, not from an object"
-)]
-struct EmptyReply {}
-
 // msal hands back an error member or an empty reply only after trying the cache
 fn rejection(outcome: Outcome, body: &[u8]) -> CertificateError {
-    let refused = outcome.error.is_some() || serde_json::from_slice::<EmptyReply>(body).is_ok();
+    // Option keeps the map value from being zero-sized
+    let parsed = serde_json::from_slice::<BTreeMap<String, Option<IgnoredAny>>>(body);
+    let refused = outcome.error.is_some() || parsed.is_ok_and(|members| members.is_empty());
     let message = outcome
         .error_description
         .filter(|text| !text.is_empty())
