@@ -1,0 +1,19 @@
+kind: helper
+name: choices-output-and-finish-reasons
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        call_type: acompletion
+        metadata: {}
+    response:
+      id: chatcmpl-1
+      choices:
+        - message: {role: assistant, content: hi}
+          finish_reason: stop
+        - message: {role: assistant, content: again}
+          finish_reason: null
+env: {}
+compare: {ignore: []}
