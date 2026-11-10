@@ -192,7 +192,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/transcribe-logging)" &&
         grep -rlE '^[[:space:]]+b3646:' tools/oracle/cases/helpers/transcribe-logging &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/transcribe-logging
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/transcribe-logging
 
 oracle_cases:
   - tools/oracle/cases/helpers/transcribe-logging/operation-prefixed-target.yaml

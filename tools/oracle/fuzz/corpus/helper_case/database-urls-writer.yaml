@@ -1,0 +1,12 @@
+kind: helper
+name: database-urls-writer-seed
+call:
+  database_urls:
+    function: build_writer_url
+    settings:
+      database_host: db.example
+      database_user: user
+      database_name: name
+      database_password: secret
+env: {}
+compare: {ignore: []}
