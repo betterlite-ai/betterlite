@@ -684,6 +684,24 @@ async fn bad_page_json_is_a_decode_error() {
 }
 
 #[tokio::test]
+async fn list_page_at_the_limit_is_decoded() {
+    let pages = Pages::new(vec![Reply::Status {
+        status: 200,
+        body: vec![b' '; CACHE_PAGE_LIMIT],
+    }]);
+    let error = check_cache(
+        &pages,
+        &native_target(),
+        "key-1",
+        &BTreeMap::new(),
+        DEADLINE,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, CacheLookupError::Decode { .. }));
+}
+
+#[tokio::test]
 async fn oversized_list_page_is_refused() {
     let pages = Pages::new(vec![Reply::Status {
         status: 200,

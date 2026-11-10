@@ -9,3 +9,6 @@ deviations:
   - what: A cached content list page larger than 4 MiB is refused with a typed error before it is parsed, where LiteLLM reads and parses whatever size the provider sends.
     why: the provider page is untrusted input, and a real page for a project stays far below 4 MiB, so the cap bounds memory for a hostile or broken upstream without refusing a working reply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L160
+  - what: A Studio cache target without a gemini_api_key is a typed error at construction, where LiteLLM's caller passes the literal dummy as the key so the list request fails later with Google's 401 or 403.
+    why: a Studio request without its API key cannot succeed, and naming the missing key before a request is clearer than sending a placeholder the provider must reject.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1289
