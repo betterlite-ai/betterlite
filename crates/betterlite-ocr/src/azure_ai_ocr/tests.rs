@@ -27,10 +27,8 @@ use crate::ocr_http::{CallHooks, OcrClient, OcrWireRequest, ocr};
 use crate::ocr_settings::OcrSettings;
 use crate::request_format::RequestFormat;
 
-use super::{
-    AZURE_AI_API_BASE_ENV, AZURE_AI_API_KEY_ENV, AzureAiOcrConfig, resolve_entra,
-    validate_destination,
-};
+use super::auth::{resolve_entra, validate_destination};
+use super::{AZURE_AI_API_BASE_ENV, AZURE_AI_API_KEY_ENV, AzureAiOcrConfig};
 
 const REFUSAL: &str = "host credentials cannot be sent to a request-controlled Azure endpoint";
 

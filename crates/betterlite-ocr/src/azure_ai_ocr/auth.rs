@@ -1,4 +1,4 @@
-use super::{AZURE_AI_API_BASE_ENV, AZURE_AI_API_KEY_ENV, resolve_entra, validate_destination};
+use super::{AZURE_AI_API_BASE_ENV, AZURE_AI_API_KEY_ENV};
 use crate::ocr_config::PreparedOcrRequest;
 use crate::ocr_config::connection::{OcrConnection, OcrInputSource, OcrSourced};
 use crate::ocr_config::has_header;
@@ -44,6 +44,33 @@ pub(crate) async fn resolve_headers(
         .ok_or(OcrError::MissingAzureAiCredentials)?;
     validate_destination(connection, token.source)?;
     Ok(bearer_headers(connection, token.value.expose_secret()))
+}
+
+pub async fn resolve_entra(
+    client: &OcrClient,
+    request: &PreparedOcrRequest,
+) -> Result<Option<OcrSourced<SecretString>>, OcrError> {
+    // LiteLLM treats an empty token from a caller provider as no token at all
+    match client.azure.token(request).await? {
+        Some(token) if token.value.expose_secret().is_empty() => Ok(None),
+        token => Ok(token),
+    }
+}
+
+pub fn validate_destination(
+    connection: &OcrConnection,
+    credential_source: OcrInputSource,
+) -> Result<(), OcrError> {
+    if connection.api_base.is_some()
+        && connection.api_base_source == OcrInputSource::Request
+        && credential_source != OcrInputSource::Request
+    {
+        return Err(OcrError::Auth(OcrAuthError::InvalidConfiguration {
+            detail: "host credentials cannot be sent to a request-controlled Azure endpoint"
+                .to_owned(),
+        }));
+    }
+    Ok(())
 }
 
 fn key_credential(connection: &OcrConnection) -> Option<OcrSourced<SecretString>> {

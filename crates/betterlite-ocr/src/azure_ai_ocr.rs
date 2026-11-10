@@ -1,16 +1,14 @@
-pub(crate) mod auth;
+pub mod auth;
 pub(crate) mod url;
 
 use crate::json::{Json, Object};
 use crate::mistral_ocr::{MistralOcrConfig, MistralOcrRequest};
-use crate::ocr_config::connection::{OcrConnection, OcrInputSource, OcrSourced};
 use crate::ocr_config::{OcrProviderConfig, OcrRequestContext, OcrTransform, PreparedOcrRequest};
 use crate::ocr_document::{OcrDocument, inline_remote_document, validate_inline_document};
-use crate::ocr_error::{OcrAuthError, OcrError};
+use crate::ocr_error::OcrError;
 use crate::ocr_http::{OcrClient, body_document};
 use crate::request_format::RequestFormat;
 use crate::response::OCRResponse;
-use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
 
 pub const AZURE_AI_API_KEY_ENV: &str = "AZURE_AI_API_KEY";
@@ -112,33 +110,6 @@ async fn inlined_mistral_request(
         inline_remote_document(context.client, document, context.connection).await?,
         transform,
     )
-}
-
-pub async fn resolve_entra(
-    client: &OcrClient,
-    request: &PreparedOcrRequest,
-) -> Result<Option<OcrSourced<SecretString>>, OcrError> {
-    // LiteLLM treats an empty token from a caller provider as no token at all
-    match client.azure.token(request).await? {
-        Some(token) if token.value.expose_secret().is_empty() => Ok(None),
-        token => Ok(token),
-    }
-}
-
-pub fn validate_destination(
-    connection: &OcrConnection,
-    credential_source: OcrInputSource,
-) -> Result<(), OcrError> {
-    if connection.api_base.is_some()
-        && connection.api_base_source == OcrInputSource::Request
-        && credential_source != OcrInputSource::Request
-    {
-        return Err(OcrError::Auth(OcrAuthError::InvalidConfiguration {
-            detail: "host credentials cannot be sent to a request-controlled Azure endpoint"
-                .to_owned(),
-        }));
-    }
-    Ok(())
 }
 
 mod tests;

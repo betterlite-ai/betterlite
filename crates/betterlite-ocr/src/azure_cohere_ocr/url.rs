@@ -1,12 +1,15 @@
 use super::AZURE_COHERE_PARSE_PATH;
-use crate::azure_ai_ocr::url::{api_base_error, complete_provider_path};
+use crate::azure_ai_ocr::url::complete_provider_path;
 use crate::ocr_error::OcrError;
 use url::Url;
 
 pub(crate) fn complete_parse_url(base: &str) -> Result<String, OcrError> {
-    let mut url = Url::parse(base.trim()).map_err(|_source| api_base_error())?;
+    let request_field = || OcrError::RequestField {
+        path: "api_base".to_owned(),
+    };
+    let mut url = Url::parse(base.trim()).map_err(|_source| request_field())?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(api_base_error());
+        return Err(request_field());
     }
     let path = url.path().trim_end_matches('/').to_owned();
     if path.ends_with("/v2/parse") {
