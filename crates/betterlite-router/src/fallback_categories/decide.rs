@@ -29,8 +29,11 @@ pub fn decide(request: &SuccessorRequest<'_>) -> FallbackSuccessor {
         if let Some(successor) = order_successor(request) {
             return successor;
         }
-        if let Some(successor) = failover_successor(request) {
-            return successor;
+        if let Some(targets) = weighted_failover_targets(request) {
+            return FallbackSuccessor::RunTargets {
+                source: TargetSource::WeightedFailover,
+                targets,
+            };
         }
     }
     if matches!(request.ordinary, OrdinaryFallbacks::NonStandard(_)) {
@@ -91,15 +94,12 @@ fn order_successor(request: &SuccessorRequest<'_>) -> Option<FallbackSuccessor> 
     })
 }
 
-fn failover_successor(request: &SuccessorRequest<'_>) -> Option<FallbackSuccessor> {
+fn weighted_failover_targets(request: &SuccessorRequest<'_>) -> Option<Vec<FallbackTarget>> {
     if !request.weighted_failover.enabled {
         return None;
     }
     let entry = plan_failover(&request.weighted_failover)?;
-    Some(FallbackSuccessor::RunTargets {
-        source: TargetSource::WeightedFailover,
-        targets: vec![FallbackTarget::from(entry)],
-    })
+    Some(vec![FallbackTarget::from(entry)])
 }
 
 fn plan_failover(request: &WeightedFailover<'_>) -> Option<FailoverEntry> {
