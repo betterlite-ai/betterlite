@@ -1,0 +1,19 @@
+kind: helper
+name: provider-metadata-factory-seed-projection
+call:
+  provider_metadata_factory:
+    provider_info_projection:
+      catalog:
+        - key: "fireworks_ai/accounts/fireworks/models/no-tools"
+          model_info:
+            supports_function_calling: false
+      steps:
+        - {op: free, model: "grok-4", provider: "xai"}
+        - {op: free, model: "m", provider: ""}
+        - {op: free, model: "m"}
+        - {op: adapter_provider_info, model: "no-tools", provider: "fireworks_ai"}
+        - {op: adapter_cost_key, model: "glm-4p6", provider: "fireworks_ai"}
+        - {op: adapter_provider_info, model: "m", provider: "xai"}
+        - {op: adapter_cost_key, model: "m", provider: "bedrock"}
+env: {}
+compare: {ignore: []}
