@@ -267,13 +267,23 @@ fn gradient_complete_url_reads_the_agent_environment_again(
 
 #[rstest]
 #[case::explicit_base(
-    None,
     Some("https://explicit"),
+    None,
+    None,
     Some("explicit-key"),
     Some("https://explicit"),
     Some("explicit-key")
 )]
+#[case::explicit_base_beats_agent_environment(
+    Some("https://explicit"),
+    Some("https://agent"),
+    Some("env-key"),
+    None,
+    Some("https://explicit"),
+    Some("env-key")
+)]
 #[case::agent_environment_default(
+    None,
     Some("https://agent"),
     Some("env-key"),
     None,
@@ -281,6 +291,7 @@ fn gradient_complete_url_reads_the_agent_environment_again(
     Some("env-key")
 )]
 #[case::serverless_default(
+    None,
     None,
     Some("env-key"),
     None,
@@ -290,11 +301,13 @@ fn gradient_complete_url_reads_the_agent_environment_again(
 #[case::empty_base_falls_to_agent_environment(
     Some(""),
     Some("https://agent"),
+    Some("env-key"),
     None,
     Some("https://agent"),
     Some("env-key")
 )]
 #[case::empty_environment_values_fall_through(
+    None,
     Some(""),
     Some(""),
     Some("explicit"),
@@ -302,6 +315,7 @@ fn gradient_complete_url_reads_the_agent_environment_again(
     Some("explicit")
 )]
 #[case::both_empty_environment_values(
+    None,
     Some(""),
     Some(""),
     None,
@@ -309,6 +323,7 @@ fn gradient_complete_url_reads_the_agent_environment_again(
     Some("")
 )]
 fn gradient_provider_info_prefers_explicit_then_agent_then_serverless(
+    #[case] explicit_base: Option<&str>,
     #[case] agent_endpoint: Option<&str>,
     #[case] environment_key: Option<&str>,
     #[case] explicit_key: Option<&str>,
@@ -324,7 +339,8 @@ fn gradient_provider_info_prefers_explicit_then_agent_then_serverless(
     }
     let loaded = settings(&entries);
     let key_override = explicit_key.map(secret);
-    let (base, key) = AgentHost::Gradient.provider_info(&loaded, None, key_override.as_ref());
+    let (base, key) =
+        AgentHost::Gradient.provider_info(&loaded, explicit_base, key_override.as_ref());
     assert_eq!(base.as_deref(), expected_base);
     assert_eq!(
         key.as_ref()
