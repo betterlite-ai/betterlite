@@ -1,0 +1,8 @@
+task: B4592
+deviations:
+  - what: A secret that cannot be encoded, because its timestamp is not a finite number, is reported as a value instead of raising; save_cli_token returns CredentialNotSaved and a load keeps the file's copy.
+    why: serde_json refuses a non-finite float and Rust has no exception path, so a typed outcome is the only way to report it; a timestamp minted from a clock is always finite, so no working login reaches this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L537-L544
+  - what: A staged token file that the discard refuses after a refused vault write is left in place instead of raising out of save_cli_token.
+    why: LiteLLM lets that OSError escape the save, turning an outcome it already decided into an exception; betterlite keeps the typed outcome and leaves the abandoned staging file for the filesystem to clean up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L168
