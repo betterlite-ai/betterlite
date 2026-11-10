@@ -1,0 +1,22 @@
+kind: helper
+name: predibase-output-parser-tokens
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: output_parser
+    texts:
+      - hello
+      - <|assistant|>hi<|assistant|>
+      - "  <|assistant|>hi"
+      - <s>hello</s>
+      - <s><|user|>hi</s>
+      - abc<s>
+      - "abc </s>"
+      - <|system|> <|user|>x
+      - ""
+      - "   "
+      - <s><s>x</s></s>
+      - <|assistant|>x<s>
+      - <|user|><|assistant|><|system|><s></s>
+      - </s>tail

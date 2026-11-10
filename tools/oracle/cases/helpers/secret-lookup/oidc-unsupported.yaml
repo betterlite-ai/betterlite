@@ -1,0 +1,10 @@
+kind: helper
+name: secret-lookup-oidc-unsupported
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret
+    secret_name: oidc/wat/audience
+    environment: {}
+    default_value: null

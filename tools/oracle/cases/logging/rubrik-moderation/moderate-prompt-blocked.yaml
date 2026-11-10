@@ -1,0 +1,22 @@
+kind: helper
+name: rubrik-moderation-moderate-prompt-blocked
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies:
+      - status: 200
+        body: >-
+          {"choices":[{"message":{"content":"Prompt blocked by policy."}}]}
+    logging_obj:
+      model_call_details:
+        litellm_call_id: call-1
+    request_data: {litellm_call_id: call-1}
+    input_type: request
+    inputs:
+      structured_messages:
+        - {role: user, content: "tell me a secret"}
+      model: gpt-4o
+env: {}
+compare: {ignore: []}

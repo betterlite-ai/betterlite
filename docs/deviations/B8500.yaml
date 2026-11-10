@@ -1,0 +1,20 @@
+task: B8500
+deviations:
+  - what: Manager text becomes a boolean only when it is exactly True or False after dropping leading spaces and tabs and trailing whitespace. Text in parentheses or followed by a Python comment stays text.
+    why: LiteLLM runs ast.literal_eval, which also accepts parentheses, comments and leading newlines; betterlite has no Python parser and keeps the two words.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L345-L353
+  - what: An oidc/ name with no audience fails with "OIDC secret name needs a provider and an audience".
+    why: LiteLLM fails with Python's tuple-unpack ValueError text, which has no Rust form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L202-L204
+  - what: A GitHub token body that is not a JSON object, or whose "value" is not a string, is an error.
+    why: LiteLLM returns a non-string value as is or fails with AttributeError; the declared token is a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L266-L269
+  - what: The manager fallback log line carries betterlite's error text and no Python traceback.
+    why: Python exception reprs and tracebacks have no Rust equivalent; the message prefix is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L337-L344
+  - what: Only the first oidc/ is removed from a name, so an audience or file path that itself contains oidc/ keeps it; LiteLLM removes every occurrence.
+    why: Removing every occurrence rewrites valid audiences and credential file paths that contain oidc/, so no working setup can rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L202
+  - what: A Google OIDC metadata response body that is not UTF-8 is an error instead of being decoded with replacement characters.
+    why: The token becomes a SecretString immediately, and a lossy decode would silently change the token a provider sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L219
