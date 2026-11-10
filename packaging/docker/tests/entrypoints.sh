@@ -54,6 +54,8 @@ run() {
 
 ddtrace_line="USE_DDTRACE is ignored because the native server has no ddtrace support"
 
+cd "$work" || fail "cannot enter the scratch folder"
+
 for script in prod_entrypoint.sh component_entrypoint.sh entrypoint.sh build_admin_ui.sh; do
     [ -f "$here/$script" ] || fail "$script is missing"
 done
@@ -92,10 +94,12 @@ for value in false 1 yes "" truee; do
     expect_lines "prod ddtrace [$value] runs server" "$work/out" --port 4000
 done
 
+touch "$work/keep-unset.db"
 run sh "$here/component_entrypoint.sh" betterlite --flag "a b"
 expect_lines "component args" "$work/out" --flag "a b"
 expect_equal "component exec keeps the process" "$child" "$stub_pid"
 expect_empty "component unset silent" "$work/err"
+[ -e "$work/keep-unset.db" ] || fail "unset variable removed a file from the working directory"
 
 STUB_EXIT=3 run sh "$here/component_entrypoint.sh" betterlite
 expect_equal "component exit code" 3 "$code"
