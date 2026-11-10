@@ -130,33 +130,25 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::image_url_empty_string(
     image_url_string(""),
     EXACT,
-    failed("the image_url field is missing or has the wrong type")
+    failed("a string image_url must not be blank")
 )]
 #[case::image_url_whitespace_string(
     image_url_string("  "),
     EXACT,
-    failed("the image_url field is missing or has the wrong type")
+    failed("a string image_url must not be blank")
 )]
-#[case::image_url_missing(
-    plain(r#"{"type":"image_url"}"#),
-    EXACT,
-    failed("the image_url field is missing or has the wrong type")
-)]
+#[case::image_url_missing(plain(r#"{"type":"image_url"}"#), EXACT, Expected::Invalid)]
 #[case::image_url_null(
     plain(r#"{"type":"image_url","image_url":null}"#),
     EXACT,
-    failed("the image_url field is missing or has the wrong type")
+    Expected::Invalid
 )]
 #[case::image_url_empty_url(
     image_url("", "auto"),
     EXACT,
-    failed("the url field is missing or has the wrong type")
+    failed("an image_url object needs a url")
 )]
-#[case::image_url_bad_detail(
-    image_url(PNG, "medium"),
-    EXACT,
-    failed("the detail field is missing or has the wrong type")
-)]
+#[case::image_url_bad_detail(image_url(PNG, "medium"), EXACT, Expected::Invalid)]
 #[case::image_base64(
     plain(r#"{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}"#),
     EXACT,
@@ -182,11 +174,7 @@ fn file(filename: &str, file_data: &str) -> String {
     EXACT,
     failed("the text source is not counted")
 )]
-#[case::image_missing_source(
-    plain(r#"{"type":"image"}"#),
-    EXACT,
-    failed("the source field is missing or has the wrong type")
-)]
+#[case::image_missing_source(plain(r#"{"type":"image"}"#), EXACT, Expected::Invalid)]
 #[case::document_title_context_text(
     r#"{"content":[{"type":"document","title":"hello","context":"world","source":{"type":"text","media_type":"text/plain","data":"hello world"}}]}"#,
     EXACT,
@@ -236,27 +224,23 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::document_missing_source(
     plain(r#"{"type":"document","title":"hello"}"#),
     EXACT,
-    failed("the source field is missing or has the wrong type")
+    Expected::Invalid
 )]
 #[case::document_text_without_data(
     plain(r#"{"type":"document","source":{"type":"text"}}"#),
     EXACT,
-    failed("the data field is missing or has the wrong type")
+    Expected::Invalid
 )]
-#[case::document_unknown_source(
+#[case::document_unknown_source_counts_as_image(
     plain(r#"{"type":"document","source":{"type":"blob"}}"#),
     EXACT,
-    failed("the blob source is not counted")
+    tokens(85)
 )]
 #[case::file_name_and_data(file("hello", PNG), EXACT, tokens(86))]
 #[case::file_name_only(file("hello world", ""), EXACT, tokens(2))]
 #[case::file_data_only(file("", PNG), EXACT, tokens(85))]
 #[case::file_empty_values(file("", ""), EXACT, tokens(0))]
-#[case::file_missing(
-    plain(r#"{"type":"file"}"#),
-    EXACT,
-    failed("the file field is missing or has the wrong type")
-)]
+#[case::file_missing(plain(r#"{"type":"file"}"#), EXACT, Expected::Invalid)]
 #[case::tool_use_name(plain(r#"{"type":"tool_use","name":"hello world"}"#), EXACT, tokens(2))]
 #[case::tool_use_input(
     plain(r#"{"type":"tool_use","input":{"city":"Paris"}}"#),
@@ -278,7 +262,7 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::tool_result_missing_id(
     plain(r#"{"type":"tool_result","content":"hello"}"#),
     EXACT,
-    failed("the tool_use_id field is missing or has the wrong type")
+    Expected::Invalid
 )]
 #[case::tool_result_missing_id_fallback(
     plain(r#"{"type":"tool_result","content":"hello"}"#),
@@ -329,6 +313,26 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::overflow_fallback(plain(&image_twice()), MAX_COUNT_FALLBACK, fallback_tokens(7))]
 #[case::invalid_json("not json", EXACT, Expected::Invalid)]
 #[case::content_item_number(r#"{"content":[5]}"#, EXACT, Expected::Invalid)]
+#[case::image_unknown_source_counts_as_image(
+    plain(r#"{"type":"image","source":{"type":"blob"}}"#),
+    EXACT,
+    tokens(85)
+)]
+#[case::image_url_number(
+    plain(r#"{"type":"image_url","image_url":5}"#),
+    EXACT,
+    Expected::Invalid
+)]
+#[case::nested_unsupported_block(
+    plain(r#"{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"video_url"}]}"#),
+    EXACT,
+    failed("a nested content block type is not counted")
+)]
+#[case::nested_unsupported_block_fallback(
+    plain(r#"{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"video_url"}]}"#),
+    FALLBACK,
+    fallback_tokens(777)
+)]
 #[tokio::test]
 async fn media_tokens_media_token_tests_behavior(
     #[case] input: String,

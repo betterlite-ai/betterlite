@@ -11,19 +11,12 @@ pub(crate) fn image_source_tokens(
     warnings: &mut Vec<Warning>,
 ) -> Result<u64, MediaError> {
     match source {
-        Source::Url { url } => image_tokens(
-            url.as_deref().unwrap_or_default(),
-            Mode::Auto,
-            settings,
-            warnings,
-        ),
-        Source::Base64 | Source::File => image_tokens("", Mode::Auto, settings, warnings),
-        Source::Text { .. } => Err(MediaError::UnsupportedSource {
-            kind: "text".to_owned(),
-        }),
-        Source::Content(_) => Err(MediaError::UnsupportedSource {
-            kind: "content".to_owned(),
-        }),
+        Source::Url { url } => image_tokens(url, Mode::Auto, settings, warnings),
+        Source::Base64 | Source::File | Source::Other => {
+            image_tokens("", Mode::Auto, settings, warnings)
+        }
+        Source::Text { .. } => Err(MediaError::UnsupportedSource { kind: "text" }),
+        Source::Content { .. } => Err(MediaError::UnsupportedSource { kind: "content" }),
     }
 }
 

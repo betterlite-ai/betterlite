@@ -1,9 +1,11 @@
+use serde_json::value::RawValue;
+
 use crate::count::text::Texter;
 
 use super::blocks::count_block;
 use super::error::MediaError;
 use super::settings::Settings;
-use super::wire::{ContentItem, TokenMedia};
+use super::wire::{Block, BlockKind, ContentItem, TokenMedia};
 
 const ROOT_DEPTH: usize = 1;
 pub const MAX_CONTENT_DEPTH: usize = 32;
@@ -28,13 +30,29 @@ pub async fn count_token_media(
     settings: &Settings,
 ) -> Result<Counted, MediaError> {
     let mut warnings = Vec::new();
-    let tokens = count_list(texter, &media.content, settings, ROOT_DEPTH, &mut warnings).await?;
+    let parsed: Result<Vec<ContentItem>, MediaError> =
+        media.content.iter().map(|item| parse_item(item)).collect();
+    let tokens = match parsed {
+        Ok(items) => count_items(texter, items, settings, ROOT_DEPTH, &mut warnings).await?,
+        Err(error) => apply_fallback(error, settings, &mut warnings)?,
+    };
     Ok(Counted { tokens, warnings })
 }
 
-pub(crate) async fn count_list(
+fn parse_item(item: &RawValue) -> Result<ContentItem, MediaError> {
+    let parsed: ContentItem =
+        serde_json::from_str(item.get()).map_err(|source| MediaError::Json { source })?;
+    if matches!(parsed, ContentItem::Block(Block::Unsupported)) {
+        let named: BlockKind =
+            serde_json::from_str(item.get()).map_err(|source| MediaError::Json { source })?;
+        return Err(MediaError::UnsupportedBlock { kind: named.kind });
+    }
+    Ok(parsed)
+}
+
+pub(crate) async fn count_items(
     texter: &Texter<'_>,
-    items: &[ContentItem],
+    items: Vec<ContentItem>,
     settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
@@ -48,9 +66,9 @@ pub(crate) async fn count_list(
         let mut total = 0_u64;
         for item in items {
             let tokens = match item {
-                ContentItem::Text(text) => count_text(texter, text).await?,
-                ContentItem::Block(raw) => {
-                    count_block(texter, raw, settings, depth, warnings).await?
+                ContentItem::Text(text) => count_text(texter, &text).await?,
+                ContentItem::Block(block) => {
+                    count_block(texter, block, settings, depth, warnings).await?
                 }
             };
             total = total.checked_add(tokens).ok_or(MediaError::Overflow)?;
@@ -68,16 +86,6 @@ pub(crate) async fn count_text(texter: &Texter<'_>, text: &str) -> Result<u64, M
     match texter.count(text).await {
         Ok(tokens) => u64::try_from(tokens).map_err(|_conversion| MediaError::Overflow),
         Err(error) => Err(MediaError::Count(error)),
-    }
-}
-
-pub(crate) async fn count_optional_text(
-    texter: &Texter<'_>,
-    value: Option<&str>,
-) -> Result<u64, MediaError> {
-    match value {
-        Some(text) => count_text(texter, text).await,
-        None => Ok(0),
     }
 }
 

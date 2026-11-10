@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_json::value::RawValue;
 
 use crate::image::tokens::Mode;
 
@@ -11,7 +12,7 @@ pub type Object = IndexMap<String, Json>;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TokenMedia {
-    pub content: Vec<ContentItem>,
+    pub content: Vec<Box<RawValue>>,
 }
 
 impl TryFrom<&[u8]> for TokenMedia {
@@ -24,91 +25,117 @@ impl TryFrom<&[u8]> for TokenMedia {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub enum ContentItem {
+pub(crate) enum ContentItem {
     Text(String),
-    Block(RawBlock),
-}
-
-impl ContentItem {
-    pub(crate) fn from_json(value: &Json) -> Result<Self, MediaError> {
-        if let Json::Text(text) = value {
-            return Ok(Self::Text(text.clone()));
-        }
-        match value {
-            Json::Object(object) => Ok(Self::Block(RawBlock::from_object(object)?)),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Text(_) => {
-                Err(MediaError::ContentItem)
-            }
-        }
-    }
+    Block(Block),
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RawBlock {
-    #[serde(rename = "type", default)]
-    pub(crate) kind: Option<String>,
-    #[serde(flatten)]
-    pub(crate) fields: Object,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Block<'block> {
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum Block {
     Text {
+        #[serde(default)]
         text: String,
     },
     ImageUrl {
-        image: ImageUrl,
+        image_url: ImageUrlValue,
     },
     Image {
         source: Source,
     },
-    Document(Document),
+    Document {
+        source: Source,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        context: String,
+    },
     File {
-        filename: Option<String>,
-        file_data: Option<String>,
+        file: FileObject,
     },
     ToolUse {
-        name: Option<String>,
-        input: Option<&'block Object>,
-        caller: Option<&'block Object>,
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        input: Option<Object>,
+        #[serde(default)]
+        caller: Option<Object>,
     },
     ToolResult {
+        #[serde(rename = "tool_use_id")]
+        _tool_use_id: String,
+        #[serde(default)]
         content: Option<NestedContent>,
     },
     Thinking {
-        text: Option<String>,
+        #[serde(default)]
+        thinking: String,
     },
+    RedactedThinking,
     ToolReference {
-        tool_name: Option<String>,
+        #[serde(default)]
+        tool_name: String,
     },
-    Unsupported {
-        kind: String,
-    },
+    #[serde(other)]
+    Unsupported,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ImageUrl {
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct BlockKind {
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum ImageUrlValue {
+    Text(String),
+    Object(ImageUrlObject),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ImageUrlObject {
     pub(crate) url: String,
+    #[serde(default)]
     pub(crate) detail: Mode,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FileObject {
+    #[serde(default)]
+    pub(crate) filename: String,
+    #[serde(default)]
+    pub(crate) file_data: String,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Document {
     pub(crate) source: Source,
-    pub(crate) title: Option<String>,
-    pub(crate) context: Option<String>,
+    pub(crate) title: String,
+    pub(crate) context: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum Source {
     Base64,
     File,
-    Url { url: Option<String> },
-    Text { data: String },
-    Content(NestedContent),
+    Url {
+        #[serde(default)]
+        url: String,
+    },
+    Text {
+        data: String,
+    },
+    Content {
+        content: NestedContent,
+    },
+    #[serde(other)]
+    Other,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
 pub(crate) enum NestedContent {
     Text(String),
     Items(Vec<ContentItem>),

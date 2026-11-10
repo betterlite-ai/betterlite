@@ -5,21 +5,21 @@ use crate::image::error::ImageError;
 
 #[derive(Debug, Error)]
 pub enum MediaError {
-    #[error("the media content JSON could not be read or written")]
+    #[error("the media content JSON could not be read")]
     Json {
         #[source]
         source: serde_json::Error,
     },
-    #[error("a content item must be a string or a content block")]
-    ContentItem,
-    #[error("a content block has no type")]
-    MissingType,
     #[error("content block type {kind} is not counted")]
     UnsupportedBlock { kind: String },
-    #[error("the {field} field is missing or has the wrong type")]
-    Field { field: &'static str },
+    #[error("a nested content block type is not counted")]
+    UnsupportedNestedBlock,
+    #[error("a string image_url must not be blank")]
+    BlankImageUrl,
+    #[error("an image_url object needs a url")]
+    EmptyImageUrl,
     #[error("the {kind} source is not counted")]
-    UnsupportedSource { kind: String },
+    UnsupportedSource { kind: &'static str },
     #[error("an image needs its exact dimensions and no local bytes were given")]
     RemoteNeedsDefaultCount,
     #[error("the content nesting exceeds {limit} levels")]
