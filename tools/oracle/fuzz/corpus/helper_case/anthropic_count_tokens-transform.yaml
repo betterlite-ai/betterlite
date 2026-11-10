@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-count-tokens-transform
+call:
+  anthropic_count_tokens:
+    function: transform
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          system: sys
+          optional_params: {thinking: {type: enabled}}
+env: {}
+compare: {ignore: []}
