@@ -406,6 +406,12 @@ fn validation_requires_messages() {
             .to_string(),
         "messages parameter is required"
     );
+    for falsey in [json("false"), json("0"), json("0.0")] {
+        assert_eq!(
+            validated("m", &falsey, None, None).unwrap_err().to_string(),
+            "messages parameter is required"
+        );
+    }
     let blank = Json::Text(String::new());
     let empty_tools = Json::List(Vec::new());
     assert_eq!(
@@ -417,6 +423,12 @@ fn validation_requires_messages() {
 }
 
 fn validation_requires_a_list() {
+    for scalar in [json("true"), json("1"), json("0.5")] {
+        assert_eq!(
+            validated("m", &scalar, None, None).unwrap_err().to_string(),
+            "messages must be a list"
+        );
+    }
     let text = Json::Text("nope".to_owned());
     assert_eq!(
         validated("m", &text, None, None).unwrap_err().to_string(),
