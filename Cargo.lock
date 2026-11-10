@@ -1232,16 +1232,22 @@ dependencies = [
  "azure_storage_blob",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "futures-util",
+ "hex",
+ "indexmap 2.14.2",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -1863,6 +1869,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "subtle",
@@ -2110,6 +2117,7 @@ dependencies = [
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-logging",
  "betterlite-oracle",
  "chrono",
  "libfuzzer-sys",
@@ -2264,11 +2272,14 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
+ "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
  "mutants",

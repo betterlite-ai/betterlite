@@ -1,0 +1,5 @@
+kind: helper
+name: b5847-map-params-seed
+call: {b5847: {op: map_params, cases: [{model: owner/vicuna-13b, non_default: {max_tokens: 5, stream: true}, optional_params: {temperature: 0.1}}]}}
+env: {}
+compare: {ignore: []}
