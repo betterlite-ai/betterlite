@@ -5,7 +5,6 @@ mod failures;
 
 use std::collections::BTreeMap;
 
-use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_mcp::credential_contracts::auth_spec::AuthResolution;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::mcp::debug::mask_secret;
@@ -19,7 +18,7 @@ use tokio::runtime::{Builder, Runtime};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::{Input, MaskInput, Pair, RequestSpec, ResponseSpec};
+use super::input::{Input, MaskInput, Pair, ResponseSpec};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
@@ -70,22 +69,9 @@ pub(super) fn response_list(
     Ok(responses)
 }
 
-fn body_state(body: Option<&String>) -> BodyState {
+pub(super) fn body_state(body: Option<&String>) -> BodyState {
     body.map_or(BodyState::NotRead, |text| {
         BodyState::Read(text.as_bytes().to_vec())
-    })
-}
-
-pub(super) fn upstream_request(spec: &RequestSpec) -> Result<UpstreamRequest, Box<HelperError>> {
-    let url = HttpxUrl::parse(&spec.url)
-        .map_err(|error| Box::new(failure("InvalidURL", error.to_string())))?;
-    let headers = header_map(&spec.headers)?;
-    let body = body_state(spec.body.as_ref());
-    Ok(UpstreamRequest {
-        method: spec.method.clone(),
-        url,
-        headers,
-        body,
     })
 }
 

@@ -1,8 +1,9 @@
 use std::str::from_utf8;
 
+use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_redact::secret::Redactor;
 use betterlite_server::mcp::debug::preview::upstream::{
-    BodyState, UpstreamResponse, capture_error_response,
+    BodyState, UpstreamRequest, UpstreamResponse, capture_error_response,
 };
 use futures_util::stream;
 use serde_json::{Value, json};
@@ -11,7 +12,7 @@ use tokio::runtime::Runtime;
 use crate::helpers::{HelperError, HelperResult};
 
 use super::super::input::{CaptureInput, CaptureScenario};
-use super::{header_map, redactor, runtime, status_code, upstream_request};
+use super::{body_state, failure, header_map, redactor, runtime, status_code};
 
 pub(super) fn capture(input: &CaptureInput) -> HelperResult {
     let redactor = redactor()?;
@@ -28,11 +29,16 @@ fn capture_scenario(
     runtime: &Runtime,
     redactor: &Redactor,
 ) -> Result<Value, Box<HelperError>> {
-    let request = scenario
-        .request
-        .as_ref()
-        .map(upstream_request)
-        .transpose()?;
+    let request = match scenario.request.as_ref() {
+        Some(spec) => Some(UpstreamRequest {
+            method: spec.method.clone(),
+            url: HttpxUrl::parse(&spec.url)
+                .map_err(|error| Box::new(failure("InvalidURL", error.to_string())))?,
+            headers: header_map(&spec.headers)?,
+            body: body_state(spec.body.as_ref()),
+        }),
+        None => None,
+    };
     let status = status_code(scenario.status)?;
     let mut response = UpstreamResponse {
         status,
