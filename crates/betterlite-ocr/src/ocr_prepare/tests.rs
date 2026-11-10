@@ -367,7 +367,7 @@ fn prepare_request_keeps_request_credentials_and_their_source() {
 #[rstest]
 #[case::cohere("parse", Some("cohere"), OcrConfigKind::Cohere)]
 #[case::textract(
-    "detect_document_text",
+    "detect-document-text",
     Some("aws_textract"),
     OcrConfigKind::AwsTextract
 )]

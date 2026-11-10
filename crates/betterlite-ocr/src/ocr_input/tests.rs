@@ -320,7 +320,7 @@ fn supported_requests_match_provider_resolution(
 #[case::cohere("parse", Some("cohere"), "output_format", "pages")]
 #[case::azure_ai("model", Some("azure_ai"), "pages", "vertex_project")]
 #[case::textract(
-    "detect_document_text",
+    "detect-document-text",
     Some("aws_textract"),
     "aws_secret_access_key",
     "vertex_project"
@@ -345,7 +345,7 @@ fn consumed_names_add_the_provider_and_auth_options(
 
 #[test]
 fn consumed_names_add_the_aws_credentials_last() {
-    let names = consumed_optional_param_names("detect_document_text", Some("aws_textract"))
+    let names = consumed_optional_param_names("detect-document-text", Some("aws_textract"))
         .expect("textract resolves");
     assert_eq!(
         names,
