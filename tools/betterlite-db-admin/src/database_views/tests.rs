@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::error::Error as _;
 use std::ffi::OsString;
 use std::future::{Future, pending};
 use std::pin::Pin;
@@ -366,23 +365,38 @@ async fn offline_probe_error_still_attempts_create() {
 
 #[tokio::test]
 async fn offline_duplicate_create_is_fatal() {
-    let mut database = Scripted::new("relation_missing", &[]);
+    let database = Postgres::new().await;
     database
-        .create_errors
-        .insert("Last30dKeysBySpend", "already_exists");
-    let (lines, source) = views_failure(offline_views(&database, FAST).await);
-    assert_eq!(lines, lines_of(&names()[..2], "Created!"));
-    let ViewsError::Statement { source: driver } = source else {
-        panic!("expected the driver error, got {source:?}");
-    };
-    let cause = driver.source().map(ToString::to_string);
-    assert_eq!(cause.as_deref(), Some("unknown option `already_exists`"));
-    let creates = database
-        .calls()
-        .iter()
-        .filter(|call| call.starts_with("create|"))
-        .count();
-    assert_eq!(creates, 3);
+        .client
+        .batch_execute(
+            r#"CREATE FUNCTION views_probe_refused() RETURNS integer LANGUAGE plpgsql VOLATILE AS $$ BEGIN RAISE EXCEPTION 'probe refused'; END $$;
+CREATE VIEW "Last30dTopEndUsersSpend" AS SELECT 1 AS refused WHERE views_probe_refused() = 1;"#,
+        )
+        .await
+        .expect("a view whose probe fails");
+    let url = database.fixture.options.url.expose_secret().to_owned();
+    let (status, lines) = run_command(&["database-views"], &url, &crate::backend()).await;
+    assert_eq!(status, ExitStatus::Failure);
+    let mut expected: Vec<String> = lines_of(&names()[..7], "Created!")
+        .into_iter()
+        .map(|line| format!("out|{line}"))
+        .collect();
+    expected.push(
+        r#"err|a view statement failed: db error: ERROR: relation "Last30dTopEndUsersSpend" already exists"#
+            .to_owned(),
+    );
+    assert_eq!(lines, expected);
+    let kept: String = database
+        .client
+        .query_one(
+            r#"SELECT pg_get_viewdef('"Last30dTopEndUsersSpend"'::regclass) AS definition"#,
+            &[],
+        )
+        .await
+        .expect("the existing view")
+        .get("definition");
+    assert!(kept.contains("views_probe_refused"));
+    database.close().await;
 }
 
 #[tokio::test]
