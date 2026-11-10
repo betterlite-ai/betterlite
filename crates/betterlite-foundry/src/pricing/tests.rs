@@ -38,13 +38,12 @@ impl CatalogLookup {
         catalog
     }
 
-    fn resolve(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
-        if let Some(prefixed) = custom_llm_provider.map(|provider| format!("{provider}/{model}"))
-            && let Some(record) = self.entries.get(&prefixed)
-        {
-            return Some(record.clone());
-        }
-        self.entries.get(model).cloned()
+    fn resolve(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
+        self.calls.set(self.calls.get().saturating_add(1));
+        provider
+            .map(|provider_name| format!("{provider_name}/{model}"))
+            .and_then(|prefixed| self.entries.get(&prefixed).cloned())
+            .or_else(|| self.entries.get(model).cloned())
     }
 
     fn calls(&self) -> u32 {
@@ -58,7 +57,6 @@ impl PriceLookup for CatalogLookup {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.calls.set(self.calls.get().saturating_add(1));
         self.resolve(model, custom_llm_provider)
     }
 
@@ -71,13 +69,13 @@ impl PriceLookup for CatalogLookup {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+        let record = self.resolve(model, custom_llm_provider)?;
+        Some(PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 
