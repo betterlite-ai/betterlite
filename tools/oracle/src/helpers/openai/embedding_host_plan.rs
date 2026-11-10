@@ -168,16 +168,33 @@ fn infinity_request(call: &Call) -> Object {
     infinity_embedding::transform_embedding_request(&call.model, &call.input, &optional)
 }
 
+fn carried_error(supplied: &Failure) -> Result<Value, Failed> {
+    match infinity_embedding::error::get_error_class(
+        &supplied.message,
+        supplied.status,
+        &supplied.headers,
+    ) {
+        InfinityEmbeddingError::Provider {
+            status_code,
+            message,
+            headers,
+        } => Ok(json!({
+            "status_code": status_code, "message": message,
+            "headers": headers, "url": SYNTHETIC_REQUEST_URL,
+        })),
+        other @ (InfinityEmbeddingError::MissingApiBase
+        | InfinityEmbeddingError::Json { .. }
+        | InfinityEmbeddingError::Shape { .. }) => {
+            Err(failure("InfinityError", None, other.to_string()))
+        }
+    }
+}
+
 fn infinity(call: &Call) -> crate::helpers::HelperResult {
     let key = call.api_key.clone().map(SecretString::from);
     let headers =
         infinity_embedding::validate_environment(&call.headers, key.as_ref(), &settings(call)?);
-    let carried = call.error.as_ref().map(|supplied| {
-        json!({
-            "status_code": supplied.status, "message": supplied.message,
-            "headers": supplied.headers, "url": SYNTHETIC_REQUEST_URL,
-        })
-    });
+    let carried = call.error.as_ref().map(carried_error).transpose()?;
     let url = infinity_embedding::get_complete_url(call.base.as_deref())
         .map_err(|error| failure("ValueError", None, error.to_string()))?;
     Ok(json!({

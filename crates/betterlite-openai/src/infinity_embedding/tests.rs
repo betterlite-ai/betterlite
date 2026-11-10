@@ -8,7 +8,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
 
-use super::error::{InfinityEmbeddingError, SYNTHETIC_REQUEST_URL};
+use super::error::{InfinityEmbeddingError, SYNTHETIC_REQUEST_URL, get_error_class};
 use super::{
     InfinityUsage, SUPPORTED_OPENAI_PARAMS, decode_infinity_embedding, get_complete_url,
     map_openai_params, transform_embedding_request, validate_environment,
@@ -242,16 +242,13 @@ fn valid_json_of_the_wrong_shape_is_not_a_json_failure(#[case] raw: &[u8]) {
 
 #[test]
 fn the_error_class_keeps_headers_and_the_synthetic_request() {
-    let error = InfinityEmbeddingError::Provider {
-        status_code: 429,
-        message: "busy".to_owned(),
-        headers: headers(&[("retry-after", "3")]),
-    };
+    let supplied = headers(&[("retry-after", "3")]);
+    let error = get_error_class("busy", 429, &supplied);
     assert_eq!(error.to_string(), "Infinity answered with status 429: busy");
     assert!(matches!(
         &error,
-        InfinityEmbeddingError::Provider { headers, .. }
-            if headers.get("retry-after").map(String::as_str) == Some("3")
+        InfinityEmbeddingError::Provider { status_code: 429, message, headers }
+            if message == "busy" && headers == &supplied
     ));
     assert_eq!(
         SYNTHETIC_REQUEST_URL,

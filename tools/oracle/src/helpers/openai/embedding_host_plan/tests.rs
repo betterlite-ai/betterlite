@@ -99,6 +99,8 @@ fn infinity_counters_stay_independent_and_errors_keep_their_headers() {
         json!({"prompt_tokens": 5_i32, "total_tokens": 0_i32})
     );
     let error = &result["infinity"]["error"];
+    assert_eq!(error["status_code"], json!(429_i32));
+    assert_eq!(error["message"], json!("busy"));
     assert_eq!(error["headers"], json!({"retry-after": "3"}));
     assert_eq!(error["url"], "https://github.com/michaelfeil/infinity");
 }

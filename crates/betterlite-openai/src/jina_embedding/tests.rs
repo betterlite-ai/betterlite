@@ -5,7 +5,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
-use super::error::JinaAiError;
+use super::error::{JinaAiError, get_error_class};
 use super::{
     BuiltinInput, DEFAULT_URL, SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
     resolve_credentials, transform_embedding_request, transform_embedding_response,
@@ -219,10 +219,15 @@ fn invalid_json_keeps_the_decoding_error_and_skips_the_hook(#[case] raw: &[u8]) 
 
 #[test]
 fn the_error_class_carries_status_and_message_only() {
-    let error = JinaAiError::Provider {
-        status_code: 429,
-        message: "slow down".to_owned(),
-    };
+    let supplied = headers(&[("retry-after", "3")]);
+    let error = get_error_class("slow down", 429, &supplied);
+    assert_eq!(
+        error,
+        JinaAiError::Provider {
+            status_code: 429,
+            message: "slow down".to_owned(),
+        }
+    );
     assert_eq!(
         error.to_string(),
         "Jina AI answered with status 429: slow down"
