@@ -136,10 +136,13 @@ fn attribute_json(value: &OtelValue) -> Value {
 fn exception_json(attributes: &[opentelemetry::KeyValue]) -> Value {
     let mut record = Map::new();
     for pair in attributes {
-        let key = pair.key.as_str();
-        if key == "exception.type" || key == "exception.message" {
-            record.insert(key.to_owned(), attribute_json(&pair.value));
-        }
+        // the Python adapter reports the exception as {type, message}
+        let field = match pair.key.as_str() {
+            "exception.type" => "type",
+            "exception.message" => "message",
+            _ => continue,
+        };
+        record.insert(field.to_owned(), attribute_json(&pair.value));
     }
     Value::Object(record)
 }
