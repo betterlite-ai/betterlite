@@ -1,17 +1,14 @@
 task: B1413
 deviations:
-  - what: A plan built in the sync SDK mode streams lazily, sending its request on the first poll instead of inside the call that builds the stream.
-    why: Native execution is one async path for both SDK modes, and the plan keeps the sync mode's wire facts; a caller cannot observe the request start except by timing it.
+  - what: A plan built in the sync SDK mode streams lazily on first poll and rejects any status other than 200; LiteLLM's sync branch posts inside the call and feeds an error body to the chunk parser.
+    why: Native execution is one async path for both SDK modes, and the async branch already requires exactly 200; forwarding an error body as empty chunks loses the provider's error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L340-L354
-  - what: A stream whose provider answers with any status other than 200 fails with the native status, in both SDK modes.
-    why: LiteLLM's sync streaming branch never checks the status and forwards the error body's lines to the chunk parser as empty chunks, which loses the provider's error; the async branch requires exactly 200.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L341-L354
-  - what: A custom_endpoint of true without an api_base fails with a typed MissingApiBase error instead of handing None to the HTTP client.
+  - what: A custom_endpoint of true without an api_base leaves the request URL empty, so building the request fails with the invalid-URL error.
     why: LiteLLM sets the completion URL to None and then fails inside httpx with an unrelated error; no working setup can rely on that.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L256-L259
   - what: A model whose prompt_factory selection returns no text fails with a typed PromptNotText error instead of sending a null prompt.
     why: LiteLLM's fall-through prompt_factory branch returns None for a model shape it does not handle, and the provider rejects the null prompt; the declared prompt is text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L270-L271
-  - what: The stream's post-call logger receives an OriginalResponse::Lines marker as original_response rather than the Python line iterator.
+  - what: The stream's post-call logger receives the marker "lines" as original_response rather than the Python line iterator.
     why: A native callback cannot share the line stream the caller consumes, and consuming it for logging would eat the answer; the marker says the logged response is the line stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L112-L119

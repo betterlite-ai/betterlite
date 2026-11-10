@@ -1,6 +1,8 @@
-use std::collections::BTreeMap;
-use std::time::Duration;
-
+use super::error::CodestralCallError;
+use super::log::{CallLogger, PreCall};
+use crate::base_helpers::provider_config;
+use crate::codestral_records::options::CodestralSettings;
+use crate::openai_base_config::Headers;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::custom::{CustomPromptTemplate, custom_prompt};
 use betterlite_prompts::factory::{Output, PromptFactory, prompt_factory};
@@ -8,39 +10,21 @@ use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-
-use super::error::CodestralCallError;
-use super::log::{CallLogger, PreCall};
-use crate::base_helpers::provider_config;
-use crate::codestral_records::options::CodestralSettings;
-use crate::openai_base_config::Headers;
-
+use std::collections::BTreeMap;
+use std::time::Duration;
 pub const DEFAULT_API_BASE: &str = "https://codestral.mistral.ai/v1/fim/completions";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Sync,
     Async,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Wrapper {
     Codestral,
     TextCompletionCodestral,
 }
-
-impl Wrapper {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Codestral => "codestral",
-            Self::TextCompletionCodestral => "text-completion-codestral",
-        }
-    }
-}
-
 pub struct CodestralRequest<'call> {
     pub api_key: Option<&'call SecretString>,
     pub headers: &'call Headers,
@@ -53,7 +37,6 @@ pub struct CodestralRequest<'call> {
     pub mode: Mode,
     pub timeout: Duration,
 }
-
 pub struct Plan {
     pub mode: Mode,
     pub headers: Headers,
@@ -66,7 +49,6 @@ pub struct Plan {
     pub messages: Vec<Value>,
     pub api_key: SecretString,
 }
-
 // LiteLLM rejects only a None key, so an empty key still builds a bearer header
 pub fn validate_environment(
     api_key: Option<&SecretString>,
@@ -83,7 +65,6 @@ pub fn validate_environment(
     headers.extend(user_headers.clone());
     Ok(headers)
 }
-
 pub async fn prepare(
     request: &CodestralRequest<'_>,
     prompts: &PromptFactory,
@@ -96,7 +77,7 @@ pub async fn prepare(
         .ok_or(CodestralCallError::MissingApiKey)?
         .clone();
     let mut options = request.optional_params.clone();
-    let url = resolve_url(&mut options, request.api_base)?;
+    let url = resolve_url(&mut options, request.api_base);
     let prompt = build_prompt(request, prompts, now).await?;
     let (body, streaming) = build_body(request, &options, &prompt)?;
     let wrapper = streaming.then_some(match request.mode {
@@ -125,47 +106,35 @@ pub async fn prepare(
     }
     Ok(plan)
 }
-
-fn resolve_url(
-    options: &mut Map<String, Value>,
-    api_base: Option<&str>,
-) -> Result<String, CodestralCallError> {
+fn resolve_url(options: &mut Map<String, Value>, api_base: Option<&str>) -> String {
     if matches!(options.remove("custom_endpoint"), Some(Value::Bool(true))) {
-        return api_base
-            .map(str::to_owned)
-            .ok_or(CodestralCallError::MissingApiBase);
+        return api_base.unwrap_or_default().to_owned();
     }
-    Ok(api_base
+    api_base
         .filter(|base| !base.is_empty())
         .unwrap_or(DEFAULT_API_BASE)
-        .to_owned())
+        .to_owned()
 }
-
 async fn build_prompt(
     request: &CodestralRequest<'_>,
     prompts: &PromptFactory,
     now: DateTime<Utc>,
 ) -> Result<String, CodestralCallError> {
     if let Some(custom) = request.custom_prompts.get(request.model) {
-        return custom_prompt(&custom_template(custom), request.messages)
-            .map_err(CodestralCallError::from);
+        let template = CustomPromptTemplate {
+            roles: custom.roles.clone(),
+            initial_prompt_value: custom.initial_prompt_value.clone(),
+            final_prompt_value: custom.final_prompt_value.clone(),
+            bos_token: String::new(),
+            eos_token: String::new(),
+        };
+        return custom_prompt(&template, request.messages).map_err(CodestralCallError::from);
     }
     match prompt_factory(prompts, request.model, request.messages, None, now).await? {
         Output::Text(text) => Ok(text),
         Output::None | Output::Ollama(_) => Err(CodestralCallError::PromptNotText),
     }
 }
-
-fn custom_template(custom: &CustomPromptTemplate) -> CustomPromptTemplate {
-    CustomPromptTemplate {
-        roles: custom.roles.clone(),
-        initial_prompt_value: custom.initial_prompt_value.clone(),
-        final_prompt_value: custom.final_prompt_value.clone(),
-        bos_token: String::new(),
-        eos_token: String::new(),
-    }
-}
-
 fn build_body(
     request: &CodestralRequest<'_>,
     options: &Map<String, Value>,
@@ -182,7 +151,6 @@ fn build_body(
     body.extend(merged);
     Ok((body, streaming))
 }
-
 fn serialized_messages(messages: &[Message]) -> Result<Vec<Value>, CodestralCallError> {
     messages
         .iter()
@@ -190,7 +158,6 @@ fn serialized_messages(messages: &[Message]) -> Result<Vec<Value>, CodestralCall
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| CodestralCallError::Encode { source })
 }
-
 fn log_pre_call(
     plan: &Plan,
     api_key: Option<&SecretString>,

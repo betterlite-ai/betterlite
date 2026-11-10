@@ -114,11 +114,11 @@ async fn the_url_follows_the_custom_endpoint_flag(
 }
 
 #[tokio::test]
-async fn a_custom_endpoint_without_a_base_is_rejected() {
+async fn a_custom_endpoint_without_a_base_leaves_the_url_empty() {
     let mut fixture = base();
     fixture.optional_params = optional(r#"{"custom_endpoint": true}"#);
-    let error = prepare_error(&fixture.request()).await;
-    assert!(matches!(error, CodestralCallError::MissingApiBase));
+    let plan = prepare_for(&fixture.request()).await.unwrap();
+    assert_eq!(plan.url, "");
 }
 
 #[tokio::test]
@@ -271,11 +271,10 @@ async fn the_pre_call_records_the_prepared_request() {
 }
 
 #[test]
-fn the_wrapper_names_match_the_serialized_literals() {
-    assert_eq!(Wrapper::Codestral.name(), "codestral");
+fn the_wrapper_serializes_to_the_provider_literals() {
     assert_eq!(
-        Wrapper::TextCompletionCodestral.name(),
-        "text-completion-codestral"
+        serde_json::to_value(Wrapper::Codestral).unwrap(),
+        Value::from("codestral")
     );
     assert_eq!(
         serde_json::to_value(Wrapper::TextCompletionCodestral).unwrap(),

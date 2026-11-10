@@ -1,20 +1,17 @@
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::StreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
-use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
-
 use super::error::CodestralCallError;
-use super::log::{CallLogger, OriginalResponse, StreamPostCall};
+use super::log::{CallLogger, StreamPostCall};
 use super::plan::Plan;
 use crate::aleph_alpha::lines::{LineStream, decode_lines};
 use crate::codestral_records::RecordSource;
 use crate::codestral_records::chunk::{CodestralChunk, decode_codestral_chunk};
 use crate::codestral_records::error::{NativeError, TextCompletionCodestralError};
 use crate::codestral_records::record_text;
-
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::StreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
 const COMPLETION_OK: u16 = 200;
-
 pub(super) async fn make_call(
     client: ProxiedClient,
     request: OutboundRequest,
@@ -28,16 +25,15 @@ pub(super) async fn make_call(
         return Err(status_failure(response, limit).await);
     }
     let logged = serde_json::to_string(&plan.body)
-        .map_err(|failure| CodestralCallError::Encode { source: failure })?;
+        .map_err(|source| CodestralCallError::Encode { source })?;
     log.stream_post_call(StreamPostCall {
         input: &plan.messages,
         api_key: "",
-        original_response: OriginalResponse::Lines,
+        original_response: "lines",
         request_data: &logged,
     });
     Ok(decoded(decode_lines(response, limit), record))
 }
-
 fn decoded(
     lines: LineStream,
     record: RecordSource,
@@ -51,7 +47,6 @@ fn decoded(
         })
         .boxed()
 }
-
 async fn status_failure(response: StreamResponse, limit: usize) -> CodestralCallError {
     match response.buffered(limit).await {
         Ok(failed) => {

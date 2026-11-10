@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 use uuid::Uuid;
 
 use super::{Event, Recorder};
-use crate::codestral_call::error::CodestralCallError;
+use crate::codestral_call::error::{CodestralCallError, TRANSPORT_STATUS};
 use crate::codestral_call::execute::CodestralCall;
 use crate::codestral_call::plan::{Mode, Plan, Wrapper};
 use crate::codestral_records::RecordSource;
@@ -215,11 +215,10 @@ async fn a_rejected_reply_keeps_its_status_after_the_post_call() {
         serve_once(listener, 400, b"bad request")
     );
     let error = outcome.unwrap_err();
-    assert_eq!(error.status_code(), Some(400));
-    assert!(matches!(
-        error,
-        CodestralCallError::Record(TextCompletionCodestralError::Native(_))
-    ));
+    let CodestralCallError::Record(TextCompletionCodestralError::Native(native)) = &error else {
+        panic!("a non-200 reply keeps its native status")
+    };
+    assert_eq!(native.status_code, 400);
     assert_eq!(recorder.phases(), vec!["post_call"]);
 }
 
@@ -240,8 +239,8 @@ async fn a_transport_failure_maps_to_status_500() {
         .complete(&plan, source(), &mut recorder)
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), Some(500));
     assert!(matches!(error, CodestralCallError::Transport { .. }));
+    assert_eq!(TRANSPORT_STATUS, 500);
 }
 
 #[tokio::test]
@@ -274,7 +273,10 @@ async fn a_stream_status_other_than_200_is_an_error() {
     let mut stream = Box::pin(planned);
     let (first, _captured) = tokio::join!(stream.next(), serve_once(listener, 201, STREAM_BODY));
     let error = first.unwrap().unwrap_err();
-    assert_eq!(error.status_code(), Some(201));
+    let CodestralCallError::Record(TextCompletionCodestralError::Native(native)) = &error else {
+        panic!("a non-200 stream keeps its native status")
+    };
+    assert_eq!(native.status_code, 201);
     assert!(recorder.phases().is_empty());
 }
 

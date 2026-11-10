@@ -9,6 +9,9 @@ call:
         model: codestral-latest
         messages: [{role: user, content: write}]
         timeout: 12.5
+        headers: {}
+        api_base: null
+        custom_prompt_dict: {}
         optional_params: {temperature: null, max_tokens: 0, suffix: null}
 env: {}
 compare: {ignore: []}

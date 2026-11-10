@@ -1,3 +1,11 @@
+use super::error::CodestralCallError;
+use super::log::CallLogger;
+use super::plan::Plan;
+use super::stream;
+use crate::codestral_records::RecordSource;
+use crate::codestral_records::chunk::CodestralChunk;
+use crate::codestral_records::record_text;
+use crate::codestral_records::reply::{CodestralReply, PostCall, process_response};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use futures_util::Stream;
@@ -7,20 +15,9 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
 use serde_json::Value;
 use url::Url;
-
-use super::error::CodestralCallError;
-use super::log::CallLogger;
-use super::plan::Plan;
-use super::stream;
-use crate::codestral_records::RecordSource;
-use crate::codestral_records::chunk::CodestralChunk;
-use crate::codestral_records::record_text;
-use crate::codestral_records::reply::{CodestralReply, PostCall, process_response};
-
 pub struct CodestralCall {
     pub client: ProxiedClient,
 }
-
 impl CodestralCall {
     pub async fn complete(
         &self,
@@ -42,7 +39,6 @@ impl CodestralCall {
         let reply = process_response(upstream.status, call, log, &source)?;
         Ok(reply)
     }
-
     pub fn stream(
         &self,
         plan: Plan,
@@ -63,7 +59,6 @@ impl CodestralCall {
         Ok(chunks.try_flatten())
     }
 }
-
 pub(super) fn outbound(
     plan: &Plan,
     client: &ProxiedClient,

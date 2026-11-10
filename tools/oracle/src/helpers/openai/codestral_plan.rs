@@ -1,9 +1,6 @@
-use std::collections::BTreeMap;
-use std::sync::Mutex;
-use std::time::Duration;
-
+use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_openai::codestral_call::log::{CallLogger, PreCall, StreamPostCall};
-use betterlite_openai::codestral_call::plan::{CodestralRequest, Mode, Plan, prepare};
+use betterlite_openai::codestral_call::plan::{CodestralRequest, Mode, prepare};
 use betterlite_openai::codestral_records::options::CodestralSettings;
 use betterlite_openai::codestral_records::reply::{PostCall, PostCallLogger};
 use betterlite_openai::openai_base_config::Headers;
@@ -15,19 +12,16 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-
-use crate::helpers::{Helper, HelperError, HelperResult};
-
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+use std::time::Duration;
 mod tests;
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     settings: CodestralSettings,
     calls: Vec<Call>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Call {
@@ -36,25 +30,18 @@ struct Call {
     model: String,
     messages: Vec<Message>,
     timeout: f64,
-    #[serde(default)]
     headers: Headers,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     custom_prompt_dict: BTreeMap<String, CustomPromptTemplate>,
-    #[serde(default)]
     optional_params: Map<String, Value>,
 }
-
 #[derive(Default)]
 struct Recorder {
     events: Vec<Value>,
 }
-
 impl PostCallLogger for Recorder {
     fn post_call(&mut self, _call: PostCall<'_>) {}
 }
-
 impl CallLogger for Recorder {
     fn pre_call(&mut self, call: PreCall<'_>) {
         self.events.push(json!({
@@ -67,15 +54,11 @@ impl CallLogger for Recorder {
             "acompletion": call.acompletion,
         }));
     }
-
     fn stream_post_call(&mut self, _call: StreamPostCall<'_>) {}
 }
-
 pub(crate) struct Op;
-
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         let prompts = PromptFactory {
             cache: Mutex::new(builtin_entries()),
@@ -85,7 +68,16 @@ impl Helper for Op {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|error| invalid(error.to_string()))?;
+            .map_err(|error| {
+                Box::new(HelperError {
+                    class: String::from("Runtime"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?;
         let calls: Vec<Value> = input
             .calls
             .iter()
@@ -94,7 +86,6 @@ impl Helper for Op {
         Ok(Value::Array(calls))
     }
 }
-
 fn run_call(
     call: &Call,
     settings: &CodestralSettings,
@@ -119,29 +110,14 @@ fn run_call(
         timeout,
     };
     let mut recorder = Recorder::default();
-    match runtime.block_on(prepare(&request, prompts, now, &mut recorder)) {
-        Ok(plan) => facts(&plan, &recorder),
-        Err(_error) => json!({"outcome": "error"}),
-    }
-}
-
-fn facts(plan: &Plan, recorder: &Recorder) -> Value {
+    let Ok(plan) = runtime.block_on(prepare(&request, prompts, now, &mut recorder)) else {
+        return json!({"outcome": "error"});
+    };
     json!({
         "mode": plan.mode,
         "request": {"url": plan.url, "headers": plan.headers, "body": plan.body},
         "provider": plan.wrapper,
         "timeout": plan.timeout.map(|timeout| timeout.as_secs_f64()),
         "events": recorder.events,
-    })
-}
-
-fn invalid(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }
