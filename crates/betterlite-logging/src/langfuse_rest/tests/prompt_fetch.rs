@@ -420,7 +420,7 @@ async fn a_body_that_fails_content_decoding_is_not_retried() {
     assert!(
         matches!(
             &error,
-            LangfuseRestError::Request(RequestFailure::Transport(_))
+            LangfuseRestError::Request(RequestFailure::Decode(_))
         ),
         "{error:?}"
     );

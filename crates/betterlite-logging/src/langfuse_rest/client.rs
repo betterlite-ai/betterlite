@@ -232,7 +232,7 @@ fn prompt_query(key: &PromptKey) -> Vec<(String, String)> {
     query
 }
 
-fn is_retryable(error: &LangfuseRestError) -> bool {
+const fn is_retryable(error: &LangfuseRestError) -> bool {
     match error {
         LangfuseRestError::Api(api) => api.status_code >= 500,
         LangfuseRestError::Request(failure) => request_is_retryable(failure),
@@ -240,23 +240,23 @@ fn is_retryable(error: &LangfuseRestError) -> bool {
     }
 }
 
-fn request_is_retryable(failure: &RequestFailure) -> bool {
+const fn request_is_retryable(failure: &RequestFailure) -> bool {
     match failure {
-        RequestFailure::Url { .. } => false,
+        RequestFailure::Url { .. } | RequestFailure::Decode(_) => false,
         RequestFailure::Transport(error) => transport_is_retryable(error),
     }
 }
 
 // httpx counts these as TransportError; TooManyRedirects, InvalidURL and DecodingError are RequestErrors
-fn transport_is_retryable(error: &TransportError) -> bool {
+const fn transport_is_retryable(error: &TransportError) -> bool {
     match error {
         TransportError::Connect(_)
         | TransportError::ConnectTimeout(_)
         | TransportError::Deadline(_)
         | TransportError::Request(_)
         | TransportError::InvalidHeader { .. }
+        | TransportError::Body(_)
         | TransportError::RedirectScheme { .. } => true,
-        TransportError::Body(source) => !source.is_decode(),
         TransportError::Rejected(_)
         | TransportError::Build(_)
         | TransportError::HeadersTooLarge { .. }

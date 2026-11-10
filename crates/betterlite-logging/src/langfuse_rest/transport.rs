@@ -8,7 +8,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::Method;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use http::header::{AUTHORIZATION, CONTENT_ENCODING, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -32,6 +32,8 @@ pub enum RequestFailure {
     },
     #[error(transparent)]
     Transport(#[from] TransportError),
+    #[error(transparent)]
+    Decode(TransportError),
 }
 
 #[derive(Debug)]
@@ -84,17 +86,36 @@ impl LangfuseHttp {
             body: RequestBody::Empty,
             deadline: self.timeout,
         };
-        let response = self
-            .client
-            .send_following(request)
-            .await?
+        let stream = self.client.send_following(request).await?;
+        let encoded = decoded_encoding(stream.response.headers());
+        let response = stream
             .buffered(self.client.limits.body_bytes)
-            .await?;
+            .await
+            .map_err(|source| buffered_failure(source, encoded))?;
         Ok(HttpResponse {
             status: response.status,
             body: response.body,
         })
     }
+}
+
+// reqwest marks every response body error as a decode error; only a declared encoding makes it httpx's DecodingError
+const fn buffered_failure(error: TransportError, encoded: bool) -> RequestFailure {
+    if encoded && matches!(&error, TransportError::Body(_)) {
+        return RequestFailure::Decode(error);
+    }
+    RequestFailure::Transport(error)
+}
+
+fn decoded_encoding(headers: &HeaderMap) -> bool {
+    headers.get(CONTENT_ENCODING).is_some_and(|value| {
+        value.to_str().is_ok_and(|text| {
+            text.split(',').any(|coding| {
+                let trimmed = coding.trim();
+                trimmed.eq_ignore_ascii_case("gzip") || trimmed.eq_ignore_ascii_case("deflate")
+            })
+        })
+    })
 }
 
 pub fn headers_for(
