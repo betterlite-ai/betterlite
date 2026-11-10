@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use super::support::{harness, harness_at};
+use super::support::{
+    DEFAULT_MAJOR_VERSION, TestGate, connect_cache, harness, harness_at,
+    overrides_with_missing_credentials,
+};
 use crate::cache_primitives::decode::CachedValue;
 use crate::redis_cache::error::RedisCacheError;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
@@ -66,13 +69,39 @@ async fn a_miss_returns_none() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_client_error_returns_before_any_hook() {
+async fn an_unreachable_redis_is_swallowed_into_none() {
     let harness = harness_at("127.0.0.1", 1, Some("ns"), 60).await;
+    let cached = harness
+        .cache
+        .async_get_cache("alpha")
+        .await
+        .expect("the swallow");
+    assert_eq!(cached, None);
+    let hooks = harness.hooks.for_call("async_get_cache");
+    assert_eq!(hooks.len(), 1);
+    assert!(hooks[0].starts_with("failure:async_get_cache:Some(\"ns:alpha\"):"));
+    let gate = harness.gate.entries();
+    assert_eq!(gate[0], "enter:async_get_cache");
+    assert!(gate[1].starts_with("swallowed:1:"));
+    assert_eq!(gate[2], "exit:1");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_build_error_returns_before_any_hook() {
+    let server = FakeServer::start().await;
+    let harness = connect_cache(
+        overrides_with_missing_credentials(&server.host(), server.port()),
+        Some("ns"),
+        60,
+        DEFAULT_MAJOR_VERSION,
+        TestGate::never(),
+    )
+    .await;
     let error = harness
         .cache
         .async_get_cache("alpha")
         .await
-        .expect_err("the client error");
+        .expect_err("the client build error");
     assert!(matches!(error, RedisCacheError::ClientReuse(_)));
     assert!(harness.hooks.for_call("async_get_cache").is_empty());
     let gate = harness.gate.entries();

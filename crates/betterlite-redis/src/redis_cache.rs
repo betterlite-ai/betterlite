@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use redis::Value;
 
-use self::error::RedisCacheError;
+use self::error::{RedisCacheError, connection_failure};
 use crate::cache_primitives::decode::CachedValue;
 use crate::cache_primitives::namespace::check_and_fix_namespace;
 use crate::cache_primitives::pipeline_increment::IncrementOperation;
@@ -51,15 +51,19 @@ impl RedisCache {
     ) -> Result<f64, RedisCacheError> {
         let started = Instant::now();
         let admission = self.gate.enter("async_increment")?;
-        if let Err(source) = self.transport.async_client().await {
-            return finish(
-                self.gate.as_ref(),
-                admission,
-                Err(RedisCacheError::from(source)),
-            );
-        }
         let used_ttl = ttl.unwrap_or(self.default_ttl);
-        let outcome = increment::increment(self, key, value, used_ttl, refresh_ttl).await;
+        let lookup = self.transport.async_client().await;
+        let outcome = match lookup {
+            Ok(_client) => increment::increment(self, key, value, used_ttl, refresh_ttl).await,
+            Err(source) if connection_failure(&source) => Err(RedisCacheError::from(source)),
+            Err(source) => {
+                return finish(
+                    self.gate.as_ref(),
+                    admission,
+                    Err(RedisCacheError::from(source)),
+                );
+            }
+        };
         let event = ServiceEvent {
             call_type: "async_increment",
             duration: started.elapsed(),
@@ -88,19 +92,23 @@ impl RedisCache {
             return Ok(None);
         }
         let started = Instant::now();
-        if let Err(source) = self.transport.async_client().await {
-            return finish(
-                self.gate.as_ref(),
-                admission,
-                Err(RedisCacheError::from(source)),
-            );
-        }
-        // pipeline_increment namespaces its own keys, so it gets them as the caller wrote them
-        let outcome = self
-            .counters
-            .pipeline_increment(increment_list)
-            .await
-            .map_err(RedisCacheError::from);
+        let lookup = self.transport.async_client().await;
+        let outcome = match lookup {
+            // pipeline_increment namespaces its own keys, so it gets them as the caller wrote them
+            Ok(_client) => self
+                .counters
+                .pipeline_increment(increment_list)
+                .await
+                .map_err(RedisCacheError::from),
+            Err(source) if connection_failure(&source) => Err(RedisCacheError::from(source)),
+            Err(source) => {
+                return finish(
+                    self.gate.as_ref(),
+                    admission,
+                    Err(RedisCacheError::from(source)),
+                );
+            }
+        };
         let event = ServiceEvent {
             call_type: "async_increment_pipeline",
             duration: started.elapsed(),

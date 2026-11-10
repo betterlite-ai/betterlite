@@ -218,6 +218,12 @@ pub(crate) fn overrides_without_socket_timeout(host: &str, port: u16) -> RedisOv
     cleared
 }
 
+pub(crate) fn overrides_with_missing_credentials(host: &str, port: u16) -> RedisOverrides {
+    let mut credential = overrides(host, port);
+    credential.credential_provider = true;
+    credential
+}
+
 pub(crate) async fn connect_cache(
     redis_overrides: RedisOverrides,
     namespace: Option<&str>,

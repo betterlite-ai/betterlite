@@ -1,7 +1,7 @@
 use redis::cmd;
 
 use super::RedisCache;
-use super::error::RedisCacheError;
+use super::error::{RedisCacheError, connection_failure};
 use crate::cache_primitives::decode::{CachedValue, decode_cached_value};
 
 pub(crate) enum Read {
@@ -13,6 +13,9 @@ pub(crate) enum Read {
 pub(crate) async fn get_cached(cache: &RedisCache, key: &str) -> Read {
     let client = match cache.transport.async_client().await {
         Ok(client) => client,
+        Err(source) if connection_failure(&source) => {
+            return Read::Failure(RedisCacheError::from(source));
+        }
         Err(source) => return Read::Client(RedisCacheError::from(source)),
     };
     let mut command = cmd("GET");

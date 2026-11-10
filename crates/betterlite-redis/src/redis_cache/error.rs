@@ -27,3 +27,13 @@ pub enum RedisCacheError {
     #[error(transparent)]
     Join(#[from] JoinError),
 }
+
+// litellm's init_async_client builds a lazy client, so a failed connection lands in the method body; only building the client sits outside it
+pub(crate) const fn connection_failure(error: &ClientReuseError) -> bool {
+    matches!(
+        error,
+        ClientReuseError::Live(
+            LiveClientError::Redis(_) | LiveClientError::NoSentinelMaster { .. }
+        ) | ClientReuseError::Timeout(_)
+    )
+}
