@@ -7,13 +7,11 @@ call:
     input: [hello]
     optional_params: {input_type: search_query}
     runs:
-      - data: {}
-        reply:
-          status: 200
-          body: '{"embeddings":[[0.5]],"meta":{"billed_units":{"input_tokens":1}}}'
-      - data: {texts: [only], model: other, input_type: image}
-        reply:
-          status: 200
-          body: '{"embeddings":[[0.25]],"meta":{"billed_units":{"input_tokens":1}}}'
+      - status: 200
+        body: '{"embeddings":[[0.5]],"meta":{"billed_units":{"input_tokens":1}}}'
+        data: {}
+      - status: 200
+        body: '{"embeddings":[[0.25]],"meta":{"billed_units":{"input_tokens":1}}}'
+        data: {texts: [only], model: other, input_type: image}
 compare: {ignore: []}
 env: {}

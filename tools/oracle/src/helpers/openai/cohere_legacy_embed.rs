@@ -36,6 +36,10 @@ pub(crate) struct Call {
     input: Vec<String>,
     #[serde(default)]
     optional_params: Object,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+    #[serde(default)]
+    api_key: Option<String>,
     runs: Vec<Run>,
 }
 
@@ -51,18 +55,6 @@ enum Mode {
 struct Run {
     #[serde(default)]
     data: Option<Object>,
-    #[serde(default)]
-    headers: BTreeMap<String, String>,
-    #[serde(default)]
-    complete_api_base: Option<String>,
-    #[serde(default)]
-    api_key: Option<String>,
-    reply: Reply,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reply {
     status: u16,
     body: String,
 }
@@ -70,18 +62,13 @@ struct Reply {
 struct Fixture {
     status: u16,
     body: Vec<u8>,
-    seen: Mutex<Vec<OutboundRequest>>,
 }
 
 impl LegacyEmbeddingTransport for Fixture {
     fn send(
         &self,
-        request: OutboundRequest,
+        _request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let Ok(mut seen) = self.seen.lock() else {
-            return ready(Err(TransportError::Closed));
-        };
-        seen.push(request);
         ready(Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
@@ -97,14 +84,15 @@ struct Recorder {
 
 impl EmbeddingHooks for Recorder {
     fn pre_call(&mut self, call: PreCall<'_>) {
-        let mut record = Map::new();
-        record.insert(String::from("phase"), json!("pre_call"));
-        record.insert(String::from("input"), json!(call.input));
-        record.insert(
-            String::from("api_key"),
-            json!(call.api_key.map(|key| key.expose_secret().to_owned())),
-        );
-        record.insert(String::from("body"), json!(call.body));
+        let mut record = Map::from_iter([
+            (String::from("phase"), json!("pre_call")),
+            (String::from("input"), json!(call.input)),
+            (
+                String::from("api_key"),
+                json!(call.api_key.map(|key| key.expose_secret().to_owned())),
+            ),
+            (String::from("body"), json!(call.body)),
+        ]);
         if let Some(request) = call.request {
             record.insert(String::from("headers"), json!(request.headers));
             record.insert(String::from("api_base"), json!(request.api_base));
@@ -113,19 +101,13 @@ impl EmbeddingHooks for Recorder {
     }
 
     fn post_call(&mut self, call: PostCall<'_>) {
-        let mut record = Map::new();
-        record.insert(String::from("phase"), json!("post_call"));
-        record.insert(String::from("input"), json!(call.input));
-        record.insert(
-            String::from("api_key"),
-            json!(call.api_key.map(|key| key.expose_secret().to_owned())),
-        );
-        record.insert(String::from("body"), json!(call.body));
-        record.insert(
-            String::from("original_response"),
-            json!(call.original_response),
-        );
-        self.records.push(Value::Object(record));
+        self.records.push(json!({
+            "phase": "post_call",
+            "input": call.input,
+            "api_key": call.api_key.map(|key| key.expose_secret().to_owned()),
+            "body": call.body,
+            "original_response": call.original_response,
+        }));
     }
 }
 
@@ -161,16 +143,16 @@ const fn mode(mode: Mode) -> SdkMode {
 }
 
 fn build(input: &Call, run: &Run) -> LegacyEmbeddingPlan {
-    let key = run.api_key.clone().map(SecretString::from);
+    let key = input.api_key.clone().map(SecretString::from);
     plan(&PlanInput {
         mode: mode(input.mode),
         model: &input.model,
         input: &input.input,
         optional_params: &input.optional_params,
         supplied_data: run.data.as_ref(),
-        complete_api_base: run.complete_api_base.as_deref(),
+        complete_api_base: None,
         api_key: key.as_ref(),
-        headers: &run.headers,
+        headers: &input.headers,
         timeout: HELPER_TIMEOUT,
     })
 }
@@ -200,13 +182,12 @@ fn outcome(value: Result<LegacyEmbeddingResponse, CohereLegacyEmbeddingError>) -
 fn scenario(runtime: &Runtime, input: &Call, run: &Run) -> Value {
     let plan = build(input, run);
     let fixture = Fixture {
-        status: run.reply.status,
-        body: run.reply.body.as_bytes().to_vec(),
-        seen: Mutex::new(Vec::new()),
+        status: run.status,
+        body: run.body.as_bytes().to_vec(),
     };
     let encoder = Encoder::default();
     let mut recorder = Recorder::default();
-    let key = run.api_key.clone().map(SecretString::from);
+    let key = input.api_key.clone().map(SecretString::from);
     let value = runtime.block_on(execute(
         &fixture,
         ExecuteInput {

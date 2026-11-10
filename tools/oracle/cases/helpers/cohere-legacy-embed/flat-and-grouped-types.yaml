@@ -6,14 +6,11 @@ call:
     model: embed-english-v3.0
     input: [hello]
     runs:
-      - reply:
-          status: 200
-          body: '{"embeddings":[[0.5],[0.25]]}'
-      - reply:
-          status: 200
-          body: '{"embeddings":{"float":[[0.5]],"int8":[[1],[2]]},"response_type":"embeddings_by_type"}'
-      - reply:
-          status: 200
-          body: '{"embeddings":{"float":[[0.75]]},"meta":{"billed_units":{"images":3,"input_tokens":2}}}'
+      - status: 200
+        body: '{"embeddings":[[0.5],[0.25]]}'
+      - status: 200
+        body: '{"embeddings":{"float":[[0.5]],"int8":[[1],[2]]},"response_type":"embeddings_by_type"}'
+      - status: 200
+        body: '{"embeddings":{"float":[[0.75]]},"meta":{"billed_units":{"images":3,"input_tokens":2}}}'
 compare: {ignore: []}
 env: {}

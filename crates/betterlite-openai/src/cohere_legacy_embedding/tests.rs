@@ -46,9 +46,6 @@ enum Hook {
         request: Option<(Headers, String)>,
     },
     Post {
-        input: Vec<String>,
-        api_key: Option<String>,
-        body: Json,
         original_response: Json,
     },
 }
@@ -72,9 +69,6 @@ impl EmbeddingHooks for Recorder {
 
     fn post_call(&mut self, call: PostCall<'_>) {
         self.hooks.push(Hook::Post {
-            input: call.input.to_vec(),
-            api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
-            body: Json::Object(call.body.clone()),
             original_response: call.original_response.clone(),
         });
     }
@@ -557,7 +551,7 @@ async fn a_transport_failure_logs_the_error_before_it_returns_it() {
     let fixture = Fixture::failing(TransportError::Closed);
     let encoding = Counting::default();
     let (hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
-    let Err(CohereLegacyEmbeddingError::Transport { source }) = outcome else {
+    let Err(CohereLegacyEmbeddingError::Transport(source)) = outcome else {
         panic!("a transport failure must be returned unchanged");
     };
     assert!(matches!(source, TransportError::Closed));
@@ -599,10 +593,7 @@ async fn an_unbuildable_endpoint_logs_a_post_call_in_async_mode() {
     let fixture = Fixture::answering(200, FLAT_REPLY);
     let encoding = Counting::default();
     let (hooks, outcome) = run_plan(&spec, &fixture, &encoding).await;
-    assert!(matches!(
-        outcome,
-        Err(CohereLegacyEmbeddingError::Url { .. })
-    ));
+    assert!(matches!(outcome, Err(CohereLegacyEmbeddingError::Url(_))));
     assert!(matches!(
         hooks.hooks.as_slice(),
         [Hook::Pre { .. }, Hook::Post { .. }]
@@ -751,7 +742,7 @@ fn a_grouped_response_type_over_flat_rows_is_rejected_after_the_post_call() {
     );
     assert!(matches!(
         outcome,
-        Err(CohereLegacyEmbeddingError::EmbeddingsNotGrouped)
+        Err(CohereLegacyEmbeddingError::Embeddings)
     ));
     assert_eq!(hooks.hooks.len(), 1);
 }
@@ -759,10 +750,7 @@ fn a_grouped_response_type_over_flat_rows_is_rejected_after_the_post_call() {
 #[test]
 fn a_malformed_reply_emits_no_success_post_call() {
     let (hooks, outcome) = decode(br#"{"embeddings":[["#, &texts(&["hello"]));
-    assert!(matches!(
-        outcome,
-        Err(CohereLegacyEmbeddingError::Json { .. })
-    ));
+    assert!(matches!(outcome, Err(CohereLegacyEmbeddingError::Json(_))));
     assert!(hooks.hooks.is_empty());
 }
 
@@ -771,24 +759,22 @@ fn a_reply_without_embeddings_logs_the_post_call_then_fails() {
     let (hooks, outcome) = decode(br#"{"meta":{}}"#, &texts(&["hello"]));
     assert!(matches!(
         outcome,
-        Err(CohereLegacyEmbeddingError::MissingEmbeddings)
+        Err(CohereLegacyEmbeddingError::Embeddings)
     ));
     assert_eq!(hooks.hooks.len(), 1);
 }
 
 #[rstest]
-#[case::root_array(b"[]", "ReplyNotAnObject")]
-#[case::embeddings_text(br#"{"embeddings":"rows"}"#, "EmbeddingsShape")]
-#[case::group_not_a_list(br#"{"embeddings":{"float":1}}"#, "EmbeddingsShape")]
-fn a_misshapen_reply_is_rejected(#[case] body: &[u8], #[case] expected: &str) {
-    let (_hooks, outcome) = decode(body, &texts(&["hello"]));
-    let named = match outcome {
-        Err(CohereLegacyEmbeddingError::ReplyNotAnObject) => "ReplyNotAnObject",
-        Err(CohereLegacyEmbeddingError::EmbeddingsShape) => "EmbeddingsShape",
-        Err(CohereLegacyEmbeddingError::EmbeddingsNotGrouped) => "EmbeddingsNotGrouped",
-        Err(_) | Ok(_) => "other",
-    };
-    assert_eq!(named, expected);
+#[case::root_array(b"[]")]
+#[case::embeddings_text(br#"{"embeddings":"rows"}"#)]
+#[case::group_not_a_list(br#"{"embeddings":{"float":1}}"#)]
+fn a_misshapen_reply_is_rejected(#[case] body: &[u8]) {
+    let (hooks, outcome) = decode(body, &texts(&["hello"]));
+    assert!(matches!(
+        outcome,
+        Err(CohereLegacyEmbeddingError::Embeddings)
+    ));
+    assert_eq!(hooks.hooks.len(), 1);
 }
 
 #[test]

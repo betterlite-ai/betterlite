@@ -6,14 +6,11 @@ call:
     model: embed-english-v3.0
     input: [hello]
     runs:
-      - reply:
-          status: 200
-          body: '{"embeddings":['
-      - reply:
-          status: 200
-          body: '{"meta":{}}'
-      - reply:
-          status: 200
-          body: '{"embeddings":[[0.5]]}'
+      - status: 200
+        body: '{"embeddings":['
+      - status: 200
+        body: '{"meta":{}}'
+      - status: 200
+        body: '{"embeddings":[[0.5]]}'
 compare: {ignore: []}
 env: {}

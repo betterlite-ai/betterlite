@@ -47,7 +47,25 @@ where
     T: LegacyEmbeddingTransport,
 {
     hooks.pre_call(pre_call(call.plan, call.input, call.api_key));
-    let reply = send(transport, &call, hooks).await?;
+    let request = match outbound(call.plan) {
+        Ok(request) => request,
+        Err(error) => {
+            let logged = Json::Text(error.to_string());
+            return Err(fail(&call, hooks, &logged, error));
+        }
+    };
+    let reply = match transport.send(request).await {
+        Ok(reply) => reply,
+        Err(source) => {
+            let logged = Json::Text(source.to_string());
+            return Err(fail(
+                &call,
+                hooks,
+                &logged,
+                CohereLegacyEmbeddingError::from(source),
+            ));
+        }
+    };
     finish(&reply, &call, hooks)
 }
 
@@ -67,32 +85,6 @@ fn pre_call<'call>(
                 api_base: &plan.url,
             }),
         },
-    }
-}
-
-async fn send<T>(
-    transport: &T,
-    call: &ExecuteInput<'_>,
-    hooks: &mut dyn EmbeddingHooks,
-) -> Result<UpstreamResponse, CohereLegacyEmbeddingError>
-where
-    T: LegacyEmbeddingTransport,
-{
-    let request = match outbound(call.plan) {
-        Ok(request) => request,
-        Err(error) => {
-            let logged = Json::Text(error.to_string());
-            return Err(fail(call, hooks, &logged, error));
-        }
-    };
-    match transport.send(request).await {
-        Ok(reply) => Ok(reply),
-        Err(source) => Err(fail(
-            call,
-            hooks,
-            &Json::Text(source.to_string()),
-            CohereLegacyEmbeddingError::Transport { source },
-        )),
     }
 }
 
@@ -142,7 +134,6 @@ fn fail(
 }
 
 fn outbound(plan: &LegacyEmbeddingPlan) -> Result<OutboundRequest, CohereLegacyEmbeddingError> {
-    let url = Url::parse(&plan.url).map_err(|source| CohereLegacyEmbeddingError::Url { source })?;
     let mut headers = HeaderMap::new();
     for (name, value) in &plan.headers {
         let header_name = HeaderName::try_from(name.as_str()).map_err(|source| {
@@ -159,14 +150,12 @@ fn outbound(plan: &LegacyEmbeddingPlan) -> Result<OutboundRequest, CohereLegacyE
         })?;
         headers.insert(header_name, header_value);
     }
-    let body = serde_json::to_vec(&plan.data)
-        .map_err(|source| CohereLegacyEmbeddingError::Encode { source })?;
     Ok(OutboundRequest {
         method: Method::POST,
-        url,
+        url: Url::parse(&plan.url)?,
         query: Vec::new(),
         headers,
-        body: RequestBody::Json(body),
+        body: RequestBody::Json(serde_json::to_vec(&plan.data)?),
         deadline: plan.timeout,
     })
 }

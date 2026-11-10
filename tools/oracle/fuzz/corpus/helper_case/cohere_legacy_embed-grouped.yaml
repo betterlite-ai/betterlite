@@ -6,9 +6,10 @@ call:
     model: embed-english-v3.0
     input: [hello]
     optional_params: {input_type: search_query}
+    api_key: sk-test
     runs:
-      - data: {}
-        api_key: sk-test
-        reply: {status: 200, body: '{"embeddings":{"int8":[[1],[2]]},"meta":{"billed_units":{"input_tokens":2}}}'}
+      - status: 200
+        body: '{"embeddings":{"int8":[[1],[2]]},"meta":{"billed_units":{"input_tokens":2}}}'
+        data: {}
 compare: {ignore: []}
 env: {}

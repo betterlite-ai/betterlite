@@ -24,17 +24,10 @@ EMBEDDING = cast(
 )
 
 
-class Reply(TypedDict):
+class Run(TypedDict):
     status: int
     body: str
-
-
-class Run(TypedDict):
-    reply: Reply
     data: NotRequired[Object | None]
-    complete_api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-    headers: NotRequired[Object]
 
 
 class Call(TypedDict):
@@ -43,6 +36,8 @@ class Call(TypedDict):
     runs: list[Run]
     input: NotRequired[list[str]]
     optional_params: NotRequired[Object]
+    headers: NotRequired[Object]
+    api_key: NotRequired[str | None]
 
 
 class Invocation(TypedDict):
@@ -51,7 +46,6 @@ class Invocation(TypedDict):
     optional_params: Object
     headers: Object
     data: Object | None
-    complete_api_base: str | None
     api_key: str | None
 
 
@@ -101,9 +95,9 @@ def unused_transport(request: httpx.Request) -> httpx.Response:
 
 
 class ReplyTransport:
-    def __init__(self, reply: Reply) -> None:
-        self.status = reply["status"]
-        self.body = reply["body"]
+    def __init__(self, run: Run) -> None:
+        self.status = run["status"]
+        self.body = run["body"]
         self.calls: list[Object] = []
 
     def record(self, url: str, data: str | None, headers: dict[str, str] | None) -> None:
@@ -117,9 +111,7 @@ class ReplyTransport:
 
     def answer(self, url: str) -> httpx.Response:
         response = httpx.Response(
-            self.status,
-            content=self.body.encode("utf-8"),
-            request=httpx.Request("POST", url),
+            self.status, content=self.body.encode("utf-8"), request=httpx.Request("POST", url)
         )
         response.raise_for_status()
         return response
@@ -142,10 +134,9 @@ def invocation_of(call: Call, run: Run) -> Invocation:
         "model": call["model"],
         "input": list(call.get("input", [])),
         "optional_params": dict(call.get("optional_params", {})),
-        "headers": run.get("headers", {}),
+        "headers": call.get("headers", {}),
         "data": run.get("data"),
-        "complete_api_base": run.get("complete_api_base"),
-        "api_key": run.get("api_key"),
+        "api_key": call.get("api_key"),
     }
 
 
@@ -166,7 +157,6 @@ def call_handler(
         headers=cast("dict[str, str]", request["headers"]),
         encoding=cast("Tokenizer | None", encoding),
         data=request["data"],
-        complete_api_base=request["complete_api_base"],
         api_key=request["api_key"],
         aembedding=is_async,
         timeout=TIMEOUT,
@@ -198,7 +188,7 @@ def outcome_of(response: EmbeddingResponse) -> Object:
 def scenario(call: Call, run: Run) -> Object:
     is_async = call["mode"] == "async"
     request = invocation_of(call, run)
-    transport = ReplyTransport(run["reply"])
+    transport = ReplyTransport(run)
     logging_obj = Recorder()
     encoding = Encoding()
     outcome: Object
@@ -224,11 +214,11 @@ def scenario(call: Call, run: Run) -> Object:
         outcome = {"ok": False, "status": status_of(error)}
     else:
         outcome = outcome_of(response)
-    record = transport.calls[0]
+    recorded = transport.calls[0]
     return {
-        "url": record["url"],
-        "headers": record["headers"],
-        "data": record["data"],
+        "url": recorded["url"],
+        "headers": recorded["headers"],
+        "data": recorded["data"],
         "hooks": cast("Json", logging_obj.records),
         "outcome": outcome,
         "encoded": cast("Json", encoding.encoded),

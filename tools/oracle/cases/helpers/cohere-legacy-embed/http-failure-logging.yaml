@@ -6,11 +6,9 @@ call:
     model: embed-english-v3.0
     input: [hello]
     runs:
-      - reply:
-          status: 500
-          body: '{"message":"upstream refused"}'
-      - reply:
-          status: 429
-          body: 'rate limited'
+      - status: 500
+        body: '{"message":"upstream refused"}'
+      - status: 429
+        body: 'rate limited'
 compare: {ignore: []}
 env: {}
