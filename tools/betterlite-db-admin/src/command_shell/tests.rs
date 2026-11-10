@@ -12,7 +12,7 @@ use tempfile::TempDir;
 
 use super::{
     AdminEnvironment, DbAdminBackend, DbAdminFuture, DbAdminService, Diagnostics, ExitStatus,
-    ResolvedConfig, run,
+    ResolvedConfig, Streams, run,
 };
 use crate::commands::{
     DbAdminCommand, DbAdminError, DbAdminOutcome, MigrationError, MigrationOptions, Operation,
@@ -470,6 +470,21 @@ async fn assembled_url_stays_out_of_environment() {
     let captures = captured(&harness);
     assert!(captures[0].0.contains("assembled.example"));
     assert_eq!(captures[0].1, None);
+}
+
+#[test]
+fn streams_write_lines_and_success_is_zero() {
+    let mut output = Vec::new();
+    let mut errors = Vec::new();
+    let mut streams = Streams {
+        output: &mut output,
+        errors: &mut errors,
+    };
+    streams.output("to stdout");
+    streams.error("to stderr");
+    assert_eq!(output, b"to stdout\n");
+    assert_eq!(errors, b"to stderr\n");
+    assert_eq!(ExitStatus::Success.code(), 0);
 }
 
 #[test]
