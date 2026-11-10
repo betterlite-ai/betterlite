@@ -1,14 +1,14 @@
 id: B675
 milestone: M3 providers
 title: Azure username-password grant
-status: todo
+status: done
 depends_on: [B173, B171, B187, B673]
 file: tasks/B675-azure-username-password.yaml
 covers:
   - "litellm/llms/azure/common_utils.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1163
