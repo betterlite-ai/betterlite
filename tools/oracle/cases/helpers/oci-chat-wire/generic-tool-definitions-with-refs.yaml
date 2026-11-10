@@ -1,0 +1,32 @@
+kind: helper
+name: oci-chat-wire-generic-tool-definitions-with-refs
+call:
+  b5942:
+    function: generic_tools
+    tools:
+      - type: function
+        function:
+          name: lookup
+          description: "Look something up"
+          parameters:
+            $defs:
+              Inner:
+                type: object
+                title: Inner
+                properties:
+                  x:
+                    type: string
+            type: object
+            properties:
+              a:
+                $ref: "#/$defs/Inner"
+              b:
+                anyOf:
+                  - type: "null"
+                  - type: integer
+                    maximum: 3
+              c:
+                type: array
+            required: [a, missing]
+env: {}
+compare: {ignore: []}

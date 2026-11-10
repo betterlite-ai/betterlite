@@ -39,3 +39,11 @@ path = "fuzz_targets/request_path_targets.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "oauth_metadata"
+path = "fuzz_targets/oauth_metadata.rs"
+test = false
+doc = false
+bench = false

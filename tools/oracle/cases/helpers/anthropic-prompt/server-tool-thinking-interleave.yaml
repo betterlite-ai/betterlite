@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-prompt-server-tool-thinking-interleave
+call:
+  anthropic_prompt:
+    messages:
+      - role: user
+        content: search
+      - role: assistant
+        content: answer
+        thinking_blocks:
+          - {type: thinking, thinking: t1, signature: s1}
+          - {type: thinking, thinking: t2, signature: s2}
+        tool_calls:
+          - {id: srvtoolu_1, type: function, function: {name: web_search, arguments: '{"q":"x"}'}}
+          - {id: call_2, type: function, function: {name: calc, arguments: "{}"}}
+          - {id: srvtoolu_2, type: function, function: {name: web_search, arguments: '{"q":"y"}'}}
+        provider_specific_fields:
+          web_search_results:
+            - {type: web_search_tool_result, tool_use_id: srvtoolu_1, content: [{type: web_search_result, title: A}]}
+          tool_results:
+            - {type: web_search_tool_result, tool_use_id: srvtoolu_2, content: []}
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+env: {}
+compare:
+  ignore: []
