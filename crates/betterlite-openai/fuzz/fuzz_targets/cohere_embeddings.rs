@@ -24,7 +24,10 @@ impl EmbeddingLogging for Fixture {
 
 fuzz_target!(|bytes: &[u8]| {
     let input = [String::from("hello")];
-    let Ok(request) = transform_request("m", &input, &Default::default()) else {
+    let Ok(empty) = serde_json::from_str("{}") else {
+        return;
+    };
+    let Ok(request) = transform_request("m", &input, &empty) else {
         return;
     };
     let mut fixture = Fixture(input.to_vec());
