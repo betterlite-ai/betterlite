@@ -1,0 +1,16 @@
+task: B2224
+deviations:
+  - what: >-
+      A token limit above u64::MAX, sent as a JSON number or a numeric string, parses to None;
+      LiteLLM's int() keeps the arbitrary-precision value.
+    why: >-
+      betterlite reports max_tokens, max_input_tokens and max_output_tokens as u64, so a value that
+      type cannot hold reads as absent like any other unparsable limit.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L110-L123"
+  - what: >-
+      A numeric string written with Unicode decimal digits, such as "٤٢", parses to None where
+      int() returns 42.
+    why: >-
+      betterlite reads the string as optional whitespace, a sign and ASCII digits, the form the
+      Lemonade reply contract names.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L116-L122"

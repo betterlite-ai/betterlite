@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-negative-or-missing-counts
+call:
+  bedrock_converse_usage:
+    batch: {usage: {inputTokens: true, outputTokens: "5", cacheReadInputTokens: null, cacheReadInputTokenCount: 7, cacheWriteInputTokens: false, cacheWriteInputTokenCount: 2}}
+env: {}
+compare: {ignore: []}

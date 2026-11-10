@@ -1,0 +1,8 @@
+kind: helper
+name: semantic-scope-constant-fields
+call:
+  b4296:
+    semantic_scope_values: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: chat-config-selection-seed-json
+call:
+  chat_config_selection:
+    function: json_fallback_precedence
+    providers:
+      - {provider: publicai, exists: true, record: true}
+      - {provider: aiml, exists: true}
+    calls:
+      - {provider: publicai, model: test-model}
+      - {provider: aiml, model: test-model}
+      - {provider: openai_like, model: test-model}
+env: {}
+compare: {ignore: []}

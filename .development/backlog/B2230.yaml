@@ -1,7 +1,7 @@
 id: B2230
 milestone: M3 providers
 title: Shared chat config selection
-status: todo
+status: done
 depends_on: [B668, B2231, B171]
 file: tasks/B2230-chat-config-selection.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/cohere/common_utils.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1067

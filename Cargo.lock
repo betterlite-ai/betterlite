@@ -1062,19 +1062,25 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1158,6 +1164,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
@@ -1177,6 +1184,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "mime",
+ "num-traits",
  "percent-encoding",
  "rstest",
  "secrecy",
@@ -1232,16 +1240,24 @@ dependencies = [
  "azure_storage_blob",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "futures-util",
+ "hex",
+ "indexmap 2.14.2",
  "rstest",
+ "rusqlite",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -1443,9 +1459,19 @@ dependencies = [
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-sdk-sts",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "betterlite-env",
  "betterlite-postgres-fixture",
  "betterlite-roi",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1895,6 +1921,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1962,7 +1989,11 @@ dependencies = [
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
+ "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -1997,8 +2028,10 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-openai",
+ "betterlite-tokenizer",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -2805,14 +2838,30 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
+ "jiff",
  "regex",
  "rstest",
  "rust_decimal",
+ "secrecy",
+ "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-vertex",
+ "jiff",
+ "libfuzzer-sys",
 ]
 
 [[package]]

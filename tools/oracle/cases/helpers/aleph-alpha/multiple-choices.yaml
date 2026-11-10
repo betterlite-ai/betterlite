@@ -1,0 +1,20 @@
+kind: helper
+name: aleph-alpha-multiple-choices
+call:
+  aleph_alpha:
+    model: luminous-base
+    messages:
+      - role: user
+        content: Say something
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: sk-aleph
+    optional_params:
+      n: 3
+    defaults: {}
+    max_tokens: 4096
+    created: 1700000002
+    reply:
+      status: 200
+      body: '{"completions":[{"completion":"one","finish_reason":"stop"},{"completion":"a much longer second completion","finish_reason":"length"},{"completion":"","finish_reason":"max_tokens"}]}'
+env: {}
+compare: {ignore: []}

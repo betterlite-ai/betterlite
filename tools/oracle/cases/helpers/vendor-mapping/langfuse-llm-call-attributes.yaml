@@ -1,0 +1,74 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-langfuse-llm-call-attributes",
+  "call": {
+    "b3846": {
+      "function": "langfuse_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "model_group": "chat-group",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "response_cost": 0.0015,
+        "model_parameters": {
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "max_tokens": 32,
+          "frequency_penalty": 0.1,
+          "presence_penalty": 0.2,
+          "seed": 7
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "hi"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": "hello"
+          }
+        ],
+        "response": {
+          "id": "resp-1",
+          "model": "gpt-4o-2024",
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": "done"
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        },
+        "metadata": {
+          "user_api_key_team_id": "team-1",
+          "user_api_key_team_alias": "Team A"
+        }
+      },
+      "capture_content": true,
+      "trace": {
+        "name": "trace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "tags": [
+          "env:test",
+          "beta"
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
