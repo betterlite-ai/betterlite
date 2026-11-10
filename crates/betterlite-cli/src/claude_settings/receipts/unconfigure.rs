@@ -1,20 +1,18 @@
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
+use tokio::task::JoinSet;
 
+use super::super::SettingsDocument;
 use super::super::io::{env_object, load_json_or_empty, write_target};
 use super::super::paths::{SettingsFileOwner, refuse_while_owned};
-use super::super::{
-    ANTHROPIC_BASE_URL_KEY, BASE_URL_PATH, CREDENTIAL_PATHS, ENV_KEY, OWNED_PATHS, SettingsDocument,
-};
 use super::error::ReceiptsError;
-use super::files::SettingsCommit;
-use super::lookup::{env_is_empty, lookup, with};
+use super::files::{LandChange, SettingsLanding};
+use super::lookup::lookup;
 use super::read::read_configure_receipt;
-use super::record::{ConfigureReceipt, owns, receipt_document};
-use super::value::{ABSENT, OwnedValue, fingerprint};
+use super::record::{ConfigureReceipt, receipt_document};
+use super::restore::{Restored, owned_and_kept, restored_document, withheld_receipt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithheldCredential {
@@ -30,14 +28,19 @@ pub struct UnconfigureOutcome {
     pub file_removed: bool,
 }
 
-struct Restored {
-    settings: SettingsDocument,
-    withheld: Vec<WithheldCredential>,
+struct Documents {
+    settings: Option<SettingsDocument>,
+    receipt: Option<ConfigureReceipt>,
 }
 
-struct Documents<'input> {
-    settings: Option<&'input SettingsDocument>,
-    receipt: Option<&'input ConfigureReceipt>,
+struct UnconfigurePlan {
+    current: SettingsDocument,
+    ours: Vec<String>,
+    kept: Vec<String>,
+    restored: Restored,
+    target: PathBuf,
+    file_removed: bool,
+    kept_receipt: Option<ConfigureReceipt>,
 }
 
 pub async fn unconfigure_claude_settings(
@@ -45,8 +48,50 @@ pub async fn unconfigure_claude_settings(
     state_path: &Path,
     owners: &[SettingsFileOwner],
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
 ) -> Result<UnconfigureOutcome, ReceiptsError> {
+    let plan = plan_off_thread(settings_path, state_path, owners).await?;
+    let documents = Documents {
+        settings: (!plan.file_removed).then(|| plan.restored.settings.clone()),
+        receipt: plan.kept_receipt.clone(),
+    };
+    write_documents(files, landers, state_path, &plan.target, &documents).await?;
+    let restored = plan
+        .ours
+        .iter()
+        .filter(|path| lookup(&plan.current, path) != lookup(&plan.restored.settings, path))
+        .cloned()
+        .collect();
+    Ok(UnconfigureOutcome {
+        restored,
+        kept: plan.kept,
+        withheld: plan.restored.withheld,
+        file_removed: plan.file_removed,
+    })
+}
+
+async fn plan_off_thread(
+    settings_path: &Path,
+    state_path: &Path,
+    owners: &[SettingsFileOwner],
+) -> Result<UnconfigurePlan, ReceiptsError> {
+    let settings = settings_path.to_owned();
+    let state = state_path.to_owned();
+    let known_owners = owners.to_vec();
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || plan_blocking(&settings, &state, &known_owners));
+    let joined = tasks
+        .join_next()
+        .await
+        .ok_or(ReceiptsError::PlannerStopped)?;
+    joined.map_err(ReceiptsError::Planner)?
+}
+
+fn plan_blocking(
+    settings_path: &Path,
+    state_path: &Path,
+    owners: &[SettingsFileOwner],
+) -> Result<UnconfigurePlan, ReceiptsError> {
     refuse_while_owned(settings_path, owners)?;
     let Some(receipt) = read_configure_receipt(state_path)? else {
         return Err(ReceiptsError::NoReceipt {
@@ -60,80 +105,15 @@ pub async fn unconfigure_claude_settings(
     let target = write_target(settings_path)?;
     let file_removed = restored.settings.is_empty() && !(receipt.file_existed && target.exists());
     let kept_receipt = withheld_receipt(&receipt, &restored.withheld);
-    let documents = Documents {
-        settings: (!file_removed).then_some(&restored.settings),
-        receipt: kept_receipt.as_ref(),
-    };
-    write_documents(files, commits, state_path, &target, &documents).await?;
-    let restored_paths = ours
-        .iter()
-        .filter(|path| lookup(&current, path) != lookup(&restored.settings, path))
-        .cloned()
-        .collect();
-    Ok(UnconfigureOutcome {
-        restored: restored_paths,
+    Ok(UnconfigurePlan {
+        current,
+        ours,
         kept,
-        withheld: restored.withheld,
+        restored,
+        target,
         file_removed,
+        kept_receipt,
     })
-}
-
-fn owned_and_kept(
-    current: &SettingsDocument,
-    receipt: &ConfigureReceipt,
-) -> (Vec<String>, Vec<String>) {
-    let mut ours = Vec::new();
-    let mut kept = Vec::new();
-    for path in written_paths(receipt) {
-        let still_ours = owns(current, &path, receipt);
-        let user_kept = !still_ours && lookup(current, &path).present;
-        if user_kept {
-            kept.push(path.clone());
-        }
-        if still_ours {
-            ours.push(path);
-        }
-    }
-    (ours, kept)
-}
-
-fn restored_document(
-    current: &SettingsDocument,
-    receipt: &ConfigureReceipt,
-    ours: &[String],
-) -> Restored {
-    let mut put_back = current.clone();
-    for path in ours {
-        let previous = receipt.previous.get(path).cloned().unwrap_or(ABSENT);
-        with(&mut put_back, path, &previous);
-    }
-    let url_after = lookup(&put_back, BASE_URL_PATH);
-    let mut withheld = Vec::new();
-    for path in CREDENTIAL_PATHS {
-        let previous = receipt.previous.get(path).cloned().unwrap_or(ABSENT);
-        if !previous.present || !ours.iter().any(|ours_path| ours_path == path) {
-            continue;
-        }
-        let endpoint = receipt.endpoints.get(path).cloned().unwrap_or(ABSENT);
-        if endpoint != url_after {
-            withheld.push(WithheldCredential {
-                key: path.to_owned(),
-                endpoint: endpoint_text(&endpoint),
-            });
-        }
-    }
-    let mut settings = put_back;
-    for item in &withheld {
-        with(&mut settings, &item.key, &ABSENT);
-    }
-    if env_is_empty(&settings) && !receipt.env_was_object {
-        let env = OwnedValue {
-            present: receipt.env_present,
-            value: JsonValue::Null,
-        };
-        with(&mut settings, ENV_KEY, &env);
-    }
-    Restored { settings, withheld }
 }
 
 async fn stage_settings(
@@ -151,66 +131,83 @@ async fn stage_settings(
     Ok(Some(staged))
 }
 
+async fn stage_receipt(
+    files: &PrivateFiles,
+    state_path: &Path,
+    receipt: Option<&ConfigureReceipt>,
+    staged_settings: Option<&StagedFile>,
+) -> Result<Option<StagedFile>, ReceiptsError> {
+    let Some(kept) = receipt else {
+        return Ok(None);
+    };
+    let value = receipt_document(kept, state_path)?;
+    match files
+        .stage_private(state_path, PrivateDocument::json(&value)?)
+        .await
+    {
+        Ok(staged) => Ok(Some(staged)),
+        Err(error) => {
+            if let Some(staged) = staged_settings {
+                files.discard_staged_json(staged).await?;
+            }
+            Err(ReceiptsError::from(error))
+        }
+    }
+}
+
 async fn write_documents(
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
     state_path: &Path,
     target: &Path,
-    documents: &Documents<'_>,
+    documents: &Documents,
 ) -> Result<(), ReceiptsError> {
-    let staged_settings = stage_settings(files, target, documents.settings).await?;
-    let staged_receipt = match documents.receipt {
-        None => None,
-        Some(receipt) => {
-            let value = receipt_document(receipt, state_path)?;
-            match files
-                .stage_private(state_path, PrivateDocument::json(&value)?)
-                .await
-            {
-                Ok(staged) => Some(staged),
-                Err(error) => {
-                    if let Some(staged) = &staged_settings {
-                        files.discard_staged_json(staged).await?;
-                    }
-                    return Err(ReceiptsError::from(error));
-                }
-            }
-        }
-    };
+    let staged_settings = stage_settings(files, target, documents.settings.as_ref()).await?;
+    let staged_receipt = stage_receipt(
+        files,
+        state_path,
+        documents.receipt.as_ref(),
+        staged_settings.as_ref(),
+    )
+    .await?;
     land_settings(
         files,
-        commits,
+        landers,
         target,
         staged_settings.as_ref(),
         staged_receipt.as_ref(),
     )
     .await?;
     if let Some(staged) = &staged_receipt {
-        commits.commit(staged, state_path).await?;
-    } else {
-        let staged = StagedFile {
-            path: state_path.to_owned(),
+        let change = LandChange::Commit {
+            staged,
+            path: state_path,
         };
-        files.discard_staged_json(&staged).await?;
+        landers.land(change).await?;
+    } else {
+        landers
+            .land(LandChange::Remove { path: state_path })
+            .await?;
     }
     Ok(())
 }
 
 async fn land_settings(
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
     target: &Path,
     staged_settings: Option<&StagedFile>,
     staged_receipt: Option<&StagedFile>,
 ) -> Result<(), ReceiptsError> {
-    let landed = if let Some(staged) = staged_settings {
-        commits.commit(staged, target).await
-    } else {
-        let staged = StagedFile {
-            path: target.to_owned(),
-        };
-        files.discard_staged_json(&staged).await?;
-        Ok(())
+    let landed = match staged_settings {
+        Some(staged) => {
+            let change = LandChange::Commit {
+                staged,
+                path: target,
+            };
+            landers.land(change).await
+        }
+        None => landers.land(LandChange::Remove { path: target }).await,
     };
     if let Err(error) = landed {
         if let Some(staged) = staged_receipt {
@@ -219,53 +216,4 @@ async fn land_settings(
         return Err(error);
     }
     Ok(())
-}
-
-fn written_paths(receipt: &ConfigureReceipt) -> Vec<String> {
-    let mut paths: Vec<String> = OWNED_PATHS
-        .iter()
-        .filter(|path| receipt.written.contains_key(**path))
-        .map(|path| (*path).to_owned())
-        .collect();
-    for path in receipt.written.keys() {
-        if !OWNED_PATHS.contains(&path.as_str()) {
-            paths.push(path.clone());
-        }
-    }
-    paths
-}
-
-fn withheld_receipt(
-    receipt: &ConfigureReceipt,
-    withheld: &[WithheldCredential],
-) -> Option<ConfigureReceipt> {
-    if withheld.is_empty() {
-        return None;
-    }
-    let absent = fingerprint(&ABSENT);
-    Some(ConfigureReceipt {
-        file_existed: receipt.file_existed,
-        env_present: receipt.env_present,
-        env_was_object: receipt.env_was_object,
-        previous: receipt.previous.clone(),
-        written: withheld
-            .iter()
-            .map(|item| (item.key.clone(), absent.clone()))
-            .collect::<BTreeMap<String, String>>(),
-        endpoints: receipt.endpoints.clone(),
-    })
-}
-
-fn endpoint_text(endpoint: &OwnedValue) -> String {
-    if !endpoint.present {
-        return format!("no {ANTHROPIC_BASE_URL_KEY} (Anthropic's default endpoint)");
-    }
-    match &endpoint.value {
-        JsonValue::String(text) => text.clone(),
-        other @ (JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_)) => other.to_string(),
-    }
 }

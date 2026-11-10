@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles, StagedFile};
+use tokio::task::JoinSet;
 
 use super::super::choices::{ModelChoice, StaticToken};
 use super::super::io::{env_object, load_json_or_empty, write_target};
@@ -10,7 +11,7 @@ use super::super::paths::{SettingsFileOwner, refuse_while_owned};
 use super::super::statusline_install::install_statusline_script;
 use super::super::{MODEL_PATHS, SettingsDocument};
 use super::error::ReceiptsError;
-use super::files::SettingsCommit;
+use super::files::{LandChange, SettingsLanding};
 use super::lookup::with;
 use super::read::read_configure_receipt;
 use super::record::{ConfigureReceipt, build_receipt, owns, receipt_document};
@@ -36,13 +37,41 @@ struct Plan {
 pub async fn configure_claude_settings(
     request: &ConfigureRequest<'_>,
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
 ) -> Result<(), ReceiptsError> {
-    let plan = build_plan(request)?;
+    let plan = plan_off_thread(request).await?;
     files
         .ensure_private_dir(state_directory(request.state_path))
         .await?;
-    stage_and_commit(files, commits, request.state_path, &plan).await
+    stage_and_commit(files, landers, request.state_path, &plan).await
+}
+
+async fn plan_off_thread(request: &ConfigureRequest<'_>) -> Result<Plan, ReceiptsError> {
+    let base_url = request.base_url.to_owned();
+    let credential = request.credential.clone();
+    let model = request.model.clone();
+    let settings_path = request.settings_path.to_owned();
+    let state_path = request.state_path.to_owned();
+    let owners = request.owners.to_vec();
+    let binary_path = request.binary_path.map(Path::to_path_buf);
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || {
+        let owned = ConfigureRequest {
+            base_url: &base_url,
+            credential: &credential,
+            model: &model,
+            settings_path: &settings_path,
+            state_path: &state_path,
+            owners: &owners,
+            binary_path: binary_path.as_deref(),
+        };
+        build_plan(&owned)
+    });
+    let joined = tasks
+        .join_next()
+        .await
+        .ok_or(ReceiptsError::PlannerStopped)?;
+    joined.map_err(ReceiptsError::Planner)?
 }
 
 fn build_plan(request: &ConfigureRequest<'_>) -> Result<Plan, ReceiptsError> {
@@ -77,12 +106,11 @@ fn build_plan(request: &ConfigureRequest<'_>) -> Result<Plan, ReceiptsError> {
     })
 }
 
-async fn stage_and_commit(
+async fn stage_documents(
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
     state_path: &Path,
     plan: &Plan,
-) -> Result<(), ReceiptsError> {
+) -> Result<(StagedFile, StagedFile), ReceiptsError> {
     let document = receipt_document(&plan.receipt, state_path)?;
     let staged_receipt = files
         .stage_private(state_path, PrivateDocument::json(&document)?)
@@ -98,16 +126,34 @@ async fn stage_and_commit(
             return Err(ReceiptsError::from(error));
         }
     };
-    if let Err(error) = commits.commit(&staged_receipt, state_path).await {
+    Ok((staged_receipt, staged_settings))
+}
+
+async fn stage_and_commit(
+    files: &PrivateFiles,
+    landers: &dyn SettingsLanding,
+    state_path: &Path,
+    plan: &Plan,
+) -> Result<(), ReceiptsError> {
+    let (staged_receipt, staged_settings) = stage_documents(files, state_path, plan).await?;
+    let receipt_change = LandChange::Commit {
+        staged: &staged_receipt,
+        path: state_path,
+    };
+    if let Err(error) = landers.land(receipt_change).await {
         files.discard_staged_json(&staged_settings).await?;
         return Err(error);
     }
-    match commits.commit(&staged_settings, &plan.target).await {
+    let settings_change = LandChange::Commit {
+        staged: &staged_settings,
+        path: &plan.target,
+    };
+    match landers.land(settings_change).await {
         Ok(()) => Ok(()),
         Err(settings_error) => {
             rollback(
                 files,
-                commits,
+                landers,
                 state_path,
                 plan.earlier.as_ref(),
                 settings_error,
@@ -147,22 +193,14 @@ fn state_directory(state_path: &Path) -> &Path {
 
 async fn rollback(
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
     state_path: &Path,
     earlier: Option<&ConfigureReceipt>,
     settings_error: ReceiptsError,
 ) -> Result<(), ReceiptsError> {
     let restored = match earlier {
-        None => {
-            let staged = StagedFile {
-                path: state_path.to_owned(),
-            };
-            files
-                .discard_staged_json(&staged)
-                .await
-                .map_err(ReceiptsError::from)
-        }
-        Some(receipt) => restore_receipt(files, commits, state_path, receipt).await,
+        None => landers.land(LandChange::Remove { path: state_path }).await,
+        Some(receipt) => restore_receipt(files, landers, state_path, receipt).await,
     };
     match restored {
         Ok(()) => Err(settings_error),
@@ -176,7 +214,7 @@ async fn rollback(
 
 async fn restore_receipt(
     files: &PrivateFiles,
-    commits: &dyn SettingsCommit,
+    landers: &dyn SettingsLanding,
     state_path: &Path,
     receipt: &ConfigureReceipt,
 ) -> Result<(), ReceiptsError> {
@@ -184,5 +222,9 @@ async fn restore_receipt(
     let staged = files
         .stage_private(state_path, PrivateDocument::json(&document)?)
         .await?;
-    commits.commit(&staged, state_path).await
+    let change = LandChange::Commit {
+        staged: &staged,
+        path: state_path,
+    };
+    landers.land(change).await
 }

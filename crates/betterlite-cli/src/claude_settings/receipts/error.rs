@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use betterlite_logging::private_json::error::PrivateJsonError;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::claude_settings::error::ClaudeSettingsError;
 
@@ -12,6 +13,10 @@ pub enum ReceiptsError {
     Settings(#[from] ClaudeSettingsError),
     #[error(transparent)]
     Storage(#[from] PrivateJsonError),
+    #[error("the Claude settings planner did not finish: {0}")]
+    Planner(#[source] JoinError),
+    #[error("the Claude settings planner stopped without running")]
+    PlannerStopped,
     #[error("cannot read the configure receipt {path}: {source}")]
     ReadReceipt {
         path: PathBuf,

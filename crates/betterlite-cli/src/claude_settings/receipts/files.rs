@@ -9,24 +9,42 @@ use super::error::ReceiptsError;
 pub type FileFuture<'operation, Output> =
     Pin<Box<dyn Future<Output = Result<Output, ReceiptsError>> + Send + 'operation>>;
 
-pub trait SettingsCommit: Send + Sync {
-    fn commit<'operation>(
+pub enum LandChange<'input> {
+    Commit {
+        staged: &'input StagedFile,
+        path: &'input Path,
+    },
+    Remove {
+        path: &'input Path,
+    },
+}
+
+pub trait SettingsLanding: Send + Sync {
+    fn land<'operation>(
         &'operation self,
-        staged: &'operation StagedFile,
-        path: &'operation Path,
+        change: LandChange<'operation>,
     ) -> FileFuture<'operation, ()>;
 }
 
-impl SettingsCommit for PrivateFiles {
-    fn commit<'operation>(
+impl SettingsLanding for PrivateFiles {
+    fn land<'operation>(
         &'operation self,
-        staged: &'operation StagedFile,
-        path: &'operation Path,
+        change: LandChange<'operation>,
     ) -> FileFuture<'operation, ()> {
         Box::pin(async move {
-            Self::commit_staged_json(self, staged, path)
-                .await
-                .map_err(ReceiptsError::from)
+            match change {
+                LandChange::Commit { staged, path } => Self::commit_staged_json(self, staged, path)
+                    .await
+                    .map_err(ReceiptsError::from),
+                LandChange::Remove { path } => {
+                    let staged = StagedFile {
+                        path: path.to_owned(),
+                    };
+                    Self::discard_staged_json(self, &staged)
+                        .await
+                        .map_err(ReceiptsError::from)
+                }
+            }
         })
     }
 }

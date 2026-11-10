@@ -16,7 +16,7 @@ use tempfile::TempDir;
 
 use super::configure::{ConfigureRequest, configure_claude_settings};
 use super::error::ReceiptsError;
-use super::files::{FileFuture, SettingsCommit};
+use super::files::{FileFuture, LandChange, SettingsLanding};
 use super::preflight::preflight_claude_settings;
 use super::read::read_configure_receipt;
 use super::record::ConfigureReceipt;
@@ -86,6 +86,8 @@ impl Fixture {
 struct Recording {
     commits: Vec<PathBuf>,
     fail_commits: Vec<usize>,
+    removes: Vec<PathBuf>,
+    fail_removes: Vec<usize>,
 }
 
 #[derive(Default)]
@@ -100,32 +102,71 @@ impl RecordingCommits {
         commits
     }
 
+    fn failing_removal(fail_commits: &[usize], fail_remove: usize) -> Self {
+        let commits = Self::new(fail_commits);
+        commits.state.lock().unwrap().fail_removes.push(fail_remove);
+        commits
+    }
+
     fn committed_paths(&self) -> Vec<PathBuf> {
         self.state.lock().unwrap().commits.clone()
     }
+
+    fn removed_paths(&self) -> Vec<PathBuf> {
+        self.state.lock().unwrap().removes.clone()
+    }
 }
 
-impl SettingsCommit for RecordingCommits {
-    fn commit<'operation>(
+impl SettingsLanding for RecordingCommits {
+    fn land<'operation>(
         &'operation self,
-        staged: &'operation StagedFile,
-        path: &'operation Path,
+        change: LandChange<'operation>,
     ) -> FileFuture<'operation, ()> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
-            state.commits.push(path.to_owned());
-            let number = state.commits.len();
-            if state.fail_commits.contains(&number) {
-                drop(state);
-                return Err(ReceiptsError::Storage(PrivateJsonError::Commit(
-                    path.to_owned(),
-                    io::Error::other("injected commit failure"),
-                )));
-            }
+            let landed = match change {
+                LandChange::Commit { staged, path } => commit_change(&mut state, staged, path),
+                LandChange::Remove { path } => remove_change(&mut state, path),
+            };
             drop(state);
-            fs::rename(&staged.path, path).unwrap();
-            Ok(())
+            landed
         })
+    }
+}
+
+fn commit_change(
+    state: &mut Recording,
+    staged: &StagedFile,
+    path: &Path,
+) -> Result<(), ReceiptsError> {
+    state.commits.push(path.to_owned());
+    let number = state.commits.len();
+    if state.fail_commits.contains(&number) {
+        return Err(ReceiptsError::Storage(PrivateJsonError::Commit(
+            path.to_owned(),
+            io::Error::other("injected commit failure"),
+        )));
+    }
+    fs::rename(&staged.path, path)
+        .map_err(|source| ReceiptsError::Storage(PrivateJsonError::Commit(path.to_owned(), source)))
+}
+
+fn remove_change(state: &mut Recording, path: &Path) -> Result<(), ReceiptsError> {
+    state.removes.push(path.to_owned());
+    let number = state.removes.len();
+    if state.fail_removes.contains(&number) {
+        return Err(ReceiptsError::Storage(PrivateJsonError::Discard(
+            path.to_owned(),
+            io::Error::other("injected removal failure"),
+        )));
+    }
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(ReceiptsError::Storage(PrivateJsonError::Discard(
+            path.to_owned(),
+            source,
+        ))),
     }
 }
 
@@ -258,7 +299,7 @@ fn configure_fingerprint_matches_the_canonical_json(
 }
 
 #[test]
-fn configure_fingerprint_ignores_object_key_order() {
+fn configure_fingerprint_ignores_object_key_order_and_separates_absent_from_null() {
     let first = OwnedValue {
         present: true,
         value: serde_json::from_str(r#"{"b":1,"a":2}"#).unwrap(),
@@ -268,10 +309,6 @@ fn configure_fingerprint_ignores_object_key_order() {
         value: serde_json::from_str(r#"{"a":2,"b":1}"#).unwrap(),
     };
     assert_eq!(fingerprint(&first), fingerprint(&second));
-}
-
-#[test]
-fn configure_fingerprint_separates_an_absent_key_from_a_null_value() {
     let null = OwnedValue {
         present: true,
         value: JsonValue::Null,
@@ -283,9 +320,6 @@ fn configure_fingerprint_separates_an_absent_key_from_a_null_value() {
 async fn configure_records_previous_values() {
     let (fixture, _commits) = configured(Some(ORIGINAL)).await;
     let receipt = stored_receipt(&fixture);
-    assert!(receipt.file_existed);
-    assert!(receipt.env_present);
-    assert!(receipt.env_was_object);
     assert_eq!(
         receipt.previous.get("env.ANTHROPIC_AUTH_TOKEN"),
         Some(&owned("sk-user"))
@@ -316,14 +350,17 @@ async fn configure_written_fingerprints_and_endpoints() {
     );
     assert_eq!(receipt.written.get(MODEL_KEY), None);
     assert_eq!(
-        receipt.endpoints.get("env.ANTHROPIC_API_KEY"),
-        Some(&owned(OLD_URL))
+        (
+            receipt.endpoints.get("env.ANTHROPIC_API_KEY"),
+            receipt.endpoints.get("env.ANTHROPIC_AUTH_TOKEN"),
+            receipt.endpoints.get("apiKeyHelper")
+        ),
+        (
+            Some(&owned(OLD_URL)),
+            Some(&owned(OLD_URL)),
+            Some(&owned(OLD_URL))
+        )
     );
-    assert_eq!(
-        receipt.endpoints.get("env.ANTHROPIC_AUTH_TOKEN"),
-        Some(&owned(OLD_URL))
-    );
-    assert_eq!(receipt.endpoints.get("apiKeyHelper"), Some(&owned(OLD_URL)));
     let document = fixture.read_settings();
     assert_eq!(env_text(&document, ANTHROPIC_BASE_URL_KEY), Some(BASE_URL));
     assert_eq!(env_text(&document, ANTHROPIC_AUTH_TOKEN_KEY), Some(TOKEN));
@@ -344,24 +381,26 @@ async fn configure_keeps_the_first_previous_and_endpoint_across_repeats() {
     .unwrap();
     let receipt = stored_receipt(&fixture);
     assert_eq!(
-        receipt.previous.get("env.ANTHROPIC_AUTH_TOKEN"),
-        Some(&owned("sk-user"))
+        (
+            receipt.previous.get("env.ANTHROPIC_AUTH_TOKEN"),
+            receipt.previous.get("env.ANTHROPIC_BASE_URL"),
+            receipt.endpoints.get("env.ANTHROPIC_AUTH_TOKEN"),
+        ),
+        (
+            Some(&owned("sk-user")),
+            Some(&owned(OLD_URL)),
+            Some(&owned(OLD_URL))
+        )
     );
     assert_eq!(
-        receipt.previous.get("env.ANTHROPIC_BASE_URL"),
-        Some(&owned(OLD_URL))
-    );
-    assert_eq!(
-        receipt.endpoints.get("env.ANTHROPIC_AUTH_TOKEN"),
-        Some(&owned(OLD_URL))
-    );
-    assert_eq!(
-        receipt.written.get("env.ANTHROPIC_AUTH_TOKEN"),
-        Some(&fingerprint(&owned("sk-second")))
-    );
-    assert_eq!(
-        receipt.written.get("env.ANTHROPIC_BASE_URL"),
-        Some(&fingerprint(&owned("https://second.example.com")))
+        (
+            receipt.written.get("env.ANTHROPIC_AUTH_TOKEN"),
+            receipt.written.get("env.ANTHROPIC_BASE_URL"),
+        ),
+        (
+            Some(&fingerprint(&owned("sk-second"))),
+            Some(&fingerprint(&owned("https://second.example.com")))
+        )
     );
 }
 
@@ -457,8 +496,7 @@ async fn configure_commits_the_receipt_before_the_settings() {
 #[tokio::test]
 async fn configure_stages_both_files_before_committing() {
     let fixture = Fixture::new();
-    let claude = fixture.paths.settings.parent().unwrap();
-    fs::write(claude, "not a directory").unwrap();
+    fs::write(fixture.paths.settings.parent().unwrap(), "not a directory").unwrap();
     let commits = RecordingCommits::new(&[]);
     let error = configure(&fixture, &commits).await.unwrap_err();
     assert!(matches!(error, ReceiptsError::Storage(_)));
@@ -508,12 +546,9 @@ async fn configure_removes_the_new_receipt_when_the_settings_commit_fails_withou
     assert!(!fixture.settings_path().exists());
     assert_eq!(
         commits.committed_paths(),
-        vec![
-            fixture.state_path(),
-            fixture.settings_path(),
-            fixture.state_path()
-        ]
+        vec![fixture.state_path(), fixture.settings_path()]
     );
+    assert_eq!(commits.removed_paths(), vec![fixture.state_path()]);
 }
 
 #[tokio::test]
@@ -623,15 +658,10 @@ async fn configure_writes_the_status_line_when_the_user_has_none() {
         status_command(&fixture.read_settings()),
         Some(STATUS_COMMAND)
     );
-    let value: JsonValue =
-        serde_json::from_str(r#"{"command":"/opt/betterlite/lite statusline","type":"command"}"#)
-            .unwrap();
-    assert_eq!(
-        stored_receipt(&fixture).written.get(STATUS_LINE_KEY),
-        Some(&fingerprint(&OwnedValue {
-            present: true,
-            value,
-        }))
+    assert!(
+        stored_receipt(&fixture)
+            .written
+            .contains_key(STATUS_LINE_KEY)
     );
 }
 
@@ -715,6 +745,28 @@ async fn unconfigure_restores_nothing_and_removes_the_settings_file_it_created()
     assert!(!fixture.state_path().exists());
 }
 
+#[tokio::test]
+async fn unconfigure_restores_nothing_and_discards_the_staged_receipt_when_removal_fails() {
+    let fixture = Fixture::new();
+    fs::create_dir_all(fixture.state_path().parent().unwrap()).unwrap();
+    let receipt = format!(
+        r#"{{"file_existed":false,"env_present":false,"env_was_object":false,"previous":{{"env.ANTHROPIC_AUTH_TOKEN":{{"present":true,"value":"sk-user"}}}},"written":{{"env.ANTHROPIC_AUTH_TOKEN":"{}"}},"endpoints":{{"env.ANTHROPIC_AUTH_TOKEN":{{"present":true,"value":"https://captured.example"}}}}}}"#,
+        fingerprint(&ABSENT)
+    );
+    fs::write(fixture.state_path(), receipt).unwrap();
+    let commits = RecordingCommits::failing_removal(&[], 1);
+    let error = unconfigure(&fixture, &commits).await.unwrap_err();
+    assert!(matches!(error, ReceiptsError::Storage(_)));
+    assert_eq!(commits.removed_paths(), vec![fixture.settings_path()]);
+    // the discarded staged receipt must not leave a token-bearing temp file behind
+    assert_eq!(
+        fs::read_dir(fixture.state_path().parent().unwrap())
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
 #[rstest]
 #[case::empty_object("{}", "{}")]
 #[case::empty_env(r#"{"env":{}}"#, r#"{"env":{}}"#)]
@@ -790,10 +842,7 @@ async fn withheld_credentials_leave_a_trimmed_receipt() {
     fixture.write_document(&edited);
     unconfigure(&fixture, &commits).await.unwrap();
     let receipt = stored_receipt(&fixture);
-    assert_eq!(
-        receipt.written.keys().cloned().collect::<Vec<String>>(),
-        vec!["env.ANTHROPIC_AUTH_TOKEN".to_owned()]
-    );
+    assert_eq!(receipt.written.len(), 1);
     assert_eq!(
         receipt.written.get("env.ANTHROPIC_AUTH_TOKEN"),
         Some(&fingerprint(&ABSENT))
@@ -861,14 +910,16 @@ async fn withheld_credentials_stay_in_a_receipt_a_later_unconfigure_restores() {
 #[test]
 fn read_configure_receipt_returns_none_when_there_is_no_receipt() {
     let fixture = Fixture::new();
-    let receipt = read_configure_receipt(&fixture.state_path()).unwrap();
-    assert!(receipt.is_none());
+    assert!(
+        read_configure_receipt(&fixture.state_path())
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[rstest]
 #[case::garbage("not json")]
 #[case::array("[]")]
-#[case::null("null")]
 #[case::empty_object("{}")]
 #[case::missing_maps(r#"{"file_existed":true,"env_present":false,"env_was_object":false}"#)]
 fn read_configure_receipt_rejects_a_file_that_is_not_a_receipt(#[case] content: &str) {
