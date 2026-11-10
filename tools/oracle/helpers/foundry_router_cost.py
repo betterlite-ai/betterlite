@@ -58,22 +58,19 @@ def _integer(fields: dict[str, Json], key: str) -> int:
     return value
 
 
-def _applied_catalog(input_value: dict[str, Json]) -> dict[str, Json] | None:
+def _apply_catalog(input_value: dict[str, Json]) -> dict[str, Json]:
     catalog = input_value.get("catalog")
-    if catalog is None:
-        return None
+    contents: dict[str, Json] = {} if catalog is None else _object(catalog)
     model_cost = cast("dict[str, Json]", litellm.model_cost)
     original = dict(model_cost)
     model_cost.clear()
-    model_cost.update(_object(catalog))
+    model_cost.update(contents)
     # get_model_info memoizes per name, so a swapped catalog drops the previous answers
     _cached_get_model_info.cache_clear()
     return original
 
 
-def _restore_catalog(original: dict[str, Json] | None) -> None:
-    if original is None:
-        return
+def _restore_catalog(original: dict[str, Json]) -> None:
     model_cost = cast("dict[str, Json]", litellm.model_cost)
     model_cost.clear()
     model_cost.update(original)
@@ -95,7 +92,7 @@ def _run_classify(input_value: dict[str, Json]) -> Json:
 
 
 def _run_flat(input_value: dict[str, Json]) -> Json:
-    original = _applied_catalog(input_value)
+    original = _apply_catalog(input_value)
     try:
         return cast(
             "Json",
@@ -116,7 +113,7 @@ def _run_flat(input_value: dict[str, Json]) -> Json:
 
 
 def _run_cost(input_value: dict[str, Json]) -> Json:
-    original = _applied_catalog(input_value)
+    original = _apply_catalog(input_value)
     try:
         reports: list[Json] = []
         for call in _objects(input_value, "calls"):
