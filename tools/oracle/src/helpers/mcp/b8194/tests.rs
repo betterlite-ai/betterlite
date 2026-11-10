@@ -39,5 +39,5 @@ fn a_wrongly_typed_section_is_not_a_b8194_input() {
     let input = json!({ "operation": "run", "bodies": "nope" });
     assert!(Op::check(&input).is_err());
     let valid = json!({ "operation": "run", "bodies": [{ "body": "x" }] });
-    assert!(Op::check(&valid).is_ok());
+    Op::check(&valid).expect("a well-typed input should check");
 }
