@@ -52,6 +52,7 @@ description: >-
   allow 220 native package/dispatch lines, 240 CLI tests and 30 wiring lines, 490 within a 525-line gate.
 scope:
   paths:
+    - "tools/betterlite-db-admin/src"
     - Cargo.toml
     - tools/betterlite-db-admin/Cargo.toml
     - tools/betterlite-db-admin/src/main.rs
