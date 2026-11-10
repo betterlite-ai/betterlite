@@ -162,7 +162,20 @@ pub(super) fn invalid_certificate() {
     assert_eq!(failure(&RSA_PKCS8[..400], None), PEM_FRAMING);
     assert_eq!(failure(b"-----BEGIN junk", None), PEM_FRAMING);
     unreadable_keys();
+    non_rsa_pkcs1_keys();
     unusable_sources();
+}
+
+fn non_rsa_pkcs1_keys() {
+    let certificate = str::from_utf8(CERTIFICATE_ONLY).unwrap();
+    let ec = format!(
+        "-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n{certificate}"
+    );
+    let dsa = format!(
+        "-----BEGIN DSA PRIVATE KEY-----\nAAAA\n-----END DSA PRIVATE KEY-----\n{certificate}"
+    );
+    assert_eq!(failure(ec.as_bytes(), None), RSA_ONLY);
+    assert_eq!(failure(dsa.as_bytes(), None), RSA_ONLY);
 }
 
 fn unreadable_keys() {
