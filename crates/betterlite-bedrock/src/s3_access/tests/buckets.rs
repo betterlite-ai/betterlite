@@ -303,6 +303,7 @@ fn a_foreign_file_id_becomes_a_400_bedrock_error() {
         &environment(&[]),
     )
     .expect_err("the bucket is foreign");
+    assert_eq!(rejection.status_code(), Some(400));
     let ManagedObjectError::Rejected(error) = rejection else {
         panic!("a rejected file id is a BedrockError");
     };
@@ -327,6 +328,7 @@ fn a_foreign_managed_id_becomes_a_400_bedrock_error() {
 fn missing_configuration_and_snapshot_errors_stay_configuration_errors() {
     let missing = resolve_managed_s3_object("s3://bucket/x", &params(None), &environment(&[]))
         .expect_err("no bucket is configured");
+    assert_eq!(missing.status_code(), None);
     let ManagedObjectError::Configuration(bucket_error) = missing else {
         panic!("missing configuration is not a BedrockError");
     };

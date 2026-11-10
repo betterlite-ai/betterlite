@@ -60,6 +60,17 @@ fn python_permits_alphabet_bytes_outside_the_url_safe_set() {
             .expect("the standard-alphabet id decodes"),
         "s3://b/k"
     );
+    // the URL-safe alphabet substitutes '-' and '_' for the standard '+' and '/'
+    assert_eq!(
+        decode_managed_file_id("bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iL2s74KC-")
+            .expect("the dash id decodes"),
+        "s3://b/k"
+    );
+    assert_eq!(
+        decode_managed_file_id("bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iL2s74KC_")
+            .expect("the underscore id decodes"),
+        "s3://b/k"
+    );
     // the same value with whitespace and a stray byte, which the permissive decoder drops
     assert_eq!(
         decode_managed_file_id(" bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iL2s= ")
