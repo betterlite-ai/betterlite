@@ -46,7 +46,10 @@ fn gpt_4o<'model>(
     }
 }
 
-fn mapping(parameters_source: &str, policy_source: &str) -> ParameterMapping {
+fn mapping(
+    parameters_source: &str,
+    policy_source: &str,
+) -> Result<ParameterMapping, ParameterError> {
     let capabilities = caps(&[OpenAiCapability::CatalogModel]);
     let parameters = parameters(parameters_source);
     let policy = policy(policy_source);
@@ -55,26 +58,14 @@ fn mapping(parameters_source: &str, policy_source: &str) -> ParameterMapping {
         parameters: &parameters,
         policy: &policy,
     })
-    .unwrap()
-}
-
-fn mapping_error(parameters_source: &str, policy_source: &str) -> ParameterError {
-    let capabilities = caps(&[OpenAiCapability::CatalogModel]);
-    let parameters = parameters(parameters_source);
-    let policy = policy(policy_source);
-    map_parameters(&ParameterRequest {
-        capabilities: gpt_4o("gpt-4o", &capabilities),
-        parameters: &parameters,
-        policy: &policy,
-    })
-    .unwrap_err()
 }
 
 fn supported_parameters_are_separated() {
     let mapping = mapping(
         r#"{"temperature": 0.5, "logprobs": true, "vendor_flag": {"mode": "fast"}}"#,
         "{}",
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.standard.len(), 2);
     assert_eq!(mapping.standard["temperature"], value("0.5"));
     assert_eq!(mapping.standard["logprobs"], value("true"));
@@ -90,7 +81,8 @@ fn explicit_zero_and_empty_values_survive() {
     let mapping = mapping(
         r#"{"temperature": 0, "n": 0, "stop": "", "user": "", "stream": false, "logprobs": false}"#,
         "{}",
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.standard["temperature"], value("0"));
     assert_eq!(mapping.standard["n"], value("0"));
     assert_eq!(mapping.standard["stop"], value(r#""""#));
@@ -104,22 +96,24 @@ fn null_values_take_the_default() {
     let mapping = mapping(
         r#"{"temperature": null, "top_p": null, "stop": null, "vendor_flag": null, "vendor_name": "x"}"#,
         "{}",
-    );
+    )
+    .unwrap();
     assert!(mapping.standard.is_empty());
     assert_eq!(mapping.provider_fields.len(), 1);
     assert_eq!(mapping.provider_fields["vendor_name"], value(r#""x""#));
 }
 
 fn stop_accepts_the_list_form() {
-    let mapping = mapping(r#"{"stop": ["a", "b"]}"#, "{}");
+    let mapping = mapping(r#"{"stop": ["a", "b"]}"#, "{}").unwrap();
     assert_eq!(mapping.standard["stop"], value(r#"["a", "b"]"#));
 }
 
 fn unsupported_names_fail_together() {
-    let error = mapping_error(
+    let error = mapping(
         r#"{"reasoning_effort": "low", "metadata": {"trace": "x"}, "temperature": 0.5}"#,
         "{}",
-    );
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         ParameterError::Unsupported { model, names }
@@ -131,7 +125,8 @@ fn drop_params_removes_unsupported_names() {
     let mapping = mapping(
         r#"{"reasoning_effort": "low", "temperature": 0.5}"#,
         r#"{"drop_params": true}"#,
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.dropped_fields, ["reasoning_effort"]);
     assert_eq!(mapping.standard["temperature"], value("0.5"));
     assert_eq!(mapping.standard.len(), 1);
@@ -141,8 +136,10 @@ fn additional_drop_params_remove_supported_names() {
     let mapping = mapping(
         r#"{"temperature": 0.5, "logprobs": true}"#,
         r#"{"additional_drop_params": ["temperature"]}"#,
-    );
-    assert_eq!(mapping.dropped_fields, ["temperature"]);
+    )
+    .unwrap();
+    assert_eq!(mapping.dropped_fields.len(), 1);
+    assert_eq!(mapping.dropped_fields[0], "temperature");
     assert_eq!(mapping.standard["logprobs"], value("true"));
     assert_eq!(mapping.standard.len(), 1);
 }
@@ -151,7 +148,8 @@ fn additional_drop_params_remove_provider_fields() {
     let mapping = mapping(
         r#"{"vendor_flag": {"a": 1}, "vendor_name": "x"}"#,
         r#"{"additional_drop_params": ["vendor_flag"]}"#,
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.dropped_fields, ["vendor_flag"]);
     assert_eq!(mapping.provider_fields.len(), 1);
     assert_eq!(mapping.provider_fields["vendor_name"], value(r#""x""#));
@@ -161,7 +159,8 @@ fn additional_drop_params_skip_validation() {
     let mapping = mapping(
         r#"{"reasoning_effort": "low"}"#,
         r#"{"additional_drop_params": ["reasoning_effort"]}"#,
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.dropped_fields, ["reasoning_effort"]);
     assert!(mapping.standard.is_empty());
 }
@@ -170,7 +169,8 @@ fn allowed_openai_params_extend_the_supported_list() {
     let mapping = mapping(
         r#"{"reasoning_effort": "low", "thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
         r#"{"allowed_openai_params": ["reasoning_effort", "thinking"]}"#,
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.standard["reasoning_effort"], value(r#""low""#));
     assert_eq!(
         mapping.standard["thinking"],
@@ -211,7 +211,7 @@ fn typed_passthrough_cannot_overwrite_the_typed_field() {
 }
 
 fn provider_fields_are_not_validated() {
-    let mapping = mapping(r#"{"vendor_flag": {"a": 1}}"#, r#"{"drop_params": true}"#);
+    let mapping = mapping(r#"{"vendor_flag": {"a": 1}}"#, r#"{"drop_params": true}"#).unwrap();
     assert_eq!(mapping.provider_fields["vendor_flag"], value(r#"{"a": 1}"#));
     assert!(mapping.dropped_fields.is_empty());
 }
@@ -248,7 +248,8 @@ fn decimal_values_keep_their_exact_text() {
     let mapping = mapping(
         r#"{"temperature": 0.1, "top_p": 2.5, "presence_penalty": -1.25}"#,
         "{}",
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.standard["temperature"].to_string(), "0.1");
     assert_eq!(mapping.standard["top_p"].to_string(), "2.5");
     assert_eq!(mapping.standard["presence_penalty"].to_string(), "-1.25");
@@ -258,7 +259,8 @@ fn dropped_names_are_sorted_and_unique() {
     let mapping = mapping(
         r#"{"vendor_b": 1, "vendor_a": 2, "temperature": 0.5}"#,
         r#"{"additional_drop_params": ["vendor_b", "temperature", "vendor_b"]}"#,
-    );
+    )
+    .unwrap();
     assert_eq!(mapping.dropped_fields, ["temperature", "vendor_b"]);
 }
 
