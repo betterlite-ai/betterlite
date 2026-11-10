@@ -13,7 +13,7 @@ call:
             content:
               - type: image_url
                 image_url:
-                  url: https://example.com/a.png
+                  url: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAACAYAAAA=
                   detail: medium
       - function: count_content
         default_token_count: 777
