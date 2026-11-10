@@ -236,6 +236,17 @@ async fn new_adds_a_leading_slash_to_a_relative_endpoint() {
 }
 
 #[tokio::test]
+async fn new_accepts_an_endpoint_with_a_scheme() {
+    let (_, router) = app_with("", "http://example.com/sse");
+    let (_, uri) = open_stream(&router).await;
+    let path = uri
+        .split_once("?session_id=")
+        .expect("the session id query")
+        .0;
+    assert_eq!(path, "/http%3A//example.com/sse");
+}
+
+#[tokio::test]
 async fn relays_the_services_messages_to_the_client() {
     let (_, router) = app();
     let (mut stream, uri) = open_stream(&router).await;
@@ -511,6 +522,19 @@ async fn rejects_a_body_over_the_request_limit() {
     let refused = send(&router, message_request(&uri, DEFAULT_OWNER, &body)).await;
     assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(body_text(refused).await, "Request body too large");
+}
+
+#[tokio::test]
+async fn refuses_an_oversized_body_after_the_session_checks() {
+    let (_, router) = app();
+    let body = "x".repeat(OVERSIZED_BYTES);
+    let refused = send(
+        &router,
+        message_request("/mcp/sse/messages?session_id=bad", DEFAULT_OWNER, &body),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_text(refused).await, "Invalid session ID");
 }
 
 #[tokio::test]
