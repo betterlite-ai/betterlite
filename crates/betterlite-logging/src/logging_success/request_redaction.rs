@@ -63,7 +63,6 @@ fn flag(candidate: &Json) -> Option<Flag> {
     }
 }
 
-// perform_redaction replaces the stored standard logging object every logger reads
 pub(super) fn redact_stored_payload(state: &mut LoggingState) {
     let mut payload = match standard_logging_object(state) {
         Ok(Some(payload)) => payload,

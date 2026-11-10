@@ -92,7 +92,6 @@ const fn logging_event(mode: SuccessMode) -> LoggingEvent {
     }
 }
 
-// the gate, _success_handler_helper_fn and the assembled-stream guard, then the callbacks to notify
 fn begin(
     handler: &SuccessHandler<'_>,
     state: &mut LoggingState,
