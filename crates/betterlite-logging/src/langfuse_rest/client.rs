@@ -15,7 +15,7 @@ use tokio_util::task::TaskTracker;
 use super::cache::{CachedLookup, CachedPrompt, Clock, PromptCache, PromptKey};
 use super::errors::{AuthCheckFailure, LangfuseRestError, auth_check_failure, decode_response};
 use super::records::{Projects, Prompt};
-use super::transport::{HeaderError, LangfuseHttp, RequestFailure, headers_for};
+use super::transport::{LangfuseHttp, RequestFailure};
 
 const PROJECTS_PATH: &str = "api/public/projects";
 const PROMPTS_PATH: &str = "api/public/v2/prompts";
@@ -46,8 +46,6 @@ pub enum LangfuseClientError {
         #[source]
         source: EnvError,
     },
-    #[error(transparent)]
-    Header(#[from] HeaderError),
 }
 
 pub struct LangfuseApiClient {
@@ -68,7 +66,6 @@ pub fn build_langfuse_client(
     clock: Arc<dyn Clock>,
     tasks: TaskTracker,
 ) -> Result<LangfuseApiClient, LangfuseClientError> {
-    let headers = headers_for(config.public_key.as_deref(), config.secret_key.as_ref())?;
     let client = match httpx_client {
         Some(client) => client,
         None => default_client()?,
@@ -76,7 +73,8 @@ pub fn build_langfuse_client(
     let http = LangfuseHttp {
         client,
         base_url: config.base_url,
-        headers,
+        public_key: config.public_key,
+        secret_key: config.secret_key,
         timeout: config.timeout,
     };
     Ok(LangfuseApiClient {
@@ -256,13 +254,13 @@ fn transport_is_retryable(error: &TransportError) -> bool {
         | TransportError::ConnectTimeout(_)
         | TransportError::Deadline(_)
         | TransportError::Request(_)
+        | TransportError::InvalidHeader { .. }
         | TransportError::RedirectScheme { .. } => true,
         TransportError::Body(source) => !source.is_decode(),
         TransportError::Rejected(_)
         | TransportError::Build(_)
         | TransportError::HeadersTooLarge { .. }
         | TransportError::BodyTooLarge { .. }
-        | TransportError::InvalidHeader { .. }
         | TransportError::MultipartContentType { .. }
         | TransportError::MultipartBoundaryHeader { .. }
         | TransportError::MultipartBoundary { .. }

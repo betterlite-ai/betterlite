@@ -689,6 +689,38 @@ async fn a_public_key_without_a_secret_sends_no_authorization_header() {
 }
 
 #[tokio::test]
+async fn a_public_key_a_header_cannot_carry_is_reported_at_request_time() {
+    let server = FakeLangfuse::start(Vec::new()).await;
+    let tasks = TaskTracker::new();
+    let clock = FakeClock(Arc::new(Mutex::new(Instant::now())));
+    let client = client_from(ClientSetup {
+        base_url: server.base_url.clone(),
+        public_key: Some("pk\nlf"),
+        secret_key: Some(SECRET_KEY),
+        ttl: TTL,
+        timeout: Duration::from_secs(5),
+        http: Some(proxied()),
+        clock: &clock,
+        tasks: &tasks,
+    });
+    let failure = client.auth_check().await.expect("the check fails");
+    assert!(
+        failure.reason.contains("x-langfuse-public-key"),
+        "{}",
+        failure.reason
+    );
+    let error = client
+        .get_prompt("greeting", None, None)
+        .await
+        .expect_err("the prompt fails");
+    assert!(
+        error.to_string().contains("x-langfuse-public-key"),
+        "{error}"
+    );
+    assert_eq!(server.request_count(), 0);
+}
+
+#[tokio::test]
 async fn a_client_without_an_injected_http_client_reaches_the_server() {
     let body = text_prompt("greeting", 1);
     let server = FakeLangfuse::start(vec![Answer::Respond {

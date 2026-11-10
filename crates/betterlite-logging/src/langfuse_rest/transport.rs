@@ -8,7 +8,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::Method;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -34,16 +34,6 @@ pub enum RequestFailure {
     Transport(#[from] TransportError),
 }
 
-#[derive(Debug, Error)]
-pub enum HeaderError {
-    #[error("the {name} header holds a character a header cannot carry")]
-    Value {
-        name: &'static str,
-        #[source]
-        source: InvalidHeaderValue,
-    },
-}
-
 #[derive(Debug)]
 pub struct HttpResponse {
     pub status: u16,
@@ -62,7 +52,8 @@ impl HttpResponse {
 pub struct LangfuseHttp {
     pub client: ProxiedClient,
     pub base_url: String,
-    pub headers: HeaderMap,
+    pub public_key: Option<String>,
+    pub secret_key: Option<SecretString>,
     pub timeout: Duration,
 }
 
@@ -89,7 +80,7 @@ impl LangfuseHttp {
             method: Method::GET,
             url,
             query,
-            headers: self.headers.clone(),
+            headers: headers_for(self.public_key.as_deref(), self.secret_key.as_ref())?,
             body: RequestBody::Empty,
             deadline: self.timeout,
         };
@@ -109,7 +100,7 @@ impl LangfuseHttp {
 pub fn headers_for(
     public_key: Option<&str>,
     secret_key: Option<&SecretString>,
-) -> Result<HeaderMap, HeaderError> {
+) -> Result<HeaderMap, TransportError> {
     let mut headers = HeaderMap::new();
     headers.insert(
         HeaderName::from_static(FERN_LANGUAGE_HEADER),
@@ -124,8 +115,8 @@ pub fn headers_for(
         HeaderValue::from_static(LANGFUSE_SDK_VERSION),
     );
     if let Some(key) = public_key {
-        let value = HeaderValue::try_from(key).map_err(|source| HeaderError::Value {
-            name: PUBLIC_KEY_HEADER,
+        let value = HeaderValue::try_from(key).map_err(|source| TransportError::InvalidHeader {
+            name: PUBLIC_KEY_HEADER.to_owned(),
             source,
         })?;
         headers.insert(HeaderName::from_static(PUBLIC_KEY_HEADER), value);
@@ -133,8 +124,8 @@ pub fn headers_for(
     if let (Some(key), Some(secret)) = (public_key, secret_key) {
         let credentials = format!("{key}:{}", secret.expose_secret());
         let mut value = HeaderValue::try_from(format!("Basic {}", STANDARD.encode(credentials)))
-            .map_err(|source| HeaderError::Value {
-                name: "authorization",
+            .map_err(|source| TransportError::InvalidHeader {
+                name: "authorization".to_owned(),
                 source,
             })?;
         value.set_sensitive(true);
