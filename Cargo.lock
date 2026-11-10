@@ -1320,11 +1320,13 @@ name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-secrets",
  "clap",
  "dbus-secret-service-keyring-store",
  "hex",
@@ -2162,6 +2164,7 @@ dependencies = [
  "betterlite-azure",
  "betterlite-bedrock",
  "betterlite-cache",
+ "betterlite-cli",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
