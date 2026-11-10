@@ -1,0 +1,36 @@
+kind: helper
+name: qdrant-semantic-cache-search-key-isolation
+call:
+  b4383:
+    key: scope-1
+    collection: semantic-cache
+    threshold: 0.8
+    vector: [0.25, 0.5, 0.75]
+    messages:
+      - role: user
+        content: what is cached
+    metadata:
+      request-id: abc
+    responses:
+      - status: 200
+        body:
+          result:
+            exists: true
+      - status: 200
+        body:
+          result:
+            status: green
+      - status: 200
+        body:
+          result: true
+      - status: 200
+        body:
+          result:
+            - score: 0.99
+              payload:
+                litellm_cache_key: another-scope
+                text: someone else's prompt
+                response: '{"choices":[{"message":{"content":"secret"}}]}'
+env: {}
+compare:
+  ignore: []

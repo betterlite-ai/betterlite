@@ -1,0 +1,12 @@
+kind: helper
+name: cohere-legacy-embed-plan-seed
+call:
+  cohere_legacy_embed:
+    model: embed-english-v3.0
+    input: [hello, "data:image/png;base64,YWJj"]
+    headers: {Content-Type: application/json, X-Amz-Date: 20260101T000000Z}
+    runs:
+      - status: 200
+        body: '{"embeddings":[[0.5]]}'
+compare: {ignore: []}
+env: {}
