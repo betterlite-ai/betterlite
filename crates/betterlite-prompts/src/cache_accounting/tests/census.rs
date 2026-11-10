@@ -159,6 +159,9 @@ fn count_route_breakpoints_reserves_for_the_larger_census() {
     );
     let merged = json(r#"{"extra_body": {"tools": [{"cache_control": {}}]}}"#);
     assert_eq!(count_route_breakpoints(None, None, Some(&merged)), 1);
+    assert_eq!(count_route_breakpoints(None, None, None), 0);
+    let unmarked = json(r#"{"extra_body": {"tools": [{"type": "function"}]}}"#);
+    assert_eq!(count_route_breakpoints(None, None, Some(&unmarked)), 0);
 }
 
 #[rstest]
