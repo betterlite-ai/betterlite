@@ -79,10 +79,8 @@ where
     Hosted: HostedSkillsHandler,
 {
     pub async fn get_skill(&self, request: SkillRequest<'_>) -> Result<Skill, SkillsFailureError> {
-        match self
-            .run(SkillAction::Get, request.call, request.logging)
-            .await
-        {
+        let running = self.run(SkillAction::Get, request.call, request.logging);
+        match running.await {
             Ok(skill) => Ok(skill),
             Err(error) => Err(failure(error, request.call, self.redactor)),
         }
@@ -92,10 +90,8 @@ where
         &self,
         request: SkillRequest<'_>,
     ) -> Result<DeleteSkillResponse, SkillsFailureError> {
-        match self
-            .run(SkillAction::Delete, request.call, request.logging)
-            .await
-        {
+        let running = self.run(SkillAction::Delete, request.call, request.logging);
+        match running.await {
             Ok(deleted) => Ok(deleted),
             Err(error) => Err(failure(error, request.call, self.redactor)),
         }
