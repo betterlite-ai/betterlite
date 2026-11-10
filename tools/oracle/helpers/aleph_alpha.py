@@ -1,5 +1,6 @@
 import json
 import os
+import time
 
 os.environ["LITELLM_RUST"] = "false"
 
@@ -220,7 +221,7 @@ def run(input_value: dict[str, Json]) -> Json:
     with (
         patched_config(max_tokens, defaults),
         patch.object(litellm, "module_level_client", client),
-        patch.object(aleph_alpha.time, "time", return_value=float(created)),
+        patch.object(time, "time", return_value=float(created)),
     ):
         try:
             result = COMPLETION(

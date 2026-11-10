@@ -1,0 +1,11 @@
+kind: helper
+name: per-item-details-absent-usage
+call:
+  b4298:
+    get_per_item_prompt_tokens_details:
+      usage: null
+      data_count: 2
+      idx: 0
+env: {}
+compare:
+  ignore: []
