@@ -13,8 +13,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use super::request::{
-    CohereEmbeddingRequest, get_complete_url, map_openai_params, transform_embedding_request,
-    transform_request, validate_environment,
+    get_complete_url, map_openai_params, transform_embedding_request, transform_request,
+    validate_environment,
 };
 use super::response::{CohereEmbeddingResponse, DecodeInput, transform_embedding_response};
 use super::usage::calculate_usage;
@@ -28,7 +28,7 @@ use crate::openai_base_config::Headers;
 struct Recorded<'call> {
     input: &'call [String],
     api_key: Option<String>,
-    complete_input_dict: &'call CohereEmbeddingRequest,
+    complete_input_dict: &'call Object,
     original_response: &'call Json,
 }
 
@@ -106,7 +106,7 @@ fn the_last_input_decides_the_modality(
     #[case] input_type: &str,
 ) {
     let input: Vec<String> = serde_json::from_str(source).unwrap();
-    let request = transform_request("m", &input, &Object::new()).unwrap();
+    let request = transform_request("m", &input, &Object::new());
     let value = serde_json::to_value(&request).unwrap();
     assert_eq!(value["model"], "m");
     assert_eq!(value["input_type"], input_type);
@@ -122,10 +122,13 @@ fn the_wrapper_wraps_a_string_and_the_lower_request_accepts_an_empty_list() {
         &Object::new(),
     )
     .unwrap();
-    assert_eq!(wrapped.texts, Some(texts(&["hello"])));
-    let empty = transform_request("m", &[], &Object::new()).unwrap();
-    assert_eq!(empty.texts, Some(Vec::new()));
-    assert_eq!(empty.input_type, DEFAULT_EMBEDDING_INPUT_TYPE);
+    assert_eq!(
+        serde_json::to_value(&wrapped).unwrap()["texts"],
+        serde_json::json!(["hello"])
+    );
+    let empty = serde_json::to_value(transform_request("m", &[], &Object::new())).unwrap();
+    assert_eq!(empty["texts"], serde_json::json!([]));
+    assert_eq!(empty["input_type"], DEFAULT_EMBEDDING_INPUT_TYPE);
     assert!(matches!(
         transform_embedding_request("m", &serde_json::from_str("[]").unwrap(), &Object::new()),
         Err(CohereEmbeddingError::EmptyInput)
@@ -143,60 +146,23 @@ fn token_inputs_are_refused_by_the_wrapper(#[case] source: &str) {
 
 #[test]
 fn inference_parameters_overlay_the_built_request() {
-    let request = transform_request(
-        "m",
-        &texts(&["hello"]),
-        &params(r#"{"model":"other","texts":["over"],"images":["pic"],"input_type":"clustering","truncate":"START","embedding_types":["int8"],"output_dimension":64}"#),
-    )
-    .unwrap();
-    assert_eq!(request.model, "other");
-    assert_eq!(request.texts, Some(texts(&["over"])));
-    assert_eq!(request.images, Some(texts(&["pic"])));
-    assert_eq!(request.input_type, "clustering");
-    assert_eq!(request.truncate.as_deref(), Some("START"));
+    let overlay = r#"{"model":"other","texts":["over"],"images":["pic"],"input_type":"clustering","truncate":"START","embedding_types":["int8"],"output_dimension":64,"max_tokens":3}"#;
+    let request = transform_request("m", &texts(&["hello"]), &params(overlay));
     assert_eq!(
-        request.embedding_types,
-        Some(vec![Json::Text(String::from("int8"))])
+        serde_json::to_value(&request).unwrap(),
+        serde_json::from_str::<serde_json::Value>(overlay).unwrap()
     );
-    assert_eq!(request.output_dimension, Some(64));
-    assert_eq!(
-        transform_request("m", &texts(&["hello"]), &params("{}"))
-            .unwrap()
-            .model,
-        "m"
-    );
+    let keys: Vec<&str> = request.keys().map(String::as_str).collect();
+    assert_eq!(&keys[..3], ["model", "texts", "input_type"]);
 }
 
 #[test]
-fn a_null_inference_value_leaves_the_built_field_alone() {
-    let request = transform_request(
-        "m",
-        &texts(&["hello"]),
-        &params(r#"{"model":null,"input_type":null,"extra":null}"#),
-    )
-    .unwrap();
-    assert_eq!(request.model, "m");
-    assert_eq!(request.input_type, DEFAULT_EMBEDDING_INPUT_TYPE);
-    assert!(request.extra.is_empty());
-}
-
-#[rstest]
-#[case::model(r#"{"model":1}"#)]
-#[case::texts(r#"{"texts":"one"}"#)]
-#[case::dimension(r#"{"output_dimension":"big"}"#)]
-fn a_parameter_the_pinned_types_reject_is_an_error(#[case] source: &str) {
-    let refused = transform_request("m", &texts(&["hello"]), &params(source));
-    assert!(matches!(refused, Err(CohereEmbeddingError::Json { .. })));
-}
-
-#[test]
-fn an_unnamed_inference_key_reaches_the_request_body() {
-    let request =
-        transform_request("m", &texts(&["hello"]), &params(r#"{"max_tokens":3}"#)).unwrap();
-    assert_eq!(request.extra, params(r#"{"max_tokens":3}"#));
+fn a_null_inference_value_overlays_and_is_sent_as_null() {
+    let source = r#"{"model":null,"input_type":null,"texts":null,"truncate":null,"output_dimension":null,"extra":null}"#;
+    let request = transform_request("m", &texts(&["hello"]), &params(source));
     assert_eq!(
-        serde_json::to_value(&request).unwrap()["max_tokens"],
-        serde_json::json!(3_i32)
+        serde_json::to_value(&request).unwrap(),
+        serde_json::from_str::<serde_json::Value>(source).unwrap()
     );
 }
 
@@ -258,6 +224,12 @@ fn the_default_headers_lose_to_the_caller_spelling(
 #[case::zeroes(r#"{"input_tokens":0,"images":0}"#, 0, Some(0), Some(0))]
 #[case::text_only(r#"{"input_tokens":3}"#, 3, Some(3), None)]
 #[case::images_only(r#"{"images":4}"#, 4, None, Some(4))]
+#[case::stray_image_tokens(
+    r#"{"input_tokens":0,"images":1,"image_tokens":1000}"#,
+    1,
+    Some(0),
+    Some(1)
+)]
 fn billed_units_sum_and_keep_both_details(
     #[case] billed: &str,
     #[case] prompt: i64,
@@ -291,9 +263,10 @@ fn billed_units_sum_and_keep_both_details(
 #[case::null(Some("null"))]
 #[case::empty_object(Some(r#"{"billed_units":{}}"#))]
 #[case::billed_null(Some(r#"{"billed_units":null}"#))]
+#[case::image_tokens_alone(Some(r#"{"billed_units":{"image_tokens":1000}}"#))]
 fn a_missing_billed_pair_counts_the_input_locally(#[case] source: Option<&str>) {
     let fixture = fixture(None, &["hello", "world!"]);
-    let meta = source.map(|text| Json::Object(params(text)));
+    let meta = source.map(json);
     let usage = calculate_usage(&texts(&["hello", "world!"]), &fixture, meta.as_ref()).unwrap();
     assert_eq!(
         (usage.prompt_tokens, usage.prompt_tokens_details),
@@ -323,7 +296,7 @@ fn billed_overflow_and_a_non_integer_billed_unit_are_errors() {
 type Decoded = Result<CohereEmbeddingResponse, CohereEmbeddingError>;
 
 fn decode(body: &str, input: &[&str], fail_on: Option<&str>) -> (Decoded, Fixture, Fixture) {
-    let request = transform_request("m", &texts(input), &Object::new()).unwrap();
+    let request = transform_request("m", &texts(input), &Object::new());
     let encoding = fixture(fail_on, input);
     let mut logging = fixture(None, input);
     let reply = DecodeInput {
@@ -416,7 +389,7 @@ fn the_fallback_pass_encodes_twice_and_the_transform_reads_logged_input() {
         *encoding.encoded.lock().unwrap(),
         texts(&["first", "second", "first", "second"])
     );
-    let request = transform_request("m", &texts(&["from-details"]), &Object::new()).unwrap();
+    let request = transform_request("m", &texts(&["from-details"]), &Object::new());
     let detail_encoding = fixture(None, &["from-details"]);
     let mut logging = fixture(None, &["from-details"]);
     let reply = DecodeInput {
@@ -437,7 +410,7 @@ fn the_fallback_pass_encodes_twice_and_the_transform_reads_logged_input() {
 #[rstest]
 fn replays_the_cohere_embeddings_corpus(#[files("fuzz/corpus/cohere_embeddings/*")] path: PathBuf) {
     let body = fs::read(path).unwrap();
-    let request = transform_request("m", &["hello".to_owned()], &Object::new()).unwrap();
+    let request = transform_request("m", &["hello".to_owned()], &Object::new());
     let encoding = fixture(None, &["hello"]);
     let mut logging = fixture(None, &["hello"]);
     let reply = DecodeInput {

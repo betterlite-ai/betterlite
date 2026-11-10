@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::error::EngineError;
 use secrecy::SecretString;
@@ -43,7 +43,7 @@ impl TextEncoding for Engine {
 pub struct PostCall<'request> {
     pub input: &'request [String],
     pub api_key: Option<&'request SecretString>,
-    pub complete_input_dict: &'request request::CohereEmbeddingRequest,
+    pub complete_input_dict: &'request Object,
     pub original_response: &'request Json,
 }
 

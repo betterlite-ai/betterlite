@@ -3,29 +3,10 @@ use std::slice;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::base64_string::is_base64_encoded;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
 
 use super::{CohereEmbeddingError, DEFAULT_COMPLETE_URL, DEFAULT_EMBEDDING_INPUT_TYPE};
 use crate::embedding::EmbeddingInput;
 use crate::openai_base_config::Headers;
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct CohereEmbeddingRequest {
-    pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub texts: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub images: Option<Vec<String>>,
-    pub input_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub truncate: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub embedding_types: Option<Vec<Json>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_dimension: Option<i64>,
-    #[serde(flatten)]
-    pub extra: Object,
-}
 
 #[must_use]
 pub fn map_openai_params(non_default_params: &Object, mut optional_params: Object) -> Object {
@@ -73,41 +54,34 @@ pub fn get_complete_url(api_base: Option<&str>) -> String {
 }
 
 // _transform_request: the last input alone decides image versus text, and Bedrock callers reach it directly
-pub fn transform_request(
-    model: &str,
-    input: &[String],
-    inference_params: &Object,
-) -> Result<CohereEmbeddingRequest, CohereEmbeddingError> {
+#[must_use]
+pub fn transform_request(model: &str, input: &[String], inference_params: &Object) -> Object {
     let image = input.last().is_some_and(|text| is_base64_encoded(text));
-    let built = CohereEmbeddingRequest {
-        model: model.to_owned(),
-        texts: (!image).then_some(input.to_vec()),
-        images: image.then_some(input.to_vec()),
-        input_type: String::from(if image {
-            "image"
-        } else {
-            DEFAULT_EMBEDDING_INPUT_TYPE
-        }),
-        truncate: None,
-        embedding_types: None,
-        output_dimension: None,
-        extra: Object::new(),
+    let (rows_key, input_type) = if image {
+        ("images", "image")
+    } else {
+        ("texts", DEFAULT_EMBEDDING_INPUT_TYPE)
     };
-    let mut fields: Object = serde_json::from_value(serde_json::to_value(built)?)?;
-    fields.extend(
-        inference_params
-            .iter()
-            .filter(|(_, value)| **value != Json::Null)
-            .map(|(name, value)| (name.clone(), value.clone())),
+    let mut request = Object::new();
+    request.insert(String::from("model"), Json::Text(model.to_owned()));
+    request.insert(
+        String::from(rows_key),
+        Json::List(input.iter().cloned().map(Json::Text).collect()),
     );
-    Ok(serde_json::from_value(serde_json::to_value(fields)?)?)
+    request.insert(
+        String::from("input_type"),
+        Json::Text(String::from(input_type)),
+    );
+    request.extend(inference_params.clone());
+    request
 }
 
+// transform_embedding_request drops a token input at input[0] and wraps a single string in a list
 pub fn transform_embedding_request(
     model: &str,
     input: &EmbeddingInput,
     optional_params: &Object,
-) -> Result<CohereEmbeddingRequest, CohereEmbeddingError> {
+) -> Result<Object, CohereEmbeddingError> {
     let texts: &[String] = match input {
         EmbeddingInput::Text(text) => slice::from_ref(text),
         EmbeddingInput::Texts(texts) if texts.is_empty() => {
@@ -118,5 +92,5 @@ pub fn transform_embedding_request(
             return Err(CohereEmbeddingError::InputNotText);
         }
     };
-    transform_request(model, texts, optional_params)
+    Ok(transform_request(model, texts, optional_params))
 }

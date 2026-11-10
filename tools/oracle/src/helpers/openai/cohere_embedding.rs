@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use betterlite_openai::cohere_embedding::request::{
-    CohereEmbeddingRequest, get_complete_url, map_openai_params, transform_embedding_request,
-    transform_request, validate_environment,
+    get_complete_url, map_openai_params, transform_embedding_request, transform_request,
+    validate_environment,
 };
 use betterlite_openai::cohere_embedding::response::{DecodeInput, transform_embedding_response};
 use betterlite_openai::cohere_embedding::{
@@ -95,13 +95,6 @@ impl EmbeddingLogging for Recorder {
     }
 }
 
-fn outcome(result: Result<CohereEmbeddingRequest, CohereEmbeddingError>) -> Value {
-    result.map_or_else(
-        |_| json!({"ok": false, "value": null}),
-        |value| json!({"ok": true, "value": value}),
-    )
-}
-
 fn request(call: &Call) -> Value {
     let mut mapped = map_openai_params(&call.options, Object::new());
     mapped.extend(call.inference.clone());
@@ -110,13 +103,17 @@ fn request(call: &Call) -> Value {
         .inputs
         .iter()
         .map(|raw| {
-            let wrapper = serde_json::from_value::<EmbeddingInput>(raw.clone())
+            let built = serde_json::from_value::<EmbeddingInput>(raw.clone())
                 .map_err(CohereEmbeddingError::from)
                 .and_then(|typed| transform_embedding_request(&call.model, &typed, &mapped));
             let lower = serde_json::from_value::<Vec<String>>(raw.clone())
                 .ok()
-                .map(|strings| outcome(transform_request(&call.model, &strings, &mapped)));
-            json!({"wrapper": outcome(wrapper), "lower": lower})
+                .map(|strings| json!({"ok": true, "value": transform_request(&call.model, &strings, &mapped)}));
+            let wrapper = built.map_or_else(
+                |_| json!({"ok": false, "value": null}),
+                |value| json!({"ok": true, "value": value}),
+            );
+            json!({"wrapper": wrapper, "lower": lower})
         })
         .collect();
     json!({

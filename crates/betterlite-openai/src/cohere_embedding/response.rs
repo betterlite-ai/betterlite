@@ -1,9 +1,8 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-use super::request::CohereEmbeddingRequest;
 use super::usage::{CohereEmbeddingUsage, calculate_usage};
 use super::{CohereEmbeddingError, EmbeddingLogging, PostCall, TextEncoding};
 
@@ -34,7 +33,7 @@ pub struct DecodeInput<'request> {
     pub body: &'request [u8],
     pub model: &'request str,
     pub api_key: Option<&'request SecretString>,
-    pub request_data: &'request CohereEmbeddingRequest,
+    pub request_data: &'request Object,
     pub encoding: &'request dyn TextEncoding,
 }
 

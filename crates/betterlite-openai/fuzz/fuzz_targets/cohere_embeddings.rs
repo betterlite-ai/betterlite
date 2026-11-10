@@ -27,9 +27,7 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(empty) = serde_json::from_str("{}") else {
         return;
     };
-    let Ok(request) = transform_request("m", &input, &empty) else {
-        return;
-    };
+    let request = transform_request("m", &input, &empty);
     let mut fixture = Fixture(input.to_vec());
     let encoding = Fixture(Vec::new());
     let reply = DecodeInput {
