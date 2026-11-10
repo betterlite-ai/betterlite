@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "azure_certificate"
+path = "fuzz_targets/azure_certificate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "azure_client_secret"
 path = "fuzz_targets/azure_client_secret.rs"
 test = false
@@ -32,6 +39,13 @@ bench = false
 [[bin]]
 name = "azure_oidc_exchange"
 path = "fuzz_targets/azure_oidc_exchange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "azure_username_password"
+path = "fuzz_targets/azure_username_password.rs"
 test = false
 doc = false
 bench = false

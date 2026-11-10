@@ -1,0 +1,17 @@
+kind: helper
+name: caching-batch-set-delete-script-shared-round-trip
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    replies:
+      SET: [{simple: OK}]
+      DEL: [{int: 1}]
+      EVALSHA: [{int: 7}]
+    steps:
+      - declare: {kind: set, key: e, value: written, ttl: 5}
+      - declare: {kind: delete, key: f}
+      - declare: {kind: script, source: "return 7", keys: [g], args: [{text: "2"}]}
+      - await_all
+env: {}
+compare: {ignore: []}

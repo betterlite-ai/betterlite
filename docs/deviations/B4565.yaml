@@ -1,0 +1,17 @@
+task: B4565
+deviations:
+  - what: >-
+      A /model_group/info token limit that is not a finite number inside i64 (for example 1e300) is left out of
+      the models.json entry, where LiteLLM's int() keeps every finite float at arbitrary precision and raises an
+      uncaught ValueError or OverflowError for NaN and infinity.
+    why: >-
+      pi's contextWindow and maxTokens are 64-bit integer fields, and serde_json refuses the non-standard NaN and
+      Infinity literals Python's json module accepts; a limit no proxy database emits must not crash the sync.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L152-L160
+  - what: >-
+      prepare_pi returns a typed error naming the missing home directory, where LiteLLM's Path.home() raises an
+      uncaught RuntimeError out of models_json_path.
+    why: >-
+      betterlite reports every pre-launch failure through one typed CLI error instead of a traceback, and a process
+      without a home directory has no place to write pi's models.json either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L163-L166

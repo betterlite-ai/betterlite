@@ -1,0 +1,7 @@
+kind: helper
+name: provider-resolution-fine-tuned
+call:
+  provider_resolution:
+    model: ft:gpt-4o-mini:acme::abc
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-count-tokens-handle
+call:
+  anthropic_count_tokens:
+    function: handle
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-seed
+          reply: {status: 200, body: '{"input_tokens":1}'}
+env: {}
+compare: {ignore: []}

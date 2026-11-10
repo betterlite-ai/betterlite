@@ -1,0 +1,60 @@
+kind: helper
+name: gigachat-structured-output
+call:
+  b8177:
+    steps:
+      - kind: map_params
+        params:
+          response_format:
+            type: json_schema
+            json_schema:
+              name: city
+              schema:
+                type: object
+                properties:
+                  name: {type: string}
+      - kind: map_params
+        params:
+          response_format:
+            type: json_schema
+            json_schema:
+              schema: {}
+        optional_params:
+          functions:
+            - {name: lookup, description: find a city}
+      - kind: map_params
+        params:
+          response_format:
+            type: json_object
+      - kind: map_params
+        params:
+          response_format:
+            type: json_schema
+            json_schema:
+              name: city
+              schema: {}
+          function_call: {name: earlier}
+      - kind: request
+        model: gigachat/GigaChat
+        messages:
+          - {role: user, content: hi}
+        token: token-1
+        params:
+          functions:
+            - {name: city, description: "Output structured response: city", parameters: {}}
+          function_call: {name: city}
+          _structured_output: true
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        structured_output: true
+        body: '{"choices": [{"message": {"role": "assistant", "function_call": {"name": "city", "arguments": {"name": "prague"}}}, "finish_reason": "function_call"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        structured_output: true
+        body: '{"choices": [{"message": {"function_call": {"name": "city"}}, "finish_reason": "function_call"}]}'
+env: {}
+compare: {ignore: []}

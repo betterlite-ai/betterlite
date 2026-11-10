@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-count-tokens-validate
+call:
+  anthropic_count_tokens:
+    function: validate
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+env: {}
+compare: {ignore: []}

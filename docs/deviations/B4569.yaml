@@ -1,0 +1,11 @@
+task: B4569
+deviations:
+  - what: A `model_providers` table written inline (`model_providers = { other = { name = "Keep" } }`) is configured and undone like any other table, where LiteLLM raises an uncaught ValueError ("Inline tables cannot contain a table") as soon as it writes `model_providers.litellm`.
+    why: An inline table is a table by LiteLLM's own type check, so the input passes its validation and only the write crashes, leaving the settings untouched but the command broken. betterlite converts the provider entry to an inline table for that parent, and restores the inline table on unconfigure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L104-L118
+  - what: A provider table written with dotted keys (`model_providers.litellm.name = "old"`) is undone correctly, where LiteLLM leaves its own provider table, including the Authorization header with the gateway key, in the file after unconfigure.
+    why: LiteLLM fingerprints the provider's snapshot text and a dotted table serializes differently from the standard table it wrote, so its ownership check fails and it reports the provider as kept. betterlite fingerprints the parsed value rather than its text form, so the field is recognized as its own, the displaced value is restored, and the credential is removed. A stale gateway key left in the Codex config is a leaked secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L90-L101
+  - what: A Codex settings path that is not valid UTF-8 is refused with CodexSettingsError::NonUtf8Path before anything is written, where LiteLLM records the path's surrogate-escaped text in the receipt.
+    why: The receipt stores the resolved settings path as a JSON string, and Rust has no lossless UTF-8 representation of arbitrary path bytes; refusing keeps the receipt consistent with the path it names instead of writing one that can never match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L58-L61
