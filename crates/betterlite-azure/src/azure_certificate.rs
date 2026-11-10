@@ -57,7 +57,7 @@ pub enum CertificateError {
     PasswordRequired,
     #[error("Password was given but private key is not encrypted.")]
     PasswordUnexpected,
-    #[error("Bad decrypt. Incorrect password?")]
+    #[error("Incorrect password, could not decrypt key")]
     BadPassword,
     #[error("a PEM private key encrypted with a Proc-Type header is not supported")]
     LegacyEncryptedPem,

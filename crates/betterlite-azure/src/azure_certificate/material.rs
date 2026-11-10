@@ -57,7 +57,10 @@ fn rsa_from_pkcs8(der: &[u8]) -> Result<Rsa, CertificateError> {
 }
 
 fn pem_parts(data: &[u8], password: Option<&str>) -> Result<(Rsa, Vec<Vec<u8>>), CertificateError> {
-    let blocks = pem::parse_many(data).map_err(|_error| CertificateError::PemFraming)?;
+    let blocks = pem::parse_many(data)
+        .ok()
+        .filter(|found| !found.is_empty())
+        .ok_or(CertificateError::PemFraming)?;
     let block = blocks
         .iter()
         .find(|block| block.tag().ends_with("PRIVATE KEY"))
