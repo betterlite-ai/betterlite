@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::database_url_policy::query::QueryValue;
+use secrecy::ExposeSecret as _;
 use betterlite_db::database_urls::cli_url::construct_cli_database_url;
 use betterlite_db::database_urls::error::DatabaseUrlError;
 use betterlite_db::database_urls::password::{
@@ -58,12 +59,16 @@ impl Helper for Op {
             Input::BuildWriterUrl { settings, auth } => {
                 let url =
                     build_writer_url(settings, *auth).map_err(|error| helper_error(&error))?;
-                Ok(optional_string(url))
+                Ok(url.map_or(serde_json::Value::Null, |url| {
+                    serde_json::Value::String(url.expose_secret().to_owned())
+                }))
             }
             Input::BuildReaderUrl { settings, auth } => {
                 let url =
                     build_reader_url(settings, *auth).map_err(|error| helper_error(&error))?;
-                Ok(optional_string(url))
+                Ok(url.map_or(serde_json::Value::Null, |url| {
+                    serde_json::Value::String(url.expose_secret().to_owned())
+                }))
             }
             Input::TlsParams { settings } => Ok(tls_params_value(settings)),
             Input::FromEnv { environment } => {
@@ -83,7 +88,9 @@ impl Helper for Op {
             Input::ConstructCliUrl { environment } => {
                 let url = construct_cli_database_url(environment)
                     .map_err(|error| helper_error(&error))?;
-                Ok(optional_string(url))
+                Ok(url.map_or(serde_json::Value::Null, |url| {
+                    serde_json::Value::String(url.expose_secret().to_owned())
+                }))
             }
             Input::Batch { calls } => Ok(serde_json::Value::Array(
                 calls.iter().map(scenario_value).collect(),
@@ -97,13 +104,6 @@ fn scenario_value(input: &Input) -> serde_json::Value {
         Ok(value) => serde_json::json!({"ok": true, "value": value}),
         Err(_error) => serde_json::json!({"ok": false}),
     }
-}
-
-fn optional_string(value: Option<String>) -> serde_json::Value {
-    if let Some(text) = value {
-        return serde_json::Value::String(text);
-    }
-    serde_json::Value::Null
 }
 
 fn tls_params_value(settings: &DatabaseUrlSettings) -> serde_json::Value {
@@ -154,7 +154,7 @@ fn writer_update_value(settings: &DatabaseUrlSettings) -> HelperResult {
     let updates: Vec<serde_json::Value> = result
         .updates
         .iter()
-        .map(|update| serde_json::json!([&update.name, &update.value]))
+        .map(|update| serde_json::json!([&update.name, update.value.expose_secret()]))
         .collect();
     Ok(serde_json::json!({"replaced": result.replaced, "updates": updates}))
 }

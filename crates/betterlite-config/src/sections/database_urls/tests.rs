@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Instant;
 
 use betterlite_db::database_url_policy::query::{
     AppendQueryParam, QueryValue, add_missing_query_params,
@@ -8,11 +10,57 @@ use betterlite_db::database_url_policy::query::{
 use betterlite_db::database_urls::error::DatabaseUrlError;
 use betterlite_db::database_urls::scheme::validate_cli_urls;
 use betterlite_db::database_urls::settings::idle_lifetime_params;
+use betterlite_secret_managers::secret_lookup::SecretLookup;
+use betterlite_secret_managers::secret_lookup::ports::{
+    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
+    OidcTokenCache,
+};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::Settings;
 use super::policy::QueryTarget;
 use crate::loader::{ConfigError, ConfigLoader};
+
+struct NoOidc;
+
+impl OidcHttp for NoOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        Err(OidcHttpError::Request {
+            message: "no network in tests".to_owned(),
+        })
+    }
+}
+
+impl AzureOidcTokens for NoOidc {
+    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
+        Ok(None)
+    }
+}
+
+impl OidcClock for NoOidc {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn unix_seconds(&self) -> i64 {
+        0
+    }
+}
+
+fn secrets() -> SecretLookup {
+    SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(NoOidc),
+        azure_tokens: Arc::new(NoOidc),
+        clock: Arc::new(NoOidc),
+        oidc_cache: OidcTokenCache::default(),
+    }
+}
+
+fn shown(value: Option<&SecretString>) -> Option<&str> {
+    value.map(SecretString::expose_secret)
+}
 
 fn variables_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -45,8 +93,8 @@ fn scalar(key: &str, value: QueryValue) -> (String, AppendQueryParam) {
 
 fn assert_endpoint_defaults(settings: &Settings) {
     let endpoints = &settings.endpoints;
-    assert_eq!(endpoints.database_url, None);
-    assert_eq!(endpoints.direct_url, None);
+    assert!(endpoints.database_url.is_none());
+    assert!(endpoints.direct_url.is_none());
     assert_eq!(endpoints.database_host, None);
     assert_eq!(endpoints.database_port, "5432");
     assert_eq!(endpoints.database_user, None);
@@ -55,8 +103,8 @@ fn assert_endpoint_defaults(settings: &Settings) {
     assert!(endpoints.database_password.is_none());
     assert_eq!(endpoints.database_sslmode, None);
     assert_eq!(endpoints.database_sslrootcert, None);
+    assert!(endpoints.database_url_read_replica.is_none());
     let replicas = [
-        &endpoints.database_url_read_replica,
         &endpoints.database_host_read_replica,
         &endpoints.database_port_read_replica,
         &endpoints.database_user_read_replica,
@@ -68,6 +116,8 @@ fn assert_endpoint_defaults(settings: &Settings) {
 
 fn assert_connection_defaults(settings: &Settings) {
     assert_eq!(settings.pool_limit, 10);
+    assert_eq!(settings.pool_timeout, QueryValue::Integer(60));
+    assert_eq!(settings.idle_lifetime, QueryValue::Integer(60));
     assert!(settings.extra_params.is_empty());
     assert_eq!(settings.endpoints.max_idle_connection_lifetime, None);
     assert!(!settings.endpoints.disable_prepared_statements);
@@ -75,15 +125,12 @@ fn assert_connection_defaults(settings: &Settings) {
     assert!(!settings.endpoints.azure_postgresql_auth);
     assert!(matches!(
         (
-            &settings.connection_timeout,
-            &settings.pool_timeout,
             &settings.connect_timeout,
             &settings.socket_timeout,
-            &settings.max_idle_lifetime,
             &settings.statement_timeout,
             &settings.lock_timeout,
         ),
-        (None, None, None, None, None, None, None)
+        (None, None, None, None)
     ));
 }
 
@@ -150,7 +197,7 @@ fn case_insensitive_env() {
         ],
     );
     assert_eq!(
-        lower.endpoints.database_url.as_deref(),
+        shown(lower.endpoints.database_url.as_ref()),
         Some("postgresql://lower/db")
     );
     assert_eq!(lower.endpoints.database_user.as_deref(), Some("lower_user"));
@@ -218,11 +265,11 @@ fn env_aliases_load_writer_fields() {
     );
     let endpoints = &settings.endpoints;
     assert_eq!(
-        endpoints.database_url.as_deref(),
+        shown(endpoints.database_url.as_ref()),
         Some("postgresql://writer/db")
     );
     assert_eq!(
-        endpoints.direct_url.as_deref(),
+        shown(endpoints.direct_url.as_ref()),
         Some("postgresql://direct/db")
     );
     assert_eq!(endpoints.database_host.as_deref(), Some("db.example"));
@@ -254,7 +301,7 @@ fn env_aliases_load_reader_fields() {
     );
     let endpoints = &settings.endpoints;
     assert_eq!(
-        endpoints.database_url_read_replica.as_deref(),
+        shown(endpoints.database_url_read_replica.as_ref()),
         Some("postgresql://reader/db")
     );
     assert_eq!(
@@ -300,17 +347,23 @@ fn invalid_idle_integer_stops_loading() {
 
 #[test]
 fn config_url_and_secret_precedence() {
+    let no_secrets = secrets();
+    let env_url = variables_map(&[("DATABASE_URL", "postgresql://env/db")]);
     let with_config_url = load(
         "general_settings:\n  database_url: postgresql://config/db\n",
         &[("DATABASE_URL", "postgresql://env/db")],
     );
     assert_eq!(
-        with_config_url.config_url.as_deref(),
+        shown(with_config_url.config_url.as_ref()),
         Some("postgresql://config/db")
     );
-    let env_url = variables_map(&[("DATABASE_URL", "postgresql://env/db")]);
     assert_eq!(
-        with_config_url.cli_writer_url(&env_url).unwrap().as_deref(),
+        shown(
+            with_config_url
+                .cli_writer_url(&env_url, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
         Some("postgresql://config/db")
     );
     let reference = load(
@@ -318,35 +371,106 @@ fn config_url_and_secret_precedence() {
         &[("SET_URL", "postgresql://reference/db")],
     );
     assert_eq!(
-        reference.config_url.as_deref(),
+        shown(reference.config_url.as_ref()),
+        Some("os.environ/SET_URL")
+    );
+    assert_eq!(
+        shown(
+            reference
+                .cli_writer_url(&env_url, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
         Some("postgresql://reference/db")
     );
+}
+
+#[test]
+fn missing_reference_skips_discrete_fields() {
+    let no_secrets = secrets();
     let missing_reference = load(
         "general_settings:\n  database_url: os.environ/MISSING_URL\n",
+        &[],
+    );
+    let discrete = variables_map(&[
+        ("DATABASE_HOST", "db.example"),
+        ("DATABASE_USERNAME", "user"),
+        ("DATABASE_NAME", "name"),
+    ]);
+    assert!(
+        missing_reference
+            .cli_writer_url(&discrete, &no_secrets)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn environment_url_wins_when_config_is_absent() {
+    let no_secrets = secrets();
+    let env_url = variables_map(&[("DATABASE_URL", "postgresql://env/db")]);
+    let env_settings = load(
+        "model_list: []\n",
         &[("DATABASE_URL", "postgresql://env/db")],
     );
-    assert_eq!(missing_reference.config_url, None);
     assert_eq!(
-        missing_reference
-            .cli_writer_url(&env_url)
-            .unwrap()
-            .as_deref(),
+        shown(
+            env_settings
+                .cli_writer_url(&env_url, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
         Some("postgresql://env/db")
     );
 }
 
 #[test]
 fn explicit_empty_config_url() {
+    let no_secrets = secrets();
     let settings = load(
         "general_settings:\n  database_url: \"\"\n",
         &[("DATABASE_URL", "postgresql://env/db")],
     );
-    assert_eq!(settings.config_url.as_deref(), Some(""));
+    assert_eq!(shown(settings.config_url.as_ref()), Some(""));
     let env_url = variables_map(&[("DATABASE_URL", "postgresql://env/db")]);
     assert_eq!(
-        settings.cli_writer_url(&env_url).unwrap(),
-        Some(String::new())
+        shown(
+            settings
+                .cli_writer_url(&env_url, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("")
     );
+}
+
+#[test]
+fn cli_exact_environment_names() {
+    let no_secrets = secrets();
+    let settings = load("model_list: []\n", &[]);
+    let lowercase_url = variables_map(&[("database_url", "mysql://lower/db")]);
+    assert!(
+        settings
+            .cli_writer_url(&lowercase_url, &no_secrets)
+            .unwrap()
+            .is_none()
+    );
+    let mixed = variables_map(&[
+        ("database_url", "mysql://lower/db"),
+        ("DATABASE_HOST", "db.example"),
+        ("DATABASE_USERNAME", "user"),
+        ("DATABASE_NAME", "name"),
+    ]);
+    assert_eq!(
+        shown(
+            settings
+                .cli_writer_url(&mixed, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example/name")
+    );
+    validate_cli_urls(&lowercase_url).unwrap();
 }
 
 fn assert_pool_timeout(settings: &Settings, expected: QueryValue) {
@@ -549,11 +673,17 @@ fn direct_no_added_statement_timeout() {
 
 #[test]
 fn present_empty_cli_url_rejected() {
+    let no_secrets = secrets();
     let empty_environment = variables_map(&[("DATABASE_URL", "")]);
     let env_settings = load("model_list: []\n", &[("DATABASE_URL", "")]);
     assert_eq!(
-        env_settings.cli_writer_url(&empty_environment).unwrap(),
-        Some(String::new())
+        shown(
+            env_settings
+                .cli_writer_url(&empty_environment, &no_secrets)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("")
     );
     let error = validate_cli_urls(&empty_environment).unwrap_err();
     assert!(matches!(error, DatabaseUrlError::UnsupportedScheme { .. }));
@@ -568,9 +698,12 @@ fn present_empty_cli_url_rejected() {
     );
     let mut composed = variables_map(&[("DATABASE_URL", "postgresql://h/db")]);
     let selected = config_settings
-        .cli_writer_url(&composed)
+        .cli_writer_url(&composed, &no_secrets)
         .unwrap()
         .expect("the explicit empty config URL wins");
-    composed.insert("DATABASE_URL".to_owned(), selected);
+    composed.insert(
+        "DATABASE_URL".to_owned(),
+        selected.expose_secret().to_owned(),
+    );
     assert!(validate_cli_urls(&composed).is_err());
 }

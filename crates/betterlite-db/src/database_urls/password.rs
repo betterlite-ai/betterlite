@@ -1,23 +1,24 @@
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::database_url_policy::query::add_missing_query_params;
 use crate::database_urls::endpoint::{Endpoint, password_url};
 use crate::database_urls::error::DatabaseUrlError;
 use crate::database_urls::settings::{AuthMode, DatabaseUrlSettings, ReaderFields};
-use crate::database_urls::tls::with_tls_params;
+use crate::database_urls::tls::tls_params;
 use crate::database_urls::update::{ConfigurationUpdate, WriterEnvResult};
 
 // The token branch belongs to the caller's strategy; this password module never mints or falls back to a password there
 pub fn build_writer_url(
     settings: &DatabaseUrlSettings,
     auth: AuthMode,
-) -> Result<Option<String>, DatabaseUrlError> {
+) -> Result<Option<SecretString>, DatabaseUrlError> {
     if auth == AuthMode::Token {
         return Ok(None);
     }
     if settings
         .database_url
-        .as_deref()
-        .is_some_and(|url| !url.is_empty())
+        .as_ref()
+        .is_some_and(|url| !url.expose_secret().is_empty())
     {
         return Ok(None);
     }
@@ -45,21 +46,22 @@ pub fn build_writer_url(
         name,
         schema: settings.database_schema.as_deref(),
     });
-    Ok(Some(with_tls_params(settings, &assembled)?))
+    let updated = add_missing_query_params(&assembled, &tls_params(settings))?;
+    Ok(Some(SecretString::from(updated)))
 }
 
 // A reader endpoint is a writer endpoint whose discrete fields resolve to the replica; a pinned writer URL never supplies them
 pub fn build_reader_url(
     settings: &DatabaseUrlSettings,
     auth: AuthMode,
-) -> Result<Option<String>, DatabaseUrlError> {
+) -> Result<Option<SecretString>, DatabaseUrlError> {
     let Some(fields) = reader_fields(settings) else {
         return Ok(None);
     };
     if settings
         .database_url_read_replica
-        .as_deref()
-        .is_some_and(|url| !url.is_empty())
+        .as_ref()
+        .is_some_and(|url| !url.expose_secret().is_empty())
     {
         return Ok(None);
     }

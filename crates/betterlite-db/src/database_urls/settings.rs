@@ -42,15 +42,15 @@ pub struct DatabaseUrlSettings {
     pub max_idle_connection_lifetime: Option<i64>,
     pub database_sslmode: Option<String>,
     pub database_sslrootcert: Option<String>,
-    pub database_url: Option<String>,
-    pub direct_url: Option<String>,
+    pub database_url: Option<SecretString>,
+    pub direct_url: Option<SecretString>,
     pub database_host: Option<String>,
     pub database_port: String,
     pub database_user: Option<String>,
     pub database_name: Option<String>,
     pub database_schema: Option<String>,
     pub database_password: Option<SecretString>,
-    pub database_url_read_replica: Option<String>,
+    pub database_url_read_replica: Option<SecretString>,
     pub database_host_read_replica: Option<String>,
     pub database_port_read_replica: Option<String>,
     pub database_user_read_replica: Option<String>,
@@ -114,8 +114,8 @@ where
         max_idle_connection_lifetime: lifetime(environment)?,
         database_sslmode: environment.lookup("DATABASE_SSLMODE"),
         database_sslrootcert: environment.lookup("DATABASE_SSLROOTCERT"),
-        database_url: environment.lookup("DATABASE_URL"),
-        direct_url: environment.lookup("DIRECT_URL"),
+        database_url: environment.lookup("DATABASE_URL").map(SecretString::from),
+        direct_url: environment.lookup("DIRECT_URL").map(SecretString::from),
         database_host: environment.lookup("DATABASE_HOST"),
         database_port: environment
             .lookup("DATABASE_PORT")
@@ -128,7 +128,9 @@ where
         database_password: environment
             .lookup("DATABASE_PASSWORD")
             .map(SecretString::from),
-        database_url_read_replica: environment.lookup("DATABASE_URL_READ_REPLICA"),
+        database_url_read_replica: environment
+            .lookup("DATABASE_URL_READ_REPLICA")
+            .map(SecretString::from),
         database_host_read_replica: environment.lookup("DATABASE_HOST_READ_REPLICA"),
         database_port_read_replica: environment.lookup("DATABASE_PORT_READ_REPLICA"),
         database_user_read_replica: environment

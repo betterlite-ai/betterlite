@@ -8,25 +8,25 @@ const QUOTE_PLUS_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'~')
     .remove(b' ');
 
-pub struct Endpoint<'text> {
-    pub user: &'text str,
-    pub password: Option<&'text SecretString>,
-    pub host: &'text str,
-    pub port: &'text str,
-    pub name: &'text str,
-    pub schema: Option<&'text str>,
+pub(crate) struct Endpoint<'text> {
+    pub(crate) user: &'text str,
+    pub(crate) password: Option<&'text SecretString>,
+    pub(crate) host: &'text str,
+    pub(crate) port: &'text str,
+    pub(crate) name: &'text str,
+    pub(crate) schema: Option<&'text str>,
 }
 
 // Mirrors CPython's quote_plus: alphanumerics and _.-~ stay literal, a space becomes '+', every other UTF-8 byte is escaped
 #[must_use]
-pub fn quote_plus(text: &str) -> String {
+pub(crate) fn quote_plus(text: &str) -> String {
     utf8_percent_encode(text, QUOTE_PLUS_SET)
         .to_string()
         .replace(' ', "+")
 }
 
 #[must_use]
-pub fn password_url(endpoint: &Endpoint<'_>) -> String {
+pub(crate) fn password_url(endpoint: &Endpoint<'_>) -> String {
     let user = quote_plus(endpoint.user);
     let name = quote_plus(endpoint.name);
     let mut url = endpoint

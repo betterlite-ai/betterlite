@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::cli_url::construct_cli_database_url;
 use super::error::DatabaseUrlError;
@@ -15,6 +15,10 @@ use super::settings::{
 };
 use super::tls::tls_params;
 use crate::database_url_policy::query::QueryValue;
+
+fn shown(url: Option<&SecretString>) -> Option<&str> {
+    url.map(SecretString::expose_secret)
+}
 
 fn settings() -> DatabaseUrlSettings {
     DatabaseUrlSettings {
@@ -60,10 +64,11 @@ fn environment_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn explicit_writer_no_replacement() {
     let mut settings = writer();
-    settings.database_url = Some("postgresql://pinned/db".to_owned());
-    assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        None
+    settings.database_url = Some(SecretString::from("postgresql://pinned/db"));
+    assert!(
+        build_writer_url(&settings, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
     assert!(
         !apply_writer_url_to_env(&settings, AuthMode::Password)
@@ -75,10 +80,14 @@ fn explicit_writer_no_replacement() {
 #[test]
 fn empty_writer_assembles() {
     let mut settings = writer();
-    settings.database_url = Some(String::new());
+    settings.database_url = Some(SecretString::from(String::new()));
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user@db.example:5432/name".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example:5432/name")
     );
 }
 
@@ -99,9 +108,10 @@ fn required_writer_fields(#[case] missing: RequiredField) {
         RequiredField::User => settings.database_user = None,
         RequiredField::Name => settings.database_name = None,
     }
-    assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        None
+    assert!(
+        build_writer_url(&settings, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -112,8 +122,12 @@ fn password_absent_or_empty(#[case] password: Option<&str>) {
     let mut settings = writer();
     settings.database_password = password.map(SecretString::from);
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user@db.example:5432/name".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example:5432/name")
     );
 }
 
@@ -124,8 +138,12 @@ fn quote_plus_credentials() {
     settings.database_name = Some("db/name".to_owned());
     settings.database_password = Some(SecretString::from("p@ss word"));
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user+name:p%40ss+word@db.example:5432/db%2Fname".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user+name:p%40ss+word@db.example:5432/db%2Fname")
     );
 }
 
@@ -134,8 +152,12 @@ fn already_encoded_password_reencoded() {
     let mut settings = writer();
     settings.database_password = Some(SecretString::from("p%40ss"));
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user:p%2540ss@db.example:5432/name".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user:p%2540ss@db.example:5432/name")
     );
 }
 
@@ -144,19 +166,31 @@ fn literal_schema_then_tls() {
     let mut settings = writer();
     settings.database_schema = Some("tenant one".to_owned());
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user@db.example:5432/name?schema=tenant one".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example:5432/name?schema=tenant one")
     );
     settings.database_sslmode = Some("require".to_owned());
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user@db.example:5432/name?schema=tenant+one&sslmode=require".to_owned())
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example:5432/name?schema=tenant+one&sslmode=require")
     );
     let mut empty_schema = writer();
     empty_schema.database_schema = Some(String::new());
     assert_eq!(
-        build_writer_url(&empty_schema, AuthMode::Password).unwrap(),
-        Some("postgresql://user@db.example:5432/name".to_owned())
+        shown(
+            build_writer_url(&empty_schema, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example:5432/name")
     );
 }
 
@@ -165,10 +199,13 @@ fn root_only_verify_full() {
     let mut settings = writer();
     settings.database_sslrootcert = Some("/certs/root.pem".to_owned());
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
         Some(
             "postgresql://user@db.example:5432/name?sslmode=verify-full&sslrootcert=%2Fcerts%2Froot.pem"
-                .to_owned()
         )
     );
     settings.database_sslmode = Some(String::new());
@@ -194,10 +231,13 @@ fn explicit_sslmode_and_blank_query() {
     settings.database_sslrootcert = Some("/certs/root.pem".to_owned());
     settings.database_schema = Some("tenant&sslmode=".to_owned());
     assert_eq!(
-        build_writer_url(&settings, AuthMode::Password).unwrap(),
+        shown(
+            build_writer_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
         Some(
             "postgresql://user@db.example:5432/name?schema=tenant&sslmode=&sslrootcert=%2Fcerts%2Froot.pem"
-                .to_owned()
         )
     );
 }
@@ -205,15 +245,17 @@ fn explicit_sslmode_and_blank_query() {
 #[test]
 fn reader_host_opt_in() {
     let settings = writer();
-    assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
-        None
+    assert!(
+        build_reader_url(&settings, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
     let mut empty_host = writer();
     empty_host.database_host_read_replica = Some(String::new());
-    assert_eq!(
-        build_reader_url(&empty_host, AuthMode::Password).unwrap(),
-        None
+    assert!(
+        build_reader_url(&empty_host, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -221,17 +263,17 @@ fn reader_host_opt_in() {
 fn pinned_reader_no_replacement() {
     let mut settings = writer();
     settings.database_host_read_replica = Some("replica.example".to_owned());
-    settings.database_url_read_replica = Some("postgresql://pinned/reader".to_owned());
-    assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
-        None
+    settings.database_url_read_replica = Some(SecretString::from("postgresql://pinned/reader"));
+    assert!(
+        build_reader_url(&settings, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
 }
 
 #[test]
 fn reader_truthy_fallbacks() {
     let mut settings = writer();
-    settings.database_host = Some("db.example".to_owned());
     settings.database_port = "5432".to_owned();
     settings.database_schema = Some("writer_schema".to_owned());
     settings.database_password = Some(SecretString::from("writer_pass"));
@@ -241,11 +283,12 @@ fn reader_truthy_fallbacks() {
     settings.database_name_read_replica = Some(String::new());
     settings.database_schema_read_replica = Some(String::new());
     assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
-        Some(
-            "postgresql://user:writer_pass@replica.example:5432/name?schema=writer_schema"
-                .to_owned()
-        )
+        shown(
+            build_reader_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user:writer_pass@replica.example:5432/name?schema=writer_schema")
     );
     settings.database_port_read_replica = Some("6543".to_owned());
     settings.database_user_read_replica = Some("reader_user".to_owned());
@@ -253,10 +296,13 @@ fn reader_truthy_fallbacks() {
     settings.database_schema_read_replica = Some("reader_schema".to_owned());
     settings.database_password_read_replica = Some(SecretString::from("reader_pass"));
     assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
+        shown(
+            build_reader_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
         Some(
             "postgresql://reader_user:reader_pass@replica.example:6543/reader_db?schema=reader_schema"
-                .to_owned()
         )
     );
 }
@@ -268,19 +314,26 @@ fn empty_reader_password_inherits() {
     settings.database_host_read_replica = Some("replica.example".to_owned());
     settings.database_password_read_replica = Some(SecretString::from(""));
     assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
-        Some("postgresql://user:writer_pass@replica.example:5432/name".to_owned())
+        shown(
+            build_reader_url(&settings, AuthMode::Password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user:writer_pass@replica.example:5432/name")
     );
 }
 
 #[test]
 fn reader_does_not_parse_writer_url() {
     let mut settings = settings();
-    settings.database_url = Some("postgresql://url_user:url_pass@pinned.example/db".to_owned());
+    settings.database_url = Some(SecretString::from(
+        "postgresql://url_user:url_pass@pinned.example/db",
+    ));
     settings.database_host_read_replica = Some("replica.example".to_owned());
-    assert_eq!(
-        build_reader_url(&settings, AuthMode::Password).unwrap(),
-        None
+    assert!(
+        build_reader_url(&settings, AuthMode::Password)
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -289,15 +342,14 @@ fn writer_update_result() {
     let settings = writer();
     let assembled = apply_writer_url_to_env(&settings, AuthMode::Password).unwrap();
     assert!(assembled.replaced);
+    assert_eq!(assembled.updates.len(), 1);
+    assert_eq!(assembled.updates[0].name, "DATABASE_URL");
     assert_eq!(
-        assembled.updates,
-        vec![super::update::ConfigurationUpdate {
-            name: "DATABASE_URL".to_owned(),
-            value: "postgresql://user@db.example:5432/name".to_owned(),
-        }]
+        assembled.updates[0].value.expose_secret(),
+        "postgresql://user@db.example:5432/name"
     );
     let mut pinned = writer();
-    pinned.database_url = Some("postgresql://pinned/db".to_owned());
+    pinned.database_url = Some(SecretString::from("postgresql://pinned/db"));
     let pinned_result = apply_writer_url_to_env(&pinned, AuthMode::Password).unwrap();
     assert!(!pinned_result.replaced);
     assert!(pinned_result.updates.is_empty());
@@ -306,18 +358,18 @@ fn writer_update_result() {
 #[test]
 fn scheme_validation_order() {
     let mut writer_bad = writer();
-    writer_bad.database_url = Some("mysql://writer/db".to_owned());
-    writer_bad.direct_url = Some("sqlite://direct/db".to_owned());
-    writer_bad.database_url_read_replica = Some("postgres://reader/db".to_owned());
+    writer_bad.database_url = Some(SecretString::from("mysql://writer/db"));
+    writer_bad.direct_url = Some(SecretString::from("sqlite://direct/db"));
+    writer_bad.database_url_read_replica = Some(SecretString::from("postgres://reader/db"));
     let writer_error = validate_component_schemes(&writer_bad).unwrap_err();
     assert_eq!(
         writer_error.to_string(),
         "DATABASE_URL uses unsupported scheme 'mysql'. LiteLLM's database features (virtual keys, store_model_in_db, spend tracking) require PostgreSQL; use a 'postgresql://' connection string. SQLite and other engines are not supported. See https://docs.litellm.ai/docs/proxy/virtual_keys"
     );
     let mut direct_bad = writer();
-    direct_bad.database_url = Some("postgresql://writer/db".to_owned());
-    direct_bad.direct_url = Some("sqlite://direct/db".to_owned());
-    direct_bad.database_url_read_replica = Some("postgres://reader/db".to_owned());
+    direct_bad.database_url = Some(SecretString::from("postgresql://writer/db"));
+    direct_bad.direct_url = Some(SecretString::from("sqlite://direct/db"));
+    direct_bad.database_url_read_replica = Some(SecretString::from("postgres://reader/db"));
     let direct_error = validate_component_schemes(&direct_bad).unwrap_err();
     assert!(
         direct_error
@@ -325,9 +377,9 @@ fn scheme_validation_order() {
             .starts_with("DIRECT_URL uses unsupported scheme 'sqlite'")
     );
     let mut reader_bad = writer();
-    reader_bad.database_url = Some("postgresql://writer/db".to_owned());
-    reader_bad.direct_url = Some("postgres://direct/db".to_owned());
-    reader_bad.database_url_read_replica = Some("mysql://reader/db".to_owned());
+    reader_bad.database_url = Some(SecretString::from("postgresql://writer/db"));
+    reader_bad.direct_url = Some(SecretString::from("postgres://direct/db"));
+    reader_bad.database_url_read_replica = Some(SecretString::from("mysql://reader/db"));
     let reader_error = validate_component_schemes(&reader_bad).unwrap_err();
     assert!(
         reader_error
@@ -335,18 +387,18 @@ fn scheme_validation_order() {
             .starts_with("DATABASE_URL_READ_REPLICA uses unsupported scheme 'mysql'")
     );
     let mut all_good = writer();
-    all_good.database_url = Some("postgresql://writer/db".to_owned());
-    all_good.direct_url = Some("postgres://direct/db".to_owned());
-    all_good.database_url_read_replica = Some("postgresql://reader/db".to_owned());
+    all_good.database_url = Some(SecretString::from("postgresql://writer/db"));
+    all_good.direct_url = Some(SecretString::from("postgres://direct/db"));
+    all_good.database_url_read_replica = Some(SecretString::from("postgresql://reader/db"));
     validate_component_schemes(&all_good).unwrap();
 }
 
 #[test]
 fn falsey_component_urls_skipped() {
     let mut settings = writer();
-    settings.database_url = Some(String::new());
-    settings.direct_url = Some(String::new());
-    settings.database_url_read_replica = Some(String::new());
+    settings.database_url = Some(SecretString::from(String::new()));
+    settings.direct_url = Some(SecretString::from(String::new()));
+    settings.database_url_read_replica = Some(SecretString::from(String::new()));
     validate_component_schemes(&settings).unwrap();
 }
 
@@ -362,15 +414,19 @@ fn cli_username_only_no_port() {
         ("DATABASE_SCHEMA", "tenant"),
     ]);
     assert_eq!(
-        construct_cli_database_url(&environment).unwrap(),
-        Some("postgresql://cli+user:p%40ss@db.example/cli_db?schema=tenant".to_owned())
+        shown(construct_cli_database_url(&environment).unwrap().as_ref()),
+        Some("postgresql://cli+user:p%40ss@db.example/cli_db?schema=tenant")
     );
     let without_username = environment_map(&[
         ("DATABASE_HOST", "db.example"),
         ("DATABASE_USER", "u"),
         ("DATABASE_NAME", "n"),
     ]);
-    assert_eq!(construct_cli_database_url(&without_username).unwrap(), None);
+    assert!(
+        construct_cli_database_url(&without_username)
+            .unwrap()
+            .is_none()
+    );
     let without_password = environment_map(&[
         ("DATABASE_HOST", "db.example"),
         ("DATABASE_USERNAME", "user"),
@@ -378,9 +434,29 @@ fn cli_username_only_no_port() {
         ("DATABASE_PASSWORD", ""),
     ]);
     assert_eq!(
-        construct_cli_database_url(&without_password).unwrap(),
-        Some("postgresql://user@db.example/cli_db".to_owned())
+        shown(
+            construct_cli_database_url(&without_password)
+                .unwrap()
+                .as_ref()
+        ),
+        Some("postgresql://user@db.example/cli_db")
     );
+}
+
+#[test]
+fn cli_lowercase_names_are_ignored() {
+    let environment = environment_map(&[
+        ("database_host", "db.example"),
+        ("database_username", "cli user"),
+        ("database_name", "cli_db"),
+    ]);
+    assert!(construct_cli_database_url(&environment).unwrap().is_none());
+    let mixed = environment_map(&[
+        ("DATABASE_HOST", "db.example"),
+        ("database_username", "cli user"),
+        ("DATABASE_NAME", "cli_db"),
+    ]);
+    assert!(construct_cli_database_url(&mixed).unwrap().is_none());
 }
 
 #[test]
@@ -390,7 +466,7 @@ fn cli_missing_fields_skips_settings_validation() {
         ("DATABASE_NAME", "cli_db"),
         ("DATABASE_MAX_IDLE_CONNECTION_LIFETIME", "soon"),
     ]);
-    assert_eq!(construct_cli_database_url(&missing).unwrap(), None);
+    assert!(construct_cli_database_url(&missing).unwrap().is_none());
     let complete = environment_map(&[
         ("DATABASE_HOST", "db.example"),
         ("DATABASE_USERNAME", "user"),
@@ -409,12 +485,17 @@ fn cli_missing_fields_skips_settings_validation() {
 #[test]
 fn token_auth_yields_no_password_replacement() {
     let settings = writer();
-    assert_eq!(build_writer_url(&settings, AuthMode::Token).unwrap(), None);
+    assert!(
+        build_writer_url(&settings, AuthMode::Token)
+            .unwrap()
+            .is_none()
+    );
     let mut reader_settings = writer();
     reader_settings.database_host_read_replica = Some("replica.example".to_owned());
-    assert_eq!(
-        build_reader_url(&reader_settings, AuthMode::Token).unwrap(),
-        None
+    assert!(
+        build_reader_url(&reader_settings, AuthMode::Token)
+            .unwrap()
+            .is_none()
     );
     assert!(
         !apply_writer_url_to_env(&reader_settings, AuthMode::Token)
@@ -435,7 +516,7 @@ fn from_env_reads_names_in_any_case() {
     ]);
     let settings = from_env(&environment).unwrap();
     assert_eq!(
-        settings.database_url.as_deref(),
+        shown(settings.database_url.as_ref()),
         Some("postgresql://mixed/db")
     );
     assert_eq!(settings.database_user.as_deref(), Some("lower_user"));
@@ -448,7 +529,7 @@ fn from_env_reads_names_in_any_case() {
 fn from_env_defaults_and_aliases() {
     let defaults = from_env(&BTreeMap::<String, String>::new()).unwrap();
     assert_eq!(defaults.database_port, DEFAULT_POSTGRES_PORT);
-    assert_eq!(defaults.database_url, None);
+    assert!(defaults.database_url.is_none());
     assert!(!defaults.iam_token_db_auth);
     assert!(!defaults.azure_postgresql_auth);
     assert!(!defaults.disable_prepared_statements);
