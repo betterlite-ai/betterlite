@@ -33,6 +33,7 @@ const SKIPPED: &str = r#"{"inputTokens": true, "outputTokens": "5", "cacheReadIn
 const TRUNCATED: &str = r#"{"inputTokens": 3.9, "outputTokens": -3.9, "cacheReadInputTokens": 1.5, "cacheWriteInputTokens": -1.5}"#;
 const INCONSISTENT: &str =
     r#"{"inputTokens": 2, "outputTokens": 3, "cacheReadInputTokens": 1, "totalTokens": 4}"#;
+const CACHED_TOTAL: &str = r#"{"inputTokens": 2, "outputTokens": 3, "cacheReadInputTokens": 4, "cacheWriteInputTokens": 5}"#;
 
 fn at<'value>(value: &'value Json, path: &[&str]) -> &'value Json {
     let mut current = value;
@@ -225,6 +226,17 @@ fn reasoning_provider_wins() {
         &FixtureCounter(None),
     );
     assert!(matches!(failed, Err(UsageError::Counter { .. })));
+    let failed_with_provider = transform_usage(
+        &usage(USAGE),
+        Some("hello world"),
+        false,
+        Some(4),
+        &FixtureCounter(None),
+    );
+    assert!(matches!(
+        failed_with_provider,
+        Err(UsageError::Counter { .. })
+    ));
 }
 
 fn batch_usage_shape() {
@@ -296,6 +308,7 @@ fn transform_error(source: &str) -> UsageError<CounterFailed> {
 fn total_token_normalization() {
     for (source, expected) in [
         (r#"{"inputTokens": 2, "outputTokens": 3}"#, "5"),
+        (CACHED_TOTAL, "14"),
         (
             r#"{"inputTokens": 2, "outputTokens": 3, "totalTokens": 0}"#,
             "0",
