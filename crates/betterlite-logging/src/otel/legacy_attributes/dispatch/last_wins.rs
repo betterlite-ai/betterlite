@@ -4,6 +4,8 @@ use std::time::SystemTime;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::{Span, SpanContext, Status};
 
+mod tests;
+
 // the SDK span pushes every set_attribute, so a repeated key would be exported twice; LiteLLM's span keeps the last value
 pub(super) struct LastWins<'span, S> {
     span: &'span mut S,

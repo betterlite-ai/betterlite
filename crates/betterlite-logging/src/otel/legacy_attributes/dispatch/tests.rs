@@ -169,6 +169,10 @@ fn langfuse_otel_hands_the_span_to_the_langfuse_writer() {
         attributes.get("langfuse.observation.type"),
         Some(&Value::from("generation"))
     );
+    assert_eq!(
+        attributes.get("llm.is_streaming"),
+        Some(&Value::from("True"))
+    );
     assert_no_generic_keys(&attributes);
 }
 

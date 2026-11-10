@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use opentelemetry::trace::Span;
 
+use crate::langfuse_otel_attributes::llm_obs::LangfuseLLMObsOTELAttributes;
 use crate::langfuse_otel_attributes::writer::set_langfuse_otel_attributes;
+use crate::otel::integrations::arize_attributes::set_attributes as set_arize_attributes;
 use crate::otel::integrations::langtrace::LangtraceAttributes;
 use crate::otel::integrations::weave_attributes::set_weave_otel_attributes;
 use crate::otel::model::metadata::wire::MetadataMap;
@@ -87,13 +89,15 @@ fn write_vendor_attributes<S>(
         "langfuse_otel" => {
             // the legacy logger carries no environment snapshot; only the dynamic param applies
             let environment: BTreeMap<String, String> = BTreeMap::new();
-            set_langfuse_otel_attributes(
+            let redact = redact_messages(kwargs);
+            // LiteLLM runs the shared Arize attribute writer first, with the Langfuse message layout
+            set_arize_attributes::<LangfuseLLMObsOTELAttributes, S>(
                 span,
                 kwargs,
-                response,
-                &environment,
-                redact_messages(kwargs),
+                response.unwrap_or(&OtelModelValue::Null(())),
+                redact,
             );
+            set_langfuse_otel_attributes(span, kwargs, response, &environment, redact);
         }
         "weave_otel" => {
             set_weave_otel_attributes(
