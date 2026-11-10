@@ -24,7 +24,7 @@ use betterlite_ocr::ocr_route::aocr;
 use betterlite_ocr::ocr_settings::OcrSettings;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -43,15 +43,15 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 struct Call {
     model: String,
-    document: Value,
+    document: Json,
     #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
     api_base_path: String,
     #[serde(default)]
-    extra_headers: Option<Map<String, Value>>,
+    extra_headers: Option<Object>,
     #[serde(default)]
-    optional_params: Map<String, Value>,
+    optional_params: Object,
     #[serde(default)]
     timeout_seconds: Option<f64>,
     answer: Value,
@@ -62,7 +62,7 @@ struct Call {
 struct WireInput {
     name: String,
     model: String,
-    document: Value,
+    document: Json,
     #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
@@ -70,9 +70,9 @@ struct WireInput {
     #[serde(default)]
     custom_llm_provider: Option<String>,
     #[serde(default)]
-    extra_headers: Option<Map<String, Value>>,
+    extra_headers: Option<Object>,
     #[serde(default)]
-    optional_params: Map<String, Value>,
+    optional_params: Object,
     #[serde(default)]
     timeout_seconds: Option<f64>,
 }
@@ -90,7 +90,7 @@ impl Helper for Op {
                 .map_err(|error| failure(&error))?;
             return runtime.block_on(run_call(call));
         }
-        run_decode(&input.decode)
+        Ok(run_decode(&input.decode))
     }
 }
 
@@ -157,40 +157,20 @@ fn client() -> Result<OcrClient, Box<HelperError>> {
     })
 }
 
-fn betterlite_json(value: &Value) -> Result<Json, Box<HelperError>> {
-    match serde_json::from_value(value.clone()) {
-        Ok(decoded) => Ok(decoded),
-        Err(error) => Err(failure(&error)),
-    }
-}
-
-fn betterlite_object(value: &Map<String, Value>) -> Result<Object, Box<HelperError>> {
-    let object = Value::Object(value.clone());
-    match serde_json::from_value(object) {
-        Ok(decoded) => Ok(decoded),
-        Err(error) => Err(failure(&error)),
-    }
-}
-
 async fn run_call(call: &Call) -> HelperResult {
     let answer = serde_json::to_vec(&call.answer).map_err(|error| failure(&error))?;
     let server = Server::start(answer).await?;
-    let extra_headers = call
-        .extra_headers
-        .as_ref()
-        .map(betterlite_object)
-        .transpose()?;
     let wire = OcrWireRequest {
         model: call.model.clone(),
-        document: betterlite_json(&call.document)?,
+        document: call.document.clone(),
         api_key: call
             .api_key
             .as_ref()
             .map(|key| SecretString::from(key.as_str())),
         api_base: Some(format!("{}{}", server.base, call.api_base_path)),
         custom_llm_provider: None,
-        extra_headers,
-        optional_params: betterlite_object(&call.optional_params)?,
+        extra_headers: call.extra_headers.clone(),
+        optional_params: call.optional_params.clone(),
         input_sources: BTreeMap::new(),
         timeout_seconds: call.timeout_seconds,
     };
@@ -214,25 +194,20 @@ fn observed(captured: &Captured, response: &betterlite_ocr::response::OCRRespons
     }))
 }
 
-fn run_decode(attempts: &[WireInput]) -> HelperResult {
+fn run_decode(attempts: &[WireInput]) -> Value {
     let mut results = Vec::with_capacity(attempts.len());
     for attempt in attempts {
-        let extra_headers = attempt
-            .extra_headers
-            .as_ref()
-            .map(betterlite_object)
-            .transpose()?;
         let wire = OcrWireRequest {
             model: attempt.model.clone(),
-            document: betterlite_json(&attempt.document)?,
+            document: attempt.document.clone(),
             api_key: attempt
                 .api_key
                 .as_ref()
                 .map(|key| SecretString::from(key.as_str())),
             api_base: attempt.api_base.clone(),
             custom_llm_provider: attempt.custom_llm_provider.clone(),
-            extra_headers,
-            optional_params: betterlite_object(&attempt.optional_params)?,
+            extra_headers: attempt.extra_headers.clone(),
+            optional_params: attempt.optional_params.clone(),
             input_sources: BTreeMap::new(),
             timeout_seconds: attempt.timeout_seconds,
         };
@@ -246,7 +221,7 @@ fn run_decode(attempts: &[WireInput]) -> HelperResult {
         };
         results.push(result);
     }
-    Ok(json!({"decode": results}))
+    json!({"decode": results})
 }
 
 fn ocr_failure(error: &OcrError) -> Box<HelperError> {

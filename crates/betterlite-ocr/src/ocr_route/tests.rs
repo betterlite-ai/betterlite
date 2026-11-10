@@ -278,7 +278,7 @@ async fn a_caller_token_call_asks_the_host_once() {
     request_wire.api_key = None;
     let request = decode_request(request_wire).expect("the request decodes");
     let machine = OcrMachine {
-        route: OcrRoute::from(client),
+        route: OcrRoute { client },
         call: OcrCall {
             request,
             caller_token: true,
@@ -312,7 +312,7 @@ async fn a_call_without_a_caller_token_does_not_ask_the_host() {
     ))
     .expect("the request decodes");
     let machine = OcrMachine {
-        route: OcrRoute::from(client),
+        route: OcrRoute { client },
         call: OcrCall {
             request,
             caller_token: false,
@@ -340,7 +340,7 @@ async fn execute_resolves_the_client_secrets_into_the_connection() {
     );
     request_wire.api_key = None;
     let request = decode_request(request_wire).expect("the request decodes");
-    let response = OcrRoute::from(client)
+    let response = OcrRoute { client }
         .execute(request, &())
         .await
         .expect("the call succeeds");
@@ -367,7 +367,7 @@ async fn a_caller_token_call_without_a_host_is_invalid() {
     request_wire.api_key = None;
     let request = decode_request(request_wire).expect("the request decodes");
     let machine = OcrMachine {
-        route: OcrRoute::from(client),
+        route: OcrRoute { client },
         call: OcrCall {
             request,
             caller_token: true,
@@ -393,10 +393,12 @@ async fn the_prepare_step_opens_the_litellm_prepare_span() {
         names: Arc::clone(&names),
     };
     let _guard = subscriber::set_default(subscriber);
-    let _response = OcrRoute::from(ocr_client(OcrSettings::default(), Duration::from_secs(5)))
-        .execute(request, &())
-        .await
-        .expect("the call succeeds");
+    let _response = OcrRoute {
+        client: ocr_client(OcrSettings::default(), Duration::from_secs(5)),
+    }
+    .execute(request, &())
+    .await
+    .expect("the call succeeds");
     let _captured = server.requests().await;
     let recorded = {
         let guard = names.lock().unwrap_or_else(PoisonError::into_inner);

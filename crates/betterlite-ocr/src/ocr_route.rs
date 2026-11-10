@@ -19,12 +19,6 @@ pub struct OcrRoute {
     pub client: OcrClient,
 }
 
-impl From<OcrClient> for OcrRoute {
-    fn from(client: OcrClient) -> Self {
-        Self { client }
-    }
-}
-
 impl OcrRoute {
     pub async fn execute(
         &self,
@@ -105,7 +99,7 @@ pub async fn aocr(
     request: LiteLLMOcrRequest<OcrDocumentInput>,
 ) -> Result<OCRResponse, OcrError> {
     let machine = OcrMachine {
-        route: OcrRoute::from(client),
+        route: OcrRoute { client },
         call: OcrCall {
             request,
             caller_token: false,
