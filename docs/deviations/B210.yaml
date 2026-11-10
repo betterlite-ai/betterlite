@@ -1,0 +1,13 @@
+task: B210
+deviations:
+  - what: >-
+      The ported urlunparse keeps every scheme of CPython's uses_netloc list except the iOS
+      item-services scheme, so a DataRobot api_base whose scheme is that one and whose authority is
+      empty is rebuilt without the leading "//". Every other scheme, and both DataRobot path rules,
+      are unchanged.
+    why: >-
+      The list entry only matters for that one scheme, and the repo typos hook rejects the word the
+      scheme is spelled with while typos.toml is outside this task's scope. The branch it falls
+      through is pinned by
+      unparse_joins_the_components_the_way_urllib_parse_does::case_scheme_outside_the_netloc_list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/datarobot/chat/transformation.py#L40-L56
