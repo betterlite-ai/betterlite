@@ -135,6 +135,45 @@ fn dot_paths_adapter_reports_path_errors(#[case] prefix: &str, #[case] message: 
     assert!(error.message.starts_with(message));
 }
 
+fn group_operations(root: &Path) -> BTreeSet<String> {
+    let entries: Vec<PathBuf> = fs::read_dir(root.join("src/helpers"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let group_files = entries
+        .iter()
+        .filter(|path| path.extension() == Some(OsStr::new("rs")))
+        .filter(|path| {
+            !["answers.rs", "mod.rs", "python.rs", "tests.rs"]
+                .iter()
+                .any(|name| path.ends_with(name))
+        })
+        .cloned()
+        .chain(
+            entries
+                .iter()
+                .map(|path| path.join("lib.rs"))
+                .filter(|path| path.is_file()),
+        );
+    group_files
+        .flat_map(|path| {
+            // operation names are the quoted strings on lines that open with a quote, several to a line
+            fs::read_to_string(path)
+                .unwrap()
+                .lines()
+                .filter(|line| line.trim_start().starts_with('"'))
+                .flat_map(|line| {
+                    line.split('"')
+                        .skip(1)
+                        .step_by(2)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[test]
 fn dispatch_py_lists_exactly_the_registered_operations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -148,28 +187,7 @@ fn dispatch_py_lists_exactly_the_registered_operations() {
         .filter_map(|line| line.trim().strip_prefix('"')?.strip_suffix("\","))
         .map(str::to_owned)
         .collect();
-    let group_files = fs::read_dir(root.join("src/helpers"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension() == Some(OsStr::new("rs")))
-        .filter(|path| {
-            !["answers.rs", "mod.rs", "python.rs", "tests.rs"]
-                .iter()
-                .any(|name| path.ends_with(name))
-        });
-    let rust: BTreeSet<String> = group_files
-        .flat_map(|path| {
-            // a group file quotes nothing but operation names, several to a line
-            fs::read_to_string(path)
-                .unwrap()
-                .split('"')
-                .skip(1)
-                .step_by(2)
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    assert_eq!(rust, python);
+    assert_eq!(group_operations(root), python);
 }
 
 fn answer_scratch(name: &str) -> PathBuf {

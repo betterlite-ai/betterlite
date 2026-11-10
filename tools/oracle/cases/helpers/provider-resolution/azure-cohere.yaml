@@ -1,0 +1,11 @@
+kind: helper
+name: provider-resolution-azure-cohere
+call:
+  provider_resolution:
+    model: azure/command-r-plus
+    api_base: https://azure.example
+    api_key: az-key
+    catalog:
+      command-r-plus: {litellm_provider: cohere_chat}
+env: {}
+compare: {ignore: []}

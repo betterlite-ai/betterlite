@@ -1316,6 +1316,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-logging",
+ "betterlite-models",
  "clap",
  "dbus-secret-service-keyring-store",
  "hex",
@@ -1555,12 +1556,14 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-db",
+ "betterlite-postgres-fixture",
  "clap",
  "rstest",
  "secrecy",
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -1888,6 +1891,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "hyper",
  "indexmap 2.14.2",
  "insta",
  "jiff",
@@ -2048,6 +2052,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "strum",
  "thiserror",
  "tokio",
  "url",
@@ -2058,6 +2063,7 @@ dependencies = [
 name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -2163,6 +2169,8 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-redact",
  "betterlite-paths",
  "betterlite-policy",
  "betterlite-postgres-fixture",
@@ -2238,6 +2246,28 @@ dependencies = [
  "serde-saphyr",
  "thiserror",
  "tl",
+]
+
+[[package]]
+name = "betterlite-oracle-helper-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
+name = "betterlite-oracle-redact"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "rstest",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
 ]
 
 [[package]]
