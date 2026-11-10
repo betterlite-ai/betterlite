@@ -2,8 +2,10 @@
 
 use std::ffi::OsString;
 use std::fs;
+use std::os::unix::ffi::OsStringExt as _;
 use std::sync::{Arc, Mutex};
 
+use betterlite_db::migration_deploy::DeployError;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tempfile::TempDir;
@@ -12,7 +14,9 @@ use super::{
     AdminEnvironment, DbAdminBackend, DbAdminFuture, DbAdminService, Diagnostics, ExitStatus,
     ResolvedConfig, run,
 };
-use crate::commands::{DbAdminCommand, DbAdminError, DbAdminOutcome, MigrationOptions, Operation};
+use crate::commands::{
+    DbAdminCommand, DbAdminError, DbAdminOutcome, MigrationError, MigrationOptions, Operation,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum Reply {
@@ -50,7 +54,9 @@ impl DbAdminService for FakeService {
                 Reply::RetriesExhausted => Ok(DbAdminOutcome::RetriesExhausted),
                 Reply::IndexJobFailed => Ok(DbAdminOutcome::IndexJobFailed),
                 Reply::Unrecoverable => Err(DbAdminError::Unrecoverable {
-                    message: "the database is unreachable".to_owned(),
+                    source: MigrationError::Deploy(DeployError::Unfinished {
+                        name: "20240101_init".to_owned(),
+                    }),
                 }),
             }
         })
@@ -431,7 +437,7 @@ async fn unrecoverable_native_exit_two() {
     assert_eq!(status, ExitStatus::Unrecoverable);
     assert_eq!(status.code(), 2);
     assert!(lines_with(&recorder, "err|").iter().any(|line| {
-        line.contains("Database migration cannot proceed: the database is unreachable")
+        line.contains("Database migration cannot proceed: migration 20240101_init has an unfinished ledger row")
     }));
 }
 
@@ -448,4 +454,51 @@ async fn native_omits_client_generation() {
     assert!(!errors.iter().any(|line| line.contains("stderr")));
     assert_eq!(errors.len(), 2);
     assert_eq!(harness.captures.lock().expect("captures").len(), 1);
+}
+
+#[tokio::test]
+async fn assembled_url_stays_out_of_environment() {
+    let harness = harness(Reply::Completed);
+    let variables = environment(&[
+        ("DATABASE_HOST", "assembled.example"),
+        ("DATABASE_USER", "user"),
+        ("DATABASE_NAME", "db"),
+        ("DATABASE_PASSWORD", "secret"),
+    ]);
+    let (status, _) = invoke(&["migrate"], variables, &harness.backend).await;
+    assert_eq!(status, ExitStatus::Success);
+    let captures = captured(&harness);
+    assert!(captures[0].0.contains("assembled.example"));
+    assert_eq!(captures[0].1, None);
+}
+
+#[test]
+fn non_utf8_variable_is_named_without_its_value() {
+    let mut recorder = Recorder::default();
+    let bad_value = OsString::from_vec(vec![0x66, 0xff]);
+    let bad_name = OsString::from_vec(vec![0x6e, 0xff]);
+    let loaded = AdminEnvironment::from_os(
+        [
+            (OsString::from("DATABASE_URL"), bad_value),
+            (bad_name, OsString::from("kept-out")),
+            (OsString::from("GOOD"), OsString::from("value")),
+        ],
+        None,
+        &mut recorder,
+    );
+    assert_eq!(
+        loaded
+            .variables
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["GOOD"]
+    );
+    assert_eq!(
+        lines_with(&recorder, "err|"),
+        vec![
+            "environment variable DATABASE_URL is not UTF-8 and is ignored".to_owned(),
+            "an environment variable name is not UTF-8 and is ignored".to_owned(),
+        ]
+    );
 }

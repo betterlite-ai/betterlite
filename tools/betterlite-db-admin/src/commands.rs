@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use betterlite_db::migration_deploy::DeployError;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -83,8 +84,17 @@ pub enum DbAdminOutcome {
 pub enum DbAdminError {
     #[error("no native service is registered for the {operation} operation")]
     Unregistered { operation: &'static str },
-    #[error("{message}")]
-    Unrecoverable { message: String },
+    #[error("{source}")]
+    Unrecoverable {
+        #[source]
+        source: MigrationError,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum MigrationError {
+    #[error(transparent)]
+    Deploy(#[from] DeployError),
 }
 
 // LiteLLM's extras str_to_bool: case-insensitive true/1/t/y/yes only, no stripping, no "on"

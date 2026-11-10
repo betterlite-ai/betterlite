@@ -26,6 +26,36 @@ pub struct AdminEnvironment {
     pub home: Option<PathBuf>,
 }
 
+impl AdminEnvironment {
+    pub fn from_os<I>(
+        variables: I,
+        home: Option<PathBuf>,
+        diagnostics: &mut dyn Diagnostics,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (OsString, OsString)>,
+    {
+        let mut decoded = BTreeMap::new();
+        for (raw_name, raw_value) in variables {
+            match (raw_name.into_string(), raw_value.into_string()) {
+                (Ok(name), Ok(value)) => {
+                    decoded.insert(name, value);
+                }
+                (Ok(name), Err(_)) => diagnostics.error(&format!(
+                    "environment variable {name} is not UTF-8 and is ignored"
+                )),
+                (Err(_), _) => {
+                    diagnostics.error("an environment variable name is not UTF-8 and is ignored");
+                }
+            }
+        }
+        Self {
+            variables: decoded,
+            home,
+        }
+    }
+}
+
 pub trait Diagnostics: Send {
     fn output(&mut self, line: &str);
     fn error(&mut self, line: &str);
@@ -88,7 +118,7 @@ enum PrepareError {
     MissingUrl,
 }
 
-// the resolved settings every registered service receives, with the writer URL already applied
+// the writer URL stays a SecretString in database_url; environment is the operator's variables as read
 pub struct ResolvedConfig {
     pub settings: Config,
     pub environment: BTreeMap<String, String>,
@@ -167,26 +197,18 @@ fn prepare(
     };
     let writer =
         apply_writer_url_to_env(endpoints, auth).map_err(|source| PrepareError::Url { source })?;
-    let mut applied = environment.variables.clone();
-    for update in &writer.updates {
-        applied.insert(update.name.clone(), update.value.expose_secret().to_owned());
-    }
     let assembled = writer.updates.into_iter().next().map(|update| update.value);
     let pinned = endpoints
         .database_url
         .clone()
         .filter(|url| !url.expose_secret().is_empty());
     let database_url = assembled.or(pinned).ok_or(PrepareError::MissingUrl)?;
-    applied.insert(
-        "DATABASE_URL".to_owned(),
-        database_url.expose_secret().to_owned(),
-    );
     let command = operation.command(&environment.variables);
     Ok((
         command,
         ResolvedConfig {
             settings,
-            environment: applied,
+            environment: environment.variables.clone(),
             database_url,
         },
     ))

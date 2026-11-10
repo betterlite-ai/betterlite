@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
 use std::env;
-use std::io::{self, Write as _};
+use std::io;
 use std::process::ExitCode;
 
-use betterlite_db_admin::command_shell::{AdminEnvironment, DbAdminBackend, Streams, run};
+use betterlite_db_admin::command_shell::{
+    AdminEnvironment, DbAdminBackend, Diagnostics as _, Streams, run,
+};
 use tokio::runtime::Builder;
 
 mod database_repair;
@@ -12,46 +13,26 @@ mod spend_backfills;
 mod spend_partitions;
 
 fn main() -> ExitCode {
-    let environment = process_environment();
     let backend = DbAdminBackend::default();
-    let runtime = match Builder::new_multi_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            drop(writeln!(
-                io::stderr(),
-                "the async runtime could not be built: {error}"
-            ));
-            return ExitCode::FAILURE;
-        }
-    };
     let mut output = io::stdout();
     let mut errors = io::stderr();
     let mut streams = Streams {
         output: &mut output,
         errors: &mut errors,
     };
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the binary is where the process environment enters, and it hands every variable to the config loader"
+    )]
+    let process_variables = env::vars_os();
+    let environment = AdminEnvironment::from_os(process_variables, env::home_dir(), &mut streams);
+    let runtime = match Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            streams.error(&format!("the async runtime could not be built: {error}"));
+            return ExitCode::FAILURE;
+        }
+    };
     let status = runtime.block_on(run(env::args_os(), environment, &backend, &mut streams));
     ExitCode::from(status.code())
-}
-
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the binary is where the process environment enters, and it hands every variable to the config loader"
-)]
-fn process_environment() -> AdminEnvironment {
-    let mut variables = BTreeMap::new();
-    for (raw_name, raw_value) in env::vars_os() {
-        let (Ok(name), Ok(value)) = (raw_name.into_string(), raw_value.into_string()) else {
-            drop(writeln!(
-                io::stderr(),
-                "an environment variable is not UTF-8 and is ignored"
-            ));
-            continue;
-        };
-        variables.insert(name, value);
-    }
-    AdminEnvironment {
-        variables,
-        home: env::home_dir(),
-    }
 }
