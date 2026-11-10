@@ -203,7 +203,7 @@ fn datarobot_base(
     } else if path.contains("api/v2/deployments") {
         path.clone()
     } else if path.contains("api/v2") && !path.contains(defaults.llmgw_path) {
-        format!("{path}{}", defaults.llmgw_suffix)
+        format!("{path}{}", defaults.llmgw_path)
     } else {
         path.clone()
     };
