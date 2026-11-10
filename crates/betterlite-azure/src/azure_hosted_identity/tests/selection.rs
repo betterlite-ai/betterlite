@@ -106,6 +106,35 @@ fn presence_selection() {
     assert_eq!(ArcFixture::new().select(), HostedProtocol::Vm);
 }
 
+#[rstest]
+#[case::service_fabric(HostedProtocol::ServiceFabric, "service_fabric")]
+#[case::app_service(HostedProtocol::AppService, "app_service")]
+#[case::azure_ml(HostedProtocol::AzureMl, "azure_ml")]
+#[case::arc(HostedProtocol::Arc, "arc")]
+#[case::vm(HostedProtocol::Vm, "vm")]
+fn protocol_names(#[case] protocol: HostedProtocol, #[case] name: &str) {
+    assert_eq!(protocol.name(), name);
+}
+
+#[rstest]
+#[case::msi_endpoint_alone(&[("MSI_ENDPOINT", "http://ml.test/msi")], false, HostedProtocol::Vm)]
+#[case::msi_secret_alone(&[("MSI_SECRET", "secret")], false, HostedProtocol::Vm)]
+#[case::identity_endpoint_alone(&[("IDENTITY_ENDPOINT", "http://arc.test/token")], false, HostedProtocol::Vm)]
+#[case::imds_endpoint_alone_with_himds(&[("IMDS_ENDPOINT", "http://arc.test/imds")], true, HostedProtocol::Arc)]
+fn partial_settings_fall_through_to_the_arc_check(
+    #[case] environment: &[(&str, &str)],
+    #[case] himds_installed: bool,
+    #[case] expected: HostedProtocol,
+) {
+    let installed = ArcFixture::new().with_file("/opt/azcmagent/bin/himds", "");
+    let host = if himds_installed {
+        installed
+    } else {
+        ArcFixture::new()
+    };
+    assert_eq!(host.with_environment(environment).select(), expected);
+}
+
 #[test]
 fn arc_selection() {
     assert_eq!(
