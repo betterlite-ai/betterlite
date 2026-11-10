@@ -121,6 +121,40 @@ fn check_commands_pass_nextest_and_grep_arguments_they_accept() {
 }
 
 #[test]
+fn check_commands_do_not_run_the_gate_inside_the_gate() {
+    let quoted =
+        "grep -qF 'cargo gate run <ID>' AGENTS.md && ! grep -qF 'cargo gate run B000' AGENTS.md";
+    assert!(argument_problems(quoted).is_empty(), "{quoted}");
+    let nested = "the built-in oracle check already runs oracle_cases";
+    for bad in [
+        "cargo gate run B3790 --only oracle",
+        "test -n \"$(git diff --name-only \"$GATE_BASE\" -- tools/oracle/cases/x)\" && cargo gate run B4291 --only oracle",
+    ] {
+        let problems = argument_problems(bad);
+        assert_eq!(problems.len(), 1, "{bad}");
+        assert!(problems[0].contains(nested), "{bad}");
+    }
+}
+
+#[test]
+fn helper_oracle_checks_compare_the_native_helper_with_litellm() {
+    for good in [
+        "cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/mcp-request-context",
+        "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/vertex",
+        "grep -q -- '--self-check tools/oracle/cases/helpers' AGENTS.md",
+    ] {
+        assert!(argument_problems(good).is_empty(), "{good}");
+    }
+    let bad = "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/mcp-request-context";
+    let problems = argument_problems(bad);
+    assert_eq!(problems.len(), 1, "{bad}");
+    assert!(
+        problems[0].contains("compares the Python helper with itself"),
+        "{bad}"
+    );
+}
+
+#[test]
 fn check_commands_pass_filtersets_nextest_can_parse() {
     let good = "cargo nextest run -p a --filterset='test(/^a::/) - test(/replays_the_/)'";
     assert!(argument_problems(good).is_empty(), "{good}");

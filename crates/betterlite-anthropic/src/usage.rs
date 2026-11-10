@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 
 use betterlite_models::decisions::Json;
 use serde::Serialize;
+use serde_json::value::to_raw_value;
 
 mod cache_creation;
 mod completion;
@@ -14,6 +15,7 @@ pub mod error;
 
 use cache_creation::cache_creation_details;
 use completion::{CompletionTokenInput, completion_token_details};
+use count::thinking_tokens;
 use error::UsageError;
 use server_tool_use::resolve_server_tool_use;
 use tokens::{TokenCounts, token_counts};
@@ -150,6 +152,19 @@ where
         service_tier: required_text(object.service_tier.as_ref(), "service_tier")?,
         iterations: object.iterations.map(|found| found.raw),
     })
+}
+
+#[must_use]
+pub fn thinking_tokens_from_usage(usage_object: &Json) -> Option<i64> {
+    let Json::Object(fields) = usage_object else {
+        return None;
+    };
+    let Some(Json::Object(details)) = fields.get("output_tokens_details") else {
+        return None;
+    };
+    let value = details.get("thinking_tokens")?;
+    let raw = to_raw_value(value).ok()?;
+    thinking_tokens(Some(&CountValue::from(raw)))
 }
 
 #[must_use]

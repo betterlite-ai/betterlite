@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-message-replay-strip-empty-content
+call:
+  anthropic_message_replay:
+    function: strip_empty_content
+    messages:
+    - {role: assistant, content: [ {type: text, text: ""}, {type: text, text: kept} ]}
+    - {role: assistant, content: []}
+env: {}
+compare: {ignore: []}

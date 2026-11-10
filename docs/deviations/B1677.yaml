@@ -1,0 +1,10 @@
+task: B1677
+deviations:
+  - what: >-
+      The Foundry router fee keeps exact Decimal amounts and rejects a nonfinite or overflowing
+      rate or product, instead of Python's float multiplication, which rounds and can yield inf.
+    why: >-
+      Money in betterlite is Decimal so a fee reconciles with spend; the rejection happens at the
+      same fee-lookup boundary as an unmapped entry, so the direct calculation raises and the
+      shared dispatcher still falls back to no fee.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/cost_calculator.py#L46-L77

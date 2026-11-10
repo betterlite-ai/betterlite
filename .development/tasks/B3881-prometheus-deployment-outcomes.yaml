@@ -202,7 +202,7 @@ checks:
       why: the oracle helper cases are absent or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-deployment)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/prometheus-deployment
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/prometheus-deployment
 
 oracle_cases:
   - tools/oracle/cases/helpers/prometheus-deployment/failure-selected-deployment.yaml
