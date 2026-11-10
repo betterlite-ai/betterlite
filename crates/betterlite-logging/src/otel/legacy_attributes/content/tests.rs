@@ -100,8 +100,10 @@ fn keys(attributes: &[(String, Value)]) -> Vec<&str> {
     attributes.iter().map(|(key, _)| key.as_str()).collect()
 }
 
-#[test]
-fn a_capture_mode_outside_the_span_writes_usage_but_no_content() {
+#[rstest]
+#[case::no_content(CaptureMode::NoContent)]
+#[case::event_only(CaptureMode::EventOnly)]
+fn a_capture_mode_outside_the_span_writes_usage_but_no_content(#[case] mode: CaptureMode) {
     let kwargs = map(r#"{
             "call_type": "acompletion",
             "messages": [{"role": "user", "content": "hello"}],
@@ -112,7 +114,7 @@ fn a_capture_mode_outside_the_span_writes_usage_but_no_content() {
         r#"{"choices": [{"message": {"role": "assistant", "content": "hi"}}], "usage": {"total_tokens": 3}}"#,
     );
     let settings = config(false);
-    let context = context(&settings, CaptureMode::NoContent);
+    let context = context(&settings, mode);
     let attributes = record(|span| {
         set_attributes(span, &context, &kwargs, Some(&response)).expect("attributes");
     });
@@ -125,6 +127,23 @@ fn a_capture_mode_outside_the_span_writes_usage_but_no_content() {
     assert!(!keys(&attributes).contains(&"gen_ai.operation.name"));
     assert!(!keys(&attributes).contains(&"gen_ai.request.id"));
     assert!(!keys(&attributes).contains(&"llm.request.functions.0.name"));
+}
+
+#[rstest]
+#[case::span_only(CaptureMode::SpanOnly)]
+#[case::span_and_event(CaptureMode::SpanAndEvent)]
+fn a_capture_mode_in_the_span_writes_the_input_messages(#[case] mode: CaptureMode) {
+    let kwargs = map(r#"{
+            "call_type": "acompletion",
+            "messages": [{"role": "user", "content": "hello"}],
+            "standard_logging_object": {"call_type": "acompletion", "request_id": "request-1"}
+        }"#);
+    let settings = config(false);
+    let context = context(&settings, mode);
+    let attributes = record(|span| {
+        set_attributes(span, &context, &kwargs, None).expect("attributes");
+    });
+    assert!(keys(&attributes).contains(&"gen_ai.input.messages"));
 }
 
 #[test]

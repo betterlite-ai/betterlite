@@ -123,12 +123,19 @@ fn non_json_text_is_written_as_the_stringified_raw_response() {
 #[case::number("5")]
 #[case::scalar_text("\"just a string\"")]
 #[case::null("null")]
-fn json_that_is_not_an_object_writes_nothing(#[case] raw_response: &str) {
+fn json_that_is_not_an_object_keeps_the_request_entries_and_adds_nothing(
+    #[case] raw_response: &str,
+) {
     let kwargs = map(&format!(
-        r#"{{"litellm_params": {{"custom_llm_provider": "anthropic"}}, "original_response": {}}}"#,
+        r#"{{"litellm_params": {{"custom_llm_provider": "anthropic"}}, "additional_args": {{"complete_input_dict": {{"model": "claude-3"}}}}, "original_response": {}}}"#,
         serde_json::to_string(raw_response).expect("encoded response")
     ));
-    assert!(raw_request_attributes(&kwargs).is_empty());
+    let attributes = raw_request_attributes(&kwargs);
+    assert_eq!(keys(&attributes), vec!["llm.anthropic.model"]);
+    assert_eq!(
+        attribute(&attributes, "llm.anthropic.model"),
+        Some(&Value::from("claude-3"))
+    );
 }
 
 #[test]
