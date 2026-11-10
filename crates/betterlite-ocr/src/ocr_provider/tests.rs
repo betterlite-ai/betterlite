@@ -485,43 +485,43 @@ fn forward_api_key_env_var_follows_an_explicit_provider() {
 }
 
 #[rstest]
-#[case::mistral("mistral/ocr")]
-#[case::azure_ai("azure_ai/ocr")]
-#[case::azure_document_intelligence("azure_ai/doc-intelligence/prebuilt-layout")]
-#[case::reducto_v3("reducto/parse-v3")]
-#[case::reducto_legacy("reducto/parse-legacy")]
-#[case::vertex_ai("vertex_ai/mistral-ocr")]
-#[case::vertex_deepseek("vertex_ai/deepseek-ocr")]
-fn forward_health_check_documents_are_pdfs(#[case] model: &str) {
+#[case::mistral("mistral/ocr", "application", "pdf", b"%PDF-")]
+#[case::azure_ai("azure_ai/ocr", "application", "pdf", b"%PDF-")]
+#[case::azure_document_intelligence(
+    "azure_ai/doc-intelligence/prebuilt-layout",
+    "application",
+    "pdf",
+    b"%PDF-"
+)]
+#[case::reducto_v3("reducto/parse-v3", "application", "pdf", b"%PDF-")]
+#[case::reducto_legacy("reducto/parse-legacy", "application", "pdf", b"%PDF-")]
+#[case::vertex_ai("vertex_ai/mistral-ocr", "application", "pdf", b"%PDF-")]
+#[case::vertex_deepseek("vertex_ai/deepseek-ocr", "application", "pdf", b"%PDF-")]
+#[case::cohere("cohere/parse", "image", "png", b"\x89PNG\r\n\x1a\n")]
+#[case::azure_cohere("azure_ai/cohere-parse", "image", "png", b"\x89PNG\r\n\x1a\n")]
+#[case::textract_detect(
+    "aws_textract/detect-document-text",
+    "image",
+    "png",
+    b"\x89PNG\r\n\x1a\n"
+)]
+#[case::textract_analyze("aws_textract/analyze-document", "image", "png", b"\x89PNG\r\n\x1a\n")]
+fn forward_health_check_documents_use_the_selected_config_media_type(
+    #[case] model: &str,
+    #[case] media_type: &str,
+    #[case] subtype: &str,
+    #[case] magic: &[u8],
+) {
     let document = get_health_check_document(model, None).expect("the document resolves");
     let inline = InlineDocument::parse(document.source())
         .expect("the data URI parses")
         .expect("the document is a data URI");
-    assert!(inline.0.mime_type().matches("application", "pdf"));
+    assert!(inline.0.mime_type().matches(media_type, subtype));
     assert!(
         inline
             .decode(4096)
             .expect("within the cap")
-            .starts_with(b"%PDF-")
-    );
-}
-
-#[rstest]
-#[case::cohere("cohere/parse")]
-#[case::azure_cohere("azure_ai/cohere-parse")]
-#[case::textract_detect("aws_textract/detect-document-text")]
-#[case::textract_analyze("aws_textract/analyze-document")]
-fn forward_health_check_documents_are_pngs(#[case] model: &str) {
-    let document = get_health_check_document(model, None).expect("the document resolves");
-    let inline = InlineDocument::parse(document.source())
-        .expect("the data URI parses")
-        .expect("the document is a data URI");
-    assert!(inline.0.mime_type().matches("image", "png"));
-    assert!(
-        inline
-            .decode(4096)
-            .expect("within the cap")
-            .starts_with(b"\x89PNG\r\n\x1a\n")
+            .starts_with(magic)
     );
 }
 
