@@ -1,0 +1,19 @@
+kind: helper
+name: enforcement-key-exceeded
+call:
+  b3006:
+    uptime_seconds: 0.0
+    memory:
+      "virtual_key_spend:key-1:gpt-4o:1d": 6.5
+    calls:
+      - kind: key
+        entity_id: key-1
+        key_alias: over-budget
+        model: gpt-4o
+        budget:
+          gpt-4o:
+            max_budget: 5.0
+            budget_duration: 1d
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,74 @@
+{
+  "kind": "helper",
+  "name": "datadog-batch-size-clamping",
+  "call": {
+    "b3933": {
+      "scenarios": [
+        {
+          "name": "zero",
+          "environment": {
+            "DD_BATCH_SIZE": "0"
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "negative",
+          "environment": {
+            "DD_BATCH_SIZE": "-5"
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "above-maximum",
+          "environment": {
+            "DD_BATCH_SIZE": "1001"
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "invalid",
+          "environment": {
+            "DD_BATCH_SIZE": "many"
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "empty",
+          "environment": {
+            "DD_BATCH_SIZE": ""
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "absent",
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        },
+        {
+          "name": "in-range",
+          "environment": {
+            "DD_BATCH_SIZE": "7"
+          },
+          "init": {
+            "dd_agent_host": "agent.local"
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
