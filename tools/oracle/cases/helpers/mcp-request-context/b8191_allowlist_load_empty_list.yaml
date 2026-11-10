@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_load_empty_list","call":{"b8191":{"operation":"allowlist_load","settings":{"mcp_allowed_clients":[]}}},"env":{},"compare":{"ignore":[]}}

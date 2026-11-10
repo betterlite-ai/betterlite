@@ -1455,9 +1455,19 @@ dependencies = [
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-sdk-sts",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "betterlite-env",
  "betterlite-postgres-fixture",
  "betterlite-roi",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1976,6 +1986,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "encoding_rs",
  "fancy-regex 0.19.2",
@@ -2014,6 +2025,7 @@ dependencies = [
  "betterlite-openai",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
