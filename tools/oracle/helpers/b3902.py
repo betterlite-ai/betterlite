@@ -41,35 +41,16 @@ class _SpanLimits(_Stub):
 
 
 class _ReadableSpan:
-    def __init__(  # noqa: PLR0913 - Langfuse builds a span with every OpenTelemetry field
-
+    # Only the name and attributes are read; the other OTel fields pass through untouched
+    def __init__(
         self,
         *,
         name: str,
         attributes: Mapping[str, object],
-        context: object = None,
-        parent: object = None,
-        resource: object = None,
-        events: Sequence[object] = (),
-        links: Sequence[object] = (),
-        kind: object = None,
-        status: object = None,
-        start_time: object = None,
-        end_time: object = None,
-        instrumentation_scope: object = None,
+        **_fields: object,
     ) -> None:
         self.name = name
         self.attributes = MappingProxyType(dict(attributes))
-        self.context = context
-        self.parent = parent
-        self.resource = resource
-        self.events = events
-        self.links = links
-        self.kind = kind
-        self.status = status
-        self.start_time = start_time
-        self.end_time = end_time
-        self.instrumentation_scope = instrumentation_scope
 
 
 class _Encoded:

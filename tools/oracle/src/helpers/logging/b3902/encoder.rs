@@ -14,16 +14,15 @@ pub(crate) struct RecordingEncoder {
 
 impl SpanEncoder for RecordingEncoder {
     fn encode(&self, spans: &[SpanData], _resource: &Resource) -> Option<Vec<u8>> {
-        if spans.iter().any(unencodable) {
+        let rejected = spans.iter().any(|span| {
+            span.attributes
+                .iter()
+                .any(|attribute| attribute.key.as_str() == UNENCODABLE_KEY)
+        });
+        if rejected {
             return None;
         }
         let index = self.journal.record_encode(spans);
         Some(index.to_be_bytes().to_vec())
     }
-}
-
-fn unencodable(span: &SpanData) -> bool {
-    span.attributes
-        .iter()
-        .any(|attribute| attribute.key.as_str() == UNENCODABLE_KEY)
 }
