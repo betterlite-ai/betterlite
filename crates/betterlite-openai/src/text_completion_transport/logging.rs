@@ -124,9 +124,10 @@ fn additional_args(
 }
 
 fn shaping_json(value: &Json) -> Option<JsonValue> {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|plain| serde_json::from_value(plain).ok())
+    match serde_json::to_value(value) {
+        Ok(plain) => serde_json::from_value(plain).ok(),
+        Err(_source) => None,
+    }
 }
 
 fn stream_options(value: &Json) -> StreamOptions {
