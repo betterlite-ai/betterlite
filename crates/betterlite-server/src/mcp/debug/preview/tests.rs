@@ -244,6 +244,51 @@ fn form_bodies_keep_their_shape_and_redact_sensitive_fields() {
     );
 }
 
+#[test]
+fn form_fields_re_encode_with_python_quote_plus() {
+    assert_eq!(
+        preview(
+            b"x=a~b*c",
+            "application/x-www-form-urlencoded",
+            &[],
+            &redactor()
+        ),
+        "x=a~b%2Ac"
+    );
+    assert_eq!(
+        preview(
+            b"api_key=a~b*c&plain=x*y",
+            "application/x-www-form-urlencoded",
+            &[],
+            &redactor()
+        ),
+        "api_key=REDACTED&plain=x%2Ay"
+    );
+}
+
+#[test]
+fn a_tilde_secret_in_a_form_field_is_masked() {
+    let known = vec![SecretString::from(String::from("tok~secret12"))];
+    assert_eq!(
+        preview(
+            b"state=tok~secret12",
+            "application/x-www-form-urlencoded",
+            &known,
+            &redactor()
+        ),
+        "state=REDACTED"
+    );
+    assert_eq!(
+        preview(
+            b"state=tok~secret12&other=1",
+            "application/x-www-form-urlencoded",
+            &known,
+            &redactor()
+        ),
+        "state=REDACTED&other=1"
+    );
+}
+
 #[rstest]
 #[case::valid("session=abc; flag=", vec!["abc", ""])]
 #[case::invalid_key("bad", vec![])]

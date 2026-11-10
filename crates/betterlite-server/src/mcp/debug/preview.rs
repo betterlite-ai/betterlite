@@ -96,16 +96,20 @@ fn structured_form(text: &str, content_type: &str) -> bool {
 }
 
 fn encoded_fields(text: &str) -> String {
-    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    let mut fields: Vec<String> = Vec::new();
     for (key, value) in form_urlencoded::parse(text.as_bytes()) {
         let redacted = if sensitive_field(&key) {
             REDACTED.to_owned()
         } else {
             value.into_owned()
         };
-        serializer.append_pair(&key, &redacted);
+        fields.push(format!(
+            "{}={}",
+            secrets::plus_encode(&key),
+            secrets::plus_encode(&redacted)
+        ));
     }
-    serializer.finish()
+    fields.join("&")
 }
 
 #[must_use]
