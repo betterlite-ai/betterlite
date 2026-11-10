@@ -130,3 +130,10 @@ path = "fuzz_targets/provider_messages.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "prompt_anthropic"
+path = "fuzz_targets/prompt_anthropic.rs"
+test = false
+doc = false
+bench = false
