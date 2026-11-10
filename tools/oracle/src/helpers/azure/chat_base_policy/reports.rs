@@ -5,7 +5,7 @@ use betterlite_azure::azure_chat_base_policy::auth::{
 };
 use betterlite_azure::azure_chat_base_policy::errors::provider_error;
 use betterlite_azure::azure_chat_base_policy::mapping::{
-    MapPolicy, format_supported_for_version, map_openai_params, normalize_model_digits,
+    MapPolicy, format_supported_for_version, map_openai_params, supports_response_format,
 };
 use betterlite_azure::azure_chat_base_policy::messages::transform_request;
 use betterlite_config::loader::ConfigLoader;
@@ -186,11 +186,10 @@ pub(super) fn model_report(call: &ModelCall, loaded: Loaded, entry: fn(&str) -> 
 }
 
 pub(super) fn version_reports(call: &VersionCall, loaded: Loaded) -> Value {
-    let models = model_entries(&call.models, |model| {
-        let supported =
-            !normalize_model_digits(model).contains("gpt-3.5") && !model.contains("gpt-35");
-        json!({"model": model, "supported": supported})
-    });
+    let models = model_entries(
+        &call.models,
+        |model| json!({"model": model, "supported": supports_response_format(model)}),
+    );
     let mut versions = Vec::with_capacity(call.versions.len());
     for pair in &call.versions {
         versions.push(version_report(&pair.year, &pair.month));

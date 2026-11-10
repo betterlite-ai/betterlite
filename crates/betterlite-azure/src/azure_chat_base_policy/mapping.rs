@@ -53,6 +53,13 @@ pub fn normalize_model_digits(model: &str) -> String {
     normalized
 }
 
+#[must_use]
+pub fn supports_response_format(model: &str) -> bool {
+    let normalized = normalize_model_digits(model);
+    let legacy_name = normalized.contains("gpt-3.5") || model.contains("gpt-35");
+    !legacy_name
+}
+
 pub fn format_supported_for_version(year: &str, month: &str) -> Result<bool, PolicyError> {
     let api_year = api_version_number(year, "year")?;
     let api_month = api_version_number(month, "month")?;
@@ -182,9 +189,7 @@ fn apply_response_format(
     let version_supported = date.map_or(Ok(true), |(year, month, _day)| {
         format_supported_for_version(year, month)
     })?;
-    let native = version_supported
-        && !normalize_model_digits(policy.model).contains("gpt-3.5")
-        && !policy.model.contains("gpt-35");
+    let native = version_supported && supports_response_format(policy.model);
     let existing_tools = optional.get("tools");
     let malformed_tools = existing_tools.is_some_and(|tools| !matches!(tools, Json::List(_)));
     let tools = match existing_tools {
