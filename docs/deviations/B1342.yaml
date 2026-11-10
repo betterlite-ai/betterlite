@@ -1,0 +1,8 @@
+task: B1342
+deviations:
+  - what: A model id made only of non-ASCII digits takes the standard path, where LiteLLM's str.isdigit() sends it to the fine-tuned endpoint.
+    why: Vertex endpoint ids are ASCII digits, and Python's Unicode digit test also accepts numerals no working endpoint id uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L111
+  - what: The VertexAITextEmbeddingConfig defaults auto_truncate, task_type and title load from the VERTEX_AI_TEXT_EMBEDDING_AUTO_TRUNCATE, VERTEX_AI_TEXT_EMBEDDING_TASK_TYPE and VERTEX_AI_TEXT_EMBEDDING_TITLE environment variables.
+    why: LiteLLM sets those class fields only from Python code, so betterlite exposes them as environment settings; unset, they stay None as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L22-L24
