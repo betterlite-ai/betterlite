@@ -1977,6 +1977,9 @@ dependencies = [
  "betterlite-models",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
+ "betterlite-tokenizer",
+ "encoding_rs",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -2819,18 +2822,30 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "jiff",
  "regex",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
  "thiserror",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-vertex",
+ "jiff",
+ "libfuzzer-sys",
 ]
 
 [[package]]
