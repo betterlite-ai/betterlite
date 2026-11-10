@@ -1,0 +1,11 @@
+kind: helper
+name: chat-config-selection-seed-image
+call:
+  chat_config_selection:
+    function: image_variation_config_selection
+    calls:
+      - {provider: openai, model: dall-e-2}
+      - {provider: topaz, model: topaz-upscale}
+      - {provider: groq, model: dall-e-2}
+env: {}
+compare: {ignore: []}

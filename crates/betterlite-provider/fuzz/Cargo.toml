@@ -38,6 +38,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "sap_credentials"
+path = "fuzz_targets/sap_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sandbox_ndjson"
 path = "fuzz_targets/sandbox_ndjson.rs"
 test = false

@@ -16,6 +16,7 @@ aws-smithy-types = "=1.9.1"
 aws-types = "=1.6.0"
 base64 = "0.23.1"
 betterlite-a2a = { path = "../betterlite-a2a" }
+betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
@@ -34,6 +35,7 @@ fancy-regex = "0.19.2"
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 mime = "0.3.17"
+num-traits = "0.2.19"
 percent-encoding.workspace = true
 secrecy.workspace = true
 serde.workspace = true

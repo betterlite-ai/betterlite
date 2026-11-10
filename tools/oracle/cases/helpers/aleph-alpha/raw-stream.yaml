@@ -1,0 +1,22 @@
+kind: helper
+name: aleph-alpha-raw-stream
+call:
+  aleph_alpha:
+    model: luminous-base
+    messages:
+      - role: user
+        content: Hi
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: sk-aleph
+    optional_params:
+      stream: true
+    defaults: {}
+    max_tokens: 4096
+    created: 1700000005
+    reply:
+      status: 200
+      body: |-
+        {"completions":[{"completion":"a","finish_reason":"stop"}]}
+        {"completions":[{"completion":"b","finish_reason":"stop"}]}
+env: {}
+compare: {ignore: []}

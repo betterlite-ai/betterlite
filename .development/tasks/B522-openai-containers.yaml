@@ -238,7 +238,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_containers)"
       && grep -q 'decode_container_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus(::|$)/)'
   - id: case-container-auth-chain
     why: Resolve api_key then litellm.api_key then litellm.openai_key then OPENAI_API_KEY using truthiness; overwrite
       the exact Authorization key with Bearer <resolved key>, including Bearer None when unresolved.

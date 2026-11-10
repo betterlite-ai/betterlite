@@ -1,0 +1,10 @@
+kind: helper
+name: cache-coordination-waiters-get-cached
+call:
+  b4291:
+    coordinator_waiter_gets_cached:
+      value:
+        flag: enabled
+env: {}
+compare:
+  ignore: []

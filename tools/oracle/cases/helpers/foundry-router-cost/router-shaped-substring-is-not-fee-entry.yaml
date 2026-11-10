@@ -1,0 +1,24 @@
+kind: helper
+name: router-shaped-substring-is-not-fee-entry
+call:
+  foundry_router_cost:
+    operation: flat
+    catalog:
+      azure_ai/model_router:
+        input_cost_per_token: 0.5
+        litellm_provider: azure_ai
+      model-router:
+        input_cost_per_token: 0.25
+        litellm_provider: azure_ai
+      model_router/azure-gpt-4o:
+        input_cost_per_token: 4
+        litellm_provider: azure_ai
+    calls:
+      - {model: model_router/azure-gpt-4o, prompt_tokens: 8}
+      - {model: my-model-router-deployment, prompt_tokens: 8}
+      - {model: azure_ai/model-router/deployment, prompt_tokens: 8}
+      - {model: model-router, prompt_tokens: 8}
+      - {model: model_router, prompt_tokens: 8}
+      - {model: plain-model, prompt_tokens: 8}
+env: {}
+compare: {ignore: []}

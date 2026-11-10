@@ -1,0 +1,24 @@
+[package]
+name = "betterlite-vertex-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-vertex = { path = ".." }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "vertex_timestamp"
+path = "fuzz_targets/vertex_timestamp.rs"
+test = false
+doc = false
+bench = false
