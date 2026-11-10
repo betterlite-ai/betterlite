@@ -1091,6 +1091,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "chrono",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",

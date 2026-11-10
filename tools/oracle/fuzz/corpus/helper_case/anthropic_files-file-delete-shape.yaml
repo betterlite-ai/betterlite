@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-files-delete-seed
+call:
+  anthropic_files:
+    file_delete_shape:
+      file_ids: ["file-1", ""]
+      bodies:
+        - {}
+env: {}
+compare: {ignore: []}
