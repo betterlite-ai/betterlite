@@ -255,17 +255,20 @@ fn response_format_mapping() {
     }
 }
 
+fn assert_blocked_number(api_version: &str, field: &'static str) {
+    let error = blocked(
+        &object(FORMAT_REQUEST),
+        EMPTY,
+        &policy("gpt-4o", api_version, DropMode::Off),
+    );
+    assert!(
+        matches!(error, PolicyError::ApiVersionNumber { field: actual, .. } if actual == field)
+    );
+}
+
 fn response_format_invalid_dates() {
-    for (api_version, field) in [("abcd-08-01", "year"), ("2024-ab-01", "month")] {
-        let error = blocked(
-            &object(FORMAT_REQUEST),
-            EMPTY,
-            &policy("gpt-4o", api_version, DropMode::Off),
-        );
-        assert!(
-            matches!(error, PolicyError::ApiVersionNumber { field: actual, .. } if actual == field)
-        );
-    }
+    assert_blocked_number("abcd-08-01", "year");
+    assert_blocked_number("2024-ab-01", "month");
 }
 
 pub(super) fn max_completion_tokens() {
