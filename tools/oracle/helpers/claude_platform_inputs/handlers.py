@@ -1,7 +1,7 @@
 import base64
 from collections.abc import Callable
 from functools import partial
-from typing import TypeAlias, cast
+from typing import cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
 import litellm
@@ -38,11 +38,6 @@ from .types import (
     resolution_outcome,
     set_environment,
 )
-
-SignRequest: TypeAlias = Callable[
-    [dict[str, str | None], dict[str, Json], dict[str, Json], str, str | None, str | None],
-    tuple[Object, bytes | None],
-]
 
 
 def workspaces(cases: list[WorkspaceCase]) -> list[Json]:
@@ -116,8 +111,7 @@ def override_call(call: OverrideCall) -> Json:
         listed: list[Json] = [name for name in sorted(resolved)]  # noqa: C416  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L51
         names = listed
     warning = entries[0] if entries else None
-    entry: Json = {"names": names, "warning": warning}
-    return entry
+    return {"names": names, "warning": warning}
 
 
 def unsupported_override(calls: list[OverrideCall]) -> list[Json]:
@@ -145,16 +139,14 @@ def project_signature(signature: tuple[Object, bytes | None], api_base: str) -> 
     headers = signature[0]
     body = signature[1]
     if body is None:
-        supplied: Json = {"signed": False, "headers": headers, "body": None}
-        return supplied
-    signed: Json = {
+        return {"signed": False, "headers": headers, "body": None}
+    return {
         "signed": True,
         "method": "POST",
         "url": api_base,
         "headers": headers,
         "body": base64.b64encode(body).decode(),
     }
-    return signed
 
 
 def sign(case: SignCase) -> Json:
@@ -162,7 +154,8 @@ def sign(case: SignCase) -> Json:
     botocore.auth.get_current_datetime = FrozenClock(case["now"])  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
     BaseAWSLLM.resolve_credentials = CredentialProvider(case["credentials"])  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
     sign_request = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
-        SignRequest,
+        "Callable[[dict[str, str | None], dict[str, Json], dict[str, Json], str, str | None, "
+        "str | None], tuple[Object, bytes | None]]",
         BedrockClaudePlatformMixin().sign_request,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
     )
     signature = sign_request(

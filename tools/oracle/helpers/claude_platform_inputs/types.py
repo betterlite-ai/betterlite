@@ -101,19 +101,14 @@ class FrozenClock:
         return self.moment
 
 
-class FixedCredentials:
+class CredentialProvider:
     def __init__(self, keys: Keys) -> None:
         self.access_key = keys["access_key_id"]
         self.secret_key = keys["secret_access_key"]
         self.token = keys.get("session_token")
 
-
-class CredentialProvider:
-    def __init__(self, keys: Keys) -> None:
-        self.credentials = FixedCredentials(keys)
-
-    def __call__(self, _auth: AwsAuthParams, _region: str | None) -> FixedCredentials:
-        return self.credentials
+    def __call__(self, _auth: AwsAuthParams, _region: str | None) -> "CredentialProvider":
+        return self
 
 
 class Warnings(logging.Handler):
@@ -147,18 +142,11 @@ def warning_entry(message: str) -> Json:
     if DROP_MARKER in message:
         _, _, listed = message.partition(DROP_MARKER)
         tuple_text, _, _ = listed.partition(" from the request body")
-        drop: Json = {"action": "drop", "params": parse_names(tuple_text)}
-        return drop
+        inner = tuple_text.strip()[1:-1].rstrip(",")
+        names: list[Json] = [] if not inner else [name.strip("'\"") for name in inner.split(", ")]
+        return {"action": "drop", "params": names}
     _, _, type_text = message.partition(IGNORE_MARKER)
-    ignore: Json = {"action": "ignore", "type_name": type_text.split(";", 1)[0]}
-    return ignore
-
-
-def parse_names(text: str) -> list[Json]:
-    inner = text.strip()[1:-1].rstrip(",")
-    if not inner:
-        return []
-    return [name.strip("'\"") for name in inner.split(", ")]
+    return {"action": "ignore", "type_name": type_text.split(";", 1)[0]}
 
 
 def override_container(spec: dict[str, Json]) -> Override:
@@ -183,14 +171,9 @@ def resolution_outcome(key: str, resolve: Callable[[], str]) -> Json:
     try:
         value = resolve()
     except AuthenticationError:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L149
-        failure: Json = {"error": "missing_region"}
-        return failure
+        return {"error": "missing_region"}
     except ValueError:
-        invalid: Json = {"error": "invalid_region"}
-        return invalid
+        return {"error": "invalid_region"}
     except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L106
-        other: Json = {"error": "other"}
-        return other
-    else:
-        success: Json = {key: value}
-        return success
+        return {"error": "other"}
+    return {key: value}

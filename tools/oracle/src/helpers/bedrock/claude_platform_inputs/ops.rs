@@ -43,17 +43,6 @@ pub(super) fn config(environment: &BTreeMap<String, String>) -> Result<Config, B
     .map_err(invalid)
 }
 
-fn config_from(
-    source: &str,
-    environment: &BTreeMap<String, String>,
-) -> Result<Config, Box<HelperError>> {
-    ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load(source)
-    .map_err(invalid)
-}
-
 const fn error_code(error: &PlatformInputError) -> &'static str {
     match error {
         PlatformInputError::MissingRegion => "missing_region",
@@ -84,7 +73,11 @@ fn workspace_config(case: &WorkspaceCase) -> Result<Config, Box<HelperError>> {
         "litellm_settings": case.litellm_settings,
     });
     let source = serde_saphyr::to_string(&document).map_err(invalid)?;
-    config_from(&source, &case.environment)
+    ConfigLoader {
+        lookup: case.environment.clone(),
+    }
+    .load(&source)
+    .map_err(invalid)
 }
 
 fn workspaces(cases: &[WorkspaceCase]) -> HelperResult {
