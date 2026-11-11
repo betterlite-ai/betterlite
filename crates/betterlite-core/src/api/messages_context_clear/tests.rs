@@ -196,6 +196,18 @@ fn noninteger_trigger_value_uses_the_default_threshold(#[case] value: &str) {
     assert_eq!(counter.call_count(), 1);
 }
 
+#[rstest]
+#[case::string(r#""many""#)]
+#[case::float("3.5")]
+#[case::null("null")]
+fn noninteger_trigger_value_triggers_above_the_default_threshold(#[case] value: &str) {
+    let counter = ScriptedCounter::new(&[100_001, 80]);
+    let spec_source = format!(r#"{{"trigger":{{"value":{value}}}}}"#);
+    let outcome = run_editor(conversation(), &spec_source, &counter);
+    assert_eq!(outcome.applied.expect("edit").cleared_tool_uses, Some(1));
+    assert_eq!(counter.call_count(), 2);
+}
+
 #[test]
 fn a_negative_input_threshold_is_always_met() {
     let counter = ScriptedCounter::new(&[0, 0]);
