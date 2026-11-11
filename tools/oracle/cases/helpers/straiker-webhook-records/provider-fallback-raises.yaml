@@ -1,0 +1,10 @@
+kind: helper
+name: provider-fallback-raises
+call:
+  b3795:
+    provider:
+      request_data:
+        model: unknown-model-xyz
+      model: unknown-model-xyz
+env: {}
+compare: {ignore: []}
