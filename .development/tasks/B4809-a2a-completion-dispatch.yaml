@@ -91,7 +91,7 @@ oracle_cases: []
 deviations:
   - what: Completion entry point (litellm.acompletion) is not owned by this task. The bridge holds a
       seam that accepts the function by name from vars(litellm)["acompletion"] to delay the dependency
-      until dispatch time. An unresolved caller, awaiting assignment in architect question 3.
+      until dispatch time. The gateway adapter over B5656's AsyncCompletionTarget is B142's.
     why: A2A provider tasks (B4804, B4806, B4808) dispatch through this bridge to any provider.
       Owning the completion entry would create a cycle since B4809 sits below them. The seam delays
       the dependency while allowing compilation. Document the blocker until assigned.
@@ -113,7 +113,7 @@ out_of_scope:
   - Bedrock AgentCore handler; owned by B4804.
   - Pydantic AI handler; owned by B4806.
   - Watsonx Orchestrate handler; owned by B4808.
-  - Completion function (litellm.acompletion) and its selection logic; owned by the unassigned execution port (architect question 3).
+  - Completion function (litellm.acompletion) and its selection logic; the gateway adapter over B5656's AsyncCompletionTarget is B142's.
 
 pitfalls:
   - _build_completion_params must strip exactly the frozenset of agent-only params before passing

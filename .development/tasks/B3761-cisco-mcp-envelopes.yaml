@@ -89,7 +89,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L188-L199
 out_of_scope:
   - Sanitized MCP argument extraction from verdicts; B3758 owns _extract_sanitized_mcp_arguments.
-  - MCP post-tool hook orchestration; B3762 drives inspection and verdict dispatch.
+  - MCP post-tool hook orchestration (async_post_mcp_tool_call_hook); B9450 owns it, and B3762 drives inspection and verdict dispatch.
   - Inspection request/response posting; B3762 calls _post_inspection.
   - Verdict finalization and redaction dispatch; B3760 calls _finalize_inspection.
   - Extraction of request inspection messages; B3756 builds _extract_inspect_messages_from_request.

@@ -1,0 +1,96 @@
+id: B9520
+title: Stamp the cold-storage object key into standard logging metadata
+description: >-
+  When litellm.cold_storage_custom_logger is set, LiteLLM writes the S3 object key of every request into the standard logging metadata as cold_storage_object_key (litellm_logging.py L5850-L5858, built by _generate_cold_storage_object_key at L6045-L6102). Spend logs store that metadata, and the request-body readers (B1729, B915) later fetch the stored request from that key, while the s3_v2 logger (B3992) uses the same key for the object it uploads. B253 built get_standard_logging_metadata without this step and left it to the S3 umbrella, and B190 assembles the payload and needs it. This task builds the key and the stamp, with nothing that depends on the S3 upload tasks, so B190 can call it.
+
+
+  Code goes in crates/betterlite-logging/src/cold_storage_key.rs and cold_storage_key/ (tests.rs). The skeleton declares the module in lib.rs; don't edit lib.rs.
+
+
+  `ColdStorageTarget { s3_path: String, partition_granularity: PartitionGranularity }` holds what LiteLLM reads from the configured cold-storage logger: its s3_path and, for an s3_v2 logger, its resolved partition granularity. Its Default is an empty path and `PartitionGranularity::Day` (B3990's enum in s3_transport::options), the values LiteLLM keeps when the logger isn't active, isn't an S3 v2 logger or the lookup fails. `trait ColdStorageLocator: Send + Sync { fn locate(&self) -> Option<ColdStorageTarget>; }` is the seam B190's lifecycle takes: None means cold_storage_custom_logger is unset and no key is written, Some means it is set. B115 implements the locator over the logger catalog; tests here use a fixed target.
+
+
+  `stamp_cold_storage_object_key(metadata: &mut StandardLoggingMetadata, start_time: Option<NaiveDateTime>, response_id: Option<&str>, target: Option<&ColdStorageTarget>)` runs after B253's get_standard_logging_metadata, since in LiteLLM it is the last step of that function. With start_time, response_id and target all present it sets metadata.cold_storage_object_key to the key and replaces whatever the request metadata copied in; with any of them missing it leaves the record as it is. The key is B3990's `object_key(target.s3_path, "", start_time, file_name, target.partition_granularity)` with file_name `time-<%H-%M-%S-%6f>_<response_id>`, the same name get_logging_id gives the s3_v2 logger, so B3992's create_batch_element accepts the stamped key as one of its two local keys. LiteLLM passes team_alias into the generator but never uses it: the prefix is always empty. LiteLLM's try/except returning None has nothing to catch here, since object_key can't fail.
+
+
+  Oracle cases in tools/oracle/cases/helpers/cold-storage-key/ use the b9520 helper. The Python side calls StandardLoggingPayloadSetup.get_standard_logging_metadata with metadata, start_time (an ISO string parsed to a naive datetime) and response_id, after setting litellm.cold_storage_custom_logger from the case. When a case gives an active s3_v2 logger, make an S3Logger from litellm.integrations.s3_v2 with object.__new__ (its __init__ starts a flush task and needs a running loop), set s3_path and s3_partition_granularity on it, and append it to litellm.callbacks; restore both globals afterwards. The answer is the record's cold_storage_object_key. The Rust side builds the target from the same input (None when the logger name is null, the default for any other name or when no s3_v2 logger is active, and for s3_v2 the logger's path or "" with its granularity resolved through B3992's PartitionGranularityCache and the case env), runs B253's get_standard_logging_metadata and then the stamp. Cases: unset-logger-keeps-copied-key (logger null, metadata carries cold_storage_object_key "copied"), s3-v2-day-key (s3_path "logs/", start 2026-01-02T03:04:05.123456, id chatcmpl-1, so "logs/2026-01-02/time-03-04-05-123456_chatcmpl-1.json"), s3-v2-hour-key (s3_partition_granularity "hour"), env-hour-granularity (granularity null, env S3_PARTITION_GRANULARITY=hour), inactive-logger-defaults (s3_v2 named, none active, so no path and day), other-logger-name (cold_storage_custom_logger gcs_bucket), generated-key-replaces-copied, missing-response-id-no-key, null-metadata-still-keyed and slash-in-response-id (id "a/b:c" becomes a_b_c in the key). Add a helper corpus seed per case under tools/oracle/fuzz/corpus/helper_case/cold-storage-key-*.
+
+
+  Native tests in cold_storage_key/tests.rs are rstest cases for the same outcomes plus the s3_path trimming B3990 does ("logs" and "logs/" give the same key) and that the stamp never touches other metadata fields. This adds no route and changes nothing a client sees in a response, so there are no HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-logging/src/cold_storage_key.rs
+    - crates/betterlite-logging/src/cold_storage_key/**
+    - tools/oracle/cases/helpers/cold-storage-key/**
+    - "tools/oracle/fuzz/corpus/helper_case/cold-storage-key-*"
+    - tools/oracle/helpers/b9520.py
+    - tools/oracle/helpers/b9520/**
+    - tools/oracle/src/helpers/logging/b9520.rs
+    - tools/oracle/src/helpers/logging/b9520/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5850-L5858
+    why: The step at the end of get_standard_logging_metadata, outside the dict-only block, that writes the key only when one was generated.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6045-L6102
+    why: The key generator, its unset check, the empty prefix and the day default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5740-L5752
+    why: start_time and response_id are optional arguments of get_standard_logging_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L383-L410
+    why: get_s3_object_key, which B3990's object_key ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7952-L7957
+    why: get_logging_id, the same file name the s3_v2 logger builds for its own key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L843-L854
+    why: The s3_v2 logger accepts the stamped key only when it equals its own day or hour key.
+dod:
+  - text: With no locator answer (cold_storage_custom_logger unset) no key is written and a cold_storage_object_key copied from the request metadata stays.
+    proof: [key-tests, oracle, new-cases, helper-python]
+  - text: With a target, start time and response id, the key is the target's path, the date segment at its granularity and time-HH-MM-SS-ffffff_<id>.json with an empty prefix, and it replaces a copied value; a missing start time or response id writes nothing.
+    proof: [key-tests, oracle, new-cases, helper-python]
+  - text: The default target writes a key with no path and day partitions, as LiteLLM does for an inactive or non-S3 logger.
+    proof: [key-tests, oracle, new-cases, helper-python]
+  - text: New helper corpus seeds call b9520 and replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: key-tests
+      why: the key layout, the replace rule or the no-key cases differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^cold_storage_key::/)'
+    - id: new-cases
+      why: no new cold-storage key case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/cold-storage-key)"
+    - id: helper-python
+      why: the b9520 adapter is missing or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9520)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9520 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9520/pyrightconfig.json
+    - id: helper-case-corpus
+      why: b9520 needs fresh seeds that replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cold-storage-key-*")" && grep -lE '^[[:space:]]+b9520:' tools/oracle/fuzz/corpus/helper_case/cold-storage-key-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cold-storage-key/unset-logger-keeps-copied-key.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/s3-v2-day-key.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/s3-v2-hour-key.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/env-hour-granularity.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/inactive-logger-defaults.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/other-logger-name.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/generated-key-replaces-copied.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/missing-response-id-no-key.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/null-metadata-still-keyed.yaml
+  - tools/oracle/cases/helpers/cold-storage-key/slash-in-response-id.yaml
+deviations: []
+out_of_scope:
+  - "Finding the logger cold_storage_custom_logger names and reading its s3_path and granularity (L6074-L6089): B115 implements ColdStorageLocator over the logger catalog."
+  - "Loading litellm_settings.cold_storage_custom_logger: B1729's spend_storage config."
+  - "Calling the stamp with the request's start time and response id after get_standard_logging_metadata: B190, which builds the payload."
+  - "The rest of get_standard_logging_metadata is B253's, and every other function in litellm_logging.py belongs to the other entries that cover the file (B190, B247 to B254 and the rest `cargo gate coverage --paths` lists); this task ports only L5850-L5858 and L6045-L6102."
+pitfalls:
+  - "LiteLLM stamps the key outside its isinstance(metadata, dict) block, so null request metadata still gets a key; B253's function returns early for None, which is why the stamp runs after it and not inside."
+  - "Only an unset cold_storage_custom_logger means no key; a named logger that isn't active, isn't s3_v2 or isn't a known callback name still gets a key with an empty path and day partitions."
+  - "The file name is time-%H-%M-%S-%f with six-digit microseconds; chrono's plain %f prints nanoseconds, so use %6f as B3992's event_key does."
+  - "team_alias reaches the generator but the prefix is always the empty string, so team or key prefixes never show up in the cold-storage key even when the s3_v2 logger uses them for its own key."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

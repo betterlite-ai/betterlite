@@ -56,7 +56,7 @@ deviations:
   - what: The check is a text check and not a docker build.
     why: The gate sandbox cannot reach the Docker socket.
 out_of_scope:
-  - "gateway/launch.py (the uvicorn and pgbouncer supervisor): nothing ports it, see the final note. Who starts pgbouncer inside the gateway container is open."
+  - "gateway/launch.py (the uvicorn and pgbouncer supervisor): B131. No PgBouncer process starts, per B711's deviation."
   - "The two binaries: B4471. The entrypoint scripts: B5070. The base Dockerfiles: B5071, B5073."
   - "Compose files that run the split deployment: B5072."
 pitfalls:
