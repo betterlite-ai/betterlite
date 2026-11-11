@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::JudgeParams;
+use betterlite_guardrails::content_filter::risk_scoring::GuardrailStatus;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::judge::apply::{JudgeInputs, LLMAsAJudgeGuardrail, RequestData};
 use betterlite_guardrails::judge::call::{
@@ -12,8 +14,11 @@ use betterlite_guardrails::judge::call::{
 };
 use betterlite_guardrails::judge::config::{GuardrailEntry, LitellmParamsSource};
 use betterlite_guardrails::judge::error::{JudgeBlockDetail, JudgeError};
+use betterlite_guardrails::judge::hooks::EventHookConfig;
 use betterlite_guardrails::judge::initialize::{CallbackRegistry, initialize_guardrail};
+use betterlite_guardrails::judge::record::JudgeGuardrailRecord;
 use betterlite_guardrails::judge::verdict::EvalInformation;
+use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
 use crate::helpers::{HelperError, HelperResult};
@@ -60,7 +65,7 @@ impl JudgeCompletion for RecordingCompletion {
         *self.request.lock().unwrap_or_else(PoisonError::into_inner) = Some(request.clone());
         if let Some(message) = &self.outcome.error {
             return Err(JudgeCompletionError {
-                message: message.clone(),
+                source: Box::new(io::Error::other(message.clone())),
             });
         }
         Ok(JudgeCompletionResponse {
@@ -83,12 +88,34 @@ struct BlockedOutput {
     detail: JudgeBlockDetail,
 }
 
+// The comparison leaves out the record's times because LiteLLM reads the wall clock.
+#[derive(serde::Serialize)]
+struct RecordOutput {
+    #[serde(rename = "guardrail_name")]
+    name: String,
+    #[serde(rename = "guardrail_provider")]
+    provider: String,
+    #[serde(rename = "guardrail_mode")]
+    mode: EventHookConfig,
+    #[serde(rename = "guardrail_response")]
+    response: Json,
+    #[serde(rename = "guardrail_status")]
+    status: GuardrailStatus,
+}
+
+struct Observed {
+    judge_call: Option<JudgeCompletionRequest>,
+    eval_information: Option<EvalInformation>,
+    guardrail_records: Vec<JudgeGuardrailRecord>,
+}
+
 #[derive(serde::Serialize)]
 struct Output {
     judge_call: Option<JudgeCompletionRequest>,
     inputs: Option<JudgeInputs>,
     eval_information: Option<EvalInformation>,
     blocked: Option<BlockedOutput>,
+    guardrail_records: Option<Vec<RecordOutput>>,
 }
 
 impl crate::helpers::Helper for Op {
@@ -126,50 +153,75 @@ fn execute(input: &ApplyInput) -> Result<Output, Box<HelperError>> {
         &mut request_data,
         input.input_type,
     ));
-    let judge_call = request
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let eval_information = request_data.metadata.eval_information.clone();
-    collect(outcome, judge_call, eval_information)
+    let observed = Observed {
+        judge_call: request
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
+        eval_information: request_data.metadata.eval_information,
+        guardrail_records: request_data.metadata.guardrail_records,
+    };
+    collect(outcome, observed)
 }
 
 fn collect(
     outcome: Result<JudgeInputs, JudgeError>,
-    judge_call: Option<JudgeCompletionRequest>,
-    eval_information: Option<EvalInformation>,
+    observed: Observed,
 ) -> Result<Output, Box<HelperError>> {
-    match outcome {
-        Ok(returned) => Ok(Output {
-            judge_call,
-            inputs: Some(returned),
-            eval_information,
-            blocked: None,
-        }),
-        Err(error) => {
-            let status = error.status_code().as_u16();
-            match error {
-                JudgeError::Blocked { detail } => Ok(Output {
-                    judge_call,
-                    inputs: None,
-                    eval_information,
-                    blocked: Some(BlockedOutput { status, detail }),
-                }),
-                failed @ (JudgeError::MissingGuardrailName
-                | JudgeError::MissingJudgeModel
-                | JudgeError::MissingCriteria
-                | JudgeError::WeightSum { .. }
-                | JudgeError::UnrepresentableWeight
-                | JudgeError::WeightOverflow
-                | JudgeError::InvalidOnFailure { .. }
-                | JudgeError::InvalidEventHook { .. }
-                | JudgeError::UnsupportedEventHook { .. }
-                | JudgeError::InvalidParam { .. }
-                | JudgeError::NoChoices
-                | JudgeError::Completion { .. }
-                | JudgeError::Verdict { .. }) => Err(failure("RuntimeError", failed.to_string())),
-            }
-        }
+    let Observed {
+        judge_call,
+        eval_information,
+        guardrail_records,
+    } = observed;
+    let records = project_records(guardrail_records);
+    let (inputs, blocked) = match outcome {
+        Ok(returned) => (Some(returned), None),
+        Err(error) => (None, Some(blocked_output(error)?)),
+    };
+    Ok(Output {
+        judge_call,
+        inputs,
+        eval_information,
+        blocked,
+        guardrail_records: records,
+    })
+}
+
+fn project_records(records: Vec<JudgeGuardrailRecord>) -> Option<Vec<RecordOutput>> {
+    if records.is_empty() {
+        return None;
+    }
+    Some(
+        records
+            .into_iter()
+            .map(|record| RecordOutput {
+                name: record.guardrail_name,
+                provider: record.guardrail_provider,
+                mode: record.guardrail_mode,
+                response: record.guardrail_response,
+                status: record.guardrail_status,
+            })
+            .collect(),
+    )
+}
+
+fn blocked_output(error: JudgeError) -> Result<BlockedOutput, Box<HelperError>> {
+    let status = error.status_code().as_u16();
+    match error {
+        JudgeError::Blocked { detail } => Ok(BlockedOutput { status, detail }),
+        failed @ (JudgeError::MissingGuardrailName
+        | JudgeError::MissingJudgeModel
+        | JudgeError::MissingCriteria
+        | JudgeError::WeightSum { .. }
+        | JudgeError::UnrepresentableWeight
+        | JudgeError::WeightOverflow
+        | JudgeError::InvalidOnFailure { .. }
+        | JudgeError::InvalidEventHook { .. }
+        | JudgeError::UnsupportedEventHook { .. }
+        | JudgeError::InvalidParam { .. }
+        | JudgeError::NoChoices
+        | JudgeError::Completion { .. }
+        | JudgeError::Verdict { .. }) => Err(failure("RuntimeError", failed.to_string())),
     }
 }
 

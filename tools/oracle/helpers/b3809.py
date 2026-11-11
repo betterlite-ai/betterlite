@@ -99,9 +99,24 @@ def run(input_value: dict[str, Json]) -> Json:
                 "detail": cast(Json, error.detail),
             }
     metadata = cast(dict[str, Json], request_data.get("metadata") or {})
+    entries = cast(
+        list[dict[str, Json]],
+        metadata.get("standard_logging_guardrail_information") or [],
+    )
+    records: list[Json] = [
+        {
+            "guardrail_name": entry["guardrail_name"],
+            "guardrail_provider": entry["guardrail_provider"],
+            "guardrail_mode": entry["guardrail_mode"],
+            "guardrail_response": entry["guardrail_response"],
+            "guardrail_status": entry["guardrail_status"],
+        }
+        for entry in entries
+    ]
     return {
         "judge_call": captured or None,
         "inputs": result,
         "eval_information": metadata.get("eval_information"),
         "blocked": blocked,
+        "guardrail_records": records or None,
     }
