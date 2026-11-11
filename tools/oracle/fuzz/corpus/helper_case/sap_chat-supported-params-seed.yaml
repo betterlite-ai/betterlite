@@ -1,0 +1,11 @@
+kind: helper
+name: sap_chat-supported-params-seed
+call:
+  b5845:
+    operation: supported_params
+    calls:
+      - {model: anthropic--claude-3.5-sonnet}
+      - {model: amazon.titan-text-lite-v1}
+      - {model: text-embedding-3-large, family: embedding}
+env: {}
+compare: {ignore: []}
