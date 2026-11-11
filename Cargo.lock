@@ -1471,6 +1471,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1478,6 +1479,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "num-traits",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -2457,6 +2459,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "mutants",
  "pem",
  "rstest",
@@ -2472,6 +2475,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "zeroize",
 ]
 
 [[package]]

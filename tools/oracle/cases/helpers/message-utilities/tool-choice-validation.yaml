@@ -1,0 +1,9 @@
+kind: helper
+name: message-utilities-tool-choice-validation
+call:
+  b5366:
+    calls:
+      - function: validate_tool_choice
+        tool_choice: {function: {name: f}}
+env: {}
+compare: {ignore: []}
