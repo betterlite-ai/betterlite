@@ -1,0 +1,23 @@
+target-version = "py311"
+line-length = 100
+src = [".", "tools/oracle/helpers", "tools/oracle/sdk_http"]
+[lint]
+select = ["ALL"]
+ignore = [
+  "C\u0050Y001",
+  "D",
+  "EM101",
+  "EM102",
+  "ISC001",
+  "RUF036",
+  "S603",
+  "S607",
+  "TC",
+  "TRY003",
+  "TRY004",
+  "TRY301",
+  "COM812",
+]
+
+[lint.per-file-ignores]
+"tools/oracle/helpers/**" = ["INP001"] # dispatch.py imports each helper by name from this folder, which is not a package
