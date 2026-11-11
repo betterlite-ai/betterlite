@@ -114,8 +114,10 @@ impl<Transport: AwsRagTransport> S3VectorsRequests<'_, '_, Transport> {
         operation: &'static str,
         body: &[u8],
     ) -> Result<AwsRagResponse, S3VectorsError<Transport::Error>> {
-        let endpoint = format!("https://s3vectors.{}", self.aws_region_name);
-        let url = format!("{endpoint}.api.aws/{operation}");
+        let url = format!(
+            "https://s3vectors.{}.api.aws/{operation}",
+            self.aws_region_name
+        );
         let mut headers = Vec::with_capacity(2);
         if !body.is_empty() {
             headers.push(("Content-Type".to_owned(), "application/json".to_owned()));
