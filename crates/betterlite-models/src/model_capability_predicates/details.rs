@@ -208,9 +208,7 @@ where
     };
     let fields: BTreeMap<String, Box<RawValue>> = from_str(metadata.get())?;
     let Some(value) = fields.get(key).filter(|value| value.get() != "null") else {
-        // B2219's projection drops keys outside its fixed list, so a custom capability key reads Absent even though the raw entry carries it
-        return raw_metadata(target, key, environment)
-            .map_or_else(|| Ok(MetadataValue::Absent), Ok);
+        return Ok(MetadataValue::Absent);
     };
     Ok(MetadataValue::Value(from_str::<Json>(value.get())?))
 }

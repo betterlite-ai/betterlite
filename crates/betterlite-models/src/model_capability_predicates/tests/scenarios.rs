@@ -26,7 +26,7 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "vision-blocked": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
     "mismatch-model": {"litellm_provider": "not-a-provider", "mode": "chat", "supports_vision": true},
     "fireworks_ai/m": {"litellm_provider": 5, "mode": "chat"},
-    "m": {"litellm_provider": "fireworks_ai", "mode": "chat", "supports_vision": true}
+    "m": {"litellm_provider": "fireworks_ai", "mode": "chat", "supports_vision": true, "supports_web_search": true}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -42,6 +42,8 @@ const DECLARED_STRING_VALUE: &str = r#"{
     "number-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": "bare-number"},
     "deepseek/own-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": "own-text"},
     "own-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": 5},
+    "deepseek/reason-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": "metadata-text"},
+    "reason-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": 5},
     "deepseek/missing-model": {"litellm_provider": "deepseek", "mode": "chat"}
 }"#;
 
@@ -260,7 +262,7 @@ const DECLARED_CUSTOM_STEPS: &[(&str, Option<&str>, Expected)] = &[
     (
         "deepseek/own-text-model",
         Some("deepseek"),
-        Expected::text("own-text"),
+        Expected::nothing(),
     ),
     (
         "deepseek/missing-model",
@@ -411,11 +413,18 @@ const VISION_KEY: &str = "supports_vision";
 const PDF_INPUT_KEY: &str = "supports_pdf_input";
 const WEB_SEARCH_KEY: &str = "supports_web_search";
 
-const REASONING_DECLARATION_STEPS: &[(&str, Option<&str>, Expected)] = &[(
-    "reasoning-model",
-    Some("deepseek"),
-    Expected::text("stringy"),
-)];
+const REASONING_DECLARATION_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    (
+        "reasoning-model",
+        Some("deepseek"),
+        Expected::text("stringy"),
+    ),
+    (
+        "deepseek/reason-text-model",
+        Some("deepseek"),
+        Expected::text("metadata-text"),
+    ),
+];
 
 const SUPPORTS_RESOLUTION_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
@@ -433,12 +442,9 @@ const VISION_PROVIDER_SCENARIO: Scenario = Scenario {
     steps: VISION_PROVIDER_STEPS,
 };
 
-// The declared fireworks_ai is prepended and stripped, so the bare openai entry mismatches and no provider info answers.
-const VISION_OVERRIDE_STEPS: &[(&str, Option<&str>, Expected)] = &[(
-    "vision-blocked",
-    Some("fireworks_ai"),
-    Expected::flag(false),
-)];
+// The declared fireworks_ai prefix is stripped, so the bare entry mismatches and the fireworks provider info reads its supports_vision.
+const VISION_OVERRIDE_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("vision-blocked", Some("fireworks_ai"), Expected::flag(true))];
 
 const VISION_OVERRIDE_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
@@ -446,12 +452,9 @@ const VISION_OVERRIDE_SCENARIO: Scenario = Scenario {
     steps: VISION_OVERRIDE_STEPS,
 };
 
-// The bare entry names a provider LiteLLM knows no model set for, so the declaration stays and rejects it.
-const VISION_MISMATCH_STEPS: &[(&str, Option<&str>, Expected)] = &[(
-    "mismatch-model",
-    Some("fireworks_ai"),
-    Expected::flag(false),
-)];
+// An entry naming a provider LiteLLM knows no model set for still reaches the fireworks provider info, which reads the bare key.
+const VISION_MISMATCH_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("mismatch-model", Some("fireworks_ai"), Expected::flag(true))];
 
 const VISION_MISMATCH_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
@@ -459,14 +462,24 @@ const VISION_MISMATCH_SCENARIO: Scenario = Scenario {
     steps: VISION_MISMATCH_STEPS,
 };
 
-// The combined entry's non-text provider stops the lookup, so the bare twin never answers.
+// A non-text litellm_provider stops the lookup, and the fireworks provider info reads the bare key's supports_vision.
 const VISION_NOT_TEXT_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
-    &[("m", Some("fireworks_ai"), Expected::flag(false))];
+    &[("m", Some("fireworks_ai"), Expected::flag(true))];
 
 const VISION_NOT_TEXT_PROVIDER_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
     reader: Reader::Supports(VISION_KEY),
     steps: VISION_NOT_TEXT_PROVIDER_STEPS,
+};
+
+// Fireworks provider info never sets web search, so the failed check must stop instead of falling through to the bare entry.
+const WEB_SEARCH_STOP_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("m", Some("fireworks_ai"), Expected::flag(false))];
+
+const WEB_SEARCH_STOP_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(WEB_SEARCH_KEY),
+    steps: WEB_SEARCH_STOP_STEPS,
 };
 
 const REASONING_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
@@ -547,6 +560,7 @@ pub(super) async fn supports_resolution() {
     check(&VISION_OVERRIDE_SCENARIO).await;
     check(&VISION_MISMATCH_SCENARIO).await;
     check(&VISION_NOT_TEXT_PROVIDER_SCENARIO).await;
+    check(&WEB_SEARCH_STOP_SCENARIO).await;
     check(&REASONING_PROVIDER_SCENARIO).await;
     check(&PDF_PROVIDER_SCENARIO).await;
     check(&WEB_SEARCH_PROVIDER_SCENARIO).await;

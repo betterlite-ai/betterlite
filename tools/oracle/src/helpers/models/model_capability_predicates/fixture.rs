@@ -161,13 +161,10 @@ fn typed_catalog(entries: &IndexMap<String, Box<RawValue>>) -> Result<ModelCatal
         .map_err(|source| FixtureError::Catalog { source })
 }
 
-// LiteLLM answers Fireworks provider info from the same model cost map, filtered to its own keys.
+// LiteLLM's fireworks capability lookup reads the bare model key, so the catalog keeps every parseable entry.
 fn fireworks_catalog(entries: &IndexMap<String, Box<RawValue>>) -> Catalog {
     let mut catalog = Catalog::new();
     for (key, entry) in entries {
-        if !key.starts_with("fireworks_ai/") {
-            continue;
-        }
         if let Ok((fields, _warnings)) = ModelFields::parse(entry) {
             catalog.insert(key.clone(), fields);
         }

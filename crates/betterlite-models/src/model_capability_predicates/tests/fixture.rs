@@ -169,13 +169,12 @@ fn typed_catalog(source: &str) -> ModelCatalog {
     ModelCatalog::parse(&bytes, UnknownFields::Warn).expect("typed catalog")
 }
 
-// LiteLLM's fireworks catalog is the same model_cost map filtered to fireworks_ai/ keys.
+// LiteLLM's fireworks capability lookup reads the bare model key, so the catalog keeps every parseable entry.
 fn fireworks_catalog(source: &str) -> Catalog {
     let entries: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(source).expect("model cost map");
     entries
         .into_iter()
-        .filter(|(key, _)| key.starts_with("fireworks_ai/"))
         .filter_map(|(key, entry)| {
             let fields = ModelFields::parse(&entry).ok()?.0;
             Some((key, fields))
