@@ -31,21 +31,24 @@ description: >-
   ports.vector_stores. worker_registry, when truthy, fails with ConfigBootError::WorkerRegistryNeedsPremium whose text
   is "Trying to use `worker_registry`" followed by LiteLLM's CommonProxyErrors.not_premium_user text, because
   open-source LiteLLM without a license refuses it the same way; otherwise the worker list is empty. The ports are one
-  trait `NonLlmRegistries` with four methods, and B8614's BootRegistries implements it over the agent, MCP and vector
-  store registries that Shared holds.
+  trait `NonLlmRegistries` with four asynchronous methods, because B8614's mcp_tools method awaits B8871's Python
+  import. load_non_llm_configs awaits them one at a time in the order above and stops at the first error, so entries
+  registered before a failure stay registered. B8614's BootRegistries implements the trait over the agent, MCP and
+  vector store registries that Shared holds.
 
 
   `init_policy_engine(config, has_db, ports)` ports _init_policy_engine: no config or a falsy policies key does
   nothing; otherwise it calls ports.init_policies(policies, policy_attachments, validate_db = has_db,
-  fail_on_error = true) and returns its error. `load_alerting_settings(general_settings, ports)` ports
+  fail_on_error = true) and returns its error. It reads `config.sections.policy_engine` (B9320's section), and B9320's PolicyRuntime is the concrete runtime behind the port. B3250 still owns the init_policies algorithm, and B8384 keeps the refresh order. `load_alerting_settings(general_settings, ports)` ports
   _load_alerting_settings: when general_settings.alerting is absent or null it does nothing; otherwise it calls
   ports.update_alerting with alerting, alerting_threshold (default 600), alert_types, alert_to_webhook_url,
   alerting_args and alert_type_config, then for each entry other than "slack" that is a known custom-logger callback
   name it asks ports.add_alerting_logger(name, alerting_args) to register it; unknown names are skipped.
 
 
-  `select_secret_manager(key_management_system, config_file_path, env)` ports initialize_secret_manager and
-  load_from_azure_key_vault. None does nothing. The accepted values are KeyManagementSystem's: azure_key_vault,
+  `select_secret_manager(key_management_system, key_management_settings, config_file_path, env)` ports initialize_secret_manager and
+  load_from_azure_key_vault. key_management_settings is an explicit input: B4410's KeyManagementSettings, already
+  resolved and validated by the caller (B8873 on the early path), and it goes into the returned ManagerState. None does nothing. The accepted values are KeyManagementSystem's: azure_key_vault,
   google_kms, aws_secret_manager, aws_kms, google_secret_manager, hashicorp_vault, cyberark, custom. Any other string
   fails with ConfigBootError::InvalidKeyManagementSystem and the text "Invalid Key Management System selected". It
   returns the B4421 ManagerState (client handle plus settings) that B8500's SecretLookup.manager holds; azure_key_vault

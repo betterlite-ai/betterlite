@@ -15,8 +15,9 @@ description: >-
   Settings, read once in mount_public. `DocsEnv` (B7740) is filled from the process environment variables DOCS_URL,
   REDOC_URL, OPENAPI_URL, NO_DOCS, NO_REDOC, NO_OPENAPI and ROOT_REDIRECT_URL, and `resolve()` gives the DocsUrls. The
   server root path is the value of B4200's request_root_paths section (SERVER_ROOT_PATH, default "/" as LiteLLM reads
-  it). The title is the title of B123's `default_info(server_root_path, version)`, "LiteLLM API", and version is the
-  betterlite crate version.
+  it). The title is the DOCS_TITLE value of B9300's config.sections.public_discovery (default "LiteLLM API", applied without a license gate, the same
+  value the model hub uses) for the docs pages and the OpenAPI info it builds, in place of the fixed title of B123's `default_info(server_root_path, version)`;
+  the version is the betterlite crate version.
 
 
   Routes merged by mount_public, in this order:
@@ -119,12 +120,12 @@ oracle_cases:
   - tools/oracle/cases/edge/public/openapi-disabled.yaml
 deviations:
   - what: The OpenAPI document lists only the eleven LLM API POST routes and the realtime and Responses WebSocket routes, without request body schemas.
-    why: axum has no route introspection and no pydantic models, so the full route list and the request schemas need a route catalog no task builds yet (see the report notes). LiteLLM documents every registered route.
+    why: axum has no route introspection and no pydantic models, so the full route list comes from B124's RouteCatalog and the request schemas have no owner yet. LiteLLM documents every registered route.
   - what: info.version in the document is the betterlite version.
     why: LiteLLM writes its own package version there.
 out_of_scope:
   - "The handlers: B3190 (provider routes), B7740 (docs pages, assets, DocsEnv) and B123 (build_document and its parts). /public/agents/fields: B8647."
-  - "A route catalog that documents every mounted route and the request body schemas: no owner yet, see the report notes."
+  - "The route inventory of every mounted route: B124's RouteCatalog, filled from the real registration sites and read by GET /routes. Request body schemas for the OpenAPI document: no owner yet."
   - "The edge layers and the UI static mounts: B8680. The Lens routes: B8682."
 pitfalls:
   - Every route here is public in LiteLLM; merged through mount instead of mount_public it would answer 401 without a key.

@@ -151,7 +151,7 @@ deviations:
 
 out_of_scope:
   - Deferred success callback execution and task scheduling (_defer_async_logging in litellm.Logging).
-  - CustomGuardrail.__init__ contract (assigned to unplanned B104).
+  - CustomGuardrail.__init__ contract (owned by B5471).
   - ModifyResponseException type definition and exception handling (handled by B184).
 
 pitfalls:

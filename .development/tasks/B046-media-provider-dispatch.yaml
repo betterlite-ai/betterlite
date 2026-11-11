@@ -101,7 +101,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1517-B1539 implement the provider leaves removed from this entry; root __init__.py files only expose those implementations.
-  - main.py completion ownership outside Fal follows the provider families B024-B043, with custom/Aleph/proxy branches B044, subscription stanzas B045, Ragflow B049 and A2A/Langgraph/Langflow B050; the concrete _complete_ suffix determines that family's adapter rather than a new generic implementation here.
+  - main.py completion ownership outside Fal follows the provider families B024-B042, with regional completion dispatch in B8312, custom/Aleph/proxy branches B044, subscription stanzas B045, Ragflow B049 and A2A/Langgraph/Langflow B050; the concrete _complete_ suffix determines that family's adapter rather than a new generic implementation here.
   - In main.py, OpenAI-base resolution stays B500, default/module encoding B195/B196, dispatch context and client helpers B198, print_verbose B2239, and stream_chunk_builder through _simple_text_part B2227; B158 owns remaining facades/mocks/retry/registration scaffolding, while the audio facade outside the Runway branch remains B083/B1083/B1084.
   - URL download behavior for BFL edits is specified solely by B1518; this composer does not add a fetcher or broaden its allowed file inputs.
 pitfalls:

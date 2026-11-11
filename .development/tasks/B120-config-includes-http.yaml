@@ -1,0 +1,209 @@
+id: B120
+title: Exercise config includes through independently booted proxies
+description: >-
+  B4142 resolves includes and connects load_file to the binary, but its gate has no HTTP
+  oracle cases. The ordinary HTTP oracle writes only one config.yaml, so it cannot yet
+  exercise a config tree. Finish this umbrella by adding bounded include-file fixtures
+  to that runner and comparing requests through the existing chat routes. No production
+  config parser, setting, reload service or route registration is added here.
+
+  Extend the ordinary HTTP Case in tools/oracle/src/case.rs with config_files, defaulting
+  to an empty BTreeMap<String, String>. Each key is a relative destination and its value
+  is the complete YAML text to write beside the root config. Keep config itself a string
+  and the existing request-or-steps contract unchanged. A case may omit kind, as current
+  HTTP files do; it must not use kind: helper. Put fixture validation and materialization
+  in tools/oracle/src/config_include_fixtures.rs and its folder, with its own
+  ConfigFixtureError. The skeleton declares the module; no helper operation is needed.
+  Reuse serde-saphyr through case::decode_case(path, bytes), std::path::Component and
+  std::fs::OpenOptions::create_new. Do not implement another YAML parser or a second
+  include resolver in the oracle. The fixture writer preserves valid YAML text, including
+  empty and non-mapping documents; the proxy decides what those documents mean.
+
+  Before creating any file, validate the entire destination set: at most 16 files,
+  64 KiB per body, 256 KiB combined, 512 bytes per path and eight path components.
+  Accept only nonempty slash-separated normal components, with a .yaml or .yml suffix.
+  Reject absolute paths, drive prefixes, backslashes, NUL, empty components, dot and
+  dot-dot components, a destination named config.yaml, and file/directory collisions
+  such as a.yaml together with a.yaml/b.yaml. These restrictions apply to fixture
+  destinations only: include strings inside their YAML may use ../config.yaml to test
+  a cycle. Apply the existing config_inspection license exclusion to every supplied
+  document, so moving LITELLM_LICENSE into an included file cannot bypass it.
+  There is no filesystem read or write in decode_case. It validates the declarations;
+  materialization happens after MockProvider has chosen its port.
+
+  In runner/config.rs, prepare two fresh config trees inside the existing group artifact
+  directory when config_files is nonempty, one for each proxy execution, including
+  --self-check. Both roots are named config.yaml. Replace {{upstream}} in the root and
+  every included body, write both copies from the original case, and pass their separate
+  root paths through the existing GatewayInput. Keep the artifact directory and child
+  log locations as today. Database URL injection, when requested, still happens separately
+  for each root; included general_settings mappings are not pre-merged by the harness.
+  A write failure returns the existing filesystem error with its source and starts no
+  child. Keep configs for the existing artifact lifecycle rather than giving them a
+  shorter TempDir lifetime. No file is written into the source checkout.
+
+  Include config_files in the HTTP grouping identity in runner.rs, so two cases with
+  equal config/env but different include bodies cannot share one boot. Update existing
+  Case struct literals in tests.rs and http/browser_flow/tests.rs, and ScenarioCase::as_case
+  in case/group.rs, with the empty map. This task does not add config_files to the separate
+  scenario, websocket or SDK schemas. Limit edits to these existing files to the Case
+  field, validation, grouping and config-path plumbing; their unrelated behavior stays
+  with its current owner.
+
+  Tests in config_include_fixtures/tests.rs call the real decode_case; preparation tests
+  in runner/config/tests.rs call their parent module's real config preparation path.
+  Name the tests rejects_unsafe_destination,
+  enforces_fixture_limits, rejects_path_collision,
+  rejects_included_license, preserves_yaml_and_mock_url,
+  isolates_proxy_trees, groups_by_include_contents and
+  defaults_to_no_config_files. Use rstest for the path and limit tables. The isolation
+  test changes one prepared included file and proves the other copy is unchanged; the
+  grouping test has identical roots but distinct file maps. Add
+  stops_on_write_failure, proving no prepared pair is returned after a write fails. Extend the existing
+  http_case fuzz target's corpus with valid nested fixtures, traversal, reserved-root,
+  file/directory collision, oversize and included-license inputs. Its decoder remains
+  case::decode_case; no additional byte parser or fuzz target is introduced.
+
+  Write eight HTTP cases under tools/oracle/cases/config-includes-http. All use only
+  OpenAI deployments, model openai/gpt-4o, api_base {{upstream}}, max_retries 0, and
+  router_settings.num_retries 0. Use distinct model_name values per case, fixed mock
+  completions and ordinary user messages. general_settings.master_key is oracle-master
+  unless a case explicitly changes it. The successful cases compare the full client
+  response and recorded provider request, including authorization and content-type.
+  Retain the existing chat cases' narrow ignores for generated values; never ignore
+  the provider model, path, credential or request count.
+
+  included-deployment puts the only deployment in fragments/models.yaml, with api_key
+  os.environ/ORACLE_INCLUDE_KEY and that variable set to oracle-include-key; POST
+  /v1/chat/completions proves include loading precedes secret resolution and dispatch.
+  root-and-included-models has one deployment in the root and another in models.yaml;
+  a steps case calls each via /chat/completions and /v1/chat/completions and records two
+  successful provider requests, proving that the list was extended rather than replaced.
+  nested-relative has include [nested/entry.yaml], whose include [models.yaml] resolves
+  to nested/models.yaml; call /engines/{model}/chat/completions with that included name.
+  root-relative-fallback uses the same tree but has only models.yaml beside the root,
+  and calls /openai/deployments/{model}/chat/completions. declaring-relative-wins supplies
+  both models.yaml files with the same model_name but different upstream model strings
+  (openai/gpt-4o at the root, openai/gpt-4o-mini beside the declaring file) and fixture
+  credentials; the captured request must use the declaring file's model and credential.
+
+  pending-before-nested includes first.yaml and second.yaml from the root, with first.yaml
+  including nested.yaml. Each changes general_settings.master_key to a different fixture
+  key. A steps case first sends the second file's key and gets 401, then sends the nested
+  file's key and succeeds: nested includes run after already-pending root entries. The
+  model stays in the root so mapping replacement cannot remove it. cycle-and-repeat has
+  nested/entry.yaml include ../config.yaml and ../models.yaml while the root also includes
+  models.yaml; give that model a fixed model_info.id. A successful request proves startup
+  terminates and the repeated location does not create another effective deployment.
+  included-master-key-required supplies the master key only in an included general_settings
+  mapping, leaves it absent in the root, and sends a chat request without Authorization;
+  it must return 401 with no upstream request. Compare status, content-type, error type,
+  param and code, ignoring only /error/message because betterlite writes its own wording.
+
+  The four inherited POST paths are /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions.
+  B004 already registers them; this task never mounts them. Missing files and malformed
+  includes stop startup and remain B4142's native failure tests, not invented HTTP errors.
+  The remaining production functions are already assigned or have no caller at the pin;
+  this task owns HTTP evidence and about 250 lines of runner/schema integration, with
+  roughly 250 lines of native tests and 300 lines of case/corpus data.
+scope:
+  paths:
+    - tools/oracle/src/config_include_fixtures.rs
+    - tools/oracle/src/config_include_fixtures/**
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/case/group.rs
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/config.rs
+    - tools/oracle/src/runner/config/**
+    - tools/oracle/src/tests.rs
+    - tools/oracle/src/http/browser_flow/tests.rs
+    - tools/oracle/cases/config-includes-http/**
+    - tools/oracle/fuzz/corpus/http_case/config-includes-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L11-L42
+    why: B4142's declaring-relative choice and root-relative fallback, observed here through live requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L53-L132
+    why: B4142's list extension, mapping replacement, pending queue and already-loaded set; the oracle must leave these to each proxy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5475-L5540
+    why: File loading invokes include resolution before returning the config; B002 and B4142 implement that path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6032-L6076
+    why: Context for source selection, resolved settings and secret resolution; B8379 owns reload composition, not this oracle task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11957
+    why: Decorators for all four existing authenticated chat aliases exercised by the include cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/read_model_list.py#L1-L29
+    why: The umbrella's sole exclusive function wraps get_config, but only its unit test calls it at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/dev_config.yaml#L1-L219
+    why: Example deployments and settings, not another loader or a declaration of runtime defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/.env.example#L1-L32
+    why: Example credentials and development environment values do not override the owning providers' defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L61-L391
+    why: Ownership audit only; B2228 owns wire-name projection, B176 consumes ControlOptions, and B7950 owns the Python type mirror.
+  - url: https://doc.rust-lang.org/std/path/enum.Component.html
+    why: Existing path components distinguish normal relative destinations from roots and parent traversal.
+  - url: https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new
+    why: Fresh fixture files must not overwrite an existing destination.
+dod:
+  - text: HTTP cases accept bounded config_files declarations, reject unsafe destinations and included license settings before filesystem work, and retain legacy decoding.
+    proof: [fixture-tests, fixture-corpus]
+  - text: The runner prepares independent include trees for both proxy executions, substitutes the mock URL, retains database injection and groups by included content.
+    proof: [fixture-tests, oracle-regressions]
+  - text: Included deployments, list extension, nested resolution, fallback, conflicts, queue order and cycles produce the same client and provider observations through the existing chat aliases.
+    proof: [http-cases-added, oracle]
+  - text: An included master key is enforced before dispatch, with matching authentication status and error fields and no provider request.
+    proof: [http-cases-added, oracle]
+checks:
+  optional: []
+  commands:
+    - id: fixture-tests
+      why: The case extension, bounds, path validation, license guard, grouping or independent file preparation is missing.
+      run: >-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/::(rejects_unsafe_destination|enforces_fixture_limits|rejects_path_collision|rejects_included_license|preserves_yaml_and_mock_url|isolates_proxy_trees|groups_by_include_contents|defaults_to_no_config_files|stops_on_write_failure)($|::)/)'
+    - id: fixture-corpus
+      why: The extended decode_case boundary has no new include fixture corpus or fails replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/config-includes-*')" &&
+        grep -lE '^config_files:' tools/oracle/fuzz/corpus/http_case/config-includes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/http_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: oracle-regressions
+      why: Adding a Case field or changing config preparation breaks existing HTTP, browser-flow or scenario behavior.
+      run: >-
+        test -f tools/oracle/src/config_include_fixtures/tests.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^tests::/) | test(/^http::browser_flow::/) | test(/^http::postgres::/) | test(/^runner::/) | test(/^routing_scenarios::/)'
+    - id: http-cases-added
+      why: Include support has no newly added comparisons against the booted LiteLLM proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/config-includes-http)"
+oracle_cases:
+  - tools/oracle/cases/config-includes-http/included-deployment.yaml
+  - tools/oracle/cases/config-includes-http/root-and-included-models.yaml
+  - tools/oracle/cases/config-includes-http/nested-relative.yaml
+  - tools/oracle/cases/config-includes-http/root-relative-fallback.yaml
+  - tools/oracle/cases/config-includes-http/declaring-relative-wins.yaml
+  - tools/oracle/cases/config-includes-http/pending-before-nested.yaml
+  - tools/oracle/cases/config-includes-http/cycle-and-repeat.yaml
+  - tools/oracle/cases/config-includes-http/included-master-key-required.yaml
+deviations: []
+out_of_scope:
+  - "read_model_list.py::read_model_list L23-L29 has no production caller at the pin; only tests/unit/proxy/test_read_model_list.py imports it, so no Python bridge or helper case is built."
+  - ".env.example and dev_config.yaml are example data, not new parsing functions or effective defaults; their provider credentials, sandbox callback and database settings remain with their existing feature owners, and B002 still rejects unsupported keys."
+  - "litellm_params.py::wire L61-L62, wire_names L375-L376, owned_wire_names and its nested names L379-L386, and the registries L370-L391 belong to B2228; all dataclass/type mirrors belong to B7950; ControlOptions and _int_from_decimal_string L246-L264 are consumed by B176, not another config loader."
+  - "Every config_includes.py function (resolve_include_file_path, _merged_value, _merged_entry, _merged, _without_include, include_entries, _pending_from, _resolve and resolve_includes) is B4142's implementation; this task supplies HTTP proof without copying it."
+  - "SettingsStore, source_for and coerce_bool are B4140; SSO descriptors, resolve_sso_config and structured mappings are B4141; B1658-B1661 implement their settings handlers and HTTP cases, and B066 composes their route bundles."
+  - "Bucket readers and module download are B4143, called from B8379's config source selection and B165/B8042's Python module loading; their production composition is not an include-fixture adapter."
+  - "publish_config_change and subscriber mechanics are B4144; B8381 starts and stops the subscriber, B8372 schedules reconciliation, B8399 supplies the config-param publication port and B2331 calls publication after model-key rotation."
+  - "Reload schedule persistence is B4145; B8385 owns periodic checks, B8586 builds their HTTP handlers and B8676 mounts them with their HTTP cases."
+  - "ProxyConfig state/saves are B8380, config overlay and reload are B8379, shared construction is B8610/B8613 and config admin mounts are B8675; B8626/B8701/B8728 already mount the MCP areas and are unrelated to this remaining include proof."
+pitfalls:
+  - "A root-only grouping key would silently run one case against another case's models.yaml."
+  - "The two child processes have different working directories, so fixture paths must be relative to each generated config.yaml rather than either process cwd."
+  - "Do not normalize include entries in the harness, because ../config.yaml is the cycle that the production loader must recognize."
+  - "An include can replace general_settings wholesale, so a database fixture's root injection must not be mistaken for a guarantee that an included mapping preserves it."
+  - "Two successful calls to distinct model names demonstrate list extension without depending on random selection among duplicate deployments."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

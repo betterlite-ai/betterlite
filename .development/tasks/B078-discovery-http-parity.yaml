@@ -1,0 +1,264 @@
+id: B078
+title: Prove populated skill discovery and UI settings through the running proxy
+description: >-
+  Discovery's handlers and mounts already have owners. B8274 builds the public skill
+  index and archive handlers, B8648 supplies their real stored-skill reader and mounts
+  them, and B8670 mounts B3211's UI document. B8648 compares only the disabled skill
+  routes over HTTP. Complete the missing enabled-path comparisons against independently
+  seeded Postgres databases, using B5076's booted LiteLLM environment and the existing
+  betterlite binary. Add the UI settings combinations below that B3211 currently proves
+  only with helpers. This task registers no route, changes no gateway handler or config
+  section, and invokes no FastAPI handler from a helper adapter.
+
+  Add tools/postgres-fixture/src/discovery_skills.rs and its directory. Its closed
+  DiscoverySeed enum has the serde snake_case variants empty, catalog and limit, with
+  Clone, Debug, PartialEq and Eq. The architect attaches the optional field
+  database.seed.discovery_skills to FixtureSeed before dispatch, defaults it to None,
+  and calls discovery_skills::seed(&Client, &DiscoverySeed) from seed_database after
+  seed_keys. That function returns the module's own DiscoveryError, preserving the
+  tokio-postgres source; the shared fixture error wraps it. None does nothing, whereas
+  empty creates the pinned LiteLLM_SkillsTable with no rows. Keep the DDL and uploaded
+  ZIP bytes in tools/postgres-fixture/fixtures/discovery-skills/. Reuse the existing
+  connection, seed deadline, independent database pair and cleanup on failure; neither
+  this module nor its SQL is a product migration or a second skills repository.
+
+  Seed only deterministic, bounded datasets. catalog contains installable uploads
+  under distinct ids and strictly increasing created_at timestamps, with at least two
+  different created_by owners. Include three manifests declaring the same name to
+  exercise stable -2 and -3 suffixes; a manifest with no name whose display_title supplies
+  it; one with neither manifest name nor display_title so skill_id supplies it; one
+  whose name candidates contain only punctuation so the literal skill wins; and a
+  manifest with a name longer than 64 characters and a description longer than 1024
+  Unicode characters. Include the description fallbacks to the stored description,
+  display_title and final unique name. Add a row with NULL file_content, an upload
+  containing plain non-ZIP bytes, and a valid ZIP without SKILL.md. The latter two must
+  exercise LiteLLM's handled rejection, not the corrupt-DEFLATE deviation of B5096.
+  Keep each upload below 64 KiB and the whole catalog below 1 MiB. Use fixed non-null
+  updated_at timestamps, since the database schema does not allow the model's optional
+  updated_at state. The limit dataset has exactly 1001 installable rows named
+  discovery-limit-0000 through discovery-limit-1000, increasing created_at by one
+  second per row, and reuses one small upload with no declared name. The oldest row
+  must be excluded before reversing the remaining 1000 rows. No fixture variant
+  accepts SQL, filesystem paths, arbitrary row counts or upload bytes from YAML.
+
+  Build fixture ZIPs independently of betterlite-http::skill_archive and store the
+  original single-folder uploads, not already flattened output. Insert bytea through
+  bound SQL parameters, never Base64 text; Prisma's Base64 conversion belongs to B3212.
+  The discovery_seed_contract tests query the exact table, column values, byte content,
+  owner diversity, chronological order and the 1001-row boundary. The test
+  discovery_seed_isolation changes or deletes a row in one provisioned database and
+  proves the other still has its original bytes.
+
+  The HTTP oracle currently decodes every application/zip body as UTF-8 and fails on
+  valid ZIP bytes. Add tools/oracle/src/discovery_http.rs and its directory, exposing
+  archive_body(content_type: &str, bytes: &[u8]) -> Option<serde_json::Value>. For the
+  application/zip media type, ignoring ASCII case and optional semicolon parameters,
+  return the same integer-byte-array representation B900 uses for
+  application/octet-stream; for other media types return None. Preserve every byte,
+  including NUL and invalid UTF-8, without unpacking or recompressing. The architect
+  adds a call to this function in http::parse_body before str::from_utf8 and returns
+  its Some value immediately. The existing 16 MiB transport response bound remains
+  in force. The discovery_capture_contract tests call the real parse_body, prove
+  application/zipx is not a ZIP media type, and show that changing one byte,
+  content-type or content-disposition produces a comparison failure. Reuse the existing
+  sha2 dependency to check the archive digest;
+  do not implement a ZIP codec or add a content-type override to the gateway.
+
+  Add discovery_case_decode tests in discovery_http/tests.rs through the existing
+  betterlite_oracle::case::decode_case(path, bytes), which reads
+  database.seed.discovery_skills. Reject an unknown variant and a map or sequence in
+  its place before either database starts. Add tools/oracle/fuzz/fuzz_targets/discovery_case.rs
+  feeding that same decoder with at most 16 MiB of YAML bytes and a committed corpus
+  in tools/oracle/fuzz/corpus/discovery_case/ for absent, empty, catalog, limit,
+  unknown-variant, wrong-type and truncated input. The normal test
+  replays_the_discovery_case_corpus uses that same entry point and requires a nonempty
+  corpus; it makes no database connection. This extends the existing HTTP case format,
+  not a helper operation or an alternative decoder.
+
+  All new cases live in tools/oracle/cases/http/discovery-parity/ and are HTTP cases
+  through the booted proxy with general_settings.master_key set. Use the current
+  ordinary HTTP YAML format, which omits kind; parse_case treats a present non-WebSocket
+  kind as a helper, so writing kind: http would currently fail decoding. Leave database_url
+  and disable_prisma_schema_update for the runner to inject. Requests have no
+  Authorization header, including for rows owned by unrelated principals; enabling
+  litellm_settings.public_skills_index publishes all stored skills. That key defaults
+  to false and is true explicitly in enabled cases. Use PROXY_BASE_URL set to
+  https://skills.example.test where an index contains URLs, so the full URL is compared
+  without ignoring each process's ephemeral port. Nothing fetches that URL. Compare
+  content-type on every JSON response as well as status and the complete body.
+
+  index-catalog requests GET /.well-known/agent-skills/index.json with catalog and
+  compares the full $schema and skills array, including order, names, description
+  fallbacks and limits, type archive, URL and sha256 digest. legacy-index-catalog
+  requests GET /.well-known/skills/index.json with the identical fixture and compares
+  the same complete body. index-empty uses empty and expects a successful empty skills
+  array. index-limit uses limit and checks the newest 1000 rows in oldest-first order.
+  archive-download fetches GET /v1/skills/{skill_id}/archive for an installable catalog
+  id and compares every returned byte plus content-type application/zip and
+  content-disposition attachment; filename="<skill_id>.zip". archive-repeat performs
+  two GETs of that same id through the existing HTTP steps format in one process to
+  exercise the real cache path, comparing bytes and both headers on each response.
+
+  archive-missing, archive-no-content and archive-invalid fetch the same archive path
+  for, respectively, an absent id, the NULL-content row and the plain non-ZIP upload.
+  Each must reach the enabled handler and answer 404 with the FastAPI detail object,
+  without inventing error type, param or code fields. Ignore only /detail for the
+  betterlite-written error wording, never the whole body. archive-no-database enables the index but
+  omits database and requests an uncached id; stored_skill catches the reader's
+  ValueError for an uninitialized database too, so this path also answers 404. It must
+  not be treated as the list route's unhandled database exception. index-no-database
+  enables the index with no database and requests the canonical index: the list
+  dependency's ValueError reaches the shared error handler, returning 500 with
+  error.type internal_server_error and no param or code, ignoring only /error/message.
+  discovery-method-not-allowed sends POST to the canonical index without a key and
+  compares 405, the detail object and Allow header; this needs B8680's installed error
+  mapping, not a new handler here. The existing B8648 disabled cases remain where they
+  are and are not copied here.
+
+  index-request-root uses catalog, PROXY_BASE_URL https://skills.example.test,
+  SERVER_ROOT_PATH /legacy and SERVER_ROOT_PATHS /tenant-a,/tenant-b. Request
+  /tenant-a/.well-known/agent-skills/index.json and compare archive URLs under
+  https://skills.example.test/tenant-a/v1/skills/, with /legacy absent from those URLs.
+  ui-scalar-root uses the same root variables and PROXY_BASE_URL, no database, and
+  GET /tenant-a/.well-known/litellm-ui-config; its server_root_path is /legacy and its
+  proxy_base_url is the raw configured URL. This deliberately tests the two documents'
+  different root-path sources through the existing middleware, not a new route alias.
+  ui-redirect-without-sso sets AUTO_REDIRECT_UI_LOGIN_TO_SSO true without any SSO
+  variable and requests /.well-known/litellm-ui-config; both sso_configured and
+  auto_redirect_to_sso are false. ui-redirect-from-settings sets GOOGLE_CLIENT_ID to
+  discovery-client and general_settings.auto_redirect_ui_login_to_sso true, leaves the
+  redirect env variable unset, and requests /litellm/.well-known/litellm-ui-config;
+  both flags are true. Compare all nine fields, with workers [] and is_control_plane
+  false in these open-source configurations. B8670 already owns defaults, the raw base
+  URL, combined UI flags and redirect enabled by the environment.
+
+  Add native tests discovery_catalog_http and discovery_limit_http under discovery_http::tests. Use
+  run_group_with_url with self_check false and the existing DatabaseEnvironment to
+  run the corresponding new HTTP cases, then inspect both client captures. Assert
+  successful statuses, nonempty expected catalogs, absence of unusable rows, exact
+  limit endpoints, and SHA-256(downloaded bytes) equal to the index digest on each
+  side. These assertions stop two empty indexes or two startup errors passing as
+  parity. Read the same YAML files the oracle check runs and do not replace the real
+  stored-skill service with a fake. Retain the established request/fixture timeouts
+  and fail normally if Postgres is unavailable. All LiteLLM functions exercised here
+  are implemented by existing parts; the source remainder is zero functions, and
+  the fixture, capture adapter and cases fit one task's line budget.
+scope:
+  paths:
+    - tools/postgres-fixture/src/discovery_skills.rs
+    - tools/postgres-fixture/src/discovery_skills/**
+    - tools/postgres-fixture/fixtures/discovery-skills/**
+    - tools/oracle/src/discovery_http.rs
+    - tools/oracle/src/discovery_http/**
+    - tools/oracle/fuzz/fuzz_targets/discovery_case.rs
+    - tools/oracle/fuzz/corpus/discovery_case/**
+    - tools/oracle/cases/http/discovery-parity/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L74-L129
+    why: HTTP parity ownership for both index decorators and the archive decorator through the real stored-skill dependencies; B8274 implements the handlers and B8648 mounts them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L31-L71
+    why: The index limit, archive response type, disabled gate and stored_skill ValueError mapping exercised by the cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L132-L200
+    why: B8274's installable ordering, archive cache, name fallbacks, suffixes and description truncation, observed through HTTP here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/agent_skills_endpoints.py#L10-L25
+    why: The complete index wire shape and 64/1024 character constants; no second response model is built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L16-L46
+    why: The two UI discovery route decorators and the root-path and redirect branches missing from the mount task's HTTP cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L112-L136
+    why: B3212's newest-first query takes 1000 rows before the discovery handler reverses them; absent principals apply no owner filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L57-L63
+    why: A missing Prisma client raises ValueError, which stored_skill converts to the archive route's missing-skill result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1452-L1467
+    why: Exact skill table, bytea storage and non-null timestamp contract for the private test fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L39-L57
+    why: B3210's digest is computed from repacked bytes rather than from the original upload; BadZipFile is a handled rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8356
+    why: B7323's custom URLs use the matched request root while the UI document reads B4200's scalar root and the raw proxy base URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/__init__.py#L1-L4
+    why: Router re-exports only; B8648 and B8670 already supply the corresponding application composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: B8591's HTTPException handler retains the normal detail object outside OTLP routes; B8680 installs shared method-error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
+    why: The no-database list exception reaches the shared 500 internal_server_error envelope, unlike the archive dependency's caught ValueError.
+dod:
+  - text: The fixed skill datasets seed the pinned schema and raw uploads independently for each gateway, including catalog ownership and chronological order and the 1001-row boundary.
+    proof: [fixture-tests]
+  - text: ZIP responses retain every byte through the actual HTTP reader, and changed bytes or archive headers fail comparison without disturbing JSON, SSE or octet-stream handling.
+    proof: [capture-tests, legacy-regression, oracle]
+  - text: The HTTP case decoder accepts each discovery seed variant, rejects invalid shapes before startup, and replays a nonempty fuzz corpus through the same decoder.
+    proof: [capture-tests, discovery-corpus]
+  - text: Enabled public indexes and both index paths match on the complete populated and empty responses, ordering, name and description rules, URLs, digest and newest-1000 limit.
+    proof: [booted-tests, oracle]
+  - text: Archive downloads and repeat reads match on bytes and headers, and absent, empty, invalid and no-database reads reach their handled 404 behavior without requiring a key.
+    proof: [booted-tests, oracle]
+  - text: Matched request prefixes affect published archive URLs while UI discovery reports the scalar root, and both missing-SSO and config-driven redirect branches match over HTTP.
+    proof: [oracle]
+  - text: An enabled index with no database reaches the shared 500 envelope and POST to the GET-only index reaches the shared 405 detail and Allow header without a key.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: fixture-tests
+      why: The skill table, deterministic rows, raw upload bytes or independent database seeding are missing or wrong.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/::discovery_seed_contract($|::)/) | test(/::discovery_seed_isolation$/)'
+    - id: capture-tests
+      why: ZIP bytes are decoded as text, changed payloads or headers are missed, or the discovery fixture field is not decoded through the real HTTP case parser.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::discovery_capture_contract($|::)/) | test(/::discovery_case_decode($|::)/)'
+    - id: booted-tests
+      why: Matching errors or empty indexes hide a failed fixture, the list limit is applied in the wrong order, or the published digest does not describe the actual downloaded bytes.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::discovery_catalog_http$/) | test(/::discovery_limit_http$/)'
+    - id: discovery-corpus
+      why: The changed case format has no new corpus or target, or its normal replay does not reach the production decoder.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/discovery_case)" &&
+        test -f tools/oracle/fuzz/fuzz_targets/discovery_case.rs &&
+        grep -rlq 'discovery_skills:' tools/oracle/fuzz/corpus/discovery_case &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_discovery_case_corpus)'
+    - id: legacy-regression
+      why: Attaching the optional fixture or ZIP capture path breaks existing database provisioning or binary HTTP comparison.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/src/discovery_http.rs tools/postgres-fixture/src/discovery_skills.rs)" &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)' &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/) | test(/^multipart_oracle::tests::/) | test(/^tests::http_/)'
+oracle_cases:
+  - tools/oracle/cases/http/discovery-parity/index-catalog.yaml
+  - tools/oracle/cases/http/discovery-parity/legacy-index-catalog.yaml
+  - tools/oracle/cases/http/discovery-parity/index-empty.yaml
+  - tools/oracle/cases/http/discovery-parity/index-limit.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-download.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-repeat.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-missing.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-no-content.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-invalid.yaml
+  - tools/oracle/cases/http/discovery-parity/archive-no-database.yaml
+  - tools/oracle/cases/http/discovery-parity/index-no-database.yaml
+  - tools/oracle/cases/http/discovery-parity/discovery-method-not-allowed.yaml
+  - tools/oracle/cases/http/discovery-parity/index-request-root.yaml
+  - tools/oracle/cases/http/discovery-parity/ui-scalar-root.yaml
+  - tools/oracle/cases/http/discovery-parity/ui-redirect-without-sso.yaml
+  - tools/oracle/cases/http/discovery-parity/ui-redirect-from-settings.yaml
+deviations: []
+out_of_scope:
+  - "ZipArchiveResponse, ensure_index_enabled, stored_skills, stored_skill, agent_skills_index, agent_skills_archive, _installable, _archive_for, _base_name, _slugify, _deduplicated, _with_ordinal and _description in agent_skills_endpoints.py are implemented by B8274; this task adds their missing HTTP comparisons."
+  - "AgentSkillsIndexEntry, AgentSkillsIndex and their constants are consumed by B8274's Rust handlers and ported as Python public types by B7949, whose covers include the type file."
+  - "The discovery package __init__.py re-exports the two routers and defines __all__; its skill export is B8274's and its UI export is B3211's, with application mounts already owned by B8648 and B8670 and aggregation by B8610."
+  - "All agent_skills_archive.py functions belong to B3210, with B5096's completed archive fixes; row conversion, list/get and cache reads belong to B3212, and the cache implementation belongs to B2226."
+  - "get_ui_config and its response model belong to B3211; B8670 owns UI startup inputs and existing HTTP defaults/flags cases; get_custom_url and join_paths belong to B7323 and request/scalar root resolution to B4200."
+  - "The HTTPException and unhandled-error response implementations belong to B8591 and their edge composition to B8680; this task only compares discovery requests passing through them."
+  - "Skill writes, deletion and authenticated /v1/skills CRUD are B1502/B1503 and their route owners; this task seeds private test databases directly and requires none of those routes."
+  - "Shared module declarations, FixtureSeed's optional attachment and existing literals, FixtureError's source variant, seed_sql's call and http::parse_body's call are architect changes before dispatch, not worker scope."
+  - "The disabled public-index cases remain with B8648; no second route mount, helper registry entry, enterprise worker registry or custom archive codec is added."
+pitfalls:
+  - "Publishing a skill index intentionally bypasses owner filtering when no principal is supplied, so catalog rows from two owners must both appear without Authorization."
+  - "list_skills takes the newest 1000 before _installable reverses them, so truncating an already oldest-first list returns the wrong boundary row."
+  - "updated_at is optional in the Python model but non-null in schema.prisma, so NULL-timestamp cache tests cannot be seeded as valid Postgres rows."
+  - "The digest covers the flattened archive download, not the uploaded ZIP bytes stored in file_content."
+  - "stored_skill catches all ValueError results, including an uninitialized database, whereas stored_skills lets that exception escape."
+  - "SERVER_ROOT_PATHS supplies the archive URL's matched prefix but never replaces server_root_path in the UI discovery document."
+  - "The existing HTTP runner groups cases by config and environment and requires the same database seed within a group, so use distinct master-key config values for empty, catalog and limit groups."
+  - "An application/zip response must bypass UTF-8 conversion before parsing, and ignoring its body would leave archive-download unable to catch corrupted output."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -48,8 +48,9 @@ description: >-
   `BootRegistries` holds Arc<AgentRegistry> (B4776), Arc<McpRegistry>, Arc<VectorStores> and implements B8590's
   NonLlmRegistries, each method loading for real, as LiteLLM does before the server starts:
   `agents` loads the config agent list into the AgentRegistry with the loader B4776 exposes for config entries;
-  `mcp_tools` loads the mcp_tools list into the ToolRegistry with B4680's load_tools_from_config and the config file
-  path (a handler string fails startup with the loader's error, as B4680 says); `mcp_servers` loads the mcp_servers
+  `mcp_tools` awaits B8871's load_configured_tools with the mcp_tools list, the config file path and the shared
+  PythonHooks service, so a handler string imports through B165 instead of failing as unsupported. Entries register in
+  order, and a later import failure leaves the earlier entries registered; `mcp_servers` loads the mcp_servers
   mapping with litellm_settings.mcp_aliases into the SharedRegistry through B6764's config loader; `vector_stores` loads
   the vector_store_registry block into VectorStores through B1062's config load (load_config's vector_store_registry
   block, so a configured store is found by the first request). Errors map into B8590's error type unchanged.

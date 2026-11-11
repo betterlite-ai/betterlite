@@ -6,6 +6,7 @@ depends_on: [B173, B4667, B4744, B5082]
 file: tasks/B4683-mcp-openapi-tools.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py"
+  - "litellm/types/mcp.py"
 parent: B138
 split_from: B138
 resolution: null

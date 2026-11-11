@@ -22,6 +22,7 @@ description: >-
   HTTPHandler/AsyncHTTPHandler clients and receives extra_headers; generic native HTTP applies the same client
   filter but passes headers={}. Bedrock gets file/key/base/provider/extra_headers/options/timeout and the
   selected sync/async method. A remaining non-None config goes through B2453; no selected response is a ValueError.
+  The IBMWatsonX selection constructs B9220's WatsonxTranscription from B8331's production environment and auth inputs.
 
   Both sync results and awaited async results get B1001 duration only when public duration is None. Store it
   solely in _hidden_params.audio_transcription_duration, including zero. Existing public duration=0 suppresses

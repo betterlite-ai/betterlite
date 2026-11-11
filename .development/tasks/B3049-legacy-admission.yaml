@@ -171,11 +171,11 @@ deviations:
     why: LiteLLM never reads them in this hook, and an unused parameter would only invite a reader to guess its purpose.
 
 out_of_scope:
-  - "Choosing the legacy limiter when `LEGACY_MULTI_INSTANCE_RATE_LIMITING` is `true` and registering it in the hook chain; the umbrella B072 does this and adds the HTTP oracle cases."
+  - "Choosing the legacy limiter when `LEGACY_MULTI_INSTANCE_RATE_LIMITING` is `true` and registering it in the hook chain; B8399 does this, and B9250 adds the HTTP oracle cases."
   - "`check_key_in_limits`, `get_all_cache_objects`, `raise_rate_limit_error`, `time_to_next_minute`, `print_verbose` and `CacheObject`; B3047 owns them."
   - "`async_log_success_event`, `async_log_failure_event`, `get_internal_user_object` and `async_post_call_success_hook` (L492-L855), which add tokens, release counts and attach headers; B3048 owns them."
   - "`get_key_model_tpm_limit`, `get_key_model_rpm_limit` (B745), `throttled_limit` (B2325) and `get_logged_api_key` (B1106)."
-  - "The `UserAPIKeyAuth` record (B2314) and the usage cache's get, increment and batch methods (InternalUsageCache, B124); no part of B124 has a Rust task yet, so this task uses them through the handler B3047 holds."
+  - "The `UserAPIKeyAuth` record (B2314) and the usage cache's get, increment and batch methods (InternalUsageCache, B8399); this task uses them through the handler B3047 holds."
 
 pitfalls:
   - "The key-and-model limits use Python's `tpm_limit_for_model or sys.maxsize`, so a configured per-model limit of 0 is unlimited here, while the same 0 on the key itself raises through check_key_in_limits."

@@ -24,7 +24,7 @@ description: >-
   and bing_grounding.search_configurations=[{project_connection_id,count:<positive integer max_results when valid>}];
   otherwise type=web_search with user_location={type:approximate,country:<uppercase>} only for string country, including
   empty. Exclude None fields. Drop search_domain_filter/max_tokens_per_page; connection mode ignores country. scope_token_header:
-  Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server credential resolution uses
+  Explicit truthy api_key becomes api-key. Otherwise B3270 trusted-destination server credential resolution uses
   BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope https://ai.azure.com/.default.
   Mint failures become ValueError with the no-credential advice, all token/env names and underlying error. Return
   copied headers overlaid with auth and Content-Type=application/json; a preexisting opposite auth header is not
@@ -149,7 +149,7 @@ dod:
   - case-search-request-web-tool
   - oracle
   - helper-python
-- text: 'scope_token_header: Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server
+- text: 'scope_token_header: Explicit truthy api_key becomes api-key. Otherwise B3270 trusted-destination server
     credential resolution uses BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope
     https://ai.azure.com/.default. Mint failures become ValueError with the no-credential advice, all token/env
     names and underlying error. Return copied headers overlaid with auth and Content-Type=application/json; a preexisting
@@ -245,7 +245,7 @@ checks:
       connection mode ignores country.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_search_request_web_tool$/)'
   - id: case-scope-token-header
-    why: Explicit truthy api_key becomes api-key. Otherwise B091 trusted-destination server credential resolution
+    why: Explicit truthy api_key becomes api-key. Otherwise B3270 trusted-destination server credential resolution
       uses BING_GROUNDING_TOKEN bound to BING_GROUNDING_PROJECT_ENDPOINT, then B677 mints scope https://ai.azure.com/.default.
       Mint failures become ValueError with the no-credential advice, all token/env names and underlying error. Return
       copied headers overlaid with auth and Content-Type=application/json; a preexisting opposite auth header is

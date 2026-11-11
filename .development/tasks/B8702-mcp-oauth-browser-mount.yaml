@@ -31,6 +31,12 @@ description: >-
   the builder defines.
 
 
+  POST /v1/mcp/server/oauth/session is B4718's route, not B4719's, and LiteLLM guards it with user_api_key_auth. Mount
+  it here too, from McpState's tokens.sessions (B4718's SessionStore, built by B8622, which mounts no route), and wrap
+  only this route with B8610's with_key_auth so it needs a normal key. B4719's cookie-aware routes stay outside the
+  key layer.
+
+
   Every first-segment path parameter must be named mcp_server_name, as B8624's routers and B8592 name it, or matchit
   refuses the merge. Tests in app::mcp::oauth_browser:: : the router merged with B8624's builds, every path answers
   something other than 404 through tower's oneshot, SessionReader returns None without a cookie, and RedirectTrust
@@ -57,6 +63,8 @@ references:
 dod:
   - text: The OauthBrowser and OauthRoutes routers are merged once each outside the auth layers.
     proof: [browser-route-tests, oracle]
+  - text: POST /v1/mcp/server/oauth/session is mounted once from McpState's tokens.sessions behind with_key_auth, while B4719's cookie-aware routes stay outside the key layer.
+    proof: [browser-route-tests]
   - text: SessionReader, RedirectTrust, CredentialRead, the shared reachability value and RouteAuth forward to their owning crates.
     proof: [browser-route-tests]
   - text: The moved B7971 and B4719 cases match LiteLLM through the booted proxy.

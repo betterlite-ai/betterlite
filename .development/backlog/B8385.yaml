@@ -4,7 +4,8 @@ title: Periodic cost map and Anthropic beta header reloads
 status: todo
 depends_on: [B8380, B194, B959, B4145, B8397]
 file: tasks/B8385-periodic-reloads.yaml
-covers: []
+covers:
+  - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
 resolution: null

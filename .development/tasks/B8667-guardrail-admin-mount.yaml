@@ -13,8 +13,9 @@ description: >-
 
   Area file. crates/betterlite-server/src/app/guardrails.rs, where the skeleton stubs `mount(router, state)` (inside the
   auth layers), `mount_public(router, state)` and `async fn start(state)`, all called by B8610's app.rs. `mount` builds
-  one `GuardrailRouteState` and passes the router through four calls in this order: `routes::mount_admin`, then
-  `submit_mount::mount`, `policy_mount::mount` and `policy_tools::mount`, each `(router, state, &route_state)`. `start`
+  one `GuardrailRouteState` and passes the router through five calls in this order: `routes::mount_admin`, then
+  `submit_mount::mount`, `policy_mount::mount` and `policy_tools::mount`, each `(router, state, &route_state)`, then
+  `policy_api::mount` (declare the module only, with no dependency on B9321, which fills it). `start`
   awaits `policy_tools::start(state)` and does nothing else. `mount_public` stays as the stub left it, since LiteLLM
   serves none of these routes without a key. Write the three files app/guardrails/submit_mount.rs, policy_mount.rs and
   policy_tools.rs as stubs whose `mount` returns the router unchanged (and, in policy_tools.rs, an `async fn start` that
@@ -27,7 +28,7 @@ description: >-
   `shared.guardrails.runtime`; `mutation`, B3685's `MutationState` with B3685's review rows over `shared.db` and
   `database: None` when `shared.db` is None, which is how those routes answer without a database; `read_through`, one
   guardrail `RegistryReadThrough` from B8665's `guardrail_read_through(runtime, db_objects)` with B8612's
-  `ProxyDbObjects`; and `policies`, B3243's persistence handle as an Option over `shared.db`. Read each route module
+  `ProxyDbObjects`; and `policies`, B3243's persistence handle, derived from `shared.policies` (B9320) and still an Option over `shared.db`. Read each route module
   before writing and take the state type it exports. No statics.
 
 

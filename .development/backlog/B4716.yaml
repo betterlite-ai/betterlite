@@ -7,6 +7,9 @@ file: tasks/B4716-mcp-payload-validation.yaml
 covers:
   - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
   - "litellm/proxy/management_endpoints/mcp_connector_import.py"
+  - "litellm/proxy/_experimental/mcp_server/utils.py"
+  - "litellm/proxy/_experimental/mcp_server/stdio_gate.py"
+  - "litellm/types/mcp.py"
 parent: B139
 split_from: B139
 resolution: null
