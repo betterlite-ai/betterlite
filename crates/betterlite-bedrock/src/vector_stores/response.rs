@@ -88,10 +88,7 @@ fn search_result(
     };
     let empty = IndexMap::new();
     let metadata = metadata_of(status, headers, index, fields)?.unwrap_or(&empty);
-    let mut result = result_of(metadata, text)?;
-    apply_file_identity(&mut result, metadata)?;
-    apply_score(&mut result, fields.get("score"))?;
-    Ok(Some(result))
+    Ok(Some(build_result(fields, metadata, text)?))
 }
 
 fn content_text<'item>(
@@ -135,7 +132,8 @@ fn metadata_of<'item>(
     }
 }
 
-fn result_of(
+fn build_result(
+    fields: &IndexMap<String, Json>,
     metadata: &IndexMap<String, Json>,
     text: &Json,
 ) -> Result<VectorStoreSearchResult, VectorStoreError> {
@@ -144,55 +142,28 @@ fn result_of(
         type_name: Some("text".to_owned()),
         extra: BTreeMap::new(),
     };
-    match text {
-        Json::Text(value) => content.text = Some(value.clone()),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            content
-                .extra
-                .insert("text".to_owned(), serde_json::to_value(other)?);
-        }
-    }
-    Ok(VectorStoreSearchResult {
+    assign_text(text, "text", &mut content.text, &mut content.extra)?;
+    let mut result = VectorStoreSearchResult {
         score: None,
         content: Some(vec![content]),
         file_id: None,
         filename: None,
         attributes: Some(serde_json::to_value(Json::Object(metadata.clone()))?),
         extra: BTreeMap::new(),
-    })
-}
-
-fn apply_file_identity(
-    result: &mut VectorStoreSearchResult,
-    metadata: &IndexMap<String, Json>,
-) -> Result<(), VectorStoreError> {
-    match file_id_from_metadata(metadata) {
-        Json::Text(value) => result.file_id = Some(value),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            result
-                .extra
-                .insert("file_id".to_owned(), serde_json::to_value(&other)?);
-        }
-    }
-    match filename_from_metadata(metadata) {
-        Json::Text(value) => result.filename = Some(value),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            result
-                .extra
-                .insert("filename".to_owned(), serde_json::to_value(&other)?);
-        }
-    }
-    Ok(())
-}
-
-fn apply_score(
-    result: &mut VectorStoreSearchResult,
-    score: Option<&Json>,
-) -> Result<(), VectorStoreError> {
-    match score {
+    };
+    assign_text(
+        &file_id_from_metadata(metadata),
+        "file_id",
+        &mut result.file_id,
+        &mut result.extra,
+    )?;
+    assign_text(
+        &filename_from_metadata(metadata),
+        "filename",
+        &mut result.filename,
+        &mut result.extra,
+    )?;
+    match fields.get("score") {
         Some(Json::Number(number)) => match Score::try_from(number.clone()) {
             Ok(parsed) => result.score = Some(parsed),
             Err(_) => {
@@ -206,6 +177,21 @@ fn apply_score(
                 "score".to_owned(),
                 serde_json::to_value(other.unwrap_or(&Json::Null))?,
             );
+        }
+    }
+    Ok(result)
+}
+
+fn assign_text(
+    value: &Json,
+    name: &str,
+    slot: &mut Option<String>,
+    extra: &mut BTreeMap<String, serde_json::Value>,
+) -> Result<(), VectorStoreError> {
+    match value {
+        Json::Text(text) => *slot = Some(text.clone()),
+        other => {
+            extra.insert(name.to_owned(), serde_json::to_value(other)?);
         }
     }
     Ok(())

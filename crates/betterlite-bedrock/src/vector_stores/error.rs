@@ -30,21 +30,6 @@ pub enum VectorStoreError {
     RetrievalConfigNotObject,
     #[error("retrievalConfiguration.vectorSearchConfiguration must be an object")]
     SearchConfigurationNotObject,
-    #[error("the knowledge base reply is not valid JSON")]
-    ReplyJson {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the knowledge base reply is not an object")]
-    ReplyNotObject,
-    #[error("retrievalResults is not an array")]
-    ResultsNotArray,
-    #[error("retrievalResults[{index}] is not an object")]
-    ResultNotObject { index: usize },
-    #[error("retrievalResults[{index}].content is not an object")]
-    ContentNotObject { index: usize },
-    #[error("retrievalResults[{index}].metadata is not an object")]
-    MetadataNotObject { index: usize },
     #[error("the knowledge base reply cannot be encoded")]
     Encode {
         #[from]

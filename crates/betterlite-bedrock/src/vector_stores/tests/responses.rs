@@ -531,9 +531,7 @@ fn assert_decode_failure_is_secret_safe() {
         ("X-Credential".to_owned(), fixture_secret.to_owned()),
     ];
     let error = decode_knowledge_base_reply(200, &headers, b"{", "q").unwrap_err();
-    for rendered in [format!("{error:?}"), format!("{error}")] {
-        assert!(!rendered.contains(fixture_secret), "{rendered}");
-    }
+    assert_secret_absent(&error, fixture_secret);
 }
 
 fn assert_signing_failure_is_secret_safe() {
@@ -559,7 +557,11 @@ fn assert_signing_failure_is_secret_safe() {
             |_settings, _region| ready(Err::<Credentials, _>(CredentialError::MissingCredentials)),
         ))
         .unwrap_err();
+    assert_secret_absent(&error, fixture_secret);
+}
+
+fn assert_secret_absent(error: &VectorStoreError, secret: &str) {
     for rendered in [format!("{error:?}"), format!("{error}")] {
-        assert!(!rendered.contains(fixture_secret), "{rendered}");
+        assert!(!rendered.contains(secret), "{rendered}");
     }
 }

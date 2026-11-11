@@ -90,15 +90,7 @@ fn retrieval_configuration(extra_body: Option<&IndexMap<String, Json>>) -> Json 
 }
 
 fn apply_max_results(retrieval: &mut Json, max_results: i64) -> Result<(), VectorStoreError> {
-    let Json::Object(fields) = retrieval else {
-        return Err(VectorStoreError::RetrievalConfigNotObject);
-    };
-    let stored = fields
-        .entry("vectorSearchConfiguration".to_owned())
-        .or_insert_with(|| Json::Object(IndexMap::new()));
-    let Json::Object(configuration) = stored else {
-        return Err(VectorStoreError::SearchConfigurationNotObject);
-    };
+    let configuration = search_configuration(retrieval)?;
     if let Some(existing) = configuration
         .get("numberOfResults")
         .filter(|value| !matches!(value, Json::Null))
@@ -117,15 +109,7 @@ fn apply_max_results(retrieval: &mut Json, max_results: i64) -> Result<(), Vecto
 }
 
 fn apply_filters(retrieval: &mut Json, filters: &Json) -> Result<(), VectorStoreError> {
-    let Json::Object(fields) = retrieval else {
-        return Err(VectorStoreError::RetrievalConfigNotObject);
-    };
-    let stored = fields
-        .entry("vectorSearchConfiguration".to_owned())
-        .or_insert_with(|| Json::Object(IndexMap::new()));
-    let Json::Object(configuration) = stored else {
-        return Err(VectorStoreError::SearchConfigurationNotObject);
-    };
+    let configuration = search_configuration(retrieval)?;
     if let Some(existing) = configuration
         .get("filter")
         .filter(|value| !matches!(value, Json::Null))
@@ -137,6 +121,21 @@ fn apply_filters(retrieval: &mut Json, filters: &Json) -> Result<(), VectorStore
     }
     configuration.insert("filter".to_owned(), filters.clone());
     Ok(())
+}
+
+fn search_configuration(
+    retrieval: &mut Json,
+) -> Result<&mut IndexMap<String, Json>, VectorStoreError> {
+    let Json::Object(fields) = retrieval else {
+        return Err(VectorStoreError::RetrievalConfigNotObject);
+    };
+    let stored = fields
+        .entry("vectorSearchConfiguration".to_owned())
+        .or_insert_with(|| Json::Object(IndexMap::new()));
+    let Json::Object(configuration) = stored else {
+        return Err(VectorStoreError::SearchConfigurationNotObject);
+    };
+    Ok(configuration)
 }
 
 #[must_use]

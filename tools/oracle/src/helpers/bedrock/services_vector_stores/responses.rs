@@ -59,17 +59,15 @@ pub(super) fn unsupported_create() -> Value {
 }
 
 pub(super) fn option_mapping(input: &Input) -> Value {
-    let results = input
-        .options
-        .iter()
-        .map(|scenario| {
-            let mut params = scenario.optional_params.clone();
-            map_openai_params(&scenario.non_default_params, &mut params).map_or_else(
-                |_error| json!({"failed": true}),
-                |()| json!({"params": params}),
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut results = Vec::with_capacity(input.options.len());
+    for scenario in &input.options {
+        let mut params = scenario.optional_params.clone();
+        let mapped = map_openai_params(&scenario.non_default_params, &mut params).map_or_else(
+            |_error| json!({"failed": true}),
+            |()| json!({"params": params}),
+        );
+        results.push(mapped);
+    }
     json!({"results": results})
 }
 

@@ -374,65 +374,52 @@ fn user_context_in_request() {
 }
 
 fn location_file_id_name() {
-    file_id_sources();
-    filename_sources();
+    for (metadata, expected) in [
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
+            r#""s3://bucket/dir/report.txt""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-chunk-id":"chunk-1"}"#,
+            r#""bedrock-kb-chunk-1""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-chunk-id":null}"#,
+            r#""bedrock-kb-None""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":""}"#,
+            r#""bedrock-kb-unknown""#,
+        ),
+    ] {
+        assert_eq!(file_id_from_metadata(&object(metadata)), json(expected));
+    }
+    for (metadata, expected) in [
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
+            r#""report.txt""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/"}"#,
+            r#""bucket""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket"}"#,
+            r#""bucket""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"https://example.com/a/b.pdf"}"#,
+            r#""b.pdf""#,
+        ),
+        (
+            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/a%20b.txt"}"#,
+            r#""a%20b.txt""#,
+        ),
+        (r#"{"x-amz-bedrock-kb-source-uri":"a/b"}"#, r#""b""#),
+    ] {
+        assert_eq!(filename_from_metadata(&object(metadata)), json(expected));
+    }
     metadata_fallbacks();
-}
-
-fn file_id_sources() {
-    assert_eq!(
-        file_id_from_metadata(&object(
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#
-        )),
-        json(r#""s3://bucket/dir/report.txt""#)
-    );
-    assert_eq!(
-        file_id_from_metadata(&object(r#"{"x-amz-bedrock-kb-chunk-id":"chunk-1"}"#)),
-        json(r#""bedrock-kb-chunk-1""#)
-    );
-    assert_eq!(
-        file_id_from_metadata(&object(r#"{"x-amz-bedrock-kb-chunk-id":null}"#)),
-        json(r#""bedrock-kb-None""#)
-    );
-    assert_eq!(
-        file_id_from_metadata(&object(r#"{"x-amz-bedrock-kb-source-uri":""}"#)),
-        json(r#""bedrock-kb-unknown""#)
-    );
-}
-
-fn filename_sources() {
-    assert_eq!(
-        filename_from_metadata(&object(
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#
-        )),
-        json(r#""report.txt""#)
-    );
-    assert_eq!(
-        filename_from_metadata(&object(
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/"}"#
-        )),
-        json(r#""bucket""#)
-    );
-    assert_eq!(
-        filename_from_metadata(&object(r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket"}"#)),
-        json(r#""bucket""#)
-    );
-    assert_eq!(
-        filename_from_metadata(&object(
-            r#"{"x-amz-bedrock-kb-source-uri":"https://example.com/a/b.pdf"}"#
-        )),
-        json(r#""b.pdf""#)
-    );
-    assert_eq!(
-        filename_from_metadata(&object(
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/a%20b.txt"}"#
-        )),
-        json(r#""a%20b.txt""#)
-    );
-    assert_eq!(
-        filename_from_metadata(&object(r#"{"x-amz-bedrock-kb-source-uri":"a/b"}"#)),
-        json(r#""b""#)
-    );
 }
 
 fn metadata_fallbacks() {
