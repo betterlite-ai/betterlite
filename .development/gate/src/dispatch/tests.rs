@@ -29,12 +29,20 @@ fn fixtures() -> (Agents, Task) {
     let mut agents: Agents = read_yaml(&development.join("agents.yaml")).unwrap();
     let task: Task = read_yaml(&development.join("tasks/B000-workspace.yaml")).unwrap();
     agents.roles.worker.keep_rungs_for(&task.id);
-    // these tests walk the four-rung ladder that ran before DeepSeek went in front
+    // these tests walk the ladders that ran before DeepSeek went in front
     agents
         .roles
         .worker
         .ladder
         .retain(|rung| rung.runner != "deepseek-worker");
+    for role in [
+        &mut agents.roles.reviewer,
+        &mut agents.roles.security_reviewer,
+        &mut agents.roles.parity_reviewer,
+    ] {
+        role.ladder
+            .retain(|rung| rung.runner != "deepseek-reviewer");
+    }
     (agents, task)
 }
 
@@ -634,8 +642,8 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
             .map(|link| link.rung.model.clone())
     };
     let openai = hold_seats(folder.path(), "openai", 12);
-    // a worker start takes a writer seat first, and Claude has 12 of those beside 16 run seats
-    let anthropic = hold_seats(folder.path(), "anthropic-writer", 12);
+    // a worker start takes a writer seat first, and Claude has 20 of those beside 24 run seats
+    let anthropic = hold_seats(folder.path(), "anthropic-writer", 20);
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
