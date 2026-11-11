@@ -1300,6 +1300,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rusqlite",
  "secrecy",
