@@ -41,6 +41,12 @@ pub struct SpendLogSeed<'seed> {
 }
 
 #[derive(Clone, Copy)]
+pub enum KeyTable {
+    Active,
+    Archived,
+}
+
+#[derive(Clone, Copy)]
 pub struct KeySeed<'seed> {
     pub token: &'seed str,
     pub spend: Decimal,
@@ -132,41 +138,40 @@ impl SpendBackfillCase {
             .expect("a tool index row");
     }
 
-    pub async fn seed_active_key(&self, seed: KeySeed<'_>) {
+    pub async fn seed_key(&self, table: KeyTable, id: &str, seed: KeySeed<'_>) {
         let spend = seed.spend.to_f64().expect("a finite spend");
         let total_spend = seed.total_spend.to_f64().expect("a finite total spend");
-        self.client
-            .execute(
-                ACTIVE_KEY_SQL,
-                &[
-                    &seed.token,
-                    &spend,
-                    &total_spend,
-                    &seed.budget_duration,
-                    &seed.budget_id,
-                ],
-            )
-            .await
-            .expect("an active key row");
-    }
-
-    pub async fn seed_archived_key(&self, id: &str, seed: KeySeed<'_>) {
-        let spend = seed.spend.to_f64().expect("a finite spend");
-        let total_spend = seed.total_spend.to_f64().expect("a finite total spend");
-        self.client
-            .execute(
-                ARCHIVED_KEY_SQL,
-                &[
-                    &id,
-                    &seed.token,
-                    &spend,
-                    &total_spend,
-                    &seed.budget_duration,
-                    &seed.budget_id,
-                ],
-            )
-            .await
-            .expect("an archived key row");
+        match table {
+            KeyTable::Active => self
+                .client
+                .execute(
+                    ACTIVE_KEY_SQL,
+                    &[
+                        &seed.token,
+                        &spend,
+                        &total_spend,
+                        &seed.budget_duration,
+                        &seed.budget_id,
+                    ],
+                )
+                .await
+                .expect("an active key row"),
+            KeyTable::Archived => self
+                .client
+                .execute(
+                    ARCHIVED_KEY_SQL,
+                    &[
+                        &id,
+                        &seed.token,
+                        &spend,
+                        &total_spend,
+                        &seed.budget_duration,
+                        &seed.budget_id,
+                    ],
+                )
+                .await
+                .expect("an archived key row"),
+        };
     }
 
     pub async fn seed_budget(&self, budget_id: &str, budget_duration: Option<&str>) {
@@ -196,25 +201,12 @@ impl SpendBackfillCase {
             .collect()
     }
 
-    pub async fn active_row(&self, token: &str) -> (Option<Decimal>, Option<Decimal>) {
-        let row = self
-            .client
-            .query_one(ACTIVE_ROW_SQL, &[&token])
-            .await
-            .expect("an active key row");
-        let spend: Option<f64> = row.get("spend");
-        let total_spend: Option<f64> = row.get("total_spend");
-        let spend_amount = spend.map(|amount| Decimal::try_from(amount).expect("a finite amount"));
-        let total = total_spend.map(|amount| Decimal::try_from(amount).expect("a finite amount"));
-        (spend_amount, total)
-    }
-
-    pub async fn archived_row(&self, id: &str) -> (Option<Decimal>, Option<Decimal>) {
-        let row = self
-            .client
-            .query_one(ARCHIVED_ROW_SQL, &[&id])
-            .await
-            .expect("an archived key row");
+    pub async fn key_row(&self, table: KeyTable, id: &str) -> (Option<Decimal>, Option<Decimal>) {
+        let sql = match table {
+            KeyTable::Active => ACTIVE_ROW_SQL,
+            KeyTable::Archived => ARCHIVED_ROW_SQL,
+        };
+        let row = self.client.query_one(sql, &[&id]).await.expect("a key row");
         let spend: Option<f64> = row.get("spend");
         let total_spend: Option<f64> = row.get("total_spend");
         let spend_amount = spend.map(|amount| Decimal::try_from(amount).expect("a finite amount"));

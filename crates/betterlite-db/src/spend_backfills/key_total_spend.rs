@@ -6,3 +6,11 @@ pub const ARCHIVED_SQL: &str = r#"UPDATE "LiteLLM_DeletedVerificationToken" SET 
 pub(crate) const ACTIVE_FAILURE: &str = "the active key lifetime spend backfill update";
 
 pub(crate) const ARCHIVED_FAILURE: &str = "the archived key lifetime spend backfill update";
+
+pub(crate) const STATEMENTS: [(super::BackfillStatement, &str); 2] = [
+    (super::BackfillStatement::FloorActiveKeys, ACTIVE_FAILURE),
+    (
+        super::BackfillStatement::FloorArchivedKeys,
+        ARCHIVED_FAILURE,
+    ),
+];

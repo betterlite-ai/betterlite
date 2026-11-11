@@ -8,7 +8,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio_postgres::Config;
 
-use super::fixtures::{KeySeed, SpendLogSeed};
+use super::fixtures::SpendLogSeed;
 use super::{
     BackfillError, BackfillFuture, BackfillOutcome, BackfillPlan, BackfillStatement,
     ExecutesBackfillStatements, daily_tool_spend, key_total_spend, key_total_spend_from_logs,
@@ -16,6 +16,7 @@ use super::{
 };
 
 mod postgres;
+mod scenarios;
 
 fn cutover() -> DateTime<Utc> {
     "2026-07-25T00:00:00Z".parse().expect("a UTC cutover")
@@ -41,22 +42,6 @@ pub(super) fn log_seed(
         spend,
         total_tokens,
         start_time,
-    }
-}
-
-pub(super) fn key<'seed>(
-    token: &'seed str,
-    spend: Decimal,
-    total_spend: Decimal,
-    budget_duration: Option<&'seed str>,
-    budget_id: Option<&'seed str>,
-) -> KeySeed<'seed> {
-    KeySeed {
-        token,
-        spend,
-        total_spend,
-        budget_duration,
-        budget_id,
     }
 }
 

@@ -98,80 +98,63 @@ where
     Executor: ExecutesBackfillStatements + Sync,
 {
     match plan {
-        BackfillPlan::DailyToolSpend { cutover } => run_daily(executor, cutover).await,
-        BackfillPlan::KeyTotalSpend => run_floor(executor).await,
-        BackfillPlan::KeyTotalSpendFromLogs => run_history(executor).await,
+        BackfillPlan::DailyToolSpend { cutover } => {
+            run_pair(
+                executor,
+                daily_tool_spend::statements(cutover),
+                |_time_zone, buckets| BackfillOutcome::DailyToolSpend { buckets },
+            )
+            .await
+        }
+        BackfillPlan::KeyTotalSpend => {
+            run_pair(
+                executor,
+                key_total_spend::STATEMENTS,
+                |active_keys, archived_keys| BackfillOutcome::KeyTotalSpend {
+                    active_keys,
+                    archived_keys,
+                },
+            )
+            .await
+        }
+        BackfillPlan::KeyTotalSpendFromLogs => {
+            run_pair(
+                executor,
+                key_total_spend_from_logs::STATEMENTS,
+                |active_keys, archived_keys| BackfillOutcome::KeyTotalSpendFromLogs {
+                    active_keys,
+                    archived_keys,
+                },
+            )
+            .await
+        }
     }
 }
 
-async fn run_daily<Executor>(
+async fn run_pair<Executor>(
     executor: &Executor,
-    cutover: DateTime<Utc>,
+    statements: [(BackfillStatement, &'static str); 2],
+    outcome: fn(u64, u64) -> BackfillOutcome,
 ) -> Result<BackfillOutcome, BackfillError>
 where
     Executor: ExecutesBackfillStatements + Sync,
 {
-    executor
-        .execute_backfill(BackfillStatement::SessionTimeZoneUtc)
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: daily_tool_spend::SESSION_TIME_ZONE_FAILURE,
-            source,
-        })?;
-    let buckets = executor
-        .execute_backfill(BackfillStatement::DailyToolSpend { cutover })
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: daily_tool_spend::INSERT_FAILURE,
-            source,
-        })?;
-    Ok(BackfillOutcome::DailyToolSpend { buckets })
-}
-
-async fn run_floor<Executor>(executor: &Executor) -> Result<BackfillOutcome, BackfillError>
-where
-    Executor: ExecutesBackfillStatements + Sync,
-{
-    let active_keys = executor
-        .execute_backfill(BackfillStatement::FloorActiveKeys)
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: key_total_spend::ACTIVE_FAILURE,
-            source,
-        })?;
-    let archived_keys = executor
-        .execute_backfill(BackfillStatement::FloorArchivedKeys)
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: key_total_spend::ARCHIVED_FAILURE,
-            source,
-        })?;
-    Ok(BackfillOutcome::KeyTotalSpend {
-        active_keys,
-        archived_keys,
-    })
-}
-
-async fn run_history<Executor>(executor: &Executor) -> Result<BackfillOutcome, BackfillError>
-where
-    Executor: ExecutesBackfillStatements + Sync,
-{
-    let active_keys = executor
-        .execute_backfill(BackfillStatement::HistoryActiveKeys)
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: key_total_spend_from_logs::ACTIVE_FAILURE,
-            source,
-        })?;
-    let archived_keys = executor
-        .execute_backfill(BackfillStatement::HistoryArchivedKeys)
-        .await
-        .map_err(|source| BackfillError::Statement {
-            statement: key_total_spend_from_logs::ARCHIVED_FAILURE,
-            source,
-        })?;
-    Ok(BackfillOutcome::KeyTotalSpendFromLogs {
-        active_keys,
-        archived_keys,
-    })
+    let [(first, first_failure), (second, second_failure)] = statements;
+    let first_rows =
+        executor
+            .execute_backfill(first)
+            .await
+            .map_err(|source| BackfillError::Statement {
+                statement: first_failure,
+                source,
+            })?;
+    let second_rows =
+        executor
+            .execute_backfill(second)
+            .await
+            .map_err(|source| BackfillError::Statement {
+                statement: second_failure,
+                source,
+            })?;
+    Ok(outcome(first_rows, second_rows))
 }

@@ -18,3 +18,18 @@ pub(crate) const SESSION_TIME_ZONE_FAILURE: &str =
     "the daily tool spend backfill session time zone update";
 
 pub(crate) const INSERT_FAILURE: &str = "the daily tool spend backfill insert";
+
+pub(crate) const fn statements(
+    cutover: chrono::DateTime<chrono::Utc>,
+) -> [(super::BackfillStatement, &'static str); 2] {
+    [
+        (
+            super::BackfillStatement::SessionTimeZoneUtc,
+            SESSION_TIME_ZONE_FAILURE,
+        ),
+        (
+            super::BackfillStatement::DailyToolSpend { cutover },
+            INSERT_FAILURE,
+        ),
+    ]
+}

@@ -40,3 +40,11 @@ WHERE k.token = s.token
 pub(crate) const ACTIVE_FAILURE: &str = "the active key history spend backfill update";
 
 pub(crate) const ARCHIVED_FAILURE: &str = "the archived key history spend backfill update";
+
+pub(crate) const STATEMENTS: [(super::BackfillStatement, &str); 2] = [
+    (super::BackfillStatement::HistoryActiveKeys, ACTIVE_FAILURE),
+    (
+        super::BackfillStatement::HistoryArchivedKeys,
+        ARCHIVED_FAILURE,
+    ),
+];

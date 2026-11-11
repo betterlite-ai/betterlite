@@ -2,13 +2,21 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use sha2::{Digest as _, Sha256};
 
-use crate::spend_backfills::fixtures::{DailyBucket, SpendBackfillCase, SpendLogSeed, at};
+use crate::spend_backfills::fixtures::{
+    DailyBucket, KeySeed, KeyTable, SpendBackfillCase, SpendLogSeed, at,
+};
 use crate::spend_backfills::{
     BackfillError, BackfillOutcome, BackfillPlan, key_total_spend, key_total_spend_from_logs,
     run_plan,
 };
 
-use super::{daily_plan, key, log_seed, money};
+use super::scenarios::{
+    ARCHIVE_DISTINCT_SCENARIO, EMPTY_DURATION_SCENARIO, FLOOR_BUDGETS, FLOOR_FAILURE_SCENARIO,
+    FLOOR_KEYS, FLOOR_TOTALS, HISTORY_FAILURE_SCENARIO, MIXED_ARCHIVE_SCENARIO,
+    NULL_LIFETIME_TOTALS, OWN_LINKED_SCENARIO, SHORT_HISTORY_KEYS, SHORT_HISTORY_LOGS,
+    SHORT_HISTORY_TOTALS,
+};
+use super::{daily_plan, log_seed, money};
 
 const EXISTING_BUCKET_SQL: &str = r#"INSERT INTO "LiteLLM_DailyToolSpend" (date, tool_name, spend, total_tokens, request_count, updated_at) VALUES ('2026-06-10', 'tool-a', 99.0, 999, 42, now())"#;
 const NULL_LOGS_SQL: &str = r#"ALTER TABLE "LiteLLM_SpendLogs" ALTER COLUMN spend DROP NOT NULL;
@@ -24,6 +32,55 @@ const REJECT_ARCHIVED_SQL: &str = r#"CREATE FUNCTION reject_archived_key_update(
 CREATE TRIGGER reject_archived_key_update BEFORE UPDATE ON "LiteLLM_DeletedVerificationToken" FOR EACH ROW EXECUTE FUNCTION reject_archived_key_update();"#;
 const ALLOW_ARCHIVED_SQL: &str = r#"DROP TRIGGER reject_archived_key_update ON "LiteLLM_DeletedVerificationToken";
 DROP FUNCTION reject_archived_key_update();"#;
+const LOG_START: (u32, u32, u32, u32, u32) = (6, 1, 0, 0, 0);
+
+type Amount = (i64, u32);
+
+#[derive(Clone, Copy)]
+pub(super) struct BudgetPlan<'plan> {
+    pub(super) budget_id: &'plan str,
+    pub(super) budget_duration: Option<&'plan str>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct KeyPlan<'plan> {
+    pub(super) table: KeyTable,
+    pub(super) id: &'plan str,
+    pub(super) token: &'plan str,
+    pub(super) spend: Amount,
+    pub(super) total_spend: Amount,
+    pub(super) budget_duration: Option<&'plan str>,
+    pub(super) budget_id: Option<&'plan str>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct LogPlan<'plan> {
+    pub(super) request_id: &'plan str,
+    pub(super) api_key: &'plan str,
+    pub(super) spend: Amount,
+    pub(super) total_tokens: i32,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ExpectedRow<'plan> {
+    pub(super) table: KeyTable,
+    pub(super) id: &'plan str,
+    pub(super) total_spend: Option<Amount>,
+}
+
+pub(super) struct HistoryScenario<'plan> {
+    pub(super) budgets: &'plan [BudgetPlan<'plan>],
+    pub(super) keys: &'plan [KeyPlan<'plan>],
+    pub(super) logs: &'plan [LogPlan<'plan>],
+    pub(super) outcome: BackfillOutcome,
+    pub(super) totals: &'plan [ExpectedRow<'plan>],
+}
+
+pub(super) struct FailureScenario<'plan> {
+    pub(super) operation: Operation,
+    pub(super) keys: &'plan [KeyPlan<'plan>],
+    pub(super) logs: &'plan [LogPlan<'plan>],
+}
 
 fn log_time() -> NaiveDateTime {
     at(7, 26, 12, 0, 0)
@@ -56,32 +113,100 @@ async fn daily(case: &SpendBackfillCase) -> BackfillOutcome {
         .expect("the daily backfill")
 }
 
-async fn floor(case: &SpendBackfillCase) -> BackfillOutcome {
-    let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, BackfillPlan::KeyTotalSpend)
-        .await
-        .expect("the floor backfill")
+#[derive(Clone, Copy)]
+pub(super) enum Operation {
+    Floor,
+    History,
 }
 
-async fn history(case: &SpendBackfillCase) -> BackfillOutcome {
-    let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, BackfillPlan::KeyTotalSpendFromLogs)
-        .await
-        .expect("the history backfill")
+impl Operation {
+    const fn plan(self) -> BackfillPlan {
+        match self {
+            Self::Floor => BackfillPlan::KeyTotalSpend,
+            Self::History => BackfillPlan::KeyTotalSpendFromLogs,
+        }
+    }
+
+    const fn failure(self) -> &'static str {
+        match self {
+            Self::Floor => key_total_spend::ARCHIVED_FAILURE,
+            Self::History => key_total_spend_from_logs::ARCHIVED_FAILURE,
+        }
+    }
+
+    const fn committed(self) -> (i64, i64) {
+        match self {
+            Self::Floor => (5, 2),
+            Self::History => (4, 2),
+        }
+    }
+
+    const fn retried(self) -> (i64, i64) {
+        match self {
+            Self::Floor => (5, 7),
+            Self::History => (4, 6),
+        }
+    }
+
+    const fn retry_outcome(self) -> BackfillOutcome {
+        match self {
+            Self::Floor => BackfillOutcome::KeyTotalSpend {
+                active_keys: 0,
+                archived_keys: 1,
+            },
+            Self::History => BackfillOutcome::KeyTotalSpendFromLogs {
+                active_keys: 0,
+                archived_keys: 1,
+            },
+        }
+    }
 }
 
-async fn floor_error(case: &SpendBackfillCase) -> BackfillError {
+async fn run_operation(
+    case: &SpendBackfillCase,
+    operation: Operation,
+) -> Result<BackfillOutcome, BackfillError> {
     let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, BackfillPlan::KeyTotalSpend)
-        .await
-        .expect_err("the archived update fails")
+    run_plan(&session, operation.plan()).await
 }
 
-async fn history_error(case: &SpendBackfillCase) -> BackfillError {
-    let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, BackfillPlan::KeyTotalSpendFromLogs)
+async fn operation_outcome(case: &SpendBackfillCase, operation: Operation) -> BackfillOutcome {
+    run_operation(case, operation)
         .await
-        .expect_err("the archived update fails")
+        .expect("the key spend backfill")
+}
+
+async fn seed_budgets(case: &SpendBackfillCase, plans: &[BudgetPlan<'_>]) {
+    for plan in plans {
+        case.seed_budget(plan.budget_id, plan.budget_duration).await;
+    }
+}
+
+async fn seed_rows(case: &SpendBackfillCase, keys: &[KeyPlan<'_>], logs: &[LogPlan<'_>]) {
+    for plan in keys {
+        let (spend_units, spend_scale) = plan.spend;
+        let (total_units, total_scale) = plan.total_spend;
+        let seed = KeySeed {
+            token: plan.token,
+            spend: money(spend_units, spend_scale),
+            total_spend: money(total_units, total_scale),
+            budget_duration: plan.budget_duration,
+            budget_id: plan.budget_id,
+        };
+        case.seed_key(plan.table, plan.id, seed).await;
+    }
+    for plan in logs {
+        let (spend_units, spend_scale) = plan.spend;
+        let (month, day, hour, minute, second) = LOG_START;
+        let seed = SpendLogSeed {
+            request_id: plan.request_id,
+            api_key: plan.api_key,
+            spend: money(spend_units, spend_scale),
+            total_tokens: plan.total_tokens,
+            start_time: at(month, day, hour, minute, second),
+        };
+        case.seed_log(seed).await;
+    }
 }
 
 async fn assert_buckets(case: &SpendBackfillCase, expected: Vec<DailyBucket>) {
@@ -89,45 +214,77 @@ async fn assert_buckets(case: &SpendBackfillCase, expected: Vec<DailyBucket>) {
     assert_eq!(actual, expected);
 }
 
-async fn assert_active_row(
-    case: &SpendBackfillCase,
-    token: &str,
-    spend: Option<Decimal>,
-    total_spend: Option<Decimal>,
-) {
-    let actual = case.active_row(token).await;
-    assert_eq!(actual, (spend, total_spend));
+async fn assert_totals(case: &SpendBackfillCase, expected: &[ExpectedRow<'_>]) {
+    for row in expected {
+        let actual = case.key_row(row.table, row.id).await.1;
+        let total = row.total_spend.map(|(units, scale)| money(units, scale));
+        assert_eq!(actual, total);
+    }
 }
 
-async fn assert_archived_row(
+async fn assert_key_total(
     case: &SpendBackfillCase,
+    table: KeyTable,
     id: &str,
-    spend: Option<Decimal>,
     total_spend: Option<Decimal>,
 ) {
-    let actual = case.archived_row(id).await;
-    assert_eq!(actual, (spend, total_spend));
-}
-
-async fn assert_active_total(case: &SpendBackfillCase, token: &str, total_spend: Option<Decimal>) {
-    let actual = case.active_row(token).await.1;
+    let actual = case.key_row(table, id).await.1;
     assert_eq!(actual, total_spend);
 }
 
-async fn assert_archived_total(case: &SpendBackfillCase, id: &str, total_spend: Option<Decimal>) {
-    let actual = case.archived_row(id).await.1;
-    assert_eq!(actual, total_spend);
+async fn run_history_scenario(scenario: HistoryScenario<'_>) {
+    let case = SpendBackfillCase::new(None).await;
+    seed_budgets(&case, scenario.budgets).await;
+    seed_rows(&case, scenario.keys, scenario.logs).await;
+    let outcome = operation_outcome(&case, Operation::History).await;
+    assert_eq!(outcome, scenario.outcome);
+    assert_totals(&case, scenario.totals).await;
+    case.close().await;
 }
 
-async fn seed_key_log(case: &SpendBackfillCase, request_id: &str, api_key: &str, spend: Decimal) {
-    case.seed_log(SpendLogSeed {
-        request_id,
-        api_key,
-        spend,
-        total_tokens: 0,
-        start_time: at(6, 1, 0, 0, 0),
-    })
-    .await;
+async fn run_failure_scenario(scenario: FailureScenario<'_>) {
+    let case = SpendBackfillCase::new(None).await;
+    seed_rows(&case, scenario.keys, scenario.logs).await;
+    assert_archived_transition(&case, scenario.operation).await;
+    case.close().await;
+}
+
+async fn assert_archived_transition(case: &SpendBackfillCase, operation: Operation) {
+    case.client
+        .batch_execute(REJECT_ARCHIVED_SQL)
+        .await
+        .expect("the rejecting trigger");
+    let error = run_operation(case, operation)
+        .await
+        .expect_err("the archived update fails");
+    let BackfillError::Statement { statement, .. } = error;
+    assert_eq!(statement, operation.failure());
+    let (active_keys, archived_keys) = operation.committed();
+    assert_transition_totals(case, active_keys, archived_keys).await;
+    case.client
+        .batch_execute(ALLOW_ARCHIVED_SQL)
+        .await
+        .expect("the trigger removal");
+    let outcome = operation_outcome(case, operation).await;
+    assert_eq!(outcome, operation.retry_outcome());
+    let (retried_active, retried_archived) = operation.retried();
+    assert_transition_totals(case, retried_active, retried_archived).await;
+}
+
+async fn assert_transition_totals(case: &SpendBackfillCase, active: i64, archived: i64) {
+    let rows = [
+        ExpectedRow {
+            table: KeyTable::Active,
+            id: "key-active",
+            total_spend: Some((active, 0)),
+        },
+        ExpectedRow {
+            table: KeyTable::Archived,
+            id: "life-one",
+            total_spend: Some((archived, 0)),
+        },
+    ];
+    assert_totals(case, &rows).await;
 }
 
 pub(super) async fn cutover_strict_utc() {
@@ -258,8 +415,9 @@ pub(super) async fn bucket_conflict_skips_all() {
 
 pub(super) async fn floor_no_budget_filter() {
     let case = SpendBackfillCase::new(None).await;
-    seed_floor_keys(&case).await;
-    let outcome = floor(&case).await;
+    seed_budgets(&case, &FLOOR_BUDGETS).await;
+    seed_rows(&case, &FLOOR_KEYS, &[]).await;
+    let outcome = operation_outcome(&case, Operation::Floor).await;
     assert_eq!(
         outcome,
         BackfillOutcome::KeyTotalSpend {
@@ -267,44 +425,8 @@ pub(super) async fn floor_no_budget_filter() {
             archived_keys: 2
         }
     );
-    assert_active_total(&case, "key-own", Some(money(5, 0))).await;
-    assert_active_total(&case, "key-linked", Some(money(5, 0))).await;
-    assert_active_total(&case, "key-plain", Some(money(5, 0))).await;
-    assert_archived_total(&case, "archived-own", Some(money(7, 0))).await;
-    assert_archived_total(&case, "archived-plain", Some(money(7, 0))).await;
+    assert_totals(&case, &FLOOR_TOTALS).await;
     case.close().await;
-}
-
-async fn seed_floor_keys(case: &SpendBackfillCase) {
-    case.seed_budget("budget-linked", Some("30d")).await;
-    case.seed_active_key(key("key-own", money(5, 0), money(1, 0), Some("1d"), None))
-        .await;
-    case.seed_active_key(key(
-        "key-linked",
-        money(5, 0),
-        money(1, 0),
-        None,
-        Some("budget-linked"),
-    ))
-    .await;
-    case.seed_active_key(key("key-plain", money(5, 0), money(1, 0), None, None))
-        .await;
-    case.seed_archived_key(
-        "archived-own",
-        key(
-            "archived-own-token",
-            money(7, 0),
-            money(2, 0),
-            Some("1d"),
-            None,
-        ),
-    )
-    .await;
-    case.seed_archived_key(
-        "archived-plain",
-        key("archived-plain-token", money(7, 0), money(2, 0), None, None),
-    )
-    .await;
 }
 
 pub(super) async fn floor_null_unchanged() {
@@ -317,7 +439,7 @@ pub(super) async fn floor_null_unchanged() {
         .batch_execute(NULL_LIFETIMES_SQL)
         .await
         .expect("the lifetime rows");
-    let outcome = floor(&case).await;
+    let outcome = operation_outcome(&case, Operation::Floor).await;
     assert_eq!(
         outcome,
         BackfillOutcome::KeyTotalSpend {
@@ -325,107 +447,16 @@ pub(super) async fn floor_null_unchanged() {
             archived_keys: 1
         }
     );
-    assert_active_row(&case, "null-spend", None, Some(money(1, 0))).await;
-    assert_active_row(&case, "null-total", Some(money(5, 0)), None).await;
-    assert_active_row(&case, "both-null", None, None).await;
-    assert_active_row(&case, "below", Some(money(5, 0)), Some(money(5, 0))).await;
-    assert_active_row(&case, "equal", Some(money(5, 0)), Some(money(5, 0))).await;
-    assert_active_row(&case, "higher", Some(money(10, 0)), Some(money(5, 0))).await;
-    assert_archived_row(
-        &case,
-        "archived-below",
-        Some(money(5, 0)),
-        Some(money(5, 0)),
-    )
-    .await;
-    assert_archived_row(&case, "archived-null", None, Some(money(1, 0))).await;
+    assert_totals(&case, &NULL_LIFETIME_TOTALS).await;
     case.close().await;
 }
 
 pub(super) async fn own_or_linked_reset() {
-    let case = SpendBackfillCase::new(None).await;
-    case.seed_budget("budget-linked", Some("30d")).await;
-    case.seed_budget("budget-plain", None).await;
-    case.seed_active_key(key("key-own", money(0, 0), money(0, 0), Some("1d"), None))
-        .await;
-    case.seed_active_key(key(
-        "key-linked",
-        money(0, 0),
-        money(0, 0),
-        None,
-        Some("budget-linked"),
-    ))
-    .await;
-    case.seed_active_key(key(
-        "key-no-reset",
-        money(0, 0),
-        money(0, 0),
-        None,
-        Some("budget-plain"),
-    ))
-    .await;
-    seed_reset_logs(&case).await;
-    let outcome = history(&case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpendFromLogs {
-            active_keys: 2,
-            archived_keys: 0
-        }
-    );
-    assert_active_total(&case, "key-own", Some(money(3, 0))).await;
-    assert_active_total(&case, "key-linked", Some(money(4, 0))).await;
-    assert_active_total(&case, "key-no-reset", Some(money(0, 0))).await;
-    case.close().await;
-}
-
-async fn seed_reset_logs(case: &SpendBackfillCase) {
-    seed_key_log(case, "log-own", "key-own", money(3, 0)).await;
-    seed_key_log(case, "log-linked", "key-linked", money(4, 0)).await;
-    seed_key_log(case, "log-no-reset", "key-no-reset", money(9, 0)).await;
+    run_history_scenario(OWN_LINKED_SCENARIO).await;
 }
 
 pub(super) async fn empty_duration_is_reset() {
-    let case = SpendBackfillCase::new(None).await;
-    case.seed_budget("budget-empty", Some("")).await;
-    case.seed_budget("budget-null", None).await;
-    case.seed_active_key(key("key-empty", money(0, 0), money(0, 0), Some(""), None))
-        .await;
-    case.seed_active_key(key(
-        "key-empty-linked",
-        money(0, 0),
-        money(0, 0),
-        None,
-        Some("budget-empty"),
-    ))
-    .await;
-    case.seed_active_key(key(
-        "key-null-linked",
-        money(0, 0),
-        money(0, 0),
-        None,
-        Some("budget-null"),
-    ))
-    .await;
-    seed_empty_duration_logs(&case).await;
-    let outcome = history(&case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpendFromLogs {
-            active_keys: 2,
-            archived_keys: 0
-        }
-    );
-    assert_active_total(&case, "key-empty", Some(money(25, 1))).await;
-    assert_active_total(&case, "key-empty-linked", Some(money(15, 1))).await;
-    assert_active_total(&case, "key-null-linked", Some(money(0, 0))).await;
-    case.close().await;
-}
-
-async fn seed_empty_duration_logs(case: &SpendBackfillCase) {
-    seed_key_log(case, "log-empty", "key-empty", money(25, 1)).await;
-    seed_key_log(case, "log-empty-linked", "key-empty-linked", money(15, 1)).await;
-    seed_key_log(case, "log-null-linked", "key-null-linked", money(7, 0)).await;
+    run_history_scenario(EMPTY_DURATION_SCENARIO).await;
 }
 
 pub(super) async fn token_or_double_hash() {
@@ -433,13 +464,31 @@ pub(super) async fn token_or_double_hash() {
     let token = "sk-token";
     let digest = double_hash(token);
     let upper = double_hash(token).to_uppercase();
-    case.seed_active_key(key(token, money(0, 0), money(0, 0), Some("1d"), None))
-        .await;
-    seed_key_log(&case, "log-token", token, money(1, 0)).await;
-    seed_key_log(&case, "log-digest", digest.as_str(), money(2, 0)).await;
-    seed_key_log(&case, "log-upper", upper.as_str(), money(100, 0)).await;
-    seed_key_log(&case, "log-other", "other", money(50, 0)).await;
-    let outcome = history(&case).await;
+    let key_row = KeySeed {
+        token,
+        spend: money(0, 0),
+        total_spend: money(0, 0),
+        budget_duration: Some("1d"),
+        budget_id: None,
+    };
+    case.seed_key(KeyTable::Active, token, key_row).await;
+    let logs = [
+        ("log-token", token, money(1, 0)),
+        ("log-digest", digest.as_str(), money(2, 0)),
+        ("log-upper", upper.as_str(), money(100, 0)),
+        ("log-other", "other", money(50, 0)),
+    ];
+    for (request_id, api_key, spend) in logs {
+        let log_row = SpendLogSeed {
+            request_id,
+            api_key,
+            spend,
+            total_tokens: 0,
+            start_time: at(6, 1, 0, 0, 0),
+        };
+        case.seed_log(log_row).await;
+    }
+    let outcome = operation_outcome(&case, Operation::History).await;
     assert_eq!(
         outcome,
         BackfillOutcome::KeyTotalSpendFromLogs {
@@ -447,90 +496,16 @@ pub(super) async fn token_or_double_hash() {
             archived_keys: 0
         }
     );
-    assert_active_total(&case, token, Some(money(3, 0))).await;
+    assert_key_total(&case, KeyTable::Active, token, Some(money(3, 0))).await;
     case.close().await;
 }
 
 pub(super) async fn archive_distinct_tokens() {
-    let case = SpendBackfillCase::new(None).await;
-    case.seed_archived_key(
-        "life-one",
-        key("archived-token", money(1, 0), money(0, 0), Some("1d"), None),
-    )
-    .await;
-    case.seed_archived_key(
-        "life-two",
-        key("archived-token", money(2, 0), money(0, 0), Some("1d"), None),
-    )
-    .await;
-    case.seed_archived_key(
-        "life-plain",
-        key("archived-token", money(0, 0), money(0, 0), None, None),
-    )
-    .await;
-    seed_key_log(&case, "log-token", "archived-token", money(3, 0)).await;
-    let outcome = history(&case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpendFromLogs {
-            active_keys: 0,
-            archived_keys: 2
-        }
-    );
-    assert_archived_total(&case, "life-one", Some(money(3, 0))).await;
-    assert_archived_total(&case, "life-two", Some(money(3, 0))).await;
-    assert_archived_total(&case, "life-plain", Some(money(0, 0))).await;
-    case.close().await;
+    run_history_scenario(ARCHIVE_DISTINCT_SCENARIO).await;
 }
 
 pub(super) async fn mixed_archive_lifetimes() {
-    let case = SpendBackfillCase::new(None).await;
-    seed_mixed_lifetimes(&case).await;
-    let outcome = history(&case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpendFromLogs {
-            active_keys: 0,
-            archived_keys: 2
-        }
-    );
-    assert_archived_total(&case, "own-reset", Some(money(2, 0))).await;
-    assert_archived_total(&case, "own-plain", Some(money(0, 0))).await;
-    assert_archived_total(&case, "linked-reset", Some(money(3, 0))).await;
-    assert_archived_total(&case, "linked-plain", Some(money(0, 0))).await;
-    case.close().await;
-}
-
-async fn seed_mixed_lifetimes(case: &SpendBackfillCase) {
-    case.seed_budget("budget-reset", Some("1d")).await;
-    case.seed_archived_key(
-        "own-reset",
-        key("mixed-token", money(0, 0), money(0, 0), Some("1d"), None),
-    )
-    .await;
-    case.seed_archived_key(
-        "own-plain",
-        key("mixed-token", money(0, 0), money(0, 0), None, None),
-    )
-    .await;
-    case.seed_archived_key(
-        "linked-reset",
-        key(
-            "linked-token",
-            money(0, 0),
-            money(0, 0),
-            None,
-            Some("budget-reset"),
-        ),
-    )
-    .await;
-    case.seed_archived_key(
-        "linked-plain",
-        key("linked-token", money(0, 0), money(0, 0), None, None),
-    )
-    .await;
-    seed_key_log(case, "log-mixed", "mixed-token", money(2, 0)).await;
-    seed_key_log(case, "log-linked", "linked-token", money(3, 0)).await;
+    run_history_scenario(MIXED_ARCHIVE_SCENARIO).await;
 }
 
 pub(super) async fn shorter_history_never_lowers() {
@@ -539,49 +514,7 @@ pub(super) async fn shorter_history_never_lowers() {
         .batch_execute(NULL_KEY_SPEND_SQL)
         .await
         .expect("a nullable spend column");
-    seed_short_history_keys(&case).await;
-    seed_short_history_logs(&case).await;
-    let outcome = history(&case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpendFromLogs {
-            active_keys: 0,
-            archived_keys: 0
-        }
-    );
-    assert_active_total(&case, "key-short", Some(money(5, 0))).await;
-    assert_active_total(&case, "key-missing", Some(money(2, 0))).await;
-    assert_active_total(&case, "key-null-sum", Some(money(1, 0))).await;
-    assert_active_total(&case, "key-plain", Some(money(0, 0))).await;
-    case.close().await;
-}
-
-async fn seed_short_history_keys(case: &SpendBackfillCase) {
-    case.seed_active_key(key("key-short", money(5, 0), money(5, 0), Some("1d"), None))
-        .await;
-    case.seed_active_key(key(
-        "key-missing",
-        money(2, 0),
-        money(2, 0),
-        Some("1d"),
-        None,
-    ))
-    .await;
-    case.seed_active_key(key(
-        "key-null-sum",
-        money(1, 0),
-        money(1, 0),
-        Some("1d"),
-        None,
-    ))
-    .await;
-    case.seed_active_key(key("key-plain", money(9, 0), money(0, 0), None, None))
-        .await;
-}
-
-async fn seed_short_history_logs(case: &SpendBackfillCase) {
-    seed_key_log(case, "log-short", "key-short", money(2, 0)).await;
-    seed_key_log(case, "log-plain", "key-plain", money(9, 0)).await;
+    seed_rows(&case, &SHORT_HISTORY_KEYS, &SHORT_HISTORY_LOGS).await;
     case.client
         .execute(
             r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, api_key, spend, total_tokens, "startTime") VALUES ('log-null', 'key-null-sum', NULL, 0, $1)"#,
@@ -589,98 +522,22 @@ async fn seed_short_history_logs(case: &SpendBackfillCase) {
         )
         .await
         .expect("a null spend log");
-}
-
-pub(super) async fn active_commits_before_archive() {
-    let case = SpendBackfillCase::new(None).await;
-    case.seed_active_key(key("key-active", money(5, 0), money(1, 0), None, None))
-        .await;
-    case.seed_archived_key(
-        "life-one",
-        key("token-one", money(7, 0), money(2, 0), None, None),
-    )
-    .await;
-    assert_floor_archived_failure(&case).await;
-    assert_floor_retry(&case).await;
-    case.close().await;
-}
-
-async fn assert_floor_archived_failure(case: &SpendBackfillCase) {
-    case.client
-        .batch_execute(REJECT_ARCHIVED_SQL)
-        .await
-        .expect("the rejecting trigger");
-    let error = floor_error(case).await;
-    let BackfillError::Statement { statement, .. } = error;
-    assert_eq!(statement, key_total_spend::ARCHIVED_FAILURE);
-    assert_active_total(case, "key-active", Some(money(5, 0))).await;
-    assert_archived_total(case, "life-one", Some(money(2, 0))).await;
-}
-
-async fn assert_floor_retry(case: &SpendBackfillCase) {
-    case.client
-        .batch_execute(ALLOW_ARCHIVED_SQL)
-        .await
-        .expect("the trigger removal");
-    let outcome = floor(case).await;
-    assert_eq!(
-        outcome,
-        BackfillOutcome::KeyTotalSpend {
-            active_keys: 0,
-            archived_keys: 1
-        }
-    );
-    assert_active_total(case, "key-active", Some(money(5, 0))).await;
-    assert_archived_total(case, "life-one", Some(money(7, 0))).await;
-}
-
-pub(super) async fn logs_second_write_failure() {
-    let case = SpendBackfillCase::new(None).await;
-    case.seed_active_key(key(
-        "key-active",
-        money(1, 0),
-        money(1, 0),
-        Some("1d"),
-        None,
-    ))
-    .await;
-    case.seed_archived_key(
-        "life-one",
-        key("token-one", money(2, 0), money(2, 0), Some("1d"), None),
-    )
-    .await;
-    seed_key_log(&case, "log-active", "key-active", money(4, 0)).await;
-    seed_key_log(&case, "log-archived", "token-one", money(6, 0)).await;
-    assert_history_archived_failure(&case).await;
-    assert_history_retry(&case).await;
-    case.close().await;
-}
-
-async fn assert_history_archived_failure(case: &SpendBackfillCase) {
-    case.client
-        .batch_execute(REJECT_ARCHIVED_SQL)
-        .await
-        .expect("the rejecting trigger");
-    let error = history_error(case).await;
-    let BackfillError::Statement { statement, .. } = error;
-    assert_eq!(statement, key_total_spend_from_logs::ARCHIVED_FAILURE);
-    assert_active_total(case, "key-active", Some(money(4, 0))).await;
-    assert_archived_total(case, "life-one", Some(money(2, 0))).await;
-}
-
-async fn assert_history_retry(case: &SpendBackfillCase) {
-    case.client
-        .batch_execute(ALLOW_ARCHIVED_SQL)
-        .await
-        .expect("the trigger removal");
-    let outcome = history(case).await;
+    let outcome = operation_outcome(&case, Operation::History).await;
     assert_eq!(
         outcome,
         BackfillOutcome::KeyTotalSpendFromLogs {
             active_keys: 0,
-            archived_keys: 1
+            archived_keys: 0
         }
     );
-    assert_active_total(case, "key-active", Some(money(4, 0))).await;
-    assert_archived_total(case, "life-one", Some(money(6, 0))).await;
+    assert_totals(&case, &SHORT_HISTORY_TOTALS).await;
+    case.close().await;
+}
+
+pub(super) async fn active_commits_before_archive() {
+    run_failure_scenario(FLOOR_FAILURE_SCENARIO).await;
+}
+
+pub(super) async fn logs_second_write_failure() {
+    run_failure_scenario(HISTORY_FAILURE_SCENARIO).await;
 }
