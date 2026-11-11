@@ -1,0 +1,13 @@
+kind: helper
+name: jsonable-opaque-dict-list-mixed
+call:
+  b3795:
+    opaque_dict_list:
+      items:
+        - plain: {role: user}
+        - model: {input_tokens: 4, output_tokens: 2}
+        - plain: not-a-dict
+        - plain: null
+        - plain: [1, 2]
+env: {}
+compare: {ignore: []}

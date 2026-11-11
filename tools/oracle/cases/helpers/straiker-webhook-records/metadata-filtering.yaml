@@ -1,0 +1,22 @@
+kind: helper
+name: metadata-filtering
+call:
+  b3795:
+    webhook_metadata:
+      request_data:
+        metadata:
+          agent_id: agent-1
+          app_name: console
+          session_id: session-1
+          user_api_key_alias: key-alias
+          region: eu-west
+          score: 0.75
+          active: true
+          detail: {nested: 1}
+          missing: null
+          tags: [a, b]
+      default_metadata:
+        region: us-east
+        tenant: acme
+env: {}
+compare: {ignore: []}
