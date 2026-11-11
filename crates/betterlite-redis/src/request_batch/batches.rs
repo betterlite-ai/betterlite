@@ -78,31 +78,30 @@ impl RequestRedisBatches {
     }
 
     pub async fn flush_all(self: &Arc<Self>) {
-        join_all(
-            Self::pending(&self.batches)
-                .iter()
-                .map(|batch| batch.flush()),
-        )
-        .await;
-        let post_call_pending = {
+        Self::flush_slots(&self.batches).await;
+        let post_call_idle = {
             let post_call = lock(&self.post_call);
-            post_call.values().any(|batch| batch.pending() > 0)
+            post_call.values().all(|batch| batch.pending() == 0)
         };
-        if !post_call_pending {
-            self.cancel_deadline();
-            registry::apply(self, registry::Change::Discard);
+        if post_call_idle {
+            self.disarm_and_discard();
         }
     }
 
     pub async fn flush_post_call(self: &Arc<Self>) {
+        Self::flush_slots(&self.post_call).await;
+        self.disarm_and_discard();
+    }
+
+    fn disarm_and_discard(self: &Arc<Self>) {
         self.cancel_deadline();
-        join_all(
-            Self::pending(&self.post_call)
-                .iter()
-                .map(|batch| batch.flush()),
-        )
-        .await;
         self.discard_if_idle();
+    }
+
+    async fn flush_slots(slots: &Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>) {
+        let pending = Self::pending(slots);
+        let flushes = pending.iter().map(|batch| batch.flush());
+        join_all(flushes).await;
     }
 
     fn pending(slots: &Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>) -> Vec<Arc<RedisBatch>> {
@@ -168,18 +167,9 @@ impl RequestRedisBatches {
             }
         };
         if expired {
-            self.flush_pending_post_call().await;
+            Self::flush_slots(&self.post_call).await;
             self.discard_if_idle();
         }
-    }
-
-    async fn flush_pending_post_call(&self) {
-        join_all(
-            Self::pending(&self.post_call)
-                .iter()
-                .map(|batch| batch.flush()),
-        )
-        .await;
     }
 
     fn discard_if_idle(self: &Arc<Self>) {
