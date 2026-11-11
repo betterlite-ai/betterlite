@@ -2,6 +2,7 @@
 
 mod postgres;
 mod support;
+mod upstream_selectors;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
