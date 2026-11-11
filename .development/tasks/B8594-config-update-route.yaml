@@ -18,7 +18,7 @@ description: >-
 
 
   The route. Only PROXY_ADMIN may call it (403 "Only proxy admins can update config"). When router_settings in the raw
-  body is an object, keys outside the allowlist (RUNTIME_UPDATABLE_ROUTER_SETTINGS plus the Router init argument names
+  body is an object, keys outside the allowlist (B9711's RUNTIME_UPDATABLE_ROUTER_SETTINGS, not a copy, plus the Router init argument names
   minus ROUTER_SETTINGS_MANAGED_OUTSIDE_CONFIG) give 400 {"error": "Unsupported router settings: <sorted, comma list> are
   not valid router settings"}, and routing_groups must pass B323's parse_routing_groups (400 with its message). No
   database is the error "No DB Connected". Before any write, B8380's reject_config_owned_writes runs for

@@ -1,0 +1,41 @@
+kind: helper
+name: openai-decisions-choice-question-roundtrip
+call:
+  openai_decisions:
+    systemone_to_request:
+      - model: gpt-4o
+        request:
+          state: "the input"
+          questions:
+            pick:
+              type: choice
+              instructions: null
+              criteria: {a: first, b: null, c: {k: 1}}
+            empty:
+              type: choice
+              instructions: ""
+              criteria: {"yes": null, "no": null}
+    request_roundtrip:
+      - model: gpt-4o
+        request:
+          input: the input
+          safety_identifier: user-1
+          questions:
+            - type: choice
+              name: pick
+              instructions: choose
+              choices:
+                - {value: a, description: first}
+                - {value: b}
+                - {value: true}
+      - model: gpt-4o
+        request:
+          input: the input
+          questions:
+            - type: choice
+              instructions: ""
+              choices:
+                - {value: "yes"}
+                - {value: "no"}
+env: {}
+compare: {ignore: []}

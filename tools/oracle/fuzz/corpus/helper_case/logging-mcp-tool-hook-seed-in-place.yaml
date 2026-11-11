@@ -1,0 +1,9 @@
+kind: helper
+name: logging-mcp-tool-hook-seed-in-place
+call:
+  b9650:
+    result: {content: [{type: text, text: seed}], structured_content: {seed: true}}
+    dynamic_success: []
+    global_success: [{name: editor, behavior: edit_in_place}]
+env: {}
+compare: {ignore: []}

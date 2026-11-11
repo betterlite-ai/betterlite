@@ -9,20 +9,23 @@ description: >-
   swallows its own errors so one bad row never stops the tick.
 
   `reload_websearch(db, callbacks)` (init_websearch_interception_settings_in_db): read litellm_settings (a JSON string
-  is decoded), take websearch_interception_params; nothing when it is not a mapping. When it has no "enabled" key and
+  is decoded), take websearch_interception_params; nothing when it is not a mapping. `callbacks` is a port declared
+  here, `WebsearchInterception` (is_registered(), and apply(params: Option<...>) where None means disabled). B9823
+  implements it over B9821's sdk_callbacks Slot (contains and replace of "websearch_interception") and its builder,
+  so this task names no B9821 or B9823 type. When it has no "enabled" key and
   nothing was applied before, leave ownership with litellm_settings.callbacks (debug log). Otherwise enabled is the
   coerced flag (default true); do nothing when the stored value equals the last one and the registered state matches.
-  Else remove every web search interception callback and, when enabled, register B1118's logger built from the params
+  Else call apply with None when disabled and, when enabled, with the params
   with "enabled" dropped and enabled_providers dropped unless it is a non-empty list (_websearch_handler_params), logging
   "Web search interception reinitialized from DB" or "Web search interception disabled", and remember the value.
 
-  `reload_semantic_filter(db, callbacks, router)` (_init_semantic_filter_settings_in_db): take
-  litellm_settings.mcp_semantic_tool_filter; nothing when absent. When it equals the last applied value and a
-  registered SemanticToolFilterHook has a filter with a built tool router, do nothing (debug "Semantic filter settings
+  `reload_semantic_filter(db, callbacks, router)` (_init_semantic_filter_settings_in_db): `callbacks` is B138's
+  SemanticFilterSlot. Take litellm_settings.mcp_semantic_tool_filter; nothing when absent. When it equals the last
+  applied value and the slot's current() hook has a filter with a built tool router, do nothing (debug "Semantic filter settings
   unchanged, skipping reinitialization"); an equal value with no ready hook logs "Semantic filter settings unchanged,
-  but hook is missing or uninitialized. Reinitializing." and goes on. Remove every SemanticToolFilterHook, and when
+  but hook is missing or uninitialized. Reinitializing." and goes on. Call the slot's remove_all(), and when
   enabled (default false) build one with B8201's initialize_from_config against the current router, registering it
-  when one comes back ("MCP Semantic Filter reinitialized from DB"); otherwise log "MCP Semantic Filter disabled".
+  with the slot's add() when one comes back ("MCP Semantic Filter reinitialized from DB"); otherwise log "MCP Semantic Filter disabled".
   Remember the value either way.
 
   `reload_sso(db)` (_init_sso_settings_in_db): read the sso_config row through B1610's repository with the
@@ -66,7 +69,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The semantic filter hook itself: B8201. The web search interception logger: B1118."
+  - "The semantic filter hook itself: B8201. The web search interception logger and the WebsearchInterception adapter: B9823, over B9821's Slot."
   - "The Vault and CyberArk env mappings and state helpers in config_override_endpoints.py: B1646. Secret manager clients: B4416, B4417 (Vault) and B4418 (CyberArk), selection: B8590."
   - "When these run: B8384 calls them from the non-LLM object sync, and B1663 calls the semantic filter and web search reloads right after a save. The safe litellm_settings overrides: B8384."
 pitfalls:
