@@ -87,6 +87,20 @@ fn other_image_formats_are_re_encoded_as_jpeg() {
 }
 
 #[test]
+fn a_space_in_a_data_url_is_dropped_while_the_payload_is_kept() {
+    let mut wrapped = String::from(JPEG_BASE64);
+    wrapped.insert(10, ' ');
+    let image = format!("data:image/jpeg;base64,{wrapped}");
+    assert_eq!(convert_image(&image).unwrap(), wrapped);
+}
+
+#[test]
+fn a_non_ascii_data_url_is_returned_unchanged() {
+    let image = format!("data:image/jpeg;base64,{JPEG_BASE64}\u{e9}");
+    assert_eq!(convert_image(&image).unwrap(), image);
+}
+
+#[test]
 fn a_bmp_without_a_data_prefix_is_re_encoded_too() {
     let found = convert_image(&bmp_base64()).unwrap();
     assert_ne!(found, bmp_base64());
