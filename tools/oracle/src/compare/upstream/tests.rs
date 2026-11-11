@@ -182,16 +182,24 @@ fn body_selector_keeps_target_and_headers(
     "abcdef01-2345-4678-9abc-def012345678.png"
 )]
 fn filename_selector_accepts_generated_names(#[case] left_name: &str, #[case] right_name: &str) {
+    let (left, right) = uploads(Some(left_name), Some(right_name));
+    let rules = comparing(&["/upstream/0/parts/1/filename"], &[]);
+    assert_eq!(failure(&left, &right, &rules), None);
+}
+
+fn uploads(
+    left_name: Option<&str>,
+    right_name: Option<&str>,
+) -> (Vec<ProviderRequest>, Vec<ProviderRequest>) {
     let left = vec![upload(Value::Array(vec![
         field_part("field", "value"),
-        file_part(Some(left_name), "payload"),
+        file_part(left_name, "payload"),
     ]))];
     let right = vec![upload(Value::Array(vec![
         field_part("field", "value"),
-        file_part(Some(right_name), "payload"),
+        file_part(right_name, "payload"),
     ]))];
-    let rules = comparing(&["/upstream/0/parts/1/filename"], &[]);
-    assert_eq!(failure(&left, &right, &rules), None);
+    (left, right)
 }
 
 #[rstest]
@@ -225,14 +233,7 @@ fn filename_selector_refuses_other_names(
     #[case] right_name: Option<&str>,
     #[case] message: &str,
 ) {
-    let left = vec![upload(Value::Array(vec![
-        field_part("field", "value"),
-        file_part(left_name, "payload"),
-    ]))];
-    let right = vec![upload(Value::Array(vec![
-        field_part("field", "value"),
-        file_part(right_name, "payload"),
-    ]))];
+    let (left, right) = uploads(left_name, right_name);
     let rules = comparing(&["/upstream/0/parts/1/filename"], &[]);
     assert_eq!(
         failure(&left, &right, &rules),

@@ -142,9 +142,9 @@ fn compare_body(
             selected.contains(format!("/upstream/{index}/parts/{part}/filename").as_str())
         })
         .collect();
-    if let Some(pointer) = mask_generated_filenames(&mut left_parts, &mut right_parts, &relaxed) {
+    if let Err(part) = mask_generated_filenames(&mut left_parts, &mut right_parts, &relaxed) {
         return Err(Difference {
-            pointer: format!("/upstream/{index}{pointer}"),
+            pointer: format!("/upstream/{index}/parts/{part}/filename"),
             message: GENERATED_FILENAMES_DIFFER.to_owned(),
         });
     }

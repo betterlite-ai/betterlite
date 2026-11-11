@@ -36,25 +36,26 @@ pub(crate) fn mask_generated_filenames(
     left: &mut [Part],
     right: &mut [Part],
     selected: &[usize],
-) -> Option<String> {
-    for part in selected {
-        let (Some(left_part), Some(right_part)) = (left.get_mut(*part), right.get_mut(*part))
-        else {
-            continue;
+) -> Result<(), usize> {
+    selected.iter().try_for_each(|part| {
+        let pair = left.get_mut(*part).zip(right.get_mut(*part));
+        let Some((left_part, right_part)) = pair else {
+            return Ok(());
         };
-        let (Some(left_name), Some(right_name)) = (
+        let names = (
             left_part.filename.as_deref(),
             right_part.filename.as_deref(),
-        ) else {
-            return Some(format!("/parts/{part}/filename"));
+        );
+        let (Some(left_name), Some(right_name)) = names else {
+            return Err(*part);
         };
         if !generated_filenames_match(left_name, right_name) {
-            return Some(format!("/parts/{part}/filename"));
+            return Err(*part);
         }
         left_part.filename = Some(String::new());
         right_part.filename = Some(String::new());
-    }
-    None
+        Ok(())
+    })
 }
 
 pub(crate) fn first_part_difference(left: &[Part], right: &[Part]) -> Option<String> {
