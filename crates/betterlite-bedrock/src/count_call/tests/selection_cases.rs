@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 
 use crate::count_call::counter::{BedrockTokenCounter, TokenCounter as _};
 
-use super::support::{Fixture, RESOLVED, Reply, call, environment, fixture, json, user_messages};
+use super::support::{Fixture, Reply, call, environment, fixture, json, user_messages};
 
 pub(crate) async fn native_count_selection() {
     provider_selection();
@@ -119,7 +119,7 @@ async fn deployment_defaults() {
     assert_eq!(outcome.total_tokens, 4);
     assert_eq!(
         transport.request().url,
-        format!("https://bedrock-runtime.us-west-2.amazonaws.com/model/{RESOLVED}/count-tokens")
+        "https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
     assert_eq!(credentials.calls(), 1);
 }
@@ -136,6 +136,6 @@ async fn model_forms_resolve() {
     counter.count_tokens(&request).await.unwrap();
     assert_eq!(
         transport.request().url,
-        format!("https://bedrock-runtime.us-west-2.amazonaws.com/model/{RESOLVED}/count-tokens")
+        "https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/count-tokens"
     );
 }

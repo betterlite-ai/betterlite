@@ -14,7 +14,7 @@ call:
           reply:
             status: 429
             body: rate limited
-            headers: {x-fixture: yes}
+            headers: {x-fixture: "yes"}
           now: 1767225600
         - model: anthropic.claude-3-5-sonnet-20241022-v2:0
           messages:

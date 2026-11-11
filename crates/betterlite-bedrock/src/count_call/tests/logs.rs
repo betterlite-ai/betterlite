@@ -75,14 +75,20 @@ struct Recorded {
     entry: Entry,
 }
 
-impl Visit for Recorded {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        match field.name() {
-            "subject" => self.entry.subject = Some(value.to_owned()),
-            "value" => self.entry.value = Some(value.to_owned()),
-            "detail" => self.entry.detail = Some(value.to_owned()),
+impl Recorded {
+    fn assign(&mut self, name: &str, text: String) {
+        match name {
+            "subject" => self.entry.subject = Some(text),
+            "value" => self.entry.value = Some(text),
+            "detail" => self.entry.detail = Some(text),
             _ => {}
         }
+    }
+}
+
+impl Visit for Recorded {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.assign(field.name(), value.to_owned());
     }
 
     fn record_u64(&mut self, field: &Field, value: u64) {
@@ -97,7 +103,9 @@ impl Visit for Recorded {
         }
     }
 
-    fn record_debug(&mut self, _field: &Field, _value: &dyn Debug) {}
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        self.assign(field.name(), format!("{value:?}"));
+    }
 }
 
 impl<Inner: Subscriber> Layer<Inner> for Captured {
