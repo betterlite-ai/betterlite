@@ -10,6 +10,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tempfile::TempDir;
 
+use crate::agent_setup::connection::{KEEP_CURRENT_KEY, NEW_KEY};
 use crate::agent_setup::error::AgentSetupError;
 use crate::agent_setup::listing::{
     ListingRequest, MAX_LISTING_BYTES, connection_listing, fetch_listing, starting_model,
@@ -19,7 +20,6 @@ use crate::agent_setup::pickers::{
     CLAUDE_MODEL_MESSAGE, CODEX_MODEL_MESSAGE, EMPTY_TARGETS_MESSAGE, KEEP_CLAUDE_DEFAULT,
     TARGET_EDIT_MESSAGE, TARGET_ROUTE_MESSAGE, pick_claude_model, pick_codex_model,
 };
-use crate::agent_setup::prepare::{KEEP_CURRENT_KEY, NEW_KEY};
 use crate::agent_setup::{MODEL_OPTION_HELP, pick_targets, resolve_credential};
 use crate::agent_setup_profiles::{Target, read_saved_setup, settings_path_for};
 use crate::claude_settings::choices::{STARTING_MODEL_ROLE, StaticToken};

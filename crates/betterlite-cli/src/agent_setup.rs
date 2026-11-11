@@ -1,4 +1,5 @@
 pub mod apply;
+pub mod connection;
 pub mod error;
 pub mod listing;
 pub mod pickers;
