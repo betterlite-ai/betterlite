@@ -32,5 +32,23 @@ call:
             data: {"event":5}
             data: {"event":null}
             data: {"event":[]}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"before"}}}}
+            data: {"event":{"metadata":{"usage":5}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"after"}}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"same"}},"metadata":{"usage":5}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":5}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"first"}}}}
+          - |
+            data: {"event":{"metadata":{"usage":{"inputTokens":1.5}}}}
 env: {}
 compare: {ignore: []}

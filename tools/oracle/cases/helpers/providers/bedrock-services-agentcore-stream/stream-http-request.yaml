@@ -46,6 +46,14 @@ call:
         messages: []
       - reads:
           - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"raw"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        signed_json_body: [1, 2, 3]
+        data: {prompt: ignored}
+        messages: []
+      - reads:
+          - |
             data: {"event":{"contentBlockDelta":{"delta":{"text":"fallback"}}}}
         headers: [[content-type, text/event-stream]]
         api_base: https://bedrock-agentcore.example/runtime

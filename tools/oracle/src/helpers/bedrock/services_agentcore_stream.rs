@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_bedrock::agentcore_stream::adapter::open;
 use betterlite_bedrock::agentcore_stream::transport::{HandlerKind, StreamHandler};
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
-use self::fixture::{FixedIds, FixtureHandler, NoLogger, drain, header_map};
+use self::fixture::{FixedIds, FixtureHandler, Recorder, drain, header_map};
 use self::project::outcome;
 use crate::helpers::HelperError;
 
@@ -94,7 +94,11 @@ async fn execute(input: &Input, ids: &[Uuid]) -> crate::helpers::HelperResult {
 
 type Handlers = (Option<Arc<FixtureHandler>>, Arc<FixtureHandler>);
 
-fn build_handlers(scenario: &Scenario, kind: HandlerKind) -> Result<Handlers, Box<HelperError>> {
+fn build_handlers(
+    scenario: &Scenario,
+    kind: HandlerKind,
+    recorder: &Arc<Recorder>,
+) -> Result<Handlers, Box<HelperError>> {
     let supplied_kind = match scenario.supplied.as_deref() {
         Some("sync") => Some(HandlerKind::Sync),
         Some("async") => Some(HandlerKind::Async),
@@ -102,27 +106,27 @@ fn build_handlers(scenario: &Scenario, kind: HandlerKind) -> Result<Handlers, Bo
         None => None,
     };
     let supplied = supplied_kind
-        .map(|chosen| FixtureHandler::new(chosen, scenario))
+        .map(|chosen| FixtureHandler::new(chosen, "supplied", recorder, scenario))
         .transpose()?
         .map(Arc::new);
-    Ok((supplied, Arc::new(FixtureHandler::new(kind, scenario)?)))
+    let default = FixtureHandler::new(kind, "default", recorder, scenario)?;
+    Ok((supplied, Arc::new(default)))
 }
 
 fn build_deps<'deps>(
-    supplied: Option<&Arc<FixtureHandler>>,
-    default: &Arc<FixtureHandler>,
+    handlers: &Handlers,
     ids: &Arc<FixedIds>,
-    logger: &'deps NoLogger,
+    logger: &'deps Recorder,
 ) -> StreamDeps<'deps> {
-    let supplied_handler: Option<Arc<dyn StreamHandler>> = supplied.map(|handler| {
+    let supplied: Option<Arc<dyn StreamHandler>> = handlers.0.as_ref().map(|handler| {
         let cloned: Arc<dyn StreamHandler> = Arc::<FixtureHandler>::clone(handler);
         cloned
     });
-    let default_handler: Arc<dyn StreamHandler> = Arc::<FixtureHandler>::clone(default);
+    let default: Arc<dyn StreamHandler> = Arc::<FixtureHandler>::clone(&handlers.1);
     let ids_handler: Arc<dyn IdSource> = Arc::<FixedIds>::clone(ids);
     StreamDeps {
-        supplied: supplied_handler,
-        default: default_handler,
+        supplied,
+        default,
         ids: ids_handler,
         logger,
     }
@@ -134,8 +138,8 @@ async fn run_scenario(
     scenario: &Scenario,
     kind: HandlerKind,
 ) -> Result<Value, Box<HelperError>> {
-    let (supplied, default) = build_handlers(scenario, kind)?;
-    let logger = NoLogger;
+    let recorder = Arc::new(Recorder::default());
+    let handlers = build_handlers(scenario, kind, &recorder)?;
     let id_source = Arc::new(FixedIds::new(ids));
     let request = StreamRequest {
         model,
@@ -145,27 +149,20 @@ async fn run_scenario(
         signed_json_body: scenario.signed_json_body.as_deref(),
         messages: &scenario.messages,
     };
-    let deps = build_deps(supplied.as_ref(), &default, &id_source, &logger);
-    let (provider, emitted) = match open(&request, &deps, kind).await {
+    let deps = build_deps(&handlers, &id_source, &recorder);
+    let (provider, chunks, error) = match open(&request, &deps, kind).await {
         Ok(mut stream) => {
             let provider = stream.provider;
-            (Some(provider), drain(&mut stream).await)
+            let (chunks, error) = drain(&mut stream).await;
+            (Some(provider), chunks, error)
         }
-        Err(error) => (None, Err(error)),
+        Err(error) => (None, Vec::new(), Some(error)),
     };
-    let handler = if scenario.supplied.as_deref() == Some(kind_name(kind)) {
-        "supplied"
-    } else {
-        "default"
-    };
-    Ok(outcome(handler, provider, &emitted))
-}
-
-const fn kind_name(kind: HandlerKind) -> &'static str {
-    match kind {
-        HandlerKind::Sync => "sync",
-        HandlerKind::Async => "async",
-    }
+    let records = recorder
+        .records
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    Ok(outcome(provider, &chunks, error.as_ref(), &records))
 }
 
 fn parse_ids(values: &[String]) -> Result<Vec<Uuid>, Box<HelperError>> {

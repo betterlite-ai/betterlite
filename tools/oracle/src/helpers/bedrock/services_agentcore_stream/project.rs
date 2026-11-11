@@ -3,27 +3,22 @@ use betterlite_bedrock::bedrock_settings::ErrorHeaders;
 use betterlite_openai::stream::chunk::Chunk;
 use serde_json::{Value, json};
 
+use super::fixture::Records;
+
 pub(super) fn outcome(
-    handler: &'static str,
     provider: Option<&'static str>,
-    emitted: &Result<Vec<Chunk>, AgentCoreStreamError>,
+    chunks: &[Chunk],
+    failure: Option<&AgentCoreStreamError>,
+    records: &Records,
 ) -> Value {
-    match emitted {
-        Ok(chunks) => json!({
-            "handler": handler,
-            "provider": provider,
-            "failed": false,
-            "chunks": chunks.iter().map(chunk_json).collect::<Vec<Value>>(),
-            "error": Value::Null,
-        }),
-        Err(error) => json!({
-            "handler": handler,
-            "provider": Value::Null,
-            "failed": true,
-            "chunks": Vec::<Value>::new(),
-            "error": error_json(error),
-        }),
-    }
+    json!({
+        "provider": provider.filter(|_| failure.is_none()),
+        "failed": failure.is_some(),
+        "chunks": chunks.iter().map(chunk_json).collect::<Vec<Value>>(),
+        "error": failure.map_or(Value::Null, error_json),
+        "posts": &records.posts,
+        "post_calls": &records.post_calls,
+    })
 }
 
 fn chunk_json(chunk: &Chunk) -> Value {

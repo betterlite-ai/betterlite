@@ -3,6 +3,7 @@ import os
 os.environ["LITELLM_RUST"] = "false"
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
@@ -45,14 +46,40 @@ class Input(BaseModel):
     scenarios: list[Scenario]
 
 
+class Attempt:
+    def __init__(self, model: str, ids: list[str], scenario: Scenario, path: Path) -> None:
+        self.model = model
+        self.ids = ids
+        self.scenario: Scenario = scenario
+        self.path: Path = path
+        self.factories: list[Json] = []
+        self.posts: list[Json] = []
+        self.post_calls: list[Json] = []
+        self.chunks: list[ModelResponseStream] = []
+
+
 class Logging:
-    def __init__(self) -> None:
+    def __init__(self, attempt: Attempt) -> None:
+        self.attempt = attempt
         self.model_call_details: dict[str, object] = {"litellm_params": {}}
         self.messages: object = None
         self.stream_options: object = None
 
-    def post_call(self, **_kwargs: object) -> None:
-        pass
+    def post_call(
+        self,
+        input: Json,  # noqa: A002 - LiteLLM passes this keyword
+        api_key: str,
+        original_response: str,
+        additional_args: dict[str, Json],
+    ) -> None:
+        self.attempt.post_calls.append(
+            {
+                "input": input,
+                "api_key": api_key,
+                "original_response": original_response,
+                "complete_input_dict": additional_args["complete_input_dict"],
+            }
+        )
 
 
 def _ids(values: list[str]) -> SimpleNamespace:
@@ -64,23 +91,59 @@ def _ids(values: list[str]) -> SimpleNamespace:
     return SimpleNamespace(uuid4=uuid4)
 
 
+def _post_record(
+    label: str, url: str, headers: dict[str, str], data: str | bytes, *, stream: bool
+) -> Json:
+    raw = data.encode() if isinstance(data, str) else data
+    try:
+        body = cast(Json, json.loads(raw))
+    except ValueError:
+        body = cast(Json, list(raw))
+    pairs = sorted([[name.lower(), value] for name, value in headers.items()])
+    return {
+        "handler": label,
+        "url": url,
+        "headers": cast(Json, pairs),
+        "body": body,
+        "stream": stream,
+    }
+
+
 class SyncFixture(HTTPHandler):
-    def __init__(self, response: httpx.Response) -> None:
+    def __init__(self, response: httpx.Response, label: str, attempt: Attempt) -> None:
         self.reply = response
+        self.label = label
+        self.attempt = attempt
 
     def post(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, _url: str, **_kwargs: object
+        self,
+        url: str,
+        headers: dict[str, str],
+        data: str | bytes,
+        stream: bool,  # noqa: FBT001
+        logging_obj: object,
     ) -> httpx.Response:
+        del logging_obj
+        self.attempt.posts.append(_post_record(self.label, url, headers, data, stream=stream))
         return self.reply
 
 
 class AsyncFixture(AsyncHTTPHandler):
-    def __init__(self, response: httpx.Response) -> None:
+    def __init__(self, response: httpx.Response, label: str, attempt: Attempt) -> None:
         self.reply = response
+        self.label = label
+        self.attempt = attempt
 
     async def post(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, _url: str, **_kwargs: object
+        self,
+        url: str,
+        headers: dict[str, str],
+        data: str | bytes,
+        stream: bool,  # noqa: FBT001
+        logging_obj: object,
     ) -> httpx.Response:
+        del logging_obj
+        self.attempt.posts.append(_post_record(self.label, url, headers, data, stream=stream))
         return self.reply
 
 
@@ -151,22 +214,13 @@ def _provider_error(error: BedrockError) -> Json:
     }
 
 
-class Attempt:
-    def __init__(self, model: str, ids: list[str], scenario: Scenario, path: Path) -> None:
-        self.model = model
-        self.ids = ids
-        self.scenario: Scenario = scenario
-        self.path: Path = path
-        self.factories: list[Json] = []
-
-
 def _parameters(attempt: Attempt) -> dict[str, object]:
     scenario = attempt.scenario
     signed = None if scenario.signed_json_body is None else bytes(scenario.signed_json_body)
     return {
         "model": attempt.model,
         "custom_llm_provider": "openai",
-        "logging_obj": Logging(),
+        "logging_obj": Logging(attempt),
         "api_base": scenario.api_base,
         "headers": dict(scenario.request_headers),
         "data": scenario.data,
@@ -177,9 +231,7 @@ def _parameters(attempt: Attempt) -> dict[str, object]:
     }
 
 
-async def _call(
-    attempt: Attempt, client: SyncFixture | AsyncFixture | None
-) -> tuple[Json, list[ModelResponseStream]]:
+async def _call(attempt: Attempt, client: SyncFixture | AsyncFixture | None) -> Json:
     scenario: Scenario = attempt.scenario
     path: Path = attempt.path
 
@@ -187,7 +239,7 @@ async def _call(
         if params != {}:
             raise ValueError("the default sync client was built with parameters")
         attempt.factories.append({"params": cast(Json, params)})
-        return SyncFixture(_response(scenario, path))
+        return SyncFixture(_response(scenario, path), "default", attempt)
 
     def async_factory(
         llm_provider: object, params: dict[str, object] | None = None, shared_session: object = None
@@ -198,7 +250,7 @@ async def _call(
         if llm_provider != LlmProviders.BEDROCK:
             raise ValueError("the default async client was built for another provider")
         attempt.factories.append({"params": cast(Json, params), "provider": str(llm_provider)})
-        return AsyncFixture(_response(scenario, path))
+        return AsyncFixture(_response(scenario, path), "default", attempt)
 
     parameters = _parameters(attempt)
     config = AmazonAgentCoreConfig()
@@ -211,7 +263,8 @@ async def _call(
         if path == "sync":
             method = cast("Callable[..., object]", config.get_sync_custom_stream_wrapper)  # pyright: ignore[reportUnknownMemberType]
             wrapper = cast("CustomStreamWrapper", method(client=client, **parameters))
-            chunks = list(cast("Iterator[ModelResponseStream]", wrapper.completion_stream))
+            for chunk in cast("Iterator[ModelResponseStream]", wrapper.completion_stream):
+                attempt.chunks.append(chunk)
         else:
             method = cast(  # pyright: ignore[reportUnknownMemberType]
                 "Callable[..., Awaitable[object]]", config.get_async_custom_stream_wrapper
@@ -221,47 +274,44 @@ async def _call(
                 await method(client=cast("AsyncHTTPHandler", client), **parameters),
             )
             stream = cast("AsyncIterator[ModelResponseStream]", wrapper.completion_stream)
-            chunks = [chunk async for chunk in stream]
-    return cast(Json, wrapper.custom_llm_provider), chunks
+            async for chunk in stream:
+                attempt.chunks.append(chunk)
+    return cast(Json, wrapper.custom_llm_provider)
 
 
-def _failure(handler: str, error: Json) -> Json:
+def _result(attempt: Attempt, provider: Json, error: Json) -> Json:
     return {
-        "handler": handler,
-        "provider": None,
-        "failed": True,
-        "chunks": [],
+        "provider": provider if error is None else None,
+        "failed": error is not None,
+        "chunks": [_chunk(chunk) for chunk in attempt.chunks],
         "error": error,
+        "posts": attempt.posts,
+        "post_calls": attempt.post_calls,
     }
 
 
 async def _outcome(model: str, ids: list[str], scenario: Scenario, path: Path) -> Json:
     attempt = Attempt(model, ids, scenario, path)
     supplied = scenario.supplied == path
-    handler = "supplied" if supplied else "default"
     if scenario.supplied == "sync":
-        client: SyncFixture | AsyncFixture | None = SyncFixture(_response(scenario, path))
+        client: SyncFixture | AsyncFixture | None = SyncFixture(
+            _response(scenario, path), "supplied", attempt
+        )
     elif scenario.supplied == "async":
-        client = AsyncFixture(_response(scenario, path))
+        client = AsyncFixture(_response(scenario, path), "supplied", attempt)
     else:
         client = None
     try:
-        provider, chunks = await _call(attempt, client)
+        provider = await _call(attempt, client)
     except BedrockError as error:
-        return _failure(handler, _provider_error(error))
+        return _result(attempt, None, _provider_error(error))
     except Exception:  # noqa: BLE001 - a case compares the failure category, not the Python class
-        return _failure(handler, {"kind": "invalid"})
+        return _result(attempt, None, {"kind": "invalid"})
     if supplied and attempt.factories:
         raise ValueError("a supplied client still built the default client")
     if not supplied and not attempt.factories:
         raise ValueError("the default client was never built")
-    return {
-        "handler": handler,
-        "provider": provider,
-        "failed": False,
-        "chunks": [_chunk(chunk) for chunk in chunks],
-        "error": None,
-    }
+    return _result(attempt, provider, None)
 
 
 async def execute(call: Input) -> Json:
