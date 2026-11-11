@@ -46,6 +46,9 @@ fn test_arn_parsing_accepts_runtime_arns(#[case] api_base: &str, #[case] region:
 
 #[rstest]
 #[case::partition_digit("arn:aws1:bedrock-agentcore:us-east-1:123456789012:runtime/r")]
+#[case::partition_group_without_dash(
+    "arn:awscn:bedrock-agentcore:us-east-1:123456789012:runtime/r"
+)]
 #[case::partition_group_digit("arn:aws-1:bedrock-agentcore:us-east-1:123456789012:runtime/r")]
 #[case::partition_empty_group("arn:aws-:bedrock-agentcore:us-east-1:123456789012:runtime/r")]
 #[case::partition_double_dash("arn:aws--cn:bedrock-agentcore:us-east-1:123456789012:runtime/r")]
