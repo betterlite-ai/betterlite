@@ -1,0 +1,4 @@
+model_list: []
+general_settings:
+  database_url: os.environ/DATABASE_URL
+# DIRECT_URL is read from the environment by the migration_drift section, like DATABASE_URL above

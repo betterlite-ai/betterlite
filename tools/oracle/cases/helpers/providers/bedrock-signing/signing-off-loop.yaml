@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-signing-signing-off-loop
+call:
+  bedrock_signing:
+    calls:
+      - off_loop:
+          context: request-context
+          value: arg
+          failure: signing failed
+env: {}
+compare: {ignore: []}

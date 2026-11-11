@@ -1,0 +1,1 @@
+{"model":"openai/gpt-4o","messages":[{"role":"user","content":"hi"}],"stream_chunk_size":512,"extra_body":{"metadata":{"prompt":{"name":"prompt-name"}},"temperature":0.2}}

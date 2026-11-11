@@ -1,0 +1,12 @@
+kind: helper
+name: realtime-cost-events-cost-preserved-across-response-done
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.done, response: {usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 0.125}}}
+      - {type: response.done, response: {usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 0.125}}}
+      - {type: response.completed, response: {service_tier: default, usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 0.125}}}
+      - {type: response.completed, response: {service_tier: default, usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 0.125}}}
+env: {}
+compare: {ignore: []}
