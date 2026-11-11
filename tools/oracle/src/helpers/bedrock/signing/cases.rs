@@ -18,11 +18,11 @@ use std::thread::ThreadId;
 use tracing::subscriber::with_default;
 use tracing_subscriber::registry;
 pub(super) fn service_request_case(case: &ServiceRequestInput) -> Result<Value, Box<HelperError>> {
-    let headers: Vec<_> = case.headers.clone().into_iter().collect();
-    let signing = sign_service_request(case.request(&headers, epoch(case.now)?), |_s, _r| {
-        ready(Ok::<_, CredentialError>(credentials_of(&case.credentials)))
-    });
-    Ok(signed_result(runtime()?.block_on(signing)))
+    let headers = case.headers.clone().into_iter().collect::<Vec<_>>();
+    Ok(signed_result(runtime()?.block_on(sign_service_request(
+        case.request(&headers, epoch(case.now)?),
+        |_settings, _region| ready(Ok(credentials_of(&case.credentials))),
+    ))))
 }
 pub(super) fn batch_request_case(case: &BatchRequestInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
