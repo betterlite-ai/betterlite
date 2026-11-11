@@ -173,8 +173,7 @@ fn nested_schema(depth: usize, total: usize, marked: &[(usize, &str)]) -> Value 
         object[*key] = json!(["x"]);
     }
     if depth < total {
-        object["properties"] =
-            json!({"next": nested_schema(depth.saturating_add(1), total, marked)});
+        object["items"] = nested_schema(depth.saturating_add(1), total, marked);
     }
     object
 }
@@ -183,7 +182,7 @@ fn descend(schema: &Value, depth: usize) -> &Value {
     if depth == 0 {
         return schema;
     }
-    descend(&schema["properties"]["next"], depth.saturating_sub(1))
+    descend(&schema["items"], depth.saturating_sub(1))
 }
 
 #[test]
