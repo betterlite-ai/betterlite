@@ -61,6 +61,7 @@ class Fields(TypedDict):
     memory: NotRequired[list[Entry]]
     default_in_memory_ttl: NotRequired[float]
     entries: NotRequired[list[Entry]]
+    key_count: NotRequired[int]
 
 
 def expiry(args: list[str]) -> str:
@@ -91,6 +92,10 @@ class Script:
         with self.lock:
             sets = [args for args in self.received if args[0].upper() == "SET"]
         return [{"key": args[1], "ex": expiry(args)} for args in sets]
+
+    def delete_lengths(self) -> list[Json]:
+        with self.lock:
+            return [len(args) - 1 for args in self.received if args[0].upper() == "DEL"]
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -200,6 +205,18 @@ async def pipeline(call: Fields, harness: Harness) -> dict[str, Json]:
     return {"ttls": ttls, "sets": harness.script.expiries()}
 
 
+async def delete_keys(call: Fields, harness: Harness) -> dict[str, Json]:
+    keys = [f"key-{index}" for index in range(call["key_count"])]
+    for key in keys:
+        harness.dual.set_cache(key, "value", local_only=True)
+    await harness.dual.async_delete_cache_keys(keys)
+    remaining = 0
+    for key in keys:
+        left: Json = harness.dual.get_cache(key, local_only=True)
+        remaining += left is not None
+    return {"chunks": harness.script.delete_lengths(), "remaining": remaining}
+
+
 SCENARIOS: dict[str, Scenario] = {
     "get_hits_memory_first": read,
     "get_backfills_memory_from_redis": read,
@@ -209,6 +226,7 @@ SCENARIOS: dict[str, Scenario] = {
     "async_increment_fallback_on_redis_error": increment_fallback,
     "set_pre_call_returns_batch_or_none": pre_call,
     "set_pipeline_applies_single_ttl": pipeline,
+    "delete_cache_keys_chunks_redis": delete_keys,
 }
 
 

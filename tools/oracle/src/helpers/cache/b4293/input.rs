@@ -17,6 +17,8 @@ pub(crate) struct Fields {
     pub(crate) default_in_memory_ttl: Option<f64>,
     #[serde(default)]
     pub(crate) entries: Vec<Entry>,
+    #[serde(default)]
+    pub(crate) key_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,6 +34,7 @@ pub(crate) enum Call {
     IncrementFallback(Fields),
     SetPreCallReturnsBatchOrNone(Fields),
     SetPipelineAppliesSingleTtl(Fields),
+    DeleteCacheKeysChunksRedis(Fields),
 }
 
 #[derive(Debug, Deserialize)]
