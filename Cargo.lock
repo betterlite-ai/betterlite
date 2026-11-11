@@ -1339,6 +1339,7 @@ dependencies = [
  "indexmap 2.14.2",
  "inquire",
  "keyring-core",
+ "mutants",
  "num-traits",
  "regex",
  "reqwest",

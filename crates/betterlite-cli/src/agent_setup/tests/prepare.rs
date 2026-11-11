@@ -436,6 +436,63 @@ async fn prepare_connection_uses_a_supplied_key_for_a_new_gateway() {
 }
 
 #[tokio::test]
+async fn prepare_connection_prefers_the_saved_url_when_the_context_is_implicit() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![Answer::Status(
+        200,
+        listing(&[("claude-1", Some("sonnet"))]),
+    )])
+    .await;
+    saved_profile(
+        &environment,
+        Target::Claude,
+        &proxy.base_url,
+        "sk-saved",
+        Some("sonnet"),
+    )
+    .await;
+    let ctx = implicit_context("http://context.test", None);
+    let mut prompter = ScriptedPrompter::new(Vec::new());
+    let run = claude_run(&ctx, &environment, None);
+    let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
+    result.unwrap();
+    let profile = read_saved_setup(Target::Claude, &environment)
+        .unwrap()
+        .unwrap();
+    assert_eq!(profile.base_url, proxy.base_url);
+    assert_eq!(proxy.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn prepare_connection_reports_a_bad_supplied_key_for_a_new_gateway() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![Answer::Status(
+        200,
+        listing(&[("claude-1", Some("sonnet"))]),
+    )])
+    .await;
+    saved_profile(
+        &environment,
+        Target::Claude,
+        "http://old.test",
+        "sk-saved",
+        Some("sonnet"),
+    )
+    .await;
+    let ctx = context(&proxy.base_url, Some("  "));
+    let mut prompter = ScriptedPrompter::new(Vec::new());
+    let run = claude_run(&ctx, &environment, None);
+    let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
+    assert!(matches!(
+        result.unwrap_err(),
+        AgentSetupError::InvalidCredential
+    ));
+    assert!(proxy.requests().is_empty());
+}
+
+#[tokio::test]
 async fn prepare_interactive_picks_a_claude_source_name() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment::with_home(home.path());
@@ -533,8 +590,9 @@ async fn prepare_interactive_picks_a_codex_id() {
     let mut prompter = ScriptedPrompter::new(vec![Reply::Model("codex-b".to_owned())]);
     let mut run = codex_run(&ctx, &environment);
     run.mode = WIZARD;
-    let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
+    let (result, _stdout, stderr) = execute(&run, &mut prompter).await;
     result.unwrap();
+    assert!(stderr.is_empty());
     assert_eq!(
         prompter.calls,
         vec![Call::Model {

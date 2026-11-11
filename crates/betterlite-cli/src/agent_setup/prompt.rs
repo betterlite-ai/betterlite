@@ -30,6 +30,7 @@ pub trait Prompter: Send {
 pub struct InquirePrompter;
 
 impl Prompter for InquirePrompter {
+    #[cfg_attr(test, mutants::skip)]
     fn pick_targets(
         &mut self,
         message: &str,
@@ -62,6 +63,7 @@ impl Prompter for InquirePrompter {
             .collect())
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn pick_model(
         &mut self,
         message: &str,
@@ -74,11 +76,13 @@ impl Prompter for InquirePrompter {
         Ok(picked)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_url(&mut self, message: &str, default: &str) -> Result<String, AgentSetupError> {
         let entered = Text::new(message).with_default(default).prompt()?;
         Ok(entered)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_secret(&mut self, message: &str) -> Result<String, AgentSetupError> {
         let entered = Password::new(message).without_confirmation().prompt()?;
         Ok(entered)

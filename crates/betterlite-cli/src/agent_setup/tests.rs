@@ -12,7 +12,8 @@ use tempfile::TempDir;
 
 use crate::agent_setup::error::AgentSetupError;
 use crate::agent_setup::listing::{
-    ListingRequest, connection_listing, fetch_listing, starting_model, validated_model,
+    ListingRequest, MAX_LISTING_BYTES, connection_listing, fetch_listing, starting_model,
+    validated_model,
 };
 use crate::agent_setup::pickers::{
     CLAUDE_MODEL_MESSAGE, CODEX_MODEL_MESSAGE, EMPTY_TARGETS_MESSAGE, KEEP_CLAUDE_DEFAULT,

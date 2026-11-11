@@ -51,6 +51,10 @@ pub enum AgentSetupError {
         #[source]
         reason: PiSyncError,
     },
+    #[error(
+        "The /v1/models listing from {base_url} is too large to load; check that it is a LiteLLM proxy."
+    )]
+    ListingTooLarge { base_url: String },
     #[error("{model} is not served by {base_url} for this key. /v1/models lists: {listed}.")]
     ModelNotServed {
         model: String,

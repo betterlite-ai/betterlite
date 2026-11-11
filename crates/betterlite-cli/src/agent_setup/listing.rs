@@ -20,7 +20,7 @@ pub const ANTHROPIC_VERSION_VALUE: &str = "2023-06-01";
 pub const GATEWAY_CLIENT_HEADER: &str = "x-gateway-client";
 pub const CLAUDE_CODE_CLIENT: &str = "claude-code";
 const LISTED_MODELS_SHOWN: usize = 20;
-const MAX_LISTING_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_LISTING_BYTES: usize = 16 * 1024 * 1024;
 
 struct HttpGet {
     client: Client,
@@ -45,7 +45,10 @@ impl ProxyGet for HttpGet {
             .take(limit.saturating_add(1))
             .read_to_end(&mut body)?;
         if body.len() > MAX_LISTING_BYTES {
-            return Err(io::Error::other("the /v1/models response is too large"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the /v1/models response is too large",
+            ));
         }
         Ok(ProxyResponse { status, body })
     }
@@ -79,7 +82,16 @@ pub async fn fetch_listing(
         return Err(AgentSetupError::ListingTaskStopped);
     };
     let fetched = joined.map_err(AgentSetupError::ListingTask)?;
-    fetched.map_err(|reason| listing_error(base_url, target, reason))
+    fetched.map_err(|reason| {
+        if let PiSyncError::Unreachable { source } = &reason
+            && source.kind() == io::ErrorKind::InvalidData
+        {
+            return AgentSetupError::ListingTooLarge {
+                base_url: base_url.to_owned(),
+            };
+        }
+        listing_error(base_url, target, reason)
+    })
 }
 
 fn listing_error(base_url: &str, target: Target, reason: PiSyncError) -> AgentSetupError {

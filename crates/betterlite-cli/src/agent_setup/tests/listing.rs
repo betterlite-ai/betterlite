@@ -140,6 +140,54 @@ async fn listing_unreachable_names_the_proxy_and_the_url_options() {
     assert!(text.contains("LITELLM_PROXY_URL"));
 }
 
+#[tokio::test]
+async fn listing_accepts_a_body_exactly_at_the_cap() {
+    let json = "{\"data\":[]}";
+    let mut body = " ".repeat(MAX_LISTING_BYTES.saturating_sub(json.len()));
+    body.push_str(json);
+    assert_eq!(body.len(), MAX_LISTING_BYTES);
+    let proxy = MockProxy::start(vec![Answer::Status(200, body)]).await;
+    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, AgentSetupError::ListingEmpty { .. }),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn listing_rejects_a_body_over_the_cap() {
+    let body = "x".repeat(MAX_LISTING_BYTES.saturating_add(1));
+    let proxy = MockProxy::start(vec![Answer::Status(200, body)]).await;
+    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, AgentSetupError::ListingTooLarge { .. }));
+    assert!(error.to_string().contains(&proxy.base_url));
+}
+
+#[tokio::test]
+async fn listing_repair_skips_a_non_rejected_failure() {
+    let proxy = MockProxy::start(vec![Answer::Status(500, "{}".to_owned())]).await;
+    let ctx = context(&proxy.base_url, Some("sk-old"));
+    let mut prompter = ScriptedPrompter::new(Vec::new());
+    let error = {
+        let mut request = ListingRequest {
+            context: &ctx,
+            base_url: &proxy.base_url,
+            credential: token("sk-old"),
+            target: Target::Claude,
+            repair: true,
+            prompter: &mut prompter,
+        };
+        connection_listing(&mut request).await.unwrap_err()
+    };
+    assert!(matches!(error, AgentSetupError::ListingFailed { .. }));
+    assert!(prompter.calls.is_empty());
+    assert_eq!(proxy.requests().len(), 1);
+}
+
 #[test]
 fn listing_validates_a_source_model_before_an_id() {
     let models = listed(&[("claude-a", Some("sonnet")), ("sonnet", None)]);

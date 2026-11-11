@@ -1,3 +1,45 @@
+fn both_targets<'run>(
+    ctx: &'run CliContext,
+    environment: &'run FakeEnvironment,
+    model: &'run str,
+    version: CodexVersion<'run>,
+) -> Run<'run> {
+    Run {
+        context: ctx,
+        targets: vec![Target::Claude, Target::Codex],
+        model: Some(model),
+        default_model: false,
+        mode: APPLY,
+        environment,
+        stdin_is_terminal: false,
+        codex_version: version,
+    }
+}
+
+fn assert_no_setup(environment: &FakeEnvironment) {
+    for target in [Target::Claude, Target::Codex] {
+        assert!(read_saved_setup(target, environment).unwrap().is_none());
+        assert!(!settings_path_for(target, environment).unwrap().exists());
+    }
+}
+
+fn assert_apply_failure(error: &AgentSetupError) {
+    let AgentSetupError::Apply {
+        name,
+        target,
+        source,
+    } = error
+    else {
+        panic!("expected the apply failure, got {error:?}");
+    };
+    assert_eq!(*name, "Claude");
+    assert_eq!(*target, Target::Claude);
+    assert!(matches!(**source, AgentSetupError::Claude(_)));
+    let text = error.to_string();
+    assert!(text.contains("Claude setup was saved"));
+    assert!(text.contains("Run `lite configure claude` to retry applying it"));
+}
+
 fn codex_stdout(settings_path: &Path, base_url: &str, model: &str) -> String {
     lines(&[
         format!(
@@ -39,16 +81,12 @@ async fn apply_preflights_every_target_before_listing() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("shared", None)]))]).await;
     let ctx = context(&proxy.base_url, Some("sk-test"));
     let mut prompter = ScriptedPrompter::new(Vec::new());
-    let run = Run {
-        context: &ctx,
-        targets: vec![Target::Claude, Target::Codex],
-        model: Some("shared"),
-        default_model: false,
-        mode: APPLY,
-        environment: &environment,
-        stdin_is_terminal: false,
-        codex_version: CodexVersion::Reported(Some("codex-cli 0.128.9")),
-    };
+    let run = both_targets(
+        &ctx,
+        &environment,
+        "shared",
+        CodexVersion::Reported(Some("codex-cli 0.128.9")),
+    );
     let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
     let error = result.unwrap_err();
     let AgentSetupError::CodexSettings(source) = &error else {
@@ -79,16 +117,12 @@ async fn apply_prepares_every_target_before_saving_any() {
     .await;
     let ctx = context(&proxy.base_url, Some("sk-test"));
     let mut prompter = ScriptedPrompter::new(Vec::new());
-    let run = Run {
-        context: &ctx,
-        targets: vec![Target::Claude, Target::Codex],
-        model: Some("shared"),
-        default_model: false,
-        mode: APPLY,
-        environment: &environment,
-        stdin_is_terminal: false,
-        codex_version: CodexVersion::Reported(Some(SAFE_CODEX)),
-    };
+    let run = both_targets(
+        &ctx,
+        &environment,
+        "shared",
+        CodexVersion::Reported(Some(SAFE_CODEX)),
+    );
     let (result, stdout, _stderr) = execute(&run, &mut prompter).await;
     assert!(matches!(
         result.unwrap_err(),
@@ -96,26 +130,7 @@ async fn apply_prepares_every_target_before_saving_any() {
     ));
     assert_eq!(proxy.requests().len(), 2);
     assert!(stdout.is_empty());
-    assert!(
-        read_saved_setup(Target::Claude, &environment)
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        read_saved_setup(Target::Codex, &environment)
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        !settings_path_for(Target::Claude, &environment)
-            .unwrap()
-            .exists()
-    );
-    assert!(
-        !settings_path_for(Target::Codex, &environment)
-            .unwrap()
-            .exists()
-    );
+    assert_no_setup(&environment);
 }
 
 #[tokio::test]
@@ -143,20 +158,7 @@ async fn apply_saves_the_profile_before_settings_and_reports_it() {
     run.mode = EDIT_WIZARD;
     let (result, stdout, _stderr) = execute(&run, &mut prompter).await;
     let error = result.unwrap_err();
-    let AgentSetupError::Apply {
-        name,
-        target,
-        source,
-    } = &error
-    else {
-        panic!("expected the apply failure, got {error:?}");
-    };
-    assert_eq!(*name, "Claude");
-    assert_eq!(*target, Target::Claude);
-    assert!(matches!(**source, AgentSetupError::Claude(_)));
-    let text = error.to_string();
-    assert!(text.contains("Claude setup was saved"));
-    assert!(text.contains("Run `lite configure claude` to retry applying it"));
+    assert_apply_failure(&error);
     assert!(stdout.is_empty());
     assert_eq!(fs::read(&settings_path).unwrap(), b"{\"env\":\"nope\"}");
     assert!(
