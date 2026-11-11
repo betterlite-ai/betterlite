@@ -128,7 +128,7 @@ async fn the_hook_reads_the_injected_api_base_for_the_dialect() {
         .async_completion_prompt(chat_request(
             "gpt-5.6",
             user_message(),
-            openai_params(UNSTAMPED_POINT),
+            marked_params(UNSTAMPED_POINT),
             &dynamic,
         ))
         .await
@@ -151,7 +151,7 @@ async fn the_hook_reads_the_injected_environment_for_the_dialect() {
         .async_completion_prompt(chat_request(
             "gpt-5.6",
             user_message(),
-            openai_params(UNSTAMPED_POINT),
+            marked_params(UNSTAMPED_POINT),
             &dynamic,
         ))
         .await
