@@ -1,0 +1,21 @@
+kind: helper
+name: sap-chat-embedding-params-url-response
+call:
+  b5845:
+    operation: embeddings
+    calls:
+      - {function: prepare, session: {token: Bearer case-token, resource_group: rg1, deployment_url: 'https://dep.example.com/v2/'}}
+      - {function: prepare, session: {token: Bearer case-token, resource_group: rg1, deployment_url: 'https://dep.example.com/v2///'}}
+      - {function: prepare, session: {token: Bearer case-token, resource_group: rg1, deployment_url: 'https://dep.example.com/v2'}}
+      - function: map_params
+        model: text-embedding-3-large
+        non_default_params: {encoding_format: base64, dimensions: 5}
+        optional_params: {encoding_format: float, dimensions: 3, type: text}
+        drop_params: true
+      - {function: map_params, model: text-embedding-ada-002, non_default_params: {encoding_format: base64}, optional_params: {}}
+      - function: response
+        raw_text: '{"final_result":{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0},{"object":"embedding","embedding":[0.3],"index":1}],"model":"text-embedding-3-large","usage":{"prompt_tokens":2,"total_tokens":2}}}'
+      - {function: response, raw_text: '{"other": true}'}
+      - {function: error_class, message: boom, status: 418}
+env: {}
+compare: {ignore: []}
