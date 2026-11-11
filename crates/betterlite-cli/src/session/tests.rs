@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::str;
@@ -370,6 +371,16 @@ fn print_token_rejects_a_stale_credential_without_renewal() {
     assert!(matches!(error, SessionError::TokenExpired));
     assert!(error.to_string().contains("lite login"));
     assert!(fixture.stdout().is_empty());
+}
+
+#[test]
+fn print_token_accepts_an_explicit_base_url_for_this_server() {
+    let files = FakeFiles::holding(record());
+    let mut fixture = PrintFixture::new(files, Vec::new());
+    fixture.context.base_url_explicit = true;
+    fixture.run(1_000).expect("prints the stored key");
+    assert_eq!(fixture.stdout(), "sk-secret\n");
+    assert!(fixture.stderr().is_empty());
 }
 
 #[test]
@@ -849,6 +860,28 @@ fn configure_claude_reports_a_settings_failure() {
             .starts_with("the login worked, but Claude Code could not be configured: ")
     );
     assert!(stdout.is_empty());
+}
+
+#[test]
+fn configure_claude_requires_a_home_for_the_state_paths() {
+    let config_dir = TempDir::new().expect("config directory");
+    let config = config_dir.path().to_str().expect("a UTF-8 config path");
+    let environment = FakeEnvironment {
+        home: None,
+        variables: BTreeMap::from([("CLAUDE_CONFIG_DIR".to_owned(), config.to_owned())]),
+    };
+    let files = PrivateFiles::default();
+    let mut stdout = Vec::new();
+    let key = secret("sk-login");
+    let mut request = configure_request(
+        &environment,
+        &files,
+        &key,
+        "https://gateway.example",
+        &mut stdout,
+    );
+    let error = configure_claude_code(&mut request).expect_err("fails");
+    assert!(matches!(error, SessionError::NoHome));
 }
 
 #[test]
