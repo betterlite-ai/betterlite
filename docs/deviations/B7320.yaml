@@ -1,0 +1,23 @@
+task: B7320
+deviations:
+  - what: >-
+      get_api_base takes typed ApiBaseParams, so it has no equivalent of LiteLLM's
+      "LiteLLM_Params(**optional_params) failed, return None" branch.
+    why: >-
+      A pydantic validation failure on a wrongly typed value has no typed-input equivalent; callers build
+      ApiBaseParams from fields that are already typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L49-L57
+  - what: >-
+      An invalid vertex_location for a claude model comes back as Err(ApiBaseError::InvalidVertexLocation),
+      where LiteLLM lets the ValueError from get_vertex_base_url escape.
+    why: >-
+      Rust has no exceptions; callers (B4026 catches everything, others decide) get the same fact as a value
+      that carries the validation message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L422-L441
+  - what: >-
+      The github_copilot and chatgpt login-free bases and the claude vertex URL come through the
+      ApiBaseHooks trait, not from module state and imports.
+    why: >-
+      betterlite-models sits below betterlite-openai and betterlite-vertex, and betterlite has no
+      module-level state; B8634 wires the real implementations in through the trait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L13-L18
