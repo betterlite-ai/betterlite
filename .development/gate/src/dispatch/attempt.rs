@@ -15,6 +15,7 @@ use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::gate_lock;
 use crate::git::git;
+use crate::report_check::mutants::mutant_problems;
 use crate::report_check::report_problems;
 use crate::spec::agents::{Rung, Runner};
 use crate::spec::report::{Report, ReportStatus};
@@ -54,8 +55,10 @@ fn failures(
     report: &Report,
 ) -> Result<Option<Failure>, GateError> {
     let task = worktree.task(task_id)?;
-    let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
+    let base = resolve_base(&worktree.root)?;
+    let added = added_dependencies(&worktree.root, &base)?;
     let mut problems = report_problems(report, &task, &added);
+    problems.extend(mutant_problems(&worktree.root, &base, report)?);
     let log = worktree
         .root
         .join(format!("docs/deviations/{task_id}.yaml"));

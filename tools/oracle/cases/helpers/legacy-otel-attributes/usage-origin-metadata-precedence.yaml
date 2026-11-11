@@ -1,0 +1,21 @@
+kind: helper
+name: usage-origin-metadata-precedence
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      call_type: get_responses
+      litellm_params:
+        custom_llm_provider: openai
+        metadata: {internal_call_origin: autorouter_classifier}
+        litellm_metadata: {internal_call_origin: background_response_cost_poll}
+      standard_logging_object:
+        call_type: get_responses
+        id: resp-1
+        metadata: {}
+    response:
+      id: resp-1
+      model: gpt-4o
+      usage: {total_tokens: 3, completion_tokens: 1, prompt_tokens: 2}
+env: {}
+compare: {ignore: []}

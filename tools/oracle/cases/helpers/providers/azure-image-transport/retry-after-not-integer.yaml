@@ -1,0 +1,49 @@
+kind: helper
+name: retry-after-not-integer
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, headers: {retry-after: soon}, body: '{"status":"running"}'}
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, headers: {retry-after: ''}, body: '{"status":"running"}'}
+          - {status: 200, body: '{"status":"succeeded","result":{"data":[{"url":"https://example.test/image.png"}]}}'}
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, headers: {retry-after: '-5'}, body: '{"status":"running"}'}
+          - {status: 200, body: '{"status":"succeeded","result":{"data":[{"url":"https://example.test/image.png"}]}}'}
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: false
+        environment: {}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, headers: {retry-after: '-5'}, body: '{"status":"running"}'}
+env: {}
+compare: {ignore: []}

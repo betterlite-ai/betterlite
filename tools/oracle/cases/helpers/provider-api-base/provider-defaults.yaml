@@ -1,0 +1,7 @@
+kind: helper
+name: provider-api-base-provider-defaults
+call:
+  b7320:
+    model: gemini/gemini-pro
+env: {}
+compare: {ignore: []}
