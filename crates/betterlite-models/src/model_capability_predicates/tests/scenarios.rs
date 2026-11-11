@@ -23,7 +23,8 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "fireworks_ai/reason-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": true},
     "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true},
     "fireworks_ai/listed-model": {"litellm_provider": "fireworks_ai", "mode": "chat"},
-    "vision-blocked": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true}
+    "vision-blocked": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
+    "mismatch-model": {"litellm_provider": "not-a-provider", "mode": "chat", "supports_vision": true}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -427,9 +428,19 @@ const VISION_PROVIDER_SCENARIO: Scenario = Scenario {
     steps: VISION_PROVIDER_STEPS,
 };
 
-// The bare entry names openai, so a fireworks_ai request rejects it and no provider info answers.
+// The catalog's openai entry overrides the declared fireworks_ai, the way LiteLLM's model sets do.
+const VISION_OVERRIDE_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("vision-blocked", Some("fireworks_ai"), Expected::flag(true))];
+
+const VISION_OVERRIDE_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(VISION_KEY),
+    steps: VISION_OVERRIDE_STEPS,
+};
+
+// The bare entry names a provider LiteLLM knows no model set for, so the declaration stays and rejects it.
 const VISION_MISMATCH_STEPS: &[(&str, Option<&str>, Expected)] = &[(
-    "vision-blocked",
+    "mismatch-model",
     Some("fireworks_ai"),
     Expected::flag(false),
 )];
@@ -515,6 +526,7 @@ const RESPONSE_SCHEMA_SCENARIO: Scenario = Scenario {
 pub(super) async fn supports_resolution() {
     check(&SUPPORTS_RESOLUTION_SCENARIO).await;
     check(&VISION_PROVIDER_SCENARIO).await;
+    check(&VISION_OVERRIDE_SCENARIO).await;
     check(&VISION_MISMATCH_SCENARIO).await;
     check(&REASONING_PROVIDER_SCENARIO).await;
     check(&PDF_PROVIDER_SCENARIO).await;
