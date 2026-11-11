@@ -29,6 +29,15 @@ fn empty() -> Params {
     Params::new()
 }
 
+fn environment_with_endpoint(runtime_endpoint: Option<&str>) -> InvokeEnvironment<'_> {
+    InvokeEnvironment {
+        region_name: None,
+        region: None,
+        session_region: None,
+        runtime_endpoint,
+    }
+}
+
 fn plain_url(stream: Option<bool>) -> InvokeModelUrl {
     request(
         "anthropic.claude-v2",
@@ -69,10 +78,7 @@ fn api_base_wins() {
         Some("https://proxy.example/"),
         &proxy_params,
         None,
-        InvokeEnvironment {
-            runtime_endpoint: Some("https://environment.example"),
-            ..InvokeEnvironment::default()
-        },
+        environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
     assert_eq!(
@@ -87,10 +93,7 @@ fn configured_and_environment() {
         None,
         &params(r#"{"aws_bedrock_runtime_endpoint":"https://configured.example"}"#),
         None,
-        InvokeEnvironment {
-            runtime_endpoint: Some("https://environment.example"),
-            ..InvokeEnvironment::default()
-        },
+        environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
     assert_eq!(
@@ -102,10 +105,7 @@ fn configured_and_environment() {
         None,
         &empty(),
         None,
-        InvokeEnvironment {
-            runtime_endpoint: Some("https://environment.example"),
-            ..InvokeEnvironment::default()
-        },
+        environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
     assert_eq!(
