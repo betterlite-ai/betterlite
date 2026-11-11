@@ -11,6 +11,7 @@ const GENERIC_WARNING: &str = "Error calling Bedrock CountTokens API";
 pub(crate) async fn count_api_failure_warning() {
     status_error_branch().await;
     non_200_branch().await;
+    redirect_branch().await;
     unreadable_reply().await;
     non_object_reply().await;
     null_input_tokens().await;
@@ -58,11 +59,23 @@ async fn status_error_branch() {
 }
 
 async fn non_200_branch() {
+    let (outcome, logs) = failing(Reply::status(201, "created")).await;
+    assert!(outcome.error);
+    assert_eq!(outcome.status_code, Some(201));
+    assert_eq!(outcome.error_message.as_deref(), Some("created"));
+    assert_eq!(logs.subjects(Kind::Error), ["AWS Bedrock error"]);
+    assert_eq!(logs.of(Kind::Warn)[0].status, Some(201));
+}
+
+async fn redirect_branch() {
     let (outcome, logs) = failing(Reply::status(302, "redirected")).await;
     assert!(outcome.error);
     assert_eq!(outcome.status_code, Some(302));
     assert_eq!(outcome.error_message.as_deref(), Some("redirected"));
-    assert_eq!(logs.subjects(Kind::Error), ["AWS Bedrock error"]);
+    assert_eq!(
+        logs.subjects(Kind::Error),
+        ["HTTP error in CountTokens handler"]
+    );
     assert_eq!(logs.of(Kind::Warn)[0].status, Some(302));
 }
 

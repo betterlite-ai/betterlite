@@ -92,11 +92,11 @@ pub(super) fn upstream_record(
     let text = String::from_utf8(response.body.clone())
         .unwrap_or_else(|error| format!("{} bytes that are not UTF-8", error.as_bytes().len()));
     let headers = header_pairs(&response.headers);
-    // AsyncHTTPHandler raises for 4xx and 5xx, so LiteLLM's HTTPStatusError branch catches those
-    let subject = if (400..=599).contains(&response.status) {
-        "HTTP error in CountTokens handler"
-    } else {
+    // AsyncHTTPHandler raises for every non-2xx reply, so LiteLLM's HTTPStatusError branch catches those
+    let subject = if (200..300).contains(&response.status) {
         "AWS Bedrock error"
+    } else {
+        "HTTP error in CountTokens handler"
     };
     tracing::error!(subject, detail = %text, "{subject}: {text}");
     let reply = ErrorReply {

@@ -246,8 +246,11 @@ where
             deadline: REQUEST_TIMEOUT,
         };
         let response = self.transport.send(outbound).await?;
-        let status = dumps(&Json::Number(serde_json::Number::from(response.status)));
-        tracing::debug!(subject = "status", value = %status, "Response status: {status}");
+        // AsyncHTTPHandler raises for every non-2xx reply before LiteLLM logs the status
+        if (200..300).contains(&response.status) {
+            let status = dumps(&Json::Number(serde_json::Number::from(response.status)));
+            tracing::debug!(subject = "status", value = %status, "Response status: {status}");
+        }
         if response.status != 200 {
             return Err(CountCallError::Upstream(Box::new(upstream_record(
                 &response, endpoint,

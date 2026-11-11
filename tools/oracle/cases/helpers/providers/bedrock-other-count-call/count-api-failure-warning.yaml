@@ -32,6 +32,15 @@ call:
           deployment:
             litellm_params:
               api_key: fixture-bearer
+          reply: {status: 201, body: created}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
           reply: {status: 500, body: boom}
           now: 1767225600
         - model: anthropic.claude-3-5-sonnet-20241022-v2:0

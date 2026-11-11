@@ -18,7 +18,7 @@ const SUBJECTS: [&str; 7] = [
 pub(crate) async fn count_debug_events() {
     success_order_and_values().await;
     transport_failure_stops_early().await;
-    status_failure_stops_before_the_reply().await;
+    status_failure_logs_no_status().await;
 }
 
 fn key() -> Vec<(&'static str, Json)> {
@@ -86,8 +86,8 @@ async fn transport_failure_stops_early() {
     stops_early(Reply::Failure, 4).await;
 }
 
-async fn status_failure_stops_before_the_reply() {
-    stops_early(Reply::status(404, "missing"), 5).await;
+async fn status_failure_logs_no_status() {
+    stops_early(Reply::status(404, "missing"), 4).await;
 }
 
 async fn stops_early(reply: Reply, expected: usize) {
