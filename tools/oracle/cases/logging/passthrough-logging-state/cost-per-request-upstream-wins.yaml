@@ -1,0 +1,14 @@
+kind: helper
+name: cost-per-request-upstream-wins
+call:
+  b3605:
+    operation: set_cost_per_request
+    state:
+      upstream_reported_usage:
+        response_cost: 2.0
+        total_tokens: null
+      response_cost: 2.0
+    kwargs_response_cost: null
+    cost_per_request: 0.5
+env: {}
+compare: {ignore: []}

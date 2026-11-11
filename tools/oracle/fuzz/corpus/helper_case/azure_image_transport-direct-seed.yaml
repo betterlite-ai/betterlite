@@ -1,0 +1,17 @@
+kind: helper
+name: azure-image-transport-direct-seed
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/openai/v1/images/generations?api-version=2024-02-01'
+        api_version: '2024-02-01'
+        deployment_name: dall-e-3
+        headers: {api-key: seed-key}
+        data: {model: dall-e-2, prompt: a seed, n: 1}
+        is_async: false
+        environment: {}
+        supplied_client: true
+        replies:
+          - {status: 200, body: '{"created":1,"data":[]}'}
+env: {}
+compare: {ignore: []}

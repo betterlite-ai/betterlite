@@ -1,0 +1,16 @@
+kind: helper
+name: batch-token-cost-prompt-seed
+call:
+  batch_token_cost:
+    kind: prompt
+    usage:
+      prompt_tokens: 100
+      prompt_details: {text_tokens: 90, audio_tokens: 10, image_tokens: 0, video_tokens: 0}
+    model_info:
+      input_cost_per_audio_token_batches: 0
+      input_cost_per_image_token_batches: null
+    input_rate: 0.5
+    cache_read_rate: 0.25
+    cache_creation_rate: null
+env: {}
+compare: {ignore: []}

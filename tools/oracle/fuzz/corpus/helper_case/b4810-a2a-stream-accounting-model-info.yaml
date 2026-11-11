@@ -1,0 +1,1 @@
+{"kind":"helper","name":"a2a_stream_accounting_model_info","call":{"b4810":{"function":"model_info","instances":[{"card":{"name":"card-agent"},"details":{}},{"card":null,"details":{"model":"old-model"}},{"card":{"description":"no name"},"details":{}},{"card":{"name":"card-agent"},"logging":false,"details":{}}]}},"env":{},"compare":{"ignore":[]}}

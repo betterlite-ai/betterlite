@@ -1,0 +1,20 @@
+kind: helper
+name: langfuse-exporter-rejected-half-then-delivery
+call:
+  b3902:
+    public_key: pk-lf-b3902
+    secret_key: sk-lf-b3902
+    base_url: https://cloud.langfuse.com
+    spans:
+      - name: first
+        attributes: []
+      - name: second
+        attributes:
+          - [langfuse.observation.input, "hello"]
+    replies:
+      - status: 413
+      - status: 400
+      - status: 413
+      - status: 200
+env: {}
+compare: {ignore: []}

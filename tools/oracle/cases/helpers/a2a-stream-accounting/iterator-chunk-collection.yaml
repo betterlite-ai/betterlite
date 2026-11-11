@@ -1,0 +1,39 @@
+kind: helper
+name: a2a-stream-accounting-iterator-chunk-collection
+call:
+  b4810:
+    function: iterate
+    instances:
+      - request: {id: req-7, params: {message: {role: user, parts: [], messageId: m1}}}
+        agent_name: agent
+        logging: {litellm_params: {cost_per_query: 0.25}}
+        start_time: "2026-01-01T00:00:01+00:00"
+        end_time: "2026-01-01T00:00:02+00:00"
+        chunks:
+          - {id: req-7, jsonrpc: "2.0", result: {kind: message, messageId: m2, role: agent, parts: [{kind: text, text: Hello}]}}
+          - {id: req-7, jsonrpc: "2.0", result: {kind: message, messageId: m3, role: agent, parts: [{kind: text, text: Hello world}]}}
+          - {id: req-7, jsonrpc: "2.0", result: {kind: status-update, taskId: t1, contextId: c1, status: {state: completed}, final: true}}
+      - request: {id: req-8, params: {message: {role: user, parts: [], messageId: m4}}}
+        agent_name: agent
+        logging: {litellm_params: {cost_per_query: 0.5}, metadata: {user_id: u-1}}
+        start_time: "2026-01-01T00:00:03+00:00"
+        end_time: "2026-01-01T00:00:04+00:00"
+        chunks:
+          - {id: req-8, jsonrpc: "2.0", result: {kind: message, messageId: m5, role: agent, parts: [{kind: text, text: one}, {kind: text, text: two}]}}
+          - {id: req-8, jsonrpc: "2.0", result: {kind: message, messageId: m6, role: agent, parts: [{kind: text, text: one two}]}}
+      - request: {id: req-9, params: {message: {role: user, parts: [], messageId: m7}}}
+        agent_name: agent
+        logging: {litellm_params: {cost_per_query: 0.25}}
+        start_time: "2026-01-01T00:00:05+00:00"
+        end_time: "2026-01-01T00:00:06+00:00"
+        failure: true
+        chunks:
+          - {id: req-9, jsonrpc: "2.0", result: {kind: message, messageId: m8, role: agent, parts: [{kind: text, text: partial}]}}
+      - request: {id: req-10, params: {message: {role: user, parts: [], messageId: m9}}}
+        agent_name: agent
+        logging: {litellm_params: {cost_per_query: 0.25}}
+        start_time: "2026-01-01T00:00:07+00:00"
+        end_time: "2026-01-01T00:00:08+00:00"
+        chunks: []
+env: {}
+compare: {ignore: []}

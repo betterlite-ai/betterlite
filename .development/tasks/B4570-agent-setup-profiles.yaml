@@ -63,6 +63,9 @@ description: >-
   {target} setup at {path}".
 scope:
   paths:
+    - "crates/betterlite-cli/src/agent_setup_profiles/locks.rs"
+    - "crates/betterlite-cli/src/agent_setup_profiles/error.rs"
+    - "crates/betterlite-cli/src/agent_setup_profiles/**"
     - crates/betterlite-cli/src/agent_setup_profiles.rs
     - crates/betterlite-cli/src/agent_setup_profiles/tests.rs
     - crates/betterlite-cli/Cargo.toml

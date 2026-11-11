@@ -253,7 +253,7 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
     let (mut agents, task) = fixtures();
     claude_answers(
         &mut agents,
-        r#"{"task":"B000","status":"blocked","summary":"Nothing is built yet, the implementation is still missing.","blocker":"implementation is still missing","owned":[],"prior_art":[],"notes":[]}"#,
+        r#"{"task":"B000","status":"blocked","summary":"Nothing is built yet, the implementation is still missing.","blocker":"implementation is still missing","owned":[],"prior_art":[],"mutants":[],"notes":[]}"#,
     );
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
@@ -283,7 +283,7 @@ fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
     let (mut agents, task) = fixtures();
     claude_answers(
         &mut agents,
-        r#"{"task":"B000","status":"blocked","summary":"The preflight still waits for a build slot after many polls.","blocker":"preflight still running","owned":[],"prior_art":[],"notes":[]}"#,
+        r#"{"task":"B000","status":"blocked","summary":"The preflight still waits for a build slot after many polls.","blocker":"preflight still running","owned":[],"prior_art":[],"mutants":[],"notes":[]}"#,
     );
     for runner in &mut agents.runners {
         runner.args[1] = format!("mkdir -p '{{home}}/gate/runs/run-cut'; {}", runner.args[1]);

@@ -8,6 +8,13 @@
       "description": "Empty when done. When blocked: what is needed, where, and the evidence.",
       "type": "string"
     },
+    "mutants": {
+      "description": "One entry per line that cargo mutants --list --in-diff prints for the branch's Rust diff, as worker.md's step 3 runs it; empty when it prints none.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MutantTest"
+      }
+    },
     "notes": {
       "description": "Facts the architect needs and nothing else.",
       "type": "array",
@@ -50,9 +57,28 @@
     "blocker",
     "owned",
     "prior_art",
+    "mutants",
     "notes"
   ],
   "$defs": {
+    "MutantTest": {
+      "type": "object",
+      "properties": {
+        "mutant": {
+          "description": "The mutant line exactly as cargo mutants --list prints it.",
+          "type": "string"
+        },
+        "test": {
+          "description": "The test that fails on that change, by its nextest name.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mutant",
+        "test"
+      ]
+    },
     "OptionVerdict": {
       "type": "string",
       "enum": [
