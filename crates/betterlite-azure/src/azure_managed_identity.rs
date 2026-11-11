@@ -92,6 +92,7 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
             return Err(ManagedIdentityError::ScopeCount);
         };
         let selection = self.select()?;
+        let resource = scope.strip_suffix("/.default").unwrap_or(scope);
         match selection.kind {
             ManagedIdentityKind::Unconfigured => Err(ManagedIdentityError::NoEndpoint),
             ManagedIdentityKind::Workload => {
@@ -109,21 +110,20 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
                 })
             }
             ManagedIdentityKind::CloudShell => {
-                let resource = scope.strip_suffix("/.default").unwrap_or(scope);
-                CloudShellCredential {
+                let shell = CloudShellCredential {
                     environment: self.environment.hosted.clone(),
                     identity: self.hosted_identity(),
                     within_default_credential: self.within_default_credential,
-                }
-                .acquire(&io.hosted, resource)
-                .map(ManagedIdentityToken::from)
-                .map_err(ManagedIdentityError::from)
+                };
+                Ok(ManagedIdentityToken::from(
+                    shell.acquire(&io.hosted, resource)?,
+                ))
             }
             ManagedIdentityKind::ServiceFabric
             | ManagedIdentityKind::AppService
             | ManagedIdentityKind::Arc
             | ManagedIdentityKind::AzureMl
-            | ManagedIdentityKind::Imds => self.msal_backed(io, scope),
+            | ManagedIdentityKind::Imds => self.msal_backed(io, resource),
         }
     }
 
@@ -138,32 +138,30 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
     fn msal_backed(
         &self,
         io: &ManagedIdentityIo<'_>,
-        scope: &str,
+        resource: &str,
     ) -> Result<ManagedIdentityToken, ManagedIdentityError> {
-        let resource = scope.strip_suffix("/.default").unwrap_or(scope);
-        let kind = match select_hosted_protocol(&self.environment.hosted, self.host) {
-            HostedProtocol::ServiceFabric => MsalKind::ServiceFabric,
-            HostedProtocol::AppService => MsalKind::AppService,
-            HostedProtocol::AzureMl => MsalKind::AzureMl,
-            HostedProtocol::Arc => return self.arc(io, resource),
-            HostedProtocol::Vm => {
-                return imds::acquire(
-                    self.environment,
-                    &io.imds,
-                    resource,
-                    self.client_id,
-                    self.probe,
-                )
-                .map(ManagedIdentityToken::from);
-            }
-        };
-        HostedCredential {
+        let hosted = HostedCredential {
             environment: self.environment.hosted.clone(),
             identity: self.hosted_identity(),
-        }
-        .acquire(kind, &io.hosted, resource)
-        .map(ManagedIdentityToken::from)
-        .map_err(ManagedIdentityError::from)
+        };
+        let token = match select_hosted_protocol(&self.environment.hosted, self.host) {
+            HostedProtocol::ServiceFabric => {
+                hosted.acquire(MsalKind::ServiceFabric, &io.hosted, resource)?
+            }
+            HostedProtocol::AppService => {
+                hosted.acquire(MsalKind::AppService, &io.hosted, resource)?
+            }
+            HostedProtocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &io.hosted, resource)?,
+            HostedProtocol::Arc => return self.arc(io, resource),
+            HostedProtocol::Vm => imds::acquire(
+                self.environment,
+                &io.imds,
+                resource,
+                self.client_id,
+                self.probe,
+            )?,
+        };
+        Ok(ManagedIdentityToken::from(token))
     }
 
     fn arc(

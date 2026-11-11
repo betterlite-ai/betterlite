@@ -88,7 +88,29 @@ impl RecordedRequest {
     }
 }
 
-type ReplyParts = (u16, Vec<(String, String)>, String);
+struct ReplyParts {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: String,
+}
+
+impl ReplyParts {
+    fn imds(self) -> ImdsResponse {
+        ImdsResponse {
+            status: self.status,
+            headers: self.headers,
+            body: SecretString::from(self.body),
+        }
+    }
+
+    fn arc(self) -> ArcResponse {
+        ArcResponse {
+            status: self.status,
+            headers: self.headers,
+            body: SecretString::from(self.body),
+        }
+    }
+}
 
 pub(super) struct Script<T> {
     replies: Mutex<VecDeque<Reply>>,
@@ -151,7 +173,11 @@ impl<T> Script<T> {
                     .into_iter()
                     .map(|(name, value)| (name.to_owned(), value.to_owned()))
                     .collect();
-                Ok((status, owned, body))
+                Ok(ReplyParts {
+                    status,
+                    headers: owned,
+                    body,
+                })
             }
         }
     }
@@ -179,12 +205,7 @@ impl From<&ImdsRequest> for RecordedRequest {
 
 impl ImdsTransport for RecordingImds {
     fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
-        let (status, headers, body) = self.exchange(RecordedRequest::from(request))?;
-        Ok(ImdsResponse {
-            status,
-            headers,
-            body: SecretString::from(body),
-        })
+        Ok(self.exchange(RecordedRequest::from(request))?.imds())
     }
 }
 
@@ -270,33 +291,30 @@ pub(super) struct RecordedHosted {
 
 impl HostedTransport for RecordingHosted {
     fn send(&self, request: &HostedRequest) -> io::Result<HostedResponse> {
-        let (_status, headers, body) = self.exchange(RecordedHosted {
+        let parts = self.exchange(RecordedHosted {
             url: request.url.clone(),
             headers: request.headers.clone(),
         })?;
-        let content_type = headers
+        let content_type = parts
+            .headers
             .into_iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
             .map(|(_, value)| value);
         Ok(HostedResponse {
             content_type,
-            body: SecretString::from(body),
+            body: SecretString::from(parts.body),
         })
     }
 }
 
 impl ArcTransport for RecordingArc {
     fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
-        let (status, headers, body) = self.exchange(ArcRequest {
+        let recorded = ArcRequest {
             url: request.url.clone(),
             query: request.query.clone(),
             headers: request.headers.clone(),
-        })?;
-        Ok(ArcResponse {
-            status,
-            headers,
-            body: SecretString::from(body),
-        })
+        };
+        Ok(self.exchange(recorded)?.arc())
     }
 }
 
