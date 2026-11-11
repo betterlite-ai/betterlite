@@ -24,8 +24,9 @@ class StreamChunk(Protocol):
     object: str
     created: int
     model: str | None
-    usage: UsageRecord | None
     choices: list[StreamChoice]
+
+    def get(self, key: str) -> UsageRecord | None: ...
 
 
 class DoneUsage(TypedDict):
@@ -60,7 +61,7 @@ def chunk_value(chunk: StreamChunk) -> Json:
         "object": chunk.object,
         "created": chunk.created,
         "model": chunk.model,
-        "usage": usage_list(chunk.usage),
+        "usage": usage_list(chunk.get("usage")),
         "choices": choices,
     }
 

@@ -25,8 +25,9 @@ from .support import (
 class ReplyMessage(Protocol):
     role: str
     content: str | None
-    reasoning_content: str | None
     tool_calls: list[ChatCompletionMessageToolCall] | None
+
+    def get(self, key: str) -> str | None: ...
 
 
 class ReplyChoice(Protocol):
@@ -64,7 +65,7 @@ def reply_value(result: ReplyResult) -> Json:
         "finish_reason": choice.finish_reason,
         "role": message.role,
         "content": content_value(message.content),
-        "reasoning_content": message.reasoning_content,
+        "reasoning_content": message.get("reasoning_content"),
         "tool_calls": calls_value(message.tool_calls),
         "usage": usage_list(result.usage),
     }

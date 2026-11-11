@@ -184,21 +184,14 @@ async fn a_missing_completion_count_uses_the_message_character_count() {
     );
 }
 
+#[rstest]
+#[case::null_prompt(r#"{"response":"hello","prompt_eval_count":null}"#)]
+#[case::null_eval(r#"{"response":"hello","eval_count":null}"#)]
+#[case::null_message_content(r#"{"response":"hello","message":{"content":null}}"#)]
 #[tokio::test]
-async fn a_null_prompt_count_uses_the_counter_and_a_null_message_count_is_zero() {
-    let found = found(
-        r#"{"response":"hello","prompt_eval_count":null,"eval_count":null,"message":{"content":null}}"#,
-        &request_data(r#"{"prompt":"a b"}"#),
-    )
-    .await;
-    assert_eq!(
-        found.usage,
-        Usage {
-            prompt_tokens: 2,
-            completion_tokens: 0,
-            total_tokens: 2,
-        }
-    );
+async fn a_null_count_is_a_reply_field_error(#[case] body: &str) {
+    let error = failed(body, &request_data(r#"{"prompt":"a b"}"#)).await;
+    assert_eq!(error.status(), None);
 }
 
 #[tokio::test]

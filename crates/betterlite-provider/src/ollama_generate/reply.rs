@@ -34,9 +34,9 @@ pub struct GenerateReply {
     #[serde(default)]
     pub thinking: Option<String>,
     #[serde(default)]
-    pub prompt_eval_count: Option<u64>,
+    pub prompt_eval_count: OptionalCount,
     #[serde(default)]
-    pub eval_count: Option<u64>,
+    pub eval_count: OptionalCount,
     #[serde(default)]
     pub message: Option<ReplyMessage>,
 }
@@ -44,7 +44,18 @@ pub struct GenerateReply {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReplyMessage {
     #[serde(default)]
-    pub content: Option<String>,
+    pub content: ResponseText,
+}
+
+// an absent count falls back to the counter, while an explicit null is a reply-field error
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(untagged)]
+pub enum OptionalCount {
+    #[default]
+    #[serde(skip)]
+    Absent,
+    Null,
+    Count(u64),
 }
 
 // an absent response stays "" while an explicit null stays None, so the two keep distinct variants
@@ -198,26 +209,43 @@ async fn token_usage(
     counter: &dyn TokenCounter,
 ) -> Result<Usage, OllamaError> {
     let prompt_tokens = match reply.prompt_eval_count {
-        Some(count) => count,
-        None => counter
+        OptionalCount::Count(count) => count,
+        OptionalCount::Absent => counter
             .count_text(prompt_text(request_data)?)
             .await
             .unwrap_or(0),
+        OptionalCount::Null => {
+            return Err(OllamaError::ReplyField {
+                field: "prompt_eval_count",
+            });
+        }
     };
-    let completion_tokens = reply.eval_count.unwrap_or_else(|| {
-        reply
-            .message
-            .as_ref()
-            .and_then(|message| message.content.as_deref())
-            .map_or(0, |text| {
-                u64::try_from(text.chars().count()).unwrap_or(u64::MAX)
-            })
-    });
+    let completion_tokens = match reply.eval_count {
+        OptionalCount::Count(count) => count,
+        OptionalCount::Absent => message_char_count(reply.message.as_ref())?,
+        OptionalCount::Null => {
+            return Err(OllamaError::ReplyField {
+                field: "eval_count",
+            });
+        }
+    };
     Ok(Usage {
         prompt_tokens,
         completion_tokens,
         total_tokens: prompt_tokens.saturating_add(completion_tokens),
     })
+}
+
+fn message_char_count(message: Option<&ReplyMessage>) -> Result<u64, OllamaError> {
+    match message.map(|entry| &entry.content) {
+        Some(ResponseText::Text(text)) => {
+            Ok(u64::try_from(text.chars().count()).unwrap_or(u64::MAX))
+        }
+        Some(ResponseText::Absent) | None => Ok(0),
+        Some(ResponseText::Null) => Err(OllamaError::ReplyField {
+            field: "message.content",
+        }),
+    }
 }
 
 fn prompt_text(request_data: &IndexMap<String, Json>) -> Result<&str, OllamaError> {
