@@ -1,9 +1,7 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use tokio::time::timeout;
-
-use super::support::{cache, command_names};
+use super::support::{cache, cache_with_timeout, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::registry::{Change, apply, drain_post_call_redis_batches};
@@ -59,12 +57,13 @@ async fn request_batch_flushing_one_request_keeps_the_others_registered() {
     );
 }
 
-#[tokio::test(start_paused = true)]
+// real time on purpose: the assertion is that two socket timeouts overlap, which a paused clock cannot separate
+#[tokio::test]
 async fn request_batch_drain_flushes_open_requests_concurrently() {
     let first_server = FakeServer::start().await;
     let second_server = FakeServer::start().await;
-    let first_cache = cache(&first_server, Some("ns")).await;
-    let second_cache = cache(&second_server, Some("ns")).await;
+    let first_cache = cache_with_timeout(&first_server, Some("ns"), 0.2).await;
+    let second_cache = cache_with_timeout(&second_server, Some("ns"), 0.2).await;
     let (first, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
     let (second, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
     first.post_call(&first_cache).increment("first", 1.5, None);
@@ -74,9 +73,10 @@ async fn request_batch_drain_flushes_open_requests_concurrently() {
     first_server.mute();
     second_server.mute();
 
-    let drained = timeout(Duration::from_millis(1100), drain_post_call_redis_batches()).await;
+    let started = Instant::now();
+    drain_post_call_redis_batches().await;
     assert!(
-        drained.is_ok(),
+        started.elapsed() < Duration::from_millis(350),
         "both backends time out together, not one after the other"
     );
 }

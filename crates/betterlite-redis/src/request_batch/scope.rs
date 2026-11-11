@@ -45,7 +45,10 @@ where
 }
 
 #[rustfmt::skip]
-pub async fn with_request_redis_batches<F: Future>(batches: Arc<RequestRedisBatches>, operation: F) -> F::Output {
+pub async fn with_request_redis_batches<F>(batches: Arc<RequestRedisBatches>, operation: F) -> F::Output
+where
+    F: Future,
+{
     ACTIVE_REQUEST_BATCHES
         .scope(batches, operation)
         .await

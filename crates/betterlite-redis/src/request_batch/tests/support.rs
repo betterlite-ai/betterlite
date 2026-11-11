@@ -85,11 +85,19 @@ fn blank_overrides() -> RedisOverrides {
 }
 
 pub(crate) async fn cache(server: &FakeServer, namespace: Option<&str>) -> Arc<RedisCache> {
+    cache_with_timeout(server, namespace, SOCKET_TIMEOUT_SECONDS).await
+}
+
+pub(crate) async fn cache_with_timeout(
+    server: &FakeServer,
+    namespace: Option<&str>,
+    timeout_seconds: f64,
+) -> Arc<RedisCache> {
     let mut overrides = blank_overrides();
     overrides.host = Some(server.host());
     overrides.port = Some(IntOrText::Value(i64::from(server.port())));
-    overrides.socket_timeout = Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS));
-    overrides.socket_connect_timeout = Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS));
+    overrides.socket_timeout = Some(FloatOrText::Value(timeout_seconds));
+    overrides.socket_connect_timeout = Some(FloatOrText::Value(timeout_seconds));
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
