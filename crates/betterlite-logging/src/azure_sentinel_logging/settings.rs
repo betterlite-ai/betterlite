@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::EnvironmentLookup;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 use url::Url;
 
 use crate::batch::logger::{BATCH_SIZE_VARIABLE, BatchSettings, FLUSH_INTERVAL_VARIABLE};
@@ -14,7 +15,8 @@ pub const DEFAULT_MONITOR_SCOPE: &str = "https://monitor.azure.com/.default";
 const GOVERNMENT_MONITOR_SCOPE: &str = "https://monitor.azure.us/.default";
 
 // every constructor argument LiteLLM takes; an absent or empty one falls through to the environment
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct SentinelInit {
     pub dcr_immutable_id: Option<String>,
     pub stream_name: Option<String>,

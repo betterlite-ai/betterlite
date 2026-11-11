@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use betterlite_logging::azure_sentinel_logging::logger::{AzureSentinelLogger, SentinelDeps};
 use betterlite_logging::azure_sentinel_logging::settings::{SentinelInit, SentinelSettings};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -39,7 +39,7 @@ struct Scenario {
     #[serde(default)]
     environment: BTreeMap<String, String>,
     #[serde(default)]
-    init: Init,
+    init: SentinelInit,
     #[serde(default)]
     batch_size: Option<usize>,
     #[serde(default)]
@@ -48,19 +48,6 @@ struct Scenario {
     replies: Vec<Reply>,
     #[serde(default)]
     actions: Vec<Action>,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct Init {
-    dcr_immutable_id: Option<String>,
-    stream_name: Option<String>,
-    endpoint: Option<String>,
-    tenant_id: Option<String>,
-    client_id: Option<String>,
-    client_secret: Option<String>,
-    audit_stream_name: Option<String>,
-    authority_host: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -134,22 +121,8 @@ fn describe(settings: &SentinelSettings) -> Value {
     })
 }
 
-fn sentinel_init(init: &Init) -> SentinelInit {
-    SentinelInit {
-        dcr_immutable_id: init.dcr_immutable_id.clone(),
-        stream_name: init.stream_name.clone(),
-        endpoint: init.endpoint.clone(),
-        tenant_id: init.tenant_id.clone(),
-        client_id: init.client_id.clone(),
-        client_secret: init.client_secret.clone().map(SecretString::from),
-        audit_stream_name: init.audit_stream_name.clone(),
-        authority_host: init.authority_host.clone(),
-    }
-}
-
 async fn drive(scenario: &Scenario, logs: &Logs) -> Value {
-    let init = sentinel_init(&scenario.init);
-    let mut settings = match SentinelSettings::resolve(&init, &scenario.environment) {
+    let mut settings = match SentinelSettings::resolve(&scenario.init, &scenario.environment) {
         Ok(settings) => settings,
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };

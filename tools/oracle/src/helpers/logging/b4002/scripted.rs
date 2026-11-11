@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
@@ -10,7 +10,7 @@ use betterlite_logging::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
 };
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{Value, json};
 use url::form_urlencoded;
 
 use super::records::{audit_payload, model_payload};
@@ -90,31 +90,23 @@ fn call_json(request: &PostRequest) -> Value {
             .headers
             .get(name)
             .and_then(|value| value.to_str().ok())
-            .map(str::to_owned)
     };
-    let mut call = Map::new();
-    call.insert(
-        "authorization".to_owned(),
-        Value::from(header("authorization")),
-    );
-    call.insert(
-        "content_type".to_owned(),
-        Value::from(header("content-type")),
-    );
-    call.insert("url".to_owned(), Value::from(request.url.as_str()));
+    let mut call = json!({
+        "authorization": header("authorization"),
+        "content_type": header("content-type"),
+        "url": request.url,
+    });
     if request.url.ends_with(TOKEN_PATH) {
-        let form: Map<String, Value> = form_urlencoded::parse(&request.body)
-            .map(|(name, value)| (name.into_owned(), Value::from(value.into_owned())))
-            .collect();
-        call.insert("kind".to_owned(), Value::from("token"));
-        call.insert("form".to_owned(), Value::Object(form));
+        let form: BTreeMap<String, String> =
+            form_urlencoded::parse(&request.body).into_owned().collect();
+        call["kind"] = json!("token");
+        call["form"] = json!(form);
     } else {
         let records: Vec<Value> = serde_json::from_slice(&request.body).unwrap_or_default();
-        let entries: Vec<Value> = records.iter().map(entry).collect();
-        call.insert("kind".to_owned(), Value::from("batch"));
-        call.insert("entries".to_owned(), Value::Array(entries));
+        call["kind"] = json!("batch");
+        call["entries"] = records.iter().map(entry).collect();
     }
-    Value::Object(call)
+    call
 }
 
 // audit records are kept whole; a model record is told apart by its id and status
@@ -122,16 +114,7 @@ fn entry(record: &Value) -> Value {
     if record.get("table_name").is_some() {
         return record.clone();
     }
-    let mut kept = Map::new();
-    kept.insert(
-        "id".to_owned(),
-        record.get("id").cloned().unwrap_or(Value::Null),
-    );
-    kept.insert(
-        "status".to_owned(),
-        record.get("status").cloned().unwrap_or(Value::Null),
-    );
-    Value::Object(kept)
+    json!({ "id": record.get("id"), "status": record.get("status") })
 }
 
 #[async_trait]
