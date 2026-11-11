@@ -17,14 +17,17 @@ use betterlite_models::call_helpers::metadata::{
     litellm_metadata_from_params, stamped_oauth_token,
 };
 use betterlite_models::call_helpers::model_name::reconstruct_model_name;
+use betterlite_models::call_helpers::stream_attributes::preserve_upstream_attributes;
 use betterlite_models::call_helpers::token_limit::coerce_token_limit;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
 
 use super::input::{
     HeaderStep, Input, ModelNameInput, SafeDivideInput, SafeDivideSecondsInput, TrustedStep,
+    UpstreamAttributesStep,
 };
 
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -46,6 +49,9 @@ pub(super) fn run(input: &Input) -> HelperResult {
             })
         }
         Input::SnapshotIsolation { record } => return snapshot_isolation(record),
+        Input::UpstreamAttributes { steps } => {
+            Value::Array(steps.iter().map(upstream_attributes).collect())
+        }
         Input::FilterInternal { record, additional } => {
             let names: BTreeSet<String> = additional.iter().cloned().collect();
             json!(RequestRecordProjection::filter_internal(
@@ -64,6 +70,17 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 .collect(),
         ),
     })
+}
+
+// only the attributes the call added or changed, since LiteLLM's dump fills defaults on the rest
+fn upstream_attributes(step: &UpstreamAttributesStep) -> Value {
+    let mut response = step.response.clone();
+    preserve_upstream_attributes(&mut response, &step.original_chunk);
+    let changed: IndexMap<&String, &Json> = response
+        .iter()
+        .filter(|(key, value)| step.response.get(*key) != Some(*value))
+        .collect();
+    json!(changed)
 }
 
 fn snapshot_isolation(record: &RequestRecord) -> HelperResult {

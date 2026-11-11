@@ -16,6 +16,7 @@ from litellm.litellm_core_utils.core_helpers import (
     is_expected_client_error,
     map_finish_reason,
     normalize_drop_params,
+    preserve_upstream_non_openai_attributes,
     process_response_headers,  # pyright: ignore[reportUnknownVariableType]
     proxy_stamped_used_client_oauth_token,
     reconstruct_model_name,  # pyright: ignore[reportUnknownVariableType]
@@ -27,6 +28,7 @@ from litellm.litellm_core_utils.llm_request_utils import (
     get_proxy_server_request_headers,  # pyright: ignore[reportUnknownVariableType]
 )
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.types.utils import ModelResponseStream
 from starlette.exceptions import HTTPException
 
 if TYPE_CHECKING:
@@ -37,9 +39,7 @@ Object: TypeAlias = dict[str, Json]
 
 _FINISH_REASON_MAP_NAME = "_FINISH_REASON_MAP"
 _SET_PROVIDER_HEADERS_NAME = "set_provider_response_headers_in_hidden_params"
-_FINISH_REASON_MAP = cast(
-    "dict[str, object]", getattr(core_helpers, _FINISH_REASON_MAP_NAME)
-)
+_FINISH_REASON_MAP = cast("dict[str, object]", getattr(core_helpers, _FINISH_REASON_MAP_NAME))
 _set_provider_headers = cast(
     "Callable[[object, dict[str, str]], None]",
     getattr(core_helpers, _SET_PROVIDER_HEADERS_NAME),
@@ -140,10 +140,7 @@ def _finish_reasons(input_value: Object) -> Json:
 def _token_limits(input_value: Object) -> Json:
     return cast(
         Json,
-        [
-            coerce_token_limit(value)
-            for value in _list(input_value.get("values"), "values")
-        ],
+        [coerce_token_limit(value) for value in _list(input_value.get("values"), "values")],
     )
 
 
@@ -250,6 +247,26 @@ def _upstream_internal_header(input_value: Object) -> Json:
     }
 
 
+def _upstream_attributes(input_value: Object) -> Json:
+    results: list[Json] = []
+    for step in _object_list(input_value.get("steps"), "steps"):
+        response = ModelResponseStream.model_validate(_object(step.get("response"), "response"))
+        original = ModelResponseStream.model_validate(
+            _object(step.get("original_chunk"), "original_chunk")
+        )
+        before = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
+        preserve_upstream_non_openai_attributes(model_response=response, original_chunk=original)
+        after = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
+        results.append(
+            {
+                key: value
+                for key, value in after.items()
+                if key not in before or before[key] != value
+            }
+        )
+    return results
+
+
 def _snapshot_isolation(input_value: Object) -> Json:
     record = _object(input_value.get("record"), "record")
     snapshot = cast(Object, safe_deep_copy(record))
@@ -269,9 +286,7 @@ def _filter_internal(input_value: Object) -> Json:
 
 
 def _drop_env_flag(configured: str | None) -> Json:
-    environ: dict[str, str] = (
-        {} if configured is None else {"LITELLM_DROP_PARAMS": configured}
-    )
+    environ: dict[str, str] = {} if configured is None else {"LITELLM_DROP_PARAMS": configured}
     capture = _WarningCapture()
     _LOGGER.addHandler(capture)
     try:
@@ -303,10 +318,7 @@ def _drop_request_flag(value: Json) -> Json:
 
 
 def _drop_request_invalid(input_value: Object) -> Json:
-    return [
-        _drop_request_flag(value)
-        for value in _list(input_value.get("values"), "values")
-    ]
+    return [_drop_request_flag(value) for value in _list(input_value.get("values"), "values")]
 
 
 def _safe_divide(input_value: Object) -> Json:
@@ -340,9 +352,7 @@ def _request_headers(input_value: Object) -> Json:
     return cast(
         Json,
         [
-            get_proxy_server_request_headers(
-                None if raw is None else _object(raw, "params")
-            )
+            get_proxy_server_request_headers(None if raw is None else _object(raw, "params"))
             for raw in _list(input_value.get("steps"), "steps")
         ],
     )
@@ -367,6 +377,8 @@ def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912
         return _response_headers(input_value)
     if function == "upstream_internal_header":
         return _upstream_internal_header(input_value)
+    if function == "upstream_attributes":
+        return _upstream_attributes(input_value)
     if function == "snapshot_isolation":
         return _snapshot_isolation(input_value)
     if function == "filter_internal":

@@ -23,6 +23,7 @@ use super::metadata::{
     stamped_oauth_token,
 };
 use super::model_name::reconstruct_model_name;
+use super::stream_attributes::preserve_upstream_attributes;
 use super::token_limit::coerce_token_limit;
 use super::tool_calls::{remove_index_from_tool_calls, remove_items_at_indices};
 use crate::decisions::Json;
@@ -776,6 +777,22 @@ fn snapshots_are_independent() {
     );
 }
 
+fn upstream_attributes_copy_only_non_openai_keys() {
+    let mut response = metadata(
+        r#"{"id":"chunk","created":1,"model":"groq/llama","choices":[],"citations":["a"],"kept":1}"#,
+    );
+    let original = metadata(
+        r#"{"id":"upstream","created":2,"model":"llama","object":"chat.completion.chunk","system_fingerprint":"fp","choices":[{"index":0}],"provider_specific_fields":{"a":1},"usage":{"total_tokens":3},"x_groq":{"id":"req"},"citations":["b"],"trace":null}"#,
+    );
+    preserve_upstream_attributes(&mut response, &original);
+    assert_eq!(
+        response,
+        metadata(
+            r#"{"id":"chunk","created":1,"model":"groq/llama","choices":[],"citations":["b"],"kept":1,"x_groq":{"id":"req"},"trace":null}"#
+        )
+    );
+}
+
 fn trusted_flags_cannot_be_forged() {
     let trusted = TrustedHeaders {
         entries: additional_headers(r#"{"x-litellm-model-group":"g"}"#),
@@ -876,6 +893,9 @@ fn trusted_flags_cannot_be_forged() {
 )]
 #[case::trusted_flags_cannot_be_forged(trusted_flags_cannot_be_forged)]
 #[case::snapshots_are_independent(snapshots_are_independent)]
+#[case::upstream_attributes_copy_only_non_openai_keys(
+    upstream_attributes_copy_only_non_openai_keys
+)]
 fn call_helpers_call_helper_tests_behavior(#[case] scenario: fn()) {
     scenario();
 }

@@ -38,6 +38,9 @@ pub(crate) enum Input {
     SnapshotIsolation {
         record: RequestRecord,
     },
+    UpstreamAttributes {
+        steps: Vec<UpstreamAttributesStep>,
+    },
     FilterInternal {
         record: RequestRecord,
         additional: Vec<String>,
@@ -73,6 +76,13 @@ pub(crate) enum TrustedStep {
         litellm_metadata: MetadataMap,
         metadata: MetadataMap,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpstreamAttributesStep {
+    pub(crate) response: IndexMap<String, Json>,
+    pub(crate) original_chunk: IndexMap<String, Json>,
 }
 
 #[derive(Debug, Deserialize)]
