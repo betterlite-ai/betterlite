@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 import httpx
@@ -120,22 +120,6 @@ def freeze_auth_clock(epoch: int) -> None:
     botocore.auth.get_current_datetime = partial(frozen_datetime, epoch)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 
 
-class InitParams(Protocol):
-    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
-        self,
-        *,
-        params_source: dict[str, str],
-        s3_bucket_name: str,
-        s3_region_name: str,
-        s3_endpoint_url: str | None,
-        s3_use_virtual_hosted_style: bool,
-        s3_server_side_encryption: str | None,
-        s3_sse_kms_key_id: str | None,
-        s3_drop_on_terminal_error: bool,
-        s3_adaptive_concurrency: bool,
-    ) -> None: ...
-
-
 class ScriptedLogger(S3Logger):
     credentials: FixedCredentials
 
@@ -143,33 +127,11 @@ class ScriptedLogger(S3Logger):
     def get_credentials(self, *_args: CredentialArg, **_kwargs: CredentialArg) -> FixedCredentials:
         return self.credentials
 
-    def configure(
-        self,
-        settings: Settings,
-        keys: Keys,
-        client: ScriptedClient,
-        limiter: RecordingLimiter | None,
-    ) -> None:
-        init_params = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
-            InitParams, self._init_s3_params
-        )
-        empty_source: dict[str, str] = {}
-        init_params(
-            params_source=empty_source,
-            s3_bucket_name=settings["bucket_name"],
-            s3_region_name=settings["region_name"],
-            s3_endpoint_url=settings.get("endpoint_url"),
-            s3_use_virtual_hosted_style=settings.get("use_virtual_hosted_style") is True,
-            s3_server_side_encryption=settings.get("server_side_encryption"),
-            s3_sse_kms_key_id=settings.get("sse_kms_key_id"),
-            s3_drop_on_terminal_error=settings.get("drop_on_terminal_error") is not False,
-            s3_adaptive_concurrency=settings.get("adaptive_concurrency") is True,
-        )
+    def arm(self, keys: Keys, client: ScriptedClient, limiter: RecordingLimiter | None) -> None:
         self.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
         self.credentials = FixedCredentials(keys)
         if limiter is not None:
             self._upload_limiter = limiter
-        self._flush_dropped = {}
 
     async def upload(self, element: s3BatchLoggingElement) -> tuple[bool, bool]:
         delivered = await self.async_upload_data_to_s3(element)
@@ -187,8 +149,17 @@ async def execute(input_value: Input) -> dict[str, Json]:
     adaptive = settings.get("adaptive_concurrency")
     limiter = RecordingLimiter() if adaptive is True else None
     client = ScriptedClient(input_value["responses"])
-    logger = object.__new__(ScriptedLogger)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L118
-    logger.configure(settings, input_value["credentials"], client, limiter)
+    logger = ScriptedLogger(
+        s3_bucket_name=settings["bucket_name"],
+        s3_region_name=settings["region_name"],
+        s3_endpoint_url=settings.get("endpoint_url"),
+        s3_use_virtual_hosted_style=settings.get("use_virtual_hosted_style") is True,
+        s3_server_side_encryption=settings.get("server_side_encryption"),
+        s3_sse_kms_key_id=settings.get("sse_kms_key_id"),
+        s3_drop_on_terminal_error=settings.get("drop_on_terminal_error") is not False,
+        s3_adaptive_concurrency=adaptive is True,
+    )
+    logger.arm(input_value["credentials"], client, limiter)
     freeze_auth_clock(input_value["now"])
     outcome: str | None = None
     samples: list[Json] | None = None
