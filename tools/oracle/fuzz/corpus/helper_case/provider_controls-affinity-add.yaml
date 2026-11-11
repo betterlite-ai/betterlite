@@ -1,0 +1,12 @@
+kind: helper
+name: provider_controls-affinity-add-seed
+call:
+  provider_affinity:
+    operation: add
+    headers:
+      other: kept
+    params:
+      provider_affinity_header: x-session-id
+      session_id: request-session
+env: {}
+compare: {ignore: []}

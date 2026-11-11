@@ -1,0 +1,16 @@
+kind: helper
+name: cache_placement-mixed-placement-seed
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages:
+          - {role: user, content: hello}
+          - {role: assistant, content: [{type: text, text: noted}]}
+          - {role: user, content: hello, cache_control: {type: ephemeral}}
+        points:
+          - {location: message, role: user, index: null, control: null}
+          - {location: message, role: assistant, index: null, control: {type: ephemeral, ttl: 1h}}
+        max_blocks: 4
+env: {}
+compare: {ignore: []}

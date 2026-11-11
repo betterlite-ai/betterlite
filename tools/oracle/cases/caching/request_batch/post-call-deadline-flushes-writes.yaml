@@ -1,0 +1,25 @@
+kind: helper
+name: caching-request-batch-post-call-deadline-flushes-writes
+call:
+  b4331:
+    caches:
+      - {setting: one, namespace: ns}
+    deadline_millis: 20
+    in_scope: true
+    replies:
+      one:
+        MGET:
+          - {array: ["nil"]}
+        INCRBYFLOAT:
+          - {bulk: "1.5"}
+    steps:
+      - {kind: batch, cache: 0, keys: [a]}
+      - {kind: post_call, call: {cache: 0, key: counter, value: 1.5, ttl: 10}}
+      - {kind: await, handle: 0}
+      - {kind: snapshot}
+      - {kind: sleep, millis: 100}
+      - {kind: snapshot}
+      - {kind: flush_post_call}
+      - {kind: snapshot}
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,9 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+async-trait = "0.1.92"
+betterlite-config = { path = "../../betterlite-config" }
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-prompts = { path = ".." }
 chrono = "0.4.45"
 indexmap = "2.14.2"
@@ -141,6 +144,13 @@ bench = false
 [[bin]]
 name = "bedrock_native_tool"
 path = "fuzz_targets/bedrock_native_tool.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt_bedrock"
+path = "fuzz_targets/prompt_bedrock.rs"
 test = false
 doc = false
 bench = false

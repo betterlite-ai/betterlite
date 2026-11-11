@@ -71,10 +71,12 @@ while true; do
       failed_checks) queue_run=$(last_queue_failure); echo "PR $pr is neither queued nor set to auto-merge ($merge_state)${queue_run:+; last queue run $queue_run failed: $(first_fail "$queue_run")}"; exit 1 ;;
       merge_conflict) echo "PR $pr conflicts with main (the merge queue removed it for merge_conflict)"; exit 1 ;;
       # no failed check is behind these, and reporting an older failed queue run would cost a fix round
-      "" | invalid_merge_commit | checks_timed_out)
+      invalid_merge_commit | checks_timed_out)
         if [ "$rearmed" -lt 3 ]; then gh pr merge "$pr" --auto --squash > /dev/null 2>&1; rearmed=$((rearmed + 1)); outside=0; sleep 60; continue; fi ;;
+      # off with no removal means turned off by hand or never set by the land, so it lets go and names no run
+      "") echo "PR $pr is neither queued nor set to auto-merge ($merge_state); the merge queue has not removed it since the land"; exit 1 ;;
     esac
-    echo "PR $pr is neither queued nor set to auto-merge ($merge_state); the merge queue removed it for ${reason:-nothing since the land}, auto-merge re-armed $rearmed times"; exit 1
+    echo "PR $pr is neither queued nor set to auto-merge ($merge_state); the merge queue removed it for $reason, auto-merge re-armed $rearmed times"; exit 1
   fi
   sleep 60
 done

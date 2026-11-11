@@ -1,0 +1,11 @@
+kind: helper
+name: realtime-cost-events-seed
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.done, response: {usage: {input_tokens: 2, output_tokens: 3}}}
+      - {type: response.completed, response: {service_tier: default, usage: {input_tokens: 4, output_tokens: 1}}}
+      - {type: session.created, session: {model: gpt-realtime}}
+env: {}
+compare: {ignore: []}

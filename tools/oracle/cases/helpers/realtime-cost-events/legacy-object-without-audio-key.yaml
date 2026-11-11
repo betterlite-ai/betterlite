@@ -1,0 +1,10 @@
+kind: helper
+name: realtime-cost-events-legacy-object-without-audio-key
+call:
+  realtime_cost_events:
+    function: transcription_model
+    events:
+      - type: transcription_session.created
+        session: {input_audio_transcription: {model: whisper-1}}
+env: {}
+compare: {ignore: []}

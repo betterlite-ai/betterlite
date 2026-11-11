@@ -1,0 +1,9 @@
+model_list:
+  - model_name: affinity-model
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: sk-test
+      provider_affinity_header: x-session-id
+      stream_chunk_size: 512
+    model_info:
+      id: affinity-model-1
