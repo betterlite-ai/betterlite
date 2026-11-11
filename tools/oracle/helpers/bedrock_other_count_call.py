@@ -140,13 +140,13 @@ class Provider:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if self.first is None:
-            timeout = request.extensions["timeout"]  # type: ignore[misc]  # https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/httpx/_models.py#L343
+            timeout = request.extensions["timeout"]  # type: ignore[misc]  # https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/httpx/_models.py#L396
             sent = {name.lower(): value for name, value in request.headers.items()}
             self.first = {
                 "method": request.method,
                 "url": str(request.url),
                 "body": request.content.decode(),
-                "timeout": float(timeout["read"]),  # type: ignore[misc]  # https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/httpx/_models.py#L343
+                "timeout": float(timeout["read"]),  # type: ignore[misc]  # https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/httpx/_models.py#L396
                 "headers": {name: sent[name] for name in REPORTED_HEADERS if name in sent},
             }
         if self.reply.get("failure"):
