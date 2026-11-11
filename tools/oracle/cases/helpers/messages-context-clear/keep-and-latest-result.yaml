@@ -19,7 +19,13 @@ call:
           - {type: tool_result, tool_use_id: c, content: result c}
           - {type: tool_result, tool_use_id: e, content: result e}
           - {type: tool_result, tool_use_id: d, content: result d}
-    tools: null
+    tools:
+      - name: lookup
+        description: Look up a record
+        input_schema:
+          type: object
+          properties:
+            query: {type: string}
     system: null
     edit_spec:
       trigger: {type: tool_uses, value: 0}

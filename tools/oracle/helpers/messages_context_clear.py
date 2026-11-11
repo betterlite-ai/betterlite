@@ -1,3 +1,8 @@
+import os
+
+# LiteLLM reads LITELLM_RUST per call; false pins the Python tokenizer the oracle compares against.
+os.environ["LITELLM_RUST"] = "false"
+
 from typing import NoReturn, Protocol, TypeAlias, cast
 from unittest.mock import patch
 
