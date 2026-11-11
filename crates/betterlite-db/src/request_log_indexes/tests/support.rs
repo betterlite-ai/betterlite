@@ -27,6 +27,7 @@ use crate::request_log_indexes::database::{
 use crate::request_log_indexes::ensure::ensure_indexes;
 use crate::request_log_indexes::leaf::build_leaf;
 use crate::request_log_indexes::locks::RetryPause;
+use crate::request_log_indexes::partition::{PartitionTarget, build_on_partitioned_table};
 use crate::request_log_indexes::{IndexBuilder, IndexDependencies, RequestLogIndexError};
 
 #[derive(Parser)]
@@ -745,7 +746,30 @@ pub(super) async fn run_leaf<D>(
 where
     D: IndexDatabase,
 {
-    build_leaf(builder, table, name, index).await.unwrap()
+    let target = IndexRef {
+        schema: builder.schema,
+        table,
+        name,
+    };
+    build_leaf(builder, target, index).await.unwrap()
+}
+
+pub(super) async fn run_partition<D>(builder: &IndexBuilder<'_, D>, schema: &str) -> bool
+where
+    D: IndexDatabase,
+{
+    let index = index_by_name(API_KEY_INDEX);
+    build_on_partitioned_table(builder, index, partition_target(schema))
+        .await
+        .unwrap()
+}
+
+pub(super) fn partition_target(schema: &str) -> PartitionTarget<'_> {
+    PartitionTarget {
+        schema,
+        table: None,
+        name: None,
+    }
 }
 
 pub(super) fn plain_table() -> TableKind {

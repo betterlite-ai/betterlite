@@ -31,6 +31,8 @@ END
 $$;
 ";
 
+const APPLY_MESSAGE: &str = "Applying REPLICA IDENTITY FULL to LiteLLM tables";
+
 pub async fn apply_replica_identity_full(
     database_url: &SecretString,
     command_timeout: Duration,
@@ -38,6 +40,7 @@ pub async fn apply_replica_identity_full(
     match connect::connect(database_url).await {
         Ok(database) => apply_on(&database, command_timeout).await,
         Err(error) => {
+            tracing::info!("{APPLY_MESSAGE}");
             tracing::error!(
                 "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables. Error: {error}"
             );
@@ -50,7 +53,14 @@ pub(crate) async fn apply_on<D>(database: &D, command_timeout: Duration) -> bool
 where
     D: IndexDatabase,
 {
-    tracing::info!("Applying REPLICA IDENTITY FULL to LiteLLM tables");
+    tracing::info!("{APPLY_MESSAGE}");
+    execute_replica_identity(database, command_timeout).await
+}
+
+async fn execute_replica_identity<D>(database: &D, command_timeout: Duration) -> bool
+where
+    D: IndexDatabase,
+{
     let executed = timeout(command_timeout, database.execute(REPLICA_IDENTITY_FULL_SQL)).await;
     match executed {
         Err(_) => {

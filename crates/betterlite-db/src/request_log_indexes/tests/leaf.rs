@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::request_log_index_catalog::catalog::IndexState;
+use crate::request_log_indexes::database::IndexRef;
 use crate::request_log_indexes::locks::HANDOVER;
 use crate::request_log_indexes::report::report_second_copies;
 
@@ -456,15 +457,14 @@ async fn parent_report_uses_plain_drop() {
     let pause = RecordingPause::standalone();
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&recorder, &test.schema, &dependencies);
-    report_second_copies(
-        &builder,
-        SPEND_LOGS,
-        API_KEY_INDEX,
-        index_by_name(API_KEY_INDEX),
-        false,
-    )
-    .await
-    .unwrap();
+    let target = IndexRef {
+        schema: &test.schema,
+        table: SPEND_LOGS,
+        name: API_KEY_INDEX,
+    };
+    report_second_copies(&builder, target, index_by_name(API_KEY_INDEX), false)
+        .await
+        .unwrap();
     assert!(warned(
         &logs.contents(),
         &format!(

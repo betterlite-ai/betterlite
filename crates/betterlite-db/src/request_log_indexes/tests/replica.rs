@@ -141,6 +141,10 @@ async fn replica_connection_failure_warns_and_returns_false() {
     );
     assert!(!apply_replica_identity_full(&url, Duration::from_secs(60)).await);
     let captured = logs.contents();
+    assert!(informed(
+        &captured,
+        "Applying REPLICA IDENTITY FULL to LiteLLM tables"
+    ));
     assert!(errored(
         &captured,
         "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables."
@@ -158,7 +162,7 @@ async fn native_replica_execution_needs_no_prisma() {
     assert!(apply_on(&fake, Duration::from_secs(60)).await);
     let statements = fake.state().statements.clone();
     assert_eq!(statements.len(), 1);
-    assert!(statements[0].starts_with("DO $$"));
+    assert!(statements[0].trim_start().starts_with("DO $$"));
     assert!(statements[0].contains("ALTER TABLE %s REPLICA IDENTITY FULL"));
     assert!(statements[0].contains(r"c.relname LIKE 'LiteLLM\_%'"));
     assert!(statements[0].contains("SET LOCAL lock_timeout = '5s'"));

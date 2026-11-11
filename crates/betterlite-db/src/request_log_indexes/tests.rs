@@ -12,14 +12,13 @@ use std::time::Duration;
 
 use deadpool_postgres::GenericClient as _;
 
-use crate::request_log_indexes::partition::build_on_partitioned_table;
 use crate::request_log_indexes::replica_identity::{REPLICA_IDENTITY_FULL_SQL, apply_on};
 
 use support::{
     API_KEY_INDEX, FixedJitter, PostgresTest, RecordingDatabase, RecordingPause, SPEND_LOGS,
-    attached_children, create_partition_tree, index_builder, index_by_name, index_dependencies,
-    index_oid, index_state_of, informed, install_logs, occurrences, other_schema, replica_identity,
-    role_name, suffix,
+    attached_children, create_partition_tree, index_builder, index_dependencies, index_oid,
+    index_state_of, informed, install_logs, occurrences, other_schema, replica_identity, role_name,
+    run_partition, suffix,
 };
 
 #[tokio::test]
@@ -32,11 +31,7 @@ async fn postgres_recursive_partition_attachment() {
     let pause = RecordingPause::standalone();
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&recorder, &test.schema, &dependencies);
-    assert!(
-        build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(run_partition(&builder, builder.schema).await);
     assert_partition_children(&test).await;
     assert_partition_logs(&logs.contents());
     drop_other_schema(&test).await;
@@ -93,22 +88,14 @@ async fn postgres_partial_progress_survives_failure() {
     let pause = RecordingPause::standalone();
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&recorder, &test.schema, &dependencies);
-    assert!(
-        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(!run_partition(&builder, builder.schema).await);
     let p1_oid = assert_first_child_survived(&test).await;
     let collision = format!("LiteLLM_SpendLogs_p2_{}", suffix());
     test.client
         .batch_execute(&format!("DROP TABLE \"{collision}\""))
         .await
         .unwrap();
-    assert!(
-        build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(run_partition(&builder, builder.schema).await);
     assert_rerun_kept_and_attached(&test, p1_oid).await;
     test.finish().await;
 }

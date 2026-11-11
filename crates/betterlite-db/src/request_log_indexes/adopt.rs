@@ -2,19 +2,19 @@ use crate::request_log_index_catalog::catalog::regclass_name;
 use crate::request_log_index_catalog::definitions::RequestLogIndex;
 
 use super::IndexBuilder;
-use super::copies::equivalent_copies;
-use super::database::IndexDatabase;
+use super::database::{IndexDatabase, IndexRef};
 
 pub(crate) async fn adopt_equivalent<D>(
     builder: &IndexBuilder<'_, D>,
-    table: &str,
-    name: &str,
+    target: IndexRef<'_>,
     index: RequestLogIndex<'_>,
 ) -> Result<bool, D::Error>
 where
     D: IndexDatabase,
 {
-    let Some(equivalent) = equivalent_copies(builder, table, name, index)
+    let Some(equivalent) = builder
+        .database
+        .equivalent_indexes(target, index)
         .await?
         .into_iter()
         .find(|candidate| candidate.valid)
@@ -22,12 +22,18 @@ where
         return Ok(false);
     };
     tracing::info!(
-        "Renaming the equivalent index {} on {table} to {name} instead of building a second one",
-        equivalent.name
+        "Renaming the equivalent index {} on {} to {} instead of building a second one",
+        equivalent.name,
+        target.table,
+        target.name
     );
     builder
         .database
-        .execute(&rename_statement(builder.schema, &equivalent.name, name))
+        .execute(&rename_statement(
+            target.schema,
+            &equivalent.name,
+            target.name,
+        ))
         .await?;
     Ok(true)
 }

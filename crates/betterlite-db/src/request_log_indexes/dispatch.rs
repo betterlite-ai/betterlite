@@ -1,9 +1,9 @@
 use crate::request_log_index_catalog::definitions::RequestLogIndex;
 
 use super::IndexBuilder;
-use super::database::IndexDatabase;
+use super::database::{IndexDatabase, IndexRef};
 use super::leaf::build_leaf;
-use super::partition::build_on_partitioned_table;
+use super::partition::{PartitionTarget, build_on_partitioned_table};
 
 pub(crate) async fn ensure_index<D>(
     builder: &IndexBuilder<'_, D>,
@@ -25,7 +25,17 @@ where
         return Ok(true);
     };
     if table.partitioned {
-        return build_on_partitioned_table(builder, index, None, None).await;
+        let partition = PartitionTarget {
+            schema: builder.schema,
+            table: None,
+            name: None,
+        };
+        return build_on_partitioned_table(builder, index, partition).await;
     }
-    build_leaf(builder, index.table, index.name, index).await
+    let target = IndexRef {
+        schema: builder.schema,
+        table: index.table,
+        name: index.name,
+    };
+    build_leaf(builder, target, index).await
 }

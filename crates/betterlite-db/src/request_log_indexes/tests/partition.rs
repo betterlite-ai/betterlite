@@ -1,11 +1,11 @@
 use crate::request_log_index_catalog::catalog::Relation;
-use crate::request_log_indexes::partition::build_on_partitioned_table;
+use crate::request_log_indexes::partition::{PartitionTarget, build_on_partitioned_table};
 
 use super::support::{
     API_KEY_INDEX, FakeDatabase, FixedJitter, PostgresTest, RecordingDatabase, RecordingPause,
     SPEND_LOGS, attached_children, duplicate_api_key_rows, index_builder, index_by_name,
     index_dependencies, index_oid, index_state_of, informed, install_logs, invalid_index,
-    leave_invalid_index, partitioned_table, suffix, valid_index,
+    leave_invalid_index, partitioned_table, run_partition, suffix, valid_index,
 };
 
 #[tokio::test]
@@ -15,10 +15,17 @@ async fn parent_optional_empty_names_not_defaulted() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    let result =
-        build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), Some(""), Some(""))
-            .await
-            .unwrap();
+    let result = build_on_partitioned_table(
+        &builder,
+        index_by_name(API_KEY_INDEX),
+        PartitionTarget {
+            schema: builder.schema,
+            table: Some(""),
+            name: Some(""),
+        },
+    )
+    .await
+    .unwrap();
     assert!(!result);
     let statements = fake.state().statements.clone();
     assert!(
@@ -50,11 +57,7 @@ async fn existing_invalid_parent_reused() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(
-        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(!run_partition(&builder, builder.schema).await);
     assert!(fake.state().statements.is_empty());
     assert!(pause.delays().is_empty());
 }
@@ -81,11 +84,7 @@ async fn first_failed_child_stops_later_children() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(
-        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(!run_partition(&builder, builder.schema).await);
     assert!(
         !fake
             .state()
@@ -123,11 +122,7 @@ async fn final_parent_validity_required() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(
-        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(!run_partition(&builder, builder.schema).await);
     assert!(
         fake.state()
             .statements
@@ -157,11 +152,7 @@ async fn interrupted_build_resumes() {
     let pause = RecordingPause::standalone();
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&recorder, &test.schema, &dependencies);
-    assert!(
-        build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
-            .await
-            .unwrap()
-    );
+    assert!(run_partition(&builder, builder.schema).await);
     assert_ne!(index_oid(&test.client, &child).await.unwrap(), invalid_oid);
     assert!(index_state_of(&test.client, &child).await.unwrap().1);
     assert_eq!(
