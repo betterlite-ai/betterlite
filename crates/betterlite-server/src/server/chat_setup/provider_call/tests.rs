@@ -47,7 +47,7 @@ async fn upstream(listener: TcpListener) -> String {
     let mut body = vec![0_u8; 4096];
     let read = stream.read(&mut body).await.unwrap();
     let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{ANSWER}",
+        "HTTP/1.1 200 OK\r\nx-request-id: up-1\r\ncontent-length: {}\r\n\r\n{ANSWER}",
         ANSWER.len()
     );
     stream.write_all(head.as_bytes()).await.unwrap();
@@ -56,7 +56,7 @@ async fn upstream(listener: TcpListener) -> String {
     String::from_utf8(received).unwrap().to_lowercase()
 }
 
-async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String) {
+async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String, Option<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let source = format!(
@@ -79,11 +79,15 @@ async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String) {
     let (sent, answered) = tokio::join!(upstream(listener), router.oneshot(request));
     let response = answered.unwrap();
     let status = response.status().as_u16();
+    let forwarded = response
+        .headers()
+        .get("llm_provider-x-request-id")
+        .map(|value| value.to_str().unwrap().to_owned());
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap()
         .to_vec();
-    (status, body, sent)
+    (status, body, sent, forwarded)
 }
 
 #[rstest]
@@ -104,7 +108,7 @@ async fn provider_framework_tests_behavior(
     #[case] status: u16,
     #[case] reached: Option<(bool, bool)>,
 ) {
-    let (answered, body, sent) = call(model, sent_body).await;
+    let (answered, body, sent, forwarded) = call(model, sent_body).await;
     assert_eq!(answered, status);
     let Some((has_usage, sends_organization)) = reached else {
         assert_eq!(sent, "");
@@ -115,6 +119,7 @@ async fn provider_framework_tests_behavior(
         reply.usage.map(|usage| usage.total_tokens),
         has_usage.then_some(3)
     );
+    assert_eq!(forwarded.as_deref(), Some("up-1"));
     assert!(sent.contains("authorization: bearer own-key"));
     assert_eq!(
         sent.contains("openai-organization: org-9"),
