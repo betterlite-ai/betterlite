@@ -118,7 +118,7 @@ checks:
     - id: fixture-regression
       why: The optional schema selection breaks existing identity fixtures or database cleanup.
       run: >-
-        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/postgres-fixture/src/dashboard.rs)" &&
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/postgres-fixture/src/dashboard.rs)" &&
         cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
 oracle_cases: []
 deviations: []
