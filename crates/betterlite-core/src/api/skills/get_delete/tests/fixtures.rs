@@ -77,7 +77,7 @@ pub(crate) fn logging() -> LoggingState {
     .expect("the logging fixture builds")
 }
 
-fn anthropic_settings() -> AnthropicSettings {
+pub(crate) fn anthropic_settings() -> AnthropicSettings {
     AnthropicSettings {
         api_key: Some(SecretString::from("sk-ant-test")),
         auth_token: None,

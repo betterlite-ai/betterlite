@@ -174,7 +174,7 @@ fn skills_api_config(
 }
 
 // AnthropicModelInfo.get_api_base(litellm_params.api_base) with B567's resolved settings as the environment
-fn api_base<'call>(
+pub(crate) fn api_base<'call>(
     params: &'call SkillsCallParams,
     settings: &'call AnthropicSettings,
 ) -> &'call str {

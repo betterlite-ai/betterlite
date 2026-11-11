@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use http::HeaderMap;
+use rstest::rstest;
 
 use crate::api::skills::fixtures::{
-    Fixture, SKILL_ID, call, call_with, kwargs, logging, skill_request,
+    Fixture, SKILL_ID, anthropic_settings, call, call_with, kwargs, logging, skill_request,
 };
 use crate::api::skills::get_delete::call::SkillsCallParams;
+use crate::api::skills::get_delete::service::api_base;
 
 #[tokio::test]
 async fn get_skill_url_targets_the_skill_endpoint() {
@@ -117,4 +119,24 @@ async fn url_construction_ignores_an_empty_call_api_base() {
         requests[0].url,
         "https://api.anthropic.com/v1/skills/skill_1"
     );
+}
+
+#[rstest]
+#[case::call_base(Some("https://gateway.example"), "https://gateway.example")]
+#[case::empty_call_base(Some(""), "https://api.anthropic.com")]
+#[case::absent_call_base(None, "https://api.anthropic.com")]
+fn call_base_resolution_uses_only_a_non_empty_api_base(
+    #[case] call_base: Option<&str>,
+    #[case] expected: &str,
+) {
+    let settings = anthropic_settings();
+    let params = SkillsCallParams {
+        api_key: None,
+        api_base: call_base.map(str::to_owned),
+        extra_headers: HeaderMap::new(),
+        extra_query: None,
+        timeout: None,
+        custom_llm_provider: None,
+    };
+    assert_eq!(api_base(&params, &settings), expected);
 }
