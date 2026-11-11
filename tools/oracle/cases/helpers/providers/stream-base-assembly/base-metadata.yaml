@@ -23,6 +23,12 @@ call:
         chunks:
           - {object: chat.completion.chunk, created: 1, model: orig, choices: []}
       - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, model: orig, choices: []}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, choices: []}
+      - function: base_metadata
         chunks: []
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

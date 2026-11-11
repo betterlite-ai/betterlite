@@ -77,9 +77,10 @@ pub fn apply_provider_metadata(
     if chunks.is_empty() {
         return;
     }
-    let Some(model) = response.model.clone().filter(|model| !model.is_empty()) else {
+    let model = response.model.clone();
+    if model.is_empty() {
         return;
-    };
+    }
     if let Err(error) = project_for_model(response, chunks, &model, context) {
         // B187: the model and the failure text can carry a credential, so both go through the redactor
         tracing::debug!(

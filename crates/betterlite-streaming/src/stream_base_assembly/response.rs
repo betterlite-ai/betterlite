@@ -1,5 +1,9 @@
-use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
+use serde::Serialize;
 
+use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
+use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
+
+use super::StreamBaseAssemblyError;
 use super::StreamedChunks;
 use super::records::{Choice, Chunk};
 
@@ -13,7 +17,7 @@ pub struct BaseResponse {
     pub id: String,
     pub object: String,
     pub created: i64,
-    pub model: Option<String>,
+    pub model: String,
     pub system_fingerprint: Option<String>,
     pub service_tier: Option<String>,
     pub choices: Vec<BaseChoice>,
@@ -26,6 +30,13 @@ pub struct BaseChoice {
     pub index: i64,
     pub message: BaseMessage,
     pub finish_reason: String,
+    pub provider_specific_fields: Option<ChoiceProviderFields>,
+}
+
+// Choices keeps the raw provider reason beside the mapped one when map_finish_reason changed it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChoiceProviderFields {
+    pub native_finish_reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,14 +45,26 @@ pub struct BaseMessage {
     pub content: Option<String>,
 }
 
-#[must_use]
-pub fn build_base_response(chunks: &StreamedChunks) -> BaseResponse {
+pub fn build_base_response(
+    chunks: &StreamedChunks,
+) -> Result<BaseResponse, StreamBaseAssemblyError> {
     let first = &chunks.first_chunk;
-    let first_model = first.model.as_deref();
+    let created = first
+        .created
+        .ok_or(StreamBaseAssemblyError::MissingCreated)?;
+    let first_model = first
+        .model
+        .as_deref()
+        .ok_or(StreamBaseAssemblyError::MissingModel)?;
+    let raw_finish_reason = finish_reason(&chunks.chunks);
+    let mapped = mapped_finish_reason(&raw_finish_reason).to_owned();
+    let provider_specific_fields = (mapped != raw_finish_reason).then_some(ChoiceProviderFields {
+        native_finish_reason: raw_finish_reason,
+    });
     let mut response = BaseResponse {
         id: chunk_id(&chunks.chunks),
         object: RESPONSE_OBJECT.to_owned(),
-        created: first.created.unwrap_or(0),
+        created,
         model: model_from_chunks(&chunks.chunks, first_model),
         system_fingerprint: first.system_fingerprint.clone(),
         service_tier: service_tier_from_chunks(&chunks.chunks),
@@ -51,7 +74,8 @@ pub fn build_base_response(chunks: &StreamedChunks) -> BaseResponse {
                 role: role_from_chunks(&chunks.chunks),
                 content: Some(String::new()),
             },
-            finish_reason: finish_reason(&chunks.chunks),
+            finish_reason: mapped,
+            provider_specific_fields,
         }],
         usage: Usage::default(),
         hidden_params: JsonObject::new(),
@@ -63,7 +87,7 @@ pub fn build_base_response(chunks: &StreamedChunks) -> BaseResponse {
             JsonValue::String(model),
         );
     }
-    response
+    Ok(response)
 }
 
 pub fn apply_hidden_params(response: &mut BaseResponse, chunk: Option<&Chunk>) {
@@ -100,11 +124,12 @@ fn role_of_choice(choice: &Choice) -> String {
     }
 }
 
-fn model_from_chunks(chunks: &[Chunk], first_model: Option<&str>) -> Option<String> {
-    let models = models_in_order(chunks, ModelSource::Chunk);
-    first_differing(&models, first_model)
-        .or(first_model)
-        .map(str::to_owned)
+fn model_from_chunks(chunks: &[Chunk], first_model: &str) -> String {
+    models_in_order(chunks, ModelSource::Chunk)
+        .iter()
+        .copied()
+        .find(|model| *model != first_model)
+        .map_or_else(|| first_model.to_owned(), str::to_owned)
 }
 
 fn service_tier_from_chunks(chunks: &[Chunk]) -> Option<String> {
@@ -129,9 +154,12 @@ fn finish_reason(chunks: &[Chunk]) -> String {
     finish_reason
 }
 
-fn provider_response_model(chunks: &[Chunk], first_model: Option<&str>) -> Option<String> {
+fn provider_response_model(chunks: &[Chunk], first_model: &str) -> Option<String> {
     let models = models_in_order(chunks, ModelSource::ProviderResponse);
-    first_differing(&models, first_model)
+    models
+        .iter()
+        .copied()
+        .find(|model| *model != first_model)
         .or_else(|| models.first().copied())
         .map(str::to_owned)
 }
@@ -154,14 +182,4 @@ fn models_in_order(chunks: &[Chunk], source: ModelSource) -> Vec<&str> {
                 .filter(|model| !model.is_empty()),
         })
         .collect()
-}
-
-fn first_differing<'model>(
-    models: &[&'model str],
-    first_model: Option<&str>,
-) -> Option<&'model str> {
-    models
-        .iter()
-        .copied()
-        .find(|model| Some(*model) != first_model)
 }

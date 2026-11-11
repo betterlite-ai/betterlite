@@ -11,6 +11,12 @@ call:
           - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: ''}], _hidden_params: {b: 2}}
       - function: finish_and_hidden
         chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: end_turn}]}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: max_tokens}]}
+      - function: finish_and_hidden
+        chunks:
           - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: real-1}}
           - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: real-2, last: true}}
       - function: finish_and_hidden

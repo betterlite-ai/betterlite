@@ -1,8 +1,8 @@
+use betterlite_streaming::stream_base_assembly::StreamedChunks;
 use betterlite_streaming::stream_base_assembly::records::Chunk;
 use betterlite_streaming::stream_base_assembly::response::{
     BaseResponse, apply_hidden_params, build_base_response,
 };
-use betterlite_streaming::stream_base_assembly::{StreamBaseAssemblyError, StreamedChunks};
 use betterlite_streaming::stream_chunk_shaping::records::Usage;
 use serde_json::{Value, json};
 
@@ -18,8 +18,9 @@ pub(super) fn sort_view(chunks: &[Chunk]) -> Value {
 }
 
 pub(super) fn response_json(chunks: &[Chunk]) -> Value {
-    with_chunks(chunks, |streamed| {
-        response_view(&build_base_response(streamed))
+    with_chunks(chunks, |streamed| match build_base_response(streamed) {
+        Ok(response) => response_view(&response),
+        Err(_error) => json!({"ok": false, "error_type": "missing_first_field"}),
     })
 }
 
@@ -29,9 +30,7 @@ where
 {
     match StreamedChunks::new(chunks.to_vec()) {
         Ok(streamed) => view(&streamed),
-        Err(StreamBaseAssemblyError::NoChunks) => {
-            json!({"ok": false, "error_type": "empty_chunks"})
-        }
+        Err(_error) => json!({"ok": false, "error_type": "empty_chunks"}),
     }
 }
 
@@ -50,6 +49,7 @@ pub(super) fn response_view(response: &BaseResponse) -> Value {
                 "index": choice.index,
                 "message": {"role": &choice.message.role, "content": &choice.message.content},
                 "finish_reason": &choice.finish_reason,
+                "provider_specific_fields": &choice.provider_specific_fields,
             })
         })
         .collect();

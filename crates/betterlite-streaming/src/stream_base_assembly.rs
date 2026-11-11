@@ -13,6 +13,10 @@ mod tests;
 pub enum StreamBaseAssemblyError {
     #[error("the chunk list is empty")]
     NoChunks,
+    #[error("the first chunk has no created timestamp")]
+    MissingCreated,
+    #[error("the first chunk has no model")]
+    MissingModel,
 }
 
 // The sorted chunks plus the original first chunk, which stays the response's metadata source.

@@ -37,7 +37,7 @@ pub(crate) enum Input {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct ResponseSpec {
-    model: Option<String>,
+    model: String,
     hidden_params: JsonObject,
 }
 
@@ -45,7 +45,7 @@ pub(crate) struct ResponseSpec {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProviderScenario {
     #[serde(default)]
-    model: Option<String>,
+    model: String,
     #[serde(default)]
     chunks: Vec<Chunk>,
     #[serde(default)]

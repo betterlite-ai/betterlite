@@ -4,17 +4,31 @@ os.environ["LITELLM_RUST"] = "false"
 
 from collections.abc import Callable
 from contextlib import ExitStack
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 from unittest import mock
 
 from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 from litellm.llms.base_llm.chat.transformation import BaseConfig
-from litellm.types.utils import Choices, ModelResponse, ModelResponseStream, StreamingChoices, Usage
+from litellm.types.utils import ModelResponse, ModelResponseStream, StreamingChoices, Usage
+
+if TYPE_CHECKING:
+    from litellm.litellm_core_utils.litellm_logging import Logging
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 CHUNK_KEYS = ("id", "object", "created", "model", "system_fingerprint", "service_tier", "choices")
 REAL_APPLY: Callable[..., None] = BaseConfig.apply_assembled_streaming_response_metadata
+
+
+class StreamProcessor(Protocol):
+    chunks: list[object]
+    first_chunk: object
+
+    def build_base_response(self, chunks: list[object]) -> ModelResponse: ...
+
+    def update_model_response_with_hidden_params(
+        self, model_response: ModelResponse, chunk: object | None = None
+    ) -> ModelResponse: ...
 
 
 def attribute(value: object, name: str) -> Json:
@@ -75,7 +89,7 @@ def build_chunks(specs: list[dict[str, Json]]) -> list[object]:
 
 def fixture_response(spec: dict[str, Json]) -> ModelResponse:
     response = ModelResponse(
-        model=cast(str | None, spec.get("model")),
+        model=cast(str, spec.get("model", "")),
         id="fixture",
         created=1,
         choices=[],
@@ -85,16 +99,6 @@ def fixture_response(spec: dict[str, Json]) -> ModelResponse:
         dict[str, object], spec.get("hidden_params", {})
     )
     return response
-
-
-def choice_finish_reason(choice: Choices) -> Json:
-    # Choices maps an unknown reason to stop and keeps the raw one beside it
-    fields = cast(dict[str, Json] | None, getattr(choice, "provider_specific_fields", None))
-    if isinstance(fields, dict):
-        native = fields.get("native_finish_reason")
-        if native is not None:
-            return cast(Json, native)
-    return choice.finish_reason
 
 
 def response_view(response: ModelResponse) -> Json:
@@ -110,7 +114,8 @@ def response_view(response: ModelResponse) -> Json:
             {
                 "index": choice.index,
                 "message": {"role": choice.message.role, "content": choice.message.content},
-                "finish_reason": choice_finish_reason(choice),
+                "finish_reason": choice.finish_reason,
+                "provider_specific_fields": attribute(choice, "provider_specific_fields"),
             }
             for choice in response.choices
         ],
@@ -123,14 +128,18 @@ def response_view(response: ModelResponse) -> Json:
     }
 
 
+def stream_processor(chunks: list[object]) -> StreamProcessor:
+    return cast(StreamProcessor, ChunkProcessor(chunks))
+
+
 def sort_case(arguments: dict[str, Json]) -> Json:
     chunks = build_chunks(cast(list[dict[str, Json]], arguments.get("chunks", [])))
     if not chunks:
         return {"ok": False, "error_type": "empty_chunks"}
-    processor = cast(Any, ChunkProcessor(chunks))  # pyright: ignore[reportAny]
+    processor = stream_processor(chunks)
     return {
-        "chunks": [chunk_view(chunk) for chunk in processor.chunks],  # pyright: ignore[reportAny]
-        "first_chunk": chunk_view(processor.first_chunk),  # pyright: ignore[reportAny]
+        "chunks": [chunk_view(chunk) for chunk in processor.chunks],
+        "first_chunk": chunk_view(processor.first_chunk),
     }
 
 
@@ -138,11 +147,10 @@ def response_case(arguments: dict[str, Json]) -> Json:
     chunks = build_chunks(cast(list[dict[str, Json]], arguments.get("chunks", [])))
     if not chunks:
         return {"ok": False, "error_type": "empty_chunks"}
-    processor = cast(Any, ChunkProcessor(chunks))  # pyright: ignore[reportAny]
-    response = cast(
-        ModelResponse,
-        processor.build_base_response(processor.chunks),  # pyright: ignore[reportAny]
-    )
+    try:
+        response = stream_processor(chunks).build_base_response(chunks)
+    except KeyError:
+        return {"ok": False, "error_type": "missing_first_field"}
     return response_view(response)
 
 
@@ -151,8 +159,8 @@ def update_case(arguments: dict[str, Json]) -> Json:
     response = fixture_response(spec)
     raw_chunk = arguments.get("chunk")
     chunk = None if raw_chunk is None else build_chunk(cast(dict[str, Json], raw_chunk))
-    processor = ChunkProcessor([{"id": "fixture"}])
-    processor.update_model_response_with_hidden_params(response, cast(Any, chunk))  # pyright: ignore[reportAny]
+    processor = stream_processor([{"id": "fixture"}])
+    processor.update_model_response_with_hidden_params(response, chunk)
     return {"hidden_params": hidden_value(response)}
 
 
@@ -189,13 +197,16 @@ def select_failing(*_args: object, **_kwargs: object) -> None:
     raise RuntimeError("fixture selector failure")
 
 
+def logging_details(spec: dict[str, Json]) -> "Logging | None":
+    custom = spec.get("custom_llm_provider")
+    if custom is None:
+        return None
+    return cast("Logging", FakeLogging({"custom_llm_provider": cast(Json, custom)}))
+
+
 def assembled_scenario(spec: dict[str, Json]) -> Json:
     chunks = build_chunks(cast(list[dict[str, Json]], spec.get("chunks", [])))
     response = fixture_response(spec)
-    custom = spec.get("custom_llm_provider")
-    logging_obj = (
-        None if custom is None else FakeLogging({"custom_llm_provider": cast(Json, custom)})
-    )
     calls: list[Json] = []
     with ExitStack() as stack:
         selector = cast(str, spec.get("selector", "table"))
@@ -232,7 +243,7 @@ def assembled_scenario(spec: dict[str, Json]) -> Json:
         ChunkProcessor.apply_provider_assembled_streaming_metadata(
             response=response,
             chunks=chunks,
-            logging_obj=cast(Any, logging_obj),  # pyright: ignore[reportAny]
+            logging_obj=logging_details(spec),
         )
     return {"response": response_view(response), "calls": calls}
 
