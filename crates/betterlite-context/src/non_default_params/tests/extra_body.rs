@@ -13,6 +13,8 @@ use crate::non_default_params::extra_body::{
 };
 
 const OPENAI_PARAMS: &[&str] = &["temperature", "model"];
+const NESTED: &str = r#"{"temperature": 1, "top_k": 3, "unset": null, "extra_body": {"a": 1}}"#;
+const FLAT: &str = r#"{"temperature": 1, "top_k": 3, "unset": null, "dropped": 4}"#;
 
 fn add(
     optional: &str,
@@ -33,36 +35,24 @@ fn add(
 }
 
 #[rstest]
-#[case::openai("openai")]
-#[case::azure("azure")]
-#[case::text_completion_openai("text-completion-openai")]
-#[case::openai_compatible_groq("groq")]
-#[case::openai_compatible_deepseek("deepseek")]
-fn extra_body_providers_collect_unknown_params(#[case] provider: &str) {
-    let result = add(
-        "{}",
-        r#"{"temperature": 1, "top_k": 3, "unset": null, "extra_body": {"a": 1}}"#,
-        provider,
-        &[],
-    )
-    .unwrap();
-    assert_eq!(result, params(r#"{"extra_body": {"a": 1, "top_k": 3}}"#));
-}
-
-#[rstest]
-#[case::anthropic("anthropic")]
-#[case::bedrock("bedrock")]
-#[case::ollama("ollama")]
-#[case::empty_provider("")]
-fn extra_body_other_providers_get_top_level_params(#[case] provider: &str) {
-    let result = add(
-        r#"{"kept": true}"#,
-        r#"{"temperature": 1, "top_k": 3, "unset": null, "dropped": 4}"#,
-        provider,
-        &["dropped"],
-    )
-    .unwrap();
-    assert_eq!(result, params(r#"{"kept": true, "top_k": 3}"#));
+#[case::openai("openai", "{}", NESTED, &[], r#"{"extra_body": {"a": 1, "top_k": 3}}"#)]
+#[case::azure("azure", "{}", NESTED, &[], r#"{"extra_body": {"a": 1, "top_k": 3}}"#)]
+#[case::text_completion_openai("text-completion-openai", "{}", NESTED, &[], r#"{"extra_body": {"a": 1, "top_k": 3}}"#)]
+#[case::openai_compatible_groq("groq", "{}", NESTED, &[], r#"{"extra_body": {"a": 1, "top_k": 3}}"#)]
+#[case::openai_compatible_deepseek("deepseek", "{}", NESTED, &[], r#"{"extra_body": {"a": 1, "top_k": 3}}"#)]
+#[case::anthropic("anthropic", r#"{"kept": true}"#, FLAT, &["dropped"], r#"{"kept": true, "top_k": 3}"#)]
+#[case::bedrock("bedrock", r#"{"kept": true}"#, FLAT, &["dropped"], r#"{"kept": true, "top_k": 3}"#)]
+#[case::ollama("ollama", r#"{"kept": true}"#, FLAT, &["dropped"], r#"{"kept": true, "top_k": 3}"#)]
+#[case::empty_provider("", r#"{"kept": true}"#, FLAT, &["dropped"], r#"{"kept": true, "top_k": 3}"#)]
+fn extra_body_unknown_params_go_where_the_provider_takes_them(
+    #[case] provider: &str,
+    #[case] optional: &str,
+    #[case] passed: &str,
+    #[case] dropped: &[&str],
+    #[case] expected: &str,
+) {
+    let result = add(optional, passed, provider, dropped).unwrap();
+    assert_eq!(result, params(expected));
 }
 
 #[test]

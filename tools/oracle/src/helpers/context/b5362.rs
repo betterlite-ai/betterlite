@@ -13,9 +13,7 @@ mod pre_process;
 #[serde(untagged)]
 enum Call {
     Filter(filters::FilterCall),
-    Mapping(filters::MappingCall),
     PreProcess(pre_process::PreProcessCall),
-    Optional(pre_process::OptionalCall),
     Cleanup(cleanup::CleanupCall),
     Media(media::MediaCall),
 }
@@ -48,9 +46,7 @@ impl crate::helpers::Helper for Op {
         for call in &input.calls {
             let outcome = match call {
                 Call::Filter(filter) => filters::run(filter),
-                Call::Mapping(mapping) => filters::run_mapping(mapping),
                 Call::PreProcess(pre) => pre_process::run(pre),
-                Call::Optional(optional) => pre_process::run_optional(optional),
                 Call::Cleanup(cleanup) => cleanup::run(cleanup),
                 Call::Media(media) => media::run(media),
             };

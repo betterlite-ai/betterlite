@@ -46,8 +46,8 @@ pub(super) enum MediaCall {
     VertexAspectRatio { size: Option<String> },
 }
 
-fn transcription(input: &TranscriptionInput) -> Result<Value, Failure> {
-    let request = TranscriptionRequest {
+fn transcription_request(input: &TranscriptionInput) -> TranscriptionRequest<'_> {
+    TranscriptionRequest {
         model: &input.model,
         custom_llm_provider: &input.custom_llm_provider,
         params: &input.params,
@@ -59,15 +59,11 @@ fn transcription(input: &TranscriptionInput) -> Result<Value, Failure> {
             .mapper
             .as_ref()
             .map(|fixture| -> &dyn OptionalParamsMapper { fixture }),
-    };
-    match transcription_optional_params(&request) {
-        Ok(optional) => Ok(serde_json::to_value(optional)?),
-        Err(error) => Err(Failure::Status(error.status_code())),
     }
 }
 
-fn image_generation(input: &ImageInput) -> Result<Value, Failure> {
-    let request = ImageGenerationRequest {
+fn image_request(input: &ImageInput) -> ImageGenerationRequest<'_> {
+    ImageGenerationRequest {
         model: input.model.as_deref(),
         custom_llm_provider: input.custom_llm_provider.as_deref(),
         params: &input.params,
@@ -84,17 +80,21 @@ fn image_generation(input: &ImageInput) -> Result<Value, Failure> {
             .bedrock
             .as_ref()
             .map(|fixture| -> &dyn OptionalParamsMapper { fixture }),
-    };
-    match get_optional_params_image_gen(&request) {
-        Ok(optional) => Ok(serde_json::to_value(optional)?),
-        Err(error) => Err(Failure::Status(error.status_code())),
     }
 }
 
 pub(super) fn run(call: &MediaCall) -> Result<Value, Failure> {
     match call {
-        MediaCall::Transcription(input) => transcription(input),
-        MediaCall::ImageGeneration(input) => image_generation(input),
+        MediaCall::Transcription(input) => {
+            let params = transcription_optional_params(&transcription_request(input))
+                .map_err(|error| Failure::Status(error.status_code()))?;
+            Ok(serde_json::to_value(params)?)
+        }
+        MediaCall::ImageGeneration(input) => {
+            let params = get_optional_params_image_gen(&image_request(input))
+                .map_err(|error| Failure::Status(error.status_code()))?;
+            Ok(serde_json::to_value(params)?)
+        }
         MediaCall::VertexAspectRatio { size } => Ok(Value::String(
             vertex_aspect_ratio(size.as_deref()).to_owned(),
         )),
