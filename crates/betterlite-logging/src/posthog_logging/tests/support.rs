@@ -141,10 +141,11 @@ pub(super) fn fixed_id() -> String {
     "generated-id".to_owned()
 }
 
-pub(super) fn logger_with(
+fn build(
     settings: PostHogSettings,
     transport: &Arc<ScriptedTransport>,
     ids: IdGenerator,
+    shutdown: Option<CancellationToken>,
 ) -> (Arc<PostHogLogger>, TaskTracker) {
     let tasks = TaskTracker::new();
     let concrete = Arc::clone(transport);
@@ -155,10 +156,18 @@ pub(super) fn logger_with(
             transport: target,
             ids,
             tasks: tasks.clone(),
-            shutdown: None,
+            shutdown,
         },
     );
     (logger, tasks)
+}
+
+pub(super) fn logger_with(
+    settings: PostHogSettings,
+    transport: &Arc<ScriptedTransport>,
+    ids: IdGenerator,
+) -> (Arc<PostHogLogger>, TaskTracker) {
+    build(settings, transport, ids, None)
 }
 
 pub(super) fn logger_with_shutdown(
@@ -166,19 +175,8 @@ pub(super) fn logger_with_shutdown(
     transport: &Arc<ScriptedTransport>,
     ids: IdGenerator,
 ) -> (Arc<PostHogLogger>, TaskTracker, CancellationToken) {
-    let tasks = TaskTracker::new();
     let shutdown = CancellationToken::new();
-    let concrete = Arc::clone(transport);
-    let target: Arc<dyn Transport> = concrete;
-    let logger = PostHogLogger::new(
-        settings,
-        PostHogDeps {
-            transport: target,
-            ids,
-            tasks: tasks.clone(),
-            shutdown: Some(shutdown.clone()),
-        },
-    );
+    let (logger, tasks) = build(settings, transport, ids, Some(shutdown.clone()));
     (logger, tasks, shutdown)
 }
 
